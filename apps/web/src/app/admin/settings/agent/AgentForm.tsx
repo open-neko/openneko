@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import Select from "@/components/Select";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
+import GraphjinAgentSection, { type GraphjinAgentPayload } from "./GraphjinAgentSection";
 
 type ProviderOption = { value: string; label: string; description: string };
 type ProviderField = {
@@ -46,7 +47,7 @@ type AgentSettingsPayload = {
 export default function AgentForm({
   initial,
 }: {
-  initial: { agent: AgentSettingsPayload; providers: SettingsPayload };
+  initial: { agent: AgentSettingsPayload; providers: SettingsPayload; graphjinAgent: GraphjinAgentPayload };
 }) {
   const [backend, setBackend] = useState(initial.agent.agent.backend);
   const [concurrentJobs, setConcurrentJobs] = useState(String(initial.agent.agent.globalCap));
@@ -248,6 +249,7 @@ export default function AgentForm({
           </Button>
         </div>
       </section>
+      <GraphjinAgentSection initial={initial.graphjinAgent} />
     </div>
   );
 }

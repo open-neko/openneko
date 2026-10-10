@@ -137,6 +137,26 @@ export function assertReadOnlyGraphql(query: string): void {
 }
 
 /** A run's GraphJin token: the K1 principal plus group roles when group grants are on. */
+/** The org's knowledge pack digest, so GraphJin's agent starts from known patterns and join paths. */
+async function graphjinAgentKnowledge(orgId: string): Promise<{ knowledge_pack?: Record<string, unknown> }> {
+  try {
+    const { ensureOrgWorkspace } = await import("./workspace");
+    const { knowledgePackPaths, readKnowledgePack } = await import("../knowledge-pack");
+    const pack = await readKnowledgePack(knowledgePackPaths((await ensureOrgWorkspace(orgId)).knowledgeRoot));
+    if (pack.mode !== "agentic") return {};
+    const insights = JSON.parse(pack.insights) as { hub_tables?: unknown; help_cards?: unknown };
+    return {
+      knowledge_pack: {
+        graphjin_syntax: JSON.parse(pack.syntax),
+        hub_tables: insights.hub_tables,
+        help_cards: insights.help_cards,
+      },
+    };
+  } catch {
+    return {};
+  }
+}
+
 async function runGraphjinToken(orgId: string, runId: string | null | undefined): Promise<string> {
   const { mintGraphjinToken } = await import("../graphjin/token");
   const { getWorkRunActor } = await import("./personas");
@@ -1128,7 +1148,7 @@ export class InProcessControlPlane implements AgentControlPlane {
       host: hostnameOf(src.graphqlUrl),
     };
     try {
-      const { askGraphjinAgent, getGraphjinAgentStatus } = await import(
+      const { GRAPHJIN_AGENT_MAX_STEPS, askGraphjinAgent, getGraphjinAgentStatus } = await import(
         "../graphjin/agent"
       );
       const agentStatus = await getGraphjinAgentStatus({
@@ -1158,13 +1178,14 @@ export class InProcessControlPlane implements AgentControlPlane {
         signal: AbortSignal.timeout(180_000),
         request: {
           instruction,
-          max_steps: Math.min(Math.max(input.maxSteps ?? 8, 1), 12),
+          max_steps: Math.min(Math.max(input.maxSteps ?? GRAPHJIN_AGENT_MAX_STEPS, 1), GRAPHJIN_AGENT_MAX_STEPS),
           return_trace: false,
           context: {
             caller: "OpenNeko data agent",
             purpose: "read-only operational data retrieval and analysis",
             constraint:
               "Use catalog and execution evidence. Do not mutate data, configuration, artifacts, tasks, watches, or workflows.",
+            ...(await graphjinAgentKnowledge(input.orgId)),
           },
         },
       });

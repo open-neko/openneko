@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
-import { observeSafely } from "./observer";
+import { errorCodeOf, observeSafely } from "./observer";
 import { sanitizeAttributes } from "./redaction";
 import type { HarnessObserver, ObservationInput } from "./types";
 
@@ -15,6 +15,7 @@ type StartupContext = {
   threadId?: string;
   observer?: HarnessObserver;
   pending?: ObservationInput[];
+  failedPhase?: string;
 };
 const current = new AsyncLocalStorage<{ trace: StartupContext; parent?: string }>();
 
@@ -77,14 +78,60 @@ export async function startupPhase<T>(phase: string, operation: () => Promise<T>
   const attrs = sanitizeAttributes({ "openneko.stage": `startup.${phase}`, ...attributes });
   await observe({ kind: "stage.start", operationId, parentOperationId, timestamp: startedAt, attributes: attrs });
   let ok = false;
+  let failure: unknown;
   try {
     const result = await current.run({ trace: context ?? {}, parent: operationId }, operation);
     ok = true;
     return result;
+  } catch (error) {
+    failure = error;
+    throw error;
   } finally {
+    if (!ok && context) context.failedPhase ??= phase;
     const durationMs = Math.max(0, performance.now() - started);
     log(phase, { ...attributes, durationMs, ok, startedAt, operationId, parentOperationId });
     await observe({ kind: "stage.end", operationId, parentOperationId: parentOperationId ?? (context?.rootOperationId ?? (context?.runId ? `work:${context.runId}` : undefined)), status: ok ? "ok" : "error", attributes: attrs,
+      ...(ok ? {} : failureDetail(failure)),
       measurements: { durationMs, coverage: "unavailable" } });
   }
+}
+
+function failureDetail(error: unknown) {
+  return {
+    errorType: error instanceof Error ? error.name : "unknown",
+    errorCode: errorCodeOf(error),
+    errorMessage: error instanceof Error ? error.message : String(error),
+  };
+}
+
+/**
+ * Ends the traced request's run as failed. A request that failed before its
+ * run existed gets a run of its own, so its buffered startup phases export.
+ */
+export async function failStartupRun(
+  error: unknown,
+  createObserver: (runId: string) => HarnessObserver,
+  attributes: Record<string, unknown> = {},
+): Promise<void> {
+  const context = current.getStore()?.trace;
+  if (!context) return;
+  const durationMs = startupElapsedMs() ?? 0;
+  if (!context.observer) {
+    const runId = context.requestId ?? randomUUID();
+    const observer = createObserver(runId);
+    await observeSafely(observer, {
+      kind: "run.start", operationId: `work:${runId}`,
+      timestamp: new Date(Date.now() - durationMs).toISOString(), attributes,
+    });
+    await bindStartupRun(runId, observer);
+  }
+  await observeSafely(context.observer, {
+    kind: "run.end",
+    operationId: context.rootOperationId ?? `work:${context.runId}`,
+    status: "error",
+    ...failureDetail(error),
+    errorCode: errorCodeOf(error) ?? (context.failedPhase ? `startup.${context.failedPhase}` : "startup_failed"),
+    attributes: { ...attributes, "openneko.outcome": "failed" },
+    measurements: { durationMs, coverage: "unavailable" },
+  });
 }

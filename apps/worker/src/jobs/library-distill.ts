@@ -1,5 +1,6 @@
 import { enqueue, QUEUE, type LibraryDistillPayload } from "@neko/db/jobs";
 import { markLibraryDocumentStatus, runLibraryDistill } from "@neko/llm";
+import { createWorkerHarnessObserver } from "../telemetry.js";
 
 const MAX_DISTILL_ATTEMPTS = 5;
 
@@ -34,6 +35,7 @@ export async function runLibraryDistillJob(
       orgId: payload.orgId,
       documentId: payload.documentId,
       force: payload.force === true,
+      observer: createWorkerHarnessObserver(`${payload.runId}:${payload.sequence}`).observer,
     });
     console.log(
       `[library-distill] document ${payload.documentId} → ${result.status}` +

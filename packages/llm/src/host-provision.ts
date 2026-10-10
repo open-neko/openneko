@@ -127,6 +127,7 @@ export {
   patchGraphjinSourcesJwtSecret,
   shouldReconcileDemoSourceAuthMode,
 } from "./graphjin/sources-config";
+import { provisionGraphjinAgent } from "./graphjin/agent-settings";
 import {
   atomicWriteFile,
   migrateGraphjinSystemSource,
@@ -490,6 +491,8 @@ function agentRuntimeLaunchConfig(args: {
   derivedEndpoints?: ProviderEndpoint[];
   derivedKeyEnv?: string;
   hasApiKey: boolean;
+  /** Versions the provider by credential, so a new key never changes one in use. */
+  credentialFingerprint?: string;
 }): AgentRuntimeLaunchConfig {
   const derivedEndpoints = args.derivedEndpoints ?? [];
   const keyEnv = OPERATOR_AGENT_ENV.keyEnv || args.derivedKeyEnv || "";
@@ -501,7 +504,9 @@ function agentRuntimeLaunchConfig(args: {
       : configuredCredential;
   const modelProvider =
     OPERATOR_AGENT_ENV.provider ||
-    (args.hasApiKey ? gatewayProviderName(args.orgId) : "");
+    (args.hasApiKey
+      ? `${gatewayProviderName(args.orgId)}${args.credentialFingerprint ? `-${args.credentialFingerprint}` : ""}`
+      : "");
   const hermesHome =
     OPERATOR_AGENT_ENV.hermesHome ||
     (derivedEndpoints.length > 0 ? hermesHomeForOrg(args.orgId) : "");
@@ -538,6 +543,7 @@ async function provisionOpenShellRuntime(
     derivedEndpoints: endpoints,
     derivedKeyEnv: runtime.keyEnv,
     hasApiKey: Boolean(apiKey),
+    ...(apiKey ? { credentialFingerprint: createHash("sha256").update(apiKey).digest("hex").slice(0, 8) } : {}),
   });
 
   if (!apiKey) return launchConfig;
@@ -551,6 +557,7 @@ async function provisionOpenShellRuntime(
       await ensureOpenShellProvider({
         providerName: launchConfig.modelProvider ?? "openneko-agent",
         apiKey,
+        ...(OPERATOR_AGENT_ENV.provider ? {} : { family: gatewayProviderName(orgId) }),
         gatewayName: process.env.OPENSHELL_GATEWAY || undefined,
         gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
       });
@@ -626,7 +633,7 @@ async function hostConfigRevision(
       .where(
         and(
           eq(llm_provider_config.org_id, orgId),
-          inArray(llm_provider_config.scope, ["primary", "agent"]),
+          inArray(llm_provider_config.scope, ["primary", "agent", "graphjin-agent"]),
         ),
       )
       .orderBy(llm_provider_config.scope),
@@ -731,6 +738,14 @@ export async function provisionHostConfig(
   } catch (e) {
     console.warn(
       `[host-provision] sources-mode provision failed: ${e instanceof Error ? e.message : e}`,
+    );
+  }
+
+  try {
+    await provisionGraphjinAgent(orgId);
+  } catch (e) {
+    console.warn(
+      `[host-provision] GraphJin agent provision failed: ${e instanceof Error ? e.message : e}`,
     );
   }
 

@@ -5,6 +5,15 @@ import type { AgentEvent } from "../agent-backend";
 import { normalizeGraphjinAgentUsage } from "../usage-normalization";
 
 type ObservationStatus = "ok" | "error";
+type FailureDetail = { errorType?: string; errorCode?: string; errorMessage?: string };
+
+function failureDetail(result: FailureDetail): FailureDetail {
+  return {
+    ...(result.errorType ? { errorType: result.errorType } : {}),
+    ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+    ...(result.errorMessage ? { errorMessage: result.errorMessage } : {}),
+  };
+}
 
 function byteLength(value: unknown): number {
   if (value === undefined) return 0;
@@ -41,6 +50,7 @@ export function createAgentEventTelemetry(input: {
   let firstOutputObserved = false;
   let stageOpen = false;
   let modelOpen = false;
+  let retries = 0;
   let outerUsage: Extract<AgentEvent, { type: "usage" }> | undefined;
 
   const observe = async (
@@ -147,15 +157,12 @@ export function createAgentEventTelemetry(input: {
       outerUsage = event;
       return;
     }
-    if (
-      event.type === "status" &&
-      event.message === "Hermes returned no output; retrying…"
-    ) {
+    if (event.type === "retry") {
       await observe({
         kind: "retry",
-        operationId: `${input.operationId}:retry:empty-output`,
+        operationId: `${input.operationId}:retry:${++retries}`,
         parentOperationId: modelOperationId,
-        attributes: { "openneko.retry.reason": "empty_output" },
+        attributes: { "openneko.retry.reason": event.reason },
       });
       return;
     }
@@ -221,9 +228,10 @@ export function createAgentEventTelemetry(input: {
     modelOpen = true;
   };
 
-  const finishAgent = async (result: {
+  const finishAgent = async (result: FailureDetail & {
     status: ObservationStatus;
-    errorType?: string;
+    timedOut?: boolean;
+    degraded?: boolean;
     outputBytes?: number;
   }): Promise<void> => {
     await observe({
@@ -257,8 +265,12 @@ export function createAgentEventTelemetry(input: {
       operationId: stageOperationId,
       parentOperationId: input.operationId,
       status: result.status,
-      ...(result.errorType ? { errorType: result.errorType } : {}),
-      attributes: { "openneko.stage": "agent" },
+      ...failureDetail(result),
+      attributes: {
+        "openneko.stage": "agent",
+        ...(result.timedOut ? { "openneko.timed_out": true } : {}),
+        ...(result.degraded ? { "openneko.outcome": "degraded" } : {}),
+      },
       measurements: {
         durationMs: Date.now() - agentStartedAt,
         coverage: "unavailable",
@@ -267,10 +279,9 @@ export function createAgentEventTelemetry(input: {
     stageOpen = false;
   };
 
-  const closeOpen = async (result: {
+  const closeOpen = async (result: FailureDetail & {
     status: ObservationStatus;
     outcome: string;
-    errorType?: string;
     usageMissingReason: string;
   }): Promise<void> => {
     for (const [toolId, tool] of toolStarts) {
@@ -330,7 +341,7 @@ export function createAgentEventTelemetry(input: {
         operationId: stageOperationId,
         parentOperationId: input.operationId,
         status: result.status,
-        ...(result.errorType ? { errorType: result.errorType } : {}),
+        ...failureDetail(result),
         attributes: {
           "openneko.stage": "agent",
           "openneko.outcome": result.outcome,
@@ -348,7 +359,7 @@ export function createAgentEventTelemetry(input: {
         operationId: `${input.operationId}:error`,
         parentOperationId: input.operationId,
         status: "error",
-        ...(result.errorType ? { errorType: result.errorType } : {}),
+        ...failureDetail(result),
         attributes: { "openneko.outcome": result.outcome },
       });
     }

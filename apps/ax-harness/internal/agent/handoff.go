@@ -26,6 +26,7 @@ type handoffRuntime struct {
 	*axgoja.Runtime
 	onExecutorError func()
 	onStep          func(title string)
+	onExecute       func(code string, result ax.Value)
 	inline          inlineBudget
 }
 
@@ -34,7 +35,7 @@ func (r *handoffRuntime) CreateSession(globals map[string]ax.Value, options map[
 	if err != nil {
 		return nil, err
 	}
-	return &handoffSession{CodeSession: base, onExecutorError: r.onExecutorError, onStep: r.onStep, inline: &r.inline}, nil
+	return &handoffSession{CodeSession: base, onExecutorError: r.onExecutorError, onStep: r.onStep, onExecute: r.onExecute, inline: &r.inline}, nil
 }
 
 type handoffSession struct {
@@ -43,12 +44,16 @@ type handoffSession struct {
 	patched         bool
 	onExecutorError func()
 	onStep          func(title string)
+	onExecute       func(code string, result ax.Value)
 	inline          *inlineBudget
 }
 
 func (s *handoffSession) Execute(code string, options map[string]ax.Value) ax.Value {
 	s.inline.reset()
 	result := s.CodeSession.Execute(code, options)
+	if s.onExecute != nil {
+		s.onExecute(code, result)
+	}
 	if s.patched {
 		if envelope, ok := result.(map[string]ax.Value); ok && envelope["is_error"] == true && s.onExecutorError != nil {
 			s.onExecutorError()

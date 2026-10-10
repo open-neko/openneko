@@ -13,6 +13,8 @@ export type HarnessRunSummary = {
   finishedAt?: string;
   status: "running" | "completed" | "failed" | "cancelled";
   errorType?: string;
+  errorCode?: string;
+  errorMessage?: string;
   backend?: string;
   provider?: string;
   requestedModel?: string;
@@ -113,7 +115,7 @@ export class HarnessRunSummaryAccumulator implements ObservationSink {
         observation.kind === "output.contract")
     ) {
       this.value.status = "failed";
-      this.value.errorType ??= observation.errorType;
+      this.recordError(observation);
     }
 
     const measurements = observation.measurements;
@@ -218,9 +220,15 @@ export class HarnessRunSummaryAccumulator implements ObservationSink {
           : observation.status === "error"
             ? "failed"
             : "completed";
-      this.value.errorType ??= observation.errorType;
+      this.recordError(observation);
       this.value.telemetryComplete = this.value.usage.coverage === "complete";
     }
+  }
+
+  private recordError(observation: HarnessObservation): void {
+    this.value.errorType ??= observation.errorType;
+    this.value.errorCode ??= observation.errorCode;
+    this.value.errorMessage ??= observation.errorMessage;
   }
 
   snapshot(): HarnessRunSummary {

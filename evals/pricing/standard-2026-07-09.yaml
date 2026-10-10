@@ -8,6 +8,12 @@ sources:
   - https://www-cdn.anthropic.com/files/4zrzovbb/website/5678bc2f5978e5bcd4f1fe7c14b2c72284dcf9f8.pdf
 entries:
   - provider: google-gemini
+    model: gemini-3.8-flash
+    input_usd_per_million_tokens: 0.75
+    output_usd_per_million_tokens: 3.75
+    cache_read_usd_per_million_tokens: 0.075
+    notes: Gemini Developer API standard paid tier, price through 2026-12-31 (1.50 / 7.50 / 0.15 from 2027-01-01); output includes thinking tokens.
+  - provider: google-gemini
     model: gemini-3.6-flash
     input_usd_per_million_tokens: 1.50
     output_usd_per_million_tokens: 7.50

@@ -96,7 +96,7 @@ describe("buildMetricPrompt", () => {
     expect(prompt).not.toContain("graphjin cli execute_graphql");
   });
 
-  it("uses only the delegated GraphJin agent surface for the treatment path", () => {
+  it("asks GraphJin's agent and carries no query know-how on the agent path", () => {
     const prompt = buildMetricPrompt({
       input: fakeInput,
       knowledge: fakeKnowledge,
@@ -105,7 +105,9 @@ describe("buildMetricPrompt", () => {
       dataAgentTool: "mcp_neko_graphjin_agent_ask",
     });
     expect(prompt).toContain("`mcp_neko_graphjin_agent_ask`");
-    expect(prompt).toContain("globally read-only");
+    expect(prompt).toContain("Write each instruction as a precise data request.");
+    expect(prompt).not.toContain(fakeKnowledge.syntax);
+    expect(prompt).not.toMatch(/hidden|not available in this treatment/i);
     expect(prompt).not.toContain("mcp_neko_graphjin_execute_graphql");
     expect(prompt).not.toContain("graphjin cli execute_graphql");
   });

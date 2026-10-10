@@ -17,8 +17,8 @@ const SECRET_VALUE_PATTERNS = [
 export function redactText(value: string): string {
   let redacted = value;
   for (const pattern of SECRET_VALUE_PATTERNS) {
-    redacted = redacted.replace(pattern, (match, prefix: string | undefined) =>
-      prefix ? `${prefix}[REDACTED]` : "[REDACTED]",
+    redacted = redacted.replace(pattern, (_match, prefix: unknown) =>
+      typeof prefix === "string" ? `${prefix}[REDACTED]` : "[REDACTED]",
     );
   }
   return redacted;
@@ -58,4 +58,9 @@ export function sanitizeErrorType(value: string | undefined): string | undefined
     .replace(/^_+|_+$/g, "")
     .slice(0, 128);
   return normalized || "unknown";
+}
+
+export function sanitizeErrorMessage(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return redactText(value).trim().slice(0, 512) || undefined;
 }

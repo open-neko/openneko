@@ -22,3 +22,5 @@ export * from "./mcp-names";
 export * from "./pack-source";
 export * from "./group-grants";
 export * from "./row-filter";
+export * from "./restart";
+export * from "./agent-settings";

@@ -23,7 +23,7 @@ import {
   createWorkerHarnessObserver,
   persistProcessingJobTelemetry,
 } from "../telemetry.js";
-import { observeSafely } from "@neko/telemetry";
+import { errorCodeOf, observeSafely } from "@neko/telemetry";
 import { createRunSpendGuard } from "@neko/llm/spend";
 
 export async function runWorkRun(jobId: string, orgId: string, payload: Parameters<typeof runWorkRunTraced>[2]): Promise<void> {
@@ -133,6 +133,8 @@ async function runWorkRunTraced(
       operationId,
       status: "error",
       errorType: cause instanceof Error ? cause.name : "unknown",
+      errorCode: errorCodeOf(cause),
+      errorMessage: cause instanceof Error ? cause.message : String(cause),
       attributes: { "openneko.outcome": "failed" },
       measurements: {
         durationMs: Date.now() - startedAt,
@@ -159,8 +161,11 @@ async function runWorkRunTraced(
       result.status === "completed" || result.status === "needs_input"
         ? "ok"
         : "error",
-    ...(result.error ? { errorType: "work_run_error" } : {}),
-    attributes: { "openneko.outcome": result.status },
+    ...(result.error
+      ? { errorType: result.errorCode ?? "work_run_error", errorMessage: result.error }
+      : {}),
+    ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+    attributes: { "openneko.outcome": result.degraded ? "degraded" : result.status },
     measurements: {
       durationMs: Date.now() - startedAt,
       coverage: "unavailable",

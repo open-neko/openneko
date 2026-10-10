@@ -49,6 +49,11 @@ func modelOptions(options map[string]ax.Value, routed *RoutedClient, effort stri
 			provider = routed.providerFor(route)
 		}
 		stage := ax.Object()
+		// Gemini's function-call output channel fails with MALFORMED_FUNCTION_CALL
+		// on about 7% of steps; its JSON Schema response format does not.
+		if provider == "google-gemini" {
+			stage["structuredOutputMode"] = "native"
+		}
 		if route != "" {
 			stage["model"] = route
 			// OpenAI-compatible routes advertise function-mode structured output;
@@ -68,6 +73,13 @@ func modelOptions(options map[string]ax.Value, routed *RoutedClient, effort stri
 	}
 	if cache {
 		options["contextCache"] = ax.Object()
+	}
+	// Stages without their own options, such as the summarizer, read this.
+	if defaultProvider == "google-gemini" {
+		options["structuredOutputMode"] = "native"
+		summarizer := ax.Object("structuredOutputMode", "native")
+		reasoningOption(summarizer, defaultProvider, effort)
+		options["summarizerOptions"] = summarizer
 	}
 }
 

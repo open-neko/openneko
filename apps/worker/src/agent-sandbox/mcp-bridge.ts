@@ -37,6 +37,9 @@ import {
 } from "@neko/llm/sandbox-runtime";
 import { BrokerControlPlane, postAgentEvents } from "./broker-client";
 
+// The broker waits up to 180s for GraphJin tools such as the GraphJin agent.
+const TOOL_CALL_TIMEOUT_MS = 180_000;
+
 /**
  * Stdio MCP server for ACP backends (hermes). The agent process can't hand
  * its in-process SDK server instances across a process boundary, so hermes'
@@ -296,10 +299,11 @@ export async function buildMultiplexedBridgeServer(
       route = routes.get(request.params.name);
     }
     if (!route) throw new Error(`mcp-bridge: unknown tool ${request.params.name}`);
-    return route.client.callTool({
-      name: route.originalToolName,
-      arguments: request.params.arguments,
-    });
+    return route.client.callTool(
+      { name: route.originalToolName, arguments: request.params.arguments },
+      undefined,
+      { timeout: TOOL_CALL_TIMEOUT_MS },
+    );
   });
   return { instance };
 }
@@ -334,14 +338,14 @@ async function warmUpBroker(baseUrl: string, name: string): Promise<void> {
   // is swallowed by hermes, so a file is the only visible channel.
   try {
     const envPick = Object.fromEntries(
-      Object.entries(process.env).filter(([k]) =>
-        /OPENNEKO_|PROXY|proxy|NODE_USE/.test(k),
-      ),
+      Object.entries(process.env)
+        .filter(([k]) => /OPENNEKO_|PROXY|proxy|NODE_USE/.test(k) && !/TOKEN|SECRET|KEY/.test(k)),
     );
     const { writeFileSync } = await import("node:fs");
     writeFileSync(
       `/tmp/bridge-${name}.log`,
       JSON.stringify({ baseUrl, trail, env: envPick }, null, 1),
+      { mode: 0o600 },
     );
   } catch {
     /* diagnostics only */

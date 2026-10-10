@@ -584,7 +584,7 @@ describeIfDb("provisionHostConfig", () => {
     });
     const firstLaunch = await provisionHostConfig(orgId);
     expect(firstLaunch).toMatchObject({
-      modelProvider: expect.stringMatching(/^openneko-agent-[a-f0-9]{16}$/),
+      modelProvider: expect.stringMatching(/^openneko-agent-[a-f0-9]{16}-[a-f0-9]{8}$/),
       modelHosts: [
         { host: "generativelanguage.googleapis.com" },
         { host: "models.dev" },
@@ -604,7 +604,7 @@ describeIfDb("provisionHostConfig", () => {
     });
     const secondLaunch = await provisionHostConfig(orgId);
     expect(secondLaunch).toMatchObject({
-      modelProvider: expect.stringMatching(/^openneko-agent-[a-f0-9]{16}$/),
+      modelProvider: expect.stringMatching(/^openneko-agent-[a-f0-9]{16}-[a-f0-9]{8}$/),
       modelHosts: [
         { host: "api.anthropic.com" },
         { host: "models.dev" },
@@ -721,6 +721,10 @@ describeIfDb("provisionHostConfig", () => {
       expect(ensureOpenShellProviderMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ apiKey: "key-b" }),
       );
+      const synced = ensureOpenShellProviderMock.mock.calls.map(([opts]) => opts as { providerName: string; family?: string });
+      // A rotated key gets a new provider in the same family; runs in flight keep the old one.
+      expect(synced.at(-1)!.providerName).not.toBe(synced.at(-2)!.providerName);
+      expect(synced.at(-1)!.providerName.startsWith(`${synced.at(-1)!.family}-`)).toBe(true);
       await expect(
         readFile(join(hermesHomeForOrg(refreshOrgId), ".env"), "utf8"),
       ).resolves.toContain("GEMINI_API_KEY=key-b");
@@ -813,7 +817,7 @@ describeIfDb("provisionHostConfig", () => {
 
       ensureOpenShellProviderMock.mockResolvedValue(undefined);
       await expect(ensureHostConfigProvisioned(retryOrgId)).resolves.toMatchObject({
-        modelProvider: expect.stringMatching(/^openneko-agent-[a-f0-9]{16}$/),
+        modelProvider: expect.stringMatching(/^openneko-agent-[a-f0-9]{16}-[a-f0-9]{8}$/),
         keyAliases: [{ from: "MODEL_API_KEY", to: "GEMINI_API_KEY" }],
       });
       expect(ensureOpenShellProviderMock).toHaveBeenCalledTimes(4);

@@ -15,6 +15,7 @@ agent_events:
   usage: [RUNTIME-OBSERVABILITY]
   telemetry: [RUNTIME-OBSERVABILITY]
   error: [RUNTIME-STREAM, OPS-HEALTH]
+  retry: [RUNTIME-STREAM, OPS-HEALTH]
   capability_denied: [SEC-EGRESS]
   done: [RUNTIME-STREAM]
   output_emit: [FLOW-OUTPUT]

@@ -108,7 +108,7 @@ describe("AxBackend", () => {
       timeoutMs: 120_000,
       maxToolIterations: 40,
       networkHosts: ["api.example.com"],
-      mcpServers: { neko_graphjin: {}, neko_ui: {}, other: {} },
+      mcpServers: { neko_graphjin_agent: {}, neko_ui: {}, other: {} },
       mcpBridgeEnv: { OPENNEKO_MCP_ORG_ID: "org-1", OPENNEKO_MCP_THREAD_ID: "t-1", OPENNEKO_MCP_SKILLS_ROOT: workspace.skillsRoot },
     });
     const [{ command, env, stdin }] = spawned;
@@ -117,7 +117,7 @@ describe("AxBackend", () => {
       HARNESS_MODEL_PROVIDER: "anthropic",
       HARNESS_MODEL: "claude-sonnet-5-5",
       HARNESS_MODEL_API_KEY: "openshell:resolve:env:MODEL_API_KEY",
-      OPENNEKO_MCP_SERVERS: "neko_graphjin",
+      OPENNEKO_MCP_SERVERS: "neko_graphjin_agent",
       OPENNEKO_MCP_ORG_ID: "org-1",
       OPENNEKO_BROKER_TOKEN: "broker-secret",
       OPENNEKO_HARNESS_WORKSPACE_DIR: workspace.orgRoot,
@@ -152,9 +152,33 @@ describe("AxBackend", () => {
     script = { lines: [finished({ status: "failed", kind: "failure", code: "deadline_exceeded" }, 1)] };
     const events: AgentEvent[] = [];
     const result = await new AxBackend(config).run({ prompt: "p", workspace, timeoutMs: 60_000, onEvent: (e) => { events.push(e); } });
-    expect(result).toMatchObject({ status: "failed", timedOut: true });
+    expect(result).toMatchObject({ status: "failed", timedOut: true, errorCode: "deadline_exceeded" });
     expect(result.error).toContain("exceeded its 60s budget");
     expect(events.at(-1)).toMatchObject({ type: "error" });
+  });
+
+  it("carries the harness failure code", async () => {
+    script = { lines: [finished({ status: "failed", kind: "failure", code: "model_http_429" }, 1)] };
+    const result = await new AxBackend(config).run({ prompt: "p", workspace });
+    expect(result).toMatchObject({ status: "failed", errorCode: "model_http_429" });
+    expect(result.timedOut).toBeUndefined();
+  });
+
+  it("marks a budget summary answer degraded and maps route fallbacks to retries", async () => {
+    script = {
+      lines: [
+        { sequence: 1, type: "model.route.fallback", name: "primary", origin: "secondary", error: "transient_provider_failure" },
+        { sequence: 2, type: "executor.step.failed", error: "actor_code_error" },
+        finished({ status: "completed", kind: "summary", answer: "Partial answer.", code: "actor_steps_exhausted" }, 3),
+      ],
+    };
+    const events: AgentEvent[] = [];
+    const result = await new AxBackend(config).run({ prompt: "p", workspace, onEvent: (e) => { events.push(e); } });
+    expect(result).toMatchObject({ status: "completed", degraded: true, errorCode: "actor_steps_exhausted", finalText: "Partial answer." });
+    expect(events.filter((e) => e.type === "retry")).toEqual([
+      { type: "retry", reason: "model_route_fallback" },
+      { type: "retry", reason: "executor_step_failed" },
+    ]);
   });
 
   it("reports the stderr tail when the harness ends without a result", async () => {
@@ -163,6 +187,7 @@ describe("AxBackend", () => {
     expect(result.status).toBe("failed");
     expect(result.error).toContain("code=2");
     expect(result.error).toContain("HARNESS_MODEL_API_KEY");
+    expect(result.errorCode).toBe("exit");
   });
 
   it("refuses to run without a configured model", async () => {

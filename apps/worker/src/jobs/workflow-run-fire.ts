@@ -1,4 +1,4 @@
-import { bindStartupRun, startupEvent, startupPhase, withStartupTrace } from "@neko/telemetry/startup";
+import { bindStartupRun, failStartupRun, startupEvent, startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import type { WorkflowRunFirePayload } from "@neko/db/jobs";
 import {
   ensureHostConfigProvisioned,
@@ -31,7 +31,7 @@ import {
   type PreparedWorkflowRun,
   type WorkflowApiBatchProgress,
 } from "@neko/llm/workflows";
-import { observeSafely } from "@neko/telemetry";
+import { errorCodeOf, observeSafely } from "@neko/telemetry";
 import { createRunSpendGuard, SpendBudgetExceeded } from "@neko/llm/spend";
 import { reckonSeedMessageFrom } from "@neko/llm/workflows/compat";
 import {
@@ -294,6 +294,16 @@ async function runApiBatch(input: {
   return { status: "completed", finalText };
 }
 
+function failPreRun(error: unknown, payload: WorkflowRunFirePayload): Promise<void> {
+  return failStartupRun(error, (runId) => createWorkerHarnessObserver(runId).observer, {
+    "openneko.run.kind": "production",
+    "openneko.product.path": "workflow",
+    "openneko.job.kind": "workflow_run_fire",
+    "openneko.workflow.id": payload.workflowId,
+    "openneko.trigger.kind": payload.triggerKind,
+  });
+}
+
 export function runWorkflowRunFire(payload: WorkflowRunFirePayload): Promise<void> {
   return withStartupTrace({ requestId: payload.apiAdmissionId ?? payload.scheduleFiringId, workflowRunId: payload.workflowRunId }, () => startupPhase("workflow.dispatch", () => runWorkflowRunFireTraced(payload)));
 }
@@ -307,7 +317,10 @@ async function runWorkflowRunFireTraced(
       firingId: scheduleFiringId,
       orgId: payload.orgId,
       workflowId: payload.workflowId,
-    }));
+    })).catch(async (error: unknown) => {
+      await failPreRun(error, payload);
+      throw error;
+    });
     if (!claimed) {
       console.log(
         `[workflow-run-fire] duplicate delivery ignored firing=${scheduleFiringId}`,
@@ -401,6 +414,8 @@ async function runWorkflowRunFireTraced(
       status: "completed" | "failed" | "cancelled" | "needs_input";
       finalText: string;
       error?: string;
+      errorCode?: string;
+      degraded?: boolean;
     };
     if (apiClaim?.mode === "batch") {
       result = await startupPhase("workflow.batch", async () => runApiBatch({
@@ -510,8 +525,11 @@ async function runWorkflowRunFireTraced(
         result.status === "completed" || result.status === "needs_input"
           ? "ok"
           : "error",
-      ...(result.error ? { errorType: "workflow_run_error" } : {}),
-      attributes: { "openneko.outcome": result.status },
+      ...(result.error
+        ? { errorType: result.errorCode ?? "workflow_run_error", errorMessage: result.error }
+        : {}),
+      ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+      attributes: { "openneko.outcome": result.degraded ? "degraded" : result.status },
       measurements: {
         durationMs: Date.now() - startedAt,
         queueDurationMs,
@@ -534,6 +552,8 @@ async function runWorkflowRunFireTraced(
         operationId: `workflow:${prepared.workRunId}`,
         status: "error",
         errorType: error instanceof Error ? error.name : "unknown",
+        errorCode: errorCodeOf(error),
+        errorMessage: error instanceof Error ? error.message : String(error),
         attributes: { "openneko.outcome": "failed" },
         measurements: {
           durationMs: Date.now() - startedAt,
@@ -545,6 +565,8 @@ async function runWorkflowRunFireTraced(
       });
       await emitRunTelemetry({ telemetry, emit, prepared, apiClaim });
       telemetryClosed = true;
+    } else if (!telemetry) {
+      await failPreRun(error, payload);
     }
     if (apiClaim) {
       const code =

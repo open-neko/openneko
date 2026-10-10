@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentEvent, AgentWorkspace } from "../src/agent-backend";
 import type { RunAgentBackendInput } from "../src/work/agent-core";
 import { GRAPHJIN_DIRECT_GOVERNED_POLICY } from "../src/work/graphjin-tool-policy";
+import { SandboxFailure } from "../src/work/sandbox-failure";
 import { SandboxPool } from "../src/work/sandbox-pool";
 import { KNOWLEDGE_FILES, refreshKnowledgeSnapshot } from "../src/knowledge-cache";
 import type { RunWorkflowAgentBackendInput } from "../src/workflows/agent-core";
@@ -36,6 +37,7 @@ const h = vi.hoisted(() => {
     failProviderReconcile: false,
     legacyProvider: false,
     missingProvider: false,
+    providerNames: [] as string[],
     execLines: undefined as string[] | undefined,
   };
   function spawn(_cmd: string, args: string[]) {
@@ -76,7 +78,8 @@ const h = vi.hoisted(() => {
         : [],
     );
     const reconciliation = args.findIndex(arg => arg.startsWith("exec(__import__('base64')"));
-    const lines = (warmCreate ? ["__openneko_warm_ready__\n"] : failedPolicy ? ["policy submitted\n"] : isExec
+    const providerList = args.includes("provider") && args.includes("list");
+    const lines = (providerList ? state.providerNames.map((name) => `${name}\n`) : warmCreate ? ["__openneko_warm_ready__\n"] : failedPolicy ? ["policy submitted\n"] : isExec
       ? state.execLines ?? [
           'noise before\n',
           `\n__openneko_event__${JSON.stringify({ type: "message", role: "assistant", content: "hi" })}\n`,
@@ -610,6 +613,15 @@ describe("makeSandboxRunCore", () => {
     expect(logs.some(line => line.includes('"type":"sandbox_warm"'))).toBe(true);
   });
 
+  it("runs an Ax chat turn in a warm slot", async () => {
+    const logs: string[] = [];
+    const core = makeSandboxRunCore({ agentImage: "test", warmPoolSize: 1, onLog: line => logs.push(line) });
+    const input = fakeInput(async () => {});
+    input.backend = { ...input.backend, id: "ax" } as RunAgentBackendInput["backend"];
+    await core(input);
+    expect(logs.some(line => line.includes('"type":"sandbox_warm"'))).toBe(true);
+  });
+
   it("reuses only the same trusted user scope and binds providers before policy readiness", async () => {
     const logs: string[] = [];
     const core = makeSandboxRunCore({ agentImage: "test", warmPoolSize: 1,
@@ -657,7 +669,9 @@ describe("makeSandboxRunCore", () => {
     h.state.failReconcile = true;
     const logs: string[] = [];
     const core = makeSandboxRunCore({ agentImage: "sync-failure-test", onLog: line => logs.push(line) });
-    await expect(core(fakeInput(async () => {}))).rejects.toThrow(/reconciliation/);
+    const error = await core(fakeInput(async () => {})).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(SandboxFailure);
+    expect(error).toMatchObject({ code: "sandbox.inputs_sync", message: expect.stringMatching(/reconciliation/) });
     expect(logs.some(line => line.includes('"phase":"exec"'))).toBe(false);
     expect(h.calls.some(call => call.args.includes("delete"))).toBe(true);
   });
@@ -775,7 +789,9 @@ describe("makeSandboxRunCore", () => {
 
   it("recovers partial artifacts when the agent fails without a filesystem hint", async () => {
     h.state.execLines = [];
-    await expect(makeSandboxRunCore({ warmPoolSize: 0, agentImage: "test", onLog: () => {} })(fakeInput(async () => {}))).rejects.toThrow();
+    const error = await makeSandboxRunCore({ warmPoolSize: 0, agentImage: "test", onLog: () => {} })(fakeInput(async () => {})).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(SandboxFailure);
+    expect(error).toMatchObject({ code: "sandbox.no_result" });
     expect(h.calls.some((call) => call.args.includes("download"))).toBe(true);
     expect(h.calls.at(-1)?.args).toContain("delete");
   });
@@ -1342,8 +1358,32 @@ describe("ensureOpenShellProvider", () => {
     h.state.failProviderReconcile = false;
     h.state.legacyProvider = false;
     h.state.missingProvider = false;
+    h.state.providerNames = [];
   });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("leaves an existing versioned provider alone, so runs in flight keep their credential", async () => {
+    h.state.providerNames = ["org-x-aaaa1111"];
+    await ensureOpenShellProvider({ providerName: "org-x-aaaa1111", apiKey: "SECRET-KEY", family: "org-x" });
+    const lines = h.calls.map((c) => c.args.join(" ")).filter((l) => !l.includes("profile import"));
+    expect(lines).toEqual(["provider list --names"]);
+  });
+
+  it("creates a new versioned provider and deletes the replaced ones only after the delay", async () => {
+    vi.useFakeTimers();
+    h.state.providerNames = ["org-x", "org-x-aaaa1111", "org-y-cccc3333"];
+    await ensureOpenShellProvider({ providerName: "org-x-bbbb2222", apiKey: "SECRET-KEY", family: "org-x", staleDelayMs: 1_000 });
+    const lines = () => h.calls.map((c) => c.args.join(" ")).filter((l) => !l.includes("profile import"));
+    expect(lines()).toEqual([
+      "provider list --names",
+      "provider create --name org-x-bbbb2222 --type openneko-agent --credential MODEL_API_KEY=SECRET-KEY",
+    ]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(lines().slice(2).sort()).toEqual(["provider delete org-x", "provider delete org-x-aaaa1111"]);
+  });
 
   it("recreates a provider whose legacy credential key OpenShell 0.1.2 cannot update", async () => {
     h.state.legacyProvider = true;
@@ -1388,6 +1428,16 @@ describe("ensureOpenShellProvider", () => {
 describe("deleteOpenShellProvider", () => {
   beforeEach(() => {
     h.calls.length = 0;
+  });
+
+  it("deletes a provider family, versioned names included", async () => {
+    h.state.providerNames = ["openneko-agent-eval-org", "openneko-agent-eval-org-aaaa1111", "openneko-agent-other"];
+    await deleteOpenShellProvider({ providerName: "openneko-agent-eval-org", family: true });
+    expect(h.calls.map((c) => c.args.join(" ")).filter((l) => l.includes("delete"))).toEqual([
+      "provider delete openneko-agent-eval-org",
+      "provider delete openneko-agent-eval-org-aaaa1111",
+    ]);
+    h.state.providerNames = [];
   });
 
   it("deletes only the explicitly named provider", async () => {

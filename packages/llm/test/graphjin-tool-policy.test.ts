@@ -136,22 +136,16 @@ describe("GraphJin direct-governed MCP policy", () => {
     }
   });
 
-  it("preserves the unrestricted production surface when no policy is set", async () => {
+  it("relays every direct tool but never GraphJin's own agent when no policy is set", async () => {
     const { client, callGraphjinTool } = await connectGraphjinServer(null);
     try {
       expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(
-        tools.map((tool) => tool.name),
+        tools.map((tool) => tool.name).filter((name) => name !== "ask_graphjin_agent"),
       );
-      await client.callTool({
-        name: "ask_graphjin_agent",
-        arguments: { instruction: "production behavior" },
-      });
-      expect(callGraphjinTool).toHaveBeenCalledWith({
-        orgId: "org-1",
-        runId: "run-1",
-        name: "ask_graphjin_agent",
-        arguments: { instruction: "production behavior" },
-      });
+      await expect(
+        client.callTool({ name: "ask_graphjin_agent", arguments: { instruction: "production behavior" } }),
+      ).rejects.toThrow(/neko_graphjin_agent/);
+      expect(callGraphjinTool).not.toHaveBeenCalled();
     } finally {
       await client.close();
     }

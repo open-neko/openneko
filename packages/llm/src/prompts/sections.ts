@@ -118,8 +118,10 @@ export type DataAccessOptions = {
   readOnly?: boolean;
   /** Skill scripts can run the query tool through the run's data socket. */
   scriptAccess?: boolean;
-  /** Read-only GraphJin server-agent tool used by delegated jobs. */
+  /** GraphJin server-agent tool, when the org opted in to GraphJin's agent. */
   agentTool?: string;
+  /** Metric cards ask once for a value, a baseline and chart rows. */
+  agentPurpose?: "metric";
   workspace: AgentWorkspace;
   knowledge: KnowledgePackContents;
   // 'syntax': inline only the DSL reference, point at the other knowledge
@@ -141,53 +143,77 @@ export function buildDataAccessSection(opts: DataAccessOptions): string {
 function buildBrokeredAgentDataAccessSection(opts: DataAccessOptions): string {
   const { agentTool } = opts;
   if (!agentTool) throw new Error("agent data access requires agentTool");
+  const metric = opts.agentPurpose === "metric";
+
+  const ask = metric
+    ? `Call \`${agentTool}\` once. Include the card title and rationale, anchor
+dates to the latest date in live data, ask for the current value and a
+comparable baseline in the same request, and ask for the smallest grouped result
+that can populate chartData. You own the final OpenNeko JSON object; ask
+GraphJin for the data, not for that format.`
+    : `Call \`${agentTool}\` once per data request. Use more calls for follow-up
+requests, and put what you learned in each new request: GraphJin's agent keeps
+no memory between calls.`;
 
   return `<data_access>
 The configured GraphJin database is the authoritative source for operational
 questions. When the user attaches a file or explicitly references uploaded
 data, read the file and use it as the source of truth for that turn. Otherwise
 default to the database.
-Delegate database discovery and querying by calling \`${agentTool}\` once with:
 
-  {
-    "instruction": "<the complete metric question, including the exact time window, aggregation, comparison baseline, grouping, and values needed for the output>",
-    "maxSteps": 6
-  }
+GraphJin's agent writes and validates the queries and runs them under the
+configured source identity. You direct it. ${ask}
 
-GraphJin's built-in agent performs catalog-first discovery, validates its
-queries, executes them under the configured source identity, and returns a
-typed response containing status, answer, data, and evidence. The trusted
-OpenNeko host selects the source, verifies that GraphJin's server agent is
-globally read-only, and keeps its credential outside your sandbox.
+${AGENT_REQUEST_GUIDANCE}${agentSchemaDigest(opts.knowledge, opts.workspace)}
 
-Your instruction must be self-contained. Include the card title and rationale,
-state that dates must be anchored to the latest date in live data, request the
-current value and a comparable baseline in the same run, and ask for the
-smallest grouped result that can populate chartData. Do not ask GraphJin to
-format the final OpenNeko JSON object; you own that output contract.
-
-Use response.data and response.evidence as the basis for every number. The
-answer field explains the result but is not a substitute for evidence. If the
-response is blocked, denied, has errors, or lacks enough evidence, do not
-invent a metric. Retry only when its structured refusal says retryable and
-gives a concrete lawful unblock step.
-
-No direct GraphQL tool, GraphJin CLI, shell, raw HTTP, configuration, or write
-path is available in this treatment. Do not try to bypass the delegated tool.
-
-Include these correctness constraints in the delegated instruction when they
-apply:
-
-${GRAPHJIN_DATE_RULE}
-
-${GRAPHJIN_FANOUT_RULE}
-
-${GRAPHJIN_AGGREGATE_RULE}
-
-- Keep results small. Ask GraphJin for server-side aggregates and grouped
-  summaries, not raw row dumps.
-- Never invent or interpolate. If GraphJin returns no rows, there is no data.
+The response has status, answer, data and evidence. Base every number on
+response.data and response.evidence; the answer field explains the result but
+does not replace them. If the response is blocked, denied, has errors, or lacks
+enough evidence, say so and do not invent a number. Retry only when its
+structured refusal says retryable and gives a concrete unblock step. If
+GraphJin returns no rows, there is no data.
 </data_access>`;
+}
+
+export const AGENT_REQUEST_GUIDANCE = `Write each instruction as a precise data request. Name the measure and how to
+compute it, the tables, the join path, the filters, the time window and the
+grouping. Ask for aggregates, not raw rows. For example: "Count
+sales.salesorderheader rows per sales.salesterritory.name, joined on
+territoryid. Return each territory with its count, highest first."`;
+
+function tablesBySchema(raw: string): string {
+  let tables: Array<{ id?: string; schema?: string; name?: string }>;
+  try {
+    const parsed = JSON.parse(raw) as { tables?: typeof tables };
+    tables = Array.isArray(parsed.tables) ? parsed.tables : [];
+  } catch {
+    return "";
+  }
+  const bySchema = new Map<string, string[]>();
+  for (const t of tables) {
+    const qualified = t.schema && t.name ? `${t.schema}.${t.name}` : t.id?.split(":").at(-1) ?? t.name;
+    if (!qualified) continue;
+    const dot = qualified.lastIndexOf(".");
+    const schema = dot > 0 ? qualified.slice(0, dot) : "";
+    bySchema.set(schema, [...(bySchema.get(schema) ?? []), qualified.slice(dot + 1)]);
+  }
+  return [...bySchema].map(([schema, names]) => `- ${schema ? `${schema}: ` : ""}${names.join(", ")}`).join("\n").slice(0, TABLE_DIGEST_MAX_CHARS);
+}
+
+/** Tables and join paths the outer agent names in its requests to GraphJin's agent. */
+export function agentSchemaDigest(knowledge: KnowledgePackContents, workspace: AgentWorkspace): string {
+  const tables = tablesBySchema(knowledge.tables);
+  if (!tables) return "";
+  const joins = compactInsightsDigest(knowledge.insights, false);
+  return `
+
+Tables (columns for every table are in ${workspace.knowledgeRoot}/tables.json):
+
+${tables}${joins ? `
+
+Main tables and join paths:
+
+${joins}` : ""}`;
 }
 
 function buildBrokeredDataAccessSection(opts: DataAccessOptions): string {
@@ -347,7 +373,7 @@ const INSIGHTS_DIGEST_MAX_CHARS = 6_000;
  *  pack's insights.json — the part of the legacy pack that made first
  *  answers fast. Compact and hard-capped: NEVER inline raw pack JSON
  *  (a 26KB inline reproducibly hung the model stream). */
-export function compactInsightsDigest(raw: string): string {
+export function compactInsightsDigest(raw: string, templates = true): string {
   let hubs: Array<{
     name?: string;
     summary?: string;
@@ -367,7 +393,7 @@ export function compactInsightsDigest(raw: string): string {
     for (const path of (hub.join_paths ?? []).slice(0, 6)) {
       block += `  join: ${String(path).slice(0, 140)}\n`;
     }
-    for (const ex of (hub.examples ?? []).slice(0, 2)) {
+    for (const ex of templates ? (hub.examples ?? []).slice(0, 2) : []) {
       const q =
         typeof ex === "string"
           ? ex

@@ -166,4 +166,36 @@ describe("harness observations", () => {
       counts: { validations: 1 },
     });
   });
+
+  it("keeps a redacted, bounded error code and message on a failed run", async () => {
+    const summary = new HarnessRunSummaryAccumulator("run-4");
+    const memory = new MemoryObservationSink();
+    const observer = createHarnessObserver({ runId: "run-4", sinks: [summary, memory] });
+    await observer.observe({ kind: "run.start", operationId: "run-4" });
+    await observer.observe({
+      kind: "model.request",
+      operationId: "model-1",
+      errorCode: "ignored",
+      errorMessage: "ignored",
+    });
+    await observer.observe({
+      kind: "run.end",
+      operationId: "run-4",
+      status: "error",
+      errorType: "agent_backend_error",
+      errorCode: "model http 429",
+      errorMessage: `provider rejected key sk-abcdefghijklmnop ${"x".repeat(600)}`,
+    });
+    expect(memory.observations[1]).not.toHaveProperty("errorCode");
+    const end = memory.observations[2];
+    expect(end?.errorCode).toBe("model_http_429");
+    expect(end?.errorMessage).toMatch(/^provider rejected key \[REDACTED\] x+$/);
+    expect(end?.errorMessage).toHaveLength(512);
+    expect(summary.snapshot()).toMatchObject({
+      status: "failed",
+      errorType: "agent_backend_error",
+      errorCode: "model_http_429",
+      errorMessage: end?.errorMessage,
+    });
+  });
 });

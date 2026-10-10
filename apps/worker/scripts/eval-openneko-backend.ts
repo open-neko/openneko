@@ -3231,7 +3231,7 @@ export function createOpenNekoBackendDriver(context: {
         if (slot.variant.backend === "hermes") {
           const providerName = gatewayProviderName(fixture.orgId);
           try {
-            await deleteOpenShellProvider({ providerName });
+            await deleteOpenShellProvider({ providerName, family: true });
             evalProviderNames.delete(providerName);
           } catch (cause) {
             console.warn(
@@ -3257,7 +3257,7 @@ export function createOpenNekoBackendDriver(context: {
       const providerCleanupFailures: string[] = [];
       for (const providerName of evalProviderNames) {
         try {
-          await deleteOpenShellProvider({ providerName });
+          await deleteOpenShellProvider({ providerName, family: true });
           evalProviderNames.delete(providerName);
         } catch (cause) {
           providerCleanupFailures.push(

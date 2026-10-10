@@ -56,7 +56,7 @@ services:
       GO_ENV: agentic
       GRAPHJIN_AGENT_API_KEY: ${GRAPHJIN_AGENT_API_KEY:-}
       GJ_AGENT_PROVIDER: ${GRAPHJIN_AGENT_PROVIDER:-google-gemini}
-      GJ_AGENT_MODEL: ${GRAPHJIN_AGENT_MODEL:-gemini-3.5-flash}
+      GJ_AGENT_MODEL: ${GRAPHJIN_AGENT_MODEL:-gemini-3.8-flash}
       GJ_AGENT_BASE_URL: ${GRAPHJIN_AGENT_BASE_URL:-}
     volumes: !override
       - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/graphjin:/config

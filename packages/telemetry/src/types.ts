@@ -78,6 +78,8 @@ export type HarnessObservation = {
   attributes: Readonly<Record<string, AttributeValue>>;
   measurements?: Readonly<ObservationMeasurements>;
   errorType?: string;
+  errorCode?: string;
+  errorMessage?: string;
 };
 
 export type ObservationInput = Omit<

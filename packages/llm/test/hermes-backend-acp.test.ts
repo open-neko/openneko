@@ -693,7 +693,9 @@ describe("HermesBackend ACP behavior", () => {
       status: "failed",
       finalText: "",
       error: expect.stringContaining("completed without assistant output"),
+      errorCode: "empty_output",
     });
+    expect(events).toContainEqual({ type: "retry", reason: "empty_output" });
     expect(events.filter((event) => event.type === "error")).toEqual([
       expect.objectContaining({
         message: expect.stringContaining("stopReason=end_turn"),
@@ -897,7 +899,7 @@ describe("HermesBackend ACP behavior", () => {
         events.push(e as { type: string; message?: string });
       },
     });
-    expect(result.status).toBe("failed");
+    expect(result).toMatchObject({ status: "failed", errorCode: "timeout", timedOut: true });
     expect(events.find((e) => e.type === "error")).toBeDefined();
   });
 
@@ -921,7 +923,7 @@ describe("HermesBackend ACP behavior", () => {
         events.push(e as { type: string; message?: string });
       },
     });
-    expect(result.status).toBe("failed");
+    expect(result).toMatchObject({ status: "failed", errorCode: "protocol" });
     expect(result.error).toContain("Provider gemini returned 503");
     expect(events.find((e) => e.type === "error")).toBeDefined();
   });

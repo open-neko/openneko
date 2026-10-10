@@ -7,7 +7,9 @@ import type {
 } from "../agent-backend";
 import type { AllowedLibrary } from "../library/staging";
 import type { AgentControlPlane } from "../work/control-plane";
+import type { GraphjinDataPath } from "../work/graphjin-tool-policy";
 import {
+  buildGraphjinAgentServer,
   buildGraphjinMcpServer,
   buildLibraryServer,
   buildWorkMemoryServer,
@@ -30,6 +32,8 @@ export interface RunWorkflowAgentBackendInput {
   mode: "live" | "headless";
   networkHosts: string[];
   triggeredByObservationId?: string | null;
+  /** "agent" when the org opted in to GraphJin's server-side agent. */
+  graphjinDataPath?: GraphjinDataPath;
   workspace: AgentWorkspace;
   /** Skill names the run's actor holds. Undefined means every skill. */
   allowedSkills?: readonly string[];
@@ -71,6 +75,7 @@ export async function runWorkflowAgentBackend(
     mode,
     triggeredByObservationId,
     networkHosts,
+    graphjinDataPath = "direct",
     workspace,
     controlPlane,
     emit,
@@ -86,11 +91,9 @@ export async function runWorkflowAgentBackend(
   const mcp = backend.capabilities.mcpTools;
   const mcpServers = mcp
     ? {
-        neko_graphjin: buildGraphjinMcpServer({
-          orgId,
-          runId,
-          controlPlane,
-        }),
+        ...(graphjinDataPath === "agent"
+          ? { neko_graphjin_agent: buildGraphjinAgentServer({ orgId, runId, controlPlane }) }
+          : { neko_graphjin: buildGraphjinMcpServer({ orgId, runId, controlPlane }) }),
         neko_workflow_output: buildWorkflowOutputServer({
           orgId,
           workflowRunId,

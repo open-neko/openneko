@@ -1,5 +1,5 @@
 import { startupPhase, startupEvent, withStartupTrace } from "@neko/telemetry/startup";
-import { getGraphjinConfigSettingsForOrg, heldItems } from "@neko/db";
+import { getGraphjinConfigSettingsForOrg, graphjinAgentEnabledForOrg, heldItems } from "@neko/db";
 import { filterHeldActions, runAllowedLibrary, runEntitlementActor, runHeldItemIds } from "./entitlement-scope";
 import type {
   AgentChatMessage,
@@ -56,7 +56,7 @@ import {
   setWorkRunValue,
   setWorkThreadBackendState,
 } from "./store";
-import type { GraphjinMcpToolPolicy } from "./graphjin-tool-policy";
+import type { GraphjinDataPath, GraphjinMcpToolPolicy } from "./graphjin-tool-policy";
 import type { PluginActionDescriptor } from "./tools";
 import { createToolOutputRecorder } from "./tool-output/metrics";
 import { runAgentBackend } from "./agent-core";
@@ -76,7 +76,8 @@ import {
   ensureWorkWorkspace as defaultEnsureWorkWorkspace,
   listInstalledSkills as defaultListInstalledSkills,
 } from "./workspace";
-import type { HarnessObserver } from "@neko/telemetry";
+import { errorCodeOf, type HarnessObserver } from "@neko/telemetry";
+import { SandboxFailure } from "./sandbox-failure";
 import { spendCapFromSignal } from "../spend/run-guard";
 
 /**
@@ -149,6 +150,8 @@ export type RunChatTurnResult = {
   status: "completed" | "failed" | "cancelled" | "needs_input";
   finalText: string;
   error?: string;
+  errorCode?: string;
+  degraded?: boolean;
 };
 
 function needsInputText(
@@ -278,6 +281,13 @@ async function runChatTurnTraced(
 
   const backend = await startupPhase("config.backend", () => resolveAgentBackend(orgId));
   const workspace = await startupPhase("workspace.prepare", () => ensureWorkWorkspace(orgId, threadId, runId));
+
+  // An eval's direct-tool policy keeps the direct path.
+  const graphjinDataPath: GraphjinDataPath =
+    dataSurface === "customer" && !opts.graphjinToolPolicy &&
+    await startupPhase("config.graphjin_agent", () => graphjinAgentEnabledForOrg(orgId))
+      ? "agent"
+      : "direct";
 
   // Knowledge layering: agentic deployments (auth_mode=jwt) get the slim
   // gj_catalog bootstrap; legacy ones keep the broad discovery dumps.
@@ -529,6 +539,7 @@ async function runChatTurnTraced(
       inlineTranscript,
       pluginActions: customerSurface ? heldPluginActions : [],
       dataSurface,
+      graphjinDataPath,
       ...(appContext ? { appContext } : {}),
       ...(recordContext ? { recordContext } : {}),
     });
@@ -565,6 +576,7 @@ async function runChatTurnTraced(
       ...(opts.graphjinToolPolicy
         ? { graphjinToolPolicy: opts.graphjinToolPolicy }
         : {}),
+      ...(graphjinDataPath === "agent" ? { graphjinDataPath } : {}),
       ...(opts.nativeDelegation
         ? { nativeDelegation: opts.nativeDelegation }
         : {}),
@@ -594,12 +606,20 @@ async function runChatTurnTraced(
     }
     const spendStop = spendCapFromSignal(signal);
     const result = spendStop
-      ? { ...coreResult, status: "failed" as const, error: spendStop.message }
+      ? { ...coreResult, status: "failed" as const, error: spendStop.message, errorCode: spendStop.code }
       : coreResult;
     const agentStatus = result.status === "completed" ? "ok" : "error";
     await eventTelemetry.finishAgent({
       status: agentStatus,
-      ...(result.error ? { errorType: "agent_backend_error" } : {}),
+      ...(result.error
+        ? {
+            errorType: result.errorCode ?? "agent_backend_error",
+            errorMessage: result.error,
+          }
+        : {}),
+      ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+      ...(result.timedOut ? { timedOut: true } : {}),
+      ...(result.degraded ? { degraded: true } : {}),
       outputBytes: Buffer.byteLength(result.finalText, "utf8"),
     });
 
@@ -893,6 +913,8 @@ async function runChatTurnTraced(
       // JSON (and break Telegram's HTML parser) on a channel that shows the text.
       finalText: persistedText,
       error: result.error,
+      ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+      ...(result.degraded ? { degraded: true } : {}),
     };
   } catch (error) {
     if (needsInputEvent) {
@@ -920,7 +942,10 @@ async function runChatTurnTraced(
     await eventTelemetry.closeOpen({
       status: "error",
       outcome: status,
-      errorType: aborted ? "cancelled" : "agent_backend_error",
+      errorType: aborted
+        ? "cancelled"
+        : spendStop?.code ?? (error instanceof SandboxFailure ? "sandbox_error" : "agent_backend_error"),
+      ...(aborted ? {} : { errorCode: spendStop?.code ?? errorCodeOf(error), errorMessage: errMsg }),
       usageMissingReason: "model call did not complete with normalized usage",
     });
     await wrappedEmit({ type: "error", message: errMsg });

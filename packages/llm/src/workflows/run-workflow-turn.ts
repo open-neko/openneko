@@ -1,9 +1,11 @@
 import { startupPhase, withStartupTrace } from "@neko/telemetry/startup";
-import { heldItems, pool, resolveUserGroups } from "@neko/db";
+import { graphjinAgentEnabledForOrg, heldItems, pool, resolveUserGroups } from "@neko/db";
+import type { GraphjinDataPath } from "../work/graphjin-tool-policy";
 import { filterHeldActions, runAllowedLibrary, runEntitlementActor, runHeldItemIds } from "../work/entitlement-scope";
 import { getWorkRunActor } from "../work/personas";
 import { workflowTurnBudget, type AgentEvent } from "../agent-backend";
-import type { HarnessObserver } from "@neko/telemetry";
+import { errorCodeOf, type HarnessObserver } from "@neko/telemetry";
+import { SandboxFailure } from "../work/sandbox-failure";
 import { resolveAgentBackend as defaultResolveAgentBackend } from "../agent-backend-resolver";
 import {
   knowledgePackPaths,
@@ -192,6 +194,8 @@ export type RunWorkflowTurnResult = {
   threadId: string;
   finalText: string;
   error?: string;
+  errorCode?: string;
+  degraded?: boolean;
 };
 
 function synthesizeSeedMessage(
@@ -268,6 +272,8 @@ async function runWorkflowTurnTraced(
     const memoryContext = await startupPhase("context.memory", async () =>
       formatGlobalMemoryPromptContext(orgId, 5, await heldItems(runActor, "team_memory")));
 
+    const graphjinDataPath: GraphjinDataPath =
+      await startupPhase("config.graphjin_agent", () => graphjinAgentEnabledForOrg(orgId)) ? "agent" : "direct";
     const knowledge = await startupPhase("knowledge.read_pack", async () => readKnowledgePack(
       knowledgePackPaths(workspace.knowledgeRoot),
     ));
@@ -281,6 +287,7 @@ async function runWorkflowTurnTraced(
       backend: backend.id,
       workspace,
       knowledge,
+      graphjinDataPath,
       pluginActions: await filterHeldActions(runActor, opts.pluginActions ?? []),
     });
 
@@ -310,6 +317,7 @@ async function runWorkflowTurnTraced(
       workflowRunId: workflowRun.id,
       mode,
       networkHosts: workflow.networkHosts,
+      ...(graphjinDataPath === "agent" ? { graphjinDataPath } : {}),
       triggeredByObservationId:
         workflowRun.triggeredByObservationId ?? null,
       workspace,
@@ -326,11 +334,19 @@ async function runWorkflowTurnTraced(
     });
     const spendStop = spendCapFromSignal(signal);
     const result = spendStop
-      ? { ...coreResult, status: "failed" as const, error: spendStop.message }
+      ? { ...coreResult, status: "failed" as const, error: spendStop.message, errorCode: spendStop.code }
       : coreResult;
     await eventTelemetry.finishAgent({
       status: result.status === "completed" ? "ok" : "error",
-      ...(result.error ? { errorType: "agent_backend_error" } : {}),
+      ...(result.error
+        ? {
+            errorType: result.errorCode ?? "agent_backend_error",
+            errorMessage: result.error,
+          }
+        : {}),
+      ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+      ...(result.timedOut ? { timedOut: true } : {}),
+      ...(result.degraded ? { degraded: true } : {}),
       outputBytes: Buffer.byteLength(result.finalText, "utf8"),
     });
 
@@ -393,6 +409,8 @@ async function runWorkflowTurnTraced(
       threadId,
       finalText: persistedText,
       error: result.error,
+      ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+      ...(result.degraded ? { degraded: true } : {}),
     };
   } catch (error) {
     if (error instanceof WorkflowNeedsInputError || needsInput) {
@@ -436,7 +454,10 @@ async function runWorkflowTurnTraced(
     await eventTelemetry.closeOpen({
       status: "error",
       outcome: status,
-      errorType: aborted ? "cancelled" : "agent_backend_error",
+      errorType: aborted
+        ? "cancelled"
+        : spendStop?.code ?? (error instanceof SandboxFailure ? "sandbox_error" : "agent_backend_error"),
+      ...(aborted ? {} : { errorCode: spendStop?.code ?? errorCodeOf(error), errorMessage: errMsg }),
       usageMissingReason: "workflow model call did not complete with normalized usage",
     });
 

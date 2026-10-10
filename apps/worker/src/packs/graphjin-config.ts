@@ -6,6 +6,7 @@ import {
   acquireGraphjinConfigLock,
   graphjinInputWithJsonVariables,
   persistGraphjinSourceConfigUpdate,
+  requestGraphjinRestart,
 } from "@neko/llm/graphjin";
 import {
   graphjinQuery,
@@ -92,38 +93,7 @@ async function persistPackSections(
   await rename(temporary, configFile);
 }
 
-export async function requestGraphjinRestart(configFile: string, endpoint: string): Promise<void> {
-  const directory = dirname(configFile);
-  const requestFile = join(directory, ".openneko-graphjin-restart");
-  const acknowledgementFile = join(directory, ".openneko-graphjin-restart-ack");
-  const token = randomUUID();
-  const temporary = `${requestFile}.${token}.tmp`;
-  await writeFile(temporary, token, { mode: 0o666 });
-  await rename(temporary, requestFile);
-
-  const deadline = Date.now() + 45_000;
-  while (Date.now() < deadline) {
-    const acknowledged = await readFile(acknowledgementFile, "utf8").catch(() => "");
-    if (acknowledged.trim() === token) {
-      try {
-        await fetch(endpoint, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ query: "query OpenNekoRestartReady { __typename }" }),
-          signal: AbortSignal.timeout(2_000),
-        });
-        return;
-      } catch {
-        // The supervisor acknowledged the replacement child; wait until its
-        // listener is reachable before returning control to pack canaries.
-      }
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error(
-    "graphjin_restart_required: the persisted pack config was not acknowledged by the GraphJin supervisor",
-  );
-}
+export { requestGraphjinRestart };
 
 async function assertGraphjinSupervisor(configFile: string): Promise<void> {
   const directory = dirname(configFile);

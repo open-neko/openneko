@@ -4,6 +4,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   EvalEnvironmentError,
+  EvalTaskError,
   createScore,
   estimateUsageCost,
   resolveCredentialRef,
@@ -23,10 +24,11 @@ import {
   seedProvider,
   uniqueOrgId,
 } from "@neko/db/test-helpers";
-import { buildPoolConfig, reconnectPool } from "@neko/db";
+import { and, buildPoolConfig, db, eq, llm_provider_config, reconnectPool } from "@neko/db";
 import {
   classifyQuestion,
   combineAgentTokenUsage,
+  ensureHostConfigProvisioned,
   provisionHostConfig,
   getGraphjinAgentStatus,
   runMetricAgent,
@@ -35,6 +37,7 @@ import {
   type MetricAgentDiagnostics,
   type MetricAgentResult,
   type QuestionClassificationDiagnostics,
+  type AgentBackendId,
 } from "@neko/llm";
 import { maybeEncryptSecret } from "@neko/llm/secrets";
 import pg from "pg";
@@ -141,6 +144,32 @@ const RUNTIME_ENVIRONMENT_NAMES = [
 ] as const;
 type RuntimeEnvironmentName = (typeof RUNTIME_ENVIRONMENT_NAMES)[number];
 
+const INFRASTRUCTURE_ERROR = /openshell|sandbox|gateway|ECONNREFUSED|socket hang up/i;
+
+/** An agent that runs but gives no valid answer fails the case; infrastructure errors still pause the run. */
+function agentFailure(cause: unknown, wallDurationMs: number, diagnostics?: MetricAgentDiagnostics): unknown {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  if (cause instanceof EvalEnvironmentError || INFRASTRUCTURE_ERROR.test(message)) return cause;
+  const agent = diagnostics?.graphjinAgent;
+  const usage = diagnostics?.totalUsage;
+  return new EvalTaskError(message, "agent_failure", {
+    measurements: {
+      wallDurationMs,
+      ...(usage?.inputTokens !== undefined ? { inputTokens: usage.inputTokens } : {}),
+      ...(usage?.outputTokens !== undefined ? { outputTokens: usage.outputTokens } : {}),
+      ...(usage?.totalTokens !== undefined ? { totalTokens: usage.totalTokens } : {}),
+      ...(agent
+        ? {
+            graphjinAgentCalls: agent.calls,
+            graphjinAgentModelCalls: agent.modelCalls,
+            graphjinAgentDurationMs: agent.durationMs,
+            graphjinAgentFailures: agent.failures,
+          }
+        : {}),
+    },
+  });
+}
+
 function parseHeadline(value: string): number | null {
   const match = value.replace(/[\s$,]/gu, "").trim().match(HEADLINE_PATTERN);
   if (!match) return null;
@@ -241,18 +270,23 @@ export function createAdventureWorksMetricDriver(context: {
       "agent_mcp_ref",
       "agent_mcp_url",
     );
-    isolatedConfigRoot ??= await mkdtemp(join(tmpdir(), "openneko-eval-config-"));
-    // OpenShell's selected-gateway registration also lives below XDG config.
-    // Mirror that public connection metadata (and any client credentials it
-    // references) into the private temporary root so sandbox execution keeps
-    // using the operator-selected gateway without mutating the host config.
-    await cp(
-      join(hostConfigRoot, "openshell"),
-      join(isolatedConfigRoot, "openshell"),
-      { recursive: true, force: false, errorOnExist: false },
-    ).catch((cause: NodeJS.ErrnoException) => {
-      if (cause.code !== "ENOENT") throw cause;
-    });
+    if (!isolatedConfigRoot) {
+      isolatedConfigRoot = await mkdtemp(join(tmpdir(), "openneko-eval-config-"));
+      // OpenShell's selected-gateway registration also lives below XDG config.
+      // Mirror that public connection metadata (and any client credentials it
+      // references) into the private temporary root so sandbox execution keeps
+      // using the operator-selected gateway without mutating the host config.
+      // A shared org also needs the host secret key that encrypted its secrets.
+      for (const dir of process.env.OPENNEKO_EVAL_ORG_ID ? ["openshell", "openneko"] : ["openshell"]) {
+        await cp(
+          join(hostConfigRoot, dir),
+          join(isolatedConfigRoot, dir),
+          { recursive: true, force: false, errorOnExist: false },
+        ).catch((cause: NodeJS.ErrnoException) => {
+          if (cause.code !== "ENOENT") throw cause;
+        });
+      }
+    }
     process.env.XDG_CONFIG_HOME = isolatedConfigRoot;
     for (const name of mutableEnv.slice(1)) delete process.env[name];
     if (metadataDbConfig.host) process.env.NEKO_PG_HOST = metadataDbConfig.host;
@@ -267,31 +301,42 @@ export function createAdventureWorksMetricDriver(context: {
     if (metadataDbConfig.ssl) process.env.NEKO_PG_SSLMODE = "require";
     process.env.OPENNEKO_AGENT_MODEL_PROVIDER = `openneko-eval-${variant.id}`;
 
-    const orgId = uniqueOrgId(`eval-${variant.id}`);
-    await createTestOrg(orgId, `Eval ${variant.id}`);
+    // A shared org reuses the org the running GraphJin signs tokens for.
+    const sharedOrg = process.env.OPENNEKO_EVAL_ORG_ID;
+    const orgId = sharedOrg ?? uniqueOrgId(`eval-${variant.id}`);
+    if (!sharedOrg) await createTestOrg(orgId, `Eval ${variant.id}`);
     try {
-      await seedDataSource(orgId, {
-        graphqlUrl,
-        mcpUrl,
-        label: "AdventureWorks eval",
-      });
-      await seedProvider(orgId, {
-        scope: "primary",
-        provider: variant.outer_model.provider,
-        model: variant.outer_model.model,
-        enabled: true,
-        config: variant.outer_model.config,
-        secrets: { apiKey: maybeEncryptSecret(apiKey) },
-      });
-      await seedProvider(orgId, {
-        scope: "agent",
-        provider: variant.backend,
-        enabled: true,
-        config: { backend: variant.backend },
-      });
-      await provisionHostConfig(orgId, { requireOpenShellSync: true });
+      if (sharedOrg) {
+        const [primary] = await db().select({ model: llm_provider_config.model }).from(llm_provider_config)
+          .where(and(eq(llm_provider_config.org_id, orgId), eq(llm_provider_config.scope, "primary")));
+        if (primary?.model !== variant.outer_model.model) {
+          throw new EvalEnvironmentError(`org ${orgId} uses ${primary?.model}, variant wants ${variant.outer_model.model}`, "outer_model_mismatch");
+        }
+      } else {
+        await seedDataSource(orgId, {
+          graphqlUrl,
+          mcpUrl,
+          label: "AdventureWorks eval",
+        });
+        await seedProvider(orgId, {
+          scope: "primary",
+          provider: variant.outer_model.provider,
+          model: variant.outer_model.model,
+          enabled: true,
+          config: variant.outer_model.config,
+          secrets: { apiKey: maybeEncryptSecret(apiKey) },
+        });
+        await seedProvider(orgId, {
+          scope: "agent",
+          provider: variant.backend,
+          enabled: true,
+          config: { backend: variant.backend },
+        });
+      }
+      if (sharedOrg) await ensureHostConfigProvisioned(orgId);
+      else await provisionHostConfig(orgId, { requireOpenShellSync: true });
     } catch (cause) {
-      await deleteTestOrg(orgId).catch(() => {});
+      if (!sharedOrg) await deleteTestOrg(orgId).catch(() => {});
       throw cause;
     }
     const environment: Partial<Record<RuntimeEnvironmentName, string>> = {};
@@ -557,6 +602,7 @@ export function createAdventureWorksMetricDriver(context: {
         jobId,
         graphjinPath:
           slot.variant.data_path === "graphjin-agent" ? "agent" : "direct",
+        backendId: slot.variant.backend as AgentBackendId,
         onDiagnostics(value) {
           diagnostics = value;
         },
@@ -569,6 +615,8 @@ export function createAdventureWorksMetricDriver(context: {
           "openneko.eval.case.id": slot.caseId,
           "openneko.eval.variant.id": slot.variantId,
         },
+      }).catch((cause: unknown) => {
+        throw agentFailure(cause, Date.now() - started, diagnostics);
       });
       const wallDurationMs = Date.now() - started;
       const unavailableUsage = (reason: string): AgentTokenUsage => ({
@@ -647,6 +695,14 @@ export function createAdventureWorksMetricDriver(context: {
                 attempts: diagnostics.attempts,
                 toolCalls: diagnostics.toolCalls,
                 toolOutputBytes: diagnostics.toolOutputBytes,
+                ...(diagnostics.graphjinAgent
+                  ? {
+                      graphjinAgentCalls: diagnostics.graphjinAgent.calls,
+                      graphjinAgentModelCalls: diagnostics.graphjinAgent.modelCalls,
+                      graphjinAgentDurationMs: diagnostics.graphjinAgent.durationMs,
+                      graphjinAgentFailures: diagnostics.graphjinAgent.failures,
+                    }
+                  : {}),
               }
             : {}),
         },
@@ -764,8 +820,10 @@ export function createAdventureWorksMetricDriver(context: {
     },
     async close() {
       await pool?.end();
-      for (const runtime of runtimes.values()) {
-        await deleteTestOrg(runtime.orgId).catch(() => {});
+      if (!process.env.OPENNEKO_EVAL_ORG_ID) {
+        for (const runtime of runtimes.values()) {
+          await deleteTestOrg(runtime.orgId).catch(() => {});
+        }
       }
       await shutdownAgentBroker();
       await reconnectPool();

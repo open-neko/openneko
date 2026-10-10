@@ -16,6 +16,7 @@ import {
   isAgentBackendId,
 } from "./agent-backend";
 import type { AxBackendConfig } from "./agent-backends/ax";
+import { isReasoningEffort } from "./agent-limits";
 import { makeAgentBackend } from "./agent-runtime";
 import { isPrimaryProvider } from "./config";
 import { resolveAxModelRoute, resolveHermesProviderRuntime } from "./provider-runtime";
@@ -116,8 +117,8 @@ export function axBackendConfig(row: StoredRow | null): AxBackendConfig | undefi
     route: resolveAxModelRoute({ provider: row.provider, model, config }),
     ...(positiveInt(config.context_window_tokens) ? { contextWindowTokens: positiveInt(config.context_window_tokens) } : {}),
     ...(positiveInt(config.max_output_tokens) ? { maxOutputTokens: positiveInt(config.max_output_tokens) } : {}),
-    // Same as Hermes: native thought summaries need high effort on these providers.
-    ...(row.provider === "anthropic" || row.provider === "google-gemini" ? { reasoningEffort: "high" as const } : {}),
+    // Medium answered q08 in 63s against 153s at high, with the same answer.
+    reasoningEffort: isReasoningEffort(config.reasoning_effort) ? config.reasoning_effort : "medium",
   };
 }
 
@@ -134,12 +135,13 @@ export async function assertAxSupported(orgId: string): Promise<void> {
  * real provider key remains independently provisioned through OpenShell and is
  * never returned with the backend.
  */
-export async function resolveAgentBackend(orgId: string): Promise<AgentBackend> {
+/** `model` overrides the primary model for Ax runs; Hermes reads its model from its provisioned config. */
+export async function resolveAgentBackend(orgId: string, backendId?: AgentBackendId, model?: string): Promise<AgentBackend> {
   const [id, primary] = await Promise.all([
-    resolveAgentBackendId(orgId),
+    backendId ?? resolveAgentBackendId(orgId),
     loadRow(orgId, "primary"),
   ]);
-  if (id === "ax") return makeAgentBackend({ id, ax: axBackendConfig(primary) });
+  if (id === "ax") return makeAgentBackend({ id, ax: axBackendConfig(model && primary ? { ...primary, model } : primary) });
   return makeAgentBackend({
     id,
     ...(primary

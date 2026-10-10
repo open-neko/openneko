@@ -57,6 +57,7 @@ interface SandboxJob {
   sourceConfigEnabled?: boolean;
   dataSurface?: RunAgentBackendInput["dataSurface"];
   graphjinToolPolicy?: RunAgentBackendInput["graphjinToolPolicy"];
+  graphjinDataPath?: RunAgentBackendInput["graphjinDataPath"];
   nativeDelegation?: RunAgentBackendInput["nativeDelegation"];
   wantsCards?: boolean;
   cardSchema?: "rich" | "core";
@@ -166,6 +167,8 @@ async function startRunDataSocket(
 ): Promise<DataSocket | undefined> {
   if (!controlPlane) return undefined;
   const kind = job.kind ?? "work";
+  // Scripts query GraphJin directly, so they get no socket on the agent path.
+  if (job.graphjinDataPath === "agent") return undefined;
   const enabled =
     kind === "workflow" ||
     (kind === "work" && job.dataSurface !== "records") ||
@@ -276,6 +279,7 @@ async function runJob(
       workflowRunId,
       mode: job.mode ?? "headless",
       networkHosts: job.networkHosts ?? [],
+      ...(job.graphjinDataPath ? { graphjinDataPath: job.graphjinDataPath } : {}),
       triggeredByObservationId: job.triggeredByObservationId ?? null,
       workspace: job.workspace,
       controlPlane,
@@ -312,6 +316,7 @@ async function runJob(
       ...(job.graphjinToolPolicy
         ? { graphjinToolPolicy: job.graphjinToolPolicy }
         : {}),
+      ...(job.graphjinDataPath ? { graphjinDataPath: job.graphjinDataPath } : {}),
       ...(job.nativeDelegation
         ? { nativeDelegation: job.nativeDelegation }
         : {}),

@@ -37,10 +37,7 @@ describe("agent event telemetry", () => {
       role: "assistant",
       content: payload,
     });
-    await telemetry.observeEvent({
-      type: "status",
-      message: "Hermes returned no output; retrying…",
-    });
+    await telemetry.observeEvent({ type: "retry", reason: "empty_output" });
     await telemetry.observeEvent({
       type: "usage",
       source: "outer",
@@ -74,6 +71,9 @@ describe("agent event telemetry", () => {
       sink.observations.find((item) => item.kind === "tool.start")
         ?.measurements?.inputBytes,
     ).toBeGreaterThan(0);
+    expect(
+      sink.observations.find((item) => item.kind === "retry")?.attributes,
+    ).toEqual({ "openneko.retry.reason": "empty_output" });
   });
 
   it("closes open model, delegation, tool, and stage spans on failure", async () => {
@@ -108,5 +108,30 @@ describe("agent event telemetry", () => {
       endings.filter((item) => item.kind === "model.response"),
     ).toHaveLength(2);
     expect(endings.every((item) => item.status === "error")).toBe(true);
+  });
+
+  it("records the backend failure code, message, and timeout on the agent stage", async () => {
+    const sink = new MemoryObservationSink();
+    const observer = createHarnessObserver({ runId: "run-3", sinks: [sink] });
+    const telemetry = createAgentEventTelemetry({ observer, operationId: "work:run-3" });
+
+    await telemetry.startAgent({ backend: "ax" });
+    await telemetry.finishAgent({
+      status: "error",
+      errorType: "deadline_exceeded",
+      errorCode: "deadline_exceeded",
+      errorMessage: "ax turn exceeded its 300s budget",
+      timedOut: true,
+      degraded: true,
+    });
+
+    const stage = sink.observations.find((item) => item.kind === "stage.end");
+    expect(stage).toMatchObject({
+      status: "error",
+      errorType: "deadline_exceeded",
+      errorCode: "deadline_exceeded",
+      errorMessage: "ax turn exceeded its 300s budget",
+      attributes: { "openneko.stage": "agent", "openneko.timed_out": true, "openneko.outcome": "degraded" },
+    });
   });
 });
