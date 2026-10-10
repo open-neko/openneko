@@ -189,5 +189,5 @@ func items(value ax.Value) []ax.Value {
 
 func resampleable(err error) bool {
 	text := err.Error()
-	return strings.Contains(text, "MALFORMED_FUNCTION_CALL") || strings.Contains(text, "Network Error") || ax.IsRetryable(err)
+	return strings.Contains(text, "MALFORMED_FUNCTION_CALL") || strings.Contains(text, "Network Error")
 }

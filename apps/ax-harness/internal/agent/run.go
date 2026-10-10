@@ -34,6 +34,8 @@ type Spec struct {
 	// Mirror Hermes model.context_length and model.max_tokens.
 	ContextWindowTokens int64 `json:"context_window_tokens,omitempty"`
 	MaxOutputTokens     int64 `json:"max_output_tokens,omitempty"`
+	// Debug emits actor.code events, which carry generated code.
+	Debug bool `json:"debug,omitempty"`
 }
 
 // MaxInputBytes is a sanity limit on stdin. As in Hermes, only the model
@@ -225,16 +227,18 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 				events.progress(Event{Type: "actor.step", Data: payload})
 			}
 		}
-		runtime.onExecute = func(code string, result ax.Value) {
-			step := struct {
-				Code  string `json:"code"`
-				Error string `json:"error,omitempty"`
-			}{Code: runePrefix(code, 4000)}
-			if envelope, ok := result.(map[string]ax.Value); ok && envelope["is_error"] == true {
-				step.Error = runePrefix(fmt.Sprint(envelope["error"]), 1000)
+		if spec.Debug {
+			runtime.onExecute = func(code string, result ax.Value) {
+				step := struct {
+					Code  string `json:"code"`
+					Error string `json:"error,omitempty"`
+				}{Code: runePrefix(code, 4000)}
+				if envelope, ok := result.(map[string]ax.Value); ok && envelope["is_error"] == true {
+					step.Error = runePrefix(fmt.Sprint(envelope["error"]), 1000)
+				}
+				payload, _ := json.Marshal(step)
+				events.send(Event{Type: "actor.code", Data: payload})
 			}
-			payload, _ := json.Marshal(step)
-			events.send(Event{Type: "actor.code", Data: payload})
 		}
 		attemptClient := client
 		if routed, ok := client.(*RoutedClient); ok && len(routed.Fallbacks) > 0 {

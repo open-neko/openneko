@@ -173,6 +173,7 @@ export class AxBackend implements AgentBackend {
       }),
       ...(this.ax.contextWindowTokens ? { context_window_tokens: this.ax.contextWindowTokens } : {}),
       ...(this.ax.maxOutputTokens ? { max_output_tokens: this.ax.maxOutputTokens } : {}),
+      ...(opts.debug ? { debug: true } : {}),
     };
 
     const child = spawn(AX_HARNESS_BINARY, [], { stdio: ["pipe", "pipe", "pipe"], cwd, env, detached: true });
