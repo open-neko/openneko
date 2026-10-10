@@ -68,7 +68,6 @@ const KILL_GRACE_MS = 15_000;
 // Read tools for the delegated child; the harness skips names this run lacks.
 const AX_CHILD_READS = [
   "mcp_neko_graphjin_query_catalog",
-  "mcp_neko_graphjin_execute_graphql",
   "mcp_neko_graphjin_agent_ask",
   "mcp_neko_memory_search",
   "mcp_neko_library_search",

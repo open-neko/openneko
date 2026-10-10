@@ -85,11 +85,11 @@ func TestInvalidToolSelectionEmitsMetadataWithoutDispatch(t *testing.T) {
 	}
 }
 
-func TestChildReadsRejectEffectsAndSkipMissingTools(t *testing.T) {
+func TestChildReadsSkipWritesAndMissingTools(t *testing.T) {
 	read := Capability{Name: "catalog", Version: "1", Origin: "host", Effect: "read", Description: "Read catalog.", InputSchema: json.RawMessage(`{"type":"object"}`), Call: func(context.Context, json.RawMessage) (json.RawMessage, error) { return json.RawMessage(`{}`), nil }}
 	write := read
 	write.Name, write.Effect = "write", "durable"
-	for _, names := range [][]string{{"write"}, {"catalog", "catalog"}} {
+	for _, names := range [][]string{{"catalog", "catalog"}} {
 		tools := Tools{Capabilities: []Capability{read, write}, ChildReads: names}
 		admitted, err := tools.admitted()
 		if err != nil {
@@ -99,7 +99,7 @@ func TestChildReadsRejectEffectsAndSkipMissingTools(t *testing.T) {
 			t.Fatalf("accepted child authority %v", names)
 		}
 	}
-	tools := Tools{Capabilities: []Capability{read, write}, ChildReads: []string{"missing", "catalog"}}
+	tools := Tools{Capabilities: []Capability{read, write}, ChildReads: []string{"missing", "write", "catalog"}}
 	admitted, err := tools.admitted()
 	if err != nil {
 		t.Fatal(err)

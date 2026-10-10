@@ -520,7 +520,8 @@ investigation to a child agent with a fresh context. Use it when a subtask
 needs many lookups whose raw results you do not need to keep, or for
 independent checks you can start together. The child sees only the question,
 so include the business question, source or table hints, constraints, and the
-answer shape you want. The child has the data, memory, library, and workspace
-file read tools. Do the work yourself when a few direct tool calls answer the
+answer shape you want. The child reads the data catalog, memory, the library,
+and workspace files; it cannot run data queries or change anything, so fetch
+data yourself. Do the work yourself when a few direct tool calls answer the
 question.
 </delegation>`;

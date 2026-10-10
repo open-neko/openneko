@@ -14,7 +14,7 @@ import (
 // Tools are host-installed capabilities for one run.
 type Tools struct {
 	Capabilities []Capability
-	ChildReads   []string // Host-admitted read tools for one owned child agent; absent names are skipped.
+	ChildReads   []string // Host-admitted read tools for one owned child agent; absent and non-read names are skipped.
 	Skills       []Skill  // Host-staged skill guides for the Ax skills catalog.
 }
 
@@ -113,11 +113,8 @@ func (t Tools) childReads(admitted []admittedTool) ([]admittedTool, error) {
 	}
 	child := make([]admittedTool, 0, len(wanted))
 	for _, capability := range admitted {
-		if !wanted[capability.Name] {
+		if !wanted[capability.Name] || capability.Effect != "read" {
 			continue
-		}
-		if capability.Effect != "read" {
-			return nil, fmt.Errorf("child capability must be read-only")
 		}
 		child = append(child, capability)
 		delete(wanted, capability.Name)
