@@ -185,7 +185,7 @@ budget on other providers. Anthropic routes use the prompt cache.
 | `OPENNEKO_HARNESS_WEB_HOSTS` | Comma list of hosts for `web_fetch`. `*.example.com` matches subdomains; `*` matches any public host. Unset means no `web_fetch`. |
 | `OPENNEKO_HARNESS_UPLOADS_DIR` | Adds read-only upload tools. |
 | `OPENNEKO_HARNESS_SKILLS_READ`, `OPENNEKO_MCP_SKILLS_ROOT` | Adds the staged skills to the Ax skills catalog, and `skill_read` and `skill_search` for supporting files. |
-| `OPENNEKO_HARNESS_CHILD_READS` | Comma list of read tools for the child agent. |
+| `OPENNEKO_HARNESS_CHILD_TOOLS` | `*` or a comma list of tools for the child agent. Pause tools stay with the parent. |
 
 `terminal` runs `/bin/sh -c` in the workspace in its own process group. A
 timeout or a cancel kills the whole group. Its environment has no broker

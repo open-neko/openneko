@@ -87,8 +87,8 @@ func main() {
 		}
 		closers = append(closers, skills.Close)
 	}
-	if child := os.Getenv("OPENNEKO_HARNESS_CHILD_READS"); child != "" {
-		tools.ChildReads = strings.Split(child, ",")
+	if child := os.Getenv("OPENNEKO_HARNESS_CHILD_TOOLS"); child != "" {
+		tools.ChildTools = strings.Split(child, ",")
 	}
 	command.MainWithToolsAndCleanup(tools, func() error {
 		var first error

@@ -513,15 +513,14 @@ export const VALUE_ESTIMATE_INSTRUCTIONS = `The time a data analyst or BI specia
    An action you propose (an email, a purchase order) carries its own
    \`minutes_saved\`.`;
 
-/** Ax delegation: the harness admits one read-only child agent. */
+/** Ax delegation: the harness admits one child agent with the parent's tools. */
 export const AX_DELEGATION = `<delegation>
-Your code can call \`team.researcher({question})\` to hand a focused read-only
-investigation to a child agent with a fresh context. Use it when a subtask
-needs many lookups whose raw results you do not need to keep, or for
-independent checks you can start together. The child sees only the question,
-so include the business question, source or table hints, constraints, and the
-answer shape you want. The child reads the data catalog, memory, the library,
-and workspace files; it cannot run data queries or change anything, so fetch
-data yourself. Do the work yourself when a few direct tool calls answer the
-question.
+Your code can call \`team.worker({task})\` to hand a focused subtask to a child
+agent with a fresh context. Use it when a subtask needs many tool calls whose
+raw results you do not need to keep, or for independent subtasks you can start
+together. The child sees only the task, so include the business question,
+source or table hints, constraints, and the result shape you want. The child
+has your tools under the same policies and approvals, except that only you can
+ask the user a question. Do the work yourself when a few direct tool calls
+finish it.
 </delegation>`;
