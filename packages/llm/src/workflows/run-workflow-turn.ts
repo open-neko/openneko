@@ -4,7 +4,8 @@ import type { GraphjinDataPath } from "../work/graphjin-tool-policy";
 import { filterHeldActions, runAllowedLibrary, runEntitlementActor, runHeldItemIds } from "../work/entitlement-scope";
 import { getWorkRunActor } from "../work/personas";
 import { workflowTurnBudget, type AgentEvent } from "../agent-backend";
-import type { HarnessObserver } from "@neko/telemetry";
+import { errorCodeOf, type HarnessObserver } from "@neko/telemetry";
+import { SandboxFailure } from "../work/sandbox-failure";
 import { resolveAgentBackend as defaultResolveAgentBackend } from "../agent-backend-resolver";
 import {
   knowledgePackPaths,
@@ -193,6 +194,8 @@ export type RunWorkflowTurnResult = {
   threadId: string;
   finalText: string;
   error?: string;
+  errorCode?: string;
+  degraded?: boolean;
 };
 
 function synthesizeSeedMessage(
@@ -271,12 +274,9 @@ async function runWorkflowTurnTraced(
 
     const graphjinDataPath: GraphjinDataPath =
       await startupPhase("config.graphjin_agent", () => graphjinAgentEnabledForOrg(orgId)) ? "agent" : "direct";
-    // GraphJin's agent does its own discovery, so the agent path needs no pack.
-    const knowledge = graphjinDataPath === "agent"
-      ? { mode: "legacy" as const, tables: "{}", namespaces: "{}", insights: "{}", syntax: "{}" }
-      : await startupPhase("knowledge.read_pack", async () => readKnowledgePack(
-        knowledgePackPaths(workspace.knowledgeRoot),
-      ));
+    const knowledge = await startupPhase("knowledge.read_pack", async () => readKnowledgePack(
+      knowledgePackPaths(workspace.knowledgeRoot),
+    ));
 
     const prompt = buildWorkflowRunnerPrompt({
       workflow,
@@ -334,11 +334,19 @@ async function runWorkflowTurnTraced(
     });
     const spendStop = spendCapFromSignal(signal);
     const result = spendStop
-      ? { ...coreResult, status: "failed" as const, error: spendStop.message }
+      ? { ...coreResult, status: "failed" as const, error: spendStop.message, errorCode: spendStop.code }
       : coreResult;
     await eventTelemetry.finishAgent({
       status: result.status === "completed" ? "ok" : "error",
-      ...(result.error ? { errorType: "agent_backend_error" } : {}),
+      ...(result.error
+        ? {
+            errorType: result.errorCode ?? "agent_backend_error",
+            errorMessage: result.error,
+          }
+        : {}),
+      ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+      ...(result.timedOut ? { timedOut: true } : {}),
+      ...(result.degraded ? { degraded: true } : {}),
       outputBytes: Buffer.byteLength(result.finalText, "utf8"),
     });
 
@@ -401,6 +409,8 @@ async function runWorkflowTurnTraced(
       threadId,
       finalText: persistedText,
       error: result.error,
+      ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+      ...(result.degraded ? { degraded: true } : {}),
     };
   } catch (error) {
     if (error instanceof WorkflowNeedsInputError || needsInput) {
@@ -444,7 +454,10 @@ async function runWorkflowTurnTraced(
     await eventTelemetry.closeOpen({
       status: "error",
       outcome: status,
-      errorType: aborted ? "cancelled" : "agent_backend_error",
+      errorType: aborted
+        ? "cancelled"
+        : spendStop?.code ?? (error instanceof SandboxFailure ? "sandbox_error" : "agent_backend_error"),
+      ...(aborted ? {} : { errorCode: spendStop?.code ?? errorCodeOf(error), errorMessage: errMsg }),
       usageMissingReason: "workflow model call did not complete with normalized usage",
     });
 

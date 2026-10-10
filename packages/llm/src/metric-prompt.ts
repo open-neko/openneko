@@ -36,6 +36,11 @@ Pick the window like this:
 2. Otherwise default to a year-grain TTM (trailing twelve months ending
    at the most recent data date). TTM is what most CXO dashboards
    expect and gives stable period-over-period comparisons.
+   TTM end = the latest data date; start = end minus one year plus one
+   day (end 2026-10-08 → start 2025-10-09). The preceding period is the
+   twelve months before start. Filter with date >= start and
+   date < the day after end: date columns can hold times, so a
+   date-only "<= end" drops the end day.
 3. For metrics that are inherently snapshot-style — current employee
    count, open opportunities, accounts at risk, inventory on hand — use
    grain="snapshot" with start = end = today.
@@ -83,6 +88,7 @@ chartType MUST match the shape of chartData. Mismatches will not render:
 </mood_and_chart>`;
 
 const METRIC_OUTPUT_CONTRACT = `<output_contract>
+This is the complete output specification; the workspace holds no other.
 Respond with ONE JSON object, exactly this shape, no prose:
 
 {
@@ -116,14 +122,8 @@ Rules for the JSON:
   query actually used.
 </output_contract>`;
 
-const METRIC_HARD_CONSTRAINTS = `<hard_constraints>
-- Never hardcode calendar years (e.g. "2025-07-20", "2014-01-01");
-  compute periods with relative arithmetic. If you need an anchor date,
-  query \`max(<date_col>)\` from the live data and use that — don't trust
-  sample dates from the knowledge pack.
-- Never hardcode baseline values or magic numbers. Always compute
-  baselines from the data (prior period of equal length, YoY, rolling
-  average, etc).
+const METRIC_QUERY_CONSTRAINTS = `- If you need an anchor date, query \`max(<date_col>)\` from the live data
+  and use that — don't trust sample dates from the knowledge pack.
 - Never use a bare limit without pagination. Use cursor-based pagination
   to process all rows, or use GraphQL aggregation with distinct to let
   the database aggregate.
@@ -132,7 +132,15 @@ const METRIC_HARD_CONSTRAINTS = `<hard_constraints>
   sum(expr: { mul: [...] }) instead.
 - Watch the silent 20-row default limit on every query level (top AND
   nested) — set explicit limit or use distinct+aggregation.
-- Never invent or interpolate. If a query returned no rows, the answer
+`;
+
+const metricHardConstraints = (direct: boolean) => `<hard_constraints>
+- Never hardcode calendar years (e.g. "2025-07-20", "2014-01-01");
+  compute periods with relative arithmetic.
+- Never hardcode baseline values or magic numbers. Always compute
+  baselines from the data (prior period of equal length, YoY, rolling
+  average, etc).
+${direct ? METRIC_QUERY_CONSTRAINTS : ""}- Never invent or interpolate. If a query returned no rows, the answer
   is "no data", not a guess.
 - If your queries fail or return data you cannot reason from, DO NOT
   narrate the failure as a metric. The worker treats this as a
@@ -200,7 +208,7 @@ snapshot. No prose around the JSON.
     }),
     METRIC_TIME_WINDOW,
     METRIC_MOOD_CHART,
-    METRIC_HARD_CONSTRAINTS,
+    metricHardConstraints(Boolean(queryTool)),
     METRIC_OUTPUT_CONTRACT,
     `<input>
 The card you must answer:

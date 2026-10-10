@@ -152,9 +152,33 @@ describe("AxBackend", () => {
     script = { lines: [finished({ status: "failed", kind: "failure", code: "deadline_exceeded" }, 1)] };
     const events: AgentEvent[] = [];
     const result = await new AxBackend(config).run({ prompt: "p", workspace, timeoutMs: 60_000, onEvent: (e) => { events.push(e); } });
-    expect(result).toMatchObject({ status: "failed", timedOut: true });
+    expect(result).toMatchObject({ status: "failed", timedOut: true, errorCode: "deadline_exceeded" });
     expect(result.error).toContain("exceeded its 60s budget");
     expect(events.at(-1)).toMatchObject({ type: "error" });
+  });
+
+  it("carries the harness failure code", async () => {
+    script = { lines: [finished({ status: "failed", kind: "failure", code: "model_http_429" }, 1)] };
+    const result = await new AxBackend(config).run({ prompt: "p", workspace });
+    expect(result).toMatchObject({ status: "failed", errorCode: "model_http_429" });
+    expect(result.timedOut).toBeUndefined();
+  });
+
+  it("marks a budget summary answer degraded and maps route fallbacks to retries", async () => {
+    script = {
+      lines: [
+        { sequence: 1, type: "model.route.fallback", name: "primary", origin: "secondary", error: "transient_provider_failure" },
+        { sequence: 2, type: "executor.step.failed", error: "actor_code_error" },
+        finished({ status: "completed", kind: "summary", answer: "Partial answer.", code: "actor_steps_exhausted" }, 3),
+      ],
+    };
+    const events: AgentEvent[] = [];
+    const result = await new AxBackend(config).run({ prompt: "p", workspace, onEvent: (e) => { events.push(e); } });
+    expect(result).toMatchObject({ status: "completed", degraded: true, errorCode: "actor_steps_exhausted", finalText: "Partial answer." });
+    expect(events.filter((e) => e.type === "retry")).toEqual([
+      { type: "retry", reason: "model_route_fallback" },
+      { type: "retry", reason: "executor_step_failed" },
+    ]);
   });
 
   it("reports the stderr tail when the harness ends without a result", async () => {
@@ -163,6 +187,7 @@ describe("AxBackend", () => {
     expect(result.status).toBe("failed");
     expect(result.error).toContain("code=2");
     expect(result.error).toContain("HARNESS_MODEL_API_KEY");
+    expect(result.errorCode).toBe("exit");
   });
 
   it("refuses to run without a configured model", async () => {

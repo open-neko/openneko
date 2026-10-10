@@ -119,11 +119,12 @@ export class AxBackend implements AgentBackend {
     try {
       const out = await this.runOnce(opts);
       if (out.status === "cancelled" || signal?.aborted) return { finalText: "", status: "cancelled", backendState };
+      const code = out.errorCode ? { errorCode: out.errorCode } : {};
       if (out.error) {
         await onEvent?.({ type: "error", message: out.error });
-        return { finalText: "", status: "failed", backendState, error: out.error, ...(out.timedOut ? { timedOut: true } : {}) };
+        return { finalText: "", status: "failed", backendState, error: out.error, ...code, ...(out.timedOut ? { timedOut: true } : {}) };
       }
-      return { finalText: out.finalText, rawText: out.rawText, status: "completed", backendState };
+      return { finalText: out.finalText, rawText: out.rawText, status: "completed", backendState, ...code, ...(out.degraded ? { degraded: true } : {}) };
     } catch (error) {
       if (signal?.aborted) return { finalText: "", status: "cancelled", backendState };
       const message = error instanceof Error ? error.message : String(error);
@@ -136,6 +137,8 @@ export class AxBackend implements AgentBackend {
     finalText: string;
     rawText?: string;
     error?: string;
+    errorCode?: string;
+    degraded?: boolean;
     timedOut?: boolean;
     status?: "cancelled";
   }> {
@@ -202,7 +205,7 @@ export class AxBackend implements AgentBackend {
       });
     };
 
-    const mapper = new AxEventMapper(emit, this.ax.route, workspace?.skillsRoot);
+    const mapper = new AxEventMapper(emit, this.ax.route, workspace?.skillsRoot, opts.debug === true);
     let result: AxResult | undefined;
     let protocolError: string | undefined;
     try {
@@ -235,7 +238,11 @@ export class AxBackend implements AgentBackend {
       if (cancelled || signal?.aborted) return { finalText: "", status: "cancelled" };
       if (!result) {
         const tail = Buffer.concat(stderr).toString("utf8").trim().split("\n").slice(-6).join("\n").slice(-600);
-        return { finalText: "", error: protocolError ?? `ax-harness exited (code=${code ?? "null"}) without a result${tail ? `: ${tail}` : ""}` };
+        return {
+          finalText: "",
+          error: protocolError ?? `ax-harness exited (code=${code ?? "null"}) without a result${tail ? `: ${tail}` : ""}`,
+          errorCode: protocolError ? "protocol" : "exit",
+        };
       }
       mapper.usage(result.usage);
       await queue;
@@ -243,11 +250,13 @@ export class AxBackend implements AgentBackend {
       const answer = result.answer ?? "";
       if (result.status !== "completed" || !answer.trim()) {
         const reason = result.code ?? "no answer";
+        const tail = Buffer.concat(stderr).toString("utf8").trim().slice(-600);
         return {
           finalText: "",
+          errorCode: result.code ?? "empty_output",
           error: reason === "deadline_exceeded"
             ? `ax turn exceeded its ${Math.round(timeoutMs / 1000)}s budget and was terminated (OPENNEKO_AGENT_TURN_TIMEOUT_MS overrides)`
-            : `ax run failed: ${reason}`,
+            : `ax run failed: ${reason}${tail ? `: ${tail}` : ""}`,
           ...(reason === "deadline_exceeded" ? { timedOut: true } : {}),
         };
       }
@@ -259,7 +268,11 @@ export class AxBackend implements AgentBackend {
         const parsed = extractSurfaceMessages(answer);
         finalText = extractMarkdownText(parsed.messages) || parsed.text;
       }
-      return { finalText: finalText.trim(), rawText: answer };
+      return {
+        finalText: finalText.trim(),
+        rawText: answer,
+        ...(result.kind === "summary" ? { degraded: true, ...(result.code ? { errorCode: result.code } : {}) } : {}),
+      };
     } finally {
       clearTimeout(reaper);
       signal?.removeEventListener("abort", onAbort);
@@ -328,6 +341,7 @@ export class AxEventMapper {
     private readonly emit: (event: AgentEvent) => void,
     private readonly route: AxModelRoute,
     private readonly skillsRoot?: string,
+    private readonly debug = false,
   ) {}
 
   private get summaryProvider(): "anthropic" | "google-gemini" | undefined {
@@ -335,7 +349,7 @@ export class AxEventMapper {
   }
 
   handle(event: AxEvent): void {
-    const data = (event.data ?? {}) as { version?: number; text?: string };
+    const data = (event.data ?? {}) as { version?: number; text?: string; code?: string; error?: string };
     switch (event.type) {
       case "answer.delta": {
         if (typeof data.text !== "string") return;
@@ -362,7 +376,7 @@ export class AxEventMapper {
           this.renderCalls.add(id);
           return;
         }
-        this.emit({ type: "tool_start", id: `ax-op-${id}`, name: event.name ?? "tool" });
+        this.emit({ type: "tool_start", id: `ax-op-${id}`, name: event.name ?? "tool", ...(event.data !== undefined ? { input: event.data } : {}) });
         return;
       }
       case "tool.finished": {
@@ -387,6 +401,17 @@ export class AxEventMapper {
         this.emit({ type: "tool_end", id });
         return;
       }
+      case "actor.code":
+        if (this.debug && typeof data.code === "string") {
+          this.emit({ type: "status", message: `actor code${typeof data.error === "string" ? ` failed (${data.error})` : ""}:\n${data.code}` });
+        }
+        return;
+      case "model.route.fallback":
+        this.emit({ type: "retry", reason: "model_route_fallback" });
+        return;
+      case "executor.step.failed":
+        this.emit({ type: "retry", reason: "executor_step_failed" });
+        return;
       case "model.request.finished":
         if (event.observed_model) this.observed = { provider: event.provider ?? this.route.provider, model: event.observed_model };
         return;

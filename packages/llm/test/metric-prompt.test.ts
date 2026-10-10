@@ -105,7 +105,7 @@ describe("buildMetricPrompt", () => {
       dataAgentTool: "mcp_neko_graphjin_agent_ask",
     });
     expect(prompt).toContain("`mcp_neko_graphjin_agent_ask`");
-    expect(prompt).toContain("the complete metric question");
+    expect(prompt).toContain("Write each instruction as a precise data request.");
     expect(prompt).not.toContain(fakeKnowledge.syntax);
     expect(prompt).not.toMatch(/hidden|not available in this treatment/i);
     expect(prompt).not.toContain("mcp_neko_graphjin_execute_graphql");

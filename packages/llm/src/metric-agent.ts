@@ -1,10 +1,12 @@
 import { startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import { data_source, db, desc, eq, graphjinAgentEnabledForOrg } from "@neko/db";
-import { observeSafely, type HarnessObserver } from "@neko/telemetry";
+import { errorCodeOf, observeSafely, type HarnessObserver } from "@neko/telemetry";
 import {
   shellToolName,
   type AgentBackend,
+  type AgentBackendId,
   type AgentEvent,
+  type AgentRunResult,
   type AgentTokenUsage,
 } from "./agent-backend";
 import { resolveAgentBackend } from "./agent-backend-resolver";
@@ -28,7 +30,7 @@ import {
   ensureIsolatedJobWorkspace,
   ensureWorkWorkspace,
 } from "./work/workspace";
-import { normalizeGraphjinAgentUsage } from "./usage-normalization";
+import { graphjinAgentResponseStatus, normalizeGraphjinAgentUsage } from "./usage-normalization";
 import { GRAPHJIN_AGENT_ASK_TOOL_TITLE, GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE } from "./graphjin/mcp-names";
 
 // Keep in sync with ROLE_FOCUS (bootstrap-metrics-writer.ts) and the
@@ -63,6 +65,12 @@ export type MetricAgentInput = {
   graphjinPath?: GraphjinDataPath;
   /** Host-only diagnostics hook; never serialized into an agent sandbox. */
   onDiagnostics?: (diagnostics: MetricAgentDiagnostics) => void;
+  /** Host-only backend choice; the org's setting applies when absent. */
+  backendId?: AgentBackendId;
+  /** Host-only Ax model override, for evals. */
+  model?: string;
+  /** Host-only view of every agent event, for tracing. */
+  onEvent?: (event: AgentEvent) => void;
 };
 
 export type { GraphjinDataPath } from "./work/graphjin-tool-policy";
@@ -75,6 +83,8 @@ export type MetricAgentDiagnostics = {
   attempts: number;
   toolCalls: Record<string, number>;
   toolOutputBytes: number;
+  /** Calls to GraphJin's agent, its model calls, time spent in them, and calls without an answer. */
+  graphjinAgent?: { calls: number; modelCalls: number; durationMs: number; failures: number };
   outerUsage?: AgentTokenUsage;
   innerUsage?: AgentTokenUsage;
   totalUsage: AgentTokenUsage;
@@ -149,12 +159,9 @@ async function runMetricAgentTraced(
     "metric-agent",
     input.jobId ?? input.slug,
   ));
-  // GraphJin's agent does its own discovery, so the agent path needs no pack.
-  const knowledge = graphjinPath === "agent"
-    ? { mode: "legacy" as const, tables: "{}", namespaces: "{}", insights: "{}", syntax: "{}" }
-    : await loadMetricKnowledge(input, knowledgeWorkspace.knowledgeRoot);
+  const knowledge = await loadMetricKnowledge(input, knowledgeWorkspace.knowledgeRoot);
 
-  const backend = await startupPhase("config.backend", async () => resolveAgentBackend(input.orgId));
+  const backend = await startupPhase("config.backend", async () => resolveAgentBackend(input.orgId, input.backendId, input.model));
   const debug = input.debug === true;
   const isolated = await startupPhase("workspace.isolate", async () => ensureIsolatedJobWorkspace(
     `metric-${input.jobId ?? input.slug}`,
@@ -170,6 +177,9 @@ async function runMetricAgentTraced(
   let innerUsage: AgentTokenUsage | undefined;
   let innerUsageMissing = false;
   const toolCalls: Record<string, number> = {};
+  const toolStarted = new Map<string, number>();
+  const graphjinAgent = { calls: 0, modelCalls: 0, durationMs: 0, failures: 0 };
+  let backendFailure: Pick<AgentRunResult, "errorCode" | "timedOut"> | undefined;
   await observe({
     kind: "run.start",
     timestamp: new Date(observedStartedAt).toISOString(),
@@ -283,11 +293,13 @@ async function runMetricAgentTraced(
         let sawOuterUsage = false;
         const callerOnEvent = runOptions.onEvent;
         const onEvent = async (event: AgentEvent): Promise<void> => {
+          input.onEvent?.(event);
           if (event.type === "message" || event.type === "surface") {
             await observeFirstOutput(modelOperationId);
           }
           if (event.type === "tool_start") {
             toolNames.set(event.id, event.name);
+            toolStarted.set(event.id, Date.now());
             toolCalls[event.name] = (toolCalls[event.name] ?? 0) + 1;
             await observe({
               kind: "tool.start",
@@ -327,6 +339,10 @@ async function runMetricAgentTraced(
             });
             if (isGraphjinAgentTool(toolName)) {
               const parsedInner = findGraphjinUsage(event.result);
+              graphjinAgent.calls += 1;
+              graphjinAgent.modelCalls += parsedInner?.modelCalls ?? 0;
+              graphjinAgent.durationMs += Date.now() - (toolStarted.get(event.id) ?? Date.now());
+              if (event.error || graphjinAgentResponseStatus(event.result) !== "answered") graphjinAgent.failures += 1;
               if (parsedInner) {
                 innerUsage = addUsage(innerUsage, parsedInner.usage);
                 await observe({
@@ -388,6 +404,9 @@ async function runMetricAgentTraced(
           await callerOnEvent?.(event);
         };
         const result = await sandboxedBackend.run({ ...runOptions, onEvent });
+        backendFailure = result.status === "failed"
+          ? { errorCode: result.errorCode, timedOut: result.timedOut }
+          : undefined;
         if (!sawOuterUsage) {
           await observe({
             kind: "model.response",
@@ -417,7 +436,7 @@ async function runMetricAgentTraced(
         workspace: isolated.workspace,
         debug,
       },
-      maxAttempts: graphjinPath === "agent" ? 1 : undefined,
+      maxAttempts: graphjinPath === "agent" ? 2 : undefined,
       label: `metric-agent org=${input.orgId} slug=${input.slug}`,
       validate: (finalText) => {
         const out = parseJsonFromOutput(
@@ -507,20 +526,27 @@ async function runMetricAgentTraced(
       innerUsage,
       graphjinPath === "agent" && (innerUsageMissing || !innerUsage),
     );
+    const errorCode = backendFailure?.errorCode ?? errorCodeOf(cause);
+    const failure = {
+      errorType: backendFailure?.errorCode ?? (cause instanceof Error ? cause.name : "unknown"),
+      ...(errorCode ? { errorCode } : {}),
+      errorMessage: cause instanceof Error ? cause.message : String(cause),
+    };
     await observe({
       kind: "error",
       operationId: `${operationId}:error`,
       parentOperationId: operationId,
       status: "error",
-      errorType: cause instanceof Error ? cause.name : "unknown",
+      ...failure,
     });
     await observe({
       kind: "run.end",
       operationId,
       status: "error",
-      errorType: cause instanceof Error ? cause.name : "unknown",
+      ...failure,
       attributes: {
         "openneko.outcome": "failed",
+        ...(backendFailure?.timedOut ? { "openneko.timed_out": true } : {}),
         ...input.observationAttributes,
       },
       measurements: {
@@ -542,6 +568,7 @@ async function runMetricAgentTraced(
         attempts,
         toolCalls: { ...toolCalls },
         toolOutputBytes,
+        ...(graphjinPath === "agent" ? { graphjinAgent: { ...graphjinAgent } } : {}),
         ...(outerUsage ? { outerUsage } : {}),
         ...(innerUsage ? { innerUsage } : {}),
         totalUsage: combinedUsage(

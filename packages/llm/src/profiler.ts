@@ -1,9 +1,13 @@
 import {
   agentTurnTimeoutMs,
   shellToolName,
+  type AgentBackend,
   type AgentRunOptions,
+  type AgentWorkspace,
 } from "./agent-backend";
+import type { HarnessObserver } from "@neko/telemetry";
 import { resolveAgentBackend } from "./agent-backend-resolver";
+import { observeAgentJob } from "./agent-job-telemetry";
 import { runValidatedAgentTurn } from "./agent-validate-loop";
 import {
   knowledgePackPaths,
@@ -12,6 +16,8 @@ import {
   type KnowledgePackContents,
 } from "./knowledge-pack";
 import {
+  AGENT_REQUEST_GUIDANCE,
+  agentSchemaDigest,
   compactHelpCardIndex,
   compactInsightsDigest,
   compactTableDigest,
@@ -36,9 +42,10 @@ export function buildProfilerPrompt(args: {
   queryTool: string;
   /** Set when the org opted in to GraphJin's server-side agent. */
   agentTool?: string;
+  workspace: AgentWorkspace;
 }): string {
   const { orgName, companyNote, knowledge, queryTool } = args;
-  if (args.agentTool) return buildProfilerAgentInstructions(args.agentTool) + profilerOutput(orgName, companyNote);
+  if (args.agentTool) return buildProfilerAgentInstructions(args.agentTool, agentSchemaDigest(knowledge, args.workspace)) + profilerOutput(orgName, companyNote);
   const agentic = knowledge.mode === "agentic";
   const catalogTool = graphjinMcpToolTitle("query_catalog");
   const helpTool = graphjinMcpToolTitle("graphql_help");
@@ -147,15 +154,15 @@ ${knowledge.syntax}`
 ` + profilerOutput(orgName, companyNote);
 }
 
-function buildProfilerAgentInstructions(agentTool: string): string {
+function buildProfilerAgentInstructions(agentTool: string, schema: string): string {
   return `You build a short markdown business profile about a customer company from its database.
 
 EXECUTION PATTERN:
-1. Call \`${agentTool}\` with {"instruction":"<one complete business question>","maxSteps":8}. GraphJin's agent finds the tables, runs validated read-only queries and returns status, answer, data and evidence.
+1. Call \`${agentTool}\` with {"instruction":"<one precise data request>"}. GraphJin's agent runs validated read-only queries and returns status, answer, data and evidence. ${AGENT_REQUEST_GUIDANCE}
 2. Ask first what the business does: its main business event with the date range, recent volume and value, and the tables that describe customers, products and locations.
 3. Then ask focused questions for each output section: top categories, products or services; geography; who is served; who does the work. Put what you already learned in each instruction; GraphJin's agent keeps no memory between calls.
-4. Ask for aggregates and grouped summaries, not raw rows. Anchor periods to the latest date in the data.
-5. When you have enough facts, emit the final markdown body exactly per the OUTPUT FORMAT. No prose around it, no code fences.
+4. Anchor periods to the latest date in the data.
+5. When you have enough facts, emit the final markdown body exactly per the OUTPUT FORMAT. No prose around it, no code fences.${schema}
 
 COMPLETION CONTRACT:
 - Treat the requested output sections as an evidence checklist, not an invitation to explore everything.
@@ -238,7 +245,7 @@ export function profilerAgentRunControls(): Pick<
   };
 }
 
-export async function runProfiler(args: {
+type ProfilerArgs = {
   orgId: string;
   mcpUrl: string;
   orgName: string;
@@ -246,7 +253,24 @@ export async function runProfiler(args: {
   jobId?: string;
   onProgress?: ProfilerProgress;
   debug?: boolean;
-}): Promise<ProfilerResult> {
+  observer?: HarnessObserver;
+};
+
+export function runProfiler(args: ProfilerArgs): Promise<ProfilerResult> {
+  return observeAgentJob(
+    {
+      observer: args.observer,
+      operationId: `profiler:${args.jobId ?? args.orgId}`,
+      productPath: "profiler",
+    },
+    (observed) => profile(args, observed),
+  );
+}
+
+async function profile(
+  args: ProfilerArgs,
+  observed: (backend: AgentBackend) => AgentBackend,
+): Promise<ProfilerResult> {
   const { orgId, mcpUrl, orgName, companyNote, jobId, onProgress, debug } = args;
 
   const knowledgeWorkspace = await ensureWorkWorkspace(
@@ -254,11 +278,8 @@ export async function runProfiler(args: {
     "profiler",
     jobId ?? orgId,
   );
-  // GraphJin's agent does its own discovery, so the agent path needs no pack.
   const agentPath = await graphjinAgentEnabledForOrg(orgId);
-  const knowledge = agentPath
-    ? { mode: "legacy" as const, tables: "{}", namespaces: "{}", insights: "{}", syntax: "{}" }
-    : await loadProfilerKnowledge(orgId, knowledgeWorkspace.knowledgeRoot);
+  const knowledge = await loadProfilerKnowledge(orgId, knowledgeWorkspace.knowledgeRoot);
 
   const backend = await resolveAgentBackend(orgId);
   const isolated = await ensureIsolatedJobWorkspace(
@@ -283,6 +304,7 @@ export async function runProfiler(args: {
       shellTool: shellToolName(backend.id),
       queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
       ...(agentPath ? { agentTool: GRAPHJIN_AGENT_ASK_TOOL_TITLE } : {}),
+      workspace: isolated.workspace,
     });
 
     if (onProgress) onProgress("Running profiler agent…");
@@ -291,7 +313,7 @@ export async function runProfiler(args: {
     // (or containing failure text) goes back to the agent for a corrective
     // turn instead of failing the onboarding job.
     const { value: businessProfile, finalText } = await runValidatedAgentTurn({
-      backend: sandboxedBackend,
+      backend: observed(sandboxedBackend),
       run: {
         prompt,
         orgId,

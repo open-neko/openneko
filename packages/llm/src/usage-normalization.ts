@@ -116,7 +116,7 @@ export function combineAgentTokenUsage(
 
 /** Locate normalized inner-model usage in GraphJin MCP response envelopes. */
 export function normalizeGraphjinAgentUsage(value: unknown):
-  | { usage: AgentTokenUsage; provider?: string; model?: string }
+  | { usage: AgentTokenUsage; provider?: string; model?: string; modelCalls?: number }
   | undefined {
   const queue: Array<{ value: unknown; depth: number }> = [{ value, depth: 0 }];
   const seen = new Set<object>();
@@ -139,7 +139,21 @@ export function normalizeGraphjinAgentUsage(value: unknown):
     if (typeof current.value !== "object") continue;
     if (seen.has(current.value)) continue;
     seen.add(current.value);
-    const record = current.value as Record<string, unknown>;
+    let record = current.value as Record<string, unknown>;
+    // GraphJin reports one usage entry per model call.
+    const calls = [record.actor, record.responder]
+      .flatMap((entries) => (Array.isArray(entries) ? entries : []))
+      .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object");
+    const modelCalls = calls.length || undefined;
+    if (modelCalls) {
+      const sum = (key: string) => calls.reduce((total, entry) => total + (Number(entry[key]) || 0), 0);
+      record = {
+        prompt_tokens: sum("prompt_tokens"),
+        completion_tokens: sum("completion_tokens"),
+        total_tokens: sum("total_tokens"),
+        cached_tokens: sum("cached_tokens"),
+      };
+    }
     if (!provider && typeof record.provider === "string") provider = record.provider;
     if (!model && typeof record.model === "string") model = record.model;
     const number = (...keys: string[]): number | undefined => {
@@ -195,11 +209,41 @@ export function normalizeGraphjinAgentUsage(value: unknown):
         },
         ...(provider ? { provider } : {}),
         ...(model ? { model } : {}),
+        ...(modelCalls ? { modelCalls } : {}),
       };
     }
     for (const nested of Object.values(record)) {
       queue.push({ value: nested, depth: current.depth + 1 });
     }
+  }
+  return undefined;
+}
+
+/** The GraphJin agent response status (answered, blocked, error, …) inside a tool result. */
+export function graphjinAgentResponseStatus(value: unknown): string | undefined {
+  const queue: Array<{ value: unknown; depth: number }> = [{ value, depth: 0 }];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (current.depth > 8 || current.value == null) continue;
+    if (typeof current.value === "string") {
+      const text = current.value.trim();
+      if (text.startsWith("{") || text.startsWith("[")) {
+        try {
+          queue.push({ value: JSON.parse(text), depth: current.depth + 1 });
+        } catch {
+          // Prose rendering.
+        }
+      }
+      continue;
+    }
+    if (typeof current.value !== "object") continue;
+    const record = current.value as Record<string, unknown>;
+    if (record.response && typeof record.response === "object") {
+      const status = (record.response as Record<string, unknown>).status;
+      if (typeof status === "string") return status;
+    }
+    if (typeof record.error === "string" && !record.response) return "error";
+    for (const nested of Object.values(record)) queue.push({ value: nested, depth: current.depth + 1 });
   }
   return undefined;
 }
