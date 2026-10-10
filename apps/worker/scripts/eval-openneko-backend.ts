@@ -2457,7 +2457,7 @@ export function createOpenNekoBackendDriver(context: {
       };
     }
 
-    if (variant.backend !== "hermes") {
+    if (variant.backend !== "hermes" && variant.backend !== "ax") {
       throw new EvalEnvironmentError(
         `no runtime adapter is installed for backend ${variant.backend}`,
         "backend_adapter_missing",
@@ -2488,12 +2488,12 @@ export function createOpenNekoBackendDriver(context: {
     evalProviderNames.add(gatewayProviderName(fixture.orgId));
     const launchConfig = await provisionHostConfig(fixture.orgId, {
       requireOpenShellSync: true,
-      requireHermesSync: true,
+      requireHermesSync: variant.backend === "hermes",
     });
     const broker = await ensureAgentBroker();
     if (!broker) {
       throw new EvalEnvironmentError(
-        "Hermes sandbox runtime did not provide an agent broker",
+        `${variant.backend} sandbox runtime did not provide an agent broker`,
         "backend_broker_missing",
       );
     }
@@ -2501,7 +2501,7 @@ export function createOpenNekoBackendDriver(context: {
     const workflowRuntime = workflowRuntimeDepsFromConfig(launchConfig, broker);
     if (!runtime.runCore || !workflowRuntime.runCore) {
       throw new EvalEnvironmentError(
-        "Hermes sandbox runtime did not provide runCore",
+        `${variant.backend} sandbox runtime did not provide runCore`,
         "backend_runtime_missing",
       );
     }
@@ -2578,7 +2578,8 @@ export function createOpenNekoBackendDriver(context: {
       for (const variant of loaded.config.variants) {
         if (
           !variant.backend.startsWith("scripted-") &&
-          variant.backend !== "hermes"
+          variant.backend !== "hermes" &&
+          variant.backend !== "ax"
         ) {
           throw new EvalEnvironmentError(
             `backend ${variant.backend} has no installed eval runtime adapter`,
@@ -3228,7 +3229,7 @@ export function createOpenNekoBackendDriver(context: {
         }
         unregisterBrokerEvents();
         unregisterEvidence();
-        if (slot.variant.backend === "hermes") {
+        if (!slot.variant.backend.startsWith("scripted-")) {
           const providerName = gatewayProviderName(fixture.orgId);
           try {
             await deleteOpenShellProvider({ providerName, family: true });
