@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"sync/atomic"
 
@@ -75,6 +77,7 @@ const maxResamples = 3
 func (c *streamingModeClient) chat(ctx context.Context, request, options map[string]ax.Value) (ax.Value, error) {
 	response, err := c.AIClient.Chat(ctx, request, options)
 	for attempt := 0; attempt < maxResamples && err != nil && ctx.Err() == nil && resampleable(err); attempt++ {
+		noteResample(err)
 		response, err = c.AIClient.Chat(ctx, request, options)
 	}
 	return response, err
@@ -109,6 +112,7 @@ func (c *streamingModeClient) StreamEvents(ctx context.Context, request, options
 		// sample again when it fails, even after partial content.
 		values, err := drain(open)
 		for attempt := 0; attempt < maxResamples && err != nil && ctx.Err() == nil && resampleable(err); attempt++ {
+			noteResample(err)
 			values, err = drain(open)
 		}
 		if err != nil {
@@ -157,6 +161,7 @@ func (s *malformedRetryStream) Next() bool {
 		return false
 	}
 	s.resamples++
+	noteResample(err)
 	next, openErr := s.open()
 	if openErr != nil {
 		return false
@@ -188,6 +193,27 @@ func items(value ax.Value) []ax.Value {
 		return list.Items
 	}
 	return nil
+}
+
+// debugResamples prints why a call was sampled again. Gemini's finish
+// message can quote model output, so it stays out of normal logs.
+var debugResamples = os.Getenv("OPENNEKO_HARNESS_DEBUG") == "1"
+
+func noteResample(err error) {
+	if !debugResamples {
+		return
+	}
+	detail := err.Error()
+	if axErr, ok := ax.AsAxError(err); ok {
+		raw, _ := axErr.Payload.(map[string]ax.Value)
+		for _, item := range items(raw["candidates"]) {
+			candidate, _ := item.(map[string]ax.Value)
+			if message, _ := candidate["finishMessage"].(string); message != "" {
+				detail += ": " + runePrefix(message, 2000)
+			}
+		}
+	}
+	fmt.Fprintln(os.Stderr, "resampling after", detail)
 }
 
 func resampleable(err error) bool {

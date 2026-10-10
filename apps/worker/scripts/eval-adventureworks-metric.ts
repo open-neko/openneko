@@ -583,6 +583,7 @@ export function createAdventureWorksMetricDriver(context: {
       const output = await runMetricAgent({
         orgId: runtime.orgId,
         question,
+        debug: process.env.OPENNEKO_EVAL_DEBUG === "1",
         role: role as
           | "CEO"
           | "CFO"
