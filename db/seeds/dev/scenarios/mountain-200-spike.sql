@@ -88,7 +88,8 @@ BEGIN
     UPDATE sales.salesorderheader SET
       subtotal = round(v_subtotal, 2),
       taxamt   = round(v_subtotal * 0.08, 2),
-      freight  = round(v_subtotal * 0.025, 2)
+      freight  = round(v_subtotal * 0.025, 2),
+      totaldue = round(v_subtotal, 2) + round(v_subtotal * 0.08, 2) + round(v_subtotal * 0.025, 2)
     WHERE salesorderid = v_orderid;
   END LOOP;
 
