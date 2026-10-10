@@ -584,7 +584,7 @@ describeIfDb("provisionHostConfig", () => {
     });
     const firstLaunch = await provisionHostConfig(orgId);
     expect(firstLaunch).toMatchObject({
-      modelProvider: expect.stringMatching(/^openneko-agent-[a-f0-9]{16}$/),
+      modelProvider: expect.stringMatching(/^openneko-agent-[a-f0-9]{16}-[a-f0-9]{8}$/),
       modelHosts: [
         { host: "generativelanguage.googleapis.com" },
         { host: "models.dev" },
@@ -604,7 +604,7 @@ describeIfDb("provisionHostConfig", () => {
     });
     const secondLaunch = await provisionHostConfig(orgId);
     expect(secondLaunch).toMatchObject({
-      modelProvider: expect.stringMatching(/^openneko-agent-[a-f0-9]{16}$/),
+      modelProvider: expect.stringMatching(/^openneko-agent-[a-f0-9]{16}-[a-f0-9]{8}$/),
       modelHosts: [
         { host: "api.anthropic.com" },
         { host: "models.dev" },
@@ -817,7 +817,7 @@ describeIfDb("provisionHostConfig", () => {
 
       ensureOpenShellProviderMock.mockResolvedValue(undefined);
       await expect(ensureHostConfigProvisioned(retryOrgId)).resolves.toMatchObject({
-        modelProvider: expect.stringMatching(/^openneko-agent-[a-f0-9]{16}$/),
+        modelProvider: expect.stringMatching(/^openneko-agent-[a-f0-9]{16}-[a-f0-9]{8}$/),
         keyAliases: [{ from: "MODEL_API_KEY", to: "GEMINI_API_KEY" }],
       });
       expect(ensureOpenShellProviderMock).toHaveBeenCalledTimes(4);
