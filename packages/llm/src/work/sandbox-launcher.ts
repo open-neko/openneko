@@ -38,6 +38,7 @@ import {
   type SkillFileHashes,
 } from "../config-vcs/skill-capture";
 import { KNOWLEDGE_FILES, readKnowledgeSnapshot } from "../knowledge-cache";
+import { SandboxFailure } from "./sandbox-failure";
 
 // Wire protocol shared with the in-image entrypoint. The agent runs in a
 // separate container, so these can't share a module at runtime — they MUST
@@ -660,9 +661,9 @@ function makeSandboxCore(
   const runInSandbox = async function (
     input: SandboxRunInput,
   ): Promise<AgentRunResult> {
-    // Warm slots preload Hermes, so Ax runs start cold.
+    // Warm slots preload Hermes; an Ax run uses the slot and leaves the fork server idle.
     const hermes = input.backend.id === "hermes";
-    let pool = kind === "work" && hermes ? getSandboxPool(opts, input.workspace) : undefined;
+    let pool = kind === "work" ? getSandboxPool(opts, input.workspace) : undefined;
     const isJob = kind === "agent-job";
     const jobInput = isJob ? (input as RunJobAgentBackendInput) : null;
     const signal = isJob
@@ -680,6 +681,10 @@ function makeSandboxCore(
         const value = await startupPhase(`sandbox.${phase}`, operation);
         ok = true;
         return value;
+      } catch (error) {
+        // exec errors other than the launcher's own are the agent's.
+        if (phase === "exec" || error instanceof SandboxFailure || (error instanceof Error && error.name === "AbortError")) throw error;
+        throw new SandboxFailure(`sandbox.${phase}`, error instanceof Error ? error.message : String(error), { cause: error });
       } finally {
         log(JSON.stringify({
           type: "sandbox_phase",
@@ -1084,7 +1089,7 @@ function makeSandboxCore(
                 }
               : {}),
             ...(opts.env ?? {}),
-            ...(pool ? { OPENNEKO_HERMES_WARM: "1", HOME: sandboxHermesHome, HERMES_HOME: sandboxHermesHome } : {}),
+            ...(pool && hermes ? { OPENNEKO_HERMES_WARM: "1", HOME: sandboxHermesHome, HERMES_HOME: sandboxHermesHome } : {}),
             ...(hermesStage ? { HERMES_HOME: sandboxHermesHome } : {}),
           },
           keyAliases: opts.keyAliases,
@@ -1367,9 +1372,15 @@ discovery:
  * `openshell provider create` step. Egress + the key-env alias stay with the
  * launcher; this only owns the credential.
  */
+/** Runs in flight keep the provider they started with; a replaced one goes after this. */
+const STALE_PROVIDER_DELAY_MS = 30 * 60_000;
+
 export async function ensureOpenShellProvider(opts: {
   providerName: string;
   apiKey: string;
+  /** Name prefix of versioned providers: an existing name already holds this credential. */
+  family?: string;
+  staleDelayMs?: number;
   cli?: string;
   gatewayName?: string;
   gatewayEndpoint?: string;
@@ -1409,6 +1420,26 @@ export async function ensureOpenShellProvider(opts: {
     "provider", "create", "--name", opts.providerName,
     "--type", OPENNEKO_AGENT_PROFILE_ID, "--credential", credential,
   ]);
+  if (opts.family) {
+    const family = opts.family;
+    const listed = (await run(["provider", "list", "--names"])).split(/\s+/).filter(Boolean);
+    if (!listed.includes(opts.providerName)) {
+      await create().catch((error) => {
+        throw new Error(
+          `OpenShell provider ${opts.providerName} creation failed: ${safeError(error)}` +
+          (profileImportError ? `; profile import: ${safeError(profileImportError)}` : ""),
+        );
+      });
+    }
+    const stale = listed.filter((name) => name !== opts.providerName && (name === family || name.startsWith(`${family}-`)));
+    if (stale.length > 0) {
+      setTimeout(() => {
+        void Promise.allSettled(stale.map((name) => run(["provider", "delete", name])));
+      }, opts.staleDelayMs ?? STALE_PROVIDER_DELAY_MS).unref();
+    }
+    return;
+  }
+
   // The provider exists after the first run, so refresh its key first. A
   // create-first order wrote a failed duplicate insert to the gateway's
   // database on every sync.
@@ -1438,6 +1469,8 @@ export async function ensureOpenShellProvider(opts: {
  * OpenShell after the corresponding metadata row has been deleted. */
 export async function deleteOpenShellProvider(opts: {
   providerName: string;
+  /** Also delete the versioned providers named `<providerName>-<fingerprint>`. */
+  family?: boolean;
   cli?: string;
   gatewayName?: string;
   gatewayEndpoint?: string;
@@ -1448,11 +1481,14 @@ export async function deleteOpenShellProvider(opts: {
     : opts.gatewayEndpoint
       ? ["--gateway-endpoint", opts.gatewayEndpoint]
       : [];
-  await runProcessOnce(
-    cli,
-    [...gatewayArgs, "provider", "delete", opts.providerName],
-    60_000,
-  );
+  const names = opts.family
+    ? (await runProcessOnce(cli, [...gatewayArgs, "provider", "list", "--names"], 60_000))
+      .split(/\s+/)
+      .filter((name) => name === opts.providerName || name.startsWith(`${opts.providerName}-`))
+    : [opts.providerName];
+  for (const name of names) {
+    await runProcessOnce(cli, [...gatewayArgs, "provider", "delete", name], 60_000);
+  }
 }
 
 /**
@@ -1704,7 +1740,7 @@ function execAndStream(
     });
     child.stderr.on("data", (d: Buffer) => (stderr += d.toString("utf8")));
     timer = setTimeout(() => {
-      fail(new Error(`agent sandbox exec timed out after ${timeoutMs}ms`));
+      fail(new SandboxFailure("sandbox.exec_timeout", `agent sandbox exec timed out after ${timeoutMs}ms`));
     }, timeoutMs);
     timer.unref();
     if (signal?.aborted) onAbort();
@@ -1745,7 +1781,8 @@ function execAndStream(
           return;
         }
         reject(
-          new Error(
+          new SandboxFailure(
+            "sandbox.no_result",
             `agent sandbox exited ${code} without a result line; stderr=${stderr.slice(0, 500)}`,
           ),
         );

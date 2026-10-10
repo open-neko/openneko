@@ -338,14 +338,14 @@ async function warmUpBroker(baseUrl: string, name: string): Promise<void> {
   // is swallowed by hermes, so a file is the only visible channel.
   try {
     const envPick = Object.fromEntries(
-      Object.entries(process.env).filter(([k]) =>
-        /OPENNEKO_|PROXY|proxy|NODE_USE/.test(k),
-      ),
+      Object.entries(process.env)
+        .filter(([k]) => /OPENNEKO_|PROXY|proxy|NODE_USE/.test(k) && !/TOKEN|SECRET|KEY/.test(k)),
     );
     const { writeFileSync } = await import("node:fs");
     writeFileSync(
       `/tmp/bridge-${name}.log`,
       JSON.stringify({ baseUrl, trail, env: envPick }, null, 1),
+      { mode: 0o600 },
     );
   } catch {
     /* diagnostics only */

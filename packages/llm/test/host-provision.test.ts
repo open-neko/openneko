@@ -721,6 +721,10 @@ describeIfDb("provisionHostConfig", () => {
       expect(ensureOpenShellProviderMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ apiKey: "key-b" }),
       );
+      const synced = ensureOpenShellProviderMock.mock.calls.map(([opts]) => opts as { providerName: string; family?: string });
+      // A rotated key gets a new provider in the same family; runs in flight keep the old one.
+      expect(synced.at(-1)!.providerName).not.toBe(synced.at(-2)!.providerName);
+      expect(synced.at(-1)!.providerName.startsWith(`${synced.at(-1)!.family}-`)).toBe(true);
       await expect(
         readFile(join(hermesHomeForOrg(refreshOrgId), ".env"), "utf8"),
       ).resolves.toContain("GEMINI_API_KEY=key-b");
