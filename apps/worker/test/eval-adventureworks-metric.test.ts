@@ -100,6 +100,23 @@ describe("AdventureWorks eval adapter", () => {
       },
     });
     expect(quarterlyChart.verdict).toBe("pass");
+
+    const scaledUnits = await driver.score({
+      case: evalCase,
+      variant,
+      oracle: { ...oracle, expectedValue: 2_070_000 },
+      phase: "initial",
+      repetition: 1,
+      execution: {
+        ...execution,
+        output: {
+          ...(execution.output as Record<string, unknown>),
+          headlineMetric: "2.07M units",
+          chartData: [{ d: "Units", v: 5, t: 90 }],
+        },
+      },
+    });
+    expect(scaledUnits.checks.find((check) => check.assertionId === "headline-value")?.passed).toBe(true);
     await driver.close?.();
   });
 });

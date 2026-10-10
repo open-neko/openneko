@@ -127,7 +127,7 @@ function costMeasurements(input: {
   };
 }
 
-const HEADLINE_PATTERN = /^([+-]?\d+(?:\.\d+)?)(?:(thousand|million|billion)|([kmb])(?![a-z]))?(?:[%x]|[a-z]+)?$/iu;
+const HEADLINE_PATTERN = /^([+-]?\d+(?:\.\d+)?)\s*(?:(thousand|million|billion)\b|([kmb])\b)?\s*(?:[%x]|[a-z][a-z\s]*)?$/iu;
 const RUNTIME_ENVIRONMENT_NAMES = [
   "XDG_CONFIG_HOME",
   "HERMES_HOME",
@@ -171,7 +171,7 @@ function agentFailure(cause: unknown, wallDurationMs: number, diagnostics?: Metr
 }
 
 function parseHeadline(value: string): number | null {
-  const match = value.replace(/[\s$,]/gu, "").trim().match(HEADLINE_PATTERN);
+  const match = value.replace(/[$,]/gu, "").trim().match(HEADLINE_PATTERN);
   if (!match) return null;
   let number = Number.parseFloat(match[1] ?? "");
   if (!Number.isFinite(number)) return null;
