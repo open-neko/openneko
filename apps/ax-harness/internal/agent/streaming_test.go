@@ -70,3 +70,157 @@ func TestResponderDeltaArrivesBeforeProviderFinishes(t *testing.T) {
 		t.Fatalf("result=%+v err=%v deltas=%q calls=%d", result, err, deltas, calls.Load())
 	}
 }
+
+type malformedOnceClient struct {
+	ax.AIClient
+	calls int
+}
+
+func (c *malformedOnceClient) Chat(context.Context, map[string]ax.Value, map[string]ax.Value) (ax.Value, error) {
+	c.calls++
+	if c.calls == 1 {
+		return nil, fmt.Errorf("Gemini finish reason was blocked: MALFORMED_FUNCTION_CALL")
+	}
+	return ax.Object("results", ax.Array()), nil
+}
+
+func TestMalformedFunctionCallIsSampledAgain(t *testing.T) {
+	inner := &malformedOnceClient{}
+	client := &streamingModeClient{AIClient: inner}
+	if _, err := client.Chat(context.Background(), ax.Object(), ax.Object()); err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if inner.calls != 2 {
+		t.Fatalf("calls = %d, want 2", inner.calls)
+	}
+}
+
+type failedStream struct{ err error }
+
+func (s failedStream) Next() bool      { return false }
+func (s failedStream) Value() ax.Value { return nil }
+func (s failedStream) Err() error      { return s.err }
+func (s failedStream) Close() error    { return nil }
+
+type malformedStreamClient struct {
+	ax.AIClient
+	opens int
+}
+
+func (c *malformedStreamClient) StreamEvents(context.Context, map[string]ax.Value, map[string]ax.Value) (ax.AxChatStream, error) {
+	c.opens++
+	if c.opens == 1 {
+		return failedStream{err: fmt.Errorf("Gemini finish reason was blocked: MALFORMED_FUNCTION_CALL")}, nil
+	}
+	return &valueStream{values: []ax.Value{ax.Object("results", ax.Array())}}, nil
+}
+
+func TestMalformedStreamIsOpenedAgainBeforeAnyChunk(t *testing.T) {
+	inner := &malformedStreamClient{}
+	client := &streamingModeClient{AIClient: inner, enabled: true}
+	stream, err := client.StreamEvents(context.Background(), ax.Object(), ax.Object())
+	if err != nil {
+		t.Fatalf("StreamEvents() error = %v", err)
+	}
+	if !stream.Next() || stream.Err() != nil {
+		t.Fatalf("stream did not recover: %v", stream.Err())
+	}
+	if inner.opens != 2 {
+		t.Fatalf("opens = %d, want 2", inner.opens)
+	}
+}
+
+type thoughtThenMalformedClient struct {
+	ax.AIClient
+	opens int
+}
+
+func (c *thoughtThenMalformedClient) StreamEvents(context.Context, map[string]ax.Value, map[string]ax.Value) (ax.AxChatStream, error) {
+	c.opens++
+	thought := ax.Object("results", ax.MutableArray(ax.Object("thought", "planning")))
+	if c.opens == 1 {
+		return &thenFail{values: []ax.Value{thought}, err: fmt.Errorf("Gemini finish reason was blocked: MALFORMED_FUNCTION_CALL")}, nil
+	}
+	return &valueStream{values: []ax.Value{ax.Object("results", []ax.Value{ax.Object("content", "done")})}}, nil
+}
+
+type thenFail struct {
+	values []ax.Value
+	index  int
+	err    error
+}
+
+func (s *thenFail) Next() bool {
+	if s.index >= len(s.values) {
+		return false
+	}
+	s.index++
+	return true
+}
+func (s *thenFail) Value() ax.Value { return s.values[s.index-1] }
+func (s *thenFail) Err() error {
+	if s.index >= len(s.values) {
+		return s.err
+	}
+	return nil
+}
+func (s *thenFail) Close() error { return nil }
+
+func TestMalformedStreamAfterThoughtsIsOpenedAgain(t *testing.T) {
+	inner := &thoughtThenMalformedClient{}
+	client := &streamingModeClient{AIClient: inner, enabled: true}
+	stream, _ := client.StreamEvents(context.Background(), ax.Object(), ax.Object())
+	for stream.Next() {
+	}
+	if stream.Err() != nil || inner.opens != 2 {
+		t.Fatalf("err = %v, opens = %d; want recovery on the second open", stream.Err(), inner.opens)
+	}
+}
+
+func TestVisibleOutputReadsAxArrays(t *testing.T) {
+	if !visibleOutput(ax.Object("results", ax.MutableArray(ax.Object("content", "answer")))) {
+		t.Fatal("content in an Ax array is visible output")
+	}
+	if visibleOutput(ax.Object("results", ax.MutableArray(ax.Object("thought", "planning")))) {
+		t.Fatal("a thought alone is not visible output")
+	}
+}
+
+func TestDroppedConnectionIsResampled(t *testing.T) {
+	if !resampleable(fmt.Errorf(`Network Error: Post "https://generativelanguage.googleapis.com/v1beta/models/x:streamGenerateContent": EOF`)) {
+		t.Fatal("a dropped connection is safe to resample")
+	}
+	if resampleable(fmt.Errorf("invalid argument")) {
+		t.Fatal("a request error is not resampled")
+	}
+}
+
+type contentThenMalformedClient struct {
+	ax.AIClient
+	opens int
+}
+
+func (c *contentThenMalformedClient) StreamEvents(context.Context, map[string]ax.Value, map[string]ax.Value) (ax.AxChatStream, error) {
+	c.opens++
+	chunk := ax.Object("results", ax.MutableArray(ax.Object("content", `{"javascriptCode":`)))
+	if c.opens == 1 {
+		return &thenFail{values: []ax.Value{chunk}, err: fmt.Errorf("Gemini finish reason was blocked: MALFORMED_FUNCTION_CALL")}, nil
+	}
+	return &valueStream{values: []ax.Value{chunk, ax.Object("results", ax.MutableArray(ax.Object("content", `"final()"}`)))}}, nil
+}
+
+func TestStructuredStreamIsSampledAgainAfterPartialContent(t *testing.T) {
+	inner := &contentThenMalformedClient{}
+	client := &streamingModeClient{AIClient: inner, enabled: true}
+	stream, err := client.StreamEvents(context.Background(), ax.Object("response_format", ax.Object()), ax.Object())
+	if err != nil {
+		t.Fatalf("StreamEvents() error = %v", err)
+	}
+	count := 0
+	for stream.Next() {
+		count++
+	}
+	if stream.Err() != nil || inner.opens != 2 || count != 2 {
+		t.Fatalf("err = %v, opens = %d, chunks = %d; want the second sample's 2 chunks only", stream.Err(), inner.opens, count)
+	}
+}

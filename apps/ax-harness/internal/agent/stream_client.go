@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync/atomic"
 
 	ax "github.com/ax-llm/ax/packages/go"
@@ -62,8 +63,18 @@ func (c *streamingModeClient) record(err error) error {
 }
 
 func (c *streamingModeClient) Chat(ctx context.Context, request, options map[string]ax.Value) (ax.Value, error) {
-	response, err := c.AIClient.Chat(ctx, request, options)
+	response, err := c.chat(ctx, request, options)
 	return response, c.record(err)
+}
+
+// chat retries once when the model call failed without effect: a malformed
+// Gemini function call, a dropped connection, or another retryable error.
+func (c *streamingModeClient) chat(ctx context.Context, request, options map[string]ax.Value) (ax.Value, error) {
+	response, err := c.AIClient.Chat(ctx, request, options)
+	if err != nil && ctx.Err() == nil && resampleable(err) {
+		return c.AIClient.Chat(ctx, request, options)
+	}
+	return response, err
 }
 
 func (c *streamingModeClient) GetFeatures(model string) map[string]ax.Value {
@@ -83,12 +94,100 @@ func (c *streamingModeClient) GetFeatures(model string) map[string]ax.Value {
 
 func (c *streamingModeClient) StreamEvents(ctx context.Context, request, options map[string]ax.Value) (ax.AxChatStream, error) {
 	if !c.enabled {
-		response, err := c.AIClient.Chat(ctx, request, options)
+		response, err := c.chat(ctx, request, options)
 		if c.record(err) != nil {
 			return nil, err
 		}
 		return &valueStream{values: []ax.Value{response}}, nil
 	}
-	stream, err := streamEvents(ctx, c.AIClient, request, options)
-	return stream, c.record(err)
+	open := func() (ax.AxChatStream, error) { return streamEvents(ctx, c.AIClient, request, options) }
+	if request["response_format"] != nil {
+		// Structured stage output is never shown live, so read it whole and
+		// sample again when it fails, even after partial content.
+		values, err := drain(open)
+		if err != nil && ctx.Err() == nil && resampleable(err) {
+			values, err = drain(open)
+		}
+		if err != nil {
+			return nil, c.record(err)
+		}
+		return &valueStream{values: values}, nil
+	}
+	stream, err := open()
+	if err != nil {
+		return nil, c.record(err)
+	}
+	return &malformedRetryStream{AxChatStream: stream, ctx: ctx, open: open}, nil
+}
+
+func drain(open func() (ax.AxChatStream, error)) ([]ax.Value, error) {
+	stream, err := open()
+	if err != nil {
+		return nil, err
+	}
+	defer stream.Close()
+	var values []ax.Value
+	for stream.Next() {
+		values = append(values, stream.Value())
+	}
+	return values, stream.Err()
+}
+
+// malformedRetryStream opens the stream again when it failed retryably
+// before any answer text or function call arrived.
+// Thought chunks only feed progress, so repeating them is harmless.
+type malformedRetryStream struct {
+	ax.AxChatStream
+	ctx     context.Context
+	open    func() (ax.AxChatStream, error)
+	yielded bool
+	retried bool
+}
+
+func (s *malformedRetryStream) Next() bool {
+	if s.AxChatStream.Next() {
+		s.yielded = s.yielded || visibleOutput(s.AxChatStream.Value())
+		return true
+	}
+	err := s.AxChatStream.Err()
+	if s.yielded || s.retried || err == nil || s.ctx.Err() != nil || !resampleable(err) {
+		return false
+	}
+	s.retried = true
+	next, openErr := s.open()
+	if openErr != nil {
+		return false
+	}
+	_ = s.AxChatStream.Close()
+	s.AxChatStream = next
+	return s.Next()
+}
+
+func visibleOutput(value ax.Value) bool {
+	chunk, _ := value.(map[string]ax.Value)
+	for _, item := range items(chunk["results"]) {
+		result, _ := item.(map[string]ax.Value)
+		if text, _ := result["content"].(string); text != "" {
+			return true
+		}
+		if len(items(result["function_calls"])) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func items(value ax.Value) []ax.Value {
+	switch list := value.(type) {
+	case []ax.Value:
+		return list
+	case *ax.AxArray:
+		return list.Items
+	}
+	return nil
+}
+
+func resampleable(err error) bool {
+	text := err.Error()
+	return strings.Contains(text, "MALFORMED_FUNCTION_CALL") || strings.Contains(text, "Network Error") || ax.IsRetryable(err)
 }
