@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.20.0](https://github.com/open-neko/openneko/compare/v3.19.0...v3.20.0) (2026-10-09)
+
+
+### Features
+
+* Ax backend, an org-wide alternative to Hermes ([d03e5a6](https://github.com/open-neko/openneko/commit/d03e5a68d867146bdb64b8adafcf05fc5c383d35))
+* Ax backend, an org-wide alternative to Hermes ([b71ab12](https://github.com/open-neko/openneko/commit/b71ab12e96949f6748b2315d8b5ec253abddf42d))
+* **ax:** use each provider's Ax profile, including Azure ([ff9953d](https://github.com/open-neko/openneko/commit/ff9953d4465c6e78c0185bff76cdf149c6b750d1))
+
+
+### Bug Fixes
+
+* **ax-harness:** accept the bundled OpenNeko skills ([6d710d4](https://github.com/open-neko/openneko/commit/6d710d43f70c06077cae46f7b796dd3d5115fe5f))
+
 ## [3.19.0](https://github.com/open-neko/openneko/compare/v3.18.0...v3.19.0) (2026-10-09)
 
 
