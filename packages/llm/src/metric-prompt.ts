@@ -117,8 +117,9 @@ Rules for the JSON:
   items.
 - All numbers in chartData.v and chartData.t must be plain numbers (not
   strings, no units).
-- baselineValue is the headline number for the comparison period, as a plain
-  number in the headline's units. Use null only when no comparison exists.
+- baselineValue is the comparison-period value of the headline metric, as a
+  full plain number on the same scale as chartData: 29983688.69, never 29.98
+  for $29.98M. Use null only when no comparison exists.
 - timeWindow.grain must be one of the listed enum values, lowercase.
 - timeWindow.start and timeWindow.end must be ISO yyyy-mm-dd strings (or
   null only when grain='all_time'). They must match the date filter the
