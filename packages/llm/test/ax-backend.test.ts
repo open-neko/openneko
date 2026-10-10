@@ -6,6 +6,7 @@ import type { AgentEvent } from "../src/agent-backend";
 type Spawned = { command: string; env: NodeJS.ProcessEnv; stdin: string };
 const spawned: Spawned[] = [];
 let script: { lines: object[]; stderr?: string; code?: number } = { lines: [] };
+let queued: (typeof script)[] = [];
 
 vi.mock("node:child_process", async () => {
   const actual = await vi.importActual<typeof import("node:child_process")>("node:child_process");
@@ -20,14 +21,15 @@ vi.mock("node:child_process", async () => {
       spawned.push(record);
       stdin.on("data", (c: Buffer) => (record.stdin += c.toString()));
       Object.assign(child, { stdin, stdout, stderr, pid: undefined, exitCode: null, kill: () => true });
+      const current = queued.shift() ?? script;
       stdin.on("finish", () => {
         const run = JSON.parse(record.stdin) as { run_id: string };
-        for (const line of script.lines) stdout.write(`${JSON.stringify({ version: 1, run_id: run.run_id, ...line })}\n`);
-        if (script.stderr) stderr.write(script.stderr);
+        for (const line of current.lines) stdout.write(`${JSON.stringify({ version: 1, run_id: run.run_id, ...line })}\n`);
+        if (current.stderr) stderr.write(current.stderr);
         stdout.end();
         stderr.end();
-        child.exitCode = script.code ?? 0;
-        setImmediate(() => child.emit("close", script.code ?? 0));
+        child.exitCode = current.code ?? 0;
+        setImmediate(() => child.emit("close", current.code ?? 0));
       });
       return child;
     },
@@ -53,6 +55,7 @@ const finished = (result: object, sequence: number) => ({ sequence, type: "run.f
 
 afterEach(() => {
   spawned.length = 0;
+  queued = [];
   vi.unstubAllEnvs();
 });
 
@@ -147,6 +150,26 @@ describe("AxBackend", () => {
     script = { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] };
     await new AxBackend(config).run({ prompt: "p", workspace, nativeDelegation: "disabled" });
     expect(spawned[1].env.OPENNEKO_HARNESS_CHILD_TOOLS).toBeUndefined();
+  });
+
+  it("runs again once after a malformed call when nothing was shown or written", async () => {
+    const malformed = {
+      lines: [finished({ status: "failed", kind: "failure", code: "model_failed" }, 1)],
+      stderr: "model failed: Gemini finish reason was blocked: MALFORMED_FUNCTION_CALL",
+      code: 1,
+    };
+    queued = [malformed, { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] }];
+    const events: AgentEvent[] = [];
+    const result = await new AxBackend(config).run({ prompt: "p", workspace, onEvent: (event) => void events.push(event) });
+    expect(result.status).toBe("completed");
+    expect(spawned).toHaveLength(2);
+    expect(events).toContainEqual({ type: "retry", reason: "malformed_function_call" });
+
+    spawned.length = 0;
+    queued = [{ ...malformed, lines: [{ sequence: 1, type: "tool.started", name: "file_write", operation_id: 1, effect: "durable" }, finished({ status: "failed", kind: "failure", code: "model_failed" }, 2)] }];
+    const wrote = await new AxBackend(config).run({ prompt: "p", workspace });
+    expect(wrote.status).toBe("failed");
+    expect(spawned).toHaveLength(1);
   });
 
   it("drops the broker binding when no bridge server runs", async () => {

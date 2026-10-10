@@ -57,6 +57,7 @@ type AxEvent = {
   type: string;
   name?: string;
   operation_id?: number;
+  effect?: string;
   observed_model?: string;
   provider?: string;
   error?: string;
@@ -117,7 +118,13 @@ export class AxBackend implements AgentBackend {
     const { onEvent, signal, backendState } = opts;
     if (signal?.aborted) return { finalText: "", status: "cancelled", backendState };
     try {
-      const out = await this.runOnce(opts);
+      let out = await this.runOnce(opts);
+      // Gemini sometimes repeats a malformed call past the harness resamples;
+      // a fresh run is safe when nothing reached the user and nothing was written.
+      if (out.error && out.retrySafe && out.error.includes("MALFORMED_FUNCTION_CALL") && !signal?.aborted) {
+        await onEvent?.({ type: "retry", reason: "malformed_function_call" });
+        out = await this.runOnce(opts);
+      }
       if (out.status === "cancelled" || signal?.aborted) return { finalText: "", status: "cancelled", backendState };
       const code = out.errorCode ? { errorCode: out.errorCode } : {};
       if (out.error) {
@@ -140,6 +147,7 @@ export class AxBackend implements AgentBackend {
     errorCode?: string;
     degraded?: boolean;
     timedOut?: boolean;
+    retrySafe?: boolean;
     status?: "cancelled";
   }> {
     if (!this.ax) throw new Error("Ax backend has no model configured. Set the primary provider in admin settings.");
@@ -199,7 +207,9 @@ export class AxBackend implements AgentBackend {
 
     let queue = Promise.resolve();
     let eventError: unknown;
+    let shownText = false;
     const emit = (event: AgentEvent) => {
+      if ((event.type === "message" || event.type === "interim") && event.content) shownText = true;
       if (!onEvent) return;
       queue = queue.then(() => onEvent(event)).catch((e) => {
         eventError ??= e;
@@ -255,6 +265,7 @@ export class AxBackend implements AgentBackend {
         return {
           finalText: "",
           errorCode: result.code ?? "empty_output",
+          retrySafe: !shownText && !mapper.wroteState,
           error: reason === "deadline_exceeded"
             ? `ax turn exceeded its ${Math.round(timeoutMs / 1000)}s budget and was terminated (OPENNEKO_AGENT_TURN_TIMEOUT_MS overrides)`
             : `ax run failed: ${reason}${tail ? `: ${tail}` : ""}`,
@@ -323,6 +334,8 @@ export class AxBackend implements AgentBackend {
     }
     if (opts.networkHosts?.length) env.OPENNEKO_HARNESS_WEB_HOSTS = opts.networkHosts.join(",");
     else delete env.OPENNEKO_HARNESS_WEB_HOSTS;
+    if (opts.debug) env.OPENNEKO_HARNESS_DEBUG = "1";
+    else delete env.OPENNEKO_HARNESS_DEBUG;
     if (opts.nativeDelegation === "disabled") delete env.OPENNEKO_HARNESS_CHILD_TOOLS;
     else env.OPENNEKO_HARNESS_CHILD_TOOLS = "*";
     return env;
@@ -338,6 +351,7 @@ export class AxEventMapper {
   private thoughtCount = 0;
   private observed?: AgentModelIdentity;
   private readonly renderCalls = new Set<number>();
+  wroteState = false;
 
   constructor(
     private readonly emit: (event: AgentEvent) => void,
@@ -374,6 +388,7 @@ export class AxEventMapper {
       case "tool.started": {
         this.flushThought();
         const id = event.operation_id ?? 0;
+        if (event.effect === "durable") this.wroteState = true;
         if (event.name === A2UI_RENDER_ACP_TITLE) {
           this.renderCalls.add(id);
           return;
