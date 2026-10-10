@@ -127,7 +127,7 @@ function costMeasurements(input: {
   };
 }
 
-const HEADLINE_PATTERN = /^([+-]?\d+(?:\.\d+)?)([kmb])?\s*([%x]?)$/iu;
+const HEADLINE_PATTERN = /^([+-]?\d+(?:\.\d+)?)(?:(thousand|million|billion)|([kmb])(?![a-z]))?(?:[%x]|[a-z]+)?$/iu;
 const RUNTIME_ENVIRONMENT_NAMES = [
   "XDG_CONFIG_HOME",
   "HERMES_HOME",
@@ -175,9 +175,10 @@ function parseHeadline(value: string): number | null {
   if (!match) return null;
   let number = Number.parseFloat(match[1] ?? "");
   if (!Number.isFinite(number)) return null;
-  if (match[2]?.toLowerCase() === "k") number *= 1_000;
-  if (match[2]?.toLowerCase() === "m") number *= 1_000_000;
-  if (match[2]?.toLowerCase() === "b") number *= 1_000_000_000;
+  const scale = (match[2] ?? match[3] ?? "").toLowerCase().charAt(0);
+  if (scale === "t" || scale === "k") number *= 1_000;
+  if (scale === "m") number *= 1_000_000;
+  if (scale === "b") number *= 1_000_000_000;
   return number;
 }
 

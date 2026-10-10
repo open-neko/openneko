@@ -87,6 +87,7 @@ describe("AdventureWorks eval adapter", () => {
         ...execution,
         output: {
           ...(execution.output as Record<string, unknown>),
+          headlineMetric: "100 orders",
           chartType: "line",
           chartData: [
             { d: "Q3", v: 20, t: 18 },
