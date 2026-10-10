@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -85,28 +86,40 @@ func TestInvalidToolSelectionEmitsMetadataWithoutDispatch(t *testing.T) {
 	}
 }
 
-func TestChildReadsRejectEffectsAndMissingTools(t *testing.T) {
+func TestChildToolsSkipPauseAndMissingTools(t *testing.T) {
 	read := Capability{Name: "catalog", Version: "1", Origin: "host", Effect: "read", Description: "Read catalog.", InputSchema: json.RawMessage(`{"type":"object"}`), Call: func(context.Context, json.RawMessage) (json.RawMessage, error) { return json.RawMessage(`{}`), nil }}
 	write := read
 	write.Name, write.Effect = "write", "durable"
-	for _, names := range [][]string{{"write"}, {"missing"}, {"catalog", "catalog"}} {
-		tools := Tools{Capabilities: []Capability{read, write}, ChildReads: names}
+	for _, names := range [][]string{{"catalog", "catalog"}} {
+		tools := Tools{Capabilities: []Capability{read, write}, ChildTools: names}
 		admitted, err := tools.admitted()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := tools.childReads(admitted); err == nil {
+		if _, err := tools.childTools(admitted); err == nil {
 			t.Fatalf("accepted child authority %v", names)
 		}
 	}
-	tools := Tools{Capabilities: []Capability{read, write}, ChildReads: []string{"catalog"}}
-	admitted, err := tools.admitted()
-	if err != nil {
-		t.Fatal(err)
-	}
-	child, err := tools.childReads(admitted)
-	if err != nil || len(child) != 1 || child[0].Name != "catalog" {
-		t.Fatalf("child=%v err=%v", child, err)
+	ask := read
+	ask.Name, ask.Effect = "ask", "pause"
+	for _, tc := range []struct {
+		names []string
+		want  string
+	}{{[]string{"missing", "write", "ask", "catalog"}, "catalog,write"}, {[]string{"*"}, "catalog,write"}} {
+		tools := Tools{Capabilities: []Capability{read, write, ask}, ChildTools: tc.names}
+		admitted, err := tools.admitted()
+		if err != nil {
+			t.Fatal(err)
+		}
+		child, err := tools.childTools(admitted)
+		var names []string
+		for _, capability := range child {
+			names = append(names, capability.Name)
+		}
+		sort.Strings(names)
+		if err != nil || strings.Join(names, ",") != tc.want {
+			t.Fatalf("%v: child=%v err=%v", tc.names, names, err)
+		}
 	}
 }
 

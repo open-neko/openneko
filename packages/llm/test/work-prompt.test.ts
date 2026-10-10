@@ -435,6 +435,13 @@ describe("buildWorkPrompt native delegation guidance", () => {
     expect(prompt).not.toContain("coder");
   });
 
+  it("gives Ax its worker child instead of delegate_task", () => {
+    const prompt = build("ax");
+    expect(prompt).toContain("<delegation>");
+    expect(prompt).toContain("team.worker({task})");
+    expect(prompt).not.toContain("delegate_task");
+  });
+
   it("omits native delegation guidance when the run disables it", () => {
     const prompt = build("hermes", { supportsNativeDelegation: false });
     expect(prompt).not.toContain("<delegation>");

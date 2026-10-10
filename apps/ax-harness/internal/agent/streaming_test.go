@@ -104,15 +104,36 @@ func (s failedStream) Close() error    { return nil }
 
 type malformedStreamClient struct {
 	ax.AIClient
-	opens int
+	opens    int
+	failures int
 }
 
 func (c *malformedStreamClient) StreamEvents(context.Context, map[string]ax.Value, map[string]ax.Value) (ax.AxChatStream, error) {
 	c.opens++
-	if c.opens == 1 {
+	if c.opens <= max(c.failures, 1) {
 		return failedStream{err: fmt.Errorf("Gemini finish reason was blocked: MALFORMED_FUNCTION_CALL")}, nil
 	}
 	return &valueStream{values: []ax.Value{ax.Object("results", ax.Array())}}, nil
+}
+
+func TestMalformedStreamIsResampledUpToTheLimit(t *testing.T) {
+	for _, tc := range []struct {
+		failures  int
+		recovered bool
+	}{{maxResamples, true}, {maxResamples + 1, false}} {
+		inner := &malformedStreamClient{failures: tc.failures}
+		client := &streamingModeClient{AIClient: inner, enabled: true}
+		stream, err := client.StreamEvents(context.Background(), ax.Object(), ax.Object())
+		if err != nil {
+			t.Fatalf("StreamEvents() error = %v", err)
+		}
+		if stream.Next() != tc.recovered {
+			t.Fatalf("failures=%d: recovered = %v, want %v", tc.failures, !tc.recovered, tc.recovered)
+		}
+		if inner.opens != maxResamples+1 && !tc.recovered || tc.recovered && inner.opens != tc.failures+1 {
+			t.Fatalf("failures=%d: opens = %d", tc.failures, inner.opens)
+		}
+	}
 }
 
 func TestMalformedStreamIsOpenedAgainBeforeAnyChunk(t *testing.T) {

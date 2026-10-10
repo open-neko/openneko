@@ -39,6 +39,7 @@ export function stubMetricAgentResult(
     mood: "watch",
     chartType: "kpi",
     chartData: [{ d: "value", v: 1_000_000, t: 950_000 }],
+    baselineValue: 950_000,
     timeWindow: {
       grain: "year",
       start: "2024-04-01",

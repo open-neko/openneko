@@ -57,7 +57,7 @@ Environment overrides:
   OPENNEKO_EVAL_AGENT_IMAGE                    default openneko-agent:eval
   OPENNEKO_EVAL_ADVENTUREWORKS_DATABASE_URL   full oracle URL override
 
-Hermes configs declare their credential as env:NAME. That variable must be
+Hermes and Ax configs declare their credential as env:NAME. That variable must be
 non-empty before this script starts. Credentials are never written to eval
 artifacts or forwarded directly into the agent container.
 EOF
@@ -198,21 +198,21 @@ esac
 }
 
 requires_agent=0
-if grep -Eq '^[[:space:]]*backend:[[:space:]]*hermes([[:space:]#]|$)' "$config_path"; then
+if grep -Eq '^[[:space:]]*backend:[[:space:]]*(hermes|ax)([[:space:]#]|$)' "$config_path"; then
   requires_agent=1
   credential_env=$(sed -n \
     's/^[[:space:]]*credential_ref:[[:space:]]*env:\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*$/\1/p' \
     "$config_path" | head -n 1)
   [ -n "$credential_env" ] || {
-    echo "Hermes config must declare credential_ref: env:NAME" >&2
+    echo "agent config must declare credential_ref: env:NAME" >&2
     exit 2
   }
   if ! printenv "$credential_env" | grep -q .; then
-    echo "required Hermes credential is not set: $credential_env" >&2
+    echo "required agent credential is not set: $credential_env" >&2
     exit 2
   fi
   command -v openshell >/dev/null 2>&1 || {
-    echo "openshell is required for a Hermes eval" >&2
+    echo "openshell is required for an agent eval" >&2
     exit 2
   }
   openshell status >/dev/null 2>&1 || {

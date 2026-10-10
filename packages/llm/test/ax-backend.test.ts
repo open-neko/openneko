@@ -140,6 +140,15 @@ describe("AxBackend", () => {
     });
   });
 
+  it("admits the child agent unless the run disables delegation", async () => {
+    script = { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] };
+    await new AxBackend(config).run({ prompt: "p", workspace });
+    expect(spawned[0].env.OPENNEKO_HARNESS_CHILD_TOOLS).toBe("*");
+    script = { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] };
+    await new AxBackend(config).run({ prompt: "p", workspace, nativeDelegation: "disabled" });
+    expect(spawned[1].env.OPENNEKO_HARNESS_CHILD_TOOLS).toBeUndefined();
+  });
+
   it("drops the broker binding when no bridge server runs", async () => {
     vi.stubEnv("OPENNEKO_BROKER_TOKEN", "broker-secret");
     script = { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] };

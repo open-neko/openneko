@@ -14,7 +14,7 @@ import (
 // Tools are host-installed capabilities for one run.
 type Tools struct {
 	Capabilities []Capability
-	ChildReads   []string // Exact host-admitted read tools for one owned child agent.
+	ChildTools   []string // Host-admitted tools for one owned child agent; "*" admits all. Absent names and pause tools are skipped.
 	Skills       []Skill  // Host-staged skill guides for the Ax skills catalog.
 }
 
@@ -100,30 +100,27 @@ func (t Tools) admitted() ([]admittedTool, error) {
 	return admitted, nil
 }
 
-func (t Tools) childReads(admitted []admittedTool) ([]admittedTool, error) {
-	if len(t.ChildReads) > 8 {
-		return nil, fmt.Errorf("too many child capabilities")
-	}
-	wanted := make(map[string]bool, len(t.ChildReads))
-	for _, name := range t.ChildReads {
+// childTools returns the parent's tools the child may call. Only the parent
+// turn can pause for the user, so pause tools stay with the parent.
+func (t Tools) childTools(admitted []admittedTool) ([]admittedTool, error) {
+	all := len(t.ChildTools) == 1 && t.ChildTools[0] == "*"
+	wanted := make(map[string]bool, len(t.ChildTools))
+	for _, name := range t.ChildTools {
+		if all {
+			break
+		}
 		if !ValidToolName(name) || wanted[name] {
 			return nil, fmt.Errorf("invalid child capability")
 		}
 		wanted[name] = true
 	}
-	child := make([]admittedTool, 0, len(wanted))
+	child := make([]admittedTool, 0, len(admitted))
 	for _, capability := range admitted {
-		if !wanted[capability.Name] {
+		if (!all && !wanted[capability.Name]) || capability.Effect == "pause" {
 			continue
-		}
-		if capability.Effect != "read" {
-			return nil, fmt.Errorf("child capability must be read-only")
 		}
 		child = append(child, capability)
 		delete(wanted, capability.Name)
-	}
-	if len(wanted) != 0 {
-		return nil, fmt.Errorf("child capability unavailable")
 	}
 	return child, nil
 }

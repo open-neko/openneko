@@ -67,12 +67,15 @@ func (c *streamingModeClient) Chat(ctx context.Context, request, options map[str
 	return response, c.record(err)
 }
 
-// chat retries once when the model call failed without effect: a malformed
-// Gemini function call, a dropped connection, or another retryable error.
+// maxResamples bounds new samples after a model call failed without effect:
+// a malformed Gemini function call or a dropped connection. One resample was
+// not enough in the V4 eval.
+const maxResamples = 3
+
 func (c *streamingModeClient) chat(ctx context.Context, request, options map[string]ax.Value) (ax.Value, error) {
 	response, err := c.AIClient.Chat(ctx, request, options)
-	if err != nil && ctx.Err() == nil && resampleable(err) {
-		return c.AIClient.Chat(ctx, request, options)
+	for attempt := 0; attempt < maxResamples && err != nil && ctx.Err() == nil && resampleable(err); attempt++ {
+		response, err = c.AIClient.Chat(ctx, request, options)
 	}
 	return response, err
 }
@@ -105,7 +108,7 @@ func (c *streamingModeClient) StreamEvents(ctx context.Context, request, options
 		// Structured stage output is never shown live, so read it whole and
 		// sample again when it fails, even after partial content.
 		values, err := drain(open)
-		if err != nil && ctx.Err() == nil && resampleable(err) {
+		for attempt := 0; attempt < maxResamples && err != nil && ctx.Err() == nil && resampleable(err); attempt++ {
 			values, err = drain(open)
 		}
 		if err != nil {
@@ -138,10 +141,10 @@ func drain(open func() (ax.AxChatStream, error)) ([]ax.Value, error) {
 // Thought chunks only feed progress, so repeating them is harmless.
 type malformedRetryStream struct {
 	ax.AxChatStream
-	ctx     context.Context
-	open    func() (ax.AxChatStream, error)
-	yielded bool
-	retried bool
+	ctx       context.Context
+	open      func() (ax.AxChatStream, error)
+	yielded   bool
+	resamples int
 }
 
 func (s *malformedRetryStream) Next() bool {
@@ -150,10 +153,10 @@ func (s *malformedRetryStream) Next() bool {
 		return true
 	}
 	err := s.AxChatStream.Err()
-	if s.yielded || s.retried || err == nil || s.ctx.Err() != nil || !resampleable(err) {
+	if s.yielded || s.resamples >= maxResamples || err == nil || s.ctx.Err() != nil || !resampleable(err) {
 		return false
 	}
-	s.retried = true
+	s.resamples++
 	next, openErr := s.open()
 	if openErr != nil {
 		return false

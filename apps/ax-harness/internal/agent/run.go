@@ -164,7 +164,7 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 	if err != nil {
 		return Result{}, err
 	}
-	childReads, err := tools.childReads(admitted)
+	childTools, err := tools.childTools(admitted)
 	if err != nil {
 		return Result{}, err
 	}
@@ -200,8 +200,8 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 		events.providers = routed.Providers
 	}
 	events.send(Event{Type: "run.started"})
-	if len(childReads) > 0 {
-		events.send(Event{Type: "child.admitted", Name: "team.researcher"})
+	if len(childTools) > 0 {
+		events.send(Event{Type: "child.admitted", Name: "team.worker"})
 	}
 	result := Result{Status: "failed", Kind: "failure", Code: "model_failed"}
 	if spec.promptTooLarge() {
@@ -370,10 +370,10 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 			})
 		}
 		engine := ax.NewAgent("question:string -> answer:string", engineOptions)
-		if len(childReads) > 0 {
+		if len(childTools) > 0 {
 			childRuntime := &handoffRuntime{Runtime: axgoja.NewRuntime(runtimePolicy())}
-			childInstruction := "Investigate only the assigned question. Return concise evidence with uncertainty. Do not claim action or tool access beyond the listed read functions."
-			for _, capability := range childReads {
+			childInstruction := "Do only the assigned task. Return a concise result with its evidence and uncertainty, and list every change you made."
+			for _, capability := range childTools {
 				register(childRuntime, capability, childView)
 				childInstruction += capability.promptDescriptor(false)
 			}
@@ -381,7 +381,7 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 			childOptions := ax.Object("runtime", childRuntime, "instruction", childInstruction, "directResponse", "off", "max_actor_steps", spec.ChildSteps(), "validationRetries", 0, "infraRetries", 0,
 				"contextPolicy", ax.Object("preset", "checkpointed", "budget", "balanced"))
 			modelOptions(childOptions, routed, spec.ReasoningEffort)
-			engine.AddChildAgent("team", "researcher", ax.NewAgent("question:string -> answer:string", childOptions))
+			engine.AddChildAgent("team", "worker", ax.NewAgent("task:string -> answer:string", childOptions))
 		}
 		anchoredClient := &contextAnchorClient{AIClient: attemptClient, request: spec.Prompt}
 		if routed != nil {
@@ -800,7 +800,7 @@ func (r *recorder) StartSpan(s ax.AxSpanStart) ax.AxSpan {
 	r.send(Event{Type: "span.started", SpanID: id, ParentID: parent, Name: s.Name})
 	child := s.Name == "ax_gen_agent_forward" && parent != 0
 	if child {
-		r.send(Event{Type: "child.started", SpanID: id, ParentID: parent, Name: "team.researcher"})
+		r.send(Event{Type: "child.started", SpanID: id, ParentID: parent, Name: "team.worker"})
 	}
 	return &span{r: r, id: id, start: time.Now(), child: child, parent: parent}
 }
@@ -824,7 +824,7 @@ func (s *span) End() {
 	s.once.Do(func() {
 		duration := time.Since(s.start).Milliseconds()
 		if s.child {
-			s.r.send(Event{Type: "child.finished", SpanID: s.id, ParentID: s.parent, Name: "team.researcher", DurationMS: duration})
+			s.r.send(Event{Type: "child.finished", SpanID: s.id, ParentID: s.parent, Name: "team.worker", DurationMS: duration})
 		}
 		s.r.send(Event{Type: "span.finished", SpanID: s.id, DurationMS: duration})
 	})

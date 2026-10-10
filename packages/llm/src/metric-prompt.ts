@@ -100,6 +100,7 @@ Respond with ONE JSON object, exactly this shape, no prose:
   "mood": "good | watch | bad",
   "chartType": "kpi | line | bar | donut | area",
   "chartData": [{ "d": "string label", "v": 0, "t": 0 }],
+  "baselineValue": 0,
   "timeWindow": {
     "grain": "day | week | month | quarter | year | all_time | snapshot",
     "start": "yyyy-mm-dd or null (only when grain='all_time')",
@@ -116,6 +117,9 @@ Rules for the JSON:
   items.
 - All numbers in chartData.v and chartData.t must be plain numbers (not
   strings, no units).
+- baselineValue is the comparison-period value of the headline metric, as a
+  full plain number on the same scale as chartData: 29983688.69, never 29.98
+  for $29.98M. Use null only when no comparison exists.
 - timeWindow.grain must be one of the listed enum values, lowercase.
 - timeWindow.start and timeWindow.end must be ISO yyyy-mm-dd strings (or
   null only when grain='all_time'). They must match the date filter the

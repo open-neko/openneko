@@ -127,7 +127,7 @@ function costMeasurements(input: {
   };
 }
 
-const HEADLINE_PATTERN = /^([+-]?\d+(?:\.\d+)?)([kmb])?\s*([%x]?)$/iu;
+const HEADLINE_PATTERN = /^([+-]?\d+(?:\.\d+)?)\s*(?:(thousand|million|billion)\b|([kmb])\b)?\s*(?:[%x]|[a-z][a-z\s]*)?$/iu;
 const RUNTIME_ENVIRONMENT_NAMES = [
   "XDG_CONFIG_HOME",
   "HERMES_HOME",
@@ -171,13 +171,14 @@ function agentFailure(cause: unknown, wallDurationMs: number, diagnostics?: Metr
 }
 
 function parseHeadline(value: string): number | null {
-  const match = value.replace(/[\s$,]/gu, "").trim().match(HEADLINE_PATTERN);
+  const match = value.replace(/[$,]/gu, "").trim().match(HEADLINE_PATTERN);
   if (!match) return null;
   let number = Number.parseFloat(match[1] ?? "");
   if (!Number.isFinite(number)) return null;
-  if (match[2]?.toLowerCase() === "k") number *= 1_000;
-  if (match[2]?.toLowerCase() === "m") number *= 1_000_000;
-  if (match[2]?.toLowerCase() === "b") number *= 1_000_000_000;
+  const scale = (match[2] ?? match[3] ?? "").toLowerCase().charAt(0);
+  if (scale === "t" || scale === "k") number *= 1_000;
+  if (scale === "m") number *= 1_000_000;
+  if (scale === "b") number *= 1_000_000_000;
   return number;
 }
 
@@ -357,7 +358,7 @@ export function createAdventureWorksMetricDriver(context: {
       definition: {
         classification: "natural question to card metadata via production classifier",
         numeric: "relative error against host SQL",
-        baseline: "prior-period chart target relative error against host SQL",
+        baseline: "baselineValue (else the first chart target) relative error against host SQL",
         timeWindow: "exact grain/start/end",
         contract: "OpenNeko metric result contract",
       },
@@ -735,7 +736,7 @@ export function createAdventureWorksMetricDriver(context: {
         }
         if (assertion.kind === "numeric.baseline-relative-error") {
           const tolerance = Number(assertion.params?.max_relative_error ?? 0.01);
-          const actual = output.chartData[0]?.t;
+          const actual = output.baselineValue ?? output.chartData[0]?.t;
           const relativeError =
             actual == null
               ? Number.POSITIVE_INFINITY
@@ -811,7 +812,7 @@ export function createAdventureWorksMetricDriver(context: {
         scorerDefinition: {
           classification: "natural question to card metadata via production classifier",
           numeric: "relative error against host SQL",
-          baseline: "prior-period chart target relative error against host SQL",
+          baseline: "baselineValue (else the first chart target) relative error against host SQL",
           timeWindow: "exact grain/start/end",
           contract: "OpenNeko metric result contract",
         },

@@ -102,7 +102,7 @@ export function normalizeAxUsage(usage: AxUsage | undefined): AgentTokenUsage {
 
 export class AxBackend implements AgentBackend {
   readonly id = "ax" as const;
-  readonly capabilities = { mcpTools: true, sessionResume: false } as const;
+  readonly capabilities = { mcpTools: true, sessionResume: false, nativeDelegation: "ax-worker" } as const;
   readonly configuredIdentity?: AgentModelIdentity;
   readonly model?: string;
 
@@ -323,7 +323,8 @@ export class AxBackend implements AgentBackend {
     }
     if (opts.networkHosts?.length) env.OPENNEKO_HARNESS_WEB_HOSTS = opts.networkHosts.join(",");
     else delete env.OPENNEKO_HARNESS_WEB_HOSTS;
-    delete env.OPENNEKO_HARNESS_CHILD_READS;
+    if (opts.nativeDelegation === "disabled") delete env.OPENNEKO_HARNESS_CHILD_TOOLS;
+    else env.OPENNEKO_HARNESS_CHILD_TOOLS = "*";
     return env;
   }
 }
