@@ -111,7 +111,8 @@ describe("buildWorkPrompt GraphJin agent path", () => {
     expect(agent).toContain("`mcp_neko_graphjin_agent_ask`");
     expect(agent).not.toMatch(/mcp_neko_graphjin_(execute_graphql|query_catalog|validate_where_clause)/);
     expect(agent).not.toContain(knowledge.syntax);
-    expect(agent).not.toContain("- Knowledge:");
+    expect(agent).toContain("- Knowledge:");
+    expect(agent).toContain("Write each instruction as a precise data request.");
     expect(agent).not.toMatch(/hidden|not available/i);
   });
 

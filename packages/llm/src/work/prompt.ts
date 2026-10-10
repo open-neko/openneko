@@ -599,14 +599,13 @@ ${creationGuidance}
 function buildWorkspaceSection(
   workspace: AgentWorkspace,
   shellTool: string,
-  knowledgePack = true,
 ): string {
   return `<workspace>
 Your cwd is ${workspace.orgRoot}. Shared directories:
 
 - Skills: ${workspace.skillsRoot}
-- Memory: ${workspace.memoryRoot}${knowledgePack ? `
-- Knowledge: ${workspace.knowledgeRoot}` : ""}
+- Memory: ${workspace.memoryRoot}
+- Knowledge: ${workspace.knowledgeRoot}
 - Team library (approved knowledge from uploaded documents, OKF
   markdown): ${workspace.orgRoot}/library/okf — when present, start at
   its index.md and follow links; each concept's frontmatter cites the
@@ -940,7 +939,7 @@ that flags churn risk every Monday."
             knowledge,
             inlineKnowledge: "syntax",
           }),
-    buildWorkspaceSection(workspace, shellTool, graphjinDataPath === "direct"),
+    buildWorkspaceSection(workspace, shellTool),
     dataSurface === "customer"
       ? buildPluginActionsSection(pluginActions ?? [], !supportsCardTool)
       : "",

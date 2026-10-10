@@ -27,6 +27,8 @@ export const GRAPHJIN_AGENT_KEY_ENV = "OPENNEKO_GRAPHJIN_AGENT_API_KEY";
 export const GRAPHJIN_AGENT_KEY_FILE = ".openneko-graphjin-agent-key";
 /** Under the 180s OpenNeko waits for an answer, so GraphJin reports its own timeout. */
 export const GRAPHJIN_AGENT_TIMEOUT_SECONDS = 170;
+/** Each step is one quick catalog or query call; high effort made steps 3x slower. */
+export const GRAPHJIN_AGENT_REASONING = "low";
 
 export type GraphjinAgentModel = {
   provider: string;
@@ -108,10 +110,11 @@ export function patchGraphjinAgentBlock(
     read_only: true,
     max_steps: GRAPHJIN_AGENT_MAX_STEPS,
     timeout_seconds: GRAPHJIN_AGENT_TIMEOUT_SECONDS,
+    reasoning: GRAPHJIN_AGENT_REASONING,
   };
   if (model.baseUrl) next.base_url = model.baseUrl;
   else delete next.base_url;
-  const changed = ["enabled", "provider", "model", "base_url", "api_key_env", "read_only", "max_steps", "timeout_seconds"].some((key) => current[key] !== next[key]);
+  const changed = ["enabled", "provider", "model", "base_url", "api_key_env", "read_only", "max_steps", "timeout_seconds", "reasoning"].some((key) => current[key] !== next[key]);
   if (!changed) return { content: yamlText, changed: false, restart: false };
   document.set("agent", document.createNode(next));
   return { content: document.toString(), changed: true, restart: true };

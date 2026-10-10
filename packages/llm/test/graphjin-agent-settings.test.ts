@@ -43,6 +43,7 @@ describe("GraphJin agent settings", () => {
       read_only: true,
       max_steps: 12,
       timeout_seconds: 170,
+      reasoning: "low",
     });
     expect(agent.base_url).toBeUndefined();
     expect(parse(provider.content).mcp).toEqual({ include_tools_with_agent: true });
