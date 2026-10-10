@@ -42,6 +42,7 @@ describe("GraphJin agent settings", () => {
       api_key_env: "OPENNEKO_GRAPHJIN_AGENT_API_KEY",
       read_only: true,
       max_steps: 8,
+      timeout_seconds: 170,
     });
     expect(agent.base_url).toBeUndefined();
     expect(parse(provider.content).mcp).toEqual({ include_tools_with_agent: true });

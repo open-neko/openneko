@@ -37,6 +37,9 @@ import {
 } from "@neko/llm/sandbox-runtime";
 import { BrokerControlPlane, postAgentEvents } from "./broker-client";
 
+// The broker waits up to 180s for GraphJin tools such as the GraphJin agent.
+const TOOL_CALL_TIMEOUT_MS = 180_000;
+
 /**
  * Stdio MCP server for ACP backends (hermes). The agent process can't hand
  * its in-process SDK server instances across a process boundary, so hermes'
@@ -296,10 +299,11 @@ export async function buildMultiplexedBridgeServer(
       route = routes.get(request.params.name);
     }
     if (!route) throw new Error(`mcp-bridge: unknown tool ${request.params.name}`);
-    return route.client.callTool({
-      name: route.originalToolName,
-      arguments: request.params.arguments,
-    });
+    return route.client.callTool(
+      { name: route.originalToolName, arguments: request.params.arguments },
+      undefined,
+      { timeout: TOOL_CALL_TIMEOUT_MS },
+    );
   });
   return { instance };
 }
