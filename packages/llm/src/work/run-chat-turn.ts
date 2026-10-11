@@ -45,6 +45,7 @@ import {
   getSoloSandboxUser,
 } from "./personas";
 import { buildWorkPrompt } from "./prompt";
+import { getThreadBot } from "./bot";
 import { compactIfNeeded, type ThreadCompaction } from "./compact-transcript";
 import { discoverRunArtifacts } from "./artifacts";
 import {
@@ -137,6 +138,7 @@ export type RunChatTurnDeps = {
   formatWorkMemoryPromptContext: typeof defaultFormatWorkMemoryPromptContext;
   prefetchKnowledgeForOrg: typeof defaultPrefetchKnowledgeForOrg;
   listInstalledSkills: typeof defaultListInstalledSkills;
+  getThreadBot: typeof getThreadBot;
   /**
    * Runs the agent loop. Production hosts inject the OpenShell sandbox
    * impl (agentRuntimeDepsFromConfig) — SEC9: the only runtime. The default
@@ -278,6 +280,9 @@ async function runChatTurnTraced(
   const dataSurface: WorkDataSurface = appContext || recordContext
     ? "records"
     : "customer";
+  const threadBot = dataSurface === "customer" && (opts.channel ?? "web") === "web"
+    ? await startupPhase("bot.load", () => (deps.getThreadBot ?? getThreadBot)(orgId, threadId))
+    : null;
 
   const backend = await startupPhase("config.backend", () => resolveAgentBackend(orgId));
   const workspace = await startupPhase("workspace.prepare", () => ensureWorkWorkspace(orgId, threadId, runId));
@@ -415,6 +420,7 @@ async function runChatTurnTraced(
     const supportsPolicyTool = customerSurface && backend.capabilities.mcpTools;
     const supportsPluginManagerTool =
       customerSurface && backend.capabilities.mcpTools;
+    const supportsBotTool = Boolean(threadBot) && backend.capabilities.mcpTools;
     const sourceConfigSettings = dataSurface === "customer"
       ? await startupPhase("config.graphjin", () => getGraphjinConfigSettingsForOrg(orgId))
       : { sourceConfigEnabled: false };
@@ -542,6 +548,7 @@ async function runChatTurnTraced(
       graphjinDataPath,
       ...(appContext ? { appContext } : {}),
       ...(recordContext ? { recordContext } : {}),
+      ...(threadBot ? { bot: threadBot, supportsBotTool } : {}),
     });
 
     await eventTelemetry.startAgent({
@@ -572,6 +579,7 @@ async function runChatTurnTraced(
       pluginActions: customerSurface ? heldPluginActions : [],
       packActions: customerSurface ? heldPackActions : [],
       sourceConfigEnabled: supportsSourceConfigTool,
+      botEnabled: supportsBotTool,
       dataSurface,
       ...(opts.graphjinToolPolicy
         ? { graphjinToolPolicy: opts.graphjinToolPolicy }

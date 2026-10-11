@@ -32,6 +32,7 @@ export {
   buildSourceConfigManagerServer,
   buildUserManagerServer,
   buildWorkMemoryServer,
+  buildBotServer,
   type PluginActionDescriptor,
   type PackActionDescriptor,
 } from "./work/tools";

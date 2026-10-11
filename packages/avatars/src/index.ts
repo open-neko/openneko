@@ -5,7 +5,7 @@ export type { SvgComponents, CreateElement } from './render';
 export type { Coat } from './colors';
 export { buildNeko, motionSeed, nekoStates, nekoStyles } from './build';
 export { NekoMotion, restFrame } from './motion';
-export { assignNekoColors, defaultNekoColors, hash, nekoCoats, nekoColors, nekoEyes, nekoLeds } from './colors';
+export { assignNekoColors, defaultNekoColors, hash, nekoCoats, nekoColors, nekoColorsFor, nekoEyes, nekoLeds, nekoPatterns } from './colors';
 export { renderScene } from './render';
 export { toSvg } from './svg';
 export { subscribe } from './ticker';

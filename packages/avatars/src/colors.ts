@@ -44,10 +44,12 @@ export const defaultNekoColors: NekoColors = {
   eye: '#f2c94c',
 };
 
-function fromHash(h: number, coatIndex = h % nekoCoats.length): NekoColors {
+export const nekoPatterns: NekoPattern[] = patterns;
+
+function fromHash(h: number, coatIndex = h % nekoCoats.length, chosen?: NekoPattern): NekoColors {
   const pick = <T>(list: T[], i: number): T => list[i % list.length] as T;
   const c = pick(nekoCoats, coatIndex);
-  const pattern = pick(patterns, h >>> 8);
+  const pattern = chosen ?? pick(patterns, h >>> 8);
   return {
     coat: c.coat,
     pattern,
@@ -61,6 +63,13 @@ function fromHash(h: number, coatIndex = h % nekoCoats.length): NekoColors {
 export function nekoColors(seed?: string | number, overrides?: Partial<NekoColors>): NekoColors {
   const base = seed === undefined || seed === '' ? defaultNekoColors : fromHash(hash(String(seed)));
   return { ...base, ...overrides };
+}
+
+/** The colours for a bot whose owner chose its coat and pattern. The seed sets the rest. */
+export function nekoColorsFor(seed: string, coat: string, pattern: NekoPattern): NekoColors {
+  const index = nekoCoats.findIndex((c) => c.name === coat);
+  const h = hash(seed);
+  return fromHash(h, index >= 0 ? index : undefined, pattern);
 }
 
 /**

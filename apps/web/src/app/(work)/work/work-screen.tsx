@@ -24,7 +24,12 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import {
+  useParams,
+  usePathname,
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
 
 // Matches paths to agent-generated/uploaded files inside the per-org workspace.
 // Two shapes:
@@ -105,6 +110,7 @@ import {
 } from "@/lib/linkify-workspace-paths";
 import BriefingCard from "@/components/BriefingCard";
 import WorkHistoryDrawer from "@/components/WorkHistoryDrawer";
+import BotGreeting from "@/components/chat/BotGreeting";
 import {
   ActionRequestCard,
   RuleSavedCard,
@@ -361,6 +367,7 @@ export default function WorkScreen() {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
+  const threadBase = usePathname()?.startsWith("/chat/") ? "/chat/t" : "/work";
   const routeThreadId =
     typeof params?.threadId === "string" ? params.threadId : null;
   const {
@@ -660,7 +667,7 @@ export default function WorkScreen() {
       eventsByRun: {},
     });
     setPendingMemories([]);
-    router.replace(`/work/${nextId}`);
+    router.replace(`${threadBase}/${nextId}`);
     return nextId;
   }
 
@@ -1266,6 +1273,7 @@ export default function WorkScreen() {
 
   return (
     <div className="work-command-surface">
+      {threadBase === "/work" || bundle?.messages.length ? (
       <header className="work-command-head">
         <div className="work-command-copy">
           {workPhase !== "prompt" ? (
@@ -1300,6 +1308,7 @@ export default function WorkScreen() {
               <span>Save as PDF</span>
             </Button>
           ) : null}
+          {threadBase === "/work" ? (
           <Button
             variant="secondary"
             className="work-command-action"
@@ -1310,11 +1319,12 @@ export default function WorkScreen() {
             <History aria-hidden="true" strokeWidth={1.9} />
             <span>History</span>
           </Button>
-          {activeThreadId || bundle?.messages.length ? (
+          ) : null}
+          {threadBase === "/work" && (activeThreadId || bundle?.messages.length) ? (
             <Button
               variant="primary"
               className="work-command-action is-primary"
-              onClick={() => router.push("/work")}
+              onClick={() => router.push(threadBase)}
             >
               <Plus aria-hidden="true" strokeWidth={2} />
               <span>New question</span>
@@ -1322,6 +1332,7 @@ export default function WorkScreen() {
           ) : null}
         </div>
       </header>
+      ) : null}
 
       <WorkHistoryDrawer
         open={historyOpen}
@@ -1343,6 +1354,8 @@ export default function WorkScreen() {
             <span />
             Loading the work trace
           </div>
+        ) : !bundle?.messages.length && threadBase !== "/work" ? (
+          <BotGreeting threadId={routeThreadId} onPick={(text) => void sendText(text)} />
         ) : !bundle?.messages.length ? (
           <EmptyAsk
             onPick={(text) => {

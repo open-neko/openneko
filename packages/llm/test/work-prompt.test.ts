@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentWorkspace } from "../src/agent-backend";
 import type { KnowledgePackContents } from "../src/knowledge-pack";
 import type { PluginCatalog } from "../src/work/control-plane";
-import { buildWorkPrompt } from "../src/work/prompt";
+import { buildBotSection, buildWorkPrompt } from "../src/work/prompt";
 import { VALUE_ESTIMATE_INSTRUCTIONS } from "../src/prompts/sections";
 
 const workspace: AgentWorkspace = {
@@ -446,5 +446,24 @@ describe("buildWorkPrompt native delegation guidance", () => {
     const prompt = build("hermes", { supportsNativeDelegation: false });
     expect(prompt).not.toContain("<delegation>");
     expect(prompt).not.toContain("delegate_task");
+  });
+});
+
+describe("buildBotSection", () => {
+  it("names the bot and follows its own instructions", () => {
+    const section = buildBotSection({ name: "Stock watcher", instructions: "Watches stock levels." }, true);
+    expect(section).toContain('"Stock watcher"');
+    expect(section).toContain("Watches stock levels.");
+    expect(section).toContain("mcp_neko_bot_update_instructions");
+  });
+
+  it("describes the instructions tool only when it is mounted", () => {
+    const section = buildBotSection({ name: "Test", instructions: "" }, false);
+    expect(section).toContain("no job description yet");
+    expect(section).not.toContain("mcp_neko_bot_");
+  });
+
+  it("leaves the prompt without a bot section for an ordinary chat", () => {
+    expect(build("hermes")).not.toContain("<bot>");
   });
 });
