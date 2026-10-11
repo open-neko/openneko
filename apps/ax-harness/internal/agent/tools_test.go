@@ -274,3 +274,43 @@ func TestGraphQLErrorsReachTheModelAndRepeatsStop(t *testing.T) {
 		t.Fatalf("failures did not reach the model")
 	}
 }
+
+func TestToolFailureReadsShellExitCode(t *testing.T) {
+	failed, message := toolFailure(json.RawMessage(`{"exit_code":1,"output":"  File \"<string>\", line 1\nSyntaxError: unexpected character after line continuation character\n","timed_out":false,"truncated":false}`))
+	if !failed || !strings.Contains(message, "exited 1") || !strings.Contains(message, "SyntaxError") {
+		t.Fatalf("non-zero exit = %v %q, want a failure that names the error", failed, message)
+	}
+	if failed, _ := toolFailure(json.RawMessage(`{"exit_code":0,"output":"ok","timed_out":false}`)); failed {
+		t.Fatal("exit code 0 counted as a failure")
+	}
+	if failed, _ := toolFailure(json.RawMessage(`{"exit_code":-1,"output":"","timed_out":true}`)); !failed {
+		t.Fatal("a timed-out command did not count as a failure")
+	}
+	if failed, _ := toolFailure(json.RawMessage(`{"data":{"rows":[]}}`)); failed {
+		t.Fatal("a result without an exit code counted as a failure")
+	}
+}
+
+func TestSearchSkillsRanksByNameThenDescription(t *testing.T) {
+	skills := []Skill{
+		{Name: "xlsx", Description: "Use this skill any time a spreadsheet file is the primary input or output"},
+		{Name: "docx", Description: "Create and edit Word documents"},
+		{Name: "excel-author", Description: "Build auditable Excel workbooks headless with openpyxl"},
+	}
+	names := func(found []Skill) string {
+		out := make([]string, len(found))
+		for i, s := range found {
+			out[i] = s.Name
+		}
+		return strings.Join(out, ",")
+	}
+	if got := names(searchSkills(skills, []ax.Value{"xlsx"})); !strings.HasPrefix(got, "xlsx") {
+		t.Fatalf("exact name search = %q", got)
+	}
+	if got := names(searchSkills(skills, []ax.Value{"make a spreadsheet file in Excel"})); !strings.Contains(got, "xlsx") || !strings.Contains(got, "excel-author") || strings.Contains(got, "docx") {
+		t.Fatalf("description search = %q", got)
+	}
+	if got := names(searchSkills(skills, []ax.Value{"weather"})); got != "" {
+		t.Fatalf("unrelated search = %q", got)
+	}
+}

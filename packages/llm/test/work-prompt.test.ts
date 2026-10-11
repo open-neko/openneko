@@ -26,7 +26,7 @@ const knowledge: KnowledgePackContents = {
 };
 
 function build(
-  backend: "hermes",
+  backend: "hermes" | "ax",
   overrides: {
     wantsCards?: boolean;
     includeUxMetadata?: boolean;
@@ -465,5 +465,25 @@ describe("buildBotSection", () => {
 
   it("leaves the prompt without a bot section for an ordinary chat", () => {
     expect(build("hermes")).not.toContain("<bot>");
+  });
+});
+
+describe("buildWorkPrompt skills catalog", () => {
+  const installedSkills = [
+    { name: "xlsx", description: "Use this skill any time a spreadsheet file is the primary input or output" },
+    { name: "docx", description: "Create and edit Word documents" },
+  ];
+
+  it("lists installed skills for Hermes", () => {
+    const prompt = build("hermes", { installedSkills });
+    expect(prompt).toContain("- xlsx — Use this skill any time a spreadsheet");
+    expect(prompt).not.toContain("discover(");
+  });
+
+  it("sends Ax to skill search instead of listing every skill", () => {
+    const prompt = build("ax", { installedSkills });
+    expect(prompt).toContain("discover({ skills:");
+    expect(prompt).not.toContain("- xlsx —");
+    expect(prompt).not.toContain("Create and edit Word documents");
   });
 });

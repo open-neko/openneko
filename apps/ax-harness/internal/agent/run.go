@@ -377,11 +377,25 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 			"contextPolicy", ax.Object("preset", "checkpointed", "budget", "balanced"))
 		modelOptions(engineOptions, routed, spec.ReasoningEffort)
 		if len(skills) > 0 {
-			catalog := make([]ax.Value, 0, len(skills))
-			for _, skill := range skills {
-				catalog = append(catalog, ax.Object("id", skill.Name, "name", skill.Name, "description", skill.Description, "content", skill.Content))
-			}
-			engineOptions["skillsCatalog"] = catalog
+			// Host search keeps the catalog out of the prompt: discover() loads
+			// only the guides that match, however many are staged.
+			engineOptions["onSkillsSearch"] = ax.AxSkillsSearchFn(func(searches []ax.Value) []ax.Value {
+				found := searchSkills(skills, searches)
+				out := make([]ax.Value, 0, len(found))
+				for _, skill := range found {
+					out = append(out, ax.Object("id", skill.Name, "name", skill.Name, "content", skill.body()))
+				}
+				return out
+			})
+			engineOptions["onLoadedSkills"] = ax.AxAgentObserverFn(func(items []ax.Value) {
+				for _, item := range items {
+					if entry, ok := item.(map[string]ax.Value); ok {
+						if id, ok := entry["id"].(string); ok && ValidSkillName(id) {
+							events.send(Event{Type: "skill.loaded", Name: id})
+						}
+					}
+				}
+			})
 			engineOptions["usageTrackingMode"] = true
 			engineOptions["onUsedSkills"] = ax.AxAgentObserverFn(func(items []ax.Value) {
 				for _, item := range items {
@@ -503,16 +517,26 @@ type graphQLEnvelope struct {
 }
 
 // toolFailure also reads a GraphQL envelope with errors and no data as a
-// failure: GraphJin returns failed queries without is_error.
+// failure: GraphJin returns failed queries without is_error. A shell command
+// that exits non-zero or times out failed too.
 func toolFailure(raw json.RawMessage) (bool, string) {
 	var result struct {
 		IsError    bool            `json:"is_error"`
 		Error      string          `json:"error"`
+		ExitCode   *int            `json:"exit_code"`
+		Output     string          `json:"output"`
+		TimedOut   bool            `json:"timed_out"`
 		Structured graphQLEnvelope `json:"structured_content"`
 		graphQLEnvelope
 	}
 	if json.Unmarshal(raw, &result) != nil {
 		return false, ""
+	}
+	if result.TimedOut {
+		return true, "command timed out: " + shellTail(result.Output)
+	}
+	if result.ExitCode != nil && *result.ExitCode != 0 {
+		return true, fmt.Sprintf("command exited %d: %s", *result.ExitCode, shellTail(result.Output))
 	}
 	for _, envelope := range []graphQLEnvelope{result.Structured, result.graphQLEnvelope} {
 		data := strings.TrimSpace(string(envelope.Data))
@@ -525,6 +549,15 @@ func toolFailure(raw json.RawMessage) (bool, string) {
 		}
 	}
 	return result.IsError, result.Error
+}
+
+// shellTail keeps the end of a command's output, where errors are printed.
+func shellTail(output string) string {
+	output = strings.TrimSpace(output)
+	if len(output) > 1000 {
+		return "..." + output[len(output)-1000:]
+	}
+	return output
 }
 
 // A malformed responder can echo an executor program as its answer. Ax may

@@ -103,25 +103,35 @@ func TestSkillsCatalogLoadsAndReportsUse(t *testing.T) {
 		`Answer: done`,
 	}}
 	server := model.server(t)
-	var used []string
+	var used, loaded []string
+	skills := []Skill{{Name: "daily-lead", Description: "Build the daily lead report", Content: "Step 1: read the leads table."}}
+	for i := 0; i < 1000; i++ {
+		skills = append(skills, Skill{Name: fmt.Sprintf("other-%04d", i), Description: "Unrelated guide", Load: func() (string, error) {
+			t.Error("a guide that did not match was read")
+			return "", nil
+		}})
+	}
 	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "skills", InputID: "i", Prompt: "Make the daily lead report"}, openAIClient(server),
-		Tools{Skills: []Skill{{Name: "daily-lead", Description: "Build the daily lead report", Content: "Step 1: read the leads table."}}},
+		Tools{Skills: skills},
 		func(e Event) error {
-			if e.Type == "skill.used" {
+			switch e.Type {
+			case "skill.used":
 				used = append(used, e.Name)
+			case "skill.loaded":
+				loaded = append(loaded, e.Name)
 			}
 			return nil
 		})
 	if err != nil || result.Status != "completed" {
 		t.Fatalf("result=%+v err=%v calls=%d", result, err, model.calls())
 	}
-	if !strings.Contains(model.body(0), "daily-lead") || !strings.Contains(model.body(0), "Build the daily lead report") {
-		t.Fatal("the skills catalog did not reach the request")
+	if strings.Contains(model.body(0), "Build the daily lead report") || strings.Contains(model.body(0), "other-0001") {
+		t.Fatal("the skills catalog was listed in the prompt")
 	}
 	if !strings.Contains(model.body(1), "Step 1: read the leads table.") {
 		t.Fatal("the loaded skill guide did not reach the next request")
 	}
-	if len(used) != 1 || used[0] != "daily-lead" {
-		t.Fatalf("used=%q", used)
+	if len(used) != 1 || used[0] != "daily-lead" || len(loaded) != 1 || loaded[0] != "daily-lead" {
+		t.Fatalf("used=%q loaded=%q", used, loaded)
 	}
 }

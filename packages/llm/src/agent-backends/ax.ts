@@ -411,6 +411,13 @@ export class AxEventMapper {
         });
         return;
       }
+      case "skill.loaded": {
+        if (!event.name || !this.skillsRoot) return;
+        const id = `ax-skill-load-${event.name}`;
+        this.emit({ type: "tool_start", id, name: "skill_view", input: { path: join(this.skillsRoot, event.name, "SKILL.md") } });
+        this.emit({ type: "tool_end", id });
+        return;
+      }
       case "skill.used": {
         if (!event.name || !this.skillsRoot) return;
         // skill-usage.ts records a skill from its SKILL.md path.

@@ -563,6 +563,7 @@ function buildSkillsSection(
   workspace: AgentWorkspace,
   installedSkills: InstalledSkill[] | undefined,
   allowCreation = true,
+  catalog: "list" | "search" = "list",
 ): string {
   const skillList =
     installedSkills && installedSkills.length > 0
@@ -584,13 +585,26 @@ function buildSkillsSection(
 agentskills.io-style files to
 \`${workspace.skillsRoot}/<skill-name>/SKILL.md\` using your shell tool.`;
 
+  const libraries = `The host image ships
+Python 3, LibreOffice (\`soffice\`), Poppler (\`pdftotext\`), qpdf, plus
+pip libs: pypdf, pdfplumber, reportlab, Pillow, openpyxl, python-pptx,
+python-docx, PyYAML.`;
+
+  if (catalog === "search") {
+    return `<skills>
+Skill guides hold the instructions for recurring work: spreadsheets,
+documents, decks, reports, models and more. Before such work, find the guide
+with discover({ skills: ["<the work, in a few words>"] }); the matching guides
+load for your next step. Follow a loaded guide. ${libraries}
+
+${creationGuidance}
+</skills>`;
+  }
+
   return `<skills>
 Installed skill catalog. Match the current task to the names and descriptions
 below. When a skill matches, read its SKILL.md at the listed path and follow
-its instructions. The host image ships
-Python 3, LibreOffice (\`soffice\`), Poppler (\`pdftotext\`), qpdf, plus
-pip libs: pypdf, pdfplumber, reportlab, Pillow, openpyxl, python-pptx,
-python-docx, PyYAML.
+its instructions. ${libraries}
 
 ${skillList}
 
@@ -940,6 +954,7 @@ that flags churn risk every Monday."
       workspace,
       installedSkills,
       dataSurface === "customer",
+      backend === "ax" ? "search" : "list",
     ),
     dataSurface === "customer"
       ? buildMemorySection({

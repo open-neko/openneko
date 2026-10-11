@@ -310,8 +310,11 @@ func TestSkillsReadFrontmatterAndBody(t *testing.T) {
 	defer f.Close()
 	catalog, err := f.Skills()
 	if err != nil || len(catalog) != 1 || catalog[0].Name != "daily-lead-union" || catalog[0].Description != "Build the daily report" ||
-		catalog[0].Content != "Long instructions remain in the file." {
+		catalog[0].Content != "" || catalog[0].Load == nil {
 		t.Fatalf("catalog=%+v err=%v", catalog, err)
+	}
+	if body, err := catalog[0].Load(); err != nil || body != "Long instructions remain in the file." {
+		t.Fatalf("body=%q err=%v", body, err)
 	}
 }
 
