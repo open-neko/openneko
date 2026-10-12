@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronLeft, LogOut, ShieldCheck } from "lucide-react";
+import { ChevronLeft, LogOut, Plug, ShieldCheck } from "lucide-react";
 import { NekoAvatar, type NekoStyle } from "@neko/avatars/react";
 import type { RailIdentity } from "@/components/AppRail";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -100,6 +100,11 @@ function ProfileMenu({ identity }: { identity?: RailIdentity }) {
           </>
         ) : null}
         <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => router.push("/chat/connectors")}>
+          <Plug aria-hidden="true" strokeWidth={2} />
+          Connectors
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuLabel>Neko style</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           value={nekoStyle}
@@ -144,7 +149,7 @@ export default function ChatShell({
 }) {
   const pathname = usePathname() ?? "/chat";
   const inThread = pathname.startsWith("/chat/t");
-  const inSubpage = inThread || pathname.startsWith("/chat/bots");
+  const inSubpage = inThread || pathname.startsWith("/chat/bots") || pathname.startsWith("/chat/connectors");
   const threadId = pathname.match(/^\/chat\/t\/([^/]+)/)?.[1] ?? null;
 
   return (

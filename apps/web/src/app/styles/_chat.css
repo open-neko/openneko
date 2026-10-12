@@ -301,3 +301,15 @@
   color: var(--text2);
   font-size: var(--type-body-sm);
 }
+
+.chat-connectors {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0 48px;
+}
+
+.chat-connectors-copy {
+  margin: 4px 0 0;
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+}

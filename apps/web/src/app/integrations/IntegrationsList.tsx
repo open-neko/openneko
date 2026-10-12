@@ -32,7 +32,8 @@ type Row = {
 
 type InitialState = { workspace: Row[]; connectors: Row[]; personal?: PackUserConnectionStatus[] };
 
-export default function IntegrationsList({ initial, isAdmin = true, preview = false }: { initial: InitialState; isAdmin?: boolean; preview?: boolean }) {
+export default function IntegrationsList({ initial, isAdmin = true, preview = false, variant = "page" }: { initial: InitialState; isAdmin?: boolean; preview?: boolean; variant?: "page" | "chat" }) {
+  const returnQuery = variant === "chat" ? "?returnTo=/chat/connectors" : "";
   const [personal, setPersonal] = useState(initial.personal ?? []);
   const [workspace, setWorkspace] = useState<Row[]>(initial.workspace);
   const [connectors, setConnectors] = useState<Row[]>(initial.connectors);
@@ -114,7 +115,7 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
     if (disconnect && !await confirmDialog({ title: `Disconnect ${row.providerLabel}?`, description: "Your automations will lose access. Pending approvals using this connection will need to be requested again.", confirmLabel: "Disconnect", destructive: true })) return;
     setBusy(`${row.packId}:${row.key}`);
     try {
-      const response = await fetch(`/api/my/pack-accounts/${encodeURIComponent(row.packId)}/${encodeURIComponent(row.key)}`, { method: disconnect ? "DELETE" : "POST" });
+      const response = await fetch(`/api/my/pack-accounts/${encodeURIComponent(row.packId)}/${encodeURIComponent(row.key)}${returnQuery}`, { method: disconnect ? "DELETE" : "POST" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Connection failed");
       if (!disconnect) { window.location.assign(result.authorizationUrl); return; }
@@ -154,7 +155,7 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
                 {busy === row.pluginName ? "Disconnecting…" : "Disconnect"}
               </Button>
             ) : disabled ? <Button disabled>Connect account</Button> : (
-              <ButtonLink variant="primary" href={`/api/integrations/connect/${encodeURIComponent(row.pluginName)}/start`}>Connect account</ButtonLink>
+              <ButtonLink variant="primary" href={`/api/integrations/connect/${encodeURIComponent(row.pluginName)}/start${returnQuery}`}>Connect account</ButtonLink>
             )}
           </ActionGroup>
         </CardFooter>
@@ -168,13 +169,25 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
     );
   }
 
+  const Wrapper = variant === "chat" ? "main" : "div";
   return (
-    <div className="root is-narrow">
-      <AppHeader />
-      <PageHeading
-        title="Integrations"
-        description="Connect external accounts for agent actions. Credentials remain in this deployment."
-      />
+    <Wrapper className={variant === "chat" ? "chat-connectors" : "root is-narrow"}>
+      {variant === "chat" ? (
+        <div className="chat-home-head">
+          <div>
+            <h1 className="chat-home-title">Connectors</h1>
+            <p className="chat-connectors-copy">Connect your own accounts. Your bots can use everything you connect.</p>
+          </div>
+        </div>
+      ) : (
+        <>
+          <AppHeader />
+          <PageHeading
+            title="Integrations"
+            description="Connect external accounts for agent actions. Credentials remain in this deployment."
+          />
+        </>
+      )}
 
       {preview && <p role="status" className="mt-4 text-ui-body-sm text-text2">Visual preview. Account actions are disabled.</p>}
 
@@ -248,7 +261,7 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
         <EmptyState
           className="py-20"
           icon={<Plug aria-hidden="true" />}
-          title="No integrations available"
+          title={variant === "chat" ? "No connectors yet" : "No integrations available"}
           body={isAdmin ? "Install a pack or plugin that provides a connection, then return here to connect your account." : "An admin needs to install a pack before you can connect your account."}
           action={isAdmin ? <ButtonLink href="/admin/settings/packs">Review packs</ButtonLink> : undefined}
         />
@@ -262,6 +275,6 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
           body="Try another provider, plugin, or scope."
         />
       ) : null}
-    </div>
+    </Wrapper>
   );
 }
