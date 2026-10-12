@@ -1,9 +1,8 @@
-import { AxSignature } from "@ax-llm/ax";
 import { describe, expect, it, vi } from "vitest";
 import {
   COMPACT_AFTER,
   KEEP_LAST,
-  COMPACTOR_SIGNATURE,
+  compactor,
   compactIfNeeded,
 } from "../src/work/compact-transcript";
 
@@ -76,7 +75,7 @@ describe("compactIfNeeded", () => {
 
 describe("compactor signature", () => {
   it("accepts a first fold with no prior summary", () => {
-    const fields = new AxSignature(COMPACTOR_SIGNATURE).getInputFields();
+    const fields = compactor.getSignature().getInputFields();
     expect(fields.find((f) => f.name === "priorSummary")?.isOptional).toBe(true);
     expect(fields.find((f) => f.name === "transcript")?.isOptional).toBeFalsy();
   });
