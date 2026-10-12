@@ -291,26 +291,66 @@ func TestToolFailureReadsShellExitCode(t *testing.T) {
 	}
 }
 
-func TestSearchSkillsRanksByNameThenDescription(t *testing.T) {
-	skills := []Skill{
-		{Name: "xlsx", Description: "Use this skill any time a spreadsheet file is the primary input or output"},
-		{Name: "docx", Description: "Create and edit Word documents"},
-		{Name: "excel-author", Description: "Build auditable Excel workbooks headless with openpyxl"},
+func TestSkillShortlistKeepsCloseStagedGuides(t *testing.T) {
+	index := &admittedTool{Capability: Capability{Name: SkillSearchTool, Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{"content":["{\"skills\":[{\"name\":\"xlsx\",\"score\":0.61},{\"name\":\"gone\",\"score\":0.5},{\"name\":\"docx\",\"score\":0.12}]}"]}`), nil
+	}}}
+	skills := []Skill{{Name: "xlsx", Description: "Spreadsheets"}, {Name: "docx", Description: "Word documents"}}
+	got, names, err := skillShortlist(context.Background(), index, skills, "make an Excel file")
+	if err != nil || strings.Join(names, ",") != "xlsx" {
+		t.Fatalf("names=%q err=%v", names, err)
 	}
-	names := func(found []Skill) string {
-		out := make([]string, len(found))
-		for i, s := range found {
-			out[i] = s.Name
+	if !strings.Contains(got, "- xlsx — Spreadsheets") || strings.Contains(got, "gone") || strings.Contains(got, "docx") {
+		t.Fatalf("shortlist = %q", got)
+	}
+	if text, _, _ := skillShortlist(context.Background(), index, skills, "  "); text != "" {
+		t.Fatal("a shortlist without a query")
+	}
+	if text, _, _ := skillShortlist(context.Background(), nil, skills, "excel"); text != "" {
+		t.Fatal("a shortlist without a query or an index")
+	}
+	if got := skillMatches(json.RawMessage(`{"content":["not json"]}`)); len(got) != 0 {
+		t.Fatalf("matches from bad text = %v", got)
+	}
+}
+
+func TestFinalStopsOnceWhileAFailureIsUnfixed(t *testing.T) {
+	answers := []string{
+		`{"javascriptCode":"final('Write the file',{})"}`,
+		`{"javascriptCode":"await builder({command:'python3 build.py'}); console.log('ran');"}`,
+		`{"javascriptCode":"final('Report the file',{})"}`,
+		`{"javascriptCode":"final('Report that the build failed',{})"}`,
+		`Answer: The file was not built: build.py failed.`,
+	}
+	var calls atomic.Int32
+	var mu sync.Mutex
+	var bodies []string
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(body))
+		mu.Unlock()
+		index := int(calls.Add(1)) - 1
+		if index >= len(answers) {
+			http.Error(w, "unexpected model call", http.StatusBadRequest)
+			return
 		}
-		return strings.Join(out, ",")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop"))))
+	}))
+	defer model.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", model.URL, "api_key", "synthetic", "model", "fixture"))
+	builder := Capability{Name: "builder", Version: "1", Origin: "fixture", Effect: "durable", Description: "Run a command.", InputSchema: json.RawMessage(`{"type":"object"}`), Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{"exit_code":1,"output":"SyntaxError: unexpected character","timed_out":false,"truncated":false}`), nil
+	}}
+	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "unfixed", InputID: "input", Prompt: "Build the file"},
+		client, Tools{Capabilities: []Capability{builder}}, func(Event) error { return nil })
+	if err != nil || result.Status != "completed" || calls.Load() != int32(len(answers)) {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
 	}
-	if got := names(searchSkills(skills, []ax.Value{"xlsx"})); !strings.HasPrefix(got, "xlsx") {
-		t.Fatalf("exact name search = %q", got)
-	}
-	if got := names(searchSkills(skills, []ax.Value{"make a spreadsheet file in Excel"})); !strings.Contains(got, "xlsx") || !strings.Contains(got, "excel-author") || strings.Contains(got, "docx") {
-		t.Fatalf("description search = %q", got)
-	}
-	if got := names(searchSkills(skills, []ax.Value{"weather"})); got != "" {
-		t.Fatalf("unrelated search = %q", got)
+	mu.Lock()
+	defer mu.Unlock()
+	if !strings.Contains(bodies[3], "failed and no later call fixed them") || !strings.Contains(bodies[3], "SyntaxError") {
+		t.Fatal("final() did not stop for the unfixed failure")
 	}
 }

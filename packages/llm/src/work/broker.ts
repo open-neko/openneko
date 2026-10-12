@@ -198,6 +198,19 @@ async function handle(
           runId: binding.runId,
         } as Parameters<AgentControlPlane["rememberWorkMemory"]>[0]),
       );
+    case "/v1/skills/search":
+      // The actor comes from the bound run; an agent-supplied user is never trusted.
+      delete body.userId;
+      return send(
+        res,
+        200,
+        await cp.searchSkillsForRun({
+          orgId: binding.orgId,
+          runId: binding.runId,
+          query: String(body.query ?? ""),
+          ...(typeof body.limit === "number" ? { limit: body.limit } : {}),
+        }),
+      );
     case "/v1/bot/instructions":
       // The chat comes from the run binding; an agent-supplied thread is never trusted.
       if (!binding.threadId) return send(res, 400, { error: "no chat bound to this run" });

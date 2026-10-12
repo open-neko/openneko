@@ -2128,3 +2128,26 @@ export function buildBotServer(
   );
   return createMcpServer({ name: "neko_bot", version: "1.0.0", tools: [update] });
 }
+
+/** Semantic skill search for the Ax harness's discover(); it is never a model tool. */
+export function buildSkillSearchServer(
+  ctx: { orgId: string; runId: string },
+  options: { controlPlane?: AgentControlPlane } = {},
+) {
+  const controlPlane = requireControlPlane(options.controlPlane);
+  const find = defineMcpTool(
+    "find",
+    "Find the installed skill guides closest in meaning to the work described.",
+    { query: z.string().min(2).max(800), limit: z.number().int().min(1).max(10).optional() },
+    async (args) => {
+      const skills = await controlPlane.searchSkillsForRun({
+        orgId: ctx.orgId,
+        runId: ctx.runId,
+        query: args.query,
+        ...(args.limit ? { limit: args.limit } : {}),
+      });
+      return { content: [{ type: "text" as const, text: JSON.stringify({ skills }) }] };
+    },
+  );
+  return createMcpServer({ name: "neko_guides", version: "1.0.0", tools: [find] });
+}

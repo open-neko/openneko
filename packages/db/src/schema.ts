@@ -1178,6 +1178,23 @@ export const work_thread = pgTable(
   }),
 );
 
+export const skill_embedding = pgTable(
+  "skill_embedding",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    skill_name: text("skill_name").notNull(),
+    document: text("document").notNull().default(""),
+    embedding: vector("embedding", 384),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_skill_idx: uniqueIndex("skill_embedding_org_id_skill_name_key").on(t.org_id, t.skill_name),
+  }),
+);
+
 export const bot = pgTable(
   "bot",
   {

@@ -592,10 +592,14 @@ python-docx, PyYAML.`;
 
   if (catalog === "search") {
     return `<skills>
-Skill guides hold the instructions for recurring work: spreadsheets,
-documents, decks, reports, models and more. Before such work, find the guide
-with discover({ skills: ["<the work, in a few words>"] }); the matching guides
-load for your next step. Follow a loaded guide. ${libraries}
+Skill guides hold the team's instructions for recurring work of every kind:
+analysis methods, reports, data checks, documents and spreadsheets, customer
+replies, and the business's own procedures. Guides that may fit the request
+are listed under it; load the one that fits with discover({ skills: ["<name>"] })
+before you start. For work no listed guide covers, search with
+discover({ skills: ["<the task, in a few words>"] }). Follow a loaded guide over
+your own approach. Each guide and its supporting files live under
+skills/<name>/; read or edit them with your file tools. ${libraries}
 
 ${creationGuidance}
 </skills>`;

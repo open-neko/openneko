@@ -23,6 +23,7 @@ type Spec struct {
 	RunID           string `json:"run_id"`
 	InputID         string `json:"input_id"`
 	Prompt          string `json:"prompt"`
+	SkillQuery      string `json:"skill_query,omitempty"`      // The user's message; the skill index ranks guides against it.
 	StreamResponses bool   `json:"stream_responses,omitempty"` // Host-qualified incremental responder transport.
 	TimeoutMS       int64  `json:"timeout_ms,omitempty"`
 	MaxActorSteps   int    `json:"max_actor_steps,omitempty"`
@@ -168,6 +169,14 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 	if err != nil {
 		return Result{}, err
 	}
+	var skillSearch *admittedTool
+	for i, capability := range admitted {
+		if capability.Name == SkillSearchTool {
+			skillSearch = &admitted[i]
+			admitted = append(admitted[:i:i], admitted[i+1:]...)
+			break
+		}
+	}
 	skills, err := tools.skills()
 	if err != nil {
 		return Result{}, err
@@ -300,6 +309,9 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 				if message, repeated := failedCalls.repeated(name, instruction); repeated {
 					detail := fmt.Sprintf("this exact call already failed %d times: %s. Change the call before you run it again", maxIdenticalFailures, safePrefix(message, 1000))
 					runtime.failures.add(name + " not run: " + detail)
+					if capability.Effect != "read" {
+						runtime.failures.failed(name, detail)
+					}
 					return ax.Object("error", "repeated_failed_call", "detail", detail, "is_error", true), nil
 				}
 				currentID := atomic.AddUint64(&operationID, 1)
@@ -326,6 +338,9 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 					detail := safePrefix(err.Error(), 500)
 					finished.Data, _ = json.Marshal(ax.Object("error", name+"_failed", "detail", detail))
 					runtime.failures.add(name + " failed: " + detail)
+					if capability.Effect != "read" {
+						runtime.failures.failed(name, detail)
+					}
 					return ax.Object("error", name+"_failed", "detail", detail), nil
 				}
 				var result ax.Value
@@ -338,8 +353,14 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 					finished.Error = name + "_failed"
 					failedCalls.record(name, instruction, message)
 					runtime.failures.add(fmt.Sprintf("%s failed: %s", name, safePrefix(message, 1000)))
-				} else if capability.Effect == "pause" {
-					events.pause()
+					if capability.Effect != "read" {
+						runtime.failures.failed(name, safePrefix(message, 300))
+					}
+				} else {
+					runtime.failures.succeeded(name)
+					if capability.Effect == "pause" {
+						events.pause()
+					}
 				}
 				if utf8.RuneCount(raw) > InlineResultChars {
 					runtime.failures.add(fmt.Sprintf("%s result has %d bytes, so it was saved instead of returned; read it with harnessSavedOperation(%d)", name, len(raw), currentID))
@@ -372,15 +393,23 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 		for _, capability := range admitted {
 			instruction += capability.promptDescriptor(true)
 		}
-		values := ax.Object("question", spec.Prompt)
 		engineOptions := ax.Object("runtime", runtime, "instruction", instruction, "directResponse", "off", "max_actor_steps", spec.ActorSteps(), "validationRetries", 0, "infraRetries", 0,
 			"contextPolicy", ax.Object("preset", "checkpointed", "budget", "balanced"))
 		modelOptions(engineOptions, routed, spec.ReasoningEffort)
+		shortlist, shortlisted, shortlistErr := skillShortlist(ctx, skillSearch, skills, spec.SkillQuery)
+		if shortlistErr != nil {
+			events.send(Event{Type: "skill.shortlist", Error: safePrefix(shortlistErr.Error(), 300)})
+		} else if len(shortlisted) > 0 {
+			data, _ := json.Marshal(shortlisted)
+			events.send(Event{Type: "skill.shortlist", Data: data})
+			engineOptions["skills"] = skillStubs(skills, shortlisted)
+		}
+		values := ax.Object("question", spec.Prompt+shortlist)
 		if len(skills) > 0 {
 			// Host search keeps the catalog out of the prompt: discover() loads
 			// only the guides that match, however many are staged.
 			engineOptions["onSkillsSearch"] = ax.AxSkillsSearchFn(func(searches []ax.Value) []ax.Value {
-				found := searchSkills(skills, searches)
+				found := searchSkills(ctx, skillSearch, skills, searches)
 				out := make([]ax.Value, 0, len(found))
 				for _, skill := range found {
 					out = append(out, ax.Object("id", skill.Name, "name", skill.Name, "content", skill.body()))

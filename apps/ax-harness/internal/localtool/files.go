@@ -72,16 +72,6 @@ func (f *Files) UploadCapabilities() []agent.Capability {
 	return []agent.Capability{read, search}
 }
 
-// SkillCapabilities expose only files staged for the current operator.
-func (f *Files) SkillCapabilities() []agent.Capability {
-	all := f.UploadCapabilities()
-	all[0].Name, all[0].Origin = "skill_read", "skills"
-	all[0].Description = "Read a staged skill instruction or supporting text file by path relative to the skills root. Skills cannot call models directly."
-	all[1].Name, all[1].Origin = "skill_search", "skills"
-	all[1].Description = searchDescription("the staged skills")
-	return all
-}
-
 const maxSkillContent = 64 << 10
 
 // Skills indexes each staged SKILL.md by the name of its folder and the
@@ -120,7 +110,7 @@ func (f *Files) Skills() ([]agent.Skill, error) {
 				return "", fmt.Errorf("skill %s has no frontmatter", name)
 			}
 			if len(body) > maxSkillContent {
-				body = runePrefix(body, maxSkillContent/4-64) + "\n[guide truncated; read " + name + "/SKILL.md with skill_read]"
+				body = runePrefix(body, maxSkillContent/4-64) + "\n[guide truncated; read the rest with file_read at skills/" + name + "/SKILL.md]"
 			}
 			return body, nil
 		}})

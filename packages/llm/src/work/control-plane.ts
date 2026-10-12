@@ -544,6 +544,12 @@ export interface AgentControlPlane {
     threadId: string;
     instructions: string;
   }): Promise<{ ok: boolean }>;
+  searchSkillsForRun(input: {
+    orgId: string;
+    runId: string;
+    query: string;
+    limit?: number;
+  }): Promise<Array<{ name: string; score: number }>>;
   searchWorkMemoryByContext(
     args: WorkMemorySearchArgs,
   ): Promise<WorkMemorySearchResult[]>;
@@ -1001,6 +1007,16 @@ export class InProcessControlPlane implements AgentControlPlane {
   }): Promise<{ ok: boolean }> {
     const { updateThreadBotInstructions } = await import("./bot");
     return updateThreadBotInstructions(input);
+  }
+
+  async searchSkillsForRun(input: {
+    orgId: string;
+    runId: string;
+    query: string;
+    limit?: number;
+  }): Promise<Array<{ name: string; score: number }>> {
+    const { searchSkillsForRun } = await import("./skill-index");
+    return searchSkillsForRun(input);
   }
 
   async searchLibraryForRun(

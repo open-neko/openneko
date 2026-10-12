@@ -46,6 +46,7 @@ import {
 } from "./personas";
 import { buildWorkPrompt } from "./prompt";
 import { getThreadBot } from "./bot";
+import { syncSkillIndex } from "./skill-index";
 import { compactIfNeeded, type ThreadCompaction } from "./compact-transcript";
 import { discoverRunArtifacts } from "./artifacts";
 import {
@@ -139,6 +140,7 @@ export type RunChatTurnDeps = {
   prefetchKnowledgeForOrg: typeof defaultPrefetchKnowledgeForOrg;
   listInstalledSkills: typeof defaultListInstalledSkills;
   getThreadBot: typeof getThreadBot;
+  syncSkillIndex: typeof syncSkillIndex;
   /**
    * Runs the agent loop. Production hosts inject the OpenShell sandbox
    * impl (agentRuntimeDepsFromConfig) — SEC9: the only runtime. The default
@@ -490,11 +492,17 @@ async function runChatTurnTraced(
             { contextQuery: message, contextLimit: 5 },
           ))
         : Promise.resolve(""),
-      startupPhase("context.skills", () => listInstalledSkills(workspace.skillsRoot)).then((skills) =>
-        customerSurface
+      startupPhase("context.skills", () => listInstalledSkills(workspace.skillsRoot)).then(async (skills) => {
+        // Ax finds skills by meaning, so its index holds every installed skill;
+        // search filters to what the actor holds.
+        if (customerSurface && backend.id === "ax") {
+          await startupPhase("context.skill_index", () => (deps.syncSkillIndex ?? syncSkillIndex)(orgId, skills))
+            .catch((error) => console.warn("[work-run] skill index sync failed:", error instanceof Error ? error.message : error));
+        }
+        return customerSurface
           ? skills.filter((skill) => !allowedSkills || allowedSkills.includes(skill.name))
-          : skills.filter((skill) => skill.name === "records"),
-      ),
+          : skills.filter((skill) => skill.name === "records");
+      }),
       startupPhase("context.persona", () => getOperatorProfile(orgId, actor.userId)),
     ]);
     const operatorProfile = buildOperatorProfileSection(profile);

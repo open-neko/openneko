@@ -38,6 +38,7 @@ import {
   buildSkillBuilderServer,
   buildWorkMemoryServer,
   buildBotServer,
+  buildSkillSearchServer,
   type PluginActionDescriptor,
   type PackActionDescriptor,
 } from "./tools";
@@ -198,6 +199,8 @@ export async function runAgentBackend(
         neko_skills: buildSkillBuilderServer(workspace.skillsRoot),
         neko_memory: buildWorkMemoryServer({ orgId, threadId, runId }, { controlPlane }),
         ...(botEnabled ? { neko_bot: buildBotServer({ orgId, threadId }, { controlPlane }) } : {}),
+        // Ax's discover() reaches the semantic skill index through this server.
+        ...(backend.id === "ax" ? { neko_guides: buildSkillSearchServer({ orgId, runId }, { controlPlane }) } : {}),
         neko_library: buildLibraryServer({ orgId, threadId, runId }, { controlPlane }),
         neko_records: buildRecordsReadServer({ orgId, runId, controlPlane }),
         neko_workflow_builder: buildWorkflowBuilderServer({

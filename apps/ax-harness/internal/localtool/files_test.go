@@ -265,36 +265,6 @@ func TestUploadCapabilitiesAreReadOnly(t *testing.T) {
 	}
 }
 
-func TestSkillCapabilitiesAreReadOnlyAndConfined(t *testing.T) {
-	root := t.TempDir()
-	if err := os.Mkdir(filepath.Join(root, "daily"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "daily", "SKILL.md"), []byte("Use the supplied date."), 0600); err != nil {
-		t.Fatal(err)
-	}
-	f, err := OpenFiles(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	capabilities := f.SkillCapabilities()
-	if len(capabilities) != 2 || capabilities[0].Name != "skill_read" || capabilities[1].Name != "skill_search" {
-		t.Fatalf("unexpected skill catalog: %+v", capabilities)
-	}
-	for _, capability := range capabilities {
-		if capability.Effect != "read" || capability.Origin != "skills" {
-			t.Fatalf("skill mutation admitted: %+v", capability)
-		}
-	}
-	if result, err := capabilities[0].Call(context.Background(), json.RawMessage(`{"path":"daily/SKILL.md"}`)); err != nil || !strings.Contains(string(result), "supplied date") {
-		t.Fatalf("skill read failed: %s %v", result, err)
-	}
-	if _, err := capabilities[0].Call(context.Background(), json.RawMessage(`{"path":"../secret"}`)); err == nil {
-		t.Fatal("skill read escaped staged root")
-	}
-}
-
 func TestSkillsReadFrontmatterAndBody(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "daily-lead-union"), 0700); err != nil {

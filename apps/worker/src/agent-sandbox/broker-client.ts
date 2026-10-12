@@ -83,6 +83,12 @@ export class BrokerControlPlane implements AgentControlPlane {
     return this.post("/v1/memory/remember", input);
   }
 
+  searchSkillsForRun(
+    input: Parameters<AgentControlPlane["searchSkillsForRun"]>[0],
+  ): ReturnType<AgentControlPlane["searchSkillsForRun"]> {
+    return this.post("/v1/skills/search", input);
+  }
+
   updateBotInstructions(
     input: Parameters<AgentControlPlane["updateBotInstructions"]>[0],
   ): ReturnType<AgentControlPlane["updateBotInstructions"]> {

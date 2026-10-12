@@ -170,6 +170,7 @@ export class AxBackend implements AgentBackend {
       run_id: runId,
       input_id: runId,
       prompt: opts.userMessage ? `${opts.prompt}\n\nCurrent user message:\n${opts.userMessage}` : opts.prompt,
+      ...(opts.userMessage ? { skill_query: opts.userMessage } : {}),
       stream_responses: Boolean(onEvent),
       ...axRunLimits({
         ...limits,
@@ -409,6 +410,11 @@ export class AxEventMapper {
           ...(event.data !== undefined ? { result: event.data } : {}),
           ...(event.error ? { error: event.error } : {}),
         });
+        return;
+      }
+      case "skill.shortlist": {
+        const names = Array.isArray(event.data) ? event.data.filter((n: unknown) => typeof n === "string") : [];
+        this.emit({ type: "status", message: event.error ? `Skill search failed: ${event.error}` : `Skill guides that may fit: ${names.join(", ")}` });
         return;
       }
       case "skill.loaded": {
