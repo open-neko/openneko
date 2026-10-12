@@ -15,10 +15,13 @@ export function NekoStyleProvider({ children }: { children: React.ReactNode }) {
   const [nekoStyle, setStyle] = useState<NekoStyle>("robot");
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(KEY) as NekoStyle | null;
-      if (saved && STYLES.includes(saved)) setStyle(saved);
-    } catch {}
+    const id = window.setTimeout(() => {
+      try {
+        const saved = localStorage.getItem(KEY) as NekoStyle | null;
+        if (saved && STYLES.includes(saved)) setStyle(saved);
+      } catch {}
+    }, 0);
+    return () => window.clearTimeout(id);
   }, []);
 
   function setNekoStyle(style: NekoStyle) {

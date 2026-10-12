@@ -1,6 +1,8 @@
 .chat-shell {
+  box-sizing: content-box;
   max-width: var(--form-max);
   margin: 0 auto;
+  padding: 0 16px;
 }
 
 .chat-topbar {
@@ -312,4 +314,121 @@
   margin: 4px 0 0;
   color: var(--text2);
   font-size: var(--type-body-sm);
+}
+
+.chat-sidebar {
+  display: none;
+}
+
+.chat-row.is-active {
+  background: var(--accent-soft);
+}
+
+.chat-list.is-compact .chat-row {
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 12px;
+}
+
+.chat-list.is-compact .chat-row-title {
+  font-size: var(--type-body);
+}
+
+@media (min-width: 1025px) {
+  .chat-frame {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: 40px;
+    box-sizing: content-box;
+    max-width: calc(280px + 40px + var(--form-max));
+    margin: 0 auto;
+    padding: 0 24px;
+    align-items: start;
+  }
+
+  .chat-frame .chat-shell {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 0;
+  }
+
+  .chat-sidebar {
+    position: sticky;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    height: 100dvh;
+    padding: 8px 0 24px;
+    overflow-y: auto;
+  }
+
+  .chat-sidebar-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 56px;
+  }
+
+  .chat-back-phone,
+  .chat-brand-phone {
+    display: none;
+  }
+
+  .chat-topbar {
+    justify-content: flex-end;
+  }
+
+  .chat-topbar .chat-bot-chip {
+    margin-right: auto;
+  }
+}
+
+.chat-shell .work-command-head {
+  position: static;
+}
+
+.thread-jump {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.thread-jump .ui-button {
+  border-radius: 999px;
+  box-shadow: var(--shadow-sm);
+}
+
+.thread-older {
+  min-height: 1px;
+  padding: 8px 0;
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+  text-align: center;
+}
+
+.chat-shell .work-transcript,
+.chat-shell .work-command-surface > .work-composer {
+  width: 100%;
+}
+
+.work-answer-followups .ui-button {
+  height: auto;
+  min-width: 0;
+  white-space: normal;
+}
+
+@media (max-width: 680px) {
+  .chat-shell .work-command-surface > .work-composer {
+    bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+.chat-shell .work-transcript h1,
+.chat-shell .work-transcript h2,
+.chat-shell .work-transcript h3 {
+  overflow-wrap: break-word;
 }

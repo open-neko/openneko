@@ -18,8 +18,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { BotAvatar } from "./BotAvatar";
+import { ChatSidebar } from "./ChatSidebar";
 import { NekoStyleProvider, useNekoStyle } from "./neko-style";
-import { useBots } from "./useBots";
+import { BotsProvider, useBots } from "./useBots";
 
 const STYLE_LABELS: Record<NekoStyle, string> = {
   robot: "Robot",
@@ -154,29 +155,35 @@ export default function ChatShell({
 
   return (
     <NekoStyleProvider>
-      <div className="chat-shell">
-        <header className="chat-topbar">
-          {inSubpage ? (
-            <ButtonLink
-              href="/chat"
-              variant="ghost"
-              size="icon"
-              aria-label="Back to chats"
-              title="Back to chats"
-            >
-              <ChevronLeft aria-hidden="true" strokeWidth={2} />
-            </ButtonLink>
-          ) : (
-            <Link href="/chat" className="chat-brand">
-              <Image src="/cat.png" alt="" width={24} height={25} />
-              <span>OpenNeko</span>
-            </Link>
-          )}
-          {threadId ? <BotChip threadId={threadId} /> : null}
-          <ProfileMenu identity={identity} />
-        </header>
-        {children}
-      </div>
+      <BotsProvider>
+        <div className="chat-frame">
+          <ChatSidebar activeThreadId={threadId} />
+          <div className="chat-shell">
+            <header className="chat-topbar">
+              {inSubpage ? (
+                <ButtonLink
+                  href="/chat"
+                  variant="ghost"
+                  size="icon"
+                  className={inThread ? "chat-back-phone" : undefined}
+                  aria-label="Back to chats"
+                  title="Back to chats"
+                >
+                  <ChevronLeft aria-hidden="true" strokeWidth={2} />
+                </ButtonLink>
+              ) : (
+                <Link href="/chat" className="chat-brand chat-brand-phone">
+                  <Image src="/cat.png" alt="" width={24} height={25} />
+                  <span>OpenNeko</span>
+                </Link>
+              )}
+              {threadId ? <BotChip threadId={threadId} /> : null}
+              <ProfileMenu identity={identity} />
+            </header>
+            {children}
+          </div>
+        </div>
+      </BotsProvider>
     </NekoStyleProvider>
   );
 }

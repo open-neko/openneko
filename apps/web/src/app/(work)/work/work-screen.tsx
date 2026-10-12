@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   useParams,
@@ -112,6 +112,7 @@ import BriefingCard from "@/components/BriefingCard";
 import WorkHistoryDrawer from "@/components/WorkHistoryDrawer";
 import BotGreeting from "@/components/chat/BotGreeting";
 import { useThreadBot } from "@/components/chat/useThreadBot";
+import { ThreadJump } from "@/components/chat/ThreadJump";
 import {
   ActionRequestCard,
   RuleSavedCard,
@@ -258,7 +259,22 @@ type ThreadBundle = {
   runs: RunRecord[];
   messages: MessageRecord[];
   eventsByRun: Record<string, WorkEvent[]>;
+  hasOlder?: boolean;
 };
+
+const CHAT_PAGE_RUNS = 20;
+
+function prependOlder(prev: ThreadBundle, older: ThreadBundle): ThreadBundle {
+  const runIds = new Set(prev.runs.map((run) => run.id));
+  const messageIds = new Set(prev.messages.map((message) => message.id));
+  return {
+    ...prev,
+    runs: [...older.runs.filter((run) => !runIds.has(run.id)), ...prev.runs],
+    messages: [...older.messages.filter((message) => !messageIds.has(message.id)), ...prev.messages],
+    eventsByRun: { ...older.eventsByRun, ...prev.eventsByRun },
+    hasOlder: older.hasOlder,
+  };
+}
 
 type StreamResult = "done" | "closed";
 
@@ -401,6 +417,10 @@ export default function WorkScreen() {
   const [draftMentions, setDraftMentions] = useState<DraftWorkMention[]>([]);
   const mentionOptionsLoadedRef = useRef(false);
   const [loadingThread, setLoadingThread] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const olderSentinelRef = useRef<HTMLDivElement | null>(null);
+  const keepOffsetRef = useRef<number | null>(null);
+  const loadOlderRef = useRef<() => Promise<boolean>>(async () => false);
   const [sending, setSending] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [activeRunId, setActiveRunIdState] = useState<string | null>(null);
@@ -542,11 +562,56 @@ export default function WorkScreen() {
     };
   }, []);
 
-  // A thread opens at the top, and is not followed until the reader sends.
+  // An Ask thread opens at the top. A bot chat opens at its latest message.
+  // Neither is followed until the reader sends.
   useEffect(() => {
     followRef.current = false;
     window.scrollTo({ top: 0 });
   }, [routeThreadId]);
+
+  useEffect(() => {
+    const transcript = transcriptRef.current;
+    if (!inBotChat || loadingThread || !transcript || !bundle?.messages.length) return;
+    const toEnd = () =>
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" });
+    const resize = new ResizeObserver(toEnd);
+    const release = () => resize.disconnect();
+    toEnd();
+    resize.observe(transcript);
+    const timer = window.setTimeout(release, 2000);
+    window.addEventListener("wheel", release, { once: true, passive: true });
+    window.addEventListener("touchstart", release, { once: true, passive: true });
+    return () => {
+      window.clearTimeout(timer);
+      release();
+      window.removeEventListener("wheel", release);
+      window.removeEventListener("touchstart", release);
+    };
+    // Only the end of a thread load moves the reader.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inBotChat, loadingThread, activeThreadId]);
+
+  useLayoutEffect(() => {
+    if (keepOffsetRef.current === null) return;
+    window.scrollTo({ top: document.documentElement.scrollHeight - keepOffsetRef.current, behavior: "instant" });
+    keepOffsetRef.current = null;
+  }, [bundle]);
+
+  useEffect(() => {
+    loadOlderRef.current = loadOlder;
+  });
+
+  useEffect(() => {
+    let lastY = window.scrollY;
+    const onScroll = () => {
+      const up = window.scrollY < lastY;
+      lastY = window.scrollY;
+      const top = olderSentinelRef.current?.getBoundingClientRect().bottom;
+      if (up && top !== undefined && top > -800) void loadOlderRef.current();
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   // Sending shows the question and the running indicator, then follows.
   useEffect(() => {
@@ -618,7 +683,9 @@ export default function WorkScreen() {
   async function loadThread(threadId: string) {
     setLoadingThread(true);
     try {
-      const res = await fetch(`/api/work/threads/${threadId}`);
+      const res = await fetch(
+        `/api/work/threads/${threadId}${inBotChat ? `?limit=${CHAT_PAGE_RUNS}` : ""}`,
+      );
       if (!res.ok) {
         activeRunStreamRef.current?.close();
         activeRunStreamRef.current = null;
@@ -637,6 +704,35 @@ export default function WorkScreen() {
     } finally {
       setLoadingThread(false);
     }
+  }
+
+  async function loadOlder(): Promise<boolean> {
+    const threadId = activeThreadIdRef.current;
+    const before = bundle?.runs[0]?.id;
+    if (!threadId || !before || !bundle?.hasOlder || loadingOlder) return false;
+    setLoadingOlder(true);
+    try {
+      const res = await fetch(
+        `/api/work/threads/${threadId}?limit=${CHAT_PAGE_RUNS}&before=${encodeURIComponent(before)}`,
+      );
+      if (!res.ok || activeThreadIdRef.current !== threadId) return false;
+      const older = withAssistantTimelinePlaceholders((await res.json()) as ThreadBundle);
+      keepOffsetRef.current = document.documentElement.scrollHeight - window.scrollY;
+      setBundle((prev) => (prev ? prependOlder(prev, older) : prev));
+      return Boolean(older.hasOlder);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
+
+  async function loadAllOlder() {
+    const threadId = activeThreadIdRef.current;
+    if (!threadId || !bundle?.hasOlder) return;
+    const res = await fetch(`/api/work/threads/${threadId}`);
+    if (!res.ok || activeThreadIdRef.current !== threadId) return;
+    const full = withAssistantTimelinePlaceholders((await res.json()) as ThreadBundle);
+    setBundle((prev) => (prev ? prependOlder(prev, { ...full, hasOlder: false }) : prev));
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   }
 
   async function loadPendingMemories(threadId: string) {
@@ -1313,7 +1409,7 @@ export default function WorkScreen() {
             <Button
               variant="secondary"
               className="work-command-action"
-              onClick={() => void printThread()}
+              onClick={() => void loadAllOlder().then(() => printThread())}
               title="Save this thread as a PDF"
             >
               <Printer aria-hidden="true" strokeWidth={1.9} />
@@ -1381,6 +1477,11 @@ export default function WorkScreen() {
               requestAnimationFrame(() => textareaRef.current?.focus());
             }}
           />
+        ) : null}
+        {bundle?.hasOlder && !loadingThread ? (
+          <div ref={olderSentinelRef} className="thread-older" role="status">
+            {loadingOlder ? "Loading earlier messages" : ""}
+          </div>
         ) : null}
         {bundle?.messages.length ? (
           bundle.messages.flatMap((message, index, arr) => {
@@ -1506,6 +1607,7 @@ export default function WorkScreen() {
       </div>
 
       <div className="work-composer">
+        {inBotChat && bundle?.messages.length ? <ThreadJump onTop={loadAllOlder} /> : null}
         {pendingMemories.length > 0 ? (
           <PendingMemoryPanel
             pending={pendingMemories}
@@ -3116,10 +3218,13 @@ function RunTimeline({
       );
     }
     if (item.kind === "tools") {
+      // Approvals render on their own below, never inside a collapsible group.
+      const tools = item.tools.filter((tool) => !tool.approval);
+      if (tools.length === 0) return null;
       return (
         <ToolGroup
           key={`tools-${index}`}
-          tools={item.tools}
+          tools={tools}
           threadId={threadId}
           runId={run?.id ?? ""}
         />
@@ -3159,6 +3264,11 @@ function RunTimeline({
     .filter(({ item }) => TRAIL_KINDS.has(item.kind));
   const foldTrail = !reasoningExpanded && !pending && trail.length > 0 && (hasText || hasSurface || Boolean(persistedText));
 
+  // An approval asks the operator to act, so it never folds into the trail.
+  const approvals = presentation.items.flatMap((item) =>
+    item.kind === "tools" ? item.tools.filter((tool) => tool.approval) : [],
+  );
+
   return (
     <div className="work-timeline flex flex-col gap-2.5 mt-1">
       {foldTrail ? (
@@ -3166,6 +3276,9 @@ function RunTimeline({
           {trail.map(({ item, index }) => renderItem(item, index))}
         </WorkTrail>
       ) : null}
+      {approvals.map((tool) => (
+        <ActionApprovalRow key={`approval-${tool.id}`} threadId={threadId} runId={run?.id ?? ""} tool={tool} />
+      ))}
       {presentation.items.map((item, index) =>
         foldTrail && TRAIL_KINDS.has(item.kind) ? null : renderItem(item, index),
       )}
