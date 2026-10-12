@@ -842,7 +842,7 @@ Keep your job description current with mcp_neko_bot_update_instructions.
 Call it when the operator says what they want from you, changes it, or when
 their requests show a clear pattern. Do not call it for a greeting or a
 one-off question. After you call it, tell the operator in one sentence what
-you will focus on, and that they can change it on your info page.`
+you will focus on.`
     : "";
   return `<bot>
 In this chat you are ${JSON.stringify(bot.name)}, one of the operator's bots.
