@@ -18,7 +18,8 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty";
 import { SearchInput } from "@/components/ui/search-input";
 import { matchesListSearch } from "@/lib/list-search";
-import { COMING_SOON_CONNECTORS, SUPPORTED_CONNECTORS } from "./connector-catalog";
+import Image from "next/image";
+import { COMING_SOON_CONNECTORS, SUPPORTED_CONNECTORS, connectorIcon } from "./connector-catalog";
 
 type Row = {
   pluginId: string;
@@ -32,6 +33,15 @@ type Row = {
 };
 
 type InitialState = { workspace: Row[]; connectors: Row[]; personal?: PackUserConnectionStatus[] };
+
+function ConnectorTitle({ label, icon }: { label: string; icon: string | null }) {
+  return (
+    <span className="flex min-w-0 items-center gap-3">
+      {icon ? <Image src={icon} alt="" width={28} height={28} className="size-7 shrink-0 object-contain" /> : null}
+      <h3 className="font-display text-ui-subsection font-bold text-text break-words">{label}</h3>
+    </span>
+  );
+}
 
 export default function IntegrationsList({ initial, isAdmin = true, preview = false, variant = "page", canSetUp = false }: { initial: InitialState; isAdmin?: boolean; preview?: boolean; variant?: "page" | "chat"; canSetUp?: boolean }) {
   const returnQuery = variant === "chat" ? "?returnTo=/chat/connectors" : "";
@@ -222,7 +232,7 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
         <ul className="flex flex-col gap-3">{visiblePersonal.map(row => <Card as="li" key={`${row.packId}:${row.key}`} className="grid gap-4" aria-busy={busy === `${row.packId}:${row.key}`}>
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="font-display text-ui-subsection font-bold text-text">{row.providerLabel}</h3>
+              <ConnectorTitle label={row.providerLabel} icon={connectorIcon(row.packId)} />
               <Badge variant={row.connected ? "success" : "muted"}>{row.connected ? "Connected" : "Not connected"}</Badge>
             </div>
             <p className="text-ui-body-sm text-text2 break-words">{row.accountLabel ?? (row.configured ? "Connect your account to get started." : "An admin needs to finish setup first.")}</p>
@@ -246,7 +256,7 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
               <Card as="li" key={connector.packId} className="grid gap-4">
                 <CardHeader>
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="font-display text-ui-subsection font-bold text-text">{connector.label}</h3>
+                    <ConnectorTitle label={connector.label} icon={connector.icon} />
                     <Badge variant="muted">Needs setup</Badge>
                   </div>
                   <p className="text-ui-body-sm text-text2">{connector.description}</p>
@@ -274,7 +284,7 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
               <Card as="li" key={connector.label} className="grid gap-2">
                 <CardHeader>
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="font-display text-ui-subsection font-bold text-text">{connector.label}</h3>
+                    <ConnectorTitle label={connector.label} icon={connector.icon} />
                     <Badge variant="secondary">Coming soon</Badge>
                   </div>
                   <p className="text-ui-body-sm text-text2">{connector.description}</p>
