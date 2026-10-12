@@ -1,5 +1,6 @@
 // Ax backend: one ax-harness process per turn. Protocol: apps/ax-harness/docs/RUN-PROTOCOL.md.
 
+import { estimateTokenCostUsd, MODEL_PRICES_VERSION } from "../spend/model-prices";
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -81,7 +82,7 @@ function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   }
 }
 
-export function normalizeAxUsage(usage: AxUsage | undefined): AgentTokenUsage {
+export function normalizeAxUsage(usage: AxUsage | undefined, route?: { provider: string; model: string }): AgentTokenUsage {
   if (!usage) return { coverage: "unavailable", missingReasons: ["Ax Harness reported no usage"] };
   const tokens = {
     inputTokens: usage.input_tokens,
@@ -91,10 +92,26 @@ export function normalizeAxUsage(usage: AxUsage | undefined): AgentTokenUsage {
     cacheWriteTokens: usage.cache_write_tokens,
     reasoningTokens: usage.reasoning_tokens,
   };
+  // A partial report is scaled up by the calls it missed.
+  const scale = usage.coverage === "complete" ? 1
+    : usage.coverage === "partial" && usage.reported && usage.requests ? usage.requests / usage.reported
+    : 0;
+  const reportedCost = route && scale > 0
+    ? estimateTokenCostUsd(route.provider, route.model, {
+        inputTokens: usage.input_tokens,
+        outputTokens: usage.output_tokens,
+        cacheReadTokens: usage.cache_read_tokens,
+        cacheWriteTokens: usage.cache_write_tokens,
+        totalTokens: usage.total_tokens,
+      })
+    : undefined;
+  const cost = reportedCost === undefined ? undefined : reportedCost * scale;
   return {
     ...Object.fromEntries(Object.entries(tokens).filter(([, v]) => typeof v === "number")),
     coverage: usage.coverage ?? "unavailable",
-    costStatus: "unknown",
+    ...(cost === undefined
+      ? { costStatus: "unknown" as const }
+      : { costStatus: "estimated" as const, estimatedCostUsd: cost, currency: "USD", costSource: "official_docs_snapshot", pricingCatalogVersion: MODEL_PRICES_VERSION }),
     ...(usage.coverage === "partial"
       ? { missingReasons: [`The provider reported usage for ${usage.reported ?? 0} of ${usage.requests ?? 0} model calls`] }
       : {}),
@@ -465,7 +482,7 @@ export class AxEventMapper {
       source: "outer",
       ...(this.observed ?? {}),
       modelIdentity: { configured, ...(this.observed ? { observed: this.observed } : {}) },
-      usage: normalizeAxUsage(usage),
+      usage: normalizeAxUsage(usage, configured),
     });
   }
 

@@ -33,7 +33,16 @@ export interface RunBinding {
 
 export type AgentBrokerEventSink = (event: AgentEvent) => Promise<void>;
 
-const runEventSinks = new Map<string, AgentBrokerEventSink>();
+// Next evaluates this module once per route bundle inside one process; the
+// broker, its port and its event sinks must be shared, as the warm pool is.
+type BrokerState = {
+  singleton?: AgentBrokerHandle;
+  starting?: Promise<AgentBrokerHandle | undefined>;
+  sinks: Map<string, AgentBrokerEventSink>;
+};
+const brokerHost = globalThis as typeof globalThis & { __opennekoAgentBroker?: BrokerState };
+const brokerState: BrokerState = (brokerHost.__opennekoAgentBroker ??= { sinks: new Map() });
+const runEventSinks = brokerState.sinks;
 
 /**
  * Attach the host run's normal event sink to MCP bridge emissions. This keeps
@@ -788,8 +797,6 @@ export async function startAgentBroker(
   };
 }
 
-let brokerSingleton: AgentBrokerHandle | undefined;
-let brokerStarting: Promise<AgentBrokerHandle | undefined> | undefined;
 
 /**
  * Lazily start the per-process agent broker, bound to the in-process control
@@ -800,10 +807,10 @@ let brokerStarting: Promise<AgentBrokerHandle | undefined> | undefined;
  * and the web chat route.
  */
 export function ensureAgentBroker(): Promise<AgentBrokerHandle | undefined> {
-  if (brokerSingleton) return Promise.resolve(brokerSingleton);
-  if (!brokerStarting) {
+  if (brokerState.singleton) return Promise.resolve(brokerState.singleton);
+  if (!brokerState.starting) {
     const pinned = Number(process.env.OPENNEKO_BROKER_PORT) || 0;
-    brokerStarting = startAgentBroker({
+    brokerState.starting = startAgentBroker({
       controlPlane: inProcessControlPlane,
       hostAlias: sandboxBrokerHost(),
       port: pinned || 4199,
@@ -823,15 +830,15 @@ export function ensureAgentBroker(): Promise<AgentBrokerHandle | undefined> {
         });
       })
       .then((h) => {
-        brokerSingleton = h;
+        brokerState.singleton = h;
         return h;
       })
       .catch((e) => {
-        brokerStarting = undefined; // allow a retry on the next run
+        brokerState.starting = undefined; // allow a retry on the next run
         throw e;
       });
   }
-  return brokerStarting;
+  return brokerState.starting;
 }
 
 /**
@@ -842,12 +849,12 @@ export function ensureAgentBroker(): Promise<AgentBrokerHandle | undefined> {
  * broker's listening socket does not keep the Node process alive.
  */
 export async function shutdownAgentBroker(): Promise<void> {
-  const starting = brokerStarting;
+  const starting = brokerState.starting;
   const active =
-    brokerSingleton ??
+    brokerState.singleton ??
     (starting ? await starting.catch(() => undefined) : undefined);
-  brokerSingleton = undefined;
-  brokerStarting = undefined;
+  brokerState.singleton = undefined;
+  brokerState.starting = undefined;
   await active?.close();
 }
 
