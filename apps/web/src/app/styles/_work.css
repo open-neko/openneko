@@ -1323,3 +1323,9 @@ textarea.work-a2ui-input { resize: vertical; }
 
 /* A finished run's working trail, folded above the answer. */
 .work-trail summary { font-weight: 600; }
+
+.work-run-stopped {
+  margin: 8px 0 0;
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+}

@@ -1183,7 +1183,9 @@ export default function WorkScreen() {
                   : event.type === "error"
                   ? "failed"
                   : run.status,
-              error: event.type === "error" ? event.message : run.error,
+              error: event.type === "error"
+                ? event.message
+                : runWasCancelled(event) ? null : run.error,
             }
           : run,
       );
@@ -1200,6 +1202,8 @@ export default function WorkScreen() {
     if (event.type === "error") {
       setStreamError(event.message);
     }
+    // A stop the operator asked for is not a failure.
+    if (runWasCancelled(event)) setStreamError(null);
   }
 
   async function cancelRun() {
@@ -1799,6 +1803,10 @@ const EMPTY_PROMPTS: Array<{ label: string; text: string }> = [
   { label: "Watch for a change", text: "Set up a workflow that " },
 ];
 
+function runWasCancelled(event: { type: string; result?: unknown }): boolean {
+  return event.type === "done" && (event.result as { status?: string } | undefined)?.status === "cancelled";
+}
+
 function EmptyAsk({ onPick }: { onPick: (text: string) => void }) {
   return (
     <div className="ask-start">
@@ -2078,7 +2086,8 @@ type TimelineItem =
       kind: "needs_input";
       request: Extract<WorkEvent, { type: "needs_input" }>;
     }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string }
+  | { kind: "stopped" };
 
 type RunArtifact = Extract<WorkEvent, { type: "artifact" }>["artifact"];
 
@@ -2420,6 +2429,7 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
   artifacts: RunArtifact[];
 } {
   const items: TimelineItem[] = [];
+  const stopped = events.some((event) => runWasCancelled(event));
   const toolsById = new Map<string, ToolItem>();
   const progressById = new Map<
     string,
@@ -2540,7 +2550,8 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
       }
       case "error": {
         flushTextSegment();
-        items.push({ kind: "error", message: event.message });
+        // An operator's stop ends the run without a failure notice.
+        items.push(stopped ? { kind: "stopped" } : { kind: "error", message: event.message });
         break;
       }
       case "surface": {
@@ -3091,6 +3102,9 @@ function RunTimeline({
           onRespond={(text) => insertComposerRef.current?.(text)}
         />
       );
+    }
+    if (item.kind === "stopped") {
+      return <p key={`stopped-${index}`} className="work-run-stopped">Stopped.</p>;
     }
     return <WorkFailureNotice key={`error-${index}`} message={item.message} />;
   };
