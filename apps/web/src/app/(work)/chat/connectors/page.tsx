@@ -9,5 +9,5 @@ export default async function ConnectorsPage() {
   const [actor, user] = await Promise.all([getCurrentActor(), getCurrentUser()]);
   const { connectors, personal } = await loadIntegrations(actor, user);
   // Org-wide connections stay in Admin; this screen holds the person's own.
-  return <IntegrationsList variant="chat" initial={{ workspace: [], connectors, personal }} isAdmin={false} />;
+  return <IntegrationsList variant="chat" initial={{ workspace: [], connectors, personal }} isAdmin={false} canSetUp={actor.role === "admin"} />;
 }

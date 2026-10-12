@@ -18,6 +18,7 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty";
 import { SearchInput } from "@/components/ui/search-input";
 import { matchesListSearch } from "@/lib/list-search";
+import { COMING_SOON_CONNECTORS, SUPPORTED_CONNECTORS } from "./connector-catalog";
 
 type Row = {
   pluginId: string;
@@ -32,7 +33,7 @@ type Row = {
 
 type InitialState = { workspace: Row[]; connectors: Row[]; personal?: PackUserConnectionStatus[] };
 
-export default function IntegrationsList({ initial, isAdmin = true, preview = false, variant = "page" }: { initial: InitialState; isAdmin?: boolean; preview?: boolean; variant?: "page" | "chat" }) {
+export default function IntegrationsList({ initial, isAdmin = true, preview = false, variant = "page", canSetUp = false }: { initial: InitialState; isAdmin?: boolean; preview?: boolean; variant?: "page" | "chat"; canSetUp?: boolean }) {
   const returnQuery = variant === "chat" ? "?returnTo=/chat/connectors" : "";
   const [personal, setPersonal] = useState(initial.personal ?? []);
   const [workspace, setWorkspace] = useState<Row[]>(initial.workspace);
@@ -124,6 +125,19 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
     } catch (error) { toast.error(error instanceof Error ? error.message : "Connection failed"); }
     finally { setBusy(null); }
   }
+
+  async function explainSetup(label: string) {
+    await confirmDialog({
+      title: `${label} needs setup`,
+      description: `An admin sets up ${label} for your workspace first. Ask an admin to install and configure it, then connect your account here.`,
+      confirmLabel: "OK",
+      cancelLabel: "Close",
+    });
+  }
+
+  const notSetUp = variant === "chat"
+    ? SUPPORTED_CONNECTORS.filter((connector) => !personal.some((row) => row.packId === connector.packId))
+    : [];
 
   function renderPluginConnection(row: Row, isDeployment: boolean) {
     const disabled = preview || busy !== null || (isDeployment && !isAdmin);
@@ -224,6 +238,53 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
         </Card>)}</ul>
       </section>}
 
+      {notSetUp.length > 0 && (
+        <section aria-labelledby="available-connectors">
+          <h2 id="available-connectors" className="mt-6 mb-2 font-display text-ui-section font-bold text-text">Available</h2>
+          <ul className="flex flex-col gap-3">
+            {notSetUp.map((connector) => (
+              <Card as="li" key={connector.packId} className="grid gap-4">
+                <CardHeader>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="font-display text-ui-subsection font-bold text-text">{connector.label}</h3>
+                    <Badge variant="muted">Needs setup</Badge>
+                  </div>
+                  <p className="text-ui-body-sm text-text2">{connector.description}</p>
+                </CardHeader>
+                <CardFooter>
+                  <ActionGroup align="start">
+                    {canSetUp ? (
+                      <ButtonLink href="/admin/settings/packs">Set up in Admin</ButtonLink>
+                    ) : (
+                      <Button onClick={() => void explainSetup(connector.label)}>Connect account</Button>
+                    )}
+                  </ActionGroup>
+                </CardFooter>
+              </Card>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {variant === "chat" && (
+        <section aria-labelledby="coming-soon-connectors">
+          <h2 id="coming-soon-connectors" className="mt-6 mb-2 font-display text-ui-section font-bold text-text">Coming soon</h2>
+          <ul className="flex flex-col gap-3">
+            {COMING_SOON_CONNECTORS.map((connector) => (
+              <Card as="li" key={connector.label} className="grid gap-2">
+                <CardHeader>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="font-display text-ui-subsection font-bold text-text">{connector.label}</h3>
+                    <Badge variant="secondary">Coming soon</Badge>
+                  </div>
+                  <p className="text-ui-body-sm text-text2">{connector.description}</p>
+                </CardHeader>
+              </Card>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {visibleWorkspace.length > 0 && (
         <>
           <h2 className="mt-6 mb-2 font-display text-ui-section font-bold text-text">
@@ -257,11 +318,11 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
         </>
       )}
 
-      {workspace.length === 0 && connectors.length === 0 && personal.length === 0 && (
+      {variant !== "chat" && workspace.length === 0 && connectors.length === 0 && personal.length === 0 && (
         <EmptyState
           className="py-20"
           icon={<Plug aria-hidden="true" />}
-          title={variant === "chat" ? "No connectors yet" : "No integrations available"}
+          title="No integrations available"
           body={isAdmin ? "Install a pack or plugin that provides a connection, then return here to connect your account." : "An admin needs to install a pack before you can connect your account."}
           action={isAdmin ? <ButtonLink href="/admin/settings/packs">Review packs</ButtonLink> : undefined}
         />
@@ -271,7 +332,7 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
         <EmptyState
           className="py-20"
           icon={<Plug aria-hidden="true" />}
-          title="No matching integrations"
+          title={variant === "chat" ? "No matching connectors" : "No matching integrations"}
           body="Try another provider, plugin, or scope."
         />
       ) : null}
