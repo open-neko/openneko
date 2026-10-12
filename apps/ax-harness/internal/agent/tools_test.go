@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -352,5 +353,19 @@ func TestFinalStopsOnceWhileAFailureIsUnfixed(t *testing.T) {
 	defer mu.Unlock()
 	if !strings.Contains(bodies[3], "failed and no later call fixed them") || !strings.Contains(bodies[3], "SyntaxError") {
 		t.Fatal("final() did not stop for the unfixed failure")
+	}
+}
+
+func TestClarificationQuestionReadsAskClarification(t *testing.T) {
+	plain := ax.AxError{Category: "clarification", Payload: ax.Object("args", []ax.Value{"Which week should the report cover?"})}
+	if text, ok := clarificationQuestion(plain); !ok || text != "Which week should the report cover?" {
+		t.Fatalf("plain = %q %v", text, ok)
+	}
+	structured := ax.AxError{Category: "clarification", Payload: ax.Object("question", "Which region?", "options", []ax.Value{"North", "South"})}
+	if text, ok := clarificationQuestion(fmt.Errorf("forward: %w", structured)); !ok || text != "Which region?\n- North\n- South" {
+		t.Fatalf("structured = %q %v", text, ok)
+	}
+	if _, ok := clarificationQuestion(ax.AxError{Category: "provider", Message: "rate limited"}); ok {
+		t.Fatal("a provider error read as a clarification")
 	}
 }

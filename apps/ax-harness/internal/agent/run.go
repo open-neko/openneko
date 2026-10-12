@@ -469,6 +469,11 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 		answer, err := streamAnswer(ctx, engine, streamClient, values, forwardOptions, events, spec.StreamResponses)
 		engine.CloseRuntimeSession()
 		events.setReserve(0)
+		if question, asked := clarificationQuestion(err); asked {
+			// askClarification() ends the turn with a question for the operator.
+			err = nil
+			answer = question
+		}
 		if err != nil {
 			result.Code = failureCode(err, events, streamClient)
 			if result.Code == "model_failed" {
@@ -944,4 +949,51 @@ func (s *span) End() {
 		}
 		s.r.send(Event{Type: "span.finished", SpanID: s.id, DurationMS: duration})
 	})
+}
+
+// clarificationQuestion reads the question an actor passed to
+// askClarification(), which Ax returns as an error of category "clarification".
+func clarificationQuestion(err error) (string, bool) {
+	var axErr ax.AxError
+	if err == nil || !errors.As(err, &axErr) || axErr.Category != "clarification" {
+		return "", false
+	}
+	payload := axErr.Payload
+	if entry, ok := payload.(map[string]ax.Value); ok {
+		if args, ok := entry["args"].([]ax.Value); ok && len(args) > 0 {
+			payload = args[0]
+		}
+	}
+	var text string
+	var options []string
+	switch v := payload.(type) {
+	case string:
+		text = v
+	case map[string]ax.Value:
+		for _, key := range []string{"question", "message", "text"} {
+			if s, ok := v[key].(string); ok && strings.TrimSpace(s) != "" {
+				text = s
+				break
+			}
+		}
+		for _, key := range []string{"options", "choices"} {
+			if list, ok := v[key].([]ax.Value); ok {
+				for _, item := range list {
+					if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+						options = append(options, s)
+					}
+				}
+			}
+		}
+	}
+	if strings.TrimSpace(text) == "" {
+		text = strings.TrimSpace(axErr.Message)
+	}
+	if text == "" {
+		return "", false
+	}
+	for _, option := range options {
+		text += "\n- " + option
+	}
+	return text, true
 }
