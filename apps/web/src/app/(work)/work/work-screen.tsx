@@ -111,6 +111,7 @@ import {
 import BriefingCard from "@/components/BriefingCard";
 import WorkHistoryDrawer from "@/components/WorkHistoryDrawer";
 import BotGreeting from "@/components/chat/BotGreeting";
+import { useThreadBot } from "@/components/chat/useThreadBot";
 import {
   ActionRequestCard,
   RuleSavedCard,
@@ -368,8 +369,11 @@ export default function WorkScreen() {
   const params = useParams();
   const searchParams = useSearchParams();
   const threadBase = usePathname()?.startsWith("/chat/") ? "/chat/t" : "/work";
+  const inBotChat = threadBase !== "/work";
   const routeThreadId =
     typeof params?.threadId === "string" ? params.threadId : null;
+  const { bot: threadBot } = useThreadBot(routeThreadId, inBotChat);
+  const assistantName = threadBot?.name ?? "OpenNeko";
   const {
     setActiveRunId,
     insertComposerRef,
@@ -703,7 +707,10 @@ export default function WorkScreen() {
     if (!mention) return [] as WorkMention[];
     return filterWorkMentions(mentionOptions, mention.query);
   }, [mention, mentionOptions]);
-  const mentionOpen = mention !== null;
+  // Once the query holds a space, the menu stays only while something matches.
+  const mentionOpen =
+    mention !== null && (!/\s/.test(mention.query) || mentionMatches.length > 0 ||
+      [mentionSourceState.skills, mentionSourceState.workflows].some((state) => state !== "ready" && state !== "error"));
   const mentionActiveIndex = mention
     ? Math.min(Math.max(mention.activeIndex, 0), mentionMatches.length - 1)
     : 0;
@@ -792,7 +799,8 @@ export default function WorkScreen() {
     if (at === -1) return null;
     if (at > 0 && !/\s/.test(value[at - 1] ?? "")) return null;
     const query = upto.slice(at + 1);
-    if (/\s/.test(query)) return null;
+    // Names hold spaces; a line break or a long run of text ends the search.
+    if (/\n/.test(query) || query.length > 80) return null;
     return { query, anchor: at, activeIndex: 0 };
   }
 
@@ -1280,14 +1288,14 @@ export default function WorkScreen() {
       {threadBase === "/work" || bundle?.messages.length ? (
       <header className="work-command-head">
         <div className="work-command-copy">
-          {workPhase !== "prompt" ? (
+          {inBotChat ? null : workPhase !== "prompt" ? (
             <div className="work-command-eyebrow">
               <span>Work</span>
               <span className="work-command-slash" aria-hidden="true">/</span>
               <span data-phase={workPhase}>{workStateLabel}</span>
             </div>
           ) : null}
-          <h1 title={threadTitle}>{threadTitle}</h1>
+          {inBotChat ? null : <h1 title={threadTitle}>{threadTitle}</h1>}
         </div>
         <div className="work-command-actions">
           {bundle?.messages.length ? (
@@ -1359,7 +1367,13 @@ export default function WorkScreen() {
             Loading the work trace
           </div>
         ) : !bundle?.messages.length && threadBase !== "/work" ? (
-          <BotGreeting threadId={routeThreadId} onPick={(text) => void sendText(text)} />
+          <BotGreeting
+            threadId={routeThreadId}
+            onPick={(text) => {
+              setDraft(text);
+              requestAnimationFrame(() => textareaRef.current?.focus());
+            }}
+          />
         ) : !bundle?.messages.length ? (
           <EmptyAsk
             onPick={(text) => {
@@ -1650,8 +1664,10 @@ export default function WorkScreen() {
             }
             placeholder={
               sending
-                ? "OpenNeko is working…"
-                : "Ask a question or describe a task…"
+                ? `${assistantName} is working…`
+                : threadBot
+                  ? `Ask ${threadBot.name}…`
+                  : "Ask a question or describe a task…"
             }
             value={draft}
             onChange={(event) =>
@@ -1744,7 +1760,7 @@ export default function WorkScreen() {
                 className="work-send-btn"
                 onClick={() => void sendMessage()}
                 disabled={!draft.trim() && files.length === 0}
-                aria-label="Send to OpenNeko"
+                aria-label={`Send to ${assistantName}`}
               >
                 <span>Send</span>
                 <ArrowUp size={14} strokeWidth={2.5} aria-hidden />
@@ -1802,6 +1818,34 @@ const EMPTY_PROMPTS: Array<{ label: string; text: string }> = [
   { label: "Inventory risk", text: "Which products are below their reorder threshold?" },
   { label: "Watch for a change", text: "Set up a workflow that " },
 ];
+
+const ATTACHMENT_LINE = /^- (\S+)\s+\((.+), (\d+) KB\)$/;
+
+/** A user message, with its attached-file lines shown as file links. */
+function UserCopy({ content }: { content: string }) {
+  const marker = content.search(/(^|\n\n)I've attached (a file|files):\n/);
+  if (marker === -1) return <div className="work-markdown user-copy">{content}</div>;
+  const text = content.slice(0, marker).trim();
+  const files = content
+    .slice(marker)
+    .split("\n")
+    .map((line) => ATTACHMENT_LINE.exec(line.trim()))
+    .filter((match): match is RegExpExecArray => match !== null);
+  if (files.length === 0) return <div className="work-markdown user-copy">{content}</div>;
+  return (
+    <div className="work-markdown user-copy">
+      {text ? <div>{text}</div> : null}
+      <ul className="work-user-attachments" aria-label="Attached files">
+        {files.map(([, path, name, kb]) => (
+          <li key={path}>
+            <a href={`/api/work/files/${path}`} download={name}>{name}</a>
+            <span>{kb} KB</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function runWasCancelled(event: { type: string; result?: unknown }): boolean {
   return event.type === "done" && (event.result as { status?: string } | undefined)?.status === "cancelled";
@@ -2000,7 +2044,7 @@ function MessageBubble({
             </div>
           </div>
         ) : (
-          <div className="work-markdown user-copy">{display}</div>
+          <UserCopy content={display} />
         )}
       </div>
       {showActions ? (
