@@ -25,10 +25,10 @@ export type SummarizeFn = (
   orgId?: string,
 ) => Promise<string>;
 
-const DESCRIPTION = `You compact an OpenNeko analyst conversation so it can continue without the full transcript. Fold the prior summary and the new turns into one dense, factual summary (max ~400 tokens) capturing only what later turns need: the operator's goals and standing asks; key findings, metrics, and figures surfaced; decisions and actions taken (including approved/rejected actions); data sources, entities, and time ranges examined; open/pending items; and the current focus. No greetings, no meta-commentary, no markdown headers — just the substance.`;
+const DESCRIPTION = `You compact an OpenNeko analyst conversation so it can continue without the full transcript. Fold the prior summary and the new turns into one dense, factual summary (at most 1,600 characters) capturing only what later turns need: the operator's goals and standing asks; key findings, metrics, and figures surfaced; decisions and actions taken (including approved/rejected actions); data sources, entities, and time ranges examined; open/pending items; and the current focus. No greetings, no meta-commentary, no markdown headers — just the substance.`;
 
 export const compactor = ax(
-  `priorSummary?:string "summary so far, absent on the first fold", transcript:string "older conversation turns to fold in" -> summary:string "dense factual summary, max ~400 tokens"`,
+  `priorSummary?:string "summary so far, absent on the first fold", transcript:string "older conversation turns to fold in" -> summary:string "dense factual summary, at most 1600 characters"`,
   { description: DESCRIPTION },
 );
 
