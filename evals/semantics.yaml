@@ -730,6 +730,63 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/work
+  - id: COLLAB-ANSWER-REUSE
+    category: work-context
+    description: An orchestrator reuses another orchestrator's answer only when it
+      is fresh, in scope, and verified again for the asking principal
+    verification: cross-thread reuse oracle
+    disposition: declared
+    tiers:
+      - deterministic
+      - stateful
+    controls:
+      - present
+      - decoy
+    owners:
+      - packages/llm/src/work
+  - id: COLLAB-CONFLICTING-CLAIMS
+    category: work-context
+    description: Conflicting agent claims in a channel are settled from data or
+      shown as a conflict; no claim becomes a learned rule without run evidence
+    verification: conflict fixture + lesson oracle
+    disposition: declared
+    tiers:
+      - deterministic
+      - adversarial
+    controls:
+      - present
+      - decoy
+      - negative
+    owners:
+      - packages/llm/src/work
+  - id: COLLAB-CREDIT-ASSIGNMENT
+    category: work-context
+    description: Outcomes credit the root task, its sub-runs, and the rules each run
+      cited, so a learned change is judged on the runs that used it
+    verification: lineage + citation oracle
+    disposition: declared
+    tiers:
+      - deterministic
+      - stateful
+    controls:
+      - present
+      - absent
+    owners:
+      - packages/llm/src/work
+  - id: COLLAB-CHANNEL-HYGIENE
+    category: work-context
+    description: Orchestrator channels carry task messages only; learning internals,
+      rule ids, and lesson chatter never appear there
+    verification: channel transcript scan
+    disposition: declared
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
+      - negative
+    owners:
+      - packages/llm/src/work
   - id: FLOW-BUILD
     category: workflow-automation
     description: Natural-language workflow creation/update/delete produces a valid
@@ -1457,6 +1514,38 @@ entries:
       the always-on floor remains
     verification: profile matrix
     disposition: declared
+    owners:
+      - packages/llm/src/work
+      - packages/records/src/policy
+  - id: SEC-COLLAB-ENTITLEMENT
+    category: security-governance
+    description: One orchestrator's private data and sub-agent results never reach
+      another orchestrator, a shared channel, or a shared learned store beyond
+      the asking principal's access
+    verification: cross-principal channel negative E2E
+    disposition: declared
+    tiers:
+      - deterministic
+      - adversarial
+    controls:
+      - present
+      - negative
+    owners:
+      - packages/llm/src/work
+      - packages/records/src/policy
+  - id: SEC-COLLAB-INJECTION
+    category: security-governance
+    description: Instructions injected into one orchestrator's sources or channel
+      messages do not spread to other orchestrators, sub-agents, or learned
+      stores
+    verification: adversarial contagion corpus
+    disposition: declared
+    tiers:
+      - deterministic
+      - adversarial
+    controls:
+      - present
+      - decoy
     owners:
       - packages/llm/src/work
       - packages/records/src/policy

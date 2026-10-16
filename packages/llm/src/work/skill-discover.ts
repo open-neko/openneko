@@ -57,6 +57,8 @@ export type SkillDiscoveryResult = {
   evidenceRunIds: string[];
   rationale?: string;
   rules?: LearnedRule[];
+  /** The new skill's description, or the rule added to an existing skill. */
+  lesson?: string;
 };
 
 const PROPOSAL_SHAPE = `{"action": "none", "rationale": "why"}
@@ -201,6 +203,7 @@ export async function runSkillDiscovery(input: {
     skillName: name,
     evidenceRunIds: grounding.runIds,
     rationale: proposal.rationale,
+    lesson: proposal.skill.description,
   };
 }
 
@@ -259,6 +262,7 @@ async function extendSkill(input: {
     evidenceRunIds: input.groundedRunIds,
     rationale: proposal.rationale,
     rules: update.rules,
+    lesson: proposal.rule,
   };
 }
 

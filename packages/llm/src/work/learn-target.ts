@@ -18,6 +18,18 @@ export const LEARN_TARGET_KINDS: readonly LearnTargetKind[] = [
   "skill-description",
   "org",
 ];
+/**
+ * Target kinds the orchestrator tree will need. The engine does not learn them
+ * yet; they are named so stores, evals and lineage can refer to them.
+ */
+export const DECLARED_TARGET_KINDS = ["role", "delegation"] as const;
+export type DeclaredTargetKind = (typeof DECLARED_TARGET_KINDS)[number];
+
+export function targetKindStatus(kind: string): "learned" | "declared" | null {
+  if (isLearnTargetKind(kind)) return "learned";
+  return (DECLARED_TARGET_KINDS as readonly string[]).includes(kind) ? "declared" : null;
+}
+
 export const ORG_TARGET_ID = "org";
 /** Threads on this channel are run by or for the learner; they never count as evidence. */
 export const LEARNING_THREAD_CHANNEL = "learning";

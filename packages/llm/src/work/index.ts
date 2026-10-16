@@ -109,6 +109,8 @@ export {
   type SkillLearnScoreSample,
 } from "./skill-learn-score";
 export {
+  deliverLearningSignal,
+  dismissLesson,
   enqueueSkillLearnForRun,
   runSkillDiscoveryForOrg,
   getSkillLearnOrgSettings,
@@ -132,17 +134,49 @@ export {
 } from "./skill-learn-verify";
 export { assertAdditiveLearnedBody, scanLearnedText } from "./skill-learn-scan";
 export {
+  DECLARED_TARGET_KINDS,
   LEARN_TARGET_KINDS,
   LEARNING_THREAD_CHANNEL,
+  targetKindStatus,
   extractRuleCitations,
   isLearnTargetKind,
   learnTargetDir,
   learnTargetKey,
   readLearnedNotes,
   writeLearnedNotes,
+  type DeclaredTargetKind,
   type LearnTarget,
   type LearnTargetKind,
 } from "./learn-target";
+export {
+  LESSON_CONSUMER,
+  listLessons,
+  type LessonDetail,
+  type LessonRow,
+  type LessonVerdict,
+} from "./learn-lessons";
+export {
+  LEARNING_EVENT_CONSUMER,
+  MAX_LEARNING_EVENTS_PER_DAY,
+  listLearningEvents,
+  recordLearningEvent,
+  type LearningEventKind,
+  type LearningEventLine,
+} from "./learn-events";
+export {
+  INTERNAL_SUBSCRIPTIONS,
+  emitRunSignal,
+  type InternalSubscription,
+  type RunSignal,
+  type RunSignalKind,
+} from "./run-signal";
+export {
+  pinRunStoreVersions,
+  readPinnedRules,
+  recordRunChannelMessages,
+  resolveRunLineage,
+  type ConsumedChannelMessage,
+} from "./run-lineage";
 export {
   LEARNED_DIR,
   ORG_PLAYBOOK_FILE,

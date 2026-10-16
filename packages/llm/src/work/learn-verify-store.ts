@@ -202,14 +202,11 @@ async function defaultExecute(input: { orgId: string; runId: string; query: stri
 }
 
 async function defaultVerifyLlm(orgId: string): Promise<VerifyLlm> {
-  const [{ ax }, { buildLlm }, { normalizeAxProgramUsage }, { estimateTokenCostUsd, MODEL_PRICES_VERSION }, { recordUsageSpend }] =
-    await Promise.all([
-      import("@ax-llm/ax"),
-      import("../llm"),
-      import("../usage-normalization"),
-      import("../spend/model-prices"),
-      import("../spend/ledger"),
-    ]);
+  const [{ ax }, { buildLlm }, { recordLearnerSpend }] = await Promise.all([
+    import("@ax-llm/ax"),
+    import("../llm"),
+    import("./learn-spend"),
+  ]);
   const llm = await buildLlm(orgId);
   const generator = ax(
     `verifyRequest:string "the question the analyst answered", answerText:string "the analyst's answer", answerFigures:string[] "figures stated in the answer", sourceCatalog:string "tables, join paths and GraphJin syntax of the data source", runQueries:string[] "the analyst's own queries, for reference" -> quantityName:string "a short name for the headline quantity, such as total revenue", answerFigure:string "the figure from answerFigures that states the headline quantity, copied exactly", graphqlQuery:string "one read-only GraphQL query that computes that quantity independently", resultPath:string "dot path to the number in the query result, such as orders.0.sum_grand_total"`,
@@ -226,24 +223,7 @@ async function defaultVerifyLlm(orgId: string): Promise<VerifyLlm> {
       sourceCatalog: input.catalog || "(no catalog)",
       runQueries: input.runQueries.length > 0 ? input.runQueries : ["(none)"],
     });
-    const calls = generator.getUsage();
-    const usage = normalizeAxProgramUsage(calls);
-    const last = calls.at(-1);
-    const cost =
-      last?.ai && last.model
-        ? estimateTokenCostUsd(last.ai, last.model, usage)
-        : undefined;
-    await recordUsageSpend({
-      orgId,
-      source: "system",
-      usage: cost === undefined
-        ? { ...usage, costStatus: "unknown" }
-        : { ...usage, costStatus: "estimated", estimatedCostUsd: cost, currency: "USD", costSource: "official_docs_snapshot", pricingCatalogVersion: MODEL_PRICES_VERSION },
-      ...(last?.ai ? { provider: last.ai } : {}),
-      ...(last?.model ? { model: last.model } : {}),
-    }).catch((error) =>
-      console.warn(`[learn-verify] spend record failed: ${error instanceof Error ? error.message : error}`),
-    );
+    await recordLearnerSpend(orgId, generator, "learn-verify");
     const query = String(result.graphqlQuery ?? "").trim();
     if (!query) return null;
     return {

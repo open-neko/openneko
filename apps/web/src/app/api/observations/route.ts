@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, db, desc, eq, observation, workflow_definition } from "@neko/db";
+import { and, db, desc, eq, notInArray, observation, workflow_definition } from "@neko/db";
+import { LEARNING_EVENT_CONSUMER, LESSON_CONSUMER } from "@neko/llm/work";
 import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
 import { workflowVisibility } from "@/lib/entitlements";
@@ -24,6 +25,10 @@ export async function GET(req: NextRequest) {
   if (sourceOutputId)
     filters.push(eq(observation.source_output_id, sourceOutputId));
   if (status) filters.push(eq(observation.status, status));
+  const actor = await getCurrentActor();
+  if (actor.role !== "admin") {
+    filters.push(notInArray(observation.consumer_kind, [LESSON_CONSUMER, LEARNING_EVENT_CONSUMER]));
+  }
 
   const rows = await db()
     .select()
@@ -33,7 +38,7 @@ export async function GET(req: NextRequest) {
     .limit(limit);
 
   const visible = await workflowVisibility();
-  const actorUserId = (await getCurrentActor()).userId;
+  const actorUserId = actor.userId;
   const owners = new Map(
     (await db()
       .select({ id: workflow_definition.id, ownerUserId: workflow_definition.owner_user_id })

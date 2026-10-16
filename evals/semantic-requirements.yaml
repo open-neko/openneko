@@ -21,6 +21,10 @@ entries:
   CALC-SCALAR: { tiers: [deterministic, live], controls: [present, decoy] }
   CALC-TIME: { tiers: [deterministic, live], controls: [present] }
   CHANNEL-DELIVERY: { tiers: [deterministic, live, adversarial], controls: [present, negative] }
+  COLLAB-ANSWER-REUSE: { disposition: declared, tiers: [deterministic, stateful], controls: [present, decoy] }
+  COLLAB-CHANNEL-HYGIENE: { disposition: declared, tiers: [deterministic, live], controls: [present, negative] }
+  COLLAB-CONFLICTING-CLAIMS: { disposition: declared, tiers: [deterministic, adversarial], controls: [present, decoy, negative] }
+  COLLAB-CREDIT-ASSIGNMENT: { disposition: declared, tiers: [deterministic, stateful], controls: [present, absent] }
   DATA-AUTH: { tiers: [deterministic, live, adversarial], controls: [present, decoy] }
   DATA-DELEGATED: { tiers: [live], controls: [present] }
   DATA-DIRECT: { tiers: [deterministic, live, adversarial], controls: [present, absent, decoy, negative] }
@@ -37,6 +41,8 @@ entries:
   RECORDS-SCHEMA-PLAN: { tiers: [deterministic, live], controls: [present] }
   SEC-APPROVAL: { tiers: [contract, deterministic], controls: [present] }
   SEC-AUDIT-CHAIN: { tiers: [deterministic], controls: [present] }
+  SEC-COLLAB-ENTITLEMENT: { disposition: declared, tiers: [deterministic, adversarial], controls: [present, negative] }
+  SEC-COLLAB-INJECTION: { disposition: declared, tiers: [deterministic, adversarial], controls: [present, decoy] }
   SEC-PROMPT-INJECTION: { tiers: [deterministic, live, adversarial], controls: [present, decoy] }
   SEC-TENANT: { tiers: [deterministic, live, adversarial], controls: [present, decoy] }
   WATCH-BUILD: { tiers: [deterministic, live], controls: [present] }
