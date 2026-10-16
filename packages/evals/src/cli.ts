@@ -48,7 +48,7 @@ function usage(): string {
     `  validate --config <path>\n` +
     `  plan --config <path> [--json]\n` +
     `  oracles --config <path> [--json] [--out <path>]\n` +
-    `  run --config <path> [--resume <run-id> | --restart] [--promote | --no-promote]\n` +
+    `  run --config <path> [--resume <run-id> | --restart] [--promote | --no-promote] [--no-episode-cache]\n` +
     `  resume --config <path> --run <run-id>\n` +
     `  rescore --config <path> --run <run-id> [--promote | --no-promote]\n` +
     `  verify --result <directory>\n` +
@@ -505,12 +505,17 @@ export async function runEvalCli(
       resultsRoot,
       ...(resumeRunId ? { resumeRunId } : {}),
       restart: has(args, "--restart"),
+      ...(has(args, "--no-episode-cache") ? { episodeCache: false } : {}),
       ...(has(args, "--promote")
         ? { promote: true }
         : has(args, "--no-promote")
           ? { promote: false }
           : {}),
     });
+    if (result.cachedEpisodes) {
+      stdout.write(`episode cache: reused ${result.cachedEpisodes} episodes from earlier runs\n`);
+    }
+    if (result.stopReason) stdout.write(`stopped: ${result.stopReason}\n`);
     stdout.write(
       `${result.resumed ? "resumed" : "completed"} ${result.runId}; reused ${result.reusedEpisodes} episodes${
         result.resultDir ? `; result ${result.resultDir}` : ""

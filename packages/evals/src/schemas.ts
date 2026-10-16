@@ -699,6 +699,11 @@ export const EpisodeSchema = z
     score: ScoreSchema.optional(),
     errorType: z.string().max(128).optional(),
     error: z.string().max(2048).optional(),
+    // Present when the episode came from the episode cache instead of a new run.
+    reusedFrom: z
+      .object({ runId: Id, slotKey: z.string().min(1), cacheKey: z.string().startsWith("sha256:") })
+      .strict()
+      .optional(),
     integrityDigest: z.string().startsWith("sha256:"),
   })
   .strict();
@@ -766,6 +771,10 @@ export const ManifestSchema = z
     completedSlotKeys: z.array(z.string()),
     failedSlotKeys: z.array(z.string()),
     inFlightSlotKeys: z.array(z.string()),
+    // Adaptive runs: planned slots the driver did not need, and why it stopped.
+    stoppedSlotKeys: z.array(z.string()).optional(),
+    stopReason: z.string().max(4096).optional(),
+    reusedSlotKeys: z.array(z.string()).optional(),
     resultDir: z.string().optional(),
   })
   .strict();

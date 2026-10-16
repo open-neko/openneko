@@ -5,8 +5,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  EpisodeCache,
   EvalTaskError,
   EvalEnvironmentError,
+  episodeCacheKey,
+  type EpisodeCacheKeyInput,
   EvalStateStore,
   EvalTransientError,
   contentDigest,
@@ -1343,5 +1346,127 @@ describe("bounded episode pool", () => {
       inFlightSlotKeys: [],
       completedSlotKeys: pool.plan.slots.slice(0, 2).map((slot) => slot.key).sort(),
     });
+  });
+});
+
+describe("episode cache", () => {
+  const base: EpisodeCacheKeyInput = {
+    runnerVersion: "0.1.0",
+    caseContentId: "sha256:case",
+    phase: "initial",
+    repetition: 1,
+    datasetDigest: "sha256:dataset",
+    oracleDigest: "sha256:oracle",
+    scorerDigest: "sha256:scorer",
+    defaults: { timeout: "12m", max_attempts: 2, cache_state: "cold", content_capture: "metadata" },
+    identity: { variant: { id: "baseline", model: "m", overlays: { a: "sha256:a" } }, code: "sha256:code", image: "sha256:image" },
+  };
+
+  it("misses when any input changes", () => {
+    const key = episodeCacheKey(base);
+    expect(episodeCacheKey(structuredClone(base))).toBe(key);
+    const changed: EpisodeCacheKeyInput[] = [
+      { ...base, runnerVersion: "0.2.0" },
+      { ...base, caseContentId: "sha256:case-2" },
+      { ...base, phase: "followup" },
+      { ...base, repetition: 2 },
+      { ...base, datasetDigest: "sha256:dataset-2" },
+      { ...base, oracleDigest: "sha256:oracle-2" },
+      { ...base, scorerDigest: "sha256:scorer-2" },
+      { ...base, defaults: { ...base.defaults, timeout: "2m" } },
+      { ...base, defaults: { ...base.defaults, max_attempts: 1 } },
+      { ...base, identity: { variant: { id: "baseline", model: "m2", overlays: { a: "sha256:a" } }, code: "sha256:code", image: "sha256:image" } },
+      { ...base, identity: { variant: { id: "baseline", model: "m", overlays: { a: "sha256:b" } }, code: "sha256:code", image: "sha256:image" } },
+      { ...base, identity: { variant: { id: "placebo", model: "m", overlays: { a: "sha256:a" } }, code: "sha256:code", image: "sha256:image" } },
+      { ...base, identity: { variant: { id: "baseline", model: "m", overlays: { a: "sha256:a" } }, code: "sha256:code-2", image: "sha256:image" } },
+      { ...base, identity: { variant: { id: "baseline", model: "m", overlays: { a: "sha256:a" } }, code: "sha256:code", image: "sha256:image-2" } },
+    ];
+    const keys = changed.map(episodeCacheKey);
+    expect(new Set([key, ...keys]).size).toBe(changed.length + 1);
+  });
+
+  it("reuses identified episodes in a later run, marks them, and reruns on a changed identity or a bypass", async () => {
+    const paths = await fixture();
+    const loaded = await loadEval(paths.configPath);
+    const plan = createEvalPlan(loaded);
+    const counters = { execute: 0, score: 0 };
+    let identity: unknown = { model: "m", code: "sha256:one" };
+    const driver = createFixtureDriver({ loaded, plan, callLog: paths.callLog, counters });
+    driver.episodeIdentity = () => identity;
+    const run = (extra: Record<string, unknown> = {}) =>
+      runEvaluation({
+        loaded, plan, driver, cwd: process.cwd(), stateRoot: paths.stateRoot,
+        resultsRoot: paths.resultsRoot, promote: false, restart: true, ...extra,
+      });
+    expect((await run()).cachedEpisodes).toBe(0);
+    expect(counters.execute).toBe(3);
+
+    const second = await run();
+    expect(second.cachedEpisodes).toBe(3);
+    expect(counters.execute).toBe(3);
+    expect(second.manifest.reusedSlotKeys).toHaveLength(3);
+    const store = new EvalStateStore(paths.stateRoot);
+    const reused = await store.readEpisode(second.runId, plan.slots[0]!.key);
+    expect(reused).toMatchObject({ runId: second.runId, status: "completed", score: { verdict: "pass" } });
+    expect(reused!.reusedFrom!.runId).not.toBe(second.runId);
+
+    await run({ episodeCache: false });
+    expect(counters.execute).toBe(6);
+    identity = { model: "m", code: "sha256:two" };
+    expect((await run()).cachedEpisodes).toBe(0);
+    expect(counters.execute).toBe(9);
+    identity = null;
+    expect((await run()).cachedEpisodes).toBe(0);
+    expect(counters.execute).toBe(12);
+  });
+
+  it("ignores a tampered cache entry", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openneko-episode-cache-"));
+    const cache = new EpisodeCache(root);
+    expect(await cache.read(episodeCacheKey(base))).toBeUndefined();
+    const store = new EvalStateStore(join(root, "state"));
+    const paths = await fixture();
+    const loaded = await loadEval(paths.configPath);
+    const plan = createEvalPlan(loaded);
+    const driver = createFixtureDriver({ loaded, plan, callLog: paths.callLog });
+    const result = await runEvaluation({
+      loaded, plan, driver, cwd: process.cwd(), stateRoot: join(root, "state"),
+      resultsRoot: paths.resultsRoot, promote: false,
+    });
+    const episode = (await store.readEpisode(result.runId, plan.slots[0]!.key))!;
+    const key = await cache.write(base, episode);
+    expect(await cache.read(key)).toMatchObject({ slotKey: episode.slotKey });
+    const path = join(root, `${key.replace("sha256:", "")}.json`);
+    const entry = JSON.parse(await readFile(path, "utf8"));
+    entry.episode.status = "failed";
+    await writeFile(path, JSON.stringify(entry), "utf8");
+    expect(await cache.read(key)).toBeUndefined();
+  });
+});
+
+describe("adaptive runs", () => {
+  it("runs the waves a driver asks for, records the stop, and promotes a verifiable result", async () => {
+    const paths = await fixture({ repetitions: 2 });
+    const loaded = await loadEval(paths.configPath);
+    const plan = createEvalPlan(loaded);
+    const driver = createFixtureDriver({ loaded, plan, callLog: paths.callLog });
+    const waves: number[] = [];
+    driver.nextSlots = ({ episodes }) => {
+      waves.push(episodes.length);
+      return episodes.length < 3
+        ? { slots: plan.slots.filter((slot) => slot.repetition === 1) }
+        : { slots: [], reason: "every gate decided at look 1" };
+    };
+    const result = await runEvaluation({
+      loaded, plan, driver, cwd: process.cwd(), stateRoot: paths.stateRoot,
+      resultsRoot: paths.resultsRoot, promote: true,
+    });
+    expect(waves).toEqual([0, 3]);
+    expect(result.stopReason).toBe("every gate decided at look 1");
+    expect(result.manifest.expectedSlotKeys).toHaveLength(3);
+    expect(result.manifest.stoppedSlotKeys).toEqual(
+      plan.slots.filter((slot) => slot.repetition === 2).map((slot) => slot.key).sort(),
+    );
+    await expect(verifyResult(result.resultDir!)).resolves.toMatchObject({ episodes: 3 });
   });
 });

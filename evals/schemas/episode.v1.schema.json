@@ -572,6 +572,28 @@
       "type": "string",
       "maxLength": 2048
     },
+    "reusedFrom": {
+      "type": "object",
+      "properties": {
+        "runId": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "slotKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cacheKey": {
+          "type": "string",
+          "pattern": "^sha256:.*"
+        }
+      },
+      "required": [
+        "runId",
+        "slotKey",
+        "cacheKey"
+      ],
+      "additionalProperties": false
+    },
     "integrityDigest": {
       "type": "string",
       "pattern": "^sha256:.*"

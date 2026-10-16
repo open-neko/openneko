@@ -630,6 +630,22 @@
         "type": "string"
       }
     },
+    "stoppedSlotKeys": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "stopReason": {
+      "type": "string",
+      "maxLength": 4096
+    },
+    "reusedSlotKeys": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "resultDir": {
       "type": "string"
     }
