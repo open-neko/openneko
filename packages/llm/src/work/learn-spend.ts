@@ -1,6 +1,6 @@
 import type { AxProgramUsage } from "@ax-llm/ax";
 import { recordUsageSpend } from "../spend/ledger";
-import { estimateTokenCostUsd, MODEL_PRICES_VERSION } from "../spend/model-prices";
+import { estimateTokenCost } from "../spend/model-prices";
 import { normalizeAxProgramUsage } from "../usage-normalization";
 
 /** The usage surface every Ax generator has, for any provider. */
@@ -25,7 +25,7 @@ export async function recordLearnerSpend(
   if (calls.length === 0) return;
   const usage = normalizeAxProgramUsage(calls);
   const last = calls.at(-1);
-  const cost = last?.ai && last.model ? estimateTokenCostUsd(last.ai, last.model, usage) : undefined;
+  const cost = last?.ai && last.model ? estimateTokenCost(last.ai, last.model, { ...usage, calls: calls.length }) : undefined;
   await record({
     orgId,
     source: "system",
@@ -35,10 +35,10 @@ export async function recordLearnerSpend(
         : {
             ...usage,
             costStatus: "estimated",
-            estimatedCostUsd: cost,
+            estimatedCostUsd: cost.usd,
             currency: "USD",
-            costSource: "official_docs_snapshot",
-            pricingCatalogVersion: MODEL_PRICES_VERSION,
+            costSource: cost.costSource,
+            pricingCatalogVersion: cost.pricingCatalogVersion,
           },
     ...(last?.ai ? { provider: last.ai } : {}),
     ...(last?.model ? { model: last.model } : {}),
