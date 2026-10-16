@@ -18,6 +18,8 @@ Send exactly one object, at most 16 MiB. Unknown fields fail the run.
 | `input_id` | string | Required. 128 characters or fewer. |
 | `instructions` | string | Optional. The org prompt: the same text for every turn of the org. The model sees it first, as `Instructions:`. |
 | `prompt` | string | Required. The rest of the turn, including history and the user message. The model sees it next, as `Question:`. Without `instructions`, it carries the whole turn. Only the model context window bounds the two together. |
+| `skill_query` | string | Optional. The user message. The host skill index recalls up to 10 guides by meaning. When it recalls two or more, one model call on the context route keeps the two or fewer that fit the request. |
+| `skill_rerank` | string | Optional. `off` keeps the index order and makes no rerank call. The harness also skips the call when `max_model_calls` is 1 to 3. |
 | `stream_responses` | boolean | Optional. Sends live `answer.delta`, `thought.delta` and `actor.step` events. |
 | `timeout_ms` | integer | Optional. Run wall clock, 1,000 to 1,800,000. Default 540,000 (9 minutes). |
 | `max_actor_steps` | integer | Optional. Actor steps, 1 to 500. Default 25. |
