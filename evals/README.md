@@ -552,7 +552,8 @@ changes unless the report explicitly opens a new cohort.
 - Use at least three repetitions for smoke comparisons and five or more for a
   product decision when variance is material.
 - Record cold/warm state explicitly; do not mix them in one aggregate.
-- Keep quality runs serial by default. Test concurrency in a separate suite.
+- Keep quality runs serial unless the driver isolates each episode (see 7.1).
+  Test concurrency itself in a separate suite.
 - Separate task failures from infrastructure failures and report both.
 - Checkpoint after every case/variant/repetition so interrupted runs resume.
 - Report means, medians, percentiles, standard deviation or confidence
@@ -601,7 +602,7 @@ other multi-episode work. The local state store contains:
 Writes use temporary files plus atomic rename. Attempts are append-only;
 episodes are immutable once complete. The manifest is updated after each
 attempt and episode. A process crash therefore loses at most the in-flight
-attempt.
+attempts.
 
 `eval run` auto-resumes the newest incomplete compatible run by default.
 `--resume <run-id>` selects one exactly; `--restart` deliberately creates a new
@@ -623,6 +624,34 @@ slot is never assumed safe: the dataset instance is reset to its fingerprinted
 baseline, setup/readiness is replayed, and the entire slot is rerun. Idempotency
 and duplicate-effect assertions still inspect durable external fakes or receipts
 where the case is specifically testing retry behavior.
+
+`defaults.concurrency` sets how many episodes run at once. Each driver declares
+the most it supports, and the runner uses the smaller value. A driver that
+declares nothing runs one episode at a time. The manifest records the
+effective value under `runtimeBudgets.concurrency`.
+
+| Driver | Most episodes at once |
+| --- | --- |
+| `openneko.work-backend`, skill-procedure and scenario cohorts | 8 |
+| `openneko.work-backend`, other cohorts | 1 |
+| `openneko.skill-learning` | 8 |
+| every other driver (metric, lifecycle, work-memory) | 1 |
+
+The runner dispatches slots in plan order and starts the next slot when one
+finishes. One serial writer records every attempt, episode and manifest
+update, so the journal stays consistent. `inFlightSlotKeys` lists every
+running slot. The runner checks the wall-time and cost budgets before each
+dispatch. Budgets count finished episodes only, so a run can overshoot by
+the slots that are in flight. When a slot pauses on an outage or a budget
+stops the run, the runner dispatches no more slots, waits for the running
+slots to finish, and then exits. Resume works as for a serial run.
+
+The work-backend cohorts that support concurrency give each episode its own
+org. The skill-learning learn stage shares one org; its runs hold one
+OpenShell provider lease, and the last run to finish releases it. The
+learner starts after every learn run finishes. Learned and placebo slots
+wait for the learner. The eval process raises its agent sandbox cap to the
+effective concurrency. The product default stays unchanged.
 
 Several-hundred-case suites support deterministic shards. Slot ownership is
 derived from the stable slot key; each stateful shard receives an isolated

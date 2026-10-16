@@ -1,10 +1,9 @@
 import {
+  activeAdministratorIds,
   and,
-  app_user,
   db,
   desc,
   eq,
-  isNull,
   organization,
   pack_install,
 } from "@neko/db";
@@ -124,15 +123,11 @@ function actionInput(input: {
 async function main() {
   const [org] = await db().select({ id: organization.id }).from(organization).limit(1);
   if (!org) throw new Error("OpenNeko organization is unavailable");
-  const [admin] = await db()
-    .select({ id: app_user.id })
-    .from(app_user)
-    .where(and(eq(app_user.role, "admin"), isNull(app_user.disabled_at)))
-    .limit(1);
+  const [adminId] = await activeAdministratorIds(org.id);
   // A just-installed local stack can legitimately have no app_user rows yet.
   // The approval model supports a null principal for trusted bootstrap/admin
   // automation while still enforcing the admin role in policy evaluation.
-  const adminUserId = admin?.id ?? null;
+  const adminUserId = adminId ?? null;
   const [installation] = await db()
     .select({ config: pack_install.config })
     .from(pack_install)

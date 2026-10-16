@@ -1,0 +1,45 @@
+schema_version: openneko.eval/v1
+id: openneko-skill-learning-scripted
+description: Provider-free learning control. The scripted backend runs the learn split, the scripted learn runs open a decoy skill before the target, a stub learner writes grounded rules, data notes, an org playbook and descriptions, and the test split runs under the baseline, learned and placebo arms.
+adapter: openneko.skill-learning
+semantics: { ref: ../semantics.yaml }
+suite: { ref: ../suites/openneko-skill-learning-v1.yaml }
+datasets:
+  - ref: ../datasets/openneko-learning/dataset.yaml
+    snapshot: v1
+defaults:
+  repetitions: 1
+  timeout: 2m
+  execution_order: counterbalanced
+  concurrency: 6
+  cache_state: cold
+  content_capture: metadata
+  max_attempts: 1
+variants:
+  - id: baseline
+    backend: scripted-good
+    outer_model: { provider: scripted, model: deterministic-v2 }
+    data_path: graphjin-direct
+    settings: { arm: baseline, scripted_outcome: pass, max_tool_calls: 30, backend_retry_attempts: 0, graphjin_preflight_timeout_ms: 30000 }
+  - id: learned
+    extends: baseline
+    settings:
+      arm: learned
+      learning:
+        corpus: ../suites/openneko-skill-learning-corpus-v1.yaml
+        repetitions: 1
+        min_repeats: 3
+        learner: stub
+        run_settings: { scripted_decoy_probe: true }
+  - id: placebo
+    extends: baseline
+    settings:
+      arm: placebo
+      placebo_rules: ../datasets/openneko-learning/fixtures/placebo-rules.md
+      placebo_notes: ../datasets/openneko-learning/fixtures/placebo-data-notes.md
+      placebo_playbook: ../datasets/openneko-learning/fixtures/placebo-playbook.md
+artifacts:
+  check_in: none
+  raw_dir: ../../.openneko/evals/raw
+  state_dir: ../../.openneko/evals/state
+  results_dir: ../../evals/results

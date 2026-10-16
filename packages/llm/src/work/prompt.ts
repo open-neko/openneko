@@ -6,6 +6,7 @@ import {
   VALUE_ESTIMATE_INSTRUCTIONS,
   buildDataAccessSection,
   buildMemorySection,
+  buildOrgPlaybookSection,
 } from "../prompts/sections";
 import type { InstalledSkill } from "./workspace";
 import type { PluginCatalog } from "./control-plane";
@@ -967,6 +968,7 @@ that flags churn risk every Monday."
           memoryContext,
         })
       : "",
+    dataSurface === "customer" ? buildOrgPlaybookSection(knowledge.learned?.orgPlaybook) : "",
     dataSurface === "customer"
       ? buildWorkflowToolsSection(supportsWorkflowTool, graphjinDataPath)
       : "",

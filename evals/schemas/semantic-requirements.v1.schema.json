@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "openneko.eval.semantic-requirements/v1"
+    },
+    "entries": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Z0-9][A-Z0-9._-]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "disposition": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "tiers": {
+            "$ref": "#/$defs/__schema1"
+          },
+          "controls": {
+            "$ref": "#/$defs/__schema3"
+          },
+          "excluded_reason": {
+            "$ref": "#/$defs/__schema5"
+          },
+          "covered_by": {
+            "$ref": "#/$defs/__schema6"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "entries"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "__schema0": {
+      "type": "string",
+      "enum": [
+        "declared",
+        "eval",
+        "excluded",
+        "non-eval"
+      ]
+    },
+    "__schema1": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema2"
+      }
+    },
+    "__schema2": {
+      "type": "string",
+      "enum": [
+        "contract",
+        "deterministic",
+        "live",
+        "stateful",
+        "adversarial",
+        "fault",
+        "load"
+      ]
+    },
+    "__schema3": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema4"
+      }
+    },
+    "__schema4": {
+      "type": "string",
+      "enum": [
+        "present",
+        "absent",
+        "decoy",
+        "negative"
+      ]
+    },
+    "__schema5": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "__schema6": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema7"
+      }
+    },
+    "__schema7": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

@@ -43,8 +43,8 @@ The backend is the only intended independent variable. Every candidate uses:
   mutations: GraphJin remains authoritative for explicitly exposed OpenAPI
   `call` mutations and all source/operation authorization.
 
-Runs use concurrency `1` until provider/model configuration is isolated per
-run. A candidate is rankable only when its configured and observed identity
+Parity cohorts run one episode at a time. They share the selection API and
+depend on case order, so the driver caps them at concurrency `1`. A candidate is rankable only when its configured and observed identity
 match and all required conformance preflights pass.
 
 ### Diagnostic tracks

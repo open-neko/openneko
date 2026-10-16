@@ -184,6 +184,23 @@ async function resolveRunMemoryLayer(runId: string | null): Promise<string | nul
   return run ? effectiveMemoryLayer(run.orgId, run) : null;
 }
 
+async function resolveRunThread(runId: string | null): Promise<string | null> {
+  if (!runId) return null;
+  const [run] = await db()
+    .select({ threadId: work_run.thread_id })
+    .from(work_run)
+    .where(eq(work_run.id, runId))
+    .limit(1);
+  return run?.threadId ?? null;
+}
+
+/** A thread-scoped memory is visible only in its own thread. */
+function threadScopeFilter(threadId: string | null) {
+  return threadId
+    ? sql`(${work_memory.scope} <> 'thread' or ${work_memory.scope_id} = ${threadId})`
+    : sql`${work_memory.scope} <> 'thread'`;
+}
+
 // Layered visibility (CV2). Team context sees only team rows. A member
 // sees their own live personal rows plus team rows whose origin they
 // haven't overridden — a personal row pointing overrides_origin_id at a
@@ -519,6 +536,7 @@ export async function formatWorkMemoryPromptContext(
           limit: options.contextLimit ?? 5,
           userId: ctx.userId ?? null,
           runId: ctx.runId ?? null,
+          ...(ctx.threadId !== undefined ? { threadId: ctx.threadId } : {}),
           ...(ctx.teamMemory !== undefined ? { teamMemory: ctx.teamMemory } : {}),
         })
       )
@@ -605,6 +623,7 @@ export async function searchWorkMemoryByContext(args: {
   limit?: number;
   userId?: string | null;
   runId?: string | null;
+  threadId?: string | null;
   teamMemory?: "*" | ReadonlySet<string>;
 }): Promise<WorkMemorySearchResult[]> {
   const limit = clamp(Math.floor(args.limit ?? 5), 1, 20);
@@ -664,6 +683,9 @@ export async function searchWorkMemoryByContext(args: {
       and(
         eq(work_memory.org_id, args.orgId),
         layerVisibilityFilter(layerUserId, args.teamMemory ?? (args.runId ? await runTeamMemory(args.orgId, args.runId) : undefined)),
+        threadScopeFilter(
+          args.threadId !== undefined ? args.threadId : await resolveRunThread(args.runId ?? null),
+        ),
         isNull(work_memory.archived_at),
         sql`work_memory.embedding IS NOT NULL`,
       ),

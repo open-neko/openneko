@@ -1,0 +1,43 @@
+schema_version: openneko.eval/v1
+id: openneko-implicit-flash-lite
+description: Implicit families K1 to K7 on the Ax backend with Gemini 3.5 Flash-Lite, five repetitions. The agent, the skill learner, the discovery job and the librarian all use the live model.
+adapter: openneko.work-backend
+semantics: { ref: ../semantics.yaml }
+pricing: { ref: ../pricing/standard-2026-07-09.yaml }
+suite: { ref: ../suites/openneko-implicit-v1.yaml }
+datasets:
+  - ref: ../datasets/openneko-implicit/dataset.yaml
+    snapshot: v1
+defaults:
+  repetitions: 5
+  timeout: 12m
+  execution_order: declared
+  concurrency: 6
+  cache_state: cold
+  content_capture: metadata
+  max_attempts: 2
+variants:
+  - id: ax-gemini-3.5-flash-lite
+    backend: ax
+    outer_model:
+      provider: google-gemini
+      model: gemini-3.5-flash-lite
+      credential_ref: env:GEMINI_API_KEY
+      config:
+        context_window_tokens: 1048576
+        max_output_tokens: 65536
+    data_path: graphjin-direct
+    settings:
+      native_delegation: disabled
+      cards: disabled
+      require_observed_model_identity: true
+      max_tool_calls: 30
+      backend_retry_attempts: 1
+      graphjin_preflight_timeout_ms: 30000
+budgets:
+  max_wall_time: 48h
+artifacts:
+  check_in: scored
+  raw_dir: ../../.openneko/evals/raw
+  state_dir: ../../.openneko/evals/state
+  results_dir: ../../evals/results

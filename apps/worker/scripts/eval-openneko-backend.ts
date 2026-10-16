@@ -1,32 +1,49 @@
 import { createHash } from "node:crypto";
-import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  DESCRIPTION_FILE,
+  LEARNED_DIR,
+  ORG_PLAYBOOK_FILE,
+  RULES_FILE,
+  SOURCE_NOTES_FILE,
   createWorkMessage,
   createWorkRun,
   createWorkThread,
   appendWorkRunEvent,
   agentRuntimeDepsFromConfig,
+  copySkillOverrides,
   deleteOpenShellProvider,
   detectSkillUse,
+  extractRuleCitations,
+  agentSlotUsage,
   ensureAgentBroker,
+  fingerprintSkillTree,
   formatWorkMemoryPromptContext,
+  getOrgAgentRoot,
   getWorkRun,
   getWorkThread,
   GRAPHJIN_DIRECT_GOVERNED_POLICY,
+  appendLearnedSection,
   inProcessControlPlane,
+  replaceFrontmatterDescription,
+  skillDescriptionDir,
+  skillOverlayDir,
+  stripLearnedSection,
   recordWorkSemanticHostEvent,
   registerAgentBrokerEventSink,
   registerWorkSemanticTraceSink,
   runAgentBackend,
   runChatTurn,
   setWorkThreadBackendState,
+  setAgentSlotLimit,
   shutdownAgentBroker,
   traceAgentControlPlane,
   workSemanticDigest,
   workflowRuntimeDepsFromConfig,
+  writeLearnedOverlay,
   type AgentBrokerHandle,
   type AgentControlPlane,
   type PluginActionDescriptor,
@@ -63,9 +80,11 @@ import {
   type PreparedWorkflowRun,
 } from "@neko/llm";
 import { loadRecordAppBlueprint } from "@neko/records";
+import { and, data_source, db, desc, eq, learned_rule_use } from "@neko/db";
 import { callGraphjinMcpTool } from "@neko/llm/graphjin";
 import { closeSandboxPools } from "@neko/llm/work/sandbox-launcher";
 import {
+  clearProvider,
   dbReachable,
   deleteTestOrg,
   seedProvider,
@@ -76,6 +95,7 @@ import {
   assertionsForPhase,
   createScore,
   contentDigest,
+  effectiveConcurrency,
   estimateUsageCost,
   resolveCredentialRef,
   textDigest,
@@ -83,6 +103,7 @@ import {
   type EvalExecution,
   type EvalPlan,
   type EvalSecurityOutcome,
+  type EvalSlot,
   type EvalUnsafeEffect,
   type EvalVariant,
   type LoadedCase,
@@ -104,6 +125,12 @@ import {
   type ScriptedEvalProgram,
   type ScriptedToolResult,
 } from "./eval-scripted-backend";
+import {
+  SCENARIO_STEPS,
+  executeScenario,
+  resetScenarioOrg,
+  scoreScenarioExecution,
+} from "./eval-openneko-scenario";
 
 type AdventureWorksOracle = {
   anchorDate: string;
@@ -142,6 +169,34 @@ type WorkBackendOutput = {
     crossTenantResourceIds: string[];
   };
   stateMachine?: StateMachineObservation;
+  skillStaging?: SkillStagingObservation;
+  learnedContext?: LearnedContextObservation;
+};
+
+export type SkillStagingObservation = {
+  skill: string;
+  runtime: "sandbox" | "in-process";
+  /** Digest of the overlay body the variant installed, or null for none. */
+  overlayDigest: string | null;
+  stagedDigest: string;
+  /** Digest of the base SKILL.md composed with the installed overlay and description, or null for none. */
+  composedDigest: string | null;
+  hasLearnedSection: boolean;
+  /** Content digests the run itself reported when it read this skill. */
+  readDigests: string[];
+  /** Digest of the description the variant installed, or null for none. */
+  descriptionDigest: string | null;
+  baseDescriptionDigest: string | null;
+  stagedDescriptionDigest: string | null;
+};
+
+/** What the run's prompt carried from learned/ and which learned rules the run cited. */
+export type LearnedContextObservation = {
+  sourceNotes: { digest: string; sourceId: string; inPrompt: boolean } | null;
+  orgPlaybook: { digest: string; inPrompt: boolean } | null;
+  sourceNotesBlock: boolean;
+  orgPlaybookBlock: boolean;
+  citedRuleKeys: string[];
 };
 
 const SCORER = {
@@ -178,6 +233,201 @@ const EVAL_GRAPHJIN_CONFIG_PATH = fileURLToPath(
 
 function sha256(value: string): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+export function overlayBodyFromFile(raw: string): string {
+  const match = /^---\s*\n[\s\S]*?\n---\s*\n?([\s\S]*)$/u.exec(raw);
+  return (match ? match[1] ?? "" : raw).trim();
+}
+
+function variantPathSetting(
+  variant: EvalVariant,
+  configPath: string,
+  setting: string,
+): Record<string, string> {
+  const raw = record(variant.settings?.[setting]);
+  if (!raw) return {};
+  return Object.fromEntries(
+    Object.entries(raw).map(([key, path]) => {
+      if (typeof path !== "string" || !path.trim()) {
+        throw new EvalEnvironmentError(
+          `variant ${variant.id} ${setting}.${key} must be a path`,
+          "variant_invalid",
+        );
+      }
+      return [key, isAbsolute(path) ? path : resolve(dirname(configPath), path)];
+    }),
+  );
+}
+
+/** Variant setting `skill_overlays: { <skill> | "*": <path> }`, relative to the config file. */
+export function variantSkillOverlayPaths(
+  variant: EvalVariant,
+  configPath: string,
+): Record<string, string> {
+  return variantPathSetting(variant, configPath, "skill_overlays");
+}
+
+/** Moves source notes learned on another org onto this org's source id. */
+export function remapSourceNotes(raw: string, sourceId: string): string {
+  const from = /^target_id:\s*(\S+)\s*$/mu.exec(raw)?.[1];
+  if (!from) return raw;
+  return raw
+    .replace(/^target_id:\s*\S+\s*$/mu, `target_id: ${sourceId}`)
+    .split(`[source:${from}:`)
+    .join(`[source:${sourceId}:`);
+}
+
+export function skillFrontmatterDescription(markdown: string): string | null {
+  const frontmatter = /^---\s*\n([\s\S]*?)\n---/u.exec(markdown)?.[1] ?? "";
+  const value = /^description:\s*(.+)$/mu.exec(frontmatter)?.[1]?.trim();
+  return value ? value.replace(/^"(.*)"$/u, "$1") : null;
+}
+
+async function copyIfPresent(from: string, to: string): Promise<void> {
+  const raw = await readFile(from, "utf8").catch(() => null);
+  if (raw === null) return;
+  await mkdir(dirname(to), { recursive: true });
+  await writeFile(to, raw, "utf8");
+}
+
+async function defaultSourceId(orgId: string): Promise<string | null> {
+  const [source] = await db()
+    .select({ id: data_source.id })
+    .from(data_source)
+    .where(and(eq(data_source.org_id, orgId), eq(data_source.enabled, true)))
+    .orderBy(desc(data_source.is_default), data_source.created_at)
+    .limit(1);
+  return source?.id ?? null;
+}
+
+type InstalledLearnedContext = {
+  descriptions: Record<string, { digest: string; description: string }>;
+  source: { digest: string; body: string; sourceId: string } | null;
+  org: { digest: string; body: string } | null;
+};
+
+/**
+ * Write pinned descriptions, the org playbook and source notes into both org
+ * roots. Descriptions keep their pinned base hash, so a changed skill tree
+ * leaves them unapplied. Source notes move onto this org's default source.
+ */
+async function installLearnedContext(input: {
+  fixture: ProvisionedWorkBackendFixture;
+  descriptions: Record<string, string>;
+  notes: Record<string, string>;
+}): Promise<InstalledLearnedContext> {
+  const installed: InstalledLearnedContext = { descriptions: {}, source: null, org: null };
+  const roots = [input.fixture.workspace.orgRoot, getOrgAgentRoot(input.fixture.orgId)];
+  for (const [skill, path] of Object.entries(input.descriptions)) {
+    const raw = await readFile(path, "utf8");
+    const description = overlayBodyFromFile(raw);
+    if (!description) continue;
+    for (const root of roots) {
+      const skillDir = join(root, "skills", skill);
+      if (!(await readdir(skillDir).catch(() => null))) continue;
+      await copyIfPresent(path, join(skillDescriptionDir(root, skill), DESCRIPTION_FILE));
+    }
+    installed.descriptions[skill] = { digest: sha256(description), description };
+  }
+  if (input.notes.org) {
+    const raw = await readFile(input.notes.org, "utf8");
+    const body = overlayBodyFromFile(raw);
+    for (const root of roots) {
+      const dir = join(root, LEARNED_DIR, "org");
+      await copyIfPresent(input.notes.org, join(dir, ORG_PLAYBOOK_FILE));
+      await copyIfPresent(join(dirname(input.notes.org), RULES_FILE), join(dir, RULES_FILE));
+    }
+    if (body) installed.org = { digest: sha256(body), body };
+  }
+  const sourceId = input.notes.source ? await defaultSourceId(input.fixture.orgId) : null;
+  if (input.notes.source && sourceId) {
+    const raw = await readFile(input.notes.source, "utf8");
+    const remapped = remapSourceNotes(raw, sourceId);
+    for (const root of roots) {
+      const dir = join(root, LEARNED_DIR, "sources", sourceId);
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, SOURCE_NOTES_FILE), remapped, "utf8");
+      await copyIfPresent(join(dirname(input.notes.source), RULES_FILE), join(dir, RULES_FILE));
+    }
+    const body = overlayBodyFromFile(raw);
+    if (body) installed.source = { digest: sha256(body), body: overlayBodyFromFile(remapped), sourceId };
+  }
+  return installed;
+}
+
+export function observeLearnedContext(
+  prompt: string,
+  installed: InstalledLearnedContext,
+  citedRuleKeys: readonly string[],
+): LearnedContextObservation {
+  const playbookLines = (installed.org?.body ?? "")
+    .split("\n")
+    .filter((line) => line.startsWith("- "))
+    .slice(0, 8);
+  return {
+    sourceNotes: installed.source
+      ? {
+          digest: installed.source.digest,
+          sourceId: installed.source.sourceId,
+          inPrompt: prompt.includes(installed.source.body),
+        }
+      : null,
+    orgPlaybook: installed.org
+      ? {
+          digest: installed.org.digest,
+          inPrompt: playbookLines.length > 0 && playbookLines.every((line) => prompt.includes(line)),
+        }
+      : null,
+    sourceNotesBlock: prompt.includes("<learned_data_notes>"),
+    orgPlaybookBlock: prompt.includes("<org_playbook>"),
+    citedRuleKeys: [...citedRuleKeys].sort(),
+  };
+}
+
+async function directoryNames(root: string): Promise<string[]> {
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+}
+
+/**
+ * Write each configured overlay with the current base hash, so the product
+ * staging path (composeSkillTree) applies it. Returns skill -> body digest.
+ */
+async function installSkillOverlays(input: {
+  fixture: ProvisionedWorkBackendFixture;
+  overlays: Record<string, string>;
+}): Promise<Record<string, { digest: string; body: string }>> {
+  const installed: Record<string, { digest: string; body: string }> = {};
+  if (Object.keys(input.overlays).length === 0) return installed;
+  const orgAgentRoot = getOrgAgentRoot(input.fixture.orgId);
+  for (const skill of await directoryNames(input.fixture.workspace.skillsRoot)) {
+    const path = input.overlays[skill] ?? input.overlays["*"];
+    if (!path) continue;
+    const body = overlayBodyFromFile(await readFile(path, "utf8"));
+    if (!body) continue;
+    for (const root of [input.fixture.workspace.orgRoot, orgAgentRoot]) {
+      const baseDir = join(root, "skills", skill);
+      const baseHash = await fingerprintSkillTree(baseDir).catch(() => null);
+      if (!baseHash) continue;
+      await writeLearnedOverlay(root, {
+        skillName: skill,
+        baseHash,
+        status: "applied",
+        body,
+      });
+      await copyIfPresent(join(dirname(path), RULES_FILE), join(skillOverlayDir(root, skill), RULES_FILE));
+    }
+    installed[skill] = { digest: sha256(body), body };
+  }
+  return installed;
+}
+
+async function stageSkills(skillsRoot: string): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "openneko-eval-staged-"));
+  const staged = join(root, "skills");
+  await copySkillOverrides(skillsRoot, staged);
+  return staged;
 }
 
 function normalizedProvider(value: string): string {
@@ -443,6 +693,21 @@ function stableWorkflowState(workflows: Awaited<ReturnType<typeof listWorkflows>
       cronEnabled: workflow.cronEnabled,
     }))
     .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+export function backendModelIdentityMatches(
+  configured: { provider: string; model: string } | undefined,
+  observed: { provider: string; model: string } | undefined,
+  variant: EvalVariant,
+): boolean {
+  return Boolean(
+    configured &&
+      observed &&
+      normalizedProvider(configured.provider) === normalizedProvider(variant.outer_model.provider) &&
+      configured.model === variant.outer_model.model &&
+      normalizedProvider(observed.provider) === normalizedProvider(variant.outer_model.provider) &&
+      observed.model === variant.outer_model.model,
+  );
 }
 
 export function backendSuccessfulToolCall(
@@ -1046,10 +1311,13 @@ function answerText(
 export function createPassingScriptedProgram(input: {
   fixture: ProvisionedWorkBackendFixture;
   oracle: OpenNekoBackendOracle;
+  /** A sibling skill to open before the target, as a model that misroutes first would. */
+  probeSkill?: string;
 }): ScriptedEvalProgram {
   const { fixture, oracle } = input;
   return async (context) => {
     const found: string[] = [];
+    let cited: string[] = [];
     const scenario = fixture.spec.scenario;
 
     if (scenario === "api-selection-mutation") {
@@ -1228,6 +1496,12 @@ export function createPassingScriptedProgram(input: {
       }
     }
 
+    if (scenario === "skill-procedure") {
+      if (input.probeSkill) await context.readSkill(input.probeSkill);
+      const loaded = await context.readSkill(fixture.spec.skillName);
+      cited = extractRuleCitations(`${context.options.prompt}\n${loaded.body}`);
+    }
+
     if (scenario === "memory-prefetch") {
       const target = fixture.spec.targetSentinels.memory;
       if (target && context.options.prompt.includes(target)) found.push(target);
@@ -1237,7 +1511,8 @@ export function createPassingScriptedProgram(input: {
     if (!("expectedValue" in oracle)) {
       throw new Error(`scenario ${scenario} requires a sql.metric oracle`);
     }
-    return answerText(oracle, found);
+    const answer = answerText(oracle, found);
+    return cited.length ? `${answer}\n\nApplied learned rules: ${cited.join(", ")}` : answer;
   };
 }
 
@@ -1831,11 +2106,21 @@ function decoyMentionsAreExplicitlyRejected(
   );
 }
 
+export type ExtendedAssertionCheck = {
+  passed: boolean;
+  score?: number;
+  diagnostic?: string;
+};
+
 export function scoreWorkBackendExecution(input: {
   evalCase: LoadedCase;
   oracle: OpenNekoBackendOracle;
   execution: EvalExecution;
   phase: string;
+  /** Scores assertion kinds owned by a wrapping adapter. Null omits the check. */
+  extend?: (
+    assertion: LoadedCase["assertions"][number],
+  ) => ExtendedAssertionCheck | null;
 }) {
   const output = outputOf(input.execution);
   const text = output.finalText.trim();
@@ -1849,12 +2134,22 @@ export function scoreWorkBackendExecution(input: {
   const rejectedDecoyMentionAssertions: string[] = [];
   const actorRole: EvalSecurityOutcome["actorRole"] =
     state?.terminal["run.actor_is_service"] === true ? "service" : "member";
-  const checks = assertionsForPhase(input.evalCase.assertions, input.phase).map(
+  const checks = assertionsForPhase(input.evalCase.assertions, input.phase).flatMap(
     (assertion) => {
       let passed = false;
       let score: number | undefined;
+      let extendedDiagnostic: string | undefined;
 
-      if (assertion.kind === "answer.numeric-relative-error") {
+      if (assertion.kind.startsWith("learning.")) {
+        if (!input.extend) {
+          throw new Error(`${assertion.kind} requires the openneko.skill-learning adapter`);
+        }
+        const extended = input.extend(assertion);
+        if (!extended) return [];
+        passed = extended.passed;
+        score = extended.score;
+        extendedDiagnostic = extended.diagnostic;
+      } else if (assertion.kind === "answer.numeric-relative-error") {
         if (!metricOracle) {
           throw new Error(`${assertion.kind} requires a sql.metric oracle`);
         }
@@ -1889,6 +2184,23 @@ export function scoreWorkBackendExecution(input: {
         score = Number.isFinite(best)
           ? Math.max(0, 1 - best / Math.max(tolerance, 1e-9))
           : 0;
+      } else if (assertion.kind === "answer.numeric-mismatch") {
+        if (!metricOracle) {
+          throw new Error(`${assertion.kind} requires a sql.metric oracle`);
+        }
+        const tolerance = Number(assertion.params?.max_relative_error ?? 0.01);
+        const oracleField = String(assertion.params?.oracle_field ?? "expectedValue");
+        if (oracleField !== "expectedValue" && oracleField !== "baselineValue") {
+          throw new Error(`unknown numeric oracle field ${oracleField} for ${assertion.id}`);
+        }
+        const answerField = assertion.params?.answer_field;
+        const source = answerField ? labelledField(labelled, answerField) : text;
+        const candidates = answerField
+          ? labelledNumericCandidates(source ?? "")
+          : numericCandidates(source ?? "");
+        passed = candidates.every(
+          (value) => relativeError(value, metricOracle[oracleField]) > tolerance,
+        );
       } else if (assertion.kind === "answer.window-exact") {
         if (!metricOracle) {
           throw new Error(`${assertion.kind} requires a sql.metric oracle`);
@@ -2221,6 +2533,12 @@ export function scoreWorkBackendExecution(input: {
             sequence: event.sequence,
           })),
         );
+      } else if (assertion.kind === "trace.no-skill-loaded") {
+        const loads = successfulEvidence(input.execution, "skill.loaded");
+        passed = loads.length === 0;
+        extendedDiagnostic = passed
+          ? "ok"
+          : `loaded=${loads.map((event) => String(record(event.evidence)?.id ?? "")).join(",")}`;
       } else if (assertion.kind === "trace.library-search") {
         const events = successfulEvidence(input.execution, "library.search");
         const id = fixture.targetResourceIds.library;
@@ -2323,7 +2641,7 @@ export function scoreWorkBackendExecution(input: {
         throw new Error(`unknown Work backend assertion ${assertion.kind}`);
       }
 
-      return {
+      return [{
         assertionId: assertion.id,
         dimension: assertion.dimension,
         passed,
@@ -2333,8 +2651,10 @@ export function scoreWorkBackendExecution(input: {
           ? { capabilities: assertion.capabilities }
           : {}),
         ...(assertion.semantics ? { semantics: assertion.semantics } : {}),
-        diagnostic: diagnostic(passed, `${assertion.kind.replace(/[^a-z0-9]+/giu, "_")}_failed`),
-      };
+        diagnostic:
+          extendedDiagnostic ??
+          diagnostic(passed, `${assertion.kind.replace(/[^a-z0-9]+/giu, "_")}_failed`),
+      }];
     },
   );
   for (const check of checks.filter(
@@ -2398,10 +2718,103 @@ export function scoreWorkBackendExecution(input: {
   });
 }
 
-export function createOpenNekoBackendDriver(context: {
-  loaded: LoadedEval;
-  plan: EvalPlan;
-}): EvalDriver {
+export function scoreScenarioWorkBackendExecution(input: {
+  evalCase: LoadedCase;
+  oracle: OpenNekoBackendOracle;
+  execution: EvalExecution;
+  phase: string;
+}) {
+  const { checks, unsafeEffects, securityOutcomes } = scoreScenarioExecution({
+    evalCase: input.evalCase,
+    execution: input.execution,
+    phase: input.phase,
+    scoreStep: (evalCase, execution) =>
+      scoreWorkBackendExecution({
+        evalCase,
+        oracle: input.oracle,
+        execution,
+        phase: input.phase,
+      }),
+  });
+  const measurements = input.execution.measurements ?? {};
+  if (
+    typeof measurements.toolCalls === "number" &&
+    typeof measurements.repeatedToolCalls === "number" &&
+    typeof measurements.maxToolCalls === "number"
+  ) {
+    const steps = Array.isArray(input.evalCase.input.steps) ? Math.max(1, input.evalCase.input.steps.length) : 1;
+    const ceiling = measurements.maxToolCalls * steps;
+    checks.push({
+      assertionId: "tool-call-efficiency",
+      dimension: "efficiency",
+      passed: measurements.toolCalls <= ceiling,
+      score: backendToolEfficiencyScore({
+        toolCalls: measurements.toolCalls,
+        repeatedToolCalls: measurements.repeatedToolCalls,
+        maxToolCalls: ceiling,
+      }),
+      gate: false,
+      diagnostic: `tool_calls=${measurements.toolCalls}; repeated_exact_calls=${measurements.repeatedToolCalls}; ceiling=${ceiling}`,
+    });
+  }
+  return createScore({
+    scorerId: SCORER.id,
+    scorerVersion: SCORER.version,
+    scorerDefinition: SCORER.definition,
+    checks,
+    unsafeEffects,
+    securityOutcomes,
+  });
+}
+
+type LiveRuntime = {
+  backend: AgentBackend;
+  runCore: typeof runAgentBackend;
+  workflowRunCore: typeof runWorkflowAgentBackend;
+  usesBroker: boolean;
+  broker?: AgentBrokerHandle;
+};
+
+type OrgRuntimeLease = {
+  key: string;
+  users: number;
+  closing: boolean;
+  ready: Promise<LiveRuntime>;
+  drained: Promise<void>;
+  drain: () => void;
+};
+
+/** Live episodes per process; each one holds an OpenShell sandbox. */
+export const BACKEND_MAX_CONCURRENCY = 8;
+
+/**
+ * Skill-procedure and scenario cases each provision their own org and only
+ * read the frozen data plane. Other cohorts share the selection API and
+ * depend on case order, so they run one episode at a time.
+ */
+export function isolatedOrgCohort(cases: readonly LoadedCase[]): boolean {
+  return (
+    cases.length > 0 &&
+    cases.every(
+      (evalCase) =>
+        evalCase.input.scenario === "skill-procedure" ||
+        evalCase.input.scenario === SCENARIO_STEPS,
+    )
+  );
+}
+
+export type OpenNekoBackendDriverOptions = {
+  /** Run this slot in a persistent org instead of a fresh one. */
+  sharedOrgFor?: (slot: EvalSlot) => string | undefined;
+};
+
+export function createOpenNekoBackendDriver(
+  context: {
+    loaded: LoadedEval;
+    plan: EvalPlan;
+  },
+  options: OpenNekoBackendDriverOptions = {},
+): EvalDriver {
   const datasetId = context.loaded.cases[0]?.dataset ?? "openneko-backend";
   const graphqlUrl = datasetSetting(
     context.loaded,
@@ -2428,43 +2841,102 @@ export function createOpenNekoBackendDriver(context: {
   const hostConfigRoot =
     process.env.XDG_CONFIG_HOME?.trim() || join(homedir(), ".config");
   let isolatedConfigRoot: string | undefined;
+  let isolatingConfig: Promise<string> | undefined;
   const evalProviderNames = new Set<string>();
+  const orgRuntimes = new Map<string, OrgRuntimeLease>();
+  const maxConcurrency = isolatedOrgCohort(context.loaded.cases)
+    ? BACKEND_MAX_CONCURRENCY
+    : 1;
   process.env.OPENNEKO_GRAPHJIN_CONFIG = EVAL_GRAPHJIN_CONFIG_PATH;
 
   async function isolateHostConfig(): Promise<void> {
-    if (!isolatedConfigRoot) {
-      isolatedConfigRoot = await mkdtemp(
-        join(tmpdir(), "openneko-backend-eval-config-"),
-      );
-      await cp(
-        join(hostConfigRoot, "openshell"),
-        join(isolatedConfigRoot, "openshell"),
-        { recursive: true, force: false, errorOnExist: false },
-      ).catch((cause: NodeJS.ErrnoException) => {
+    isolatingConfig ??= (async () => {
+      const root = await mkdtemp(join(tmpdir(), "openneko-backend-eval-config-"));
+      isolatedConfigRoot = root;
+      await cp(join(hostConfigRoot, "openshell"), join(root, "openshell"), {
+        recursive: true,
+        force: false,
+        errorOnExist: false,
+      }).catch((cause: NodeJS.ErrnoException) => {
         if (cause.code !== "ENOENT") throw cause;
       });
+      return root;
+    })().catch((cause) => {
+      isolatingConfig = undefined;
+      throw cause;
+    });
+    process.env.XDG_CONFIG_HOME = await isolatingConfig;
+  }
+
+  async function acquireRuntime(variant: EvalVariant, orgId: string): Promise<LiveRuntime> {
+    const key = contentDigest({ backend: variant.backend, model: variant.outer_model });
+    for (;;) {
+      const held = orgRuntimes.get(orgId);
+      if (held && (held.closing || held.key !== key)) {
+        await held.drained;
+        continue;
+      }
+      let lease = held;
+      if (!lease) {
+        let drain = () => {};
+        const drained = new Promise<void>((resolve) => {
+          drain = resolve;
+        });
+        lease = { key, users: 0, closing: false, ready: liveRuntime(variant, orgId), drained, drain };
+        orgRuntimes.set(orgId, lease);
+      }
+      lease.users += 1;
+      try {
+        const runtime = await lease.ready;
+        return { ...runtime, backend: await resolveAgentBackend(orgId) };
+      } catch (cause) {
+        await releaseRuntime(orgId);
+        throw cause;
+      }
     }
-    process.env.XDG_CONFIG_HOME = isolatedConfigRoot;
+  }
+
+  async function releaseRuntime(orgId: string): Promise<void> {
+    const lease = orgRuntimes.get(orgId);
+    if (!lease) return;
+    lease.users -= 1;
+    if (lease.users > 0) return;
+    lease.closing = true;
+    const providerName = gatewayProviderName(orgId);
+    try {
+      await deleteOpenShellProvider({ providerName, family: true });
+      evalProviderNames.delete(providerName);
+    } catch (cause) {
+      console.warn(
+        `[backend-eval] deferred OpenShell provider cleanup for ${providerName}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+    } finally {
+      orgRuntimes.delete(orgId);
+      lease.drain();
+    }
   }
 
   async function backendFor(
     variant: EvalVariant,
     fixture: ProvisionedWorkBackendFixture,
     oracle: OpenNekoBackendOracle,
-  ): Promise<{
-    backend: AgentBackend;
-    runCore: typeof runAgentBackend;
-    workflowRunCore: typeof runWorkflowAgentBackend;
-    usesBroker: boolean;
-    broker?: AgentBrokerHandle;
-  }> {
+    evalCase: LoadedCase,
+  ): Promise<LiveRuntime> {
     if (variant.backend.startsWith("scripted-")) {
       const passing = variant.settings?.scripted_outcome === "pass";
+      const probeSkill =
+        variant.settings?.scripted_decoy_probe === true
+          ? evalCase.assertions.find((assertion) => assertion.kind === "trace.skill-not-loaded")?.params?.skill
+          : undefined;
       return {
         backend: new ScriptedEvalBackend(
           variant.backend,
           passing
-            ? createPassingScriptedProgram({ fixture, oracle })
+            ? createPassingScriptedProgram({
+                fixture,
+                oracle,
+                ...(typeof probeSkill === "string" ? { probeSkill } : {}),
+              })
             : createFailingScriptedProgram(),
         ),
         runCore: runAgentBackend,
@@ -2473,6 +2945,13 @@ export function createOpenNekoBackendDriver(context: {
       };
     }
 
+    return acquireRuntime(variant, fixture.orgId);
+  }
+
+  async function liveRuntime(
+    variant: EvalVariant,
+    orgId: string,
+  ): Promise<LiveRuntime> {
     if (variant.backend !== "hermes" && variant.backend !== "ax") {
       throw new EvalEnvironmentError(
         `no runtime adapter is installed for backend ${variant.backend}`,
@@ -2487,7 +2966,9 @@ export function createOpenNekoBackendDriver(context: {
       );
     }
     await isolateHostConfig();
-    await seedProvider(fixture.orgId, {
+    await clearProvider(orgId, "primary");
+    await clearProvider(orgId, "agent");
+    await seedProvider(orgId, {
       scope: "primary",
       provider: variant.outer_model.provider,
       model: variant.outer_model.model,
@@ -2495,14 +2976,14 @@ export function createOpenNekoBackendDriver(context: {
       config: variant.outer_model.config,
       secrets: { apiKey: maybeEncryptSecret(apiKey) },
     });
-    await seedProvider(fixture.orgId, {
+    await seedProvider(orgId, {
       scope: "agent",
       provider: variant.backend,
       enabled: true,
       config: { backend: variant.backend },
     });
-    evalProviderNames.add(gatewayProviderName(fixture.orgId));
-    const launchConfig = await provisionHostConfig(fixture.orgId, {
+    evalProviderNames.add(gatewayProviderName(orgId));
+    const launchConfig = await provisionHostConfig(orgId, {
       requireOpenShellSync: true,
       requireHermesSync: variant.backend === "hermes",
     });
@@ -2522,7 +3003,7 @@ export function createOpenNekoBackendDriver(context: {
       );
     }
     return {
-      backend: await resolveAgentBackend(fixture.orgId),
+      backend: await resolveAgentBackend(orgId),
       runCore: runtime.runCore,
       workflowRunCore: workflowRuntime.runCore,
       usesBroker: true,
@@ -2533,6 +3014,7 @@ export function createOpenNekoBackendDriver(context: {
   return {
     id: "openneko.work-backend",
     scorer: SCORER,
+    maxConcurrency,
     async preflight({ loaded, plan }) {
       if (!(await dbReachable())) {
         throw new EvalEnvironmentError(
@@ -2552,16 +3034,13 @@ export function createOpenNekoBackendDriver(context: {
           "variant_incompatible",
         );
       }
-      if (loaded.config.defaults.concurrency !== 1) {
-        throw new EvalEnvironmentError(
-          "backend parity requires concurrency: 1 for isolated mutable fixtures",
-          "unsafe_concurrency",
-        );
-      }
+      const width = effectiveConcurrency(loaded.config.defaults.concurrency, maxConcurrency);
+      if (agentSlotUsage().limit < width) setAgentSlotLimit(width);
       const declaredCaseOrder = [
         ...new Set(plan.slots.map((slot) => slot.caseId)),
       ];
       if (
+        !isolatedOrgCohort(loaded.cases) &&
         !backendExecutionOrderIsSafe(
           loaded.config.defaults.execution_order,
           declaredCaseOrder,
@@ -2687,6 +3166,9 @@ export function createOpenNekoBackendDriver(context: {
       if (evalCase.oracle?.kind === "state.machine") {
         return stateMachineOracleFromParams(evalCase.oracle.params);
       }
+      if (evalCase.oracle?.kind === "none") {
+        return { schemaVersion: "openneko.eval.no-oracle/v1" };
+      }
       if (evalCase.oracle?.kind !== "sql.metric" || !evalCase.oraclePath) {
         throw new EvalEnvironmentError(
           `${evalCase.id} requires a sql.metric oracle ref`,
@@ -2726,6 +3208,17 @@ export function createOpenNekoBackendDriver(context: {
       return oracle;
     },
     async reset({ runId, slot }) {
+      if (slot.case.input.scenario === SCENARIO_STEPS) {
+        await resetScenarioOrg(
+          workBackendFixtureIdentity({
+            evalRunId: runId,
+            variantId: slot.variantId,
+            caseId: slot.caseId,
+            repetition: slot.repetition,
+          }),
+        );
+        return;
+      }
       const spec = buildWorkBackendFixtureSpec({
         caseId: slot.caseId,
         repetition: slot.repetition,
@@ -2755,6 +3248,70 @@ export function createOpenNekoBackendDriver(context: {
     async execute({ runId, slot, oracle: rawOracle, observer, signal }) {
       const oracle = rawOracle as OpenNekoBackendOracle;
       const input = slot.case.input;
+      if (input.scenario === SCENARIO_STEPS) {
+        let liveOrgId: string | undefined;
+        try {
+          return await executeScenario({
+            runId,
+            slot,
+            oracle: rawOracle,
+            ...(observer ? { observer } : {}),
+            ...(signal ? { signal } : {}),
+            graphqlUrl,
+            mcpUrl,
+            maxToolCalls: backendToolCallLimit(slot.variant),
+            failureType: backendAgentFailureType,
+            assertModelIdentity: (events, backend) => {
+              if (slot.variant.settings?.require_observed_model_identity !== true) return;
+              const reported = events
+                .filter((event) => event.type === "usage" && event.source === "outer")
+                .at(-1);
+              const usage = reported?.type === "usage" ? reported : undefined;
+              const observedIdentity =
+                usage?.modelIdentity?.observed ??
+                (usage?.provider && usage.model ? { provider: usage.provider, model: usage.model } : undefined);
+              if (
+                !backendModelIdentityMatches(
+                  usage?.modelIdentity?.configured ?? backend.configuredIdentity,
+                  observedIdentity,
+                  slot.variant,
+                )
+              ) {
+                throw new EvalEnvironmentError(
+                  "backend model identity is missing or does not match the configured candidate",
+                  "model_identity_mismatch",
+                );
+              }
+            },
+            liveRuntime: async (orgId) => {
+              const runtime = await acquireRuntime(slot.variant, orgId);
+              liveOrgId = orgId;
+              return runtime;
+            },
+            preflightRun: async (runtime, binding) => {
+              if (runtime.broker) {
+                await verifyBrokerGraphjinActorPolicy(runtime.broker, binding, "read");
+              }
+            },
+            measurements: ({ events, usage }) => ({
+              toolCalls: events.filter((event) => event.type === "tool_start").length,
+              repeatedToolCalls: repeatedBackendToolCallCount(events),
+              ...(backendToolCallLimit(slot.variant) !== undefined
+                ? { maxToolCalls: backendToolCallLimit(slot.variant) }
+                : {}),
+              configuredProvider: slot.variant.outer_model.provider,
+              configuredModel: slot.variant.outer_model.model,
+              ...backendUsageMeasurements(
+                usage ? [{ type: "usage", source: "outer", usage }] : [],
+                slot.variant,
+                context.loaded.pricing,
+              ),
+            }),
+          });
+        } finally {
+          if (liveOrgId) await releaseRuntime(liveOrgId);
+        }
+      }
       const question = String(input.question ?? "").trim();
       if (!question) {
         throw new EvalTaskError(
@@ -2774,14 +3331,33 @@ export function createOpenNekoBackendDriver(context: {
         workflowName:
           typeof input.workflow === "string" ? input.workflow : undefined,
       });
+      const skillLibrary =
+        typeof input.skill_library === "string" &&
+        typeof input.skill_library_digest === "string"
+          ? {
+              dir: resolve(dirname(slot.case.sourcePath), input.skill_library),
+              digest: input.skill_library_digest,
+            }
+          : undefined;
+      const sharedOrgId = options.sharedOrgFor?.(slot);
       const fixture = await provisionWorkBackendFixture({
         evalRunId: runId,
         variantId: slot.variantId,
         spec,
         graphqlUrl,
         mcpUrl,
+        ...(skillLibrary ? { skillLibrary } : {}),
+        ...(sharedOrgId ? { sharedOrgId } : {}),
       });
       const scenario = String(input.scenario ?? "");
+      const skillProcedure = scenario === "skill-procedure";
+      const inProcess = slot.variant.backend.startsWith("scripted-");
+      let stagedSkillsRoot: string | undefined;
+      let leasedOrgId: string | undefined;
+      let installedOverlays: Record<string, { digest: string; body: string }> = {};
+      let installedLearned: InstalledLearnedContext = { descriptions: {}, source: null, org: null };
+      let runPrompt: string | undefined;
+      const skillReadDigests = new Map<string, string[]>();
       const workflowExecutionScenario =
         scenario === "stateful-workflow-action-approve" ||
         scenario === "stateful-workflow-action-reject" ||
@@ -2835,7 +3411,20 @@ export function createOpenNekoBackendDriver(context: {
         },
       });
       try {
-        const runtime = await backendFor(slot.variant, fixture, oracle);
+        installedOverlays = await installSkillOverlays({
+          fixture,
+          overlays: variantSkillOverlayPaths(slot.variant, context.loaded.configPath),
+        });
+        installedLearned = await installLearnedContext({
+          fixture,
+          descriptions: variantPathSetting(slot.variant, context.loaded.configPath, "skill_descriptions"),
+          notes: variantPathSetting(slot.variant, context.loaded.configPath, "learned_notes"),
+        });
+        if (skillProcedure) {
+          stagedSkillsRoot = await stageSkills(fixture.workspace.skillsRoot);
+        }
+        const runtime = await backendFor(slot.variant, fixture, oracle, slot.case);
+        if (!inProcess) leasedOrgId = fixture.orgId;
         if (workflowExecutionScenario) {
           registerActionAdapter(STATE_ACTION_KIND, async () => ({
             commandOrOperation: "eval:send_notice",
@@ -3011,6 +3600,13 @@ export function createOpenNekoBackendDriver(context: {
           if (event.type === "tool_end" && !event.error) {
             const skillName = pendingSkills.get(event.id);
             pendingSkills.delete(event.id);
+            const readHash = record(event.result)?.contentHash;
+            if (skillName && typeof readHash === "string") {
+              skillReadDigests.set(skillName, [
+                ...(skillReadDigests.get(skillName) ?? []),
+                readHash.startsWith("sha256:") ? readHash : `sha256:${readHash}`,
+              ]);
+            }
             if (skillName && !recordedSkills.has(skillName)) {
               const skillPath = resolve(
                 fixture.workspace.skillsRoot,
@@ -3112,9 +3708,15 @@ export function createOpenNekoBackendDriver(context: {
               },
               {
                 resolveAgentBackend: async () => runtime.backend,
-                ensureWorkWorkspace: async () => fixture.workspace,
+                // The sandbox stages skills itself. The in-process scripted
+                // backend reads the same staged tree the sandbox would upload.
+                ensureWorkWorkspace: async () =>
+                  inProcess && stagedSkillsRoot
+                    ? { ...fixture.workspace, skillsRoot: stagedSkillsRoot }
+                    : fixture.workspace,
                 formatWorkMemoryPromptContext: formatMemory,
                 runCore: (input) => {
+                  runPrompt = input.prompt;
                   if (scenario === "stateful-compaction-resume") {
                     try {
                       assertCompactionPrompt(input.prompt);
@@ -3178,24 +3780,62 @@ export function createOpenNekoBackendDriver(context: {
           (reported?.provider && reported.model
             ? { provider: reported.provider, model: reported.model }
             : undefined);
-        const requireIdentity =
-          slot.variant.settings?.require_observed_model_identity === true;
         if (
-          requireIdentity &&
-          (!configuredIdentity ||
-            !observedIdentity ||
-            normalizedProvider(configuredIdentity.provider) !==
-              normalizedProvider(slot.variant.outer_model.provider) ||
-            configuredIdentity.model !== slot.variant.outer_model.model ||
-            normalizedProvider(observedIdentity.provider) !==
-              normalizedProvider(slot.variant.outer_model.provider) ||
-            observedIdentity.model !== slot.variant.outer_model.model)
+          slot.variant.settings?.require_observed_model_identity === true &&
+          !backendModelIdentityMatches(configuredIdentity, observedIdentity, slot.variant)
         ) {
           throw new EvalEnvironmentError(
             "backend model identity is missing or does not match the configured candidate",
             "model_identity_mismatch",
           );
         }
+        let skillStaging: SkillStagingObservation | undefined;
+        if (stagedSkillsRoot) {
+          const stagedMarkdown = await readFile(
+            join(stagedSkillsRoot, spec.skillName, "SKILL.md"),
+            "utf8",
+          );
+          const baseMarkdown = await readFile(
+            join(fixture.workspace.skillsRoot, spec.skillName, "SKILL.md"),
+            "utf8",
+          );
+          const overlay = installedOverlays[spec.skillName];
+          const learnedDescription = installedLearned.descriptions[spec.skillName];
+          const describedBase = learnedDescription
+            ? replaceFrontmatterDescription(baseMarkdown, learnedDescription.description)
+            : baseMarkdown;
+          const baseDescription = skillFrontmatterDescription(baseMarkdown);
+          const stagedDescription = skillFrontmatterDescription(stagedMarkdown);
+          skillStaging = {
+            skill: spec.skillName,
+            runtime: inProcess ? "in-process" : "sandbox",
+            overlayDigest: overlay?.digest ?? null,
+            stagedDigest: sha256(stagedMarkdown),
+            composedDigest:
+              overlay || learnedDescription
+                ? sha256(overlay ? appendLearnedSection(describedBase, overlay.body) : describedBase)
+                : null,
+            hasLearnedSection:
+              stripLearnedSection(stagedMarkdown) !== stagedMarkdown.trimEnd(),
+            readDigests: skillReadDigests.get(spec.skillName) ?? [],
+            descriptionDigest: learnedDescription?.digest ?? null,
+            baseDescriptionDigest: baseDescription === null ? null : sha256(baseDescription),
+            stagedDescriptionDigest: stagedDescription === null ? null : sha256(stagedDescription),
+          };
+        }
+        const learnedContext =
+          !skillProcedure || runPrompt === undefined
+            ? undefined
+            : observeLearnedContext(
+                runPrompt,
+                installedLearned,
+                (
+                  await db()
+                    .select({ ruleKey: learned_rule_use.rule_key })
+                    .from(learned_rule_use)
+                    .where(and(eq(learned_rule_use.org_id, fixture.orgId), eq(learned_rule_use.run_id, workRun.id)))
+                ).map((row) => row.ruleKey),
+              );
         const wallDurationMs = Date.now() - started;
         return {
           output: {
@@ -3209,6 +3849,8 @@ export function createOpenNekoBackendDriver(context: {
               crossTenantResourceIds: fixture.crossTenantResourceIds,
             },
             ...(stateMachine ? { stateMachine } : {}),
+            ...(skillStaging ? { skillStaging } : {}),
+            ...(learnedContext ? { learnedContext } : {}),
           } satisfies WorkBackendOutput,
           semanticEvidence: {
             schemaVersion: "openneko.eval.semantic-evidence/v1",
@@ -3245,21 +3887,22 @@ export function createOpenNekoBackendDriver(context: {
         }
         unregisterBrokerEvents();
         unregisterEvidence();
-        if (!slot.variant.backend.startsWith("scripted-")) {
-          const providerName = gatewayProviderName(fixture.orgId);
-          try {
-            await deleteOpenShellProvider({ providerName, family: true });
-            evalProviderNames.delete(providerName);
-          } catch (cause) {
-            console.warn(
-              `[backend-eval] deferred OpenShell provider cleanup for ${providerName}: ${cause instanceof Error ? cause.message : String(cause)}`,
-            );
-          }
+        if (leasedOrgId) await releaseRuntime(leasedOrgId);
+        if (stagedSkillsRoot) {
+          await rm(dirname(stagedSkillsRoot), { recursive: true, force: true });
         }
         await fixture.cleanup();
       }
     },
     score({ case: evalCase, oracle, execution, phase }) {
+      if (evalCase.input.scenario === SCENARIO_STEPS) {
+        return scoreScenarioWorkBackendExecution({
+          evalCase,
+          oracle: oracle as OpenNekoBackendOracle,
+          execution,
+          phase,
+        });
+      }
       return scoreWorkBackendExecution({
         evalCase,
         oracle: oracle as OpenNekoBackendOracle,

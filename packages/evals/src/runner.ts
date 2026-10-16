@@ -11,6 +11,7 @@ import {
 import { contentDigest } from "./canonical";
 import type { LoadedCase, LoadedEval } from "./load";
 import type { EvalPlan, EvalSlot } from "./plan";
+import { createSerialQueue, effectiveConcurrency, runBoundedPool } from "./pool";
 import { evaluateSuiteGates, promoteResult } from "./report";
 import { assertionsForPhase, summarizeEpisodes } from "./scoring";
 import {
@@ -51,6 +52,8 @@ export type EvalSlotContext = EvalDriverContext & {
 
 export interface EvalDriver {
   readonly id: string;
+  /** Episodes this driver can run at once. The runner uses min(config, this); undefined means 1. */
+  readonly maxConcurrency?: number;
   readonly scorer: { id: string; version: string; definition: unknown };
   preflight(context: EvalDriverContext): Promise<{
     datasetFingerprint: unknown;
@@ -185,7 +188,11 @@ async function resolveOracles(
 
 function updateProgress(
   manifest: EvalManifest,
-  input: { completed: Set<string>; failed: Set<string>; inFlight?: string },
+  input: {
+    completed: ReadonlySet<string>;
+    failed: ReadonlySet<string>;
+    inFlight?: ReadonlySet<string>;
+  },
 ): EvalManifest {
   const now = new Date().toISOString();
   return {
@@ -193,7 +200,7 @@ function updateProgress(
     updatedAt: now,
     completedSlotKeys: [...input.completed].sort(),
     failedSlotKeys: [...input.failed].sort(),
-    inFlightSlotKeys: input.inFlight ? [input.inFlight] : [],
+    inFlightSlotKeys: [...(input.inFlight ?? [])].sort(),
   };
 }
 
@@ -255,7 +262,10 @@ function positiveInteger(value: unknown): number | null {
     : null;
 }
 
-function runtimeBudgets(loaded: LoadedEval): EvalManifest["runtimeBudgets"] {
+function runtimeBudgets(
+  loaded: LoadedEval,
+  concurrency: number,
+): EvalManifest["runtimeBudgets"] {
   const outputLimits = loaded.config.variants.map((variant) =>
     positiveInteger(variant.outer_model.config?.max_output_tokens),
   );
@@ -301,7 +311,7 @@ function runtimeBudgets(loaded: LoadedEval): EvalManifest["runtimeBudgets"] {
             : 0,
       ]),
     ),
-    concurrency: loaded.config.defaults.concurrency,
+    concurrency,
     cacheState: loaded.config.defaults.cache_state,
     configuredModels: Object.fromEntries(
       loaded.config.variants.map((variant) => [
@@ -341,11 +351,10 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
       `config requests adapter ${options.plan.adapter}, received ${options.driver.id}`,
     );
   }
-  if (options.loaded.config.defaults.concurrency !== 1) {
-    throw new Error(
-      "eval runner v0.1 requires concurrency: 1; use deterministic shards for parallel quality runs",
-    );
-  }
+  const concurrency = effectiveConcurrency(
+    options.loaded.config.defaults.concurrency,
+    options.driver.maxConcurrency,
+  );
   let runLoopOwnsDriver = false;
   try {
     const driverContext = { loaded: options.loaded, plan: options.plan };
@@ -415,7 +424,7 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
               thresholdPolicyDigest: options.loaded.digests.thresholdPolicy,
             }
           : {}),
-        runtimeBudgets: runtimeBudgets(options.loaded),
+        runtimeBudgets: runtimeBudgets(options.loaded, concurrency),
         status: "in_progress",
         createdAt: now,
         updatedAt: now,
@@ -447,13 +456,23 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
 
     const lock = await store.acquireLock(manifest.runId);
     runLoopOwnsDriver = true;
+    const runId = manifest.runId;
+    let current: EvalManifest = manifest;
     const episodes: EvalEpisode[] = [];
     const completed = new Set<string>();
     const failed = new Set<string>();
+    const inFlight = new Set<string>();
+    const serial = createSerialQueue();
+    const writeProgress = (report: boolean) =>
+      serial(async () => {
+        current = updateProgress(current, { completed, failed, inFlight });
+        await store.replaceManifest(current);
+        if (report) await partialReport(store, current, episodes);
+      });
     let reusedEpisodes = 0;
     try {
       for (const slot of options.plan.slots) {
-        const episode = await store.readEpisode(manifest.runId, slot.key);
+        const episode = await store.readEpisode(runId, slot.key);
         if (!episode) continue;
         episodes.push(episode);
         completed.add(slot.key);
@@ -465,12 +484,9 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
         }
       }
       reusedEpisodes = episodes.length;
-      manifest = updateProgress(manifest, { completed, failed });
-      await store.replaceManifest(manifest);
-      await partialReport(store, manifest, episodes);
+      await writeProgress(true);
 
-      for (const slot of options.plan.slots) {
-        if (completed.has(slot.key)) continue;
+      const checkBudgets = () => {
         const wallBudget = options.loaded.config.budgets?.max_wall_time;
         if (
           wallBudget &&
@@ -492,197 +508,209 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
             "cost_budget_exhausted",
           );
         }
+      };
+
+      const runSlot = async (slot: EvalSlot): Promise<void> => {
         const oracle = oracles[slot.caseId];
-        let attempt = await store.nextAttemptNumber(manifest.runId, slot.key);
+        let attempt = await serial(() =>
+          store.nextAttemptNumber(runId, slot.key),
+        );
         const lastAttempt =
           attempt + options.loaded.config.defaults.max_attempts - 1;
         let terminal: EvalEpisode | undefined;
-        while (attempt <= lastAttempt && !terminal) {
-          const startedAt = new Date().toISOString();
-          await store.writeAttempt({
-            schemaVersion: "openneko.eval.attempt/v1",
-            runId: manifest.runId,
-            slotKey: slot.key,
-            attempt,
-            event: "started",
-            timestamp: startedAt,
-            status: "running",
-          });
-          manifest = updateProgress(manifest, {
-            completed,
-            failed,
-            inFlight: slot.key,
-          });
-          await store.replaceManifest(manifest);
+        inFlight.add(slot.key);
+        try {
+          while (attempt <= lastAttempt && !terminal) {
+            const startedAt = new Date().toISOString();
+            const startedAttempt = attempt;
+            await serial(async () => {
+              await store.writeAttempt({
+                schemaVersion: "openneko.eval.attempt/v1",
+                runId,
+                slotKey: slot.key,
+                attempt: startedAttempt,
+                event: "started",
+                timestamp: startedAt,
+                status: "running",
+              });
+              current = updateProgress(current, { completed, failed, inFlight });
+              await store.replaceManifest(current);
+            });
 
-          const memorySink = new MemoryObservationSink();
-          const observer = createHarnessObserver({
-            runId: manifest.runId,
-            sinks: [memorySink],
-          });
-          const resetContext = {
-            ...driverContext,
-            runId: manifest.runId,
-            slot,
-            oracle,
-          };
-          const timeout = durationMs(
-            slot.case.timeout ?? options.loaded.config.defaults.timeout,
-          );
-          try {
-            if (
-              slot.case.family === "mutation" ||
-              slot.case.family === "watcher"
-            ) {
-              if (!options.driver.reset) {
+            const memorySink = new MemoryObservationSink();
+            const observer = createHarnessObserver({
+              runId,
+              sinks: [memorySink],
+            });
+            const resetContext = {
+              ...driverContext,
+              runId,
+              slot,
+              oracle,
+            };
+            const timeout = durationMs(
+              slot.case.timeout ?? options.loaded.config.defaults.timeout,
+            );
+            try {
+              if (
+                slot.case.family === "mutation" ||
+                slot.case.family === "watcher"
+              ) {
+                if (!options.driver.reset) {
+                  throw new EvalEnvironmentError(
+                    `adapter ${options.driver.id} does not implement reset for ${slot.case.family} case ${slot.case.id}`,
+                    "reset_unsupported",
+                  );
+                }
+                await options.driver.reset(resetContext);
+              }
+              const rawExecution = await options.driver.execute({
+                ...resetContext,
+                observer,
+                signal: AbortSignal.timeout(timeout),
+              });
+              const execution: EvalExecution =
+                rawExecution.semanticEvidence === undefined
+                  ? rawExecution
+                  : {
+                      ...rawExecution,
+                      semanticEvidence: EvalSemanticEvidenceSchema.parse(
+                        rawExecution.semanticEvidence,
+                      ),
+                    };
+              const score = await options.driver.score({
+                case: slot.case,
+                variant: slot.variant,
+                oracle,
+                execution,
+                phase: slot.phase,
+                repetition: slot.repetition,
+              });
+              const finishedAt = new Date().toISOString();
+              terminal = await serial(async () => {
+                await store.writeAttempt({
+                  schemaVersion: "openneko.eval.attempt/v1",
+                  runId,
+                  slotKey: slot.key,
+                  attempt: startedAttempt,
+                  event: "finished",
+                  timestamp: finishedAt,
+                  status: "completed",
+                });
+                return store.writeEpisode({
+                  schemaVersion: "openneko.eval.episode/v1",
+                  runId,
+                  slotKey: slot.key,
+                  pairKey: slot.pairKey,
+                  treatment: slot.treatment,
+                  caseId: slot.caseId,
+                  caseContentId: slot.case.contentId,
+                  family: slot.case.family,
+                  productPath: slot.case.product_path,
+                  difficulty: slot.case.difficulty,
+                  capabilityTags: slot.case.capability_tags,
+                  semantics: semanticsForSlot(slot),
+                  ...(assertionTargetsForSlot(slot).length
+                    ? { assertionTargets: assertionTargetsForSlot(slot) }
+                    : {}),
+                  variantId: slot.variantId,
+                  datasetId: slot.datasetId,
+                  repetition: slot.repetition,
+                  phase: slot.phase,
+                  attempt: startedAttempt,
+                  startedAt,
+                  finishedAt,
+                  status: "completed",
+                  ...(execution.output !== undefined
+                    ? { output: execution.output }
+                    : {}),
+                  measurements: execution.measurements ?? {},
+                  observations: memorySink.observations,
+                  ...(execution.semanticEvidence !== undefined
+                    ? { semanticEvidence: execution.semanticEvidence }
+                    : {}),
+                  score,
+                });
+              });
+            } catch (cause) {
+              const info = errorInfo(cause);
+              const failedExecution =
+                cause instanceof EvalTaskError ? cause.execution : undefined;
+              const failedEvidence = failedExecution?.semanticEvidence
+                ? EvalSemanticEvidenceSchema.parse(
+                    failedExecution.semanticEvidence,
+                  )
+                : undefined;
+              const finishedAt = new Date().toISOString();
+              await serial(() =>
+                store.writeAttempt({
+                  schemaVersion: "openneko.eval.attempt/v1",
+                  runId,
+                  slotKey: slot.key,
+                  attempt: startedAttempt,
+                  event: "finished",
+                  timestamp: finishedAt,
+                  status: info.environment ? "environment_failure" : "failed",
+                  errorType: info.type,
+                  error: info.message,
+                }),
+              );
+              if (info.environment && attempt >= lastAttempt) {
                 throw new EvalEnvironmentError(
-                  `adapter ${options.driver.id} does not implement reset for ${slot.case.family} case ${slot.case.id}`,
-                  "reset_unsupported",
+                  `run ${runId} paused at ${slot.key}: ${info.message}; resume with --resume ${runId}`,
+                  info.type,
                 );
               }
-              await options.driver.reset(resetContext);
+              if (!info.environment) {
+                terminal = await serial(() =>
+                  store.writeEpisode({
+                    schemaVersion: "openneko.eval.episode/v1",
+                    runId,
+                    slotKey: slot.key,
+                    pairKey: slot.pairKey,
+                    treatment: slot.treatment,
+                    caseId: slot.caseId,
+                    caseContentId: slot.case.contentId,
+                    family: slot.case.family,
+                    productPath: slot.case.product_path,
+                    difficulty: slot.case.difficulty,
+                    capabilityTags: slot.case.capability_tags,
+                    semantics: semanticsForSlot(slot),
+                    ...(assertionTargetsForSlot(slot).length
+                      ? { assertionTargets: assertionTargetsForSlot(slot) }
+                      : {}),
+                    variantId: slot.variantId,
+                    datasetId: slot.datasetId,
+                    repetition: slot.repetition,
+                    phase: slot.phase,
+                    attempt: startedAttempt,
+                    startedAt,
+                    finishedAt,
+                    status: "failed",
+                    measurements: failedExecution?.measurements ?? {},
+                    observations: memorySink.observations,
+                    ...(failedEvidence !== undefined
+                      ? { semanticEvidence: failedEvidence }
+                      : {}),
+                    errorType: info.type,
+                    error: info.message,
+                  }),
+                );
+              }
+            } finally {
+              await observer.shutdown();
+              if (
+                options.driver.reset &&
+                (slot.case.family === "mutation" ||
+                  slot.case.family === "watcher")
+              ) {
+                await options.driver.reset(resetContext);
+              }
             }
-            const rawExecution = await options.driver.execute({
-              ...resetContext,
-              observer,
-              signal: AbortSignal.timeout(timeout),
-            });
-            const execution: EvalExecution =
-              rawExecution.semanticEvidence === undefined
-                ? rawExecution
-                : {
-                    ...rawExecution,
-                    semanticEvidence: EvalSemanticEvidenceSchema.parse(
-                      rawExecution.semanticEvidence,
-                    ),
-                  };
-            const score = await options.driver.score({
-              case: slot.case,
-              variant: slot.variant,
-              oracle,
-              execution,
-              phase: slot.phase,
-              repetition: slot.repetition,
-            });
-            const finishedAt = new Date().toISOString();
-            await store.writeAttempt({
-              schemaVersion: "openneko.eval.attempt/v1",
-              runId: manifest.runId,
-              slotKey: slot.key,
-              attempt,
-              event: "finished",
-              timestamp: finishedAt,
-              status: "completed",
-            });
-            terminal = await store.writeEpisode({
-              schemaVersion: "openneko.eval.episode/v1",
-              runId: manifest.runId,
-              slotKey: slot.key,
-              pairKey: slot.pairKey,
-              treatment: slot.treatment,
-              caseId: slot.caseId,
-              caseContentId: slot.case.contentId,
-              family: slot.case.family,
-              productPath: slot.case.product_path,
-              difficulty: slot.case.difficulty,
-              capabilityTags: slot.case.capability_tags,
-              semantics: semanticsForSlot(slot),
-              ...(assertionTargetsForSlot(slot).length
-                ? { assertionTargets: assertionTargetsForSlot(slot) }
-                : {}),
-              variantId: slot.variantId,
-              datasetId: slot.datasetId,
-              repetition: slot.repetition,
-              phase: slot.phase,
-              attempt,
-              startedAt,
-              finishedAt,
-              status: "completed",
-              ...(execution.output !== undefined
-                ? { output: execution.output }
-                : {}),
-              measurements: execution.measurements ?? {},
-              observations: memorySink.observations,
-              ...(execution.semanticEvidence !== undefined
-                ? { semanticEvidence: execution.semanticEvidence }
-                : {}),
-              score,
-            });
-          } catch (cause) {
-            const info = errorInfo(cause);
-            const failedExecution =
-              cause instanceof EvalTaskError ? cause.execution : undefined;
-            const failedEvidence = failedExecution?.semanticEvidence
-              ? EvalSemanticEvidenceSchema.parse(
-                  failedExecution.semanticEvidence,
-                )
-              : undefined;
-            const finishedAt = new Date().toISOString();
-            await store.writeAttempt({
-              schemaVersion: "openneko.eval.attempt/v1",
-              runId: manifest.runId,
-              slotKey: slot.key,
-              attempt,
-              event: "finished",
-              timestamp: finishedAt,
-              status: info.environment ? "environment_failure" : "failed",
-              errorType: info.type,
-              error: info.message,
-            });
-            if (info.environment && attempt >= lastAttempt) {
-              manifest = updateProgress(manifest, { completed, failed });
-              await store.replaceManifest(manifest);
-              await partialReport(store, manifest, episodes);
-              throw new EvalEnvironmentError(
-                `run ${manifest.runId} paused at ${slot.key}: ${info.message}; resume with --resume ${manifest.runId}`,
-                info.type,
-              );
-            }
-            if (!info.environment) {
-              terminal = await store.writeEpisode({
-                schemaVersion: "openneko.eval.episode/v1",
-                runId: manifest.runId,
-                slotKey: slot.key,
-                pairKey: slot.pairKey,
-                treatment: slot.treatment,
-                caseId: slot.caseId,
-                caseContentId: slot.case.contentId,
-                family: slot.case.family,
-                productPath: slot.case.product_path,
-                difficulty: slot.case.difficulty,
-                capabilityTags: slot.case.capability_tags,
-                semantics: semanticsForSlot(slot),
-                ...(assertionTargetsForSlot(slot).length
-                  ? { assertionTargets: assertionTargetsForSlot(slot) }
-                  : {}),
-                variantId: slot.variantId,
-                datasetId: slot.datasetId,
-                repetition: slot.repetition,
-                phase: slot.phase,
-                attempt,
-                startedAt,
-                finishedAt,
-                status: "failed",
-                measurements: failedExecution?.measurements ?? {},
-                observations: memorySink.observations,
-                ...(failedEvidence !== undefined
-                  ? { semanticEvidence: failedEvidence }
-                  : {}),
-                errorType: info.type,
-                error: info.message,
-              });
-            }
-          } finally {
-            await observer.shutdown();
-            if (
-              options.driver.reset &&
-              (slot.case.family === "mutation" ||
-                slot.case.family === "watcher")
-            ) {
-              await options.driver.reset(resetContext);
-            }
+            attempt += 1;
           }
-          attempt += 1;
+        } finally {
+          inFlight.delete(slot.key);
         }
         if (!terminal)
           throw new Error(`slot ${slot.key} ended without an episode`);
@@ -694,40 +722,57 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
         ) {
           failed.add(slot.key);
         }
-        manifest = updateProgress(manifest, { completed, failed });
-        await store.replaceManifest(manifest);
-        await partialReport(store, manifest, episodes);
+        await writeProgress(true);
+      };
+
+      try {
+        await runBoundedPool({
+          items: options.plan.slots.filter((slot) => !completed.has(slot.key)),
+          concurrency,
+          beforeDispatch: checkBudgets,
+          run: runSlot,
+        });
+      } catch (cause) {
+        await writeProgress(true);
+        throw cause;
       }
-      manifest = {
-        ...updateProgress(manifest, { completed, failed }),
+      const planOrder = new Map(
+        options.plan.slots.map((slot, index) => [slot.key, index]),
+      );
+      episodes.sort(
+        (left, right) =>
+          planOrder.get(left.slotKey)! - planOrder.get(right.slotKey)!,
+      );
+      current = {
+        ...updateProgress(current, { completed, failed, inFlight }),
         status: "complete",
       };
-      await store.replaceManifest(manifest);
-      await partialReport(store, manifest, episodes);
+      await store.replaceManifest(current);
+      await partialReport(store, current, episodes);
       let resultDir: string | undefined;
       if (
         options.promote ??
         options.loaded.config.artifacts.check_in === "scored"
       ) {
         resultDir = await promoteResult({
-          manifest,
+          manifest: current,
           episodes,
           resultsRoot: options.resultsRoot,
         });
-        manifest = { ...manifest, resultDir };
-        await store.replaceManifest(manifest);
+        current = { ...current, resultDir };
+        await store.replaceManifest(current);
       }
       return {
-        runId: manifest.runId,
+        runId,
         resumed,
         reusedEpisodes,
         gatesPassed: evaluateSuiteGates(
           summarizeEpisodes(episodes),
-          manifest.suiteGates,
-          manifest.thresholdPolicy,
+          current.suiteGates,
+          current.thresholdPolicy,
         ),
         ...(resultDir ? { resultDir } : {}),
-        manifest,
+        manifest: current,
       };
     } finally {
       try {

@@ -34,6 +34,42 @@ export const GRAPHJIN_AGGREGATE_RULE = `- Make the database do the math. When th
   themselves (e.g. "list the orders"); then page with \`limit\`/\`offset\`
   and take the smallest set that answers the question.`;
 
+const LEARNED_CITE = `When you apply one of these, name its id in one short line of your answer:
+"applied learned rule: <id>".`;
+
+/** Data notes learned from this org's settled runs; empty when nothing is learned. */
+export function buildLearnedNotesBlock(notes: string | undefined): string {
+  const body = notes?.trim();
+  if (!body) return "";
+  return `
+
+<learned_data_notes>
+These notes come from this organization's settled runs on its data. Use them
+when you plan joins, read columns, anchor dates, and sum nested rows.
+
+${body}
+
+${LEARNED_CITE}
+</learned_data_notes>`;
+}
+
+/** The org playbook: at most eight cross-cutting habits learned from settled runs. */
+export function buildOrgPlaybookSection(playbook: string | undefined): string {
+  const rules = (playbook ?? "")
+    .split("\n")
+    .filter((line) => line.startsWith("- "))
+    .slice(0, 8);
+  if (rules.length === 0) return "";
+  return `<org_playbook>
+These habits come from this organization's settled runs. Follow each one when
+it fits the request.
+
+${rules.join("\n")}
+
+${LEARNED_CITE}
+</org_playbook>`;
+}
+
 export type MemorySaveMode = "tool" | "fence" | "none";
 
 export type MemorySectionOptions = {
@@ -81,9 +117,12 @@ source when you rely on one.`);
   }
 
   if (saveMode === "tool") {
-    usageBlocks.push(`To save a new memory: call \`mcp_neko_memory_save\` with the
-exact rule the operator stated. Use \`global\` scope unless they say
-it's only for this thread.
+    usageBlocks.push(`Save lasting knowledge as you learn it, without waiting to be asked.
+When the operator states a business rule, a metric definition, a stable
+preference, or corrects an assumption you made, call
+\`mcp_neko_memory_save\` with that fact in one clear sentence. Save what
+will still hold next week; keep one-off request details in the thread.
+Use \`global\` scope unless they say it's only for this thread.
 
 To change a saved memory: call \`mcp_neko_memory_update\` with its id and
 the whole new text. Do this when the operator corrects or adds to a rule
@@ -99,8 +138,10 @@ that is already saved, so one rule stays in one memory.`);
 
 The runtime parses the fence and persists each entry. Multiple
 \`{ "save": ... }\` items in the array are allowed. The block is
-removed from the user-visible output. Only emit this when the operator
-explicitly says to remember/save something — never speculatively.`);
+removed from the user-visible output. Emit it when the operator states
+a business rule, a metric definition, a stable preference, or corrects
+an assumption you made. Save what will still hold next week; keep
+one-off request details in the thread.`);
   }
 
   const usage = usageBlocks.length > 0 ? `\n\n${usageBlocks.join("\n\n")}` : "";
@@ -168,7 +209,7 @@ default to the database.
 GraphJin's agent writes and validates the queries and runs them under the
 configured source identity. You direct it. ${ask}
 
-${AGENT_REQUEST_GUIDANCE}${agentSchemaDigest(opts.knowledge, opts.workspace)}
+${AGENT_REQUEST_GUIDANCE}${agentSchemaDigest(opts.knowledge, opts.workspace)}${buildLearnedNotesBlock(opts.knowledge.learned?.sourceNotes)}
 
 The response has status, answer, data and evidence. Base every number on
 response.data and response.evidence; the answer field explains the result but
@@ -366,7 +407,7 @@ ${GRAPHJIN_AGGREGATE_RULE}
 - Never invent or interpolate. If a query returned no rows, the answer is
   "no data", not a guess.
 
-${knowledgeBlock}
+${knowledgeBlock}${buildLearnedNotesBlock(knowledge.learned?.sourceNotes)}
 </data_access>`;
 }
 

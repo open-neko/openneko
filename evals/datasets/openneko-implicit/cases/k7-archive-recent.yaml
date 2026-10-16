@@ -1,0 +1,24 @@
+schema_version: openneko.eval.case/v1
+id: k7-archive-recent
+version: 1.0.0
+family: read
+product_path: work
+dataset: openneko-implicit
+capability_tags: ["aggregate.count","date.anchor","date.window","sales.customers","work.graphjin-direct","work.skill-discover"]
+difficulty: catalog
+semantics: ["WORK-SKILL-DISCOVER","WORK-SKILL-LEARN","WORK-SKILLS"]
+timeout: 90m
+input:
+  scenario: "steps"
+  family: "K7"
+  controls: ["absent"]
+  skill_library: "../../openneko-learning/skills"
+  skill_library_digest: "sha256:843f1811773009e19dba379c919cb1f601ebd9a192dd69868de24b16a413f17a"
+  skill_library_include: ["aw-vendor-lead-time","aw-color-inventory"]
+  steps:
+    - {"id":"seed","kind":"seed-skills","skills":[{"name":"aw-weekly-returns","description":"Summarize weekly product returns by reason.","body":"1. Group returns by reason.\n2. Report the top reasons.","learned":true},{"name":"aw-vendor-holds","description":"List vendors with purchase orders on hold.","body":"1. Find held purchase orders.\n2. Group them by vendor.","learned":true},{"name":"aw-board-pack","description":"Assemble the quarterly board pack outline.","body":"1. Collect the quarter figures.\n2. Draft the outline.","learned":false}]}
+    - {"id":"discover","kind":"discover","days_later":10,"scripted":{"action":"none","quote":"distinct customers"}}
+oracle:
+  kind: none
+assertions:
+  - {"id":"recent-learned-kept","dimension":"method","kind":"state.skill-archived","gate":true,"params":{"step":"discover","archived":[],"kept":["aw-weekly-returns","aw-vendor-holds","aw-board-pack"]}}

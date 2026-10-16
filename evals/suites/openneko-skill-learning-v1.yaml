@@ -1,0 +1,37 @@
+schema_version: openneko.eval.suite/v1
+id: openneko-skill-learning-v1
+version: 1.0.0
+description: "Measured learning cohort: test-split siblings, held-out templates and one explicit-mention control per template."
+cases:
+  - { ref: ../datasets/openneko-learning/cases/category-rank-01.yaml }
+  - { ref: ../datasets/openneko-learning/cases/category-rank-05.yaml }
+  - { ref: ../datasets/openneko-learning/cases/category-rank-09.yaml }
+  - { ref: ../datasets/openneko-learning/cases/color-units-01.yaml }
+  - { ref: ../datasets/openneko-learning/cases/color-units-05.yaml }
+  - { ref: ../datasets/openneko-learning/cases/color-units-09.yaml }
+  - { ref: ../datasets/openneko-learning/cases/discount-depth-02.yaml }
+  - { ref: ../datasets/openneko-learning/cases/discount-depth-04.yaml }
+  - { ref: ../datasets/openneko-learning/cases/discount-depth-10.yaml }
+  - { ref: ../datasets/openneko-learning/cases/online-share-02.yaml }
+  - { ref: ../datasets/openneko-learning/cases/online-share-03.yaml }
+  - { ref: ../datasets/openneko-learning/cases/online-share-04.yaml }
+  - { ref: ../datasets/openneko-learning/cases/territory-rank-05.yaml }
+  - { ref: ../datasets/openneko-learning/cases/territory-rank-08.yaml }
+  - { ref: ../datasets/openneko-learning/cases/territory-rank-10.yaml }
+  - { ref: ../datasets/openneko-learning/cases/vendor-rank-03.yaml }
+  - { ref: ../datasets/openneko-learning/cases/vendor-rank-05.yaml }
+  - { ref: ../datasets/openneko-learning/cases/vendor-rank-10.yaml }
+  - { ref: ../datasets/openneko-learning/cases/freight-share-01.yaml }
+  - { ref: ../datasets/openneko-learning/cases/freight-share-02.yaml }
+  - { ref: ../datasets/openneko-learning/cases/freight-share-03.yaml }
+  - { ref: ../datasets/openneko-learning/cases/salesperson-rank-01.yaml }
+  - { ref: ../datasets/openneko-learning/cases/salesperson-rank-02.yaml }
+  - { ref: ../datasets/openneko-learning/cases/salesperson-rank-03.yaml }
+  - { ref: ../datasets/openneko-learning/cases/category-rank-mention.yaml }
+  - { ref: ../datasets/openneko-learning/cases/color-units-mention.yaml }
+  - { ref: ../datasets/openneko-learning/cases/discount-depth-mention.yaml }
+  - { ref: ../datasets/openneko-learning/cases/freight-share-mention.yaml }
+  - { ref: ../datasets/openneko-learning/cases/online-share-mention.yaml }
+  - { ref: ../datasets/openneko-learning/cases/salesperson-rank-mention.yaml }
+  - { ref: ../datasets/openneko-learning/cases/territory-rank-mention.yaml }
+  - { ref: ../datasets/openneko-learning/cases/vendor-rank-mention.yaml }

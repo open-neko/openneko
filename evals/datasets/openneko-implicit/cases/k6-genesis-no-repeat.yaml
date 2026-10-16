@@ -1,0 +1,29 @@
+schema_version: openneko.eval.case/v1
+id: k6-genesis-no-repeat
+version: 1.0.0
+family: read
+product_path: work
+dataset: openneko-implicit
+capability_tags: ["aggregate.count","date.anchor","date.window","sales.customers","work.graphjin-direct","work.skill-discover","work.skill-load"]
+difficulty: time-window
+semantics: ["WORK-SKILL-DISCOVER","WORK-SKILL-LEARN","WORK-SKILLS","DATA-DIRECT"]
+timeout: 60m
+input:
+  scenario: "steps"
+  family: "K6"
+  controls: ["negative"]
+  skill_library: "../../openneko-learning/skills"
+  skill_library_digest: "sha256:843f1811773009e19dba379c919cb1f601ebd9a192dd69868de24b16a413f17a"
+  skill_library_include: ["aw-vendor-lead-time","aw-color-inventory"]
+  steps:
+    - {"id":"run-1","kind":"chat","thread":"n1","question":"How many distinct customers placed at least one sales order in the 90-day window that ends on the latest sales-order date? Every day-count window includes both endpoints. Compare it with the immediately preceding 90-day window. Put each requested field on its own line using these exact labels: Current value, Comparison value, Current window, and Winner; omit Winner when no named winner was requested.","scripted":{"answer":"oracle"}}
+    - {"id":"run-2","kind":"chat","thread":"n2","question":"How many orders did we take in the 60-day window that ends on the latest sales-order date? Every day-count window includes both endpoints. Compare it with the immediately preceding 60-day window. Put each requested field on its own line using these exact labels: Current value, Comparison value, Current window, and Winner; omit Winner when no named winner was requested.","scripted":{"answer":"oracle"}}
+    - {"id":"run-3","kind":"chat","thread":"n3","question":"What was our revenue in the 30-day window that ends on the latest sales-order date? Every day-count window includes both endpoints. Compare it with the immediately preceding 30-day window. Put each requested field on its own line using these exact labels: Current value, Comparison value, Current window, and Winner; omit Winner when no named winner was requested.","scripted":{"answer":"oracle"}}
+    - {"id":"run-4","kind":"chat","thread":"n4","question":"How many sales order lines did we book in the 45-day window that ends on the latest sales-order date? Every day-count window includes both endpoints. Compare it with the immediately preceding 45-day window. Put each requested field on its own line using these exact labels: Current value, Comparison value, Current window, and Winner; omit Winner when no named winner was requested.","scripted":{"answer":"oracle"}}
+    - {"id":"run-5","kind":"chat","thread":"n5","question":"What was the average subtotal per sales order in the 120-day window that ends on the latest sales-order date? Every day-count window includes both endpoints. Compare it with the immediately preceding 120-day window. Put each requested field on its own line using these exact labels: Current value, Comparison value, Current window, and Winner; omit Winner when no named winner was requested.","scripted":{"answer":"oracle"}}
+    - {"id":"discover","kind":"discover","scripted":{"action":"none","quote":"distinct customers"}}
+oracle:
+  kind: sql.metric
+  ref: ../oracles/k6-customers.sql
+assertions:
+  - {"id":"discover-skips","dimension":"method","kind":"state.skill-discovery","gate":true,"params":{"step":"discover","decisions":["skipped"],"max_new":0}}

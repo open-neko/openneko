@@ -25,6 +25,7 @@ agent_events:
   followups: [OUTPUT-FOLLOWUPS]
   vitals: [OUTPUT-VITALS]
   skill_used: [WORK-SKILLS]
+  learned_rule_use: [WORK-SKILL-LEARN]
 
 worker_queues:
   business_profile_build: [ONBOARD-PROFILE]
@@ -53,7 +54,9 @@ worker_queues:
   library_distill: [LIBRARY-DISTILL, LIBRARY-LAYERS]
   embedding_index: [WORK-MEMORY-SEARCH, WORK-LIBRARY-SEARCH]
   embedding_sweep: [WORK-MEMORY-SEARCH, WORK-LIBRARY-SEARCH]
-  skill_learn: [WORK-SKILLS]
+  skill_learn: [WORK-SKILLS, WORK-SKILL-LEARN]
+  skill_discover: [WORK-SKILLS, WORK-SKILL-LEARN, WORK-SKILL-DISCOVER]
+  learn_verify: [WORK-SKILL-LEARN]
   directory_sync: [ADMIN-USER, PLUGIN-AUTH]
 
 observation_kinds:

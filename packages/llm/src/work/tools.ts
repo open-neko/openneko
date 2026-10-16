@@ -1540,11 +1540,11 @@ export function buildWorkMemoryServer(
   const save = defineMcpTool(
     "save",
     [
-      "Save a durable memory the operator stated explicitly. Use only when",
-      "the operator says to remember/save something, corrects a recurring",
-      "assumption, defines a metric/business rule, or states a stable",
-      "preference. Never speculatively. Default scope=global, kind=business_rule,",
-      "pinned=true.",
+      "Save a durable memory without waiting to be asked: a business rule,",
+      "a metric definition, a stable preference, or a correction the operator",
+      "states. Save facts that will still hold next week. Update an existing",
+      "memory instead when the fact is already saved. Default scope=global,",
+      "kind=business_rule, pinned=true.",
     ].join(" "),
     {
       text: z.string().min(5).max(2000),

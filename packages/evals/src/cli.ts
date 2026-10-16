@@ -97,7 +97,7 @@ function planDocument(loaded: LoadedEval, plan: EvalPlan): unknown {
           .map((entry) => entry.id)
           .sort(),
         dispositionCounts: Object.fromEntries(
-          ["declared", "eval", "non-eval"].map((disposition) => [
+          ["declared", "eval", "excluded", "non-eval"].map((disposition) => [
             disposition,
             loaded.semantics!.entries.filter(
               (entry) => entry.disposition === disposition,

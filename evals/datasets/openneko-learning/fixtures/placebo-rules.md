@@ -1,0 +1,14 @@
+- Read the whole request before you start, and restate the goal to yourself in one sentence.
+- Prefer the connected governed source over memory, and say which source the answer came from.
+- Keep the answer short and put each requested field on its own line.
+- Check that every requested field has a value before you reply.
+- When a step returns an error, read the message, correct the step once, and try again.
+- Use the names that the source uses for people, places and products.
+- Avoid extra commentary after the requested fields.
+- When the request names a skill, follow the order of its steps.
+- Write dates in a form that a reader cannot misread.
+- Do not guess a value that the source did not return; say what is missing instead.
+- Keep units consistent between the current value and the comparison value.
+- Round only at the end, and keep the precision that the request asks for.
+- When two readings of the request are possible, choose the plain reading and state it.
+- Recheck the final numbers against the query results before you answer.

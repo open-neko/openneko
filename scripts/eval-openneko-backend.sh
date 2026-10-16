@@ -40,7 +40,7 @@ Suites (default: --smoke):
   --full              Three-repetition, 159-episode Hermes v2 reference cohort
   --full-v3           Three-repetition, 177-episode Hermes v3 reference cohort
   --full-v4           Three-repetition, 195-episode Hermes v4 reference cohort
-  --config PATH       Run another openneko.work-backend config
+  --config PATH       Run another openneko.work-backend or openneko.skill-learning config
 
 Options:
   --resume RUN_ID     Resume the exact durable run
@@ -184,8 +184,8 @@ case "$config_path" in
     exit 2
     ;;
 esac
-grep -Eq '^[[:space:]]*adapter:[[:space:]]*openneko\.work-backend([[:space:]#]|$)' "$config_path" || {
-  echo "config does not use the openneko.work-backend adapter: $config_path" >&2
+grep -Eq '^[[:space:]]*adapter:[[:space:]]*openneko\.(work-backend|skill-learning)([[:space:]#]|$)' "$config_path" || {
+  echo "config does not use the openneko.work-backend or openneko.skill-learning adapter: $config_path" >&2
   exit 2
 }
 

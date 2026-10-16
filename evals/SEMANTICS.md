@@ -121,6 +121,8 @@ All current `AgentEvent` variants map here or to runtime/action semantics:
 | `WORK-PERSONA` | Operator role/profile changes prompt emphasis without weakening authorization | matched persona cases |
 | `WORK-COMPACTION` | Long-thread compaction retains decisions, figures, actions, and open tasks without cross-thread leakage | multi-turn oracle |
 | `WORK-SKILLS` | Skill discovery, dependency aggregation, install/use, and allowed-tool implications are correct | trace + artifact contract |
+| `WORK-SKILL-LEARN` | Learned skill guidance comes only from grounded run evidence, passes safety and leakage checks, accumulates across versions, and improves verified outcomes on held-out sibling tasks without harming other families | learning track: grounding + leak + held-out sibling oracle |
+| `WORK-SKILL-DISCOVER` | Offline discovery turns repeated runs with no skill into one grounded new or extended skill, prefers extending a catalog skill, stays under the learned-skill cap, avoids near-duplicates and archives idle learned skills | scenario: catalog state + later unprompted skill load |
 | `WORK-CONFIG-VCS` | Snapshot/history/restore/promote/adopt of config artifacts preserve semantic content and attribution | repository/DB oracle |
 
 ## 5. Workflow, observation, watcher, and action semantics

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { detectSkillUse } from "../src/work/skill-usage";
 import { composeSkillTree } from "../src/work/skill-overlay";
 import { runSkillLearn } from "../src/work/skill-learn";
+import { buildRunEvidence } from "../src/work/skill-learn-evidence";
 import { fingerprintSkillTree } from "../src/work/workspace";
 
 const PACK = resolve(
@@ -130,6 +131,20 @@ describe("Magento refunds and fulfillment skill paths", () => {
       settlementMs: 0,
       minRepeats: 5,
       currentBaseHash: await fingerprintSkillTree(skillDir),
+      currentEffectiveHash: "same",
+      loadEvidence: async (runIds) =>
+        runIds.map((runId) =>
+          buildRunEvidence({
+            runId,
+            status: "completed",
+            request: "Why are refunds high this month?",
+            answer: "Refunds rose on configurable products.",
+            events: [
+              { type: "tool_start", id: "1", name: "graphql", input: { query: "creditmemo items" } },
+              { type: "tool_end", id: "1", error: "credit memo child rows double-count the parent" },
+            ],
+          }),
+        ),
       usages: Array.from({ length: 5 }, (_, i) => ({
         runId: `run-${i}`,
         skillName: "magento-investigate-refunds",
@@ -137,15 +152,20 @@ describe("Magento refunds and fulfillment skill paths", () => {
         createdAt: new Date(0),
       })),
       propose: async () => ({
-        lesson: "parent items",
         rationale: "credit memo child rows double-count",
-        learnedMarkdown:
-          "Prefer parent items when product structures would double-count.",
-        evidenceRunIds: ["run-0", "run-1", "run-2", "run-3", "run-4"],
+        operations: [
+          {
+            op: "add",
+            text: "Prefer parent items when product structures would double-count.",
+            evidenceRunIds: ["run-0", "run-1", "run-2", "run-3", "run-4"],
+            evidenceQuotes: ["child rows double-count the parent"],
+          },
+        ],
       }),
     });
     expect(result.decision).toBe("applied");
-    expect(result.trace.lesson).toBe("parent items");
+    expect(result.trace.lesson).toContain("Prefer parent items");
+    expect(result.rules?.[0]?.evidenceRunIds).toHaveLength(5);
     expect(await readFile(join(skillDir, "SKILL.md"), "utf8")).toBe(original);
     expect(
       await readFile(

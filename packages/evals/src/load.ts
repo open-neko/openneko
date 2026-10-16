@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { parse } from "yaml";
+import { assertionKindErrors, isRegisteredAdapter } from "./assertion-kinds";
 import { contentDigest, textDigest } from "./canonical";
 import {
   CaseSchema,
@@ -266,6 +267,12 @@ export async function loadEval(configPathInput: string): Promise<LoadedEval> {
             }
           : assertion;
       });
+    }
+    if (isRegisteredAdapter(config.adapter)) {
+      const kindErrors = assertionKindErrors(config.adapter, parsedCase);
+      if (kindErrors.length) {
+        throw new Error(`${casePath}: ${kindErrors.join("; ")}`);
+      }
     }
     if (parsedCase.product_path === "metric") {
       parsedCase.input = MetricQuestionInputSchema.parse(parsedCase.input);

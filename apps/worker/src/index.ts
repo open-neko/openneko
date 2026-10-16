@@ -18,6 +18,8 @@ import {
   type ChannelDeliverPayload,
   type LibraryExtractPayload,
   type LibraryDistillPayload,
+  type LearnVerifyPayload,
+  type SkillDiscoverPayload,
   type SkillLearnPayload,
   type ProcessingJobPayload,
   type RecordsIdentityLinkPayload,
@@ -141,7 +143,7 @@ import { sweepExpiredLibraryTransientState } from "./jobs/library-cleanup.js";
 import { runLibraryExtractJob } from "./jobs/library-extract.js";
 import { recoverUnqueuedLibraryUploads } from "./jobs/library-recovery.js";
 import { runLibraryDistillJob } from "./jobs/library-distill.js";
-import { runSkillLearnJob } from "./jobs/skill-learn.js";
+import { runLearnVerifyJob, runSkillDiscoverJob, runSkillLearnJob } from "./jobs/skill-learn.js";
 import { runRecordsIdentityLink } from "./jobs/records-identity-link.js";
 import { runRecordsBackupVerification } from "./jobs/records-backup-verify.js";
 import { seedOpenNekoOpsWorkflow } from "./jobs/records-ops-finding.js";
@@ -1374,6 +1376,40 @@ await b.work(
       } catch (e) {
         console.warn(
           `[skill-learn] job ${job.id} failed; pg-boss may retry: ${e instanceof Error ? e.message : e}`,
+        );
+        throw e;
+      }
+    }
+  },
+);
+
+await b.work(
+  QUEUE.LEARN_VERIFY,
+  { batchSize: 1, pollingIntervalSeconds: 2 },
+  async (jobs: PgBossLib.Job<LearnVerifyPayload>[]) => {
+    for (const job of jobs) {
+      try {
+        await runLearnVerifyJob(job.data);
+      } catch (e) {
+        console.warn(
+          `[learn-verify] job ${job.id} failed; pg-boss may retry: ${e instanceof Error ? e.message : e}`,
+        );
+        throw e;
+      }
+    }
+  },
+);
+
+await b.work(
+  QUEUE.SKILL_DISCOVER,
+  { batchSize: 1, pollingIntervalSeconds: 5 },
+  async (jobs: PgBossLib.Job<SkillDiscoverPayload>[]) => {
+    for (const job of jobs) {
+      try {
+        await runSkillDiscoverJob(job.data);
+      } catch (e) {
+        console.warn(
+          `[skill-discover] job ${job.id} failed; pg-boss may retry: ${e instanceof Error ? e.message : e}`,
         );
         throw e;
       }

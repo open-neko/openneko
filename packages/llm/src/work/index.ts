@@ -102,26 +102,89 @@ export {
 } from "./skill-learn-propose";
 export {
   MAGENTO_LEARN_SKILLS,
+  learnedVersionRegressed,
   magentoScoreImproved,
   scoreSkillLearnWindow,
   type SkillLearnScore,
   type SkillLearnScoreSample,
 } from "./skill-learn-score";
 export {
+  enqueueSkillLearnForRun,
+  runSkillDiscoveryForOrg,
   getSkillLearnOrgSettings,
+  runLearnForTarget,
+  runLearnVerifyForRun,
   runSkillLearnForOrgSkill,
   setSkillLearnOrgEnabled,
   type SkillLearnOrgSettings,
 } from "./skill-learn-store";
+export {
+  recordAnswerChecks,
+  verifyRunForLearning,
+  type VerifyExecute,
+  type VerifyLlm,
+} from "./learn-verify-store";
+export {
+  runAnswerChecks,
+  verifyRate,
+  type AnswerCheck,
+  type RunVerification,
+} from "./skill-learn-verify";
 export { assertAdditiveLearnedBody, scanLearnedText } from "./skill-learn-scan";
 export {
+  LEARN_TARGET_KINDS,
+  LEARNING_THREAD_CHANNEL,
+  extractRuleCitations,
+  isLearnTargetKind,
+  learnTargetDir,
+  learnTargetKey,
+  readLearnedNotes,
+  writeLearnedNotes,
+  type LearnTarget,
+  type LearnTargetKind,
+} from "./learn-target";
+export {
+  LEARNED_DIR,
+  ORG_PLAYBOOK_FILE,
+  SOURCE_NOTES_FILE,
+  readLearnedContext,
+} from "./learned-context";
+export { learnTargetsForRun } from "./learn-target-store";
+export {
+  archiveIdleLearnedSkills,
+  isLearnedSkill,
+  MAX_LEARNED_SKILLS,
+  runSkillDiscovery,
+  type CatalogSkill,
+  type SkillDiscoveryResult,
+} from "./skill-discover";
+export {
+  buildRunEvidence,
+  loadRunEvidence,
+  type RunEvidence,
+  type RunOutcome,
+} from "./skill-learn-evidence";
+export {
+  applyPlaybookOperations,
+  RULES_FILE,
+  readLearnedRules,
+  renderLearnedRules,
+  type LearnedRule,
+  type PlaybookOperation,
+} from "./skill-learn-playbook";
+export {
+  DESCRIPTION_FILE,
   LEARNED_FILE,
   SKILL_OVERLAYS_DIR,
   appendLearnedSection,
+  replaceFrontmatterDescription,
+  skillDescriptionDir,
   composeSkillTree,
   fingerprintEffectiveSkill,
   overlayAppliesToBase,
+  readLearnedDescription,
   readLearnedOverlay,
+  writeLearnedDescription,
   skillOverlayDir,
   stripLearnedSection,
   writeLearnedOverlay,

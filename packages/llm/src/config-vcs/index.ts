@@ -27,6 +27,8 @@ const TRACKED_IGNORE = `# config-vcs (CV0): version config artifacts only.
 !library/**
 !skill-overlays/
 !skill-overlays/**
+!learned/
+!learned/**
 `;
 
 // OKF bundle root: declares the version and catalogs the tracked trees.
@@ -43,6 +45,7 @@ title: "OpenNeko org knowledge"
 - [memory/](memory/) — durable team memories
 - [library/](library/okf/index.md) — approved knowledge distilled from documents
 - [skill-overlays/](skill-overlays/) — additive learned guidance for skills
+- [learned/](learned/) — learned data source notes and the org playbook
 `;
 
 export type ConfigCommit = {

@@ -1,0 +1,12 @@
+- Read the table and column names from the catalog before you write a query.
+- Ask for aggregates from the source instead of raw rows.
+- Check that each join key matches on both sides before you trust a total.
+- Filter on the columns that the request names, and keep other filters out.
+- Group by the same column that the answer reports.
+- Treat an empty result as no data, and say so.
+- Compare like with like: use the same measure for both periods.
+- Read the column type before you compare a date or a number.
+- Keep the query small enough that the result fits in one response.
+- Name the table that each reported value came from.
+- When two columns have similar names, read both and pick the one the request means.
+- Recheck a total that looks too large for a join that repeats rows.

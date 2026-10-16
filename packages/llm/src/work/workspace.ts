@@ -20,7 +20,9 @@ import { fileURLToPath } from "node:url";
 import type { AgentWorkspace } from "../agent-backend";
 import {
   composeSkillTree,
+  descriptionAppliesToBase,
   overlayAppliesToBase,
+  readLearnedDescription,
   readLearnedOverlay,
 } from "./skill-overlay";
 
@@ -252,7 +254,14 @@ export async function listInstalledSkills(
       if (!match) continue;
       const fm = match[1];
       const descMatch = fm.match(/^description:\s*(.+)$/m);
-      const description = descMatch ? descMatch[1].trim() : "";
+      let description = descMatch ? descMatch[1].trim() : "";
+      const learned = await readLearnedDescription(dirname(skillsRoot), name);
+      if (
+        learned &&
+        descriptionAppliesToBase(learned, await fingerprintSkillTree(join(skillsRoot, name)).catch(() => ""))
+      ) {
+        description = learned.description;
+      }
       out.push({ name, description });
     } catch {
       // skill dir without readable SKILL.md — skip
@@ -406,11 +415,14 @@ export async function copySkillOverrides(
     }
     const orgRoot = dirname(skillsRoot);
     const overlay = await readLearnedOverlay(orgRoot, entry.name);
-    const overlayLive = await overlayAppliesToBase(
-      overlay,
-      workspaceHash || (await fingerprintSkillTree(workspaceSource).catch(() => "")),
-    );
-    if (isUnmodifiedBuiltin && !overlayLive) continue;
+    const description = await readLearnedDescription(orgRoot, entry.name);
+    const liveHash =
+      overlay || description
+        ? workspaceHash || (await fingerprintSkillTree(workspaceSource).catch(() => ""))
+        : "";
+    const overlayLive = await overlayAppliesToBase(overlay, liveHash);
+    const descriptionLive = descriptionAppliesToBase(description, liveHash);
+    if (isUnmodifiedBuiltin && !overlayLive && !descriptionLive) continue;
 
     const destination = join(destinationRoot, entry.name);
     const composeBase = isUnmodifiedBuiltin ? bundled : source;
@@ -418,6 +430,7 @@ export async function copySkillOverrides(
       baseDir: composeBase,
       destDir: destination,
       overlay: overlayLive ? overlay : null,
+      description: descriptionLive ? description : null,
     });
     copied.push(entry.name);
   }

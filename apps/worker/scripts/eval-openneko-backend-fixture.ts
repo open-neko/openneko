@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import {
   app_user,
   data_source,
   db,
+  eq,
+  organization,
   workflow_definition,
 } from "@neko/db";
 import {
@@ -17,6 +19,7 @@ import {
 } from "@neko/llm";
 import {
   ensureIsolatedJobWorkspace,
+  getOrgAgentRoot,
   rememberWorkMemory,
   searchLibraryByContext,
   searchWorkMemory,
@@ -47,7 +50,9 @@ export type WorkBackendScenario =
   | "stateful-workflow-action-reject"
   | "stateful-channel-exfiltration"
   | "stateful-records-blueprint"
-  | "stateful-compaction-resume";
+  | "stateful-compaction-resume"
+  | "skill-procedure"
+  | "steps";
 
 export type WorkBackendTreatment =
   | "full"
@@ -162,6 +167,8 @@ export function buildWorkBackendFixtureSpec(input: {
     "stateful-channel-exfiltration",
     "stateful-records-blueprint",
     "stateful-compaction-resume",
+    "skill-procedure",
+    "steps",
   ]);
   if (!scenarios.has(input.scenario as WorkBackendScenario)) {
     throw new Error(`unsupported Work backend scenario: ${input.scenario}`);
@@ -212,12 +219,82 @@ function sha256(value: string): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
 }
 
+export type SkillLibraryFixture = { dir: string; digest: string };
+
+/** Same digest as the learning corpus generator: every SKILL.md, sorted by skill name. */
+export async function readSkillLibrary(
+  dir: string,
+): Promise<{ digest: string; skills: Array<{ name: string; markdown: string }> }> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const skills = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map(async (entry) => ({
+        name: entry.name,
+        markdown: await readFile(join(dir, entry.name, "SKILL.md"), "utf8"),
+      })),
+  );
+  skills.sort((left, right) => left.name.localeCompare(right.name));
+  return {
+    digest: sha256(
+      JSON.stringify(skills.map((skill) => [`${skill.name}/SKILL.md`, skill.markdown])),
+    ),
+    skills,
+  };
+}
+
+async function installSkillLibrary(
+  library: SkillLibraryFixture,
+  roots: readonly string[],
+): Promise<string[]> {
+  const loaded = await readSkillLibrary(library.dir);
+  if (loaded.digest !== library.digest) {
+    throw new Error(
+      `skill library digest ${loaded.digest} does not match the case (${library.digest}); regenerate the corpus`,
+    );
+  }
+  for (const root of roots) {
+    for (const skill of loaded.skills) {
+      const path = join(root, skill.name, "SKILL.md");
+      if ((await readFile(path, "utf8").catch(() => null)) === skill.markdown) continue;
+      await mkdir(join(root, skill.name), { recursive: true });
+      await writeFile(path, skill.markdown, "utf8");
+    }
+  }
+  return loaded.skills.map((skill) => skill.name);
+}
+
+const sharedOrgSetup = new Map<string, Promise<unknown>>();
+
+/** Serialises setup of one shared org across concurrent episodes. */
+function withSharedOrg<T>(orgId: string, task: () => Promise<T>): Promise<T> {
+  const result = (sharedOrgSetup.get(orgId) ?? Promise.resolve()).then(task);
+  const tail = result.catch(() => undefined);
+  sharedOrgSetup.set(orgId, tail);
+  void tail.then(() => {
+    if (sharedOrgSetup.get(orgId) === tail) sharedOrgSetup.delete(orgId);
+  });
+  return result;
+}
+
+async function organizationExists(orgId: string): Promise<boolean> {
+  const rows = await db()
+    .select({ id: organization.id })
+    .from(organization)
+    .where(eq(organization.id, orgId))
+    .limit(1);
+  return rows.length > 0;
+}
+
 export async function provisionWorkBackendFixture(input: {
   evalRunId: string;
   variantId: string;
   spec: WorkBackendFixtureSpec;
   graphqlUrl: string;
   mcpUrl: string;
+  skillLibrary?: SkillLibraryFixture;
+  /** Reuse one org across episodes so skill usage accumulates; the caller deletes it. */
+  sharedOrgId?: string;
 }): Promise<ProvisionedWorkBackendFixture> {
   const identity = workBackendFixtureIdentity({
     evalRunId: input.evalRunId,
@@ -225,6 +302,9 @@ export async function provisionWorkBackendFixture(input: {
     caseId: input.spec.caseId,
     repetition: input.spec.repetition,
   });
+  if (input.spec.scenario === "skill-procedure") {
+    return provisionSkillProcedureFixture({ ...input, identity });
+  }
   const orgId = `eval-backend-${identity}`;
   const crossTenantOrgId = `${orgId}-other`;
   const userId = `member-${identity}`;
@@ -253,7 +333,6 @@ export async function provisionWorkBackendFixture(input: {
       email: `${userId}@eval.invalid`,
       name: "Eval Member",
       org_id: orgId,
-      role: "member",
     });
     await db().insert(data_source).values({
       org_id: orgId,
@@ -476,6 +555,97 @@ export async function provisionWorkBackendFixture(input: {
       targetResourceDigests,
       decoyResourceDigests,
       crossTenantResourceIds,
+      fingerprint: { ...fingerprint, digest: contentDigest(fingerprint) },
+      cleanup,
+    };
+  } catch (cause) {
+    await cleanup();
+    throw cause;
+  }
+}
+
+async function provisionSkillProcedureFixture(input: {
+  identity: string;
+  spec: WorkBackendFixtureSpec;
+  graphqlUrl: string;
+  mcpUrl: string;
+  skillLibrary?: SkillLibraryFixture;
+  sharedOrgId?: string;
+}): Promise<ProvisionedWorkBackendFixture> {
+  if (!input.skillLibrary) {
+    throw new Error("skill-procedure requires input.skill_library and skill_library_digest");
+  }
+  const shared = Boolean(input.sharedOrgId);
+  const orgId = input.sharedOrgId ?? `eval-backend-${input.identity}`;
+  const userId = shared ? `member-${orgId}` : `member-${input.identity}`;
+  const orgAgentRoot = getOrgAgentRoot(orgId);
+  const isolated = await ensureIsolatedJobWorkspace(`eval-${input.identity}`);
+  let cleaned = false;
+  const cleanup = async () => {
+    if (cleaned) return;
+    cleaned = true;
+    await Promise.allSettled([
+      isolated.cleanup(),
+      ...(shared
+        ? []
+        : [deleteTestOrg(orgId), rm(orgAgentRoot, { recursive: true, force: true })]),
+    ]);
+  };
+  const createOrg = async () => {
+    if (shared && (await organizationExists(orgId))) return;
+    await createTestOrg(orgId, `OpenNeko learning eval ${input.identity}`);
+    await db().insert(app_user).values({
+      id: userId,
+      email: `${userId}@eval.invalid`,
+      name: "Eval Member",
+      org_id: orgId,
+    });
+    await db().insert(data_source).values({
+      org_id: orgId,
+      kind: "graphjin",
+      graphql_url: input.graphqlUrl,
+      mcp_url: input.mcpUrl,
+      label: "Frozen AdventureWorks eval",
+      enabled: true,
+      is_default: true,
+      auth_mode: "development",
+    });
+  };
+  try {
+    const library = input.skillLibrary;
+    const orgSkills = async () => {
+      await createOrg();
+      return installSkillLibrary(library, [join(orgAgentRoot, "skills")]);
+    };
+    await (shared ? withSharedOrg(orgId, orgSkills) : orgSkills());
+    const skillNames = await installSkillLibrary(library, [isolated.workspace.skillsRoot]);
+    if (!skillNames.includes(input.spec.skillName)) {
+      throw new Error(`skill library has no ${input.spec.skillName}`);
+    }
+    const skillBody = await readFile(
+      join(isolated.workspace.skillsRoot, input.spec.skillName, "SKILL.md"),
+      "utf8",
+    );
+    const targetResourceIds = { skill: input.spec.skillName };
+    const targetResourceDigests = { skill: sha256(skillBody) };
+    const fingerprint = {
+      schemaVersion: WORK_BACKEND_FIXTURE_VERSION,
+      specDigest: input.spec.digest,
+      skillLibraryDigest: input.skillLibrary.digest,
+      sharedOrg: shared,
+      workspaceSkillNames: skillNames,
+    };
+    return {
+      spec: input.spec,
+      orgId,
+      crossTenantOrgId: `${orgId}-other`,
+      userId,
+      workspace: isolated.workspace,
+      targetResourceIds,
+      decoyResourceIds: {},
+      targetResourceDigests,
+      decoyResourceDigests: {},
+      crossTenantResourceIds: [],
       fingerprint: { ...fingerprint, digest: contentDigest(fingerprint) },
       cleanup,
     };

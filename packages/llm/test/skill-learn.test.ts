@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSkillLearn } from "../src/work/skill-learn";
+import { buildRunEvidence, type RunEvidence } from "../src/work/skill-learn-evidence";
 import { parseSkillLearnProposal } from "../src/work/skill-learn-propose";
 import { scanLearnedText } from "../src/work/skill-learn-scan";
 import { fingerprintSkillTree } from "../src/work/workspace";
@@ -22,6 +23,21 @@ afterEach(async () => {
     if (path) await rm(path, { recursive: true, force: true });
   }
 });
+
+function evidenceFor(runIds: string[]): RunEvidence[] {
+  return runIds.map((runId) =>
+    buildRunEvidence({
+      runId,
+      status: "completed",
+      request: "How much did we refund last month?",
+      answer: "Refunds were 12,345.67 last month.",
+      events: [
+        { type: "tool_start", id: "t1", name: "graphql", input: { query: "refunds" } },
+        { type: "tool_end", id: "t1", error: "child rows double-counted the refund total" },
+      ],
+    }),
+  );
+}
 
 function usages(count: number, createdAt: Date) {
   return Array.from({ length: count }, (_, index) => ({
@@ -49,26 +65,28 @@ describe("skill-learn module boundary", () => {
 });
 
 describe("parseSkillLearnProposal", () => {
-  it("accepts schema JSON and drops run ids that were not in the cohort", () => {
+  it("keeps typed operations and drops run ids outside the cohort", () => {
     const parsed = parseSkillLearnProposal(
-      `here\n{"lesson":"parent items","rationale":"child rows double-count","learnedMarkdown":"Prefer parent items.","evidenceRunIds":["run-1","nope"]}`,
+      `here\n{"rationale":"child rows double-count","operations":[{"op":"add","text":"Prefer parent items.","evidenceRunIds":["run-1","nope"],"evidenceQuotes":["parent item rows"]},{"op":"remove","ruleId":"L2"},{"op":"rewrite"}]}`,
       ["run-1", "run-2"],
     );
     expect(parsed).toEqual({
-      lesson: "parent items",
       rationale: "child rows double-count",
-      learnedMarkdown: "Prefer parent items.",
-      evidenceRunIds: ["run-1"],
+      operations: [
+        {
+          op: "add",
+          text: "Prefer parent items.",
+          evidenceRunIds: ["run-1"],
+          evidenceQuotes: ["parent item rows"],
+        },
+        { op: "remove", ruleId: "L2", evidenceRunIds: [], evidenceQuotes: [] },
+      ],
     });
   });
 
-  it("rejects JSON with no allowed evidence run ids", () => {
-    expect(
-      parseSkillLearnProposal(
-        `{"lesson":"x","rationale":"y","learnedMarkdown":"z","evidenceRunIds":["other"]}`,
-        ["run-1"],
-      ),
-    ).toBeNull();
+  it("rejects output with no operations", () => {
+    expect(parseSkillLearnProposal(`{"rationale":"x","operations":[]}`, ["run-1"])).toBeNull();
+    expect(parseSkillLearnProposal("no json", ["run-1"])).toBeNull();
   });
 });
 
@@ -100,6 +118,8 @@ describe("runSkillLearn", () => {
       orgEnabled: true,
       skillEnabled: true,
       usages: usages(4, new Date(0)),
+      currentBaseHash: "base-hash",
+      currentEffectiveHash: "same-hash",
       settlementMs: 0,
       minRepeats: 5,
     });
@@ -137,7 +157,7 @@ describe("runSkillLearn", () => {
     expect(result.reason).toBe("flags_off");
   });
 
-  it("applies through the production proposer when llm returns schema JSON", async () => {
+  it("applies through the production proposer when llm returns grounded operations", async () => {
     const orgRoot = await mkdtemp(join(tmpdir(), "neko-learn-prod-propose-"));
     cleanupPaths.push(orgRoot);
     const skillDir = join(orgRoot, "skills", "magento-investigate-refunds");
@@ -145,6 +165,49 @@ describe("runSkillLearn", () => {
     const original = await readFile(join(MAGENTO_REFUNDS, "SKILL.md"), "utf8");
     await writeFile(join(skillDir, "SKILL.md"), original, "utf8");
     const cohort = usages(5, new Date(0));
+    let prompt = "";
+    const result = await runSkillLearn({
+      orgId: "org",
+      orgRoot,
+      skillName: "magento-investigate-refunds",
+      orgEnabled: true,
+      skillEnabled: true,
+      usages: cohort,
+      currentEffectiveHash: "same-hash",
+      settlementMs: 0,
+      minRepeats: 5,
+      loadEvidence: async (runIds) => evidenceFor(runIds),
+      llm: async (text) => {
+        prompt = text;
+        return JSON.stringify({
+          rationale: "runs double-counted child rows",
+          operations: [
+            {
+              op: "add",
+              text: "Sum refunds on parent items only; child rows double-count.",
+              evidenceRunIds: cohort.slice(0, 2).map((usage) => usage.runId),
+              evidenceQuotes: ["child rows double-counted the refund"],
+            },
+          ],
+        });
+      },
+    });
+    expect(prompt).toContain("child rows double-counted the refund");
+    expect(prompt).toContain("current rules:");
+    expect(result.decision).toBe("applied");
+    expect(result.rules?.[0]?.evidenceRunIds).toHaveLength(2);
+    expect(await readFile(join(skillDir, "SKILL.md"), "utf8")).toBe(original);
+  });
+
+  it("applies an additive LEARNED.md and does not rewrite pack SKILL.md", async () => {
+    const orgRoot = await mkdtemp(join(tmpdir(), "neko-learn-apply-"));
+    cleanupPaths.push(orgRoot);
+    const skillDir = join(orgRoot, "skills", "magento-investigate-refunds");
+    await mkdir(skillDir, { recursive: true });
+    const original = await readFile(join(MAGENTO_REFUNDS, "SKILL.md"), "utf8");
+    await writeFile(join(skillDir, "SKILL.md"), original, "utf8");
+    const baseHash = await fingerprintSkillTree(skillDir);
+    const cohort = usages(5, new Date(0)).map((usage) => ({ ...usage, contentHash: baseHash }));
     const result = await runSkillLearn({
       orgId: "org",
       orgRoot,
@@ -154,55 +217,20 @@ describe("runSkillLearn", () => {
       usages: cohort,
       settlementMs: 0,
       minRepeats: 5,
-      llm: async () =>
-        JSON.stringify({
-          lesson: "parent items",
-          rationale: "five settled runs double-counted child rows",
-          learnedMarkdown:
-            "Prefer parent items when product structures would double-count.",
-          evidenceRunIds: cohort.map((usage) => usage.runId),
-        }),
-    });
-    expect(result.decision).toBe("applied");
-    expect(result.trace.lesson).toBe("parent items");
-    expect(await readFile(join(skillDir, "SKILL.md"), "utf8")).toBe(original);
-  });
-
-  it("applies additive LEARNED.md and does not rewrite pack SKILL.md", async () => {
-    const orgRoot = await mkdtemp(join(tmpdir(), "neko-learn-apply-"));
-    cleanupPaths.push(orgRoot);
-    const skillDir = join(orgRoot, "skills", "magento-investigate-refunds");
-    await mkdir(skillDir, { recursive: true });
-    const original = await readFile(join(MAGENTO_REFUNDS, "SKILL.md"), "utf8");
-    await writeFile(join(skillDir, "SKILL.md"), original, "utf8");
-    await mkdir(join(skillDir, "references"), { recursive: true });
-    await writeFile(
-      join(skillDir, "references", "refunds-and-cancellations.md"),
-      await readFile(
-        join(MAGENTO_REFUNDS, "references", "refunds-and-cancellations.md"),
-        "utf8",
-      ),
-    );
-    const baseHash = await fingerprintSkillTree(skillDir);
-    const result = await runSkillLearn({
-      orgId: "org",
-      orgRoot,
-      skillName: "magento-investigate-refunds",
-      orgEnabled: true,
-      skillEnabled: true,
-      usages: usages(5, new Date(0)),
-      settlementMs: 0,
-      minRepeats: 5,
-      currentBaseHash: baseHash,
+      loadEvidence: async (runIds) => evidenceFor(runIds),
       propose: async () => ({
-        lesson: "keep credit-memo math on parent items",
         rationale: "five settled refunds runs double-counted child rows",
-        learnedMarkdown: "Prefer parent items when product structures would double-count.",
-        evidenceRunIds: usages(5, new Date(0)).map((usage) => usage.runId),
+        operations: [
+          {
+            op: "add",
+            text: "Prefer parent items when product structures would double-count.",
+            evidenceRunIds: cohort.slice(0, 3).map((usage) => usage.runId),
+            evidenceQuotes: ["child rows double-counted the refund"],
+          },
+        ],
       }),
     });
     expect(result.decision).toBe("applied");
-    expect(result.trace.lesson).toContain("parent items");
     expect(result.trace.rationale).toContain("double-counted");
     expect(await readFile(join(skillDir, "SKILL.md"), "utf8")).toBe(original);
     const learned = await readFile(
@@ -211,6 +239,83 @@ describe("runSkillLearn", () => {
     );
     expect(learned).toContain("Prefer parent items");
     expect(learned).toContain(`base_hash: ${baseHash}`);
+  });
+
+  it("learns only from runs on the current effective skill version", async () => {
+    const orgRoot = await mkdtemp(join(tmpdir(), "neko-learn-version-"));
+    cleanupPaths.push(orgRoot);
+    const skillDir = join(orgRoot, "skills", "demo");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), "# Demo\n", "utf8");
+    const result = await runSkillLearn({
+      orgId: "org",
+      orgRoot,
+      skillName: "demo",
+      orgEnabled: true,
+      skillEnabled: true,
+      usages: usages(6, new Date(0)).map((usage) => ({ ...usage, contentHash: "old" })),
+      settlementMs: 0,
+      loadEvidence: async (runIds) => evidenceFor(runIds),
+    });
+    expect(result.decision).toBe("skipped");
+    expect(result.reason).toBe("below_repeat_threshold");
+  });
+
+  it("skips when the runs left no evidence", async () => {
+    const orgRoot = await mkdtemp(join(tmpdir(), "neko-learn-noevidence-"));
+    cleanupPaths.push(orgRoot);
+    const skillDir = join(orgRoot, "skills", "demo");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), "# Demo\n", "utf8");
+    const result = await runSkillLearn({
+      orgId: "org",
+      orgRoot,
+      skillName: "demo",
+      orgEnabled: true,
+      skillEnabled: true,
+      usages: usages(5, new Date(0)),
+      currentEffectiveHash: "same-hash",
+      settlementMs: 0,
+      propose: async () => {
+        throw new Error("proposer must not run without evidence");
+      },
+    });
+    expect(result.decision).toBe("skipped");
+    expect(result.reason).toBe("insufficient_evidence");
+  });
+
+  it("drops rules whose quotes are not in the cited runs", async () => {
+    const orgRoot = await mkdtemp(join(tmpdir(), "neko-learn-ungrounded-"));
+    cleanupPaths.push(orgRoot);
+    const skillDir = join(orgRoot, "skills", "demo");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), "# Demo\n", "utf8");
+    const cohort = usages(5, new Date(0)).map((usage) => ({ ...usage, skillName: "demo" }));
+    const result = await runSkillLearn({
+      orgId: "org",
+      orgRoot,
+      skillName: "demo",
+      orgEnabled: true,
+      skillEnabled: true,
+      usages: cohort,
+      currentEffectiveHash: "same-hash",
+      settlementMs: 0,
+      loadEvidence: async (runIds) => evidenceFor(runIds),
+      propose: async () => ({
+        rationale: "invented",
+        operations: [
+          {
+            op: "add",
+            text: "Always join the warehouse table first.",
+            evidenceRunIds: cohort.map((usage) => usage.runId),
+            evidenceQuotes: ["the warehouse join fixed every run"],
+          },
+        ],
+      }),
+    });
+    expect(result.decision).toBe("skipped");
+    expect(result.reason).toBe("no_grounded_rules");
+    expect(result.trace.dropped?.[0]?.reason).toMatch(/grounded in 0/);
   });
 
   it("rejects a secret-bearing candidate", async () => {
@@ -230,11 +335,18 @@ describe("runSkillLearn", () => {
         skillName: "demo",
       })),
       settlementMs: 0,
+      currentEffectiveHash: "same-hash",
+      loadEvidence: async (runIds) => evidenceFor(runIds),
       propose: async () => ({
-        lesson: "leak",
         rationale: "bad",
-        learnedMarkdown: "Store GEMINI api_key=sk-abc1234567890xyz in the skill.",
-        evidenceRunIds: ["r1"],
+        operations: [
+          {
+            op: "add",
+            text: "Store GEMINI api_key=sk-abc1234567890xyz in the skill.",
+            evidenceRunIds: ["r1"],
+            evidenceQuotes: ["child rows double-counted the refund"],
+          },
+        ],
       }),
     });
     expect(result.decision).toBe("rejected");
@@ -258,11 +370,13 @@ describe("runSkillLearn", () => {
         skillName: "demo",
       })),
       settlementMs: 0,
+      currentEffectiveHash: "same-hash",
+      loadEvidence: async (runIds) => evidenceFor(runIds),
       propose: async () => ({
-        lesson: "hijack",
         rationale: "bad",
-        learnedMarkdown: "---\nname: evil\n---\n",
-        evidenceRunIds: ["r1"],
+        operations: [
+          { op: "add", text: "name: evil", evidenceRunIds: ["r1"], evidenceQuotes: [] },
+        ],
       }),
     });
     expect(result.decision).toBe("rejected");

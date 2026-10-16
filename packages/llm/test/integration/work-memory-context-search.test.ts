@@ -44,6 +44,7 @@ import {
 } from "../../src/work/memory";
 
 import { runEmbeddingIndexJob } from "../../src/embedding-jobs";
+import { createWorkThread } from "../../src/work/store";
 async function rememberWorkMemory(input: Parameters<typeof saveMemory>[0]) {
   const memory = await saveMemory(input);
   await runEmbeddingIndexJob({ kind: "memory", orgId: input.orgId, id: memory.id });
@@ -135,6 +136,29 @@ describeIfDb("work memory context search (pgvector)", () => {
       // Scalar score returned, finite number.
       expect(typeof results[0].score).toBe("number");
       expect(Number.isFinite(results[0].score)).toBe(true);
+    } finally {
+      await deleteTestOrg(orgId);
+    }
+  });
+
+  it("shows a thread-scoped memory only in its own thread", async () => {
+    try {
+      const own = await createWorkThread(orgId, "own");
+      const other = await createWorkThread(orgId, "other");
+      const memory = await rememberWorkMemory({
+        orgId,
+        threadId: own.id,
+        text: "Count only shipped orders in this thread",
+        kind: "business_rule",
+        scope: "thread",
+      });
+      const query = "which orders should I count";
+      const inOwn = await searchWorkMemoryByContext({ orgId, query, threadId: own.id });
+      const inOther = await searchWorkMemoryByContext({ orgId, query, threadId: other.id });
+      const noThread = await searchWorkMemoryByContext({ orgId, query });
+      expect(inOwn.map((r) => r.memory.id)).toEqual([memory.id]);
+      expect(inOther).toEqual([]);
+      expect(noThread).toEqual([]);
     } finally {
       await deleteTestOrg(orgId);
     }
@@ -239,6 +263,44 @@ describeIfDb("work memory context search (pgvector)", () => {
       const matches = out.split(m.text).length - 1;
       expect(matches).toBe(1);
       expect(out).toContain("durable context");
+    } finally {
+      await deleteTestOrg(orgId);
+    }
+  });
+});
+
+describeIfDb("learning settlement", () => {
+  it("settles a run at the operator's next message, at completion when unattended, or at the idle limit", async () => {
+    const { runSettledAt } = await import("../../src/work/skill-learn-store");
+    const { work_run, work_message } = await import("@neko/db");
+    const orgId = uniqueOrgId("settle");
+    await createTestOrg(orgId, "Settle");
+    try {
+      const thread = await createWorkThread(orgId, "t");
+      const done = new Date("2026-10-16T10:00:00Z");
+      const [chat, service, quiet] = await db()
+        .insert(work_run)
+        .values([
+          { org_id: orgId, thread_id: thread.id, backend: "ax", status: "completed", finished_at: done },
+          { org_id: orgId, thread_id: thread.id, backend: "ax", status: "completed", finished_at: done, actor_role: "service" },
+          { org_id: orgId, thread_id: thread.id, backend: "ax", status: "running" },
+        ])
+        .returning({ id: work_run.id });
+      await db().insert(work_message).values({
+        org_id: orgId,
+        thread_id: thread.id,
+        role: "user",
+        content: "that is wrong",
+        created_at: new Date("2026-10-16T10:03:00Z"),
+      });
+      const rows = await db()
+        .select({ id: work_run.id, settledAt: runSettledAt(10 * 60 * 1000) })
+        .from(work_run)
+        .where(eq(work_run.org_id, orgId));
+      const at = new Map(rows.map((row) => [row.id, row.settledAt ? new Date(row.settledAt).toISOString() : null]));
+      expect(at.get(chat!.id)).toBe("2026-10-16T10:03:00.000Z");
+      expect(at.get(service!.id)).toBe("2026-10-16T10:00:00.000Z");
+      expect(at.get(quiet!.id)).toBeNull();
     } finally {
       await deleteTestOrg(orgId);
     }

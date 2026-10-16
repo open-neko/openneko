@@ -10,6 +10,7 @@ import {
   VALUE_ESTIMATE_INSTRUCTIONS,
   buildDataAccessSection,
   buildMemorySection,
+  buildOrgPlaybookSection,
 } from "../prompts/sections";
 import type { WorkflowRecord } from "./store";
 import { GRAPHJIN_AGENT_ASK_TOOL_TITLE, GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE } from "../graphjin/mcp-names";
@@ -200,6 +201,7 @@ ${overlay}
 `
     : "";
 
+  const orgPlaybookSection = buildOrgPlaybookSection(knowledge.learned?.orgPlaybook);
   const memorySection = buildMemorySection({
     searchTool: true,
     saveMode: "tool",
@@ -258,7 +260,7 @@ lost when the run ends.
 
 ${actionsBlock}
 
-${memorySection}
+${memorySection}${orgPlaybookSection ? `\n\n${orgPlaybookSection}` : ""}
 
 ${buildNativeDelegationBlock(backend)}
 

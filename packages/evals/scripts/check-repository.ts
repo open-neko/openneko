@@ -1,7 +1,15 @@
 import { readFile, readdir } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createEvalPlan, loadEval, verifyResult } from "../src";
+import {
+  computeSemanticCoverage,
+  createEvalPlan,
+  formatCoverageTable,
+  isRegisteredAdapter,
+  loadEval,
+  verifyResult,
+  type CoverageConfig,
+} from "../src";
 import { parse } from "yaml";
 import { assertReadmeMetrics } from "../src/report";
 import { SummarySchema } from "../src/schemas";
@@ -32,7 +40,8 @@ const configPaths = await filesBelow(configRoot, ".yaml");
 if (!configPaths.length) throw new Error("evals/configs contains no configurations");
 
 const configIds = new Set<string>();
-const coveredSemantics = new Set<string>();
+const coverageConfigs: CoverageConfig[] = [];
+const unregisteredAdapters = new Set<string>();
 let registry:
   | NonNullable<Awaited<ReturnType<typeof loadEval>>["semantics"]>
   | undefined;
@@ -45,30 +54,32 @@ for (const configPath of configPaths) {
     throw new Error(`duplicate eval config id ${loaded.config.id}`);
   }
   configIds.add(loaded.config.id);
+  if (!isRegisteredAdapter(loaded.config.adapter)) {
+    unregisteredAdapters.add(`${loaded.config.id}: ${loaded.config.adapter}`);
+  }
   cases += loaded.cases.length;
   calls += plan.calls;
   registry ??= loaded.semantics;
-  for (const evalCase of loaded.cases) {
-    for (const semantic of evalCase.semantics) coveredSemantics.add(semantic);
-  }
-  for (const variant of loaded.config.variants) {
-    if (variant.data_path === "graphjin-direct") coveredSemantics.add("DATA-DIRECT");
-    if (variant.data_path === "graphjin-agent") coveredSemantics.add("DATA-DELEGATED");
-    if (variant.data_path === "planner-host-execute") {
-      coveredSemantics.add("DATA-PLANNER-EXECUTE");
-    }
-  }
+  coverageConfigs.push({
+    id: loaded.config.id,
+    variants: loaded.config.variants,
+    cases: loaded.cases,
+  });
+}
+if (unregisteredAdapters.size) {
+  throw new Error(
+    `eval configs use adapters with no assertion kind registry in packages/evals/src/assertion-kinds.ts: ${[...unregisteredAdapters].join(", ")}`,
+  );
 }
 if (!registry) throw new Error("no eval config references the semantic registry");
-const missingEvalSemantics = registry.entries
-  .filter(
-    (entry) =>
-      entry.disposition === "eval" && !coveredSemantics.has(entry.id),
-  )
-  .map((entry) => entry.id);
-if (missingEvalSemantics.length) {
+const coverage = computeSemanticCoverage(registry, coverageConfigs);
+process.stdout.write(`${formatCoverageTable(coverage.prefixes)}\n`);
+if (coverage.unknown.length) {
+  throw new Error(`cases cite unknown semantics: ${coverage.unknown.join(", ")}`);
+}
+if (coverage.missingEval.length) {
   throw new Error(
-    `semantic entries marked eval have no configured coverage: ${missingEvalSemantics.join(", ")}`,
+    `semantic entries marked eval have no configured coverage: ${coverage.missingEval.join(", ")}`,
   );
 }
 
@@ -217,5 +228,5 @@ for (const manifestPath of resultManifests) {
 }
 
 process.stdout.write(
-  `eval repository valid: ${configPaths.length} configs, ${cases} selected case references, ${calls} planned calls, ${coveredSemantics.size}/${registry.entries.length} semantic IDs covered, ${Object.keys(inventory.agent_events).length} agent events, ${Object.keys(inventory.worker_queues).length} worker queues, ${Object.keys(inventory.observation_kinds).length} observation kinds mapped, ${resultManifests.length} checked-in results verified (${acceptedResults} accepted, ${rejectedResults} rejected)\n`,
+  `eval repository valid: ${configPaths.length} configs, ${cases} selected case references, ${calls} planned calls, ${coverage.covered.size}/${registry.entries.length} semantic IDs covered, ${Object.keys(inventory.agent_events).length} agent events, ${Object.keys(inventory.worker_queues).length} worker queues, ${Object.keys(inventory.observation_kinds).length} observation kinds mapped, ${resultManifests.length} checked-in results verified (${acceptedResults} accepted, ${rejectedResults} rejected)\n`,
 );

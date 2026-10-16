@@ -78,8 +78,9 @@ export default function SkillLearnCard() {
         <div className="min-w-0">
           <h2 className="settings-card-title">Skill learning</h2>
           <p className="settings-card-copy">
-            When on, OpenNeko records a lesson from repeated skill use and adds
-            it to the skill. Authored skill files stay as written.
+            When on, OpenNeko learns from settled runs: rules for skills, notes
+            for data sources, skill descriptions, and an org playbook. Authored
+            skill files stay as written.
           </p>
         </div>
         {enabled === null ? null : (
@@ -103,9 +104,11 @@ export default function SkillLearnCard() {
       )}
       <Disclosure title="What this changes" className="mt-4">
         <p className="m-0 text-ui-body-sm leading-[1.55] text-text2">
-          OpenNeko writes a LEARNED.md overlay after the same lesson shows up
-          enough times. The overlay does not store customer data. A decision log
-          records each apply, skip, and reject. Off by default.
+          OpenNeko writes a learned overlay after the same lesson shows up in
+          enough runs: LEARNED.md and a description for a skill, NOTES.md for a
+          data source, and PLAYBOOK.md for the org (at most 8 rules). Overlays
+          do not store customer data. Each target has its own decision log of
+          applies, skips, rejects, and rollbacks. Off by default.
         </p>
       </Disclosure>
     </section>

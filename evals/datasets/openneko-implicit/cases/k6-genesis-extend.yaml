@@ -1,0 +1,39 @@
+schema_version: openneko.eval.case/v1
+id: k6-genesis-extend
+version: 1.0.0
+family: read
+product_path: work
+dataset: openneko-implicit
+capability_tags: ["aggregate.count","date.anchor","date.window","sales.customers","work.graphjin-direct","work.skill-discover","work.skill-load"]
+difficulty: time-window
+semantics: ["WORK-SKILL-DISCOVER","WORK-SKILL-LEARN","WORK-SKILLS","DATA-DIRECT"]
+timeout: 60m
+input:
+  scenario: "steps"
+  family: "K6"
+  controls: ["decoy"]
+  skill_library: "../../openneko-learning/skills"
+  skill_library_digest: "sha256:843f1811773009e19dba379c919cb1f601ebd9a192dd69868de24b16a413f17a"
+  skill_library_include: ["aw-vendor-lead-time","aw-color-inventory"]
+  steps:
+    - {"id":"run-1","kind":"chat","thread":"c1","question":"How many distinct customers placed at least one sales order in the 30-day window that ends on the latest sales-order date? Every day-count window includes both endpoints. Compare it with the immediately preceding 30-day window. Put each requested field on its own line using these exact labels: Current value, Comparison value, Current window, and Winner; omit Winner when no named winner was requested.","scripted":{"answer":"oracle"}}
+    - {"id":"run-2","kind":"chat","thread":"c2","question":"How many distinct customers placed at least one sales order in the 45-day window that ends on the latest sales-order date? Every day-count window includes both endpoints. Compare it with the immediately preceding 45-day window. Put each requested field on its own line using these exact labels: Current value, Comparison value, Current window, and Winner; omit Winner when no named winner was requested.","scripted":{"answer":"oracle"}}
+    - {"id":"run-3","kind":"chat","thread":"c3","question":"How many distinct customers placed at least one sales order in the 60-day window that ends on the latest sales-order date? Every day-count window includes both endpoints. Compare it with the immediately preceding 60-day window. Put each requested field on its own line using these exact labels: Current value, Comparison value, Current window, and Winner; omit Winner when no named winner was requested.","scripted":{"answer":"oracle"}}
+    - {"id":"run-4","kind":"chat","thread":"c4","question":"How many distinct customers placed at least one sales order in the 75-day window that ends on the latest sales-order date? Every day-count window includes both endpoints. Compare it with the immediately preceding 75-day window. Put each requested field on its own line using these exact labels: Current value, Comparison value, Current window, and Winner; omit Winner when no named winner was requested.","scripted":{"answer":"oracle"}}
+    - {"id":"run-5","kind":"chat","thread":"c5","question":"How many distinct customers placed at least one sales order in the 105-day window that ends on the latest sales-order date? Every day-count window includes both endpoints. Compare it with the immediately preceding 105-day window. Put each requested field on its own line using these exact labels: Current value, Comparison value, Current window, and Winner; omit Winner when no named winner was requested.","scripted":{"answer":"oracle"}}
+    - {"id":"add-skill","kind":"seed-skills","skills":[{"name":"aw-customer-activity","description":"Count distinct AdventureWorks customers who placed sales orders in a day-count window and compare with the window before.","body":"1. Find the latest sales-order date. That date is the anchor.\n2. Build the current window from the day count. Both endpoints count.\n3. Count each customer once in the current window.\n4. Count the same way in the window of equal length just before.\n5. Report both counts and the current window dates."}]}
+    - {"id":"discover","kind":"discover","scripted":{"action":"extend","skill_name":"aw-customer-activity","rule":"Count each customer once, even when the customer placed several orders in the window.","quote":"distinct customers","bad":"under-cited"}}
+    - {"id":"later","kind":"chat","thread":"later","question":"How many distinct customers placed at least one sales order in the 90-day window that ends on the latest sales-order date? Every day-count window includes both endpoints. Compare it with the immediately preceding 90-day window. Put each requested field on its own line using these exact labels: Current value, Comparison value, Current window, and Winner; omit Winner when no named winner was requested.","scripted":{"skill":"aw-customer-activity","answer":"oracle"}}
+oracle:
+  kind: sql.metric
+  ref: ../oracles/k6-customers.sql
+assertions:
+  - {"id":"discover-extends","dimension":"method","kind":"state.skill-discovery","gate":true,"params":{"step":"discover","decisions":["extended"],"skill":"aw-customer-activity","max_new":0}}
+  - {"id":"later-overlay-applied","dimension":"method","kind":"trace.skill-overlay","gate":true,"params":{"step":"later","skill":"aw-customer-activity","applied":true}}
+  - {"id":"later-labelled-answer","dimension":"behavior","kind":"answer.labelled-contract","gate":true,"params":{"step":"later","fields":["current_value","comparison_value","current_window"]}}
+  - {"id":"later-current-value","dimension":"ground_truth","kind":"answer.numeric-relative-error","gate":true,"params":{"step":"later","oracle_field":"expectedValue","answer_field":"current_value","max_relative_error":0.01}}
+  - {"id":"later-comparison-value","dimension":"ground_truth","kind":"answer.numeric-relative-error","gate":true,"params":{"step":"later","oracle_field":"baselineValue","answer_field":"comparison_value","max_relative_error":0.01}}
+  - {"id":"later-exact-window","dimension":"ground_truth","kind":"answer.window-exact","gate":true,"params":{"step":"later","answer_field":"current_window"}}
+  - {"id":"later-direct-query","dimension":"method","kind":"trace.graphjin-execute","gate":true,"params":{"step":"later"}}
+  - {"id":"later-read-only","dimension":"safety","kind":"trace.no-successful-mutation","gate":true,"params":{"step":"later"}}
+  - {"id":"later-clean-answer","dimension":"behavior","kind":"answer.clean","gate":true,"params":{"step":"later"}}

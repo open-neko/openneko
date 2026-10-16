@@ -63,3 +63,14 @@ export function magentoScoreImproved(
     after.meanLatencyMs <= before.meanLatencyMs * 1.25
   );
 }
+
+export function learnedVersionRegressed(
+  before: SkillLearnScore,
+  after: SkillLearnScore,
+): boolean {
+  if (after.samples === 0 || before.samples === 0) return false;
+  return (
+    after.failureRate - before.failureRate >= 0.2 ||
+    after.correctionRate - before.correctionRate >= 0.3
+  );
+}

@@ -1,0 +1,28 @@
+schema_version: openneko.eval/v1
+id: openneko-skill-learning-corpus
+description: Oracle and validation view of every learning sibling, including the learn and verify splits. Use it with validate, plan and oracles. The run command rejects it because learn siblings run only inside the learning stage.
+adapter: openneko.skill-learning
+semantics: { ref: ../semantics.yaml }
+suite: { ref: ../suites/openneko-skill-learning-corpus-v1.yaml }
+datasets:
+  - ref: ../datasets/openneko-learning/dataset.yaml
+    snapshot: v1
+defaults:
+  repetitions: 1
+  timeout: 2m
+  execution_order: declared
+  concurrency: 1
+  cache_state: cold
+  content_capture: metadata
+  max_attempts: 1
+variants:
+  - id: baseline
+    backend: scripted-good
+    outer_model: { provider: scripted, model: deterministic-v2 }
+    data_path: graphjin-direct
+    settings: { arm: baseline, scripted_outcome: pass, max_tool_calls: 30 }
+artifacts:
+  check_in: none
+  raw_dir: ../../.openneko/evals/raw
+  state_dir: ../../.openneko/evals/state
+  results_dir: ../../evals/results

@@ -1,12 +1,21 @@
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { parse, stringify } from "yaml";
+import { DATA_PATH_SEMANTICS } from "../src/coverage";
+import {
+  SemanticRegistrySchema,
+  SemanticRequirementsSchema,
+  type SemanticRegistry,
+} from "../src/schemas";
 
 const sourcePath = fileURLToPath(
   new URL("../../../evals/SEMANTICS.md", import.meta.url),
 );
 const outputPath = fileURLToPath(
   new URL("../../../evals/semantics.yaml", import.meta.url),
+);
+const requirementsPath = fileURLToPath(
+  new URL("../../../evals/semantic-requirements.yaml", import.meta.url),
 );
 const evalRoot = fileURLToPath(new URL("../../../evals", import.meta.url));
 
@@ -41,11 +50,9 @@ for (const path of await yamlFiles(evalRoot)) {
       ? document.variants
       : []) {
       const dataPath = (variant as { data_path?: unknown }).data_path;
-      if (dataPath === "graphjin-direct") evalCovered.add("DATA-DIRECT");
-      if (dataPath === "graphjin-agent") evalCovered.add("DATA-DELEGATED");
-      if (dataPath === "planner-host-execute") {
-        evalCovered.add("DATA-PLANNER-EXECUTE");
-      }
+      const semantic =
+        typeof dataPath === "string" ? DATA_PATH_SEMANTICS[dataPath] : undefined;
+      if (semantic) evalCovered.add(semantic);
     }
   }
 }
@@ -72,16 +79,12 @@ const categoryBySection: Record<number, string> = {
   9: "operability-recovery",
 };
 
+const requirements = SemanticRequirementsSchema.parse(
+  parse(await readFile(requirementsPath, "utf8")),
+).entries;
 const source = await readFile(sourcePath, "utf8");
 let section = 0;
-const entries: Array<{
-  id: string;
-  category: string;
-  description: string;
-  verification: string;
-  disposition: "declared" | "eval";
-  owners: string[];
-}> = [];
+const entries: SemanticRegistry["entries"] = [];
 for (const line of source.split("\n")) {
   const heading = /^##\s+(\d+)\./u.exec(line);
   if (heading) section = Number(heading[1]);
@@ -89,12 +92,18 @@ for (const line of source.split("\n")) {
     line,
   );
   if (!row || !categoryBySection[section] || !ownerBySection[section]) continue;
+  const id = row[1]!;
+  const { disposition, ...coverage } = requirements[id] ?? {};
+  if (disposition && disposition !== "eval" && evalCovered.has(id)) {
+    throw new Error(`${id} is cited by eval cases but declared ${disposition}`);
+  }
   entries.push({
-    id: row[1]!,
+    id,
     category: categoryBySection[section]!,
     description: row[2]!,
     verification: row[3]!,
-    disposition: evalCovered.has(row[1]!) ? "eval" : "declared",
+    disposition: disposition ?? (evalCovered.has(id) ? "eval" : "declared"),
+    ...coverage,
     owners: [...ownerBySection[section]!],
   });
 }
@@ -108,6 +117,12 @@ if (duplicates.length) {
   throw new Error(`duplicate semantics: ${duplicates.map((entry) => entry.id).join(", ")}`);
 }
 const known = new Set(entries.map((entry) => entry.id));
+const unknownRequirements = Object.keys(requirements).filter((id) => !known.has(id));
+if (unknownRequirements.length) {
+  throw new Error(
+    `semantic-requirements.yaml references unknown semantics: ${unknownRequirements.join(", ")}`,
+  );
+}
 const unknownCoverage = [...evalCovered].filter((id) => !known.has(id));
 if (unknownCoverage.length) {
   throw new Error(
@@ -116,10 +131,12 @@ if (unknownCoverage.length) {
 }
 await writeFile(
   outputPath,
-  stringify({
-    schema_version: "openneko.eval.semantics/v1",
-    generated_from: "evals/SEMANTICS.md",
-    entries,
-  }),
+  stringify(
+    SemanticRegistrySchema.parse({
+      schema_version: "openneko.eval.semantics/v1",
+      generated_from: "evals/SEMANTICS.md",
+      entries,
+    }),
+  ),
   "utf8",
 );

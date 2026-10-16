@@ -3032,6 +3032,8 @@ export const skill_learn_state = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     skill_name: text("skill_name").notNull(),
+    target_kind: text("target_kind").notNull().default("skill"),
+    target_id: text("target_id"),
     enabled: boolean("enabled").notNull().default(false),
     high_water_event_id: bigint("high_water_event_id", {
       mode: "number",
@@ -3059,6 +3061,9 @@ export const skill_learn_event = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     skill_name: text("skill_name").notNull(),
+    target_kind: text("target_kind").notNull().default("skill"),
+    target_id: text("target_id"),
+    cohort_digest: text("cohort_digest"),
     base_hash: text("base_hash"),
     content_hash: text("content_hash"),
     run_ids: jsonb("run_ids").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
@@ -3079,6 +3084,60 @@ export const skill_learn_event = pgTable(
       t.skill_name,
       t.created_at.desc(),
     ),
+    org_target_recent_idx: index("skill_learn_event_org_target_recent_idx").on(
+      t.org_id,
+      t.target_kind,
+      t.target_id,
+      t.created_at.desc(),
+    ),
+  }),
+);
+
+export const learned_rule_use = pgTable(
+  "learned_rule_use",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    run_id: uuid("run_id")
+      .notNull()
+      .references(() => work_run.id, { onDelete: "cascade" }),
+    rule_key: text("rule_key").notNull(),
+    target_kind: text("target_kind").notNull(),
+    target_id: text("target_id").notNull(),
+    version: text("version").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    run_rule_unique: uniqueIndex("learned_rule_use_run_rule_unique").on(t.run_id, t.rule_key),
+    org_rule_idx: index("learned_rule_use_org_rule_idx").on(t.org_id, t.rule_key, t.created_at.desc()),
+  }),
+);
+
+export const run_verification = pgTable(
+  "run_verification",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    run_id: uuid("run_id")
+      .notNull()
+      .references(() => work_run.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"check" | "recompute">().notNull(),
+    check_id: text("check_id").notNull(),
+    verdict: text("verdict")
+      .$type<"pending" | "pass" | "fail" | "unknown" | "agree" | "disagree">()
+      .notNull(),
+    detail: text("detail").notNull().default(""),
+    data: jsonb("data").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    run_check_unique: uniqueIndex("run_verification_run_check_unique").on(t.run_id, t.kind, t.check_id),
+    org_kind_recent_idx: index("run_verification_org_kind_recent_idx").on(t.org_id, t.kind, t.created_at.desc()),
   }),
 );
 

@@ -1,6 +1,7 @@
 import { startupPhase } from "@neko/telemetry/startup";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { readLearnedContext, type LearnedContext } from "./work/learned-context";
 import { clearKnowledgeSnapshot, readKnowledgeSnapshot, refreshKnowledgeSnapshot, removeKnowledgeSnapshot } from "./knowledge-cache";
 
 export const KNOWLEDGE_SECTIONS = [
@@ -95,6 +96,8 @@ export type KnowledgePackContents = {
   namespaces: string;
   insights: string;
   syntax: string;
+  /** Data notes and the org playbook the learner wrote from settled runs. */
+  learned?: LearnedContext;
 };
 
 export function knowledgePackPaths(knowledgeRoot: string): KnowledgePackPaths {
@@ -125,12 +128,13 @@ export async function readKnowledgePack(
   const snapshot = await readKnowledgeSnapshot(knowledge.knowledgeRoot);
   const read = (file: keyof NonNullable<typeof snapshot>["files"], fallback: string) =>
     snapshot ? Promise.resolve(snapshot.files[file]) : readOrEmpty(fallback);
-  const [tables, namespaces, insights, syntax, modeRaw] = await Promise.all([
+  const [tables, namespaces, insights, syntax, modeRaw, learned] = await Promise.all([
     read("tables.json", knowledge.files.tables),
     read("namespaces.json", knowledge.files.namespaces),
     read("insights.json", knowledge.files.insights),
     read("syntax.json", knowledge.files.syntax),
     read("mode.json", knowledge.files.mode),
+    readLearnedContext(dirname(knowledge.knowledgeRoot)),
   ]);
   let mode: KnowledgeMode = "legacy";
   try {
@@ -138,7 +142,7 @@ export async function readKnowledgePack(
   } catch {
     // pre-agentic packs have no mode file — legacy.
   }
-  return { mode, tables, namespaces, insights, syntax };
+  return { mode, tables, namespaces, insights, syntax, learned };
 }
 
 const FETCH_TIMEOUT_MS = 10_000;

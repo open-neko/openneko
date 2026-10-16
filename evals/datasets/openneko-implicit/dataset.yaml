@@ -1,0 +1,48 @@
+schema_version: openneko.eval.dataset/v1
+id: openneko-implicit
+version: 1.0.0
+description: Implicit agentic features over frozen AdventureWorks. Each case is an ordered scenario against one isolated org. No question names a skill, memory, library document or capability, except the explicit-mention controls.
+license: Apache-2.0 and Microsoft AdventureWorks sample database
+capabilities:
+  - aggregate.average
+  - aggregate.count
+  - aggregate.rank
+  - aggregate.ratio
+  - aggregate.sum
+  - date.anchor
+  - date.window
+  - filter.boolean
+  - filter.numeric
+  - production.categories
+  - production.products
+  - purchasing.orders
+  - purchasing.vendors
+  - relation.join
+  - sales.customers
+  - sales.order-lines
+  - sales.orders
+  - sales.territories
+  - work.graphjin-direct
+  - work.library-search
+  - work.library-upload
+  - work.memory-save
+  - work.memory-search
+  - work.skill-discover
+  - work.skill-learn
+  - work.skill-load
+  - work.workflow-run
+snapshots:
+  - id: v1
+    description: AdventureWorks full seed with simulator and injector disabled.
+    seed: 20261016
+connection:
+  agent_graphql_ref: env:OPENNEKO_EVAL_ADVENTUREWORKS_GRAPHQL_URL
+  agent_mcp_ref: env:OPENNEKO_EVAL_ADVENTUREWORKS_MCP_URL
+  oracle_database_ref: env:OPENNEKO_EVAL_ADVENTUREWORKS_DATABASE_URL
+  defaults:
+    agent_graphql_url: http://127.0.0.1:18080/api/v1/graphql
+    agent_mcp_url: http://127.0.0.1:18080/api/v1/mcp
+    oracle_database_url: postgresql://openneko_eval_reader:eval-reader-only@127.0.0.1:15433/adventureworks
+anchor_policy:
+  kind: data-derived
+  description: Each window ends on the frozen maximum order date, so every oracle resolves against the same snapshot.

@@ -1,0 +1,58 @@
+schema_version: openneko.eval/v1
+id: openneko-skill-learning-flash-lite
+description: Skill learning track T19 with the Ax backend and Gemini 3.5 Flash-Lite. The learned arm runs the learn split once, learns every target the runs feed (skill rules, data notes, descriptions and the org playbook), and pins each file by digest. All arms then run the test split and the held-out templates five times.
+adapter: openneko.skill-learning
+semantics: { ref: ../semantics.yaml }
+pricing: { ref: ../pricing/standard-2026-07-09.yaml }
+suite: { ref: ../suites/openneko-skill-learning-v1.yaml }
+datasets:
+  - ref: ../datasets/openneko-learning/dataset.yaml
+    snapshot: v1
+defaults:
+  repetitions: 5
+  timeout: 12m
+  execution_order: counterbalanced
+  concurrency: 6
+  cache_state: cold
+  content_capture: metadata
+  max_attempts: 2
+variants:
+  - id: baseline
+    backend: ax
+    outer_model:
+      provider: google-gemini
+      model: gemini-3.5-flash-lite
+      credential_ref: env:GEMINI_API_KEY
+      config:
+        context_window_tokens: 1048576
+        max_output_tokens: 65536
+    data_path: graphjin-direct
+    settings:
+      arm: baseline
+      native_delegation: disabled
+      cards: disabled
+      require_observed_model_identity: true
+      max_tool_calls: 30
+      backend_retry_attempts: 1
+      graphjin_preflight_timeout_ms: 30000
+  - id: learned
+    extends: baseline
+    settings:
+      arm: learned
+      learning:
+        corpus: ../suites/openneko-skill-learning-corpus-v1.yaml
+        repetitions: 1
+        min_repeats: 3
+        learner: live
+  - id: placebo
+    extends: baseline
+    settings:
+      arm: placebo
+      placebo_rules: ../datasets/openneko-learning/fixtures/placebo-rules.md
+      placebo_notes: ../datasets/openneko-learning/fixtures/placebo-data-notes.md
+      placebo_playbook: ../datasets/openneko-learning/fixtures/placebo-playbook.md
+artifacts:
+  check_in: scored
+  raw_dir: ../../.openneko/evals/raw
+  state_dir: ../../.openneko/evals/state
+  results_dir: ../../evals/results

@@ -157,6 +157,11 @@ entries:
       explicitly opted-in API `call` mutations without overgranting
     verification: fake-server E2E
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/llm/src/graphjin
       - packages/llm/src/work
@@ -184,6 +189,15 @@ entries:
       through the brokered path
     verification: runtime oracle
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+      - adversarial
+    controls:
+      - present
+      - absent
+      - decoy
+      - negative
     owners:
       - packages/llm/src/graphjin
       - packages/llm/src/work
@@ -193,6 +207,10 @@ entries:
       data/evidence/usage and obey read-only policy
     verification: outer+inner trace + oracle
     disposition: eval
+    tiers:
+      - live
+    controls:
+      - present
     owners:
       - packages/llm/src/graphjin
       - packages/llm/src/work
@@ -220,6 +238,13 @@ entries:
       restrictions are enforced
     verification: cross-principal negative E2E
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+      - adversarial
+    controls:
+      - present
+      - decoy
     owners:
       - packages/llm/src/graphjin
       - packages/llm/src/work
@@ -229,6 +254,14 @@ entries:
       writes while explicitly exposed API `call` mutations remain executable"
     verification: adversarial contract + fake-server E2E
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+      - adversarial
+    controls:
+      - present
+      - decoy
+      - negative
     owners:
       - packages/llm/src/graphjin
       - packages/llm/src/work
@@ -255,6 +288,12 @@ entries:
       conversions match ground truth
     verification: numeric oracle
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
+      - decoy
     owners:
       - packages/llm/src/graphjin
       - packages/llm/src/work
@@ -263,6 +302,11 @@ entries:
     description: Boolean, enum, null, text, and compound filters match ground truth
     verification: row/value oracle
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/llm/src/graphjin
       - packages/llm/src/work
@@ -272,6 +316,11 @@ entries:
       timezones, and comparison periods are correct
     verification: value + interval oracle
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/llm/src/graphjin
       - packages/llm/src/work
@@ -281,6 +330,11 @@ entries:
       duplicate aggregation
     verification: value + method oracle
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/llm/src/graphjin
       - packages/llm/src/work
@@ -290,6 +344,12 @@ entries:
       with database-side grouping
     verification: value/dimension + method
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
+      - decoy
     owners:
       - packages/llm/src/graphjin
       - packages/llm/src/work
@@ -307,6 +367,11 @@ entries:
     description: Multi-step domain calculations preserve definitions, units, and assumptions
     verification: composite oracle
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/llm/src/graphjin
       - packages/llm/src/work
@@ -324,6 +389,11 @@ entries:
       evidence agree
     verification: cross-field scorer
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/llm/src/graphjin
       - packages/llm/src/work
@@ -360,6 +430,11 @@ entries:
       status on success/failure
     verification: DB + ground-truth oracle
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/llm/src
       - apps/worker/src/jobs
@@ -447,6 +522,11 @@ entries:
       truncation, and replay are correct
     verification: DB state machine
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/llm/src/work
   - id: WORK-CONTEXT-BRIEFING
@@ -469,6 +549,13 @@ entries:
       misses honestly
     verification: seeded retrieval eval
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
+      - absent
+      - decoy
     owners:
       - packages/llm/src/work
   - id: WORK-MEMORY-WRITE
@@ -477,6 +564,15 @@ entries:
       confidence, and dedupe
     verification: state oracle
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+      - stateful
+    controls:
+      - present
+      - absent
+      - decoy
+      - negative
     owners:
       - packages/llm/src/work
   - id: WORK-MEMORY-LAYERS
@@ -500,7 +596,15 @@ entries:
       on the uploader's personal layer — update-not-append, content-hash dedupe,
       forced retry, clean failure reasons
     verification: distiller fixture oracle
-    disposition: declared
+    disposition: eval
+    tiers:
+      - deterministic
+      - live
+      - stateful
+    controls:
+      - present
+      - absent
+      - decoy
     owners:
       - packages/llm/src/work
   - id: LIBRARY-LAYERS
@@ -519,6 +623,13 @@ entries:
       to its answer
     verification: planted retrieval + answer + trusted trace
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+      - adversarial
+    controls:
+      - present
+      - decoy
     owners:
       - packages/llm/src/work
   - id: WORK-WORKFLOW-RETRIEVE
@@ -527,6 +638,13 @@ entries:
       rather than a similarly named decoy, and applies its exact goal or steps
     verification: planted workflow + answer + trusted trace
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
+      - absent
+      - decoy
     owners:
       - packages/llm/src/work
   - id: WORK-PERSONA
@@ -543,6 +661,11 @@ entries:
       open tasks without cross-thread leakage
     verification: multi-turn oracle
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/llm/src/work
   - id: WORK-SKILLS
@@ -551,6 +674,52 @@ entries:
       allowed-tool implications are correct
     verification: trace + artifact contract
     disposition: eval
+    tiers:
+      - contract
+      - deterministic
+      - live
+      - adversarial
+    controls:
+      - present
+      - absent
+      - decoy
+    owners:
+      - packages/llm/src/work
+  - id: WORK-SKILL-LEARN
+    category: work-context
+    description: Learned skill guidance comes only from grounded run evidence,
+      passes safety and leakage checks, accumulates across versions, and
+      improves verified outcomes on held-out sibling tasks without harming other
+      families
+    verification: "learning track: grounding + leak + held-out sibling oracle"
+    disposition: eval
+    tiers:
+      - deterministic
+      - live
+      - adversarial
+    controls:
+      - present
+      - absent
+      - decoy
+    owners:
+      - packages/llm/src/work
+  - id: WORK-SKILL-DISCOVER
+    category: work-context
+    description: Offline discovery turns repeated runs with no skill into one
+      grounded new or extended skill, prefers extending a catalog skill, stays
+      under the learned-skill cap, avoids near-duplicates and archives idle
+      learned skills
+    verification: "scenario: catalog state + later unprompted skill load"
+    disposition: eval
+    tiers:
+      - deterministic
+      - live
+      - stateful
+    controls:
+      - present
+      - absent
+      - decoy
+      - negative
     owners:
       - packages/llm/src/work
   - id: WORK-CONFIG-VCS
@@ -567,6 +736,11 @@ entries:
       definition with provenance
     verification: DB + schema oracle
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/llm/src/workflows
       - apps/worker/src/jobs
@@ -585,6 +759,11 @@ entries:
       the intended times once
     verification: fake clock + state
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/llm/src/workflows
       - apps/worker/src/jobs
@@ -621,6 +800,13 @@ entries:
       produce outputs/actions correctly
     verification: state + trace oracle
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+      - adversarial
+    controls:
+      - present
+      - negative
     owners:
       - packages/llm/src/workflows
       - apps/worker/src/jobs
@@ -639,6 +825,13 @@ entries:
       attribution are correct
     verification: DB/event oracle
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+      - adversarial
+    controls:
+      - present
+      - negative
     owners:
       - packages/llm/src/workflows
       - apps/worker/src/jobs
@@ -673,6 +866,11 @@ entries:
       operator, threshold, cadence, and severity
     verification: state + query oracle
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/llm/src/workflows
       - apps/worker/src/jobs
@@ -682,6 +880,11 @@ entries:
       values correctly"
     verification: deterministic matrix
     disposition: eval
+    tiers:
+      - contract
+      - deterministic
+    controls:
+      - present
     owners:
       - packages/llm/src/workflows
       - apps/worker/src/jobs
@@ -691,6 +894,11 @@ entries:
       last-value/check timestamps are correct
     verification: fake clock + DB
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/llm/src/workflows
       - apps/worker/src/jobs
@@ -700,6 +908,11 @@ entries:
       the window
     verification: event sequence
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/llm/src/workflows
       - apps/worker/src/jobs
@@ -709,6 +922,11 @@ entries:
       original evidence
     verification: causal trace + state
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/llm/src/workflows
       - apps/worker/src/jobs
@@ -718,6 +936,10 @@ entries:
       subscriptions or events
     verification: stateful E2E
     disposition: eval
+    tiers:
+      - deterministic
+    controls:
+      - present
     owners:
       - packages/llm/src/workflows
       - apps/worker/src/jobs
@@ -727,6 +949,13 @@ entries:
       target, payload, risk, actor, and rationale
     verification: request state oracle
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+      - adversarial
+    controls:
+      - present
+      - negative
     owners:
       - packages/llm/src/workflows
       - apps/worker/src/jobs
@@ -736,6 +965,14 @@ entries:
       role requirements are correct
     verification: policy decision matrix
     disposition: eval
+    tiers:
+      - contract
+      - deterministic
+      - live
+      - adversarial
+    controls:
+      - present
+      - negative
     owners:
       - packages/llm/src/workflows
       - apps/worker/src/jobs
@@ -745,6 +982,13 @@ entries:
       invalid/repeated decisions
     verification: state-machine oracle
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+      - adversarial
+    controls:
+      - present
+      - negative
     owners:
       - packages/llm/src/workflows
       - apps/worker/src/jobs
@@ -754,6 +998,11 @@ entries:
       success/failure receipts
     verification: fake adapter + DB
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/llm/src/workflows
       - apps/worker/src/jobs
@@ -763,6 +1012,13 @@ entries:
       external effect
     verification: receipt/external fake
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+      - adversarial
+    controls:
+      - present
+      - negative
     owners:
       - packages/llm/src/workflows
       - apps/worker/src/jobs
@@ -772,6 +1028,13 @@ entries:
       unchanged
     verification: post-state diff
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+      - adversarial
+    controls:
+      - present
+      - negative
     owners:
       - packages/llm/src/workflows
       - apps/worker/src/jobs
@@ -781,6 +1044,11 @@ entries:
       egress, and normalize outcomes
     verification: adapter contract/E2E
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/llm/src/workflows
       - apps/worker/src/jobs
@@ -790,6 +1058,10 @@ entries:
       attributable and tamper-evident
     verification: audit-chain oracle
     disposition: eval
+    tiers:
+      - deterministic
+    controls:
+      - present
     owners:
       - packages/llm/src/workflows
       - apps/worker/src/jobs
@@ -828,6 +1100,13 @@ entries:
       follow-ups deliver to the originating channel
     verification: fake channel transcript
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+      - adversarial
+    controls:
+      - present
+      - negative
     owners:
       - packages/channels
       - packages/plugin-types
@@ -964,6 +1243,11 @@ entries:
       are deterministic and recoverable
     verification: state-machine E2E
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/records
   - id: RECORDS-READ
@@ -996,6 +1280,11 @@ entries:
       GraphJin enforcement
     verification: cross-role differential
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/records
   - id: RECORDS-IMPORT
@@ -1036,6 +1325,11 @@ entries:
       record mutation/receipt
     verification: action + state oracle
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+    controls:
+      - present
     owners:
       - packages/records
   - id: RECORDS-OPS
@@ -1061,6 +1355,13 @@ entries:
       actions, channels, and telemetry
     verification: cross-tenant adversarial
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+      - adversarial
+    controls:
+      - present
+      - decoy
     owners:
       - packages/llm/src/work
       - packages/records/src/policy
@@ -1105,6 +1406,13 @@ entries:
       or exfiltration policy
     verification: adversarial corpus
     disposition: eval
+    tiers:
+      - deterministic
+      - live
+      - adversarial
+    controls:
+      - present
+      - decoy
     owners:
       - packages/llm/src/work
       - packages/records/src/policy
@@ -1113,6 +1421,11 @@ entries:
     description: Consequential changes cannot bypass proposal/policy/approval paths
     verification: negative side-effect oracle
     disposition: eval
+    tiers:
+      - contract
+      - deterministic
+    controls:
+      - present
     owners:
       - packages/llm/src/work
       - packages/records/src/policy
@@ -1122,6 +1435,10 @@ entries:
       failure independently
     verification: tamper test
     disposition: eval
+    tiers:
+      - deterministic
+    controls:
+      - present
     owners:
       - packages/llm/src/work
       - packages/records/src/policy

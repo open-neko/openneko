@@ -1,0 +1,56 @@
+schema_version: openneko.eval.semantic-requirements/v1
+
+# Coverage requirements merged into semantics.yaml by `semantics:generate`.
+# `tiers` and `controls` record the layers and control cases that cover each
+# semantic. A semantic without `disposition` is `eval` when a case cites it and
+# `declared` otherwise. `excluded` requires `excluded_reason` and `covered_by`.
+entries:
+  ACTION-ADAPTER: { tiers: [deterministic, live], controls: [present] }
+  ACTION-APPROVAL: { tiers: [deterministic, live, adversarial], controls: [present, negative] }
+  ACTION-AUDIT: { tiers: [deterministic], controls: [present] }
+  ACTION-COLLATERAL: { tiers: [deterministic, live, adversarial], controls: [present, negative] }
+  ACTION-EXECUTE: { tiers: [deterministic, live], controls: [present] }
+  ACTION-IDEMPOTENCY: { tiers: [deterministic, live, adversarial], controls: [present, negative] }
+  ACTION-POLICY: { tiers: [contract, deterministic, live, adversarial], controls: [present, negative] }
+  ACTION-PROPOSE: { tiers: [deterministic, live, adversarial], controls: [present, negative] }
+  CALC-BUSINESS: { tiers: [deterministic, live], controls: [present] }
+  CALC-EVIDENCE: { tiers: [deterministic, live], controls: [present] }
+  CALC-FILTER: { tiers: [deterministic, live], controls: [present] }
+  CALC-JOIN: { tiers: [deterministic, live], controls: [present] }
+  CALC-RANK: { tiers: [deterministic, live], controls: [present, decoy] }
+  CALC-SCALAR: { tiers: [deterministic, live], controls: [present, decoy] }
+  CALC-TIME: { tiers: [deterministic, live], controls: [present] }
+  CHANNEL-DELIVERY: { tiers: [deterministic, live, adversarial], controls: [present, negative] }
+  DATA-AUTH: { tiers: [deterministic, live, adversarial], controls: [present, decoy] }
+  DATA-DELEGATED: { tiers: [live], controls: [present] }
+  DATA-DIRECT: { tiers: [deterministic, live, adversarial], controls: [present, absent, decoy, negative] }
+  DATA-QUERY-GUARD: { tiers: [deterministic, live, adversarial], controls: [present, decoy, negative] }
+  DATA-SOURCE-OPENAPI: { tiers: [deterministic, live], controls: [present] }
+  FLOW-BUILD: { tiers: [deterministic, live], controls: [present] }
+  FLOW-CRON: { tiers: [deterministic, live], controls: [present] }
+  FLOW-OUTPUT: { tiers: [deterministic, live, adversarial], controls: [present, negative] }
+  FLOW-RUN: { tiers: [deterministic, live, adversarial], controls: [present, negative] }
+  LIBRARY-DISTILL: { tiers: [deterministic, live, stateful], controls: [present, absent, decoy] }
+  METRIC-REFRESH: { tiers: [deterministic, live], controls: [present] }
+  RECORDS-ACTION: { tiers: [deterministic, live], controls: [present] }
+  RECORDS-POLICY: { tiers: [deterministic, live], controls: [present] }
+  RECORDS-SCHEMA-PLAN: { tiers: [deterministic, live], controls: [present] }
+  SEC-APPROVAL: { tiers: [contract, deterministic], controls: [present] }
+  SEC-AUDIT-CHAIN: { tiers: [deterministic], controls: [present] }
+  SEC-PROMPT-INJECTION: { tiers: [deterministic, live, adversarial], controls: [present, decoy] }
+  SEC-TENANT: { tiers: [deterministic, live, adversarial], controls: [present, decoy] }
+  WATCH-BUILD: { tiers: [deterministic, live], controls: [present] }
+  WATCH-CONDITION: { tiers: [contract, deterministic], controls: [present] }
+  WATCH-DEBOUNCE: { tiers: [deterministic, live], controls: [present] }
+  WATCH-DELIVERY: { tiers: [deterministic, live], controls: [present] }
+  WATCH-LIFECYCLE: { tiers: [deterministic], controls: [present] }
+  WATCH-SWEEP: { tiers: [deterministic, live], controls: [present] }
+  WORK-COMPACTION: { tiers: [deterministic, live], controls: [present] }
+  WORK-LIBRARY-SEARCH: { tiers: [deterministic, live, adversarial], controls: [present, decoy] }
+  WORK-MEMORY-SEARCH: { tiers: [deterministic, live], controls: [present, absent, decoy] }
+  WORK-MEMORY-WRITE: { tiers: [deterministic, live, stateful], controls: [present, absent, decoy, negative] }
+  WORK-SKILL-DISCOVER: { disposition: eval, tiers: [deterministic, live, stateful], controls: [present, absent, decoy, negative] }
+  WORK-SKILL-LEARN: { disposition: eval, tiers: [deterministic, live, adversarial], controls: [present, absent, decoy] }
+  WORK-SKILLS: { tiers: [contract, deterministic, live, adversarial], controls: [present, absent, decoy] }
+  WORK-THREAD: { tiers: [deterministic, live], controls: [present] }
+  WORK-WORKFLOW-RETRIEVE: { tiers: [deterministic, live], controls: [present, absent, decoy] }

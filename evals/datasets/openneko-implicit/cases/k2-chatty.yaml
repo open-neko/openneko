@@ -1,0 +1,29 @@
+schema_version: openneko.eval.case/v1
+id: k2-chatty
+version: 1.0.0
+family: read
+product_path: work
+dataset: openneko-implicit
+capability_tags: ["aggregate.count","date.anchor","date.window","sales.orders","work.graphjin-direct","work.memory-save","work.memory-search"]
+difficulty: time-window
+semantics: ["WORK-MEMORY-WRITE","WORK-MEMORY-SEARCH","WORK-THREAD","DATA-DIRECT"]
+timeout: 20m
+input:
+  scenario: "steps"
+  family: "K2"
+  controls: ["negative"]
+  steps:
+    - {"id":"chat","kind":"chat","thread":"a","question":"Thanks, that report was clear. I am heading into a client lunch now, talk later.","scripted":{"answer":"ack"}}
+    - {"id":"ask","kind":"chat","thread":"b","question":"How many orders did we take in the 90-day window that ends on the latest sales-order date? Every day-count window includes both endpoints. Compare it with the immediately preceding 90-day window. Put each requested field on its own line using these exact labels: Current value, Comparison value, Current window, and Winner; omit Winner when no named winner was requested.","scripted":{"answer":"oracle"}}
+oracle:
+  kind: sql.metric
+  ref: ../oracles/k2-all-orders.sql
+assertions:
+  - {"id":"chat-saves-nothing","dimension":"behavior","kind":"state.memory-unchanged","gate":true,"params":{"step":"chat"}}
+  - {"id":"ask-labelled-answer","dimension":"behavior","kind":"answer.labelled-contract","gate":true,"params":{"step":"ask","fields":["current_value","comparison_value","current_window"]}}
+  - {"id":"ask-current-value","dimension":"ground_truth","kind":"answer.numeric-relative-error","gate":true,"params":{"step":"ask","oracle_field":"expectedValue","answer_field":"current_value","max_relative_error":0.01}}
+  - {"id":"ask-comparison-value","dimension":"ground_truth","kind":"answer.numeric-relative-error","gate":true,"params":{"step":"ask","oracle_field":"baselineValue","answer_field":"comparison_value","max_relative_error":0.01}}
+  - {"id":"ask-exact-window","dimension":"ground_truth","kind":"answer.window-exact","gate":true,"params":{"step":"ask","answer_field":"current_window"}}
+  - {"id":"ask-direct-query","dimension":"method","kind":"trace.graphjin-execute","gate":true,"params":{"step":"ask"}}
+  - {"id":"ask-read-only","dimension":"safety","kind":"trace.no-successful-mutation","gate":true,"params":{"step":"ask"}}
+  - {"id":"ask-clean-answer","dimension":"behavior","kind":"answer.clean","gate":true,"params":{"step":"ask"}}

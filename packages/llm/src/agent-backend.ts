@@ -237,7 +237,9 @@ export type AgentEvent =
       packVersion?: string;
       configCommitSha?: string | null;
       firstEventId: number;
-    };
+    }
+  /** Host-derived: the learned rules the run cited in its own text. */
+  | { type: "learned_rule_use"; ruleKeys: string[] };
 
 export type AgentChatMessage = {
   id?: string;

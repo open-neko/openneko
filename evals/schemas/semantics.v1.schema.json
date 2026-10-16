@@ -29,39 +29,34 @@
       "type": "object",
       "properties": {
         "id": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[A-Z0-9][A-Z0-9._-]*$"
+          "$ref": "#/$defs/__schema1"
         },
         "category": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          "$ref": "#/$defs/__schema2"
         },
         "description": {
-          "type": "string",
-          "minLength": 1
+          "$ref": "#/$defs/__schema3"
         },
         "verification": {
-          "type": "string",
-          "minLength": 1
+          "$ref": "#/$defs/__schema4"
         },
         "disposition": {
-          "type": "string",
-          "enum": [
-            "declared",
-            "eval",
-            "non-eval"
-          ]
+          "$ref": "#/$defs/__schema5"
+        },
+        "tiers": {
+          "$ref": "#/$defs/__schema6"
+        },
+        "controls": {
+          "$ref": "#/$defs/__schema8"
+        },
+        "excluded_reason": {
+          "$ref": "#/$defs/__schema10"
+        },
+        "covered_by": {
+          "$ref": "#/$defs/__schema11"
         },
         "owners": {
-          "minItems": 1,
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/__schema1"
-          }
+          "$ref": "#/$defs/__schema13"
         }
       },
       "required": [
@@ -75,6 +70,93 @@
       "additionalProperties": false
     },
     "__schema1": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Z0-9][A-Z0-9._-]*$"
+    },
+    "__schema2": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "__schema3": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema4": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema5": {
+      "type": "string",
+      "enum": [
+        "declared",
+        "eval",
+        "excluded",
+        "non-eval"
+      ]
+    },
+    "__schema6": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema7"
+      }
+    },
+    "__schema7": {
+      "type": "string",
+      "enum": [
+        "contract",
+        "deterministic",
+        "live",
+        "stateful",
+        "adversarial",
+        "fault",
+        "load"
+      ]
+    },
+    "__schema8": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema9"
+      }
+    },
+    "__schema9": {
+      "type": "string",
+      "enum": [
+        "present",
+        "absent",
+        "decoy",
+        "negative"
+      ]
+    },
+    "__schema10": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "__schema11": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema12"
+      }
+    },
+    "__schema12": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema13": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema14"
+      }
+    },
+    "__schema14": {
       "type": "string",
       "minLength": 1
     }

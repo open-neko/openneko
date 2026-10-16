@@ -413,6 +413,71 @@ export const SuiteSchema = z
   })
   .strict();
 
+export const SemanticTierSchema = z.enum([
+  "contract",
+  "deterministic",
+  "live",
+  "stateful",
+  "adversarial",
+  "fault",
+  "load",
+]);
+export const SemanticControlSchema = z.enum([
+  "present",
+  "absent",
+  "decoy",
+  "negative",
+]);
+export const SemanticDispositionSchema = z.enum([
+  "declared",
+  "eval",
+  "excluded",
+  "non-eval",
+]);
+
+function uniqueList<T extends z.ZodType<string>>(item: T) {
+  return z
+    .array(item)
+    .min(1)
+    .refine((values) => new Set(values).size === values.length, {
+      message: "must not repeat a value",
+    });
+}
+
+const SemanticCoverageFields = {
+  tiers: uniqueList(SemanticTierSchema).optional(),
+  controls: uniqueList(SemanticControlSchema).optional(),
+  excluded_reason: z.string().min(1).max(1024).optional(),
+  covered_by: z.array(z.string().min(1)).min(1).optional(),
+};
+
+function refineExclusion(
+  value: {
+    disposition?: z.infer<typeof SemanticDispositionSchema>;
+    excluded_reason?: string;
+    covered_by?: string[];
+  },
+  context: z.RefinementCtx,
+): void {
+  const excluded = value.disposition === "excluded";
+  for (const field of ["excluded_reason", "covered_by"] as const) {
+    if (excluded && !value[field]) {
+      context.addIssue({
+        code: "custom",
+        path: [field],
+        message: `excluded semantics require ${field}`,
+      });
+    }
+    if (!excluded && value[field]) {
+      context.addIssue({
+        code: "custom",
+        path: [field],
+        message: `${field} is only valid for excluded semantics`,
+      });
+    }
+  }
+}
+
 export const SemanticRegistrySchema = z
   .object({
     schema_version: z.literal("openneko.eval.semantics/v1"),
@@ -425,12 +490,30 @@ export const SemanticRegistrySchema = z
             category: Id,
             description: z.string().min(1),
             verification: z.string().min(1),
-            disposition: z.enum(["declared", "eval", "non-eval"]),
+            disposition: SemanticDispositionSchema,
+            ...SemanticCoverageFields,
             owners: z.array(z.string().min(1)).min(1),
           })
-          .strict(),
+          .strict()
+          .superRefine(refineExclusion),
       )
       .min(1),
+  })
+  .strict();
+
+export const SemanticRequirementsSchema = z
+  .object({
+    schema_version: z.literal("openneko.eval.semantic-requirements/v1"),
+    entries: z.record(
+      SemanticId,
+      z
+        .object({
+          disposition: SemanticDispositionSchema.optional(),
+          ...SemanticCoverageFields,
+        })
+        .strict()
+        .superRefine(refineExclusion),
+    ),
   })
   .strict();
 
@@ -1053,6 +1136,7 @@ export type EvalCase = z.infer<typeof CaseSchema>;
 export type EvalSuite = z.infer<typeof SuiteSchema>;
 export type EvalThresholdPolicy = z.infer<typeof ThresholdPolicySchema>;
 export type SemanticRegistry = z.infer<typeof SemanticRegistrySchema>;
+export type SemanticRequirements = z.infer<typeof SemanticRequirementsSchema>;
 export type EvalUnsafeEffect = z.infer<typeof UnsafeEffectSchema>;
 export type EvalSecurityOutcome = z.infer<typeof SecurityOutcomeSchema>;
 export type EvalAssertionTarget = z.infer<typeof AssertionTargetSchema>;

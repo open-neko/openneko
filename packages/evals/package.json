@@ -12,6 +12,8 @@
   "scripts": {
     "schemas:generate": "tsx scripts/generate-json-schemas.ts",
     "semantics:generate": "tsx scripts/generate-semantics.ts",
+    "learning:generate": "tsx scripts/generate-learning-corpus.ts",
+    "implicit:generate": "tsx scripts/generate-implicit-corpus.ts",
     "repo:check": "tsx scripts/check-repository.ts",
     "test": "vitest run",
     "test:watch": "vitest",

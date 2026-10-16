@@ -234,6 +234,7 @@ async function handle(
       );
     case "/v1/memory/search": {
       delete body.userId;
+      delete body.threadId;
       const query = String(body.query ?? "");
       const limit = typeof body.limit === "number" ? body.limit : undefined;
       return send(

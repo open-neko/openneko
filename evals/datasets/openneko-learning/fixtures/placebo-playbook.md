@@ -1,0 +1,8 @@
+- Read the request once more before you send the answer.
+- Answer the question that was asked, then stop.
+- Use the words the operator used for the business terms.
+- Say which source each answer came from.
+- Keep each requested field on its own line.
+- When a value is missing, say what is missing.
+- Keep the same units through the whole answer.
+- Prefer one clear answer to several partial ones.

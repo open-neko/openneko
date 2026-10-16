@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   EvalTaskError,
   EvalEnvironmentError,
@@ -40,6 +40,8 @@ async function fixture(
       Record<string, { pairId: string; treatment: string }>
     >;
     v4Policy?: boolean;
+    concurrency?: number;
+    repetitions?: number;
   } = {},
 ): Promise<{
   root: string;
@@ -133,10 +135,10 @@ adapter: fixture
 suite: { ref: ./suite.yaml }
 datasets: [{ ref: ./dataset.yaml, snapshot: fixed }]
 defaults:
-  repetitions: 1
+  repetitions: ${options.repetitions ?? 1}
   timeout: 10s
   execution_order: declared
-  concurrency: 1
+  concurrency: ${options.concurrency ?? 1}
   cache_state: warm
   content_capture: metadata
   max_attempts: 2
@@ -1157,5 +1159,155 @@ describe("durable eval execution", () => {
       manifestPath,
       `${JSON.stringify(originalManifest, null, 2)}\n`,
     );
+  });
+});
+
+describe("bounded episode pool", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  async function pooled(options: Parameters<typeof fixture>[0] & { maxConcurrency?: number }) {
+    const paths = await fixture(options);
+    const loaded = await loadEval(paths.configPath);
+    const plan = createEvalPlan(loaded);
+    const base = createFixtureDriver({ loaded, plan, callLog: paths.callLog, estimatedCostUsd: options.maxCostUsd });
+    const started: string[] = [];
+    const active = { now: 0, peak: 0 };
+    const driver: EvalDriver = {
+      ...base,
+      ...(options.maxConcurrency !== undefined ? { maxConcurrency: options.maxConcurrency } : {}),
+      async execute(context) {
+        started.push(context.slot.key);
+        active.now += 1;
+        active.peak = Math.max(active.peak, active.now);
+        try {
+          const index = plan.slots.findIndex((slot) => slot.key === context.slot.key);
+          await sleep(5 + ((plan.slots.length - index) % 3) * 15);
+          return await base.execute(context);
+        } finally {
+          active.now -= 1;
+        }
+      },
+    };
+    const run = (extra: Partial<Parameters<typeof runEvaluation>[0]> = {}) =>
+      runEvaluation({
+        loaded, plan, driver, cwd: process.cwd(),
+        stateRoot: paths.stateRoot, resultsRoot: paths.resultsRoot, promote: false, ...extra,
+      });
+    return { paths, loaded, plan, driver, started, active, run, store: new EvalStateStore(paths.stateRoot) };
+  }
+
+  it("dispatches in plan order and caps width at min(config, driver)", async () => {
+    const capped = await pooled({ concurrency: 4, repetitions: 3, maxConcurrency: 2 });
+    const result = await capped.run();
+    expect(capped.started).toEqual(capped.plan.slots.map((slot) => slot.key));
+    expect(capped.active.peak).toBe(2);
+    expect(result.manifest.runtimeBudgets?.concurrency).toBe(2);
+    expect((await readStateEpisodes(capped.paths.stateRoot, result.manifest)).map((episode) => episode.slotKey).sort())
+      .toEqual(capped.plan.slots.map((slot) => slot.key).sort());
+
+    const undeclared = await pooled({ concurrency: 4, repetitions: 2 });
+    await undeclared.run();
+    expect(undeclared.active.peak).toBe(1);
+  });
+
+  it("serialises every state write while episodes overlap", async () => {
+    const pool = await pooled({ concurrency: 3, repetitions: 3, maxConcurrency: 3 });
+    const writes = { now: 0, peak: 0 };
+    for (const method of ["writeAttempt", "writeEpisode", "replaceManifest", "writePartialReport", "nextAttemptNumber"] as const) {
+      const original = EvalStateStore.prototype[method] as (...args: unknown[]) => Promise<unknown>;
+      vi.spyOn(EvalStateStore.prototype, method).mockImplementation(async function (this: EvalStateStore, ...args: unknown[]) {
+        writes.now += 1;
+        writes.peak = Math.max(writes.peak, writes.now);
+        try {
+          await sleep(1);
+          return await original.apply(this, args);
+        } finally {
+          writes.now -= 1;
+        }
+      } as never);
+    }
+    const inFlightSeen: number[] = [];
+    const execute = pool.driver.execute.bind(pool.driver);
+    pool.driver.execute = async (context) => {
+      const manifest = await pool.store.readManifest(context.runId);
+      inFlightSeen.push(manifest.inFlightSlotKeys.length);
+      return execute(context);
+    };
+    const result = await pool.run();
+    expect(pool.active.peak).toBe(3);
+    expect(writes.peak).toBe(1);
+    expect(Math.max(...inFlightSeen)).toBeGreaterThan(1);
+    expect(result.manifest).toMatchObject({ status: "complete", inFlightSlotKeys: [] });
+    expect(result.manifest.completedSlotKeys).toHaveLength(pool.plan.slots.length);
+    const attempts = await readdir(join(pool.store.runDir(result.runId), "attempts"));
+    expect(attempts).toHaveLength(pool.plan.slots.length * 2);
+  });
+
+  it("drains in-flight slots on a mid-pool failure and resumes the rest", async () => {
+    const pool = await pooled({ concurrency: 3, repetitions: 2, maxConcurrency: 3 });
+    const failing = pool.plan.slots[1]!.key;
+    const execute = pool.driver.execute.bind(pool.driver);
+    pool.driver.execute = async (context) => {
+      if (context.slot.key === failing) {
+        throw new EvalEnvironmentError("fetch failed: ECONNRESET", "agent_infrastructure_failure");
+      }
+      return execute(context);
+    };
+    await expect(pool.run()).rejects.toThrow(/paused at .*--resume/u);
+    const [runId] = await readdir(join(pool.paths.stateRoot, "runs"));
+    const paused = await pool.store.readManifest(runId!);
+    expect(paused).toMatchObject({ status: "in_progress", inFlightSlotKeys: [], failedSlotKeys: [] });
+    expect(paused.completedSlotKeys).not.toContain(failing);
+    for (const key of paused.completedSlotKeys) {
+      expect(await pool.store.readEpisode(runId!, key)).toBeDefined();
+    }
+    expect(paused.completedSlotKeys.length).toBeLessThan(pool.plan.slots.length - 1);
+
+    pool.driver.execute = execute;
+    const before = pool.started.length;
+    const result = await pool.run();
+    expect(result).toMatchObject({ runId, resumed: true, reusedEpisodes: paused.completedSlotKeys.length });
+    expect(result.manifest.status).toBe("complete");
+    expect(pool.started.length - before).toBe(pool.plan.slots.length - paused.completedSlotKeys.length);
+    expect(await pool.store.readEpisode(runId!, failing)).toMatchObject({ attempt: 3, status: "completed" });
+  });
+
+  it("resumes every slot exactly once after a hard exit with several slots in flight", async () => {
+    const paths = await fixture({ concurrency: 3, repetitions: 2 });
+    const childPath = fileURLToPath(new URL("./fixtures/crash-runner.ts", import.meta.url));
+    const child = spawnSync(
+      process.execPath,
+      ["--import", "tsx/esm", childPath, paths.configPath, paths.stateRoot, paths.resultsRoot, paths.callLog, process.cwd(), "", "3"],
+      { cwd: process.cwd(), encoding: "utf8" },
+    );
+    expect(child.status, child.stderr).toBe(91);
+    const loaded = await loadEval(paths.configPath);
+    const plan = createEvalPlan(loaded);
+    const result = await runEvaluation({
+      loaded, plan,
+      driver: { ...createFixtureDriver({ loaded, plan, callLog: paths.callLog }), maxConcurrency: 3 },
+      cwd: process.cwd(), stateRoot: paths.stateRoot, resultsRoot: paths.resultsRoot, promote: false,
+    });
+    expect(result.resumed).toBe(true);
+    expect(result.manifest.status).toBe("complete");
+    const episodes = await readStateEpisodes(paths.stateRoot, result.manifest);
+    expect(episodes.map((episode) => episode.slotKey).sort()).toEqual(plan.slots.map((slot) => slot.key).sort());
+    expect((await readFile(paths.callLog, "utf8")).trim().split("\n").length).toBeLessThanOrEqual(plan.slots.length + 2);
+  });
+
+  it("checks the cost budget before each dispatch and drains in-flight slots", async () => {
+    const pool = await pooled({ concurrency: 2, repetitions: 2, maxConcurrency: 2, maxCostUsd: 1 });
+    await expect(pool.run()).rejects.toThrow(/cost budget .* exhausted/u);
+    expect(pool.started).toEqual(pool.plan.slots.slice(0, 2).map((slot) => slot.key));
+    const [runId] = await readdir(join(pool.paths.stateRoot, "runs"));
+    expect(await pool.store.readManifest(runId!)).toMatchObject({
+      status: "in_progress",
+      inFlightSlotKeys: [],
+      completedSlotKeys: pool.plan.slots.slice(0, 2).map((slot) => slot.key).sort(),
+    });
   });
 });

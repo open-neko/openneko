@@ -425,6 +425,8 @@ export async function finishWorkRun(
       event: `run:${status}`,
       payload: { status, error },
     });
+    const { enqueueSkillLearnForRun } = await import("./skill-learn-store");
+    await enqueueSkillLearnForRun(rows[0].orgId, runId);
   }
 }
 

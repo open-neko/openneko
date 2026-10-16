@@ -1,0 +1,33 @@
+schema_version: openneko.eval/v1
+id: openneko-implicit-scripted
+description: Provider-free control for the implicit families K1 to K7. The good program follows each step's scripted hint and must pass every case. The bad program loads every skill, saves every message as a thread memory, never retrieves context and states oracle values. Its learner, discovery and distill stubs misbehave, its clock never advances and it overfills the seeded catalog by one, so every new gate fails somewhere.
+adapter: openneko.work-backend
+semantics: { ref: ../semantics.yaml }
+suite: { ref: ../suites/openneko-implicit-v1.yaml }
+datasets:
+  - ref: ../datasets/openneko-implicit/dataset.yaml
+    snapshot: v1
+defaults:
+  repetitions: 1
+  timeout: 10m
+  execution_order: declared
+  concurrency: 6
+  cache_state: cold
+  content_capture: metadata
+  max_attempts: 1
+variants:
+  - id: scripted-good
+    backend: scripted-good
+    outer_model: { provider: scripted, model: deterministic-v2 }
+    data_path: graphjin-direct
+    settings: { scripted_outcome: pass, max_tool_calls: 60 }
+  - id: scripted-bad
+    backend: scripted-bad
+    outer_model: { provider: scripted, model: deterministic-v2 }
+    data_path: graphjin-direct
+    settings: { scripted_outcome: fail, max_tool_calls: 60 }
+artifacts:
+  check_in: none
+  raw_dir: ../../.openneko/evals/raw
+  state_dir: ../../.openneko/evals/state
+  results_dir: ../../evals/results

@@ -6,4 +6,8 @@ export * from "./state-store";
 export * from "./scoring";
 export * from "./report";
 export * from "./runner";
+export * from "./pool";
 export * from "./pricing";
+export * from "./assertion-kinds";
+export * from "./coverage";
+export * from "./learning";

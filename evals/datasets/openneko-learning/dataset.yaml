@@ -1,0 +1,41 @@
+schema_version: openneko.eval.dataset/v1
+id: openneko-learning
+version: 1.0.0
+description: Sibling tasks over frozen AdventureWorks for the skill learning track. Each template is one procedure with one org skill. Siblings use different parameters and a fixed seed splits them into learn, verify and test.
+license: Apache-2.0 and Microsoft AdventureWorks sample database
+capabilities:
+  - aggregate.average
+  - aggregate.count
+  - aggregate.rank
+  - aggregate.ratio
+  - aggregate.sum
+  - date.anchor
+  - date.window
+  - filter.boolean
+  - filter.numeric
+  - production.categories
+  - production.products
+  - purchasing.orders
+  - purchasing.vendors
+  - relation.join
+  - sales.order-lines
+  - sales.orders
+  - sales.salespeople
+  - sales.territories
+  - work.graphjin-direct
+  - work.skill-load
+snapshots:
+  - id: v1
+    description: AdventureWorks full seed with simulator and injector disabled. Every episode plants the full skill library.
+    seed: 20261016
+connection:
+  agent_graphql_ref: env:OPENNEKO_EVAL_ADVENTUREWORKS_GRAPHQL_URL
+  agent_mcp_ref: env:OPENNEKO_EVAL_ADVENTUREWORKS_MCP_URL
+  oracle_database_ref: env:OPENNEKO_EVAL_ADVENTUREWORKS_DATABASE_URL
+  defaults:
+    agent_graphql_url: http://127.0.0.1:18080/api/v1/graphql
+    agent_mcp_url: http://127.0.0.1:18080/api/v1/mcp
+    oracle_database_url: postgresql://openneko_eval_reader:eval-reader-only@127.0.0.1:15433/adventureworks
+anchor_policy:
+  kind: data-derived
+  description: Each window ends on the frozen maximum order date of the relevant table, minus an optional offset in days.

@@ -83,7 +83,7 @@ function policy(
     allowedTargets: { patterns: ["account-*"] },
     deniedTargets: { patterns: ["account-blocked"] },
     limits: {},
-    approverRole: null,
+    approverGroupId: null,
     priority: 100,
     enabled: true,
     createdByThreadId: null,

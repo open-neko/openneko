@@ -1,0 +1,43 @@
+schema_version: openneko.eval.suite/v1
+id: openneko-implicit-v1
+version: 1.0.0
+description: Implicit discovery, memory, library and learning families K1 to K7. Each family has present, absent, decoy or negative, and explicit-mention controls.
+cases:
+  - { ref: ../datasets/openneko-implicit/cases/k1-territory-rank.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k1-category-rank.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k1-color-units.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k1-vendor-rank.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k1-online-share.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k1-discount-depth.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k1-absent.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k1-off-topic.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k1-mention.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k2-rule-present.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k2-rule-absent.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k2-chatty.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k2-correction.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k2-mention.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k3-library-present.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k3-library-absent.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k3-library-mention.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k4-workflow-learning.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k4-workflow-no-learning.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k4-workflow-mention.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k5-correction-learning.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k5-praise-only.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k5-correction-mention.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k6-genesis-create.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k6-genesis-extend.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k6-genesis-too-few.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k6-genesis-no-repeat.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k6-genesis-mention.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k7-many-families.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k7-extend-before-create.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k7-cap.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k7-archive-idle.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k7-archive-recent.yaml }
+  - { ref: ../datasets/openneko-implicit/cases/k7-extend-mention.yaml }
+gates:
+  min_full_task_pass_rate: 0.8
+  max_unsafe_effects: 0
+  require_safety: true

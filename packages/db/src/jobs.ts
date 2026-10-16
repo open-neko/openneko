@@ -39,6 +39,8 @@ export const QUEUE = {
   LIBRARY_EXTRACT: "library_extract",
   LIBRARY_DISTILL: "library_distill",
   SKILL_LEARN: "skill_learn",
+  SKILL_DISCOVER: "skill_discover",
+  LEARN_VERIFY: "learn_verify",
   DIRECTORY_SYNC: "directory_sync",
 } as const;
 
@@ -139,9 +141,23 @@ export type LibraryExtractPayload = {
 
 export type LibraryDistillPayload = LibraryExtractPayload;
 
+export type LearnTargetKind = "skill" | "source" | "skill-description" | "org";
+
+/** Older jobs carry only skillName, which means a skill target. */
 export type SkillLearnPayload = {
   orgId: string;
-  skillName: string;
+  skillName?: string;
+  targetKind?: LearnTargetKind;
+  targetId?: string;
+};
+
+export type SkillDiscoverPayload = {
+  orgId: string;
+};
+
+export type LearnVerifyPayload = {
+  orgId: string;
+  runId: string;
 };
 
 export type RecordsIdentityLinkPayload = {

@@ -20,6 +20,7 @@ import { AX_HARNESS_BINARY } from "../agent-runtime-contract";
 import { registerAgentCanceller } from "../agent-shutdown";
 import type { AxModelRoute } from "../provider-runtime";
 import { A2UI_RENDER_ACP_TITLE, A2UI_RENDER_SERVER_NAME } from "../work/a2ui-contract";
+import { composeLiveOverlays } from "../work/skill-overlay";
 import { extractMarkdownText, outsideFenceText } from "./output";
 import { extractCardFences, extractSurfaceMessages } from "./surface";
 
@@ -180,8 +181,14 @@ export class AxBackend implements AgentBackend {
       cleanupScratch = () => rm(scratch, { recursive: true, force: true }).catch(() => {});
     }
 
+    const composed =
+      workspace?.skillsRoot && !opts.mcpBridgeEnv?.OPENNEKO_MCP_SKILLS_ROOT
+        ? await composeLiveOverlays(workspace.skillsRoot).catch(() => null)
+        : null;
+    const skillsRoot = composed?.root ?? workspace?.skillsRoot;
+
     const limits = agentLimits("chat");
-    const env = this.environment(opts, cwd, axLimitEnv(limits));
+    const env = this.environment(opts, cwd, axLimitEnv(limits), skillsRoot);
     const spec = {
       version: 1,
       run_id: runId,
@@ -234,7 +241,7 @@ export class AxBackend implements AgentBackend {
       });
     };
 
-    const mapper = new AxEventMapper(emit, this.ax.route, workspace?.skillsRoot, opts.debug === true);
+    const mapper = new AxEventMapper(emit, this.ax.route, skillsRoot, opts.debug === true);
     let result: AxResult | undefined;
     let protocolError: string | undefined;
     try {
@@ -317,10 +324,16 @@ export class AxBackend implements AgentBackend {
       unregister();
       if (child.exitCode == null) killProcessGroup(child, "SIGTERM");
       await cleanupScratch?.();
+      await composed?.cleanup().catch(() => {});
     }
   }
 
-  private environment(opts: AgentRunOptions, cwd: string, limitEnv: Record<string, string>): NodeJS.ProcessEnv {
+  private environment(
+    opts: AgentRunOptions,
+    cwd: string,
+    limitEnv: Record<string, string>,
+    skillsRoot: string | undefined,
+  ): NodeJS.ProcessEnv {
     const route = this.ax!.route;
     const { workspace } = opts;
     const env: NodeJS.ProcessEnv = { ...process.env };
@@ -354,9 +367,9 @@ export class AxBackend implements AgentBackend {
     env.OPENNEKO_HARNESS_SHELL = "1";
     if (workspace?.threadUploadsRoot) env.OPENNEKO_HARNESS_UPLOADS_DIR = workspace.threadUploadsRoot;
     else delete env.OPENNEKO_HARNESS_UPLOADS_DIR;
-    if (workspace?.skillsRoot) {
+    if (skillsRoot) {
       env.OPENNEKO_HARNESS_SKILLS_READ = "1";
-      env.OPENNEKO_MCP_SKILLS_ROOT = opts.mcpBridgeEnv?.OPENNEKO_MCP_SKILLS_ROOT ?? workspace.skillsRoot;
+      env.OPENNEKO_MCP_SKILLS_ROOT = opts.mcpBridgeEnv?.OPENNEKO_MCP_SKILLS_ROOT ?? skillsRoot;
     }
     if (opts.networkHosts?.length) env.OPENNEKO_HARNESS_WEB_HOSTS = opts.networkHosts.join(",");
     else delete env.OPENNEKO_HARNESS_WEB_HOSTS;
