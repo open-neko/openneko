@@ -1,4 +1,6 @@
-import { resolve } from "node:path";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadEval } from "@neko/evals";
 import { buildRunEvidence } from "@neko/llm/work";
@@ -16,7 +18,11 @@ import {
   learningKinds,
   routingNoise,
   learningGate,
+  learningSequence,
   runLearnStage,
+  sequentialLooks,
+  sourceTreeDigest,
+  variantIdentity,
   stubSkillLearnLlm,
   summarizeCitations,
   verifyLearnedDelivery,
@@ -376,5 +382,118 @@ describe("skill-learning delivery", () => {
       citing: { runs: 2, passed: 1 },
       nonCiting: { runs: 1, passed: 1 },
     });
+  });
+});
+
+describe("skill-learning waves and conditional ablations", () => {
+  const variant = (id: string, settings: Record<string, unknown>) =>
+    ({ id, backend: "scripted-good", outer_model: { provider: "scripted", model: "m" }, data_path: "graphjin-direct", settings }) as never;
+  const variants = [
+    variant("baseline", { arm: "baseline" }),
+    variant("learned", { arm: "learned", learning: { corpus: "c" } }),
+    variant("learned-rules", { arm: "learned", learning: { corpus: "c", kinds: ["skill"] } }),
+    variant("placebo", { arm: "placebo" }),
+  ];
+  const cases = Array.from({ length: 12 }, (_, index) => `c${index + 1}`);
+  const slots = (arms: readonly string[], repetitions: number) =>
+    arms.flatMap((variantId) =>
+      cases.flatMap((caseId) =>
+        Array.from({ length: repetitions }, (_, index) => ({
+          key: `${variantId}/${caseId}/${index + 1}`,
+          variantId,
+          caseId,
+          repetition: index + 1,
+          case: { input: { split: "test" } },
+        })),
+      ),
+    );
+  const episode = (answer: boolean) =>
+    ({
+      status: "completed",
+      score: {
+        verdict: answer ? "pass" : "fail",
+        checks: [
+          { assertionId: "current-value", dimension: "ground_truth", passed: answer },
+          { assertionId: "skill-loaded", dimension: "method", passed: true },
+        ],
+      },
+    }) as never;
+  const all = slots(["baseline", "learned", "learned-rules", "placebo"], 5);
+  const run = (answerFor: (arm: string) => boolean, through: number, arms = ["baseline", "learned", "placebo"]) =>
+    new Map(
+      all
+        .filter((slot) => arms.includes(slot.variantId) && slot.repetition <= through)
+        .map((slot) => [slot.key, episode(answerFor(slot.variantId))]),
+    );
+
+  it("reads looks from the learned variant and defaults to one look", () => {
+    expect(sequentialLooks(variants, 5)).toEqual([5]);
+    expect(sequentialLooks([variant("learned", { arm: "learned", sequential: { looks: [2, 3, 5] } })], 5)).toEqual([2, 3, 5]);
+    expect(() => sequentialLooks([variant("learned", { arm: "learned", sequential: { looks: [2, 4] } })], 5)).toThrow(/end at 5/);
+  });
+
+  it("runs only the main arms in the first wave", () => {
+    const sequence = learningSequence({ slots: all, episodes: new Map(), variants, looks: [2, 3, 5] });
+    expect(new Set(sequence.next.map((slot) => slot.variantId))).toEqual(new Set(["baseline", "learned", "placebo"]));
+    expect(Math.max(...sequence.next.map((slot) => slot.repetition))).toBe(2);
+  });
+
+  it("stops after the first look on a clear effect and runs the ablation arm on the same repetitions", () => {
+    const sequence = learningSequence({
+      slots: all,
+      episodes: run((arm) => arm === "learned", 2),
+      variants,
+      looks: [2, 3, 5],
+    });
+    expect(sequence.state).toMatchObject({ look: 0, stopped: true });
+    expect(sequence.state.gates.map((gate) => gate.decision)).toEqual(["pass", "pass", "pass"]);
+    expect(sequence.ablation).toMatchObject({ arms: ["learned-rules"], run: true });
+    expect(new Set(sequence.next.map((slot) => slot.variantId))).toEqual(new Set(["learned-rules"]));
+    expect(Math.max(...sequence.next.map((slot) => slot.repetition))).toBe(2);
+  });
+
+  it("skips the ablation arm when the learned arm does not differ from baseline", () => {
+    const sequence = learningSequence({ slots: all, episodes: run(() => true, 2), variants, looks: [2, 3, 5] });
+    expect(sequence.state.stopped).toBe(true);
+    expect(sequence.state.gates.find((gate) => gate.id === "answer-vs-baseline")?.decision).toBe("fail");
+    expect(sequence.ablation).toMatchObject({ run: false });
+    expect(sequence.next).toEqual([]);
+    expect(sequence.reason).toMatch(/learned-rules skipped/);
+  });
+
+  it("runs a forced ablation arm in every wave", () => {
+    const forced = variants.map((entry: { id: string; settings: Record<string, unknown> }) =>
+      entry.id === "learned-rules" ? variant(entry.id, { ...entry.settings, ablation: "always" }) : entry,
+    ) as never[];
+    const sequence = learningSequence({ slots: all, episodes: new Map(), variants: forced, looks: [2, 3, 5] });
+    expect(sequence.next.some((slot) => slot.variantId === "learned-rules")).toBe(true);
+    expect(sequence.ablation).toBeNull();
+  });
+});
+
+describe("skill-learning episode cache identity", () => {
+  it("changes the source digest when any tracked file changes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openneko-source-digest-"));
+    await mkdir(join(root, "pkg/src"), { recursive: true });
+    await mkdir(join(root, "pkg/test"), { recursive: true });
+    await writeFile(join(root, "pkg/src/a.ts"), "export const a = 1;\n");
+    await writeFile(join(root, "pkg/test/a.test.ts"), "test\n");
+    const first = await sourceTreeDigest(root, ["pkg"]);
+    await writeFile(join(root, "pkg/test/a.test.ts"), "changed test\n");
+    expect(await sourceTreeDigest(root, ["pkg"])).toBe(first);
+    await writeFile(join(root, "pkg/src/a.ts"), "export const a = 2;\n");
+    expect(await sourceTreeDigest(root, ["pkg"])).not.toBe(first);
+  });
+
+  it("keys installed overlays by content, not by path", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openneko-variant-identity-"));
+    await writeFile(join(root, "one.md"), "- rule\n");
+    await writeFile(join(root, "two.md"), "- rule\n");
+    await writeFile(join(root, "three.md"), "- other rule\n");
+    const placebo = (path: string) =>
+      ({ id: "placebo", backend: "ax", outer_model: { provider: "p", model: "m" }, settings: { skill_overlays: { s: join(root, path) } } }) as never;
+    const one = await variantIdentity(placebo("one.md"));
+    expect(await variantIdentity(placebo("two.md"))).toEqual(one);
+    expect(await variantIdentity(placebo("three.md"))).not.toEqual(one);
   });
 });

@@ -9,6 +9,7 @@ import {
   type HarnessObserver,
 } from "@neko/telemetry";
 import { contentDigest } from "./canonical";
+import { EpisodeCache, episodeCacheKey, type EpisodeCacheKeyInput } from "./episode-cache";
 import type { LoadedCase, LoadedEval } from "./load";
 import type { EvalPlan, EvalSlot } from "./plan";
 import { createSerialQueue, effectiveConcurrency, runBoundedPool } from "./pool";
@@ -75,7 +76,25 @@ export interface EvalDriver {
     repetition: number;
   }): Promise<EvalScore> | EvalScore;
   close?(): Promise<void>;
+  /**
+   * Everything outside the case that shapes an episode of this slot: the
+   * resolved variant, its installed files and the agent code path. Null keeps
+   * the slot out of the episode cache.
+   */
+  episodeIdentity?(slot: EvalSlot): Promise<unknown> | unknown;
+  /** Whether a terminal episode may serve later runs. Defaults to every terminal episode. */
+  cacheable?(episode: EvalEpisode): boolean;
+  /**
+   * Adaptive runs: the slots to run next, given the terminal episodes so far.
+   * The run stops when no returned slot is still open; reason says why.
+   */
+  nextSlots?(input: {
+    plan: EvalPlan;
+    episodes: readonly EvalEpisode[];
+  }): Promise<EvalSchedule> | EvalSchedule;
 }
+
+export type EvalSchedule = { slots: readonly EvalSlot[]; reason?: string };
 
 export class EvalEnvironmentError extends Error {
   constructor(
@@ -350,12 +369,18 @@ export type RunEvaluationOptions = {
   promote?: boolean;
   /** Retries for EvalTransientError, with exponential backoff from backoffMs. */
   transientRetry?: { retries: number; backoffMs: number };
+  /** Reuse and record cached episodes for slots the driver identifies. Defaults to true. */
+  episodeCache?: boolean;
+  /** Defaults to <stateRoot>/episode-cache. */
+  cacheRoot?: string;
 };
 
 export async function runEvaluation(options: RunEvaluationOptions): Promise<{
   runId: string;
   resumed: boolean;
   reusedEpisodes: number;
+  cachedEpisodes: number;
+  stopReason?: string;
   gatesPassed: boolean;
   resultDir?: string;
   manifest: EvalManifest;
@@ -484,10 +509,33 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
         if (report) await partialReport(store, current, episodes);
       });
     let reusedEpisodes = 0;
+    const cache =
+      options.episodeCache !== false && options.driver.episodeIdentity
+        ? new EpisodeCache(options.cacheRoot ?? `${options.stateRoot}/episode-cache`)
+        : undefined;
+    const reusedSlotKeys = new Set(current.reusedSlotKeys ?? []);
+    const cacheInputs = async (slot: EvalSlot): Promise<EpisodeCacheKeyInput | null> => {
+      if (!cache) return null;
+      const identity = await options.driver.episodeIdentity!(slot);
+      if (identity === null || identity === undefined) return null;
+      const { timeout, max_attempts, cache_state, content_capture } = options.loaded.config.defaults;
+      return {
+        runnerVersion: EVAL_RUNNER_VERSION,
+        caseContentId: slot.case.contentId,
+        phase: slot.phase,
+        repetition: slot.repetition,
+        datasetDigest: compatibility.datasetDigest,
+        oracleDigest: contentDigest(oracles[slot.caseId] ?? null),
+        scorerDigest,
+        defaults: { timeout: slot.case.timeout ?? timeout, max_attempts, cache_state, content_capture },
+        identity,
+      };
+    };
     try {
       for (const slot of options.plan.slots) {
         const episode = await store.readEpisode(runId, slot.key);
         if (!episode) continue;
+        if (episode.reusedFrom) reusedSlotKeys.add(slot.key);
         episodes.push(episode);
         completed.add(slot.key);
         if (
@@ -502,9 +550,10 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
 
       const checkBudgets = () => {
         const wallBudget = options.loaded.config.budgets?.max_wall_time;
+        const spent = episodes.filter((episode) => !episode.reusedFrom);
         if (
           wallBudget &&
-          measuredTotal(episodes, "wallDurationMs") >= durationMs(wallBudget)
+          measuredTotal(spent, "wallDurationMs") >= durationMs(wallBudget)
         ) {
           throw new EvalEnvironmentError(
             `eval wall-time budget ${wallBudget} is exhausted`,
@@ -515,7 +564,7 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
           options.loaded.config.budgets?.max_estimated_cost_usd;
         if (
           costBudget !== undefined &&
-          measuredTotal(episodes, "estimatedCostUsd") >= costBudget
+          measuredTotal(spent, "estimatedCostUsd") >= costBudget
         ) {
           throw new EvalEnvironmentError(
             `eval estimated cost budget $${costBudget} is exhausted`,
@@ -524,7 +573,81 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
         }
       };
 
+      const finishSlot = async (slot: EvalSlot, terminal: EvalEpisode) => {
+        episodes.push(terminal);
+        completed.add(slot.key);
+        if (
+          terminal.status !== "completed" ||
+          terminal.score?.verdict === "fail"
+        ) {
+          failed.add(slot.key);
+        }
+        await writeProgress(true);
+      };
+
+      const reuseSlot = async (
+        slot: EvalSlot,
+        cached: EvalEpisode,
+        cacheKey: string,
+      ): Promise<EvalEpisode> => {
+        const {
+          integrityDigest: _digest,
+          reusedFrom,
+          ...episode
+        } = cached;
+        const score =
+          cached.status === "completed"
+            ? await options.driver.score({
+                case: slot.case,
+                variant: slot.variant,
+                oracle: oracles[slot.caseId],
+                execution: {
+                  ...(cached.output !== undefined ? { output: cached.output } : {}),
+                  measurements: cached.measurements,
+                  ...(cached.semanticEvidence !== undefined
+                    ? { semanticEvidence: cached.semanticEvidence }
+                    : {}),
+                },
+                phase: slot.phase,
+                repetition: slot.repetition,
+              })
+            : undefined;
+        return serial(() =>
+          store.writeEpisode({
+            ...episode,
+            runId,
+            slotKey: slot.key,
+            pairKey: slot.pairKey,
+            treatment: slot.treatment,
+            caseId: slot.caseId,
+            variantId: slot.variantId,
+            datasetId: slot.datasetId,
+            repetition: slot.repetition,
+            phase: slot.phase,
+            ...(score ? { score } : {}),
+            reusedFrom: reusedFrom ?? {
+              runId: cached.runId,
+              slotKey: cached.slotKey,
+              cacheKey,
+            },
+          }),
+        );
+      };
+
+      let cachedEpisodes = 0;
       const runSlot = async (slot: EvalSlot): Promise<void> => {
+        const inputs = await cacheInputs(slot);
+        if (inputs) {
+          const cacheKey = episodeCacheKey(inputs);
+          const cached = await cache!.read(cacheKey);
+          if (cached) {
+            const reused = await reuseSlot(slot, cached, cacheKey);
+            cachedEpisodes += 1;
+            reusedSlotKeys.add(slot.key);
+            await finishSlot(slot, reused);
+            return;
+          }
+        }
         const oracle = oracles[slot.caseId];
         let attempt = await serial(() =>
           store.nextAttemptNumber(runId, slot.key),
@@ -735,24 +858,40 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
         }
         if (!terminal)
           throw new Error(`slot ${slot.key} ended without an episode`);
-        episodes.push(terminal);
-        completed.add(slot.key);
-        if (
-          terminal.status !== "completed" ||
-          terminal.score?.verdict === "fail"
-        ) {
-          failed.add(slot.key);
+        if (inputs && (options.driver.cacheable?.(terminal) ?? true)) {
+          await cache!.write(inputs, terminal);
         }
-        await writeProgress(true);
+        await finishSlot(slot, terminal);
       };
 
+      let stopReason: string | undefined;
       try {
-        await runBoundedPool({
-          items: options.plan.slots.filter((slot) => !completed.has(slot.key)),
-          concurrency,
-          beforeDispatch: checkBudgets,
-          run: runSlot,
-        });
+        if (!options.driver.nextSlots) {
+          await runBoundedPool({
+            items: options.plan.slots.filter((slot) => !completed.has(slot.key)),
+            concurrency,
+            beforeDispatch: checkBudgets,
+            run: runSlot,
+          });
+        } else {
+          for (;;) {
+            const next = await options.driver.nextSlots({
+              plan: options.plan,
+              episodes,
+            });
+            const items = next.slots.filter((slot) => !completed.has(slot.key));
+            if (items.length === 0) {
+              stopReason = next.reason;
+              break;
+            }
+            await runBoundedPool({
+              items,
+              concurrency,
+              beforeDispatch: checkBudgets,
+              run: runSlot,
+            });
+          }
+        }
       } catch (cause) {
         await writeProgress(true);
         throw cause;
@@ -764,9 +903,18 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
         (left, right) =>
           planOrder.get(left.slotKey)! - planOrder.get(right.slotKey)!,
       );
+      const stoppedSlotKeys = options.plan.slots
+        .map((slot) => slot.key)
+        .filter((key) => !completed.has(key))
+        .sort();
       current = {
         ...updateProgress(current, { completed, failed, inFlight }),
         status: "complete",
+        ...(stoppedSlotKeys.length
+          ? { expectedSlotKeys: [...completed].sort(), stoppedSlotKeys }
+          : {}),
+        ...(stopReason ? { stopReason } : {}),
+        ...(reusedSlotKeys.size ? { reusedSlotKeys: [...reusedSlotKeys].sort() } : {}),
       };
       await store.replaceManifest(current);
       await partialReport(store, current, episodes);
@@ -787,6 +935,8 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
         runId,
         resumed,
         reusedEpisodes,
+        cachedEpisodes,
+        ...(stopReason ? { stopReason } : {}),
         gatesPassed: evaluateSuiteGates(
           summarizeEpisodes(episodes),
           current.suiteGates,
@@ -830,6 +980,7 @@ export async function rescoreEvaluation(input: {
     const rescored: EvalEpisode[] = [];
     for (const slot of input.plan.slots) {
       const episode = await store.readEpisode(input.runId, slot.key);
+      if (!episode && manifest.stoppedSlotKeys?.includes(slot.key)) continue;
       if (!episode)
         throw new Error(`cannot rescore incomplete run: missing ${slot.key}`);
       if (episode.status !== "completed") {

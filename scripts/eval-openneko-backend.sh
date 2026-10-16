@@ -19,6 +19,7 @@ resume_run=
 restart=0
 promotion=
 build_agent=1
+episode_cache=1
 
 usage() {
   cat <<'EOF'
@@ -48,6 +49,7 @@ Options:
   --promote           Write and verify a sanitized result (default)
   --no-promote        Keep only private durable run state; skip result verification
   --no-build-agent    Reuse OPENNEKO_EVAL_AGENT_IMAGE after verifying it exists
+  --no-episode-cache  Run every episode; reuse none from earlier runs
   -h, --help          Show this help
 
 Environment overrides:
@@ -138,6 +140,9 @@ while [ "$#" -gt 0 ]; do
     --no-promote)
       [ -z "$promotion" ] || { echo "choose only one promotion mode" >&2; exit 2; }
       promotion=--no-promote
+      ;;
+    --no-episode-cache)
+      episode_cache=0
       ;;
     --no-build-agent)
       build_agent=0
@@ -456,6 +461,9 @@ if [ -n "$resume_run" ]; then
 fi
 if [ "$restart" -eq 1 ]; then
   set -- "$@" --restart
+fi
+if [ "$episode_cache" -eq 0 ]; then
+  set -- "$@" --no-episode-cache
 fi
 if [ -n "$promotion" ]; then
   set -- "$@" "$promotion"

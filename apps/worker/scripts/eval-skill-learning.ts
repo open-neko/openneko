@@ -1,7 +1,9 @@
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
+import { promisify } from "node:util";
 import { and, db, desc, eq, skill_learn_event, work_run } from "@neko/db";
 import { deleteTestOrg } from "@neko/db/test-helpers";
 import {
@@ -34,6 +36,9 @@ import {
   loadEval,
   pairedArmComparison,
   runBoundedPool,
+  sequentialRuleText,
+  sequentialState,
+  validateLooks,
   type ArmTaskOutcome,
   type EvalDriver,
   type EvalEpisode,
@@ -45,7 +50,11 @@ import {
   type LoadedCase,
   type LoadedEval,
   type OracleLeakSource,
+  type GateDecision,
   type PairedArmComparison,
+  type SequentialGateSpec,
+  type SequentialObservation,
+  type SequentialState,
 } from "@neko/evals";
 import { MemoryObservationSink, createHarnessObserver } from "@neko/telemetry";
 import {
@@ -139,7 +148,9 @@ const TARGET_FILE: Record<LearnTargetKind, string> = {
 };
 const ORG_PLAYBOOK_LINES = 8;
 
-function sha256(value: string): string {
+const execFileAsync = promisify(execFile);
+
+function sha256(value: string | Buffer): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
 }
 
@@ -617,7 +628,13 @@ export function learningGates(input: {
   noise: { value: number; source: string };
   leaks: number;
   safetyFailures: number;
+  /** Sequential decisions by gate ID; they replace the fixed CI check. */
+  decisions?: Readonly<Record<string, GateDecision>>;
 }): LearningGate[] {
+  const decided = (id: string, fallback: boolean | null): boolean | null => {
+    const decision = input.decisions?.[id];
+    return decision === undefined ? fallback : decision === "pass" ? true : decision === "fail" ? false : null;
+  };
   const above = (comparison?: PairedArmComparison) => (comparison?.ci95 ? comparison.ci95.low > 0 : null);
   return [
     {
@@ -625,21 +642,24 @@ export function learningGates(input: {
       hypothesis: "H1",
       rule: "learned beats baseline on answer correctness; CI lower bound > 0",
       observed: ciText(input.answerVsBaseline),
-      passed: above(input.answerVsBaseline),
+      passed: decided("answer-vs-baseline", above(input.answerVsBaseline)),
     },
     {
       id: "routing-not-worse",
       hypothesis: "routing guard",
       rule: `learned is not worse than baseline on routing; CI lower bound >= -${pctText(input.noise.value)} (${input.noise.source})`,
       observed: ciText(input.routingVsBaseline),
-      passed: input.routingVsBaseline?.ci95 ? input.routingVsBaseline.ci95.low >= -input.noise.value - 1e-9 : null,
+      passed: decided(
+        "routing-not-worse",
+        input.routingVsBaseline?.ci95 ? input.routingVsBaseline.ci95.low >= -input.noise.value - 1e-9 : null,
+      ),
     },
     {
       id: "answer-vs-placebo",
       hypothesis: "H2",
       rule: "learned beats placebo on answer correctness; CI lower bound > 0",
       observed: ciText(input.answerVsPlacebo),
-      passed: above(input.answerVsPlacebo),
+      passed: decided("answer-vs-placebo", above(input.answerVsPlacebo)),
     },
     {
       id: "no-leak-no-safety-failure",
@@ -649,6 +669,215 @@ export function learningGates(input: {
       passed: input.leaks === 0 && input.safetyFailures === 0,
     },
   ];
+}
+
+/** Look schedule from the learned variant's settings.sequential.looks; one look at every repetition by default. */
+export function sequentialLooks(variants: readonly EvalVariant[], repetitions: number): number[] {
+  const learned = variants.find(
+    (variant) => variant.settings?.arm === "learned" && record(variant.settings?.sequential)?.looks !== undefined,
+  );
+  const looks = record(learned?.settings?.sequential)?.looks;
+  if (looks === undefined) return [repetitions];
+  try {
+    return validateLooks(Array.isArray(looks) ? looks.map(Number) : [], repetitions);
+  } catch (cause) {
+    throw new EvalEnvironmentError(
+      `variant ${learned!.id} settings.sequential.looks: ${cause instanceof Error ? cause.message : String(cause)}`,
+      "variant_invalid",
+    );
+  }
+}
+
+/** An ablation arm applies only some learned kinds. It runs only when the learned arm differs from baseline, unless settings.ablation is always. */
+export function conditionalAblation(variant: EvalVariant): boolean {
+  const mode = variant.settings?.ablation ?? "conditional";
+  if (mode !== "conditional" && mode !== "always") {
+    throw new EvalEnvironmentError(`variant ${variant.id} settings.ablation must be conditional or always`, "variant_invalid");
+  }
+  return armOf(variant) === "learned" && learningKinds(variant) !== null && mode === "conditional";
+}
+
+type SequenceSlot = Pick<EvalSlot, "key" | "variantId" | "caseId" | "repetition"> & { case: Pick<LoadedCase, "input"> };
+
+export type LearningSequence = {
+  looks: number[];
+  state: SequentialState;
+  gates: SequentialGateSpec[];
+  noise: { value: number; source: string };
+  ablation: { arms: string[]; run: boolean; reason: string } | null;
+  next: SequenceSlot[];
+  reason: string;
+};
+
+function taskOf(slot: SequenceSlot): string {
+  return `${String(slot.case.input.split ?? "")}/${slot.caseId}`;
+}
+
+/**
+ * Waves for the learning cohort: the main arms run look by look until every
+ * gate is decided; conditional ablation arms then run on the same repetitions
+ * only when the learned arm differs from baseline on a gate metric.
+ */
+export function learningSequence(input: {
+  slots: readonly SequenceSlot[];
+  episodes: ReadonlyMap<string, Pick<EvalEpisode, "status" | "errorType" | "score">>;
+  variants: readonly EvalVariant[];
+  looks: readonly number[];
+  iterations?: number;
+}): LearningSequence {
+  const looks = [...input.looks];
+  const ids = (arm: Arm) => input.variants.filter((variant) => armOf(variant) === arm).map((variant) => variant.id);
+  const [baselineId, aaId] = ids("baseline");
+  const learnedId =
+    input.variants.find((variant) => armOf(variant) === "learned" && learningKinds(variant) === null)?.id ?? ids("learned")[0];
+  const placeboId = ids("placebo")[0];
+  const conditional = input.variants.filter(conditionalAblation).map((variant) => variant.id);
+  const main = input.variants.map((variant) => variant.id).filter((id) => !conditional.includes(id));
+  const tasks = [...new Set(input.slots.map(taskOf))];
+  const observations: SequentialObservation[] = input.slots.flatMap((slot) => {
+    const episode = input.episodes.get(slot.key);
+    if (!episode) return [];
+    const outcome = episodeOutcome(episode);
+    return [
+      {
+        taskId: taskOf(slot),
+        arm: slot.variantId,
+        repetition: slot.repetition,
+        outcomes: outcome.infra ? null : { answer: outcome.answer, routing: outcome.routing },
+      },
+    ];
+  });
+  const rows = (metric: "answer" | "routing") =>
+    observations.flatMap((row) =>
+      row.outcomes && row.taskId.startsWith("test/")
+        ? [{ taskId: row.taskId, arm: row.arm, repetition: row.repetition, passed: row.outcomes[metric]! }]
+        : [],
+    );
+  const noise = routingNoise(
+    baselineId && aaId ? pairedArmComparison(rows("routing"), aaId, baselineId, `test/routing/${aaId}/${baselineId}`) : undefined,
+  );
+  const gates: SequentialGateSpec[] = [
+    ...(learnedId && baselineId
+      ? [
+          { id: "answer-vs-baseline", metric: "answer", treatment: learnedId, control: baselineId, threshold: 0, strict: true, taskPrefix: "test/" },
+          { id: "routing-not-worse", metric: "routing", treatment: learnedId, control: baselineId, threshold: -noise.value, strict: false, taskPrefix: "test/" },
+        ]
+      : []),
+    ...(learnedId && placeboId
+      ? [{ id: "answer-vs-placebo", metric: "answer", treatment: learnedId, control: placeboId, threshold: 0, strict: true, taskPrefix: "test/" }]
+      : []),
+  ];
+  const state = sequentialState({
+    looks,
+    tasks,
+    arms: main,
+    metrics: ["answer", "routing"],
+    gates,
+    observations,
+    ...(input.iterations ? { iterations: input.iterations } : {}),
+  });
+  const within = (slot: SequenceSlot) => slot.repetition <= (state.targets.get(taskOf(slot)) ?? 0);
+  if (!state.complete) {
+    return {
+      looks,
+      state,
+      gates,
+      noise,
+      ablation: null,
+      next: input.slots.filter((slot) => main.includes(slot.variantId) && within(slot)),
+      reason: `look ${state.look + 1} of ${looks.length} in progress`,
+    };
+  }
+  const decisions = state.gates.map((gate) => `${gate.id} ${gate.decision} at look ${gate.look + 1}`).join(", ");
+  const stopped = `${looks.length > 1 ? `stopped after look ${state.look + 1} of ${looks.length}` : "single look"}${decisions ? `: ${decisions}` : ""}`;
+  if (conditional.length === 0) return { looks, state, gates, noise, ablation: null, next: [], reason: stopped };
+  const differing =
+    learnedId && baselineId
+      ? (["answer", "routing"] as const).filter((metric) => {
+          const ci = pairedArmComparison(
+            rows(metric).filter((row) => row.repetition <= (state.targets.get(row.taskId) ?? 0)),
+            learnedId,
+            baselineId,
+            `test/${metric}/${learnedId}/${baselineId}`,
+          ).ci95;
+          return ci !== null && (ci.low > 0 || ci.high < 0);
+        })
+      : [];
+  const run = differing.length > 0;
+  const reason = run
+    ? `ran because ${learnedId} differs from ${baselineId} on ${differing.join(" and ")} (95% CI excludes 0)`
+    : `skipped because ${learnedId ?? "the learned arm"} does not differ from ${baselineId ?? "baseline"} on answer or routing (each 95% CI includes 0)`;
+  return {
+    looks,
+    state,
+    gates,
+    noise,
+    ablation: { arms: conditional, run, reason },
+    next: run ? input.slots.filter((slot) => conditional.includes(slot.variantId) && within(slot)) : [],
+    reason: `${stopped}; ablation arms ${conditional.join(", ")} ${reason}`,
+  };
+}
+
+const EPISODE_SOURCE_PATHS = [
+  "packages/llm",
+  "apps/ax-harness",
+  "apps/worker/src/agent-sandbox",
+  "apps/worker/scripts/eval-openneko-backend.ts",
+  "apps/worker/scripts/eval-openneko-backend-fixture.ts",
+  "apps/worker/scripts/eval-openneko-scenario.ts",
+  "apps/worker/scripts/eval-scripted-backend.ts",
+  "apps/worker/scripts/eval-skill-learning.ts",
+  "packages/evals/src",
+  "packages/db/src",
+  "packages/records/src",
+  "db/migrations",
+  "docker/agent-base.Dockerfile",
+  "pnpm-lock.yaml",
+];
+const SKIPPED_SOURCE_DIRS = new Set(["node_modules", "dist", ".turbo", "coverage", "test", "tests", "__tests__"]);
+
+/** Digest of the files that shape an episode: the agent code path, the run driver and the lockfile. */
+export async function sourceTreeDigest(root: string, paths: readonly string[] = EPISODE_SOURCE_PATHS): Promise<string> {
+  const entries: Array<[string, string]> = [];
+  const visit = async (path: string): Promise<void> => {
+    const info = await stat(join(root, path)).catch(() => null);
+    if (!info) {
+      entries.push([path, "missing"]);
+    } else if (info.isDirectory()) {
+      for (const name of (await readdir(join(root, path))).sort()) {
+        if (!SKIPPED_SOURCE_DIRS.has(name) && !/\.test\.[cm]?[jt]sx?$/u.test(name)) await visit(`${path}/${name}`);
+      }
+    } else if (info.isFile()) {
+      entries.push([path, sha256(await readFile(join(root, path)))]);
+    }
+  };
+  for (const path of paths) await visit(path);
+  return contentDigest(entries);
+}
+
+async function agentImageId(image = process.env.OPENNEKO_AGENT_IMAGE): Promise<string | null> {
+  if (!image) return null;
+  try {
+    const { stdout } = await execFileAsync("docker", ["image", "inspect", "--format", "{{.Id}}", image], { timeout: 30_000 });
+    return stdout.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** The inner variant with every installed overlay and note path replaced by its content digest. */
+export async function variantIdentity(variant: EvalVariant): Promise<unknown> {
+  const settings = { ...(variant.settings ?? {}) };
+  for (const key of ["skill_overlays", "skill_descriptions", "learned_notes"]) {
+    const files = record(settings[key]);
+    if (!files) continue;
+    settings[key] = Object.fromEntries(
+      await Promise.all(
+        Object.entries(files).map(async ([name, path]) => [name, sha256(await readFile(String(path)))] as const),
+      ),
+    );
+  }
+  return { ...variant, settings };
 }
 
 export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: EvalPlan }): EvalDriver {
@@ -667,6 +896,8 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
   const learnedVariants = loaded.config.variants.filter((variant) => variant.settings?.arm === "learned");
   const learnedVariant =
     learnedVariants.find((variant) => record(variant.settings?.learning)?.kinds === undefined) ?? learnedVariants[0];
+  const looks = () => sequentialLooks(loaded.config.variants, loaded.config.defaults.repetitions);
+  let codeIdentity: Promise<{ source: string; image: string | null }> | undefined;
 
   function innerVariant(variant: EvalVariant): EvalVariant {
     const {
@@ -675,6 +906,8 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
       placebo_rules: _placebo,
       placebo_notes: _notes,
       placebo_playbook: _playbook,
+      sequential: _sequential,
+      ablation: _ablation,
       ...settings
     } = variant.settings ?? {};
     return {
@@ -981,7 +1214,6 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
     const variantArm = new Map(loaded.config.variants.map((variant) => [variant.id, armOf(variant)]));
     const baselineIds = variantIds.filter((id) => variantArm.get(id) === "baseline");
     const baselineId = baselineIds[0];
-    const aaId = baselineIds[1];
     const learnedId = learnedVariant?.id;
     const placeboId = variantIds.find((id) => variantArm.get(id) === "placebo");
     const rows: Record<LearningOutcome, ArmTaskOutcome[]> = { answer: [], routing: [], task: [] };
@@ -1001,10 +1233,20 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
       entry.total += 1;
       if (passed) entry.pass += 1;
     };
+    const stored = new Map<string, EvalEpisode>();
     for (const slot of context.plan.slots) {
       const episode = await store.readEpisode(runId, slot.key).catch(() => null);
+      if (episode) stored.set(slot.key, episode);
+    }
+    const sequence = learningSequence({ slots: context.plan.slots, episodes: stored, variants: loaded.config.variants, looks: looks() });
+    const reused: Record<string, { reused: number; total: number }> = {};
+    for (const slot of context.plan.slots) {
+      const episode = stored.get(slot.key);
       if (!episode) continue;
       const variant = slot.variantId;
+      const reuse = (reused[variant] ??= { reused: 0, total: 0 });
+      reuse.total += 1;
+      if (episode.reusedFrom) reuse.reused += 1;
       const split = String(slot.case.input.split ?? "");
       const outcome = episodeOutcome(episode);
       if (outcome.infra) {
@@ -1087,12 +1329,14 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
     }
     const versus = (treatment?: string, control?: string) =>
       treatment && control ? comparisons[`${treatment} vs ${control}`]?.test : undefined;
-    const noise = routingNoise(versus(aaId, baselineId)?.routing);
+    const noise = sequence.noise;
     const learnedIds = variantIds.filter((id) => variantArm.get(id) === "learned");
+    const decided = (id: string) => sequence.state.gates.find((gate) => gate.id === id);
     const gates = learningGates({
-      answerVsBaseline: versus(learnedId, baselineId)?.answer,
-      routingVsBaseline: versus(learnedId, baselineId)?.routing,
-      answerVsPlacebo: versus(learnedId, placeboId)?.answer,
+      answerVsBaseline: decided("answer-vs-baseline")?.comparison,
+      routingVsBaseline: decided("routing-not-worse")?.comparison,
+      answerVsPlacebo: decided("answer-vs-placebo")?.comparison,
+      decisions: Object.fromEntries(sequence.state.gates.map((gate) => [gate.id, gate.decision])),
       noise,
       leaks: artifact?.leaks.length ?? 0,
       safetyFailures: learnedIds.reduce((total, id) => total + (safety[id] ?? 0), 0),
@@ -1110,6 +1354,17 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
         ]),
       ),
       gates: { verdict: shipped ? "pass" : "fail", gates },
+      sequential: {
+        rule: sequentialRuleText(sequence.looks),
+        looks: sequence.looks,
+        stoppedAtLook: sequence.state.look + 1,
+        stopped: sequence.state.stopped,
+        decisions: sequence.state.gates.map(({ id, decision, look, level }) => ({ id, decision, look: look + 1, level })),
+        settledTasks: [...sequence.state.settled].sort(),
+        repetitionsPerTask: Object.fromEntries([...sequence.state.targets].sort(([a], [b]) => a.localeCompare(b))),
+        ablation: sequence.ablation,
+      },
+      reused,
       outcomes: counts,
       infraFailures: infra,
       agentFailures: failures,
@@ -1170,9 +1425,19 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
       "",
       `Run ${runId}. Learn key ${artifact?.learnKey ?? "none"}.`,
       "",
+      "## Stopping rule",
+      "",
+      sequentialRuleText(sequence.looks),
+      "",
+      `This run: ${sequence.reason}. Episodes reused from earlier runs: ${
+        Object.entries(reused)
+          .map(([arm, entry]) => `${arm} ${entry.reused}/${entry.total}`)
+          .join(", ") || "none"
+      }. Reused episodes come from the episode cache; their key covers the case, variant, model, installed overlays, repetition, dataset, scorer and agent code path.`,
+      "",
       `## Shipping gates: ${shipped ? "PASS" : "FAIL"}`,
       "",
-      `Test split, ${learnedId ?? "learned"} against ${baselineId ?? "baseline"} and ${placeboId ?? "placebo"}. Each cell is the mean paired difference with its bootstrap 95% CI.`,
+      `Test split, ${learnedId ?? "learned"} against ${baselineId ?? "baseline"} and ${placeboId ?? "placebo"}. Each gate cell is the mean paired difference with its CI at the look that decided it (${(100 * (sequence.state.gates[0]?.level ?? 0.95)).toFixed(2)}% expanded percentile bootstrap); the later tables use plain 95% CIs.`,
       "",
       "| Gate | Rule | Observed | Result |",
       "| --- | --- | --- | --- |",
@@ -1298,6 +1563,8 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
           }
         }
       }
+      looks();
+      for (const variant of loaded.config.variants) conditionalAblation(variant);
       const preflight = await inner.preflight(driverContext);
       await learning();
       return {
@@ -1322,6 +1589,34 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
     },
     resolveOracle(evalCase, driverContext) {
       return inner.resolveOracle(evalCase, driverContext);
+    },
+    async episodeIdentity(slot) {
+      const arm = armOf(slot.variant);
+      if (arm === "learned") return null;
+      if (arm !== "baseline") await learning();
+      codeIdentity ??= (async () => ({ source: await sourceTreeDigest(workspaceRoot), image: await agentImageId() }))();
+      const code = await codeIdentity;
+      const live = !slot.variant.backend.startsWith("scripted-");
+      if (live && !code.image) return null;
+      return {
+        adapter: SKILL_LEARNING_ADAPTER,
+        variant: await variantIdentity(innerVariant(slot.variant)),
+        source: code.source,
+        ...(live ? { image: code.image } : {}),
+      };
+    },
+    cacheable(episode) {
+      return episode.status === "completed" || !isProviderFailureType(episode.errorType);
+    },
+    nextSlots({ plan, episodes }) {
+      const sequence = learningSequence({
+        slots: plan.slots,
+        episodes: new Map(episodes.map((episode) => [episode.slotKey, episode])),
+        variants: loaded.config.variants,
+        looks: looks(),
+      });
+      const keys = new Set(sequence.next.map((slot) => slot.key));
+      return { slots: plan.slots.filter((slot) => keys.has(slot.key)), reason: sequence.reason };
     },
     async execute(slotContext) {
       observedRunId = slotContext.runId;

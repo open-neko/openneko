@@ -11,3 +11,5 @@ export * from "./pricing";
 export * from "./assertion-kinds";
 export * from "./coverage";
 export * from "./learning";
+export * from "./sequential";
+export * from "./episode-cache";

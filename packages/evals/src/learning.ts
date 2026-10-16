@@ -108,11 +108,12 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-/** Percentile bootstrap 95% interval of the mean, with a fixed seed. */
+/** Percentile bootstrap interval of the mean (95% by default), with a fixed seed. */
 export function bootstrapMeanCi(
   values: readonly number[],
   seed = "openneko-learning",
   iterations = 10_000,
+  level = 0.95,
 ): { mean: number; low: number; high: number } | null {
   if (values.length === 0) return null;
   const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -127,8 +128,9 @@ export function bootstrapMeanCi(
   }
   means.sort((left, right) => left - right);
   const at = (quantile: number) =>
-    means[Math.min(means.length - 1, Math.max(0, Math.floor(quantile * means.length)))]!;
-  return { mean, low: at(0.025), high: at(0.975) };
+    means[Math.min(means.length - 1, Math.max(0, Math.floor(quantile * means.length + 1e-9)))]!;
+  const tail = (1 - level) / 2;
+  return { mean, low: at(tail), high: at(1 - tail) };
 }
 
 export type ArmTaskOutcome = {
@@ -160,6 +162,7 @@ export function pairedArmComparison(
   treatment: string,
   control: string,
   seed?: string,
+  options: { level?: number; iterations?: number } = {},
 ): PairedArmComparison {
   const rates = (arm: string) => {
     const byTask = new Map<string, boolean[]>();
@@ -192,6 +195,8 @@ export function pairedArmComparison(
   const ci = bootstrapMeanCi(
     perTask.map((task) => task.difference),
     seed ?? `${treatment}/${control}`,
+    options.iterations,
+    options.level,
   );
   return {
     treatment,

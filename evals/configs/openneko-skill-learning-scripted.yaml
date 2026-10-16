@@ -33,10 +33,10 @@ variants:
         run_settings: { scripted_decoy_probe: true }
   - id: learned-rules
     extends: learned
-    settings: { learning: { kinds: [skill] } }
+    settings: { ablation: always, learning: { kinds: [skill] } }
   - id: learned-descriptions
     extends: learned
-    settings: { learning: { kinds: [skill-description] } }
+    settings: { ablation: always, learning: { kinds: [skill-description] } }
   - id: placebo
     extends: baseline
     settings:
