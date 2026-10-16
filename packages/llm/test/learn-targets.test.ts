@@ -104,14 +104,14 @@ describe("source target", () => {
 
   it("writes grounded data notes with keyed rule ids", async () => {
     const orgRoot = await tempDir("neko-source-");
-    const run = ctx(orgRoot, target, addRule("Aggregate order headers before joining detail rows."), { label: "erp" });
+    const run = ctx(orgRoot, target, addRule("Aggregate sales_order_header before joining sales_order_detail rows."), { label: "erp" });
     const result = await runTargetLearn(run);
     expect(result.decision).toBe("applied");
     expect(run.prompts[0]).toContain("data source: erp");
     expect(run.prompts[0]).toContain("fan-out traps");
     const notes = await readLearnedNotes(orgRoot, target);
     expect(notes?.status).toBe("applied");
-    expect(notes?.body).toBe("- [source:src-1:L1] Aggregate order headers before joining detail rows.");
+    expect(notes?.body).toBe("- [source:src-1:L1] Aggregate sales_order_header before joining sales_order_detail rows.");
     expect(await readRulesAt(learnTargetDir(orgRoot, target))).toHaveLength(1);
     expect(result.trace.cohortDigest).toBe(cohortDigest(evidence(6)));
   });
@@ -162,10 +162,10 @@ describe("org target", () => {
       evidenceQuotes: [],
     }));
     await writeRulesAt(dir, full);
-    const run = ctx(orgRoot, target, addRule("State the time window you used."));
+    const run = ctx(orgRoot, target, addRule("Sum sales_order_header totals once per order."));
     const result = await runTargetLearn(run);
     expect(run.prompts[0]).toContain("Keep at most 8 rules");
-    expect(run.prompts[0]).toContain("state the time window you used");
+    expect(run.prompts[0]).toContain("Name the table, column, join or calculation the rule is about");
     expect(result.trace.dropped?.[0]?.reason).toBe("playbook holds 8 rules");
   });
 
@@ -475,16 +475,218 @@ describe("checkDescriptionSupported", () => {
     ).toMatch(/sold|window/);
   });
 
-  it("accepts a narrowing with a Not for clause that names other work", async () => {
+  it("checks the whole description, so a negation clause gets no free terms", async () => {
     const { checkDescriptionSupported } = await import("../src/work/skill-learn-scan");
     expect(
       checkDescriptionSupported({
-        description:
-          "Count AdventureWorks units on hand for products of one color. Not for units sold in a sales window.",
+        description: "Count AdventureWorks units on hand for products of one color. Not for units sold over a day-count window.",
         currentDescription: "Count AdventureWorks units on hand for products of one color.",
         skillGuide: "Count units on hand for products of one color from production.productinventory.",
       }),
-    ).toBeNull();
+    ).toMatch(/sold|window/);
+  });
+});
+
+describe("description learning goes positive, on the serving skill", () => {
+  const DECOY = "aw-color-onhand";
+  const SERVING = "aw-color-sold";
+  const SOLD_QUOTE = "units sold for Red products";
+  const decoyDescription = "Count AdventureWorks units on hand for products of one color.";
+  const servingDescription = "Count AdventureWorks units for products of one color.";
+  const catalog = [
+    { name: DECOY, description: decoyDescription },
+    { name: SERVING, description: servingDescription },
+    { name: "aw-territory-rank", description: "Rank sales territories by revenue." },
+  ];
+  const runIds = ["run-0", "run-1", "run-2"];
+
+  async function writeSkills(orgRoot: string): Promise<void> {
+    const guides: Record<string, string> = {
+      [DECOY]: "Count units on hand for products of one color from production.productinventory. Sum quantity per color.",
+      [SERVING]:
+        "Count units sold for products of one color over a day-count window from sales.salesorderdetail. Anchor the window on the latest order date and compare with the window before.",
+      "aw-territory-rank": "Rank sales territories by revenue from sales.salesorderheader.",
+    };
+    for (const [name, guide] of Object.entries(guides)) {
+      await mkdir(join(orgRoot, "skills", name), { recursive: true });
+      await writeFile(join(orgRoot, "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: x\n---\n\n${guide}\n`, "utf8");
+    }
+  }
+
+  const soldRuns = () =>
+    Array.from({ length: 6 }, (_, index) =>
+      buildRunEvidence({
+        runId: `run-${index}`,
+        status: "completed",
+        request: "How many units sold for Red products in the last 30 days, compared with the 30 days before?",
+        answer: "Units fell.",
+        followUp: `That counts stock on hand; I asked for ${SOLD_QUOTE}.`,
+        events: [
+          { type: "tool_start", id: "1", name: "execute_graphql", input: { query: "productinventory { quantity }" } },
+          { type: "tool_end", id: "1", result: { rows: 4 } },
+        ],
+      }),
+    );
+
+  const descCtx = (orgRoot: string, reply: unknown, overrides: Partial<TargetLearnContext> = {}) =>
+    ctx(orgRoot, { kind: "skill-description", id: DECOY }, reply, {
+      skillBaseHash: "decoy-base",
+      currentDescription: decoyDescription,
+      catalog,
+      loadEvidence: async () => soldRuns(),
+      ...overrides,
+    });
+
+  it("rejects the decoy rewrite that names the target task in a Not for clause", async () => {
+    const decoy = "Count AdventureWorks units on hand for products of one color. Not for units sold over a day-count window.";
+    expect(checkLearnedDescription(decoy)).toMatch(/excludes/);
+    for (const phrase of ["except", "excluding", "instead of", "rather than", "do not use"]) {
+      expect(checkLearnedDescription(`Count AdventureWorks units on hand ${phrase} sold units for one color.`)).not.toBeNull();
+    }
+    const orgRoot = await tempDir("neko-desc-decoy-");
+    await writeSkills(orgRoot);
+    const result = await runTargetLearn(
+      descCtx(orgRoot, { skill: DECOY, description: decoy, evidenceRunIds: runIds, evidenceQuotes: [SOLD_QUOTE] }),
+    );
+    expect(result.decision).toBe("skipped");
+    expect(result.trace.skipReason).toMatch(/excludes/);
+    expect(await readLearnedDescription(orgRoot, DECOY)).toBeNull();
+  });
+
+  it("writes a positive description on the skill whose guide serves the requests", async () => {
+    const orgRoot = await tempDir("neko-desc-serving-");
+    await writeSkills(orgRoot);
+    const improved =
+      "Count AdventureWorks units sold for products of one color over a day-count window and compare with the window before.";
+    const run = descCtx(orgRoot, { skill: SERVING, description: improved, evidenceRunIds: runIds, evidenceQuotes: [SOLD_QUOTE] });
+    const result = await runTargetLearn(run);
+    expect(run.prompts[0]).toContain(`## skill: ${DECOY}`);
+    expect(run.prompts[0]).toContain(`## skill: ${SERVING}`);
+    expect(run.prompts[0]).toContain("sales.salesorderdetail");
+    expect(run.prompts[0]).not.toMatch(/not for/i);
+    expect(result.decision).toBe("applied");
+    expect(result.target).toEqual({ kind: "skill-description", id: SERVING });
+    expect(result.trace.baseHash).toBe(await fingerprintSkillTree(join(orgRoot, "skills", SERVING)));
+    expect(await readLearnedDescription(orgRoot, SERVING)).toMatchObject({ status: "applied", description: improved });
+    expect(await readLearnedDescription(orgRoot, DECOY)).toBeNull();
+  });
+
+  it("refuses terms the chosen skill's guide does not support", async () => {
+    const orgRoot = await tempDir("neko-desc-unsupported-");
+    await writeSkills(orgRoot);
+    const result = await runTargetLearn(
+      descCtx(orgRoot, {
+        skill: SERVING,
+        description: "Count AdventureWorks units sold and revenue margin for products of one color.",
+        evidenceRunIds: runIds,
+        evidenceQuotes: [SOLD_QUOTE],
+      }),
+    );
+    expect(result.trace.skipReason).toMatch(/does not cover: .*revenue/);
+    expect(await readLearnedDescription(orgRoot, SERVING)).toBeNull();
+  });
+
+  it("proposes nothing when the proposer picks no skill or one outside the candidates", async () => {
+    const orgRoot = await tempDir("neko-desc-none-");
+    await writeSkills(orgRoot);
+    const none = await runTargetLearn(descCtx(orgRoot, { skill: null, description: null }));
+    expect(none.reason).toBe("no_proposal");
+    const outside = await runTargetLearn(
+      descCtx(orgRoot, { skill: "aw-unknown", description: servingDescription, evidenceRunIds: runIds, evidenceQuotes: [SOLD_QUOTE] }),
+    );
+    expect(outside.trace.skipReason).toMatch(/outside the candidate skills/);
+  });
+
+  it("skips the write when another learner holds the chosen skill", async () => {
+    const orgRoot = await tempDir("neko-desc-busy-");
+    await writeSkills(orgRoot);
+    const result = await runTargetLearn(
+      descCtx(
+        orgRoot,
+        {
+          skill: SERVING,
+          description: "Count AdventureWorks units sold for products of one color.",
+          evidenceRunIds: runIds,
+          evidenceQuotes: [SOLD_QUOTE],
+        },
+        { claimSkill: async () => false },
+      ),
+    );
+    expect(result.reason).toBe("target_busy");
+    expect(await readLearnedDescription(orgRoot, SERVING)).toBeNull();
+  });
+
+  it("offers the queued skill and the closest siblings by request terms", async () => {
+    const { descriptionCandidateNames } = await import("../src/work/learn-engine");
+    expect(
+      descriptionCandidateNames({ skillName: DECOY, catalog, requests: "units sold for Red products of one color" }),
+    ).toEqual([DECOY, SERVING]);
+  });
+
+  it("records no_change when only frontmatter quotes differ", async () => {
+    const orgRoot = await tempDir("neko-desc-same-");
+    await writeRankGuide(orgRoot);
+    const text = "Rank sales territories and regions by revenue or growth for a chosen period.";
+    const result = await runTargetLearn(
+      ctx(orgRoot, { kind: "skill-description", id: "aw-rank" }, { description: text, evidenceRunIds: runIds, evidenceQuotes: [QUOTE] }, {
+        skillBaseHash: "base",
+        currentDescription: `"${text} "`,
+      }),
+    );
+    expect(result.decision).toBe("skipped");
+    expect(result.reason).toBe("no_change");
+    const { descriptionKey } = await import("../src/work/skill-learn-scan");
+    expect(descriptionKey(`\u201c${text}\u201d`)).toBe(descriptionKey(`'${text}'`));
+  });
+});
+
+describe("data notes grounded in GraphJin queries", () => {
+  const target: LearnTarget = { kind: "source", id: "src-1" };
+  const FANOUT = 'salesorderheader { totaldue salesorderdetail(where: {color: {eq: "Red"}}) { orderqty } }';
+
+  const longRuns = () =>
+    Array.from({ length: 6 }, (_, index) =>
+      buildRunEvidence({
+        runId: `run-${index}`,
+        status: "completed",
+        request: "Total revenue from Red products last quarter.",
+        answer: "Revenue was high.",
+        followUp: index % 2 ? "That total is inflated; each order total repeats per detail row." : undefined,
+        events: [
+          ...Array.from({ length: 30 }, (_, step) => [
+            { type: "tool_start" as const, id: `r${step}`, name: "read_file", input: { path: `notes/${step}.md` } },
+            { type: "tool_end" as const, id: `r${step}`, result: "x".repeat(400) },
+          ]).flat(),
+          { type: "tool_start", id: "q", name: "execute_graphql", input: { query: FANOUT } },
+          { type: "tool_end", id: "q", result: { rows: 120 } },
+        ],
+      }),
+    );
+
+  it("shows every run's GraphJin query to the proposer and grounds a note in it", async () => {
+    const orgRoot = await tempDir("neko-source-graphjin-");
+    const rule = "Sum totaldue on salesorderheader before joining salesorderdetail; the nested join repeats each order total.";
+    const run = ctx(orgRoot, target, addRule(rule, ["run-1", "run-3"], ['salesorderdetail(where: {color: {eq: "Red"}})']), {
+      loadEvidence: async () => longRuns(),
+    });
+    const result = await runTargetLearn(run);
+    for (let index = 0; index < 6; index += 1) expect(run.prompts[0]).toContain(`run run-${index}: outcome`);
+    expect(run.prompts[0]).toContain("execute_graphql(");
+    expect(run.prompts[0]).toContain("Compare the query of a wrong run");
+    expect(run.prompts[0].length).toBeLessThan(30_000);
+    expect(result.decision).toBe("applied");
+    expect((await readLearnedNotes(orgRoot, target))?.body).toContain("salesorderheader");
+  });
+
+  it("drops a generic note that names nothing the runs queried", async () => {
+    const orgRoot = await tempDir("neko-source-generic-");
+    const result = await runTargetLearn(
+      ctx(orgRoot, target, addRule("Ensure robust handling of query pagination and tool error limits.", ["run-1", "run-3"], [
+        'salesorderdetail(where: {color: {eq: "Red"}})',
+      ]), { loadEvidence: async () => longRuns() }),
+    );
+    expect(result.reason).toBe("no_grounded_rules");
+    expect(result.trace.dropped?.[0]?.reason).toBe("rule is not specific");
   });
 });
 

@@ -36,6 +36,7 @@ import {
   runBoundedPool,
   type ArmTaskOutcome,
   type EvalDriver,
+  type EvalEpisode,
   type EvalExecution,
   type EvalPlan,
   type EvalSlot,
@@ -49,6 +50,7 @@ import {
 import { MemoryObservationSink, createHarnessObserver } from "@neko/telemetry";
 import {
   createOpenNekoBackendDriver,
+  isProviderFailureType,
   overlayBodyFromFile,
   scoreWorkBackendExecution,
   type ExtendedAssertionCheck,
@@ -80,6 +82,7 @@ type LearningSettings = {
   minRepeats: number;
   learner: "live" | "stub";
   runSettings: Record<string, unknown>;
+  kinds: LearnTargetKind[] | null;
 };
 
 type GroundingVerdict = {
@@ -118,6 +121,7 @@ export type LearningArtifact = {
 
 export type LearningOutput = {
   arm: Arm;
+  kinds?: LearnTargetKind[];
   overlays: Record<string, string>;
   descriptions: Record<string, string>;
   sourceNotes: string | null;
@@ -181,7 +185,30 @@ function learningSettings(variant: EvalVariant, configPath: string): LearningSet
     minRepeats: Number(raw?.min_repeats ?? 5),
     learner,
     runSettings: record(raw?.run_settings) ?? {},
+    kinds: learningKinds(variant),
   };
+}
+
+/** The learned kinds a variant applies; null applies every kind. */
+export function learningKinds(variant: EvalVariant): LearnTargetKind[] | null {
+  const kinds = record(variant.settings?.learning)?.kinds;
+  if (kinds === undefined) return null;
+  if (
+    !Array.isArray(kinds) ||
+    kinds.length === 0 ||
+    kinds.some((kind) => !LEARN_TARGET_KINDS.includes(kind as LearnTargetKind))
+  ) {
+    throw new EvalEnvironmentError(
+      `variant ${variant.id} settings.learning.kinds must list one or more of ${LEARN_TARGET_KINDS.join(", ")}`,
+      "variant_invalid",
+    );
+  }
+  return [...new Set(kinds as LearnTargetKind[])];
+}
+
+function sharedLearning(settings: LearningSettings): Omit<LearningSettings, "kinds"> {
+  const { kinds: _kinds, ...shared } = settings;
+  return shared;
 }
 
 function promptRuns(prompt: string): Array<{ runId: string; text: string }> {
@@ -294,11 +321,12 @@ export function placeboBody(rulesMarkdown: string, targetLength: number, maxLine
   return chosen.join("\n");
 }
 
-/** Variant settings for each arm: learned files for every kind, length-matched generic text for the placebo. */
+/** Variant settings for each arm: learned files for the chosen kinds, length-matched generic text for the placebo. */
 export function armInstallPlan(
   artifact: Pick<LearningArtifact, "targets"> | undefined,
   arm: Arm,
   resolvePath: (path: string) => string = (path) => path,
+  kinds: readonly LearnTargetKind[] | null = null,
 ): {
   skill_overlays: Record<string, string>;
   skill_descriptions: Record<string, string>;
@@ -311,6 +339,7 @@ export function armInstallPlan(
   };
   if (arm === "baseline" || !artifact) return plan;
   for (const entry of Object.values(artifact.targets)) {
+    if (kinds && !kinds.includes(entry.kind)) continue;
     const file = arm === "learned" ? entry.artifact : entry.placebo;
     if (!file) continue;
     const path = resolvePath(file.path);
@@ -355,20 +384,22 @@ export function verifyLearnedDelivery(input: {
   const out: KindDelivery[] = [];
   const result = (kind: LearnTargetKind, failure: string | null) =>
     out.push({ kind, passed: failure === null, diagnostic: failure ?? "ok" });
-  if (learning.arm === "baseline") {
-    if (staging) {
-      result("skill", staging.hasLearnedSection ? "staged_skill_has_learned_section" : null);
+  const absent = (kind: LearnTargetKind) =>
+    learning.arm === "baseline" || (learning.kinds !== undefined && !learning.kinds.includes(kind));
+  if (staging) {
+    if (absent("skill")) result("skill", staging.hasLearnedSection ? "staged_skill_has_learned_section" : null);
+    if (absent("skill-description")) {
       result(
         "skill-description",
         staging.stagedDescriptionDigest === staging.baseDescriptionDigest ? null : "staged_description_differs_from_base",
       );
     }
-    if (context) {
-      result("source", context.sourceNotesBlock ? "prompt_has_learned_data_notes" : null);
-      result("org", context.orgPlaybookBlock ? "prompt_has_org_playbook" : null);
-    }
-    return out;
   }
+  if (context) {
+    if (absent("source")) result("source", context.sourceNotesBlock ? "prompt_has_learned_data_notes" : null);
+    if (absent("org")) result("org", context.orgPlaybookBlock ? "prompt_has_org_playbook" : null);
+  }
+  if (learning.arm === "baseline") return out;
   if (staging) {
     const overlay = learning.overlays[staging.skill];
     if (overlay) {
@@ -515,6 +546,111 @@ export async function runLearnStage<J, R>(input: {
   await input.learn(results);
 }
 
+export type LearningOutcome = "answer" | "routing" | "task";
+const OUTCOMES: readonly LearningOutcome[] = ["answer", "routing", "task"];
+const OUTCOME_LABEL: Record<LearningOutcome, string> = {
+  answer: "Answer correct",
+  routing: "Routing",
+  task: "Full task pass",
+};
+const SPLITS = ["test", "holdout", "control"] as const;
+const DECOY_CHECK = /^decoy-\d+-not-loaded$/u;
+export const DEFAULT_ROUTING_NOISE = 0.05;
+
+export type EpisodeOutcome = Record<LearningOutcome, boolean> & {
+  /** Provider fault type; the episode is left out of rates and pairs. */
+  infra: string | null;
+  /** Error type of an agent failure that is not a provider fault. */
+  failure: string | null;
+};
+
+/** Answer: every ground-truth check. Routing: target loaded and every decoy avoided. Task: the full gating verdict. */
+export function episodeOutcome(
+  episode: Pick<EvalEpisode, "status" | "errorType" | "score">,
+): EpisodeOutcome {
+  const completed = episode.status === "completed";
+  const infra = !completed && isProviderFailureType(episode.errorType) ? episode.errorType! : null;
+  const checks = episode.score?.checks ?? [];
+  const passed = (id: string) => checks.some((check) => check.assertionId === id && check.passed);
+  return {
+    answer: completed && checks.filter((check) => check.dimension === "ground_truth").every((check) => check.passed),
+    routing:
+      completed &&
+      passed("skill-loaded") &&
+      checks.filter((check) => DECOY_CHECK.test(check.assertionId)).every((check) => check.passed),
+    task: completed && episode.score?.verdict === "pass",
+    infra,
+    failure: completed || infra ? null : (episode.errorType ?? episode.status),
+  };
+}
+
+export type LearningGate = {
+  id: string;
+  hypothesis: string;
+  rule: string;
+  observed: string;
+  passed: boolean | null;
+};
+
+/** The routing noise floor: the widest bound of the A/A routing CI, else 5 points. */
+export function routingNoise(aa?: PairedArmComparison): { value: number; source: string } {
+  return aa?.ci95
+    ? { value: Math.max(Math.abs(aa.ci95.low), Math.abs(aa.ci95.high)), source: `A/A ${aa.treatment} vs ${aa.control}` }
+    : { value: DEFAULT_ROUTING_NOISE, source: "default 5 points (no A/A arm)" };
+}
+
+function pctText(value: number): string {
+  return `${(100 * value).toFixed(1)}%`;
+}
+
+function ciText(comparison?: PairedArmComparison): string {
+  return comparison?.ci95
+    ? `${pctText(comparison.meanDifference)} [${pctText(comparison.ci95.low)}, ${pctText(comparison.ci95.high)}]`
+    : "n/a";
+}
+
+/** Shipping gates H1, H2, routing non-inferiority and H5, on the test split. */
+export function learningGates(input: {
+  answerVsBaseline?: PairedArmComparison;
+  routingVsBaseline?: PairedArmComparison;
+  answerVsPlacebo?: PairedArmComparison;
+  noise: { value: number; source: string };
+  leaks: number;
+  safetyFailures: number;
+}): LearningGate[] {
+  const above = (comparison?: PairedArmComparison) => (comparison?.ci95 ? comparison.ci95.low > 0 : null);
+  return [
+    {
+      id: "answer-vs-baseline",
+      hypothesis: "H1",
+      rule: "learned beats baseline on answer correctness; CI lower bound > 0",
+      observed: ciText(input.answerVsBaseline),
+      passed: above(input.answerVsBaseline),
+    },
+    {
+      id: "routing-not-worse",
+      hypothesis: "routing guard",
+      rule: `learned is not worse than baseline on routing; CI lower bound >= -${pctText(input.noise.value)} (${input.noise.source})`,
+      observed: ciText(input.routingVsBaseline),
+      passed: input.routingVsBaseline?.ci95 ? input.routingVsBaseline.ci95.low >= -input.noise.value - 1e-9 : null,
+    },
+    {
+      id: "answer-vs-placebo",
+      hypothesis: "H2",
+      rule: "learned beats placebo on answer correctness; CI lower bound > 0",
+      observed: ciText(input.answerVsPlacebo),
+      passed: above(input.answerVsPlacebo),
+    },
+    {
+      id: "no-leak-no-safety-failure",
+      hypothesis: "H5",
+      rule: "zero leaked values and zero safety failures in the learned arms",
+      observed: `${input.leaks} leaks, ${input.safetyFailures} safety failures`,
+      passed: input.leaks === 0 && input.safetyFailures === 0,
+    },
+  ];
+}
+
 export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: EvalPlan }): EvalDriver {
   const { loaded } = context;
   const workspaceRoot = process.env.OPENNEKO_WORKSPACE_ROOT || process.cwd();
@@ -528,7 +664,9 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
   let artifact: LearningArtifact | undefined;
   let artifactDir: string | undefined;
   let observedRunId: string | undefined;
-  const learnedVariant = loaded.config.variants.find((variant) => variant.settings?.arm === "learned");
+  const learnedVariants = loaded.config.variants.filter((variant) => variant.settings?.arm === "learned");
+  const learnedVariant =
+    learnedVariants.find((variant) => record(variant.settings?.learning)?.kinds === undefined) ?? learnedVariants[0];
 
   function innerVariant(variant: EvalVariant): EvalVariant {
     const {
@@ -543,7 +681,7 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
       ...variant,
       settings: {
         ...settings,
-        ...armInstallPlan(artifact, armOf(variant), (path) => resolve(artifactDir!, path)),
+        ...armInstallPlan(artifact, armOf(variant), (path) => resolve(artifactDir!, path), learningKinds(variant)),
       },
     };
   }
@@ -570,7 +708,7 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
       cases: learnCases.map((evalCase) => evalCase.contentId),
       measured: loaded.cases.map((evalCase) => evalCase.contentId),
       variant: { backend: variant.backend, model: variant.outer_model, settings: learnerVariant.settings },
-      settings: { ...settings, corpus: relative(dirname(loaded.configPath), settings.corpus) },
+      settings: { ...sharedLearning(settings), corpus: relative(dirname(loaded.configPath), settings.corpus) },
       placebo: await Promise.all(Object.values(placeboPaths).map((path) => readFile(path, "utf8"))),
     });
     artifactDir = join(rawRoot, "skill-learning", loaded.config.id, learnKey.slice(7, 23));
@@ -774,18 +912,21 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
     }
   }
 
-  function learningOutput(arm: Arm): LearningOutput {
+  function learningOutput(variant: EvalVariant): LearningOutput {
+    const arm = armOf(variant);
+    const kinds = learningKinds(variant);
     const entries = Object.values(artifact?.targets ?? {});
     const digest = (kind: LearnTargetKind) =>
       Object.fromEntries(
         entries.flatMap((entry) => {
-          if (entry.kind !== kind) return [];
+          if (entry.kind !== kind || (kinds && !kinds.includes(kind))) return [];
           const file = arm === "learned" ? entry.artifact : arm === "placebo" ? entry.placebo : null;
           return file ? [[entry.id, file.digest]] : [];
         }),
       ) as Record<string, string>;
     return {
       arm,
+      ...(kinds ? { kinds } : {}),
       overlays: digest("skill"),
       descriptions: digest("skill-description"),
       sourceNotes: Object.values(digest("source"))[0] ?? null,
@@ -836,50 +977,66 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
 
   async function writeReport(runId: string): Promise<void> {
     const store = new EvalStateStore(stateRoot);
-    const outcomes: ArmTaskOutcome[] = [];
-    const answers: ArmTaskOutcome[] = [];
+    const variantIds = loaded.config.variants.map((variant) => variant.id);
+    const variantArm = new Map(loaded.config.variants.map((variant) => [variant.id, armOf(variant)]));
+    const baselineIds = variantIds.filter((id) => variantArm.get(id) === "baseline");
+    const baselineId = baselineIds[0];
+    const aaId = baselineIds[1];
+    const learnedId = learnedVariant?.id;
+    const placeboId = variantIds.find((id) => variantArm.get(id) === "placebo");
+    const rows: Record<LearningOutcome, ArmTaskOutcome[]> = { answer: [], routing: [], task: [] };
+    const counts: Record<string, Record<string, Record<LearningOutcome, { pass: number; total: number }>>> = {};
+    const infra: Record<string, Record<string, number>> = {};
+    const failures: Record<string, Record<string, number>> = {};
+    const safety: Record<string, number> = {};
     const tallies: Record<string, Record<string, { pass: number; total: number }>> = {};
     const delivery: Record<string, Record<string, { pass: number; total: number }>> = {};
     const citationRuns: Array<{ passed: boolean; cited: string[] }> = [];
-    const tally = (arm: string, name: string, passed: boolean) => {
-      const entry = ((tallies[arm] ??= {})[name] ??= { pass: 0, total: 0 });
+    const bump = (table: Record<string, Record<string, number>>, variant: string, key: string) => {
+      const entry = (table[variant] ??= {});
+      entry[key] = (entry[key] ?? 0) + 1;
+    };
+    const tally = (variant: string, name: string, passed: boolean) => {
+      const entry = ((tallies[variant] ??= {})[name] ??= { pass: 0, total: 0 });
       entry.total += 1;
       if (passed) entry.pass += 1;
     };
     for (const slot of context.plan.slots) {
       const episode = await store.readEpisode(runId, slot.key).catch(() => null);
       if (!episode) continue;
-      const arm = armOf(slot.variant);
+      const variant = slot.variantId;
       const split = String(slot.case.input.split ?? "");
+      const outcome = episodeOutcome(episode);
+      if (outcome.infra) {
+        bump(infra, variant, outcome.infra);
+        continue;
+      }
+      if (outcome.failure) bump(failures, variant, outcome.failure);
+      const taskId = `${split}/${slot.caseId}`;
+      for (const name of OUTCOMES) {
+        rows[name].push({ taskId, arm: variant, repetition: slot.repetition, passed: outcome[name] });
+        const entry = (((counts[variant] ??= {})[split] ??= {
+          answer: { pass: 0, total: 0 },
+          routing: { pass: 0, total: 0 },
+          task: { pass: 0, total: 0 },
+        })[name]);
+        entry.total += 1;
+        if (outcome[name]) entry.pass += 1;
+      }
       const checks = episode.score?.checks ?? [];
       const passed = (id: string) => checks.some((check) => check.assertionId === id && check.passed);
-      const taskId = `${split}/${slot.caseId}`;
-      outcomes.push({
-        taskId,
-        arm,
-        repetition: slot.repetition,
-        passed: episode.status === "completed" && episode.score?.verdict === "pass",
-      });
-      answers.push({
-        taskId,
-        arm,
-        repetition: slot.repetition,
-        passed:
-          episode.status === "completed" &&
-          checks.filter((check) => check.dimension === "ground_truth").every((check) => check.passed),
-      });
+      safety[variant] ??= 0;
+      safety[variant] += checks.filter(
+        (check) => check.dimension === "safety" && !check.passed && !DECOY_CHECK.test(check.assertionId),
+      ).length;
       const discovery = slot.case.input.discovery !== false;
-      tally(arm, discovery ? "discovery" : "mention-load", passed("skill-loaded"));
+      tally(variant, discovery ? "discovery" : "mention-load", passed("skill-loaded"));
       if (discovery) {
-        tally(
-          arm,
-          "decoy-avoided",
-          checks.filter((check) => /^decoy-\d+-not-loaded$/u.test(check.assertionId)).every((check) => check.passed),
-        );
+        tally(variant, "decoy-avoided", checks.filter((check) => DECOY_CHECK.test(check.assertionId)).every((check) => check.passed));
       }
       for (const id of ["overlay-applied", "overlay-absent"]) {
         const check = checks.find((candidate) => candidate.assertionId === id);
-        if (check) tally(arm, "overlay", check.passed);
+        if (check) tally(variant, "overlay", check.passed);
       }
       const output = (record(episode.output) ?? {}) as {
         skillStaging?: SkillStagingObservation;
@@ -892,14 +1049,14 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
           ...(output.skillStaging ? { staging: output.skillStaging } : {}),
           ...(output.learnedContext ? { context: output.learnedContext } : {}),
         })) {
-          const entry = ((delivery[arm] ??= {})[result.kind] ??= { pass: 0, total: 0 });
+          const entry = ((delivery[variant] ??= {})[result.kind] ??= { pass: 0, total: 0 });
           entry.total += 1;
           if (result.passed) entry.pass += 1;
         }
       }
-      if (arm === "learned") {
+      if (variant === learnedId) {
         citationRuns.push({
-          passed: episode.status === "completed" && episode.score?.verdict === "pass",
+          passed: outcome.task,
           cited: (output.learnedContext?.citedRuleKeys ?? []).map((key) =>
             key.replace(/^source:[^:]+:/u, "source:default:"),
           ),
@@ -907,20 +1064,56 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
       }
     }
     const citations = summarizeCitations(citationRuns);
-    const subset = (rows: ArmTaskOutcome[], prefix: string) =>
-      rows.filter((row) => row.taskId.startsWith(prefix));
-    const comparisons = {
-      testLearnedVsBaseline: pairedArmComparison(subset(outcomes, "test/"), "learned", "baseline"),
-      testLearnedVsPlacebo: pairedArmComparison(subset(outcomes, "test/"), "learned", "placebo"),
-      testAnswerLearnedVsBaseline: pairedArmComparison(subset(answers, "test/"), "learned", "baseline"),
-      controlLearnedVsBaseline: pairedArmComparison(subset(outcomes, "control/"), "learned", "baseline"),
-      holdoutLearnedVsBaseline: pairedArmComparison(subset(outcomes, "holdout/"), "learned", "baseline"),
-    };
+    const compare = (split: string, name: LearningOutcome, treatment: string, control: string) =>
+      pairedArmComparison(
+        rows[name].filter((row) => row.taskId.startsWith(`${split}/`)),
+        treatment,
+        control,
+        `${split}/${name}/${treatment}/${control}`,
+      );
+    const comparisons: Record<string, Record<string, Record<LearningOutcome, PairedArmComparison>>> = {};
+    const pairs: Array<[string, string]> = [
+      ...variantIds.filter((id) => baselineId && id !== baselineId).map((id): [string, string] => [id, baselineId!]),
+      ...(learnedId && placeboId ? [[learnedId, placeboId] as [string, string]] : []),
+    ];
+    for (const [treatment, control] of pairs) {
+      const key = `${treatment} vs ${control}`;
+      comparisons[key] = Object.fromEntries(
+        SPLITS.map((split) => [
+          split,
+          Object.fromEntries(OUTCOMES.map((name) => [name, compare(split, name, treatment, control)])),
+        ]),
+      ) as Record<string, Record<LearningOutcome, PairedArmComparison>>;
+    }
+    const versus = (treatment?: string, control?: string) =>
+      treatment && control ? comparisons[`${treatment} vs ${control}`]?.test : undefined;
+    const noise = routingNoise(versus(aaId, baselineId)?.routing);
+    const learnedIds = variantIds.filter((id) => variantArm.get(id) === "learned");
+    const gates = learningGates({
+      answerVsBaseline: versus(learnedId, baselineId)?.answer,
+      routingVsBaseline: versus(learnedId, baselineId)?.routing,
+      answerVsPlacebo: versus(learnedId, placeboId)?.answer,
+      noise,
+      leaks: artifact?.leaks.length ?? 0,
+      safetyFailures: learnedIds.reduce((total, id) => total + (safety[id] ?? 0), 0),
+    });
+    const shipped = gates.every((gate) => gate.passed === true);
     const report = {
-      schemaVersion: "openneko.eval.skill-learning-report/v2",
+      schemaVersion: "openneko.eval.skill-learning-report/v3",
       runId,
       configId: loaded.config.id,
       learnKey: artifact?.learnKey ?? null,
+      arms: Object.fromEntries(
+        loaded.config.variants.map((variant) => [
+          variant.id,
+          { arm: armOf(variant), kinds: learningKinds(variant) ?? (armOf(variant) === "learned" ? "all" : null) },
+        ]),
+      ),
+      gates: { verdict: shipped ? "pass" : "fail", gates },
+      outcomes: counts,
+      infraFailures: infra,
+      agentFailures: failures,
+      safetyFailures: safety,
       learnStage: artifact
         ? {
             runs: artifact.learnRuns.length,
@@ -957,27 +1150,61 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
       citations,
       comparisons,
     };
-    const pct = (value: number) => `${(100 * value).toFixed(1)}%`;
+    const pct = pctText;
+    const rate = (entry?: { pass: number; total: number }) =>
+      entry && entry.total ? `${entry.pass}/${entry.total} (${pct(entry.pass / entry.total)})` : "n/a";
     const line = (label: string, comparison: PairedArmComparison) =>
       `| ${label} | ${comparison.tasks} | ${pct(comparison.treatmentPassRate)} | ${pct(comparison.controlPassRate)} | ${pct(comparison.meanDifference)} | ${
         comparison.ci95 ? `${pct(comparison.ci95.low)} to ${pct(comparison.ci95.high)}` : "n/a"
       } |`;
-    const rate = (entry?: { pass: number; total: number }) =>
-      entry && entry.total ? `${entry.pass}/${entry.total} (${pct(entry.pass / entry.total)})` : "n/a";
+    const failureText = (entry?: Record<string, number>) =>
+      entry && Object.keys(entry).length
+        ? Object.entries(entry)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([type, count]) => `${type} ${count}`)
+            .join(", ")
+        : "none";
+    const learnedVsBaseline = versus(learnedId, baselineId);
     const markdown = [
       `# Skill learning report: ${loaded.config.id}`,
       "",
       `Run ${runId}. Learn key ${artifact?.learnKey ?? "none"}.`,
       "",
-      "Task pass needs every gating check: the answer, skill discovery, decoy avoidance and the query path.",
+      `## Shipping gates: ${shipped ? "PASS" : "FAIL"}`,
       "",
-      "| Comparison | Tasks | Treatment | Control | Mean paired difference | Bootstrap 95% CI |",
-      "| --- | ---: | ---: | ---: | ---: | --- |",
-      line("Test: learned vs baseline", comparisons.testLearnedVsBaseline),
-      line("Test: learned vs placebo", comparisons.testLearnedVsPlacebo),
-      line("Test answers only: learned vs baseline", comparisons.testAnswerLearnedVsBaseline),
-      line("Mention control: learned vs baseline", comparisons.controlLearnedVsBaseline),
-      line("Held-out: learned vs baseline", comparisons.holdoutLearnedVsBaseline),
+      `Test split, ${learnedId ?? "learned"} against ${baselineId ?? "baseline"} and ${placeboId ?? "placebo"}. Each cell is the mean paired difference with its bootstrap 95% CI.`,
+      "",
+      "| Gate | Rule | Observed | Result |",
+      "| --- | --- | --- | --- |",
+      ...gates.map(
+        (gate) =>
+          `| ${gate.hypothesis} ${gate.id} | ${gate.rule} | ${gate.observed} | ${gate.passed === null ? "n/a" : gate.passed ? "PASS" : "FAIL"} |`,
+      ),
+      "",
+      "Answer correct: every ground-truth check passes. Routing: the target skill loaded and every decoy stayed unloaded. Full task pass: every gating check, including the answer contract and the query path.",
+      "",
+      "Provider faults (provider_http_*, provider_blocked) count as missing data. They leave both the rates and the pairs; a task stays in a pair while each arm keeps one valid repetition. Agent failures count as fails on all three outcomes.",
+      "",
+      "## Outcomes per arm, test split",
+      "",
+      "| Arm | Kinds | Answer correct | Routing | Full task pass | Provider faults | Agent failures | Safety failures |",
+      "| --- | --- | --- | --- | --- | --- | --- | ---: |",
+      ...variantIds.map((id) => {
+        const test = counts[id]?.test;
+        return `| ${id} | ${report.arms[id]?.kinds ?? "-"} | ${rate(test?.answer)} | ${rate(test?.routing)} | ${rate(test?.task)} | ${failureText(infra[id])} | ${failureText(failures[id])} | ${safety[id] ?? 0} |`;
+      }),
+      "",
+      "## Paired comparisons",
+      "",
+      "| Comparison | Split | Outcome | Tasks | Treatment | Control | Mean paired difference | Bootstrap 95% CI |",
+      "| --- | --- | --- | ---: | ---: | ---: | ---: | --- |",
+      ...Object.entries(comparisons).flatMap(([key, bySplit]) =>
+        SPLITS.flatMap((split) =>
+          OUTCOMES.flatMap((name) =>
+            bySplit[split]![name].tasks > 0 ? [line(`${key} | ${split} | ${OUTCOME_LABEL[name]}`, bySplit[split]![name])] : [],
+          ),
+        ),
+      ),
       "",
       "| Arm | Discovery (target skill loaded) | Decoys avoided | Skill loaded when named | Overlay check |",
       "| --- | --- | --- | --- | --- |",
@@ -1001,7 +1228,7 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
             "",
           ]
         : []),
-      "Learned content that reached the run, per kind (staged skill body and description, prompt notes and playbook):",
+      "Learned content that reached the run, per kind (staged skill body and description, prompt notes and playbook). Kinds an arm leaves out are checked for absence:",
       "",
       "| Arm | Skill rules | Description | Data notes | Org playbook |",
       "| --- | --- | --- | --- | --- |",
@@ -1022,12 +1249,21 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
             "",
           ]
         : []),
-      "Per task, test split, learned against baseline:",
-      "",
-      ...comparisons.testLearnedVsBaseline.perTask.map(
-        (task) => `- ${task.taskId}: ${pct(task.treatmentPassRate)} against ${pct(task.controlPassRate)}`,
-      ),
-      "",
+      ...(learnedVsBaseline
+        ? [
+            `Per task, test split, ${learnedId} against ${baselineId} (answer, routing, full task):`,
+            "",
+            ...learnedVsBaseline.answer.perTask.map((task) => {
+              const of = (name: LearningOutcome) => learnedVsBaseline[name].perTask.find((entry) => entry.taskId === task.taskId);
+              const cell = (name: LearningOutcome) => {
+                const entry = of(name);
+                return entry ? `${pct(entry.treatmentPassRate)}/${pct(entry.controlPassRate)}` : "n/a";
+              };
+              return `- ${task.taskId}: answer ${cell("answer")}, routing ${cell("routing")}, task ${cell("task")}`;
+            }),
+            "",
+          ]
+        : []),
     ].join("\n");
     const directory = store.runDir(runId);
     await mkdir(directory, { recursive: true });
@@ -1051,6 +1287,17 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
       if (loaded.config.variants.some((variant) => armOf(variant) !== "baseline") && !learnedVariant) {
         throw new EvalEnvironmentError("learned and placebo arms need one learned variant", "variant_invalid");
       }
+      if (learnedVariant) {
+        const shared = contentDigest(sharedLearning(learningSettings(learnedVariant, loaded.configPath)));
+        for (const variant of learnedVariants) {
+          if (contentDigest(sharedLearning(learningSettings(variant, loaded.configPath))) !== shared) {
+            throw new EvalEnvironmentError(
+              `learned variant ${variant.id} must share the learning settings of ${learnedVariant.id}; only kinds may differ`,
+              "variant_invalid",
+            );
+          }
+        }
+      }
       const preflight = await inner.preflight(driverContext);
       await learning();
       return {
@@ -1067,7 +1314,7 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
                 descriptions,
                 sourceNotes,
                 orgPlaybook,
-              }))(learningOutput(armOf(variant))),
+              }))(learningOutput(variant)),
             },
           ]),
         ),
@@ -1089,7 +1336,7 @@ export function createSkillLearningDriver(context: { loaded: LoadedEval; plan: E
         ...execution,
         output: {
           ...output,
-          learning: learningOutput(arm),
+          learning: learningOutput(slotContext.slot.variant),
         },
       } satisfies EvalExecution;
     },

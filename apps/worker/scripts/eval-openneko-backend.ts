@@ -92,6 +92,7 @@ import {
 import {
   EvalEnvironmentError,
   EvalTaskError,
+  EvalTransientError,
   assertionsForPhase,
   createScore,
   contentDigest,
@@ -1014,6 +1015,22 @@ async function runGrantDiagnostic(binding: RunBinding): Promise<string> {
   }
 }
 
+/** Runs a read-only preflight call again after a transient failure, waiting backoffMs, then twice that. */
+export async function withPreflightRetry<T>(
+  run: () => Promise<T>,
+  attempts = 3,
+  backoffMs = 1_000,
+): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await run();
+    } catch (cause) {
+      if (attempt >= attempts) throw cause;
+      await new Promise((done) => setTimeout(done, backoffMs * 2 ** (attempt - 1)));
+    }
+  }
+}
+
 async function verifyBrokerGraphjinActorPolicy(
   broker: AgentBrokerHandle,
   binding: RunBinding,
@@ -1044,7 +1061,7 @@ async function verifyBrokerGraphjinActorPolicy(
     >,
     boundary: string,
   ): Promise<void> => {
-    const tools = await actorControlPlane.listGraphjinTools(identity).catch(async (cause) => {
+    const tools = await withPreflightRetry(() => actorControlPlane.listGraphjinTools(identity)).catch(async (cause) => {
       throw new EvalEnvironmentError(
         `${boundary} tool discovery preflight failed: ${cause instanceof Error ? cause.message : String(cause)}; ${await runGrantDiagnostic(binding)}`,
         "graphjin_api_operation_not_discoverable",
@@ -1073,10 +1090,12 @@ async function verifyBrokerGraphjinActorPolicy(
       return;
     }
 
-    const result = await actorControlPlane.callGraphjinTool({
-      ...identity,
-      ...selectionReadRequest(),
-    });
+    const result = await withPreflightRetry(() =>
+      actorControlPlane.callGraphjinTool({
+        ...identity,
+        ...selectionReadRequest(),
+      }),
+    );
     assertSelectionReadResult(result, `${boundary} actor`);
   };
 
@@ -1698,10 +1717,24 @@ function diagnostic(passed: boolean, failure: string): string {
   return passed ? "ok" : failure;
 }
 
+/** Provider faults a fresh attempt may clear: retryable HTTP codes and a blocked Gemini finish reason. */
+export function transientProviderFailureType(error?: string): string | null {
+  if (!error) return null;
+  const http = /\bmodel_http_(429|500|502|503|504)\b/u.exec(error);
+  if (http) return `provider_http_${http[1]}`;
+  return /finish reason was blocked/iu.test(error) ? "provider_blocked" : null;
+}
+
+export function isProviderFailureType(errorType: string | undefined): boolean {
+  return typeof errorType === "string" && errorType.startsWith("provider_");
+}
+
 export function backendAgentFailureType(
   status: string,
   error?: string,
 ): string {
+  const provider = transientProviderFailureType(error);
+  if (provider) return provider;
   if (
     error &&
     (detectUpstreamError(error) ||
@@ -3742,6 +3775,9 @@ export function createOpenNekoBackendDriver(
           const errorType = backendAgentFailureType(result.status, result.error);
           if (errorType === "agent_infrastructure_failure") {
             throw new EvalEnvironmentError(result.error!, errorType);
+          }
+          if (isProviderFailureType(errorType)) {
+            throw new EvalTransientError(result.error!, errorType, partialExecution());
           }
           throw new EvalTaskError(
             result.error || `agent ended with ${result.status}`,

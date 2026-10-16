@@ -121,7 +121,7 @@ describeIfDb("learning lineage", () => {
       JSON.stringify({
         rationale: "fan-out",
         operations: [
-          { op: "add", text: "Aggregate order headers before joining detail rows.", evidenceRunIds: runIds.slice(0, 2), evidenceQuotes: [QUOTE] },
+          { op: "add", text: "Aggregate order headers before joining sales_order_detail rows.", evidenceRunIds: runIds.slice(0, 2), evidenceQuotes: [QUOTE] },
           { op: "add", text: "Always trust the first total.", evidenceRunIds: runIds.slice(0, 1), evidenceQuotes: [QUOTE] },
         ],
       });
@@ -133,7 +133,7 @@ describeIfDb("learning lineage", () => {
     const promoted = lessons.find((l) => l.detail.verdict === "promoted")!;
     const dropped = lessons.find((l) => l.detail.verdict === "dropped")!;
     expect(promoted).toMatchObject({
-      text: "Aggregate order headers before joining detail rows.",
+      text: "Aggregate order headers before joining sales_order_detail rows.",
       status: "active",
       detail: { targetKind: "source", targetId: sourceId, ruleId: "L1", version: result.eventId, enteredVersion: result.eventId },
     });
@@ -147,7 +147,7 @@ describeIfDb("learning lineage", () => {
     expect(dismissed).toEqual({ dismissed: true, removedRule: true });
     const dir = learnTargetDir(getOrgAgentRoot(orgId), target);
     expect(await readRulesAt(dir)).toEqual([]);
-    expect(await readRejectedAt(dir)).toContain("aggregate order headers before joining detail rows.");
+    expect(await readRejectedAt(dir)).toContain("aggregate order headers before joining sales_order_detail rows.");
     expect((await readLearnedNotes(getOrgAgentRoot(orgId), target))?.status).toBe("disabled");
     const [after] = await listLessons(orgId, { status: "dismissed" });
     expect(after).toMatchObject({ id: promoted.id, detail: { dismissedBy: "admin-1" } });

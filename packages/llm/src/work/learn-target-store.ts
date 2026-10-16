@@ -153,7 +153,7 @@ export async function lastLearnAttemptAt(orgId: string, target: LearnTarget): Pr
         eq(skill_learn_event.org_id, orgId),
         targetWhere(target),
         sql`(${skill_learn_event.decision} in ('applied', 'rejected', 'rolled_back')
-          or ${skill_learn_event.reason} in ('no_proposal', 'no_grounded_rules', 'no_change'))`,
+          or ${skill_learn_event.reason} in ('no_proposal', 'no_grounded_rules', 'no_change', 'described_other_skill'))`,
       ),
     )
     .orderBy(desc(skill_learn_event.created_at))
@@ -651,10 +651,24 @@ export async function runNonSkillTargetLearn(input: {
         skillBaseHash,
         currentDescription,
         catalog,
+        claimSkill: async (skillName) => {
+          const other = learnTargetKey({ kind: "skill-description", id: skillName });
+          const locked = await tx.execute<{ locked: boolean }>(
+            sql`select pg_try_advisory_xact_lock(hashtext(${orgId}), hashtext(${other})) as locked`,
+          );
+          return locked.rows[0]?.locked === true;
+        },
       }));
-    return finish(orgId, orgRoot, target, result, tx);
+    if (!result.target || learnTargetKey(result.target) === key) return finish(orgId, orgRoot, target, result, tx);
+    const { cohortDigest, ...changed } = result.trace;
+    await finish(orgId, orgRoot, target, {
+      decision: "skipped",
+      reason: "described_other_skill",
+      trace: { ...changed, cohortDigest, skipReason: `applied to ${result.target.id}` },
+    }, tx);
+    return finish(orgId, orgRoot, result.target, { ...result, trace: changed }, tx);
   });
-  await afterLearn(orgId, target, learned, now);
+  await afterLearn(orgId, learned.target ?? target, learned, now);
   return learned;
 }
 

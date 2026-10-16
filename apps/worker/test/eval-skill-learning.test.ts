@@ -11,6 +11,10 @@ import {
 import {
   armInstallPlan,
   collectLearnTargets,
+  episodeOutcome,
+  learningGates,
+  learningKinds,
+  routingNoise,
   learningGate,
   runLearnStage,
   stubSkillLearnLlm,
@@ -190,6 +194,80 @@ describe("skill-learning targets", () => {
   });
 });
 
+describe("skill-learning ablation", () => {
+  it("installs only the kinds an ablation arm names", () => {
+    expect(armInstallPlan(ARTIFACT, "learned", undefined, ["skill"])).toEqual({
+      skill_overlays: { "aw-x": "learned/skill/aw-x" },
+      skill_descriptions: {},
+      learned_notes: {},
+    });
+    expect(armInstallPlan(ARTIFACT, "learned", undefined, ["skill-description"])).toEqual({
+      skill_overlays: {},
+      skill_descriptions: { "aw-x": "learned/skill-description/aw-x" },
+      learned_notes: {},
+    });
+  });
+
+  it("reads and validates learning.kinds", () => {
+    const variant = (kinds: unknown) =>
+      ({ id: "v", settings: { arm: "learned", learning: { corpus: "c", kinds } } }) as never;
+    expect(learningKinds({ id: "v", settings: { arm: "learned", learning: { corpus: "c" } } } as never)).toBeNull();
+    expect(learningKinds(variant(["skill", "skill"]))).toEqual(["skill"]);
+    expect(() => learningKinds(variant([]))).toThrow(/kinds/u);
+    expect(() => learningKinds(variant(["rules"]))).toThrow(/kinds/u);
+  });
+});
+
+describe("skill-learning outcomes and gates", () => {
+  const check = (assertionId: string, dimension: string, passed: boolean) => ({ assertionId, dimension, passed });
+  const episode = (checks: ReturnType<typeof check>[], verdict = "fail") =>
+    ({ status: "completed", score: { verdict, checks } }) as never;
+
+  it("splits answer, routing and full task pass, and sets provider faults apart", () => {
+    const right = [check("current-value", "ground_truth", true), check("exact-window", "ground_truth", true)];
+    const routed = [check("skill-loaded", "method", true), check("decoy-1-not-loaded", "safety", true)];
+    expect(episodeOutcome(episode([...right, ...routed], "pass"))).toEqual({
+      answer: true, routing: true, task: true, infra: null, failure: null,
+    });
+    expect(
+      episodeOutcome(episode([...right, check("skill-loaded", "method", true), check("decoy-2-not-loaded", "safety", false)])),
+    ).toMatchObject({ answer: true, routing: false, task: false });
+    expect(episodeOutcome(episode([check("current-value", "ground_truth", false), ...routed]))).toMatchObject({
+      answer: false, routing: true,
+    });
+    expect(episodeOutcome({ status: "failed", errorType: "provider_blocked" } as never)).toEqual({
+      answer: false, routing: false, task: false, infra: "provider_blocked", failure: null,
+    });
+    expect(episodeOutcome({ status: "failed", errorType: "agent_tool_call_limit_exceeded" } as never)).toMatchObject({
+      infra: null, failure: "agent_tool_call_limit_exceeded",
+    });
+  });
+
+  it("passes the gates only when every CI clears its bound", () => {
+    const comparison = (low: number, high: number) =>
+      ({ treatment: "a", control: "b", tasks: 3, treatmentPassRate: 0, controlPassRate: 0, meanDifference: (low + high) / 2, ci95: { low, high }, perTask: [] });
+    expect(routingNoise()).toEqual({ value: 0.05, source: "default 5 points (no A/A arm)" });
+    expect(routingNoise(comparison(-0.08, 0.02)).value).toBe(0.08);
+    const pass = learningGates({
+      answerVsBaseline: comparison(0.01, 0.2),
+      routingVsBaseline: comparison(-0.05, 0.1),
+      answerVsPlacebo: comparison(0.02, 0.1),
+      noise: routingNoise(),
+      leaks: 0,
+      safetyFailures: 0,
+    });
+    expect(pass.map((gate) => gate.passed)).toEqual([true, true, true, true]);
+    const fail = learningGates({
+      answerVsBaseline: comparison(0, 0.2),
+      routingVsBaseline: comparison(-0.06, 0.1),
+      noise: routingNoise(),
+      leaks: 1,
+      safetyFailures: 0,
+    });
+    expect(fail.map((gate) => gate.passed)).toEqual([false, false, null, false]);
+  });
+});
+
 describe("skill-learning delivery", () => {
   const staging: SkillStagingObservation = {
     skill: "aw-x",
@@ -268,6 +346,22 @@ describe("skill-learning delivery", () => {
         context: observeLearnedContext("plain prompt", { descriptions: {}, source: null, org: null }, []),
       }).every((entry) => entry.passed),
     ).toBe(true);
+  });
+
+  it("checks that an ablation arm received only its kinds", () => {
+    const rulesOnly: LearningOutput = { ...learned, kinds: ["skill"], descriptions: {}, sourceNotes: null, orgPlaybook: null };
+    const plain = observeLearnedContext("plain prompt", { descriptions: {}, source: null, org: null }, []);
+    expect(
+      verifyLearnedDelivery({ learning: rulesOnly, staging: { ...staging, stagedDescriptionDigest: "sha256:base" }, context: plain }),
+    ).toEqual([
+      { kind: "skill-description", passed: true, diagnostic: "ok" },
+      { kind: "source", passed: true, diagnostic: "ok" },
+      { kind: "org", passed: true, diagnostic: "ok" },
+      { kind: "skill", passed: true, diagnostic: "ok" },
+    ]);
+    expect(
+      verifyLearnedDelivery({ learning: rulesOnly, staging, context }).filter((entry) => !entry.passed).map((entry) => entry.diagnostic),
+    ).toEqual(["staged_description_differs_from_base", "prompt_has_learned_data_notes", "prompt_has_org_playbook"]);
   });
 
   it("compares citing with non-citing runs per rule", () => {

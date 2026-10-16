@@ -95,7 +95,7 @@ describe("runSkillDiscovery", () => {
           action: "extend",
           rationale: "aw-sales covers this",
           skillName: "aw-sales",
-          rule: "For growth rankings, aggregate each window before comparing territories.",
+          rule: "For growth rankings, aggregate each window per territory before comparing them.",
           evidenceRunIds: allRuns,
           evidenceQuotes: quote,
         }),

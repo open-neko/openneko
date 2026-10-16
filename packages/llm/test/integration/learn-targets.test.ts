@@ -1,7 +1,7 @@
 // Typed learning targets share the event log, settlement, batch trigger,
 // brakes and rollback guards; these tests run the target-keyed queries.
 
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -27,6 +27,7 @@ import {
   recordLearnedRuleUse,
 } from "../../src/work/learn-target-store";
 import { loadRunEvidence } from "../../src/work/skill-learn-evidence";
+import { readLearnedDescription } from "../../src/work/skill-overlay";
 import { readRejectedAt, readRulesAt, writeRulesAt } from "../../src/work/skill-learn-playbook";
 import { runLearnForTarget, setSkillLearnOrgEnabled } from "../../src/work/skill-learn-store";
 import { createWorkRun, createWorkThread } from "../../src/work/store";
@@ -174,7 +175,7 @@ describeIfDb("typed learning targets", () => {
         operations: [
           {
             op: "add",
-            text: "Aggregate order headers before joining detail rows.",
+            text: "Aggregate order headers before joining sales_order_detail rows.",
             evidenceRunIds: runIds.slice(0, 2),
             evidenceQuotes: [QUOTE],
           },
@@ -186,7 +187,7 @@ describeIfDb("typed learning targets", () => {
     expect(result.decision).toBe("applied");
     expect(prompts[0]).toContain("data source: default");
     const notes = await readLearnedNotes(getOrgAgentRoot(orgId), target);
-    expect(notes?.body).toBe(`- [source:${sourceId}:L1] Aggregate order headers before joining detail rows.`);
+    expect(notes?.body).toBe(`- [source:${sourceId}:L1] Aggregate order headers before joining sales_order_detail rows.`);
 
     const [event] = await db()
       .select()
@@ -204,6 +205,51 @@ describeIfDb("typed learning targets", () => {
     const again = await runLearnForTarget({ orgId, target, settlementMs: 0, llm, now, guardIntervalMs: 0 });
     expect(again.reason).toBe("below_repeat_threshold");
     expect(prompts).toHaveLength(1);
+  });
+
+  it("writes a learned description on the serving skill and logs the attempt on the queued one", async () => {
+    const { orgId } = await newOrg("learn-desc-route");
+    const skillsRoot = join(getOrgAgentRoot(orgId), "skills");
+    const skills: Record<string, [string, string]> = {
+      "aw-stock": ["Count units on hand for products of one color.", "Count units on hand for products of one color."],
+      "aw-rank": ["Ranks territories.", "Rank sales territories by revenue for a chosen period."],
+    };
+    for (const [name, [description, guide]] of Object.entries(skills)) {
+      await mkdir(join(skillsRoot, name), { recursive: true });
+      await writeFile(join(skillsRoot, name, "SKILL.md"), `---\nname: ${name}\ndescription: ${description}\n---\n\n${guide}\n`, "utf8");
+    }
+    const runIds: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      runIds.push((await makeRun(orgId, { at: at(i), status: "failed", graphql: true, skills: ["aw-stock"] })).runId);
+    }
+    const prompts: string[] = [];
+    const description = "Rank sales territories by revenue for a chosen period.";
+    const result = await runLearnForTarget({
+      orgId,
+      target: { kind: "skill-description", id: "aw-stock" },
+      settlementMs: 0,
+      guardIntervalMs: 0,
+      now: new Date(Date.UTC(2026, 9, 2)),
+      llm: async (prompt) => {
+        prompts.push(prompt);
+        return JSON.stringify({ skill: "aw-rank", description, evidenceRunIds: runIds.slice(0, 3), evidenceQuotes: [QUOTE] });
+      },
+    });
+    expect(prompts[0]).toContain("## skill: aw-rank");
+    expect(result).toMatchObject({ decision: "applied", target: { kind: "skill-description", id: "aw-rank" } });
+    expect(await readLearnedDescription(getOrgAgentRoot(orgId), "aw-rank")).toMatchObject({ status: "applied", description });
+    expect(await readLearnedDescription(getOrgAgentRoot(orgId), "aw-stock")).toBeNull();
+
+    const events = await db()
+      .select()
+      .from(skill_learn_event)
+      .where(and(eq(skill_learn_event.org_id, orgId), eq(skill_learn_event.target_kind, "skill-description")));
+    const queued = events.find((event) => event.target_id === "aw-stock");
+    const changed = events.find((event) => event.target_id === "aw-rank");
+    expect(queued).toMatchObject({ decision: "skipped", reason: "described_other_skill" });
+    expect(queued?.cohort_digest).toMatch(/^[0-9a-f]{64}$/);
+    expect(changed).toMatchObject({ decision: "applied", skill_name: "skill-description:aw-rank", cohort_digest: null });
+    expect(await lastLearnAttemptAt(orgId, { kind: "skill-description", id: "aw-stock" })).toEqual(queued?.created_at);
   });
 
   it("enforces the daily proposer budget and promotion cap per org", async () => {

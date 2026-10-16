@@ -83,6 +83,7 @@ export function checkLearnedDescription(text: string): string | null {
   if (hits.length > 0) return hits.map((hit) => hit.detail).join("; ");
   if (AUTHORITY_RE.test(description)) return "description mentions tools, permissions or policy";
   if (ADDRESSES_AGENT_RE.test(description)) return "description gives the agent instructions";
+  if (NEGATION_RE.test(description)) return "description names requests the skill excludes";
   return null;
 }
 
@@ -94,29 +95,33 @@ export function checkOrgRule(text: string): string | null {
 const DESCRIPTION_STOPWORDS = new Set(
   "about above after again against also because been before being below between both but by can could does doing down during each from further have having here into itself just more most must only other over same should some such than that their them then there these they this those through under until very what when where which while will with within without would your one two three agent skill skills request requests report reports data".split(" "),
 );
-const NEGATION_RE = /\b(?:not for|not used for|except|excluding)\b/i;
+const NEGATION_RE = /\b(?:not (?:used )?for|except|excluding|instead of|rather than|do not use)\b/i;
 
-function descriptionTerms(text: string): string[] {
+export function descriptionTerms(text: string): string[] {
   return (text.toLowerCase().match(/[a-z][a-z0-9-]{3,}/g) ?? [])
     .map((word) => word.replace(/(?:ies)$/, "y").replace(/(?<!s)s$/, ""))
     .filter((word) => !DESCRIPTION_STOPWORDS.has(word));
 }
 
-/**
- * A learned description may only use terms the skill already supports: its
- * guide or its current description. Terms after a "Not for" clause name what
- * the skill excludes, so they need no support.
- */
+/** A learned description may only use terms the skill already supports: its guide or its current description. */
 export function checkDescriptionSupported(input: {
   description: string;
   currentDescription: string;
   skillGuide: string;
 }): string | null {
-  const match = NEGATION_RE.exec(input.description);
-  const claimed = match ? input.description.slice(0, match.index) : input.description;
   const supported = new Set(descriptionTerms(`${input.currentDescription}\n${input.skillGuide}`));
-  const unsupported = [...new Set(descriptionTerms(claimed))].filter((term) => !supported.has(term));
+  const unsupported = [...new Set(descriptionTerms(input.description))].filter((term) => !supported.has(term));
   return unsupported.length > 0
     ? `description claims what the skill guide does not cover: ${unsupported.slice(0, 6).join(", ")}`
     : null;
+}
+
+/** Frontmatter quotes, curly quotes, case and spacing do not change a description. */
+export function descriptionKey(text: string): string {
+  return unquoteDescription(text).toLowerCase();
+}
+
+export function unquoteDescription(text: string): string {
+  const flat = text.replace(/[\u201c\u201d\u201e]/g, '"').replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, " ").trim();
+  return flat.replace(/^(["'])(.*)\1$/, "$2").trim();
 }

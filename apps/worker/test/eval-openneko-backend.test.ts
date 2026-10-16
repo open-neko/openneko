@@ -10,6 +10,7 @@ import type { AgentEvent } from "@neko/llm";
 import { workSemanticDigest, type WorkSemanticTraceEvent } from "@neko/llm/work";
 import {
   backendAgentFailureType,
+  withPreflightRetry,
   backendUsageMeasurements,
   assertCompactionPrompt,
   backendExplicitModelLimits,
@@ -193,6 +194,38 @@ describe("OpenNeko backend scorer", () => {
     for (const error of ["tool call limit exceeded", "HTTP 400 invalid tool arguments", "request aborted", "answer was 503"]) {
       expect(backendAgentFailureType("failed", error)).toBe("agent_failed");
     }
+  });
+
+  it("classifies Ax provider codes and blocked finishes as retryable provider failures", () => {
+    expect(backendAgentFailureType("failed", "ax run failed: model_http_503")).toBe("provider_http_503");
+    expect(backendAgentFailureType("failed", "ax run failed: model_http_429: slow down")).toBe("provider_http_429");
+    expect(
+      backendAgentFailureType(
+        "failed",
+        "ax run failed: model_failed: Unable to fix validation error: Gemini finish reason was blocked: MALFORMED_FUNCTION_CALL",
+      ),
+    ).toBe("provider_blocked");
+    expect(backendAgentFailureType("failed", "ax run failed: model_http_400")).toBe("agent_failed");
+    expect(backendAgentFailureType("failed", "agent executor did not return runtime code field: javascriptCode")).toBe("agent_failed");
+  });
+
+  it("retries a failed preflight read with backoff and gives up after the last attempt", async () => {
+    let calls = 0;
+    await expect(
+      withPreflightRetry(async () => {
+        calls += 1;
+        if (calls < 3) throw new Error("No data source is available to this run.");
+        return "tools";
+      }, 3, 1),
+    ).resolves.toBe("tools");
+    calls = 0;
+    await expect(
+      withPreflightRetry(async () => {
+        calls += 1;
+        throw new Error("down");
+      }, 3, 1),
+    ).rejects.toThrow("down");
+    expect(calls).toBe(3);
   });
 
   it("passes composition only when answer truth and trusted method evidence agree", () => {

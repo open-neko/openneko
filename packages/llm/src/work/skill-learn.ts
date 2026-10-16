@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { runWentWrong, type RunEvidence } from "./skill-learn-evidence";
-import { renderKeyedRules } from "./learn-target";
+import { renderKeyedRules, type LearnTarget } from "./learn-target";
 import {
   applyPlaybookOperations,
   readLearnedRules,
@@ -64,6 +64,8 @@ export type SkillLearnResult = {
   diff?: string;
   /** The skill_learn_event row this result wrote. */
   eventId?: string;
+  /** The target this result changed, when the engine chose one other than the queued target. */
+  target?: LearnTarget;
 };
 
 export type SkillUsageSnapshot = {

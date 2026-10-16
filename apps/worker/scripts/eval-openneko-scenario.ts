@@ -68,6 +68,7 @@ import {
 import {
   EvalEnvironmentError,
   EvalTaskError,
+  EvalTransientError,
   contentDigest,
   type EvalExecution,
   type EvalScore,
@@ -891,6 +892,9 @@ export async function executeScenario(input: ScenarioExecutionInput): Promise<Ev
           const errorType = input.failureType(result.status, result.error);
           if (errorType === "agent_infrastructure_failure") {
             throw new EvalEnvironmentError(result.error ?? errorType, errorType);
+          }
+          if (errorType.startsWith("provider_")) {
+            throw new EvalTransientError(result.error ?? errorType, errorType, partial());
           }
           throw new EvalTaskError(result.error || `agent ended with ${result.status}`, errorType, partial());
         }

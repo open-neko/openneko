@@ -156,7 +156,7 @@ describe("Magento refunds and fulfillment skill paths", () => {
         operations: [
           {
             op: "add",
-            text: "Prefer parent items when product structures would double-count.",
+            text: "Prefer parent items when creditmemo product structures would double-count.",
             evidenceRunIds: ["run-0", "run-1", "run-2", "run-3", "run-4"],
             evidenceQuotes: ["child rows double-count the parent"],
           },

@@ -8,6 +8,7 @@ import {
   EvalTaskError,
   EvalEnvironmentError,
   EvalStateStore,
+  EvalTransientError,
   contentDigest,
   createEvalPlan,
   loadEval,
@@ -210,6 +211,39 @@ describe("durable eval execution", () => {
     expect(await readFile(store.episodePath(runId!, plan.slots[0]!.key), "utf8")).toBe(saved);
     expect((await readFile(paths.callLog, "utf8")).trim().split("\n")).toHaveLength(3);
     expect((await readFile(paths.resetLog, "utf8")).trim().split("\n").filter((key) => key === plan.slots[1]!.key)).toHaveLength(10);
+  });
+
+  it("retries transient provider faults with backoff, then records an infra episode without pausing", async () => {
+    const paths = await fixture();
+    const loaded = await loadEval(paths.configPath);
+    const plan = createEvalPlan(loaded);
+    const driver = createFixtureDriver({ loaded, plan, callLog: paths.callLog, resetLog: paths.resetLog });
+    const execute = driver.execute.bind(driver);
+    const calls = new Map<string, number>();
+    driver.execute = async (context) => {
+      const count = (calls.get(context.slot.key) ?? 0) + 1;
+      calls.set(context.slot.key, count);
+      if (context.slot.key === plan.slots[0]!.key && count < 3) {
+        throw new EvalTransientError("ax run failed: model_http_503", "provider_http_503");
+      }
+      if (context.slot.key === plan.slots[1]!.key) {
+        throw new EvalTransientError("Gemini finish reason was blocked: MALFORMED_FUNCTION_CALL", "provider_blocked");
+      }
+      return execute(context);
+    };
+    const started = Date.now();
+    const result = await runEvaluation({
+      loaded, plan, driver, cwd: process.cwd(), stateRoot: paths.stateRoot,
+      resultsRoot: paths.resultsRoot, promote: false, transientRetry: { retries: 3, backoffMs: 5 },
+    });
+    expect(Date.now() - started).toBeGreaterThanOrEqual(5 + 10 + 20);
+    expect(result.manifest.status).toBe("complete");
+    const store = new EvalStateStore(paths.stateRoot);
+    expect(await store.readEpisode(result.runId, plan.slots[0]!.key)).toMatchObject({ status: "completed", attempt: 3 });
+    expect(calls.get(plan.slots[1]!.key)).toBe(4);
+    expect(await store.readEpisode(result.runId, plan.slots[1]!.key)).toMatchObject({
+      status: "failed", attempt: 4, errorType: "provider_blocked",
+    });
   });
 
   it("retains private partial measurements and evidence for task failures", async () => {

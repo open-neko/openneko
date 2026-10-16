@@ -1,6 +1,6 @@
 schema_version: openneko.eval/v1
 id: openneko-skill-learning-flash-lite
-description: Skill learning track T19 with the Ax backend and Gemini 3.5 Flash-Lite. The learned arm runs the learn split once, learns every target the runs feed (skill rules, data notes, descriptions and the org playbook), and pins each file by digest. All arms then run the test split and the held-out templates five times.
+description: Skill learning track T19 with the Ax backend and Gemini 3.5 Flash-Lite. The learned arm runs the learn split once, learns every target the runs feed (skill rules, data notes, descriptions and the org playbook), and pins each file by digest. The learned-rules and learned-descriptions arms apply only that kind of the same pinned artifact. All arms then run the test split and the held-out templates five times.
 adapter: openneko.skill-learning
 semantics: { ref: ../semantics.yaml }
 pricing: { ref: ../pricing/standard-2026-07-09.yaml }
@@ -44,6 +44,12 @@ variants:
         repetitions: 1
         min_repeats: 3
         learner: live
+  - id: learned-rules
+    extends: learned
+    settings: { learning: { kinds: [skill] } }
+  - id: learned-descriptions
+    extends: learned
+    settings: { learning: { kinds: [skill-description] } }
   - id: placebo
     extends: baseline
     settings:

@@ -16,7 +16,10 @@ function run(runId: string, channel: Parameters<typeof buildRunEvidence>[0]["cha
     status: "completed",
     request: "Total refunds last month.",
     answer: "Refunds were high.",
-    events: [],
+    events: [
+      { type: "tool_start", id: "1", name: "graphql", input: { query: "sales_creditmemo { grand_total }" } },
+      { type: "tool_end", id: "1", result: { rows: 3 } },
+    ],
     channel,
   });
 }
@@ -94,10 +97,10 @@ describe("channel messages in run evidence", () => {
       evidence,
       operations: [
         { op: "add", text: "Partial refunds are double counted.", evidenceRunIds: ["r1", "r2", "r3"], evidenceQuotes: [CLAIM] },
-        { op: "add", text: "Read partial refunds from credit memos.", evidenceRunIds: ["r1", "r2"], evidenceQuotes: [FEEDBACK] },
+        { op: "add", text: "Read partial refunds from sales_creditmemo.", evidenceRunIds: ["r1", "r2"], evidenceQuotes: [FEEDBACK] },
       ],
     });
-    expect(update.rules.map((rule) => rule.text)).toEqual(["Read partial refunds from credit memos."]);
+    expect(update.rules.map((rule) => rule.text)).toEqual(["Read partial refunds from sales_creditmemo."]);
     expect(update.dropped).toEqual([
       expect.objectContaining({ reason: "grounded in 0 run(s); needs 2" }),
     ]);

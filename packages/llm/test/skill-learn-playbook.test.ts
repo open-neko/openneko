@@ -62,7 +62,10 @@ describe("operator follow-up", () => {
       request: "How many orders shipped last month?",
       answer: "1,204 orders.",
       followUp: "That is wrong, it should exclude cancelled orders.",
-      events: [],
+      events: [
+        { type: "tool_start", id: "1", name: "graphql", input: { query: "orders { status }" } },
+        { type: "tool_end", id: "1", result: { rows: 3 } },
+      ],
     });
     expect(corrected.digest).toContain("operator follow-up: That is wrong");
     const result = applyPlaybookOperations({
@@ -70,7 +73,7 @@ describe("operator follow-up", () => {
       operations: [
         {
           op: "add",
-          text: "Exclude cancelled orders from order counts.",
+          text: "Exclude orders whose status is cancelled from order counts.",
           evidenceRunIds: ["run-d", "run-e"],
           evidenceQuotes: ["it should exclude cancelled orders"],
         },
@@ -85,17 +88,56 @@ describe("applyPlaybookOperations", () => {
   it("adds a rule grounded in two runs", () => {
     const result = applyPlaybookOperations({
       current: [],
-      operations: [add("Aggregate order headers before joining detail rows.")],
+      operations: [add("Aggregate sales_order_header before joining sales_order_detail rows.")],
       evidence: runs,
     });
     expect(result.rules).toEqual([
       {
         id: "L1",
-        text: "Aggregate order headers before joining detail rows.",
+        text: "Aggregate sales_order_header before joining sales_order_detail rows.",
         evidenceRunIds: ["run-a", "run-b"],
         evidenceQuotes: ["joining sales_order_detail inflated totals"],
       },
     ]);
+  });
+
+  it("drops a rule with only generic words", () => {
+    const result = applyPlaybookOperations({
+      current: [],
+      operations: [add("Ensure robust handling of query pagination and tool error limits; verify results carefully.")],
+      evidence: runs,
+    });
+    expect(result.rules).toEqual([]);
+    expect(result.dropped[0]?.reason).toBe("rule is not specific");
+  });
+
+  it("keeps a rule that names a column the cited runs queried", () => {
+    const columnRuns = ["run-a", "run-b"].map((runId) =>
+      buildRunEvidence({
+        runId,
+        status: "completed",
+        request: "Revenue by territory in 2024.",
+        answer: "Northwest leads.",
+        followUp: "Use the order date, the ship date shifts revenue into the next year.",
+        events: [
+          { type: "tool_start", id: "1", name: "graphql", input: { query: "salesorderheader { shipdate totaldue }" } },
+          { type: "tool_end", id: "1", result: { rows: 12 } },
+        ],
+      }),
+    );
+    const result = applyPlaybookOperations({
+      current: [],
+      operations: [
+        {
+          op: "add",
+          text: "Anchor revenue years on orderdate; shipdate moves late-December orders into the next year.",
+          evidenceRunIds: ["run-a", "run-b"],
+          evidenceQuotes: ["the ship date shifts revenue"],
+        },
+      ],
+      evidence: columnRuns,
+    });
+    expect(result.rules).toHaveLength(1);
   });
 
   it("drops a rule supported by one run", () => {
@@ -144,13 +186,13 @@ describe("applyPlaybookOperations", () => {
     const result = applyPlaybookOperations({
       current,
       operations: [
-        { ...add("Revised rule."), op: "update", ruleId: "L1" },
+        { ...add("Revised sales_order_detail rule."), op: "update", ruleId: "L1" },
         { op: "remove", ruleId: "L2" },
-        add("revised   RULE."),
+        add("revised   SALES_ORDER_DETAIL rule."),
       ],
       evidence: runs,
     });
-    expect(result.rules.map((rule) => [rule.id, rule.text])).toEqual([["L1", "Revised rule."]]);
+    expect(result.rules.map((rule) => [rule.id, rule.text])).toEqual([["L1", "Revised sales_order_detail rule."]]);
     expect(result.dropped[0]?.reason).toBe("duplicate rule");
   });
 
@@ -163,7 +205,7 @@ describe("applyPlaybookOperations", () => {
     }));
     const result = applyPlaybookOperations({
       current,
-      operations: [add("One more rule.")],
+      operations: [add("Sum sales_order_detail once per order.")],
       evidence: runs,
     });
     expect(result.rules).toHaveLength(MAX_RULES);

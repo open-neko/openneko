@@ -1,6 +1,6 @@
 schema_version: openneko.eval/v1
 id: openneko-skill-learning-scripted
-description: Provider-free learning control. The scripted backend runs the learn split, the scripted learn runs open a decoy skill before the target, a stub learner writes grounded rules, data notes, an org playbook and descriptions, and the test split runs under the baseline, learned and placebo arms.
+description: Provider-free learning control. The scripted backend runs the learn split, the scripted learn runs open a decoy skill before the target, a stub learner writes grounded rules, data notes, an org playbook and descriptions, and the test split runs under the baseline, learned, learned-rules, learned-descriptions and placebo arms.
 adapter: openneko.skill-learning
 semantics: { ref: ../semantics.yaml }
 suite: { ref: ../suites/openneko-skill-learning-v1.yaml }
@@ -31,6 +31,12 @@ variants:
         min_repeats: 3
         learner: stub
         run_settings: { scripted_decoy_probe: true }
+  - id: learned-rules
+    extends: learned
+    settings: { learning: { kinds: [skill] } }
+  - id: learned-descriptions
+    extends: learned
+    settings: { learning: { kinds: [skill-description] } }
   - id: placebo
     extends: baseline
     settings:

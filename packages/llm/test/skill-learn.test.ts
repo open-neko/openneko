@@ -223,7 +223,7 @@ describe("runSkillLearn", () => {
         operations: [
           {
             op: "add",
-            text: "Prefer parent items when product structures would double-count.",
+            text: "Prefer parent items when product structures would double-count refunds.",
             evidenceRunIds: cohort.slice(0, 3).map((usage) => usage.runId),
             evidenceQuotes: ["child rows double-counted the refund"],
           },

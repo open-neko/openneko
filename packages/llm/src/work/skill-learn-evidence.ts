@@ -13,7 +13,7 @@ import {
   work_thread,
 } from "@neko/db";
 import type { AgentEvent } from "../agent-backend";
-import { LEARNING_THREAD_CHANNEL } from "./learn-target";
+import { GRAPHJIN_TOOL_PATTERN, LEARNING_THREAD_CHANNEL } from "./learn-target";
 import { LEARNED_END, LEARNED_START } from "./skill-overlay";
 import {
   isVerifiedWrong,
@@ -59,6 +59,10 @@ export function runWentWrong(run: RunEvidence): boolean {
 const MAX_STEPS = 40;
 const MAX_INPUT = 240;
 const MAX_RESULT = 320;
+/** Data query steps hold the data lessons, so they keep more of the query and its result. */
+const MAX_DATA_INPUT = 800;
+const MAX_DATA_RESULT = 600;
+const DATA_TOOL_RE = new RegExp(GRAPHJIN_TOOL_PATTERN, "i");
 const MAX_REQUEST = 800;
 const MAX_ANSWER = 1200;
 
@@ -81,16 +85,20 @@ export function buildRunEvidence(input: {
     if (steps.length >= MAX_STEPS) break;
     switch (event.type) {
       case "tool_start":
-        starts.set(event.id, { name: event.name, input: clip(stringify(event.input), MAX_INPUT) });
+        starts.set(event.id, {
+          name: event.name,
+          input: clip(stringify(event.input), DATA_TOOL_RE.test(event.name) ? MAX_DATA_INPUT : MAX_INPUT),
+        });
         break;
       case "tool_end": {
         const start = starts.get(event.id);
         const name = start?.name ?? "tool";
+        const maxResult = DATA_TOOL_RE.test(name) ? MAX_DATA_RESULT : MAX_RESULT;
         if (event.error) {
           toolErrors += 1;
-          steps.push(`${name}(${start?.input ?? ""}) -> error: ${clip(event.error, MAX_RESULT)}`);
+          steps.push(`${name}(${start?.input ?? ""}) -> error: ${clip(event.error, maxResult)}`);
         } else {
-          steps.push(`${name}(${start?.input ?? ""}) -> ${clip(stringify(event.result), MAX_RESULT)}`);
+          steps.push(`${name}(${start?.input ?? ""}) -> ${clip(stringify(event.result), maxResult)}`);
         }
         break;
       }

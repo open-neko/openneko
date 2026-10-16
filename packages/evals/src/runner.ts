@@ -99,6 +99,16 @@ export class EvalTaskError extends Error {
   }
 }
 
+/** A provider fault that a fresh attempt may clear. The runner retries it with backoff, then records a failed episode. */
+export class EvalTransientError extends EvalTaskError {
+  constructor(message: string, errorType = "provider_transient", execution?: EvalExecution) {
+    super(message, errorType, execution);
+    this.name = "EvalTransientError";
+  }
+}
+
+export const DEFAULT_TRANSIENT_RETRY = { retries: 3, backoffMs: 2_000 } as const;
+
 function durationMs(value: string): number {
   const match = /^(\d+)(ms|s|m|h)$/u.exec(value);
   if (!match) throw new Error(`invalid duration ${value}`);
@@ -112,6 +122,7 @@ function errorInfo(cause: unknown): {
   type: string;
   message: string;
   environment: boolean;
+  transient: boolean;
 } {
   const message = redactText(
     cause instanceof Error ? cause.message : String(cause),
@@ -122,6 +133,7 @@ function errorInfo(cause: unknown): {
     type: type.replace(/[^A-Za-z0-9_.:-]+/g, "_").slice(0, 128) || "unknown",
     message,
     environment: !(cause instanceof EvalTaskError),
+    transient: cause instanceof EvalTransientError,
   };
 }
 
@@ -336,6 +348,8 @@ export type RunEvaluationOptions = {
   resumeRunId?: string;
   restart?: boolean;
   promote?: boolean;
+  /** Retries for EvalTransientError, with exponential backoff from backoffMs. */
+  transientRetry?: { retries: number; backoffMs: number };
 };
 
 export async function runEvaluation(options: RunEvaluationOptions): Promise<{
@@ -515,8 +529,10 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
         let attempt = await serial(() =>
           store.nextAttemptNumber(runId, slot.key),
         );
-        const lastAttempt =
+        let lastAttempt =
           attempt + options.loaded.config.defaults.max_attempts - 1;
+        const transientRetry = options.transientRetry ?? DEFAULT_TRANSIENT_RETRY;
+        let transientRetries = 0;
         let terminal: EvalEpisode | undefined;
         inFlight.add(slot.key);
         try {
@@ -655,13 +671,18 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
                   error: info.message,
                 }),
               );
-              if (info.environment && attempt >= lastAttempt) {
+              if (info.transient && transientRetries < transientRetry.retries) {
+                transientRetries += 1;
+                lastAttempt += 1;
+                await new Promise((done) =>
+                  setTimeout(done, transientRetry.backoffMs * 2 ** (transientRetries - 1)),
+                );
+              } else if (info.environment && attempt >= lastAttempt) {
                 throw new EvalEnvironmentError(
                   `run ${runId} paused at ${slot.key}: ${info.message}; resume with --resume ${runId}`,
                   info.type,
                 );
-              }
-              if (!info.environment) {
+              } else if (!info.environment) {
                 terminal = await serial(() =>
                   store.writeEpisode({
                     schemaVersion: "openneko.eval.episode/v1",

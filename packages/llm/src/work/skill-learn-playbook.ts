@@ -175,6 +175,11 @@ export function applyPlaybookOperations(input: {
       continue;
     }
 
+    if (!ruleIsSpecific(text, grounding.runIds.map((id) => evidenceById.get(id)!))) {
+      dropped.push({ operation, reason: "rule is not specific" });
+      continue;
+    }
+
     if (operation.op === "update") {
       const rule = rules.find((candidate) => candidate.id === operation.ruleId);
       if (!rule) {
@@ -220,13 +225,46 @@ export function groundEvidence(
   for (const runId of unique(operation.evidenceRunIds ?? [])) {
     const run = evidenceById.get(runId);
     if (!run) continue;
-    const digest = normalize(run.grounding ?? run.digest);
-    const match = quotes.find((quote) => digest.includes(normalize(quote)));
+    const digest = quoteText(run.grounding ?? run.digest);
+    const match = quotes.find((quote) => digest.includes(quoteText(quote)));
     if (!match) continue;
     runIds.push(runId);
     grounded.push(match);
   }
   return { runIds, quotes: unique(grounded) };
+}
+
+/** Digest text as a model quotes it: JSON escapes read as the characters they stand for. */
+function quoteText(text: string): string {
+  return normalize(text.replace(/\\[nrt]/g, " ").replace(/\\(["'\\/])/g, "$1"));
+}
+
+const STEP_RE = /^step \d+: [^(\n]*\((.*?)\) -> (.*)$/gm;
+const IDENTIFIER_RE = /[a-z][a-z0-9]*(?:[_.][a-z0-9]+)+/gi;
+const INPUT_WORD_RE = /\b[a-z][a-z0-9]{5,}\b/g;
+const GENERIC_TERMS = new Set(
+  "ensure robust handle handling verify carefully always should before result results return returns select variables mutation fragment string number object boolean values".split(" "),
+);
+
+/** Table, column, field and function names the runs' tool inputs and results used. */
+export function concreteRunTerms(runs: readonly RunEvidence[]): Set<string> {
+  const terms = new Set<string>();
+  for (const run of runs) {
+    for (const [, input = "", result = ""] of (run.grounding ?? run.digest).matchAll(STEP_RE)) {
+      for (const match of `${input}\n${result}`.matchAll(IDENTIFIER_RE)) terms.add(match[0].toLowerCase());
+      for (const match of input.matchAll(INPUT_WORD_RE)) {
+        if (!GENERIC_TERMS.has(match[0])) terms.add(match[0]);
+      }
+    }
+  }
+  return terms;
+}
+
+/** A rule must name something concrete the cited runs touched. */
+export function ruleIsSpecific(text: string, runs: readonly RunEvidence[]): boolean {
+  const terms = concreteRunTerms(runs);
+  return (text.toLowerCase().match(IDENTIFIER_RE) ?? []).some((term) => terms.has(term)) ||
+    (text.toLowerCase().match(/[a-z][a-z0-9]*/g) ?? []).some((word) => word.length >= 6 && terms.has(word));
 }
 
 const NUMBER_RE = /\d[\d,]*(?:\.\d+)?/g;
