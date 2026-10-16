@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { RunEvidence } from "./skill-learn-evidence";
 import {
   batchGate,
@@ -44,12 +46,13 @@ import {
 } from "./skill-learn-propose";
 import {
   assertAdditiveLearnedBody,
+  checkDescriptionSupported,
   checkLearnedDescription,
   checkOrgRule,
   MAX_DESCRIPTION_CHARS,
   scanLearnedText,
 } from "./skill-learn-scan";
-import { readLearnedDescription, writeLearnedDescription } from "./skill-overlay";
+import { readLearnedDescription, stripLearnedSection, writeLearnedDescription } from "./skill-overlay";
 
 export type TargetLearnContext = {
   orgId: string;
@@ -207,11 +210,18 @@ async function learnDescription(
 ): Promise<SkillLearnResult> {
   const skillName = ctx.target.id;
   const dir = learnTargetDir(ctx.orgRoot, ctx.target);
+  const skillGuide = stripLearnedSection(
+    (await readFile(join(ctx.orgRoot, "skills", skillName, "SKILL.md"), "utf8").catch(() => "")).replace(
+      /^---\s*\n[\s\S]*?\n---\s*\n?/,
+      "",
+    ),
+  );
   const raw = await callLearnLlm(
     ctx.orgId,
     buildDescriptionLearnPrompt({
       skillName,
       description: ctx.currentDescription ?? "",
+      skillGuide,
       catalog: ctx.catalog ?? [],
       evidence,
       maxChars: MAX_DESCRIPTION_CHARS,
@@ -232,7 +242,9 @@ async function learnDescription(
   if (hits.length > 0) {
     return { decision: "rejected", reason: hits.map((hit) => hit.detail).join("; "), trace };
   }
-  const invalid = checkLearnedDescription(description);
+  const invalid =
+    checkLearnedDescription(description) ??
+    checkDescriptionSupported({ description, currentDescription: ctx.currentDescription ?? "", skillGuide });
   if (invalid) return { decision: "skipped", reason: "no_grounded_rules", trace: { ...trace, skipReason: invalid } };
   if ((await readRejectedAt(dir)).includes(normalizeRuleText(description))) {
     return { decision: "skipped", reason: "no_grounded_rules", trace: { ...trace, skipReason: "description was rolled back earlier" } };

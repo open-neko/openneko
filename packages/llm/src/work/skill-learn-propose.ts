@@ -154,6 +154,7 @@ const DESCRIPTION_SHAPE = `{
 export function buildDescriptionLearnPrompt(input: {
   skillName: string;
   description: string;
+  skillGuide?: string;
   catalog: ReadonlyArray<{ name: string; description: string }>;
   evidence: readonly RunEvidence[];
   maxChars: number;
@@ -161,7 +162,8 @@ export function buildDescriptionLearnPrompt(input: {
   return [
     "You maintain the description of one agent skill. The agent reads skill descriptions to choose which skill guide to load for a request.",
     "Study the settled runs below. They loaded this skill, loaded several skills, or were corrected or failed verification after a skill was loaded.",
-    "Write one revised description that states which requests this skill serves, so the agent loads it for those requests and picks a sibling skill for the others.",
+    "Describe what the skill guide below actually does, in its own terms. The description must stay true to the guide.",
+    "When runs loaded this skill for requests the guide does not serve, end with a short clause that starts with \"Not for\" and names those requests, so the agent picks a sibling skill for them.",
     `Write one plain sentence or two, at most ${input.maxChars} characters, without quotes. Describe the requests and the data; leave out instructions to the agent.`,
     "Cite at least three runs and copy a short exact quote (12 or more characters) from each cited run.",
     'Return {"description": null} when the current description already routes these runs well.',
@@ -169,6 +171,8 @@ export function buildDescriptionLearnPrompt(input: {
     DESCRIPTION_SHAPE,
     `skill: ${input.skillName}`,
     `current description: ${input.description}`,
+    "skill guide:",
+    (input.skillGuide ?? "").slice(0, MAX_SKILL_CHARS),
     "other skills:",
     input.catalog
       .filter((skill) => skill.name !== input.skillName)

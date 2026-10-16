@@ -236,6 +236,7 @@ describe("skill-description target", () => {
 
   it("needs three grounded runs", async () => {
     const orgRoot = await tempDir("neko-desc-");
+    await writeRankGuide(orgRoot);
     const base = { skillBaseHash: "base", currentDescription: "Ranks things." };
     const two = await runTargetLearn(ctx(orgRoot, target, proposal(["run-0", "run-1"]), base));
     expect(two.trace.skipReason).toMatch(/needs 3/);
@@ -445,6 +446,7 @@ describe("learner output is never evidence", () => {
 
   it("keeps rolled-back description text on the blocklist", async () => {
     const orgRoot = await tempDir("neko-desc-block-");
+    await writeRankGuide(orgRoot);
     const target: LearnTarget = { kind: "skill-description", id: "aw-rank" };
     const { rejectTextsAt } = await import("../src/work/skill-learn-playbook");
     const text = "Ranks territories by revenue for a chosen period of time.";
@@ -458,3 +460,39 @@ describe("learner output is never evidence", () => {
     expect(result.trace.skipReason).toMatch(/rolled back earlier/);
   });
 });
+
+describe("checkDescriptionSupported", () => {
+  it("rejects a decoy description rewritten to claim the target's task", async () => {
+    const { checkDescriptionSupported } = await import("../src/work/skill-learn-scan");
+    const guide = "Count units on hand for products of one color from production.productinventory. Sum quantity per color.";
+    expect(
+      checkDescriptionSupported({
+        description:
+          "Count AdventureWorks units sold for products of one color in a day-count window and compare with the window before.",
+        currentDescription: "Count AdventureWorks units on hand for products of one color.",
+        skillGuide: guide,
+      }),
+    ).toMatch(/sold|window/);
+  });
+
+  it("accepts a narrowing with a Not for clause that names other work", async () => {
+    const { checkDescriptionSupported } = await import("../src/work/skill-learn-scan");
+    expect(
+      checkDescriptionSupported({
+        description:
+          "Count AdventureWorks units on hand for products of one color. Not for units sold in a sales window.",
+        currentDescription: "Count AdventureWorks units on hand for products of one color.",
+        skillGuide: "Count units on hand for products of one color from production.productinventory.",
+      }),
+    ).toBeNull();
+  });
+});
+
+async function writeRankGuide(orgRoot: string): Promise<void> {
+  await mkdir(join(orgRoot, "skills", "aw-rank"), { recursive: true });
+  await writeFile(
+    join(orgRoot, "skills", "aw-rank", "SKILL.md"),
+    "---\nname: aw-rank\ndescription: Ranks things.\n---\n\nRank sales territories and regions by revenue or growth for a chosen period of time.\n",
+    "utf8",
+  );
+}
