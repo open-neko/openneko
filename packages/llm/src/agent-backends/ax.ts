@@ -21,8 +21,16 @@ import { registerAgentCanceller } from "../agent-shutdown";
 import type { AxModelRoute } from "../provider-runtime";
 import { A2UI_RENDER_ACP_TITLE, A2UI_RENDER_SERVER_NAME } from "../work/a2ui-contract";
 import { composeLiveOverlays } from "../work/skill-overlay";
+import { splitStablePrompt } from "../prompts/stable-prefix";
 import { extractMarkdownText, outsideFenceText } from "./output";
 import { extractCardFences, extractSurfaceMessages } from "./surface";
+
+/** The org prompt goes in `instructions` and the per-turn rest in `prompt`, so providers cache the org prompt on its own. */
+export function axRunPrompt(prompt: string, userMessage?: string): { instructions?: string; prompt: string } {
+  const { stable, turn } = splitStablePrompt(prompt);
+  const question = userMessage ? `${turn}\n\nCurrent user message:\n${userMessage}` : turn;
+  return stable ? { instructions: stable, prompt: question } : { prompt: question };
+}
 
 /** Trusted, non-secret model settings, resolved on the host from admin settings. */
 export type AxBackendConfig = {
@@ -193,7 +201,7 @@ export class AxBackend implements AgentBackend {
       version: 1,
       run_id: runId,
       input_id: runId,
-      prompt: opts.userMessage ? `${opts.prompt}\n\nCurrent user message:\n${opts.userMessage}` : opts.prompt,
+      ...axRunPrompt(opts.prompt, opts.userMessage),
       ...(opts.userMessage ? { skill_query: opts.userMessage } : {}),
       stream_responses: Boolean(onEvent),
       ...axRunLimits({

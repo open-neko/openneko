@@ -16,7 +16,8 @@ Send exactly one object, at most 16 MiB. Unknown fields fail the run.
 | `version` | integer | Must be `1`. |
 | `run_id` | string | Required. 128 characters or fewer. |
 | `input_id` | string | Required. 128 characters or fewer. |
-| `prompt` | string | Required. It carries the whole turn, including history. Only the model context window bounds it. |
+| `instructions` | string | Optional. The org prompt: the same text for every turn of the org. The model sees it first, as `Instructions:`. |
+| `prompt` | string | Required. The rest of the turn, including history and the user message. The model sees it next, as `Question:`. Without `instructions`, it carries the whole turn. Only the model context window bounds the two together. |
 | `stream_responses` | boolean | Optional. Sends live `answer.delta`, `thought.delta` and `actor.step` events. |
 | `timeout_ms` | integer | Optional. Run wall clock, 1,000 to 1,800,000. Default 540,000 (9 minutes). |
 | `max_actor_steps` | integer | Optional. Actor steps, 1 to 500. Default 25. |
@@ -166,7 +167,18 @@ every route enable the cost ceiling. Each route names the environment variable
 that holds its key. Ax client retries are off; the harness owns fallback.
 
 `reasoning_effort` sets `reasoning_effort` on OpenAI routes and Ax's thinking
-budget on other providers. Anthropic routes use the prompt cache.
+budget on other providers.
+
+Each stage's system prompt is identical for every turn, and `instructions`
+starts the first user message, so every provider sees a stable prefix. On
+`anthropic`, `openai` and `openai-responses` routes the harness turns on Ax's
+context cache and sends `instructions` as a user message of its own with a
+cache mark. Anthropic then puts a `cache_control` breakpoint on it, and OpenAI
+GPT-5.6 and GPT-6 models put an explicit cache breakpoint on it, so a new turn
+of the same org reuses the cached org prompt. Other routes, Gemini included,
+use the provider's implicit prefix cache. The harness does not create Gemini
+cache objects: one process runs one turn, so a cache object would need a
+registry across processes, and Ax creates it outside the metered model calls.
 
 ## OpenNeko entry
 

@@ -6,8 +6,10 @@ import {
   eq,
   gte,
   inArray,
+  isNotNull,
   isNull,
   lt,
+  ne,
   or,
   sql,
   work_message,
@@ -334,17 +336,20 @@ export async function createWorkRun(
   backend: AgentBackendId,
   actor?: RunActor,
   spend: RunSpend = { source: "system" },
+  lineage?: { parentRunId?: string | null },
 ) {
+  const { pinRunStoreVersions, resolveRunLineage } = await import("./run-lineage");
+  const { parentRunId, rootRunId } = await resolveRunLineage(orgId, lineage?.parentRunId);
   const client = await pool().connect();
   let released = false;
   let rows: (typeof work_run.$inferSelect)[];
   try {
     await client.query("begin");
     const inserted = await client.query<typeof work_run.$inferSelect>(
-      `insert into work_run (org_id, thread_id, backend, status, actor_user_id, actor_role)
-       values ($1, $2, $3, 'queued', $4, $5)
+      `insert into work_run (org_id, thread_id, backend, status, actor_user_id, actor_role, parent_run_id, root_run_id)
+       values ($1, $2, $3, 'queued', $4, $5, $6, $7)
        returning *`,
-      [orgId, threadId, backend, actor?.userId ?? null, actor?.role ?? null],
+      [orgId, threadId, backend, actor?.userId ?? null, actor?.role ?? null, parentRunId, rootRunId],
     );
     rows = inserted.rows;
     await admitRunSpend(client, {
@@ -374,7 +379,11 @@ export async function createWorkRun(
       backend,
       actorUserId: actor?.userId ?? null,
       actorRole: actor?.role ?? null,
+      ...(parentRunId ? { parentRunId, rootRunId } : {}),
     },
+  });
+  await pinRunStoreVersions(orgId, rows[0].id, rootRunId).catch((error: unknown) => {
+    console.warn(`[work-run] store version pin failed for run ${rows[0].id}: ${error instanceof Error ? error.message : error}`);
   });
   return rows[0];
 }
@@ -425,8 +434,8 @@ export async function finishWorkRun(
       event: `run:${status}`,
       payload: { status, error },
     });
-    const { enqueueSkillLearnForRun } = await import("./skill-learn-store");
-    await enqueueSkillLearnForRun(rows[0].orgId, runId);
+    const { emitRunSignal } = await import("./run-signal");
+    await emitRunSignal({ kind: "run_finished", orgId: rows[0].orgId, runId });
   }
 }
 
@@ -503,7 +512,32 @@ export async function createWorkMessage(args: {
     })
     .returning();
   await touchWorkThread(args.threadId);
+  if (args.role === "user") void emitFeedbackForPreviousRun(args.orgId, args.threadId, args.runId);
   return rows[0];
+}
+
+/** A person's message settles the thread's previous finished run as feedback. */
+async function emitFeedbackForPreviousRun(orgId: string, threadId: string, runId: string | null): Promise<void> {
+  try {
+    const [previous] = await db()
+      .select({ id: work_run.id })
+      .from(work_run)
+      .where(
+        and(
+          eq(work_run.org_id, orgId),
+          eq(work_run.thread_id, threadId),
+          isNotNull(work_run.finished_at),
+          ...(runId ? [ne(work_run.id, runId)] : []),
+        ),
+      )
+      .orderBy(desc(work_run.finished_at))
+      .limit(1);
+    if (!previous) return;
+    const { emitRunSignal } = await import("./run-signal");
+    await emitRunSignal({ kind: "human_feedback", orgId, runId: previous.id });
+  } catch (error) {
+    console.warn(`[work-message] feedback signal failed for thread ${threadId}: ${error instanceof Error ? error.message : error}`);
+  }
 }
 
 export async function saveAssistantWorkMessage(args: {

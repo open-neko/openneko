@@ -11,6 +11,7 @@ import {
   isNotNull,
   learned_rule_use,
   ne,
+  run_store_version,
   run_verification,
   skill_learn_event,
   skill_learn_org,
@@ -24,6 +25,8 @@ import {
 } from "@neko/db";
 import { recordConfigChange } from "../config-vcs";
 import { runTargetLearn } from "./learn-engine";
+import { recordLearningEventQuietly, utcDay } from "./learn-events";
+import { recordResultLessons } from "./learn-lessons";
 import {
   GRAPHJIN_TOOL_PATTERN,
   LEARNING_THREAD_CHANNEL,
@@ -100,11 +103,20 @@ type Tx = Parameters<Parameters<ReturnType<typeof db>["transaction"]>[0]>[0];
  * Unfinished runs never settle.
  */
 export function runSettledAt(idleMs: number, verifyTimeoutMs = DEFAULT_VERIFY_TIMEOUT_MS) {
+  // A sub-run settles with its root task.
+  return sql<string | null>`case
+    when "work_run"."finished_at" is null then null
+    when "work_run"."root_run_id" is not null then (select ${settledAtFor("root", idleMs, verifyTimeoutMs)}
+      from ${work_run} root where root.id = "work_run"."root_run_id")
+    else ${settledAtFor("work_run", idleMs, verifyTimeoutMs)} end`;
+}
+
+function settledAtFor(alias: string, idleMs: number, verifyTimeoutMs: number) {
   const idle = `${Math.max(0, Math.round(idleMs / 1000))} seconds`;
   const verifyTimeout = `${Math.max(0, Math.round(verifyTimeoutMs / 1000))} seconds`;
   // Drizzle leaves selected columns unqualified on a single-table select, so the
-  // subqueries name work_run explicitly instead of binding to their own tables.
-  const run = (column: "id" | "thread_id" | "finished_at" | "actor_role") => sql.raw(`"work_run"."${column}"`);
+  // subqueries name the run alias explicitly instead of binding to their own tables.
+  const run = (column: "id" | "thread_id" | "finished_at" | "actor_role") => sql.raw(`"${alias}"."${column}"`);
   return sql<string | null>`case when ${run("finished_at")} is null then null else greatest(
     least(
       (select min(m.created_at) from work_message m
@@ -177,13 +189,27 @@ export function learningBrake(orgId: string, target: LearnTarget, now = new Date
       })
       .from(skill_learn_event)
       .where(and(eq(skill_learn_event.org_id, orgId), gte(skill_learn_event.created_at, since)));
-    if ((counts?.proposals ?? 0) >= envLimit("OPENNEKO_LEARN_DAILY_PROPOSALS", DEFAULT_DAILY_PROPOSALS)) {
-      return "daily_learning_budget";
+    const hit =
+      (counts?.proposals ?? 0) >= envLimit("OPENNEKO_LEARN_DAILY_PROPOSALS", DEFAULT_DAILY_PROPOSALS)
+        ? "daily_learning_budget"
+        : (counts?.promotions ?? 0) >= envLimit("OPENNEKO_LEARN_DAILY_PROMOTIONS", DEFAULT_DAILY_PROMOTIONS)
+          ? "daily_promotion_cap"
+          : null;
+    if (hit) {
+      await recordLearningEventQuietly({
+        orgId,
+        kind: "budget_hit",
+        key: utcDay(now),
+        title: "Learning reached its daily limit.",
+        body:
+          hit === "daily_learning_budget"
+            ? "OpenNeko reached today's limit on rule proposals. It starts again tomorrow."
+            : "OpenNeko reached today's limit on new rules. It starts again tomorrow.",
+        mood: "watch",
+        now,
+      });
     }
-    if ((counts?.promotions ?? 0) >= envLimit("OPENNEKO_LEARN_DAILY_PROMOTIONS", DEFAULT_DAILY_PROMOTIONS)) {
-      return "daily_promotion_cap";
-    }
-    return null;
+    return hit;
   };
 }
 
@@ -192,8 +218,9 @@ export async function insertLearnEvent(
   orgId: string,
   target: LearnTarget,
   result: SkillLearnResult,
-): Promise<void> {
-  await tx.insert(skill_learn_event).values({
+): Promise<string> {
+  const versioned = result.decision === "applied" || result.decision === "rolled_back";
+  const [row] = await tx.insert(skill_learn_event).values({
     org_id: orgId,
     skill_name: learnTargetKey(target),
     target_kind: target.kind,
@@ -205,10 +232,11 @@ export async function insertLearnEvent(
     lesson: result.trace.lesson ?? null,
     rationale: result.trace.rationale ?? null,
     diff: result.diff ?? null,
-    model_trace: result.trace,
+    model_trace: versioned && result.rules ? { ...result.trace, versionRules: result.rules } : result.trace,
     decision: result.decision,
     reason: result.reason,
-  });
+  }).returning({ id: skill_learn_event.id });
+  return row!.id;
 }
 
 export async function upsertLearnState(
@@ -240,32 +268,64 @@ export async function upsertLearnState(
     });
 }
 
-/** Rules whose citing runs fail or get corrected clearly more often than comparable runs that did not cite them. */
-export function citedRulesToRollBack(input: {
+type CitedRuleRate = { rule: LearnedRule; key: string; citedBadRate: number; otherBadRate: number };
+
+function citedRuleRates(input: {
   target: LearnTarget;
   rules: readonly LearnedRule[];
   evidence: readonly RunEvidence[];
   citations: ReadonlyArray<{ runId: string; ruleKey: string }>;
   minCitations?: number;
-}): Array<{ rule: LearnedRule; key: string; citedBadRate: number; otherBadRate: number }> {
+}): CitedRuleRate[] {
   const minCitations = input.minCitations ?? MIN_RULE_CITATIONS;
   const bad = (run: RunEvidence) => run.outcome === "failed" || Boolean(run.followUp) || Boolean(run.verifiedWrong);
   const rate = (runs: readonly RunEvidence[]) =>
     runs.length === 0 ? 0 : runs.filter(bad).length / runs.length;
-  const out: Array<{ rule: LearnedRule; key: string; citedBadRate: number; otherBadRate: number }> = [];
+  const out: CitedRuleRate[] = [];
   for (const rule of input.rules) {
     const key = `${input.target.kind}:${input.target.id}:${rule.id}`;
     const citing = new Set(input.citations.filter((c) => c.ruleKey === key).map((c) => c.runId));
     const cited = input.evidence.filter((run) => citing.has(run.runId));
     const others = input.evidence.filter((run) => !citing.has(run.runId));
     if (cited.length < minCitations || others.length < minCitations) continue;
-    const citedBadRate = rate(cited);
-    const otherBadRate = rate(others);
-    if (citedBadRate - otherBadRate >= RULE_REGRESSION_MARGIN) {
-      out.push({ rule, key, citedBadRate, otherBadRate });
-    }
+    out.push({ rule, key, citedBadRate: rate(cited), otherBadRate: rate(others) });
   }
   return out;
+}
+
+/** Rules whose citing runs fail or get corrected clearly more often than comparable runs that did not cite them. */
+export function citedRulesToRollBack(input: Parameters<typeof citedRuleRates>[0]): CitedRuleRate[] {
+  return citedRuleRates(input).filter((r) => r.citedBadRate - r.otherBadRate >= RULE_REGRESSION_MARGIN);
+}
+
+/** Rules whose citing runs go wrong clearly less often than comparable runs. */
+export function citedRulesImproved(input: Parameters<typeof citedRuleRates>[0]): CitedRuleRate[] {
+  return citedRuleRates(input).filter((r) => r.otherBadRate - r.citedBadRate >= RULE_REGRESSION_MARGIN);
+}
+
+/** Writes a target's kept rules and its rendered store; returns the skill overlay when the target is a skill. */
+export async function writeTargetRules(
+  orgRoot: string,
+  target: LearnTarget,
+  kept: readonly LearnedRule[],
+): Promise<{ body: string; overlay?: SkillLearnResult["overlay"] }> {
+  const dir = learnTargetDir(orgRoot, target);
+  await writeRulesAt(dir, kept);
+  const body = renderKeyedRules(target, kept);
+  const status = kept.length > 0 ? ("applied" as const) : ("disabled" as const);
+  if (target.kind === "skill") {
+    const current = await readLearnedOverlay(orgRoot, target.id);
+    if (!current) return { body };
+    const overlay = { ...current, status, body: kept.length > 0 ? body : current.body };
+    await writeLearnedOverlay(orgRoot, overlay);
+    return { body, overlay };
+  }
+  await writeLearnedNotes(orgRoot, { target, status, body });
+  return { body };
+}
+
+function percent(rate: number): string {
+  return `${Math.round(rate * 100)}%`;
 }
 
 /** Puts regressed rules on the blocklist alone; the rest of the version stays. */
@@ -296,24 +356,24 @@ export async function rollBackCitedRules(input: {
   if (citations.length < MIN_RULE_CITATIONS) return null;
   const evidence = await loadRunEvidence(input.orgId, runIds);
   const culprits = citedRulesToRollBack({ target: input.target, rules, evidence, citations });
-  if (culprits.length === 0) return null;
+  if (culprits.length === 0) {
+    for (const helped of citedRulesImproved({ target: input.target, rules, evidence, citations })) {
+      await recordLearningEventQuietly({
+        orgId: input.orgId,
+        kind: "outcome_change",
+        key: helped.key,
+        title: "A learned rule is helping.",
+        body: `Runs that used rule ${helped.key} went wrong ${percent(helped.citedBadRate)} of the time. Other runs went wrong ${percent(helped.otherBadRate)} of the time. The rule: ${helped.rule.text}`,
+        mood: "good",
+      });
+    }
+    return null;
+  }
 
   const dropped = new Set(culprits.map((culprit) => culprit.rule.id));
   const kept = rules.filter((rule) => !dropped.has(rule.id));
   await rejectTextsAt(dir, culprits.map((culprit) => culprit.rule.text));
-  await writeRulesAt(dir, kept);
-  const body = renderKeyedRules(input.target, kept);
-  const status = kept.length > 0 ? ("applied" as const) : ("disabled" as const);
-  let overlay: SkillLearnResult["overlay"];
-  if (input.target.kind === "skill") {
-    const current = await readLearnedOverlay(input.orgRoot, input.target.id);
-    if (current) {
-      overlay = { ...current, status, body: kept.length > 0 ? body : current.body };
-      await writeLearnedOverlay(input.orgRoot, overlay);
-    }
-  } else {
-    await writeLearnedNotes(input.orgRoot, { target: input.target, status, body });
-  }
+  const { body, overlay } = await writeTargetRules(input.orgRoot, input.target, kept);
   return {
     decision: "rolled_back",
     reason: culprits
@@ -332,16 +392,20 @@ export async function rollBackCitedRules(input: {
 
 type VersionEvent = { id: string; createdAt: Date; decision: string };
 
-/** Each run saw the target version that the latest apply or rollback before it produced. */
-export function assignTargetVersions<T extends { createdAt: Date }>(
-  runs: readonly T[],
-  versions: readonly VersionEvent[],
-): Array<T & { contentHash: string }> {
+/**
+ * Each run saw the version it pinned at start. A run with no pin saw the
+ * version the latest apply or rollback before its task started produced.
+ */
+export function assignTargetVersions<
+  T extends { createdAt: Date; versionAt?: Date | null; pinnedVersion?: string | null },
+>(runs: readonly T[], versions: readonly VersionEvent[]): Array<T & { contentHash: string }> {
   const ordered = [...versions].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   return runs.map((run) => {
+    if (run.pinnedVersion) return { ...run, contentHash: run.pinnedVersion };
+    const at = (run.versionAt ?? run.createdAt).getTime();
     let version = "v0";
     for (const event of ordered) {
-      if (event.createdAt.getTime() <= run.createdAt.getTime()) version = event.id;
+      if (event.createdAt.getTime() <= at) version = event.id;
       else break;
     }
     return { ...run, contentHash: version };
@@ -374,7 +438,9 @@ export async function targetRuns(input: {
   verifyTimeoutMs?: number;
   since?: Date;
   now?: Date;
-}): Promise<Array<{ runId: string; createdAt: Date; settledAt: Date | null }>> {
+}): Promise<
+  Array<{ runId: string; createdAt: Date; settledAt: Date | null; versionAt: Date; pinnedVersion: string | null }>
+> {
   const now = input.now ?? new Date();
   const conditions = [
     eq(work_run.org_id, input.orgId),
@@ -404,6 +470,11 @@ export async function targetRuns(input: {
       runId: work_run.id,
       createdAt: work_run.created_at,
       settledAt: runSettledAt(input.settlementMs, input.verifyTimeoutMs),
+      versionAt: sql<string>`coalesce((select root.created_at from ${work_run} root
+        where root.id = "work_run"."root_run_id"), "work_run"."created_at")`,
+      pinnedVersion: sql<string | null>`(select v.version from ${run_store_version} v
+        where v.run_id = "work_run"."id" and v.target_kind = ${input.target.kind}
+          and v.target_id = ${input.target.id})`,
     })
     .from(work_run)
     .where(and(...conditions))
@@ -413,6 +484,8 @@ export async function targetRuns(input: {
     runId: row.runId,
     createdAt: row.createdAt,
     settledAt: row.settledAt ? new Date(row.settledAt) : null,
+    versionAt: new Date(row.versionAt),
+    pinnedVersion: row.pinnedVersion ?? null,
   }));
 }
 
@@ -544,7 +617,7 @@ export async function runNonSkillTargetLearn(input: {
   const orgEnabled = orgRow?.enabled === true;
   const targetEnabled = stateRow ? stateRow.enabled : true;
 
-  return db().transaction(async (tx) => {
+  const learned = await db().transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${orgId}), hashtext(${key}))`);
     const guarded =
       orgEnabled && targetEnabled && guardDue(orgId, target, now, input.guardIntervalMs)
@@ -581,6 +654,25 @@ export async function runNonSkillTargetLearn(input: {
       }));
     return finish(orgId, orgRoot, target, result, tx);
   });
+  await afterLearn(orgId, target, learned, now);
+  return learned;
+}
+
+/** Audit after a learner result commits: lessons, and an event for a rollback. */
+export async function afterLearn(orgId: string, target: LearnTarget, result: SkillLearnResult, now = new Date()): Promise<void> {
+  await recordResultLessons(orgId, target, result, now);
+  if (result.decision === "rolled_back") {
+    const what = target.kind === "skill-description" ? `routing description for ${target.id}` : `${target.kind} ${target.id}`;
+    await recordLearningEventQuietly({
+      orgId,
+      kind: "rolled_back",
+      key: `${target.kind}:${target.id}:${utcDay(now)}`,
+      title: `OpenNeko rolled back learned guidance for ${what}.`,
+      body: `Runs that used it went wrong more often. ${result.reason}.`,
+      mood: "watch",
+      now,
+    });
+  }
 }
 
 async function finish(
@@ -590,8 +682,9 @@ async function finish(
   result: SkillLearnResult,
   tx?: Tx,
 ): Promise<SkillLearnResult> {
+  let eventId = "";
   const write = async (t: Tx) => {
-    await insertLearnEvent(t, orgId, target, result);
+    eventId = await insertLearnEvent(t, orgId, target, result);
     if (result.decision === "applied" || result.decision === "rolled_back") {
       await upsertLearnState(t, orgId, target, {
         base: result.trace.baseHash ?? null,
@@ -606,7 +699,7 @@ async function finish(
   };
   if (tx) await write(tx);
   else await db().transaction(write);
-  return result;
+  return { ...result, eventId };
 }
 
 /** Records the learned rules a run cited, for per-rule credit. Keys that name no live rule are ignored. */

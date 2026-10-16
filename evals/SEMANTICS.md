@@ -124,6 +124,10 @@ All current `AgentEvent` variants map here or to runtime/action semantics:
 | `WORK-SKILL-LEARN` | Learned skill guidance comes only from grounded run evidence, passes safety and leakage checks, accumulates across versions, and improves verified outcomes on held-out sibling tasks without harming other families | learning track: grounding + leak + held-out sibling oracle |
 | `WORK-SKILL-DISCOVER` | Offline discovery turns repeated runs with no skill into one grounded new or extended skill, prefers extending a catalog skill, stays under the learned-skill cap, avoids near-duplicates and archives idle learned skills | scenario: catalog state + later unprompted skill load |
 | `WORK-CONFIG-VCS` | Snapshot/history/restore/promote/adopt of config artifacts preserve semantic content and attribution | repository/DB oracle |
+| `COLLAB-ANSWER-REUSE` | An orchestrator reuses another orchestrator's answer only when it is fresh, in scope, and verified again for the asking principal | cross-thread reuse oracle |
+| `COLLAB-CONFLICTING-CLAIMS` | Conflicting agent claims in a channel are settled from data or shown as a conflict; no claim becomes a learned rule without run evidence | conflict fixture + lesson oracle |
+| `COLLAB-CREDIT-ASSIGNMENT` | Outcomes credit the root task, its sub-runs, and the rules each run cited, so a learned change is judged on the runs that used it | lineage + citation oracle |
+| `COLLAB-CHANNEL-HYGIENE` | Orchestrator channels carry task messages only; learning internals, rule ids, and lesson chatter never appear there | channel transcript scan |
 
 ## 5. Workflow, observation, watcher, and action semantics
 
@@ -209,6 +213,8 @@ All current `AgentEvent` variants map here or to runtime/action semantics:
 | `SEC-AUDIT-CHAIN` | Append-only chain sequence/hash verifies and exposes logging failure independently | tamper test |
 | `SEC-BEHAVIOR` | Excessive action/memory/control-plane rates raise the expected alert without false cross-org attribution | fake clock + DB |
 | `SEC-DEPLOYMENT-PROFILE` | Solo/team/org/hardened defaults change controls coherently while the always-on floor remains | profile matrix |
+| `SEC-COLLAB-ENTITLEMENT` | One orchestrator's private data and sub-agent results never reach another orchestrator, a shared channel, or a shared learned store beyond the asking principal's access | cross-principal channel negative E2E |
+| `SEC-COLLAB-INJECTION` | Instructions injected into one orchestrator's sources or channel messages do not spread to other orchestrators, sub-agents, or learned stores | adversarial contagion corpus |
 | `SEC-TELEMETRY` | Content mode, redaction, cardinality, tenant hashing, retention, and export controls are enforced | telemetry conformance |
 
 ## 9. Operability and recovery semantics

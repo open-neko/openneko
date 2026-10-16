@@ -33,6 +33,7 @@ export type PlaybookApplyResult = {
   applied: PlaybookOperation[];
   dropped: DroppedOperation[];
   unsafe: string[];
+  unsafeOperations: DroppedOperation[];
 };
 
 export async function readLearnedRules(
@@ -120,6 +121,7 @@ export function applyPlaybookOperations(input: {
   const applied: PlaybookOperation[] = [];
   const dropped: DroppedOperation[] = [];
   const unsafe: string[] = [];
+  const unsafeOperations: DroppedOperation[] = [];
   let nextId = nextRuleNumber(rules);
 
   for (const operation of input.operations) {
@@ -141,7 +143,9 @@ export function applyPlaybookOperations(input: {
     }
     const hits = scanLearnedText(text);
     if (hits.length > 0) {
-      unsafe.push(`${text.slice(0, 80)}: ${hits.map((hit) => hit.detail).join("; ")}`);
+      const detail = hits.map((hit) => hit.detail).join("; ");
+      unsafe.push(`${text.slice(0, 80)}: ${detail}`);
+      unsafeOperations.push({ operation, reason: `unsafe: ${detail}` });
       continue;
     }
     if (rejected.has(normalize(text))) {
@@ -201,7 +205,7 @@ export function applyPlaybookOperations(input: {
     applied.push(operation);
   }
 
-  return { rules, applied, dropped, unsafe };
+  return { rules, applied, dropped, unsafe, unsafeOperations };
 }
 
 export function groundEvidence(
@@ -216,7 +220,7 @@ export function groundEvidence(
   for (const runId of unique(operation.evidenceRunIds ?? [])) {
     const run = evidenceById.get(runId);
     if (!run) continue;
-    const digest = normalize(run.digest);
+    const digest = normalize(run.grounding ?? run.digest);
     const match = quotes.find((quote) => digest.includes(normalize(quote)));
     if (!match) continue;
     runIds.push(runId);

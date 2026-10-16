@@ -6,7 +6,9 @@ import {
   desc,
   eq,
   gte,
+  isNotNull,
   lte,
+  observation,
   skill_learn_event,
   skill_learn_org,
   skill_learn_state,
@@ -35,6 +37,7 @@ import {
 import { loadRunEvidence, type RunEvidence } from "./skill-learn-evidence";
 import type { LearnTarget } from "./learn-target";
 import {
+  afterLearn,
   guardDue,
   insertLearnEvent,
   lastLearnAttemptAt,
@@ -46,10 +49,21 @@ import {
   runNonSkillTargetLearn,
   runSettledAt,
   upsertLearnState,
+  writeTargetRules,
 } from "./learn-target-store";
+import { recordLearningEventQuietly } from "./learn-events";
+import { getLesson, recordLessons } from "./learn-lessons";
+import { learnTargetDir, learnTargetKey, learnTargetVcsPath, isLearnTargetKind } from "./learn-target";
+import type { RunSignal } from "./run-signal";
 
 export { runSettledAt };
-import { readLearnedRules, rejectLearnedRules } from "./skill-learn-playbook";
+import {
+  normalizeRuleText,
+  readLearnedRules,
+  readRulesAt,
+  rejectLearnedRules,
+  rejectTextsAt,
+} from "./skill-learn-playbook";
 import {
   recordAnswerChecks,
   runRecompute,
@@ -61,7 +75,9 @@ import type { SkillLearnLlm } from "./skill-learn-propose";
 import { learnedVersionRegressed, scoreSkillLearnWindow } from "./skill-learn-score";
 import {
   fingerprintEffectiveSkill,
+  readLearnedDescription,
   readLearnedOverlay,
+  writeLearnedDescription,
   writeLearnedOverlay,
 } from "./skill-overlay";
 
@@ -179,7 +195,7 @@ export async function runSkillLearnForOrgSkill(input: {
   const skillEnabled = stateRow ? stateRow.enabled : true;
   const now = input.now ?? new Date();
 
-  return db().transaction(async (tx) => {
+  const learned = await db().transaction(async (tx) => {
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtext(${input.orgId}), hashtext(${input.skillName}))`,
     );
@@ -204,7 +220,7 @@ export async function runSkillLearnForOrgSkill(input: {
         loadEvidence: (runIds) => loadRunEvidence(input.orgId, runIds),
       }));
 
-    await insertLearnEvent(tx, input.orgId, target, result);
+    const eventId = await insertLearnEvent(tx, input.orgId, target, result);
 
     if (
       (result.decision === "applied" || result.decision === "rolled_back") &&
@@ -224,8 +240,10 @@ export async function runSkillLearnForOrgSkill(input: {
       });
     }
 
-    return result;
+    return { ...result, eventId };
   });
+  await afterLearn(input.orgId, target, learned, now);
+  return learned;
 }
 
 async function rollBackSkillRules(input: {
@@ -359,6 +377,126 @@ export async function enqueueSkillLearnForRun(orgId: string, runId: string): Pro
   }
 }
 
+/**
+ * The runs a signal about one run settles: a root and its finished sub-runs.
+ * A sub-run settles with its root, so a sub-run alone settles only once its
+ * root has finished.
+ */
+export async function runsSettledWith(orgId: string, runId: string): Promise<string[]> {
+  const [run] = await db()
+    .select({ id: work_run.id, rootRunId: work_run.root_run_id })
+    .from(work_run)
+    .where(and(eq(work_run.org_id, orgId), eq(work_run.id, runId)))
+    .limit(1);
+  if (!run) return [];
+  if (run.rootRunId && run.rootRunId !== run.id) {
+    const [root] = await db()
+      .select({ finishedAt: work_run.finished_at })
+      .from(work_run)
+      .where(eq(work_run.id, run.rootRunId))
+      .limit(1);
+    return root?.finishedAt ? [run.id] : [];
+  }
+  const subRuns = await db()
+    .select({ id: work_run.id })
+    .from(work_run)
+    .where(and(eq(work_run.org_id, orgId), eq(work_run.root_run_id, run.id), isNotNull(work_run.finished_at)))
+    .orderBy(work_run.created_at);
+  return [run.id, ...subRuns.map((row) => row.id)];
+}
+
+/** The learning consumer of run signals: a finished run feeds its targets, and feedback re-queues them. */
+export async function deliverLearningSignal(signal: RunSignal): Promise<string[]> {
+  const runIds = await runsSettledWith(signal.orgId, signal.runId);
+  for (const runId of runIds) {
+    if (signal.kind === "run_finished") {
+      await enqueueSkillLearnForRun(signal.orgId, runId);
+    } else if ((await getSkillLearnOrgSettings(signal.orgId)).enabled) {
+      await enqueueLearnTargets(signal.orgId, runId);
+    }
+  }
+  return runIds;
+}
+
+/**
+ * An admin dismisses a lesson. Its text goes on the target's blocklist, and a
+ * live rule with that text leaves the store as a new rolled-back version.
+ */
+export async function dismissLesson(input: {
+  orgId: string;
+  lessonId: string;
+  userId?: string | null;
+}): Promise<{ dismissed: boolean; removedRule: boolean } | null> {
+  const lesson = await getLesson(input.orgId, input.lessonId);
+  if (!lesson) return null;
+  const kind = lesson.detail.targetKind;
+  if (!isLearnTargetKind(kind)) return null;
+  const target: LearnTarget = { kind, id: lesson.detail.targetId };
+  const orgRoot = getOrgAgentRoot(input.orgId);
+  const dir = learnTargetDir(orgRoot, target);
+  const normalized = normalizeRuleText(lesson.text);
+  const removedRule = await db().transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${input.orgId}), hashtext(${learnTargetKey(target)}))`,
+    );
+    await rejectTextsAt(dir, [lesson.text]);
+    let result: SkillLearnResult | null = null;
+    if (target.kind === "skill-description") {
+      const learned = await readLearnedDescription(orgRoot, target.id);
+      if (learned?.status === "applied" && normalizeRuleText(learned.description) === normalized) {
+        await writeLearnedDescription(orgRoot, { ...learned, status: "disabled" });
+        result = {
+          decision: "rolled_back",
+          reason: "an admin dismissed the lesson",
+          rules: [],
+          trace: { contentHash: `${learnedBodyHash(learned.description)}:disabled` },
+        };
+      }
+    } else {
+      const rules = await readRulesAt(dir);
+      const removed = rules.filter((rule) => normalizeRuleText(rule.text) === normalized);
+      if (removed.length > 0) {
+        const kept = rules.filter((rule) => !removed.includes(rule));
+        const { body, overlay } = await writeTargetRules(orgRoot, target, kept);
+        result = {
+          decision: "rolled_back",
+          reason: "an admin dismissed the lesson",
+          ...(overlay ? { overlay } : {}),
+          rules: kept,
+          trace: {
+            ...(overlay ? { baseHash: overlay.baseHash } : {}),
+            contentHash: learnedBodyHash(body),
+            rules: removed,
+          },
+        };
+      }
+    }
+    if (result) {
+      await insertLearnEvent(tx, input.orgId, target, result);
+      await upsertLearnState(tx, input.orgId, target, {
+        base: result.trace.baseHash ?? null,
+        learned: result.trace.contentHash ?? "",
+      });
+    }
+    await tx
+      .update(observation)
+      .set({
+        status: "dismissed",
+        consumer_user_id: input.userId ?? null,
+        detail: sql`${observation.detail} || ${JSON.stringify({ dismissedBy: input.userId ?? null })}::jsonb`,
+        updated_at: new Date(),
+      })
+      .where(and(eq(observation.org_id, input.orgId), eq(observation.id, lesson.id)));
+    return Boolean(result);
+  });
+  await recordConfigChange({
+    workspaceRoot: orgRoot,
+    paths: [learnTargetVcsPath(target)],
+    message: `Dismissed learned lesson for ${target.kind}: ${target.id}`,
+  });
+  return { dismissed: true, removedRule };
+}
+
 /** The queued recomputation for a sampled run; afterwards the run's targets learn from the verdict. */
 export async function runLearnVerifyForRun(input: {
   orgId: string;
@@ -373,7 +511,7 @@ export async function runLearnVerifyForRun(input: {
   return result;
 }
 
-async function enqueueLearnTargets(orgId: string, runId: string): Promise<void> {
+export async function enqueueLearnTargets(orgId: string, runId: string): Promise<void> {
   const { targets, noSkill } = await learnTargetsForRun(orgId, runId);
   if (targets.length === 0) return;
   const { enqueue, QUEUE } = await import("@neko/db/jobs");
@@ -493,7 +631,7 @@ export async function runSkillDiscoveryForOrg(input: {
     llm: input.llm ?? (await defaultDiscoveryLlm(input.orgId)),
   });
 
-  await db().insert(skill_learn_event).values({
+  const [discoveryEvent] = await db().insert(skill_learn_event).values({
     org_id: input.orgId,
     skill_name: DISCOVERY_EVENT_SKILL,
     target_kind: "discovery",
@@ -504,7 +642,41 @@ export async function runSkillDiscoveryForOrg(input: {
     model_trace: { ...result, archived },
     decision: result.decision,
     reason: result.reason,
-  });
+  }).returning({ id: skill_learn_event.id });
+  if ((result.decision === "created" || result.decision === "extended") && result.skillName && result.lesson) {
+    await recordLessons({
+      orgId: input.orgId,
+      target: { kind: "skill", id: result.skillName },
+      lessons: [
+        {
+          text: result.lesson,
+          verdict: "promoted",
+          reason: result.reason,
+          runIds: result.evidenceRunIds,
+          quotes: [],
+          ...(result.decision === "extended"
+            ? { ruleId: result.rules?.find((rule) => rule.text === result.lesson)?.id }
+            : {}),
+        },
+      ],
+      decision: result.decision,
+      eventId: discoveryEvent?.id ?? null,
+      now,
+    }).catch((error: unknown) => {
+      console.warn(`[skill-discover] lesson record failed: ${error instanceof Error ? error.message : error}`);
+    });
+  }
+  if (result.decision === "created" && result.skillName) {
+    await recordLearningEventQuietly({
+      orgId: input.orgId,
+      kind: "skill_created",
+      key: result.skillName,
+      title: `OpenNeko learned a new skill: ${result.skillName}.`,
+      body: `It found the same procedure in ${result.evidenceRunIds.length} settled runs and wrote it as a skill. ${result.lesson ?? ""}`.trim(),
+      mood: "good",
+      now,
+    });
+  }
   if (result.decision === "created" || result.decision === "extended" || archived.length > 0) {
     await recordConfigChange({
       workspaceRoot: orgRoot,
@@ -526,9 +698,10 @@ export async function runSkillDiscoveryForOrg(input: {
 }
 
 async function defaultDiscoveryLlm(orgId: string): Promise<SkillLearnLlm> {
-  const [{ ax }, { buildLlm }] = await Promise.all([
+  const [{ ax }, { buildLlm }, { recordLearnerSpend }] = await Promise.all([
     import("@ax-llm/ax"),
     import("../llm"),
+    import("./learn-spend"),
   ]);
   const llm = await buildLlm(orgId);
   const generator = ax(
@@ -539,7 +712,11 @@ async function defaultDiscoveryLlm(orgId: string): Promise<SkillLearnLlm> {
     },
   );
   return async (prompt: string) => {
-    const result = await generator.forward(llm, { discoveryPrompt: prompt });
-    return String(result.catalogDecision ?? "");
+    try {
+      const result = await generator.forward(llm, { discoveryPrompt: prompt });
+      return String(result.catalogDecision ?? "");
+    } finally {
+      await recordLearnerSpend(orgId, generator, "skill-discover");
+    }
   };
 }

@@ -5,6 +5,7 @@ import {
   eq,
   inArray,
   ne,
+  run_channel_message,
   run_verification,
   work_message,
   work_run,
@@ -32,8 +33,23 @@ export type RunEvidence = {
   followUp?: string;
   /** A deterministic check failed or an independent recomputation disagreed. */
   verifiedWrong?: boolean;
+  /** People's channel messages the run consumed; they count as feedback. */
+  feedback?: string[];
+  /** Agent channel messages the run consumed; claims, never grounding. */
+  claims?: number;
   digest: string;
+  /** The text a rule quote must match; the digest without agent claims. */
+  grounding?: string;
 };
+
+export type ChannelMessageEvidence = {
+  senderKind: "human" | "agent";
+  thread: string;
+  content: string;
+};
+
+/** Only org-wide channel messages feed shared learned stores. */
+export const EVIDENCE_CHANNEL_SCOPE = "org";
 
 /** A run that failed, hit tool errors, drew an operator follow-up or failed verification. */
 export function runWentWrong(run: RunEvidence): boolean {
@@ -55,6 +71,7 @@ export function buildRunEvidence(input: {
   followUp?: string;
   events: readonly AgentEvent[];
   verifications?: readonly RunVerification[];
+  channel?: readonly ChannelMessageEvidence[];
 }): RunEvidence {
   const outcome = toOutcome(input.status);
   const starts = new Map<string, { name: string; input: string }>();
@@ -96,6 +113,16 @@ export function buildRunEvidence(input: {
   const answer = clip(input.answer, MAX_ANSWER);
   const verifications = input.verifications ?? [];
   const verifiedWrong = isVerifiedWrong(verifications);
+  const channel = input.channel ?? [];
+  const feedback = channel
+    .filter((message) => message.senderKind === "human")
+    .map((message) => clip(message.content, MAX_REQUEST));
+  const feedbackLines = channel
+    .filter((message) => message.senderKind === "human")
+    .map((message) => `channel feedback from a person in ${message.thread}: ${clip(message.content, MAX_REQUEST)}`);
+  const claimLines = channel
+    .filter((message) => message.senderKind === "agent")
+    .map((message) => `agent claim in ${message.thread}, not evidence: ${clip(message.content, MAX_RESULT)}`);
   const lines = [
     `run ${input.runId}: outcome ${outcome}${input.error ? ` (${clip(input.error, MAX_RESULT)})` : ""}, tool errors ${toolErrors}${verifiedWrong ? ", failed verification" : ""}`,
     `request: ${clip(input.request, MAX_REQUEST)}`,
@@ -103,6 +130,7 @@ export function buildRunEvidence(input: {
     `answer: ${answer}`,
     ...verificationLines(verifications).map((line) => clip(line, MAX_RESULT)),
     ...(input.followUp ? [`operator follow-up: ${clip(input.followUp, MAX_REQUEST)}`] : []),
+    ...feedbackLines,
   ];
   return {
     runId: input.runId,
@@ -112,7 +140,10 @@ export function buildRunEvidence(input: {
     answer,
     ...(input.followUp ? { followUp: clip(input.followUp, MAX_REQUEST) } : {}),
     ...(verifiedWrong ? { verifiedWrong } : {}),
-    digest: lines.join("\n"),
+    ...(feedback.length > 0 ? { feedback } : {}),
+    ...(claimLines.length > 0
+      ? { claims: claimLines.length, digest: [...lines, ...claimLines].join("\n"), grounding: lines.join("\n") }
+      : { digest: lines.join("\n") }),
   };
 }
 
@@ -184,6 +215,22 @@ export async function loadRunEvidence(
     .from(run_verification)
     .where(and(eq(run_verification.org_id, orgId), inArray(run_verification.run_id, [...runIds])))
     .orderBy(asc(run_verification.kind), asc(run_verification.check_id));
+  const channelRows = await db()
+    .select({
+      runId: run_channel_message.run_id,
+      senderKind: run_channel_message.sender_kind,
+      thread: run_channel_message.channel_thread,
+      content: run_channel_message.content,
+    })
+    .from(run_channel_message)
+    .where(
+      and(
+        eq(run_channel_message.org_id, orgId),
+        inArray(run_channel_message.run_id, [...runIds]),
+        eq(run_channel_message.access_scope, EVIDENCE_CHANNEL_SCOPE),
+      ),
+    )
+    .orderBy(asc(run_channel_message.created_at));
 
   const order = new Map(runIds.map((id, index) => [id, index]));
   runs.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
@@ -222,6 +269,7 @@ export async function loadRunEvidence(
       followUp,
       events: runEvents,
       verifications,
+      channel: channelRows.filter((row) => row.runId === run.id),
     });
   });
 }

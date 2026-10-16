@@ -51,6 +51,7 @@ export type SkillLearnTrace = {
   rules?: LearnedRule[];
   applied?: PlaybookOperation[];
   dropped?: DroppedOperation[];
+  unsafe?: DroppedOperation[];
   outcomes?: Record<string, number>;
 };
 
@@ -61,6 +62,8 @@ export type SkillLearnResult = {
   rules?: LearnedRule[];
   trace: SkillLearnTrace;
   diff?: string;
+  /** The skill_learn_event row this result wrote. */
+  eventId?: string;
 };
 
 export type SkillUsageSnapshot = {
@@ -199,6 +202,7 @@ export async function runSkillLearn(
     rules: update.rules,
     applied: update.applied,
     dropped: update.dropped,
+    ...(update.unsafeOperations.length > 0 ? { unsafe: update.unsafeOperations } : {}),
   };
   if (update.unsafe.length > 0) {
     return { decision: "rejected", reason: update.unsafe.join("; "), trace };

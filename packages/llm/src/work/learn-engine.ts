@@ -175,6 +175,7 @@ async function learnRules(
     rules: update.rules,
     applied: update.applied,
     dropped: update.dropped,
+    ...(update.unsafeOperations.length > 0 ? { unsafe: update.unsafeOperations } : {}),
   };
   if (update.unsafe.length > 0) {
     return { decision: "rejected", reason: update.unsafe.join("; "), trace };

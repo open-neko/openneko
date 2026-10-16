@@ -232,9 +232,10 @@ export async function proposeSkillLearn(input: {
 }
 
 async function defaultSkillLearnLlm(orgId: string): Promise<SkillLearnLlm> {
-  const [{ ax }, { buildLlm }] = await Promise.all([
+  const [{ ax }, { buildLlm }, { recordLearnerSpend }] = await Promise.all([
     import("@ax-llm/ax"),
     import("../llm"),
+    import("./learn-spend"),
   ]);
   const llm = await buildLlm(orgId);
   const generator = ax(
@@ -245,8 +246,12 @@ async function defaultSkillLearnLlm(orgId: string): Promise<SkillLearnLlm> {
     },
   );
   return async (prompt: string) => {
-    const result = await generator.forward(llm, { learningPrompt: prompt });
-    return String(result.playbookUpdate ?? "");
+    try {
+      const result = await generator.forward(llm, { learningPrompt: prompt });
+      return String(result.playbookUpdate ?? "");
+    } finally {
+      await recordLearnerSpend(orgId, generator, "skill-learn");
+    }
   };
 }
 

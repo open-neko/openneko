@@ -1249,6 +1249,10 @@ export const work_run = pgTable(
     analysis_minutes_saved: integer("analysis_minutes_saved"),
     analysis_minutes_basis: text("analysis_minutes_basis"),
     estimate_version: integer("estimate_version").notNull().default(1),
+    // A sub-run names the run that started it and the root task it serves.
+    // Both are null on a root run. Foreign keys live in migration 0122.
+    parent_run_id: uuid("parent_run_id"),
+    root_run_id: uuid("root_run_id"),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
     finished_at: ts("finished_at"),
@@ -1262,6 +1266,9 @@ export const work_run = pgTable(
       t.org_id,
       t.finished_at,
     ),
+    root_idx: index("work_run_root_idx")
+      .on(t.root_run_id)
+      .where(sql`${t.root_run_id} is not null`),
   }),
 );
 
@@ -2295,12 +2302,26 @@ export const observation = pgTable(
     body: text("body"),
     mood: text("mood"),
     status: text("status").notNull().default("active"),
+    // Consumer-specific lineage, such as a learning lesson's target and verdict.
+    detail: jsonb("detail")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    dedupe_key: text("dedupe_key"),
     first_seen_at: ts("first_seen_at").notNull().defaultNow(),
     last_seen_at: ts("last_seen_at").notNull().defaultNow(),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },
   (t) => ({
+    org_dedupe_unique: uniqueIndex("observation_org_dedupe_unique")
+      .on(t.org_id, t.dedupe_key)
+      .where(sql`${t.dedupe_key} is not null`),
+    org_consumer_recent_idx: index("observation_org_consumer_recent_idx").on(
+      t.org_id,
+      t.consumer_kind,
+      t.created_at.desc(),
+    ),
     source_output_idx: index("observation_source_output_idx")
       .on(t.source_output_id)
       .where(sql`${t.source_output_id} is not null`),
@@ -2335,6 +2356,25 @@ export const workflow_output_source_observation = pgTable(
       t.observation_id,
     ),
     obs_idx: index("workflow_output_source_obs_obs_idx").on(t.observation_id),
+  }),
+);
+
+// Runs an observation rests on, such as the evidence runs of a learning lesson.
+export const observation_run = pgTable(
+  "observation_run",
+  {
+    observation_id: uuid("observation_id")
+      .notNull()
+      .references(() => observation.id, { onDelete: "cascade" }),
+    run_id: uuid("run_id")
+      .notNull()
+      .references(() => work_run.id, { onDelete: "cascade" }),
+    quote: text("quote"),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.observation_id, t.run_id] }),
+    run_idx: index("observation_run_run_idx").on(t.run_id),
   }),
 );
 
@@ -3112,6 +3152,55 @@ export const learned_rule_use = pgTable(
   (t) => ({
     run_rule_unique: uniqueIndex("learned_rule_use_run_rule_unique").on(t.run_id, t.rule_key),
     org_rule_idx: index("learned_rule_use_org_rule_idx").on(t.org_id, t.rule_key, t.created_at.desc()),
+  }),
+);
+
+// The learned-store version each target had when a run started. A sub-run
+// copies its root's rows, so one task reads one version of every store.
+export const run_store_version = pgTable(
+  "run_store_version",
+  {
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    run_id: uuid("run_id")
+      .notNull()
+      .references(() => work_run.id, { onDelete: "cascade" }),
+    target_kind: text("target_kind").notNull(),
+    target_id: text("target_id").notNull(),
+    version: text("version").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.run_id, t.target_kind, t.target_id] }),
+  }),
+);
+
+// Channel messages a run consumed. Human messages count as feedback; agent
+// messages are claims and never ground a learned rule alone.
+export const run_channel_message = pgTable(
+  "run_channel_message",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    run_id: uuid("run_id")
+      .notNull()
+      .references(() => work_run.id, { onDelete: "cascade" }),
+    channel_thread: text("channel_thread").notNull(),
+    message_ref: text("message_ref").notNull(),
+    sender_kind: text("sender_kind").$type<"human" | "agent">().notNull(),
+    sender_id: text("sender_id"),
+    access_scope: text("access_scope").notNull().default("private"),
+    content: text("content").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    run_message_unique: uniqueIndex("run_channel_message_run_message_unique").on(
+      t.run_id,
+      t.message_ref,
+    ),
   }),
 );
 
