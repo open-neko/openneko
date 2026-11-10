@@ -1,6 +1,6 @@
 /**
  * Sandbox-only runtime surface. Keep this entrypoint free of host database,
- * records, telemetry, and secret-management implementations.
+ * telemetry, and secret-management implementations.
  */
 export { runAgentBackend, type RunAgentBackendInput } from "./work/agent-core";
 export {
@@ -26,7 +26,6 @@ export {
   buildPluginActionServer,
   buildPackActionServer,
   buildPluginManagerServer,
-  buildRecordsReadServer,
   buildRenderCardsServer,
   buildSkillBuilderServer,
   buildSourceConfigManagerServer,

@@ -1389,19 +1389,19 @@ describe("OpenNeko backend v2 corpus", () => {
     const loaded = await loadEval(
       resolve(process.cwd(), "../../evals/configs/openneko-backend-scripted-good-v3.yaml"),
     );
-    expect(loaded.cases).toHaveLength(59);
+    expect(loaded.cases).toHaveLength(58);
     expect(loaded.cases.slice(0, 8).map((item) => item.id)).toEqual([
       "b00-api-selection",
       "s01-workflow-build",
       "s02-watcher-build-fire",
       "s03-workflow-action-approve",
       "s04-workflow-action-reject",
-      "s05-records-blueprint",
       "s06-compaction-resume",
       "b12-safety",
+      "b01-graphjin-direct",
     ]);
     const stateCases = loaded.cases.filter((item) => item.id.startsWith("s"));
-    expect(stateCases).toHaveLength(6);
+    expect(stateCases).toHaveLength(5);
     expect(
       stateCases.every(
         (item) =>
@@ -1417,7 +1417,7 @@ describe("OpenNeko backend v2 corpus", () => {
     const loaded = await loadEval(
       resolve(process.cwd(), "../../evals/configs/openneko-backend-scripted-good-v4.yaml"),
     );
-    expect(loaded.cases).toHaveLength(65);
+    expect(loaded.cases).toHaveLength(64);
     expect(loaded.cases.slice(0, 2).map((item) => item.id)).toEqual([
       "b00-api-selection",
       "b12c-mutation-denial",
@@ -1613,8 +1613,8 @@ describe("OpenNeko backend MCP event recognition", () => {
       {
         type: "tool_start",
         id: "records-1",
-        name: "mcp_neko_records_browse_blueprints",
-        input: { blueprint: "crm" },
+        name: "mcp_neko_files_search",
+        input: { query: "crm" },
       },
       { type: "tool_end", id: "records-1", result: { ok: true } },
     ];
@@ -1622,8 +1622,8 @@ describe("OpenNeko backend MCP event recognition", () => {
     expect(
       backendSuccessfulToolCall(
         events,
-        /neko_records.*browse_blueprints/iu,
-        (input) => input.blueprint === "crm",
+        /neko_files.*search/iu,
+        (input) => input.query === "crm",
       ),
     ).toBe(true);
   });
@@ -1635,8 +1635,8 @@ describe("OpenNeko backend MCP event recognition", () => {
         id: "records-legacy",
         name: "other",
         input: {
-          title: "mcp__neko__records_browse_blueprints",
-          rawInput: '{"blueprint":"crm"}',
+          title: "mcp__neko__files_search",
+          rawInput: '{"query":"crm"}',
         },
       },
       { type: "tool_end", id: "records-legacy", result: { ok: true } },
@@ -1645,8 +1645,8 @@ describe("OpenNeko backend MCP event recognition", () => {
     expect(
       backendSuccessfulToolCall(
         events,
-        /neko_records.*browse_blueprints/iu,
-        (input) => input.blueprint === "crm",
+        /neko_files.*search/iu,
+        (input) => input.query === "crm",
       ),
     ).toBe(true);
   });

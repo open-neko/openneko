@@ -65,11 +65,6 @@ import { runAgentBackend } from "./agent-core";
 import { createAgentEventTelemetry } from "./agent-event-telemetry";
 import { structuredTurnSummary } from "./structured-turn-summary";
 import {
-  parseAppWorkContext,
-  parseRecordWorkContext,
-  type WorkDataSurface,
-} from "./data-surface";
-import {
   inProcessControlPlane,
   type AgentControlPlane,
   type PluginCatalog,
@@ -268,16 +263,7 @@ async function runChatTurnTraced(
     );
     return { status: "failed", finalText: "", error: errMsg };
   }
-  const appContext = parseAppWorkContext(
-    bundle.thread.backendState.appContext,
-  );
-  const recordContext = parseRecordWorkContext(
-    bundle.thread.backendState.recordContext,
-  );
-  const dataSurface: WorkDataSurface = appContext || recordContext
-    ? "records"
-    : "customer";
-  const threadBot = dataSurface === "customer" && (opts.channel ?? "web") === "web"
+  const threadBot = (opts.channel ?? "web") === "web"
     ? await startupPhase("bot.load", () => (deps.getThreadBot ?? getThreadBot)(orgId, threadId))
     : null;
 
@@ -286,24 +272,20 @@ async function runChatTurnTraced(
 
   // An eval's direct-tool policy keeps the direct path.
   const graphjinDataPath: GraphjinDataPath =
-    dataSurface === "customer" && !opts.graphjinToolPolicy &&
+    !opts.graphjinToolPolicy &&
     await startupPhase("config.graphjin_agent", () => graphjinAgentEnabledForOrg(orgId))
       ? "agent"
       : "direct";
 
   // Knowledge layering: agentic deployments (auth_mode=jwt) get the slim
   // gj_catalog bootstrap; legacy ones keep the broad discovery dumps.
-  if (dataSurface === "customer") {
-    const refresh = await startupPhase("knowledge.prefetch", () => prefetchKnowledgeForOrg(orgId, workspace.knowledgeRoot));
-    if (!refresh.ok) {
-      console.warn(
-        `[work-run] org=${orgId} knowledge refresh failed (${refresh.error}); proceeding with on-disk pack`,
-      );
-    }
+  const refresh = await startupPhase("knowledge.prefetch", () => prefetchKnowledgeForOrg(orgId, workspace.knowledgeRoot));
+  if (!refresh.ok) {
+    console.warn(
+      `[work-run] org=${orgId} knowledge refresh failed (${refresh.error}); proceeding with on-disk pack`,
+    );
   }
-  const knowledge = dataSurface === "records"
-    ? { mode: "legacy" as const, tables: "{}", namespaces: "{}", insights: "{}", syntax: "{}" }
-    : await startupPhase("knowledge.read_pack", () => readKnowledgePack(knowledgePackPaths(workspace.knowledgeRoot)));
+  const knowledge = await startupPhase("knowledge.read_pack", () => readKnowledgePack(knowledgePackPaths(workspace.knowledgeRoot)));
 
   let assistantText = "";
   let turnUsageReported = false;
@@ -390,7 +372,7 @@ async function runChatTurnTraced(
   const actor = await startupPhase("identity.resolve", () => getWorkRunActor(runId));
 
   try {
-    if (dataSurface === "customer" && !backend.capabilities.mcpTools) {
+    if (!backend.capabilities.mcpTools) {
       throw new Error(
         "Customer data access requires the native GraphJin broker tool; this backend does not support MCP tools.",
       );
@@ -405,21 +387,16 @@ async function runChatTurnTraced(
     // projection). Thin channels answer in plain markdown — no rendering
     // vocabulary in their prompt. See docs/PER_CHANNEL_RENDERING.md.
     const RENDERING_CHANNELS = new Set(["web", "telegram"]);
-    const customerSurface = dataSurface === "customer";
-    const channelWantsCards = RENDERING_CHANNELS.has(opts.channel ?? "web");
-    const wantsCards = customerSurface && channelWantsCards;
+    const wantsCards = RENDERING_CHANNELS.has(opts.channel ?? "web");
     const richCards = wantsCards && (opts.channel ?? "web") === "web";
-    const supportsCardTool = customerSurface && backend.capabilities.mcpTools;
+    const supportsCardTool = backend.capabilities.mcpTools;
     const supportsClarificationTool = backend.capabilities.mcpTools;
-    const supportsSkillTool = customerSurface && backend.capabilities.mcpTools;
-    const supportsMemoryTool = customerSurface && backend.capabilities.mcpTools;
-    const supportsWorkflowTool = customerSurface && backend.capabilities.mcpTools;
-    const supportsPolicyTool = customerSurface && backend.capabilities.mcpTools;
-    const supportsPluginManagerTool =
-      customerSurface && backend.capabilities.mcpTools;
-    const sourceConfigSettings = dataSurface === "customer"
-      ? await startupPhase("config.graphjin", () => getGraphjinConfigSettingsForOrg(orgId))
-      : { sourceConfigEnabled: false };
+    const supportsSkillTool = backend.capabilities.mcpTools;
+    const supportsMemoryTool = backend.capabilities.mcpTools;
+    const supportsWorkflowTool = backend.capabilities.mcpTools;
+    const supportsPolicyTool = backend.capabilities.mcpTools;
+    const supportsPluginManagerTool = backend.capabilities.mcpTools;
+    const sourceConfigSettings = await startupPhase("config.graphjin", () => getGraphjinConfigSettingsForOrg(orgId));
     const supportsSourceConfigTool =
       backend.capabilities.mcpTools &&
       actor.role === "admin" &&
@@ -471,30 +448,26 @@ async function runChatTurnTraced(
         filterHeldActions(runActor, opts.packActions ?? []),
       ]));
     const [memoryContext, installedSkills, profile] = await Promise.all([
-      customerSurface
-        ? startupPhase("context.memory", () => formatWorkMemoryPromptContext(
-            {
-              orgId,
-              threadId,
-              runId,
-              userId: effectiveMemoryLayer(orgId, actor),
-              teamMemory,
-            },
-            // Use the latest user message as the retrieval query so we pull
-            // memories semantically close to what the operator just asked.
-            { contextQuery: message, contextLimit: 5 },
-          ))
-        : Promise.resolve(""),
+      startupPhase("context.memory", () => formatWorkMemoryPromptContext(
+        {
+          orgId,
+          threadId,
+          runId,
+          userId: effectiveMemoryLayer(orgId, actor),
+          teamMemory,
+        },
+        // Use the latest user message as the retrieval query so we pull
+        // memories semantically close to what the operator just asked.
+        { contextQuery: message, contextLimit: 5 },
+      )),
       startupPhase("context.skills", () => listInstalledSkills(workspace.skillsRoot)).then(async (skills) => {
         // Ax finds skills by meaning, so its index holds every installed skill;
         // search filters to what the actor holds.
-        if (customerSurface && backend.id === "ax") {
+        if (backend.id === "ax") {
           await startupPhase("context.skill_index", () => (deps.syncSkillIndex ?? syncSkillIndex)(orgId, skills))
             .catch((error) => console.warn("[work-run] skill index sync failed:", error instanceof Error ? error.message : error));
         }
-        return customerSurface
-          ? skills.filter((skill) => !allowedSkills || allowedSkills.includes(skill.name))
-          : skills.filter((skill) => skill.name === "records");
+        return skills.filter((skill) => !allowedSkills || allowedSkills.includes(skill.name));
       }),
       startupPhase("context.persona", () => getOperatorProfile(orgId, actor.userId)),
     ]);
@@ -544,11 +517,8 @@ async function runChatTurnTraced(
         opts.nativeDelegation !== "disabled",
       pluginCatalog,
       inlineTranscript,
-      pluginActions: customerSurface ? heldPluginActions : [],
-      dataSurface,
+      pluginActions: heldPluginActions,
       graphjinDataPath,
-      ...(appContext ? { appContext } : {}),
-      ...(recordContext ? { recordContext } : {}),
       ...(threadBot ? { bot: threadBot } : {}),
     });
 
@@ -558,7 +528,7 @@ async function runChatTurnTraced(
       inputBytes: Buffer.byteLength(`${prompt}\n\n${message}`, "utf8"),
     });
     const coreResult = await runCore({
-      ...(allowedSkills && customerSurface ? { allowedSkills } : {}),
+      ...(allowedSkills ? { allowedSkills } : {}),
       backend,
       prompt,
       userMessage: message,
@@ -567,10 +537,9 @@ async function runChatTurnTraced(
       runId,
       workspace,
       backendState: bundle.thread.backendState,
-      pluginActions: customerSurface ? heldPluginActions : [],
-      packActions: customerSurface ? heldPackActions : [],
+      pluginActions: heldPluginActions,
+      packActions: heldPackActions,
       sourceConfigEnabled: supportsSourceConfigTool,
-      dataSurface,
       ...(opts.graphjinToolPolicy
         ? { graphjinToolPolicy: opts.graphjinToolPolicy }
         : {}),
@@ -579,10 +548,7 @@ async function runChatTurnTraced(
         ? { nativeDelegation: opts.nativeDelegation }
         : {}),
       controlPlane: opts.controlPlane ?? inProcessControlPlane,
-      // The clarification server can render its deterministic form in any web
-      // Work chat, including records-scoped app chat. Generated answer-card
-      // vocabulary remains gated separately in the prompt above.
-      wantsCards: channelWantsCards,
+      wantsCards,
       cardSchema: richCards ? "rich" : "core",
       emit: wrappedEmit,
       signal,
@@ -627,11 +593,6 @@ async function runChatTurnTraced(
       const base = (
         backendStateChanged ? result.backendState : bundle.thread.backendState
       ) as Record<string, unknown>;
-      const protectedBase = {
-        ...base,
-        ...(appContext ? { appContext } : {}),
-        ...(recordContext ? { recordContext } : {}),
-      };
       // Transcript compaction is host-owned state. Inline backends commonly
       // return a fresh backend-state object every turn; replacing the stored
       // object must not silently discard an existing rolling summary.
@@ -639,8 +600,8 @@ async function runChatTurnTraced(
       await setWorkThreadBackendState(
         threadId,
         compaction
-          ? { ...protectedBase, compaction }
-          : protectedBase,
+          ? { ...base, compaction }
+          : base,
       );
     }
 

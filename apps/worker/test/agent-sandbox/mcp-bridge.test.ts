@@ -19,7 +19,6 @@ const SERVERS = [
   "neko_graphjin_agent",
   "neko_skills",
   "neko_memory",
-  "neko_records",
   "neko_workflow_builder",
   "neko_workflow_output",
   "neko_action",

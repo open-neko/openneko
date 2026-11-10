@@ -40,7 +40,6 @@ import {
   getCurrentScrubber,
   getPluginRegistryInstance,
 } from "../plugins/registry-instance.js";
-import { includeRecordActionDescriptors } from "../records/adapters.js";
 import {
   createWorkerHarnessObserver,
   persistWorkflowRunTelemetry,
@@ -438,9 +437,7 @@ async function runWorkflowRunFireTraced(
       }));
     } else {
       const agentRuntime = await startupPhase("config.provision", async () => ensureHostConfigProvisioned(payload.orgId));
-      const pluginActions = includeRecordActionDescriptors(
-        getPluginRegistryInstance()?.getRegisteredActionDescriptors() ?? [],
-      );
+      const pluginActions = getPluginRegistryInstance()?.getRegisteredActionDescriptors() ?? [];
       const broker = await startupPhase("broker.ready", async () => ensureAgentBroker());
       const abort = new AbortController();
       const unregister = registerAgentCanceller(() => abort.abort());
@@ -491,7 +488,6 @@ async function runWorkflowRunFireTraced(
             signal: spendGuard.signal,
             timeoutMs: apiClaim ? apiClaim.limits.maxRuntimeSeconds * 1_000 : undefined,
             maxToolIterations: apiClaim ? apiClaim.limits.maxToolCalls : undefined,
-            pluginActions,
             observer: telemetry.observer,
           },
           workflowRuntimeDepsFromConfig(agentRuntime, broker),

@@ -951,101 +951,6 @@ entries:
       - packages/channels
       - packages/plugin-types
       - packages/plugin-install
-  - id: RECORDS-REGISTRY
-    category: records
-    description: App/object definitions, availability mirror, and catalog remain consistent
-    verification: catalog/schema oracle
-    disposition: declared
-    owners:
-      - packages/records
-  - id: RECORDS-SCHEMA-PLAN
-    category: records
-    description: Schema proposals, previews, counterproposals, DDL saga, and audit
-      are deterministic and recoverable
-    verification: state-machine E2E
-    disposition: eval
-    owners:
-      - packages/records
-  - id: RECORDS-READ
-    category: records
-    description: List/detail/reference/aggregate queries honor filters, ordering,
-      cursors, and projections
-    verification: query/result oracle
-    disposition: declared
-    owners:
-      - packages/records
-  - id: RECORDS-WRITE
-    category: records
-    description: Create/update/delete/backfill validate fields/references and record
-      change history
-    verification: pre/post-state oracle
-    disposition: declared
-    owners:
-      - packages/records
-  - id: RECORDS-RECYCLE
-    category: records
-    description: Soft-deleted records are listed/restored/purged only with correct
-      permission
-    verification: state + auth oracle
-    disposition: declared
-    owners:
-      - packages/records
-  - id: RECORDS-POLICY
-    category: records
-    description: App/object/field/row permissions and actor synchronization match
-      GraphJin enforcement
-    verification: cross-role differential
-    disposition: eval
-    owners:
-      - packages/records
-  - id: RECORDS-IMPORT
-    category: records
-    description: CSV/artifact plan hash, sampling, batched execution, rejects,
-      cancellation, resume, and receipt are correct
-    verification: import fixture oracle
-    disposition: declared
-    owners:
-      - packages/records
-  - id: RECORDS-CONNECT
-    category: records
-    description: Salesforce export/sync/cursor/cutover handle deltas, retries,
-      conflicts, and provenance
-    verification: fake connector + DB
-    disposition: declared
-    owners:
-      - packages/records
-  - id: RECORDS-IDENTITY
-    category: records
-    description: Imported users reconcile/link/conflict/ignore and backfill
-      ownership without scope escalation
-    verification: identity state oracle
-    disposition: declared
-    owners:
-      - packages/records
-  - id: RECORDS-WATCH
-    category: records
-    description: Starter watches bind/reconcile and enqueue evaluation exactly once
-      per source event
-    verification: event/receipt oracle
-    disposition: declared
-    owners:
-      - packages/records
-  - id: RECORDS-ACTION
-    category: records
-    description: Records action execution obeys policy and produces the intended
-      record mutation/receipt
-    verification: action + state oracle
-    disposition: eval
-    owners:
-      - packages/records
-  - id: RECORDS-OPS
-    category: records
-    description: Health, lifecycle, system findings, backup verification, and ops
-      watches report real conditions
-    verification: fault-injected smoke
-    disposition: declared
-    owners:
-      - packages/records
   - id: SEC-PRINCIPAL
     category: security-governance
     description: Human/service identity and backend actor are snapshotted and
@@ -1054,7 +959,6 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-TENANT
     category: security-governance
     description: Org boundaries hold across data, records, threads, memory, files,
@@ -1063,7 +967,6 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-AUTHZ
     category: security-governance
     description: Admin/member/service and source roles allow exactly their declared
@@ -1072,7 +975,6 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-TOOL-ALLOWLIST
     category: security-governance
     description: Backend/operator-local tools outside the run catalog are unreachable
@@ -1080,7 +982,6 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-EGRESS
     category: security-governance
     description: Undeclared network access is denied and emitted as a structured
@@ -1089,7 +990,6 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-SECRETS
     category: security-governance
     description: Keys stay outside sandboxes/model context and are scrubbed from
@@ -1098,7 +998,6 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-PROMPT-INJECTION
     category: security-governance
     description: Untrusted data/tool content cannot override data, action, identity,
@@ -1107,7 +1006,6 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-APPROVAL
     category: security-governance
     description: Consequential changes cannot bypass proposal/policy/approval paths
@@ -1115,7 +1013,6 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-AUDIT-CHAIN
     category: security-governance
     description: Append-only chain sequence/hash verifies and exposes logging
@@ -1124,7 +1021,6 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-BEHAVIOR
     category: security-governance
     description: Excessive action/memory/control-plane rates raise the expected
@@ -1133,7 +1029,6 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-DEPLOYMENT-PROFILE
     category: security-governance
     description: Solo/team/org/hardened defaults change controls coherently while
@@ -1142,7 +1037,6 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-TELEMETRY
     category: security-governance
     description: Content mode, redaction, cardinality, tenant hashing, retention,
@@ -1151,7 +1045,6 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: OPS-JOB-LIFECYCLE
     category: operability-recovery
     description: Queue, running, retrying, succeeded, failed, and cancelled states
@@ -1207,8 +1100,8 @@ entries:
       - apps/openneko/internal
   - id: OPS-BACKUP
     category: operability-recovery
-    description: Records backup and verification detect corruption/missing data and
-      report safely
+    description: Backup files verify in full before restore, and restore reports
+      failures safely
     verification: backup restore test
     disposition: declared
     owners:

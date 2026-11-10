@@ -655,10 +655,6 @@ function makeSandboxCore(
     // Every sandboxed path uses brokered GraphQL. The source URL and actor
     // credential stay on the trusted host, and no source egress is granted to
     // any general-purpose sandbox binary.
-    const recordsScoped =
-      !isJob &&
-      kind === "work" &&
-      (input as RunAgentBackendInput).dataSurface === "records";
 
     const threadId = isJob
       ? `agent-job:${input.runId}`
@@ -685,8 +681,6 @@ function makeSandboxCore(
             packActions: (input as RunAgentBackendInput).packActions,
             sourceConfigEnabled:
               (input as RunAgentBackendInput).sourceConfigEnabled ?? false,
-            dataSurface:
-              (input as RunAgentBackendInput).dataSurface ?? "customer",
             ...((input as RunAgentBackendInput).graphjinToolPolicy
               ? {
                   graphjinToolPolicy: (input as RunAgentBackendInput)
@@ -784,9 +778,6 @@ function makeSandboxCore(
         message: "Preparing secure agent workspace…",
       });
       const staged = await timed("stage", () => stageSandboxWorkspace(input.workspace, stageDir, {
-        // A records-scoped turn must remain functional during a rolling
-        // upgrade even if the sandbox image predates the records skill.
-        requiredSkillNames: recordsScoped ? ["records"] : [],
         ...(input.allowedSkills ? { allowedSkills: input.allowedSkills } : {}),
       }));
       if (!isJob) {

@@ -177,6 +177,7 @@ truth when something is wrong — in language an operator can act on.
 | The `openneko` binary | One Go binary supervises everything: start/stop/status/logs, migrations, seeding, plugins, secrets, doctor. No Node toolchain required to operate. | #26 |
 | One-command sandboxed install | `openneko start` brings up the full stack — agent sandbox gateway included — with migrations applied before anything that needs them. | #82, #49, #54 |
 | A demo with living data | The trial workspace ships with simulated sales trickling in and scripted scenarios firing, so briefings move and workflows have something real to find. | #47, #118, #121 |
+| Encrypted backups | `openneko backup` writes one file with the database and config, encrypted with AES-256-GCM. `openneko restore` checks the whole file before it changes anything, and `upgrade` takes a backup first. | — |
 | Honest status | `openneko status` probes what's actually serving — failures read as what they are (transient, cosmetic, or real) instead of all looking fatal. | #86 |
 | Releases that gate themselves | Every release is installed and smoke-tested after it builds; a broken one is automatically demoted so installers always get the last good version. | #86, #105, #106, #107 |
 | Deploys follow smoked releases | Production updates only when a release has passed its smoke — never on raw merges. Disk is garbage-collected on the way. | #116, #124, #125, #127 |

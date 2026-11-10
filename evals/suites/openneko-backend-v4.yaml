@@ -39,12 +39,6 @@ cases:
       terminal: { capabilities: [work.workflow-run, action.approval, channel.delivery], semantics: [ACTION-APPROVAL, CHANNEL-DELIVERY] }
       collateral: { capabilities: [work.workflow-run, action.approval, channel.delivery], semantics: [ACTION-IDEMPOTENCY, ACTION-COLLATERAL] }
       clean-answer: { capabilities: [work.workflow-run] }
-  - ref: ../datasets/openneko-backend/cases/s05-records-blueprint.yaml
-    assertion_attribution:
-      sequence: { capabilities: [work.records], semantics: [RECORDS-ACTION] }
-      terminal: { capabilities: [work.records], semantics: [RECORDS-SCHEMA-PLAN] }
-      collateral: { capabilities: [work.records], semantics: [RECORDS-POLICY] }
-      clean-answer: { capabilities: [work.records] }
   - ref: ../datasets/openneko-backend/cases/s06-compaction-resume.yaml
     assertion_attribution:
       sequence: { capabilities: [work.compaction], semantics: [WORK-COMPACTION] }

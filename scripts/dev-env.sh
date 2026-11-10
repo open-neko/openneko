@@ -32,8 +32,6 @@ export NEKO_PG_PORT="${OPENNEKO_DB_PORT:-5432}"
 # The gateway container reads this password from compose. Host migrations do
 # not provision the role, so dev-up.sh sets the role to the same value.
 export OPENNEKO_OPENSHELL_DB_PASSWORD="${OPENNEKO_OPENSHELL_DB_PASSWORD:-openneko-openshell-development-password}"
-export RECORDS_PG_HOST=127.0.0.1
-export RECORDS_PG_PORT="${OPENNEKO_RECORDS_DB_PORT:-5434}"
 
 # Plugins install into the dev state, not the repo root, so the host
 # worker reads the same manifest the openneko CLI writes.
@@ -42,13 +40,6 @@ export OPENNEKO_PLUGIN_INSTALL_DIR="${OPENNEKO_PLUGIN_INSTALL_DIR:-$OPENNEKO_DEV
 
 export OPENNEKO_GRAPHJIN_URL="http://127.0.0.1:${OPENNEKO_GRAPHJIN_PORT:-8089}"
 export OPENNEKO_GRAPHJIN_CONFIG="$OPENNEKO_DEV_STATE/graphjin/agentic.yml"
-export OPENNEKO_RECORDS_GRAPHJIN_URL="http://127.0.0.1:${OPENNEKO_RECORDS_GRAPHJIN_PORT:-8090}"
-export OPENNEKO_RECORDS_WATCH_GRAPHJIN_URL="http://127.0.0.1:${OPENNEKO_RECORDS_WATCH_GRAPHJIN_PORT:-8091}"
-export OPENNEKO_RECORDS_GRAPHJIN_CONFIG_DIR="$OPENNEKO_DEV_STATE/records-graphjin"
-# Records GraphJin runs in Docker and reaches the records database by name.
-export OPENNEKO_RECORDS_GRAPHJIN_DB_HOST="${OPENNEKO_RECORDS_GRAPHJIN_DB_HOST:-records-db}"
-export OPENNEKO_RECORDS_GRAPHJIN_DB_PORT="${OPENNEKO_RECORDS_GRAPHJIN_DB_PORT:-5432}"
-export OPENNEKO_RECORDS_GRAPHJIN_BINARY="${OPENNEKO_RECORDS_GRAPHJIN_BINARY:-$PWD/scripts/dev-records-graphjin.sh}"
 
 export OPENNEKO_AGENT_IMAGE="${OPENNEKO_AGENT_IMAGE:-openneko-agent:dev}"
 export OPENSHELL_GATEWAY="${OPENSHELL_GATEWAY:-openneko-dev}"

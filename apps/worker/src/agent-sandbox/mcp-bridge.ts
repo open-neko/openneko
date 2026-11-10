@@ -19,7 +19,6 @@ import {
   buildPluginActionServer,
   buildPackActionServer,
   buildPluginManagerServer,
-  buildRecordsReadServer,
   buildRenderCardsServer,
   buildSkillBuilderServer,
   buildSourceConfigManagerServer,
@@ -74,7 +73,6 @@ export type BridgeServerContext = {
   brokerToken?: string;
   workflowRunId?: string;
   triggeredByObservationId?: string | null;
-  recordScope?: { appId: string; objectApiName: string };
   wantsCards?: boolean;
   cardSchema?: string;
   graphjinToolPolicy?: GraphjinMcpToolPolicy;
@@ -125,13 +123,6 @@ export function buildBridgeServer(
       return buildSkillSearchServer({ orgId, runId }, { controlPlane });
     case "neko_files":
       return buildFilesServer({ orgId, threadId, runId }, { controlPlane });
-    case "neko_records":
-      return buildRecordsReadServer({
-        orgId,
-        runId,
-        controlPlane,
-        ...(ctx.recordScope ? { scope: ctx.recordScope } : {}),
-      });
     case "neko_workflow_builder":
       return buildWorkflowBuilderServer({
         orgId,
@@ -388,12 +379,6 @@ async function main(): Promise<void> {
     workflowRunId: process.env.OPENNEKO_MCP_WORKFLOW_RUN_ID,
     triggeredByObservationId:
       process.env.OPENNEKO_MCP_TRIGGERED_BY_OBSERVATION_ID ?? null,
-    recordScope: process.env.OPENNEKO_MCP_RECORD_SCOPE
-      ? (JSON.parse(process.env.OPENNEKO_MCP_RECORD_SCOPE) as {
-          appId: string;
-          objectApiName: string;
-        })
-      : undefined,
     wantsCards: process.env.OPENNEKO_MCP_WANTS_CARDS === "1",
     cardSchema: process.env.OPENNEKO_MCP_CARD_SCHEMA,
     graphjinToolPolicy: parseGraphjinMcpToolPolicy(

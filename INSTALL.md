@@ -83,7 +83,7 @@ globex.example.com {
 
 Only the reverse proxy needs public `80`/`443` firewall access. The customer web
 ports above and each OpenShell gateway stay on host loopback; databases,
-GraphJin, brokers, and backup services stay inside their private Docker
+GraphJin, brokers, and the file service stay inside their private Docker
 networks.
 
 For named instances, omitting `--port`, `--openshell-port`, or
@@ -100,7 +100,7 @@ Target every later operation explicitly:
 openneko --instance acme status
 openneko --instance acme logs -f
 openneko --instance acme upgrade
-openneko --instance acme backup now
+openneko --instance acme backup
 openneko --instance acme stop
 ```
 
@@ -161,9 +161,9 @@ openneko version
 
 Modes:
 
-- **`prod`** (default) — the production control, records, customer-data,
-  backup/storage, file, and OpenShell services. Eleven containers remain
-  running after the four startup jobs complete.
+- **`prod`** (default) — the production control, customer-data, file, and
+  OpenShell services. Seven containers remain running after the three startup
+  jobs complete.
 - **`dev`** — source-checkout workflow: use `pnpm dev:setup` for Docker-only dependencies plus AdventureWorks demo data, then `pnpm dev` for hot-reloaded web/worker from source.
 - **`demo`** — core + AdventureWorks: `adventureworks-db`, `adventureworks-init`, `neko-adventureworks-seed`. The full live-trial flow (continuous order trickle + scenario injector) lives in `compose.adventureworks.yml` and needs the [Build from source](#build-from-source-advanced) path.
 
@@ -265,15 +265,45 @@ Library files from older releases into the folder once, at start. It marks a
 document as failed when its original file is gone.
 
 
+## Backup and restore
+
+`openneko backup` writes one encrypted file while the stack runs. The file
+holds a `pg_dump` of `neko-db` and the config and file volumes
+(`openneko-config`, `openneko-graphjin-cli` and `openneko-files`). Files go to
+`${XDG_DATA_HOME:-$HOME/.local/share}/openneko/backups/`. Use `--to` or
+`OPENNEKO_BACKUP_DIR` to write them somewhere else, such as a NAS.
+
+```bash
+openneko backup
+openneko restore <file> --confirm RESTORE
+```
+
+Restore decrypts and checks the whole file before it changes anything. Then it
+stops the stack, replaces the volumes, recreates the database and starts the
+stack again. Migrations bring an older backup forward. `openneko doctor`
+warns when the latest backup is missing or more than a week old.
+
+Each installation has its own backup key. Keep a copy away from the backups:
+
+```bash
+openneko backup key export --to /secure/off-host/openneko-backup.key
+openneko backup key adopt --from /secure/off-host/openneko-backup.key
+```
+
+On a new host, `adopt` installs the copied key. You can also pass
+`--key-file` to a single restore. A file is AES-256-GCM in authenticated
+chunks, so a wrong key, a cut file or any edit fails the check.
+
 ## Upgrade
 
 `openneko upgrade` is the normal stack upgrade path. It:
 
-1. Pulls the latest OpenNeko service, agent, and plugin-base images.
-2. Detects the mode recorded by your last `setup` or `start` (`prod`, `dev`, or `demo`) and recreates that stack detached.
-3. Re-runs every idempotent initializer against the existing volumes, including runtime-artifact repair and pending migrations.
-4. Waits for every declared service health check; a crash loop or unreachable data plane fails the upgrade instead of being reported as success.
-5. Persists the new version and removes old OpenNeko image tags only after the stack is healthy (unless you pass `--no-prune`).
+1. Takes an `openneko backup` of the running stack and stops if the backup fails. Pass `--skip-backup` to upgrade without one.
+2. Pulls the latest OpenNeko service, agent, and plugin-base images.
+3. Detects the mode recorded by your last `setup` or `start` (`prod`, `dev`, or `demo`) and recreates that stack detached.
+4. Re-runs every idempotent initializer against the existing volumes, including runtime-artifact repair and pending migrations.
+5. Waits for every declared service health check; a crash loop or unreachable data plane fails the upgrade instead of being reported as success.
+6. Persists the new version and removes old OpenNeko image tags only after the stack is healthy (unless you pass `--no-prune`).
 
 Run it from the same install directory you use for `openneko start`:
 
@@ -351,7 +381,7 @@ The packaged stack publishes only two host ports:
 - Web app: `3000` by default
 - OpenShell gateway: loopback-only `18080` by default
 
-Postgres, GraphJin, worker broker, backup API, file service, and demo data
+Postgres, GraphJin, worker broker, file service, and demo data
 services remain on the private Docker network. Web is the only port intended to be reachable from
 another machine; the OpenShell host mapping exists only for local sandbox
 callbacks.
@@ -424,7 +454,7 @@ pnpm dev
 
 Web and worker run on the host with hot reload. Everything else runs in Docker.
 
-- `pnpm dev:up` starts the backing services with `compose.dev.yml`: `neko-db`, `records-db`, both GraphJin data planes, `neko-graphjin`, the OpenShell gateway with the agent image, and AdventureWorks with its simulator. It installs the pinned GraphJin and OpenShell CLIs into `.openneko/dev/bin`, rebuilds a GraphJin image that reports another version than the pin, runs migrations from source, writes the GraphJin JWT secret, and registers the OpenShell gateway for host processes.
+- `pnpm dev:up` starts the backing services with `compose.dev.yml`: `neko-db`, `neko-graphjin`, the customer GraphJin, the OpenShell gateway with the agent image, and AdventureWorks with its simulator. It installs the pinned GraphJin and OpenShell CLIs into `.openneko/dev/bin`, rebuilds a GraphJin image that reports another version than the pin, runs migrations from source, writes the GraphJin JWT secret, and registers the OpenShell gateway for host processes.
 - `pnpm dev:seed` seeds demo workflows. `pnpm dev:setup` runs both steps.
 - `pnpm dev` runs `next dev` on port 3000 and `tsx watch` for the worker. Edits to `apps/web`, `apps/worker`, and workspace packages reload without an image build.
 - `scripts/dev-env.sh` holds the host settings. Each service a host process calls has a loopback port; `pnpm dev:web` and `pnpm dev:worker` source the file.

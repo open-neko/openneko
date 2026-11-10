@@ -106,9 +106,9 @@ includes all Level 2 controls plus the 800-172 enhancements.
 | Control | Technical requirement | L1 | L2 | L3 | Applicability | Status | Rationale / evidence |
 |---|---|:-:|:-:|:-:|---|---|---|
 | 3.8.3 | Sanitize media before disposal/reuse | L1 | L2 | L3 | Deployment | Inherited | Physical media handling is the operator's. Product-side note: all state lives in one Postgres, one secrets file and the `openneko-files` volume of uploaded files, so the surface to sanitize is small and known (`README.md` "single Postgres", `INSTALL.md` "File search"). |
-| 3.8.6 | Encrypt CUI on media during transport | | L2 | L3 | Deployment | Inherited | Backup transport is the operator's; encrypting backups at rest is theirs too (see 3.8.9). |
+| 3.8.6 | Encrypt CUI on media during transport | | L2 | L3 | Shared | 🟡 Partial | `openneko backup` files leave the host already encrypted with AES-256-GCM (see 3.8.9), so they stay protected on any media that carries them. The transport channel, and backups taken by other means, are the operator's. |
 | 3.8.7 | Control removable media | | L2 | L3 | Deployment | Inherited | Host/endpoint control. |
-| 3.8.9 | Protect confidentiality of backup CUI | | L2 | L3 | Shared | 🟡 Partial | Secrets inside any backup are already ciphertext (`enc:v1`, `packages/secret-crypt`); business data in Postgres dumps is plaintext — the operator must encrypt backups. |
+| 3.8.9 | Protect confidentiality of backup CUI | | L2 | L3 | Shared | ✅ Shipped | Secrets inside any backup are already ciphertext (`enc:v1`, `packages/secret-crypt`). `openneko backup` encrypts the whole file (database dump and config volumes) with AES-256-GCM under a per-installation backup key (`apps/openneko/internal/cli/backup_archive.go`). Custody of that key, and encryption of backups taken by other means, are the operator's. |
 
 ## Maintenance (MA) / Risk Assessment (RA)
 

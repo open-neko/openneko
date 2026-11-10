@@ -183,7 +183,7 @@ at the prompt) to finish at the web UI. Credential flags
 			// dedicated `openshell` role (see ensureOpenShellGatewayRole), so no
 			// gateway restart is needed.
 			if outcome.PasswordSet != "" {
-				if err := config.WriteLocalDatabasePasswords("", outcome.PasswordSet, outcome.PasswordSet); err != nil {
+				if err := config.WriteLocalPgPassword("", outcome.PasswordSet); err != nil {
 					ui.Info(out, "warning: couldn't persist the DB password to the host config: %v", err)
 				}
 			}

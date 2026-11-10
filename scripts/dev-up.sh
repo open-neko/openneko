@@ -9,11 +9,8 @@ compose() {
   docker compose -f compose.yml -f compose.openshell.yml -f compose.adventureworks.yml -f compose.graphjin-agent.yml -f compose.dev.yml "$@"
 }
 
-mkdir -p "$OPENNEKO_DEV_STATE/graphjin" "$OPENNEKO_DEV_STATE/records-graphjin" "$OPENNEKO_CONFIG_VOLUME" "$OPENSHELL_STATE_DIR"
+mkdir -p "$OPENNEKO_DEV_STATE/graphjin" "$OPENNEKO_CONFIG_VOLUME" "$OPENSHELL_STATE_DIR"
 printf '%s\n' "$COMPOSE_PROJECT_NAME" > "$OPENNEKO_DEV_STATE/compose-project"
-if [ ! -s .openneko/development-backup-key ]; then
-  (umask 077 && openssl rand -hex 32 > .openneko/development-backup-key)
-fi
 
 # Host processes validate GraphJin configs with the pinned CLI.
 graphjin_version="$(sed -n 's/^export const GRAPHJIN_VERSION = "\(.*\)";$/\1/p' packages/llm/src/graphjin/version.ts)"
@@ -51,7 +48,7 @@ if ! "$OPENNEKO_DEV_STATE/bin/openshell" --version 2>/dev/null | grep -qx "opens
   rm -rf "$download"
 fi
 
-compose up -d --wait neko-db records-db
+compose up -d --wait neko-db
 (cd apps/openneko && go run ./cmd/openneko migrate)
 
 # The OpenShell gateway signs in as its own role. Give it the password the
@@ -69,7 +66,7 @@ GRAPHJIN_SOURCES_CONFIG="$OPENNEKO_GRAPHJIN_CONFIG" \
 
 # Compose reuses a built image after the GraphJin pin moves. Rebuild each
 # GraphJin image that reports another version, or the worker stops at start.
-for service in neko-graphjin graphjin records-graphjin; do
+for service in neko-graphjin graphjin; do
   if ! compose run --rm --no-deps -T --entrypoint graphjin "$service" version 2>/dev/null \
     | grep -q "GraphJin $graphjin_version"; then
     echo "Rebuilding $service for GraphJin $graphjin_version"
@@ -78,7 +75,7 @@ for service in neko-graphjin graphjin records-graphjin; do
 done
 
 compose up -d \
-  neko-graphjin graphjin records-graphjin records-watch-graphjin \
+  neko-graphjin graphjin \
   agent-image openshell-gateway \
   adventureworks-simulator adventureworks-scenario-injector
 

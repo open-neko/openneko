@@ -16,11 +16,6 @@ import {
 } from "./graphjin-tool-policy";
 import { buildAskUserQuestionServer } from "./interaction-server";
 import {
-  parseAppWorkContext,
-  parseRecordWorkContext,
-  type WorkDataSurface,
-} from "./data-surface";
-import {
   buildPluginActionServer,
   buildPackActionServer,
   buildPluginManagerServer,
@@ -33,7 +28,6 @@ import {
   buildUserManagerServer,
   buildFilesServer,
   buildRenderCardsServer,
-  buildRecordsReadServer,
   buildSkillBuilderServer,
   buildWorkMemoryServer,
   buildSkillSearchServer,
@@ -59,8 +53,6 @@ export interface RunAgentBackendInput {
   packActions?: readonly PackActionDescriptor[];
   /** Mount the GraphJin source-config MCP server for this admin run. */
   sourceConfigEnabled?: boolean;
-  /** Selects the isolated data plane for this turn. */
-  dataSurface?: WorkDataSurface;
   /** Optional backend-neutral restriction for this run's GraphJin MCP. */
   graphjinToolPolicy?: GraphjinMcpToolPolicy;
   /** "agent" when the org opted in to GraphJin's server-side agent. */
@@ -102,7 +94,6 @@ export async function runAgentBackend(
     pluginActions,
     packActions = [],
     sourceConfigEnabled = false,
-    dataSurface = "customer",
     graphjinToolPolicy,
     graphjinDataPath = "direct",
     nativeDelegation,
@@ -114,22 +105,7 @@ export async function runAgentBackend(
   } = input;
 
   const mcp = backend.capabilities.mcpTools;
-  const recordsOnly = dataSurface === "records";
-  const appContext = recordsOnly
-    ? parseAppWorkContext(backendState?.appContext)
-    : null;
-  const recordContext = recordsOnly
-    ? parseRecordWorkContext(backendState?.recordContext)
-    : null;
-  // Legacy record-context threads retain their original exact-object scope.
-  // App-owned chat uses the actor's normal records grants across apps.
-  const recordScope = !appContext && recordContext
-    ? {
-        appId: recordContext.appId,
-        objectApiName: recordContext.objectApiName,
-      }
-    : undefined;
-  const pluginActionServer = mcp && !recordsOnly
+  const pluginActionServer = mcp
     ? buildPluginActionServer({
         orgId,
         threadId,
@@ -139,7 +115,7 @@ export async function runAgentBackend(
         controlPlane,
       })
     : null;
-  const packActionServer = mcp && !recordsOnly
+  const packActionServer = mcp
     ? buildPackActionServer({
         orgId,
         threadId,
@@ -151,21 +127,7 @@ export async function runAgentBackend(
     : null;
 
   const mcpServers = mcp
-    ? recordsOnly
-      ? {
-          neko_interaction: buildAskUserQuestionServer({
-            runId,
-            wantsCards,
-            emit,
-          }),
-          neko_records: buildRecordsReadServer({
-            orgId,
-            runId,
-            controlPlane,
-            ...(recordScope ? { scope: recordScope } : {}),
-          }),
-        }
-      : {
+    ? {
         // Work chat is interactive. Material ambiguity pauses the turn and
         // returns control to the operator through a deterministic form.
         neko_interaction: buildAskUserQuestionServer({
@@ -192,7 +154,6 @@ export async function runAgentBackend(
         // Ax's discover() reaches the semantic skill index through this server.
         ...(backend.id === "ax" ? { neko_guides: buildSkillSearchServer({ orgId, runId }, { controlPlane }) } : {}),
         ...(filesEnabled() ? { neko_files: buildFilesServer({ orgId, threadId, runId }, { controlPlane }) } : {}),
-        neko_records: buildRecordsReadServer({ orgId, runId, controlPlane }),
         neko_workflow_builder: buildWorkflowBuilderServer({
           orgId,
           createdByThreadId: threadId,
@@ -273,15 +234,8 @@ export async function runAgentBackend(
                   serializeGraphjinMcpToolPolicy(graphjinToolPolicy),
               }
             : {}),
-          OPENNEKO_MCP_PLUGIN_ACTIONS: JSON.stringify(
-            recordsOnly ? [] : (pluginActions ?? []),
-          ),
-          OPENNEKO_MCP_PACK_ACTIONS: JSON.stringify(
-            recordsOnly ? [] : packActions,
-          ),
-          ...(recordScope
-            ? { OPENNEKO_MCP_RECORD_SCOPE: JSON.stringify(recordScope) }
-            : {}),
+          OPENNEKO_MCP_PLUGIN_ACTIONS: JSON.stringify(pluginActions ?? []),
+          OPENNEKO_MCP_PACK_ACTIONS: JSON.stringify(packActions),
         }
       : undefined,
     ...(nativeDelegation ? { nativeDelegation } : {}),

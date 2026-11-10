@@ -62,10 +62,6 @@ vi.mock("../../src/plugins/registry-instance.js", () => ({
   getPluginRegistryInstance: vi.fn(() => null),
 }));
 
-vi.mock("../../src/records/adapters.js", () => ({
-  includeRecordActionDescriptors: vi.fn(() => []),
-}));
-
 vi.mock("../../src/telemetry.js", async () => {
   const actual = await vi.importActual<typeof import("../../src/telemetry.js")>(
     "../../src/telemetry.js",

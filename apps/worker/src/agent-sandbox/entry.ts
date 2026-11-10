@@ -51,7 +51,6 @@ interface SandboxJob {
   pluginActions?: RunAgentBackendInput["pluginActions"];
   packActions?: RunAgentBackendInput["packActions"];
   sourceConfigEnabled?: boolean;
-  dataSurface?: RunAgentBackendInput["dataSurface"];
   graphjinToolPolicy?: RunAgentBackendInput["graphjinToolPolicy"];
   graphjinDataPath?: RunAgentBackendInput["graphjinDataPath"];
   nativeDelegation?: RunAgentBackendInput["nativeDelegation"];
@@ -162,7 +161,7 @@ async function startRunDataSocket(
   if (job.graphjinDataPath === "agent") return undefined;
   const enabled =
     kind === "workflow" ||
-    (kind === "work" && job.dataSurface !== "records") ||
+    kind === "work" ||
     (kind === "agent-job" && job.agentAccess?.graphjinRead === true);
   if (!enabled) return undefined;
   const socket = await startDataSocket({
@@ -304,7 +303,6 @@ async function runJob(
       pluginActions: job.pluginActions ?? [],
       packActions: job.packActions ?? [],
       sourceConfigEnabled: job.sourceConfigEnabled ?? false,
-      dataSurface: job.dataSurface ?? "customer",
       ...(job.graphjinToolPolicy
         ? { graphjinToolPolicy: job.graphjinToolPolicy }
         : {}),

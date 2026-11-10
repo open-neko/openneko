@@ -104,12 +104,11 @@ tools against a frozen AdventureWorks snapshot.
 ## Stack modes
 
 `openneko start|setup|upgrade --mode prod|dev|demo` picks which Compose layers the
-CLI deploys. Every mode shares the same core: app + records Postgres, migrations,
-backup/restore, web, worker, three internal GraphJin instances (app
-subscriptions, records, records-watch), plus the customer-facing GraphJin in
-sources (agentic) mode. The OpenShell sandbox runtime (gateway, registry,
-certgen) is always layered on top — it is the only way agents and plugins run,
-in every mode.
+CLI deploys. Every mode shares the same core: app Postgres, migrations, web,
+worker, `openneko serve` for file search, the internal GraphJin for app
+subscriptions, plus the customer-facing GraphJin in sources (agentic) mode. The
+OpenShell sandbox runtime (gateway, registry, certgen) is always layered on top.
+It is the only way agents and plugins run, in every mode.
 
 | Mode | Layers on top of core | What's different |
 |------|----------------------|------------------|

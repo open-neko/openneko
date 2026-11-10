@@ -177,20 +177,7 @@ All current `AgentEvent` variants map here or to runtime/action semantics:
 
 ## 7. Records-engine semantics
 
-| ID | Semantic outcome | Primary verification |
-|---|---|---|
-| `RECORDS-REGISTRY` | App/object definitions, availability mirror, and catalog remain consistent | catalog/schema oracle |
-| `RECORDS-SCHEMA-PLAN` | Schema proposals, previews, counterproposals, DDL saga, and audit are deterministic and recoverable | state-machine E2E |
-| `RECORDS-READ` | List/detail/reference/aggregate queries honor filters, ordering, cursors, and projections | query/result oracle |
-| `RECORDS-WRITE` | Create/update/delete/backfill validate fields/references and record change history | pre/post-state oracle |
-| `RECORDS-RECYCLE` | Soft-deleted records are listed/restored/purged only with correct permission | state + auth oracle |
-| `RECORDS-POLICY` | App/object/field/row permissions and actor synchronization match GraphJin enforcement | cross-role differential |
-| `RECORDS-IMPORT` | CSV/artifact plan hash, sampling, batched execution, rejects, cancellation, resume, and receipt are correct | import fixture oracle |
-| `RECORDS-CONNECT` | Salesforce export/sync/cursor/cutover handle deltas, retries, conflicts, and provenance | fake connector + DB |
-| `RECORDS-IDENTITY` | Imported users reconcile/link/conflict/ignore and backfill ownership without scope escalation | identity state oracle |
-| `RECORDS-WATCH` | Starter watches bind/reconcile and enqueue evaluation exactly once per source event | event/receipt oracle |
-| `RECORDS-ACTION` | Records action execution obeys policy and produces the intended record mutation/receipt | action + state oracle |
-| `RECORDS-OPS` | Health, lifecycle, system findings, backup verification, and ops watches report real conditions | fault-injected smoke |
+Records left the product in November 2026. Its `RECORDS-*` IDs are retired.
 
 ## 8. Security and governance semantics
 
@@ -219,7 +206,7 @@ All current `AgentEvent` variants map here or to runtime/action semantics:
 | `OPS-PROVISION` | Provider, model, source, sandbox, and credential configuration reaches every required process consistently | deployment fixture |
 | `OPS-HEALTH` | Status distinguishes healthy, degraded, transient, and terminal failures with actionable causes | fault-injected smoke |
 | `OPS-DEMO` | Demo seed, simulator, and scenarios are reproducible and resettable | snapshot/digest smoke |
-| `OPS-BACKUP` | Records backup and verification detect corruption/missing data and report safely | backup restore test |
+| `OPS-BACKUP` | Backup files verify in full before restore, and restore reports failures safely | backup restore test |
 | `OPS-UPGRADE` | Config/schema/plugin/runtime upgrades preserve supported state and fail safely | upgrade matrix |
 | `OPS-RESOURCE` | Disk, memory, network, provider quota, and sandbox limits degrade predictably and remain observable | soak/fault injection |
 
@@ -238,7 +225,6 @@ The machine registry will enumerate legal and illegal transitions for at least:
 - source subscription and source-change receipt;
 - channel identity link;
 - plugin install/runtime state;
-- records schema saga, import run, connector cursor/cutover, and recycle state;
 - configuration change/promote/adopt/restore;
 - eval run, attempt, episode, shard, and baseline promotion.
 
@@ -262,12 +248,6 @@ All current worker jobs map to the registry:
 | `business-profile-build`, `industry-insights-build`, `bootstrap-metrics-build`, `metric-refresh` | `ONBOARD-*`, `METRIC-REFRESH` |
 | `workflow-run-fire`, `workflow-scheduler`, `workflow-output-ttl-sweep` | `FLOW-RUN`, `FLOW-CRON`, `FLOW-OUTPUT-TTL` |
 | `action-execute` | `ACTION-EXECUTE`, `ACTION-IDEMPOTENCY`, `ACTION-AUDIT` |
-| `records-watch-evaluate` | `RECORDS-WATCH`, `WATCH-*` |
-| `records-import` | `RECORDS-IMPORT` |
-| `records-salesforce-export`, `records-salesforce-sync`, `records-salesforce-sync-sweep`, `records-salesforce-cutover` | `RECORDS-CONNECT` |
-| `records-identity-link` | `RECORDS-IDENTITY` |
-| `library-distill` | `LIBRARY-DISTILL`, `LIBRARY-LAYERS` |
-| `records-backup-verify`, `records-ops-health`, `records-ops-watch`, `records-ops-finding`, `records-lifecycle-finding`, `records-system-finding` | `RECORDS-OPS`, `OPS-BACKUP` |
 
 ## 12. Corpus growth rule
 

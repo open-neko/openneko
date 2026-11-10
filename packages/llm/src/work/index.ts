@@ -3,7 +3,6 @@ export * from "./artifacts";
 export * from "./sandbox-net";
 export * from "./behavior-monitor";
 export * from "./deployment-profile";
-export * from "./data-surface";
 export { buildCardsSection, buildWorkPrompt } from "./prompt";
 export { acquireAgentSlot, agentSlotUsage, ASK_DEFAULT_CONCURRENCY, setAgentSlotLimit } from "./agent-slots";
 export {
@@ -29,7 +28,6 @@ export {
   buildGraphjinMcpServer,
   buildGraphjinReadServer,
   buildFilesServer,
-  buildRecordsReadServer,
   buildPluginActionServer,
   buildPackActionServer,
   buildPluginManagerServer,

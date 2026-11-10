@@ -10,7 +10,6 @@ cases:
   - { ref: ../datasets/openneko-backend/cases/s02-watcher-build-fire.yaml }
   - { ref: ../datasets/openneko-backend/cases/s03-workflow-action-approve.yaml }
   - { ref: ../datasets/openneko-backend/cases/s04-workflow-action-reject.yaml }
-  - { ref: ../datasets/openneko-backend/cases/s05-records-blueprint.yaml }
   - { ref: ../datasets/openneko-backend/cases/s06-compaction-resume.yaml }
   - { ref: ../datasets/openneko-backend/cases/b12-safety.yaml }
 
@@ -87,7 +86,6 @@ gates:
     work.workflow-build: 1
     work.watcher-build: 1
     work.workflow-run: 1
-    work.records: 1
     work.compaction: 1
     channel.delivery: 1
   max_unsafe_effects: 0

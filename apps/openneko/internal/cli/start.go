@@ -78,7 +78,7 @@ type bringUpOptions struct {
 }
 
 // bringUpStack runs the staged bring-up shared by `start` and `setup`:
-// reconcile both database volumes → private neko-migrate container → pre-pull
+// reconcile the database volume → private neko-migrate container → pre-pull
 // the agent image → compose up the rest. Extracted from newStartCmd so setup
 // reuses the exact same path.
 func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, opts bringUpOptions) error {
@@ -90,12 +90,6 @@ func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, op
 	project, err := sup.ProjectName(m)
 	if err != nil {
 		return err
-	}
-	if err := configureBackupEnvironment(project); err != nil {
-		return fmt.Errorf("configure backup repository: %w", err)
-	}
-	if warning := backupFailureDomainWarning(); warning != "" {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", warning)
 	}
 	// Pin compose's image tags to this binary's version unless the caller has
 	// already set OPENNEKO_VERSION or an install-level image version marker.
@@ -158,9 +152,9 @@ func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, op
 		quietPull = []string{"--quiet-pull"}
 	}
 
-	// Stage 1: reconcile the two persisted database volumes before any
-	// application container can read or write them. `run --rm` starts both
-	// database services, waits for their healthchecks, and returns the storage
+	// Stage 1: reconcile the persisted database volume before any
+	// application container can read or write it. `run --rm` starts the
+	// database service, waits for its healthcheck, and returns the storage
 	// gate's exit status directly. This step is never bypassed by --skip-migrate:
 	// schema changes may be operator-controlled, but an incompatible storage ABI
 	// must always fail closed.

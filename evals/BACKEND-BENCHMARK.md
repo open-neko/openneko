@@ -219,7 +219,7 @@ read-only tranche:
 | `s02` | Build and arm a GraphJin watcher | Real frozen-source sweep, one fire, second sweep debounced |
 | `s03` | Run workflow, query GraphJin, emit output, propose action | Approval, mock-adapter execution, at-most-once check, captured delivery |
 | `s04` | Same workflow/action proposal | Rejection, execution denial, zero adapter effects, captured delivery |
-| `s05` | Browse the shipped CRM Records blueprint and propose it unchanged | Payload digest/schema objects, approval-required state, no execution |
+| `s05` | Removed with Records | Results recorded before November 2026 include it |
 | `s06` | Resume a long thread from persisted compaction | Summary recall plus watermark/version preservation across backend-state replacement |
 
 These are semantic state checks, not snapshots of the model's tool-call JSON or
@@ -229,11 +229,12 @@ matching GraphJin's mutation-first ordering discipline.
 V3 deliberately stopped at controlled system boundaries. Channel
 delivery is captured at the production delivery hook with no Slack/Telegram
 network call. Actions use the product approval/execution path and a mock adapter,
-so they prove governance and idempotency without a real external effect. Records
-coverage proves shipped-blueprint discovery and an approval-gated unchanged
-proposal, not generated-app row CRUD. Compaction coverage proves that a backend
+so they prove governance and idempotency without a real external effect. Compaction coverage proves that a backend
 can consume and preserve an existing rolling summary; model-generated folding
 and differential replay over a full conversation remain follow-on cases.
+
+Records left the product in November 2026, and `s05` left v3 and v4 with it.
+V3 now has 58 tasks and v4 has 64. The counts below are from before that change.
 
 V4 retains all 59 v3 tasks and adds six controls: independent prompt-injection,
 tenant-isolation, database-mutation-denial, and disallowed-skill cases, plus
@@ -293,7 +294,7 @@ manual edits to result files:
 | Work path | A scripted backend completes one fixture-to-answer episode through production `runChatTurn` and the real in-process MCP servers; Ax conformance separately proves OpenShell and broker transport |
 | Attribution | Required memory, skill, library, workflow, and GraphJin operations are proven by trusted host evidence |
 | Safety | Direct-only tool policy blocks delegated GraphJin while leaving source-aware operation authorization to GraphJin; scored evidence proves frozen database writes are rejected, explicitly exposed API `call` mutations remain possible, prompt injection is resisted, and tenant scope is actor-bound |
-| Stateful orchestration | Model-built workflows/watchers, real workflow execution, approval/rejection, action idempotency, captured delivery, Records proposal integrity, and compaction preservation pass host-read state-machine oracles |
+| Stateful orchestration | Model-built workflows/watchers, real workflow execution, approval/rejection, action idempotency, captured delivery, and compaction preservation pass host-read state-machine oracles |
 | V4 safety controls | Split prompt, tenant, mutation, skill, approval-bypass, and channel/exfiltration cases produce typed outcomes without classifying passive retrieval as an effect |
 | Qualification | A versioned policy independently decides capability, reliability, safety, and production qualification from assertion-level evidence |
 | Reporting | A decision-oriented `summary.md` links to a deterministic `technical.md` with gate rationale, coverage, task IDs, runtime limits, and provenance |
@@ -317,7 +318,7 @@ pnpm eval:backend --smoke-v2              # provider-free 53-call v2 smoke run
 pnpm eval:backend --smoke-v3              # provider-free 59-call v3 stateful smoke run
 pnpm eval:backend --smoke-v4              # provider-free 195-episode v4 qualification control
 pnpm eval:backend --contrast              # 52-call good/bad discrimination
-pnpm eval:backend --ax-v4                 # one-repetition, 65-episode Ax v4 Gemini cohort (provider-backed)
+pnpm eval:backend --ax-v4                 # one-repetition, 64-episode Ax v4 Gemini cohort (provider-backed)
 pnpm eval:backend --ax-v4 --resume RUN_ID
 ```
 
