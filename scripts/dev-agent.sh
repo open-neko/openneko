@@ -1,0 +1,13 @@
+#!/bin/sh
+# Runs `openneko serve` on the host for `pnpm dev`. It serves files over HTTP
+# and runs agent turns on OPENNEKO_SERVE_SOCKET.
+set -eu
+
+. scripts/dev-env.sh
+
+mkdir -p "$(dirname "$OPENNEKO_SERVE_SOCKET")" "$OPENNEKO_AGENT_RUNS_DIR" "$OPENNEKO_DEV_STATE/bin"
+(cd apps/openneko && go build -o "$OPENNEKO_DEV_STATE/bin/openneko" ./cmd/openneko)
+exec "$OPENNEKO_DEV_STATE/bin/openneko" serve \
+  --addr "127.0.0.1:${OPENNEKO_SERVE_PORT:-8090}" \
+  --files-dir "$OPENNEKO_DEV_STATE/files" \
+  --index-dir "$OPENNEKO_DEV_STATE/file-index"

@@ -17,7 +17,7 @@ export class AgentRuntimeUnavailableError extends Error {
 }
 /**
  * Fail before setup is marked complete or onboarding work is queued unless
- * the exact OpenShell control-plane path used by the profiler is reachable.
+ * openneko serve answers on its agent socket and the org's model key loads.
  * Keep the underlying CLI error in server logs; browser copy is intentionally
  * stable, actionable, and free of local paths or provider details.
  */
@@ -26,7 +26,7 @@ export async function requireAgentRuntimeReady(orgId: string): Promise<void> {
     await verifyAgentRuntimeReady(orgId);
   } catch (cause) {
     console.warn(
-      `[agent-runtime-readiness] OpenShell preflight failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+      `[agent-runtime-readiness] agent runtime preflight failed: ${cause instanceof Error ? cause.message : String(cause)}`,
     );
     throw new AgentRuntimeUnavailableError({ cause });
   }

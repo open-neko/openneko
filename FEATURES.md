@@ -43,7 +43,7 @@ results as readable cards and charts — not raw data dumps.
 | A memory the agent keeps | Teach the assistant a fact once and it recalls it when a question needs it. The agent saves and searches its own memory with Postgres full-text search. Connect an embedding service and it also recalls by meaning. | #17 |
 | Briefing → deep dive | Any briefing card opens into a full Ask thread seeded with that card's context — from "what's this number?" to a real investigation in one click. | #8 |
 | Editable business profile | The assistant's understanding of your company is right there to read — click into it and edit it like a document. | #10 |
-| One runtime, any model provider | Ax is the sandboxed agent runtime for every organisation. It keeps the full administrative toolset, works with Anthropic, Google, OpenAI-compatible and other providers, and prices each run from the model price list. | #3, #112, #436, #449 |
+| One runtime, any model provider | Ax is the agent runtime for every organisation. It keeps the full administrative toolset, works with Anthropic, Google, OpenAI-compatible and other providers, and prices each run from the model price list. | #3, #112, #436, #449 |
 | Information-dense Compact mode | A density toggle switches the whole app between a comfortable reading layout and an information-dense operator view. | #88 |
 
 ## Connect your data, conversationally
@@ -132,14 +132,14 @@ restorable.
 
 ## Security you can verify
 
-The assistant is treated as untrusted by design: it runs in a locked-down
-sandbox, never holds your keys, and leaves a tamper-evident trail you can
-hand to an auditor.
+The assistant is treated as untrusted by design: it runs no code, its tools
+never hold your keys, and it leaves a tamper-evident trail you can hand to an
+auditor.
 
 | Feature | What it does for you | Shipped in |
 |---|---|---|
-| Always sandboxed | The AI agent runs inside isolation boxes with networking denied by default — this is the only mode, not an option you might forget to turn on. | #82, #96, #98 |
-| Your keys never enter the box | API keys are injected on the wire by a gateway outside the sandbox; the agent only ever holds a placeholder. Verifiably — you can grep the box and find nothing. | #82 |
+| The agent runs no code | The agent reads and writes files in its own run folder and reaches data only through the OpenNeko broker. It has no terminal. | #82, #96, #98 |
+| The agent's tools never see your keys | The model key travels to `openneko serve` with each turn. Serve removes every `*_API_KEY` variable from the environment the agent's tools run in. | #82 |
 | Secrets encrypted at rest | Tokens, passwords, and keys are encrypted on disk everywhere they're stored. | #96 |
 | Bring your own vault | Plug in an external secrets manager (Infisical) instead of local files, with no change to how anything else works. | #96 |
 | Approval gates | Anything that changes the world — sending, installing, configuring, inviting — becomes a proposal a human approves first, governed by per-organisation policies. | #11, #96 |

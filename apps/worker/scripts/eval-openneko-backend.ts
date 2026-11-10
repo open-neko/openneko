@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -9,7 +9,6 @@ import {
   createWorkThread,
   appendWorkRunEvent,
   agentRuntimeDepsFromConfig,
-  deleteOpenShellProvider,
   detectSkillUse,
   ensureAgentBroker,
   formatWorkMemoryPromptContext,
@@ -34,7 +33,6 @@ import {
 } from "@neko/llm/work";
 import {
   detectUpstreamError,
-  gatewayProviderName,
   provisionHostConfig,
   resolveAgentBackend,
   type AgentBackend,
@@ -2363,10 +2361,7 @@ export function createOpenNekoBackendDriver(context: {
   const originalEnvironment = new Map<string, string | undefined>(
     RUNTIME_ENVIRONMENT_NAMES.map((name) => [name, process.env[name]]),
   );
-  const hostConfigRoot =
-    process.env.XDG_CONFIG_HOME?.trim() || join(homedir(), ".config");
   let isolatedConfigRoot: string | undefined;
-  const evalProviderNames = new Set<string>();
   process.env.OPENNEKO_GRAPHJIN_CONFIG = EVAL_GRAPHJIN_CONFIG_PATH;
 
   async function isolateHostConfig(): Promise<void> {
@@ -2374,13 +2369,6 @@ export function createOpenNekoBackendDriver(context: {
       isolatedConfigRoot = await mkdtemp(
         join(tmpdir(), "openneko-backend-eval-config-"),
       );
-      await cp(
-        join(hostConfigRoot, "openshell"),
-        join(isolatedConfigRoot, "openshell"),
-        { recursive: true, force: false, errorOnExist: false },
-      ).catch((cause: NodeJS.ErrnoException) => {
-        if (cause.code !== "ENOENT") throw cause;
-      });
     }
     process.env.XDG_CONFIG_HOME = isolatedConfigRoot;
   }
@@ -2439,10 +2427,7 @@ export function createOpenNekoBackendDriver(context: {
       enabled: true,
       config: { backend: variant.backend },
     });
-    evalProviderNames.add(gatewayProviderName(fixture.orgId));
-    const launchConfig = await provisionHostConfig(fixture.orgId, {
-      requireOpenShellSync: true,
-    });
+    const launchConfig = await provisionHostConfig(fixture.orgId);
     const broker = await ensureAgentBroker();
     if (!broker) {
       throw new EvalEnvironmentError(
@@ -3160,17 +3145,6 @@ export function createOpenNekoBackendDriver(context: {
         }
         unregisterBrokerEvents();
         unregisterEvidence();
-        if (!slot.variant.backend.startsWith("scripted-")) {
-          const providerName = gatewayProviderName(fixture.orgId);
-          try {
-            await deleteOpenShellProvider({ providerName, family: true });
-            evalProviderNames.delete(providerName);
-          } catch (cause) {
-            console.warn(
-              `[backend-eval] deferred OpenShell provider cleanup for ${providerName}: ${cause instanceof Error ? cause.message : String(cause)}`,
-            );
-          }
-        }
         await fixture.cleanup();
       }
     },
@@ -3186,29 +3160,12 @@ export function createOpenNekoBackendDriver(context: {
       await oraclePool.end();
       closeSandboxLauncher();
       await shutdownAgentBroker();
-      const providerCleanupFailures: string[] = [];
-      for (const providerName of evalProviderNames) {
-        try {
-          await deleteOpenShellProvider({ providerName, family: true });
-          evalProviderNames.delete(providerName);
-        } catch (cause) {
-          providerCleanupFailures.push(
-            `${providerName}: ${cause instanceof Error ? cause.message : String(cause)}`,
-          );
-        }
-      }
       if (isolatedConfigRoot) {
         await rm(isolatedConfigRoot, { recursive: true, force: true });
       }
       for (const [name, value] of originalEnvironment) {
         if (value === undefined) delete process.env[name];
         else process.env[name] = value;
-      }
-      if (providerCleanupFailures.length > 0) {
-        throw new EvalEnvironmentError(
-          `OpenShell provider cleanup failed: ${providerCleanupFailures.join("; ")}`,
-          "openshell_provider_cleanup_failed",
-        );
       }
     },
   };

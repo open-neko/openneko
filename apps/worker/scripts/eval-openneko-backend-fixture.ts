@@ -256,7 +256,6 @@ export async function provisionWorkBackendFixture(input: {
       email: `${userId}@eval.invalid`,
       name: "Eval Member",
       org_id: orgId,
-      role: "member",
     });
     await db().insert(data_source).values({
       org_id: orgId,

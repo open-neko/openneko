@@ -138,12 +138,12 @@ describe("AxBackend", () => {
       OPENNEKO_MCP_ORG_ID: "org-1",
       OPENNEKO_BROKER_TOKEN: "broker-secret",
       OPENNEKO_HARNESS_WORKSPACE_DIR: workspace.orgRoot,
-      OPENNEKO_HARNESS_SHELL: "1",
       OPENNEKO_HARNESS_SKILLS_READ: "1",
       OPENNEKO_HARNESS_UPLOADS_DIR: workspace.threadUploadsRoot,
       OPENNEKO_HARNESS_WEB_HOSTS: "api.example.com",
       OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS: "180",
     });
+    expect(env.OPENNEKO_HARNESS_SHELL).toBeUndefined();
     expect(env.ANTHROPIC_API_KEY).toBeUndefined();
     expect(env.MODEL_API_KEY).toBeUndefined();
     expect(JSON.parse(stdin)).toMatchObject({

@@ -37,7 +37,7 @@ export {
 export { AX_HARNESS_BINARY } from "./agent-runtime-contract";
 export {
   ensureHostConfigProvisioned,
-  gatewayProviderName,
+  loadAgentModelKeys,
   provisionHostConfig,
   verifyAgentRuntimeReady,
 } from "./host-provision";

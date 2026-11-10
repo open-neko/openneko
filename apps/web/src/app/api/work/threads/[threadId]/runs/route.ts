@@ -94,9 +94,8 @@ async function postRun(request: NextRequest, context: RouteContext) {
     startupPhase("context.pack_actions", () => listPackActionDescriptors(orgId)),
   ]);
 
-  // The agent loop runs in an OpenShell sandbox (SEC9: the only runtime).
-  // The web server stays the control plane, launches the box, and relays
-  // events over the existing SSE.
+  // The web server runs the run's agent runner as a child process; its
+  // turns run in openneko serve. Events relay over the existing SSE.
   const broker = await startupPhase("broker.ready", () => ensureAgentBroker());
 
   let run: Awaited<ReturnType<typeof createWorkRun>>;

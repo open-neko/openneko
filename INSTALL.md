@@ -35,7 +35,7 @@ Then run `openneko setup` (guided), or `openneko start` to bring the stack up wi
 
 1. Choose an admin database password.
 2. Confirm the pre-filled GraphJin URL (`--mode demo`) or enter your own (`--mode prod`).
-3. Pick the model provider the agent should use (Anthropic / OpenAI / Google / Ollama / others). The agent (Ax) runs inside the OpenShell sandbox with the full tool set, including the chat-first management tools.
+3. Pick the model provider the agent should use (Anthropic / OpenAI / Google / Ollama / others). The agent (Ax) runs in `openneko serve` with the full tool set except the terminal, including the chat-first management tools.
 4. Add your provider API key.
 5. Add an industry research provider, or skip.
 
@@ -204,16 +204,14 @@ two-second timeout, is fire-and-forget, and never blocks the governed operation.
 Alert delivery failures are themselves emitted as structured critical stderr
 events.
 
-### Agent sandboxing
+### Agent runtime
 
-The agent loop always runs inside OpenShell policy
-sandboxes — default-deny egress, and the model API key never enters the
-sandbox (the gateway's egress proxy injects it on the wire; the box only
-ever holds an opaque placeholder). The containerized OpenShell gateway is
-part of the stack and the agent image is pre-pulled at install (never on
-the first chat). State dir is handled per-platform automatically (under
-`$HOME` on macOS/OrbStack, `/var/lib/openneko/openshell` on Linux). Needs
-Docker — already required to run OpenNeko.
+Web and worker start one agent runner per run. The runner stages the run's
+files in a shared folder and sends each turn to `openneko serve` over a Unix
+socket. The model key travels with the turn, and serve keeps every `*_API_KEY`
+variable out of the agent's tools. The agent reads and writes files in its
+run folder and reaches data only through the OpenNeko broker. The agent has
+no terminal; the external sandbox service adds it in a later release.
 
 ### Semantic search (optional)
 

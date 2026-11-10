@@ -14,7 +14,8 @@
   },
   "scripts": {
     "bootstrap": "AX_SKIP_SKILL_INSTALL=1 pnpm install && [ -f db/graphjin/dev.example.yml ] && [ ! -f db/graphjin/dev.yml ] && cp db/graphjin/dev.example.yml db/graphjin/dev.yml || true",
-    "dev": "concurrently -n web,worker -c blue,magenta \"pnpm dev:web\" \"pnpm dev:worker\"",
+    "dev": "concurrently -n agent,web,worker -c green,blue,magenta \"pnpm dev:agent\" \"pnpm dev:web\" \"pnpm dev:worker\"",
+    "dev:agent": "sh scripts/dev-agent.sh",
     "dev:web": ". scripts/dev-env.sh && OPENNEKO_BROKER_PORT=\"${OPENNEKO_WEB_BROKER_PORT:-4198}\" pnpm --filter @neko/web exec next dev --port \"${OPENNEKO_PORT:-3000}\"",
     "dev:web:stack": "sh scripts/dev-web-stack.sh",
     "dev:worker": ". scripts/dev-env.sh && OPENNEKO_BROKER_PORT=\"${OPENNEKO_WORKER_BROKER_PORT:-4199}\" pnpm --filter @neko/worker dev",

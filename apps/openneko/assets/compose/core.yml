@@ -295,7 +295,10 @@ services:
       OPENNEKO_SERVE_ADDR: 0.0.0.0:8090
       OPENNEKO_FILES_DIR: /data/files
       OPENNEKO_FILES_INDEX_DIR: /data/file-index
+      OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
     volumes:
+      - openneko-agent-runs:/var/lib/openneko/agent-runs
+      - openneko-run:/run/openneko
       - openneko-config:/config/openneko:ro
       - openneko-files:/data
     restart: unless-stopped
@@ -303,6 +306,8 @@ services:
   web:
     image: ghcr.io/open-neko/neko-web:${OPENNEKO_VERSION:-latest}
     depends_on:
+      openneko-serve:
+        condition: service_started
       # Schema is guaranteed ready by neko-migrate before web boots — no
       # need for web's entrypoint to run migrate itself anymore.
       neko-migrate:
@@ -327,6 +332,8 @@ services:
       OPENNEKO_MAP_STYLE: ${OPENNEKO_MAP_STYLE:-}
       OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
+      OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
+      OPENNEKO_AGENT_RUNS_DIR: /var/lib/openneko/agent-runs
     ports:
       # Web is the intentional server boundary. Operators can restrict it to
       # loopback with OPENNEKO_WEB_BIND_ADDRESS=127.0.0.1 when desired.
@@ -336,11 +343,15 @@ services:
       - openneko-graphjin-cli:/config/graphjin
       - openneko-agent-home:/tmp/openneko-home
       - openneko-agent-tmp:/tmp/openneko-tmp
+      - openneko-agent-runs:/var/lib/openneko/agent-runs
+      - openneko-run:/run/openneko
     restart: unless-stopped
 
   worker:
     image: ghcr.io/open-neko/neko-worker:${OPENNEKO_VERSION:-latest}
     depends_on:
+      openneko-serve:
+        condition: service_started
       # Same as web: neko-migrate completes before worker starts, so the
       # entrypoint no longer runs migrate.
       neko-migrate:
@@ -361,6 +372,8 @@ services:
       <<: *neko-app-env
       OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
+      OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
+      OPENNEKO_AGENT_RUNS_DIR: /var/lib/openneko/agent-runs
     expose:
       - "4100"
     volumes:
@@ -368,6 +381,8 @@ services:
       - openneko-graphjin-cli:/config/graphjin
       - openneko-agent-home:/tmp/openneko-home
       - openneko-agent-tmp:/tmp/openneko-tmp
+      - openneko-agent-runs:/var/lib/openneko/agent-runs
+      - openneko-run:/run/openneko
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4100/health"]
       interval: 5s
@@ -384,3 +399,5 @@ volumes:
   openneko-graphjin-cli:
   openneko-agent-home:
   openneko-agent-tmp:
+  openneko-agent-runs:
+  openneko-run:

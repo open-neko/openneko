@@ -291,8 +291,21 @@ COPY evals/environment/adventureworks/api/server.mjs /app/server.mjs
 EXPOSE 8090
 ENTRYPOINT ["node", "/app/server.mjs"]
 
+# ─── 4z. agent runner bundle ───────────────────────────────────────────
+# The runner entry and multiplexed tool bridge, without the worker's
+# dependency closure. Web and worker run it from /opt/openneko-agent.
+FROM source AS agent-deploy
+RUN cd apps/worker && pnpm exec esbuild \
+      src/agent-sandbox/entry.ts src/agent-sandbox/mcp-bridge.ts \
+      --bundle --platform=node --format=esm \
+      --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" \
+      --outdir=/out/agent-app \
+    && printf '{"type":"module"}\n' > /out/agent-app/package.json \
+    && mkdir -p /out/agent-app/assets \
+    && cp -R ../../packages/llm/assets/builtin-skills /out/agent-app/assets/
+
 # ─── 5a. web runtime ───────────────────────────────────────────────────
-# Web remains a trusted OpenShell control plane; the agent runtime is not here.
+# Web runs each agent run's runner from /opt/openneko-agent; turns run in serve.
 FROM runtime-base AS web
 ARG OPENNEKO_VERSION=unknown
 ARG OPENNEKO_COMMIT=unknown
@@ -309,6 +322,7 @@ ENV NODE_ENV=production \
     XDG_CONFIG_HOME=/tmp/openneko-config \
     NEXT_TELEMETRY_DISABLED=1
 RUN useradd --system --create-home --uid 1001 neko
+RUN install -d -o 1001 -m 0770 /var/lib/openneko/agent-runs /run/openneko
 RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-tmp \
     && chown -R neko:neko /config /tmp/openneko-home /tmp/openneko-tmp
 # Standalone output is self-contained (server.js + traced node_modules).
@@ -326,6 +340,8 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # worker image and the host install.
 COPY --from=go-build --chown=neko:neko /out/openneko /usr/local/bin/openneko
 RUN chmod +x /usr/local/bin/openneko
+COPY --from=agent-deploy /out/agent-app /opt/openneko-agent
+RUN chmod -R a+rX /opt/openneko-agent
 USER neko
 EXPOSE 8080
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
@@ -362,6 +378,7 @@ ENV NODE_ENV=production \
     HOME=/tmp/openneko-home \
     XDG_CONFIG_HOME=/tmp/openneko-config
 RUN useradd --system --create-home --uid 1001 neko
+RUN install -d -o 1001 -m 0770 /var/lib/openneko/agent-runs /run/openneko
 # /cache is mounted by the demo-mode adventureworks-init step; pre-creating
 # it here lets the named volume initialize with neko ownership instead of root
 # (Docker copies image-side ownership into a fresh named volume on first mount).
@@ -384,24 +401,16 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # extra install step. Same binary operators install on their host.
 COPY --from=go-build --chown=neko:neko /out/openneko /usr/local/bin/openneko
 RUN chmod +x /usr/local/bin/openneko
+COPY --from=agent-deploy /out/agent-app /opt/openneko-agent
+RUN chmod -R a+rX /opt/openneko-agent
 USER neko
+RUN cd /opt/openneko-agent && node entry.js --preflight \
+    && node --input-type=module -e "await import('./mcp-bridge.js')"
 EXPOSE 4100
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["node", "--import", "tsx/esm", "src/index.ts"]
 
 # ─── 5d. agent sandbox runtime (OpenShell) ─────────────────────────────
-# Compile the sandbox-only entry and multiplexed bridge. Ship their assets,
-# not the worker's dependency closure (DB, ONNX, transformers, tsx).
-FROM source AS agent-deploy
-RUN cd apps/worker && pnpm exec esbuild \
-      src/agent-sandbox/entry.ts src/agent-sandbox/mcp-bridge.ts \
-      --bundle --platform=node --format=esm \
-      --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" \
-      --outdir=/out/agent-app \
-    && printf '{"type":"module"}\n' > /out/agent-app/package.json \
-    && mkdir -p /out/agent-app/assets \
-    && cp -R ../../packages/llm/assets/builtin-skills /out/agent-app/assets/
-
 FROM cli AS agent
 USER root
 # Supervisor egress-netns tools + a non-root `sandbox` user (high UID, OpenShell
@@ -449,12 +458,16 @@ CMD ["--help"]
 # distroless cc image. /data is created here so a fresh named volume is owned
 # by the non-root user.
 FROM debian:bookworm-slim AS serve-data
-RUN mkdir -p /data/files /data/file-index && chown -R 1001:1001 /data
+RUN mkdir -p /data/files /data/file-index /var/lib/openneko/agent-runs /run/openneko \
+    && chown -R 1001:1001 /data /var/lib/openneko /run/openneko \
+    && chmod 0770 /var/lib/openneko/agent-runs /run/openneko
 
 FROM gcr.io/distroless/cc-debian12:latest AS neko-serve
 COPY --from=go-build /out/openneko /openneko
 COPY --from=duckdb-bin /usr/local/bin/duckdb /usr/local/bin/duckdb
 COPY --from=serve-data --chown=1001:1001 /data /data
+COPY --from=serve-data --chown=1001:1001 /var/lib/openneko /var/lib/openneko
+COPY --from=serve-data --chown=1001:1001 /run/openneko /run/openneko
 USER 1001:1001
 ENTRYPOINT ["/openneko"]
 CMD ["serve"]
