@@ -181,6 +181,13 @@ gives a warning, and start goes on.
 - With a URL, setup skips its database password step. Change the password
   where the database is managed, then update the URL.
 
+The next start step, `storage-reconcile`, only reports on a database that you
+run. It prints the collation provider and version. When the version changed
+since the database recorded it, for example after an operating system upgrade
+on the database server, it prints the `REINDEX DATABASE` and
+`ALTER DATABASE ... REFRESH COLLATION VERSION` lines to run. It changes
+nothing. With the bundled `neko-db`, it rebuilds the indexes itself.
+
 ### The bundled database of an older release
 
 Releases before this one ran `neko-db` in prod mode too. When a prod install
@@ -367,8 +374,12 @@ document as failed when its original file is gone.
 ## Backup and restore
 
 `openneko backup` writes one encrypted file while the stack runs. The file
-holds a `pg_dump` of `neko-db` and the config and file volumes
-(`openneko-config`, `openneko-graphjin-cli` and `openneko-files`). Files go to
+holds a `pg_dump` of OpenNeko's database and the config and file volumes
+(`openneko-config`, `openneko-graphjin-cli` and `openneko-files`). With a
+database URL, `pg_dump` runs in a worker container and connects by the URL and
+its TLS files, so the host needs no Postgres tools. The dump holds the objects
+that the URL's login owns. It leaves out the schemas and tables of other roles.
+Files go to
 `${XDG_DATA_HOME:-$HOME/.local/share}/openneko/backups/`. Use `--to` or
 `OPENNEKO_BACKUP_DIR` to write them somewhere else, such as a NAS.
 
@@ -378,9 +389,17 @@ openneko restore <file> --confirm RESTORE
 ```
 
 Restore decrypts and checks the whole file before it changes anything. Then it
-stops the stack, replaces the volumes, recreates the database and starts the
-stack again. Migrations bring an older backup forward. `openneko doctor`
-warns when the latest backup is missing or more than a week old.
+names the database it will replace, stops the stack, replaces the volumes,
+restores the database and starts the stack again. Migrations bring an older
+backup forward. `openneko doctor` warns when the latest backup is missing or
+more than a week old.
+
+With the bundled `neko-db`, restore drops and recreates the database. With a
+database URL, restore cannot do that. It drops every object that the URL's
+login owns in the database the URL names, then restores the dump in one
+transaction. It keeps the extensions, the objects that other roles own and the
+grants that you gave the login. Restore does not put a backup of an external
+database into a bundled `neko-db`.
 
 Each installation has its own backup key. Keep a copy away from the backups:
 

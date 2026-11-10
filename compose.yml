@@ -43,15 +43,15 @@ services:
     volumes:
       - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/config/openneko
 
-  # Storage ABI gate: repairs persisted indexes after a libc/collation
-  # change, so an incompatible image fails closed before any read or write.
+  # Reports the collation state of the external database. The bundled
+  # database overlay turns it into the storage ABI gate, which repairs.
   storage-reconcile:
     profiles: ["steps"]
     build:
       context: .
       target: neko-cli
     restart: "no"
-    command: ["storage", "reconcile"]
+    command: ["storage", "reconcile", "--report-only"]
     secrets: *database-url
     environment:
       OPENNEKO_DATABASE_URL_FILE: /run/secrets/database-url

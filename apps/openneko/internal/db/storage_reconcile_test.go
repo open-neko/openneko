@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -203,5 +204,47 @@ func TestNullableString(t *testing.T) {
 	}
 	if got := nullableString(storageString("x")); got != `"x"` {
 		t.Fatalf("nullableString(x) = %q", got)
+	}
+}
+
+func TestInspectStorageReportsAndWritesNothing(t *testing.T) {
+	c := &fakeStorageConn{
+		database: "neko",
+		provider: "c",
+		recorded: storageString("2.31"),
+		actual:   storageString("2.36"),
+	}
+	var lines []string
+	if err := InspectStorage(context.Background(), c, func(format string, args ...any) {
+		lines = append(lines, fmt.Sprintf(format, args...))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.exec) != 0 {
+		t.Fatalf("inspect wrote to the database: %v", c.exec)
+	}
+	joined := strings.Join(lines, "\n")
+	for _, want := range []string{"external database", `REINDEX DATABASE "neko";`, `ALTER DATABASE "neko" REFRESH COLLATION VERSION;`} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("report lacks %q:\n%s", want, joined)
+		}
+	}
+
+	c.recorded = storageString("2.36")
+	lines = nil
+	if err := InspectStorage(context.Background(), c, func(format string, args ...any) {
+		lines = append(lines, fmt.Sprintf(format, args...))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(lines, "\n"), "WARN") {
+		t.Fatalf("matching versions gave a warning:\n%s", strings.Join(lines, "\n"))
+	}
+
+	c.provider = "i"
+	c.actual = storageString("153.120")
+	c.recorded = storageString("153.120")
+	if err := InspectStorage(context.Background(), c, nil); err != nil {
+		t.Fatalf("an ICU database must not fail the report: %v", err)
 	}
 }

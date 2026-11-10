@@ -30,10 +30,14 @@ func newStorageContractCmd() *cobra.Command {
 }
 
 func newStorageReconcileCmd() *cobra.Command {
-	return &cobra.Command{
+	var reportOnly bool
+	cmd := &cobra.Command{
 		Use:   "reconcile",
 		Short: "Reconcile the managed database before application startup",
-		Args:  cobra.NoArgs,
+		Long: `Reconcile the bundled database to the storage contract: rebuild its indexes
+after a libc or collation change. With --report-only, for a database that the
+operator runs, report the collation state and the SQL to run, and change nothing.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			out := cmd.OutOrStdout()
@@ -45,9 +49,18 @@ func newStorageReconcileCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("connect to database: %w", err)
 			}
-			repaired, reconcileErr := db.ReconcileStorage(ctx, conn, func(format string, args ...any) {
+			logf := func(format string, args ...any) {
 				fmt.Fprintf(out, format+"\n", args...)
-			})
+			}
+			if reportOnly {
+				inspectErr := db.InspectStorage(ctx, conn, logf)
+				closeErr := conn.Close(ctx)
+				if inspectErr != nil {
+					return fmt.Errorf("inspect database: %w", inspectErr)
+				}
+				return closeErr
+			}
+			repaired, reconcileErr := db.ReconcileStorage(ctx, conn, logf)
 			closeErr := conn.Close(ctx)
 			if reconcileErr != nil {
 				return fmt.Errorf("reconcile database: %w", reconcileErr)
@@ -62,4 +75,6 @@ func newStorageReconcileCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&reportOnly, "report-only", false, "Report on a database that OpenNeko does not own; change nothing")
+	return cmd
 }

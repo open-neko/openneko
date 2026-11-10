@@ -298,8 +298,11 @@ ARG OPENNEKO_COMMIT=unknown
 ENV OPENNEKO_VERSION=$OPENNEKO_VERSION OPENNEKO_COMMIT=$OPENNEKO_COMMIT
 LABEL org.opencontainers.image.revision=$OPENNEKO_COMMIT org.opencontainers.image.version=$OPENNEKO_VERSION
 WORKDIR /app
+# pg_dump must be at least the server's major version; Debian's client is 15.
+COPY --from=neko-db /usr/local/share/keyrings/postgres.gpg.asc /usr/local/share/keyrings/postgres.gpg.asc
+COPY --from=neko-db /etc/apt/sources.list.d/pgdg.list /etc/apt/sources.list.d/pgdg.list
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git openssh-client postgresql-client unzip \
+      git openssh-client postgresql-client-16 unzip \
     && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
     PORT=4100 \

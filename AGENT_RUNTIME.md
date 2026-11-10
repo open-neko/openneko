@@ -102,7 +102,9 @@ Migration 0128 removed the setting that did that.
 
 1. An external database only: `database-check` runs `openneko database
    check` (see INSTALL.md, "OpenNeko's database").
-2. `storage-reconcile` checks the database storage contract.
+2. `storage-reconcile` reports the collation state of an external database
+   and changes nothing. With the bundled database, it rebuilds the indexes
+   after a libc or collation change.
 3. `neko-migrate` applies the migrations (`--skip-migrate` turns it off).
 4. `openneko-config-init` gives the config volume to user 1001.
 5. Demo mode only: `adventureworks-init` loads the sample data and

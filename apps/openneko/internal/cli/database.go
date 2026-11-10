@@ -32,6 +32,7 @@ func newDatabaseCmd() *cobra.Command {
 			return checkDatabase(cmd.Context(), target.DSN(), cmd.OutOrStdout())
 		},
 	})
+	cmd.AddCommand(newDatabaseInfoCmd(), newDatabaseDumpCmd(), newDatabaseRestoreCmd())
 	return cmd
 }
 

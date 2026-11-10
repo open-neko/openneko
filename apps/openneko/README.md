@@ -99,8 +99,9 @@ modes always load that overlay.
 
 ### Backups
 
-`openneko backup` writes one encrypted file containing a `pg_dump` of the bundled neko-db
-and archives of the volumes `openneko-config`, `openneko-graphjin-cli` (the
+`openneko backup` writes one encrypted file containing a `pg_dump` of OpenNeko's database
+(the bundled neko-db, or the database that the URL names, dumped from a worker
+container) and archives of the volumes `openneko-config`, `openneko-graphjin-cli` (the
 customer GraphJin config), `openneko-files` (each user's files) and, in the
 demo, `graphjin-config`. The stack must be running. Files
 go to `${XDG_DATA_HOME:-$HOME/.local/share}/openneko/backups/<installation>/<project>/`
@@ -108,8 +109,9 @@ unless `--to` or `OPENNEKO_BACKUP_DIR` names another place, such as a NAS.
 There is no backup service and no point-in-time restore: a backup is a file.
 
 `openneko restore <file> --confirm RESTORE` decrypts and verifies the whole
-file before changing anything, then stops the stack, replaces the config
-volumes, recreates the database from the dump and starts the stack again,
+file before changing anything, then names the target database, stops the
+stack, replaces the config volumes, restores the database from the dump and
+starts the stack again,
 whose migrations bring an older backup forward. `openneko doctor` reports the
 latest backup and warns when there is none or it is more than a week old.
 

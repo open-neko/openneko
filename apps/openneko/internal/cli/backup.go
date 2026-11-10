@@ -55,6 +55,7 @@ type backupManifest struct {
 		User          string `json:"user"`
 		Name          string `json:"name"`
 		ServerVersion string `json:"server_version"`
+		External      bool   `json:"external,omitempty"`
 	} `json:"database"`
 	Volumes []string `json:"volumes"`
 }
@@ -64,8 +65,10 @@ func newBackupCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "backup [--to <file>]",
 		Short: "Write an encrypted backup of the database and config volumes to a file",
-		Long: `Write one encrypted file holding a pg_dump of neko-db plus the OpenNeko and
-GraphJin config volumes (including Library files). The stack must be running.
+		Long: `Write one encrypted file holding a pg_dump of OpenNeko's database plus the
+OpenNeko and GraphJin volumes. With an external database, pg_dump runs in a
+worker container and connects by the database URL. With the bundled neko-db,
+the stack must be running.
 
 By default the file goes to $XDG_DATA_HOME/openneko/backups/<installation>/<project>
 (override with OPENNEKO_BACKUP_DIR). It is encrypted with this installation's
@@ -220,14 +223,13 @@ func resolveBackupDestination(destination, defaultDir, project string, now time.
 // returns its path. The file appears under its final name only once every
 // byte has been written and synced.
 func createBackup(ctx context.Context, sup *compose.Supervisor, project string, files []string, destination string, out io.Writer) (string, error) {
-	if !usesBundledDatabase(files) {
-		return "", errors.New("openneko backup dumps only the bundled neko-db; back up your external database where it runs")
-	}
-	stack := backupStack{sup: sup, project: project, files: files}
-	if running, err := stack.serviceRunning(ctx, "neko-db"); err != nil {
-		return "", err
-	} else if !running {
-		return "", fmt.Errorf("neko-db is not running in %s; start the stack (`openneko start -d`) before taking a backup", project)
+	stack := backupStack{sup: sup, project: project, files: files, external: !usesBundledDatabase(files)}
+	if !stack.external {
+		if running, err := stack.serviceRunning(ctx, "neko-db"); err != nil {
+			return "", err
+		} else if !running {
+			return "", fmt.Errorf("neko-db is not running in %s; start the stack (`openneko start -d`) before taking a backup", project)
+		}
 	}
 	key, keyPath, err := loadBackupKey(sup, true)
 	if err != nil {
@@ -252,18 +254,22 @@ func createBackup(ctx context.Context, sup *compose.Supervisor, project string, 
 		Project:         project,
 		OpenNekoVersion: version.Version,
 	}
-	identity, err := stack.psql(ctx, `select current_user || '|' || current_database() || '|' || current_setting('server_version')`)
+	identity, err := stack.databaseIdentity(ctx)
 	if err != nil {
-		return "", fmt.Errorf("inspect neko-db: %w", err)
+		return "", fmt.Errorf("inspect OpenNeko's database: %w", err)
 	}
 	parts := strings.Split(identity, "|")
 	if len(parts) != 3 {
-		return "", fmt.Errorf("inspect neko-db: unexpected response %q", identity)
+		return "", fmt.Errorf("inspect OpenNeko's database: unexpected response %q", identity)
 	}
 	manifest.Database.User, manifest.Database.Name, manifest.Database.ServerVersion = parts[0], parts[1], parts[2]
-	rolePassword, err := stack.psql(ctx, `select coalesce(rolpassword, '') from pg_authid where rolname = current_user`)
-	if err != nil {
-		return "", fmt.Errorf("read neko-db role: %w", err)
+	manifest.Database.External = stack.external
+	rolePassword := ""
+	if !stack.external {
+		rolePassword, err = stack.psql(ctx, `select coalesce(rolpassword, '') from pg_authid where rolname = current_user`)
+		if err != nil {
+			return "", fmt.Errorf("read neko-db role: %w", err)
+		}
 	}
 	volumes := map[string]string{}
 	for _, volume := range backupVolumes {
@@ -280,7 +286,7 @@ func createBackup(ctx context.Context, sup *compose.Supervisor, project string, 
 		volumes[volume.name] = name
 		manifest.Volumes = append(manifest.Volumes, volume.name)
 	}
-	image, err := stack.databaseImage(ctx)
+	image, err := stack.helperImage(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -336,11 +342,11 @@ func createBackup(ctx context.Context, sup *compose.Supervisor, project string, 
 	}); err != nil {
 		return "", err
 	}
-	fmt.Fprintln(out, "Dumping neko-db...")
+	fmt.Fprintf(out, "Dumping database %s...\n", manifest.Database.Name)
 	if err := writeEntry(backupDatabaseEntry, func(w io.Writer) error {
 		return stack.dumpDatabase(ctx, w)
 	}); err != nil {
-		return "", fmt.Errorf("dump neko-db: %w", err)
+		return "", fmt.Errorf("dump database %s: %w", manifest.Database.Name, err)
 	}
 	if err := bundle.Finish(); err != nil {
 		return "", err
@@ -381,9 +387,10 @@ func syncDirectory(dir string) {
 // backupStack runs the docker operations backup and restore need against one
 // Compose project.
 type backupStack struct {
-	sup     *compose.Supervisor
-	project string
-	files   []string
+	sup      *compose.Supervisor
+	project  string
+	files    []string
+	external bool
 }
 
 func (s backupStack) compose(ctx context.Context, stdin io.Reader, stdout io.Writer, args ...string) error {
@@ -414,26 +421,48 @@ func (s backupStack) serviceRunning(ctx context.Context, service string) (bool, 
 	return ids != "", nil
 }
 
-// databaseImage is the image of the project's neko-db container. It carries
-// tar and runs as root, so it can archive and restore any volume without
-// pulling another image.
-func (s backupStack) databaseImage(ctx context.Context) (string, error) {
-	ids, err := s.composeOutput(ctx, "ps", "-a", "-q", "neko-db")
+// helperImage is the image of the project's neko-db container, or of its
+// worker with an external database. Both carry tar and run as root, so they
+// archive and restore any volume without pulling another image.
+func (s backupStack) helperImage(ctx context.Context) (string, error) {
+	service := "neko-db"
+	if s.external {
+		service = "worker"
+	}
+	ids, err := s.composeOutput(ctx, "ps", "-a", "-q", service)
 	if err != nil {
 		return "", err
 	}
 	id := strings.TrimSpace(strings.SplitN(ids, "\n", 2)[0])
 	if id == "" {
-		return "", fmt.Errorf("no neko-db container exists in %s", s.project)
+		return "", fmt.Errorf("no %s container exists in %s", service, s.project)
 	}
 	image, err := dockerOutput(ctx, "inspect", "--format", "{{.Image}}", id)
 	if err != nil {
 		return "", err
 	}
 	if image == "" {
-		return "", fmt.Errorf("cannot determine the neko-db image")
+		return "", fmt.Errorf("cannot determine the %s image", service)
 	}
 	return image, nil
+}
+
+// databaseTool runs `openneko database <args>` in a new worker container,
+// which holds the database URL secret, its TLS files and pg_dump.
+func (s backupStack) databaseTool(ctx context.Context, stdin io.Reader, stdout io.Writer, args ...string) error {
+	run := []string{"run", "--rm", "-T", "--no-deps", "-e", "TMPDIR=/tmp", "--entrypoint", "/usr/local/bin/openneko", "worker", "database"}
+	return s.compose(ctx, stdin, stdout, append(run, args...)...)
+}
+
+func (s backupStack) databaseIdentity(ctx context.Context) (string, error) {
+	if !s.external {
+		return s.psql(ctx, `select current_user || '|' || current_database() || '|' || current_setting('server_version')`)
+	}
+	var stdout bytes.Buffer
+	if err := s.databaseTool(ctx, nil, &stdout, "info"); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(stdout.String()), nil
 }
 
 // volumeName resolves a Compose volume to its Docker name by label, so
@@ -463,6 +492,9 @@ func (s backupStack) psql(ctx context.Context, query string) (string, error) {
 }
 
 func (s backupStack) dumpDatabase(ctx context.Context, w io.Writer) error {
+	if s.external {
+		return s.databaseTool(ctx, nil, w, "dump")
+	}
 	return s.compose(ctx, nil, w, "exec", "-T", "neko-db", "sh", "-ec",
 		`exec pg_dump --format=custom --no-password -U "$POSTGRES_USER" -d "$POSTGRES_DB"`)
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,9 +27,11 @@ func newRestoreCmd() *cobra.Command {
 		Use:   "restore <file> --confirm RESTORE",
 		Short: "Restore the database and config volumes from an `openneko backup` file",
 		Long: `Decrypt and verify the whole backup file first, then stop the stack, replace
-the OpenNeko and GraphJin config volumes, recreate the neko database from the
-dump, and start the stack again (migrations bring an older backup forward).
-This overwrites live data and configuration.`,
+the OpenNeko and GraphJin volumes, restore the database from the dump, and
+start the stack again (migrations bring an older backup forward). With an
+external database, restore replaces every object that the URL's login owns in
+the database that the URL names, and keeps its extensions. This overwrites
+live data and configuration.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path, err := validateRestoreArgs(args, confirmation)
@@ -204,10 +207,19 @@ func runRestore(ctx context.Context, cmd *cobra.Command, path, keyFile string) e
 	if err != nil {
 		return err
 	}
-	if !usesBundledDatabase(files) {
-		return errors.New("openneko restore restores only into the bundled neko-db; this install uses an external database (nothing was changed)")
+	stack := backupStack{sup: sup, project: project, files: files, external: !usesBundledDatabase(files)}
+	if !stack.external && manifest.Database.External {
+		return errors.New("this backup is of an external database; restore it into an install that uses a database URL (nothing was changed)")
 	}
-	stack := backupStack{sup: sup, project: project, files: files}
+	if stack.external {
+		database, err := resolveStackDatabase(ctx, sup, mode, project)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "Restoring into %s, from OpenNeko's database URL.\n", describeDatabaseURL(database.url))
+	} else {
+		fmt.Fprintf(out, "Restoring into the bundled neko-db of %s.\n", project)
+	}
 
 	fmt.Fprintln(out, "Stopping the stack...")
 	if err := stack.compose(ctx, nil, os.Stdout, "stop"); err != nil {
@@ -218,7 +230,7 @@ func runRestore(ctx context.Context, cmd *cobra.Command, path, keyFile string) e
 	if err := stack.compose(ctx, nil, os.Stdout, "up", "--no-start"); err != nil {
 		return fmt.Errorf("prepare stack volumes: %w", err)
 	}
-	image, err := stack.databaseImage(ctx)
+	image, err := stack.helperImage(ctx)
 	if err != nil {
 		return err
 	}
@@ -267,6 +279,11 @@ func runRestore(ctx context.Context, cmd *cobra.Command, path, keyFile string) e
 				return failed("reading the backup", err)
 			}
 			rolePassword = string(raw)
+		case name == backupDatabaseEntry && stack.external:
+			if err := stack.databaseTool(ctx, entry, out, "restore"); err != nil {
+				return failed("restoring the database", err)
+			}
+			databaseRestored = true
 		case name == backupDatabaseEntry:
 			fmt.Fprintln(out, "Restoring neko-db...")
 			if err := stack.compose(ctx, nil, os.Stdout, "up", "-d", "--wait", "--wait-timeout", "180", "--no-deps", "neko-db"); err != nil {
@@ -326,4 +343,12 @@ SQL`
 	}
 	_, err := s.psql(ctx, "ALTER ROLE CURRENT_USER PASSWORD '"+rolePassword+"'")
 	return err
+}
+
+func describeDatabaseURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "the database that the URL names"
+	}
+	return fmt.Sprintf("database %s on %s", strings.TrimPrefix(u.Path, "/"), u.Host)
 }

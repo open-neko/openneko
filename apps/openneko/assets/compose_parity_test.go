@@ -317,8 +317,8 @@ func TestStorageReconciliationGatesEveryDatabaseConsumer(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s compose is missing storage-reconcile", label)
 		}
-		if want := []string{"storage", "reconcile"}; !reflect.DeepEqual(reconcile.Command, want) {
-			t.Fatalf("%s storage-reconcile command = %v, want %v", label, reconcile.Command, want)
+		if want := []string{"storage", "reconcile", "--report-only"}; !reflect.DeepEqual(reconcile.Command, want) {
+			t.Fatalf("%s storage-reconcile command = %v, want %v: an external database is reported on, not repaired", label, reconcile.Command, want)
 		}
 		if reconcile.Environment["OPENNEKO_DATABASE_URL_FILE"] != "/run/secrets/database-url" {
 			t.Fatalf("%s storage-reconcile does not read the database URL", label)
@@ -571,9 +571,9 @@ func TestPackagedDemoLoaderHasItsTools(t *testing.T) {
 	if end := strings.Index(stage, "\nFROM "); end >= 0 {
 		stage = stage[:end]
 	}
-	for _, tool := range []string{"unzip", "postgresql-client"} {
+	for _, tool := range []string{"unzip", "postgresql-client-16"} {
 		if !strings.Contains(stage, " "+tool+" ") {
-			t.Errorf("the worker image does not install %s, which the demo AdventureWorks loader runs", tool)
+			t.Errorf("the worker image does not install %s, which the demo AdventureWorks loader and backup run", tool)
 		}
 	}
 }
@@ -590,6 +590,9 @@ func TestBundledDatabaseGatesStorageReconciliation(t *testing.T) {
 		reconcile := loadComposeParityDocument(t, raw).Services["storage-reconcile"]
 		if reconcile.DependsOn["neko-db"].Condition != "service_healthy" {
 			t.Fatalf("%s storage-reconcile must wait for healthy neko-db", label)
+		}
+		if want := []string{"storage", "reconcile"}; !reflect.DeepEqual(reconcile.Command, want) {
+			t.Fatalf("%s storage-reconcile command = %v, want %v: the bundled database is repaired", label, reconcile.Command, want)
 		}
 		for _, key := range []string{"NEKO_PG_HOST", "NEKO_PG_DATABASE"} {
 			if _, ok := reconcile.Environment[key]; !ok {

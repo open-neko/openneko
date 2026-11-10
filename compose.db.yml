@@ -46,6 +46,7 @@ services:
     secrets: !reset []
 
   storage-reconcile:
+    command: ["storage", "reconcile"]
     depends_on:
       neko-db:
         condition: service_healthy
