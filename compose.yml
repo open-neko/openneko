@@ -15,8 +15,8 @@ x-neko-app-env: &neko-app-env
   NEKO_EMBEDDING_MODEL: ${NEKO_EMBEDDING_MODEL:-}
   NEKO_EMBEDDING_API_KEY: ${NEKO_EMBEDDING_API_KEY:-}
   NEKO_EMBEDDING_DIMENSIONS: ${NEKO_EMBEDDING_DIMENSIONS:-}
-  NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,neko-graphjin,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
-  no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,neko-graphjin,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
+  NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
+  no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
 
 services:
   neko-db:
@@ -128,47 +128,8 @@ services:
       - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/config/openneko
     restart: "no"
 
-  neko-graphjin:
-    build:
-      context: .
-      target: neko-graphjin
-    restart: unless-stopped
-    depends_on:
-      # neko-db must be reachable for graphjin to connect; neko-migrate must
-      # have finished so graphjin's schema cache reflects all pending
-      # migrations. db_schema_poll_duration: 10s in neko.yml also picks up
-      # post-boot migrations, but the explicit dep keeps first-boot
-      # deterministic.
-      neko-db:
-        condition: service_healthy
-      neko-migrate:
-        condition: service_completed_successfully
-    # The custom entrypoint reads the password from /openneko-config/config.json
-    # (written by the worker entrypoint + the /setup wizard) on every container
-    # start, so password rotation works after a simple `docker compose restart
-    # neko-graphjin`. NEKO_PG_PASSWORD here is the bootstrap fallback used the
-    # very first time, before config.json exists.
-    #
-    # OPENNEKO_CONFIG_VOLUME selects the source of /openneko-config. Default is
-    # the named volume `openneko-config`, shared with web+worker when they too
-    # run in compose. In host-hybrid dev (`pnpm dev:up`), it's overridden to the
-    # operator's `$HOME/.config/openneko` so host web/worker and in-Docker
-    # graphjin share the same physical config.json without a manual sync.
-    environment:
-      NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
-    volumes:
-      - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/openneko-config:ro
-    ports:
-      - "127.0.0.1:${OPENNEKO_GRAPHJIN_PORT:-8089}:8089"
-    healthcheck:
-      # graphjin serves no /health route (it 500s); the GraphQL endpoint
-      # answering is the honest readiness signal.
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8089/api/v1/graphql"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
-  # One-shot: sets the neko_files role password, writes serve's credentials
+  # One-shot: sets the neko_files and neko_subscriptions role passwords,
+  # writes serve's credentials
   # and creates the customer GraphJin config when it is missing. Serve holds
   # no main database login and no secret-key.
   openneko-serve-init:
@@ -196,7 +157,9 @@ services:
     restart: "no"
 
   # openneko serve: each user's private files, their keyword index in
-  # neko-db, SQL over sheet tables, agent turns and the customer GraphJin.
+  # neko-db, SQL over sheet tables, agent turns, the customer GraphJin on
+  # 8080 and the subscriptions GraphJin on 8089 (workflow outputs, read as
+  # neko_subscriptions).
   # Web and worker call it with short-lived tokens signed with a key derived
   # from the secret-key. GraphJin does not reload auth keys, so serve starts
   # after openneko-serve-init has written the per-org JWT secret.
@@ -213,6 +176,7 @@ services:
         aliases: [graphjin]
     ports:
       - "127.0.0.1:${GRAPHJIN_PORT:-8080}:8080"
+      - "127.0.0.1:${OPENNEKO_GRAPHJIN_PORT:-8089}:8089"
     environment:
       OPENNEKO_SERVE_CREDENTIALS: /credentials
       OPENNEKO_SERVE_ADDR: 0.0.0.0:8090
@@ -223,6 +187,7 @@ services:
       OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
       OPENNEKO_GRAPHJIN_ADDR: 0.0.0.0:8080
+      OPENNEKO_SUBSCRIPTIONS_ADDR: 0.0.0.0:8089
     volumes:
       - openneko-agent-runs:/var/lib/openneko/agent-runs
       - openneko-run:/run/openneko
@@ -241,8 +206,6 @@ services:
       # Schema is guaranteed ready by neko-migrate before web boots.
       neko-migrate:
         condition: service_completed_successfully
-      neko-graphjin:
-        condition: service_started
       openneko-serve-init:
         condition: service_completed_successfully
       # Web is the user-facing readiness boundary. Do not serve the temporary
@@ -257,7 +220,7 @@ services:
       # URL people open when the web port is behind a proxy or another host.
       OPENNEKO_PUBLIC_URL: ${OPENNEKO_PUBLIC_URL:-http://localhost:${OPENNEKO_PORT:-3000}}
       OPENNEKO_MAP_STYLE: ${OPENNEKO_MAP_STYLE:-}
-      OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
+      OPENNEKO_GRAPHJIN_URL: http://openneko-serve:8089
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
       OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
       OPENNEKO_SANDBOX_URL: ${OPENNEKO_SANDBOX_URL:-}
@@ -266,7 +229,7 @@ services:
     ports:
       - "${OPENNEKO_WEB_BIND_ADDRESS:-0.0.0.0}:${OPENNEKO_PORT:-3000}:8080"
     volumes:
-      # Honors OPENNEKO_CONFIG_VOLUME like neko-migrate/neko-graphjin, so the
+      # Honors OPENNEKO_CONFIG_VOLUME like neko-migrate, so the
       # host-hybrid dev layout shares one physical config dir (and one
       # secret-key) instead of splitting it across a named volume.
       - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/config/openneko
@@ -295,7 +258,7 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *neko-app-env
-      OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
+      OPENNEKO_GRAPHJIN_URL: http://openneko-serve:8089
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
       OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
       OPENNEKO_SANDBOX_URL: ${OPENNEKO_SANDBOX_URL:-}

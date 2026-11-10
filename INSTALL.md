@@ -185,8 +185,8 @@ openneko version
 Modes:
 
 - **`prod`** (default) — the production control, customer-data, file, and
-  agent runtime services. Six containers remain running after the six startup
-  jobs complete.
+  agent runtime services. Four containers remain running (`neko-db`,
+  `openneko-serve`, `web`, `worker`) after four startup jobs complete.
 - **`dev`** — source-checkout workflow: use `pnpm dev:setup` for Docker-only dependencies plus AdventureWorks demo data, then `pnpm dev` for hot-reloaded web/worker from source.
 - **`demo`** — core + AdventureWorks: `adventureworks-db`, `adventureworks-init`, `neko-adventureworks-seed`. The full live-trial flow (continuous order trickle + scenario injector) lives in `compose.adventureworks.yml` and needs the [Build from source](#build-from-source-advanced) path.
 
@@ -506,14 +506,14 @@ pnpm dev
 
 Web and worker run on the host with hot reload. Everything else runs in Docker.
 
-- `pnpm dev:up` starts the backing services with `compose.dev.yml`: `neko-db`, `neko-graphjin`, the `openneko-serve` container with the customer GraphJin, and AdventureWorks with its simulator. It installs the pinned GraphJin CLI into `.openneko/dev/bin`, builds the serve image, rebuilds `neko-graphjin` when it reports another version than the pin, runs migrations from source, and writes the GraphJin JWT secret.
+- `pnpm dev:up` starts the backing services with `compose.dev.yml`: `neko-db`, the `openneko-serve` container with the customer GraphJin and the subscriptions GraphJin, and AdventureWorks with its simulator. It installs the pinned GraphJin CLI into `.openneko/dev/bin`, builds the serve image, runs migrations from source, and writes the GraphJin JWT secret.
 - `pnpm dev:seed` seeds demo workflows. `pnpm dev:setup` runs both steps.
 - `pnpm dev` runs `next dev` on port 3000 and `tsx watch` for the worker. Edits to `apps/web`, `apps/worker`, and workspace packages reload without an image build.
 - `scripts/dev-env.sh` holds the host settings. Each service a host process calls has a loopback port; `pnpm dev:web` and `pnpm dev:worker` source the file.
 - The customer GraphJin runs in sources mode from `db/graphjin/dev.sources.example.yml`. Its config lives in `.openneko/dev/graphjin`, and the worker manages it like the core stack.
 - OpenNeko state uses your XDG config home. Set `OPENNEKO_DEV_CONFIG_HOME=$PWD/.openneko/dev/config` to keep a worktree's stack separate, and a distinct `COMPOSE_PROJECT_NAME` with its ports when two stacks run at once.
 
-Without `neko-graphjin`, subscription-chained workflows stay silent (`subscription manager ready (0 active)` in worker logs).
+Without the `openneko-serve` container, subscription-chained workflows stay silent (`subscription manager ready (0 active)` in worker logs).
 
 Install host-only CLIs the worker shells out to (Docker images already include them):
 
@@ -555,7 +555,7 @@ environment override.
 
 **GraphJin connection fails.** `--mode demo` uses internal `http://graphjin:8080` (pre-filled). Dev mode (`pnpm dev`) on the host uses `http://localhost:8080`.
 
-**Workflow subscriptions don't fire.** `neko-graphjin` must be healthy. The worker logs `subscription manager ready (N active)` on boot — if `N=0` despite subscriptions in the DB, GraphJin is unreachable or its password drifted. Rotate via `/setup`, then `openneko stop && openneko start`.
+**Workflow subscriptions don't fire.** Run `openneko status` and check the `subscriptions` line. The worker logs `subscription manager ready (N active)` on boot. If `N=0` while the database holds subscriptions, the subscriptions GraphJin in `openneko-serve` is unreachable. `openneko stop && openneko start` writes its login again.
 
 **Provider key fails.** Confirm it's active, has billing/quota, and matches the provider in `/settings`.
 

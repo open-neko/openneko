@@ -21,16 +21,25 @@ describe("buildSubscriptionQuery (workflow_output)", () => {
     });
     expect(payload).not.toBeNull();
     expect(payload!.variables).toEqual({
-      where: {
-        org_id: { eq: "org-abc" },
-        scope: { eq: "apac_churn" },
-        topic: { eq: "partner_renewal" },
-        mood: { in: ["watch", "act"] },
-        kind: { in: ["finding", "recommendation"] },
-      },
+      org_id: "org-abc",
+      scope: "apac_churn",
+      topic: "partner_renewal",
     });
-    expect(payload!.query).toContain("subscription WorkflowOutputMatch");
-    expect(payload!.query).toContain("workflow_output");
+    expect(payload!.query).toContain(
+      'workflow_output(where: { org_id: { eq: $org_id }, scope: { eq: $scope }, topic: { eq: $topic }, mood: { in: ["watch", "act"] }, kind: { in: ["finding", "recommendation"] } }',
+    );
+    expect(payload!.query).not.toContain("$where");
+    expect(payload!.query).not.toContain("org-abc");
+  });
+
+  it("filters by org_id alone when the filter is empty, and one mood by eq", () => {
+    const empty = buildSubscriptionQuery({ sourceKind: "workflow_output", orgId: "o", filter: {} })!;
+    expect(empty.variables).toEqual({ org_id: "o" });
+    expect(empty.query).toContain("workflow_output(where: { org_id: { eq: $org_id } }");
+    const one = buildSubscriptionQuery({ sourceKind: "workflow_output", orgId: "o", filter: { mood: "act" } })!;
+    expect(one.query).toContain("mood: { eq: $mood }");
+    const quoted = buildSubscriptionQuery({ sourceKind: "workflow_output", orgId: "o", filter: { kinds: ['a" } }) {'] } })!;
+    expect(quoted.query).toContain('kind: { in: ["a\\" } }) {"] }');
   });
 
   it("returns null for source_kinds not yet wired", () => {

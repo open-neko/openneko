@@ -46,7 +46,7 @@ describe("startSubscriptionManager — transport resolver", () => {
     vi.useRealTimers();
   });
 
-  it("routes workflow_output to neko-graphjin URL and source_change to data-source URL", async () => {
+  it("routes workflow_output to the subscriptions GraphJin URL and source_change to data-source URL", async () => {
     listEnabledMock.mockResolvedValueOnce([
       fakeSub({
         id: "sub-wfo",
@@ -67,7 +67,7 @@ describe("startSubscriptionManager — transport resolver", () => {
     const resolveTransport = vi.fn(async (sub: SubscriptionRecord) =>
       sub.sourceKind === "source_change"
         ? { baseUrl: "http://data-source-graphjin:8080" }
-        : { baseUrl: "http://neko-graphjin:8089" },
+        : { baseUrl: "http://openneko-serve:8089" },
     );
 
     const mgr = startSubscriptionManager({
@@ -84,7 +84,7 @@ describe("startSubscriptionManager — transport resolver", () => {
     const srcCall = calls.find((c) =>
       c.query.includes("SourceChangeMatch"),
     );
-    expect(wfoCall?.baseUrl).toBe("http://neko-graphjin:8089");
+    expect(wfoCall?.baseUrl).toBe("http://openneko-serve:8089");
     expect(srcCall?.baseUrl).toBe("http://data-source-graphjin:8080");
 
     await mgr.stop();

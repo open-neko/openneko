@@ -174,6 +174,57 @@ func TestCustomerGraphJinRunsInServe(t *testing.T) {
 	}
 }
 
+func TestSubscriptionsGraphJinRunsInServe(t *testing.T) {
+	root := repoRootForTest(t)
+	read := func(path string) composeParityDocument {
+		var raw []byte
+		var err error
+		if strings.HasPrefix(path, "compose/") {
+			raw, err = ComposeFS.ReadFile(path)
+		} else {
+			raw, err = os.ReadFile(filepath.Join(root, path))
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return loadComposeParityDocument(t, raw)
+	}
+	for _, path := range []string{"compose.yml", "compose.adventureworks.yml", "compose.dev.yml", "compose/core.yml", "compose/demo.yml"} {
+		doc := read(path)
+		if _, ok := doc.Services["neko-graphjin"]; ok {
+			t.Errorf("%s still defines neko-graphjin; serve runs the subscriptions GraphJin", path)
+		}
+		for name, service := range doc.Services {
+			if _, ok := service.DependsOn["neko-graphjin"]; ok {
+				t.Errorf("%s: %s waits for the removed neko-graphjin service", path, name)
+			}
+		}
+	}
+	for _, path := range []string{"compose.yml", "compose/core.yml"} {
+		doc := read(path)
+		if got := doc.Services["openneko-serve"].Environment["OPENNEKO_SUBSCRIPTIONS_ADDR"]; got != "0.0.0.0:8089" {
+			t.Errorf("%s serve subscriptions address = %#v", path, got)
+		}
+		for _, name := range []string{"web", "worker"} {
+			if got := doc.Services[name].Environment["OPENNEKO_GRAPHJIN_URL"]; got != "http://openneko-serve:8089" {
+				t.Errorf("%s: %s subscribes at %#v, want http://openneko-serve:8089", path, name, got)
+			}
+		}
+	}
+	for _, gone := range []string{"scripts/neko-graphjin-entrypoint.sh", "db/graphjin/neko.yml", "apps/openneko/cmd/graphjin-config"} {
+		if _, err := os.Stat(filepath.Join(root, gone)); err == nil {
+			t.Errorf("%s is still in the repo", gone)
+		}
+	}
+	dockerfile, err := os.ReadFile(filepath.Join(root, "Dockerfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(dockerfile), "AS neko-graphjin") {
+		t.Error("the Dockerfile still builds the neko-graphjin image")
+	}
+}
+
 func composeMountSourceAt(mounts []string, target string) string {
 	for _, mount := range mounts {
 		parts := strings.Split(mount, ":")

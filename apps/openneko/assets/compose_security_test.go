@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -145,14 +146,12 @@ func TestPackagedComposeExposesOnlyWebToLAN(t *testing.T) {
 
 func TestPackagedComposeKeepsRuntimeTrafficOnDockerNetwork(t *testing.T) {
 	core, _ := readComposeForTest(t, "core.yml")
-	for service, port := range map[string]string{
-		"neko-db":        "5432",
-		"openneko-serve": "8080",
-		"neko-graphjin":  "8089",
+	for service, ports := range map[string][]string{
+		"neko-db":        {"5432"},
+		"openneko-serve": {"8080", "8089"},
 	} {
-		got := core.Services[service].Expose
-		if len(got) != 1 || got[0] != port {
-			t.Fatalf("%s expose = %v, want internal port %s", service, got, port)
+		if got := core.Services[service].Expose; !reflect.DeepEqual(got, ports) {
+			t.Fatalf("%s expose = %v, want internal ports %v", service, got, ports)
 		}
 	}
 

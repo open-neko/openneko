@@ -32,18 +32,30 @@ function buildWorkflowOutputSubscription(
   orgId: string,
 ): SubscriptionQueryPayload {
   const f = filter as WorkflowOutputFilter;
-  const where: Record<string, unknown> = { org_id: { eq: orgId } };
-  if (f.scope) where.scope = { eq: f.scope };
-  if (f.topic) where.topic = { eq: f.topic };
-  if (f.mood) {
-    where.mood = Array.isArray(f.mood) ? { in: f.mood } : { eq: f.mood };
+  // GraphJin 3.21.18 rejects a `$where` variable, and a subscription fails on
+  // a list variable, so scalars are variables and lists are literals.
+  const variables: Record<string, unknown> = { org_id: orgId };
+  const where = ["org_id: { eq: $org_id }"];
+  if (f.scope) {
+    variables.scope = f.scope;
+    where.push("scope: { eq: $scope }");
+  }
+  if (f.topic) {
+    variables.topic = f.topic;
+    where.push("topic: { eq: $topic }");
+  }
+  if (Array.isArray(f.mood)) {
+    where.push(`mood: { in: ${toGraphqlLiteral(f.mood.map(String))} }`);
+  } else if (f.mood) {
+    variables.mood = f.mood;
+    where.push("mood: { eq: $mood }");
   }
   if (f.kinds && f.kinds.length > 0) {
-    where.kind = { in: f.kinds };
+    where.push(`kind: { in: ${toGraphqlLiteral(f.kinds.map(String))} }`);
   }
 
-  const query = `subscription WorkflowOutputMatch($where: workflow_outputWhereInput) {
-  workflow_output(where: $where, order_by: { created_at: desc }, limit: 1) {
+  const query = `subscription WorkflowOutputMatch {
+  workflow_output(where: { ${where.join(", ")} }, order_by: { created_at: desc }, limit: 1) {
     id
     org_id
     workflow_run_id
@@ -56,7 +68,7 @@ function buildWorkflowOutputSubscription(
   }
 }`;
 
-  return { query, variables: { where } };
+  return { query, variables };
 }
 
 export type WorkflowOutputMatch = {

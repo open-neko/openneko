@@ -75,11 +75,13 @@ zone is serve and the runner's turns. Serve holds only these:
 
 - the `neko_files` database login. The role can read and write the three
   `file_content_*` tables and nothing else (migration 0127).
+- the `neko_subscriptions` database login. The role can read
+  `workflow_output` and nothing else (migration 0129).
 - the token key, `HMAC(secret key, "openneko-serve:v1")`. It checks the
   tokens that web and the worker sign. It cannot decrypt a stored value.
 - a turn's model key, while the turn runs.
 
-The one-shot `openneko-serve-init` step writes the first two into the
+The one-shot `openneko-serve-init` step writes the first three into the
 `openneko-serve-credentials` volume before serve starts. It runs on every
 start, so a new secret key reaches serve on the next start. Serve does not
 mount the config volume.
@@ -128,6 +130,25 @@ own container.
   socket and no sandbox key. It runs as the same user in the same
   container, so it can still read files that serve can read.
 
+## The subscriptions GraphJin
+
+Serve also runs the GraphJin that serves the worker's workflow output
+subscriptions, on port 8089. It is a second child process of the same kind,
+with the same restarts, 503 answer and state file.
+
+- It connects as `neko_subscriptions`. Serve reads the role's URL from
+  `subscriptions.url` in the credentials folder and writes the GraphJin config
+  into a private folder (`OPENNEKO_SUBSCRIPTIONS_DIR`, default
+  `$TMPDIR/openneko-subscriptions`, mode 0700). When the URL changes, serve
+  restarts the child. A URL for another role is refused, and the running
+  child stays.
+- The child gets no `GJ_*` variables and no `GO_ENV`, because those are for
+  the customer GraphJin.
+- `openneko graphjin status --subscriptions` prints its state, and
+  `openneko status` shows it as the `subscriptions` line.
+- This replaces the `neko-graphjin` container, which logged in as `neko`.
+  `openneko start` and `upgrade` remove the old container.
+
 ## The sandbox service
 
 The sandbox gives each run its own user and group from
@@ -170,6 +191,9 @@ Compose sets all of these. They matter only for custom deployments.
 | `OPENNEKO_GRAPHJIN_CONFIG` | web, worker, serve, serve-init | the customer GraphJin config (`/config/graphjin/agentic.yml`); empty runs no GraphJin in serve |
 | `OPENNEKO_GRAPHJIN_ADDR` | serve | where the customer GraphJin listens (default `127.0.0.1:8080`; Compose sets `0.0.0.0:8080`) |
 | `OPENNEKO_GRAPHJIN_SEED` | serve-init | the template for a new config; the serve image sets it |
+| `OPENNEKO_SUBSCRIPTIONS_ADDR` | serve | where the subscriptions GraphJin listens (default `127.0.0.1:8089`; Compose sets `0.0.0.0:8089`); empty runs none |
+| `OPENNEKO_SUBSCRIPTIONS_DIR` | serve | the private folder for its config and state |
+| `OPENNEKO_GRAPHJIN_URL` | web, worker | the subscriptions GraphJin (`http://openneko-serve:8089`) |
 
 Web and the worker check that serve answers on its socket before setup
 completes and before onboarding work starts. When serve does not answer, they

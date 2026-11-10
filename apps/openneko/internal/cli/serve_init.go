@@ -23,8 +23,11 @@ import (
 const (
 	filesRole           = "neko_files"
 	filesRoleLabel      = "openneko-files-role:v1"
+	subsRole            = "neko_subscriptions"
+	subsRoleLabel       = "openneko-subscriptions-role:v1"
 	serveTokenKeyFile   = "token.key"
 	serveDatabaseFile   = "database.url"
+	serveSubsFile       = "subscriptions.url"
 	serveCredentialsEnv = "OPENNEKO_SERVE_CREDENTIALS"
 )
 
@@ -73,30 +76,33 @@ func writeServeCredentials(ctx context.Context, admin db.ConnConfig, configDir, 
 	if err != nil {
 		return err
 	}
-	pw, err := config.SigningSecret(configDir, filesRoleLabel)
-	if err != nil {
-		return err
-	}
-	password := hex.EncodeToString(pw)
-
 	conn, err := pgx.Connect(ctx, admin.DSN())
 	if err != nil {
 		return err
 	}
 	defer conn.Close(ctx)
-	if _, err := conn.Exec(ctx, fmt.Sprintf("alter role %s with login password '%s'", filesRole, password)); err != nil {
-		return fmt.Errorf("set the %s password (the role comes from migration 0127; the database login needs the right to alter it): %w", filesRole, err)
-	}
-
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	roleURL, err := roleDatabaseURL(admin, filesRole, password)
-	if err != nil {
-		return err
-	}
-	if err := writeFileAtomic(filepath.Join(dir, serveDatabaseFile), []byte(roleURL+"\n")); err != nil {
-		return err
+	for _, r := range []struct{ role, label, migration, file string }{
+		{filesRole, filesRoleLabel, "0127", serveDatabaseFile},
+		{subsRole, subsRoleLabel, "0129", serveSubsFile},
+	} {
+		pw, err := config.SigningSecret(configDir, r.label)
+		if err != nil {
+			return err
+		}
+		password := hex.EncodeToString(pw)
+		if _, err := conn.Exec(ctx, fmt.Sprintf("alter role %s with login password '%s'", r.role, password)); err != nil {
+			return fmt.Errorf("set the %s password (the role comes from migration %s; the database login needs the right to alter it): %w", r.role, r.migration, err)
+		}
+		roleURL, err := roleDatabaseURL(admin, r.role, password)
+		if err != nil {
+			return err
+		}
+		if err := writeFileAtomic(filepath.Join(dir, r.file), []byte(roleURL+"\n")); err != nil {
+			return err
+		}
 	}
 	return writeFileAtomic(filepath.Join(dir, serveTokenKeyFile), []byte(hex.EncodeToString(tokenKey)+"\n"))
 }

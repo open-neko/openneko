@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,9 +18,10 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/files"
+	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
 )
 
-func TestServeInitGivesServeOnlyTheFileTables(t *testing.T) {
+func TestServeInitGivesEachServeRoleOnlyItsTables(t *testing.T) {
 	url := os.Getenv("OPENNEKO_TEST_DATABASE_URL")
 	if url == "" {
 		t.Skip("set OPENNEKO_TEST_DATABASE_URL to a Postgres database")
@@ -31,6 +33,9 @@ func TestServeInitGivesServeOnlyTheFileTables(t *testing.T) {
 	}
 	admin, err := pgx.Connect(ctx, url)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.Exec(ctx, "select pg_advisory_lock(7129)"); err != nil {
 		t.Fatal(err)
 	}
 	name := fmt.Sprintf("serve_init_%d", time.Now().UnixNano())
@@ -62,7 +67,7 @@ func TestServeInitGivesServeOnlyTheFileTables(t *testing.T) {
 			t.Fatalf("run %d: %v", i, err)
 		}
 	}
-	for _, f := range []string{serveTokenKeyFile, serveDatabaseFile} {
+	for _, f := range []string{serveTokenKeyFile, serveDatabaseFile, serveSubsFile} {
 		info, err := os.Stat(filepath.Join(out, f))
 		if err != nil {
 			t.Fatal(err)
@@ -87,7 +92,7 @@ func TestServeInitGivesServeOnlyTheFileTables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range []string{serveTokenKeyFile, serveDatabaseFile} {
+	for _, f := range []string{serveTokenKeyFile, serveDatabaseFile, serveSubsFile} {
 		raw, _ := os.ReadFile(filepath.Join(out, f))
 		if bytes.Contains(raw, bytes.TrimSpace(secret)) || bytes.Contains(raw, []byte(base.Password)) {
 			t.Fatalf("%s holds the secret-key or the main database password", f)
@@ -127,6 +132,34 @@ func TestServeInitGivesServeOnlyTheFileTables(t *testing.T) {
 		var pgErr *pgconn.PgError
 		if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
 			t.Fatalf("%s running %q: want permission denied, got %v", filesRole, sql, err)
+		}
+	}
+	subsURL, err := os.ReadFile(filepath.Join(out, serveSubsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gjhost.RenderSubscriptionsConfig(strings.TrimSpace(string(subsURL))); err != nil {
+		t.Fatal(err)
+	}
+	subs, err := pgx.Connect(ctx, strings.TrimSpace(string(subsURL)))
+	if err != nil {
+		t.Fatalf("connect as %s: %v", subsRole, err)
+	}
+	defer subs.Close(ctx)
+	if _, err := subs.Exec(ctx, `select count(*) from workflow_output`); err != nil {
+		t.Fatal(err)
+	}
+	for _, sql := range []string{
+		`select count(*) from organization`,
+		`select count(*) from file_content_unit`,
+		`select count(*) from llm_provider_config`,
+		`delete from workflow_output`,
+		`create table subs_owned (id int)`,
+	} {
+		_, err := subs.Exec(ctx, sql)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+			t.Fatalf("%s running %q: want permission denied, got %v", subsRole, sql, err)
 		}
 	}
 }

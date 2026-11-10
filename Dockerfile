@@ -75,8 +75,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       git openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Pinned GraphJin binary for the worker's config checks, neko-graphjin and the
-# backend eval. The customer GraphJin runs inside openneko serve, linked from
+# Pinned GraphJin binary for the worker's config checks and the backend eval. The customer GraphJin runs inside openneko serve, linked from
 # serv/v3 v3.21.18 (upstream commit 6f14910d5e64, the replace lines in
 # apps/openneko/go.mod); bump both together.
 FROM debian:bookworm-slim AS graphjin-bin
@@ -159,10 +158,6 @@ RUN cd apps/openneko && \
     CGO_ENABLED=0 GOOS=linux \
     go build -trimpath -ldflags "-s -w -X github.com/open-neko/neko/apps/openneko/internal/version.Version=container -X github.com/open-neko/neko/apps/openneko/internal/version.Commit=container -X github.com/open-neko/neko/apps/openneko/internal/version.CommitTimestamp=container" \
       -o /out/openneko ./cmd/openneko
-RUN cd apps/openneko && \
-    CGO_ENABLED=0 GOOS=linux \
-    go build -trimpath -ldflags "-s -w" \
-      -o /out/openneko-graphjin-config ./cmd/graphjin-config
 
 # DuckDB CLI for sheet tables in openneko serve, pinned by checksum.
 FROM debian:bookworm-slim AS duckdb-bin
@@ -359,7 +354,8 @@ CMD ["--help"]
 
 # ─── 5d. neko-serve runtime ────────────────────────────────────────────
 # `openneko serve`: each user's private files, their keyword index in neko-db,
-# SQL over sheet tables, agent turns and the customer GraphJin. DuckDB needs
+# SQL over sheet tables, agent turns, the customer GraphJin and the
+# subscriptions GraphJin. DuckDB needs
 # libstdc++, so the base is the distroless cc image. The folders are created
 # here so a fresh named volume is owned by the non-root user.
 FROM debian:bookworm-slim AS serve-data
@@ -383,26 +379,9 @@ USER 1001:1001
 ENTRYPOINT ["/openneko"]
 CMD ["serve"]
 
-# ─── 6. neko-graphjin runtime ──────────────────────────────────────────
-# OpenNeko's own GraphJin instance — exposes the metadata Postgres
-# (workflow_definition, workflow_run, workflow_output, observation,
-# subscription, action_*) so the worker can subscribe to output-match
-# firings and dogfood query features. Distinct from the customer-data
-# graphjin in compose.adventureworks.yml.
-#
-# The entrypoint re-templates db/graphjin/neko.yml from the openneko
-# config.json on every start, so password rotation via /setup just
-# requires `docker compose restart neko-graphjin`. The credential templater is
-# a small static Go binary; Node is not present in either GraphJin image.
+# ─── 6. graphjin-runtime ───────────────────────────────────────────────
+# The GraphJin binary alone, for the backend eval stack.
 FROM alpine:3.22 AS graphjin-runtime
 RUN apk add --no-cache ca-certificates curl tini
 COPY --from=graphjin-bin /usr/local/bin/graphjin /usr/local/bin/graphjin
 
-FROM graphjin-runtime AS neko-graphjin
-COPY scripts/neko-graphjin-entrypoint.sh /usr/local/bin/neko-graphjin-entrypoint.sh
-COPY --from=go-build /out/openneko-graphjin-config /usr/local/bin/openneko-graphjin-config
-RUN chmod +x /usr/local/bin/neko-graphjin-entrypoint.sh
-COPY db/graphjin/neko.yml /seed/neko.yml
-EXPOSE 8089
-ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/neko-graphjin-entrypoint.sh"]
-CMD ["serve", "--path", "/config"]

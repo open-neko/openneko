@@ -20,8 +20,8 @@ x-neko-app-env: &neko-app-env
   NEKO_EMBEDDING_MODEL: ${NEKO_EMBEDDING_MODEL:-}
   NEKO_EMBEDDING_API_KEY: ${NEKO_EMBEDDING_API_KEY:-}
   NEKO_EMBEDDING_DIMENSIONS: ${NEKO_EMBEDDING_DIMENSIONS:-}
-  NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,neko-graphjin,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
-  no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,neko-graphjin,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
+  NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
+  no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
 
 services:
   neko-db:
@@ -127,34 +127,8 @@ services:
       - openneko-config:/config/openneko
     restart: "no"
 
-  neko-graphjin:
-    image: ghcr.io/open-neko/neko-graphjin:${OPENNEKO_VERSION:-latest}
-    restart: unless-stopped
-    depends_on:
-      # neko-db must be reachable for graphjin to connect; neko-migrate must
-      # have finished so the schema graphjin caches at boot reflects all
-      # pending migrations. The neko.yml config also sets
-      # db_schema_poll_duration: 10s so post-boot migrations are picked up
-      # automatically, but the explicit dep keeps first-boot deterministic.
-      neko-db:
-        condition: service_healthy
-      neko-migrate:
-        condition: service_completed_successfully
-    environment:
-      NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
-    volumes:
-      - openneko-config:/openneko-config:ro
-    expose:
-      - "8089"
-    healthcheck:
-      # graphjin serves no /health route (it 500s); the GraphQL endpoint
-      # answering is the honest readiness signal.
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8089/api/v1/graphql"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
-  # One-shot: sets the neko_files role password, writes serve's credentials
+  # One-shot: sets the neko_files and neko_subscriptions role passwords,
+  # writes serve's credentials
   # and creates the customer GraphJin config from the image's seed when it is
   # missing. Serve holds no main database login and no secret-key.
   openneko-serve-init:
@@ -180,7 +154,9 @@ services:
     restart: "no"
 
   # openneko serve: each user's private files, their keyword index in
-  # neko-db, SQL over sheet tables, agent turns and the customer GraphJin.
+  # neko-db, SQL over sheet tables, agent turns, the customer GraphJin on
+  # 8080 and the subscriptions GraphJin on 8089 (workflow outputs, read as
+  # neko_subscriptions).
   # Web and worker call it with short-lived tokens signed with a key derived
   # from the secret-key. GraphJin does not reload auth keys, so serve starts
   # after openneko-serve-init has written the per-org JWT secret.
@@ -195,6 +171,7 @@ services:
         aliases: [graphjin]
     expose:
       - "8080"
+      - "8089"
     environment:
       OPENNEKO_SERVE_CREDENTIALS: /credentials
       OPENNEKO_SERVE_ADDR: 0.0.0.0:8090
@@ -205,6 +182,7 @@ services:
       OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
       OPENNEKO_GRAPHJIN_ADDR: 0.0.0.0:8080
+      OPENNEKO_SUBSCRIPTIONS_ADDR: 0.0.0.0:8089
     volumes:
       - openneko-agent-runs:/var/lib/openneko/agent-runs
       - openneko-run:/run/openneko
@@ -222,8 +200,6 @@ services:
       # need for web's entrypoint to run migrate itself anymore.
       neko-migrate:
         condition: service_completed_successfully
-      neko-graphjin:
-        condition: service_started
       openneko-serve-init:
         condition: service_completed_successfully
       # Web is the user-facing readiness boundary. Do not serve the temporary
@@ -238,7 +214,7 @@ services:
       # URL people open when the web port is behind a proxy or another host.
       OPENNEKO_PUBLIC_URL: ${OPENNEKO_PUBLIC_URL:-http://localhost:${OPENNEKO_PORT:-3000}}
       OPENNEKO_MAP_STYLE: ${OPENNEKO_MAP_STYLE:-}
-      OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
+      OPENNEKO_GRAPHJIN_URL: http://openneko-serve:8089
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
       OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
       OPENNEKO_SANDBOX_URL: ${OPENNEKO_SANDBOX_URL:-}
@@ -274,7 +250,7 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *neko-app-env
-      OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
+      OPENNEKO_GRAPHJIN_URL: http://openneko-serve:8089
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
       OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
       OPENNEKO_SANDBOX_URL: ${OPENNEKO_SANDBOX_URL:-}

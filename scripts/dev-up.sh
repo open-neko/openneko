@@ -36,16 +36,8 @@ compose up -d --wait neko-db
 compose build openneko-serve
 compose run --rm --no-deps openneko-serve-init
 
-# Compose reuses a built image after the GraphJin pin moves. Rebuild
-# neko-graphjin when it reports another version, or the worker stops at start.
-if ! compose run --rm --no-deps -T --entrypoint graphjin neko-graphjin version 2>/dev/null \
-  | grep -q "GraphJin $graphjin_version"; then
-  echo "Rebuilding neko-graphjin for GraphJin $graphjin_version"
-  compose build neko-graphjin
-fi
-
 compose up -d \
-  neko-graphjin openneko-serve \
+  openneko-serve \
   adventureworks-simulator adventureworks-scenario-injector
 
 echo "Backing services are up. Start web and worker with: pnpm dev"

@@ -1,4 +1,4 @@
-// Package gjhost runs the customer GraphJin for openneko serve.
+// Package gjhost runs the GraphJin engines of openneko serve.
 package gjhost
 
 import (

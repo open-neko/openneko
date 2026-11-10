@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -51,11 +52,15 @@ func newGraphjinServeCmd() *cobra.Command {
 
 func newGraphjinStatusCmd() *cobra.Command {
 	var file string
+	var subs bool
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Print the state of the customer GraphJin that openneko serve runs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if subs {
+				file = filepath.Join(subscriptionsDir(), gjhost.SubscriptionsConfig)
+			}
 			if file == "" {
 				return fmt.Errorf("--config is required")
 			}
@@ -71,6 +76,7 @@ func newGraphjinStatusCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&file, "config", os.Getenv("OPENNEKO_GRAPHJIN_CONFIG"), "Customer GraphJin config file (agentic.yml)")
+	cmd.Flags().BoolVar(&subs, "subscriptions", false, "Print the state of the subscriptions GraphJin")
 	return cmd
 }
 

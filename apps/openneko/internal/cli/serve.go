@@ -24,7 +24,7 @@ import (
 )
 
 func newServeCmd() *cobra.Command {
-	var addr, filesDir, indexDir, duckdb, agentSocket, sandboxURL, credentials, gjConfig, gjAddr string
+	var addr, filesDir, indexDir, duckdb, agentSocket, sandboxURL, credentials, gjConfig, gjAddr, subsAddr, subsDir string
 	var maxTurns int
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -74,6 +74,16 @@ func newServeCmd() *cobra.Command {
 			} else {
 				gjDone <- nil
 			}
+			subsDone := make(chan error, 1)
+			if subsAddr != "" && credentials != "" {
+				subs := &gjhost.Subscriptions{URLFile: filepath.Join(credentials, serveSubsFile), Dir: subsDir, Addr: subsAddr, Log: cmd.ErrOrStderr()}
+				go func() { subsDone <- subs.Run(ctx) }()
+			} else {
+				if subsAddr != "" {
+					fmt.Fprintln(cmd.ErrOrStderr(), "subscriptions GraphJin off: it needs --credentials from `openneko serve-init`")
+				}
+				subsDone <- nil
+			}
 			srv := &http.Server{Handler: svc.Handler(), ReadHeaderTimeout: 10 * time.Second}
 			fmt.Fprintf(cmd.OutOrStdout(), "openneko serve listening on %s\n", ln.Addr())
 			errc := make(chan error, 1)
@@ -99,9 +109,12 @@ func newServeCmd() *cobra.Command {
 				case <-shut.Done():
 				}
 			}
-			select {
-			case <-gjDone:
-			case <-time.After(7 * time.Second):
+			wait := time.After(7 * time.Second)
+			for _, done := range []chan error{gjDone, subsDone} {
+				select {
+				case <-done:
+				case <-wait:
+				}
 			}
 			return nil
 		},
@@ -120,6 +133,8 @@ func newServeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&credentials, "credentials", os.Getenv(serveCredentialsEnv), "Folder written by `openneko serve-init`: the token key and the neko_files database URL. Empty reads the secret-key and the main database login")
 	cmd.Flags().StringVar(&gjConfig, "graphjin-config", os.Getenv("OPENNEKO_GRAPHJIN_CONFIG"), "Customer GraphJin config file (agentic.yml); empty runs no GraphJin. GraphJin runs as a child process; a new token in .openneko-graphjin-restart beside it restarts the child")
 	cmd.Flags().StringVar(&gjAddr, "graphjin-addr", envOr("OPENNEKO_GRAPHJIN_ADDR", "127.0.0.1:8080"), "Listen address for the customer GraphJin")
+	cmd.Flags().StringVar(&subsAddr, "subscriptions-addr", envOr("OPENNEKO_SUBSCRIPTIONS_ADDR", "127.0.0.1:8089"), "Listen address for the subscriptions GraphJin, which serves workflow output subscriptions as neko_subscriptions; empty turns it off")
+	cmd.Flags().StringVar(&subsDir, "subscriptions-dir", subscriptionsDir(), "Private folder for the subscriptions GraphJin config and state")
 	cmd.Flags().StringVar(&duckdb, "duckdb", envOr("OPENNEKO_DUCKDB", "duckdb"), "DuckDB CLI for SQL over sheet tables")
 	return cmd
 }
@@ -141,4 +156,8 @@ func serveKeyAndDatabase(credentials string) ([]byte, string, error) {
 		return nil, "", err
 	}
 	return key, conn.DSN(), nil
+}
+
+func subscriptionsDir() string {
+	return envOr("OPENNEKO_SUBSCRIPTIONS_DIR", filepath.Join(os.TempDir(), "openneko-subscriptions"))
 }

@@ -19,7 +19,7 @@ func TestClassifyStack(t *testing.T) {
 		{"all up + one-shot migrate done", []composeService{
 			{Service: "web", State: "running", Health: "healthy"},
 			{Service: "worker", State: "running", Health: "healthy"},
-			{Service: "neko-graphjin", State: "running", Health: "healthy"},
+			{Service: "openneko-serve", State: "running", Health: ""},
 			{Service: "neko-db", State: "running", Health: "healthy"},
 			{Service: "storage-reconcile", State: "exited", ExitCode: 0},
 			{Service: "neko-migrate", State: "exited", ExitCode: 0},
@@ -30,7 +30,7 @@ func TestClassifyStack(t *testing.T) {
 		}, serving},
 		{"unhealthy is degraded, not down", []composeService{
 			{Service: "web", State: "running", Health: "healthy"},
-			{Service: "neko-graphjin", State: "running", Health: "unhealthy"},
+			{Service: "worker", State: "running", Health: "unhealthy"},
 		}, degraded},
 		{"starting is degraded", []composeService{
 			{Service: "worker", State: "running", Health: "starting"},
@@ -45,7 +45,7 @@ func TestClassifyStack(t *testing.T) {
 		{"a failed one-shot setup job is degraded, not down", []composeService{
 			{Service: "web", State: "running", Health: "healthy"},
 			{Service: "worker", State: "running", Health: "healthy"},
-			{Service: "neko-graphjin", State: "running", Health: "healthy"},
+			{Service: "openneko-serve", State: "running", Health: ""},
 			{Service: "neko-db", State: "running", Health: "healthy"},
 			{Service: "neko-adventureworks-seed", State: "exited", ExitCode: 1},
 		}, degraded},
@@ -98,12 +98,16 @@ func TestWriteStatusEmitsVerdictWord(t *testing.T) {
 func TestGraphjinStatusLine(t *testing.T) {
 	since := time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC)
 	down := describeGraphjinState(gjhost.State{State: gjhost.StateRestarting, Reason: "exit status 1: api: error initializing auth handler: auth: unknown auth type: x", Since: since, Restarts: 3})
-	line, ok := graphjinStatusLine(down, false)
+	line, ok := graphjinStatusLine("graphjin", down, false)
 	if ok || !strings.Contains(line, "restarting since 2026-11-10T09:00:00Z, 3 restarts: exit status 1: api: error initializing auth handler") {
 		t.Fatalf("line = %q, ok = %v", line, ok)
 	}
-	line, ok = graphjinStatusLine(describeGraphjinState(gjhost.State{State: gjhost.StateRunning, Since: since}), true)
+	line, ok = graphjinStatusLine("graphjin", describeGraphjinState(gjhost.State{State: gjhost.StateRunning, Since: since}), true)
 	if !ok || line != "  ✅ graphjin — running since 2026-11-10T09:00:00Z" {
+		t.Fatalf("line = %q, ok = %v", line, ok)
+	}
+	line, ok = graphjinStatusLine("subscriptions", describeGraphjinState(gjhost.State{State: gjhost.StateRunning, Since: since}), true)
+	if !ok || line != "  ✅ subscriptions — running since 2026-11-10T09:00:00Z" {
 		t.Fatalf("line = %q, ok = %v", line, ok)
 	}
 }
