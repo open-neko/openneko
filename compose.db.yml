@@ -32,6 +32,19 @@ services:
       timeout: 5s
       retries: 20
 
+  database-check:
+    depends_on:
+      neko-db:
+        condition: service_healthy
+    environment:
+      OPENNEKO_DATABASE_URL_FILE: !reset null
+      NEKO_PG_HOST: neko-db
+      NEKO_PG_PORT: "5432"
+      NEKO_PG_USER: neko
+      NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
+      NEKO_PG_DATABASE: neko
+    secrets: !reset []
+
   storage-reconcile:
     depends_on:
       neko-db:

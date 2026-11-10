@@ -26,6 +26,23 @@ services:
   # `compose run --rm` and stop at the first failure. From a source checkout,
   # `docker compose run --rm openneko-serve-init` runs the whole chain.
   #
+  # Checks an external database before the other steps: connection, TLS,
+  # the vector extension and the rights to create the serve roles. It prints
+  # the SQL an operator must run when a right is missing.
+  database-check:
+    profiles: ["steps"]
+    build:
+      context: .
+      target: neko-cli
+    restart: "no"
+    command: ["database", "check"]
+    secrets: *database-url
+    environment:
+      OPENNEKO_DATABASE_URL_FILE: /run/secrets/database-url
+      XDG_CONFIG_HOME: /config
+    volumes:
+      - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/config/openneko
+
   # Storage ABI gate: repairs persisted indexes after a libc/collation
   # change, so an incompatible image fails closed before any read or write.
   storage-reconcile:

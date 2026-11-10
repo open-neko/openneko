@@ -99,7 +99,14 @@ func (s *Supervisor) Materialize(mode Mode) ([]string, error) {
 
 // MaterializeStack is Materialize with an explicit choice of the bundled
 // database. A prod install takes it only as a legacy install.
-func (s *Supervisor) MaterializeStack(mode Mode, bundledDB bool) ([]string, error) {
+// Overlay is a compose file that the CLI writes at start, after the
+// embedded files and before the operator's compose.override.yml.
+type Overlay struct {
+	Name string
+	Data []byte
+}
+
+func (s *Supervisor) MaterializeStack(mode Mode, bundledDB bool, overlays ...Overlay) ([]string, error) {
 	rt, err := s.runtimeDir()
 	if err != nil {
 		return nil, err
@@ -129,6 +136,13 @@ func (s *Supervisor) MaterializeStack(mode Mode, bundledDB bool) ([]string, erro
 		}
 		dst := filepath.Join(rt, filepath.Base(name))
 		if err := os.WriteFile(dst, raw, 0o644); err != nil {
+			return nil, err
+		}
+		out = append(out, dst)
+	}
+	for _, overlay := range overlays {
+		dst := filepath.Join(rt, overlay.Name)
+		if err := os.WriteFile(dst, overlay.Data, 0o644); err != nil {
 			return nil, err
 		}
 		out = append(out, dst)

@@ -60,12 +60,96 @@ func stackFiles(ctx context.Context, sup *compose.Supervisor, mode compose.Mode,
 	if err != nil {
 		return nil, err
 	}
+	for _, file := range databaseTLSFiles {
+		_ = os.Unsetenv(file.env)
+	}
 	if database.bundled {
 		_ = os.Unsetenv("OPENNEKO_DATABASE_URL")
-	} else if err := os.Setenv("OPENNEKO_DATABASE_URL", database.url); err != nil {
+		return sup.MaterializeStack(mode, true)
+	}
+	containerURL, contents, err := containerDatabaseURL(database.url)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Setenv("OPENNEKO_DATABASE_URL", containerURL); err != nil {
 		return nil, fmt.Errorf("pass the database URL to compose: %w", err)
 	}
-	return sup.MaterializeStack(mode, database.bundled)
+	if len(contents) == 0 {
+		return sup.MaterializeStack(mode, false)
+	}
+	var secrets []string
+	for _, file := range databaseTLSFiles {
+		content, ok := contents[file.secret]
+		if !ok {
+			continue
+		}
+		if err := os.Setenv(file.env, content); err != nil {
+			return nil, fmt.Errorf("pass %s to compose: %w", file.param, err)
+		}
+		secrets = append(secrets, file.secret)
+	}
+	return sup.MaterializeStack(mode, false, compose.Overlay{Name: "database-tls.yml", Data: databaseTLSOverlay(secrets)})
+}
+
+// openneko-serve gets no URL secret, but its role URLs keep the main URL's
+// TLS parameters, so it needs the files.
+var databaseServices = []string{"database-check", "storage-reconcile", "neko-migrate", "openneko-serve-init", "openneko-serve", "web", "worker"}
+
+var databaseTLSFiles = []struct{ param, secret, env string }{
+	{"sslrootcert", "database-ca", "OPENNEKO_DATABASE_CA"},
+	{"sslcert", "database-cert", "OPENNEKO_DATABASE_CERT"},
+	{"sslkey", "database-key", "OPENNEKO_DATABASE_KEY"},
+}
+
+// containerDatabaseURL reads the TLS files that raw names on this host and
+// points raw at the copies that compose puts in /run/secrets.
+func containerDatabaseURL(raw string) (string, map[string]string, error) {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
+		return raw, nil, nil
+	}
+	query := u.Query()
+	contents := map[string]string{}
+	for _, file := range databaseTLSFiles {
+		path := query.Get(file.param)
+		if path == "" || (file.param == "sslrootcert" && path == "system") {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return "", nil, fmt.Errorf("the database URL names %s=%s, and openneko cannot read it: %w", file.param, path, err)
+		}
+		if len(strings.TrimSpace(string(data))) == 0 {
+			return "", nil, fmt.Errorf("the database URL names %s=%s, and the file is empty", file.param, path)
+		}
+		contents[file.secret] = string(data)
+		query.Set(file.param, "/run/secrets/"+file.secret)
+	}
+	if len(contents) == 0 {
+		return raw, nil, nil
+	}
+	u.RawQuery = query.Encode()
+	return u.String(), contents, nil
+}
+
+func databaseTLSOverlay(secrets []string) []byte {
+	var b strings.Builder
+	b.WriteString("# Written by openneko start: the TLS files that the database URL names.\nservices:\n")
+	for _, service := range databaseServices {
+		fmt.Fprintf(&b, "  %s:\n    secrets:\n", service)
+		for _, secret := range secrets {
+			fmt.Fprintf(&b, "      - source: %s\n        uid: \"1001\"\n        gid: \"1001\"\n        mode: 0400\n", secret)
+		}
+	}
+	b.WriteString("secrets:\n")
+	for _, file := range databaseTLSFiles {
+		for _, secret := range secrets {
+			if secret == file.secret {
+				fmt.Fprintf(&b, "  %s:\n    environment: %s\n", file.secret, file.env)
+			}
+		}
+	}
+	return []byte(b.String())
 }
 
 // ensureSetupDatabaseURL gives a prod install its database URL before the

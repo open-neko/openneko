@@ -14,12 +14,16 @@ type startStep struct {
 	failure  string
 }
 
-func startSteps(mode compose.Mode) []startStep {
-	steps := []startStep{
-		{service: "storage-reconcile", withDeps: true, failure: "database storage reconciliation failed"},
-		{service: "neko-migrate", failure: "database preparation failed"},
-		{service: "openneko-config-init", failure: "config volume preparation failed"},
+func startSteps(mode compose.Mode, bundledDB bool) []startStep {
+	var steps []startStep
+	if !bundledDB {
+		steps = append(steps, startStep{service: "database-check", failure: "OpenNeko's database failed its check"})
 	}
+	steps = append(steps,
+		startStep{service: "storage-reconcile", withDeps: true, failure: "database storage reconciliation failed"},
+		startStep{service: "neko-migrate", failure: "database preparation failed"},
+		startStep{service: "openneko-config-init", failure: "config volume preparation failed"},
+	)
 	if mode == compose.ModeDemo {
 		steps = append(steps,
 			startStep{service: "adventureworks-init", withDeps: true, failure: "AdventureWorks data load failed"},
@@ -55,7 +59,7 @@ func runStartSteps(ctx context.Context, sup *compose.Supervisor, project string,
 	} else if code != 0 {
 		return WithExit(code, fmt.Errorf("could not remove the old start-step containers"))
 	}
-	for _, step := range startSteps(mode) {
+	for _, step := range startSteps(mode, usesBundledDatabase(files)) {
 		code, err := sup.Run(ctx, project, files, startStepArgs(step, runFlags), os.Stdout, os.Stderr)
 		if err != nil {
 			return err

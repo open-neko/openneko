@@ -14,7 +14,7 @@ import (
 func TestStartStepsRunInOrder(t *testing.T) {
 	commands := func(mode compose.Mode) [][]string {
 		var out [][]string
-		for _, step := range startSteps(mode) {
+		for _, step := range startSteps(mode, true) {
 			out = append(out, startStepArgs(step, []string{"--pull", "never"}))
 		}
 		return out
@@ -39,6 +39,13 @@ func TestStartStepsRunInOrder(t *testing.T) {
 	)
 	if got := commands(compose.ModeDemo); !reflect.DeepEqual(got, demo) {
 		t.Fatalf("demo steps = %v", got)
+	}
+	var external [][]string
+	for _, step := range startSteps(compose.ModeProd, false) {
+		external = append(external, startStepArgs(step, nil))
+	}
+	if want := []string{"run", "--rm", "-T", "--no-deps", "database-check"}; !reflect.DeepEqual(external[0], want) || len(external) != len(prod)+1 {
+		t.Fatalf("external database steps = %v", external)
 	}
 }
 
@@ -74,7 +81,7 @@ func TestStartStepsExistInTheEmbeddedCompose(t *testing.T) {
 		compose.ModeDemo: {"core.yml", "demo.yml"},
 	} {
 		services := load(files...)
-		for _, step := range startSteps(mode) {
+		for _, step := range startSteps(mode, mode == compose.ModeDev || mode == compose.ModeDemo) {
 			svc, ok := services[step.service]
 			if !ok {
 				t.Fatalf("%s: step %s is not in the compose files", mode, step.service)

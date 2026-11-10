@@ -153,10 +153,31 @@ name.
   checking it. Use one of these three. With `prefer` or `allow`, web and the
   worker connect without TLS.
 - `sslrootcert` names the CA file. Without it, OpenNeko uses its default CA
-  list. `openneko start` does not yet mount the CA file into the containers.
-- The `neko` role must own the database. The migrations create the `vector`
-  extension and the `neko_files` role. If the `neko` role cannot create them,
-  create both before the first start.
+  list. `sslcert` and `sslkey` name a client certificate and its key, for a
+  server that asks for one. Give paths on the host where you run `openneko`.
+  `openneko start` copies each file into the containers that connect to the
+  database, `openneko-serve` included, as a Compose secret readable only by
+  user 1001, and points the URL at the copy. Serve's `neko_files` and
+  `neko_subscriptions` logins use the same files.
+- The `neko` role must own the database and have `CREATEROLE`. The
+  migrations create the `vector` extension and the `neko_files` and
+  `neko_subscriptions` roles.
+
+Before the other start steps, `openneko start` and `setup` run
+`openneko database check` in a container. It connects with the URL, reports
+the TLS mode, and checks that the login owns the database, can create tables
+in schema `public`, can create the `vector` extension (or finds it), and can
+create the two roles or set their passwords. When a right is missing, start
+stops and prints the SQL to run as a superuser, for example:
+
+```text
+  FAIL  neko does not own neko. The start steps create schemas and reindex the database
+        Run this SQL as a superuser, in database neko:
+          ALTER DATABASE "neko" OWNER TO "neko";
+```
+
+Run the SQL, then run `openneko start`. A URL without `sslmode=verify-full`
+gives a warning, and start goes on.
 - With a URL, setup skips its database password step. Change the password
   where the database is managed, then update the URL.
 
@@ -204,7 +225,7 @@ openneko version
 Modes:
 
 - **`prod`** (default) — the production control, customer-data, file, and
-  agent runtime services. `openneko start` runs four start steps in order,
+  agent runtime services. `openneko start` runs five start steps in order,
   then starts three containers: `openneko-serve`, `web` and `worker`.
   OpenNeko's database is yours, by URL.
 - **`dev`** — source-checkout workflow: use `pnpm dev:setup` for Docker-only dependencies plus AdventureWorks demo data, then `pnpm dev` for hot-reloaded web/worker from source.
@@ -485,7 +506,9 @@ docker compose -f compose.yml -f compose.db.yml -f compose.adventureworks.yml ru
 ```
 
 The `run --rm openneko-serve-init` line runs the start steps in order:
-storage check, migrations, config volume, serve credentials. Run it again
+storage check, migrations, config volume, serve credentials. With your own
+database in place of `compose.db.yml`, run `docker compose run --rm
+database-check` first. Run it again
 after each `git pull`, before `up`.
 
 ### Live trial data

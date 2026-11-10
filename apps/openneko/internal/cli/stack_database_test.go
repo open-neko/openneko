@@ -5,8 +5,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/open-neko/neko/apps/openneko/assets"
 	"github.com/open-neko/neko/apps/openneko/internal/compose"
@@ -185,5 +188,107 @@ func TestSetupRefusesADatabaseURLTheContainersCannotUse(t *testing.T) {
 		if err := checkDatabaseURLShape(raw); err != nil {
 			t.Fatalf("refused %q: %v", raw, err)
 		}
+	}
+}
+
+func TestProdStartMountsTheTLSFilesTheURLNames(t *testing.T) {
+	sup := isolateStackDatabase(t)
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	ca, cert, key := write("ca.pem", "CA PEM"), write("client.pem", "CERT PEM"), write("client.key", "KEY PEM")
+	for _, env := range []string{"OPENNEKO_DATABASE_CA", "OPENNEKO_DATABASE_CERT", "OPENNEKO_DATABASE_KEY"} {
+		t.Setenv(env, "")
+	}
+	hostURL := "postgres://neko:pw@db.internal:5432/neko?sslmode=verify-full&sslrootcert=" + ca + "&sslcert=" + cert + "&sslkey=" + key
+	if err := config.WriteLocalDatabaseURL("", hostURL); err != nil {
+		t.Fatal(err)
+	}
+	files, err := stackFiles(context.Background(), sup, compose.ModeProd, "openneko-prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := materializedNames(files); got != "core.yml,database-tls.yml" {
+		t.Fatalf("files = %s", got)
+	}
+	want := "postgres://neko:pw@db.internal:5432/neko?sslcert=%2Frun%2Fsecrets%2Fdatabase-cert&sslkey=%2Frun%2Fsecrets%2Fdatabase-key&sslmode=verify-full&sslrootcert=%2Frun%2Fsecrets%2Fdatabase-ca"
+	if got := os.Getenv("OPENNEKO_DATABASE_URL"); got != want {
+		t.Fatalf("container URL = %s", got)
+	}
+	for env, body := range map[string]string{"OPENNEKO_DATABASE_CA": "CA PEM", "OPENNEKO_DATABASE_CERT": "CERT PEM", "OPENNEKO_DATABASE_KEY": "KEY PEM"} {
+		if got := os.Getenv(env); got != body {
+			t.Fatalf("%s = %q", env, got)
+		}
+	}
+
+	if err := config.WriteLocalDatabaseURL("", "postgres://neko:pw@db.internal:5432/neko?sslmode=verify-full&sslrootcert=system"); err != nil {
+		t.Fatal(err)
+	}
+	files, err = stackFiles(context.Background(), sup, compose.ModeProd, "openneko-prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := materializedNames(files); got != "core.yml" || os.Getenv("OPENNEKO_DATABASE_CA") != "" {
+		t.Fatalf("files = %s, CA env %q; sslrootcert=system names no file", got, os.Getenv("OPENNEKO_DATABASE_CA"))
+	}
+
+	if err := config.WriteLocalDatabaseURL("", "postgres://neko:pw@db.internal/neko?sslmode=verify-full&sslrootcert="+filepath.Join(dir, "missing.pem")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stackFiles(context.Background(), sup, compose.ModeProd, "openneko-prod"); err == nil || !strings.Contains(err.Error(), "sslrootcert=") {
+		t.Fatalf("a missing CA file: err = %v", err)
+	}
+}
+
+func TestDatabaseTLSOverlayCoversEveryDatabaseService(t *testing.T) {
+	type service struct {
+		Secrets []struct {
+			Source string `yaml:"source"`
+			UID    string `yaml:"uid"`
+			Mode   any    `yaml:"mode"`
+		} `yaml:"secrets"`
+	}
+	var core struct {
+		Services map[string]service `yaml:"services"`
+	}
+	raw, err := assets.ComposeFS.ReadFile("compose/core.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := yaml.Unmarshal(raw, &core); err != nil {
+		t.Fatal(err)
+	}
+	for name, svc := range core.Services {
+		for _, secret := range svc.Secrets {
+			if secret.Source == "database-url" && !slices.Contains(databaseServices, name) {
+				t.Fatalf("%s reads the database URL and gets no TLS files", name)
+			}
+		}
+	}
+	var overlay struct {
+		Services map[string]service `yaml:"services"`
+		Secrets  map[string]struct {
+			Environment string `yaml:"environment"`
+		} `yaml:"secrets"`
+	}
+	if err := yaml.Unmarshal(databaseTLSOverlay([]string{"database-ca", "database-key"}), &overlay); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range databaseServices {
+		if _, ok := core.Services[name]; !ok {
+			t.Fatalf("%s is not a core.yml service", name)
+		}
+		svc := overlay.Services[name]
+		if len(svc.Secrets) != 2 || svc.Secrets[0].Source != "database-ca" || svc.Secrets[1].Source != "database-key" || svc.Secrets[1].UID != "1001" {
+			t.Fatalf("%s overlay secrets = %+v", name, svc.Secrets)
+		}
+	}
+	if overlay.Secrets["database-ca"].Environment != "OPENNEKO_DATABASE_CA" || overlay.Secrets["database-key"].Environment != "OPENNEKO_DATABASE_KEY" || len(overlay.Secrets) != 2 {
+		t.Fatalf("overlay secrets = %+v", overlay.Secrets)
 	}
 }

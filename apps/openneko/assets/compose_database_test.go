@@ -10,7 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var databaseURLConsumers = []string{"storage-reconcile", "neko-migrate", "openneko-serve-init", "web", "worker"}
+var databaseURLConsumers = []string{"database-check", "storage-reconcile", "neko-migrate", "openneko-serve-init", "web", "worker"}
 
 func composeNode(t *testing.T, raw []byte) *yaml.Node {
 	t.Helper()

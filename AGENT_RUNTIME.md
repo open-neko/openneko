@@ -100,21 +100,25 @@ Migration 0128 removed the setting that did that.
 `openneko start` runs these steps in order, each in its own container with
 `docker compose run --rm`, and stops at the first failure:
 
-1. `storage-reconcile` checks the database storage contract.
-2. `neko-migrate` applies the migrations (`--skip-migrate` turns it off).
-3. `openneko-config-init` gives the config volume to user 1001.
-4. Demo mode only: `adventureworks-init` loads the sample data and
+1. An external database only: `database-check` runs `openneko database
+   check` (see INSTALL.md, "OpenNeko's database").
+2. `storage-reconcile` checks the database storage contract.
+3. `neko-migrate` applies the migrations (`--skip-migrate` turns it off).
+4. `openneko-config-init` gives the config volume to user 1001.
+5. Demo mode only: `adventureworks-init` loads the sample data and
    `neko-adventureworks-seed` creates the demo organization.
-5. `openneko-serve-init` writes serve's credentials and the GraphJin config.
+6. `openneko-serve-init` writes serve's credentials and the GraphJin config.
 
 Then `docker compose up` starts the services. `openneko upgrade` and
 `openneko restore` run the same steps. The steps are in the compose profile
 `steps`, so `up` does not start them and no running service waits for them.
 From a source checkout, `docker compose run --rm openneko-serve-init` runs
-steps 1, 2, 3 and 5 in order.
+steps 2, 3, 4 and 6 in order.
 
-In prod mode, steps 1, 2 and 5, web and the worker read OpenNeko's database
-URL from the Compose secret `database-url`. Serve does not get it. Dev, demo
+In prod mode, steps 1, 2, 3 and 6, web and the worker read OpenNeko's database
+URL from the Compose secret `database-url`. Serve does not get it. When the
+URL names TLS files, start writes `database-tls.yml`, which gives the same
+services and serve a copy of each file as a Compose secret. Dev, demo
 and a legacy prod install load `bundled-db.yml`, which adds `neko-db` and
 points the same services at it.
 
