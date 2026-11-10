@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -20,6 +21,7 @@ import (
 
 func newGraphjinServeCmd() *cobra.Command {
 	var file, addr string
+	var asChild bool
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Run only the customer GraphJin, as openneko serve runs it",
@@ -30,12 +32,57 @@ func newGraphjinServeCmd() *cobra.Command {
 			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			return (&gjhost.Host{ConfigFile: file, Addr: addr, Log: cmd.ErrOrStderr()}).Run(ctx)
+			if asChild {
+				go func() {
+					_, _ = io.Copy(io.Discard, os.Stdin)
+					stop()
+				}()
+				return gjhost.Serve(ctx, file, addr, cmd.ErrOrStderr())
+			}
+			return (&gjhost.Supervisor{ConfigFile: file, Addr: addr, Log: cmd.ErrOrStderr(), Command: gjhost.SelfCommand(file)}).Run(ctx)
 		},
 	}
 	cmd.Flags().StringVar(&file, "config", os.Getenv("OPENNEKO_GRAPHJIN_CONFIG"), "Customer GraphJin config file (agentic.yml)")
 	cmd.Flags().StringVar(&addr, "addr", envOr("OPENNEKO_GRAPHJIN_ADDR", "127.0.0.1:8080"), "Listen address")
+	cmd.Flags().BoolVar(&asChild, "child", false, "Run one engine and exit when stdin closes; the supervisor uses it")
+	_ = cmd.Flags().MarkHidden("child")
 	return cmd
+}
+
+func newGraphjinStatusCmd() *cobra.Command {
+	var file string
+	cmd := &cobra.Command{
+		Use:   "status",
+		Short: "Print the state of the customer GraphJin that openneko serve runs",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if file == "" {
+				return fmt.Errorf("--config is required")
+			}
+			st, err := gjhost.ReadState(file)
+			if err != nil {
+				return fmt.Errorf("no GraphJin state beside %s: %w", file, err)
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), describeGraphjinState(st))
+			if st.State != gjhost.StateRunning {
+				return WithExit(1, nil)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&file, "config", os.Getenv("OPENNEKO_GRAPHJIN_CONFIG"), "Customer GraphJin config file (agentic.yml)")
+	return cmd
+}
+
+func describeGraphjinState(st gjhost.State) string {
+	line := fmt.Sprintf("GraphJin %s since %s", st.State, st.Since.Format(time.RFC3339))
+	if st.Restarts > 0 {
+		line += fmt.Sprintf(", %d restarts", st.Restarts)
+	}
+	if st.Reason != "" {
+		line += ": " + st.Reason
+	}
+	return line
 }
 
 // The worker already owns GraphJin preview/apply, credential sealing, the
@@ -58,7 +105,7 @@ console.log("GraphJin configuration imported");
 
 func newGraphjinCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "graphjin", Short: "Manage the customer GraphJin configuration"}
-	cmd.AddCommand(newGraphjinServeCmd(), &cobra.Command{
+	cmd.AddCommand(newGraphjinServeCmd(), newGraphjinStatusCmd(), &cobra.Command{
 		Use:   "version",
 		Short: "Print the GraphJin version linked into this binary",
 		Args:  cobra.NoArgs,

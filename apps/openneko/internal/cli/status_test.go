@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
 )
 
 func TestClassifyStack(t *testing.T) {
@@ -89,5 +92,18 @@ func TestWriteStatusEmitsVerdictWord(t *testing.T) {
 		if !strings.Contains(b.String(), want) {
 			t.Fatalf("state %v output missing %q: %s", state, want, b.String())
 		}
+	}
+}
+
+func TestGraphjinStatusLine(t *testing.T) {
+	since := time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC)
+	down := describeGraphjinState(gjhost.State{State: gjhost.StateRestarting, Reason: "exit status 1: api: error initializing auth handler: auth: unknown auth type: x", Since: since, Restarts: 3})
+	line, ok := graphjinStatusLine(down, false)
+	if ok || !strings.Contains(line, "restarting since 2026-11-10T09:00:00Z, 3 restarts: exit status 1: api: error initializing auth handler") {
+		t.Fatalf("line = %q, ok = %v", line, ok)
+	}
+	line, ok = graphjinStatusLine(describeGraphjinState(gjhost.State{State: gjhost.StateRunning, Since: since}), true)
+	if !ok || line != "  ✅ graphjin — running since 2026-11-10T09:00:00Z" {
+		t.Fatalf("line = %q, ok = %v", line, ok)
 	}
 }

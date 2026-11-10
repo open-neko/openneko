@@ -1,4 +1,4 @@
-// Package gjhost runs the customer GraphJin inside openneko serve.
+// Package gjhost runs the customer GraphJin for openneko serve.
 package gjhost
 
 import (
@@ -22,15 +22,9 @@ const (
 	RestartAckFile = ".openneko-graphjin-restart-ack"
 	PingFile       = ".openneko-graphjin-supervisor-ping"
 	PingAckFile    = ".openneko-graphjin-supervisor-ping-ack"
+	StateFile      = ".openneko-graphjin-state"
 	staleAgentKey  = ".openneko-graphjin-agent-key"
 )
-
-type Host struct {
-	ConfigFile string
-	Addr       string
-	Log        io.Writer
-	Poll       time.Duration
-}
 
 type instance struct {
 	gj   *serv.HttpService
@@ -38,63 +32,36 @@ type instance struct {
 	done chan error
 }
 
-// Run serves GraphJin until ctx ends. A new token in RestartFile replaces the
-// running engine with one built from the config on disk, as the old
-// supervisor script did.
-func (h *Host) Run(ctx context.Context) error {
-	dir := filepath.Dir(h.ConfigFile)
-	poll := h.Poll
-	if poll == 0 {
-		poll = time.Second
-	}
-	_ = os.Remove(filepath.Join(dir, staleAgentKey))
-	last := readToken(filepath.Join(dir, RestartAckFile))
-
-	cur, err := h.start()
+// Serve runs one GraphJin engine on addr ("unix:/path" or host:port) until
+// ctx ends or the engine stops. GraphJin's own Fatal calls end the process.
+func Serve(ctx context.Context, configFile, addr string, log io.Writer) error {
+	in, err := start(configFile, addr, log)
 	if err != nil {
-		h.logf("graphjin did not start: %v", err)
+		return err
 	}
-	tick := time.NewTicker(poll)
-	defer tick.Stop()
-	for {
-		var done chan error
-		if cur != nil {
-			done = cur.done
+	select {
+	case <-ctx.Done():
+		stop(in, time.Second)
+		return nil
+	case err := <-in.done:
+		stop(in, time.Second)
+		if err == nil {
+			err = errors.New("graphjin stopped")
 		}
-		select {
-		case <-ctx.Done():
-			h.stop(cur, time.Second)
-			return nil
-		case err := <-done:
-			h.logf("graphjin stopped: %v", err)
-			h.stop(cur, time.Second)
-			cur = nil
-		case <-tick.C:
-		}
-		if token := readToken(filepath.Join(dir, RestartFile)); token != "" && token != last {
-			h.stop(cur, 5*time.Second)
-			if cur, err = h.start(); err != nil {
-				h.logf("graphjin did not start: %v", err)
-			}
-			last = token
-			if err := writeAtomic(filepath.Join(dir, RestartAckFile), token); err != nil {
-				h.logf("graphjin restart ack: %v", err)
-			}
-		} else if cur == nil {
-			if cur, err = h.start(); err != nil {
-				h.logf("graphjin did not start: %v", err)
-			}
-		}
-		if token := readToken(filepath.Join(dir, PingFile)); token != "" {
-			if err := writeAtomic(filepath.Join(dir, PingAckFile), token); err != nil {
-				h.logf("graphjin ping ack: %v", err)
-			}
-		}
+		return err
 	}
 }
 
-func (h *Host) start() (*instance, error) {
-	name := strings.TrimSuffix(h.ConfigFile, filepath.Ext(h.ConfigFile))
+func listen(addr string) (net.Listener, error) {
+	if path, ok := strings.CutPrefix(addr, "unix:"); ok {
+		_ = os.Remove(path)
+		return net.Listen("unix", path)
+	}
+	return net.Listen("tcp", addr)
+}
+
+func start(configFile, addr string, log io.Writer) (*instance, error) {
+	name := strings.TrimSuffix(configFile, filepath.Ext(configFile))
 	conf, err := serv.ReadInConfig(name)
 	if err != nil {
 		return nil, err
@@ -108,7 +75,7 @@ func (h *Host) start() (*instance, error) {
 		_ = gj.Close()
 		return nil, err
 	}
-	ln, err := net.Listen("tcp", h.Addr)
+	ln, err := listen(addr)
 	if err != nil {
 		_ = gj.Close()
 		return nil, err
@@ -130,24 +97,17 @@ func (h *Host) start() (*instance, error) {
 		}
 		in.done <- err
 	}()
-	h.logf("graphjin listening on %s (%s)", ln.Addr(), h.ConfigFile)
+	if log != nil {
+		fmt.Fprintf(log, "graphjin listening on %s (%s)\n", ln.Addr(), configFile)
+	}
 	return in, nil
 }
 
-func (h *Host) stop(in *instance, drain time.Duration) {
-	if in == nil {
-		return
-	}
+func stop(in *instance, drain time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), drain)
 	defer cancel()
 	_ = in.srv.Shutdown(ctx)
 	_ = in.gj.Close()
-}
-
-func (h *Host) logf(format string, args ...any) {
-	if h.Log != nil {
-		fmt.Fprintf(h.Log, format+"\n", args...)
-	}
 }
 
 func readToken(path string) string {
@@ -158,9 +118,9 @@ func readToken(path string) string {
 	return strings.TrimSpace(string(b))
 }
 
-func writeAtomic(path, token string) error {
+func writeAtomic(path string, data []byte) error {
 	tmp := fmt.Sprintf("%s.%d", path, os.Getpid())
-	if err := os.WriteFile(tmp, []byte(token), 0o600); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)

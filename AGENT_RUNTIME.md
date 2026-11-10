@@ -95,8 +95,9 @@ Migration 0128 removed the setting that did that.
 
 ## The customer GraphJin
 
-Serve runs the customer GraphJin in its own process, from the pinned GraphJin
-module (v3.21.18). It listens on port 8080 and answers as `graphjin` on the
+Serve runs the customer GraphJin from the pinned GraphJin module (v3.21.18)
+as a child process of the same executable: `openneko graphjin serve --child`.
+A GraphJin crash ends only the child. Serve listens on port 8080 and answers as `graphjin` on the
 stack network, so stored endpoints such as `http://graphjin:8080` keep
 working. Its config, `agentic.yml`, holds the customer's source logins and the
 per-org JWT secret. It is in the agent zone, as it was when GraphJin had its
@@ -108,10 +109,24 @@ own container.
   the `system` block into the file. GraphJin reads auth keys only when it
   starts, so serve, web and the worker wait for this step.
 - When the worker changes the config, it writes a new token to
-  `.openneko-graphjin-restart`. Serve then builds a new engine from the file
-  and writes the token to `.openneko-graphjin-restart-ack`. Serve answers
-  `.openneko-graphjin-supervisor-ping` the same way. These are the files the
-  old supervisor script used.
+  `.openneko-graphjin-restart`. Serve then starts a new child with the file
+  and writes the token to `.openneko-graphjin-restart-ack` when the child
+  answers or exits. Serve answers `.openneko-graphjin-supervisor-ping` the
+  same way. These are the files the old supervisor script used.
+- Serve passes each request on port 8080 to the child through a private
+  socket. When the child exits, serve starts it again after 1 s, then 2 s,
+  up to 30 s. It starts the child at once when the config file changes or a
+  restart token arrives. While the child is down, file search and agent
+  turns keep working, and port 8080 answers HTTP 503 with "GraphJin is
+  restarting" and the child's last line of output.
+- Serve writes the child's state to `.openneko-graphjin-state` beside the
+  config. `openneko graphjin status` prints it, and `openneko status` shows
+  it as the `graphjin` line.
+- The child gets the config path, the socket and a short list of variables:
+  `GJ_*`, `GO_ENV`, `PATH`, `HOME`, `TZ`, the locale, the CA file paths and
+  the Go runtime settings. It gets no serve credentials path, no agent
+  socket and no sandbox key. It runs as the same user in the same
+  container, so it can still read files that serve can read.
 
 ## The sandbox service
 

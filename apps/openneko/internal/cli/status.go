@@ -80,6 +80,12 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 			state, lines := classifyStack(services)
+			if line, ok := graphjinStatus(project, files, services); line != "" {
+				lines = append(lines, line)
+				if !ok && state == serving {
+					state = degraded
+				}
+			}
 			writeStatus(cmd.OutOrStdout(), state, lines, probeWeb())
 			if state == serving {
 				return nil
@@ -172,6 +178,37 @@ func classifyStack(services []composeService) (health, []string) {
 		}
 	}
 	return worst, lines
+}
+
+// graphjinStatus asks openneko serve for the state of its GraphJin child.
+func graphjinStatus(project string, files []string, services []composeService) (string, bool) {
+	running := false
+	for _, s := range services {
+		running = running || (s.Service == "openneko-serve" && strings.EqualFold(strings.TrimSpace(s.State), "running"))
+	}
+	if !running {
+		return "", true
+	}
+	args := []string{"compose"}
+	if project != "" {
+		args = append(args, "-p", project)
+	}
+	for _, f := range files {
+		args = append(args, "-f", f)
+	}
+	args = append(args, "exec", "-T", "openneko-serve", "/openneko", "graphjin", "status")
+	out, err := exec.Command("docker", args...).CombinedOutput()
+	return graphjinStatusLine(strings.TrimSpace(string(out)), err == nil)
+}
+
+func graphjinStatusLine(out string, ok bool) (string, bool) {
+	if ok {
+		return "  ✅ graphjin — " + strings.TrimPrefix(out, "GraphJin "), true
+	}
+	if out == "" {
+		out = "no answer from openneko serve"
+	}
+	return "  ⚠️  graphjin — " + strings.TrimPrefix(out, "GraphJin ") + " — see `openneko logs openneko-serve`", false
 }
 
 func describeState(s composeService) string {
