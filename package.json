@@ -22,7 +22,7 @@
     "dev:up": "sh scripts/dev-up.sh",
     "dev:seed": ". scripts/dev-env.sh && ADVENTUREWORKS_GRAPHJIN_ROOT=\"http://localhost:${GRAPHJIN_PORT:-8080}\" ADVENTUREWORKS_UPDATE_DATA_SOURCE=1 pnpm --filter @neko/worker exec tsx ../../packages/db/src/seed-adventureworks.mjs",
     "dev:setup": "pnpm dev:up && pnpm dev:seed",
-    "dev:down": "docker compose -f compose.yml -f compose.adventureworks.yml -f compose.graphjin-agent.yml -f compose.dev.yml down",
+    "dev:down": "docker compose -f compose.yml -f compose.adventureworks.yml -f compose.dev.yml down",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",

@@ -39,7 +39,6 @@ function build(
     supportsClarificationTool?: boolean;
     supportsNativeDelegation?: boolean;
     installedSkills?: Array<{ name: string; description: string }>;
-    graphjinDataPath?: "direct" | "agent";
   } = {},
 ): string {
   return buildWorkPrompt({
@@ -59,7 +58,6 @@ function build(
     supportsClarificationTool: overrides.supportsClarificationTool ?? false,
     supportsNativeDelegation: overrides.supportsNativeDelegation ?? true,
     installedSkills: overrides.installedSkills,
-    ...(overrides.graphjinDataPath ? { graphjinDataPath: overrides.graphjinDataPath } : {}),
     inlineTranscript: false,
   });
 }
@@ -77,20 +75,9 @@ describe("buildWorkPrompt UX metadata", () => {
   });
 });
 
-describe("buildWorkPrompt GraphJin agent path", () => {
-  it("describes only GraphJin's agent for data, including workflow triggers", () => {
-    const agent = build("ax", { graphjinDataPath: "agent", supportsWorkflowTool: true });
-    expect(agent).toContain("`mcp_neko_graphjin_agent_ask`");
-    expect(agent).not.toMatch(/mcp_neko_graphjin_(execute_graphql|query_catalog|validate_where_clause)/);
-    expect(agent).not.toContain(knowledge.syntax);
-    expect(agent).toContain("- Knowledge:");
-    expect(agent).toContain("Write each instruction as a precise data request.");
-    expect(agent).not.toMatch(/hidden|not available/i);
-  });
-
-  it("keeps the direct path unchanged", () => {
+describe("buildWorkPrompt GraphJin data path", () => {
+  it("names the direct GraphJin tools and never GraphJin's agent", () => {
     const direct = build("ax", { supportsWorkflowTool: true });
-    expect(direct).toBe(build("ax", { graphjinDataPath: "direct", supportsWorkflowTool: true }));
     expect(direct).toContain("`mcp_neko_graphjin_execute_graphql`");
     expect(direct).toContain("`mcp_neko_graphjin_query_catalog`");
     expect(direct).not.toContain("mcp_neko_graphjin_agent_ask");

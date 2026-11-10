@@ -147,7 +147,7 @@ func TestGraphJinSupervisorIsImageOwnedAndEverySourceOverlayRepairsOldVolumes(t 
 	assertGraphJinSupervisorRepair(t, "source core", base.Services["graphjin-config-init"], "/seed/graphjin-supervisor.sh")
 	assertGraphJinConfigVolumeMatches(t, "source core", base.Services["graphjin-config-init"], base.Services["graphjin"])
 
-	for _, overlayName := range []string{"compose.adventureworks.yml", "compose.graphjin-agent.yml"} {
+	for _, overlayName := range []string{"compose.adventureworks.yml", "compose.dev.yml"} {
 		raw, err := os.ReadFile(root + "/" + overlayName)
 		if err != nil {
 			t.Fatal(err)

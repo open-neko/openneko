@@ -11,7 +11,6 @@ import type { AgentControlPlane } from "./control-plane";
 import {
   GRAPHJIN_TOOL_POLICY_ENV,
   serializeGraphjinMcpToolPolicy,
-  type GraphjinDataPath,
   type GraphjinMcpToolPolicy,
 } from "./graphjin-tool-policy";
 import { buildAskUserQuestionServer } from "./interaction-server";
@@ -20,7 +19,6 @@ import {
   buildAuditViewerServer,
   buildChannelManagerServer,
   buildDataSourceManagerServer,
-  buildGraphjinAgentServer,
   buildGraphjinMcpServer,
   buildSourceConfigManagerServer,
   buildUserManagerServer,
@@ -51,8 +49,6 @@ export interface RunAgentBackendInput {
   sourceConfigEnabled?: boolean;
   /** Optional backend-neutral restriction for this run's GraphJin MCP. */
   graphjinToolPolicy?: GraphjinMcpToolPolicy;
-  /** "agent" when the org opted in to GraphJin's server-side agent. */
-  graphjinDataPath?: GraphjinDataPath;
   /** Optional per-run restriction on the backend's own sub-agent primitive. */
   nativeDelegation?: AgentNativeDelegationPolicy;
   /** In-process on the host; broker-backed inside the agent sandbox. */
@@ -90,7 +86,6 @@ export async function runAgentBackend(
     packActions = [],
     sourceConfigEnabled = false,
     graphjinToolPolicy,
-    graphjinDataPath = "direct",
     nativeDelegation,
     controlPlane,
     wantsCards = true,
@@ -122,16 +117,12 @@ export async function runAgentBackend(
         }),
         // GraphJin is brokered through the trusted host. No binary, source
         // URL, or credential enters the box.
-        ...(graphjinDataPath === "agent"
-          ? { neko_graphjin_agent: buildGraphjinAgentServer({ orgId, runId, controlPlane }) }
-          : {
-              neko_graphjin: buildGraphjinMcpServer({
-                orgId,
-                runId,
-                controlPlane,
-                ...(graphjinToolPolicy ? { toolPolicy: graphjinToolPolicy } : {}),
-              }),
-            }),
+        neko_graphjin: buildGraphjinMcpServer({
+          orgId,
+          runId,
+          controlPlane,
+          ...(graphjinToolPolicy ? { toolPolicy: graphjinToolPolicy } : {}),
+        }),
         // Rendering is per-channel: the card server only ships to web turns.
         ...(wantsCards ? { neko_ui: buildRenderCardsServer(emit, { rich: cardSchema === "rich" }) } : {}),
         neko_skills: buildSkillBuilderServer(workspace.skillsRoot),

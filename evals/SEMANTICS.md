@@ -62,7 +62,6 @@ state transition, delivery, denial, audit record, or user-visible contract.
 | `DATA-DISCOVERY` | Catalog/schema discovery finds relevant tables, columns, relationships, and query patterns | answer + trace method |
 | `DATA-KNOWLEDGE` | Knowledge-pack prefetch, freshness, fallback, and agentic catalog modes are correct | digest + fault injection |
 | `DATA-DIRECT` | Direct GraphJin execution returns grounded read-only results through the brokered path | runtime oracle |
-| `DATA-DELEGATED` | Delegated GraphJin agent results carry sufficient data/evidence/usage and obey read-only policy | outer+inner trace + oracle |
 | `DATA-PLANNER-EXECUTE` | A delegated planner may propose, but the trusted host executes and verifies the final query | plan/query/oracle |
 | `DATA-MULTISOURCE` | One answer can select and reconcile several registered sources without confusing identities or dates | cross-source oracle |
 | `DATA-AUTH` | GraphJin tokens carry the correct org/user/role; row and source restrictions are enforced | cross-principal negative E2E |

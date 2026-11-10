@@ -126,13 +126,6 @@ export {
   type GraphjinConfigSettings,
 } from "./graphjin-config";
 export {
-  GRAPHJIN_AGENT_REUSE_PRIMARY,
-  GRAPHJIN_AGENT_SCOPE,
-  getGraphjinAgentRow,
-  graphjinAgentEnabledForOrg,
-  type GraphjinAgentRow,
-} from "./graphjin-agent";
-export {
   and,
   asc,
   desc,

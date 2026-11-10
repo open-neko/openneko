@@ -13,7 +13,6 @@ import {
   buildAuditViewerServer,
   buildChannelManagerServer,
   buildDataSourceManagerServer,
-  buildGraphjinAgentServer,
   buildGraphjinMcpServer,
   buildFilesServer,
   buildPackActionServer,
@@ -104,8 +103,6 @@ export function buildBridgeServer(
           ? { toolPolicy: ctx.graphjinToolPolicy }
           : {}),
       });
-    case "neko_graphjin_agent":
-      return buildGraphjinAgentServer({ orgId, runId, controlPlane });
     case "neko_skills":
       return buildSkillBuilderServer(skillsRoot);
     case "neko_memory":

@@ -96,36 +96,6 @@ describe("buildMetricPrompt", () => {
     expect(prompt).not.toContain("graphjin cli execute_graphql");
   });
 
-  it("asks GraphJin's agent and carries no query know-how on the agent path", () => {
-    const prompt = buildMetricPrompt({
-      input: fakeInput,
-      knowledge: fakeKnowledge,
-      workspace: fakeWorkspace,
-      shellTool: "terminal",
-      dataAgentTool: "mcp_neko_graphjin_agent_ask",
-    });
-    expect(prompt).toContain("`mcp_neko_graphjin_agent_ask`");
-    expect(prompt).toContain("Write each instruction as a precise data request.");
-    expect(prompt).not.toContain(fakeKnowledge.syntax);
-    expect(prompt).not.toMatch(/hidden|not available in this treatment/i);
-    expect(prompt).not.toContain("mcp_neko_graphjin_execute_graphql");
-    expect(prompt).not.toContain("graphjin cli execute_graphql");
-  });
-
-  it("rejects ambiguous direct and delegated data surfaces", () => {
-    const ambiguous = {
-      input: fakeInput,
-      knowledge: fakeKnowledge,
-      workspace: fakeWorkspace,
-      shellTool: "terminal",
-      queryTool: "mcp_neko_graphjin_execute_graphql",
-      dataAgentTool: "mcp_neko_graphjin_agent_ask",
-    } as unknown as Parameters<typeof buildMetricPrompt>[0];
-    expect(() =>
-      buildMetricPrompt(ambiguous),
-    ).toThrow("choose either queryTool or agentTool");
-  });
-
   it("declares the JSON output contract with every required field name", () => {
     const prompt = buildMetricPrompt({
       input: fakeInput,

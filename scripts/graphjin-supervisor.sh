@@ -6,22 +6,16 @@ request_file="${config_dir}/.openneko-graphjin-restart"
 ack_file="${config_dir}/.openneko-graphjin-restart-ack"
 ping_file="${config_dir}/.openneko-graphjin-supervisor-ping"
 ping_ack_file="${config_dir}/.openneko-graphjin-supervisor-ping-ack"
-# OpenNeko writes the GraphJin agent key here when the admin opts in.
-agent_key_file="${config_dir}/.openneko-graphjin-agent-key"
 child_pid=""
 last_token=""
+
+rm -f "${config_dir}/.openneko-graphjin-agent-key"
 
 if [ -f "$ack_file" ]; then
   last_token=$(cat "$ack_file" 2>/dev/null || true)
 fi
 
 start_graphjin() {
-  if [ -f "$agent_key_file" ]; then
-    OPENNEKO_GRAPHJIN_AGENT_API_KEY=$(cat "$agent_key_file")
-    export OPENNEKO_GRAPHJIN_AGENT_API_KEY
-    # OpenNeko writes the agent block; compose defaults must not override it.
-    unset GJ_AGENT_PROVIDER GJ_AGENT_MODEL GJ_AGENT_BASE_URL GJ_AGENT_API_KEY_ENV
-  fi
   graphjin "$@" &
   child_pid=$!
 }

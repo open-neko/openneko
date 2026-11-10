@@ -81,7 +81,7 @@ export type ProviderSeed = {
     | "agent"
     | "install-policy"
     | "graphjin-config"
-    | "graphjin-agent";
+    | "public-url";
   provider: string;
   model?: string | null;
   enabled?: boolean;
@@ -109,7 +109,7 @@ export async function clearProvider(
     | "agent"
     | "install-policy"
     | "graphjin-config"
-    | "graphjin-agent",
+    | "public-url",
 ): Promise<void> {
   await db()
     .delete(llm_provider_config)

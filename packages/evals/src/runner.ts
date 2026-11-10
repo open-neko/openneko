@@ -225,7 +225,6 @@ function measuredTotal(
 function semanticsForSlot(slot: EvalSlot): string[] {
   const dataPathSemantic: Partial<Record<EvalVariant["data_path"], string>> = {
     "graphjin-direct": "DATA-DIRECT",
-    "graphjin-agent": "DATA-DELEGATED",
     "planner-host-execute": "DATA-PLANNER-EXECUTE",
   };
   const semantic = dataPathSemantic[slot.variant.data_path];

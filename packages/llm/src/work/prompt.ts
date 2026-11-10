@@ -8,9 +8,7 @@ import {
   buildMemorySection,
 } from "../prompts/sections";
 import type { InstalledSkill } from "./workspace";
-import type { GraphjinDataPath } from "./graphjin-tool-policy";
 import {
-  GRAPHJIN_AGENT_ASK_TOOL_TITLE,
   GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
   GRAPHJIN_QUERY_CATALOG_TOOL_TITLE,
   GRAPHJIN_VALIDATE_WHERE_TOOL_TITLE,
@@ -197,21 +195,12 @@ function buildNativeDelegationSection(supportedForRun: boolean, backend: AgentBa
   return backend === "ax" ? AX_DELEGATION : "";
 }
 
-function triggerDiscovery(graphjinDataPath: GraphjinDataPath): string {
-  return graphjinDataPath === "agent"
-    ? `call \`${GRAPHJIN_AGENT_ASK_TOOL_TITLE}\` with the operator's natural-language
-condition. Ask for the table, its primary key, the columns the condition uses,
-and a where filter that GraphJin has validated against that table.`
-    : `call \`${GRAPHJIN_QUERY_CATALOG_TOOL_TITLE}\` with the operator's natural-language
+const TRIGGER_DISCOVERY = `call \`${GRAPHJIN_QUERY_CATALOG_TOOL_TITLE}\` with the operator's natural-language
 condition. Inspect the returned table card, columns, and relationship edges,
 then confirm the table, columns, and primary key. Validate the finished
 filter with \`${GRAPHJIN_VALIDATE_WHERE_TOOL_TITLE}\`.`;
-}
 
-function buildWorkflowToolsSection(
-  supportsWorkflowTool: boolean,
-  graphjinDataPath: GraphjinDataPath,
-): string {
+function buildWorkflowToolsSection(supportsWorkflowTool: boolean): string {
   if (supportsWorkflowTool) {
     return `<workflows>
 The operator can ask you to set up, modify, or look up workflows directly
@@ -251,7 +240,7 @@ A workflow can run on a schedule, when the data changes, or both:
   The workflow's \`steps\` are the response (e.g. "DM Amit on Slack with
   the low-stock details"); \`triggers.when\` is the condition.
 
-  Before setting \`triggers.when\`, ${triggerDiscovery(graphjinDataPath)}
+  Before setting \`triggers.when\`, ${TRIGGER_DISCOVERY}
 
 - \`batch\` — an optional workflow-native API contract with a record-array
   field and deterministic CSV columns (each column maps a name to a dotted
@@ -320,7 +309,7 @@ both:
   \`triggers.when\` is the condition. Omit \`triggers\` entirely for a
   manual workflow.
 
-Before writing \`triggers.when\`, ${triggerDiscovery(graphjinDataPath)} \`primary_key\` is required
+Before writing \`triggers.when\`, ${TRIGGER_DISCOVERY} \`primary_key\` is required
 and drives idempotency. If the workflow's steps write back to the watched
 table, add \`triggers.when.idempotency_key_template\` (e.g.
 \`"reorder-{primary_key}"\`).
@@ -664,8 +653,6 @@ export function buildWorkPrompt(args: {
   supportsWorkflowTool: boolean;
   supportsPolicyTool: boolean;
   supportsSourceConfigTool: boolean;
-  /** "agent" when the org opted in to GraphJin's server-side agent. */
-  graphjinDataPath?: GraphjinDataPath;
   supportsClarificationTool?: boolean;
   /** True only when this run may expose the backend's native sub-agent tool. */
   supportsNativeDelegation: boolean;
@@ -697,7 +684,6 @@ export function buildWorkPrompt(args: {
     supportsClarificationTool = false,
     supportsNativeDelegation,
     inlineTranscript,
-    graphjinDataPath = "direct",
     bot,
   } = args;
   const shellTool = shellToolName(backend);
@@ -722,21 +708,19 @@ that flags churn risk every Monday."
       true,
       backend === "ax" ? "search" : "list",
     ),
-    buildWorkflowToolsSection(supportsWorkflowTool, graphjinDataPath),
+    buildWorkflowToolsSection(supportsWorkflowTool),
     buildPoliciesSection(supportsPolicyTool),
     buildSourceConfigSection(supportsSourceConfigTool, workspace),
     buildNativeDelegationSection(supportsNativeDelegation, backend),
-    graphjinDataPath === "agent"
-      ? buildDataAccessSection({ shellTool, agentTool: GRAPHJIN_AGENT_ASK_TOOL_TITLE, workspace, knowledge, inlineKnowledge: "syntax" })
-      : buildDataAccessSection({
-          shellTool,
-          queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
-          queryIdentity: "actor",
-          scriptAccess: true,
-          workspace,
-          knowledge,
-          inlineKnowledge: "syntax",
-        }),
+    buildDataAccessSection({
+      shellTool,
+      queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
+      queryIdentity: "actor",
+      scriptAccess: true,
+      workspace,
+      knowledge,
+      inlineKnowledge: "syntax",
+    }),
     RULES_SECTION,
     includeUxMetadata ? CLOSING_SECTION : "",
     // Prompt caches reuse the identical prefix: org-wide sections above, per-user to per-message below.

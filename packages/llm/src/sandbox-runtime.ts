@@ -19,7 +19,6 @@ export {
   buildAuditViewerServer,
   buildChannelManagerServer,
   buildDataSourceManagerServer,
-  buildGraphjinAgentServer,
   buildGraphjinMcpServer,
   buildGraphjinReadServer,
   buildFilesServer,

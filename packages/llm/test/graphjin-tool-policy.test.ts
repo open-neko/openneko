@@ -144,7 +144,7 @@ describe("GraphJin direct-governed MCP policy", () => {
       );
       await expect(
         client.callTool({ name: "ask_graphjin_agent", arguments: { instruction: "production behavior" } }),
-      ).rejects.toThrow(/neko_graphjin_agent/);
+      ).rejects.toThrow(/ask_graphjin_agent is not available/);
       expect(callGraphjinTool).not.toHaveBeenCalled();
     } finally {
       await client.close();

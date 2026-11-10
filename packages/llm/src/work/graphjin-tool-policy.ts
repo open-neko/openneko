@@ -14,16 +14,7 @@ export type GraphjinMcpToolPolicy = Readonly<{
 export const GRAPHJIN_DIRECT_GOVERNED_POLICY: GraphjinMcpToolPolicy =
   Object.freeze({ mode: "direct-governed" });
 
-/**
- * How a run reaches customer data: GraphJin's direct tools, or only GraphJin's
- * server-side agent when the org opted in.
- */
-export type GraphjinDataPath = "direct" | "agent";
-
-/**
- * GraphJin's own agent tool. Runs reach that agent only through the
- * neko_graphjin_agent server, which the org opt-in controls.
- */
+/** GraphJin's own agent tool. No run reaches it. */
 export const GRAPHJIN_SERVER_AGENT_TOOL = "ask_graphjin_agent";
 
 export const GRAPHJIN_TOOL_POLICY_ENV =
@@ -105,7 +96,7 @@ export function assertGraphjinMcpToolCallAllowed(
 ): void {
   if (!policy) {
     if (input.name === GRAPHJIN_SERVER_AGENT_TOOL) {
-      throw new Error(`GraphJin MCP tool ${GRAPHJIN_SERVER_AGENT_TOOL} is reached through neko_graphjin_agent`);
+      throw new Error(`GraphJin MCP tool ${GRAPHJIN_SERVER_AGENT_TOOL} is not available`);
     }
     return;
   }

@@ -30,7 +30,6 @@ import {
   combineAgentTokenUsage,
   ensureHostConfigProvisioned,
   provisionHostConfig,
-  getGraphjinAgentStatus,
   runMetricAgent,
   shutdownAgentBroker,
   type AgentTokenUsage,
@@ -60,7 +59,6 @@ function costMeasurements(input: {
   variant: EvalVariant;
   catalog: PricingCatalog | undefined;
   outerUsage: AgentTokenUsage;
-  innerUsage?: AgentTokenUsage;
 }): Record<string, unknown> {
   const scopes = [
     {
@@ -68,15 +66,6 @@ function costMeasurements(input: {
       model: input.variant.outer_model,
       usage: input.outerUsage,
     },
-    ...(input.variant.data_path === "graphjin-agent" && input.variant.inner_model
-      ? [
-          {
-            name: "inner",
-            model: input.variant.inner_model,
-            usage: input.innerUsage,
-          },
-        ]
-      : []),
   ];
   const priced = scopes.map((scope) => ({
     ...scope,
@@ -148,7 +137,6 @@ const INFRASTRUCTURE_ERROR = /openneko serve|sandbox|gateway|ECONNREFUSED|socket
 function agentFailure(cause: unknown, wallDurationMs: number, diagnostics?: MetricAgentDiagnostics): unknown {
   const message = cause instanceof Error ? cause.message : String(cause);
   if (cause instanceof EvalEnvironmentError || INFRASTRUCTURE_ERROR.test(message)) return cause;
-  const agent = diagnostics?.graphjinAgent;
   const usage = diagnostics?.totalUsage;
   return new EvalTaskError(message, "agent_failure", {
     measurements: {
@@ -156,14 +144,6 @@ function agentFailure(cause: unknown, wallDurationMs: number, diagnostics?: Metr
       ...(usage?.inputTokens !== undefined ? { inputTokens: usage.inputTokens } : {}),
       ...(usage?.outputTokens !== undefined ? { outputTokens: usage.outputTokens } : {}),
       ...(usage?.totalTokens !== undefined ? { totalTokens: usage.totalTokens } : {}),
-      ...(agent
-        ? {
-            graphjinAgentCalls: agent.calls,
-            graphjinAgentModelCalls: agent.modelCalls,
-            graphjinAgentDurationMs: agent.durationMs,
-            graphjinAgentFailures: agent.failures,
-          }
-        : {}),
     },
   });
 }
@@ -178,12 +158,6 @@ function parseHeadline(value: string): number | null {
   if (scale === "m") number *= 1_000_000;
   if (scale === "b") number *= 1_000_000_000;
   return number;
-}
-
-function normalizedProvider(value: string): string {
-  const normalized = value.trim().toLocaleLowerCase();
-  if (["google", "google-gemini", "gemini"].includes(normalized)) return "gemini";
-  return normalized;
 }
 
 function datasetSetting(
@@ -365,22 +339,13 @@ export function createAdventureWorksMetricDriver(context: {
         );
       }
       for (const variant of loaded.config.variants) {
-        if (
-          variant.data_path !== "graphjin-direct" &&
-          variant.data_path !== "graphjin-agent"
-        ) {
+        if (variant.data_path !== "graphjin-direct") {
           throw new EvalEnvironmentError(
             `adventureworks.metric does not support ${variant.data_path}`,
             "data_path_unsupported",
           );
         }
         resolveCredentialRef(variant.outer_model.credential_ref);
-        if (variant.data_path === "graphjin-agent" && !variant.inner_model) {
-          throw new EvalEnvironmentError(
-            `variant ${variant.id} must declare inner_model for graphjin-agent`,
-            "inner_model_missing",
-          );
-        }
       }
       const datasetId = loaded.cases[0]?.dataset ?? "adventureworks";
       const graphqlUrl = datasetSetting(
@@ -405,48 +370,6 @@ export function createAdventureWorksMetricDriver(context: {
           `GraphJin preflight returned HTTP ${response.status}`,
           "graphjin_unhealthy",
         );
-      }
-      let delegatedStatus:
-        | Awaited<ReturnType<typeof getGraphjinAgentStatus>>
-        | undefined;
-      if (loaded.config.variants.some((variant) => variant.data_path === "graphjin-agent")) {
-        delegatedStatus = await getGraphjinAgentStatus({
-          baseUrl: graphqlUrl,
-          token: "openneko-read-only",
-          signal: AbortSignal.timeout(10_000),
-        }).catch((cause) => {
-          throw new EvalEnvironmentError(
-            `GraphJin agent preflight failed: ${cause instanceof Error ? cause.message : cause}`,
-            "graphjin_agent_unreachable",
-          );
-        });
-        if (!delegatedStatus.ready) {
-          throw new EvalEnvironmentError(
-            delegatedStatus.message || "GraphJin agent is not ready",
-            "graphjin_agent_unready",
-          );
-        }
-        if (!delegatedStatus.read_only) {
-          throw new EvalEnvironmentError(
-            "GraphJin agent must be globally read-only for harness evaluation",
-            "graphjin_agent_not_read_only",
-          );
-        }
-        for (const variant of loaded.config.variants.filter(
-          (candidate) => candidate.data_path === "graphjin-agent",
-        )) {
-          const expected = variant.inner_model!;
-          if (
-            normalizedProvider(expected.provider) !==
-              normalizedProvider(delegatedStatus.provider) ||
-            (delegatedStatus.model && delegatedStatus.model !== expected.model)
-          ) {
-            throw new EvalEnvironmentError(
-              `variant ${variant.id} requests inner ${expected.provider}:${expected.model}, GraphJin reports ${delegatedStatus.provider}:${delegatedStatus.model ?? "unknown"}`,
-              "inner_model_mismatch",
-            );
-          }
-        }
       }
       const fingerprint = await oraclePool().query<{
         database_name: string;
@@ -486,13 +409,6 @@ export function createAdventureWorksMetricDriver(context: {
               provider: variant.outer_model.provider,
               model: variant.outer_model.model,
               dataPath: variant.data_path,
-              ...(variant.data_path === "graphjin-agent" && delegatedStatus
-                ? {
-                    innerProvider: delegatedStatus.provider,
-                    innerModel: delegatedStatus.model,
-                    innerMaxSteps: delegatedStatus.max_steps,
-                  }
-                : {}),
             },
           ]),
         ),
@@ -596,8 +512,6 @@ export function createAdventureWorksMetricDriver(context: {
           | "donut"
           | "area",
         jobId,
-        graphjinPath:
-          slot.variant.data_path === "graphjin-agent" ? "agent" : "direct",
         backendId: slot.variant.backend as AgentBackendId,
         onDiagnostics(value) {
           diagnostics = value;
@@ -637,7 +551,6 @@ export function createAdventureWorksMetricDriver(context: {
         variant: slot.variant,
         catalog: context.loaded.pricing,
         outerUsage,
-        ...(diagnostics?.innerUsage ? { innerUsage: diagnostics.innerUsage } : {}),
       });
       await observer.observe({
         kind: "output.contract",
@@ -691,14 +604,6 @@ export function createAdventureWorksMetricDriver(context: {
                 attempts: diagnostics.attempts,
                 toolCalls: diagnostics.toolCalls,
                 toolOutputBytes: diagnostics.toolOutputBytes,
-                ...(diagnostics.graphjinAgent
-                  ? {
-                      graphjinAgentCalls: diagnostics.graphjinAgent.calls,
-                      graphjinAgentModelCalls: diagnostics.graphjinAgent.modelCalls,
-                      graphjinAgentDurationMs: diagnostics.graphjinAgent.durationMs,
-                      graphjinAgentFailures: diagnostics.graphjinAgent.failures,
-                    }
-                  : {}),
               }
             : {}),
         },

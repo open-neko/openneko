@@ -1,6 +1,6 @@
 schema_version: openneko.eval/v1
 id: adventureworks-harness-factorial
-description: Full 2×2 provider/data-path experiment through Ax with one externally provisioned GraphJin inner model.
+description: Two providers through Ax on the direct GraphJin path.
 adapter: adventureworks.metric
 semantics:
   ref: ../semantics.yaml
@@ -39,26 +39,6 @@ variants:
       model: gemini-3.6-flash
       credential_ref: env:GEMINI_API_KEY
     data_path: graphjin-direct
-
-  - id: ax-anthropic-delegated
-    extends: ax-anthropic-direct
-    data_path: graphjin-agent
-    inner_model:
-      provider: google-gemini
-      model: gemini-3.6-flash
-      credential_ref: env:GEMINI_API_KEY
-      config:
-        provisioning: external-graphjin
-
-  - id: ax-gemini-delegated
-    extends: ax-gemini-direct
-    data_path: graphjin-agent
-    inner_model:
-      provider: google-gemini
-      model: gemini-3.6-flash
-      credential_ref: env:GEMINI_API_KEY
-      config:
-        provisioning: external-graphjin
 
 budgets:
   max_wall_time: 48h

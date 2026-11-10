@@ -16,8 +16,6 @@ import {
   type KnowledgePackContents,
 } from "./knowledge-pack";
 import {
-  AGENT_REQUEST_GUIDANCE,
-  agentSchemaDigest,
   compactHelpCardIndex,
   compactInsightsDigest,
   compactTableDigest,
@@ -27,9 +25,7 @@ import {
   ensureIsolatedJobWorkspace,
   ensureWorkWorkspace,
 } from "./work/workspace";
-import { graphjinAgentEnabledForOrg } from "@neko/db";
 import {
-  GRAPHJIN_AGENT_ASK_TOOL_TITLE,
   GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
   graphjinMcpToolTitle,
 } from "./graphjin/mcp-names";
@@ -40,12 +36,9 @@ export function buildProfilerPrompt(args: {
   knowledge: KnowledgePackContents;
   shellTool: string;
   queryTool: string;
-  /** Set when the org opted in to GraphJin's server-side agent. */
-  agentTool?: string;
   workspace: AgentWorkspace;
 }): string {
   const { orgName, companyNote, knowledge, queryTool } = args;
-  if (args.agentTool) return buildProfilerAgentInstructions(args.agentTool, agentSchemaDigest(knowledge, args.workspace)) + profilerOutput(orgName, companyNote);
   const agentic = knowledge.mode === "agentic";
   const catalogTool = graphjinMcpToolTitle("query_catalog");
   const helpTool = graphjinMcpToolTitle("graphql_help");
@@ -154,26 +147,6 @@ ${knowledge.syntax}`
 ` + profilerOutput(orgName, companyNote);
 }
 
-function buildProfilerAgentInstructions(agentTool: string, schema: string): string {
-  return `You build a short markdown business profile about a customer company from its database.
-
-EXECUTION PATTERN:
-1. Call \`${agentTool}\` with {"instruction":"<one precise data request>"}. GraphJin's agent runs validated read-only queries and returns status, answer, data and evidence. ${AGENT_REQUEST_GUIDANCE}
-2. Ask first what the business does: its main business event with the date range, recent volume and value, and the tables that describe customers, products and locations.
-3. Then ask focused questions for each output section: top categories, products or services; geography; who is served; who does the work. Put what you already learned in each instruction; GraphJin's agent keeps no memory between calls.
-4. Anchor periods to the latest date in the data.
-5. When you have enough facts, emit the final markdown body exactly per the OUTPUT FORMAT. No prose around it, no code fences.${schema}
-
-COMPLETION CONTRACT:
-- Treat the requested output sections as an evidence checklist, not an invitation to explore everything.
-- A section is ready when you have representative evidence for it, or the data does not cover it and the section can honestly say "Not measured."
-- Stop asking and write the profile as soon as every section is ready.
-- If a response is blocked, denied, has errors, or lacks evidence, use what you already have and mark that fact "Not measured."
-- Every number in the profile must come from response.data or response.evidence in this run. Never invent or interpolate.
-
-`;
-}
-
 function profilerOutput(orgName: string, companyNote: string): string {
   return `================================================================================
 OUTPUT FORMAT — respond with EXACTLY this markdown body, no code fences, no prose around it:
@@ -278,7 +251,6 @@ async function profile(
     "profiler",
     jobId ?? orgId,
   );
-  const agentPath = await graphjinAgentEnabledForOrg(orgId);
   const knowledge = await loadProfilerKnowledge(orgId, knowledgeWorkspace.knowledgeRoot);
 
   const backend = await resolveAgentBackend(orgId);
@@ -291,7 +263,7 @@ async function profile(
       orgId,
       runId: jobId ?? orgId,
       workspace: isolated.workspace,
-      access: agentPath ? { graphjinAgent: true } : { graphjinRead: true },
+      access: { graphjinRead: true },
     });
     console.log(
       `[profiler] org=${orgId} backend=${backend.id} runtime=serve`,
@@ -303,7 +275,6 @@ async function profile(
       knowledge,
       shellTool: shellToolName(backend.id),
       queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
-      ...(agentPath ? { agentTool: GRAPHJIN_AGENT_ASK_TOOL_TITLE } : {}),
       workspace: isolated.workspace,
     });
 

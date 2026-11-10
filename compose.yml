@@ -180,9 +180,6 @@ services:
       - "127.0.0.1:${GRAPHJIN_PORT:-8080}:8080"
     environment:
       GO_ENV: agentic
-      GRAPHJIN_AGENT_API_KEY: ${GRAPHJIN_AGENT_API_KEY:-}
-      GJ_AGENT_PROVIDER: ${GRAPHJIN_AGENT_PROVIDER:-openai}
-      GJ_AGENT_MODEL: ${GRAPHJIN_AGENT_MODEL:-gpt-4.1-mini}
     volumes:
       - openneko-graphjin-cli:/config
     command: ["serve", "--path", "/config"]

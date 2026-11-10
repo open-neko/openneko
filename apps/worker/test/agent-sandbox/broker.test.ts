@@ -64,16 +64,6 @@ function makeFakeControlPlane() {
       calls.push({ method: "graphjin-tool-call", input: input as Record<string, unknown> });
       return { content: [{ type: "text", text: '{"cards":[]}' }] };
     },
-    async askGraphjinDataAgent(input) {
-      calls.push({ method: "graphjin-agent", input: input as Record<string, unknown> });
-      return {
-        response: {
-          status: "answered",
-          answer: "31,465 orders",
-          data: { count: 31_465 },
-        },
-      };
-    },
     async saveWorkflowWithTrigger(input) {
       calls.push({ method: "wf-save", input: input as Record<string, unknown> });
       return { action: "created", workflow: { id: "w1", name: "W" } } as Awaited<
@@ -192,9 +182,6 @@ describe("agent broker", () => {
     events = [];
     server = createAgentBroker({
       controlPlane: fake.cp,
-      // These tests exercise the direct GraphJin routes; an org on the
-      // default agent path is refused them (covered below).
-      graphjinAgentOnly: async () => false,
       resolveRun: (t) =>
         t === "good"
           ? { runId: "r1", orgId: "o1", kind: "work" }
@@ -239,47 +226,13 @@ describe("agent broker", () => {
     expect(fake.calls.find((c) => c.method === "search")?.input.orgId).toBe("o1");
   });
 
-  it("binds GraphJin data-agent delegation to the authenticated org and run", async () => {
-    const cp = new BrokerControlPlane(baseUrl, "good");
-    const result = await cp.askGraphjinDataAgent({
-      orgId: "SPOOF",
-      runId: "SPOOF",
-      instruction: "Count all orders",
-      maxSteps: 6,
+  it("has no route to GraphJin's agent", async () => {
+    const response = await fetch(`${baseUrl}/v1/graphjin/agent`, {
+      method: "POST",
+      headers: { authorization: "Bearer good", "content-type": "application/json" },
+      body: JSON.stringify({ instruction: "Count all orders" }),
     });
-
-    expect(result.response?.data).toEqual({ count: 31_465 });
-    expect(fake.calls.find((call) => call.method === "graphjin-agent")?.input).toEqual({
-      orgId: "o1",
-      runId: "r1",
-      instruction: "Count all orders",
-      maxSteps: 6,
-    });
-  });
-
-  it("lets a job ask GraphJin's agent without run entitlements", async () => {
-    await new BrokerControlPlane(baseUrl, "job").askGraphjinDataAgent({ orgId: "SPOOF", runId: "SPOOF", instruction: "Count all orders" });
-    expect(fake.calls.find((call) => call.method === "graphjin-agent")?.input).toEqual({ orgId: "o1", instruction: "Count all orders" });
-  });
-
-  it("refuses direct GraphJin routes when the org uses GraphJin's agent", async () => {
-    const agentOnly = createAgentBroker({
-      controlPlane: fake.cp,
-      resolveRun: () => ({ runId: "r1", orgId: "o1", kind: "work" }),
-      onEvents: async () => {},
-      graphjinAgentOnly: async () => true,
-    });
-    await new Promise<void>((r) => agentOnly.listen(0, "127.0.0.1", r));
-    try {
-      const cp = new BrokerControlPlane(`http://127.0.0.1:${(agentOnly.address() as AddressInfo).port}`, "good");
-      await expect(cp.listGraphjinTools({ orgId: "o1", runId: "r1" })).rejects.toThrow(/GraphJin agent/);
-      await expect(cp.queryGraphjinRead({ orgId: "o1", runId: "r1", query: "query { a { id } }" })).rejects.toThrow(/GraphJin agent/);
-      const answer = await cp.askGraphjinDataAgent({ orgId: "o1", runId: "r1", instruction: "Count all orders" });
-      expect(answer.response?.data).toEqual({ count: 31_465 });
-      expect(fake.calls.some((call) => call.method === "graphjin-tools-list" || call.method === "graphjin-read")).toBe(false);
-    } finally {
-      await new Promise<void>((r) => agentOnly.close(() => r()));
-    }
+    expect(response.status).toBe(404);
   });
 
   it("uses actor identity for work GraphJin reads and service identity for jobs", async () => {

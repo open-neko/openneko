@@ -26,7 +26,6 @@ function staticServers(): NekoMcpServer[] {
     tools.buildDataSourceManagerServer(base),
     tools.buildSourceConfigManagerServer(base),
     tools.buildAuditViewerServer(base),
-    tools.buildGraphjinAgentServer(base),
     tools.buildWorkMemoryServer(memory, { controlPlane }),
     tools.buildFilesServer(memory, { controlPlane }),
     tools.buildSkillBuilderServer("/tmp/openneko-portability-skills"),

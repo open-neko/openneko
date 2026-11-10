@@ -119,7 +119,6 @@ describeIfDb("run entitlements", () => {
       await revokeItem(orgId, { groupId: everyone, itemType: "data_source", itemId: "*" });
       await expect(inProcessControlPlane.listGraphjinTools({ orgId, runId: run.id })).rejects.toThrow("No data source is available");
       await expect(inProcessControlPlane.queryGraphjinRead({ orgId, runId: run.id, query: "query { x }" })).rejects.toThrow("No data source is available");
-      expect(await inProcessControlPlane.askGraphjinDataAgent({ orgId, runId: run.id, instruction: "revenue" })).toMatchObject({ denied: true });
     });
   });
 

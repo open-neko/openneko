@@ -912,7 +912,6 @@
           "type": "string",
           "enum": [
             "graphjin-direct",
-            "graphjin-agent",
             "planner-host-execute",
             "none"
           ]

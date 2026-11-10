@@ -1,5 +1,5 @@
 import { startupPhase, withStartupTrace } from "@neko/telemetry/startup";
-import { data_source, db, desc, eq, graphjinAgentEnabledForOrg } from "@neko/db";
+import { data_source, db, desc, eq } from "@neko/db";
 import { errorCodeOf, observeSafely, type HarnessObserver } from "@neko/telemetry";
 import {
   shellToolName,
@@ -30,8 +30,7 @@ import {
   ensureIsolatedJobWorkspace,
   ensureWorkWorkspace,
 } from "./work/workspace";
-import { graphjinAgentResponseStatus, normalizeGraphjinAgentUsage } from "./usage-normalization";
-import { GRAPHJIN_AGENT_ASK_TOOL_TITLE, GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE } from "./graphjin/mcp-names";
+import { GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE } from "./graphjin/mcp-names";
 
 // Keep in sync with ROLE_FOCUS (bootstrap-metrics-writer.ts) and the
 // onboarding ALL_SEATS list — every seat the product offers must be here.
@@ -61,8 +60,6 @@ export type MetricAgentInput = {
   observer?: HarnessObserver;
   /** Additional metadata; the observer drops content-bearing and unsafe values. */
   observationAttributes?: Record<string, unknown>;
-  /** Direct host-brokered GraphQL or read-only GraphJin server-agent delegation. */
-  graphjinPath?: GraphjinDataPath;
   /** Host-only diagnostics hook; never serialized into an agent sandbox. */
   onDiagnostics?: (diagnostics: MetricAgentDiagnostics) => void;
   /** Host-only backend choice; the org's setting applies when absent. */
@@ -73,20 +70,13 @@ export type MetricAgentInput = {
   onEvent?: (event: AgentEvent) => void;
 };
 
-export type { GraphjinDataPath } from "./work/graphjin-tool-policy";
-import type { GraphjinDataPath } from "./work/graphjin-tool-policy";
-
 export type MetricAgentDiagnostics = {
-  graphjinPath: GraphjinDataPath;
   promptChars: number;
   durationMs: number;
   attempts: number;
   toolCalls: Record<string, number>;
   toolOutputBytes: number;
-  /** Calls to GraphJin's agent, its model calls, time spent in them, and calls without an answer. */
-  graphjinAgent?: { calls: number; modelCalls: number; durationMs: number; failures: number };
   outerUsage?: AgentTokenUsage;
-  innerUsage?: AgentTokenUsage;
   totalUsage: AgentTokenUsage;
 };
 
@@ -131,8 +121,6 @@ async function runMetricAgentTraced(
   input: MetricAgentInput,
 ): Promise<MetricAgentResult> {
   const observedStartedAt = Date.now();
-  const graphjinPath: GraphjinDataPath = input.graphjinPath ??
-    (await startupPhase("config.graphjin_agent", () => graphjinAgentEnabledForOrg(input.orgId)) ? "agent" : "direct");
   const sources = await startupPhase("metric.db_read", async () => db()
     .select({
       graphql_url: data_source.graphql_url,
@@ -143,16 +131,12 @@ async function runMetricAgentTraced(
     .orderBy(desc(data_source.is_default), data_source.created_at)
     .limit(1));
   const source = sources[0];
-  const requiredUrl =
-    graphjinPath === "agent" ? source?.graphql_url : source?.mcp_url;
-  if (!requiredUrl) {
-    throw new Error(
-      `no ${graphjinPath === "agent" ? "graphql_url" : "mcp_url"} for org ${input.orgId}`,
-    );
+  if (!source?.mcp_url) {
+    throw new Error(`no mcp_url for org ${input.orgId}`);
   }
 
   console.log(
-    `[metric-agent] org=${input.orgId} role=${input.role} slug=${input.slug} graphjinPath=${graphjinPath}`,
+    `[metric-agent] org=${input.orgId} role=${input.role} slug=${input.slug}`,
   );
 
   const knowledgeWorkspace = await startupPhase("workspace.prepare", async () => ensureWorkWorkspace(
@@ -175,11 +159,7 @@ async function runMetricAgentTraced(
   let attempts = 0;
   let toolOutputBytes = 0;
   let outerUsage: AgentTokenUsage | undefined;
-  let innerUsage: AgentTokenUsage | undefined;
-  let innerUsageMissing = false;
   const toolCalls: Record<string, number> = {};
-  const toolStarted = new Map<string, number>();
-  const graphjinAgent = { calls: 0, modelCalls: 0, durationMs: 0, failures: 0 };
   let backendFailure: Pick<AgentRunResult, "errorCode" | "timedOut"> | undefined;
   await observe({
     kind: "run.start",
@@ -189,7 +169,7 @@ async function runMetricAgentTraced(
       "openneko.run.kind": "production",
       "openneko.product.path": "metric",
       "openneko.backend": backend.id,
-      "openneko.data.path": `graphjin-${graphjinPath}`,
+      "openneko.data.path": "graphjin-direct",
       ...(backend.model ? { "gen_ai.request.model": backend.model } : {}),
       ...input.observationAttributes,
     },
@@ -206,8 +186,7 @@ async function runMetricAgentTraced(
       runId: input.jobId ?? input.slug,
       workspace: isolated.workspace,
       access: {
-        graphjinRead: graphjinPath === "direct",
-        graphjinAgent: graphjinPath === "agent",
+        graphjinRead: true,
         memorySearch: supportsMemorySearch,
       },
     }));
@@ -217,14 +196,12 @@ async function runMetricAgentTraced(
       knowledge,
       workspace: isolated.workspace,
       shellTool: shellToolName(backend.id),
-      ...(graphjinPath === "direct"
-        ? { queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE }
-        : { dataAgentTool: GRAPHJIN_AGENT_ASK_TOOL_TITLE }),
+      queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
       memoryContext,
       supportsMemorySearch,
     });
     // GJ3: role-shaped warm-start for discovery (cached per org/role/intent).
-    const pathwaysSection = graphjinPath === "agent" ? "" : buildDiscoveryPathwaysSection(
+    const pathwaysSection = buildDiscoveryPathwaysSection(
       getDiscoveryPathways({
         orgId: input.orgId,
         role: input.role,
@@ -237,7 +214,7 @@ async function runMetricAgentTraced(
       : basePrompt;
 
     console.log(
-      `[metric-agent] org=${input.orgId} slug=${input.slug} backend=${backend.id} graphjinPath=${graphjinPath} runtime=serve`,
+      `[metric-agent] org=${input.orgId} slug=${input.slug} backend=${backend.id} runtime=serve`,
     );
 
     promptChars = prompt.length;
@@ -300,7 +277,6 @@ async function runMetricAgentTraced(
           }
           if (event.type === "tool_start") {
             toolNames.set(event.id, event.name);
-            toolStarted.set(event.id, Date.now());
             toolCalls[event.name] = (toolCalls[event.name] ?? 0) + 1;
             await observe({
               kind: "tool.start",
@@ -312,20 +288,6 @@ async function runMetricAgentTraced(
                 coverage: "unavailable",
               },
             });
-            if (isGraphjinAgentTool(event.name)) {
-              await observe({
-                kind: "delegation.start",
-                operationId: `${operationId}:delegation:${event.id}`,
-                parentOperationId: modelOperationId,
-                attributes: { "openneko.delegation.target": "graphjin-agent" },
-              });
-              await observe({
-                kind: "model.request",
-                operationId: `${operationId}:inner-model:${event.id}`,
-                parentOperationId: `${operationId}:delegation:${event.id}`,
-                attributes: { "openneko.model.scope": "inner" },
-              });
-            }
           } else if (event.type === "tool_end") {
             const toolName = toolNames.get(event.id) ?? "unknown";
             const outputBytes = byteLength(event.result ?? event.error);
@@ -338,52 +300,6 @@ async function runMetricAgentTraced(
               attributes: { "gen_ai.tool.name": toolName },
               measurements: { outputBytes, coverage: "unavailable" },
             });
-            if (isGraphjinAgentTool(toolName)) {
-              const parsedInner = findGraphjinUsage(event.result);
-              graphjinAgent.calls += 1;
-              graphjinAgent.modelCalls += parsedInner?.modelCalls ?? 0;
-              graphjinAgent.durationMs += Date.now() - (toolStarted.get(event.id) ?? Date.now());
-              if (event.error || graphjinAgentResponseStatus(event.result) !== "answered") graphjinAgent.failures += 1;
-              if (parsedInner) {
-                innerUsage = addUsage(innerUsage, parsedInner.usage);
-                await observe({
-                  kind: "model.response",
-                  operationId: `${operationId}:inner-model:${event.id}`,
-                  parentOperationId: `${operationId}:delegation:${event.id}`,
-                  status: event.error ? "error" : "ok",
-                  attributes: {
-                    "openneko.model.scope": "inner",
-                    ...(parsedInner.provider
-                      ? { "gen_ai.provider.name": parsedInner.provider }
-                      : {}),
-                    ...(parsedInner.model
-                      ? { "gen_ai.response.model": parsedInner.model }
-                      : {}),
-                  },
-                  measurements: parsedInner.usage,
-                });
-              } else {
-                innerUsageMissing = true;
-                await observe({
-                  kind: "model.response",
-                  operationId: `${operationId}:inner-model:${event.id}`,
-                  parentOperationId: `${operationId}:delegation:${event.id}`,
-                  status: event.error ? "error" : "ok",
-                  attributes: { "openneko.model.scope": "inner" },
-                  measurements: {
-                    coverage: "unavailable",
-                    missingReasons: ["GraphJin agent response omitted normalized usage"],
-                  },
-                });
-              }
-              await observe({
-                kind: "delegation.end",
-                operationId: `${operationId}:delegation:${event.id}`,
-                parentOperationId: modelOperationId,
-                status: event.error ? "error" : "ok",
-                attributes: { "openneko.delegation.target": "graphjin-agent" },
-              });
-            }
           } else if (event.type === "usage" && event.source === "outer") {
             sawOuterUsage = true;
             outerUsage = addUsage(outerUsage, event.usage);
@@ -437,7 +353,6 @@ async function runMetricAgentTraced(
         workspace: isolated.workspace,
         debug,
       },
-      maxAttempts: graphjinPath === "agent" ? 2 : undefined,
       label: `metric-agent org=${input.orgId} slug=${input.slug}`,
       validate: (finalText) => {
         const out = parseJsonFromOutput(
@@ -452,11 +367,7 @@ async function runMetricAgentTraced(
       },
     });
     const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(0);
-    const totalUsage = combinedUsage(
-      outerUsage,
-      innerUsage,
-      graphjinPath === "agent" && (innerUsageMissing || !innerUsage),
-    );
+    const totalUsage = combinedUsage(outerUsage);
     await observe({
       kind: "stage.end",
       operationId: `${operationId}:agent`,
@@ -525,11 +436,7 @@ async function runMetricAgentTraced(
 
     return result;
   } catch (cause) {
-    const totalUsage = combinedUsage(
-      outerUsage,
-      innerUsage,
-      graphjinPath === "agent" && (innerUsageMissing || !innerUsage),
-    );
+    const totalUsage = combinedUsage(outerUsage);
     const errorCode = backendFailure?.errorCode ?? errorCodeOf(cause);
     const failure = {
       errorType: backendFailure?.errorCode ?? (cause instanceof Error ? cause.name : "unknown"),
@@ -566,20 +473,13 @@ async function runMetricAgentTraced(
   } finally {
     try {
       input.onDiagnostics?.({
-        graphjinPath,
         promptChars,
         durationMs: Date.now() - observedStartedAt,
         attempts,
         toolCalls: { ...toolCalls },
         toolOutputBytes,
-        ...(graphjinPath === "agent" ? { graphjinAgent: { ...graphjinAgent } } : {}),
         ...(outerUsage ? { outerUsage } : {}),
-        ...(innerUsage ? { innerUsage } : {}),
-        totalUsage: combinedUsage(
-          outerUsage,
-          innerUsage,
-          graphjinPath === "agent" && (innerUsageMissing || !innerUsage),
-        ),
+        totalUsage: combinedUsage(outerUsage),
       });
     } catch {
       // Diagnostics must never change the metric result.
@@ -599,10 +499,6 @@ function byteLength(value: unknown): number {
   } catch {
     return 0;
   }
-}
-
-function isGraphjinAgentTool(name: string): boolean {
-  return name.toLocaleLowerCase().includes("neko_graphjin_agent");
 }
 
 function addOptional(
@@ -654,36 +550,12 @@ function addUsage(
   };
 }
 
-function combinedUsage(
-  outer: AgentTokenUsage | undefined,
-  inner: AgentTokenUsage | undefined,
-  innerMissing: boolean,
-): AgentTokenUsage {
-  let total = outer;
-  if (inner) total = addUsage(total, inner);
-  if (!total) {
-    return {
-      coverage: "unavailable",
-      missingReasons: [
-        "agent backend returned no normalized usage",
-        ...(innerMissing ? ["GraphJin agent usage is unavailable"] : []),
-      ],
-    };
-  }
-  if (!innerMissing) return total;
-  return {
-    ...total,
-    coverage: "partial",
-    missingReasons: [
-      ...new Set([
-        ...(total.missingReasons ?? []),
-        "GraphJin agent usage is unavailable",
-      ]),
-    ],
+function combinedUsage(outer: AgentTokenUsage | undefined): AgentTokenUsage {
+  return outer ?? {
+    coverage: "unavailable",
+    missingReasons: ["agent backend returned no normalized usage"],
   };
 }
-
-const findGraphjinUsage = normalizeGraphjinAgentUsage;
 
 async function loadMetricKnowledge(input: MetricAgentInput, knowledgeRoot: string) {
   const refreshResult = await startupPhase("knowledge.prefetch", async () => prefetchKnowledgeForOrg(

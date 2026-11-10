@@ -1057,57 +1057,6 @@ export function buildGraphjinMcpServer(opts: {
 /** @deprecated Use buildGraphjinMcpServer; retained for runtime API compatibility. */
 export const buildGraphjinReadServer = buildGraphjinMcpServer;
 
-/**
- * Read-only delegation surface for GraphJin's built-in server agent. The
- * sandbox supplies only a business instruction; the host owns source
- * selection, readiness checks, and credentials.
- */
-export function buildGraphjinAgentServer(opts: {
-  orgId: string;
-  runId?: string;
-  dataSourceId?: string;
-  controlPlane?: AgentControlPlane;
-}) {
-  const controlPlane = requireControlPlane(opts.controlPlane);
-  const ask = defineMcpTool(
-    "ask",
-    [
-      "Delegate one read-only operational data question to GraphJin's",
-      "catalog-first server agent. Include the complete business question,",
-      "time window, aggregation, comparison baseline, and desired dimension",
-      "in one instruction. The trusted host verifies read-only mode and keeps",
-      "the source credential outside this sandbox.",
-    ].join(" "),
-    {
-      instruction: z.string().trim().min(1).max(8_000),
-      maxSteps: z.number().int().min(1).max(12).optional(),
-    },
-    async (args) => {
-      const result = await controlPlane.askGraphjinDataAgent({
-        orgId: opts.orgId,
-        runId: opts.runId ?? null,
-        ...(opts.dataSourceId ? { dataSourceId: opts.dataSourceId } : {}),
-        instruction: args.instruction,
-        ...(args.maxSteps ? { maxSteps: args.maxSteps } : {}),
-      });
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(result),
-          },
-        ],
-      };
-    },
-  );
-
-  return createMcpServer({
-    name: "neko_graphjin_agent",
-    version: "1.0.0",
-    tools: [ask],
-  });
-}
-
 // Memory surface: `search`, `save` and `update`. Reads use pgvector
 // context-search (matches the auto-context retrieval path), writes go
 // through the same rememberWorkMemory used by the `save:` chat command,

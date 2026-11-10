@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -71,17 +71,18 @@ while :; do sleep 1; done
     }
   });
 
-  it("gives GraphJin the agent key from the key file on each start", async () => {
+  it("deletes a stale GraphJin agent key file and starts GraphJin without a key", async () => {
     const directory = await mkdtemp(join(tmpdir(), "openneko-graphjin-supervisor-"));
     const binary = join(directory, "graphjin");
     const starts = join(directory, "starts.log");
     await writeFile(binary, `#!/bin/sh
-printf '%s\\n' "\${OPENNEKO_GRAPHJIN_AGENT_API_KEY:-none}:\${GJ_AGENT_MODEL:-file}" >> "$GRAPHJIN_TEST_STARTS"
+printf '%s\\n' "\${OPENNEKO_GRAPHJIN_AGENT_API_KEY:-none}" >> "$GRAPHJIN_TEST_STARTS"
 trap 'exit 0' TERM INT
 while :; do sleep 1; done
 `);
     await chmod(binary, 0o755);
-    await writeFile(join(directory, ".openneko-graphjin-agent-key"), "key-1", { mode: 0o600 });
+    const keyFile = join(directory, ".openneko-graphjin-agent-key");
+    await writeFile(keyFile, "key-1", { mode: 0o600 });
     const supervisor = spawn(
       "/bin/sh",
       [resolve(process.cwd(), "../../scripts/graphjin-supervisor.sh"), "serve", "--path", directory],
@@ -92,17 +93,14 @@ while :; do sleep 1; done
           PATH: `${directory}:${process.env.PATH ?? ""}`,
           GRAPHJIN_TEST_STARTS: starts,
           OPENNEKO_GRAPHJIN_CONFIG_DIR: directory,
-          GJ_AGENT_MODEL: "compose-default",
         },
         stdio: "ignore",
       },
     );
     children.push(supervisor);
     try {
-      await waitFor(async () => (await readFile(starts, "utf8").catch(() => "")).includes("key-1:file"));
-      await writeFile(join(directory, ".openneko-graphjin-agent-key"), "key-2", { mode: 0o600 });
-      await writeFile(join(directory, ".openneko-graphjin-restart"), "restart-key");
-      await waitFor(async () => (await readFile(starts, "utf8").catch(() => "")).trim().split("\n").at(-1) === "key-2:file");
+      await waitFor(async () => (await readFile(starts, "utf8").catch(() => "")).trim() === "none");
+      await expect(stat(keyFile)).rejects.toThrow(/ENOENT/);
     } finally {
       supervisor.kill("SIGTERM");
       await new Promise((resolveExit) => supervisor.once("exit", resolveExit));

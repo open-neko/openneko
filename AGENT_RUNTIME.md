@@ -89,6 +89,10 @@ shares the stack network with the database, web and the worker. The
 database grants and the broker's per-run tokens stop serve from acting
 outside its zone.
 
+Agent runs read customer data only through the direct GraphJin tools. No run
+hands a question to GraphJin's own agent, so GraphJin gets no provider key.
+Migration 0128 removed the setting that did that.
+
 ## The sandbox service
 
 The sandbox gives each run its own user and group from

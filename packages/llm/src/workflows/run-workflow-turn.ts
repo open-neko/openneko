@@ -1,8 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { startupPhase, withStartupTrace } from "@neko/telemetry/startup";
-import { graphjinAgentEnabledForOrg, heldItems, pool, resolveUserGroups } from "@neko/db";
-import type { GraphjinDataPath } from "../work/graphjin-tool-policy";
+import { heldItems, pool, resolveUserGroups } from "@neko/db";
 import { runEntitlementActor, runHeldItemIds } from "../work/entitlement-scope";
 import { getWorkRunActor } from "../work/personas";
 import { workflowTurnBudget, type AgentEvent } from "../agent-backend";
@@ -268,8 +267,6 @@ async function runWorkflowTurnTraced(
     const memoryContext = await startupPhase("context.memory", async () =>
       formatGlobalMemoryPromptContext(orgId, 5, await heldItems(runActor, "team_memory")));
 
-    const graphjinDataPath: GraphjinDataPath =
-      await startupPhase("config.graphjin_agent", () => graphjinAgentEnabledForOrg(orgId)) ? "agent" : "direct";
     const knowledge = await startupPhase("knowledge.read_pack", async () => readKnowledgePack(
       knowledgePackPaths(workspace.knowledgeRoot),
     ));
@@ -283,7 +280,6 @@ async function runWorkflowTurnTraced(
       backend: backend.id,
       workspace,
       knowledge,
-      graphjinDataPath,
     });
 
     const seedMessage = buildWorkflowSeedMessage({
@@ -311,7 +307,6 @@ async function runWorkflowTurnTraced(
       workflowRunId: workflowRun.id,
       mode,
       networkHosts: workflow.networkHosts,
-      ...(graphjinDataPath === "agent" ? { graphjinDataPath } : {}),
       triggeredByObservationId:
         workflowRun.triggeredByObservationId ?? null,
       workspace,

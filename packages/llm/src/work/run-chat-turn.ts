@@ -1,5 +1,5 @@
 import { startupPhase, startupEvent, withStartupTrace } from "@neko/telemetry/startup";
-import { getGraphjinConfigSettingsForOrg, graphjinAgentEnabledForOrg, heldItems } from "@neko/db";
+import { getGraphjinConfigSettingsForOrg, heldItems } from "@neko/db";
 import { filterHeldActions, runEntitlementActor, runHeldItemIds } from "./entitlement-scope";
 import type {
   AgentChatMessage,
@@ -58,7 +58,7 @@ import {
   setWorkRunValue,
   setWorkThreadBackendState,
 } from "./store";
-import type { GraphjinDataPath, GraphjinMcpToolPolicy } from "./graphjin-tool-policy";
+import type { GraphjinMcpToolPolicy } from "./graphjin-tool-policy";
 import type { PackActionDescriptor } from "./tools";
 import { createToolOutputRecorder } from "./tool-output/metrics";
 import { runAgentBackend } from "./agent-core";
@@ -276,13 +276,6 @@ async function runChatTurnTraced(
 
   const backend = await startupPhase("config.backend", () => resolveAgentBackend(orgId));
   const workspace = await startupPhase("workspace.prepare", () => ensureWorkWorkspace(orgId, threadId, runId));
-
-  // An eval's direct-tool policy keeps the direct path.
-  const graphjinDataPath: GraphjinDataPath =
-    !opts.graphjinToolPolicy &&
-    await startupPhase("config.graphjin_agent", () => graphjinAgentEnabledForOrg(orgId))
-      ? "agent"
-      : "direct";
 
   // Knowledge layering: agentic deployments (auth_mode=jwt) get the slim
   // gj_catalog bootstrap; legacy ones keep the broad discovery dumps.
@@ -502,7 +495,6 @@ async function runChatTurnTraced(
         backend.capabilities.nativeDelegation !== undefined &&
         opts.nativeDelegation !== "disabled",
       inlineTranscript,
-      graphjinDataPath,
       ...(threadBot ? { bot: threadBot } : {}),
     });
 
@@ -526,7 +518,6 @@ async function runChatTurnTraced(
       ...(opts.graphjinToolPolicy
         ? { graphjinToolPolicy: opts.graphjinToolPolicy }
         : {}),
-      ...(graphjinDataPath === "agent" ? { graphjinDataPath } : {}),
       ...(opts.nativeDelegation
         ? { nativeDelegation: opts.nativeDelegation }
         : {}),

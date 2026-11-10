@@ -187,15 +187,6 @@ entries:
     owners:
       - packages/llm/src/graphjin
       - packages/llm/src/work
-  - id: DATA-DELEGATED
-    category: data-calculation
-    description: Delegated GraphJin agent results carry sufficient
-      data/evidence/usage and obey read-only policy
-    verification: outer+inner trace + oracle
-    disposition: eval
-    owners:
-      - packages/llm/src/graphjin
-      - packages/llm/src/work
   - id: DATA-PLANNER-EXECUTE
     category: data-calculation
     description: A delegated planner may propose, but the trusted host executes and

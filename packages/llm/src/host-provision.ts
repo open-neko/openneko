@@ -121,7 +121,6 @@ export {
   patchGraphjinSourcesJwtSecret,
   shouldReconcileDemoSourceAuthMode,
 } from "./graphjin/sources-config";
-import { provisionGraphjinAgent } from "./graphjin/agent-settings";
 import {
   atomicWriteFile,
   migrateGraphjinSystemSource,
@@ -380,7 +379,7 @@ async function hostConfigRevision(
       .where(
         and(
           eq(llm_provider_config.org_id, orgId),
-          inArray(llm_provider_config.scope, ["primary", "agent", "graphjin-agent"]),
+          inArray(llm_provider_config.scope, ["primary", "agent"]),
         ),
       )
       .orderBy(llm_provider_config.scope),
@@ -467,14 +466,6 @@ export async function provisionHostConfig(
   } catch (e) {
     console.warn(
       `[host-provision] sources-mode provision failed: ${e instanceof Error ? e.message : e}`,
-    );
-  }
-
-  try {
-    await provisionGraphjinAgent(orgId);
-  } catch (e) {
-    console.warn(
-      `[host-provision] GraphJin agent provision failed: ${e instanceof Error ? e.message : e}`,
     );
   }
 

@@ -13,7 +13,6 @@ import {
   type AxBackendConfig,
 } from "@neko/llm/agent-runtime";
 import {
-  buildGraphjinAgentServer,
   buildGraphjinMcpServer,
   buildWorkMemoryServer,
   getBuiltinSkillsRoot,
@@ -57,7 +56,6 @@ interface SandboxJob {
   packActions?: RunAgentBackendInput["packActions"];
   sourceConfigEnabled?: boolean;
   graphjinToolPolicy?: RunAgentBackendInput["graphjinToolPolicy"];
-  graphjinDataPath?: RunAgentBackendInput["graphjinDataPath"];
   nativeDelegation?: RunAgentBackendInput["nativeDelegation"];
   wantsCards?: boolean;
   cardSchema?: "rich" | "core";
@@ -74,7 +72,6 @@ interface SandboxJob {
   /** Explicit least-privilege envelope for non-interactive agent jobs. */
   agentAccess?: {
     graphjinRead?: boolean;
-    graphjinAgent?: boolean;
     memorySearch?: boolean;
   };
   agentRun?: Pick<
@@ -174,8 +171,6 @@ async function startRunDataSocket(
 ): Promise<DataSocket | undefined> {
   if (!controlPlane) return undefined;
   const kind = job.kind ?? "work";
-  // Scripts query GraphJin directly, so they get no socket on the agent path.
-  if (job.graphjinDataPath === "agent") return undefined;
   const enabled =
     kind === "workflow" ||
     kind === "work" ||
@@ -211,27 +206,17 @@ async function runJob(
   let result: AgentRunResult;
   if (kind === "agent-job") {
     const graphjinRead = job.agentAccess?.graphjinRead === true;
-    const graphjinAgent = job.agentAccess?.graphjinAgent === true;
     const memorySearch = job.agentAccess?.memorySearch === true;
-    if ((graphjinRead || graphjinAgent || memorySearch) && !controlPlane) {
+    if ((graphjinRead || memorySearch) && !controlPlane) {
       throw new Error("agent-sandbox: brokered job capability missing broker");
     }
     const mcpServers =
-      graphjinRead || graphjinAgent || memorySearch
+      graphjinRead || memorySearch
         ? {
             ...(graphjinRead
               ? {
                   neko_graphjin: buildGraphjinMcpServer({
                     orgId: job.orgId,
-                    controlPlane,
-                  }),
-                }
-              : {}),
-            ...(graphjinAgent
-              ? {
-                  neko_graphjin_agent: buildGraphjinAgentServer({
-                    orgId: job.orgId,
-                    runId: job.runId,
                     controlPlane,
                   }),
                 }
@@ -256,7 +241,7 @@ async function runJob(
       mcpServers,
       wantsCards: false,
       mcpBridgeEnv:
-        graphjinRead || graphjinAgent || memorySearch
+        graphjinRead || memorySearch
           ? {
               OPENNEKO_MCP_ORG_ID: job.orgId,
               OPENNEKO_MCP_MODE: "agent-job",
@@ -285,7 +270,6 @@ async function runJob(
       workflowRunId,
       mode: job.mode ?? "headless",
       networkHosts: job.networkHosts ?? [],
-      ...(job.graphjinDataPath ? { graphjinDataPath: job.graphjinDataPath } : {}),
       triggeredByObservationId: job.triggeredByObservationId ?? null,
       workspace: job.workspace,
       controlPlane,
@@ -321,7 +305,6 @@ async function runJob(
       ...(job.graphjinToolPolicy
         ? { graphjinToolPolicy: job.graphjinToolPolicy }
         : {}),
-      ...(job.graphjinDataPath ? { graphjinDataPath: job.graphjinDataPath } : {}),
       ...(job.nativeDelegation
         ? { nativeDelegation: job.nativeDelegation }
         : {}),

@@ -12,8 +12,7 @@ import {
   buildMemorySection,
 } from "../prompts/sections";
 import type { WorkflowRecord } from "./store";
-import { GRAPHJIN_AGENT_ASK_TOOL_TITLE, GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE } from "../graphjin/mcp-names";
-import type { GraphjinDataPath } from "../work/graphjin-tool-policy";
+import { GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE } from "../graphjin/mcp-names";
 
 export type BuildWorkflowRunnerPromptInput = {
   workflow: WorkflowRecord;
@@ -26,8 +25,6 @@ export type BuildWorkflowRunnerPromptInput = {
   backend: AgentBackendId;
   workspace: AgentWorkspace;
   knowledge: KnowledgePackContents;
-  /** "agent" when the org opted in to GraphJin's server-side agent. */
-  graphjinDataPath?: GraphjinDataPath;
 };
 
 const HEADLESS_TAIL = `<mode>headless</mode>
@@ -90,18 +87,16 @@ export function buildWorkflowRunnerPrompt(
     throw new Error("Workflow runs require the native GraphJin broker tool");
   }
   const shellTool = shellToolName(backend);
-  const dataAccessSection = input.graphjinDataPath === "agent"
-    ? buildDataAccessSection({ shellTool, agentTool: GRAPHJIN_AGENT_ASK_TOOL_TITLE, workspace, knowledge, inlineKnowledge: "syntax" })
-    : buildDataAccessSection({
-        shellTool,
-        queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
-        queryIdentity: "actor",
-        readOnly: true,
-        scriptAccess: true,
-        workspace,
-        knowledge,
-        inlineKnowledge: "syntax",
-      });
+  const dataAccessSection = buildDataAccessSection({
+    shellTool,
+    queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
+    queryIdentity: "actor",
+    readOnly: true,
+    scriptAccess: true,
+    workspace,
+    knowledge,
+    inlineKnowledge: "syntax",
+  });
 
   const stepsBlock = workflow.steps
     .map((step, index) =>

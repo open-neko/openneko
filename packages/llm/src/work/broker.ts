@@ -5,7 +5,6 @@ import {
   type ServerResponse,
 } from "node:http";
 import { randomUUID } from "node:crypto";
-import { graphjinAgentEnabledForOrg } from "@neko/db";
 import type { AgentEvent } from "../agent-backend";
 import { inProcessControlPlane, type AgentControlPlane } from "./control-plane";
 import {
@@ -65,11 +64,7 @@ export interface AgentBrokerDeps {
   /** Host-side event sink: scrub + persist. Scrubbing stays here so a
    *  sandboxed agent can't leak a secret it was never given. */
   onEvents(binding: RunBinding, events: AgentEvent[]): Promise<void>;
-  /** True when the org reaches GraphJin only through its server-side agent. */
-  graphjinAgentOnly?(orgId: string): Promise<boolean>;
 }
-
-const DIRECT_GRAPHJIN_ROUTES = new Set(["/v1/graphjin/query", "/v1/graphjin/tools/list", "/v1/graphjin/tools/call"]);
 
 /**
  * Localhost HTTP/JSON broker — the ONLY channel a sandboxed agent turn has
@@ -114,10 +109,6 @@ async function handle(
   // identity (human principal + agent backend). Best-effort — auditing
   // must never fail the call itself.
   void auditControlPlaneCall(binding, path);
-
-  if (DIRECT_GRAPHJIN_ROUTES.has(path) && await (deps.graphjinAgentOnly ?? graphjinAgentEnabledForOrg)(binding.orgId).catch(() => false)) {
-    return send(res, 403, { error: "This organization reaches its data through the GraphJin agent." });
-  }
 
   switch (path) {
     case "/v1/policy/evaluate":
@@ -358,23 +349,6 @@ async function handle(
         }),
       );
     }
-    case "/v1/graphjin/agent":
-      return send(
-        res,
-        200,
-        await cp.askGraphjinDataAgent({
-          orgId: binding.orgId,
-          // A job has no work_run row, so it carries no run entitlements.
-          ...(binding.kind === "agent-job" ? {} : { runId: binding.runId }),
-          instruction: String(body.instruction ?? ""),
-          ...(typeof body.dataSourceId === "string"
-            ? { dataSourceId: body.dataSourceId }
-            : {}),
-          ...(typeof body.maxSteps === "number"
-            ? { maxSteps: body.maxSteps }
-            : {}),
-        }),
-      );
     case "/v1/workflow/save":
       return send(
         res,

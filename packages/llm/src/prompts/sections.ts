@@ -126,10 +126,6 @@ export type DataAccessOptions = {
   readOnly?: boolean;
   /** Skill scripts can run the query tool through the run's data socket. */
   scriptAccess?: boolean;
-  /** GraphJin server-agent tool, when the org opted in to GraphJin's agent. */
-  agentTool?: string;
-  /** Metric cards ask once for a value, a baseline and chart rows. */
-  agentPurpose?: "metric";
   workspace: AgentWorkspace;
   knowledge: KnowledgePackContents;
   // 'syntax': inline only the DSL reference, point at the other knowledge
@@ -140,88 +136,8 @@ export type DataAccessOptions = {
 };
 
 export function buildDataAccessSection(opts: DataAccessOptions): string {
-  if (opts.queryTool && opts.agentTool) {
-    throw new Error("choose either queryTool or agentTool, not both");
-  }
-  if (opts.agentTool) return buildBrokeredAgentDataAccessSection(opts);
   if (opts.queryTool) return buildBrokeredDataAccessSection(opts);
   throw new Error("GraphJin data access requires a native broker tool");
-}
-
-function buildBrokeredAgentDataAccessSection(opts: DataAccessOptions): string {
-  const { agentTool } = opts;
-  if (!agentTool) throw new Error("agent data access requires agentTool");
-  const metric = opts.agentPurpose === "metric";
-
-  const ask = metric
-    ? `Call \`${agentTool}\` once. Include the card title and rationale, anchor
-dates to the latest date in live data, ask for the current value and a
-comparable baseline in the same request, and ask for the smallest grouped result
-that can populate chartData. You own the final OpenNeko JSON object; ask
-GraphJin for the data, not for that format.`
-    : `Call \`${agentTool}\` once per data request. Use more calls for follow-up
-requests, and put what you learned in each new request: GraphJin's agent keeps
-no memory between calls.`;
-
-  return `<data_access>
-The configured GraphJin database is the authoritative source for operational
-questions. When the user attaches a file or explicitly references uploaded
-data, read the file and use it as the source of truth for that turn. Otherwise
-default to the database.
-
-GraphJin's agent writes and validates the queries and runs them under the
-configured source identity. You direct it. ${ask}
-
-${AGENT_REQUEST_GUIDANCE}${agentSchemaDigest(opts.knowledge, opts.workspace)}
-
-The response has status, answer, data and evidence. Base every number on
-response.data and response.evidence; the answer field explains the result but
-does not replace them. If the response is blocked, denied, has errors, or lacks
-enough evidence, say so and do not invent a number. Retry only when its
-structured refusal says retryable and gives a concrete unblock step. If
-GraphJin returns no rows, there is no data.
-</data_access>`;
-}
-
-export const AGENT_REQUEST_GUIDANCE = `Write each instruction as a precise data request. Name the measure and how to
-compute it, the tables, the join path, the filters, the time window and the
-grouping. Ask for aggregates, not raw rows. For example: "Count
-sales.salesorderheader rows per sales.salesterritory.name, joined on
-territoryid. Return each territory with its count, highest first."`;
-
-function tablesBySchema(raw: string): string {
-  let tables: Array<{ id?: string; schema?: string; name?: string }>;
-  try {
-    const parsed = JSON.parse(raw) as { tables?: typeof tables };
-    tables = Array.isArray(parsed.tables) ? parsed.tables : [];
-  } catch {
-    return "";
-  }
-  const bySchema = new Map<string, string[]>();
-  for (const t of tables) {
-    const qualified = t.schema && t.name ? `${t.schema}.${t.name}` : t.id?.split(":").at(-1) ?? t.name;
-    if (!qualified) continue;
-    const dot = qualified.lastIndexOf(".");
-    const schema = dot > 0 ? qualified.slice(0, dot) : "";
-    bySchema.set(schema, [...(bySchema.get(schema) ?? []), qualified.slice(dot + 1)]);
-  }
-  return [...bySchema].map(([schema, names]) => `- ${schema ? `${schema}: ` : ""}${names.join(", ")}`).join("\n").slice(0, TABLE_DIGEST_MAX_CHARS);
-}
-
-/** Tables and join paths the outer agent names in its requests to GraphJin's agent. */
-export function agentSchemaDigest(knowledge: KnowledgePackContents, workspace: AgentWorkspace): string {
-  const tables = tablesBySchema(knowledge.tables);
-  if (!tables) return "";
-  const joins = compactInsightsDigest(knowledge.insights, false);
-  return `
-
-Tables (columns for every table are in ${workspace.knowledgeRoot}/tables.json):
-
-${tables}${joins ? `
-
-Main tables and join paths:
-
-${joins}` : ""}`;
 }
 
 function buildBrokeredDataAccessSection(opts: DataAccessOptions): string {

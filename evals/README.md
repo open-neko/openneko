@@ -4,7 +4,7 @@
 > observation contract, durable resume journal, deterministic rescoring,
 > PR-safe result verifier, CLI (including the `oracles` ground-truth
 > extraction command), semantic registry, a 40-case authored AdventureWorks
-> corpus (`adventureworks-40q`), direct and delegated GraphJin paths,
+> corpus (`adventureworks-40q`), the direct GraphJin path,
 > optional OTLP tracing in worker and web execution, persisted production
 > summaries, latency/token/cost aggregates, the first executable watcher/action
 > lifecycle pack, and backend eval v4 assertion attribution, typed security
@@ -95,9 +95,8 @@ pnpm openneko eval verify --result evals/results/<config-id>/<run-id>
 pnpm openneko eval report --result evals/results/<config-id>/<run-id>
 ```
 
-The metric adapter supports Ax across model providers, direct GraphJin and
-the read-only delegated GraphJin server agent, independent outer/inner
-provider-model identities, and dataset/config variation. The lifecycle adapter
+The metric adapter supports Ax across model providers, direct GraphJin, and
+dataset/config variation. The lifecycle adapter
 executes watcher and approval-governed mutation state machines against isolated
 test organizations with deterministic clocks, query responses, and action
 effects.
@@ -171,8 +170,7 @@ able to vary and attribute at least these factors:
 | Product path | metric refresh, business profiling, bootstrap metrics, `/work` chat, workflow build/run, actions, source configuration |
 | Agent runtime | Ax |
 | Outer provider/model | any valid Ax provider/model |
-| Data path | direct GraphJin query, delegated GraphJin agent, later planner-then-host-execute |
-| Inner provider/model | GraphJin agent provider/model, independent from the outer model |
+| Data path | direct GraphJin query, later planner-then-host-execute |
 | Dataset | AdventureWorks first; later other databases, files, OpenAPI sources, and multi-source packs |
 | Prompt and contracts | prompt version, output schema, role/persona, validation/repair loop |
 | Discovery context | knowledge-pack version, catalog mode, discovery pathways, schema freshness |
@@ -184,8 +182,8 @@ able to vary and attribute at least these factors:
 | Infrastructure state | cold/warm sandbox and caches, network latency, provider throttling, tool faults, service restarts |
 
 Not every factor should be crossed with every other factor. The runner validates
-capabilities and compatibility before execution. For example, a delegated
-GraphJin arm requires an enabled GraphJin server agent.
+capabilities and compatibility before execution. For example, the metric
+adapter accepts only the direct GraphJin data path.
 
 Two comparison tracks are necessary:
 
@@ -403,14 +401,6 @@ variants:
       model: ${OPENNEKO_EVAL_GEMINI_MODEL}
       credential_ref: env:GEMINI_API_KEY
     data_path: graphjin-direct
-
-  - id: ax-gemini-delegated
-    extends: ax-gemini-direct
-    data_path: graphjin-agent
-    inner_model:
-      provider: google-gemini
-      model: ${OPENNEKO_EVAL_GRAPHJIN_MODEL}
-      credential_ref: env:GEMINI_API_KEY
 
   - id: ax-anthropic-direct
     backend: ax
@@ -944,7 +934,7 @@ work is deliberately visible:
   growing the read/calculation corpus toward several hundred cases;
 - add resettable watcher/reactive and mutation/action packs with pre-state,
   readiness, post-state, collateral, audit, and idempotency oracles;
-- cover Ax across selected providers, direct/delegated GraphJin, and
+- cover Ax across selected providers, direct GraphJin, and
   provider/model variants with compatibility validation;
 - run repeated, counterbalanced baselines;
 - check in compact scored results through a PR;
@@ -966,8 +956,8 @@ work is deliberately visible:
 - A hard process kill during a run reuses every verified completed slot and
   safely reconstructs the in-flight mutation/watcher fixture instead of
   restarting or trusting ambiguous state.
-- The same case runs through Ax with at least two providers, and through
-  direct and delegated GraphJin data paths.
+- The same case runs through Ax with at least two providers on the direct
+  GraphJin data path.
 - Adding another dataset requires a dataset pack, not runner edits.
 - Every result identifies exact code/config/dataset/scorer/model provenance and
   telemetry coverage.

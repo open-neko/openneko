@@ -67,7 +67,6 @@ async function loadContext(args: readonly string[], cwd: string): Promise<{
 function planDocument(loaded: LoadedEval, plan: EvalPlan): unknown {
   const derivedSemantics = loaded.config.variants.flatMap((variant) => {
     if (variant.data_path === "graphjin-direct") return ["DATA-DIRECT"];
-    if (variant.data_path === "graphjin-agent") return ["DATA-DELEGATED"];
     if (variant.data_path === "planner-host-execute") {
       return ["DATA-PLANNER-EXECUTE"];
     }

@@ -325,8 +325,8 @@ async function runMetricRefreshTraced(jobId: string, orgId: string) {
     throw e;
   } finally {
     if (spendReservationId) {
-      for (const usage of [metricDiagnostics?.outerUsage, metricDiagnostics?.innerUsage]) {
-        if (!usage) continue;
+      const usage = metricDiagnostics?.outerUsage;
+      if (usage) {
         await recordUsageSpend({ orgId, reservationId: spendReservationId, usage }).catch((error) => {
           console.error(`[metric_refresh] could not record spend for job=${jobId}: ${error instanceof Error ? error.message : error}`);
         });

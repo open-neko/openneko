@@ -138,13 +138,13 @@ const METRIC_QUERY_CONSTRAINTS = `- If you need an anchor date, query \`max(<dat
   nested) — set explicit limit or use distinct+aggregation.
 `;
 
-const metricHardConstraints = (direct: boolean) => `<hard_constraints>
+const METRIC_HARD_CONSTRAINTS = `<hard_constraints>
 - Never hardcode calendar years (e.g. "2025-07-20", "2014-01-01");
   compute periods with relative arithmetic.
 - Never hardcode baseline values or magic numbers. Always compute
   baselines from the data (prior period of equal length, YoY, rolling
   average, etc).
-${direct ? METRIC_QUERY_CONSTRAINTS : ""}- Never invent or interpolate. If a query returned no rows, the answer
+${METRIC_QUERY_CONSTRAINTS}- Never invent or interpolate. If a query returned no rows, the answer
   is "no data", not a guess.
 - If your queries fail or return data you cannot reason from, DO NOT
   narrate the failure as a metric. The worker treats this as a
@@ -167,12 +167,8 @@ type MetricPromptBaseArgs = {
   supportsMemorySearch?: boolean;
 };
 
-type MetricPromptDataAccess =
-  | { queryTool: string; dataAgentTool?: never }
-  | { queryTool?: never; dataAgentTool: string };
-
 export function buildMetricPrompt(
-  args: MetricPromptBaseArgs & MetricPromptDataAccess,
+  args: MetricPromptBaseArgs & { queryTool: string },
 ): string {
   const {
     input,
@@ -180,7 +176,6 @@ export function buildMetricPrompt(
     workspace,
     shellTool,
     queryTool,
-    dataAgentTool,
     memoryContext,
     supportsMemorySearch,
   } = args;
@@ -202,8 +197,6 @@ snapshot. No prose around the JSON.
     buildDataAccessSection({
       shellTool,
       queryTool,
-      agentTool: dataAgentTool,
-      agentPurpose: "metric",
       workspace,
       knowledge,
       readOnly: true,
@@ -212,7 +205,7 @@ snapshot. No prose around the JSON.
     }),
     METRIC_TIME_WINDOW,
     METRIC_MOOD_CHART,
-    metricHardConstraints(Boolean(queryTool)),
+    METRIC_HARD_CONSTRAINTS,
     METRIC_OUTPUT_CONTRACT,
     `<input>
 The card you must answer:

@@ -26,8 +26,6 @@ function stubControlPlane(): AgentControlPlane {
     queryGraphjinRead: unused as AgentControlPlane["queryGraphjinRead"],
     listGraphjinTools: unused as AgentControlPlane["listGraphjinTools"],
     callGraphjinTool: unused as AgentControlPlane["callGraphjinTool"],
-    askGraphjinDataAgent:
-      unused as AgentControlPlane["askGraphjinDataAgent"],
     saveWorkflowWithTrigger:
       unused as AgentControlPlane["saveWorkflowWithTrigger"],
     emitWorkflowOutput: unused as AgentControlPlane["emitWorkflowOutput"],

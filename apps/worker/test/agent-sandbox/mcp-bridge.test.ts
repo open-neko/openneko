@@ -16,7 +16,6 @@ const SERVERS = [
   "neko_interaction",
   "neko_ui",
   "neko_graphjin",
-  "neko_graphjin_agent",
   "neko_skills",
   "neko_memory",
   "neko_workflow_builder",

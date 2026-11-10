@@ -36,6 +36,8 @@ const M_0011 = join(REPO_ROOT, "db", "migrations", "0011_action_stack.sql");
 const M_0019 = join(REPO_ROOT, "db", "migrations", "0019_install_policy_scope.sql");
 const M_0048 = join(REPO_ROOT, "db", "migrations", "0048_graphjin_config_scope.sql");
 const M_0110 = join(REPO_ROOT, "db", "migrations", "0110_graphjin_agent_scope.sql");
+const M_0118 = join(REPO_ROOT, "db", "migrations", "0118_public_url_scope.sql");
+const M_0128 = join(REPO_ROOT, "db", "migrations", "0128_drop_graphjin_agent_scope.sql");
 const M_0034 = join(REPO_ROOT, "db", "migrations", "0034_workflow_ownership.sql");
 const M_0051 = join(REPO_ROOT, "db", "migrations", "0051_app_state.sql");
 const M_0052 = join(REPO_ROOT, "db", "migrations", "0052_records_ops_health.sql");
@@ -238,6 +240,31 @@ describeIfDb("schema migrations", () => {
           ["chk110", scope],
         );
       }
+    });
+  });
+
+  it("0128 drops the GraphJin agent opt-in and its scope", async () => {
+    await withTempDb(async (client) => {
+      await applyFile(client, M_0001);
+      await applyFile(client, M_0002);
+      await applyFile(client, M_0048);
+      await applyFile(client, M_0110);
+      await applyFile(client, M_0118);
+
+      await client.query(`insert into organization (id, name) values ('chk128', 'Check Test 128')`);
+      await client.query(
+        `insert into llm_provider_config (org_id, scope, provider, enabled) values ('chk128', 'graphjin-agent', 'primary', true), ('chk128', 'public-url', 'settings', true)`,
+      );
+      await applyFile(client, M_0128);
+      await applyFile(client, M_0128);
+
+      const { rows } = await client.query<{ scope: string }>(
+        `select scope from llm_provider_config where org_id = 'chk128' order by scope`,
+      );
+      expect(rows.map((row) => row.scope)).toEqual(["public-url"]);
+      await expect(
+        client.query(`insert into llm_provider_config (org_id, scope, provider) values ('chk128', 'graphjin-agent', 'primary')`),
+      ).rejects.toThrow(/llm_provider_config_scope_check/);
     });
   });
 

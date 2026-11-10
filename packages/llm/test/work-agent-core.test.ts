@@ -148,32 +148,4 @@ describe("runAgentBackend", () => {
       "direct-governed",
     );
   });
-
-  it.each(["ax"] as const)("mounts only GraphJin's agent on the agent path for %s", async (id) => {
-    let captured: AgentRunOptions | undefined;
-    const backend: AgentBackend = {
-      id,
-      capabilities: { mcpTools: true, sessionResume: false },
-      async run(opts) {
-        captured = opts;
-        return { status: "completed", finalText: "done" };
-      },
-    };
-
-    await runAgentBackend({
-      backend,
-      prompt: "prompt",
-      userMessage: "How many orders?",
-      orgId: "org-1",
-      threadId: "thread-1",
-      runId: "run-1",
-      workspace,
-      controlPlane,
-      graphjinDataPath: "agent",
-      emit: async () => {},
-    });
-
-    expect(captured?.mcpServers).toHaveProperty("neko_graphjin_agent");
-    expect(captured?.mcpServers).not.toHaveProperty("neko_graphjin");
-  });
 });

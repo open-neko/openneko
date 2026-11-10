@@ -42,7 +42,6 @@ for (const path of await yamlFiles(evalRoot)) {
       : []) {
       const dataPath = (variant as { data_path?: unknown }).data_path;
       if (dataPath === "graphjin-direct") evalCovered.add("DATA-DIRECT");
-      if (dataPath === "graphjin-agent") evalCovered.add("DATA-DELEGATED");
       if (dataPath === "planner-host-execute") {
         evalCovered.add("DATA-PLANNER-EXECUTE");
       }

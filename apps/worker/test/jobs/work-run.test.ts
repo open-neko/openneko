@@ -372,18 +372,13 @@ describeIfDb("runChatTurn", () => {
       await opts.onEvent({
         type: "tool_start",
         id: "tool-1",
-        name: "mcp_neko_graphjin_agent_ask",
+        name: "mcp_neko_graphjin_execute_graphql",
         input: { privateQuery: "must not escape" },
       });
       await opts.onEvent({
         type: "tool_end",
         id: "tool-1",
-        result: {
-          privateRows: ["must not escape"],
-          provider: "openai",
-          model: "gpt-inner",
-          usage: { input_tokens: 7, output_tokens: 3, total_tokens: 10 },
-        },
+        result: { privateRows: ["must not escape"] },
       });
       await opts.onEvent({
         type: "usage",
@@ -435,11 +430,7 @@ describeIfDb("runChatTurn", () => {
       "stage.start",
       "model.request",
       "tool.start",
-      "delegation.start",
-      "model.request",
       "tool.end",
-      "model.response",
-      "delegation.end",
       "model.first_chunk",
       "run.first_output",
       "model.response",
@@ -457,24 +448,6 @@ describeIfDb("runChatTurn", () => {
       outputTokens: 4,
       totalTokens: 16,
       coverage: "complete",
-    });
-    expect(
-      memory.observations.find(
-        (item) =>
-          item.kind === "model.response" &&
-          item.attributes["openneko.model.scope"] === "inner",
-      ),
-    ).toMatchObject({
-      attributes: {
-        "gen_ai.provider.name": "openai",
-        "gen_ai.response.model": "gpt-inner",
-      },
-      measurements: {
-        inputTokens: 7,
-        outputTokens: 3,
-        totalTokens: 10,
-        coverage: "complete",
-      },
     });
     const serialized = JSON.stringify(memory.observations);
     expect(serialized).not.toContain("private question");

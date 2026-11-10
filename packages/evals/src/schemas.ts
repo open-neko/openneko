@@ -65,7 +65,6 @@ export const VariantSchema = z
     outer_model: ModelConfigSchema,
     data_path: z.enum([
       "graphjin-direct",
-      "graphjin-agent",
       "planner-host-execute",
       "none",
     ]),

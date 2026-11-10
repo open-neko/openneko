@@ -102,12 +102,8 @@ function createApiCeilingGuard(input: {
   const emit = async (event: AgentEvent): Promise<void> => {
     if (event.type === "tool_start") {
       toolCalls += 1;
-      // Each tool result requires another outer-model turn. GraphJin agent
-      // tools additionally execute one separately metered inner model.
+      // Each tool result requires another outer-model turn.
       modelCalls += 1;
-      if (event.name.toLocaleLowerCase().includes("neko_graphjin_agent")) {
-        modelCalls += 1;
-      }
       if (toolCalls > input.claim.limits.maxToolCalls) {
         fail("tool_call_limit", "The API run exceeded its tool-call ceiling.");
       }
