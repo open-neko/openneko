@@ -84,22 +84,38 @@ func WriteLocalPgPassword(override, password string) error {
 	if err != nil {
 		return err
 	}
+	return updateLocal(override, func(doc map[string]any) {
+		pg, _ := doc["pg"].(map[string]any)
+		if pg == nil {
+			pg = map[string]any{}
+		}
+		pg["password"] = enc
+		doc["pg"] = pg
+	})
+}
+
+// WriteLocalDatabaseURL stores OpenNeko's database URL in the host config,
+// encrypted with the host secret-key.
+func WriteLocalDatabaseURL(override, url string) error {
+	enc, err := EncryptValue(override, url)
+	if err != nil {
+		return err
+	}
+	return updateLocal(override, func(doc map[string]any) {
+		doc["database_url"] = enc
+	})
+}
+
+// updateLocal changes config.json in place. Keys it does not know, and every
+// key the change leaves alone, stay as written.
+func updateLocal(override string, change func(map[string]any)) error {
 	dir := Dir(override)
 	path := filepath.Join(dir, "config.json")
-
-	// Merge over the raw file so only pg.password changes and every other
-	// key, known or not, stays as written.
 	doc := map[string]any{}
 	if data, err := os.ReadFile(path); err == nil {
 		_ = json.Unmarshal(data, &doc)
 	}
-	pg, _ := doc["pg"].(map[string]any)
-	if pg == nil {
-		pg = map[string]any{}
-	}
-	pg["password"] = enc
-	doc["pg"] = pg
-
+	change(doc)
 	out, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return err

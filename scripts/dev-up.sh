@@ -6,7 +6,7 @@ set -eu
 . scripts/dev-env.sh
 
 compose() {
-  docker compose -f compose.yml -f compose.adventureworks.yml -f compose.dev.yml "$@"
+  docker compose -f compose.yml -f compose.db.yml -f compose.adventureworks.yml -f compose.dev.yml "$@"
 }
 
 mkdir -p "$OPENNEKO_DEV_STATE/graphjin" "$OPENNEKO_CONFIG_VOLUME"

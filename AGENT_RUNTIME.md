@@ -113,6 +113,11 @@ Then `docker compose up` starts the services. `openneko upgrade` and
 From a source checkout, `docker compose run --rm openneko-serve-init` runs
 steps 1, 2, 3 and 5 in order.
 
+In prod mode, steps 1, 2 and 5, web and the worker read OpenNeko's database
+URL from the Compose secret `database-url`. Serve does not get it. Dev, demo
+and a legacy prod install load `bundled-db.yml`, which adds `neko-db` and
+points the same services at it.
+
 ## The customer GraphJin
 
 Serve runs the customer GraphJin from the pinned GraphJin module (v3.21.18)
@@ -180,7 +185,9 @@ Ending a run kills every process its user started and removes its home.
 In the Compose overlay the sandbox container:
 
 - sits **only** on its own network. Commands can reach the internet, but not
-  `neko-db`, GraphJin, the broker or another service of the stack;
+  GraphJin, the broker or another service of the stack. In prod mode
+  OpenNeko's database is a server on your network, so firewall the sandbox
+  network from it;
 - drops every capability except `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `KILL`,
   `SETGID` and `SETUID`, and sets `no-new-privileges`;
 - mounts only the sockets folder, the runs folder and the sandbox homes. It

@@ -320,13 +320,8 @@ func TestStorageReconciliationGatesEveryDatabaseConsumer(t *testing.T) {
 		if want := []string{"storage", "reconcile"}; !reflect.DeepEqual(reconcile.Command, want) {
 			t.Fatalf("%s storage-reconcile command = %v, want %v", label, reconcile.Command, want)
 		}
-		if reconcile.DependsOn["neko-db"].Condition != "service_healthy" {
-			t.Fatalf("%s storage-reconcile must wait for healthy neko-db", label)
-		}
-		for _, key := range []string{"NEKO_PG_HOST", "NEKO_PG_DATABASE"} {
-			if _, ok := reconcile.Environment[key]; !ok {
-				t.Fatalf("%s storage-reconcile is missing %s", label, key)
-			}
+		if reconcile.Environment["OPENNEKO_DATABASE_URL_FILE"] != "/run/secrets/database-url" {
+			t.Fatalf("%s storage-reconcile does not read the database URL", label)
 		}
 		for _, consumer := range []string{"neko-migrate"} {
 			if document.Services[consumer].DependsOn["storage-reconcile"].Condition != "service_completed_successfully" {
@@ -579,6 +574,27 @@ func TestPackagedDemoLoaderHasItsTools(t *testing.T) {
 	for _, tool := range []string{"unzip", "postgresql-client"} {
 		if !strings.Contains(stage, " "+tool+" ") {
 			t.Errorf("the worker image does not install %s, which the demo AdventureWorks loader runs", tool)
+		}
+	}
+}
+
+func TestBundledDatabaseGatesStorageReconciliation(t *testing.T) {
+	sourceRaw, err := os.ReadFile(filepath.Join(repoRootForTest(t), "compose.db.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for label, raw := range map[string][]byte{
+		"source":   sourceRaw,
+		"packaged": readEmbeddedCompose(t, "bundled-db.yml"),
+	} {
+		reconcile := loadComposeParityDocument(t, raw).Services["storage-reconcile"]
+		if reconcile.DependsOn["neko-db"].Condition != "service_healthy" {
+			t.Fatalf("%s storage-reconcile must wait for healthy neko-db", label)
+		}
+		for _, key := range []string{"NEKO_PG_HOST", "NEKO_PG_DATABASE"} {
+			if _, ok := reconcile.Environment[key]; !ok {
+				t.Fatalf("%s storage-reconcile is missing %s", label, key)
+			}
 		}
 	}
 }

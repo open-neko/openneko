@@ -1,5 +1,6 @@
 # Embedded core compose. The `openneko` binary materializes this and overlays
-# dev.yml / demo.yml depending on `openneko start --mode`. Image tags are
+# dev.yml / demo.yml depending on `openneko start --mode`, and bundled-db.yml
+# in dev and demo modes and for a legacy prod install. Image tags are
 # pinned to the binary's release version via the ${OPENNEKO_VERSION} env var
 # (set by the supervisor before invoking docker compose). Operators who want
 # to build from source should use the repo-root compose.yml instead.
@@ -10,11 +11,7 @@ x-neko-app-env: &neko-app-env
   XDG_CACHE_HOME: /tmp/openneko-home/.cache
   XDG_DATA_HOME: /tmp/openneko-home/.local/share
   XDG_STATE_HOME: /tmp/openneko-home/.local/state
-  NEKO_PG_HOST: neko-db
-  NEKO_PG_PORT: "5432"
-  NEKO_PG_USER: neko
-  NEKO_PG_PASSWORD: secret
-  NEKO_PG_DATABASE: neko
+  OPENNEKO_DATABASE_URL_FILE: /run/secrets/database-url
   OPENNEKO_SERVE_URL: http://openneko-serve:8090
   NEKO_EMBEDDING_URL: ${NEKO_EMBEDDING_URL:-}
   NEKO_EMBEDDING_MODEL: ${NEKO_EMBEDDING_MODEL:-}
@@ -23,34 +20,13 @@ x-neko-app-env: &neko-app-env
   NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
   no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
 
-services:
-  neko-db:
-    image: ghcr.io/open-neko/neko-db:${OPENNEKO_VERSION:-latest}
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: neko
-      POSTGRES_PASSWORD: secret
-      POSTGRES_DB: neko
-      PGDATA: /var/lib/postgresql/neko
-    expose:
-      - "5432"
-    volumes:
-      - neko-db-data:/var/lib/postgresql/neko
-      - neko-db-socket:/var/run/postgresql
-    command:
-      - postgres
-      - -c
-      - wal_compression=on
-      - -c
-      - temp_file_limit=5GB
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - pg_isready -U neko -d neko
-      interval: 5s
-      timeout: 5s
-      retries: 20
+x-database-url: &database-url
+  - source: database-url
+    uid: "1001"
+    gid: "1001"
+    mode: 0400
 
+services:
   # Start steps. Services in the "steps" profile are not part of `up`.
   # `openneko start`, `upgrade` and `restore` run them in this order with
   # `compose run --rm` and stop at the first failure. From a source checkout,
@@ -63,23 +39,12 @@ services:
     image: ghcr.io/open-neko/neko-cli:${OPENNEKO_VERSION:-latest}
     restart: "no"
     command: ["storage", "reconcile"]
-    depends_on:
-      neko-db:
-        condition: service_healthy
+    secrets: *database-url
     environment:
-      NEKO_PG_HOST: neko-db
-      NEKO_PG_PORT: "5432"
-      NEKO_PG_USER: neko
-      NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
-      NEKO_PG_DATABASE: neko
+      OPENNEKO_DATABASE_URL_FILE: /run/secrets/database-url
       XDG_CONFIG_HOME: /config
     volumes:
       - openneko-config:/config/openneko
-
-
-
-
-
 
   # Applies SQL migrations after the storage gate.
   neko-migrate:
@@ -88,20 +53,13 @@ services:
     restart: "no"
     command: ["migrate"]
     depends_on:
-      neko-db:
-        condition: service_healthy
       storage-reconcile:
         condition: service_completed_successfully
-    # NEKO_PG_PASSWORD here is the bootstrap fallback only — once /setup
-    # rotates the password the openneko CLI's defaultConn reads it from
-    # /config/openneko/config.json on the shared volume. Without this volume
-    # mount, re-`compose up` after rotation would fail with stale creds.
+    # With the bundled database, config.json on the config volume holds the
+    # password that setup rotates.
+    secrets: *database-url
     environment:
-      NEKO_PG_HOST: neko-db
-      NEKO_PG_PORT: "5432"
-      NEKO_PG_USER: neko
-      NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
-      NEKO_PG_DATABASE: neko
+      OPENNEKO_DATABASE_URL_FILE: /run/secrets/database-url
       OPENNEKO_SKIP_MIGRATE: ${OPENNEKO_SKIP_MIGRATE:-}
       XDG_CONFIG_HOME: /config
     volumes:
@@ -142,12 +100,9 @@ services:
         condition: service_completed_successfully
       openneko-config-init:
         condition: service_completed_successfully
+    secrets: *database-url
     environment:
-      NEKO_PG_HOST: neko-db
-      NEKO_PG_PORT: "5432"
-      NEKO_PG_USER: neko
-      NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
-      NEKO_PG_DATABASE: neko
+      OPENNEKO_DATABASE_URL_FILE: /run/secrets/database-url
       XDG_CONFIG_HOME: /config
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
     volumes:
@@ -157,7 +112,7 @@ services:
     restart: "no"
 
   # openneko serve: each user's private files, their keyword index in
-  # neko-db, SQL over sheet tables, agent turns, the customer GraphJin on
+  # OpenNeko's database, SQL over sheet tables, agent turns, the customer GraphJin on
   # 8080 and the subscriptions GraphJin on 8089 (workflow outputs, read as
   # neko_subscriptions).
   # Web and worker call it with short-lived tokens signed with a key derived
@@ -166,9 +121,6 @@ services:
   openneko-serve:
     image: ghcr.io/open-neko/neko-serve:${OPENNEKO_VERSION:-latest}
     command: ["serve"]
-    depends_on:
-      neko-db:
-        condition: service_healthy
     networks:
       default:
         aliases: [graphjin]
@@ -203,6 +155,7 @@ services:
       # recovery screen while the control plane is still starting.
       worker:
         condition: service_healthy
+    secrets: *database-url
     environment:
       <<: *neko-app-env
       WORKER_ADMIN_URL: http://worker:4100
@@ -233,10 +186,9 @@ services:
   worker:
     image: ghcr.io/open-neko/neko-worker:${OPENNEKO_VERSION:-latest}
     depends_on:
-      neko-db:
-        condition: service_healthy
       openneko-serve:
         condition: service_started
+    secrets: *database-url
     environment:
       <<: *neko-app-env
       OPENNEKO_GRAPHJIN_URL: http://openneko-serve:8089
@@ -263,8 +215,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  neko-db-data:
-  neko-db-socket:
   openneko-config:
   openneko-files:
   openneko-serve-credentials:
@@ -273,3 +223,7 @@ volumes:
   openneko-agent-tmp:
   openneko-agent-runs:
   openneko-run:
+
+secrets:
+  database-url:
+    environment: OPENNEKO_DATABASE_URL

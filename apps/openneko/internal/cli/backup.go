@@ -73,7 +73,7 @@ backup key; keep a copy of the key elsewhere with ` + "`openneko backup key expo
 Restore with ` + "`openneko restore <file> --confirm RESTORE`" + `.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			sup, _, project, files, err := currentStackCompose()
+			sup, _, project, files, err := currentStackCompose(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -177,7 +177,7 @@ func newBackupKeyExportCmd() *cobra.Command {
 	return cmd
 }
 
-func currentStackCompose() (*compose.Supervisor, compose.Mode, string, []string, error) {
+func currentStackCompose(ctx context.Context) (*compose.Supervisor, compose.Mode, string, []string, error) {
 	sup := compose.New(assets.ComposeFS)
 	project, err := sup.ProjectName("")
 	if err != nil {
@@ -187,7 +187,7 @@ func currentStackCompose() (*compose.Supervisor, compose.Mode, string, []string,
 	if !ok {
 		mode = compose.ModeProd
 	}
-	files, err := sup.Materialize(mode)
+	files, err := stackFiles(ctx, sup, mode, project)
 	if err != nil {
 		return nil, "", "", nil, err
 	}
@@ -220,6 +220,9 @@ func resolveBackupDestination(destination, defaultDir, project string, now time.
 // returns its path. The file appears under its final name only once every
 // byte has been written and synced.
 func createBackup(ctx context.Context, sup *compose.Supervisor, project string, files []string, destination string, out io.Writer) (string, error) {
+	if !usesBundledDatabase(files) {
+		return "", errors.New("openneko backup dumps only the bundled neko-db; back up your external database where it runs")
+	}
 	stack := backupStack{sup: sup, project: project, files: files}
 	if running, err := stack.serviceRunning(ctx, "neko-db"); err != nil {
 		return "", err

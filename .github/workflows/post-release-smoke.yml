@@ -113,6 +113,7 @@ jobs:
             sed -n 's/^[[:space:]]*image:[[:space:]]*//p' \
               apps/openneko/assets/compose/core.yml \
               apps/openneko/assets/compose/demo.yml \
+              apps/openneko/assets/compose/bundled-db.yml \
             | sed -e "s/\${OPENNEKO_VERSION:-latest}/${tag}/" \
                   -e 's/\${[A-Za-z_][A-Za-z_0-9]*:-\([^}]*\)}/\1/g' \
             | sort -u

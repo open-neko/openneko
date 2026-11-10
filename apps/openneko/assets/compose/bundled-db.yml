@@ -1,0 +1,99 @@
+# OpenNeko's database as a container. Dev and demo modes load this file. A
+# prod install loads it only when it has the neko-db-data volume and no
+# database URL: an install from a release that bundled Postgres. A new prod
+# install gives OpenNeko a database URL and never loads this file.
+services:
+  neko-db:
+    image: ghcr.io/open-neko/neko-db:${OPENNEKO_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: neko
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: neko
+      PGDATA: /var/lib/postgresql/neko
+    expose:
+      - "5432"
+    volumes:
+      - neko-db-data:/var/lib/postgresql/neko
+      - neko-db-socket:/var/run/postgresql
+    command:
+      - postgres
+      - -c
+      - wal_compression=on
+      - -c
+      - temp_file_limit=5GB
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U neko -d neko
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  storage-reconcile:
+    depends_on:
+      neko-db:
+        condition: service_healthy
+    environment:
+      OPENNEKO_DATABASE_URL_FILE: !reset null
+      NEKO_PG_HOST: neko-db
+      NEKO_PG_PORT: "5432"
+      NEKO_PG_USER: neko
+      NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
+      NEKO_PG_DATABASE: neko
+    secrets: !reset []
+
+  neko-migrate:
+    depends_on:
+      neko-db:
+        condition: service_healthy
+    environment:
+      OPENNEKO_DATABASE_URL_FILE: !reset null
+      NEKO_PG_HOST: neko-db
+      NEKO_PG_PORT: "5432"
+      NEKO_PG_USER: neko
+      NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
+      NEKO_PG_DATABASE: neko
+    secrets: !reset []
+
+  openneko-serve-init:
+    environment:
+      OPENNEKO_DATABASE_URL_FILE: !reset null
+      NEKO_PG_HOST: neko-db
+      NEKO_PG_PORT: "5432"
+      NEKO_PG_USER: neko
+      NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
+      NEKO_PG_DATABASE: neko
+    secrets: !reset []
+
+  openneko-serve:
+    depends_on:
+      neko-db:
+        condition: service_healthy
+
+  web:
+    environment:
+      OPENNEKO_DATABASE_URL_FILE: !reset null
+      NEKO_PG_HOST: neko-db
+      NEKO_PG_PORT: "5432"
+      NEKO_PG_USER: neko
+      NEKO_PG_PASSWORD: secret
+      NEKO_PG_DATABASE: neko
+    secrets: !reset []
+
+  worker:
+    depends_on:
+      neko-db:
+        condition: service_healthy
+    environment:
+      OPENNEKO_DATABASE_URL_FILE: !reset null
+      NEKO_PG_HOST: neko-db
+      NEKO_PG_PORT: "5432"
+      NEKO_PG_USER: neko
+      NEKO_PG_PASSWORD: secret
+      NEKO_PG_DATABASE: neko
+    secrets: !reset []
+
+volumes:
+  neko-db-data:
+  neko-db-socket:

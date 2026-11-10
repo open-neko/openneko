@@ -14,6 +14,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/open-neko/neko/apps/openneko/assets"
+	"github.com/open-neko/neko/apps/openneko/internal/compose"
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 )
 
@@ -175,11 +177,7 @@ func readRestoreKey(keyFile string) (string, error) {
 		}
 		return config.ReadBackupKey(absolute)
 	}
-	sup, _, _, _, err := currentStackCompose()
-	if err != nil {
-		return "", err
-	}
-	key, _, err := loadBackupKey(sup, false)
+	key, _, err := loadBackupKey(compose.New(assets.ComposeFS), false)
 	return key, err
 }
 
@@ -202,9 +200,12 @@ func runRestore(ctx context.Context, cmd *cobra.Command, path, keyFile string) e
 	fmt.Fprintf(out, "Backup of %s taken %s by openneko %s verified.\n",
 		manifest.Project, manifest.CreatedAt.Format("2006-01-02 15:04:05 UTC"), manifest.OpenNekoVersion)
 
-	sup, mode, project, files, err := currentStackCompose()
+	sup, mode, project, files, err := currentStackCompose(ctx)
 	if err != nil {
 		return err
+	}
+	if !usesBundledDatabase(files) {
+		return errors.New("openneko restore restores only into the bundled neko-db; this install uses an external database (nothing was changed)")
 	}
 	stack := backupStack{sup: sup, project: project, files: files}
 

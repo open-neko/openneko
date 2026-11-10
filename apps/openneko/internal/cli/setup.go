@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/open-neko/neko/apps/openneko/assets"
 	"github.com/open-neko/neko/apps/openneko/internal/compose"
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/preflight"
@@ -45,6 +46,8 @@ func newSetupCmd() *cobra.Command {
 		researchProvider string
 		researchKey      string
 		noResearch       bool
+
+		databaseURLFlag string
 
 		skipPlugins bool
 		pluginsCSV  string
@@ -98,6 +101,9 @@ at the prompt) to finish at the web UI. Credential flags
 			// answers (re-running setup against a live install jumps straight
 			// to configuration). Port checks only run for a fresh bring-up,
 			// since a live OpenNeko legitimately holds those ports.
+			if alreadyUp && strings.TrimSpace(databaseURLFlag) != "" {
+				return fmt.Errorf("%s is already running; --database-url applies to a new install only", baseURL)
+			}
 			if alreadyUp {
 				ui.Info(out, "Existing OpenNeko detected — skipping preflight and bring-up.")
 				// The wizard configures WHATEVER stack answers on this port.
@@ -124,6 +130,9 @@ at the prompt) to finish at the web UI. Credential flags
 				}
 			} else {
 				if err := runPreflight(out); err != nil {
+					return err
+				}
+				if err := ensureSetupDatabaseURL(ctx, compose.New(assets.ComposeFS), m, databaseURLFlag, prompt.IsInteractive(), prompt.Hidden); err != nil {
 					return err
 				}
 				ui.Info(out, "Bringing up the stack…")
@@ -204,6 +213,7 @@ at the prompt) to finish at the web UI. Credential flags
 	_ = cmd.Flags().MarkDeprecated("openshell-port", "the agent runtime has no host port; the flag is ignored")
 	cmd.Flags().StringVar(&dockerSubnet, "docker-subnet", "", "Deprecated: Docker assigns each instance's network")
 	_ = cmd.Flags().MarkDeprecated("docker-subnet", "Docker assigns each instance's network; the flag is ignored")
+	cmd.Flags().StringVar(&databaseURLFlag, "database-url", "", "Prod mode: postgres:// URL of OpenNeko's database, which you run")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "Stream full image-pull output during bring-up")
 	cmd.Flags().BoolVar(&skipOnboarding, "skip-onboarding", false, "Bring up the stack only; finish configuration in the browser")
 	cmd.Flags().StringVar(&adminPassword, "admin-password", "", "Headless: admin database password")

@@ -117,7 +117,7 @@ export async function detectRunnablePlans(): Promise<CanRunResult> {
   const reach = await graphqlReachable(graphqlUrl);
   if (!reach.ok) {
     blocking.push(
-      `GraphQL endpoint ${graphqlUrl} unreachable: ${reach.reason}. Bring up the docker stack: docker compose -f compose.yml -f compose.adventureworks.yml up -d`,
+      `GraphQL endpoint ${graphqlUrl} unreachable: ${reach.reason}. Bring up the docker stack: docker compose -f compose.yml -f compose.db.yml -f compose.adventureworks.yml up -d`,
     );
   }
 

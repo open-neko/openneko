@@ -163,11 +163,13 @@ func TestStartStepsStayOutOfTheUpGraph(t *testing.T) {
 	}
 	combos := map[string][][]byte{
 		"prod":                  {readEmbeddedCompose(t, "core.yml")},
-		"dev":                   {readEmbeddedCompose(t, "core.yml"), readEmbeddedCompose(t, "dev.yml")},
-		"demo":                  {readEmbeddedCompose(t, "core.yml"), readEmbeddedCompose(t, "demo.yml")},
+		"legacy prod":           {readEmbeddedCompose(t, "core.yml"), readEmbeddedCompose(t, "bundled-db.yml")},
+		"dev":                   {readEmbeddedCompose(t, "core.yml"), readEmbeddedCompose(t, "dev.yml"), readEmbeddedCompose(t, "bundled-db.yml")},
+		"demo":                  {readEmbeddedCompose(t, "core.yml"), readEmbeddedCompose(t, "demo.yml"), readEmbeddedCompose(t, "bundled-db.yml")},
 		"source":                {readRootCompose(t, "compose.yml")},
-		"source adventureworks": {readRootCompose(t, "compose.yml"), readRootCompose(t, "compose.adventureworks.yml")},
-		"source dev":            {readRootCompose(t, "compose.yml"), readRootCompose(t, "compose.adventureworks.yml"), readRootCompose(t, "compose.dev.yml")},
+		"source db":             {readRootCompose(t, "compose.yml"), readRootCompose(t, "compose.db.yml")},
+		"source adventureworks": {readRootCompose(t, "compose.yml"), readRootCompose(t, "compose.db.yml"), readRootCompose(t, "compose.adventureworks.yml")},
+		"source dev":            {readRootCompose(t, "compose.yml"), readRootCompose(t, "compose.db.yml"), readRootCompose(t, "compose.adventureworks.yml"), readRootCompose(t, "compose.dev.yml")},
 	}
 	for name, raws := range combos {
 		graph := mergedDependencyGraph(t, raws...)
@@ -192,15 +194,27 @@ func TestStartStepsStayOutOfTheUpGraph(t *testing.T) {
 		}
 	}
 
-	var running []string
-	for service := range mergedDependencyGraph(t, readEmbeddedCompose(t, "core.yml")) {
-		if !stepServices(t, readEmbeddedCompose(t, "core.yml"))[service] {
-			running = append(running, service)
+	for name, tc := range map[string]struct {
+		files []string
+		want  []string
+	}{
+		"prod":        {[]string{"core.yml"}, []string{"openneko-serve", "web", "worker"}},
+		"legacy prod": {[]string{"core.yml", "bundled-db.yml"}, []string{"neko-db", "openneko-serve", "web", "worker"}},
+	} {
+		var raws [][]byte
+		for _, file := range tc.files {
+			raws = append(raws, readEmbeddedCompose(t, file))
 		}
-	}
-	sort.Strings(running)
-	if want := []string{"neko-db", "openneko-serve", "web", "worker"}; !slices.Equal(running, want) {
-		t.Fatalf("prod-mode compose runs %v, want %v", running, want)
+		var running []string
+		for service := range mergedDependencyGraph(t, raws...) {
+			if !stepServices(t, raws...)[service] {
+				running = append(running, service)
+			}
+		}
+		sort.Strings(running)
+		if !slices.Equal(running, tc.want) {
+			t.Fatalf("%s compose runs %v, want %v", name, running, tc.want)
+		}
 	}
 
 	demo := stepServices(t, readEmbeddedCompose(t, "core.yml"), readEmbeddedCompose(t, "demo.yml"))

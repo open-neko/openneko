@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"syscall"
@@ -46,6 +47,7 @@ type Supervisor struct {
 	//   compose/core.yml
 	//   compose/dev.yml
 	//   compose/demo.yml
+	//   compose/bundled-db.yml
 	AssetsFS fs.FS
 	// RuntimeDir is where compose files are written. Defaults to
 	// $OPENNEKO_WORKSPACE_ROOT/.openneko/runtime/ when that variable is set,
@@ -90,7 +92,14 @@ func (s *Supervisor) runtimeDir() (string, error) {
 
 // Materialize writes the embedded compose files for the given mode into the
 // runtime dir and returns the list of `-f` paths to pass to `docker compose`.
+// Dev and demo modes get the bundled database; prod mode does not.
 func (s *Supervisor) Materialize(mode Mode) ([]string, error) {
+	return s.MaterializeStack(mode, mode == ModeDev || mode == ModeDemo)
+}
+
+// MaterializeStack is Materialize with an explicit choice of the bundled
+// database. A prod install takes it only as a legacy install.
+func (s *Supervisor) MaterializeStack(mode Mode, bundledDB bool) ([]string, error) {
 	rt, err := s.runtimeDir()
 	if err != nil {
 		return nil, err
@@ -108,6 +117,9 @@ func (s *Supervisor) Materialize(mode Mode) ([]string, error) {
 		// core only
 	default:
 		return nil, fmt.Errorf("compose: unknown mode %q (want prod|dev|demo)", mode)
+	}
+	if bundledDB {
+		files = append(files, "compose/bundled-db.yml")
 	}
 	var out []string
 	for _, name := range files {
@@ -348,6 +360,23 @@ func (s *Supervisor) RunIO(ctx context.Context, projectName string, files, args 
 			return 0, nil
 		}
 	}
+}
+
+// VolumeExists reports whether Docker has a volume with this name.
+func (s *Supervisor) VolumeExists(ctx context.Context, name string) (bool, error) {
+	var stderr strings.Builder
+	cmd := exec.CommandContext(ctx, "docker", "volume", "ls", "-q", "--filter", "name=^"+regexp.QuoteMeta(name)+"$")
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("docker volume ls: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.TrimSpace(line) == name {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // EnsureImage pulls image unless it's already present locally. Used to warm the

@@ -112,7 +112,7 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 	if err != nil {
 		return err
 	}
-	files, err := sup.Materialize(m)
+	files, err := stackFiles(ctx, sup, m, project)
 	if err != nil {
 		return err
 	}

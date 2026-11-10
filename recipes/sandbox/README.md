@@ -8,9 +8,9 @@ and no OpenNeko secret.
 ## Build and run beside the stack
 
 ```sh
-docker compose -f compose.yml -f recipes/sandbox/compose.yml --profile steps build
-docker compose -f compose.yml -f recipes/sandbox/compose.yml run --rm openneko-serve-init
-docker compose -f compose.yml -f recipes/sandbox/compose.yml up -d
+docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml --profile steps build
+docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml run --rm openneko-serve-init
+docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml up -d
 ```
 
 The `run` line runs the start steps (storage check, migrations, config

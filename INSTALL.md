@@ -33,7 +33,7 @@ Then run `openneko setup` (guided), or `openneko start` to bring the stack up wi
 
 `openneko setup` walks through the steps below **in the terminal**. Prefer a browser? Choose **browser** at the first prompt (or pass `--skip-onboarding`, or just run `openneko start`) and open [http://localhost:3000](http://localhost:3000) for the same wizard. Either way:
 
-1. Choose an admin database password.
+1. With the bundled database (`--mode demo` or `--mode dev`), choose an admin database password. In prod mode, setup asks for [OpenNeko's database](#opennekos-database) URL before it starts the stack.
 2. Confirm the pre-filled GraphJin URL (`--mode demo`) or enter your own (`--mode prod`).
 3. Pick the model provider the agent should use (Anthropic / OpenAI / Google / Ollama / others). The agent (Ax) runs in `openneko serve` with the full tool set, including the chat-first management tools. It gets a terminal only when you connect a [sandbox](#sandbox-optional).
 4. Add your provider API key.
@@ -118,35 +118,54 @@ isolation.
 
 ```bash
 mkdir -p ~/openneko && cd ~/openneko
-openneko setup --mode prod
+openneko setup --mode prod --database-url 'postgres://neko:PASSWORD@db.example.com:5432/neko?sslmode=verify-full'
 ```
 
-Enter your GraphJin base URL when setup asks for it (terminal or browser). If GraphJin runs on your host, use `http://host.docker.internal:8080` — OpenNeko appends the GraphQL and MCP paths automatically.
+Prod mode runs no database of its own. Give it [OpenNeko's database](#opennekos-database)
+with `--database-url`, or enter the URL when setup asks for it. Enter your GraphJin base URL when setup asks for it (terminal or browser). If GraphJin runs on your host, use `http://host.docker.internal:8080` — OpenNeko appends the GraphQL and MCP paths automatically.
 
 ## OpenNeko's database
 
-OpenNeko keeps its own data in Postgres 16 with the `vector` extension. To use
-a Postgres server that you run, give OpenNeko one connection URL:
+OpenNeko keeps its own data in Postgres 16 with the `vector` extension. In
+prod mode you run that Postgres server, and OpenNeko connects to it by one URL.
+Dev and demo modes run a Postgres container (`neko-db`) for you.
 
 ```text
 postgres://neko:PASSWORD@db.example.com:5432/neko?sslmode=verify-full&sslrootcert=/etc/openneko/db-ca.pem
 ```
 
-Put the URL in a file that only the OpenNeko account can read, and set
-`OPENNEKO_DATABASE_URL_FILE` to its path. You can also set `database_url` in
-`~/.config/openneko/config.json`. The URL replaces the `NEKO_PG_*` settings.
+`openneko setup --database-url` stores the URL in
+`~/.config/openneko/config.json`, encrypted with the host secret key. You can
+also put the URL in a file that only the OpenNeko account can read, and set
+`OPENNEKO_DATABASE_URL_FILE` to its path. The URL replaces the `NEKO_PG_*`
+settings. In prod mode, `openneko start` stops with a message when it finds no
+URL.
+
+`openneko start` gives the URL to the containers as a Compose secret, a file
+at `/run/secrets/database-url`. It does not go into their environment.
+`openneko-serve` does not get it. The URL host must be one that the containers
+can reach: `localhost` names the container itself, so setup refuses it. For a
+Postgres server on the same host, use `host.docker.internal` or the host's
+name.
 
 - `sslmode=verify-full` checks the server certificate and its host name.
   `verify-ca` checks only the certificate, and `require` encrypts without
   checking it. Use one of these three. With `prefer` or `allow`, web and the
   worker connect without TLS.
 - `sslrootcert` names the CA file. Without it, OpenNeko uses its default CA
-  list.
+  list. `openneko start` does not yet mount the CA file into the containers.
 - The `neko` role must own the database. The migrations create the `vector`
   extension and the `neko_files` role. If the `neko` role cannot create them,
   create both before the first start.
 - With a URL, setup skips its database password step. Change the password
   where the database is managed, then update the URL.
+
+### The bundled database of an older release
+
+Releases before this one ran `neko-db` in prod mode too. When a prod install
+has the `neko-db-data` volume and no database URL, `openneko start` and
+`openneko upgrade` keep running `neko-db` with that volume, so the data stays
+where it is. A new prod install never gets `neko-db`.
 
 ## Solution packs and skills
 
@@ -166,14 +185,14 @@ Packs add sources, actions, workflows and skills, and can turn on the built-in S
 
 ```bash
 openneko [--instance name] setup [--mode prod|dev|demo] [--port N] \
-  [--bind-address IPv4]
+  [--bind-address IPv4] [--database-url postgres://...]
 openneko instances                 # configured host installations
 openneko start [--mode prod|dev|demo] [--detach]
 openneko upgrade [--version vX.Y.Z] [--mode auto|prod|dev|demo]
 openneko status                    # docker compose ps proxy
 openneko logs [service…] [-f]
 openneko stop [--volumes]          # --volumes wipes data
-openneko migrate                   # apply pending migrations against running neko-db
+openneko migrate                   # apply pending migrations to OpenNeko's database
 openneko serve [--agent-socket path]  # user files and file search; agent turns on a Unix socket when set (runs as the openneko-serve container)
 openneko seed adventureworks       # one-shot demo data load (already done by --mode demo)
 openneko [--instance name] graphjin import <customer-config.yml|->
@@ -186,10 +205,10 @@ Modes:
 
 - **`prod`** (default) — the production control, customer-data, file, and
   agent runtime services. `openneko start` runs four start steps in order,
-  then starts four containers: `neko-db`, `openneko-serve`, `web` and
-  `worker`.
+  then starts three containers: `openneko-serve`, `web` and `worker`.
+  OpenNeko's database is yours, by URL.
 - **`dev`** — source-checkout workflow: use `pnpm dev:setup` for Docker-only dependencies plus AdventureWorks demo data, then `pnpm dev` for hot-reloaded web/worker from source.
-- **`demo`** — core + AdventureWorks: `adventureworks-db`, `adventureworks-init`, `neko-adventureworks-seed`. The full live-trial flow (continuous order trickle + scenario injector) lives in `compose.adventureworks.yml` and needs the [Build from source](#build-from-source-advanced) path.
+- **`demo`** — core + `neko-db` + AdventureWorks: `adventureworks-db`, `adventureworks-init`, `neko-adventureworks-seed`. The full live-trial flow (continuous order trickle + scenario injector) lives in `compose.adventureworks.yml` and needs the [Build from source](#build-from-source-advanced) path.
 
 `~/.config/openneko/compose.override.yml` is auto-applied if present (last `-f` to docker compose).
 
@@ -304,14 +323,14 @@ of the user who owns the run:
 - query sheet tables: one read-only DuckDB query over the sheets of
   spreadsheet and CSV files
 
-The keyword index is in `neko-db`. The sheet tables are Parquet files on the
+The keyword index is in OpenNeko's database. The sheet tables are Parquet files on the
 same volume. OpenNeko rebuilds both from the files, so you can delete them.
 DuckDB runs with external access off and reads only the tables of that user.
 Web and worker reach the service at `OPENNEKO_SERVE_URL` with a token that
 expires after one minute. When `OPENNEKO_SERVE_URL` is not set, the assistant
 does not get the file tools.
 
-`openneko-serve` connects to `neko-db` as `neko_files`. That role can read
+`openneko-serve` connects to OpenNeko's database as `neko_files`. That role can read
 and write only the file index tables. The start step `openneko-serve-init`
 sets its password, derived from the secret key, and gives the service a key
 that checks the tokens. The service never gets the secret key or the `neko`
@@ -421,7 +440,7 @@ openneko upgrade
 
 ### What `openneko start` does
 
-1. **Migrate.** Connects to `neko-db`, takes a Postgres advisory lock, applies pending embedded migrations, releases the lock. Idempotent.
+1. **Migrate.** Connects to OpenNeko's database, takes a Postgres advisory lock, applies pending embedded migrations, releases the lock. Idempotent.
 2. **Compose up.** Writes embedded compose files to `.openneko/runtime/` and runs `docker compose up`. Docker pulls the pinned image tags.
 
 `openneko stop` doesn't touch volumes. Use `--volumes` for a clean slate (wipes the metadata DB, demo state, agent workspaces).
@@ -436,7 +455,7 @@ openneko reset --all      # wipes everything including secrets
 ## Ports
 
 The packaged stack publishes one host port: the web app, `3000` by default.
-Postgres, GraphJin, the worker broker, the file service, the agent runtime and
+The bundled Postgres, GraphJin, the worker broker, the file service, the agent runtime and
 the demo data services stay on the private Docker network.
 
 Configure and persist the port during guided installation:
@@ -459,10 +478,10 @@ for a reverse-proxy deployment.
 ```bash
 git clone https://github.com/open-neko/openneko.git
 cd neko
-docker compose -f compose.yml -f compose.adventureworks.yml --profile steps build
-docker compose -f compose.yml -f compose.adventureworks.yml run --rm openneko-serve-init
-docker compose -f compose.yml -f compose.adventureworks.yml up -d
-docker compose -f compose.yml -f compose.adventureworks.yml run --rm neko-adventureworks-seed
+docker compose -f compose.yml -f compose.db.yml -f compose.adventureworks.yml --profile steps build
+docker compose -f compose.yml -f compose.db.yml -f compose.adventureworks.yml run --rm openneko-serve-init
+docker compose -f compose.yml -f compose.db.yml -f compose.adventureworks.yml up -d
+docker compose -f compose.yml -f compose.db.yml -f compose.adventureworks.yml run --rm neko-adventureworks-seed
 ```
 
 The `run --rm openneko-serve-init` line runs the start steps in order:
@@ -475,7 +494,7 @@ The source compose trickles fresh sales orders into the sample DB every 10 minut
 
 ```bash
 AW_SIM_INTERVAL_SEC=300 AW_SIM_ORDERS_MIN=1 AW_SIM_ORDERS_MAX=5 \
-  docker compose -f compose.yml -f compose.adventureworks.yml up -d
+  docker compose -f compose.yml -f compose.db.yml -f compose.adventureworks.yml up -d
 ```
 
 Disable the trickle: `AW_SIM_ENABLED=0`.
@@ -491,7 +510,7 @@ The seed pre-loads three watchers:
 To see the loop without waiting for an organic dip, fire the Germany scenario (stops new orders for territory 8 for three hours):
 
 ```bash
-docker compose -f compose.yml -f compose.adventureworks.yml \
+docker compose -f compose.yml -f compose.db.yml -f compose.adventureworks.yml \
   exec adventureworks-scenario-injector \
   /scripts/scenario-injector.sh fire germany-revenue-drop
 ```
@@ -513,7 +532,7 @@ pnpm dev
 
 Web and worker run on the host with hot reload. Everything else runs in Docker.
 
-- `pnpm dev:up` starts the backing services with `compose.dev.yml`: `neko-db`, the `openneko-serve` container with the customer GraphJin and the subscriptions GraphJin, and AdventureWorks with its simulator. It installs the pinned GraphJin CLI into `.openneko/dev/bin`, builds the serve image, runs migrations from source, and writes the GraphJin JWT secret.
+- `pnpm dev:up` starts the backing services with `compose.db.yml` and `compose.dev.yml`: `neko-db`, the `openneko-serve` container with the customer GraphJin and the subscriptions GraphJin, and AdventureWorks with its simulator. It installs the pinned GraphJin CLI into `.openneko/dev/bin`, builds the serve image, runs migrations from source, and writes the GraphJin JWT secret.
 - `pnpm dev:seed` seeds demo workflows. `pnpm dev:setup` runs both steps.
 - `pnpm dev` runs `next dev` on port 3000 and `tsx watch` for the worker. Edits to `apps/web`, `apps/worker`, and workspace packages reload without an image build.
 - `scripts/dev-env.sh` holds the host settings. Each service a host process calls has a loopback port; `pnpm dev:web` and `pnpm dev:worker` source the file.

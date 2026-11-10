@@ -60,7 +60,7 @@ func newDoctorCmd() *cobra.Command {
 }
 
 func runOperationalDoctor(ctx context.Context, out io.Writer) (bool, error) {
-	sup, _, project, files, err := currentStackCompose()
+	sup, _, project, files, err := currentStackCompose(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -84,6 +84,10 @@ func runOperationalDoctor(ctx context.Context, out io.Writer) (bool, error) {
 		return false, nil
 	}
 
+	if !usesBundledDatabase(files) {
+		fmt.Fprintln(out, "database: external, by URL; doctor does not check it")
+		return false, nil
+	}
 	if !running["neko-db"] {
 		fmt.Fprintln(out, "database: FAIL — neko-db is not running")
 		return true, nil

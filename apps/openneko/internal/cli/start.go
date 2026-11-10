@@ -99,7 +99,7 @@ func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, op
 		_ = os.Setenv("OPENNEKO_VERSION", imageVersion)
 	}
 
-	files, err := sup.Materialize(m)
+	files, err := stackFiles(ctx, sup, m, project)
 	if err != nil {
 		return err
 	}

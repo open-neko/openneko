@@ -98,16 +98,17 @@ tools against a frozen AdventureWorks snapshot.
 ## Stack modes
 
 `openneko start|setup|upgrade --mode prod|dev|demo` picks which Compose layers the
-CLI deploys. Every mode shares the same core: app Postgres, migrations, web,
-worker and `openneko serve`. In every mode, `openneko serve` runs file search,
+CLI deploys. Every mode shares the same core: migrations, web, worker and
+`openneko serve`. OpenNeko's own Postgres is yours in prod mode, by URL; dev
+and demo modes run one in a container. In every mode, `openneko serve` runs file search,
 every agent turn, the customer-facing GraphJin in sources (agentic) mode and
 the internal GraphJin for app subscriptions.
 
 | Mode | Layers on top of core | What's different |
 |------|----------------------|------------------|
-| **prod** (default) | none | Core stack only. You connect your own data source; actions run for real. |
-| **demo** | AdventureWorks sample DB, seed job, order simulator, scenario injector | Customer GraphJin points at the sample data. What `openneko setup --mode demo` gives you. |
-| **dev** | none (reserved overlay) | For working on OpenNeko itself: Docker runs only the dependency services while web and worker hot-reload as host processes (`pnpm dev:setup && pnpm dev`, using the repo's root `compose.yml`) — see [CONTRIBUTING.md](CONTRIBUTING.md). |
+| **prod** (default) | none | Core stack only, with your Postgres for OpenNeko's database. You connect your own data source; actions run for real. |
+| **demo** | OpenNeko's database in a container, AdventureWorks sample DB, seed job, order simulator, scenario injector | Customer GraphJin points at the sample data. What `openneko setup --mode demo` gives you. |
+| **dev** | OpenNeko's database in a container | For working on OpenNeko itself: Docker runs only the dependency services while web and worker hot-reload as host processes (`pnpm dev:setup && pnpm dev`, using the repo's root `compose.yml`) — see [CONTRIBUTING.md](CONTRIBUTING.md). |
 
 **Solution packs** (e.g. `openneko pack install magento`) are not a mode: they
 layer onto a running stack in any mode, adding sources, specs, and saved queries

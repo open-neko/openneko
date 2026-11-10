@@ -31,7 +31,7 @@ You also need Docker (Docker Desktop on macOS, Docker Engine on Linux).
 
 ```bash
 openneko [--instance name] setup [--mode prod|dev|demo] [--port N] \
-  [--bind-address IPv4]
+  [--bind-address IPv4] [--database-url postgres://...]
 openneko instances                       # list configured installations
 openneko start [--mode prod|dev|demo] [--detach]
 openneko upgrade [--version vX.Y.Z] [--mode auto|prod|dev|demo] [--stack-only|--cli-only] [--skip-backup]
@@ -90,9 +90,16 @@ before this behavior need one final manual CLI update; subsequent
 a recorded mode are inferred from existing Docker Compose projects; pass
 `--mode` only when multiple OpenNeko stacks exist.
 
+Prod mode runs no Postgres. `start` and `upgrade` read OpenNeko's database URL
+from `OPENNEKO_DATABASE_URL_FILE` or `database_url` in the host config.json,
+and give it to the containers as the Compose secret `database-url`. A prod
+install from an older release, with the `neko-db-data` volume and no URL,
+keeps its bundled `neko-db` through the `bundled-db.yml` overlay. Dev and demo
+modes always load that overlay.
+
 ### Backups
 
-`openneko backup` writes one encrypted file containing a `pg_dump` of neko-db
+`openneko backup` writes one encrypted file containing a `pg_dump` of the bundled neko-db
 and archives of the volumes `openneko-config`, `openneko-graphjin-cli` (the
 customer GraphJin config), `openneko-files` (each user's files) and, in the
 demo, `graphjin-config`. The stack must be running. Files

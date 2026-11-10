@@ -1,6 +1,6 @@
 # Adds the sandbox to the stack in compose.yml:
-#   docker compose -f compose.yml -f recipes/sandbox/compose.yml run --rm openneko-serve-init
-#   docker compose -f compose.yml -f recipes/sandbox/compose.yml up -d
+#   docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml run --rm openneko-serve-init
+#   docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml up -d
 # The sandbox shares the agent-runs volume with web, worker and serve, and
 # reaches them only through the socket in openneko-run.
 x-sandbox-env: &sandbox-env

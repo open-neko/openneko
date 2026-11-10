@@ -216,7 +216,7 @@ metadata_compose() {
   OPENNEKO_DB_PORT=$metadata_port \
   OPENNEKO_BACKUP_KEY_FILE=$metadata_key \
   OPENNEKO_BACKUP_REPOSITORY=$metadata_backups \
-    docker compose --project-name "$metadata_project" --file "$repo_root/compose.yml" "$@"
+    docker compose --project-name "$metadata_project" --file "$repo_root/compose.yml" --file "$repo_root/compose.db.yml" "$@"
 }
 
 wait_for_metadata_database() {

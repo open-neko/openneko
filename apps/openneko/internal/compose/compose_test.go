@@ -17,9 +17,10 @@ func isolateConfig(t *testing.T) {
 
 func sampleFS() fstest.MapFS {
 	return fstest.MapFS{
-		"compose/core.yml": {Data: []byte("services: { web: {} }\n")},
-		"compose/dev.yml":  {Data: []byte("services: { dev: {} }\n")},
-		"compose/demo.yml": {Data: []byte("services: { demo: {} }\n")},
+		"compose/core.yml":       {Data: []byte("services: { web: {} }\n")},
+		"compose/dev.yml":        {Data: []byte("services: { dev: {} }\n")},
+		"compose/demo.yml":       {Data: []byte("services: { demo: {} }\n")},
+		"compose/bundled-db.yml": {Data: []byte("services: { neko-db: {} }\n")},
 	}
 }
 
@@ -53,9 +54,35 @@ func TestMaterializeDemo(t *testing.T) {
 	for _, f := range files {
 		got = append(got, filepath.Base(f))
 	}
-	want := []string{"core.yml", "demo.yml"}
+	want := []string{"core.yml", "demo.yml", "bundled-db.yml"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("unexpected order: %v", got)
+	}
+}
+
+func TestMaterializeStackGivesProdTheBundledDatabaseOnlyOnRequest(t *testing.T) {
+	isolateConfig(t)
+	s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: t.TempDir(), GOOS: "linux"}
+	for _, tc := range []struct {
+		mode    Mode
+		bundled bool
+		want    string
+	}{
+		{ModeProd, false, "core.yml"},
+		{ModeProd, true, "core.yml,bundled-db.yml"},
+		{ModeDev, true, "core.yml,dev.yml,bundled-db.yml"},
+	} {
+		files, err := s.MaterializeStack(tc.mode, tc.bundled)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, f := range files {
+			got = append(got, filepath.Base(f))
+		}
+		if strings.Join(got, ",") != tc.want {
+			t.Fatalf("%s bundled=%v: got %v want %s", tc.mode, tc.bundled, got, tc.want)
+		}
 	}
 }
 

@@ -146,18 +146,23 @@ func TestPackagedComposeExposesOnlyWebToLAN(t *testing.T) {
 
 func TestPackagedComposeKeepsRuntimeTrafficOnDockerNetwork(t *testing.T) {
 	core, _ := readComposeForTest(t, "core.yml")
+	bundled, _ := readComposeForTest(t, "bundled-db.yml")
 	for service, ports := range map[string][]string{
-		"neko-db":        {"5432"},
-		"openneko-serve": {"8080", "8089"},
+		"neko-db":        bundled.Services["neko-db"].Expose,
+		"openneko-serve": core.Services["openneko-serve"].Expose,
 	} {
-		if got := core.Services[service].Expose; !reflect.DeepEqual(got, ports) {
-			t.Fatalf("%s expose = %v, want internal ports %v", service, got, ports)
+		want := map[string][]string{"neko-db": {"5432"}, "openneko-serve": {"8080", "8089"}}[service]
+		if !reflect.DeepEqual(ports, want) {
+			t.Fatalf("%s expose = %v, want internal ports %v", service, ports, want)
 		}
 	}
+	if len(bundled.Services["neko-db"].Ports) != 0 {
+		t.Fatalf("bundled neko-db publishes host ports: %v", bundled.Services["neko-db"].Ports)
+	}
 
-	migrate := core.Services["neko-migrate"]
+	migrate := bundled.Services["neko-migrate"]
 	if migrate.Environment["NEKO_PG_HOST"] != "neko-db" {
-		t.Fatalf("migration host = %q, want Docker service neko-db", migrate.Environment["NEKO_PG_HOST"])
+		t.Fatalf("bundled migration host = %q, want Docker service neko-db", migrate.Environment["NEKO_PG_HOST"])
 	}
 	if core.Services["web"].DependsOn["worker"].Condition != "service_healthy" {
 		t.Fatal("web must start after the worker control plane is healthy")
@@ -170,6 +175,7 @@ func TestServeHoldsNoControlZoneSecrets(t *testing.T) {
 		Environment map[string]any `yaml:"environment"`
 		EnvFile     any            `yaml:"env_file"`
 		Volumes     []string       `yaml:"volumes"`
+		Secrets     []any          `yaml:"secrets"`
 	}
 	forbidden := func(name string) bool {
 		upper := strings.ToUpper(name)
@@ -203,6 +209,9 @@ func TestServeHoldsNoControlZoneSecrets(t *testing.T) {
 		}
 		if serve.EnvFile != nil {
 			t.Fatalf("%s: openneko-serve reads an env_file", name)
+		}
+		if len(serve.Secrets) != 0 {
+			t.Fatalf("%s: openneko-serve mounts secrets %v; the main database URL stays out of serve", name, serve.Secrets)
 		}
 		for key, value := range serve.Environment {
 			if forbidden(key) {
