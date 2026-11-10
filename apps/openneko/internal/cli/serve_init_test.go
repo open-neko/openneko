@@ -155,3 +155,46 @@ func TestRoleDatabaseURLKeepsHostAndTLS(t *testing.T) {
 		t.Fatal("a non-postgres URL must fail")
 	}
 }
+
+func TestSeedGraphjinConfigCreatesOnceAndDropsTheShellSupervisor(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "graphjin")
+	seed := filepath.Join(t.TempDir(), "seed.yml")
+	if err := os.WriteFile(seed, []byte("secrets:\n  keystore:\n    key: \"REPLACE_WITH_BASE64_32_BYTE_KEY\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, "agentic.yml")
+	created, err := seedGraphjinConfig(file, seed)
+	if err != nil || !created {
+		t.Fatalf("first seed: created=%v err=%v", created, err)
+	}
+	first, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(first, []byte(graphjinKeystorePlaceholder)) {
+		t.Fatalf("the keystore placeholder is still in the config:\n%s", first)
+	}
+	if info, _ := os.Stat(file); info.Mode().Perm() != 0o600 {
+		t.Fatalf("config mode %v", info.Mode().Perm())
+	}
+
+	stale := filepath.Join(dir, ".openneko-graphjin-supervisor.sh")
+	if err := os.WriteFile(stale, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	created, err = seedGraphjinConfig(file, seed)
+	if err != nil || created {
+		t.Fatalf("second seed: created=%v err=%v", created, err)
+	}
+	again, _ := os.ReadFile(file)
+	if !bytes.Equal(first, again) {
+		t.Fatal("an existing config was replaced")
+	}
+	if _, err := os.Stat(stale); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the shell supervisor copy is still there: %v", err)
+	}
+
+	if _, err := seedGraphjinConfig(filepath.Join(t.TempDir(), "agentic.yml"), ""); err == nil {
+		t.Fatal("a missing config with no seed must fail")
+	}
+}

@@ -91,13 +91,13 @@ describe.skipIf(!enabled)("pack-owned connector on packaged GraphJin", () => {
     delete config.agent;
     config.sources = [{ name: "fixture", kind: "database", default: true, read_only: true, type: "postgres", host: "host.docker.internal", port: Number(port), dbname: "connector", user: "neko", access: { read: "authenticated", write: "blocked", delete: "blocked" } }];
     await writeFile(join(configRoot, "agentic.yml"), stringify(config));
-    const image = (await docker("image", "inspect", process.env.OPENNEKO_CONNECTOR_TEST_IMAGE ?? "ghcr.io/open-neko/neko-graphjin:latest", "--format", "{{.Id}}")).stdout.trim();
-    expect((await docker("run", "--rm", "--entrypoint", "graphjin", image, "version")).stdout).toContain("GraphJin 3.21.18");
+    const image = (await docker("image", "inspect", process.env.OPENNEKO_CONNECTOR_TEST_IMAGE ?? "ghcr.io/open-neko/neko-serve:latest", "--format", "{{.Id}}")).stdout.trim();
+    expect((await docker("run", "--rm", image, "graphjin", "version")).stdout).toContain("GraphJin 3.21.18");
     const reservation = createServer();
     await new Promise<void>(resolve => reservation.listen(0, "127.0.0.1", resolve));
     const reservedPort = (reservation.address() as { port: number }).port;
     await new Promise<void>(resolve => reservation.close(() => resolve()));
-    await docker("run", "-d", "--name", graphjin, "--user", "0", "-e", "GO_ENV=agentic", "-p", `127.0.0.1:${reservedPort}:8080`, "-v", `${configRoot}:/config`, "-v", `${resolve("../../scripts/graphjin-supervisor.sh")}:/supervisor.sh:ro`, "--entrypoint", "/bin/sh", image, "/supervisor.sh", "serve", "--path", "/config");
+    await docker("run", "-d", "--name", graphjin, "--user", "0", "--add-host", "host.docker.internal:host-gateway", "-p", `127.0.0.1:${reservedPort}:8080`, "-v", `${configRoot}:/config`, image, "graphjin", "serve", "--config", "/config/agentic.yml", "--addr", "0.0.0.0:8080");
     const graphjinPort = (await docker("port", graphjin, "8080/tcp")).stdout.trim().split(":").at(-1)!;
     endpoint = `http://127.0.0.1:${graphjinPort}/api/v1/graphql`;
     await ready();

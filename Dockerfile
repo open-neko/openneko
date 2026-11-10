@@ -75,8 +75,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       git openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Pinned GraphJin binary shared by the worker and the two dedicated GraphJin
-# runtimes.
+# Pinned GraphJin binary for the worker's config checks, neko-graphjin and the
+# backend eval. The customer GraphJin runs inside openneko serve, linked from
+# serv/v3 v3.21.18 (upstream commit 6f14910d5e64, the replace lines in
+# apps/openneko/go.mod); bump both together.
 FROM debian:bookworm-slim AS graphjin-bin
 ARG GRAPHJIN_VERSION=3.21.18
 ARG TARGETARCH
@@ -328,7 +330,6 @@ COPY --from=worker-deploy --chown=neko:neko /out/worker-app ./
 COPY --chown=neko:neko db ./db
 # Embedded first-party solution packs are loaded and validated by the worker.
 COPY --chown=neko:neko packs ./packs
-COPY --chown=neko:neko scripts/graphjin-supervisor.sh ./scripts/graphjin-supervisor.sh
 COPY --chown=neko:neko apps/worker/scripts/magento-v2-live-acceptance.ts ./scripts/magento-v2-live-acceptance.ts
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
@@ -361,15 +362,15 @@ ENTRYPOINT ["/openneko"]
 CMD ["--help"]
 
 # ─── 5d. neko-serve runtime ────────────────────────────────────────────
-# `openneko serve`: each user's private files, their keyword index in neko-db
-# and SQL over sheet tables. DuckDB needs libstdc++, so the base is the
-# distroless cc image. /data is created here so a fresh named volume is owned
-# by the non-root user.
+# `openneko serve`: each user's private files, their keyword index in neko-db,
+# SQL over sheet tables, agent turns and the customer GraphJin. DuckDB needs
+# libstdc++, so the base is the distroless cc image. The folders are created
+# here so a fresh named volume is owned by the non-root user.
 FROM debian:bookworm-slim AS serve-data
-RUN mkdir -p /data/files /data/file-index /var/lib/openneko/agent-runs /run/openneko /credentials \
-    && chown -R 1001:1001 /data /var/lib/openneko /run/openneko /credentials \
+RUN mkdir -p /data/files /data/file-index /var/lib/openneko/agent-runs /run/openneko /credentials /config/graphjin \
+    && chown -R 1001:1001 /data /var/lib/openneko /run/openneko /credentials /config \
     && chmod 0770 /var/lib/openneko/agent-runs /run/openneko \
-    && chmod 0700 /credentials
+    && chmod 0700 /credentials /config/graphjin
 
 FROM gcr.io/distroless/cc-debian12:latest AS neko-serve
 COPY --from=go-build /out/openneko /openneko
@@ -378,6 +379,10 @@ COPY --from=serve-data --chown=1001:1001 /data /data
 COPY --from=serve-data --chown=1001:1001 /var/lib/openneko /var/lib/openneko
 COPY --from=serve-data --chown=1001:1001 /run/openneko /run/openneko
 COPY --from=serve-data --chown=1001:1001 /credentials /credentials
+COPY --from=serve-data --chown=1001:1001 /config /config
+COPY db/graphjin/customer.sources.example.yml /seed/customer.sources.yml
+COPY db/graphjin/dev.sources.example.yml /seed/dev.sources.yml
+ENV OPENNEKO_GRAPHJIN_SEED=/seed/customer.sources.yml
 USER 1001:1001
 ENTRYPOINT ["/openneko"]
 CMD ["serve"]
@@ -396,8 +401,6 @@ CMD ["serve"]
 FROM alpine:3.22 AS graphjin-runtime
 RUN apk add --no-cache ca-certificates curl tini
 COPY --from=graphjin-bin /usr/local/bin/graphjin /usr/local/bin/graphjin
-COPY scripts/graphjin-supervisor.sh /usr/local/bin/openneko-graphjin-supervisor.sh
-RUN chmod +x /usr/local/bin/openneko-graphjin-supervisor.sh
 
 FROM graphjin-runtime AS neko-graphjin
 COPY scripts/neko-graphjin-entrypoint.sh /usr/local/bin/neko-graphjin-entrypoint.sh

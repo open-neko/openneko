@@ -146,9 +146,9 @@ func TestPackagedComposeExposesOnlyWebToLAN(t *testing.T) {
 func TestPackagedComposeKeepsRuntimeTrafficOnDockerNetwork(t *testing.T) {
 	core, _ := readComposeForTest(t, "core.yml")
 	for service, port := range map[string]string{
-		"neko-db":       "5432",
-		"graphjin":      "8080",
-		"neko-graphjin": "8089",
+		"neko-db":        "5432",
+		"openneko-serve": "8080",
+		"neko-graphjin":  "8089",
 	} {
 		got := core.Services[service].Expose
 		if len(got) != 1 || got[0] != port {

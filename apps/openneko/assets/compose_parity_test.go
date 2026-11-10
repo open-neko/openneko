@@ -3,7 +3,6 @@ package assets
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -37,6 +36,20 @@ type composeParityService struct {
 	Ports       []string                           `yaml:"ports"`
 	Command     []string                           `yaml:"command"`
 	Healthcheck map[string]any                     `yaml:"healthcheck"`
+	Networks    any                                `yaml:"networks"`
+}
+
+func composeNetworkAliases(service composeParityService, network string) []string {
+	networks, _ := service.Networks.(map[string]any)
+	entry, _ := networks[network].(map[string]any)
+	raw, _ := entry["aliases"].([]any)
+	var aliases []string
+	for _, alias := range raw {
+		if s, ok := alias.(string); ok {
+			aliases = append(aliases, s)
+		}
+	}
+	return aliases
 }
 
 func TestEmbeddingIsBoundedAndLibrarianIsGone(t *testing.T) {
@@ -72,126 +85,88 @@ func TestEmbeddingIsBoundedAndLibrarianIsGone(t *testing.T) {
 
 }
 
-func TestPackagedGraphJinReusesReleasedRuntime(t *testing.T) {
-	coreRaw, err := ComposeFS.ReadFile("compose/core.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	core := loadComposeParityDocument(t, coreRaw)
-	graphjin, ok := core.Services["graphjin"]
-	if !ok {
-		t.Fatal("packaged core is missing graphjin")
-	}
-	if !strings.Contains(graphjin.Image, "ghcr.io/open-neko/neko-graphjin:") {
-		t.Fatalf("packaged graphjin image = %q, want the neko-graphjin runtime", graphjin.Image)
-	}
-	entrypoint := strings.Join(graphjin.Entrypoint, "\n")
-	for _, required := range []string{
-		"/usr/local/bin/openneko-graphjin-supervisor.sh",
-		"/config/.openneko-graphjin-supervisor.sh",
-	} {
-		if !strings.Contains(entrypoint, required) {
-			t.Fatalf("packaged graphjin entrypoint does not include %s: %v", required, graphjin.Entrypoint)
-		}
-	}
-	wantHealthcheck := []string{
-		"CMD", "curl", "-sS", "-o", "/dev/null",
-		"http://127.0.0.1:8080/api/v1/graphql",
-	}
-	if got := composeHealthcheckTest(t, "packaged", "graphjin", graphjin); !reflect.DeepEqual(got, wantHealthcheck) {
-		t.Fatalf("packaged graphjin readiness check = %v, want %v", got, wantHealthcheck)
-	}
-	configInit, ok := core.Services["graphjin-config-init"]
-	if !ok {
-		t.Fatal("packaged core is missing graphjin-config-init")
-	}
-	assertGraphJinSupervisorRepair(t, "packaged core", configInit, "/app/scripts/graphjin-supervisor.sh")
-	assertGraphJinConfigVolumeMatches(t, "packaged core", configInit, graphjin)
-
-	demoRaw, err := ComposeFS.ReadFile("compose/demo.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	demo := loadComposeParityDocument(t, demoRaw)
-	demoConfigInit := demo.Services["graphjin-config-init"]
-	assertGraphJinSupervisorRepair(t, "packaged demo overlay", demoConfigInit, "/app/scripts/graphjin-supervisor.sh")
-	assertGraphJinConfigVolumeMatches(t, "packaged demo overlay", demoConfigInit, demo.Services["graphjin"])
-	if strings.Contains(string(demoRaw), "dosco/graphjin") {
-		t.Fatal("packaged demo restores the duplicate upstream GraphJin image")
-	}
-}
-
-func TestGraphJinSupervisorIsImageOwnedAndEverySourceOverlayRepairsOldVolumes(t *testing.T) {
+func TestCustomerGraphJinRunsInServe(t *testing.T) {
 	root := repoRootForTest(t)
-	dockerfile, err := os.ReadFile(root + "/Dockerfile")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, required := range []string{
-		"COPY scripts/graphjin-supervisor.sh /usr/local/bin/openneko-graphjin-supervisor.sh",
-		"chmod +x /usr/local/bin/openneko-graphjin-supervisor.sh",
-	} {
-		if !strings.Contains(string(dockerfile), required) {
-			t.Fatalf("GraphJin runtime does not own its supervisor: missing %q", required)
+	read := func(path string) composeParityDocument {
+		var raw []byte
+		var err error
+		if strings.HasPrefix(path, "compose/") {
+			raw, err = ComposeFS.ReadFile(path)
+		} else {
+			raw, err = os.ReadFile(filepath.Join(root, path))
 		}
-	}
-
-	baseRaw, err := os.ReadFile(root + "/compose.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	base := loadComposeParityDocument(t, baseRaw)
-	if strings.Contains(base.Services["graphjin"].Image, "dosco/graphjin") {
-		t.Fatal("source graphjin uses the shell-less upstream image with a shell supervisor")
-	}
-	assertGraphJinSupervisorRepair(t, "source core", base.Services["graphjin-config-init"], "/seed/graphjin-supervisor.sh")
-	assertGraphJinConfigVolumeMatches(t, "source core", base.Services["graphjin-config-init"], base.Services["graphjin"])
-
-	for _, overlayName := range []string{"compose.adventureworks.yml", "compose.dev.yml"} {
-		raw, err := os.ReadFile(root + "/" + overlayName)
 		if err != nil {
 			t.Fatal(err)
 		}
-		overlay := loadComposeParityDocument(t, raw)
-		initializer := overlay.Services["graphjin-config-init"]
-		if len(initializer.Command) != 0 {
-			t.Fatalf("%s appends a command that the inherited initializer entrypoint would ignore", overlayName)
-		}
-		assertGraphJinSupervisorRepair(t, overlayName, initializer, "/seed/graphjin-supervisor.sh")
+		return loadComposeParityDocument(t, raw)
 	}
-}
+	for _, path := range []string{"compose.yml", "compose.adventureworks.yml", "compose.dev.yml", "compose/core.yml", "compose/demo.yml"} {
+		doc := read(path)
+		for _, gone := range []string{"graphjin", "graphjin-config-init"} {
+			if _, ok := doc.Services[gone]; ok {
+				t.Errorf("%s still defines the %s service; the customer GraphJin runs in openneko-serve", path, gone)
+			}
+		}
+		for name, service := range doc.Services {
+			if _, ok := service.DependsOn["graphjin"]; ok {
+				t.Errorf("%s: %s waits for the removed graphjin service", path, name)
+			}
+		}
+	}
 
-func assertGraphJinSupervisorRepair(t *testing.T, label string, service composeParityService, source string) {
-	t.Helper()
-	script := strings.Join(service.Entrypoint, "\n")
-	copyLine := "cp " + source + " /config/.openneko-graphjin-supervisor.sh.tmp"
-	for _, required := range []string{
-		copyLine,
-		"chmod 0755 /config/.openneko-graphjin-supervisor.sh.tmp",
-		"mv /config/.openneko-graphjin-supervisor.sh.tmp /config/.openneko-graphjin-supervisor.sh",
-		"chown -R 1001:999 /config",
-		"find /config -type d -exec chmod 0700 {} +",
-		"find /config -type f -exec chmod 0600 {} +",
-		"chmod 0700 /config/.openneko-graphjin-supervisor.sh",
+	for _, path := range []string{"compose.yml", "compose/core.yml"} {
+		doc := read(path)
+		serve := doc.Services["openneko-serve"]
+		if got := serve.Environment["OPENNEKO_GRAPHJIN_CONFIG"]; got != "/config/graphjin/agentic.yml" {
+			t.Errorf("%s serve GraphJin config = %#v", path, got)
+		}
+		if got := serve.Environment["OPENNEKO_GRAPHJIN_ADDR"]; got != "0.0.0.0:8080" {
+			t.Errorf("%s serve GraphJin address = %#v", path, got)
+		}
+		if got := composeNetworkAliases(serve, "default"); !reflect.DeepEqual(got, []string{"graphjin"}) {
+			t.Errorf("%s serve must answer as graphjin for existing configs, aliases = %v", path, got)
+		}
+		if got := serve.DependsOn["graphjin-secret-init"].Condition; got != "service_completed_successfully" {
+			t.Errorf("%s serve must start after the per-org JWT secret is written, got %q", path, got)
+		}
+		volume := composeMountSourceAt(serve.Volumes, "/config/graphjin")
+		for _, name := range []string{"openneko-serve-init", "graphjin-secret-init", "web", "worker"} {
+			if got := composeMountSourceAt(doc.Services[name].Volumes, "/config/graphjin"); got != volume || got == "" {
+				t.Errorf("%s: %s mounts %q at /config/graphjin, serve mounts %q", path, name, got, volume)
+			}
+		}
+		if got := doc.Services["openneko-serve-init"].Environment["OPENNEKO_GRAPHJIN_CONFIG"]; got != "/config/graphjin/agentic.yml" {
+			t.Errorf("%s serve-init seeds %#v", path, got)
+		}
+		if got := doc.Services["graphjin-secret-init"].DependsOn["openneko-serve-init"].Condition; got != "service_completed_successfully" {
+			t.Errorf("%s secret init must run after serve-init seeds the config, got %q", path, got)
+		}
+	}
+
+	demo := read("compose/demo.yml")
+	for _, name := range []string{"openneko-serve-init", "openneko-serve", "graphjin-secret-init"} {
+		if got := composeMountSourceAt(demo.Services[name].Volumes, "/config/graphjin"); got != "graphjin-config" {
+			t.Errorf("demo %s mounts %q at /config/graphjin, want graphjin-config", name, got)
+		}
+	}
+	if got := demo.Services["openneko-serve-init"].Environment["OPENNEKO_GRAPHJIN_SEED"]; got != "/seed/dev.sources.yml" {
+		t.Errorf("demo seed = %#v", got)
+	}
+
+	dockerfile, err := os.ReadFile(filepath.Join(root, "Dockerfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, seed := range []string{
+		"COPY db/graphjin/customer.sources.example.yml /seed/customer.sources.yml",
+		"COPY db/graphjin/dev.sources.example.yml /seed/dev.sources.yml",
 	} {
-		if !strings.Contains(script, required) {
-			t.Fatalf("%s does not atomically repair an existing GraphJin supervisor volume: missing %q", label, required)
+		if !strings.Contains(string(dockerfile), seed) {
+			t.Errorf("the serve image lacks %q", seed)
 		}
 	}
-	if strings.Contains(script, "chmod -R a+rwX /config") {
-		t.Fatalf("%s makes GraphJin secrets writable by every container user", label)
-	}
-	if lastConditionalEnd := strings.LastIndex(script, "\nfi\n"); lastConditionalEnd >= 0 && strings.Index(script, copyLine) < lastConditionalEnd {
-		t.Fatalf("%s repairs the supervisor only on first install; upgrades must refresh it unconditionally", label)
-	}
-}
-
-func assertGraphJinConfigVolumeMatches(t *testing.T, label string, initializer, graphjin composeParityService) {
-	t.Helper()
-	initSource := composeMountSourceAt(initializer.Volumes, "/config")
-	graphjinSource := composeMountSourceAt(graphjin.Volumes, "/config")
-	if initSource == "" || graphjinSource == "" || initSource != graphjinSource {
-		t.Fatalf("%s repairs GraphJin volume %q but serves volume %q", label, initSource, graphjinSource)
+	if strings.Contains(string(dockerfile), "graphjin-supervisor.sh") {
+		t.Error("the Dockerfile still ships the shell GraphJin supervisor")
 	}
 }
 
@@ -203,69 +178,6 @@ func composeMountSourceAt(mounts []string, target string) string {
 		}
 	}
 	return ""
-}
-
-func TestPackagedDemoInitializerHealsAnExistingVolumeMissingTheSupervisor(t *testing.T) {
-	root := repoRootForTest(t)
-	supervisorSource := filepath.Join(root, "scripts", "graphjin-supervisor.sh")
-	wantSupervisor, err := os.ReadFile(supervisorSource)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, composeFile := range []string{"core.yml", "demo.yml"} {
-		t.Run(composeFile, func(t *testing.T) {
-			raw, err := ComposeFS.ReadFile("compose/" + composeFile)
-			if err != nil {
-				t.Fatal(err)
-			}
-			service := loadComposeParityDocument(t, raw).Services["graphjin-config-init"]
-			script := strings.Join(service.Entrypoint[2:], "\n")
-
-			configDir := t.TempDir()
-			persistedConfig := filepath.Join(configDir, "agentic.yml")
-			if err := os.WriteFile(persistedConfig, []byte("persisted: true\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			// This is the v2.33-v2.35 production state: config survived the
-			// upgrade, while the supervisor file was never installed.
-			missingSupervisor := filepath.Join(configDir, ".openneko-graphjin-supervisor.sh")
-			if err := os.Remove(missingSupervisor); err != nil && !os.IsNotExist(err) {
-				t.Fatal(err)
-			}
-
-			script = strings.ReplaceAll(script, "/app/scripts/graphjin-supervisor.sh", supervisorSource)
-			script = strings.ReplaceAll(script, "/config", configDir)
-			// Docker Compose turns $$ into a literal $ before invoking the shell.
-			script = strings.ReplaceAll(script, "$$", "$")
-			cmd := exec.Command("/bin/sh", "-c", script)
-			if output, err := cmd.CombinedOutput(); err != nil {
-				t.Fatalf("run %s initializer against existing volume: %v\n%s", composeFile, err, output)
-			}
-
-			gotSupervisor, err := os.ReadFile(missingSupervisor)
-			if err != nil {
-				t.Fatalf("repaired supervisor is missing: %v", err)
-			}
-			if !reflect.DeepEqual(gotSupervisor, wantSupervisor) {
-				t.Fatal("repaired supervisor does not match the released runtime artifact")
-			}
-			info, err := os.Stat(missingSupervisor)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if info.Mode().Perm()&0o111 == 0 {
-				t.Fatalf("repaired supervisor mode = %o, want executable", info.Mode().Perm())
-			}
-			persisted, err := os.ReadFile(persistedConfig)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(persisted) != "persisted: true\n" {
-				t.Fatalf("initializer replaced existing datasource config: %q", persisted)
-			}
-		})
-	}
 }
 
 func TestPostReleaseSmokeGatesRetainedDemoUpgrades(t *testing.T) {
@@ -280,10 +192,10 @@ func TestPostReleaseSmokeGatesRetainedDemoUpgrades(t *testing.T) {
 	workflow := string(raw)
 	for _, required := range []string{
 		"openneko start --mode demo --detach --pull never",
-		"rm -f /config/.openneko-graphjin-supervisor.sh",
 		"openneko upgrade --stack-only --mode demo",
-		"test -x /config/.openneko-graphjin-supervisor.sh",
-		"{{.State.Health.Status}}",
+		"test ! -e /config/.openneko-graphjin-supervisor.sh",
+		"com.docker.compose.service=openneko-serve",
+		"{{.State.Status}}",
 		"authenticated_datasource_query=ok",
 	} {
 		if !strings.Contains(workflow, required) {
@@ -483,16 +395,6 @@ func composeParityInventoryFor(service composeParityService) composeParityInvent
 	}
 }
 
-func withoutMount(mounts []string, ignored string) []string {
-	filtered := make([]string, 0, len(mounts))
-	for _, mount := range mounts {
-		if mount != ignored {
-			filtered = append(filtered, mount)
-		}
-	}
-	return filtered
-}
-
 func composeHealthcheckTest(t *testing.T, label, serviceName string, service composeParityService) []string {
 	t.Helper()
 	raw, ok := service.Healthcheck["test"].([]any)
@@ -531,40 +433,8 @@ func TestSourceAndPackagedComposeStateInventoryMatch(t *testing.T) {
 	for _, name := range sortedKeys(root.Services) {
 		got := composeParityInventoryFor(root.Services[name])
 		want := composeParityInventoryFor(packaged.Services[name])
-		if name == "graphjin-config-init" {
-			// Source compose reads immutable seeds from the checkout. Packaged
-			// compose reads the same paths baked into neko-worker, so it correctly
-			// has no host bind mounts for these inputs.
-			got.Mounts = withoutMount(
-				got.Mounts,
-				"./db/graphjin/customer.sources.example.yml:/seed/customer.sources.yml:ro",
-			)
-			got.Mounts = withoutMount(
-				got.Mounts,
-				"./scripts/graphjin-supervisor.sh:/seed/graphjin-supervisor.sh:ro",
-			)
-		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("service %s state/recovery inventory drifted:\nsource:   %#v\npackaged: %#v", name, got, want)
-		}
-	}
-}
-
-func TestCustomerGraphJinDoesNotOwnWorkerConfigAsRoot(t *testing.T) {
-	rootRaw, err := os.ReadFile("../../../compose.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	packagedRaw, err := ComposeFS.ReadFile("compose/core.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for label, document := range map[string]composeParityDocument{
-		"source":   loadComposeParityDocument(t, rootRaw),
-		"packaged": loadComposeParityDocument(t, packagedRaw),
-	} {
-		if got := document.Services["graphjin"].User; got != "1001:999" {
-			t.Errorf("%s graphjin user = %q, want 1001:999", label, got)
 		}
 	}
 }

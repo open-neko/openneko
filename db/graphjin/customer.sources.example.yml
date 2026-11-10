@@ -1,13 +1,13 @@
 # Production source-mode template for the CUSTOMER-data GraphJin.
 #
 # A fresh install intentionally has no customer database source. OpenNeko ships
-# this GraphJin container and its governed config plane; an admin then registers
+# GraphJin inside openneko serve with its governed config plane; an admin registers
 # the customer's existing database or API source through setup/chat. The demo
 # overlay replaces this seed with dev.sources.example.yml, which includes the
 # AdventureWorks source.
 #
 # The worker replaces the JWT placeholder with the deployment/org-derived
-# signing secret at boot. The config initializer replaces the keystore
+# signing secret at boot. openneko serve-init replaces the keystore
 # placeholder with a random 32-byte key before GraphJin starts.
 
 app_name: OpenNeko Customer Data

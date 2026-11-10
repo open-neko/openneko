@@ -185,7 +185,7 @@ jobs:
           openneko logs || true
           exit 1
 
-      - name: Retained-volume upgrade repairs and serves GraphJin
+      - name: Retained-volume upgrade keeps the GraphJin config and serves it from serve
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         env:
           OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
@@ -194,17 +194,16 @@ jobs:
           worker_image="ghcr.io/open-neko/neko-worker:$OPENNEKO_VERSION"
           config_volume="openneko-demo_graphjin-config"
 
-          # Recreate the production regression exactly: the persisted config
-          # exists, but the runtime supervisor artifact is absent. Also keep a
-          # sentinel proving the upgrade reused rather than replaced the volume.
+          # Keep a sentinel proving the upgrade reused rather than replaced the
+          # volume, and a shell supervisor copy that releases before GraphJin
+          # moved into serve left behind; serve-init removes it.
           docker run --rm --user 0:0 \
             --entrypoint /bin/sh \
             -v "$config_volume:/config" \
             "$worker_image" -ceu '
               test -s /config/agentic.yml
               printf "%s\n" retained-state > /config/.upgrade-smoke-sentinel
-              rm -f /config/.openneko-graphjin-supervisor.sh \
-                    /config/.openneko-graphjin-supervisor.sh.tmp
+              printf "#!/bin/sh\n" > /config/.openneko-graphjin-supervisor.sh
             '
 
           openneko upgrade --stack-only --mode demo \
@@ -215,14 +214,14 @@ jobs:
             -v "$config_volume:/config" \
             "$worker_image" -ceu '
               test "$(cat /config/.upgrade-smoke-sentinel)" = retained-state
-              test -x /config/.openneko-graphjin-supervisor.sh
+              test ! -e /config/.openneko-graphjin-supervisor.sh
             '
 
-          graphjin=$(docker ps -q \
+          serve=$(docker ps -q \
             --filter label=com.docker.compose.project=openneko-demo \
-            --filter label=com.docker.compose.service=graphjin | head -1)
-          test -n "$graphjin"
-          test "$(docker inspect --format '{{.State.Health.Status}}' "$graphjin")" = healthy
+            --filter label=com.docker.compose.service=openneko-serve | head -1)
+          test -n "$serve"
+          test "$(docker inspect --format '{{.State.Status}}' "$serve")" = running
 
           worker=$(docker ps -q \
             --filter label=com.docker.compose.project=openneko-demo \

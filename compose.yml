@@ -78,36 +78,6 @@ services:
 
 
 
-  # Customer-data GraphJin. This is the endpoint stored per organization and
-  # configured to point at the customer's existing databases/APIs. A fresh
-  # production install starts with only GraphJin's governed config plane; the
-  # demo overlay adds AdventureWorks as its initial data source.
-  graphjin-config-init:
-    image: alpine:3.20
-    user: "0:0"
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        set -eu
-        if [ ! -f /config/agentic.yml ]; then
-          cp /seed/customer.sources.yml /config/agentic.yml
-          KEY=$$(head -c 32 /dev/urandom | base64 | tr -d '\n')
-          sed -i "s|REPLACE_WITH_BASE64_32_BYTE_KEY|$$KEY|" /config/agentic.yml
-        fi
-        cp /seed/graphjin-supervisor.sh /config/.openneko-graphjin-supervisor.sh.tmp
-        chmod 0755 /config/.openneko-graphjin-supervisor.sh.tmp
-        mv /config/.openneko-graphjin-supervisor.sh.tmp /config/.openneko-graphjin-supervisor.sh
-        chown -R 1001:999 /config 2>/dev/null || true
-        find /config -type d -exec chmod 0700 {} +
-        find /config -type f -exec chmod 0600 {} +
-        chmod 0700 /config/.openneko-graphjin-supervisor.sh
-    volumes:
-      - openneko-graphjin-cli:/config
-      - ./db/graphjin/customer.sources.example.yml:/seed/customer.sources.yml:ro
-      - ./scripts/graphjin-supervisor.sh:/seed/graphjin-supervisor.sh:ro
-    restart: "no"
-
   # One-shot: resolves (or creates, under an advisory lock) the single org
   # row and reconciles the per-org JWT secret into the customer GraphJin
   # sources config BEFORE the server's first start. GraphJin 3.18 does not
@@ -141,7 +111,7 @@ services:
         condition: service_completed_successfully
       openneko-config-init:
         condition: service_completed_successfully
-      graphjin-config-init:
+      openneko-serve-init:
         condition: service_completed_successfully
     environment:
       <<: *neko-app-env
@@ -150,45 +120,6 @@ services:
       - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/config/openneko
       - openneko-graphjin-cli:/config/graphjin
     restart: "no"
-
-  graphjin:
-    # Released installs use the matching released image in the embedded
-    # Compose file; this source Compose file must exercise the current pin.
-    build:
-      context: .
-      target: neko-graphjin
-    user: "1001:999"
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        if [ -x /usr/local/bin/openneko-graphjin-supervisor.sh ]; then
-          exec /usr/local/bin/openneko-graphjin-supervisor.sh "$$@"
-        fi
-        exec /bin/sh /config/.openneko-graphjin-supervisor.sh "$$@"
-      - --
-    restart: unless-stopped
-    depends_on:
-      graphjin-config-init:
-        condition: service_completed_successfully
-      # The per-org JWT secret is reconciled into agentic.yml by the
-      # graphjin-secret-init one-shot. GraphJin 3.18 does not hot-reload
-      # auth keys, so start only after that reconciliation has completed.
-      graphjin-secret-init:
-        condition: service_completed_successfully
-    ports:
-      - "127.0.0.1:${GRAPHJIN_PORT:-8080}:8080"
-    environment:
-      GO_ENV: agentic
-    volumes:
-      - openneko-graphjin-cli:/config
-    command: ["serve", "--path", "/config"]
-    healthcheck:
-      test: ["CMD", "curl", "-sS", "-o", "/dev/null", "http://127.0.0.1:8080/api/v1/graphql"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-      start_period: 10s
 
   # One-shot: applies SQL migrations to neko-db after both database volumes
   # satisfy the enforced storage contract. Every long-running service depends
@@ -280,8 +211,9 @@ services:
       timeout: 3s
       retries: 5
 
-  # One-shot: sets the neko_files role password and writes serve's
-  # credentials. Serve holds no main database login and no secret-key.
+  # One-shot: sets the neko_files role password, writes serve's credentials
+  # and creates the customer GraphJin config when it is missing. Serve holds
+  # no main database login and no secret-key.
   openneko-serve-init:
     build:
       context: .
@@ -299,14 +231,18 @@ services:
       NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
       NEKO_PG_DATABASE: neko
       XDG_CONFIG_HOME: /config
+      OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
     volumes:
       - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/config/openneko
       - openneko-serve-credentials:/credentials
+      - openneko-graphjin-cli:/config/graphjin
     restart: "no"
 
   # openneko serve: each user's private files, their keyword index in
-  # neko-db, SQL over sheet tables and agent turns. Web and worker call it
-  # with short-lived tokens signed with a key derived from the secret-key.
+  # neko-db, SQL over sheet tables, agent turns and the customer GraphJin.
+  # Web and worker call it with short-lived tokens signed with a key derived
+  # from the secret-key. GraphJin does not reload auth keys, so serve starts
+  # after graphjin-secret-init has written the per-org JWT secret.
   openneko-serve:
     build:
       context: .
@@ -315,6 +251,13 @@ services:
     depends_on:
       openneko-serve-init:
         condition: service_completed_successfully
+      graphjin-secret-init:
+        condition: service_completed_successfully
+    networks:
+      default:
+        aliases: [graphjin]
+    ports:
+      - "127.0.0.1:${GRAPHJIN_PORT:-8080}:8080"
     environment:
       OPENNEKO_SERVE_CREDENTIALS: /credentials
       OPENNEKO_SERVE_ADDR: 0.0.0.0:8090
@@ -323,11 +266,14 @@ services:
       OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
       OPENNEKO_SANDBOX_URL: ${OPENNEKO_SANDBOX_URL:-}
       OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
+      OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
+      OPENNEKO_GRAPHJIN_ADDR: 0.0.0.0:8080
     volumes:
       - openneko-agent-runs:/var/lib/openneko/agent-runs
       - openneko-run:/run/openneko
       - openneko-serve-credentials:/credentials:ro
       - openneko-files:/data
+      - openneko-graphjin-cli:/config/graphjin
     restart: unless-stopped
 
   web:
@@ -341,8 +287,6 @@ services:
       neko-migrate:
         condition: service_completed_successfully
       neko-graphjin:
-        condition: service_started
-      graphjin:
         condition: service_started
       graphjin-secret-init:
         condition: service_completed_successfully
@@ -393,8 +337,6 @@ services:
       # The per-org JWT secret is seeded by graphjin-secret-init before
       # either GraphJin or the worker starts; the worker's own boot pass is
       # a re-verify. Depending on the one-shots avoids a startup cycle.
-      graphjin-config-init:
-        condition: service_completed_successfully
       graphjin-secret-init:
         condition: service_completed_successfully
     environment:

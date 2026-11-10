@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"net/url"
@@ -27,7 +29,7 @@ const (
 )
 
 func newServeInitCmd() *cobra.Command {
-	var dir string
+	var dir, gjConfig, gjSeed string
 	cmd := &cobra.Command{
 		Use:    "serve-init",
 		Short:  "Write the narrow credentials that openneko serve reads",
@@ -45,10 +47,22 @@ func newServeInitCmd() *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "openneko serve credentials written to %s\n", dir)
+			if gjConfig == "" {
+				return nil
+			}
+			created, err := seedGraphjinConfig(gjConfig, gjSeed)
+			if err != nil {
+				return err
+			}
+			if created {
+				fmt.Fprintf(cmd.OutOrStdout(), "customer GraphJin config written to %s\n", gjConfig)
+			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", os.Getenv(serveCredentialsEnv), "Folder for the serve credentials")
+	cmd.Flags().StringVar(&gjConfig, "graphjin-config", os.Getenv("OPENNEKO_GRAPHJIN_CONFIG"), "Customer GraphJin config file to create when it is missing; empty skips this step")
+	cmd.Flags().StringVar(&gjSeed, "graphjin-seed", os.Getenv("OPENNEKO_GRAPHJIN_SEED"), "Template for a new customer GraphJin config")
 	return cmd
 }
 
@@ -86,6 +100,34 @@ func writeServeCredentials(ctx context.Context, admin db.ConnConfig, configDir, 
 		return err
 	}
 	return writeFileAtomic(filepath.Join(dir, serveTokenKeyFile), []byte(hex.EncodeToString(tokenKey)+"\n"))
+}
+
+const graphjinKeystorePlaceholder = "REPLACE_WITH_BASE64_32_BYTE_KEY"
+
+func seedGraphjinConfig(file, seed string) (bool, error) {
+	dir := filepath.Dir(file)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return false, err
+	}
+	_ = os.Remove(filepath.Join(dir, ".openneko-graphjin-supervisor.sh"))
+	if _, err := os.Stat(file); err == nil {
+		return false, nil
+	} else if !os.IsNotExist(err) {
+		return false, err
+	}
+	if seed == "" {
+		return false, fmt.Errorf("%s is missing and no --graphjin-seed is set", file)
+	}
+	raw, err := os.ReadFile(seed)
+	if err != nil {
+		return false, err
+	}
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return false, err
+	}
+	conf := strings.ReplaceAll(string(raw), graphjinKeystorePlaceholder, base64.StdEncoding.EncodeToString(key))
+	return true, writeFileAtomic(file, []byte(conf))
 }
 
 func roleDatabaseURL(c db.ConnConfig, user, password string) (string, error) {

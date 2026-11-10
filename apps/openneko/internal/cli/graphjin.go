@@ -7,13 +7,36 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
 	"github.com/open-neko/neko/apps/openneko/internal/compose"
+	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
 )
+
+func newGraphjinServeCmd() *cobra.Command {
+	var file, addr string
+	cmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Run only the customer GraphJin, as openneko serve runs it",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if file == "" {
+				return fmt.Errorf("--config is required")
+			}
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			return (&gjhost.Host{ConfigFile: file, Addr: addr, Log: cmd.ErrOrStderr()}).Run(ctx)
+		},
+	}
+	cmd.Flags().StringVar(&file, "config", os.Getenv("OPENNEKO_GRAPHJIN_CONFIG"), "Customer GraphJin config file (agentic.yml)")
+	cmd.Flags().StringVar(&addr, "addr", envOr("OPENNEKO_GRAPHJIN_ADDR", "127.0.0.1:8080"), "Listen address")
+	return cmd
+}
 
 // The worker already owns GraphJin preview/apply, credential sealing, the
 // shared config lock, persistence, and restart. Use that path from the host.
@@ -35,6 +58,14 @@ console.log("GraphJin configuration imported");
 
 func newGraphjinCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "graphjin", Short: "Manage the customer GraphJin configuration"}
+	cmd.AddCommand(newGraphjinServeCmd(), &cobra.Command{
+		Use:   "version",
+		Short: "Print the GraphJin version linked into this binary",
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, _ []string) {
+			fmt.Fprintf(cmd.OutOrStdout(), "GraphJin %s\n", gjhost.Version())
+		},
+	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "import <customer-config.yml|->",
 		Short: "Import customer sources, tables, and relationships into the running instance",

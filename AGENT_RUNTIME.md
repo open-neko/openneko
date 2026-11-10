@@ -60,7 +60,7 @@ trusted host. Only the agent loop runs in the runner and serve.
 | Piece | Runs as | Holds | Network |
 |---|---|---|---|
 | Runner | the web or worker user (`neko`, 1001) | the run's broker token and the org's model key, for this run only | that of web or the worker |
-| `openneko serve` | `neko`, 1001 | a turn's model key while the turn runs; the files service; the `neko_files` database login and the derived token key | the stack's network, for the model APIs |
+| `openneko serve` | `neko`, 1001 | a turn's model key while the turn runs; the files service; the `neko_files` database login and the derived token key; the customer GraphJin and its config | the stack's network, for the model APIs and the customer's data sources |
 | Sandbox service | root, to give each run its own user | **no secrets**; a command gets only `PATH`, `HOME`, `TMPDIR`, `LANG`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH` | only its own network |
 
 Model keys exist only in the runner and in serve. Serve drops every
@@ -92,6 +92,25 @@ outside its zone.
 Agent runs read customer data only through the direct GraphJin tools. No run
 hands a question to GraphJin's own agent, so GraphJin gets no provider key.
 Migration 0128 removed the setting that did that.
+
+## The customer GraphJin
+
+Serve runs the customer GraphJin in its own process, from the pinned GraphJin
+module (v3.21.18). It listens on port 8080 and answers as `graphjin` on the
+stack network, so stored endpoints such as `http://graphjin:8080` keep
+working. Its config, `agentic.yml`, holds the customer's source logins and the
+per-org JWT secret. It is in the agent zone, as it was when GraphJin had its
+own container.
+
+- `openneko-serve-init` creates `agentic.yml` from the seed in the serve image
+  when the file is missing, with a new keystore key.
+- `graphjin-secret-init` writes the per-org JWT secret before serve starts.
+  GraphJin reads auth keys only when it starts.
+- When the worker changes the config, it writes a new token to
+  `.openneko-graphjin-restart`. Serve then builds a new engine from the file
+  and writes the token to `.openneko-graphjin-restart-ack`. Serve answers
+  `.openneko-graphjin-supervisor-ping` the same way. These are the files the
+  old supervisor script used.
 
 ## The sandbox service
 
@@ -132,6 +151,9 @@ Compose sets all of these. They matter only for custom deployments.
 | `OPENNEKO_AGENT_ENTRY` | web, worker | the runner (`/opt/openneko-agent/entry.js`; a `.ts` path runs with tsx) |
 | `OPENNEKO_SANDBOX_URL` | web, worker, serve | the sandbox service (`unix:///path`, `http://` or `https://`); empty turns the terminal off |
 | `OPENNEKO_SANDBOX_KEY` | web, worker, serve, sandbox | the bearer key of the sandbox service |
+| `OPENNEKO_GRAPHJIN_CONFIG` | web, worker, serve, serve-init | the customer GraphJin config (`/config/graphjin/agentic.yml`); empty runs no GraphJin in serve |
+| `OPENNEKO_GRAPHJIN_ADDR` | serve | where the customer GraphJin listens (default `127.0.0.1:8080`; Compose sets `0.0.0.0:8080`) |
+| `OPENNEKO_GRAPHJIN_SEED` | serve-init | the template for a new config; the serve image sets it |
 
 Web and the worker check that serve answers on its socket before setup
 completes and before onboarding work starts. When serve does not answer, they
@@ -140,5 +162,7 @@ report that the agent runtime (openneko serve) is unavailable.
 ## Development
 
 `pnpm dev` runs `openneko serve` on the host next to web and the worker
-(`scripts/dev-agent.sh`). To try the terminal, run the sandbox recipe and set
+(`scripts/dev-agent.sh`). That serve runs no GraphJin. The customer GraphJin
+runs in the `openneko-serve` container that `pnpm dev:up` starts, on
+`localhost:8080`. To try the terminal, run the sandbox recipe and set
 `OPENNEKO_SANDBOX_URL`.

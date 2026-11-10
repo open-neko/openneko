@@ -31,24 +31,23 @@ fi
 compose up -d --wait neko-db
 (cd apps/openneko && go run ./cmd/openneko migrate)
 
-# GraphJin reads its auth key only at start, so the per-org secret goes into
-# agentic.yml before the server starts.
-compose run --rm --no-deps graphjin-config-init
+# GraphJin in serve reads its auth key only at start, so the per-org secret
+# goes into agentic.yml before serve starts.
+compose build openneko-serve
+compose run --rm --no-deps openneko-serve-init
 GRAPHJIN_SOURCES_CONFIG="$OPENNEKO_GRAPHJIN_CONFIG" \
   pnpm --filter @neko/worker exec tsx ../../packages/llm/src/graphjin/init-secret.mjs
 
-# Compose reuses a built image after the GraphJin pin moves. Rebuild each
-# GraphJin image that reports another version, or the worker stops at start.
-for service in neko-graphjin graphjin; do
-  if ! compose run --rm --no-deps -T --entrypoint graphjin "$service" version 2>/dev/null \
-    | grep -q "GraphJin $graphjin_version"; then
-    echo "Rebuilding $service for GraphJin $graphjin_version"
-    compose build "$service"
-  fi
-done
+# Compose reuses a built image after the GraphJin pin moves. Rebuild
+# neko-graphjin when it reports another version, or the worker stops at start.
+if ! compose run --rm --no-deps -T --entrypoint graphjin neko-graphjin version 2>/dev/null \
+  | grep -q "GraphJin $graphjin_version"; then
+  echo "Rebuilding neko-graphjin for GraphJin $graphjin_version"
+  compose build neko-graphjin
+fi
 
 compose up -d \
-  neko-graphjin graphjin \
+  neko-graphjin openneko-serve \
   adventureworks-simulator adventureworks-scenario-injector
 
 echo "Backing services are up. Start web and worker with: pnpm dev"

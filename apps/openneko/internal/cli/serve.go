@@ -19,15 +19,16 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/filecontent"
 	"github.com/open-neko/neko/apps/openneko/internal/files"
+	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
 func newServeCmd() *cobra.Command {
-	var addr, filesDir, indexDir, duckdb, agentSocket, sandboxURL, credentials string
+	var addr, filesDir, indexDir, duckdb, agentSocket, sandboxURL, credentials, gjConfig, gjAddr string
 	var maxTurns int
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Run the OpenNeko core service (user files, file search and agent turns)",
+		Short: "Run the OpenNeko core service (user files, file search, agent turns and the customer GraphJin)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
@@ -66,6 +67,13 @@ func newServeCmd() *cobra.Command {
 					return err
 				}
 			}
+			gjDone := make(chan error, 1)
+			if gjConfig != "" {
+				gj := &gjhost.Host{ConfigFile: gjConfig, Addr: gjAddr, Log: cmd.ErrOrStderr()}
+				go func() { gjDone <- gj.Run(ctx) }()
+			} else {
+				gjDone <- nil
+			}
 			srv := &http.Server{Handler: svc.Handler(), ReadHeaderTimeout: 10 * time.Second}
 			fmt.Fprintf(cmd.OutOrStdout(), "openneko serve listening on %s\n", ln.Addr())
 			errc := make(chan error, 1)
@@ -91,6 +99,10 @@ func newServeCmd() *cobra.Command {
 				case <-shut.Done():
 				}
 			}
+			select {
+			case <-gjDone:
+			case <-time.After(2 * time.Second):
+			}
 			return nil
 		},
 	}
@@ -106,6 +118,8 @@ func newServeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&sandboxURL, "sandbox-url", os.Getenv("OPENNEKO_SANDBOX_URL"), "Sandbox service for agent terminal commands (unix:///path or http(s)://host:port); empty turns the terminal off. Its key is read from OPENNEKO_SANDBOX_KEY")
 	cmd.Flags().IntVar(&maxTurns, "max-turns", envInt("OPENNEKO_SERVE_MAX_TURNS", 32), "Agent turns that run at once; more are refused")
 	cmd.Flags().StringVar(&credentials, "credentials", os.Getenv(serveCredentialsEnv), "Folder written by `openneko serve-init`: the token key and the neko_files database URL. Empty reads the secret-key and the main database login")
+	cmd.Flags().StringVar(&gjConfig, "graphjin-config", os.Getenv("OPENNEKO_GRAPHJIN_CONFIG"), "Customer GraphJin config file (agentic.yml); empty runs no GraphJin. A new token in .openneko-graphjin-restart beside it restarts the engine")
+	cmd.Flags().StringVar(&gjAddr, "graphjin-addr", envOr("OPENNEKO_GRAPHJIN_ADDR", "127.0.0.1:8080"), "Listen address for the customer GraphJin")
 	cmd.Flags().StringVar(&duckdb, "duckdb", envOr("OPENNEKO_DUCKDB", "duckdb"), "DuckDB CLI for SQL over sheet tables")
 	return cmd
 }

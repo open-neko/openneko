@@ -99,9 +99,9 @@ tools against a frozen AdventureWorks snapshot.
 
 `openneko start|setup|upgrade --mode prod|dev|demo` picks which Compose layers the
 CLI deploys. Every mode shares the same core: app Postgres, migrations, web,
-worker, `openneko serve` for file search, the internal GraphJin for app
-subscriptions, plus the customer-facing GraphJin in sources (agentic) mode.
-`openneko serve` also runs every agent turn, in every mode.
+worker, `openneko serve`, and the internal GraphJin for app subscriptions.
+`openneko serve` runs file search, every agent turn and the customer-facing
+GraphJin in sources (agentic) mode, in every mode.
 
 | Mode | Layers on top of core | What's different |
 |------|----------------------|------------------|
