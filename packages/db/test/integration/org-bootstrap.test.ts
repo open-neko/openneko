@@ -1,9 +1,9 @@
 /**
  * getOrgId() bootstrap race, against a real Postgres.
  *
- * On an empty organization table, web, worker, the graphjin-secret-init
- * one-shot, and the demo seed can all resolve the org concurrently, and
- * nothing in the schema forbids a second row. Creation must therefore be
+ * On an empty organization table, web, worker, `openneko serve-init` and
+ * the demo seed can all resolve the org concurrently, and nothing in the
+ * schema forbids a second row. Creation must therefore be
  * serialized (advisory lock) and reads made deterministic (stable ORDER BY).
  */
 

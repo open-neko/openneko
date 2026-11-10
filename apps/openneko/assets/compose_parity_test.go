@@ -102,14 +102,16 @@ func TestCustomerGraphJinRunsInServe(t *testing.T) {
 	}
 	for _, path := range []string{"compose.yml", "compose.adventureworks.yml", "compose.dev.yml", "compose/core.yml", "compose/demo.yml"} {
 		doc := read(path)
-		for _, gone := range []string{"graphjin", "graphjin-config-init"} {
+		for _, gone := range []string{"graphjin", "graphjin-config-init", "graphjin-secret-init"} {
 			if _, ok := doc.Services[gone]; ok {
 				t.Errorf("%s still defines the %s service; the customer GraphJin runs in openneko-serve", path, gone)
 			}
 		}
 		for name, service := range doc.Services {
-			if _, ok := service.DependsOn["graphjin"]; ok {
-				t.Errorf("%s: %s waits for the removed graphjin service", path, name)
+			for _, gone := range []string{"graphjin", "graphjin-secret-init"} {
+				if _, ok := service.DependsOn[gone]; ok {
+					t.Errorf("%s: %s waits for the removed %s service", path, name, gone)
+				}
 			}
 		}
 	}
@@ -126,11 +128,13 @@ func TestCustomerGraphJinRunsInServe(t *testing.T) {
 		if got := composeNetworkAliases(serve, "default"); !reflect.DeepEqual(got, []string{"graphjin"}) {
 			t.Errorf("%s serve must answer as graphjin for existing configs, aliases = %v", path, got)
 		}
-		if got := serve.DependsOn["graphjin-secret-init"].Condition; got != "service_completed_successfully" {
-			t.Errorf("%s serve must start after the per-org JWT secret is written, got %q", path, got)
+		for _, name := range []string{"openneko-serve", "web", "worker"} {
+			if got := doc.Services[name].DependsOn["openneko-serve-init"].Condition; got != "service_completed_successfully" {
+				t.Errorf("%s: %s must start after serve-init writes the per-org JWT secret, got %q", path, name, got)
+			}
 		}
 		volume := composeMountSourceAt(serve.Volumes, "/config/graphjin")
-		for _, name := range []string{"openneko-serve-init", "graphjin-secret-init", "web", "worker"} {
+		for _, name := range []string{"openneko-serve-init", "web", "worker"} {
 			if got := composeMountSourceAt(doc.Services[name].Volumes, "/config/graphjin"); got != volume || got == "" {
 				t.Errorf("%s: %s mounts %q at /config/graphjin, serve mounts %q", path, name, got, volume)
 			}
@@ -138,19 +142,19 @@ func TestCustomerGraphJinRunsInServe(t *testing.T) {
 		if got := doc.Services["openneko-serve-init"].Environment["OPENNEKO_GRAPHJIN_CONFIG"]; got != "/config/graphjin/agentic.yml" {
 			t.Errorf("%s serve-init seeds %#v", path, got)
 		}
-		if got := doc.Services["graphjin-secret-init"].DependsOn["openneko-serve-init"].Condition; got != "service_completed_successfully" {
-			t.Errorf("%s secret init must run after serve-init seeds the config, got %q", path, got)
-		}
 	}
 
 	demo := read("compose/demo.yml")
-	for _, name := range []string{"openneko-serve-init", "openneko-serve", "graphjin-secret-init"} {
+	for _, name := range []string{"openneko-serve-init", "openneko-serve"} {
 		if got := composeMountSourceAt(demo.Services[name].Volumes, "/config/graphjin"); got != "graphjin-config" {
 			t.Errorf("demo %s mounts %q at /config/graphjin, want graphjin-config", name, got)
 		}
 	}
 	if got := demo.Services["openneko-serve-init"].Environment["OPENNEKO_GRAPHJIN_SEED"]; got != "/seed/dev.sources.yml" {
 		t.Errorf("demo seed = %#v", got)
+	}
+	if got := demo.Services["openneko-serve-init"].DependsOn["neko-adventureworks-seed"].Condition; got != "service_completed_successfully" {
+		t.Errorf("demo serve-init must run after the seed creates the demo org, got %q", got)
 	}
 
 	dockerfile, err := os.ReadFile(filepath.Join(root, "Dockerfile"))

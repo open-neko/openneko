@@ -35,8 +35,6 @@ compose up -d --wait neko-db
 # goes into agentic.yml before serve starts.
 compose build openneko-serve
 compose run --rm --no-deps openneko-serve-init
-GRAPHJIN_SOURCES_CONFIG="$OPENNEKO_GRAPHJIN_CONFIG" \
-  pnpm --filter @neko/worker exec tsx ../../packages/llm/src/graphjin/init-secret.mjs
 
 # Compose reuses a built image after the GraphJin pin moves. Rebuild
 # neko-graphjin when it reports another version, or the worker stops at start.

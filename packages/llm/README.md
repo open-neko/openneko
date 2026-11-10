@@ -45,8 +45,8 @@ unset, `capabilities.api.write: true`, `access.write` set to `authenticated` or
 
 ### Governed API writes through the config workflow
 
-Nobody edits the GraphJin file by hand. The `graphjin-secret-init` one-shot
-and the worker's boot pass run `reconcileGraphjinWritePolicy`, which brings an
+Nobody edits the GraphJin file by hand. `openneko serve-init` (Go) and the
+worker's boot pass (`reconcileGraphjinWritePolicy`) bring an
 existing sources-mode config up to the shipped policy (`mcp.allow_mutations`,
 `raw_graphql.mutate`, the `member` and `service` roles) before GraphJin starts.
 

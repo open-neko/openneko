@@ -47,17 +47,16 @@ func newServeInitCmd() *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "openneko serve credentials written to %s\n", dir)
-			if gjConfig == "" {
-				return nil
+			if gjConfig != "" {
+				created, err := seedGraphjinConfig(gjConfig, gjSeed)
+				if err != nil {
+					return err
+				}
+				if created {
+					fmt.Fprintf(cmd.OutOrStdout(), "customer GraphJin config written to %s\n", gjConfig)
+				}
 			}
-			created, err := seedGraphjinConfig(gjConfig, gjSeed)
-			if err != nil {
-				return err
-			}
-			if created {
-				fmt.Fprintf(cmd.OutOrStdout(), "customer GraphJin config written to %s\n", gjConfig)
-			}
-			return nil
+			return prepareGraphjinAuth(cmd.Context(), cmd.OutOrStdout(), admin, "", gjConfig)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", os.Getenv(serveCredentialsEnv), "Folder for the serve credentials")

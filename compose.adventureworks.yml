@@ -48,13 +48,6 @@ services:
       - graphjin-config:/config/graphjin
       - ./db/graphjin/dev.example.yml:/seed/dev.yml:ro
 
-  # Legacy anonymous dev config — no JWT secret to reconcile. The one-shot
-  # still runs (core wires graphjin/worker/web behind it) so org-row
-  # creation stays serialized for host dev processes.
-  graphjin-secret-init:
-    environment:
-      GRAPHJIN_SOURCES_CONFIG: ""
-
   openneko-serve:
     depends_on:
       adventureworks-init:

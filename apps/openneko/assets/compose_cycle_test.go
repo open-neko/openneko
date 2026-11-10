@@ -3,6 +3,7 @@ package assets
 import (
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"testing"
 )
@@ -137,22 +138,19 @@ func TestSourceComposeOverlaysAreAcyclic(t *testing.T) {
 	}
 }
 
-// The one-shot that seeds the per-org JWT secret must gate every consumer
-// of that secret: GraphJin must not start before the secret is in its
-// config (3.18 does not hot-reload auth keys), and worker/web must not
-// race the org-row bootstrap it performs.
-func TestGraphjinSecretInitGatesItsConsumers(t *testing.T) {
-	graph := mergedDependencyGraph(t, readEmbeddedCompose(t, "core.yml"))
-	for _, consumer := range []string{"openneko-serve", "worker", "web"} {
-		deps := graph[consumer]
-		found := false
-		for _, dep := range deps {
-			if dep == "graphjin-secret-init" {
-				found = true
-			}
+// GraphJin reads its auth key only at start, and web and worker must not
+// race the org-row bootstrap, so all three wait for openneko-serve-init.
+func TestServeInitGatesTheGraphjinSecretConsumers(t *testing.T) {
+	for _, file := range []string{"core.yml", "demo.yml"} {
+		raws := [][]byte{readEmbeddedCompose(t, "core.yml")}
+		if file != "core.yml" {
+			raws = append(raws, readEmbeddedCompose(t, file))
 		}
-		if !found {
-			t.Fatalf("%s does not depend on graphjin-secret-init (deps: %v)", consumer, deps)
+		graph := mergedDependencyGraph(t, raws...)
+		for _, consumer := range []string{"openneko-serve", "worker", "web"} {
+			if !slices.Contains(graph[consumer], "openneko-serve-init") {
+				t.Fatalf("%s: %s does not depend on openneko-serve-init (deps: %v)", file, consumer, graph[consumer])
+			}
 		}
 	}
 }

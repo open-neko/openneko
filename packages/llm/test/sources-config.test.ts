@@ -163,9 +163,7 @@ describe("atomicWriteFile", () => {
   });
 });
 
-// host-provision must keep re-exporting the canonical implementations —
-// the graphjin-secret-init one-shot and the worker's boot pass patch the
-// same file and must agree byte-for-byte.
+// host-provision must keep re-exporting the canonical implementations.
 describe("host-provision re-exports", () => {
   it("exposes the same functions as sources-config", () => {
     expect(hostProvision.patchGraphjinSourcesJwtSecret).toBe(patchGraphjinSourcesJwtSecret);

@@ -10,7 +10,7 @@
  * single-tenant per process or gets refactored to per-job.
  *
  * Nothing in the schema forbids a second organization row, and on a fresh
- * database web, worker, the graphjin-secret-init one-shot, and the demo
+ * database web, worker, `openneko serve-init`, and the demo
  * seed can all arrive here at once — so creation is serialized under a
  * transaction-scoped advisory lock, and every reader picks the same row
  * via a stable ORDER BY. (Compose ordering usually prevents the race, but

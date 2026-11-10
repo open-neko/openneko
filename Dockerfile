@@ -187,10 +187,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 FROM source AS init-tools-deploy
 RUN mkdir -p /out/init-tools \
     && cd apps/worker \
-    && pnpm exec esbuild ../../packages/llm/src/graphjin/init-secret.mjs \
-      --bundle --minify --platform=node --format=esm \
-      --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" \
-      --outfile=/out/init-tools/graphjin-init-secret.js \
     && pnpm exec esbuild ../../packages/db/src/seed-adventureworks.mjs \
       --bundle --minify --platform=node --format=esm \
       --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" \

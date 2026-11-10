@@ -35,7 +35,7 @@ const client = new pg.Client(buildPoolConfig());
 
 await client.connect();
 
-// Same advisory lock as getOrgId() and graphjin-secret-init: on a fresh
+// Same advisory lock as getOrgId() and `openneko serve-init`: on a fresh
 // database several processes can race to create the single org row, and
 // nothing in the schema forbids a second one.
 await client.query("begin");

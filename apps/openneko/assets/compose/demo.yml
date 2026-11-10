@@ -43,22 +43,15 @@ services:
 
   # The demo keeps its GraphJin config on the dedicated graphjin-config
   # volume, seeded from the AdventureWorks sources template. Compose replaces
-  # the core mount for the same container path.
+  # the core mount for the same container path. Serve-init runs after the
+  # seed, so the demo's 'adventureworks' org is the first org row and the
+  # GraphJin secret matches it.
   openneko-serve-init:
-    environment:
-      OPENNEKO_GRAPHJIN_SEED: /seed/dev.sources.yml
-    volumes:
-      - graphjin-config:/config/graphjin
-
-  # The demo keeps its GraphJin config on the dedicated graphjin-config
-  # volume; point the secret one-shot's /config/graphjin mount there
-  # (Compose replaces the core mount for the same container path). Running
-  # after the seed keeps the demo's 'adventureworks' org the first (and
-  # only) org row, so the derived secret matches the org the demo uses.
-  graphjin-secret-init:
     depends_on:
       neko-adventureworks-seed:
         condition: service_completed_successfully
+    environment:
+      OPENNEKO_GRAPHJIN_SEED: /seed/dev.sources.yml
     volumes:
       - graphjin-config:/config/graphjin
 

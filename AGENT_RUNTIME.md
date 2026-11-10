@@ -103,9 +103,10 @@ per-org JWT secret. It is in the agent zone, as it was when GraphJin had its
 own container.
 
 - `openneko-serve-init` creates `agentic.yml` from the seed in the serve image
-  when the file is missing, with a new keystore key.
-- `graphjin-secret-init` writes the per-org JWT secret before serve starts.
-  GraphJin reads auth keys only when it starts.
+  when the file is missing, with a new keystore key. It then finds or creates
+  the organization row and writes the per-org JWT secret, the write policy and
+  the `system` block into the file. GraphJin reads auth keys only when it
+  starts, so serve, web and the worker wait for this step.
 - When the worker changes the config, it writes a new token to
   `.openneko-graphjin-restart`. Serve then builds a new engine from the file
   and writes the token to `.openneko-graphjin-restart-ack`. Serve answers
