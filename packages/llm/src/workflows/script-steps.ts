@@ -1,8 +1,8 @@
-import { spawn } from "node:child_process";
-import { createWriteStream, existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import type { AgentEvent, AgentWorkspace } from "../agent-backend";
+import { SandboxRun, sandboxConfig } from "../work/sandbox-service";
 import type { WorkflowStep } from "./store";
 
 export type ScriptStepResult = {
@@ -11,15 +11,14 @@ export type ScriptStepResult = {
   status: "ok" | "failed" | "timeout" | "skipped";
   exitCode: number | null;
   durationMs: number;
-  stdoutPath?: string;
-  stderrPath?: string;
-  stdoutTail?: string;
-  stderrTail?: string;
+  outputPath?: string;
+  outputTail?: string;
   error?: string;
 };
 
 const DEFAULT_TIMEOUT_SECONDS = 1_200;
 const TAIL_BYTES = 4_000;
+const MAX_OUTPUT = 1_000_000;
 
 /**
  * Runs a workflow's script steps in order before the agent turn. The first
@@ -34,28 +33,34 @@ export async function runScriptSteps(opts: {
   signal?: AbortSignal;
 }): Promise<ScriptStepResult[]> {
   const results: ScriptStepResult[] = [];
+  const config = sandboxConfig();
+  const sandbox = config ? new SandboxRun(config) : undefined;
   let blocked: string | null = null;
-  for (const step of opts.steps) {
-    if (!step.script) continue;
-    if (blocked) {
-      results.push({
-        id: step.id,
-        description: step.description,
-        status: "skipped",
-        exitCode: null,
-        durationMs: 0,
-        error: `skipped because step ${blocked} did not succeed`,
+  try {
+    for (const step of opts.steps) {
+      if (!step.script) continue;
+      if (blocked) {
+        results.push({
+          id: step.id,
+          description: step.description,
+          status: "skipped",
+          exitCode: null,
+          durationMs: 0,
+          error: `skipped because step ${blocked} did not succeed`,
+        });
+        continue;
+      }
+      await opts.emit({ type: "status", message: `Running script step: ${step.description}` });
+      const result = await runOne(step, opts, sandbox);
+      results.push(result);
+      await opts.emit({
+        type: "status",
+        message: `Script step ${step.id} ${result.status} in ${Math.round(result.durationMs / 1000)}s`,
       });
-      continue;
+      if (result.status !== "ok") blocked = step.id;
     }
-    await opts.emit({ type: "status", message: `Running script step: ${step.description}` });
-    const result = await runOne(step, opts);
-    results.push(result);
-    await opts.emit({
-      type: "status",
-      message: `Script step ${step.id} ${result.status} in ${Math.round(result.durationMs / 1000)}s`,
-    });
-    if (result.status !== "ok") blocked = step.id;
+  } finally {
+    await sandbox?.end();
   }
   return results;
 }
@@ -63,6 +68,7 @@ export async function runScriptSteps(opts: {
 async function runOne(
   step: WorkflowStep,
   opts: Parameters<typeof runScriptSteps>[0],
+  sandbox: SandboxRun | undefined,
 ): Promise<ScriptStepResult> {
   const script = step.script!;
   const base = { id: step.id, description: step.description };
@@ -75,6 +81,9 @@ async function runOne(
     error,
   });
 
+  if (!sandbox) {
+    return fail("script steps run in the sandbox service, and this install has none (OPENNEKO_SANDBOX_URL is not set)");
+  }
   if (opts.allowedSkills && !opts.allowedSkills.includes(script.skill)) {
     return fail(`skill ${script.skill} is not available to this run`);
   }
@@ -98,69 +107,47 @@ async function runOne(
 
   const logDir = join(opts.workspace.runRoot, "steps");
   await mkdir(logDir, { recursive: true });
-  const stdoutPath = join(logDir, `${safeName(step.id)}.stdout.log`);
-  const stderrPath = join(logDir, `${safeName(step.id)}.stderr.log`);
-  const stdout = new Tail(stdoutPath);
-  const stderr = new Tail(stderrPath);
-  const timeoutMs = (script.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS) * 1_000;
+  const name = safeName(step.id);
+  const outputPath = join(logDir, `${name}.output.log`);
+  const inputPath = join(logDir, `${name}.input.json`);
+  await writeFile(inputPath, JSON.stringify(opts.input ?? {}));
+  const timeoutSeconds = script.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
+  const command = `OPENNEKO_WORKFLOW_INPUT="$(cat ${shellQuote(inputPath)})" exec ${argv.map(shellQuote).join(" ")}`;
 
-  const outcome = await new Promise<{ code: number | null; timedOut: boolean; error?: string }>(
-    (done) => {
-      const child = spawn(argv[0]!, argv.slice(1), {
-        cwd: opts.workspace.runRoot,
-        env: {
-          ...process.env,
-          ...vars,
-          OPENNEKO_WORKFLOW_INPUT: JSON.stringify(opts.input ?? {}),
-        },
-        stdio: ["ignore", "pipe", "pipe"],
-        detached: true,
-      });
-      let timedOut = false;
-      const kill = () => {
-        try {
-          if (child.pid) process.kill(-child.pid, "SIGKILL");
-        } catch {
-          child.kill("SIGKILL");
-        }
-      };
-      const timer = setTimeout(() => {
-        timedOut = true;
-        kill();
-      }, timeoutMs);
-      const onAbort = () => kill();
-      opts.signal?.addEventListener("abort", onAbort, { once: true });
-      child.stdout.on("data", (chunk: Buffer) => stdout.write(chunk));
-      child.stderr.on("data", (chunk: Buffer) => stderr.write(chunk));
-      child.on("error", (err) => {
-        clearTimeout(timer);
-        opts.signal?.removeEventListener("abort", onAbort);
-        done({ code: null, timedOut, error: err.message });
-      });
-      child.on("close", (code) => {
-        clearTimeout(timer);
-        opts.signal?.removeEventListener("abort", onAbort);
-        done({ code, timedOut });
-      });
-    },
-  );
-  await Promise.all([stdout.close(), stderr.close()]);
+  let outcome: { code: number | null; timedOut: boolean; output: string; error?: string };
+  try {
+    const result = await sandbox.exec({
+      workspace: opts.workspace.runRoot,
+      command,
+      skillDir,
+      env: { RUN_DIR: opts.workspace.runRoot, ARTIFACT_DIR: opts.workspace.artifactRoot },
+      timeoutSeconds,
+      maxOutput: MAX_OUTPUT,
+    }, opts.signal);
+    outcome = { code: result.exit_code, timedOut: result.timed_out === true, output: result.output };
+  } catch (err) {
+    outcome = { code: null, timedOut: false, output: "", error: err instanceof Error ? err.message : String(err) };
+  }
+  await writeFile(outputPath, outcome.output);
+  const tail = Buffer.from(outcome.output);
 
   return {
     ...base,
     status: outcome.timedOut ? "timeout" : outcome.code === 0 ? "ok" : "failed",
-    exitCode: outcome.code,
+    exitCode: outcome.timedOut ? null : outcome.code,
     durationMs: Date.now() - started,
-    stdoutPath,
-    stderrPath,
-    stdoutTail: stdout.tail(),
-    stderrTail: stderr.tail(),
+    outputPath,
+    outputTail: tail.subarray(Math.max(0, tail.length - TAIL_BYTES)).toString("utf8").trim(),
     ...(outcome.error
       ? { error: outcome.error }
       : outcome.timedOut
-        ? { error: `timed out after ${timeoutMs / 1000}s` }
+        ? { error: `timed out after ${timeoutSeconds}s` }
         : {}),
   };
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 const ARG_VAR = /\$\{(input\.[A-Za-z0-9_]+|[A-Z_]+)(?::-([^}]*))?\}/g;
@@ -195,16 +182,15 @@ export function formatScriptStepResults(results: readonly ScriptStepResult[]): s
         `description: ${r.description}`,
       ];
       if (r.error) lines.push(`error: ${r.error}`);
-      if (r.stdoutPath) lines.push(`stdout_file: ${r.stdoutPath}`);
-      if (r.stderrPath) lines.push(`stderr_file: ${r.stderrPath}`);
-      if (r.stdoutTail) lines.push(`stdout_tail:\n${r.stdoutTail}`);
-      if (r.status !== "ok" && r.stderrTail) lines.push(`stderr_tail:\n${r.stderrTail}`);
+      if (r.outputPath) lines.push(`output_file: ${r.outputPath}`);
+      if (r.outputTail) lines.push(`output_tail:\n${r.outputTail}`);
       lines.push("</step>");
       return lines.join("\n");
     })
     .join("\n");
   return `<step_results>
-The workflow's script steps already ran in the run directory before this turn.
+The workflow's script steps already ran in the sandbox, in the run directory,
+before this turn.
 Use their output files. Rerun a step's command only to fix a failure you
 understand.
 
@@ -214,29 +200,4 @@ ${body}
 
 function safeName(id: string): string {
   return id.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 60) || "step";
-}
-
-class Tail {
-  private readonly file;
-  private buffer = Buffer.alloc(0);
-
-  constructor(path: string) {
-    this.file = createWriteStream(path);
-  }
-
-  write(chunk: Buffer): void {
-    this.file.write(chunk);
-    this.buffer = Buffer.concat([this.buffer, chunk]);
-    if (this.buffer.length > TAIL_BYTES * 2) {
-      this.buffer = this.buffer.subarray(this.buffer.length - TAIL_BYTES);
-    }
-  }
-
-  tail(): string {
-    return this.buffer.subarray(Math.max(0, this.buffer.length - TAIL_BYTES)).toString("utf8").trim();
-  }
-
-  close(): Promise<void> {
-    return new Promise((done) => this.file.end(() => done()));
-  }
 }

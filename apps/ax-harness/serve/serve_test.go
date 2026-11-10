@@ -16,6 +16,7 @@ import (
 
 	protocol "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/open-neko/openneko/apps/ax-harness/harness"
+	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
 const spec = `{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Find reference"}`
@@ -192,7 +193,7 @@ func TestServeCancelsOnHangupAndBoundsTurns(t *testing.T) {
 	started := make(chan struct{}, 2)
 	cancelled := make(chan struct{}, 2)
 	var seen harness.Turn
-	server := &Server{MaxTurns: 1, Run: func(ctx context.Context, turn harness.Turn) (int, error) {
+	server := &Server{MaxTurns: 1, Sandbox: sandbox.Config{URL: "unix:///run/openneko/sandbox.sock", Key: "serve-sandbox-key"}, Run: func(ctx context.Context, turn harness.Turn) (int, error) {
 		seen = turn
 		started <- struct{}{}
 		<-ctx.Done()
@@ -200,13 +201,16 @@ func TestServeCancelsOnHangupAndBoundsTurns(t *testing.T) {
 		return 1, ctx.Err()
 	}}
 	socket := startServer(t, server)
-	first := dial(t, socket, Frame{Type: "start", Spec: json.RawMessage(spec), Environ: []string{"OPENNEKO_MCP_BRIDGE=/x", "ANTHROPIC_API_KEY=leak", "A=1"},
+	first := dial(t, socket, Frame{Type: "start", Spec: json.RawMessage(spec), Environ: []string{"OPENNEKO_MCP_BRIDGE=/x", "ANTHROPIC_API_KEY=leak", "OPENNEKO_SANDBOX_URL=http://elsewhere", "OPENNEKO_SANDBOX_KEY=w", "A=1"},
 		ModelKeys: map[string]string{"MODEL_API_KEY": "turn-key", "DATABASE_PASSWORD": "x"}})
 	<-started
 	for _, entry := range seen.Environ {
-		if strings.HasPrefix(entry, "OPENNEKO_MCP_BRIDGE=") || strings.HasPrefix(entry, "ANTHROPIC_API_KEY=") {
+		if strings.HasPrefix(entry, "OPENNEKO_MCP_BRIDGE=") || strings.HasPrefix(entry, "ANTHROPIC_API_KEY=") || strings.HasPrefix(entry, "OPENNEKO_SANDBOX_") {
 			t.Fatalf("serve passed %q through from the worker", entry)
 		}
+	}
+	if seen.Sandbox.URL != "unix:///run/openneko/sandbox.sock" || seen.Sandbox.Key != "serve-sandbox-key" {
+		t.Fatalf("the turn's sandbox = %+v, want serve's", seen.Sandbox)
 	}
 	if got := seen.Secrets("DATABASE_URL"); got != "" {
 		t.Fatalf("a non-key variable was readable as a secret: %q", got)

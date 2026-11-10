@@ -138,7 +138,7 @@ auditor.
 
 | Feature | What it does for you | Shipped in |
 |---|---|---|
-| The agent runs no code | The agent reads and writes files in its own run folder and reaches data only through the OpenNeko broker. It has no terminal. | #82, #96, #98 |
+| The agent runs no code in OpenNeko | The agent reads and writes files in its own run folder and reaches data only through the OpenNeko broker. Its terminal, the script skills and workflow script steps run in an external sandbox service, and only when one is connected. The sandbox gets no model key and no broker token. | #82, #96, #98 |
 | The agent's tools never see your keys | The model key travels to `openneko serve` with each turn. Serve removes every `*_API_KEY` variable from the environment the agent's tools run in. | #82 |
 | Secrets encrypted at rest | Tokens, passwords, and keys are encrypted on disk everywhere they're stored. | #96 |
 | Bring your own vault | Plug in an external secrets manager (Infisical) instead of local files, with no change to how anything else works. | #96 |

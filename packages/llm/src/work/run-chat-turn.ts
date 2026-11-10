@@ -75,6 +75,7 @@ import {
 import { errorCodeOf, type HarnessObserver } from "@neko/telemetry";
 import { SandboxFailure } from "./sandbox-failure";
 import { spendCapFromSignal } from "../spend/run-guard";
+import { skillRunnable } from "./sandbox-service";
 
 /**
  * Delivery channel for a run. "web" renders a2ui cards (the channel injects the
@@ -462,7 +463,7 @@ async function runChatTurnTraced(
           await startupPhase("context.skill_index", () => (deps.syncSkillIndex ?? syncSkillIndex)(orgId, skills))
             .catch((error) => console.warn("[work-run] skill index sync failed:", error instanceof Error ? error.message : error));
         }
-        return skills.filter((skill) => !allowedSkills || allowedSkills.includes(skill.name));
+        return skills.filter((skill) => (!allowedSkills || allowedSkills.includes(skill.name)) && skillRunnable(skill.name));
       }),
       startupPhase("context.persona", () => getOperatorProfile(orgId, actor.userId)),
     ]);

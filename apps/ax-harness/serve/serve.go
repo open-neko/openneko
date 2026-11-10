@@ -30,6 +30,7 @@ import (
 	"syscall"
 
 	"github.com/open-neko/openneko/apps/ax-harness/harness"
+	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
 const (
@@ -59,6 +60,8 @@ type Server struct {
 	Getenv func(string) string
 	// MaxTurns bounds the turns that run at once; more are refused.
 	MaxTurns int
+	// Sandbox runs every turn's terminal commands. The worker cannot set it.
+	Sandbox sandbox.Config
 	// Run runs one turn; tests replace it.
 	Run func(context.Context, harness.Turn) (int, error)
 
@@ -158,6 +161,7 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 	turn := harness.Turn{
 		Environ: s.environ(start.Environ),
 		Secrets: s.secrets(start.ModelKeyEnv, start.ModelKeys),
+		Sandbox: s.Sandbox,
 		In:      bytes.NewReader(start.Spec),
 		Out:     &lineWriter{emit: func(line []byte) error { return out.write(Frame{Type: "event", Event: line}) }},
 	}
@@ -192,14 +196,14 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 	exit(code, runErr)
 }
 
-// environ drops what the worker may not set: model credentials come from
-// serve, and the tool bridge runs over the socket.
+// environ drops what the worker may not set: model credentials and the
+// sandbox come from serve, and the tool bridge runs over the socket.
 func (s *Server) environ(in []string) []string {
 	out := make([]string, 0, len(in)+1)
 	hasPath := false
 	for _, entry := range in {
 		name, _, ok := strings.Cut(entry, "=")
-		if !ok || name == "" || name == "OPENNEKO_MCP_BRIDGE" || keyEnvName.MatchString(name) {
+		if !ok || name == "" || name == "OPENNEKO_MCP_BRIDGE" || strings.HasPrefix(name, "OPENNEKO_SANDBOX_") || keyEnvName.MatchString(name) {
 			continue
 		}
 		hasPath = hasPath || name == "PATH"

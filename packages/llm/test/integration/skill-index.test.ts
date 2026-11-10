@@ -31,6 +31,7 @@ describeIfDb("skill index", () => {
   let runId: string;
 
   beforeAll(async () => {
+    vi.stubEnv("OPENNEKO_SANDBOX_URL", "unix:///run/openneko/sandbox.sock");
     await createTestOrg(orgId);
     const thread = await createWorkThread(orgId, "skills");
     const run = await createWorkRun(orgId, thread.id, "ax", { userId: null, role: "admin" });
@@ -38,6 +39,7 @@ describeIfDb("skill index", () => {
   });
 
   afterAll(async () => {
+    vi.unstubAllEnvs();
     await deleteTestOrg(orgId);
     await pool().end();
   });
@@ -77,6 +79,17 @@ describeIfDb("skill index", () => {
       expect(await searchSkillsForRun({ orgId, runId, query: "the and of" })).toEqual([]);
     } finally {
       vi.mocked(embeddingModel).mockReturnValue("test-model");
+    }
+  });
+
+  it("hides the script skills when the install has no sandbox", async () => {
+    vi.stubEnv("OPENNEKO_SANDBOX_URL", "");
+    try {
+      const results = await searchSkillsForRun({ orgId, runId, query: "Make me an Excel file of stock", limit: 3 });
+      expect(results.map((s) => s.name)).not.toContain("xlsx");
+      expect(results.map((s) => s.name)).not.toContain("docx");
+    } finally {
+      vi.stubEnv("OPENNEKO_SANDBOX_URL", "unix:///run/openneko/sandbox.sock");
     }
   });
 

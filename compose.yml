@@ -314,6 +314,8 @@ services:
       OPENNEKO_FILES_DIR: /data/files
       OPENNEKO_FILES_INDEX_DIR: /data/file-index
       OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
+      OPENNEKO_SANDBOX_URL: ${OPENNEKO_SANDBOX_URL:-}
+      OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
     volumes:
       - openneko-agent-runs:/var/lib/openneko/agent-runs
       - openneko-run:/run/openneko
@@ -352,6 +354,8 @@ services:
       OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
       OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
+      OPENNEKO_SANDBOX_URL: ${OPENNEKO_SANDBOX_URL:-}
+      OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
       OPENNEKO_AGENT_RUNS_DIR: /var/lib/openneko/agent-runs
     ports:
       - "${OPENNEKO_WEB_BIND_ADDRESS:-0.0.0.0}:${OPENNEKO_PORT:-3000}:8080"
@@ -391,6 +395,8 @@ services:
       OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
       OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
+      OPENNEKO_SANDBOX_URL: ${OPENNEKO_SANDBOX_URL:-}
+      OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
       OPENNEKO_AGENT_RUNS_DIR: /var/lib/openneko/agent-runs
     expose:
       - "4100"

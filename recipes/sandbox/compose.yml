@@ -1,0 +1,53 @@
+# Adds the sandbox to the stack in compose.yml:
+#   docker compose -f compose.yml -f recipes/sandbox/compose.yml up -d
+# The sandbox shares the agent-runs volume with web, worker and serve, and
+# reaches them only through the socket in openneko-run.
+x-sandbox-env: &sandbox-env
+  OPENNEKO_SANDBOX_URL: unix:///run/openneko/sandbox.sock
+  OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
+
+services:
+  openneko-sandbox:
+    build:
+      context: recipes/sandbox
+    command: ["--listen", "unix:///run/openneko/sandbox.sock"]
+    restart: unless-stopped
+    environment:
+      OPENNEKO_SANDBOX_WORKSPACES: /var/lib/openneko/agent-runs
+      OPENNEKO_SANDBOX_HOMES: /var/lib/openneko/sandbox-homes
+      OPENNEKO_SANDBOX_GID: "1001"
+      OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
+    volumes:
+      - openneko-run:/run/openneko
+      - openneko-agent-runs:/var/lib/openneko/agent-runs
+      - openneko-sandbox-homes:/var/lib/openneko/sandbox-homes
+    networks:
+      - openneko-sandbox
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - KILL
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 1024
+
+  openneko-serve:
+    environment: *sandbox-env
+    depends_on:
+      openneko-sandbox:
+        condition: service_started
+  web:
+    environment: *sandbox-env
+  worker:
+    environment: *sandbox-env
+
+volumes:
+  openneko-sandbox-homes:
+
+networks:
+  openneko-sandbox:

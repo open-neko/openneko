@@ -3,22 +3,15 @@ package localtool
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
-	"syscall"
-	"time"
 
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 )
 
-// Default terminal limits match Hermes: 180 s default, 600 s maximum, and
-// 50,000 characters of combined output. The host can set both defaults.
 const (
 	defaultShellTimeout = 180
 	maxShellTimeout     = 600
@@ -26,30 +19,49 @@ const (
 	maxShellOutput      = 1_000_000
 )
 
-// Shell runs commands in the run workspace without the host's credentials.
+// Shell sends the agent's terminal commands to an Executor, the sandbox
+// service. Commands never run in this process.
 type Shell struct {
 	dir       string
 	skills    string
-	strip     map[string]bool
 	env       []string
+	executor  Executor
 	timeout   int
 	maxOutput int
 }
 
-// OpenShell checks the workspace and records the variables to remove from
-// every command's environment.
-func OpenShell(dir string, strip []string) (*Shell, error) {
+type ExecResult struct {
+	ExitCode  int    `json:"exit_code"`
+	Output    string `json:"output"`
+	TimedOut  bool   `json:"timed_out"`
+	Truncated bool   `json:"truncated"`
+}
+
+// Executor runs one run's terminal commands. env carries only RunPathVars.
+type Executor interface {
+	Exec(ctx context.Context, command, skillDir string, env map[string]string, timeoutSeconds, maxOutput int) (ExecResult, error)
+	Close() error
+}
+
+// RunPathVars name the run's folders, which skills and
+// workflow scripts read. They hold paths, never secrets.
+var RunPathVars = []string{"RUN_DIR", "ARTIFACT_DIR", "PYTHONPATH"}
+
+func OpenShell(dir string, executor Executor) (*Shell, error) {
 	if !filepath.IsAbs(dir) {
 		return nil, fmt.Errorf("workspace path must be absolute")
 	}
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 		return nil, fmt.Errorf("workspace unavailable")
 	}
-	set := make(map[string]bool, len(strip))
-	for _, name := range strip {
-		set[name] = true
+	if executor == nil {
+		return nil, fmt.Errorf("the terminal needs a sandbox")
 	}
-	return &Shell{dir: dir, strip: set, timeout: defaultShellTimeout, maxOutput: defaultShellOutput}, nil
+	return &Shell{dir: dir, executor: executor, timeout: defaultShellTimeout, maxOutput: defaultShellOutput}, nil
+}
+
+func (s *Shell) Close() error {
+	return s.executor.Close()
 }
 
 // SetLimits sets the default command timeout and the output cap.
@@ -61,8 +73,8 @@ func (s *Shell) SetLimits(timeoutSeconds, maxOutput int) error {
 	return nil
 }
 
-// SetEnviron replaces the process environment as the base of every command's
-// environment, for a host that runs the harness in-process.
+// SetEnviron replaces the process environment as the source of RunPathVars,
+// for a host that runs the harness in-process.
 func (s *Shell) SetEnviron(environ []string) {
 	s.env = append([]string{}, environ...)
 }
@@ -117,13 +129,6 @@ func (s *Shell) Capability() agent.Capability {
 		Call:        s.run}
 }
 
-type shellResult struct {
-	ExitCode  int    `json:"exit_code"`
-	Output    string `json:"output"`
-	TimedOut  bool   `json:"timed_out"`
-	Truncated bool   `json:"truncated"`
-}
-
 func (s *Shell) run(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
 	var input struct {
 		Command        string `json:"command"`
@@ -136,94 +141,21 @@ func (s *Shell) run(ctx context.Context, raw json.RawMessage) (json.RawMessage, 
 	if input.TimeoutSeconds == 0 {
 		input.TimeoutSeconds = s.timeout
 	}
-	cmd := exec.Command("/bin/sh", "-c", input.Command)
-	cmd.Dir = s.dir
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	for _, entry := range s.environ() {
-		name, _, _ := strings.Cut(entry, "=")
-		if !s.strip[name] {
-			cmd.Env = append(cmd.Env, entry)
-		}
+	result, err := s.executor.Exec(ctx, input.Command, s.skillDir(input.Command), s.runPaths(), input.TimeoutSeconds, s.maxOutput)
+	if err != nil {
+		return nil, err
 	}
-	if dir := s.skillDir(input.Command); dir != "" {
-		cmd.Env = append(cmd.Env, "SKILL_DIR="+dir)
-	}
-	output := &capturedOutput{max: s.maxOutput}
-	cmd.Stdout, cmd.Stderr = output, output
-	cmd.WaitDelay = 5 * time.Second
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("terminal command could not start")
-	}
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-	timer := time.NewTimer(time.Duration(input.TimeoutSeconds) * time.Second)
-	defer timer.Stop()
-	var waitErr error
-	timedOut := false
-	select {
-	case waitErr = <-done:
-	case <-timer.C:
-		timedOut = true
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		waitErr = <-done
-	case <-ctx.Done():
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		<-done
-		return nil, ctx.Err()
-	}
-	// Background children keep the group alive after the shell exits.
-	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	result := shellResult{TimedOut: timedOut}
-	var exitErr *exec.ExitError
-	switch {
-	case waitErr == nil:
-	case errors.As(waitErr, &exitErr):
-		result.ExitCode = exitErr.ExitCode()
-	default:
-		result.ExitCode = -1
-	}
-	result.Output, result.Truncated = output.text()
 	return json.Marshal(result)
 }
 
-// capturedOutput keeps the first and last halves of the output budget.
-type capturedOutput struct {
-	mu      sync.Mutex
-	max     int
-	head    []byte
-	tail    []byte
-	dropped int
-}
-
-func (c *capturedOutput) Write(p []byte) (int, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	n := len(p)
-	outputHalf := c.max / 2
-	if room := outputHalf*4 - len(c.head); room > 0 {
-		take := min(room, len(p))
-		c.head = append(c.head, p[:take]...)
-		p = p[take:]
+func (s *Shell) runPaths() map[string]string {
+	out := map[string]string{}
+	for _, name := range RunPathVars {
+		if value := envValue(s.environ(), name); value != "" {
+			out[name] = value
+		}
 	}
-	c.tail = append(c.tail, p...)
-	if extra := len(c.tail) - outputHalf*4; extra > 0 {
-		c.dropped += extra
-		c.tail = append([]byte(nil), c.tail[extra:]...)
-	}
-	return n, nil
-}
-
-// text returns at most max characters, head and tail around a marker.
-func (c *capturedOutput) text() (string, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	outputHalf := c.max / 2
-	all := strings.ToValidUTF8(string(c.head)+string(c.tail), "�")
-	runes := []rune(all)
-	if c.dropped == 0 && len(runes) <= c.max {
-		return all, false
-	}
-	return string(runes[:outputHalf]) + "\n[... output truncated ...]\n" + string(runes[len(runes)-outputHalf:]), true
+	return out
 }
 
 func envValue(environ []string, name string) string {

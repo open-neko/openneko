@@ -220,7 +220,8 @@ The `harness` package reads these variables from the turn's environment:
 | `OPENNEKO_MCP_SERVERS` | Comma list of bridge servers to start. |
 | `OPENNEKO_BROKER_URL`, `OPENNEKO_BROKER_TOKEN` | Passed to the bridge only, then removed from the harness process. |
 | `OPENNEKO_HARNESS_WORKSPACE_DIR` | Adds `file_read`, `file_edit`, `file_write`, `file_search`. |
-| `OPENNEKO_HARNESS_SHELL` | `1` adds `terminal`. Needs the workspace. |
+| `OPENNEKO_HARNESS_SHELL` | `1` adds `terminal`. Needs the workspace and a sandbox. |
+| `OPENNEKO_SANDBOX_URL`, `OPENNEKO_SANDBOX_KEY` | The sandbox service that runs `terminal` commands: `unix:///path`, `http://` or `https://`. In serve, only serve's own values count. Without a URL there is no `terminal`. |
 | `OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS` | Default terminal timeout, 1 to 600. Default 180. |
 | `OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT` | Terminal output cap in characters, 1,000 to 1,000,000. Default 50,000. |
 | `OPENNEKO_HARNESS_WEB_HOSTS` | Comma list of hosts for `web_fetch`. `*.example.com` matches subdomains; `*` matches any public host. Unset means no `web_fetch`. |
@@ -228,12 +229,14 @@ The `harness` package reads these variables from the turn's environment:
 | `OPENNEKO_HARNESS_SKILLS_READ`, `OPENNEKO_MCP_SKILLS_ROOT` | Adds the staged skills to the Ax skills catalog, and `skill_read` and `skill_search` for supporting files. |
 | `OPENNEKO_HARNESS_CHILD_TOOLS` | `*` or a comma list of tools for the child agent. Pause tools stay with the parent. |
 
-`terminal` runs `/bin/sh -c` in the workspace in its own process group. A
-timeout or a cancel kills the whole group. Its environment has no broker
-binding and no model credential: the entry removes `OPENNEKO_BROKER_URL`,
-`OPENNEKO_BROKER_TOKEN`, `HARNESS_MODEL_API_KEY`, `HARNESS_MODEL_ROUTES` and
-every route's key variable. A non-zero exit is a normal result with
-`exit_code` and `output`.
+`terminal` sends each command to the sandbox service. The harness never runs
+a command itself. The request carries the command, the workspace, the
+skill folder and only `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH`. No broker
+binding and no model credential leave the harness. The sandbox runs
+`/bin/sh -c` in the workspace and kills the command's process group on a
+timeout or a cancel. A non-zero exit is a normal result with `exit_code` and
+`output`. The run ends in the sandbox when the turn ends.
+`recipes/sandbox/README.md` describes the service's API.
 
 `file_edit` replaces `old_string` with `new_string`. The file must be read in
 this run and unchanged since the last read or edit. `old_string` must match

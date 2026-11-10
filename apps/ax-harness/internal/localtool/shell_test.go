@@ -3,19 +3,56 @@ package localtool
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"syscall"
 	"testing"
-	"time"
 )
 
-func runShell(t *testing.T, s *Shell, ctx context.Context, input string) (shellResult, error) {
+type execCall struct {
+	command, skillDir string
+	env               map[string]string
+	timeout, max      int
+}
+
+type fakeExecutor struct {
+	calls  []execCall
+	closed bool
+	err    error
+}
+
+func (f *fakeExecutor) Exec(_ context.Context, command, skillDir string, env map[string]string, timeoutSeconds, maxOutput int) (ExecResult, error) {
+	f.calls = append(f.calls, execCall{command, skillDir, env, timeoutSeconds, maxOutput})
+	if f.err != nil {
+		return ExecResult{}, f.err
+	}
+	output := "[" + skillDir + "]"
+	if strings.Contains(command, "big") {
+		output = strings.Repeat("x", maxOutput)
+	}
+	return ExecResult{ExitCode: 3, Output: output, Truncated: strings.Contains(command, "big")}, nil
+}
+
+func (f *fakeExecutor) Close() error {
+	f.closed = true
+	return nil
+}
+
+func openShell(t *testing.T) (*Shell, *fakeExecutor) {
+	t.Helper()
+	executor := &fakeExecutor{}
+	s, err := OpenShell(t.TempDir(), executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s, executor
+}
+
+func runShell(t *testing.T, s *Shell, ctx context.Context, input string) (ExecResult, error) {
 	t.Helper()
 	raw, err := s.Capability().Call(ctx, json.RawMessage(input))
-	var result shellResult
+	var result ExecResult
 	if err == nil {
 		if decodeErr := json.Unmarshal(raw, &result); decodeErr != nil {
 			t.Fatal(decodeErr)
@@ -24,88 +61,53 @@ func runShell(t *testing.T, s *Shell, ctx context.Context, input string) (shellR
 	return result, err
 }
 
-func TestShellRunsInTheWorkspace(t *testing.T) {
-	dir := t.TempDir()
-	s, err := OpenShell(dir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	result, err := runShell(t, s, context.Background(), `{"command":"pwd; echo hello"}`)
-	resolved, _ := filepath.EvalSymlinks(dir)
-	if err != nil || result.ExitCode != 0 || !strings.Contains(result.Output, "hello") || !strings.Contains(result.Output, resolved) {
+func TestShellSendsCommandsToTheSandbox(t *testing.T) {
+	s, executor := openShell(t)
+	s.SetEnviron([]string{"RUN_DIR=/runs/a", "ARTIFACT_DIR=/runs/a/out", "HARNESS_MODEL_API_KEY=secret", "OPENNEKO_BROKER_TOKEN=token", "PATH=/bin"})
+	result, err := runShell(t, s, context.Background(), `{"command":"echo hi"}`)
+	if err != nil || result.ExitCode != 3 {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
-	result, err = runShell(t, s, context.Background(), `{"command":"echo oops >&2; exit 3"}`)
-	if err != nil || result.ExitCode != 3 || !strings.Contains(result.Output, "oops") {
-		t.Fatalf("a non-zero exit was not a normal result: %+v %v", result, err)
+	call := executor.calls[0]
+	if call.command != "echo hi" || call.timeout != defaultShellTimeout || call.max != defaultShellOutput {
+		t.Fatalf("call = %+v", call)
+	}
+	if len(call.env) != 2 || call.env["RUN_DIR"] != "/runs/a" || call.env["ARTIFACT_DIR"] != "/runs/a/out" {
+		t.Fatalf("the sandbox got more than the run's paths: %v", call.env)
+	}
+	if err := s.Close(); err != nil || !executor.closed {
+		t.Fatal("closing the shell did not end the sandbox run")
 	}
 }
 
-func TestShellTimeoutKillsChildProcesses(t *testing.T) {
-	dir := t.TempDir()
-	s, _ := OpenShell(dir, nil)
-	start := time.Now()
-	result, err := runShell(t, s, context.Background(), `{"command":"sleep 30 & echo $! > child.pid; wait","timeout_seconds":1}`)
-	if err != nil || !result.TimedOut || time.Since(start) > 10*time.Second {
-		t.Fatalf("result=%+v err=%v elapsed=%s", result, err, time.Since(start))
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "child.pid"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	pid, _ := strconv.Atoi(strings.TrimSpace(string(data)))
-	time.Sleep(100 * time.Millisecond)
-	if syscall.Kill(pid, 0) == nil {
-		t.Fatalf("child process %d survived the timeout", pid)
-	}
-}
-
-func TestShellStripsCredentials(t *testing.T) {
-	t.Setenv("HARNESS_SECRET_KEY", "do-not-leak")
-	t.Setenv("HARNESS_VISIBLE", "fine")
-	s, _ := OpenShell(t.TempDir(), []string{"HARNESS_SECRET_KEY"})
-	result, err := runShell(t, s, context.Background(), `{"command":"echo \"[$HARNESS_SECRET_KEY][$HARNESS_VISIBLE]\""}`)
-	if err != nil || !strings.Contains(result.Output, "[][fine]") {
-		t.Fatalf("result=%+v err=%v", result, err)
-	}
-}
-
-func TestShellOutputIsCapped(t *testing.T) {
-	s, _ := OpenShell(t.TempDir(), nil)
-	result, err := runShell(t, s, context.Background(), `{"command":"echo START; head -c 300000 /dev/zero | tr '\\0' 'a'; echo; echo END"}`)
-	if err != nil || !result.Truncated || len([]rune(result.Output)) > maxShellOutput+100 ||
-		!strings.HasPrefix(result.Output, "START") || !strings.Contains(result.Output, "END") || !strings.Contains(result.Output, "output truncated") {
-		t.Fatalf("truncated=%v length=%d err=%v", result.Truncated, len(result.Output), err)
-	}
-}
-
-func TestShellStopsOnCancel(t *testing.T) {
-	s, _ := OpenShell(t.TempDir(), nil)
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		time.Sleep(200 * time.Millisecond)
-		cancel()
-	}()
-	start := time.Now()
-	if _, err := runShell(t, s, ctx, `{"command":"sleep 30"}`); err == nil || time.Since(start) > 5*time.Second {
-		t.Fatalf("cancellation did not stop the command: err=%v elapsed=%s", err, time.Since(start))
+func TestShellReportsAnUnavailableSandbox(t *testing.T) {
+	s, executor := openShell(t)
+	executor.err = errors.New("terminal unavailable: connection refused")
+	if _, err := runShell(t, s, context.Background(), `{"command":"true"}`); err == nil || !strings.Contains(err.Error(), "unavailable") {
+		t.Fatalf("err = %v", err)
 	}
 }
 
 func TestShellRejectsBadInput(t *testing.T) {
-	s, _ := OpenShell(t.TempDir(), nil)
+	s, executor := openShell(t)
 	for _, input := range []string{`{"command":""}`, `{"command":"ls","timeout_seconds":601}`} {
 		if _, err := runShell(t, s, context.Background(), input); err == nil {
 			t.Fatalf("accepted %s", input)
 		}
 	}
-	if _, err := OpenShell("relative/dir", nil); err == nil {
+	if len(executor.calls) != 0 {
+		t.Fatal("a bad command reached the sandbox")
+	}
+	if _, err := OpenShell("relative/dir", executor); err == nil {
 		t.Fatal("accepted a relative workspace")
+	}
+	if _, err := OpenShell(t.TempDir(), nil); err == nil {
+		t.Fatal("opened a terminal with no sandbox")
 	}
 }
 
 func TestShellHostLimits(t *testing.T) {
-	s, _ := OpenShell(t.TempDir(), nil)
+	s, _ := openShell(t)
 	if err := s.SetLimits(0, 50_000); err == nil {
 		t.Fatal("zero timeout was accepted")
 	}
@@ -115,7 +117,7 @@ func TestShellHostLimits(t *testing.T) {
 	if !strings.Contains(s.Capability().Description, "2000 characters") || !strings.Contains(s.Capability().Description, "30 seconds") {
 		t.Fatalf("description does not show host limits: %s", s.Capability().Description)
 	}
-	raw, err := s.Capability().Call(context.Background(), json.RawMessage(`{"command":"yes x | head -c 10000"}`))
+	raw, err := s.Capability().Call(context.Background(), json.RawMessage(`{"command":"big"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +141,7 @@ func TestShellSetsSkillDirFromTheScriptPath(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	s, _ := OpenShell(t.TempDir(), nil)
+	s, _ := openShell(t)
 	s.SetSkillsRoot(skills)
 	for command, want := range map[string]string{
 		`echo \"[$SKILL_DIR]\" \"$SKILL_DIR/scripts/check.py\"`:                          "[" + filepath.Join(skills, "stock-check") + "]",

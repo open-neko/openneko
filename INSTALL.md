@@ -35,7 +35,7 @@ Then run `openneko setup` (guided), or `openneko start` to bring the stack up wi
 
 1. Choose an admin database password.
 2. Confirm the pre-filled GraphJin URL (`--mode demo`) or enter your own (`--mode prod`).
-3. Pick the model provider the agent should use (Anthropic / OpenAI / Google / Ollama / others). The agent (Ax) runs in `openneko serve` with the full tool set except the terminal, including the chat-first management tools.
+3. Pick the model provider the agent should use (Anthropic / OpenAI / Google / Ollama / others). The agent (Ax) runs in `openneko serve` with the full tool set, including the chat-first management tools. It gets a terminal only when you connect a [sandbox](#sandbox-optional).
 4. Add your provider API key.
 5. Add an industry research provider, or skip.
 
@@ -211,7 +211,37 @@ files in a shared folder and sends each turn to `openneko serve` over a Unix
 socket. The model key travels with the turn, and serve keeps every `*_API_KEY`
 variable out of the agent's tools. The agent reads and writes files in its
 run folder and reaches data only through the OpenNeko broker. The agent has
-no terminal; the external sandbox service adds it in a later release.
+a terminal only when a sandbox is connected.
+
+### Sandbox (optional)
+
+OpenNeko runs no command for the agent. To give the agent a terminal, and to
+turn on workflow script steps and the 13 bundled skills that run scripts
+(xlsx, docx, pptx, pdf, document-extraction, skill-creator, excel-author,
+pptx-author and the five financial-model skills), connect a sandbox service.
+Give web, worker and `openneko-serve` its URL and key, then run
+`openneko stop` and `openneko start`:
+
+```yaml
+# ~/.config/openneko/compose.override.yml
+x-sandbox: &sandbox
+  OPENNEKO_SANDBOX_URL: unix:///run/openneko/sandbox.sock   # or http(s)://host:port
+  OPENNEKO_SANDBOX_KEY: <a long random string>
+services:
+  openneko-serve:
+    environment: *sandbox
+  web:
+    environment: *sandbox
+  worker:
+    environment: *sandbox
+```
+
+Without a URL the agent has no terminal, the script skills are hidden from
+every run, and a workflow script step fails with a message. The sandbox
+gets each command, the run folder and the skill folder. It never gets a
+model key, the broker token or a database password. The first sandbox
+service is `recipes/sandbox`. It needs the `openneko-agent-runs` volume, so
+it runs on the same host as the stack; see `recipes/sandbox/README.md`.
 
 ### Semantic search (optional)
 

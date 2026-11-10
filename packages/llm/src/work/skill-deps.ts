@@ -1,6 +1,6 @@
 // Dependency manifest for Neko's bundled skills (packages/llm/assets/builtin-skills/*).
 // The upstream Anthropic skills don't ship a machine-readable dep list — they
-// mention requirements in SKILL.md prose. Mirroring those here lets the Dockerfile
+// mention requirements in SKILL.md prose. Mirroring those here lets recipes/sandbox/Dockerfile
 // and scripts/skill-doctor.ts know what to install.
 //
 // User-authored skills are not in this manifest. They typically use the runtime's

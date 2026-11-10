@@ -19,6 +19,7 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/internal/command"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/localtool"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/mcp"
+	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
 // The bridge's ask tool ends the turn until the operator answers.
@@ -32,11 +33,12 @@ func Main() {
 		return
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	environ := os.Environ()
+	environ := withoutSandbox(os.Environ())
+	box := sandbox.ConfigFromEnv(os.Getenv)
 	// Only the bridge may reach the broker.
 	_ = os.Unsetenv("OPENNEKO_BROKER_URL")
 	_ = os.Unsetenv("OPENNEKO_BROKER_TOKEN")
-	code, err := Run(ctx, environ, os.Stdin, os.Stdout)
+	code, err := RunTurn(ctx, Turn{Environ: environ, Sandbox: box, In: os.Stdin, Out: os.Stdout})
 	stop()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -64,8 +66,11 @@ type Turn struct {
 	// Bridge carries the OpenNeko tools as MCP over a stream, in place of
 	// the bridge process that OPENNEKO_MCP_BRIDGE names.
 	Bridge io.ReadWriteCloser
-	In     io.Reader
-	Out    io.Writer
+	// Sandbox runs the terminal's commands. Without it the run has no
+	// terminal, even when OPENNEKO_HARNESS_SHELL asks for one.
+	Sandbox sandbox.Config
+	In      io.Reader
+	Out     io.Writer
 }
 
 // RunTurn runs turn; see Run.
@@ -118,14 +123,19 @@ func RunTurn(ctx context.Context, turn Turn) (int, error) {
 		tools.Capabilities = append(tools.Capabilities, files.Capabilities()...)
 		closers = append(closers, files.Close)
 	}
-	if enabled := getenv("OPENNEKO_HARNESS_SHELL"); enabled != "" {
+	if enabled := getenv("OPENNEKO_HARNESS_SHELL"); enabled != "" && turn.Sandbox.Enabled() {
 		if enabled != "1" || workspace == "" {
 			return failed(fmt.Errorf("the terminal needs OPENNEKO_HARNESS_SHELL=1 and OPENNEKO_HARNESS_WORKSPACE_DIR"))
 		}
-		shell, err := localtool.OpenShell(workspace, shellStripList(getenv))
+		client, err := sandbox.NewClient(turn.Sandbox, workspace)
 		if err != nil {
 			return failed(fmt.Errorf("terminal unavailable: %w", err))
 		}
+		shell, err := localtool.OpenShell(workspace, client)
+		if err != nil {
+			return failed(fmt.Errorf("terminal unavailable: %w", err))
+		}
+		closers = append(closers, shell.Close)
 		shell.SetEnviron(environ)
 		shell.SetSkillsRoot(getenv("OPENNEKO_MCP_SKILLS_ROOT"))
 		timeout, err := intEnv(getenv, "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS", 180)
@@ -235,10 +245,14 @@ func bridgeCommand(bridge, servers string, environ []string) *exec.Cmd {
 	return cmd
 }
 
-// shellStripList names the variables a terminal command must not inherit:
-// the broker binding and every model credential.
-func shellStripList(getenv func(string) string) []string {
-	return append([]string{"OPENNEKO_BROKER_URL", "OPENNEKO_BROKER_TOKEN"}, command.KeyEnvNames(getenv)...)
+func withoutSandbox(environ []string) []string {
+	out := make([]string, 0, len(environ))
+	for _, entry := range environ {
+		if !strings.HasPrefix(entry, "OPENNEKO_SANDBOX_") {
+			out = append(out, entry)
+		}
+	}
+	return out
 }
 
 // intEnv reads a host limit; an unset variable keeps the default and a malformed one fails the run.

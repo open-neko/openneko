@@ -1,7 +1,8 @@
-import { and, db, eq, inArray, skill_embedding, sql } from "@neko/db";
+import { and, db, eq, inArray, notInArray, skill_embedding, sql } from "@neko/db";
 import { embedText, embeddingModel, vectorLiteral } from "../embedding";
 import { entitlementActorForRun, runHeldItemIds } from "./entitlement-scope";
 import { interleaveResults, keywordTsQuery } from "./keyword-search";
+import { SANDBOX_SKILLS, sandboxConfig } from "./sandbox-service";
 
 export type SkillSearchResult = { name: string; score: number };
 
@@ -45,6 +46,10 @@ export async function syncSkillIndex(
   }
 }
 
+function runnableOnly() {
+  return sandboxConfig() ? [] : [notInArray(skill_embedding.skill_name, [...SANDBOX_SKILLS])];
+}
+
 async function keywordSkillSearch(
   orgId: string,
   held: string[] | null | undefined,
@@ -62,6 +67,7 @@ async function keywordSkillSearch(
       and(
         eq(skill_embedding.org_id, orgId),
         ...(held ? [inArray(skill_embedding.skill_name, held)] : []),
+        ...runnableOnly(),
         ...(unindexedModel
           ? [sql`(${skill_embedding.embedding} IS NULL OR ${skill_embedding.embedding_model} IS DISTINCT FROM ${unindexedModel})`]
           : []),
@@ -115,6 +121,7 @@ export async function searchSkillsForRun(input: {
           eq(skill_embedding.embedding_model, model),
           sql`${skill_embedding.embedding} IS NOT NULL`,
           ...(held ? [inArray(skill_embedding.skill_name, held)] : []),
+          ...runnableOnly(),
         ),
       )
       .orderBy(distance)

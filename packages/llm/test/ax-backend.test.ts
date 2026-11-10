@@ -157,6 +157,16 @@ describe("AxBackend", () => {
     });
   });
 
+  it("offers the terminal only when the install has a sandbox", async () => {
+    script = { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] };
+    await new AxBackend(config).run({ prompt: "p", workspace });
+    vi.stubEnv("OPENNEKO_SANDBOX_URL", "unix:///run/openneko/sandbox.sock");
+    await new AxBackend(config).run({ prompt: "p", workspace });
+    const [off, on] = spawned.map((s) => s.env);
+    expect(off!.OPENNEKO_HARNESS_SHELL).toBeUndefined();
+    expect(on!.OPENNEKO_HARNESS_SHELL).toBe("1");
+  });
+
   it("asks the harness to rerank skill guides unless the deployment turns it off", async () => {
     script = { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] };
     await new AxBackend(config).run({ prompt: "p", userMessage: "How are sales?", workspace });

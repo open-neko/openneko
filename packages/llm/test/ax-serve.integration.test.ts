@@ -4,9 +4,9 @@
 
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createServer, type Server as HttpServer } from "node:http";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -24,12 +24,16 @@ function hasGo(): boolean {
 }
 
 const binary = process.env.OPENNEKO_TEST_BINARY;
-// Opt in: it builds the openneko binary unless OPENNEKO_TEST_BINARY names one.
+// Opt in: it builds the openneko binary unless OPENNEKO_TEST_BINARY names one,
+// and the sandbox recipe unless OPENNEKO_TEST_SANDBOX_BINARY names one.
 const runnable = Boolean(binary) || (process.env.OPENNEKO_SERVE_IT === "1" && hasGo());
 
 (runnable ? describe : describe.skip)("Ax backend in openneko serve", () => {
   let dir: string;
   let serve: ChildProcess;
+  let sandbox: ChildProcess;
+  let responses: string[];
+  let calls = 0;
   let model: HttpServer;
   let modelUrl: string;
   const keys: string[] = [];
@@ -45,7 +49,16 @@ const runnable = Boolean(binary) || (process.env.OPENNEKO_SERVE_IT === "1" && ha
         stdio: "inherit",
       });
     }
-    const responses = [
+    let sandboxBin = process.env.OPENNEKO_TEST_SANDBOX_BINARY;
+    if (!sandboxBin) {
+      sandboxBin = join(dir, "openneko-sandbox");
+      execFileSync("go", ["build", "-o", sandboxBin, "."], {
+        cwd: resolve(__dirname, "../../../recipes/sandbox"),
+        env: { ...process.env, HOME: homedir() },
+        stdio: "inherit",
+      });
+    }
+    responses = [
       `{"javascriptCode":"final('Find reference', {})"}`,
       `{"javascriptCode":"final('Report', {reference:'REF-42'});"}`,
       "Answer: REF-42",
@@ -55,7 +68,7 @@ const runnable = Boolean(binary) || (process.env.OPENNEKO_SERVE_IT === "1" && ha
       req.on("data", (c) => (body += c));
       req.on("end", () => {
         keys.push(String(req.headers.authorization));
-        const content = responses[Math.min(keys.length - 1, responses.length - 1)];
+        const content = responses[Math.min(calls++, responses.length - 1)];
         res.setHeader("content-type", "application/json");
         res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content }, finish_reason: "stop" }] }));
       });
@@ -63,6 +76,16 @@ const runnable = Boolean(binary) || (process.env.OPENNEKO_SERVE_IT === "1" && ha
     await new Promise<void>((done) => model.listen(0, "127.0.0.1", done));
     modelUrl = `http://127.0.0.1:${(model.address() as { port: number }).port}`;
 
+    const sandboxSocket = join(dir, "sandbox.sock");
+    sandbox = spawn(sandboxBin, ["--listen", `unix://${sandboxSocket}`], {
+      stdio: ["ignore", "ignore", "pipe"],
+      env: {
+        PATH: process.env.PATH ?? "/usr/bin:/bin",
+        OPENNEKO_SANDBOX_WORKSPACES: dir,
+        OPENNEKO_SANDBOX_HOMES: join(dir, "sandbox-homes"),
+        OPENNEKO_SANDBOX_KEY: "sandbox-key",
+      },
+    });
     const socket = join(dir, "serve.sock");
     const serveEnv = Object.fromEntries(
       Object.entries(process.env).filter(
@@ -78,8 +101,9 @@ const runnable = Boolean(binary) || (process.env.OPENNEKO_SERVE_IT === "1" && ha
         "--addr", "127.0.0.1:0",
         "--files-dir", join(dir, "files"),
         "--index-dir", join(dir, "file-index"),
+        "--sandbox-url", `unix://${sandboxSocket}`,
       ],
-      { stdio: ["ignore", "ignore", "pipe"], env: serveEnv },
+      { stdio: ["ignore", "ignore", "pipe"], env: { ...serveEnv, OPENNEKO_SANDBOX_KEY: "sandbox-key" } },
     );
     for (let i = 0; i < 200 && !existsSync(socket); i++) await new Promise((r) => setTimeout(r, 25));
     if (!existsSync(socket)) throw new Error("openneko serve did not start");
@@ -102,11 +126,69 @@ const runnable = Boolean(binary) || (process.env.OPENNEKO_SERVE_IT === "1" && ha
     registerServeToolBridge(undefined);
     vi.unstubAllEnvs();
     serve?.kill("SIGTERM");
+    sandbox?.kill("SIGTERM");
     await new Promise<void>((done) => (model ? model.close(() => done()) : done()));
     if (dir) await rm(dir, { recursive: true, force: true });
   });
 
+  const workspaceIn = async (root: string, run: string) => {
+    await mkdir(join(root, "skills"), { recursive: true });
+    await mkdir(join(root, "runs", run), { recursive: true });
+    return {
+      orgRoot: root,
+      skillsRoot: join(root, "skills"),
+      memoryRoot: join(root, "memory"),
+      knowledgeRoot: join(root, "knowledge"),
+      uploadsRoot: join(root, "uploads"),
+      runsRoot: join(root, "runs"),
+      runRoot: join(root, "runs", run),
+      artifactRoot: join(root, "runs", run, "artifacts"),
+      binRoot: join(root, "runs", run, "bin"),
+    };
+  };
+
+  it("runs the terminal's command in the sandbox, without the model key", async () => {
+    const workspace = await workspaceIn(await mkdtemp(join(dir, "ws-")), "r2");
+    vi.stubEnv("OPENNEKO_SANDBOX_URL", "unix:///set-by-serve-only");
+    vi.stubEnv("RUN_DIR", workspace.runRoot);
+    calls = 0;
+    responses = [
+      `{"javascriptCode":"final('Run the check', {})"}`,
+      `{"javascriptCode":"const r = await terminal({command:'env > \\"$RUN_DIR/env.txt\\"; echo sandboxed'}); console.log(r.output)"}`,
+      `{"javascriptCode":"final('Report', {reference:'SBX-1'});"}`,
+      "Answer: SBX-1",
+    ];
+    const backend = new AxBackend({
+      route: { provider: "openai-compatible", model: "fixture", url: modelUrl, keyEnv: "OPENAI_API_KEY" },
+    });
+    const result = await backend.run({
+      prompt: "Run the check",
+      orgId: "org-1",
+      tag: "run-serve-2",
+      workspace,
+      mcpServers: {},
+      mcpBridgeEnv: { OPENNEKO_MCP_ORG_ID: "org-1", OPENNEKO_MCP_THREAD_ID: "thread-2", OPENNEKO_MCP_RUN_ID: "run-serve-2" },
+      nativeDelegation: "disabled",
+    });
+    vi.unstubAllEnvs();
+    vi.stubEnv("OPENNEKO_SERVE_SOCKET", join(dir, "serve.sock"));
+    vi.stubEnv("OPENAI_API_KEY", "org-stored-key");
+    expect(result.status, result.error).toBe("completed");
+    const env = await readFile(join(workspace.runRoot, "env.txt"), "utf8");
+    expect(env).toContain(`RUN_DIR=${workspace.runRoot}`);
+    expect(env).not.toContain("org-stored-key");
+    expect(env).not.toContain("sandbox-key");
+    expect(env).not.toMatch(/OPENNEKO_(BROKER|SANDBOX|MCP)_/);
+  });
+
   it("answers, with the key and tools crossing the socket", async () => {
+    calls = 0;
+    responses = [
+      `{"javascriptCode":"final('Find reference', {})"}`,
+      `{"javascriptCode":"final('Report', {reference:'REF-42'});"}`,
+      "Answer: REF-42",
+    ];
+    keys.length = 0;
     const backend = new AxBackend({
       route: { provider: "openai-compatible", model: "fixture", url: modelUrl, keyEnv: "OPENAI_API_KEY" },
     });

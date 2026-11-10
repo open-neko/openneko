@@ -12,12 +12,14 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
 func TestServeAgentTurnsAnswersOnTheSocket(t *testing.T) {
 	socket := filepath.Join(t.TempDir(), "serve.sock")
 	ctx, cancel := context.WithCancel(context.Background())
-	done, err := serveAgentTurns(ctx, io.Discard, socket, 2)
+	done, err := serveAgentTurns(ctx, io.Discard, socket, 2, sandbox.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,5 +67,15 @@ func TestServeAgentTurnsAnswersOnTheSocket(t *testing.T) {
 	}
 	if _, err := os.Stat(socket); !os.IsNotExist(err) {
 		t.Fatalf("socket left behind: %v", err)
+	}
+}
+
+func TestServeAgentTurnsRefusesABadSandboxURL(t *testing.T) {
+	socket := filepath.Join(t.TempDir(), "serve.sock")
+	if _, err := serveAgentTurns(context.Background(), io.Discard, socket, 1, sandbox.Config{URL: "ftp://sandbox"}); err == nil {
+		t.Fatal("serve started with a sandbox URL it cannot use")
+	}
+	if _, err := os.Stat(socket); !os.IsNotExist(err) {
+		t.Fatalf("serve opened its socket before the sandbox URL was checked: %v", err)
 	}
 }

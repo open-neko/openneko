@@ -18,6 +18,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentWorkspace } from "../agent-backend";
+import { skillRunnable } from "./sandbox-service";
 import {
   composeSkillTree,
   overlayAppliesToBase,
@@ -384,6 +385,7 @@ export async function copySkillOverrides(
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (!entry.isDirectory()) continue;
     if (allowed && !allowed.has(entry.name)) continue;
+    if (!forced.has(entry.name) && !skillRunnable(entry.name)) continue;
     const workspaceSource = join(skillsRoot, entry.name);
     const bundled = join(BUILTIN_SKILLS_ROOT, entry.name);
     const source = forced.has(entry.name) ? bundled : workspaceSource;
@@ -434,6 +436,7 @@ async function seedBuiltinSkills(skillsRoot: string, allowedSkills?: readonly st
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     if (allowed && !allowed.has(entry.name)) continue;
+    if (!skillRunnable(entry.name)) continue;
     const dest = join(skillsRoot, entry.name);
     try {
       await access(dest, fsConstants.F_OK);

@@ -88,7 +88,7 @@ export function spawnHarnessTurn(opts: {
 }
 
 /** Variables a serve turn may carry. Everything else, keys above all, stays here. */
-const SERVE_ENV = /^(OPENNEKO_MCP_(ORG_ID|THREAD_ID|SKILLS_ROOT)|OPENNEKO_HARNESS_[A-Z_]+|HARNESS_MODEL(_PROVIDER|_URL|_OPTIONS)?|HARNESS_MODEL_ROUTES)$/;
+const SERVE_ENV = /^(OPENNEKO_MCP_(ORG_ID|THREAD_ID|SKILLS_ROOT)|OPENNEKO_HARNESS_[A-Z_]+|HARNESS_MODEL(_PROVIDER|_URL|_OPTIONS)?|HARNESS_MODEL_ROUTES|RUN_DIR|ARTIFACT_DIR|PYTHONPATH)$/;
 
 /** Runs the turn in `openneko serve`. The model key travels in its own field. */
 export function serveHarnessTurn(opts: {

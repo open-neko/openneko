@@ -21,6 +21,7 @@ import { splitStablePrompt } from "../prompts/stable-prefix";
 import { extractMarkdownText, outsideFenceText } from "./output";
 import { extractCardFences, extractSurfaceMessages } from "./surface";
 import { serveHarnessTurn, serveSocket, spawnHarnessTurn } from "./harness-turn";
+import { sandboxConfig } from "../work/sandbox-service";
 
 /** The run's model key: a stored key the worker loaded, or a key in the environment. */
 function modelKey(route: AxModelRoute): string {
@@ -366,7 +367,8 @@ export class AxBackend implements AgentBackend {
     env.OPENNEKO_MCP_ORG_ID = opts.mcpBridgeEnv?.OPENNEKO_MCP_ORG_ID ?? opts.orgId ?? "local";
     env.OPENNEKO_MCP_THREAD_ID = opts.mcpBridgeEnv?.OPENNEKO_MCP_THREAD_ID ?? opts.tag ?? "local";
     env.OPENNEKO_HARNESS_WORKSPACE_DIR = cwd;
-    delete env.OPENNEKO_HARNESS_SHELL;
+    if (sandboxConfig()) env.OPENNEKO_HARNESS_SHELL = "1";
+    else delete env.OPENNEKO_HARNESS_SHELL;
     if (workspace?.threadUploadsRoot) env.OPENNEKO_HARNESS_UPLOADS_DIR = workspace.threadUploadsRoot;
     else delete env.OPENNEKO_HARNESS_UPLOADS_DIR;
     if (workspace?.skillsRoot) {

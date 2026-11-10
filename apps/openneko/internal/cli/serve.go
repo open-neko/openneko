@@ -19,10 +19,11 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/filecontent"
 	"github.com/open-neko/neko/apps/openneko/internal/files"
+	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
 func newServeCmd() *cobra.Command {
-	var addr, filesDir, indexDir, duckdb, agentSocket string
+	var addr, filesDir, indexDir, duckdb, agentSocket, sandboxURL string
 	var maxTurns int
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -60,7 +61,7 @@ func newServeCmd() *cobra.Command {
 			}
 			var agentDone <-chan error
 			if agentSocket != "" {
-				if agentDone, err = serveAgentTurns(ctx, cmd.OutOrStdout(), agentSocket, maxTurns); err != nil {
+				if agentDone, err = serveAgentTurns(ctx, cmd.OutOrStdout(), agentSocket, maxTurns, sandbox.Config{URL: sandboxURL, Key: os.Getenv("OPENNEKO_SANDBOX_KEY")}); err != nil {
 					_ = ln.Close()
 					return err
 				}
@@ -102,6 +103,7 @@ func newServeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&filesDir, "files-dir", envOr("OPENNEKO_FILES_DIR", filepath.Join(data, "openneko", "files")), "Folder that holds each user's private files")
 	cmd.Flags().StringVar(&indexDir, "index-dir", envOr("OPENNEKO_FILES_INDEX_DIR", filepath.Join(data, "openneko", "file-index")), "Folder for the sheet tables derived from the files; safe to delete")
 	cmd.Flags().StringVar(&agentSocket, "agent-socket", os.Getenv("OPENNEKO_SERVE_SOCKET"), "Unix socket for agent turns; empty turns them off")
+	cmd.Flags().StringVar(&sandboxURL, "sandbox-url", os.Getenv("OPENNEKO_SANDBOX_URL"), "Sandbox service for agent terminal commands (unix:///path or http(s)://host:port); empty turns the terminal off. Its key is read from OPENNEKO_SANDBOX_KEY")
 	cmd.Flags().IntVar(&maxTurns, "max-turns", envInt("OPENNEKO_SERVE_MAX_TURNS", 32), "Agent turns that run at once; more are refused")
 	cmd.Flags().StringVar(&duckdb, "duckdb", envOr("OPENNEKO_DUCKDB", "duckdb"), "DuckDB CLI for SQL over sheet tables")
 	return cmd

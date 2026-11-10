@@ -9,7 +9,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   SKILL_ORIGIN_FILE,
   copySkillOverrides,
@@ -26,7 +26,12 @@ import {
 const cleanupPaths: string[] = [];
 const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 
+beforeEach(() => {
+  process.env.OPENNEKO_SANDBOX_URL = "unix:///run/openneko/sandbox.sock";
+});
+
 afterEach(async () => {
+  delete process.env.OPENNEKO_SANDBOX_URL;
   while (cleanupPaths.length > 0) {
     const path = cleanupPaths.pop();
     if (path) await rm(path, { recursive: true, force: true });
@@ -149,6 +154,25 @@ describe("work workspace", () => {
     expect(after).not.toContain("pdf");
     expect(after).not.toContain("quarterly-review");
     expect(after).toContain("skill-creator");
+  }, 30_000);
+
+  it("leaves out the script skills when the install has no sandbox", async () => {
+    delete process.env.OPENNEKO_SANDBOX_URL;
+    const home = await mkdtemp(join(tmpdir(), "neko-work-home-"));
+    const stage = await mkdtemp(join(tmpdir(), "neko-skills-stage-"));
+    cleanupPaths.push(home, stage);
+    process.env.HOME = home;
+    const workspace = await ensureOrgWorkspace("org-test");
+    const seeded = await readdir(workspace.skillsRoot);
+    expect(seeded).toContain("graphjin-config");
+    for (const name of ["pdf", "xlsx", "docx", "pptx", "skill-creator", "dcf-model"]) expect(seeded).not.toContain(name);
+
+    await mkdir(join(workspace.skillsRoot, "xlsx"), { recursive: true });
+    await writeFile(join(workspace.skillsRoot, "xlsx", "SKILL.md"), "Seeded before the sandbox went away.");
+    const stagedSkills = join(stage, "skills");
+    expect(await copySkillOverrides(workspace.skillsRoot, stagedSkills)).not.toContain("xlsx");
+    await materializeBuiltinSkills(stagedSkills);
+    expect(await readdir(stagedSkills)).not.toContain("xlsx");
   }, 30_000);
 
   it("stages and seeds only the skills the run's actor holds", async () => {

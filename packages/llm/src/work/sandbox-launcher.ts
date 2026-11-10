@@ -709,7 +709,7 @@ function passThroughEnv(): Record<string, string> {
   const names = [
     "PATH", "LANG", "TZ", "NODE_ENV", "NODE_EXTRA_CA_CERTS",
     "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy", "ALL_PROXY", "NODE_USE_ENV_PROXY",
-    "OPENNEKO_SERVE_SOCKET", "OPENNEKO_MCP_BRIDGE", "OPENNEKO_AX_SKILL_RERANK", "OPENNEKO_AGENT_TURN_TIMEOUT_MS",
+    "OPENNEKO_SERVE_SOCKET", "OPENNEKO_SANDBOX_URL", "OPENNEKO_SANDBOX_KEY", "OPENNEKO_MCP_BRIDGE", "OPENNEKO_AX_SKILL_RERANK", "OPENNEKO_AGENT_TURN_TIMEOUT_MS",
   ];
   return Object.fromEntries(
     names.flatMap((name) => (process.env[name] ? [[name, process.env[name]!]] : [])),
@@ -850,7 +850,9 @@ function execAndStream(
       settled = true;
       cleanup();
       killGroup(child);
-      reject(err);
+      if (child.exitCode !== null || child.signalCode !== null) return reject(err);
+      child.once("exit", () => reject(err));
+      setTimeout(() => reject(err), 5_000).unref();
     };
     const onAbort = () => fail(abortError());
     const rl = createInterface({ input: child.stdout });
