@@ -140,7 +140,7 @@ func runDatabaseMove(ctx context.Context, cmd *cobra.Command, target string) err
 	if err := oldStack.compose(ctx, nil, os.Stdout, "rm", "--force", "--stop", "neko-db"); err != nil {
 		return unchanged("stopping neko-db", err)
 	}
-	if err := runRestore(ctx, cmd, backup, ""); err != nil {
+	if err := runRestore(ctx, cmd, backup, "", false); err != nil {
 		return unchanged("restoring the backup into the new database", err)
 	}
 	if err := config.WriteLocalDatabaseURL("", target); err != nil {

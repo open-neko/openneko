@@ -43,7 +43,7 @@ openneko seed adventureworks
 openneko [--instance name] graphjin import <customer-config.yml|->
 openneko backup [--to <file>]
 openneko backup key {export,adopt}
-openneko restore <file> --confirm RESTORE [--key-file <key>]
+openneko restore <file> --confirm RESTORE [--key-file <key>] [--drop-foreign-objects]
 openneko reset [--all]
 ```
 
@@ -114,7 +114,10 @@ There is no backup service and no point-in-time restore: a backup is a file.
 file before changing anything, then names the target database, stops the
 stack, replaces the config volumes, restores the database from the dump and
 starts the stack again,
-whose migrations bring an older backup forward. `openneko doctor` reports the
+whose migrations bring an older backup forward. With a database URL, restore
+first lists the objects that the login owns and OpenNeko did not make. It stops
+when there are any, unless `--drop-foreign-objects` is set and you type the
+database name. `openneko doctor` reports the
 latest backup and warns when there is none or it is more than a week old.
 
 Each installation has its own backup key, created on first use under

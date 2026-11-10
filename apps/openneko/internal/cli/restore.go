@@ -23,6 +23,7 @@ import (
 func newRestoreCmd() *cobra.Command {
 	var confirmation string
 	var keyFile string
+	var dropForeign bool
 	cmd := &cobra.Command{
 		Use:   "restore <file> --confirm RESTORE",
 		Short: "Restore the database and config volumes from an `openneko backup` file",
@@ -30,19 +31,22 @@ func newRestoreCmd() *cobra.Command {
 the OpenNeko and GraphJin volumes, restore the database from the dump, and
 start the stack again (migrations bring an older backup forward). With an
 external database, restore replaces every object that the URL's login owns in
-the database that the URL names, and keeps its extensions. This overwrites
-live data and configuration.`,
+the database that the URL names, and keeps its extensions. It stops before it
+changes anything when the login owns objects that OpenNeko did not make;
+--drop-foreign-objects drops them too, after you type the database name.
+This overwrites live data and configuration.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path, err := validateRestoreArgs(args, confirmation)
 			if err != nil {
 				return err
 			}
-			return runRestore(cmd.Context(), cmd, path, keyFile)
+			return runRestore(cmd.Context(), cmd, path, keyFile, dropForeign)
 		},
 	}
 	cmd.Flags().StringVar(&confirmation, "confirm", "", "type RESTORE to allow destructive overwrite")
 	cmd.Flags().StringVar(&keyFile, "key-file", "", "Backup key to decrypt with (default: this installation's key)")
+	cmd.Flags().BoolVar(&dropForeign, "drop-foreign-objects", false, "With a database URL, also drop the objects that the login owns and OpenNeko did not make")
 	return cmd
 }
 
@@ -184,7 +188,7 @@ func readRestoreKey(keyFile string) (string, error) {
 	return key, err
 }
 
-func runRestore(ctx context.Context, cmd *cobra.Command, path, keyFile string) error {
+func runRestore(ctx context.Context, cmd *cobra.Command, path, keyFile string, dropForeign bool) error {
 	out := cmd.OutOrStdout()
 	key, err := readRestoreKey(keyFile)
 	if err != nil {
@@ -208,6 +212,7 @@ func runRestore(ctx context.Context, cmd *cobra.Command, path, keyFile string) e
 		return err
 	}
 	stack := backupStack{sup: sup, project: project, files: files, external: !usesBundledDatabase(files)}
+	restoreArgs := []string{"restore"}
 	if !stack.external && manifest.Database.External {
 		return errors.New("this backup is of an external database; restore it into an install that uses a database URL (nothing was changed)")
 	}
@@ -217,6 +222,13 @@ func runRestore(ctx context.Context, cmd *cobra.Command, path, keyFile string) e
 			return err
 		}
 		fmt.Fprintf(out, "Restoring into %s, from OpenNeko's database URL.\n", describeDatabaseURL(database.url))
+		confirmed, err := confirmForeignObjects(ctx, stack, cmd.InOrStdin(), out, path, key, databaseNameOf(database.url), dropForeign)
+		if err != nil {
+			return err
+		}
+		if confirmed {
+			restoreArgs = append(restoreArgs, "--drop-foreign-objects")
+		}
 	} else {
 		fmt.Fprintf(out, "Restoring into the bundled neko-db of %s.\n", project)
 	}
@@ -280,7 +292,7 @@ func runRestore(ctx context.Context, cmd *cobra.Command, path, keyFile string) e
 			}
 			rolePassword = string(raw)
 		case name == backupDatabaseEntry && stack.external:
-			if err := stack.databaseTool(ctx, entry, out, "restore"); err != nil {
+			if err := stack.databaseTool(ctx, entry, out, restoreArgs...); err != nil {
 				return failed("restoring the database", err)
 			}
 			databaseRestored = true
@@ -343,6 +355,80 @@ SQL`
 	}
 	_, err := s.psql(ctx, "ALTER ROLE CURRENT_USER PASSWORD '"+rolePassword+"'")
 	return err
+}
+
+// confirmForeignObjects runs before the stack stops. It lists the objects
+// that the restore would drop and that OpenNeko did not make, and goes on
+// only with --drop-foreign-objects and the database name typed back.
+func confirmForeignObjects(ctx context.Context, stack backupStack, in io.Reader, out io.Writer, path, key, database string, dropForeign bool) (bool, error) {
+	foreign, err := stack.foreignObjects(ctx, path, key)
+	if err != nil {
+		return false, fmt.Errorf("check database %s before the restore; nothing was changed: %w", database, err)
+	}
+	return confirmForeignDrop(in, out, foreign, database, dropForeign)
+}
+
+func confirmForeignDrop(in io.Reader, out io.Writer, foreign []string, database string, dropForeign bool) (bool, error) {
+	if len(foreign) == 0 {
+		return false, nil
+	}
+	fmt.Fprintf(out, "The login owns %d objects in database %s that OpenNeko did not make:\n%s\n", len(foreign), database, indentList(foreign, len(foreign)))
+	if !dropForeign {
+		return false, fmt.Errorf("restore drops every object that the login owns, and these are not OpenNeko's. Give OpenNeko a database and a login of its own. To drop them anyway, run the restore again with --drop-foreign-objects. Nothing was changed")
+	}
+	fmt.Fprintf(out, "The restore drops these objects, and nothing brings them back. Type the database name (%s) to go on: ", database)
+	line, err := bufio.NewReader(in).ReadString('\n')
+	if strings.TrimSpace(line) != database || database == "" {
+		if err != nil && !errors.Is(err, io.EOF) {
+			return false, err
+		}
+		return false, errors.New("the database name does not match; nothing was changed")
+	}
+	return true, nil
+}
+
+func (s backupStack) foreignObjects(ctx context.Context, path, key string) ([]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	plain, err := newBackupDecrypter(file, key)
+	if err != nil {
+		return nil, err
+	}
+	bundle := newBackupBundleReader(plain)
+	for {
+		name, entry, err := bundle.Next()
+		if errors.Is(err, io.EOF) {
+			return nil, errors.New("the database dump is missing")
+		}
+		if err != nil {
+			return nil, err
+		}
+		if name != backupDatabaseEntry {
+			continue
+		}
+		var stdout strings.Builder
+		if err := s.databaseTool(ctx, bufio.NewReaderSize(entry, 1<<20), &stdout, "foreign-objects"); err != nil {
+			return nil, err
+		}
+		var foreign []string
+		for _, line := range strings.Split(stdout.String(), "\n") {
+			if line = strings.TrimSpace(line); line != "" {
+				foreign = append(foreign, line)
+			}
+		}
+		return foreign, nil
+	}
+}
+
+func databaseNameOf(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimPrefix(u.Path, "/")
 }
 
 func describeDatabaseURL(raw string) string {

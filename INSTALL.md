@@ -160,8 +160,10 @@ name.
   database, `openneko-serve` included, as a Compose secret readable only by
   user 1001, and points the URL at the copy. Serve's `neko_files` and
   `neko_subscriptions` logins use the same files.
-- Give OpenNeko a database of its own. The `neko` role needs `CREATE` on that
-  database and on schema `public`, and `CREATEROLE`. It does not need to own
+- Give OpenNeko a database of its own and a login of its own. Restore drops
+  every object that the login owns in that database (see
+  [Backup and restore](#backup-and-restore)). The `neko` role needs `CREATE`
+  on that database and on schema `public`, and `CREATEROLE`. It does not need to own
   the database, so a managed Postgres service works. The migrations create
   the `vector` extension and the `neko_files` and `neko_subscriptions` roles.
 - Postgres 16 is the oldest version that OpenNeko supports. The storage check
@@ -184,7 +186,9 @@ and prints what to do, for example:
 ```
 
 Run the SQL, then run `openneko start`. A URL without `sslmode=verify-full`
-gives a warning, and start goes on.
+gives a warning, and start goes on. The check also warns when the login owns
+objects that OpenNeko did not make: objects that no OpenNeko migration names,
+outside the `pgboss` and `openneko_internal` schemas. A restore stops on them.
 - With a URL, setup skips its database password step. Change the password
   where the database is managed, then update the URL.
 
@@ -430,6 +434,15 @@ login owns in the database the URL names, then restores the dump in one
 transaction. It keeps the extensions, the objects that other roles own and the
 grants that you gave the login. Restore does not put a backup of an external
 database into a bundled `neko-db`.
+
+Before restore stops the stack, it lists the objects that the login owns and
+that OpenNeko did not make. An object is OpenNeko's when the backup holds it,
+an OpenNeko migration names it, or it is in the `pgboss` or `openneko_internal`
+schema. When the list is not empty, restore prints it, changes nothing and
+stops. Move those objects to another login, or give OpenNeko a database and a
+login of its own. To drop them with the restore, add `--drop-foreign-objects`.
+Restore then prints the list again and asks you to type the database name.
+Nothing brings the dropped objects back.
 
 Each installation has its own backup key. Keep a copy away from the backups:
 

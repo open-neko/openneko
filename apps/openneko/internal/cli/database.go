@@ -37,7 +37,7 @@ func newDatabaseCmd() *cobra.Command {
 			return checkDatabase(cmd.Context(), target.DSN(), cmd.OutOrStdout())
 		},
 	})
-	cmd.AddCommand(newDatabaseInfoCmd(), newDatabaseDumpCmd(), newDatabaseRestoreCmd(), newDatabaseEmptyCmd(), newDatabaseMoveCmd())
+	cmd.AddCommand(newDatabaseInfoCmd(), newDatabaseDumpCmd(), newDatabaseRestoreCmd(), newDatabaseForeignObjectsCmd(), newDatabaseEmptyCmd(), newDatabaseMoveCmd())
 	return cmd
 }
 
@@ -139,6 +139,18 @@ func databaseFindings(ctx context.Context, conn *pgx.Conn, sslMode, user, databa
 			return nil, err
 		}
 		findings = append(findings, f)
+	}
+	foreign, err := foreignObjects(ctx, conn, nil)
+	if err != nil {
+		return nil, err
+	}
+	if len(foreign) > 0 {
+		shown := foreign
+		if len(shown) > 5 {
+			shown = append(shown[:5:5], fmt.Sprintf("and %d more", len(foreign)-5))
+		}
+		findings = append(findings, databaseFinding{level: "warn", text: fmt.Sprintf("%s owns %d objects in %s that OpenNeko did not make (%s). A restore stops on them. Give OpenNeko a database and a login of its own",
+			user, len(foreign), database, strings.Join(shown, ", "))})
 	}
 	return findings, nil
 }

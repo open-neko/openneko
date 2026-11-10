@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -72,7 +71,8 @@ func newDatabaseDumpCmd() *cobra.Command {
 }
 
 func newDatabaseRestoreCmd() *cobra.Command {
-	return &cobra.Command{
+	var dropForeign bool
+	cmd := &cobra.Command{
 		Use:    "restore",
 		Short:  "Replace OpenNeko's objects in its database with the pg_dump archive on stdin",
 		Hidden: true,
@@ -82,9 +82,11 @@ func newDatabaseRestoreCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return restoreExternalDatabase(cmd.Context(), target.DSN(), cmd.InOrStdin(), cmd.OutOrStdout())
+			return restoreExternalDatabase(cmd.Context(), target.DSN(), cmd.InOrStdin(), cmd.OutOrStdout(), dropForeign)
 		},
 	}
+	cmd.Flags().BoolVar(&dropForeign, "drop-foreign-objects", false, "also drop the objects that the login owns and OpenNeko did not make")
+	return cmd
 }
 
 // dumpExclusions keeps the dump to what the login owns, the same objects
@@ -202,26 +204,19 @@ END $$`
 // the login owns, then restores the archive in one transaction. The archive's
 // owners and extension entries are skipped: the login owns what it restores,
 // and the extensions stay as the operator made them.
-func restoreExternalDatabase(ctx context.Context, dsn string, archive io.Reader, out io.Writer) error {
-	spool, err := os.CreateTemp("", "openneko-restore-*.dump")
+func restoreExternalDatabase(ctx context.Context, dsn string, archive io.Reader, out io.Writer, dropForeign bool) error {
+	spool, err := spoolArchive(archive)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(spool.Name())
-	if _, err := io.Copy(spool, bufio.NewReaderSize(archive, 1<<20)); err != nil {
-		spool.Close()
-		return fmt.Errorf("read the database archive: %w", err)
-	}
-	if err := spool.Close(); err != nil {
-		return err
-	}
+	defer os.Remove(spool)
 
 	plain, password, err := splitDatabasePassword(dsn)
 	if err != nil {
 		return err
 	}
-	var contents bytes.Buffer
-	if err := runPostgresTool(ctx, nil, &contents, "", "pg_restore", "--list", spool.Name()); err != nil {
+	archived, contents, err := archiveContents(ctx, spool)
+	if err != nil {
 		return err
 	}
 	list, err := os.CreateTemp("", "openneko-restore-*.list")
@@ -229,7 +224,7 @@ func restoreExternalDatabase(ctx context.Context, dsn string, archive io.Reader,
 		return err
 	}
 	defer os.Remove(list.Name())
-	if _, err := io.WriteString(list, restoreList(contents.String())); err != nil {
+	if _, err := io.WriteString(list, restoreList(contents)); err != nil {
 		list.Close()
 		return err
 	}
@@ -246,6 +241,13 @@ func restoreExternalDatabase(ctx context.Context, dsn string, archive io.Reader,
 	if err := conn.QueryRow(ctx, `select current_user, current_database()`).Scan(&user, &database); err != nil {
 		return err
 	}
+	foreign, err := foreignObjects(ctx, conn, archived)
+	if err != nil {
+		return err
+	}
+	if len(foreign) > 0 && !dropForeign {
+		return foreignObjectsError(user, database, foreign)
+	}
 	fmt.Fprintf(out, "Clearing the objects that %s owns in database %s...\n", user, database)
 	if _, err := conn.Exec(ctx, clearOwnedObjectsSQL); err != nil {
 		return fmt.Errorf("clear database %s: %w", database, err)
@@ -256,7 +258,7 @@ func restoreExternalDatabase(ctx context.Context, dsn string, archive io.Reader,
 	fmt.Fprintf(out, "Restoring database %s...\n", database)
 	return runPostgresTool(ctx, nil, io.Discard, password, "pg_restore",
 		"--no-owner", "--exit-on-error", "--single-transaction", "--no-password",
-		"--use-list="+list.Name(), "--dbname="+plain, spool.Name())
+		"--use-list="+list.Name(), "--dbname="+plain, spool)
 }
 
 // restoreList drops the extension entries from a pg_restore --list table of
