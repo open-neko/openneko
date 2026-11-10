@@ -199,10 +199,10 @@ describe("request_source_config_change", () => {
   it("shows the form again with each problem beside its answer", async () => {
     const emit = vi.fn(async () => {});
     const previewSourceConfigChange = vi.fn(async () => ({
-      error: "The login name is empty. Save the password for this login first.",
+      error: "The login name is empty. OpenNeko needs a login with a password. Save the password for this login first.",
       problems: [
         { field: "user", message: "The login name is empty." },
-        { field: "secretRef", message: "Save the password for this login first." },
+        { field: "secretRef", message: "OpenNeko needs a login with a password. Save the password for this login first." },
         { field: null, message: "GraphJin did not accept this change.", detail: "something else" },
       ],
     }));
@@ -250,7 +250,7 @@ describe("request_source_config_change", () => {
     });
     expect(surface.dataModel.problems).toEqual({
       user: "The login name is empty.",
-      secretRef: "Save the password for this login first.",
+      secretRef: "OpenNeko needs a login with a password. Save the password for this login first.",
       general: "GraphJin did not accept this change.",
     });
     const byId = new Map(surface.components.map((component) => [component.id, component]));

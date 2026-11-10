@@ -5,7 +5,7 @@ import {
   db,
   eq,
   GRAPHJIN_CONFIG_SCOPE,
-  graphjinConfigSettingsFromConfig,
+  graphjinConfigSettingsFromRow,
   llm_provider_config,
   type GraphjinConfigSettings,
 } from "@neko/db";
@@ -52,9 +52,7 @@ export async function getGraphjinConfigSettingsPayload(
 ): Promise<GraphjinConfigSettingsPayload> {
   const row = await loadRow(orgId);
   return {
-    settings: row
-      ? graphjinConfigSettingsFromConfig(row.config, row.enabled)
-      : { sourceConfigEnabled: false },
+    settings: graphjinConfigSettingsFromRow(row ?? undefined),
     source: row ? "org" : "default",
   };
 }
@@ -64,9 +62,7 @@ export async function saveGraphjinConfigSettingsDraft(
   draft: Partial<GraphjinConfigSettings>,
 ): Promise<GraphjinConfigSettings> {
   const existing = await loadRow(orgId);
-  const current = existing
-    ? graphjinConfigSettingsFromConfig(existing.config, existing.enabled)
-    : { sourceConfigEnabled: false };
+  const current = graphjinConfigSettingsFromRow(existing ?? undefined);
   const merged: GraphjinConfigSettings = {
     sourceConfigEnabled:
       typeof draft.sourceConfigEnabled === "boolean"

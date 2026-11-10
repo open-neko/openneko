@@ -1,6 +1,6 @@
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { db, eq, GRAPHJIN_CONFIG_SCOPE, llm_provider_config, pool, skill_embedding } from "@neko/db";
+import { and, db, eq, GRAPHJIN_CONFIG_SCOPE, llm_provider_config, pool, skill_embedding } from "@neko/db";
 import { createTestOrg, dbReachable, deleteTestOrg, uniqueOrgId } from "@neko/db/test-helpers";
 
 // Each topic is one axis, so texts that share a topic sit close together.
@@ -108,15 +108,19 @@ describeIfDb("skill index", () => {
           .searchSkillsForRun({ orgId, runId: run, query: "GraphJin sources roles", limit: 3 })
           .then((results) => results.map((s) => s.name));
 
-      expect(await search(runId)).not.toContain("graphjin-config");
       await db().insert(llm_provider_config).values({
         org_id: orgId,
         scope: GRAPHJIN_CONFIG_SCOPE,
         provider: "graphjin-config",
-        enabled: true,
-        config: { sourceConfigEnabled: true },
+        enabled: false,
+        config: { sourceConfigEnabled: false },
         secrets: {},
       });
+      expect(await search(runId)).not.toContain("graphjin-config");
+      await db()
+        .update(llm_provider_config)
+        .set({ enabled: true, config: { sourceConfigEnabled: true } })
+        .where(and(eq(llm_provider_config.org_id, orgId), eq(llm_provider_config.scope, GRAPHJIN_CONFIG_SCOPE)));
       expect(await search(runId)).toContain("graphjin-config");
       expect(await search(service.id)).not.toContain("graphjin-config");
       expect(await searchSkillsForRun({ orgId, runId: service.id, query: "GraphJin sources roles" }))

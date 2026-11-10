@@ -1392,6 +1392,8 @@ export class InProcessControlPlane implements AgentControlPlane {
     }
 
     let secretValue = "";
+    const scrub = (value: string | undefined): string =>
+      secretValue ? (value ?? "").split(secretValue).join("[REDACTED]") : value ?? "";
     try {
       let specAsset: OpenApiSpecAssetView | undefined;
       const kind = Array.isArray(input.payload.kind)
@@ -1683,14 +1685,10 @@ export class InProcessControlPlane implements AgentControlPlane {
       if (response.errors?.length) {
         return {
           source,
-          error: response.errors.map((item) => item.message).join("; "),
+          error: scrub(response.errors.map((item) => item.message).join("; ")),
         };
       }
       const row = response.data?.gj_config;
-      const scrub = (value: string | undefined): string =>
-        secretValue && secretValue.length >= 8
-          ? (value ?? "").split(secretValue).join("[REDACTED]")
-          : value ?? "";
       const valid = row?.valid === true && Boolean(row.preview_id);
       const errors = parseConfigPreviewJSON(scrub(row?.errors_json));
       const preview = {
@@ -1714,17 +1712,17 @@ export class InProcessControlPlane implements AgentControlPlane {
             : {}),
         };
       }
-      const fileCheck = await checkConfigFile(update);
+      const checked = await checkConfigFile(update);
+      const fileCheck = checked.checked
+        ? { ...checked, errors: checked.errors.map((item) => scrub(item)) }
+        : { ...checked, reason: scrub(checked.reason) };
       if (fileCheck.checked && !fileCheck.valid) {
-        const problems = mapGraphjinConfigErrors(
-          fileCheck.errors.map((item) => scrub(item)),
-          input.payload,
-        );
+        const problems = mapGraphjinConfigErrors(fileCheck.errors, input.payload);
         return {
           source,
           problems,
           error: `The config file would not load in GraphJin. ${describeConfigProblems(problems)}`,
-          preview: { ...preview, valid: false, errors: fileCheck.errors.map((item) => scrub(item)), fileCheck },
+          preview: { ...preview, valid: false, errors: fileCheck.errors, fileCheck },
         };
       }
       return {
@@ -1733,14 +1731,16 @@ export class InProcessControlPlane implements AgentControlPlane {
         preview: { ...preview, fileCheck },
       };
     } catch (err) {
+      const { PasswordRequiredError } = await import("../graphjin/source-types");
+      if (err instanceof PasswordRequiredError) {
+        return {
+          source,
+          problems: [{ field: err.field, message: err.message }],
+          error: err.message,
+        };
+      }
       const message = err instanceof Error ? err.message : String(err);
-      return {
-        source,
-        error:
-          secretValue && secretValue.length >= 8
-            ? message.split(secretValue).join("[REDACTED]").slice(0, 1_000)
-            : message.slice(0, 1_000),
-      };
+      return { source, error: scrub(message).slice(0, 1_000) };
     }
   }
 

@@ -18,7 +18,7 @@ export type GraphjinConfigSettings = {
 };
 
 export const DEFAULT_GRAPHJIN_CONFIG_SETTINGS: GraphjinConfigSettings = {
-  sourceConfigEnabled: false,
+  sourceConfigEnabled: true,
 };
 
 function readBool(value: unknown, fallback: boolean): boolean {
@@ -36,6 +36,13 @@ export function graphjinConfigSettingsFromConfig(
     sourceConfigEnabled:
       rowEnabled && readBool(config.sourceConfigEnabled, true),
   };
+}
+
+export function graphjinConfigSettingsFromRow(
+  row: { enabled: boolean; config: Record<string, unknown> | null } | undefined,
+): GraphjinConfigSettings {
+  if (!row) return { ...DEFAULT_GRAPHJIN_CONFIG_SETTINGS };
+  return graphjinConfigSettingsFromConfig(row.config, row.enabled);
 }
 
 export async function getGraphjinConfigSettingsForOrg(
@@ -57,6 +64,5 @@ export async function getGraphjinConfigSettingsForOrg(
   const row = rows[0] as
     | { enabled: boolean; config: Record<string, unknown> | null }
     | undefined;
-  if (!row) return { ...DEFAULT_GRAPHJIN_CONFIG_SETTINGS };
-  return graphjinConfigSettingsFromConfig(row.config, row.enabled);
+  return graphjinConfigSettingsFromRow(row);
 }

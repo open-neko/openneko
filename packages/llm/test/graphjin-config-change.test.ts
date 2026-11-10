@@ -6,6 +6,7 @@ import {
   graphjinInputValue,
   assertDatabaseSourcesStayReadOnly,
 } from "../src/graphjin/config-change";
+import { PASSWORD_REQUIRED_MESSAGE, PasswordRequiredError } from "../src/graphjin/source-types";
 
 describe("GraphJin config change compiler", () => {
   it("builds additive source-access patches", async () => {
@@ -44,6 +45,23 @@ describe("GraphJin config change compiler", () => {
     const [warehouse] = (result.update as { update_sources: Array<Record<string, unknown>> })
       .update_sources;
     expect(warehouse?.read_only).toBe(true);
+  });
+
+  it("refuses a database login with no password", async () => {
+    const database = {
+      action: "register_source",
+      name: "warehouse",
+      kind: "database",
+      host: "warehouse-db",
+      dbname: "warehouse",
+      user: "reader",
+    };
+    await expect(buildGraphjinConfigUpdate(database, vi.fn(async () => "x"))).rejects.toBeInstanceOf(
+      PasswordRequiredError,
+    );
+    await expect(
+      buildGraphjinConfigUpdate({ ...database, secretRef: "EMPTY_PASSWORD" }, vi.fn(async () => "")),
+    ).rejects.toThrow(PASSWORD_REQUIRED_MESSAGE);
   });
 
   it("builds an API source from OpenAPI-specific fields", async () => {
@@ -427,12 +445,10 @@ describe("enable_api_writes", () => {
 describe("database tables and types", () => {
   it("accepts postgres, mysql and mariadb and rejects other types", async () => {
     for (const type of ["postgres", ["mysql"], "MariaDB"]) {
-      const { update } = await buildGraphjinConfigUpdate({
-        action: "register_source",
-        name: "shop",
-        kind: "database",
-        type,
-      });
+      const { update } = await buildGraphjinConfigUpdate(
+        { action: "register_source", name: "shop", kind: "database", type, secretRef: "shop-password" },
+        async () => "pw",
+      );
       const [source] = (update as { update_sources: Array<Record<string, unknown>> })
         .update_sources;
       expect(["postgres", "mysql", "mariadb"]).toContain(source?.type);
@@ -448,14 +464,18 @@ describe("database tables and types", () => {
   });
 
   it("puts hidden and admin-only tables in the new source's access", async () => {
-    const { update } = await buildGraphjinConfigUpdate({
-      action: "register_source",
-      name: "shop",
-      kind: "database",
-      type: "mysql",
-      blockedTables: ["admin_user", "admin_user", "oauth_token"],
-      adminTables: ["sales_invoice"],
-    });
+    const { update } = await buildGraphjinConfigUpdate(
+      {
+        action: "register_source",
+        name: "shop",
+        kind: "database",
+        type: "mysql",
+        secretRef: "shop-password",
+        blockedTables: ["admin_user", "admin_user", "oauth_token"],
+        adminTables: ["sales_invoice"],
+      },
+      async () => "pw",
+    );
     const [source] = (update as { update_sources: Array<Record<string, unknown>> })
       .update_sources;
     expect(source?.access).toEqual({

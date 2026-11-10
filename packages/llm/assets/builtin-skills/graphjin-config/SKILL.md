@@ -30,7 +30,8 @@ plan every change yourself. An admin approves each change before it applies.
    admin types the password into the card. The card stores it and gives you
    its name as `secretRef`. To reuse a stored password, call
    `mcp_neko_source_config_manager_list_source_secret_names` and prefill that
-   name.
+   name. OpenNeko does not connect with a login that has no password. When
+   the admin has no password for the login, ask them to give it one first.
 6. For an API source, use the managed OpenAPI asset from the submitted card.
    When the admin gives a hosted HTTPS URL in chat, call
    `mcp_neko_source_config_manager_import_openapi_spec`. When the admin

@@ -1,3 +1,5 @@
+import { PASSWORD_REQUIRED_MESSAGE } from "./source-types";
+
 export type ConfigProblem = {
   /** The answer the problem belongs to: a form field or tool argument name. Null when no single answer is at fault. */
   field: string | null;
@@ -97,7 +99,7 @@ export function checkSourceConfigAnswers(
     if (!text(payload.dbname)) add("dbname", "The database name is empty.");
     if (!text(payload.user)) add("user", "The login name is empty.");
     const secretRef = text(payload.secretRef);
-    if (!secretRef) add("secretRef", "Save the password for this login first.");
+    if (!secretRef) add("secretRef", PASSWORD_REQUIRED_MESSAGE);
     else if (context.secretNames && !context.secretNames.includes(secretRef)) {
       add("secretRef", `No saved password is named "${secretRef}". Save the password again.`);
     }

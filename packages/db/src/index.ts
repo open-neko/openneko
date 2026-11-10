@@ -123,6 +123,7 @@ export {
   GRAPHJIN_CONFIG_SCOPE,
   getGraphjinConfigSettingsForOrg,
   graphjinConfigSettingsFromConfig,
+  graphjinConfigSettingsFromRow,
   type GraphjinConfigSettings,
 } from "./graphjin-config";
 export {

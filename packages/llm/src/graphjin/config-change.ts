@@ -7,7 +7,11 @@ import {
   validatePublicFileBaseUrl,
 } from "./file-source";
 import { parseManagedFileSourceManifest } from "./file-source-assets";
-import { DATABASE_SOURCE_TYPES, SOURCE_TABLE_NAME } from "./source-types";
+import {
+  DATABASE_SOURCE_TYPES,
+  PasswordRequiredError,
+  SOURCE_TABLE_NAME,
+} from "./source-types";
 
 export type ResolveSourceSecret = (name: string) => Promise<string>;
 
@@ -378,13 +382,14 @@ export async function buildGraphjinConfigUpdate(
       copyString("user");
       const ref =
         typeof payload.secretRef === "string" ? payload.secretRef.trim() : "";
-      if (ref) {
-        if (!resolveSecret) {
-          throw new Error("register_source secret resolution is unavailable");
-        }
-        secretName = ref;
-        source.password = await resolveSecret(ref);
+      if (!ref) throw new PasswordRequiredError();
+      if (!resolveSecret) {
+        throw new Error("register_source secret resolution is unavailable");
       }
+      secretName = ref;
+      const password = await resolveSecret(ref);
+      if (!password) throw new PasswordRequiredError();
+      source.password = password;
     }
     if (kind === "api") {
       const specAssetId =

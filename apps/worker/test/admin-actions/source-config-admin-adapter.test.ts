@@ -387,7 +387,7 @@ describeIfDb("source_config_admin adapter (OL5)", () => {
   it("register_source uses update_sources (upsert), never sources: (replace)", async () => {
     await setEndpoint(CUSTOMER);
     const { calls } = installFetchMock();
-    const { result } = await runAction({
+    const database = {
       action: "register_source",
       name: "warehouse",
       kind: "database",
@@ -395,7 +395,17 @@ describeIfDb("source_config_admin adapter (OL5)", () => {
       port: 5432,
       dbname: "warehouse",
       user: "reader",
-    });
+    };
+    const passwordless = await runAction(database);
+    expect(passwordless.result.ok).toBe(false);
+    expect(passwordless.result.error).toContain("OpenNeko needs a login with a password.");
+    expect(calls.some((call) => call.body.query.includes("update_sources"))).toBe(false);
+    await db()
+      .insert(data_source_secret)
+      .values({ org_id: orgId, name: "warehouse-password", value_enc: maybeEncryptSecret("wh-pw"), updated_at: new Date() })
+      .onConflictDoNothing();
+    calls.length = 0;
+    const { result } = await runAction({ ...database, secretRef: "warehouse-password" });
     expect(result.ok, result.error).toBe(true);
     const preview = calls[1].body.query;
     expect(preview).toContain("update_sources");

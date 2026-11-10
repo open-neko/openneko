@@ -38,7 +38,7 @@ describe("checkSourceConfigAnswers", () => {
       { field: "port", message: "The port must be a whole number from 1 to 65535." },
       { field: "dbname", message: "The database name is empty." },
       { field: "user", message: "The login name is empty." },
-      { field: "secretRef", message: "Save the password for this login first." },
+      { field: "secretRef", message: "OpenNeko needs a login with a password. Save the password for this login first." },
     ]);
   });
 

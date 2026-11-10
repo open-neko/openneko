@@ -115,6 +115,18 @@ candidate after the check. Each problem names the answer at fault, and the
 source form shows it beside that field. API and local-file sources skip the
 file check, because their files exist only after approval.
 
+A database source needs a login with a password. OpenNeko refuses a
+proposal with no saved password, or with a saved password that is empty, at
+the answer check and again at apply. The password goes to GraphJin only. The
+control plane and the approval worker replace it with `[REDACTED]` in every
+error text, so GraphJin's errors cannot carry it to the model, a log line or
+the thread.
+
+The org setting "Ask-based config" (Admin settings, Data access rules) turns
+these tools on. It is on for an organization made after migration 0130.
+Migration 0130 saves "off" for each organization that had no saved value, so
+an upgrade changes nothing. Every change still needs an admin's approval.
+
 ## Start steps
 
 `openneko start` runs these steps in order, each in its own container with
