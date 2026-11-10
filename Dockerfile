@@ -366,9 +366,10 @@ CMD ["--help"]
 # distroless cc image. /data is created here so a fresh named volume is owned
 # by the non-root user.
 FROM debian:bookworm-slim AS serve-data
-RUN mkdir -p /data/files /data/file-index /var/lib/openneko/agent-runs /run/openneko \
-    && chown -R 1001:1001 /data /var/lib/openneko /run/openneko \
-    && chmod 0770 /var/lib/openneko/agent-runs /run/openneko
+RUN mkdir -p /data/files /data/file-index /var/lib/openneko/agent-runs /run/openneko /credentials \
+    && chown -R 1001:1001 /data /var/lib/openneko /run/openneko /credentials \
+    && chmod 0770 /var/lib/openneko/agent-runs /run/openneko \
+    && chmod 0700 /credentials
 
 FROM gcr.io/distroless/cc-debian12:latest AS neko-serve
 COPY --from=go-build /out/openneko /openneko
@@ -376,6 +377,7 @@ COPY --from=duckdb-bin /usr/local/bin/duckdb /usr/local/bin/duckdb
 COPY --from=serve-data --chown=1001:1001 /data /data
 COPY --from=serve-data --chown=1001:1001 /var/lib/openneko /var/lib/openneko
 COPY --from=serve-data --chown=1001:1001 /run/openneko /run/openneko
+COPY --from=serve-data --chown=1001:1001 /credentials /credentials
 USER 1001:1001
 ENTRYPOINT ["/openneko"]
 CMD ["serve"]

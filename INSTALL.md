@@ -160,7 +160,7 @@ openneko version
 Modes:
 
 - **`prod`** (default) — the production control, customer-data, file, and
-  agent runtime services. Six containers remain running after the five startup
+  agent runtime services. Six containers remain running after the six startup
   jobs complete.
 - **`dev`** — source-checkout workflow: use `pnpm dev:setup` for Docker-only dependencies plus AdventureWorks demo data, then `pnpm dev` for hot-reloaded web/worker from source.
 - **`demo`** — core + AdventureWorks: `adventureworks-db`, `adventureworks-init`, `neko-adventureworks-seed`. The full live-trial flow (continuous order trickle + scenario injector) lives in `compose.adventureworks.yml` and needs the [Build from source](#build-from-source-advanced) path.
@@ -284,6 +284,13 @@ DuckDB runs with external access off and reads only the tables of that user.
 Web and worker reach the service at `OPENNEKO_SERVE_URL` with a token that
 expires after one minute. When `OPENNEKO_SERVE_URL` is not set, the assistant
 does not get the file tools.
+
+`openneko-serve` connects to `neko-db` as `neko_files`. That role can read
+and write only the file index tables. The startup job `openneko-serve-init`
+sets its password, derived from the secret key, and gives the service a key
+that checks the tokens. The service never gets the secret key or the `neko`
+password. On a database you manage yourself, give the `neko` login the
+`CREATEROLE` right, so it can create `neko_files` and set its password.
 
 Files a user adds to the Library go into that folder. When `OPENNEKO_SERVE_URL`
 is not set, the Library refuses uploads. After an upgrade, the worker moves

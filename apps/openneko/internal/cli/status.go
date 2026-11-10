@@ -46,6 +46,7 @@ var oneShotJobs = map[string]bool{
 	"storage-reconcile":        true,
 	"adventureworks-init":      true,
 	"graphjin-config-init":     true,
+	"openneko-serve-init":      true,
 	"neko-adventureworks-seed": true,
 }
 

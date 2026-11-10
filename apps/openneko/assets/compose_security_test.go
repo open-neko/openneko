@@ -164,3 +164,68 @@ func TestPackagedComposeKeepsRuntimeTrafficOnDockerNetwork(t *testing.T) {
 		t.Fatal("web must start after the worker control plane is healthy")
 	}
 }
+
+func TestServeHoldsNoControlZoneSecrets(t *testing.T) {
+	root := repoRootForTest(t)
+	type service struct {
+		Environment map[string]any `yaml:"environment"`
+		EnvFile     any            `yaml:"env_file"`
+		Volumes     []string       `yaml:"volumes"`
+	}
+	forbidden := func(name string) bool {
+		upper := strings.ToUpper(name)
+		switch {
+		case upper == "NEKO_PG_PASSWORD", upper == "NEKO_SECRET_KEY", upper == "NEKO_DATABASE_URL", upper == "DATABASE_URL":
+			return true
+		case strings.Contains(upper, "PASSWORD"), strings.HasSuffix(upper, "_API_KEY"), strings.Contains(upper, "SECRET"):
+			return true
+		}
+		for _, provider := range []string{"OPENAI", "ANTHROPIC", "GEMINI", "GOOGLE", "VERTEX", "AWS", "BEDROCK", "AZURE", "MISTRAL", "GROQ", "COHERE", "DEEPSEEK", "XAI", "OPENROUTER", "TOGETHER"} {
+			if strings.HasPrefix(upper, provider+"_") {
+				return true
+			}
+		}
+		return false
+	}
+	for _, name := range []string{"compose.yml", "apps/openneko/assets/compose/core.yml", "recipes/sandbox/compose.yml"} {
+		raw, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc struct {
+			Services map[string]service `yaml:"services"`
+		}
+		if err := yaml.Unmarshal(raw, &doc); err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		serve, ok := doc.Services["openneko-serve"]
+		if !ok {
+			t.Fatalf("%s has no openneko-serve service", name)
+		}
+		if serve.EnvFile != nil {
+			t.Fatalf("%s: openneko-serve reads an env_file", name)
+		}
+		for key, value := range serve.Environment {
+			if forbidden(key) {
+				t.Fatalf("%s: openneko-serve names %s", name, key)
+			}
+			if key == "NEKO_PG_USER" && value != nil && value != "neko_files" {
+				t.Fatalf("%s: openneko-serve logs in as %v", name, value)
+			}
+		}
+		for _, mount := range serve.Volumes {
+			source := strings.SplitN(mount, ":", 2)[0]
+			if strings.Contains(source, "openneko-config") || strings.Contains(source, "OPENNEKO_CONFIG_VOLUME") {
+				t.Fatalf("%s: openneko-serve mounts the config volume (%s), which holds the secret-key and the database password", name, mount)
+			}
+		}
+		if name != "recipes/sandbox/compose.yml" {
+			if got := serve.Environment["OPENNEKO_SERVE_CREDENTIALS"]; got != "/credentials" {
+				t.Fatalf("%s: openneko-serve OPENNEKO_SERVE_CREDENTIALS = %v", name, got)
+			}
+			if _, ok := doc.Services["openneko-serve-init"]; !ok {
+				t.Fatalf("%s has no openneko-serve-init step", name)
+			}
+		}
+	}
+}

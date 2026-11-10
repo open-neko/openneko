@@ -92,6 +92,11 @@ func loadOrCreateKey(overrideDir string) ([]byte, error) {
 	return sum[:], nil
 }
 
+func EnsureSecretKey(overrideDir string) error {
+	_, err := loadOrCreateKey(overrideDir)
+	return err
+}
+
 // EncryptValue encrypts a plaintext value to the enc:v1 wire format.
 func EncryptValue(overrideDir, value string) (string, error) {
 	key, err := loadOrCreateKey(overrideDir)

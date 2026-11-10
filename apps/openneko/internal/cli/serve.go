@@ -23,7 +23,7 @@ import (
 )
 
 func newServeCmd() *cobra.Command {
-	var addr, filesDir, indexDir, duckdb, agentSocket, sandboxURL string
+	var addr, filesDir, indexDir, duckdb, agentSocket, sandboxURL, credentials string
 	var maxTurns int
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -33,11 +33,11 @@ func newServeCmd() *cobra.Command {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
-			key, err := config.SigningSecret("", files.TokenLabel)
+			key, dsn, err := serveKeyAndDatabase(credentials)
 			if err != nil {
-				return fmt.Errorf("read the secret-key: %w", err)
+				return err
 			}
-			pool, err := pgxpool.New(ctx, defaultConn().DSN())
+			pool, err := pgxpool.New(ctx, dsn)
 			if err != nil {
 				return err
 			}
@@ -105,6 +105,22 @@ func newServeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&agentSocket, "agent-socket", os.Getenv("OPENNEKO_SERVE_SOCKET"), "Unix socket for agent turns; empty turns them off")
 	cmd.Flags().StringVar(&sandboxURL, "sandbox-url", os.Getenv("OPENNEKO_SANDBOX_URL"), "Sandbox service for agent terminal commands (unix:///path or http(s)://host:port); empty turns the terminal off. Its key is read from OPENNEKO_SANDBOX_KEY")
 	cmd.Flags().IntVar(&maxTurns, "max-turns", envInt("OPENNEKO_SERVE_MAX_TURNS", 32), "Agent turns that run at once; more are refused")
+	cmd.Flags().StringVar(&credentials, "credentials", os.Getenv(serveCredentialsEnv), "Folder written by `openneko serve-init`: the token key and the neko_files database URL. Empty reads the secret-key and the main database login")
 	cmd.Flags().StringVar(&duckdb, "duckdb", envOr("OPENNEKO_DUCKDB", "duckdb"), "DuckDB CLI for SQL over sheet tables")
 	return cmd
+}
+
+func serveKeyAndDatabase(credentials string) ([]byte, string, error) {
+	if credentials != "" {
+		key, dsn, err := readServeCredentials(credentials)
+		if err != nil {
+			return nil, "", fmt.Errorf("read the serve credentials: %w", err)
+		}
+		return key, dsn, nil
+	}
+	key, err := config.SigningSecret("", files.TokenLabel)
+	if err != nil {
+		return nil, "", fmt.Errorf("read the secret-key: %w", err)
+	}
+	return key, defaultConn().DSN(), nil
 }

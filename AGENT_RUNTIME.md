@@ -60,16 +60,34 @@ trusted host. Only the agent loop runs in the runner and serve.
 | Piece | Runs as | Holds | Network |
 |---|---|---|---|
 | Runner | the web or worker user (`neko`, 1001) | the run's broker token and the org's model key, for this run only | that of web or the worker |
-| `openneko serve` | `neko`, 1001 | a turn's model key while the turn runs; the files service; the database login and the read-only config folder | the stack's network, for the model APIs |
+| `openneko serve` | `neko`, 1001 | a turn's model key while the turn runs; the files service; the `neko_files` database login and the derived token key | the stack's network, for the model APIs |
 | Sandbox service | root, to give each run its own user | **no secrets**; a command gets only `PATH`, `HOME`, `TMPDIR`, `LANG`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH` | only its own network |
 
 Model keys exist only in the runner and in serve. Serve drops every
 `OPENNEKO_SANDBOX_*` value that a turn sends, and the sandbox request carries
 no model key, so the terminal cannot read one.
 
-Known gap: serve still connects to the database as the application role and
-mounts the config folder that holds the secret key. A later release gives
-serve a narrow database role and a derived key only.
+## Two zones
+
+The stack has two zones. The control zone is web and the worker. It holds
+the secret key, the `neko` database login and the provider keys. The agent
+zone is serve and the runner's turns. Serve holds only these:
+
+- the `neko_files` database login. The role can read and write the three
+  `file_content_*` tables and nothing else (migration 0127).
+- the token key, `HMAC(secret key, "openneko-serve:v1")`. It checks the
+  tokens that web and the worker sign. It cannot decrypt a stored value.
+- a turn's model key, while the turn runs.
+
+The one-shot `openneko-serve-init` step writes the first two into the
+`openneko-serve-credentials` volume before serve starts. It runs on every
+start, so a new secret key reaches serve on the next start. Serve does not
+mount the config volume.
+
+Containers and credentials separate the zones. The network does not: serve
+shares the stack network with the database, web and the worker. The
+database grants and the broker's per-run tokens stop serve from acting
+outside its zone.
 
 ## The sandbox service
 

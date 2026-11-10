@@ -7,7 +7,9 @@ set -eu
 
 mkdir -p "$(dirname "$OPENNEKO_SERVE_SOCKET")" "$OPENNEKO_AGENT_RUNS_DIR" "$OPENNEKO_DEV_STATE/bin"
 (cd apps/openneko && go build -o "$OPENNEKO_DEV_STATE/bin/openneko" ./cmd/openneko)
+"$OPENNEKO_DEV_STATE/bin/openneko" serve-init --dir "$OPENNEKO_DEV_STATE/serve-credentials"
 exec "$OPENNEKO_DEV_STATE/bin/openneko" serve \
+  --credentials "$OPENNEKO_DEV_STATE/serve-credentials" \
   --addr "127.0.0.1:${OPENNEKO_SERVE_PORT:-8090}" \
   --files-dir "$OPENNEKO_DEV_STATE/files" \
   --index-dir "$OPENNEKO_DEV_STATE/file-index"
