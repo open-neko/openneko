@@ -22,3 +22,5 @@ export * from "./pack-source";
 export * from "./group-grants";
 export * from "./row-filter";
 export * from "./restart";
+export * from "./config-problems";
+export * from "./config-file-check";

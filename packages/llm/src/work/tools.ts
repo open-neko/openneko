@@ -11,6 +11,7 @@ import { RENDER_CARDS_DESCRIPTION } from "./render-catalog";
 import {
   buildSourceFormSurface,
   SOURCE_FORM_PREFILL_SHAPE,
+  sourceFormPrefillFromAnswers,
   type SourceFormPrefill,
 } from "./source-form";
 import type { AgentEvent } from "../agent-backend";
@@ -887,14 +888,36 @@ export function buildSourceConfigManagerServer(opts: {
         payload: changePayload,
       });
       if (preview.denied || preview.error || !preview.preview?.valid) {
+        const problems = preview.problems ?? [];
+        let formShown = false;
+        if (problems.length > 0 && action === "register_source") {
+          try {
+            await opts.emit({
+              type: "surface",
+              messages: buildSourceFormSurface(
+                sourceFormPrefillFromAnswers(rest),
+                `source-form-${randomUUID()}`,
+                problems,
+              ),
+            });
+            formShown = true;
+          } catch {
+            formShown = false;
+          }
+        }
         return {
           content: [
             {
               type: "text" as const,
               text: JSON.stringify({
                 ok: false,
-                stage: "graphjin_config_preview",
+                stage: problems.length > 0 ? "answer_check" : "graphjin_config_preview",
                 ...preview,
+                ...(formShown
+                  ? { next: "The form is shown again with each problem beside its answer. Tell the admin what to fix, in one or two sentences, and wait for the new answers." }
+                  : problems.length > 0
+                    ? { next: "Tell the admin which answer to fix and why, using the problem messages, then ask for the new answer." }
+                    : {}),
               }),
             },
           ],

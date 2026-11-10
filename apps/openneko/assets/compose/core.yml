@@ -148,6 +148,7 @@ services:
       OPENNEKO_FILES_DIR: /data/files
       OPENNEKO_FILES_INDEX_DIR: /data/file-index
       OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
+      OPENNEKO_CONFIG_CHECK_SOCKET: /run/openneko/config-check.sock
       OPENNEKO_SANDBOX_URL: ${OPENNEKO_SANDBOX_URL:-}
       OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
@@ -182,6 +183,7 @@ services:
       OPENNEKO_GRAPHJIN_URL: http://openneko-serve:8089
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
       OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
+      OPENNEKO_CONFIG_CHECK_SOCKET: /run/openneko/config-check.sock
       OPENNEKO_SANDBOX_URL: ${OPENNEKO_SANDBOX_URL:-}
       OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
       OPENNEKO_AGENT_RUNS_DIR: /var/lib/openneko/agent-runs
@@ -209,6 +211,7 @@ services:
       OPENNEKO_GRAPHJIN_URL: http://openneko-serve:8089
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
       OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
+      OPENNEKO_CONFIG_CHECK_SOCKET: /run/openneko/config-check.sock
       OPENNEKO_SANDBOX_URL: ${OPENNEKO_SANDBOX_URL:-}
       OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
       OPENNEKO_AGENT_RUNS_DIR: /var/lib/openneko/agent-runs

@@ -1318,6 +1318,7 @@ textarea.work-a2ui-input { resize: vertical; }
 }
 .work-openapi-file { padding-block: 6px; }
 .work-openapi-error { color: var(--danger); font-size: var(--type-caption); }
+.work-a2ui-field-error { color: var(--danger); font-size: var(--type-caption); }
 .work-openapi-summary {
   padding: 12px;
   background: var(--card);

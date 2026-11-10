@@ -719,6 +719,15 @@ registerComponent("Tabs", (comp: A2UIComponent, ctx: RenderContext) => (
   <TabsView props={comp as unknown as TabsProps & { id: string }} ctx={ctx} />
 ));
 
+function FieldError({ id, error }: { id: string; error?: unknown }) {
+  if (typeof error !== "string" || !error) return null;
+  return (
+    <span id={id} className="work-a2ui-field-error" role="alert">
+      {error}
+    </span>
+  );
+}
+
 registerComponent("TextField", (comp: A2UIComponent, ctx: RenderContext) => {
   const props = comp as unknown as TextFieldProps & { id: string };
   const path = bindingPath(ctx, props.id, "value");
@@ -728,10 +737,14 @@ registerComponent("TextField", (comp: A2UIComponent, ctx: RenderContext) => {
       : props.variant === "obscured"
         ? "password"
         : "text";
+  const errorId = `${ctx.surface.surfaceId}-${props.id}-error`;
+  const hasError = typeof props.error === "string" && props.error !== "";
   const common = {
     id: `${ctx.surface.surfaceId}-${props.id}`,
     className: "work-a2ui-input",
     placeholder: props.placeholder,
+    "aria-invalid": hasError || undefined,
+    "aria-describedby": hasError ? errorId : undefined,
     value: props.value == null ? "" : String(props.value),
     onChange: (
       event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
@@ -752,6 +765,7 @@ registerComponent("TextField", (comp: A2UIComponent, ctx: RenderContext) => {
       ) : (
         <Input {...common} type={inputType} />
       )}
+      <FieldError id={errorId} error={props.error} />
     </label>
   );
 });
@@ -805,6 +819,7 @@ registerComponent("ChoicePicker", (comp: A2UIComponent, ctx: RenderContext) => {
             </option>
           ))}
         </NativeSelect>
+        <FieldError id={`${ctx.surface.surfaceId}-${props.id}-error`} error={props.error} />
       </label>
     );
   }
@@ -841,6 +856,7 @@ registerComponent("ChoicePicker", (comp: A2UIComponent, ctx: RenderContext) => {
           );
         })}
       </div>
+      <FieldError id={`${ctx.surface.surfaceId}-${props.id}-error`} error={props.error} />
     </fieldset>
   );
 });
@@ -1279,6 +1295,7 @@ function SourceSecretInputView({
           value={password}
           onChange={(event) => setPassword(event.target.value)}
         />
+        <FieldError id={`${props.id}-error`} error={props.error} />
       </label>
       <Button
         type="button"

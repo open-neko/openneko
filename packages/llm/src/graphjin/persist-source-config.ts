@@ -285,6 +285,30 @@ export async function persistGraphjinSourceConfigUpdate(input: {
     /* turbopackIgnore: true */ input.configFile,
     "utf8",
   );
+  const merged = mergeGraphjinSourceConfigUpdate(raw, input.update);
+  const previousMode = (
+    await stat(/* turbopackIgnore: true */ input.configFile)
+  ).mode & 0o777;
+  const temporary = join(
+    /* turbopackIgnore: true */ dirname(input.configFile),
+    `.${randomUUID()}.graphjin-config.tmp`,
+  );
+  await writeFile(
+    /* turbopackIgnore: true */ temporary,
+    merged,
+    { mode: previousMode },
+  );
+  await rename(
+    /* turbopackIgnore: true */ temporary,
+    input.configFile,
+  );
+}
+
+/** The config file text after the update, as the approval worker writes it. */
+export function mergeGraphjinSourceConfigUpdate(
+  raw: string,
+  update: Record<string, unknown>,
+): string {
   const document = parseDocument(raw);
   if (document.errors.length > 0) {
     throw new Error(
@@ -297,7 +321,7 @@ export async function persistGraphjinSourceConfigUpdate(input: {
 
   let sourcesNode = document.get("sources", true);
   const touchesSources = ["update_sources", "remove_sources", "source_patches"].some(
-    (key) => Array.isArray(input.update[key]) && (input.update[key] as unknown[]).length > 0,
+    (key) => Array.isArray(update[key]) && (update[key] as unknown[]).length > 0,
   );
   if (sourcesNode == null) {
     sourcesNode = new YAMLSeq();
@@ -307,7 +331,7 @@ export async function persistGraphjinSourceConfigUpdate(input: {
     throw new Error("GraphJin config sources must be a YAML list");
   }
 
-  const updates = input.update.update_sources;
+  const updates = update.update_sources;
   if (Array.isArray(updates)) {
     for (const value of updates) {
       if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -324,7 +348,7 @@ export async function persistGraphjinSourceConfigUpdate(input: {
     }
   }
 
-  const removals = input.update.remove_sources;
+  const removals = update.remove_sources;
   if (Array.isArray(removals)) {
     const names = new Set(
       removals.map((value, index) => {
@@ -339,7 +363,7 @@ export async function persistGraphjinSourceConfigUpdate(input: {
     );
   }
 
-  const accessPatches = input.update.source_patches;
+  const accessPatches = update.source_patches;
   if (Array.isArray(accessPatches)) {
     for (const value of accessPatches) {
       if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -358,22 +382,6 @@ export async function persistGraphjinSourceConfigUpdate(input: {
     }
   }
 
-  persistRoles(document, input.update.roles);
-
-  const previousMode = (
-    await stat(/* turbopackIgnore: true */ input.configFile)
-  ).mode & 0o777;
-  const temporary = join(
-    /* turbopackIgnore: true */ dirname(input.configFile),
-    `.${randomUUID()}.graphjin-config.tmp`,
-  );
-  await writeFile(
-    /* turbopackIgnore: true */ temporary,
-    document.toString(),
-    { mode: previousMode },
-  );
-  await rename(
-    /* turbopackIgnore: true */ temporary,
-    input.configFile,
-  );
+  persistRoles(document, update.roles);
+  return document.toString();
 }

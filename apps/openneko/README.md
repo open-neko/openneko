@@ -41,6 +41,7 @@ openneko logs [service…] [-f]
 openneko migrate
 openneko seed adventureworks
 openneko [--instance name] graphjin import <customer-config.yml|->
+openneko graphjin check [--config file]
 openneko backup [--to <file>]
 openneko backup key {export,adopt}
 openneko restore <file> --confirm RESTORE [--key-file <key>] [--drop-foreign-objects]

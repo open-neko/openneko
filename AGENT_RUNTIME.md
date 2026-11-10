@@ -101,6 +101,20 @@ set `agent.enabled: false`. The model fills a typed proposal
 approves, the worker applies the change to the running GraphJin and writes it
 to `OPENNEKO_GRAPHJIN_CONFIG`: sources, access, table lists and roles.
 
+Before a proposal reaches an admin, the control plane checks it three times:
+the answers (an empty login, a password name that is not saved, a port out of
+range, a source or table that does not exist), then GraphJin's live preview,
+then the config file. For the file check, the control plane writes the config
+as it would be after approval to a private folder beside the config
+(`.openneko-check/<id>/`, mode 0700) and asks serve to load it with the
+pinned GraphJin loader. Serve listens on the Unix socket
+`OPENNEKO_CONFIG_CHECK_SOCKET` (mode 0660, the same rule as the agent
+socket). The request names the candidate by id only, serve reads only that
+folder, and the reply holds errors only. The control plane deletes the
+candidate after the check. Each problem names the answer at fault, and the
+source form shows it beside that field. API and local-file sources skip the
+file check, because their files exist only after approval.
+
 ## Start steps
 
 `openneko start` runs these steps in order, each in its own container with

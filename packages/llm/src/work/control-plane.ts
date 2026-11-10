@@ -345,6 +345,8 @@ export type SourceConfigViewResult = {
 export type SourceConfigPreviewResult = {
   denied?: boolean;
   error?: string;
+  /** Each problem names the admin's answer at fault. */
+  problems?: import("../graphjin/config-problems").ConfigProblem[];
   source?: { id: string; name: string; host: string | null };
   specAsset?: OpenApiSpecAssetView;
   preview?: {
@@ -357,6 +359,7 @@ export type SourceConfigPreviewResult = {
     changes: unknown;
     findings: unknown;
     errors: unknown;
+    fileCheck?: import("../graphjin/config-file-check").GraphjinFileCheck;
   };
 };
 
@@ -1457,6 +1460,85 @@ export class InProcessControlPlane implements AgentControlPlane {
               process.env.OPENNEKO_GRAPHJIN_FILES_DIR?.trim() || "/config/files",
           })
         : undefined;
+      const { graphjinQuery } = await import("../graphjin/client");
+      const { mintGraphjinToken } = await import("../graphjin/token");
+      const token = mintGraphjinToken({
+        orgId: input.orgId,
+        userId: gate.userId,
+        role: "admin",
+        ttlSeconds: 120,
+      });
+      const headers = { authorization: `Bearer ${token}` };
+      const revisionResponse = await graphjinQuery<{
+        gj_config?: { catalog_revision?: string; sources?: unknown };
+      }>({
+        baseUrl: src.graphqlUrl,
+        headers,
+        query: 'query { gj_config(id: "current") { catalog_revision sources } }',
+      });
+      const revision = revisionResponse.data?.gj_config?.catalog_revision;
+      if (!revision || revisionResponse.errors?.length) {
+        return {
+          source,
+          error:
+            revisionResponse.errors?.map((item) => item.message).join("; ") ||
+            "GraphJin did not return catalog_revision",
+        };
+      }
+      let currentSources = revisionResponse.data?.gj_config?.sources;
+      if (typeof currentSources === "string") {
+        try {
+          currentSources = JSON.parse(currentSources);
+        } catch {
+          currentSources = [];
+        }
+      }
+      const {
+        checkSourceConfigAnswers,
+        describeConfigProblems,
+        mapGraphjinConfigErrors,
+      } = await import("../graphjin/config-problems");
+      const secretNames = (
+        await db()
+          .select({ name: data_source_secret.name })
+          .from(data_source_secret)
+          .where(eq(data_source_secret.org_id, input.orgId))
+      ).map((row) => row.name);
+      const sourceTables = new Map<string, string[]>();
+      const tablesSource =
+        input.payload.action === "set_source_tables" &&
+        typeof input.payload.source === "string"
+          ? input.payload.source.trim()
+          : "";
+      if (tablesSource) {
+        const tablesResponse = await graphjinQuery<{
+          gj_catalog?: Array<{ table_name?: string | null }>;
+        }>({
+          baseUrl: src.graphqlUrl,
+          headers,
+          query:
+            'query ($source: String!) { gj_catalog(where: { kind: { eq: "table" }, source: { eq: $source } }, limit: 5000) { table_name } }',
+          variables: { source: tablesSource },
+        });
+        const tables = (tablesResponse.data?.gj_catalog ?? [])
+          .map((row) => row.table_name ?? "")
+          .filter(Boolean);
+        if (!tablesResponse.errors?.length) {
+          sourceTables.set(tablesSource.toLowerCase(), tables);
+        }
+      }
+      const answerProblems = checkSourceConfigAnswers(input.payload, {
+        secretNames,
+        currentSources,
+        sourceTables,
+      });
+      if (answerProblems.length > 0) {
+        return {
+          source,
+          problems: answerProblems,
+          error: describeConfigProblems(answerProblems),
+        };
+      }
       const { update } = await buildGraphjinConfigUpdate(
         input.payload,
         async (name) => {
@@ -1494,39 +1576,6 @@ export class InProcessControlPlane implements AgentControlPlane {
       // entropy; even its plain SHA-256 must never enter an approval payload.
       // Canonical JSON survives PostgreSQL JSONB key reordering.
       const patchHash = graphjinConfigPatchHash(input.payload);
-      const { graphjinQuery } = await import("../graphjin/client");
-      const { mintGraphjinToken } = await import("../graphjin/token");
-      const token = mintGraphjinToken({
-        orgId: input.orgId,
-        userId: gate.userId,
-        role: "admin",
-        ttlSeconds: 120,
-      });
-      const headers = { authorization: `Bearer ${token}` };
-      const revisionResponse = await graphjinQuery<{
-        gj_config?: { catalog_revision?: string; sources?: unknown };
-      }>({
-        baseUrl: src.graphqlUrl,
-        headers,
-        query: 'query { gj_config(id: "current") { catalog_revision sources } }',
-      });
-      const revision = revisionResponse.data?.gj_config?.catalog_revision;
-      if (!revision || revisionResponse.errors?.length) {
-        return {
-          source,
-          error:
-            revisionResponse.errors?.map((item) => item.message).join("; ") ||
-            "GraphJin did not return catalog_revision",
-        };
-      }
-      let currentSources = revisionResponse.data?.gj_config?.sources;
-      if (typeof currentSources === "string") {
-        try {
-          currentSources = JSON.parse(currentSources);
-        } catch {
-          currentSources = [];
-        }
-      }
       assertDatabaseSourcesStayReadOnly(update, currentSources);
       if (
         input.payload.action === "register_source" &&
@@ -1544,6 +1593,16 @@ export class InProcessControlPlane implements AgentControlPlane {
           error: `a GraphJin source named "${sourceName}" already exists`,
         };
       }
+      const checkConfigFile = async (candidate: Record<string, unknown>) => {
+        const { checkGraphjinConfigCandidate } = await import(
+          "../graphjin/config-file-check"
+        );
+        return checkGraphjinConfigCandidate({
+          configFile: process.env.OPENNEKO_GRAPHJIN_CONFIG,
+          socketPath: process.env.OPENNEKO_CONFIG_CHECK_SOCKET,
+          update: candidate,
+        });
+      };
       // The managed file is materialized only after approval. Local OpenAPI
       // validation plus the live catalog revision form the proposal preview;
       // the worker performs GraphJin's own two-phase preview after staging it.
@@ -1632,20 +1691,46 @@ export class InProcessControlPlane implements AgentControlPlane {
         secretValue && secretValue.length >= 8
           ? (value ?? "").split(secretValue).join("[REDACTED]")
           : value ?? "";
+      const valid = row?.valid === true && Boolean(row.preview_id);
+      const errors = parseConfigPreviewJSON(scrub(row?.errors_json));
+      const preview = {
+        valid,
+        patchHash,
+        catalogRevision: revision,
+        expiresAt: row?.expires_at ?? null,
+        scope: null,
+        reloadMode: null,
+        changes: parseConfigPreviewJSON(scrub(row?.change_summary_json)),
+        findings: parseConfigPreviewJSON(scrub(row?.findings_json)),
+        errors,
+      };
+      if (!valid) {
+        const problems = mapGraphjinConfigErrors(errors, input.payload);
+        return {
+          source,
+          preview,
+          ...(problems.length > 0
+            ? { problems, error: describeConfigProblems(problems) }
+            : {}),
+        };
+      }
+      const fileCheck = await checkConfigFile(update);
+      if (fileCheck.checked && !fileCheck.valid) {
+        const problems = mapGraphjinConfigErrors(
+          fileCheck.errors.map((item) => scrub(item)),
+          input.payload,
+        );
+        return {
+          source,
+          problems,
+          error: `The config file would not load in GraphJin. ${describeConfigProblems(problems)}`,
+          preview: { ...preview, valid: false, errors: fileCheck.errors.map((item) => scrub(item)), fileCheck },
+        };
+      }
       return {
         source,
         ...(specAsset ? { specAsset } : {}),
-        preview: {
-          valid: row?.valid === true && Boolean(row.preview_id),
-          patchHash,
-          catalogRevision: revision,
-          expiresAt: row?.expires_at ?? null,
-          scope: null,
-          reloadMode: null,
-          changes: parseConfigPreviewJSON(scrub(row?.change_summary_json)),
-          findings: parseConfigPreviewJSON(scrub(row?.findings_json)),
-          errors: parseConfigPreviewJSON(scrub(row?.errors_json)),
-        },
+        preview: { ...preview, fileCheck },
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

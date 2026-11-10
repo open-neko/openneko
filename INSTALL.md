@@ -258,6 +258,7 @@ openneko migrate                   # apply pending migrations to OpenNeko's data
 openneko serve [--agent-socket path]  # user files and file search; agent turns on a Unix socket when set (runs as the openneko-serve container)
 openneko seed adventureworks       # one-shot demo data load (already done by --mode demo)
 openneko [--instance name] graphjin import <customer-config.yml|->
+openneko graphjin check [--config file]  # load a GraphJin config with the pinned loader; exit 1 and the reason when it is not valid
 openneko reset [--all]             # tear down + clear local config (--all also wipes secrets)
 openneko doctor                    # host check, docker daemon, stack health
 openneko version
@@ -278,6 +279,11 @@ Modes:
 `relationships`. Use `-` to read it from standard input. It requires a running
 production installation, validates the change through GraphJin, seals source
 credentials, and preserves OpenNeko-managed authentication and keystore settings.
+
+`graphjin check` loads a GraphJin config file with the GraphJin version built
+into `openneko` and runs the checks GraphJin runs at start. It prints the first
+problem and exits 1, or prints "valid" and exits 0. The default file is
+`OPENNEKO_GRAPHJIN_CONFIG`.
 
 ### Audit logging failure alerts
 

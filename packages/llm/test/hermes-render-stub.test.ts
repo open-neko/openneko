@@ -195,4 +195,94 @@ describe("request_source_config_change", () => {
       },
     });
   });
+
+  it("shows the form again with each problem beside its answer", async () => {
+    const emit = vi.fn(async () => {});
+    const previewSourceConfigChange = vi.fn(async () => ({
+      error: "The login name is empty. Save the password for this login first.",
+      problems: [
+        { field: "user", message: "The login name is empty." },
+        { field: "secretRef", message: "Save the password for this login first." },
+        { field: null, message: "GraphJin did not accept this change.", detail: "something else" },
+      ],
+    }));
+    const server = buildSourceConfigManagerServer({
+      orgId: "org",
+      runId: "run",
+      emit,
+      controlPlane: { previewSourceConfigChange } as never,
+    });
+    await withServer(server, async (client) => {
+      const result = await client.callTool({
+        name: "request_source_config_change",
+        arguments: {
+          action: "register_source",
+          name: "shop",
+          kind: "database",
+          type: "mysql",
+          host: "db.internal",
+          port: 3306,
+          dbname: "magento",
+          blockedTables: ["admin_user", "oauth_token"],
+          intent: "Connect the store database.",
+        },
+      });
+      const body = JSON.parse(text(result));
+      expect(body).toMatchObject({
+        ok: false,
+        stage: "answer_check",
+        problems: [{ field: "user" }, { field: "secretRef" }, { field: null }],
+      });
+      expect(body.next).toMatch(/form is shown again/);
+    });
+    expect(emit).toHaveBeenCalledTimes(1);
+    const surface = (emit.mock.calls[0]?.[0] as { messages: Array<{ createSurface: { dataModel: Record<string, Record<string, unknown>>; components: Array<Record<string, unknown>> } }> })
+      .messages[0]!.createSurface;
+    expect(surface.dataModel.form).toMatchObject({
+      name: "shop",
+      kind: ["database"],
+      type: ["mysql"],
+      host: "db.internal",
+      port: 3306,
+      dbname: "magento",
+      user: "",
+      blockedTables: "admin_user, oauth_token",
+    });
+    expect(surface.dataModel.problems).toEqual({
+      user: "The login name is empty.",
+      secretRef: "Save the password for this login first.",
+      general: "GraphJin did not accept this change.",
+    });
+    const byId = new Map(surface.components.map((component) => [component.id, component]));
+    expect(byId.get("user")).toMatchObject({ error: { path: "/problems/user" } });
+    expect(byId.get("password")).toMatchObject({ error: { path: "/problems/secretRef" } });
+    expect(byId.get("problemsNote")).toMatchObject({ component: "Conditional", when: { path: "/problems/general" } });
+  });
+
+  it("shows no form for a change with no form", async () => {
+    const emit = vi.fn(async () => {});
+    const previewSourceConfigChange = vi.fn(async () => ({
+      error: 'No source is named "shopp".',
+      problems: [{ field: "source", message: 'No source is named "shopp". The sources are: shop.' }],
+    }));
+    const server = buildSourceConfigManagerServer({
+      orgId: "org",
+      runId: "run",
+      emit,
+      controlPlane: { previewSourceConfigChange } as never,
+    });
+    await withServer(server, async (client) => {
+      const result = await client.callTool({
+        name: "request_source_config_change",
+        arguments: { action: "set_source_access", source: "shopp", read: "admin", intent: "Admins only." },
+      });
+      expect(JSON.parse(text(result))).toMatchObject({
+        ok: false,
+        stage: "answer_check",
+        problems: [{ field: "source" }],
+        next: expect.stringMatching(/which answer to fix/),
+      });
+    });
+    expect(emit).not.toHaveBeenCalled();
+  });
 });

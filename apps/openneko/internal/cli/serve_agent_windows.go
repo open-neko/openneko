@@ -13,3 +13,7 @@ import (
 func serveAgentTurns(context.Context, io.Writer, string, int, sandbox.Config) (<-chan error, error) {
 	return nil, errors.New("agent turns need a Unix socket; Windows is not supported yet")
 }
+
+func serveConfigCheck(context.Context, io.Writer, string, string) (<-chan error, error) {
+	return nil, errors.New("the GraphJin config check needs a Unix socket; Windows is not supported yet")
+}

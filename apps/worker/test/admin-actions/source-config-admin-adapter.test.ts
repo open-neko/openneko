@@ -6,7 +6,8 @@
 // and that connection secrets stay value-blind to the agent/payload/audit.
 
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
@@ -727,5 +728,138 @@ describeIfDb("source_config_admin adapter (OL5)", () => {
     expect(denied.denied).toBe(true);
     expect(denied.error).toMatch(/admin-only/i);
     expect(calls).toHaveLength(0);
+  });
+
+  it("CHECK: names the answer at fault before GraphJin sees the change", async () => {
+    await setEndpoint(CUSTOMER);
+    await setSourceConfigEnabled(true);
+    const { calls } = installFetchMock();
+    const result = await inProcessControlPlane.previewSourceConfigChange({
+      orgId,
+      actorRole: "admin",
+      payload: {
+        action: "register_source",
+        name: "shop",
+        kind: "database",
+        type: "mysql",
+        host: "db.internal",
+        port: 3306,
+        dbname: "magento",
+        user: "",
+        secretRef: "no-such-password",
+      },
+    });
+    expect(result.problems).toEqual([
+      { field: "user", message: "The login name is empty." },
+      { field: "secretRef", message: 'No saved password is named "no-such-password". Save the password again.' },
+    ]);
+    expect(result.error).toBe(
+      'The login name is empty. No saved password is named "no-such-password". Save the password again.',
+    );
+    expect(calls.some((call) => call.body.query.includes('mode: "preview"'))).toBe(false);
+  });
+
+  it("CHECK: ties a refused login to the password answer and keeps the password out", async () => {
+    await setEndpoint(CUSTOMER);
+    await setSourceConfigEnabled(true);
+    const SECRET_VALUE = "check-pw-hunter2";
+    await db()
+      .insert(data_source_secret)
+      .values({ org_id: orgId, name: "shop-password", value_enc: maybeEncryptSecret(SECRET_VALUE), updated_at: new Date() })
+      .onConflictDoNothing();
+    installFetchMock();
+    const mocked = vi.mocked(fetch);
+    const base = mocked.getMockImplementation()!;
+    mocked.mockImplementation(async (url, init) => {
+      const body = JSON.parse(String((init as RequestInit).body)) as { query: string };
+      if (!body.query.includes('mode: "preview"')) return base(url, init);
+      const errors = [
+        `database 'shop' (reader@db.internal:3306/magento): connection failed: Error 1045 (28000): Access denied for user 'reader' (password ${SECRET_VALUE})`,
+      ];
+      return {
+        ok: true,
+        json: async () => ({ data: { gj_config: { valid: false, errors_json: JSON.stringify(errors) } } }),
+        text: async () => "",
+      } as Response;
+    });
+    const result = await inProcessControlPlane.previewSourceConfigChange({
+      orgId,
+      actorRole: "admin",
+      payload: {
+        action: "register_source",
+        name: "shop",
+        kind: "database",
+        type: "mysql",
+        host: "db.internal",
+        port: 3306,
+        dbname: "magento",
+        user: "reader",
+        secretRef: "shop-password",
+      },
+    });
+    expect(result.preview?.valid).toBe(false);
+    expect(result.problems?.[0]).toMatchObject({
+      field: "secretRef",
+      message: 'The database refused the login "reader" with this password. Check the login name and save the password again.',
+    });
+    expect(JSON.stringify(result)).not.toContain(SECRET_VALUE);
+  });
+
+  it("CHECK: loads the merged config file through serve's check socket before approval", async () => {
+    await setEndpoint(CUSTOMER);
+    await setSourceConfigEnabled(true);
+    installFetchMock();
+    const socketPath = join(configRoot, "check.sock");
+    const seen: Array<{ body: string; content: string }> = [];
+    let reply: { valid: boolean; errors: string[] } = {
+      valid: false,
+      errors: ['sources["adventureworks"].access.read: unsupported access mode "owner"'],
+    };
+    const server = createServer((req, res) => {
+      let body = "";
+      req.on("data", (chunk) => (body += chunk));
+      req.on("end", async () => {
+        const { candidate } = JSON.parse(body) as { candidate: string };
+        const content = await readFile(join(configRoot, ".openneko-check", candidate, "agentic.yml"), "utf8");
+        seen.push({ body, content });
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(reply));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    vi.stubEnv("OPENNEKO_CONFIG_CHECK_SOCKET", socketPath);
+    try {
+      const payload = { action: "set_source_access", source: "adventureworks", read: "owner" };
+      const refused = await inProcessControlPlane.previewSourceConfigChange({ orgId, actorRole: "admin", payload });
+      expect(refused.preview?.valid).toBe(false);
+      expect(refused.preview?.fileCheck).toEqual({ checked: true, valid: false, errors: reply.errors });
+      expect(refused.problems).toEqual([{
+        field: "read",
+        message: 'GraphJin does not accept this read access: unsupported access mode "owner".',
+        detail: reply.errors[0],
+      }]);
+      expect(refused.error).toMatch(/^The config file would not load in GraphJin\./);
+      expect(seen[0]!.body).not.toContain("sources");
+      expect(seen[0]!.content).toContain("read: owner");
+      expect(await readdir(join(configRoot, ".openneko-check"))).toEqual([]);
+      expect(await readFile(configFile, "utf8")).toContain("read: blocked");
+
+      reply = { valid: true, errors: [] };
+      const accepted = await inProcessControlPlane.previewSourceConfigChange({ orgId, actorRole: "admin", payload });
+      expect(accepted.preview).toMatchObject({ valid: true, fileCheck: { checked: true, valid: true } });
+      expect(accepted.problems).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+      await new Promise((resolve) => server.close(resolve));
+    }
+    const unchecked = await inProcessControlPlane.previewSourceConfigChange({
+      orgId,
+      actorRole: "admin",
+      payload: { action: "set_source_access", source: "adventureworks", read: "admin" },
+    });
+    expect(unchecked.preview).toMatchObject({
+      valid: true,
+      fileCheck: { checked: false, reason: "OPENNEKO_CONFIG_CHECK_SOCKET is not set" },
+    });
   });
 });

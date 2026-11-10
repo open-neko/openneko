@@ -24,7 +24,7 @@ import (
 )
 
 func newServeCmd() *cobra.Command {
-	var addr, filesDir, indexDir, duckdb, agentSocket, sandboxURL, credentials, gjConfig, gjAddr, subsAddr, subsDir string
+	var addr, filesDir, indexDir, duckdb, agentSocket, checkSocket, sandboxURL, credentials, gjConfig, gjAddr, subsAddr, subsDir string
 	var maxTurns int
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -67,6 +67,13 @@ func newServeCmd() *cobra.Command {
 					return err
 				}
 			}
+			var checkDone <-chan error
+			if checkSocket != "" && gjConfig != "" {
+				if checkDone, err = serveConfigCheck(ctx, cmd.OutOrStdout(), checkSocket, gjConfig); err != nil {
+					_ = ln.Close()
+					return err
+				}
+			}
 			gjDone := make(chan error, 1)
 			if gjConfig != "" {
 				gj := &gjhost.Supervisor{ConfigFile: gjConfig, Addr: gjAddr, Log: cmd.ErrOrStderr(), Command: gjhost.SelfCommand(gjConfig)}
@@ -96,6 +103,10 @@ func newServeCmd() *cobra.Command {
 				stop()
 				_ = srv.Close()
 				return fmt.Errorf("agent socket: %w", err)
+			case err := <-checkDone:
+				stop()
+				_ = srv.Close()
+				return fmt.Errorf("config check socket: %w", err)
 			case <-ctx.Done():
 			}
 			shut, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -128,6 +139,7 @@ func newServeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&filesDir, "files-dir", envOr("OPENNEKO_FILES_DIR", filepath.Join(data, "openneko", "files")), "Folder that holds each user's private files")
 	cmd.Flags().StringVar(&indexDir, "index-dir", envOr("OPENNEKO_FILES_INDEX_DIR", filepath.Join(data, "openneko", "file-index")), "Folder for the sheet tables derived from the files; safe to delete")
 	cmd.Flags().StringVar(&agentSocket, "agent-socket", os.Getenv("OPENNEKO_SERVE_SOCKET"), "Unix socket for agent turns; empty turns them off")
+	cmd.Flags().StringVar(&checkSocket, "config-check-socket", os.Getenv("OPENNEKO_CONFIG_CHECK_SOCKET"), "Unix socket where web and worker ask serve to load a candidate GraphJin config with the pinned loader; empty turns the check off")
 	cmd.Flags().StringVar(&sandboxURL, "sandbox-url", os.Getenv("OPENNEKO_SANDBOX_URL"), "Sandbox service for agent terminal commands (unix:///path or http(s)://host:port); empty turns the terminal off. Its key is read from OPENNEKO_SANDBOX_KEY")
 	cmd.Flags().IntVar(&maxTurns, "max-turns", envInt("OPENNEKO_SERVE_MAX_TURNS", 32), "Agent turns that run at once; more are refused")
 	cmd.Flags().StringVar(&credentials, "credentials", os.Getenv(serveCredentialsEnv), "Folder written by `openneko serve-init`: the token key and the neko_files database URL. Empty reads the secret-key and the main database login")

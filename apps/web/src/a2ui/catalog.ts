@@ -291,6 +291,8 @@ export interface TextFieldProps {
   value?: string | number;
   placeholder?: string;
   variant?: "longText" | "number" | "shortText" | "obscured";
+  /** A problem with this answer, shown beside the field. */
+  error?: string;
 }
 
 export interface CheckBoxProps {
@@ -307,6 +309,8 @@ export interface ChoicePickerProps {
   variant?: "multipleSelection" | "mutuallyExclusive";
   displayStyle?: "checkbox" | "chips";
   filterable?: boolean;
+  /** A problem with this answer, shown beside the field. */
+  error?: string;
 }
 
 export interface ConditionalProps {
@@ -335,6 +339,8 @@ export interface SourceSecretInputProps {
   label?: string;
   sourceName?: string;
   value?: unknown;
+  /** A problem with this answer, shown beside the field. */
+  error?: string;
 }
 
 export interface ConfirmationProps {

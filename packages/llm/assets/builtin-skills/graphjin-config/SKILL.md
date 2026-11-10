@@ -46,7 +46,15 @@ plan every change yourself. An admin approves each change before it applies.
    confirmed fields. Before the call, compare the change with the current
    config from step 2. Tell the admin what the change does and what stays the
    same.
-9. Summarize the proposal and its approval status. Say that nothing applies
+9. OpenNeko checks every proposal before the admin sees "approve": first
+   the answers, then GraphJin's live preview, then the config file with the
+   pinned GraphJin loader. When the result has `problems`, the change is not
+   filed. Each problem names the answer at fault in `field` and the fix in
+   `message`. For a new source, the form comes back with each message beside
+   its field. Tell the admin what to fix in one or two sentences and wait for
+   the new answers. Do not repeat GraphJin's `detail` text unless the admin
+   asks for it.
+10. Summarize the proposal and its approval status. Say that nothing applies
    until an admin approves it.
 
 A view or an explanation succeeds when the answer rests on the redacted config

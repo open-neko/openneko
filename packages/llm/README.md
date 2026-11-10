@@ -155,6 +155,12 @@ form, so a password never reaches the model. `describe_source_config` on the sam
 GraphJin's `gj_config` row with GraphJin's redaction applied again on our
 side (`src/graphjin/config-redact.ts`). The server and the `graphjin-config`
 skill reach admin web runs only (`src/work/admin-skills.ts`).
+`request_source_config_change` returns `problems` (`{ field, message,
+detail? }`, from `src/graphjin/config-problems.ts`) when a check fails. For a
+`register_source` proposal it shows the form again with each message bound to
+`/problems/<field>`; `TextField`, `ChoicePicker` and `SourceSecretInput` render
+an `error` property beside the input. `src/graphjin/config-file-check.ts`
+asks serve to load the merged file with the pinned loader.
 
 Every tool schema uses the portable JSON Schema subset in
 [`src/tool-schema-portability.ts`](src/tool-schema-portability.ts): declared

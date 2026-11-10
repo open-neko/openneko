@@ -50,6 +50,31 @@ func newGraphjinServeCmd() *cobra.Command {
 	return cmd
 }
 
+func newGraphjinCheckCmd() *cobra.Command {
+	var file string
+	cmd := &cobra.Command{
+		Use:   "check",
+		Short: "Load a GraphJin config file with the pinned loader and print what is wrong",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if file == "" {
+				return fmt.Errorf("--config is required")
+			}
+			if _, err := os.Stat(file); err != nil {
+				return err
+			}
+			if err := gjhost.CheckConfig(file); err != nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s: not valid for GraphJin %s: %v\n", file, gjhost.Version(), err)
+				return WithExit(1, nil)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s: valid for GraphJin %s\n", file, gjhost.Version())
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&file, "config", os.Getenv("OPENNEKO_GRAPHJIN_CONFIG"), "GraphJin config file to check")
+	return cmd
+}
+
 func newGraphjinStatusCmd() *cobra.Command {
 	var file string
 	var subs bool
@@ -119,7 +144,7 @@ func newGraphjinCmd() *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "GraphJin %s\n", gjhost.Version())
 		},
 	})
-	cmd.AddCommand(&cobra.Command{
+	cmd.AddCommand(newGraphjinCheckCmd(), &cobra.Command{
 		Use:   "import <customer-config.yml|->",
 		Short: "Import customer sources, tables, and relationships into the running instance",
 		Args:  cobra.ExactArgs(1),

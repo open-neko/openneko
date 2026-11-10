@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { AgentSurfaceMessage } from "../agent-backend";
 import { A2UI_CATALOG_ID, A2UI_VERSION } from "./a2ui-contract";
 import { DATABASE_SOURCE_TYPES } from "../graphjin/source-types";
+import type { ConfigProblem } from "../graphjin/config-problems";
 
 const optionalText = (max: number) => z.string().trim().max(max).optional();
 
@@ -27,42 +28,58 @@ export const SOURCE_FORM_PREFILL_SHAPE = {
 };
 
 const sourceFormPrefillSchema = z.object(SOURCE_FORM_PREFILL_SHAPE);
+
+const FORM_FIELDS = new Set(["name", "kind", "type", "host", "port", "dbname", "user", "secretRef", "blockedTables", "adminTables", "backend", "bucket", "prefix", "region", "endpoint", "publicBaseUrl", "presignTtl"]);
+
+function problemsByField(problems: readonly ConfigProblem[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  const general: string[] = [];
+  for (const problem of problems) {
+    if (problem.field && FORM_FIELDS.has(problem.field)) {
+      out[problem.field] = out[problem.field] ? `${out[problem.field]} ${problem.message}` : problem.message;
+    } else general.push(problem.message);
+  }
+  if (general.length > 0) out.general = general.join(" ");
+  return out;
+}
 export type SourceFormPrefill = z.infer<typeof sourceFormPrefillSchema>;
 
 const SOURCE_FORM_COMPONENTS: Array<Record<string, unknown>> = [
-  {"id": "root", "component": "Answer", "eyebrow": "GRAPHJIN CONFIG", "title": "Add a source", "subtitle": "Choose a source type and provide its connection details.", "children": ["note", "common", "databaseFields", "apiFields", "fileFields", "databaseSubmit", "apiSubmit", "fileSubmit"]},
+  {"id": "root", "component": "Answer", "eyebrow": "GRAPHJIN CONFIG", "title": "Add a source", "subtitle": "Choose a source type and provide its connection details.", "children": ["note", "problemsNote", "common", "databaseFields", "apiFields", "fileFields", "databaseSubmit", "apiSubmit", "fileSubmit"]},
   {"id": "note", "component": "Callout", "mood": "watch", "title": "Approval required", "text": "Submitting creates a configuration proposal for admin review."},
+  {"id": "problemsNote", "component": "Conditional", "when": {"path": "/problems/general"}, "children": ["problemsCallout"]},
+  {"id": "problemsCallout", "component": "Callout", "mood": "watch", "title": "Fix these answers", "text": {"path": "/problems/general"}},
   {"id": "common", "component": "Column", "children": ["name", "kind"]},
-  {"id": "name", "component": "TextField", "label": "Source name", "value": {"path": "/form/name"}, "placeholder": "warehouse"},
-  {"id": "kind", "component": "ChoicePicker", "label": "Source kind", "options": [{"label": "Database", "value": "database"}, {"label": "API", "value": "api"}, {"label": "Files", "value": "file"}], "value": {"path": "/form/kind"}, "variant": "mutuallyExclusive"},
+  {"id": "name", "component": "TextField", "label": "Source name", "value": {"path": "/form/name"}, "placeholder": "warehouse", "error": {"path": "/problems/name"}},
+  {"id": "kind", "component": "ChoicePicker", "label": "Source kind", "options": [{"label": "Database", "value": "database"}, {"label": "API", "value": "api"}, {"label": "Files", "value": "file"}], "value": {"path": "/form/kind"}, "variant": "mutuallyExclusive", "error": {"path": "/problems/kind"}},
   {"id": "databaseFields", "component": "Conditional", "when": {"path": "/form/kind"}, "equals": "database", "children": ["type", "network", "database", "password", "tables"]},
-  {"id": "type", "component": "ChoicePicker", "label": "Database type", "options": [{"label": "PostgreSQL", "value": "postgres"}, {"label": "MySQL", "value": "mysql"}, {"label": "MariaDB", "value": "mariadb"}], "value": {"path": "/form/type"}, "variant": "mutuallyExclusive"},
+  {"id": "type", "component": "ChoicePicker", "label": "Database type", "options": [{"label": "PostgreSQL", "value": "postgres"}, {"label": "MySQL", "value": "mysql"}, {"label": "MariaDB", "value": "mariadb"}], "value": {"path": "/form/type"}, "variant": "mutuallyExclusive", "error": {"path": "/problems/type"}},
   {"id": "network", "component": "Row", "children": ["host", "port"]},
-  {"id": "host", "component": "TextField", "label": "Host", "value": {"path": "/form/host"}, "placeholder": "db.internal"},
-  {"id": "port", "component": "TextField", "label": "Port", "value": {"path": "/form/port"}, "variant": "number"},
+  {"id": "host", "component": "TextField", "label": "Host", "value": {"path": "/form/host"}, "placeholder": "db.internal", "error": {"path": "/problems/host"}},
+  {"id": "port", "component": "TextField", "label": "Port", "value": {"path": "/form/port"}, "variant": "number", "error": {"path": "/problems/port"}},
   {"id": "database", "component": "Row", "children": ["dbname", "user"]},
-  {"id": "dbname", "component": "TextField", "label": "Database", "value": {"path": "/form/dbname"}},
-  {"id": "user", "component": "TextField", "label": "Read-only login", "value": {"path": "/form/user"}},
-  {"id": "password", "component": "SourceSecretInput", "label": "Password", "sourceName": {"path": "/form/name"}, "value": {"path": "/form/secretRef"}},
+  {"id": "dbname", "component": "TextField", "label": "Database", "value": {"path": "/form/dbname"}, "error": {"path": "/problems/dbname"}},
+  {"id": "user", "component": "TextField", "label": "Read-only login", "value": {"path": "/form/user"}, "error": {"path": "/problems/user"}},
+  {"id": "password", "component": "SourceSecretInput", "label": "Password", "sourceName": {"path": "/form/name"}, "value": {"path": "/form/secretRef"}, "error": {"path": "/problems/secretRef"}},
   {"id": "tables", "component": "Column", "children": ["blockedTables", "adminTables"]},
-  {"id": "blockedTables", "component": "TextField", "label": "Tables no one may read (optional)", "value": {"path": "/form/blockedTables"}, "placeholder": "admin_user, oauth_token"},
-  {"id": "adminTables", "component": "TextField", "label": "Tables only admins may read (optional)", "value": {"path": "/form/adminTables"}, "placeholder": "payroll"},
+  {"id": "blockedTables", "component": "TextField", "label": "Tables no one may read (optional)", "value": {"path": "/form/blockedTables"}, "placeholder": "admin_user, oauth_token", "error": {"path": "/problems/blockedTables"}},
+  {"id": "adminTables", "component": "TextField", "label": "Tables only admins may read (optional)", "value": {"path": "/form/adminTables"}, "placeholder": "payroll", "error": {"path": "/problems/adminTables"}},
   {"id": "apiFields", "component": "Conditional", "when": {"path": "/form/kind"}, "equals": "api", "children": ["openApiSpec"]},
   {"id": "openApiSpec", "component": "OpenApiSpecInput", "label": "OpenAPI specification", "value": {"path": "/form/openApiSpec"}},
   {"id": "fileFields", "component": "Conditional", "when": {"path": "/form/kind"}, "equals": "file", "children": ["fileSecurity", "backend", "localFields", "objectFields", "s3Fields"]},
   {"id": "fileSecurity", "component": "Callout", "mood": "watch", "title": "Read-only source", "text": "Authenticated organization members receive list/read access to approved file content."},
-  {"id": "backend", "component": "ChoicePicker", "label": "Storage backend", "options": [{"label": "Local", "value": "local"}, {"label": "S3", "value": "s3"}, {"label": "GCS", "value": "gcs"}], "value": {"path": "/form/backend"}, "variant": "mutuallyExclusive"},
+  {"id": "backend", "component": "ChoicePicker", "label": "Storage backend", "options": [{"label": "Local", "value": "local"}, {"label": "S3", "value": "s3"}, {"label": "GCS", "value": "gcs"}], "value": {"path": "/form/backend"}, "variant": "mutuallyExclusive", "error": {"path": "/problems/backend"}},
   {"id": "localFields", "component": "Conditional", "when": {"path": "/form/backend"}, "equals": "local", "children": ["managedFiles"]},
   {"id": "managedFiles", "component": "ManagedFileSourceInput", "label": "Managed local files", "sourceName": {"path": "/form/name"}, "value": {"path": "/form/localFiles"}},
   {"id": "objectFields", "component": "Conditional", "when": {"path": "/form/backend"}, "oneOf": ["s3", "gcs"], "children": ["cloudCredentials", "bucket", "prefix", "publicBaseUrl", "presignTtl"]},
   {"id": "cloudCredentials", "component": "Callout", "mood": "watch", "title": "Deployment credentials", "text": "GraphJin uses its AWS or Google Cloud runtime identity; chat and approval carry storage metadata."},
-  {"id": "bucket", "component": "TextField", "label": "Bucket", "value": {"path": "/form/bucket"}},
-  {"id": "prefix", "component": "TextField", "label": "Key prefix", "value": {"path": "/form/prefix"}},
-  {"id": "publicBaseUrl", "component": "TextField", "label": "Public HTTPS base URL (optional)", "value": {"path": "/form/publicBaseUrl"}},
-  {"id": "presignTtl", "component": "TextField", "label": "Presigned URL TTL", "value": {"path": "/form/presignTtl"}, "placeholder": "15m"},
+  {"id": "bucket", "component": "TextField", "label": "Bucket", "value": {"path": "/form/bucket"}, "error": {"path": "/problems/bucket"}},
+  {"id": "prefix", "component": "TextField", "label": "Key prefix", "value": {"path": "/form/prefix"}, "error": {"path": "/problems/prefix"}},
+  {"id": "publicBaseUrl", "component": "TextField", "label": "Public HTTPS base URL (optional)", "value": {"path": "/form/publicBaseUrl"}, "error": {"path": "/problems/publicBaseUrl"}},
+  {"id": "presignTtl", "component": "TextField", "label": "Presigned URL TTL", "value": {"path": "/form/presignTtl"}, "placeholder": "15m", "error": {"path": "/problems/presignTtl"}},
   {"id": "s3Fields", "component": "Conditional", "when": {"path": "/form/backend"}, "equals": "s3", "children": ["region", "endpoint"]},
-  {"id": "region", "component": "TextField", "label": "Region", "value": {"path": "/form/region"}},
-  {"id": "endpoint", "component": "TextField", "label": "S3-compatible endpoint", "value": {"path": "/form/endpoint"}},
+  {"id": "region", "component": "TextField", "label": "Region", "value": {"path": "/form/region"}, "error": {"path": "/problems/region"}},
+  {"id": "endpoint", "component": "TextField", "label": "S3-compatible endpoint", "value": {"path": "/form/endpoint"}, "error": {"path": "/problems/endpoint"}},
   {"id": "submitLabel", "component": "Text", "text": "Review proposal"},
   {"id": "databaseSubmit", "component": "Conditional", "when": {"path": "/form/kind"}, "equals": "database", "children": ["submitDatabase"]},
   {"id": "apiSubmit", "component": "Conditional", "when": {"path": "/form/kind"}, "equals": "api", "children": ["submitApi"]},
@@ -80,6 +97,7 @@ const SOURCE_FORM_COMPONENTS: Array<Record<string, unknown>> = [
 export function buildSourceFormSurface(
   prefill: SourceFormPrefill,
   surfaceId: string,
+  problems: readonly ConfigProblem[] = [],
 ): AgentSurfaceMessage[] {
   const { kind, backend, type, ...fields } = sourceFormPrefillSchema.parse(prefill);
   const form = {
@@ -109,8 +127,28 @@ export function buildSourceFormSurface(
     createSurface: {
       surfaceId,
       catalogId: A2UI_CATALOG_ID,
-      dataModel: { form },
+      dataModel: { form, problems: problemsByField(problems) },
       components: SOURCE_FORM_COMPONENTS,
     },
   } as AgentSurfaceMessage];
+}
+
+/** Turn the answers of a register_source proposal back into the form's values. */
+export function sourceFormPrefillFromAnswers(answers: Record<string, unknown>): SourceFormPrefill {
+  const pick = (value: unknown) => (Array.isArray(value) && value.length === 1 ? value[0] : value);
+  const list = (value: unknown) => (Array.isArray(value) ? value.join(", ") : undefined);
+  const prefill: Record<string, unknown> = {};
+  for (const key of ["name", "host", "dbname", "user", "secretRef", "bucket", "prefix", "region", "endpoint", "publicBaseUrl", "presignTtl"]) {
+    if (typeof answers[key] === "string") prefill[key] = answers[key];
+  }
+  for (const key of ["kind", "type", "backend"]) {
+    const value = pick(answers[key]);
+    if (typeof value === "string") prefill[key] = value;
+  }
+  if (typeof answers.port === "number") prefill.port = answers.port;
+  const blocked = list(answers.blockedTables);
+  const admin = list(answers.adminTables);
+  if (blocked) prefill.blockedTables = blocked;
+  if (admin) prefill.adminTables = admin;
+  return sourceFormPrefillSchema.parse(prefill);
 }
