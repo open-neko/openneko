@@ -214,13 +214,6 @@ services:
       NEKO_PG_USER: neko
       NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
       NEKO_PG_DATABASE: neko
-      # The host supervisor derives this from its per-install secret and passes
-      # it into the private migration container for gateway-role provisioning.
-      # Directly running the generated Compose files may leave it empty; the
-      # guard below then fails before changing the role. Use the OpenNeko CLI
-      # so migration and gateway always receive the same credential.
-      OPENNEKO_OPENSHELL_DB_PASSWORD: ${OPENNEKO_OPENSHELL_DB_PASSWORD:-}
-      OPENNEKO_REQUIRE_EXPLICIT_OPENSHELL_DB_PASSWORD: "1"
       OPENNEKO_SKIP_MIGRATE: ${OPENNEKO_SKIP_MIGRATE:-}
       XDG_CONFIG_HOME: /config
     volumes:

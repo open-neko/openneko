@@ -108,8 +108,8 @@ entries:
       - apps/worker/src
   - id: RUNTIME-SANDBOX
     category: runtime-backend
-    description: Every production agent runs in the required OpenShell boundary with
-      declared mounts and capabilities
+    description: Every agent turn runs in openneko serve; terminal commands run only
+      in the sandbox service, with declared mounts and capabilities
     verification: containment E2E
     disposition: declared
     owners:

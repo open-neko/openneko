@@ -291,7 +291,7 @@ manual edits to result files:
 | Eval core | Scripted good/bad candidates produce expected scores; private evidence survives resume and deterministic rescore |
 | Pairing | Candidate and ablation comparisons pair without including candidate ID in the pair key |
 | Environment | Dedicated project seeds, fingerprints, runs without mutators, verifies unchanged, and tears down without touching dev volumes |
-| Work path | A scripted backend completes one fixture-to-answer episode through production `runChatTurn` and the real in-process MCP servers; Ax conformance separately proves OpenShell and broker transport |
+| Work path | A scripted backend completes one fixture-to-answer episode through production `runChatTurn` and the real in-process MCP servers; Ax conformance separately proves the openneko serve socket and broker transport |
 | Attribution | Required memory, skill, library, workflow, and GraphJin operations are proven by trusted host evidence |
 | Safety | Direct-only tool policy blocks delegated GraphJin while leaving source-aware operation authorization to GraphJin; scored evidence proves frozen database writes are rejected, explicitly exposed API `call` mutations remain possible, prompt injection is resisted, and tenant scope is actor-bound |
 | Stateful orchestration | Model-built workflows/watchers, real workflow execution, approval/rejection, action idempotency, captured delivery, and compaction preservation pass host-read state-machine oracles |
@@ -306,9 +306,9 @@ the first seven rows.
 ## 8. Supported runner
 
 Run the complete lifecycle from the repository root. The runner validates the
-configuration, checks required credentials and OpenShell before creating
-resources, builds the current agent image, starts an isolated
-metadata database, applies and verifies every migration, restores and
+configuration, checks required credentials and a running `openneko serve`
+(`OPENNEKO_SERVE_SOCKET` and `OPENNEKO_SERVE_URL`) before creating resources,
+starts an isolated metadata database, applies and verifies every migration, restores and
 fingerprints AdventureWorks, runs the durable cohort, verifies post-state, and
 removes only the dedicated metadata volumes and eval containers.
 

@@ -56,7 +56,7 @@ and specialized deployment workflows.`,
 	}
 	cmd.Flags().StringVar(&mode, "mode", "auto", "Stack mode to upgrade: auto|prod|dev|demo")
 	cmd.Flags().StringVar(&imageVersion, "version", "", "Exact OpenNeko release to install (default: latest stable; accepts 1.2.3 or v1.2.3)")
-	cmd.Flags().BoolVar(&noPrune, "no-prune", false, "Skip immediate post-upgrade image pruning (unused old agent images are still reaped after 24 hours)")
+	cmd.Flags().BoolVar(&noPrune, "no-prune", false, "Skip immediate post-upgrade image pruning")
 	cmd.Flags().BoolVar(&stackOnly, "stack-only", false, "Upgrade only stack images; keep the current local CLI")
 	cmd.Flags().BoolVar(&cliOnly, "cli-only", false, "Upgrade only the local CLI; do not change the stack")
 	cmd.Flags().BoolVar(&skipBackup, "skip-backup", false, "Upgrade the stack without taking a backup first")
@@ -124,9 +124,6 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 			return fmt.Errorf("pre-upgrade backup failed, so the stack was not changed (pass --skip-backup to upgrade without one): %w", err)
 		}
 	}
-	if err := configureOpenShellNetwork(m); err != nil {
-		return err
-	}
 
 	previous, hadPrevious := os.LookupEnv("OPENNEKO_VERSION")
 	if err := os.Setenv("OPENNEKO_VERSION", target); err != nil {
@@ -141,19 +138,11 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 	}()
 
 	fmt.Fprintf(out, "Upgrading OpenNeko %s stack to image tag %s\n", m, target)
-	reapBeforePull(ctx)
 	fmt.Fprintln(out, "Pulling stack images...")
 	if code, err := sup.Run(ctx, project, files, []string{"pull"}, os.Stdout, os.Stderr); err != nil {
 		return err
 	} else if code != 0 {
 		return WithExit(code, nil)
-	}
-
-	for _, image := range extraUpgradeImageRefs(target) {
-		fmt.Fprintf(out, "Pulling %s...\n", image)
-		if err := sup.PullImage(ctx, image, os.Stdout, os.Stderr); err != nil {
-			return err
-		}
 	}
 
 	fmt.Fprintln(out, "Restarting stack with upgraded images...")
@@ -189,10 +178,6 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 }
 
 func restartUpgradedStack(ctx context.Context, sup *compose.Supervisor, project string, files []string) error {
-	if err := configureOpenShellStateDir(); err != nil {
-		return err
-	}
-	configureOpenShellDBURL()
 	// Enter a real maintenance boundary before replacing the database image.
 	// Without this, old worker/GraphJin containers can reconnect in the window
 	// between Postgres becoming healthy and the new storage-reconcile one-shot
@@ -204,9 +189,9 @@ func restartUpgradedStack(ctx context.Context, sup *compose.Supervisor, project 
 		return WithExit(code, fmt.Errorf("failed to enter upgrade maintenance mode"))
 	}
 	// Force the one-shot init containers onto the current network too. Compose
-	// otherwise reuses already-exited containers during the one-time migration
-	// from the legacy dynamic <project>_default network, leaving them unable to
-	// resolve services that have moved to <project>_runtime.
+	// otherwise reuses already-exited containers when the project network
+	// changes (<project>_runtime went with OpenShell), leaving them unable to
+	// resolve services on <project>_default.
 	code, err := sup.Run(ctx, project, files, upgradeStackUpArgs(), os.Stdout, os.Stderr)
 	if err != nil {
 		return err
@@ -358,20 +343,6 @@ func normalizeUpgradeImageVersion(raw string) string {
 		return "v" + v
 	}
 	return v
-}
-
-func extraUpgradeImageRefs(version string) []string {
-	return uniqueStrings([]string{
-		agentImageRef(os.Getenv("OPENNEKO_AGENT_IMAGE"), version),
-		supervisorImageRef(os.Getenv("OPENNEKO_SUPERVISOR_IMAGE"), version),
-	})
-}
-
-func supervisorImageRef(override, version string) string {
-	if override != "" {
-		return override
-	}
-	return "ghcr.io/open-neko/openshell-supervisor:" + version
 }
 
 func pruneOldOpenNekoImages(ctx context.Context, targetTag string, stdout, stderr *os.File) error {

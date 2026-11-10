@@ -19,7 +19,7 @@ jobs:
   build-image:
     # Build on manual workflow_dispatch (preview/branch builds) OR on a real
     # STABLE release. Skip release events for pre-release tags (e.g.
-    # v1.18.0-openshell.N): release-please auto-publishes a Release for every tag
+    # v1.18.0-preview.N): release-please auto-publishes a Release for every tag
     # we push, which would otherwise (a) double-build alongside the manual run
     # and (b) tag :latest from an unreleased preview, clobbering downloads. The
     # manual run builds previews WITHOUT :latest; stable releases (tag has no
@@ -80,24 +80,6 @@ jobs:
             runner: ubuntu-22.04
           - image: neko-db
             target: neko-db
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
-          # Agent sandbox image: Ax Harness, entry/bridge bundles and skills
-          # plus the document toolchain, pulled by the OpenShell runtime.
-          - image: agent
-            target: agent
-            platform: linux/amd64
-            runner: ubuntu-22.04
-          - image: agent
-            target: agent
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
-          - image: openshell-supervisor
-            file: docker/openshell-supervisor.Dockerfile
-            platform: linux/amd64
-            runner: ubuntu-22.04
-          - image: openshell-supervisor
-            file: docker/openshell-supervisor.Dockerfile
             platform: linux/arm64
             runner: ubuntu-24.04-arm
     steps:
@@ -184,7 +166,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [neko-web, neko-worker, neko-graphjin, neko-cli, neko-serve, neko-db, agent, openshell-supervisor]
+        image: [neko-web, neko-worker, neko-graphjin, neko-cli, neko-serve, neko-db]
     steps:
       - name: Resolve release tag
         id: tag
@@ -258,20 +240,16 @@ jobs:
       - name: Enforce aggregate unique-layer budget
         run: |
           set -euo pipefail
-          # v2.30.4 measured 1459.5 MiB on linux/amd64 after deduplicating
-          # shared layers (1235.7 MiB on arm64). The enforced Bookworm/glibc
-          # database ABI adds about 148 MiB once (in neko-db; the demo still
-          # retains Alpine), leaving a narrow ceiling that
-          # still catches accidental growth.
+          # The ceiling was set while the stack still held the agent image
+          # (about 800 MiB) and the OpenShell images; lower it once a release
+          # without them is measured.
           MAX_MIB=$(jq -er '.uniqueStack' scripts/image-size-budgets.json)
           bash scripts/check-image-stack-size.sh \
             "${{ steps.tag.outputs.value }}" \
             "${{ matrix.arch }}" \
             "$MAX_MIB" \
             neko-web neko-worker neko-graphjin neko-cli neko-serve \
-            neko-db agent openshell-supervisor \
-            postgres:16-alpine busybox:latest \
-            "ghcr.io/nvidia/openshell/gateway:${OPENSHELL_VERSION:-0.1.2}"
+            neko-db postgres:16-alpine
 
   goreleaser:
     name: goreleaser

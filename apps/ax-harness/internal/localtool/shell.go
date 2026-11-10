@@ -47,7 +47,7 @@ type Executor interface {
 // workflow scripts read. They hold paths, never secrets.
 var RunPathVars = []string{"RUN_DIR", "ARTIFACT_DIR", "PYTHONPATH"}
 
-func OpenShell(dir string, executor Executor) (*Shell, error) {
+func NewShell(dir string, executor Executor) (*Shell, error) {
 	if !filepath.IsAbs(dir) {
 		return nil, fmt.Errorf("workspace path must be absolute")
 	}

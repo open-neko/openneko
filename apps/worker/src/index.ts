@@ -607,8 +607,8 @@ const GRAPHJIN_URL = toGraphqlEndpoint(
 );
 console.log(`[worker] neko graphjin client targeting ${GRAPHJIN_URL}`);
 
-if (process.env.OPENNEKO_AGENT_IMAGE) {
-  try { prepareSandboxCapacity(); }
+if (process.env.OPENNEKO_SERVE_SOCKET) {
+  try { await prepareSandboxCapacity(); }
   catch (error) { console.error("[sandbox] startup preparation failed", error); }
 }
 const b = await boss();

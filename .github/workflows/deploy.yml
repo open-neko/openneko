@@ -2,7 +2,7 @@ name: Deploy to VM
 
 # Deploy only after the release images and post-release smoke pass. A main
 # supervisor can include Compose commands missing from the previous release's
-# images, which left web and worker stopped when the reaper was first added.
+# images, which once left web and worker stopped after a service was added.
 on:
   workflow_run:
     workflows: ["post-release smoke"]
@@ -104,17 +104,11 @@ jobs:
             reclaim_disk
 
             # upgrade force-recreates one-shot init containers as well as the
-            # long-running services, which is required for the one-time move
-            # from the legacy default network to the fixed runtime network.
+            # long-running services, which is required when the project
+            # network changes between releases.
             OPENNEKO_VERSION="$DEPLOY_IMAGE_TAG" OPENNEKO_PORT=80 \
               openneko upgrade --mode demo --version "$DEPLOY_IMAGE_TAG" --no-prune
             OPENNEKO_PORT=80 openneko status
-
-            REAPER=$(docker ps -q \
-              --filter label=com.docker.compose.project=openneko-demo \
-              --filter label=com.docker.compose.service=neko-reaper | head -1)
-            test -n "$REAPER"
-            test "$(docker inspect -f '{{.State.Health.Status}}' "$REAPER")" = healthy
 
             WORKER=$(docker ps -q \
               --filter label=com.docker.compose.project=openneko-demo \
@@ -153,34 +147,14 @@ jobs:
               console.log("authenticated_datasource_query=ok");
             '
 
-            # Exercise the path that ordinary HTTP health checks missed in
-            # PR #208: a supervisor inside a fresh sandbox must call back to
-            # the containerised gateway and reach Ready.
-            trap 'docker exec "$WORKER" openshell sandbox delete --gateway openneko neko-deploy-smoke >/dev/null 2>&1 || true' EXIT
-            docker exec -i "$WORKER" sh -c 'cat > /tmp/openneko-smoke-policy.yaml' <<'POLICY'
-          version: 1
-          filesystem_policy:
-            include_workdir: true
-            read_only: [/usr, /lib, /proc, /dev/urandom, /app, /etc, /var/log]
-            read_write: [/sandbox, /tmp, /dev/null]
-          landlock:
-            compatibility: best_effort
-          process:
-            run_as_user: sandbox
-            run_as_group: sandbox
-          network_policies: {}
-          POLICY
-            docker exec "$WORKER" openshell sandbox create \
-              --gateway openneko --name neko-deploy-smoke \
-              --from "ghcr.io/open-neko/agent:$DEPLOY_IMAGE_TAG" \
-              --policy /tmp/openneko-smoke-policy.yaml \
-              --detach --no-tty --no-auto-providers -- sleep infinity
-            docker exec "$WORKER" openshell sandbox exec \
-              --gateway openneko -n neko-deploy-smoke --no-tty -- \
-              node /app/entry.js --preflight
-            docker exec "$WORKER" openshell sandbox delete \
-              --gateway openneko neko-deploy-smoke
-            trap - EXIT
+            # The runner must boot from the worker image and reach the
+            # agent socket of openneko serve.
+            docker exec "$WORKER" sh -c 'cd /opt/openneko-agent && node entry.js --preflight'
+            docker exec "$WORKER" node -e '
+              require("node:net").connect(process.env.OPENNEKO_SERVE_SOCKET)
+                .on("connect", () => { console.log("serve_socket=ok"); process.exit(0); })
+                .on("error", (error) => { console.error(error.message); process.exit(1); });
+            '
 
             # Process liveness used to pass while pg-boss's schedule polling
             # had silently stopped. Require a successful durable scheduler DB

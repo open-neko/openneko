@@ -141,20 +141,6 @@ func TestPackagedComposeExposesOnlyWebToLAN(t *testing.T) {
 			t.Fatalf("demo.yml service %s unexpectedly publishes host ports: %v", name, service.Ports)
 		}
 	}
-
-	openshell, _ := readComposeForTest(t, "openshell.yml")
-	for name, service := range openshell.Services {
-		if name == "openshell-gateway" {
-			want := "127.0.0.1:${OPENSHELL_PORT:-18080}:${OPENSHELL_PORT:-18080}"
-			if len(service.Ports) != 1 || service.Ports[0] != want {
-				t.Fatalf("gateway ports = %v, want only loopback %q", service.Ports, want)
-			}
-			continue
-		}
-		if len(service.Ports) != 0 {
-			t.Fatalf("openshell.yml service %s unexpectedly publishes host ports: %v", name, service.Ports)
-		}
-	}
 }
 
 func TestPackagedComposeKeepsRuntimeTrafficOnDockerNetwork(t *testing.T) {
@@ -174,56 +160,7 @@ func TestPackagedComposeKeepsRuntimeTrafficOnDockerNetwork(t *testing.T) {
 	if migrate.Environment["NEKO_PG_HOST"] != "neko-db" {
 		t.Fatalf("migration host = %q, want Docker service neko-db", migrate.Environment["NEKO_PG_HOST"])
 	}
-	if _, ok := migrate.Environment["OPENNEKO_OPENSHELL_DB_PASSWORD"]; !ok {
-		t.Fatal("migration service must receive the gateway-role password")
-	}
-	if migrate.Environment["OPENNEKO_REQUIRE_EXPLICIT_OPENSHELL_DB_PASSWORD"] != "1" {
-		t.Fatal("migration service must fail closed when the gateway-role password is absent")
-	}
 	if core.Services["web"].DependsOn["worker"].Condition != "service_healthy" {
 		t.Fatal("web must start after the worker control plane is healthy")
-	}
-
-	openshell, raw := readComposeForTest(t, "openshell.yml")
-	gateway := openshell.Services["openshell-gateway"]
-	if gateway.DependsOn["neko-migrate"].Condition != "service_completed_successfully" {
-		t.Fatal("OpenShell gateway must wait for private database preparation")
-	}
-	ready := openshell.Services["openshell-ready"]
-	if ready.DependsOn["openshell-gateway"].Condition != "service_started" {
-		t.Fatal("OpenShell readiness probe must start after the gateway container")
-	}
-	for _, service := range []string{"worker", "web"} {
-		env := openshell.Services[service].Environment
-		if env["OPENNEKO_SANDBOX_SHARED_NETWORK"] != "1" {
-			t.Fatalf("%s shared-network broker config is incomplete: %v", service, env)
-		}
-		if _, exposed := env["OPENNEKO_BROKER_HOST_ALIAS"]; exposed {
-			t.Fatalf("%s must derive a private container IP instead of a host broker alias", service)
-		}
-		if openshell.Services[service].DependsOn["openshell-ready"].Condition != "service_completed_successfully" {
-			t.Fatalf("%s must wait for a successful OpenShell control-plane probe", service)
-		}
-	}
-	for _, required := range []string{
-		`version = 2`,
-		`compute_driver = "docker"`,
-		`guest_tls_ca = "%s/pki/ca.crt"`,
-		`signing_key_path = "%s/pki/jwt/signing.pem"`,
-		`sandbox_runtime_image = "ghcr.io/nvidia/openshell/sandbox:%s"`,
-		`supervisor_image = "%s"`,
-		`"${OPENNEKO_SUPERVISOR_IMAGE:-ghcr.io/open-neko/openshell-supervisor:${OPENNEKO_VERSION:-latest}}"`,
-		`grpc_endpoint = "https://127.0.0.1:%s"`,
-		`OPENNEKO_COMPOSE_NETWORK: "${COMPOSE_PROJECT_NAME}_runtime"`,
-		`OPENSHELL_GATEWAY_IP: "${OPENSHELL_GATEWAY_IP:-172.29.0.2}"`,
-		`ipv4_address: "${OPENSHELL_GATEWAY_IP:-172.29.0.2}"`,
-		`name: "${COMPOSE_PROJECT_NAME}_runtime"`,
-		`subnet: "${OPENNEKO_DOCKER_SUBNET:-172.29.0.0/24}"`,
-		`gateway: "${OPENNEKO_DOCKER_GATEWAY:-172.29.0.1}"`,
-		`ip_range: "${OPENNEKO_DOCKER_IP_RANGE:-172.29.0.128/25}"`,
-	} {
-		if !strings.Contains(raw, required) {
-			t.Fatalf("openshell.yml missing %q", required)
-		}
 	}
 }

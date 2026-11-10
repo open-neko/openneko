@@ -191,10 +191,6 @@ func currentStackCompose() (*compose.Supervisor, compose.Mode, string, []string,
 	if err != nil {
 		return nil, "", "", nil, err
 	}
-	if err := configureOpenShellStateDir(); err != nil {
-		return nil, "", "", nil, err
-	}
-	configureOpenShellDBURL()
 	return sup, mode, project, files, nil
 }
 

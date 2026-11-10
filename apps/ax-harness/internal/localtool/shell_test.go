@@ -39,10 +39,10 @@ func (f *fakeExecutor) Close() error {
 	return nil
 }
 
-func openShell(t *testing.T) (*Shell, *fakeExecutor) {
+func newShell(t *testing.T) (*Shell, *fakeExecutor) {
 	t.Helper()
 	executor := &fakeExecutor{}
-	s, err := OpenShell(t.TempDir(), executor)
+	s, err := NewShell(t.TempDir(), executor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func runShell(t *testing.T, s *Shell, ctx context.Context, input string) (ExecRe
 }
 
 func TestShellSendsCommandsToTheSandbox(t *testing.T) {
-	s, executor := openShell(t)
+	s, executor := newShell(t)
 	s.SetEnviron([]string{"RUN_DIR=/runs/a", "ARTIFACT_DIR=/runs/a/out", "HARNESS_MODEL_API_KEY=secret", "OPENNEKO_BROKER_TOKEN=token", "PATH=/bin"})
 	result, err := runShell(t, s, context.Background(), `{"command":"echo hi"}`)
 	if err != nil || result.ExitCode != 3 {
@@ -81,7 +81,7 @@ func TestShellSendsCommandsToTheSandbox(t *testing.T) {
 }
 
 func TestShellReportsAnUnavailableSandbox(t *testing.T) {
-	s, executor := openShell(t)
+	s, executor := newShell(t)
 	executor.err = errors.New("terminal unavailable: connection refused")
 	if _, err := runShell(t, s, context.Background(), `{"command":"true"}`); err == nil || !strings.Contains(err.Error(), "unavailable") {
 		t.Fatalf("err = %v", err)
@@ -89,7 +89,7 @@ func TestShellReportsAnUnavailableSandbox(t *testing.T) {
 }
 
 func TestShellRejectsBadInput(t *testing.T) {
-	s, executor := openShell(t)
+	s, executor := newShell(t)
 	for _, input := range []string{`{"command":""}`, `{"command":"ls","timeout_seconds":601}`} {
 		if _, err := runShell(t, s, context.Background(), input); err == nil {
 			t.Fatalf("accepted %s", input)
@@ -98,16 +98,16 @@ func TestShellRejectsBadInput(t *testing.T) {
 	if len(executor.calls) != 0 {
 		t.Fatal("a bad command reached the sandbox")
 	}
-	if _, err := OpenShell("relative/dir", executor); err == nil {
+	if _, err := NewShell("relative/dir", executor); err == nil {
 		t.Fatal("accepted a relative workspace")
 	}
-	if _, err := OpenShell(t.TempDir(), nil); err == nil {
+	if _, err := NewShell(t.TempDir(), nil); err == nil {
 		t.Fatal("opened a terminal with no sandbox")
 	}
 }
 
 func TestShellHostLimits(t *testing.T) {
-	s, _ := openShell(t)
+	s, _ := newShell(t)
 	if err := s.SetLimits(0, 50_000); err == nil {
 		t.Fatal("zero timeout was accepted")
 	}
@@ -141,7 +141,7 @@ func TestShellSetsSkillDirFromTheScriptPath(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	s, _ := openShell(t)
+	s, _ := newShell(t)
 	s.SetSkillsRoot(skills)
 	for command, want := range map[string]string{
 		`echo \"[$SKILL_DIR]\" \"$SKILL_DIR/scripts/check.py\"`:                          "[" + filepath.Join(skills, "stock-check") + "]",

@@ -104,8 +104,6 @@ jobs:
           # misses fails the boot — so derive the list from the full demo
           # stack instead of hand-maintaining it. Demo includes every core
           # service plus the upgrade-sensitive datasource overlay.
-          # (busybox:latest for openshell-reg was the second one missed).
-          # OPENSHELL_VERSION is intentionally literal in the second sed expression.
           # The final expression unwraps ANY other ${VAR:-default} to its
           # default (e.g. ${OPENNEKO_GRAPHJIN_IMAGE:-dosco/graphjin:X}) — an
           # uninterpolated ref reaches `docker pull` as a literal and fails
@@ -115,9 +113,7 @@ jobs:
             sed -n 's/^[[:space:]]*image:[[:space:]]*//p' \
               apps/openneko/assets/compose/core.yml \
               apps/openneko/assets/compose/demo.yml \
-              apps/openneko/assets/compose/openshell.yml \
             | sed -e "s/\${OPENNEKO_VERSION:-latest}/${tag}/" \
-                  -e 's/\${OPENSHELL_VERSION:-\([0-9.][0-9.]*\)}/\1/' \
                   -e 's/\${[A-Za-z_][A-Za-z_0-9]*:-\([^}]*\)}/\1/g' \
             | sort -u
           )
@@ -135,21 +131,6 @@ jobs:
               sleep 10
             done
           done
-
-      - name: Verify agent egress executable contract
-        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
-        env:
-          OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
-        run: |
-          set -euo pipefail
-          # OpenShell binds model egress to this exact executable.
-          configured_binary=$(docker run --rm --entrypoint node \
-            "ghcr.io/open-neko/neko-worker:$OPENNEKO_VERSION" \
-            --import tsx/esm --input-type=module --eval \
-            'import { AX_HARNESS_BINARY } from "@neko/llm"; console.log(AX_HARNESS_BINARY)')
-          echo "OpenNeko policy executable: $configured_binary"
-          docker run --rm --entrypoint sh "ghcr.io/open-neko/agent:$OPENNEKO_VERSION" \
-            -c "test -x '$configured_binary'"
 
       - name: Verify enforced database storage contract
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
@@ -314,41 +295,20 @@ jobs:
             exit 1
           fi
 
-      - name: OpenShell work sandbox lifecycle smoke
+      - name: Agent runner and serve socket smoke
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
-        env:
-          OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
         run: |
           set -euo pipefail
           worker=$(docker ps -q \
             --filter label=com.docker.compose.project=openneko-demo \
             --filter label=com.docker.compose.service=worker | head -1)
           test -n "$worker"
-          sandbox="neko-smoke-$$"
-          trap 'docker exec "$worker" openshell --gateway openneko sandbox delete "$sandbox" >/dev/null 2>&1 || true' EXIT
-          # Work sandboxes supply /app in their creation policy. Without it,
-          # OpenShell's no-network default denies the agent bundle under Landlock.
-          docker exec -i "$worker" sh -c 'cat > /tmp/openneko-smoke-policy.yaml' <<'POLICY'
-          version: 1
-          filesystem_policy:
-            include_workdir: true
-            read_only: [/usr, /lib, /proc, /dev/urandom, /app, /etc, /var/log]
-            read_write: [/sandbox, /tmp, /dev/null]
-          landlock:
-            compatibility: best_effort
-          process:
-            run_as_user: sandbox
-            run_as_group: sandbox
-          network_policies: {}
-          POLICY
-          docker exec "$worker" openshell sandbox create \
-            --gateway openneko \
-            --name "$sandbox" \
-            --from "ghcr.io/open-neko/agent:$OPENNEKO_VERSION" \
-            --policy /tmp/openneko-smoke-policy.yaml \
-            --detach --no-tty --no-auto-providers -- sleep infinity
-          docker exec "$worker" openshell --gateway openneko sandbox exec \
-            -n "$sandbox" --no-tty -- node /app/entry.js --preflight
+          docker exec "$worker" sh -c 'cd /opt/openneko-agent && node entry.js --preflight'
+          docker exec "$worker" node -e '
+            require("node:net").connect(process.env.OPENNEKO_SERVE_SOCKET)
+              .on("connect", () => process.exit(0))
+              .on("error", (error) => { console.error(error.message); process.exit(1); });
+          '
 
       # Failed releases are demoted to prerelease by the failure path below.
       # A manual recovery must reverse that state before this workflow ends:

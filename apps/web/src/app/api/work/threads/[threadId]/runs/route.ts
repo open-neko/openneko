@@ -84,9 +84,9 @@ async function postRun(request: NextRequest, context: RouteContext) {
   // Memory writes are agent-driven through the brokered memory MCP tool.
   const backend = await startupPhase("config.backend", () => resolveAgentBackend(orgId));
 
-  // Derive the agent-sandbox env (model egress, gateway provider, key alias)
-  // before creating the run. If gateway sync is temporarily unavailable, the
-  // memoized provision attempt is cleared and the caller can retry cleanly.
+  // Derive the run's agent settings before creating the run. If provisioning
+  // is temporarily unavailable, the memoized attempt is cleared and the caller
+  // can retry cleanly.
   const agentRuntime = await startupPhase("config.provision", () => ensureHostConfigProvisioned(orgId));
 
   const [pluginActions, packActions] = await Promise.all([
@@ -94,8 +94,9 @@ async function postRun(request: NextRequest, context: RouteContext) {
     startupPhase("context.pack_actions", () => listPackActionDescriptors(orgId)),
   ]);
 
-  // The web server runs the run's agent runner as a child process; its
-  // turns run in openneko serve. Events relay over the existing SSE.
+  // The agent loop runs in a runner process whose turns run in openneko
+  // serve. The web server stays the control plane, starts the runner, and
+  // relays events over the existing SSE.
   const broker = await startupPhase("broker.ready", () => ensureAgentBroker());
 
   let run: Awaited<ReturnType<typeof createWorkRun>>;

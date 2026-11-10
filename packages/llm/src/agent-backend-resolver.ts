@@ -94,7 +94,7 @@ function positiveInt(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
-/** Ax needs the route itself, not only the identity; the key stays in OpenShell. */
+/** Ax needs the route itself, not only the identity; the launcher loads the key per run. */
 export function axBackendConfig(row: StoredRow | null): AxBackendConfig | undefined {
   const model = row?.model?.trim();
   if (!row?.enabled || !model || !isPrimaryProvider(row.provider)) return undefined;
@@ -110,8 +110,7 @@ export function axBackendConfig(row: StoredRow | null): AxBackendConfig | undefi
 
 /**
  * Resolve the org's backend and its non-secret configured model identity. The
- * real provider key remains independently provisioned through OpenShell and is
- * never returned with the backend.
+ * provider key is never returned with the backend.
  */
 /** `model` overrides the primary model for this run. */
 export async function resolveAgentBackend(orgId: string, backendId?: AgentBackendId, model?: string): Promise<AgentBackend> {

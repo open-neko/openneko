@@ -1,7 +1,7 @@
 # Environment for host web and worker processes against `pnpm dev:up`.
 # Source from the repository root: `. scripts/dev-env.sh`.
 #
-# OPENNEKO_DEV_CONFIG_HOME: config home for OpenNeko and OpenShell state
+# OPENNEKO_DEV_CONFIG_HOME: config home for OpenNeko state
 #   (default: your XDG config home). Set it per worktree to keep stacks apart.
 # OPENNEKO_DEV_STATE: GraphJin config directories shared with Docker
 #   (default: .openneko/dev in this checkout).
@@ -20,7 +20,6 @@ fi
 COMPOSE_PROJECT_NAME="$(printf '%s' "${COMPOSE_PROJECT_NAME:-$(basename "$PWD")}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-')"
 export COMPOSE_PROJECT_NAME
 export OPENNEKO_CONFIG_VOLUME="${OPENNEKO_CONFIG_VOLUME:-${XDG_CONFIG_HOME:-$HOME/.config}/openneko}"
-export OPENSHELL_STATE_DIR="${OPENSHELL_STATE_DIR:-$PWD/.openneko/openshell}"
 # `pnpm dev:up` installs the pinned GraphJin CLI here.
 export PATH="$OPENNEKO_DEV_STATE/bin:$PATH"
 
@@ -29,20 +28,9 @@ export PATH="$OPENNEKO_DEV_STATE/bin:$PATH"
 export OPENNEKO_PG_ENV_OVERRIDE=1
 export NEKO_PG_HOST=127.0.0.1
 export NEKO_PG_PORT="${OPENNEKO_DB_PORT:-5432}"
-# The gateway container reads this password from compose. Host migrations do
-# not provision the role, so dev-up.sh sets the role to the same value.
-export OPENNEKO_OPENSHELL_DB_PASSWORD="${OPENNEKO_OPENSHELL_DB_PASSWORD:-openneko-openshell-development-password}"
 
 export OPENNEKO_GRAPHJIN_URL="http://127.0.0.1:${OPENNEKO_GRAPHJIN_PORT:-8089}"
 export OPENNEKO_GRAPHJIN_CONFIG="$OPENNEKO_DEV_STATE/graphjin/agentic.yml"
-
-export OPENNEKO_AGENT_IMAGE="${OPENNEKO_AGENT_IMAGE:-openneko-agent:dev}"
-export OPENSHELL_GATEWAY="${OPENSHELL_GATEWAY:-openneko-dev}"
-export OPENNEKO_SANDBOX_SHARED_NETWORK=0
-if [ -z "${OPENNEKO_BROKER_HOST_ALIAS:-}" ] && [ -s "$OPENNEKO_DEV_STATE/broker-host" ]; then
-  OPENNEKO_BROKER_HOST_ALIAS="$(cat "$OPENNEKO_DEV_STATE/broker-host")"
-  export OPENNEKO_BROKER_HOST_ALIAS
-fi
 
 # scripts/dev-agent.sh runs `openneko serve` on the host. Agent runners run
 # from source and stage runs where serve reads them.

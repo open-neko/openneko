@@ -142,7 +142,7 @@ const RUNTIME_ENVIRONMENT_NAMES = [
 ] as const;
 type RuntimeEnvironmentName = (typeof RUNTIME_ENVIRONMENT_NAMES)[number];
 
-const INFRASTRUCTURE_ERROR = /openshell|sandbox|gateway|ECONNREFUSED|socket hang up/i;
+const INFRASTRUCTURE_ERROR = /openneko serve|sandbox|gateway|ECONNREFUSED|socket hang up/i;
 
 /** An agent that runs but gives no valid answer fails the case; infrastructure errors still pause the run. */
 function agentFailure(cause: unknown, wallDurationMs: number, diagnostics?: MetricAgentDiagnostics): unknown {
@@ -271,15 +271,11 @@ export function createAdventureWorksMetricDriver(context: {
     );
     if (!isolatedConfigRoot) {
       isolatedConfigRoot = await mkdtemp(join(tmpdir(), "openneko-eval-config-"));
-      // OpenShell's selected-gateway registration also lives below XDG config.
-      // Mirror that public connection metadata (and any client credentials it
-      // references) into the private temporary root so sandbox execution keeps
-      // using the operator-selected gateway without mutating the host config.
-      // A shared org also needs the host secret key that encrypted its secrets.
-      for (const dir of process.env.OPENNEKO_EVAL_ORG_ID ? ["openshell", "openneko"] : ["openshell"]) {
+      // A shared org needs the host secret key that encrypted its secrets.
+      if (process.env.OPENNEKO_EVAL_ORG_ID) {
         await cp(
-          join(hostConfigRoot, dir),
-          join(isolatedConfigRoot, dir),
+          join(hostConfigRoot, "openneko"),
+          join(isolatedConfigRoot, "openneko"),
           { recursive: true, force: false, errorOnExist: false },
         ).catch((cause: NodeJS.ErrnoException) => {
           if (cause.code !== "ENOENT") throw cause;
@@ -333,7 +329,7 @@ export function createAdventureWorksMetricDriver(context: {
         });
       }
       if (sharedOrg) await ensureHostConfigProvisioned(orgId);
-      else await provisionHostConfig(orgId, { requireOpenShellSync: true });
+      else await provisionHostConfig(orgId);
     } catch (cause) {
       if (!sharedOrg) await deleteTestOrg(orgId).catch(() => {});
       throw cause;

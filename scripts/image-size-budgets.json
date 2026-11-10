@@ -5,7 +5,5 @@
   "neko-cli": 10,
   "neko-serve": 50,
   "neko-db": 165,
-  "agent": 800,
-  "openshell-supervisor": 70,
   "uniqueStack": 2500
 }

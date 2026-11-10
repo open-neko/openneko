@@ -9,10 +9,9 @@ smoke_workflow=".github/workflows/post-release-smoke.yml"
 budgets="scripts/image-size-budgets.json"
 
 jq -e '
-  .agent == 800
-  and .uniqueStack == 2500
-  and (.agent | type) == "number"
+  .uniqueStack == 2500
   and (.uniqueStack | type) == "number"
+  and (has("agent") | not)
 ' "$budgets" >/dev/null
 
 grep -Fq "Manual recovery runs may contain CI hardening newer than the tag" "$release_workflow"

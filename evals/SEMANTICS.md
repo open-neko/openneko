@@ -48,7 +48,7 @@ state transition, delivery, denial, audit record, or user-visible contract.
 | `RUNTIME-VALIDATE` | Invalid structured output is repaired within bounds or fails honestly | schema + attempt oracle |
 | `RUNTIME-CONCURRENCY` | Global/backend caps, queueing, cancellation, and fairness hold under parallel work | load/soak |
 | `RUNTIME-SHUTDOWN` | Process shutdown cancels agents and leaves jobs/runs recoverable | restart smoke |
-| `RUNTIME-SANDBOX` | Every production agent runs in the required OpenShell boundary with declared mounts and capabilities | containment E2E |
+| `RUNTIME-SANDBOX` | Every agent turn runs in openneko serve; terminal commands run only in the sandbox service, with declared mounts and capabilities | containment E2E |
 | `RUNTIME-OBSERVABILITY` | Canonical observations, OTel spans/metrics, and run summaries agree and never alter outcomes | telemetry conformance |
 
 ## 2. Data discovery, access, and calculation semantics

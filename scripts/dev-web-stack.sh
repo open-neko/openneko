@@ -2,7 +2,7 @@
 set -eu
 
 refuse_non_development_mode() {
-  echo "Host web + OpenShell registration is development-only." >&2
+  echo "The host web server is development-only." >&2
   echo "Production and demo modes must run the web service inside the stack." >&2
   exit 1
 }
@@ -104,23 +104,21 @@ do
 done
 
 web_container="${container_prefix}-web-1"
-if [ ! -f "$state_root/config/openneko/secret-key" ] || \
-   [ ! -f "$state_root/config/openshell/gateways/openneko/metadata.json" ]; then
+if [ ! -f "$state_root/config/openneko/secret-key" ]; then
   # Seed the state from the stack's web container. The copy holds the
   # secret key that decrypts the database passwords in config.json.
   if docker inspect "$web_container" >/dev/null 2>&1; then
     echo "Copying stack config from $web_container to $state_root/config"
     (umask 077 && mkdir -p "$state_root/config")
-    for config_dir in openneko openshell graphjin; do
+    for config_dir in openneko graphjin; do
       docker cp -q "$web_container:/config/$config_dir" "$state_root/config/"
     done
   fi
 fi
 
-if [ ! -f "$state_root/config/openneko/secret-key" ] || \
-   [ ! -f "$state_root/config/openshell/gateways/openneko/metadata.json" ]; then
+if [ ! -f "$state_root/config/openneko/secret-key" ]; then
   echo "Host web state is missing at $state_root." >&2
-  echo "Copy the stack config, OpenShell registration, and agent workspace there before first use." >&2
+  echo "Copy the stack config there before first use." >&2
   exit 1
 fi
 
@@ -145,12 +143,8 @@ export WORKER_ADMIN_URL="http://$(container_ip "$worker_container"):4100"
 resolve_endpoint "$metadata_graphjin_container" 8089
 export OPENNEKO_GRAPHJIN_URL="http://${endpoint_host}:${endpoint_port}"
 export OPENNEKO_GRAPHJIN_CONFIG="$state_root/config/graphjin/agentic.yml"
-
-export OPENSHELL_STATE_DIR="${OPENSHELL_STATE_DIR:-$PWD/.openneko/openshell}"
-export OPENSHELL_GATEWAY="${OPENSHELL_GATEWAY:-openneko}"
-export OPENNEKO_AGENT_IMAGE="${OPENNEKO_AGENT_IMAGE:-openneko-agent:dev}"
-export OPENNEKO_SANDBOX_SHARED_NETWORK=0
 export OPENNEKO_BROKER_PORT="${OPENNEKO_WEB_BROKER_PORT:-4198}"
+
 
 echo "OpenNeko web: http://localhost:${web_port} (hot reload)"
 echo "Backing services: Docker Compose project ${project_name}"

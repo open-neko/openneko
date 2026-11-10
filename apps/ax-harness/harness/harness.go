@@ -131,7 +131,7 @@ func RunTurn(ctx context.Context, turn Turn) (int, error) {
 		if err != nil {
 			return failed(fmt.Errorf("terminal unavailable: %w", err))
 		}
-		shell, err := localtool.OpenShell(workspace, client)
+		shell, err := localtool.NewShell(workspace, client)
 		if err != nil {
 			return failed(fmt.Errorf("terminal unavailable: %w", err))
 		}

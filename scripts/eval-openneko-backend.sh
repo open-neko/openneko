@@ -7,8 +7,6 @@ repo_root=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 metadata_project=openneko-backend-eval-metadata
 metadata_port=${OPENNEKO_EVAL_METADATA_PORT:-15432}
 metadata_config_root=
-openshell_sandbox_baseline=
-openshell_provider_baseline=
 metadata_started=0
 data_attempted=0
 data_ready=0
@@ -18,7 +16,6 @@ config_input=
 resume_run=
 restart=0
 promotion=
-build_agent=1
 
 usage() {
   cat <<'EOF'
@@ -30,7 +27,7 @@ Suites (default: --smoke):
   --smoke-v3          Provider-free 59-call stateful walking skeleton
   --smoke-v4          Provider-free 195-episode v4 qualification control
   --contrast          Provider-free 52-call good/bad discrimination run
-  --ax-v4             One-repetition, 65-episode Ax v4 Gemini cohort
+  --ax-v4             One-repetition, 64-episode Ax v4 Gemini cohort
   --config PATH       Run another openneko.work-backend config
 
 Options:
@@ -38,19 +35,19 @@ Options:
   --restart           Start a new run even if a compatible run is available
   --promote           Write and verify a sanitized result (default)
   --no-promote        Keep only private durable run state; skip result verification
-  --no-build-agent    Reuse OPENNEKO_EVAL_AGENT_IMAGE after verifying it exists
   -h, --help          Show this help
 
 Environment overrides:
   OPENNEKO_EVAL_METADATA_PORT                 default 15432
   OPENNEKO_EVAL_AW_DB_PORT                    default 15433
   OPENNEKO_EVAL_GRAPHJIN_PORT                  default 18080
-  OPENNEKO_EVAL_AGENT_IMAGE                    default openneko-agent:eval
   OPENNEKO_EVAL_ADVENTUREWORKS_DATABASE_URL   full oracle URL override
 
 Ax configs declare their credential as env:NAME. That variable must be
-non-empty before this script starts. Credentials are never written to eval
-artifacts or forwarded directly into the agent container.
+non-empty before this script starts. An Ax config also needs a running
+`openneko serve` with agent turns on: set OPENNEKO_SERVE_SOCKET to its socket
+and OPENNEKO_SERVE_URL to its address. Credentials are never written to eval
+artifacts.
 EOF
 }
 
@@ -102,9 +99,6 @@ while [ "$#" -gt 0 ]; do
     --no-promote)
       [ -z "$promotion" ] || { echo "choose only one promotion mode" >&2; exit 2; }
       promotion=--no-promote
-      ;;
-    --no-build-agent)
-      build_agent=0
       ;;
     --)
       ;;
@@ -175,12 +169,12 @@ if grep -Eq '^[[:space:]]*backend:[[:space:]]*ax([[:space:]#]|$)' "$config_path"
     echo "required agent credential is not set: $credential_env" >&2
     exit 2
   fi
-  command -v openshell >/dev/null 2>&1 || {
-    echo "openshell is required for an agent eval" >&2
+  [ -S "${OPENNEKO_SERVE_SOCKET:-}" ] || {
+    echo "an agent eval needs OPENNEKO_SERVE_SOCKET set to the socket of a running openneko serve" >&2
     exit 2
   }
-  openshell status >/dev/null 2>&1 || {
-    echo "the configured OpenShell gateway is not reachable" >&2
+  [ -n "${OPENNEKO_SERVE_URL:-}" ] || {
+    echo "an agent eval needs OPENNEKO_SERVE_URL set to the same openneko serve" >&2
     exit 2
   }
 fi
@@ -208,26 +202,7 @@ run_eval_cli validate --config "$config_path"
 run_eval_cli plan --config "$config_path"
 "$repo_root/scripts/eval-adventureworks/check-static.sh"
 
-agent_image=${OPENNEKO_EVAL_AGENT_IMAGE:-openneko-agent:eval}
-if [ "$requires_agent" -eq 1 ]; then
-  if [ "$build_agent" -eq 1 ]; then
-    echo "[backend-eval] building candidate agent image $agent_image"
-    docker build --target agent --tag "$agent_image" "$repo_root"
-  else
-    docker image inspect "$agent_image" >/dev/null 2>&1 || {
-      echo "agent image does not exist: $agent_image" >&2
-      exit 2
-    }
-  fi
-fi
-
 metadata_config_root=$(mktemp -d "${TMPDIR:-/tmp}/openneko-backend-eval-migrate.XXXXXX")
-if [ "$requires_agent" -eq 1 ]; then
-  openshell_sandbox_baseline=$metadata_config_root/openshell-sandboxes.baseline
-  openshell_provider_baseline=$metadata_config_root/openshell-providers.baseline
-  openshell sandbox list --names | sort >"$openshell_sandbox_baseline"
-  openshell provider list --names | sort >"$openshell_provider_baseline"
-fi
 metadata_key=$repo_root/.openneko/evals/metadata-backup-key
 metadata_backups=$repo_root/.openneko/evals/metadata-backups
 install -d -m 0700 "$repo_root/.openneko" "$repo_root/.openneko/evals" "$metadata_backups"
@@ -291,57 +266,6 @@ cleanup() {
       down --remove-orphans >/dev/null 2>&1 || cleanup_failed=1
   fi
 
-  # A hard interrupt can terminate the TypeScript driver before its per-org
-  # finally block removes its sandbox and gateway provider. Resolve the exact
-  # work-run sandbox names from this invocation's isolated metadata DB, and
-  # intersect them with sandboxes created after the pre-run snapshot. Delete
-  # those sandboxes before providers because OpenShell will not delete a
-  # provider while a live sandbox still references it.
-  if [ "$requires_agent" -eq 1 ] && [ "$metadata_started" -eq 1 ] \
-    && [ -n "$openshell_sandbox_baseline" ] \
-    && [ -f "$openshell_sandbox_baseline" ]; then
-    openshell_sandbox_current=$metadata_config_root/openshell-sandboxes.current
-    eval_sandbox_names=$metadata_config_root/openshell-sandboxes.eval
-    if metadata_compose exec -T neko-db \
-      psql --no-psqlrc --tuples-only --no-align --username neko --dbname neko \
-        --command "select 'work-' || id from work_run" 2>/dev/null \
-        | tr -d '\r' | sort >"$eval_sandbox_names" \
-      && openshell sandbox list --names 2>/dev/null \
-        | sort >"$openshell_sandbox_current"; then
-      comm -13 "$openshell_sandbox_baseline" "$openshell_sandbox_current" \
-        | comm -12 - "$eval_sandbox_names" \
-        | while IFS= read -r sandbox_name; do
-            [ -n "$sandbox_name" ] || continue
-            if ! openshell sandbox delete "$sandbox_name" >/dev/null 2>&1; then
-              echo "[backend-eval] failed to delete OpenShell sandbox $sandbox_name" >&2
-              exit 1
-            fi
-          done || cleanup_failed=1
-    else
-      echo "[backend-eval] could not resolve OpenShell sandboxes for cleanup" >&2
-      cleanup_failed=1
-    fi
-  fi
-
-  # Delete only OpenNeko providers created after this invocation's snapshot;
-  # pre-existing developer or production providers remain untouched.
-  if [ -n "$openshell_provider_baseline" ] && [ -f "$openshell_provider_baseline" ]; then
-    openshell_provider_current=$metadata_config_root/openshell-providers.current
-    if openshell provider list --names 2>/dev/null | sort >"$openshell_provider_current"; then
-      comm -13 "$openshell_provider_baseline" "$openshell_provider_current" \
-        | awk '/^openneko-agent-/' \
-        | while IFS= read -r provider_name; do
-            [ -n "$provider_name" ] || continue
-            if ! openshell provider delete "$provider_name" >/dev/null 2>&1; then
-              echo "[backend-eval] failed to delete OpenShell provider $provider_name" >&2
-              exit 1
-            fi
-          done || cleanup_failed=1
-    else
-      cleanup_failed=1
-    fi
-  fi
-
   if [ "$metadata_started" -eq 1 ]; then
     metadata_compose down --volumes --remove-orphans >/dev/null 2>&1 || cleanup_failed=1
   fi
@@ -381,8 +305,6 @@ echo "[backend-eval] applying OpenNeko metadata migrations"
   NEKO_PG_PASSWORD=secret \
   NEKO_PG_DATABASE=neko \
   NEKO_PG_SSLMODE=disable \
-  OPENNEKO_OPENSHELL_DB_PASSWORD=openneko-eval-openshell-development-password \
-  OPENNEKO_REQUIRE_EXPLICIT_OPENSHELL_DB_PASSWORD=1 \
     go run ./cmd/openneko migrate
 )
 
@@ -405,7 +327,7 @@ graphjin_port=${OPENNEKO_EVAL_GRAPHJIN_PORT:-18080}
 export OPENNEKO_EVAL_ADVENTUREWORKS_GRAPHQL_URL="${OPENNEKO_EVAL_ADVENTUREWORKS_GRAPHQL_URL:-http://127.0.0.1:$graphjin_port/api/v1/graphql}"
 export OPENNEKO_EVAL_ADVENTUREWORKS_MCP_URL="${OPENNEKO_EVAL_ADVENTUREWORKS_MCP_URL:-http://127.0.0.1:$graphjin_port/api/v1/mcp}"
 export OPENNEKO_EVAL_ADVENTUREWORKS_DATABASE_URL="${OPENNEKO_EVAL_ADVENTUREWORKS_DATABASE_URL:-postgresql://openneko_eval_reader:eval-reader-only@127.0.0.1:$aw_db_port/adventureworks}"
-export OPENNEKO_AGENT_IMAGE="$agent_image"
+export OPENNEKO_AGENT_ENTRY="${OPENNEKO_AGENT_ENTRY:-$repo_root/apps/worker/src/agent-sandbox/entry.ts}"
 export OPENNEKO_PG_ENV_OVERRIDE=1
 export NEKO_PG_HOST=127.0.0.1
 export NEKO_PG_PORT="$metadata_port"

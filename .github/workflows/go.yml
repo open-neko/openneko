@@ -9,7 +9,6 @@ on:
       - "db/migrations/**"
       - "Dockerfile"
       - "compose.yml"
-      - "compose.openshell.yml"
       - ".github/workflows/deploy.yml"
       - ".github/workflows/go.yml"
   pull_request:
@@ -19,7 +18,6 @@ on:
       - "db/migrations/**"
       - "Dockerfile"
       - "compose.yml"
-      - "compose.openshell.yml"
       - ".github/workflows/deploy.yml"
       - ".github/workflows/go.yml"
 
@@ -77,9 +75,6 @@ jobs:
 
       - name: go test (database integration)
         run: go test -tags=integration -count=1 -timeout 10m ./internal/db/...
-
-      - name: go test (OpenShell credential integration)
-        run: go test -tags=integration -count=1 -timeout 10m -run '^TestMigrateOpenShellRoleCredentialContract$' ./internal/cli
 
   goreleaser-check:
     name: goreleaser check

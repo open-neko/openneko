@@ -46,7 +46,6 @@ type Supervisor struct {
 	//   compose/core.yml
 	//   compose/dev.yml
 	//   compose/demo.yml
-	//   compose/openshell.yml
 	AssetsFS fs.FS
 	// RuntimeDir is where compose files are written. Defaults to
 	// $OPENNEKO_WORKSPACE_ROOT/.openneko/runtime/ when that variable is set,
@@ -110,8 +109,6 @@ func (s *Supervisor) Materialize(mode Mode) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("compose: unknown mode %q (want prod|dev|demo)", mode)
 	}
-	// SEC9: OpenShell is the only runtime — its overlay always applies.
-	files = append(files, "compose/openshell.yml")
 	var out []string
 	for _, name := range files {
 		raw, err := fs.ReadFile(s.AssetsFS, name)

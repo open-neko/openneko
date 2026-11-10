@@ -13,8 +13,8 @@
 # ─── 1. base: node + system tooling ────────────────────────────────────
 # The official Node image also carries npm, Corepack, Yarn, C/C++ headers, and
 # documentation. Copy only the executable into the shared runtime lineage;
-# worker and agent add a pruned npm payload below because they genuinely offer
-# runtime package installation. Web and plugin sandboxes do not pay that tax.
+# the worker adds a pruned npm payload below because it offers runtime package
+# installation. Web does not pay that tax.
 FROM node:24.22.1-bookworm-slim AS node-distribution
 
 FROM node-distribution AS npm-payload
@@ -66,43 +66,17 @@ RUN test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.36" \
     && test "$(pg_config --version)" = "PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2)" \
     && test "$(id -u postgres):$(id -g postgres)" = "999:999"
 
-# Pinned static OpenShell client shared by control planes and the readiness
-# one-shot without pulling a Node/worker filesystem into the latter.
-FROM debian:bookworm-slim AS openshell-bin
-ARG OPENSHELL_VERSION=0.1.2
-ARG OPENSHELL_ASSET_AMD64=594438336
-ARG OPENSHELL_ASSET_ARM64=594438335
-ARG TARGETARCH
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
-    && OPENSHELL_ASSET_ID="$(case "${TARGETARCH}" in amd64) echo "${OPENSHELL_ASSET_AMD64}" ;; arm64) echo "${OPENSHELL_ASSET_ARM64}" ;; *) exit 1 ;; esac)" \
-    && curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors -o /tmp/openshell.tgz \
-      -H 'Accept: application/octet-stream' \
-      "https://api.github.com/repos/NVIDIA/OpenShell/releases/assets/${OPENSHELL_ASSET_ID}" \
-    && tar -xzf /tmp/openshell.tgz -C /usr/local/bin openshell \
-    && rm /tmp/openshell.tgz \
-    && rm -rf /var/lib/apt/lists/* \
-    && test "$(openshell --version)" = "openshell ${OPENSHELL_VERSION}"
-
-FROM alpine:3.22 AS openshell-ready
-RUN apk add --no-cache ca-certificates
-COPY --from=openshell-bin /usr/local/bin/openshell /usr/local/bin/openshell
-CMD ["openshell", "--version"]
-
-# ─── 2. control-plane runtime: sandbox launcher only ───────────────────
-# Web is a trusted control plane that launches OpenShell sandboxes but never
-# contains an agent runtime, GraphJin CLI, or document toolchain. The worker
-# uses the narrower shared GraphJin/npm runtime defined below.
+# ─── 2. control-plane runtime ─────────────────────────────────────────
+# Web holds no GraphJin CLI and no document toolchain. The worker uses the
+# narrower shared GraphJin/npm runtime defined below.
 FROM node-runtime AS runtime-base
-# Git supports trusted config VCS and git-backed installs. openssh-client is
-# required by `openshell sandbox exec`.
+# Git and ssh serve trusted config VCS and git-backed installs.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git openssh-client \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=openshell-bin /usr/local/bin/openshell /usr/local/bin/openshell
 
-# Pinned GraphJin binary shared by the Records-aware worker and the two
-# dedicated GraphJin runtimes. The sandbox agent deliberately does not inherit
-# this lineage: all agent GraphJin reads cross the authenticated host broker.
+# Pinned GraphJin binary shared by the worker and the two dedicated GraphJin
+# runtimes.
 FROM debian:bookworm-slim AS graphjin-bin
 ARG GRAPHJIN_VERSION=3.21.16
 ARG TARGETARCH
@@ -117,36 +91,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && graphjin version
 
 # The worker requires npm plus the pinned GraphJin CLI for trusted host-side
-# Records configuration. It is never part of the sandbox agent image.
+# configuration.
 FROM npm-runtime AS graphjin-node-runtime
 COPY --from=graphjin-bin /usr/local/bin/graphjin /usr/local/bin/graphjin
-
-# ─── 2b. agent runtime base (sandbox only) ────────────────────────────
-FROM npm-runtime AS agent-base
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      git patch python3 python3-pip \
-    && rm -rf /var/lib/apt/lists/*
-
-# ─── 2c. document toolchain (agent image only) ─────────────────────────
-# Bundled skills (xlsx / pptx / docx / pdf / document-extraction) shell out to
-# Python + LibreOffice + Poppler / qpdf / Tesseract via the agent's Bash inside
-# the OpenShell sandbox — web never runs these, so the ~1GB toolchain stays out
-# of its image.
-# Keep this list in sync with KNOWN_SKILL_DEPS (packages/llm/src/work/skill-deps.ts);
-# `pnpm skills:check` prints the current aggregate.
-FROM agent-base AS cli
-ENV NODE_PATH=/usr/local/lib/node_modules
-RUN npm install --global --omit=dev --no-audit --no-fund \
-      docx@9.7.1 pptxgenjs@4.0.1 react@19.2.8 react-dom@19.2.8 \
-      react-icons@5.7.0 sharp@0.35.3 \
-    && npm cache clean --force
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      libreoffice-core libreoffice-common libreoffice-writer libreoffice-calc \
-      libreoffice-impress libreoffice-draw poppler-utils qpdf tesseract-ocr file \
-    && rm -rf /var/lib/apt/lists/* \
-    && pip3 install --no-cache-dir --break-system-packages \
-       openpyxl python-pptx Pillow python-docx pypdf pdfplumber reportlab PyYAML \
-       defusedxml lxml
 
 # ─── 3. deps: workspace install (cached on lockfile) ───────────────────
 FROM base AS deps
@@ -215,17 +162,7 @@ RUN cd apps/openneko && \
     go build -trimpath -ldflags "-s -w" \
       -o /out/openneko-graphjin-config ./cmd/graphjin-config
 
-# Ax Harness: the Go agent behind the Ax backend. OpenShell pins model egress
-# to /usr/local/bin/ax-harness for Ax runs (AX_HARNESS_BINARY).
-FROM golang:1.26.10-bookworm AS ax-harness-build
-WORKDIR /src
-COPY apps/ax-harness/go.mod apps/ax-harness/go.sum apps/ax-harness/
-RUN cd apps/ax-harness && go mod download
-COPY apps/ax-harness apps/ax-harness
-RUN cd apps/ax-harness && CGO_ENABLED=0 GOOS=linux \
-    go build -trimpath -ldflags "-s -w" -o /out/ax-harness ./cmd/ax-harness
-
-# DuckDB CLI for data work in the agent terminal, pinned by checksum.
+# DuckDB CLI for sheet tables in openneko serve, pinned by checksum.
 FROM debian:bookworm-slim AS duckdb-bin
 ARG TARGETARCH
 ARG DUCKDB_VERSION=v1.5.5
@@ -371,7 +308,6 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git openssh-client postgresql-client \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=openshell-bin /usr/local/bin/openshell /usr/local/bin/openshell
 ENV NODE_ENV=production \
     PORT=4100 \
     HOSTNAME=0.0.0.0 \
@@ -409,34 +345,6 @@ RUN cd /opt/openneko-agent && node entry.js --preflight \
 EXPOSE 4100
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["node", "--import", "tsx/esm", "src/index.ts"]
-
-# ─── 5d. agent sandbox runtime (OpenShell) ─────────────────────────────
-FROM cli AS agent
-USER root
-# Supervisor egress-netns tools + a non-root `sandbox` user (high UID, OpenShell
-# convention). GraphJin never enters this image; the agent can reach it only
-# through the authenticated host broker.
-RUN apt-get update && apt-get install -y --no-install-recommends iproute2 nftables jq ripgrep \
-    && rm -rf /var/lib/apt/lists/*
-COPY --from=ax-harness-build /out/ax-harness /usr/local/bin/ax-harness
-COPY --from=duckdb-bin /usr/local/bin/duckdb /usr/local/bin/duckdb
-RUN groupadd -g 1000660000 sandbox \
-    && useradd -u 1000660000 -g sandbox -d /sandbox -M sandbox \
-    && install -d -o sandbox -g sandbox /sandbox
-# Only the two bundles and built-in skills enter the agent filesystem.
-COPY --from=agent-deploy --chown=1000660000:1000660000 /out/agent-app /app
-# OpenShell may execute as a remapped non-root UID. Build output can inherit
-# restrictive source modes, so every runtime bundle and parent directory must
-# be readable regardless of the sandbox's assigned UID.
-RUN chmod -R a+rX /app
-USER sandbox
-# Fail the image build if the non-root sandbox cannot read and boot the
-# bundled runtime without workspace node_modules.
-RUN cd /app && node entry.js --preflight \
-    && node --input-type=module -e "await import('./mcp-bridge.js')"
-WORKDIR /sandbox
-# Supervisor-replaced; launcher runs: cd /app && node /app/entry.js
-CMD ["node", "--version"]
 
 # ─── 5c. neko-cli runtime ──────────────────────────────────────────────
 # Minimal image containing just the openneko Go binary. Used as the
