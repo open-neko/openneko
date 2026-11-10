@@ -11,6 +11,7 @@ apps/web/test-results/
 apps/web/playwright-report/
 
 /docs/
+/private/
 .turbo/
 dist/
 build/
