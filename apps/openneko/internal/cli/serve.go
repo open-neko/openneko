@@ -22,10 +22,11 @@ import (
 )
 
 func newServeCmd() *cobra.Command {
-	var addr, filesDir, indexDir, duckdb string
+	var addr, filesDir, indexDir, duckdb, agentSocket string
+	var maxTurns int
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Run the OpenNeko core service (user files and file search)",
+		Short: "Run the OpenNeko core service (user files, file search and agent turns)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
@@ -57,19 +58,37 @@ func newServeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			var agentDone <-chan error
+			if agentSocket != "" {
+				if agentDone, err = serveAgentTurns(ctx, cmd.OutOrStdout(), agentSocket, maxTurns); err != nil {
+					_ = ln.Close()
+					return err
+				}
+			}
 			srv := &http.Server{Handler: svc.Handler(), ReadHeaderTimeout: 10 * time.Second}
 			fmt.Fprintf(cmd.OutOrStdout(), "openneko serve listening on %s\n", ln.Addr())
 			errc := make(chan error, 1)
 			go func() { errc <- srv.Serve(ln) }()
 			select {
 			case err := <-errc:
+				stop()
 				return err
+			case err := <-agentDone:
+				stop()
+				_ = srv.Close()
+				return fmt.Errorf("agent socket: %w", err)
 			case <-ctx.Done():
 			}
 			shut, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			if err := srv.Shutdown(shut); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 				return err
+			}
+			if agentDone != nil {
+				select {
+				case <-agentDone:
+				case <-shut.Done():
+				}
 			}
 			return nil
 		},
@@ -82,6 +101,8 @@ func newServeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&addr, "addr", envOr("OPENNEKO_SERVE_ADDR", "127.0.0.1:8090"), "Listen address")
 	cmd.Flags().StringVar(&filesDir, "files-dir", envOr("OPENNEKO_FILES_DIR", filepath.Join(data, "openneko", "files")), "Folder that holds each user's private files")
 	cmd.Flags().StringVar(&indexDir, "index-dir", envOr("OPENNEKO_FILES_INDEX_DIR", filepath.Join(data, "openneko", "file-index")), "Folder for the sheet tables derived from the files; safe to delete")
+	cmd.Flags().StringVar(&agentSocket, "agent-socket", os.Getenv("OPENNEKO_SERVE_SOCKET"), "Unix socket for agent turns; empty turns them off")
+	cmd.Flags().IntVar(&maxTurns, "max-turns", envInt("OPENNEKO_SERVE_MAX_TURNS", 32), "Agent turns that run at once; more are refused")
 	cmd.Flags().StringVar(&duckdb, "duckdb", envOr("OPENNEKO_DUCKDB", "duckdb"), "DuckDB CLI for SQL over sheet tables")
 	return cmd
 }

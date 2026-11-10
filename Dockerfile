@@ -197,7 +197,9 @@ RUN sh scripts/prune-node-runtime.sh /app/apps/web/.next/standalone "$TARGETARCH
 FROM golang:1.26.10-bookworm AS go-build
 WORKDIR /src
 COPY apps/openneko/go.mod apps/openneko/go.sum apps/openneko/
+COPY apps/ax-harness/go.mod apps/ax-harness/go.sum apps/ax-harness/
 RUN cd apps/openneko && go mod download
+COPY apps/ax-harness apps/ax-harness
 COPY apps/openneko apps/openneko
 COPY db/migrations db/migrations
 # Ensure the embedded migration copies match the canonical source. CI also

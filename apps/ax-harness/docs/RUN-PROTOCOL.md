@@ -1,11 +1,18 @@
 # Run protocol
 
-Ax Harness runs one agent turn per process. The host writes one JSON run
-specification to stdin. The harness writes one JSON event per line to stdout.
-The host owns history, compaction across turns, approvals, the sandbox and
-scheduling.
+Ax Harness runs one agent turn. The host writes one JSON run specification.
+The harness writes one JSON event per line. The host owns history, compaction
+across turns, approvals, the sandbox and scheduling.
 
-Build the binary with `go build -o bin/ax-harness ./cmd/ax-harness`.
+The host can run a turn in two ways:
+
+- The `ax-harness` binary runs one turn per process on stdin and stdout. Build
+  it with `go build -o bin/ax-harness ./cmd/ax-harness`.
+- `openneko serve --agent-socket <path>` runs turns in one process, one turn
+  per connection. The frames are in `serve/serve.go`. Serve removes
+  `OPENNEKO_MCP_BRIDGE` and every `*_API_KEY` variable from the turn's
+  environment. It reads the model key from the start frame or from its own
+  environment, so the turn's tools and terminal never see it.
 
 ## Input
 
@@ -200,12 +207,11 @@ cache mark. Anthropic then puts a `cache_control` breakpoint on it, and OpenAI
 GPT-5.6 and GPT-6 models put an explicit cache breakpoint on it, so a new turn
 of the same org reuses the cached org prompt. Other routes, Gemini included,
 use the provider's implicit prefix cache. The harness does not create Gemini
-cache objects: one process runs one turn, so a cache object would need a
-registry across processes, and Ax creates it outside the metered model calls.
+cache objects: a cache object would need a registry across turns, and Ax creates it outside the metered model calls.
 
 ## OpenNeko entry
 
-`cmd/ax-harness` reads these environment variables:
+The `harness` package reads these variables from the turn's environment:
 
 | Variable | Use |
 | --- | --- |
