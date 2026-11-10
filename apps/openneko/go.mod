@@ -20,7 +20,7 @@ require (
 )
 
 require (
-	github.com/ax-llm/ax/packages/go v0.0.0-20261008025325-987328ccf984 // indirect
+	github.com/ax-llm/ax/packages/go v0.0.0-20261029090635-42fceae3d6cd // indirect
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/dlclark/regexp2 v1.11.4 // indirect
 	github.com/dop251/goja v0.0.0-20250630131328-58d95d85e994 // indirect

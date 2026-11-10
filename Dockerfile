@@ -78,7 +78,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Pinned GraphJin binary shared by the worker and the two dedicated GraphJin
 # runtimes.
 FROM debian:bookworm-slim AS graphjin-bin
-ARG GRAPHJIN_VERSION=3.21.16
+ARG GRAPHJIN_VERSION=3.21.18
 ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
     && case "${TARGETARCH}" in amd64|arm64) ;; *) exit 1 ;; esac \
