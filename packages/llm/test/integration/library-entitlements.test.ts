@@ -18,6 +18,7 @@ import { createTestOrg, dbReachable, deleteTestOrg, uniqueOrgId } from "@neko/db
 vi.mock("../../src/embedding", () => ({
   embedText: async () => [1, ...Array(383).fill(0)],
   vectorLiteral: (vector: number[]) => `[${vector.join(",")}]`,
+  embeddingModel: () => "test-model",
 }));
 import { copyAllowedTeamLibrary } from "../../src/library/staging";
 import { rebuildIndexes } from "../../src/library/tree";
@@ -63,7 +64,7 @@ const reachable = await dbReachable();
       const vector = sql`${JSON.stringify([1, ...Array(383).fill(0)])}::vector`;
       const insert = async (path: string, title: string, userId: string | null = null) => {
         const [row] = await db().insert(library_concept).values({
-          org_id: orgId, user_id: userId, path, type: "note", title, body: `${title} body`, status: "stable", embedding: vector,
+          org_id: orgId, user_id: userId, path, type: "note", title, body: `${title} body`, status: "stable", embedding: vector, embedding_model: "test-model",
         }).returning({ id: library_concept.id });
         return row!.id;
       };

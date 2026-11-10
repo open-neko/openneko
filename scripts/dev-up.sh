@@ -79,7 +79,7 @@ done
 
 compose up -d \
   neko-graphjin graphjin records-graphjin records-watch-graphjin \
-  embedding librarian agent-image openshell-gateway \
+  librarian agent-image openshell-gateway \
   adventureworks-simulator adventureworks-scenario-injector
 
 # Host processes reach the OpenShell gateway on its loopback port.

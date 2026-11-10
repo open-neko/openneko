@@ -25,6 +25,7 @@ vi.mock("../../src/embedding", async () => {
       return v;
     }),
     vectorLiteral: (vec: number[]) => `[${vec.join(",")}]`,
+    embeddingModel: () => "test-model",
   };
 });
 

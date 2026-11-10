@@ -197,7 +197,6 @@ COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY patches patches
 COPY apps/web/package.json apps/web/package.json
 COPY apps/worker/package.json apps/worker/package.json
-COPY apps/embedding/package.json apps/embedding/package.json
 COPY packages/avatars/package.json packages/avatars/package.json
 COPY packages/channels/package.json packages/channels/package.json
 COPY packages/db/package.json packages/db/package.json
@@ -334,30 +333,6 @@ WORKDIR /app
 COPY evals/environment/adventureworks/api/server.mjs /app/server.mjs
 EXPOSE 8090
 ENTRYPOINT ["node", "/app/server.mjs"]
-
-# Shared listener used by the embedding and Docling service images.
-FROM golang:1.26.10-bookworm AS lazy-service-build
-WORKDIR /src
-COPY apps/lazy-service .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/lazy-service .
-
-FROM source AS embedding-deploy
-ARG TARGETARCH
-RUN pnpm --filter @neko/embedding deploy --prod /out/embedding \
-    && sh scripts/prune-node-runtime.sh /out/embedding "$TARGETARCH"
-# Bake and test the model. Offline readiness is a build requirement.
-RUN cd /out/embedding && NEKO_TRANSFORMERS_CACHE=/out/embedding/models node model.mjs --prewarm
-
-FROM node-runtime AS embedding
-RUN useradd --system --create-home --uid 10001 embedding
-COPY --from=embedding-deploy --chown=embedding:embedding /out/embedding /app
-COPY --from=lazy-service-build /out/lazy-service /usr/local/bin/lazy-service
-ENV NEKO_TRANSFORMERS_CACHE=/app/models
-WORKDIR /app
-USER embedding
-EXPOSE 5003
-ENTRYPOINT ["lazy-service"]
-CMD ["--listen", ":5003", "--upstream", "http://127.0.0.1:5004", "--", "node", "/app/server.mjs"]
 
 # ─── 5a. web runtime ───────────────────────────────────────────────────
 # Web remains a trusted OpenShell control plane; the agent runtime is not here.

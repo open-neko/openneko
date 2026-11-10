@@ -21,9 +21,12 @@ x-neko-app-env: &neko-app-env
   RECORDS_PG_PASSWORD: ${OPENNEKO_RECORDS_PG_PASSWORD:-records-secret}
   RECORDS_PG_DATABASE: ${OPENNEKO_RECORDS_PG_DATABASE:-records}
   OPENNEKO_RECORDS_GRAPHJIN_URL: http://records-graphjin:8090
-  NEKO_EMBEDDING_URL: http://embedding:5003
-  NO_PROXY: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,embedding,librarian,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
-  no_proxy: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,embedding,librarian,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
+  NEKO_EMBEDDING_URL: ${NEKO_EMBEDDING_URL:-}
+  NEKO_EMBEDDING_MODEL: ${NEKO_EMBEDDING_MODEL:-}
+  NEKO_EMBEDDING_API_KEY: ${NEKO_EMBEDDING_API_KEY:-}
+  NEKO_EMBEDDING_DIMENSIONS: ${NEKO_EMBEDDING_DIMENSIONS:-}
+  NO_PROXY: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,librarian,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
+  no_proxy: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,librarian,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
 
 services:
   neko-db:
@@ -503,30 +506,6 @@ services:
       timeout: 3s
       retries: 5
 
-  embedding:
-    # The listener is always available; ONNX/model memory exists only on demand.
-    image: ${OPENNEKO_EMBEDDING_IMAGE:-ghcr.io/open-neko/neko-embedding:${OPENNEKO_VERSION:-latest}}
-    restart: unless-stopped
-    environment:
-      OPENNEKO_SERVICE_IDLE_TIMEOUT: ${OPENNEKO_EMBEDDING_IDLE_TIMEOUT:-5m}
-    read_only: true
-    cpus: ${OPENNEKO_EMBEDDING_CPUS:-1.0}
-    mem_limit: ${OPENNEKO_EMBEDDING_MEMORY:-1g}
-    pids_limit: 64
-    cap_drop:
-      - ALL
-    tmpfs:
-      - /tmp:size=64m,mode=1777
-    security_opt:
-      - no-new-privileges:true
-    expose:
-      - "5003"
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5003/health/ready"]
-      interval: 15s
-      timeout: 3s
-      retries: 3
-
   librarian:
     # OpenNeko's digital-document extractor. Layout/table models are vendored
     # in the release image and runtime network access is disabled at the model
@@ -630,8 +609,6 @@ services:
       graphjin-secret-init:
         condition: service_completed_successfully
       librarian:
-        condition: service_healthy
-      embedding:
         condition: service_healthy
       records-db:
         condition: service_healthy

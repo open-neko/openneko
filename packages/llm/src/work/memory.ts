@@ -17,7 +17,8 @@ import {
   work_pending_memory,
   work_run,
 } from "@neko/db";
-import { embedText, vectorLiteral } from "../embedding";
+import { embedText, embeddingModel, vectorLiteral } from "../embedding";
+import { interleaveResults, keywordTsQuery } from "./keyword-search";
 import {
   WORK_MEMORY_KINDS,
   WORK_MEMORY_SCOPES,
@@ -595,10 +596,69 @@ export async function searchWorkMemory(
   return { saved, archives };
 }
 
-// Semantic search via pgvector. Embeds the query with the same
-// transformers.js model used at write time and pulls the N nearest
-// non-archived memories by cosine distance. Returned `score` is the
-// cosine similarity (1 - distance), so higher is better.
+const memoryColumns = () => ({
+  id: work_memory.id,
+  org_id: work_memory.org_id,
+  kind: work_memory.kind,
+  scope: work_memory.scope,
+  scope_id: work_memory.scope_id,
+  text: work_memory.text,
+  pinned: work_memory.pinned,
+  confidence: work_memory.confidence,
+  metadata: work_memory.metadata,
+  source_run_id: work_memory.source_run_id,
+  source_thread_id: work_memory.source_thread_id,
+  use_count: work_memory.use_count,
+  last_used_at: work_memory.last_used_at,
+  user_id: work_memory.user_id,
+  origin_id: work_memory.origin_id,
+  overrides_origin_id: work_memory.overrides_origin_id,
+  suppressed: work_memory.suppressed,
+  promoted_from_id: work_memory.promoted_from_id,
+  promoted_by: work_memory.promoted_by,
+  promoted_at: work_memory.promoted_at,
+  integrity_hmac: work_memory.integrity_hmac,
+  expires_at: work_memory.expires_at,
+  archived_at: work_memory.archived_at,
+  embedding: work_memory.embedding,
+  embedding_model: work_memory.embedding_model,
+  created_at: work_memory.created_at,
+  updated_at: work_memory.updated_at,
+});
+
+type ContextSearchRow = WorkMemoryRow & { score: number };
+
+async function keywordMemorySearch(
+  visible: ReturnType<typeof and>,
+  query: string,
+  limit: number,
+  unindexedModel?: string,
+): Promise<ContextSearchRow[]> {
+  const tsquery = keywordTsQuery(query);
+  const document = sql`to_tsvector('english', ${work_memory.text})`;
+  const rank = sql<number>`ts_rank_cd(${document}, ${tsquery})`;
+  return (await db()
+    .select({ ...memoryColumns(), score: rank })
+    .from(work_memory)
+    .where(
+      and(
+        visible,
+        ...(unindexedModel
+          ? [sql`(work_memory.embedding IS NULL OR work_memory.embedding_model IS DISTINCT FROM ${unindexedModel})`]
+          : []),
+        sql`${document} @@ ${tsquery}`,
+      ),
+    )
+    .orderBy(sql`${rank} desc`, desc(work_memory.updated_at))
+    .limit(limit)) as ContextSearchRow[];
+}
+
+/**
+ * With embedding on, ranks memories by cosine similarity and interleaves
+ * keyword hits on memories that have no current vector. With embedding off or
+ * failing, uses Postgres full-text search. `score` is the similarity or the
+ * full-text rank; higher is better.
+ */
 export async function searchWorkMemoryByContext(args: {
   orgId: string;
   query: string;
@@ -614,62 +674,38 @@ export async function searchWorkMemoryByContext(args: {
     args.userId !== undefined
       ? args.userId
       : await resolveRunMemoryLayer(args.runId ?? null);
-  let queryVec: string;
-  try {
-    queryVec = vectorLiteral(await embedText(trimmed));
-  } catch (err) {
-    console.error(
-      "[work-memory] context search embed failed:",
-      err instanceof Error ? err.message : err,
-    );
-    return [];
+  const visible = and(
+    eq(work_memory.org_id, args.orgId),
+    layerVisibilityFilter(layerUserId, args.teamMemory ?? (args.runId ? await runTeamMemory(args.orgId, args.runId) : undefined)),
+    isNull(work_memory.archived_at),
+  );
+  const model = embeddingModel();
+  let queryVec: string | null = null;
+  if (model) {
+    try {
+      queryVec = vectorLiteral(await embedText(trimmed));
+    } catch (err) {
+      console.warn(
+        "[work-memory] embedding unavailable; searching by keyword:",
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
-  // Use Drizzle's typed select so timestamp columns come back as Dates
-  // (not strings) and the row shape matches rowToMemory's expectations.
-  // Vector ordering goes in via raw sql; the score is computed as a
-  // separate column so we don't have to re-embed for the result.
-  const orderExpr = sql`work_memory.embedding <=> ${queryVec}::vector`;
-  const rows = await db()
-    .select({
-      id: work_memory.id,
-      org_id: work_memory.org_id,
-      kind: work_memory.kind,
-      scope: work_memory.scope,
-      scope_id: work_memory.scope_id,
-      text: work_memory.text,
-      pinned: work_memory.pinned,
-      confidence: work_memory.confidence,
-      metadata: work_memory.metadata,
-      source_run_id: work_memory.source_run_id,
-      source_thread_id: work_memory.source_thread_id,
-      use_count: work_memory.use_count,
-      last_used_at: work_memory.last_used_at,
-      user_id: work_memory.user_id,
-      origin_id: work_memory.origin_id,
-      overrides_origin_id: work_memory.overrides_origin_id,
-      suppressed: work_memory.suppressed,
-      promoted_from_id: work_memory.promoted_from_id,
-      promoted_by: work_memory.promoted_by,
-      promoted_at: work_memory.promoted_at,
-      integrity_hmac: work_memory.integrity_hmac,
-      expires_at: work_memory.expires_at,
-      archived_at: work_memory.archived_at,
-      embedding: work_memory.embedding,
-      created_at: work_memory.created_at,
-      updated_at: work_memory.updated_at,
-      score: sql<number>`1 - (work_memory.embedding <=> ${queryVec}::vector)`,
-    })
-    .from(work_memory)
-    .where(
-      and(
-        eq(work_memory.org_id, args.orgId),
-        layerVisibilityFilter(layerUserId, args.teamMemory ?? (args.runId ? await runTeamMemory(args.orgId, args.runId) : undefined)),
-        isNull(work_memory.archived_at),
-        sql`work_memory.embedding IS NOT NULL`,
-      ),
-    )
-    .orderBy(orderExpr)
-    .limit(limit);
+  let rows: ContextSearchRow[];
+  if (model && queryVec) {
+    const [semantic, unindexed] = await Promise.all([
+      db()
+        .select({ ...memoryColumns(), score: sql<number>`1 - (work_memory.embedding <=> ${queryVec}::vector)` })
+        .from(work_memory)
+        .where(and(visible, sql`work_memory.embedding IS NOT NULL`, eq(work_memory.embedding_model, model)))
+        .orderBy(sql`work_memory.embedding <=> ${queryVec}::vector`)
+        .limit(limit) as Promise<ContextSearchRow[]>,
+      keywordMemorySearch(visible, trimmed, limit, model),
+    ]);
+    rows = interleaveResults(semantic, unindexed, (row) => row.id, limit);
+  } else {
+    rows = await keywordMemorySearch(visible, trimmed, limit);
+  }
   if (rows.length === 0) return [];
   await touchWorkMemories(
     { orgId: args.orgId, runId: args.runId ?? null },

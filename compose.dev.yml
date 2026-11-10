@@ -14,10 +14,6 @@ services:
   records-db:
     command: [postgres, -c, archive_mode=off, -c, wal_compression=on, -c, temp_file_limit=5GB]
 
-  embedding:
-    ports:
-      - "127.0.0.1:${OPENNEKO_EMBEDDING_PORT:-5003}:5003"
-
   librarian:
     ports:
       - "127.0.0.1:${OPENNEKO_LIBRARIAN_PORT:-5001}:5001"

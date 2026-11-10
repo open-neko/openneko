@@ -57,7 +57,7 @@ includes all Level 2 controls plus the 800-172 enhancements.
 | 3.1.17 | Protect wireless access with authentication and encryption | | L2 | L3 | Deployment | Inherited | Deployment wireless identity and encryption controls. |
 | 3.1.18 | Control connection of mobile devices | | L2 | L3 | Deployment | Inherited | OpenNeko ships no mobile agent; mobile browser access is governed by deployment MDM and access controls. |
 | 3.1.19 | Encrypt CUI on mobile devices and platforms | | L2 | L3 | Deployment | Inherited | Endpoint/MDM encryption control. |
-| 3.1.20 | Verify/control connections to external systems | L1 | L2 | L3 | Product | ✅ Shipped | Outbound connections are default-deny and enumerable: agent egress per `(host, binary)` via the OpenShell gateway, plugin egress per manifest allowlist (`OPENSHELL.md`, `PLUGINS.md`). The model API is the only egress the agent gets by default. |
+| 3.1.20 | Verify/control connections to external systems | L1 | L2 | L3 | Product | ✅ Shipped | Outbound connections are default-deny and enumerable: agent egress per `(host, binary)` via the OpenShell gateway, plugin egress per manifest allowlist (`OPENSHELL.md`, `PLUGINS.md`). The model API is the only egress the agent gets by default. An external embedding service is off by default; when the operator sets `NEKO_EMBEDDING_URL`, web and worker send memory, skill and Library text to that one URL (`INSTALL.md` "Semantic search"). |
 | 3.1.21 | Limit portable storage on external systems | | L2 | L3 | Deployment | Inherited | Host/endpoint control. |
 
 ## Audit & Accountability (AU)

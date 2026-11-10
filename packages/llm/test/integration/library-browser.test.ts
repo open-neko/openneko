@@ -10,6 +10,7 @@ vi.mock("../../src/embedding", () => ({
     return [1, ...Array(383).fill(0)];
   },
   vectorLiteral: (vector: number[]) => `[${vector.join(",")}]`,
+  embeddingModel: () => "test-model",
 }));
 import { browseLibrary, editLibraryConcept, listLibraryConcepts, parseLibraryBrowseOptions, readLibraryConcept } from "../../src/work/library";
 
@@ -55,11 +56,11 @@ if (!reachable && process.env.LIBRARY_BROWSE_REQUIRE_DB === "1") throw new Error
       body: index === 1004 ? "rareword 100% underscore_value" : "Synthetic content", type: "policy", status: "stable",
     })));
     await db().insert(library_concept).values([
-      { id: semanticId, org_id: orgId, user_id: alice, title: "Replenishment", path: "semantic.md", type: "playbook", body: "No literal match", status: "stable", embedding: vector, source_document_id: documentId },
-      { id: hiddenId, org_id: orgId, user_id: bob, title: "Private", path: "private.md", type: "secret-type", body: "rareword", status: "stable", embedding: vector },
-      { id: draftId, org_id: orgId, user_id: null, title: "Pending team", path: "draft.md", type: "review-type", body: "rareword", status: "draft", embedding: vector, promoted_from_id: semanticId },
-      { id: foreignId, org_id: otherOrgId, user_id: null, title: "Other organization", path: "foreign.md", type: "foreign-type", body: "rareword", status: "stable", embedding: vector },
-      { id: archivedId, org_id: orgId, user_id: alice, title: "Archived", path: "archived.md", type: "archived-type", body: "rareword", status: "stable", archived_at: new Date(), embedding: vector },
+      { id: semanticId, org_id: orgId, user_id: alice, title: "Replenishment", path: "semantic.md", type: "playbook", body: "No literal match", status: "stable", embedding: vector, embedding_model: "test-model", source_document_id: documentId },
+      { id: hiddenId, org_id: orgId, user_id: bob, title: "Private", path: "private.md", type: "secret-type", body: "rareword", status: "stable", embedding: vector, embedding_model: "test-model" },
+      { id: draftId, org_id: orgId, user_id: null, title: "Pending team", path: "draft.md", type: "review-type", body: "rareword", status: "draft", embedding: vector, embedding_model: "test-model", promoted_from_id: semanticId },
+      { id: foreignId, org_id: otherOrgId, user_id: null, title: "Other organization", path: "foreign.md", type: "foreign-type", body: "rareword", status: "stable", embedding: vector, embedding_model: "test-model" },
+      { id: archivedId, org_id: orgId, user_id: alice, title: "Archived", path: "archived.md", type: "archived-type", body: "rareword", status: "stable", archived_at: new Date(), embedding: vector, embedding_model: "test-model" },
       { id: teamId, org_id: orgId, user_id: null, title: "Team knowledge", path: "team.md", type: "policy", body: "Synthetic team", status: "stable" },
     ]);
   }, 30_000);

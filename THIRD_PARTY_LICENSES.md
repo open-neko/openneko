@@ -33,7 +33,6 @@ OpenNeko's runtime dependencies are listed in the various `package.json` files a
 |---|---|---|
 | `pg`, `pg-boss` | MIT | Postgres client + job queue |
 | `next` | MIT | Web app framework |
-| `@huggingface/transformers` | Apache-2.0 | Embedding model runtime |
 | `zod` | MIT | Schema validation |
 | `drizzle-orm` | Apache-2.0 | DB schema + queries |
 

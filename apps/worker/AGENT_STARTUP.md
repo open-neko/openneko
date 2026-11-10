@@ -70,9 +70,9 @@ must fail. Launcher tests cover resource limits, cancellation, partial output,
 empty output, and cleanup. Real gateway/model acceptance remains the opt-in
 `packages/llm/test/sandbox-launcher-e2e.test.ts` suite.
 
-Embedding computation now runs in the shared embedding service. Both it and
-Docling use the [lazy processing listener](../lazy-service/README.md), releasing
-model memory after idle time. Incremental upload caches remain out of scope:
+Embedding runs in an external service that the operator sets by URL. Docling
+uses the [lazy processing listener](../../recipes/lazy-service/README.md),
+which releases model memory after idle time. Incremental upload caches remain out of scope:
 fresh boxes have no upload baseline and unchanged built-in skills are already omitted.
 
 ## Knowledge cache

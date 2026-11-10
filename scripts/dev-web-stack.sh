@@ -87,7 +87,6 @@ resolve_endpoint() {
 }
 
 worker_container="${container_prefix}-worker-1"
-embedding_container="${container_prefix}-embedding-1"
 records_graphjin_container="${container_prefix}-records-graphjin-1"
 metadata_db_container="${container_prefix}-neko-db-1"
 records_db_container="${container_prefix}-records-db-1"
@@ -95,7 +94,6 @@ metadata_graphjin_container="${container_prefix}-neko-graphjin-1"
 
 for required_container in \
   "$worker_container" \
-  "$embedding_container" \
   "$records_graphjin_container" \
   "$metadata_db_container" \
   "$records_db_container" \
@@ -150,7 +148,6 @@ export RECORDS_PG_HOST="$endpoint_host"
 export RECORDS_PG_PORT="$endpoint_port"
 export OPENNEKO_PG_ENV_OVERRIDE=1
 
-export NEKO_EMBEDDING_URL="http://$(container_ip "$embedding_container"):5003"
 export WORKER_ADMIN_URL="http://$(container_ip "$worker_container"):4100"
 export OPENNEKO_RECORDS_GRAPHJIN_URL="http://$(container_ip "$records_graphjin_container"):8090"
 resolve_endpoint "$metadata_graphjin_container" 8089

@@ -2,10 +2,10 @@ import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import pg from 'pg';
 import PgBoss from 'pg-boss';
 
-const state = vi.hoisted(() => ({ pool: null as unknown as pg.Pool, boss: null as unknown as PgBoss, embed: vi.fn() }));
+const state = vi.hoisted(() => ({ pool: null as unknown as pg.Pool, boss: null as unknown as PgBoss, embed: vi.fn(), model: 'model-a' as string | null }));
 vi.mock('@neko/db', () => ({ pool: () => state.pool }));
 vi.mock('@neko/db/jobs', () => ({ boss: async () => state.boss, QUEUE: { EMBEDDING_INDEX: 'embedding_index' } }));
-vi.mock('../../../packages/llm/src/embedding', () => ({ embedText: state.embed, vectorLiteral: (v: number[]) => JSON.stringify(v) }));
+vi.mock('../../../packages/llm/src/embedding', () => ({ embedText: state.embed, embeddingModel: () => state.model, vectorLiteral: (v: number[]) => JSON.stringify(v) }));
 import { dispatchEmbeddingJobs, runEmbeddingIndexJob } from '../../../packages/llm/src/embedding-jobs';
 
 // Dedicated disposable database only: this test creates its own minimal tables.
@@ -17,12 +17,12 @@ beforeAll(async () => {
   await state.boss.start();
   await state.boss.createQueue('embedding_index');
   await state.pool.query(`CREATE EXTENSION IF NOT EXISTS vector;
-    CREATE TABLE work_memory (id uuid PRIMARY KEY, org_id text, text text, embedding vector(384),
+    CREATE TABLE work_memory (id uuid PRIMARY KEY, org_id text, text text, embedding vector, embedding_model text,
       archived_at timestamptz, suppressed boolean DEFAULT false, expires_at timestamptz, updated_at timestamptz DEFAULT now());
     CREATE TABLE library_concept (id uuid PRIMARY KEY, org_id text, title text, description text, body text,
-      embedding vector(384), archived_at timestamptz, updated_at timestamptz DEFAULT now());
+      embedding vector, embedding_model text, archived_at timestamptz, updated_at timestamptz DEFAULT now());
     CREATE TABLE skill_embedding (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), org_id text, skill_name text,
-      document text DEFAULT '', embedding vector(384), updated_at timestamptz DEFAULT now());`);
+      document text DEFAULT '', embedding vector, embedding_model text, updated_at timestamptz DEFAULT now());`);
 });
 afterAll(async () => {
   if (!url) return;
@@ -33,6 +33,12 @@ it.skipIf(!url)('durably dispatches, deduplicates, retries, scopes updates and r
   const id = '00000000-0000-4000-8000-000000000001';
   const job = { kind: 'memory' as const, orgId: 'org-a', id };
   await state.pool.query('INSERT INTO work_memory(id,org_id,text) VALUES($1,$2,$3)', [id, job.orgId, 'original']);
+  state.model = null;
+  await dispatchEmbeddingJobs();
+  await runEmbeddingIndexJob(job);
+  expect((await state.pool.query("SELECT count(*)::int AS n FROM pgboss.job WHERE name='embedding_index'")).rows[0].n).toBe(0);
+  expect(state.embed).not.toHaveBeenCalled();
+  state.model = 'model-a';
   await Promise.all([dispatchEmbeddingJobs(), dispatchEmbeddingJobs()]);
   expect((await state.pool.query("SELECT count(*)::int AS n FROM pgboss.job WHERE name='embedding_index'")).rows[0].n).toBe(1);
   const durable = await state.boss.fetch('embedding_index');
@@ -56,7 +62,14 @@ it.skipIf(!url)('durably dispatches, deduplicates, retries, scopes updates and r
   expect(state.embed).toHaveBeenCalledTimes(2);
   await runEmbeddingIndexJob(job);
   expect(state.embed).toHaveBeenLastCalledWith('edited', 150_000);
-  expect((await state.pool.query('SELECT embedding IS NOT NULL AS indexed FROM work_memory WHERE id=$1', [id])).rows[0].indexed).toBe(true);
+  expect((await state.pool.query('SELECT embedding IS NOT NULL AS indexed, embedding_model FROM work_memory WHERE id=$1', [id])).rows[0])
+    .toEqual({ indexed: true, embedding_model: 'model-a' });
+  const before = state.embed.mock.calls.length;
+  await runEmbeddingIndexJob(job);
+  expect(state.embed).toHaveBeenCalledTimes(before);
+  state.model = 'model-b';
+  await runEmbeddingIndexJob(job);
+  expect((await state.pool.query('SELECT embedding_model FROM work_memory WHERE id=$1', [id])).rows[0].embedding_model).toBe('model-b');
   const conceptId = '00000000-0000-4000-8000-000000000002';
   await state.pool.query('INSERT INTO library_concept(id,org_id,title,description,body) VALUES($1,$2,$3,$4,$5)',
     [conceptId, 'org-b', 'Title', null, 'Body']);

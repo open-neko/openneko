@@ -24,13 +24,12 @@ import {
 const ts = (name: string) =>
   timestamp(name, { withTimezone: true, mode: "date" });
 
-// pgvector column. Stored as `vector(N)`; we don't read it back into JS
-// (similarity search uses raw SQL with the `<=>` operator). Drizzle just
-// needs to know the type exists so inserts typecheck.
-const vector = (name: string, dim: number) =>
+// pgvector column without a fixed dimension: the configured embedding model
+// decides it, and embedding_model records which model wrote each vector.
+const vector = (name: string) =>
   customType<{ data: string; driverData: string }>({
     dataType() {
-      return `vector(${dim})`;
+      return "vector";
     },
   })(name);
 
@@ -1187,7 +1186,8 @@ export const skill_embedding = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     skill_name: text("skill_name").notNull(),
     document: text("document").notNull().default(""),
-    embedding: vector("embedding", 384),
+    embedding: vector("embedding"),
+    embedding_model: text("embedding_model"),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },
   (t) => ({
@@ -1358,7 +1358,8 @@ export const work_memory = pgTable(
     integrity_hmac: text("integrity_hmac"),
     expires_at: ts("expires_at"),
     archived_at: ts("archived_at"),
-    embedding: vector("embedding", 384),
+    embedding: vector("embedding"),
+    embedding_model: text("embedding_model"),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },
@@ -1562,7 +1563,8 @@ export const library_concept = pgTable(
     promoted_by: text("promoted_by"),
     promoted_at: ts("promoted_at"),
     archived_at: ts("archived_at"),
-    embedding: vector("embedding", 384),
+    embedding: vector("embedding"),
+    embedding_model: text("embedding_model"),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },

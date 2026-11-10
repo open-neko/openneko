@@ -16,15 +16,16 @@ x-neko-app-env: &neko-app-env
   RECORDS_PG_PASSWORD: ${OPENNEKO_RECORDS_PG_PASSWORD:-records-secret}
   RECORDS_PG_DATABASE: ${OPENNEKO_RECORDS_PG_DATABASE:-records}
   OPENNEKO_RECORDS_GRAPHJIN_URL: http://records-graphjin:8090
-  NEKO_EMBEDDING_URL: http://embedding:5003
-  NO_PROXY: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,embedding,librarian,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
-  no_proxy: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,embedding,librarian,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
+  NEKO_EMBEDDING_URL: ${NEKO_EMBEDDING_URL:-}
+  NEKO_EMBEDDING_MODEL: ${NEKO_EMBEDDING_MODEL:-}
+  NEKO_EMBEDDING_API_KEY: ${NEKO_EMBEDDING_API_KEY:-}
+  NEKO_EMBEDDING_DIMENSIONS: ${NEKO_EMBEDDING_DIMENSIONS:-}
+  NO_PROXY: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,librarian,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
+  no_proxy: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,librarian,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
 
 services:
   neko-db:
-    # pgvector image — base postgres:16 + the vector extension preinstalled.
-    # work_memory.embedding stores 384-dim vectors from transformers.js
-    # (Xenova/all-MiniLM-L6-v2) for context-based memory retrieval.
+    # pgvector image: base postgres:16 with the vector extension preinstalled.
     build:
       context: .
       target: neko-db
@@ -584,33 +585,6 @@ services:
       timeout: 3s
       retries: 5
 
-  embedding:
-    # The listener is always available; ONNX/model memory exists only on demand.
-    image: ${OPENNEKO_EMBEDDING_IMAGE:-openneko-embedding:dev}
-    build:
-      context: .
-      target: embedding
-    restart: unless-stopped
-    environment:
-      OPENNEKO_SERVICE_IDLE_TIMEOUT: ${OPENNEKO_EMBEDDING_IDLE_TIMEOUT:-5m}
-    read_only: true
-    cpus: ${OPENNEKO_EMBEDDING_CPUS:-1.0}
-    mem_limit: ${OPENNEKO_EMBEDDING_MEMORY:-1g}
-    pids_limit: 64
-    cap_drop:
-      - ALL
-    tmpfs:
-      - /tmp:size=64m,mode=1777
-    security_opt:
-      - no-new-privileges:true
-    expose:
-      - "5003"
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5003/health/ready"]
-      interval: 15s
-      timeout: 3s
-      retries: 3
-
   librarian:
     # OpenNeko's digital-document extractor. The selected Docling layout/table
     # models are copied into this image at build time; model resolution is
@@ -728,8 +702,6 @@ services:
       graphjin-secret-init:
         condition: service_completed_successfully
       librarian:
-        condition: service_healthy
-      embedding:
         condition: service_healthy
     environment:
       <<: *neko-app-env

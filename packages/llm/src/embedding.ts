@@ -1,34 +1,69 @@
-// Embedding computation belongs to the shared, lazily started service.
-// Keep the model and vector contract identical to existing pgvector rows.
-export const EMBEDDING_DIM = 384;
-const EMBEDDING_MODEL = "Xenova/all-MiniLM-L6-v2";
+export type EmbeddingConfig = {
+  url: string;
+  apiKey: string | null;
+  model: string;
+  dimensions: number | null;
+};
+
+export class EmbeddingOffError extends Error {
+  constructor() {
+    super("embedding is off: NEKO_EMBEDDING_URL and NEKO_EMBEDDING_MODEL are not both set");
+  }
+}
+
+const MAX_DIMENSIONS = 16_000;
+
+export function embeddingConfig(env: NodeJS.ProcessEnv = process.env): EmbeddingConfig | null {
+  const url = env.NEKO_EMBEDDING_URL?.trim().replace(/\/+$/, "");
+  const model = env.NEKO_EMBEDDING_MODEL?.trim();
+  if (!url || !model) return null;
+  const dimensions = Number.parseInt(env.NEKO_EMBEDDING_DIMENSIONS?.trim() ?? "", 10);
+  return {
+    url,
+    apiKey: env.NEKO_EMBEDDING_API_KEY?.trim() || null,
+    model,
+    dimensions: dimensions > 0 && dimensions <= MAX_DIMENSIONS ? dimensions : null,
+  };
+}
+
+export function embeddingModel(): string | null {
+  const config = embeddingConfig();
+  if (!config) return null;
+  return config.dimensions ? `${config.model}@${config.dimensions}` : config.model;
+}
 
 export async function embedText(text: string, timeoutMs = 15_000): Promise<number[]> {
+  const config = embeddingConfig();
+  if (!config) throw new EmbeddingOffError();
   const trimmed = text.trim();
   if (!trimmed) throw new Error("embedText: text is empty");
   if (trimmed.length > 32000) throw new Error("embedText: text exceeds 32000 characters");
-  const baseUrl = process.env.NEKO_EMBEDDING_URL?.trim();
-  if (!baseUrl) throw new Error("NEKO_EMBEDDING_URL is not configured");
-  const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/v1/embeddings`, {
+  const response = await fetch(`${config.url}/embeddings`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text: trimmed }),
-    // Interactive queries have a short deadline; durable jobs allow cold startup.
+    headers: {
+      "content-type": "application/json",
+      ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}),
+    },
+    body: JSON.stringify({
+      model: config.model,
+      input: trimmed,
+      encoding_format: "float",
+      ...(config.dimensions ? { dimensions: config.dimensions } : {}),
+    }),
     signal: AbortSignal.timeout(timeoutMs),
     redirect: "error",
   });
   if (!response.ok) throw new Error(`embedding service returned HTTP ${response.status}`);
   const body = await response.json();
-  if (body?.model !== EMBEDDING_MODEL || body?.dimensions !== EMBEDDING_DIM ||
-      !Array.isArray(body?.vector) || body.vector.length !== EMBEDDING_DIM ||
-      !body.vector.every((value: unknown) => typeof value === "number" && Number.isFinite(value))) {
+  const vector = body?.data?.[0]?.embedding;
+  if (!Array.isArray(vector) || vector.length === 0 || vector.length > MAX_DIMENSIONS ||
+      (config.dimensions !== null && vector.length !== config.dimensions) ||
+      !vector.every((value: unknown) => typeof value === "number" && Number.isFinite(value))) {
     throw new Error("embedding service returned an incompatible vector");
   }
-  return body.vector;
+  return vector;
 }
 
-// Format a JS number[] as the literal pgvector accepts when bound as text.
-// pgvector wants `[0.1,0.2,...]` (square brackets, comma-separated, no spaces).
 export function vectorLiteral(vec: number[]): string {
   return `[${vec.join(",")}]`;
 }

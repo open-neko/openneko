@@ -33,6 +33,7 @@ vi.mock("../../../../packages/llm/src/embedding", () => ({
   EMBEDDING_DIM: 384,
   embedText: vi.fn(async () => Array(384).fill(0)),
   vectorLiteral: (vec: number[]) => `[${vec.join(",")}]`,
+  embeddingModel: () => "test-model",
 }));
 
 import {

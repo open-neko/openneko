@@ -25,7 +25,7 @@ import {
   workflow_definition,
   workflow_run,
 } from "@neko/db";
-import { embedText, vectorLiteral } from "../embedding";
+import { embedText, embeddingModel, vectorLiteral } from "../embedding";
 import type { HeldItems } from "@neko/db";
 import { entitlementActorForRun, libraryAccessFor } from "./entitlement-scope";
 import type { OkfActorStamp, OkfSource } from "../library/okf";
@@ -181,10 +181,13 @@ export async function browseLibrary(reader: LibraryReader, options: LibraryBrows
   const isDocuments = options.view === "documents";
   const conceptText = sql`concat_ws(' ', ${library_concept.title}, ${library_concept.description}, ${library_concept.path}, ${library_concept.type}, ${library_concept.tags}::text, ${library_concept.body})`;
   const documentText = sql`concat_ws(' ', ${library_document.filename}, ${library_document.relative_path}, ${library_document.status})`;
-  const queryVec = options.query ? await tryEmbed(options.query) : null;
+  const model = embeddingModel();
+  const queryVec = options.query && model ? await tryEmbed(options.query) : null;
   const conceptKeywords = words.length ? and(...words.map(word => sql`${conceptText} ilike ${word}`))! : sql`false`;
   const documentKeywords = words.length ? and(...words.map(word => sql`${documentText} ilike ${word}`))! : sql`false`;
-  const similarity = queryVec ? sql`greatest(coalesce(1 - (${library_concept.embedding} <=> ${queryVec}::vector), 0), 0)` : sql`0`;
+  const similarity = queryVec
+    ? sql`(case when ${library_concept.embedding_model} = ${model} then greatest(coalesce(1 - (${library_concept.embedding} <=> ${queryVec}::vector), 0), 0) else 0 end)`
+    : sql`0`;
   const conceptScore = sql`(case when ${conceptKeywords} then 1 else 0 end + ${similarity})`;
   // Documents reuse the concepts distilled from them; no second embedding store.
   const score = isDocuments
@@ -1103,7 +1106,7 @@ async function tryEmbed(text: string): Promise<string | null> {
   try {
     return vectorLiteral(await embedText(text));
   } catch (err) {
-    console.error(
+    console.warn(
       "[library] query embedding unavailable:",
       err instanceof Error ? err.message : err,
     );

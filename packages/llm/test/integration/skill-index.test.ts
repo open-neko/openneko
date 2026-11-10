@@ -1,5 +1,3 @@
-// Ax finds skills by meaning: the index mirrors installed skills and search
-// ranks them by cosine distance for the run's actor.
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db, eq, pool, skill_embedding } from "@neko/db";
@@ -17,8 +15,11 @@ vi.mock("../../src/embedding", async () => ({
     return v;
   }),
   vectorLiteral: (vec: number[]) => `[${vec.join(",")}]`,
+  embeddingModel: vi.fn(() => "test-model"),
 }));
 
+import { embeddingModel } from "../../src/embedding";
+import { runEmbeddingIndexJob } from "../../src/embedding-jobs";
 import { searchSkillsForRun, syncSkillIndex } from "../../src/work/skill-index";
 import { createWorkRun, createWorkThread } from "../../src/work/store";
 
@@ -49,7 +50,10 @@ describeIfDb("skill index", () => {
     ]);
     const rows = await db().select().from(skill_embedding).where(eq(skill_embedding.org_id, orgId));
     expect(rows).toHaveLength(3);
-    expect(rows.every((row) => row.embedding !== null)).toBe(true);
+    expect(rows.every((row) => row.embedding === null)).toBe(true);
+    for (const row of rows) await runEmbeddingIndexJob({ kind: "skill", orgId, id: row.id });
+    const indexed = await db().select().from(skill_embedding).where(eq(skill_embedding.org_id, orgId));
+    expect(indexed.every((row) => row.embedding !== null && row.embedding_model === "test-model")).toBe(true);
 
     const excel = await searchSkillsForRun({ orgId, runId, query: "Make me an Excel file of stock", limit: 1 });
     expect(excel.map((s) => s.name)).toEqual(["xlsx"]);
@@ -63,6 +67,17 @@ describeIfDb("skill index", () => {
     const after = await db().select().from(skill_embedding).where(eq(skill_embedding.org_id, orgId));
     expect(after.map((row) => row.skill_name).sort()).toEqual(["docx", "xlsx"]);
     expect(after.find((row) => row.skill_name === "docx")?.document).toBe("docx\nDraft letters as Word documents");
+  });
+
+  it("searches by keyword when embedding is off", async () => {
+    vi.mocked(embeddingModel).mockReturnValue(null);
+    try {
+      const results = await searchSkillsForRun({ orgId, runId, query: "spreadsheet output", limit: 1 });
+      expect(results.map((s) => s.name)).toEqual(["xlsx"]);
+      expect(await searchSkillsForRun({ orgId, runId, query: "the and of" })).toEqual([]);
+    } finally {
+      vi.mocked(embeddingModel).mockReturnValue("test-model");
+    }
   });
 
   it("finds nothing for an unknown run", async () => {

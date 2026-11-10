@@ -212,6 +212,33 @@ the first chat). State dir is handled per-platform automatically (under
 `$HOME` on macOS/OrbStack, `/var/lib/openneko/openshell` on Linux). Needs
 Docker — already required to run OpenNeko.
 
+### Semantic search (optional)
+
+OpenNeko finds memories and skills with Postgres full-text search. To find
+them by meaning as well, connect an OpenAI-compatible embedding service. Give
+web and worker the same values, then run `openneko stop` and `openneko start`:
+
+```yaml
+# ~/.config/openneko/compose.override.yml
+x-embedding: &embedding
+  NEKO_EMBEDDING_URL: https://embeddings.example/v1   # OpenNeko calls <url>/embeddings
+  NEKO_EMBEDDING_MODEL: text-embedding-3-small
+  NEKO_EMBEDDING_API_KEY: ${NEKO_EMBEDDING_API_KEY}   # optional
+  NEKO_EMBEDDING_DIMENSIONS: "768"                    # optional
+services:
+  web:
+    environment: *embedding
+  worker:
+    environment: *embedding
+```
+
+Semantic search is off until both the URL and the model are set. When it is
+on, web and worker send memory, skill and Library text to that service. A
+background job embeds stored rows; until it reaches a row, and whenever the
+service fails, search uses full-text search. A change of model re-embeds
+every row. To run a model on your own machine, see
+`recipes/embedding-gemma/README.md`.
+
 
 ## Upgrade
 
@@ -372,7 +399,7 @@ pnpm dev
 
 Web and worker run on the host with hot reload. Everything else runs in Docker.
 
-- `pnpm dev:up` starts the backing services with `compose.dev.yml`: `neko-db`, `records-db`, both GraphJin data planes, `neko-graphjin`, `embedding`, `librarian`, the OpenShell gateway with the agent image, and AdventureWorks with its simulator. It installs the pinned GraphJin and OpenShell CLIs into `.openneko/dev/bin`, rebuilds a GraphJin image that reports another version than the pin, runs migrations from source, writes the GraphJin JWT secret, and registers the OpenShell gateway for host processes.
+- `pnpm dev:up` starts the backing services with `compose.dev.yml`: `neko-db`, `records-db`, both GraphJin data planes, `neko-graphjin`, `librarian`, the OpenShell gateway with the agent image, and AdventureWorks with its simulator. It installs the pinned GraphJin and OpenShell CLIs into `.openneko/dev/bin`, rebuilds a GraphJin image that reports another version than the pin, runs migrations from source, writes the GraphJin JWT secret, and registers the OpenShell gateway for host processes.
 - `pnpm dev:seed` seeds demo workflows. `pnpm dev:setup` runs both steps.
 - `pnpm dev` runs `next dev` on port 3000 and `tsx watch` for the worker. Edits to `apps/web`, `apps/worker`, and workspace packages reload without an image build.
 - `scripts/dev-env.sh` holds the host settings. Each service a host process calls has a loopback port; `pnpm dev:web` and `pnpm dev:worker` source the file.
