@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import { graphjinAgentEnabledForOrg, heldItems, pool, resolveUserGroups } from "@neko/db";
 import type { GraphjinDataPath } from "../work/graphjin-tool-policy";
-import { filterHeldActions, runEntitlementActor, runHeldItemIds } from "../work/entitlement-scope";
+import { runEntitlementActor, runHeldItemIds } from "../work/entitlement-scope";
 import { getWorkRunActor } from "../work/personas";
 import { workflowTurnBudget, type AgentEvent } from "../agent-backend";
 import { errorCodeOf, type HarnessObserver } from "@neko/telemetry";
@@ -36,7 +36,6 @@ import { clampAnalysisMinutes } from "./value";
 import {
   buildWorkflowRunnerPrompt,
   buildWorkflowSeedMessage,
-  type PluginActionPromptDescriptor,
 } from "./runner-prompt";
 import {
   createWorkflowRun,
@@ -184,13 +183,6 @@ export type RunWorkflowTurnOptions = {
   wantsCards?: boolean;
   /** Metadata-only observation stream shared with Ask. */
   observer?: HarnessObserver;
-  /**
-   * Installed plugin action kinds, so the runner agent proposes real kinds
-   * (e.g. send_slack_dm) that policy rules + adapters match — not a generic
-   * send_message that stalls at pending_approval. The fire job passes its
-   * registry snapshot; tests may omit it.
-   */
-  pluginActions?: readonly PluginActionPromptDescriptor[];
 };
 
 export type RunWorkflowTurnDeps = {
@@ -292,7 +284,6 @@ async function runWorkflowTurnTraced(
       workspace,
       knowledge,
       graphjinDataPath,
-      pluginActions: await filterHeldActions(runActor, opts.pluginActions ?? []),
     });
 
     const seedMessage = buildWorkflowSeedMessage({

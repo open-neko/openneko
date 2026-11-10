@@ -104,46 +104,10 @@ describe("buildWorkflowRunnerPrompt", () => {
     ).toThrow(/native GraphJin broker tool/);
   });
 
-  it("surfaces installed plugin action kinds to the native tool path", () => {
-      const prompt = buildWorkflowRunnerPrompt({
-        ...base,
-        mcpTools: true,
-        pluginActions: [
-          {
-            kind: "send_slack_dm",
-            description: "Send a DM to a Slack user.",
-            example: { user: "amit", text: "Stock is low." },
-          },
-          {
-            kind: "lookup_slack_entity",
-            description: "Look up a Slack user.",
-            default_mode: "deny",
-          },
-        ],
-      });
-      expect(prompt).toContain("send_slack_dm");
-      // the example payload is surfaced verbatim so the agent copies the shape
-      expect(prompt).toContain('example payload: {"user":"amit","text":"Stock is low."}');
-      // denied-everywhere kinds are not advertised
-      expect(prompt).not.toContain("lookup_slack_entity");
-  });
-
-  it("surfaces an internal action's scope to the native action tool", () => {
-    const prompt = buildWorkflowRunnerPrompt({
-      ...base,
-      mcpTools: true,
-      pluginActions: [
-        {
-          kind: "user_admin",
-          scope: "internal",
-          description: "Invite or change a user.",
-          default_mode: "ask",
-        },
-      ],
-    });
-
-    expect(prompt).toContain("`user_admin` (scope: internal)");
-    expect(prompt).toContain("Always use the exact scope listed");
+  it("tells the runner to use an action kind that a step names", () => {
+    const prompt = buildWorkflowRunnerPrompt({ ...base, mcpTools: true });
+    expect(prompt).toContain("When a step names an action kind, use that exact kind.");
+    expect(prompt).not.toContain("Installed action kinds");
   });
 
   it("includes the workflow's overlay and steps", () => {

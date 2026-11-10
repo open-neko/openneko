@@ -39,12 +39,6 @@ function build(
     supportsClarificationTool?: boolean;
     supportsNativeDelegation?: boolean;
     installedSkills?: Array<{ name: string; description: string }>;
-    pluginActions?: Array<{
-      kind: string;
-      description: string;
-      scope?: "external" | "internal";
-      default_mode?: "auto" | "ask" | "deny";
-    }>;
     graphjinDataPath?: "direct" | "agent";
   } = {},
 ): string {
@@ -65,7 +59,6 @@ function build(
     supportsClarificationTool: overrides.supportsClarificationTool ?? false,
     supportsNativeDelegation: overrides.supportsNativeDelegation ?? true,
     installedSkills: overrides.installedSkills,
-    pluginActions: overrides.pluginActions,
     ...(overrides.graphjinDataPath ? { graphjinDataPath: overrides.graphjinDataPath } : {}),
     inlineTranscript: false,
   });
@@ -184,30 +177,9 @@ describe("buildWorkPrompt skill catalog", () => {
   });
 });
 
-describe("buildWorkPrompt action scopes", () => {
-  it("teaches fence-based agents the fixed scope for internal and plugin actions", () => {
-    const prompt = build("ax", {
-      pluginActions: [
-        {
-          kind: "user_admin",
-          description: "Invite or change a user.",
-          scope: "internal",
-          default_mode: "ask",
-        },
-        {
-          kind: "send_slack_dm",
-          description: "Send a Slack direct message.",
-          default_mode: "ask",
-        },
-      ],
-    });
-
-    expect(prompt).toContain("`user_admin` (scope:internal; mode:ask)");
-    expect(prompt).toContain("`send_slack_dm` (scope:external; mode:ask)");
-    expect(prompt).toContain(
-      '"scope": "<the exact scope shown for the selected kind>"',
-    );
-    expect(prompt).toMatch(/Never relabel an internal action as\s+external/);
+describe("buildWorkPrompt action tools", () => {
+  it("carries no fenced action tool list", () => {
+    expect(build("ax", { supportsCardTool: false })).not.toContain("<action_tools>");
   });
 });
 

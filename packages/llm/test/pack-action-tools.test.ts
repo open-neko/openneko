@@ -30,7 +30,7 @@ vi.mock("../src/mcp-server", () => ({
   ),
 }));
 
-import { buildPackActionServer, buildPluginActionServer } from "../src/work/tools";
+import { buildPackActionServer } from "../src/work/tools";
 
 function controlPlane(
   result: Awaited<
@@ -70,7 +70,7 @@ async function invoke(
   >,
 ) {
   const emit = vi.fn();
-  buildPluginActionServer({
+  buildPackActionServer({
     orgId: "org-1",
     threadId: "thread-1",
     runId: "run-1",
@@ -99,7 +99,7 @@ async function invoke(
   };
 }
 
-describe("auto-mode plugin action tools", () => {
+describe("auto-mode pack action tools", () => {
   beforeEach(() => sdk.tools.clear());
 
   it("waits for execution and returns the real outcome to the agent", async () => {
@@ -161,7 +161,7 @@ describe("auto-mode plugin action tools", () => {
     }));
     const emit = vi.fn();
 
-    buildPluginActionServer({
+    buildPackActionServer({
       orgId: "org-1",
       threadId: "thread-1",
       runId: "run-1",
@@ -203,7 +203,7 @@ describe("auto-mode plugin action tools", () => {
 describe("pack action tools", () => {
   beforeEach(() => sdk.tools.clear());
 
-  it("creates a governed approval request without a plugin descriptor", async () => {
+  it("creates a governed approval request", async () => {
     const evaluateActionPolicy = vi.fn(async () => ({
       decision: "needs_approval" as const,
       mode: "ask" as const,

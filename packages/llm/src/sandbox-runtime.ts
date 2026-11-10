@@ -23,7 +23,6 @@ export {
   buildGraphjinMcpServer,
   buildGraphjinReadServer,
   buildFilesServer,
-  buildPluginActionServer,
   buildPackActionServer,
   buildRenderCardsServer,
   buildSkillBuilderServer,
@@ -31,7 +30,6 @@ export {
   buildUserManagerServer,
   buildWorkMemoryServer,
   buildSkillSearchServer,
-  type PluginActionDescriptor,
   type PackActionDescriptor,
 } from "./work/tools";
 export {

@@ -59,7 +59,7 @@ import {
   setWorkThreadBackendState,
 } from "./store";
 import type { GraphjinDataPath, GraphjinMcpToolPolicy } from "./graphjin-tool-policy";
-import type { PluginActionDescriptor } from "./tools";
+import type { PackActionDescriptor } from "./tools";
 import { createToolOutputRecorder } from "./tool-output/metrics";
 import { runAgentBackend } from "./agent-core";
 import { createAgentEventTelemetry } from "./agent-event-telemetry";
@@ -95,12 +95,8 @@ export type RunChatTurnOptions = {
   includeUxMetadata?: boolean;
   emit: (event: AgentEvent) => Promise<void>;
   signal?: AbortSignal;
-  /**
-   * Worker-registered governed action kinds, one MCP tool per kind.
-   */
-  pluginActions?: readonly PluginActionDescriptor[];
   /** Installed pack actions, discovered from installed pack artifacts. */
-  packActions?: readonly import("./tools").PackActionDescriptor[];
+  packActions?: readonly PackActionDescriptor[];
   /**
    * Control-plane impl for the DB-touching MCP tools. Default (undefined)
    * uses the in-process plane; the agent sandbox injects a broker client.
@@ -450,11 +446,10 @@ async function runChatTurnTraced(
     });
 
     const runActor = await runEntitlementActor(orgId, actor);
-    const [allowedSkills, teamMemory, heldPluginActions, heldPackActions] = await startupPhase("identity.entitlements", () =>
+    const [allowedSkills, teamMemory, heldPackActions] = await startupPhase("identity.entitlements", () =>
       Promise.all([
         runHeldItemIds(runActor, "skill"),
         heldItems(runActor, "team_memory"),
-        filterHeldActions(runActor, opts.pluginActions ?? []),
         filterHeldActions(runActor, opts.packActions ?? []),
       ]));
     const [memoryContext, installedSkills, profile] = await Promise.all([
@@ -507,7 +502,6 @@ async function runChatTurnTraced(
         backend.capabilities.nativeDelegation !== undefined &&
         opts.nativeDelegation !== "disabled",
       inlineTranscript,
-      pluginActions: heldPluginActions,
       graphjinDataPath,
       ...(threadBot ? { bot: threadBot } : {}),
     });
@@ -527,7 +521,6 @@ async function runChatTurnTraced(
       runId,
       workspace,
       backendState: bundle.thread.backendState,
-      pluginActions: heldPluginActions,
       packActions: heldPackActions,
       sourceConfigEnabled: supportsSourceConfigTool,
       ...(opts.graphjinToolPolicy

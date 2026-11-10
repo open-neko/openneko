@@ -276,43 +276,6 @@ export async function beginAuth(params: {
   return (await res.json()) as { authorizationUrl: string };
 }
 
-/**
- * Built-in governed action descriptors (records actions). /work hands
- * these to the agent's tool builder so it can register one MCP tool per
- * kind. Best-effort: an unreachable worker yields an empty list (the
- * agent simply won't have those tools that turn).
- */
-export interface ActionDescriptor {
-  kind: string;
-  description: string;
-  pluginName?: string;
-  scope?: "external" | "internal";
-  default_mode?:
-    | "auto"
-    | "ask"
-    | "deny"
-    | {
-        external?: "auto" | "ask" | "deny";
-        internal?: "auto" | "ask" | "deny";
-      };
-  example?: Record<string, unknown>;
-}
-
-export async function getActionDescriptors(): Promise<ActionDescriptor[]> {
-  try {
-    const res = await fetch(`${workerAdminBase()}/admin/action-descriptors`, {
-      method: "GET",
-      cache: "no-store",
-      signal: AbortSignal.timeout(2000),
-    });
-    if (!res.ok) return [];
-    const body = (await res.json()) as { descriptors?: ActionDescriptor[] };
-    return body.descriptors ?? [];
-  } catch {
-    return [];
-  }
-}
-
 export async function completeAuth(params: {
   code: string;
   redirectUri: string;

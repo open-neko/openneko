@@ -16,7 +16,6 @@ import {
 } from "./graphjin-tool-policy";
 import { buildAskUserQuestionServer } from "./interaction-server";
 import {
-  buildPluginActionServer,
   buildPackActionServer,
   buildAuditViewerServer,
   buildChannelManagerServer,
@@ -30,7 +29,6 @@ import {
   buildSkillBuilderServer,
   buildWorkMemoryServer,
   buildSkillSearchServer,
-  type PluginActionDescriptor,
   type PackActionDescriptor,
 } from "./tools";
 import { filesEnabled } from "../files/client";
@@ -47,8 +45,7 @@ export interface RunAgentBackendInput {
   backendState?: Record<string, unknown>;
   /** Skill names the run's actor holds. Undefined means every skill. */
   allowedSkills?: readonly string[];
-  pluginActions: readonly PluginActionDescriptor[];
-  /** Installed pack actions, discovered independently of built-in actions. */
+  /** Installed pack actions. */
   packActions?: readonly PackActionDescriptor[];
   /** Mount the GraphJin source-config MCP server for this admin run. */
   sourceConfigEnabled?: boolean;
@@ -90,7 +87,6 @@ export async function runAgentBackend(
     runId,
     workspace,
     backendState,
-    pluginActions,
     packActions = [],
     sourceConfigEnabled = false,
     graphjinToolPolicy,
@@ -104,16 +100,6 @@ export async function runAgentBackend(
   } = input;
 
   const mcp = backend.capabilities.mcpTools;
-  const pluginActionServer = mcp
-    ? buildPluginActionServer({
-        orgId,
-        threadId,
-        runId,
-        descriptors: pluginActions,
-        emit,
-        controlPlane,
-      })
-    : null;
   const packActionServer = mcp
     ? buildPackActionServer({
         orgId,
@@ -196,7 +182,6 @@ export async function runAgentBackend(
             }
           : {}),
         neko_audit: buildAuditViewerServer({ orgId, runId, controlPlane }),
-        ...(pluginActionServer ? { neko_plugin_actions: pluginActionServer } : {}),
         ...(packActionServer ? { neko_pack_actions: packActionServer } : {}),
       }
     : undefined;
@@ -227,7 +212,6 @@ export async function runAgentBackend(
                   serializeGraphjinMcpToolPolicy(graphjinToolPolicy),
               }
             : {}),
-          OPENNEKO_MCP_PLUGIN_ACTIONS: JSON.stringify(pluginActions ?? []),
           OPENNEKO_MCP_PACK_ACTIONS: JSON.stringify(packActions),
         }
       : undefined,

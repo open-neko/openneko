@@ -52,7 +52,6 @@ describe("runAgentBackend", () => {
       runId: "run-1",
       workspace,
       controlPlane,
-      pluginActions: [],
       emit: async () => {},
     });
 
@@ -70,7 +69,7 @@ describe("runAgentBackend", () => {
     });
   });
 
-  it("mounts pack actions separately from plugin actions", async () => {
+  it("mounts pack actions and no plugin action server", async () => {
     let captured: AgentRunOptions | undefined;
     const backend: AgentBackend = {
       id: "ax",
@@ -100,7 +99,6 @@ describe("runAgentBackend", () => {
       runId: "run-1",
       workspace,
       controlPlane,
-      pluginActions: [],
       packActions,
       emit: async () => {},
     });
@@ -112,7 +110,7 @@ describe("runAgentBackend", () => {
     expect(captured?.mcpBridgeEnv?.OPENNEKO_MCP_PACK_ACTIONS).toBe(
       JSON.stringify(packActions),
     );
-    expect(captured?.mcpBridgeEnv?.OPENNEKO_MCP_PLUGIN_ACTIONS).toBe("[]");
+    expect(captured?.mcpBridgeEnv).not.toHaveProperty("OPENNEKO_MCP_PLUGIN_ACTIONS");
   });
 
   it("applies and serializes the same per-run GraphJin policy", async () => {
@@ -139,7 +137,6 @@ describe("runAgentBackend", () => {
       runId: "run-1",
       workspace,
       controlPlane,
-      pluginActions: [],
       graphjinToolPolicy: GRAPHJIN_DIRECT_GOVERNED_POLICY,
       emit: async () => {},
     });
@@ -172,7 +169,6 @@ describe("runAgentBackend", () => {
       runId: "run-1",
       workspace,
       controlPlane,
-      pluginActions: [],
       graphjinDataPath: "agent",
       emit: async () => {},
     });

@@ -392,15 +392,6 @@ export function assertCompactionPrompt(prompt: string): void {
   }
 }
 
-function stateActionPromptDescriptor() {
-  return {
-    kind: STATE_ACTION_KIND,
-    scope: "external" as const,
-    description: "Send one evaluated notice to the finance operations channel.",
-    default_mode: "ask" as const,
-  };
-}
-
 const STATEFUL_SCENARIOS = new Set([
   "stateful-workflow-build",
   "stateful-watcher-build-fire",
@@ -2981,7 +2972,6 @@ export function createOpenNekoBackendDriver(context: {
                 userMessage: question,
                 mode: "headless",
                 emit,
-                pluginActions: [stateActionPromptDescriptor()],
                 observer,
                 signal: episodeSignal,
               },
@@ -3003,7 +2993,6 @@ export function createOpenNekoBackendDriver(context: {
                 channel: "slack",
                 includeUxMetadata: false,
                 emit,
-                pluginActions: [],
                 controlPlane: tracedControlPlane,
                 graphjinToolPolicy: GRAPHJIN_DIRECT_GOVERNED_POLICY,
                 nativeDelegation: "disabled",

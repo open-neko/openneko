@@ -1351,12 +1351,7 @@ export function buildFilesServer(ctx: WorkMemoryContext, options: FilesServerOpt
   });
 }
 
-/**
- * Worker-registered governed action kinds (the built-in records actions),
- * surfaced to the agent as MCP tools. The worker passes the descriptors in
- * at turn start; this module only needs the {kind, description,
- * default_mode} triples to build tools.
- */
+/** Pack action kinds, surfaced to the agent as MCP tools. */
 interface GovernedActionDescriptor {
   kind: string;
   description: string;
@@ -1378,16 +1373,12 @@ interface GovernedActionDescriptor {
       };
   /** Example payload from the manifest, surfaced to the agent so it shapes the call correctly. */
   example?: Record<string, unknown>;
-  /** Integration that handles the kind; the integration item gates it. */
-  pluginName?: string;
 }
-
-export interface PluginActionDescriptor extends GovernedActionDescriptor {}
 
 export interface PackActionDescriptor extends GovernedActionDescriptor {}
 
 function modeForScope(
-  default_mode: PluginActionDescriptor["default_mode"],
+  default_mode: PackActionDescriptor["default_mode"],
   scope: "external" | "internal",
 ): "auto" | "ask" | "deny" | undefined {
   if (default_mode === undefined) return undefined;
@@ -1396,7 +1387,7 @@ function modeForScope(
 }
 
 function isDeniedEverywhere(
-  default_mode: PluginActionDescriptor["default_mode"],
+  default_mode: PackActionDescriptor["default_mode"],
 ): boolean {
   if (default_mode === "deny") return true;
   if (default_mode && typeof default_mode === "object") {
@@ -1409,7 +1400,7 @@ function isDeniedEverywhere(
 }
 
 function needsIntentForKind(
-  default_mode: PluginActionDescriptor["default_mode"],
+  default_mode: PackActionDescriptor["default_mode"],
 ): boolean {
   // Intent is required at schema-time whenever the kind COULD land in
   // ask-mode under any scope — so the agent has to author one
@@ -1419,16 +1410,6 @@ function needsIntentForKind(
     return Object.values(default_mode).some((m) => m === "ask");
   }
   return false;
-}
-
-export interface BuildPluginActionServerOptions {
-  orgId: string;
-  threadId: string;
-  runId: string;
-  descriptors: readonly PluginActionDescriptor[];
-  emit: (event: AgentEvent) => Promise<void> | void;
-  /** Explicit in-process or broker-backed control plane. */
-  controlPlane?: AgentControlPlane;
 }
 
 export interface BuildPackActionServerOptions {
@@ -1471,9 +1452,8 @@ export interface BuildPackActionServerOptions {
  * Returns null when no kinds are registered (or all are deny) so the
  * caller can omit the server from the MCP map.
  */
-function buildGovernedActionServer(
-  opts: BuildPluginActionServerOptions | BuildPackActionServerOptions,
-  serverName: "neko_plugin_actions" | "neko_pack_actions",
+export function buildPackActionServer(
+  opts: BuildPackActionServerOptions,
 ): ReturnType<typeof createMcpServer> | null {
   const active = opts.descriptors.filter((d) => !isDeniedEverywhere(d.default_mode));
   if (active.length === 0) return null;
@@ -1748,23 +1728,12 @@ function buildGovernedActionServer(
   });
 
   return createMcpServer({
-    name: serverName,
+    name: "neko_pack_actions",
     version: "1.0.0",
     tools,
   });
 }
 
-export function buildPluginActionServer(
-  opts: BuildPluginActionServerOptions,
-): ReturnType<typeof createMcpServer> | null {
-  return buildGovernedActionServer(opts, "neko_plugin_actions");
-}
-
-export function buildPackActionServer(
-  opts: BuildPackActionServerOptions,
-): ReturnType<typeof createMcpServer> | null {
-  return buildGovernedActionServer(opts, "neko_pack_actions");
-}
 
 /** Semantic skill search for the Ax harness's discover(); it is never a model tool. */
 export function buildSkillSearchServer(

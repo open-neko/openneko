@@ -24,7 +24,6 @@
  *   POST /admin/auth/complete → 200 + { identity }
  *                               Body: { code, redirectUri, state }
  *                               Finishes sign-in with the chosen provider.
- *   GET  /admin/action-descriptors → built-in governed action kinds (records).
  *   GET  /admin/channels/settings → each built-in channel's declared settings
  *                               (secrets report only whether they are set).
  *   POST /admin/channels/settings → { channel, values: { KEY: string | null } }.
@@ -277,29 +276,6 @@ export interface SchedulerHealthSurface {
   };
 }
 
-/**
- * Built-in governed action kinds (records actions) with their seeded
- * approval mode. The web process's /work route and rules page read them
- * here; the adapters live in the worker.
- */
-export interface ActionsHandlerSurface {
-  getActionDescriptors(): Array<{
-    kind: string;
-    description: string;
-    pluginName?: string;
-    scope?: "external" | "internal";
-    default_mode?:
-      | "auto"
-      | "ask"
-      | "deny"
-      | {
-          external?: "auto" | "ask" | "deny";
-          internal?: "auto" | "ask" | "deny";
-        };
-    example?: Record<string, unknown>;
-  }>;
-}
-
 export type AdminHandlerOptions = {
   /**
    * Called from POST /admin/reconnect after responding 202. Defaults to
@@ -318,11 +294,6 @@ export type AdminHandlerOptions = {
    * case /admin/auth/* routes report no provider or return 503.
    */
   auth?: AuthHandlerSurface | null;
-  /**
-   * Built-in action descriptors. Absent in tests, in which case
-   * /admin/action-descriptors returns an empty array.
-   */
-  actions?: ActionsHandlerSurface | null;
   /**
    * Connector surface — wired to the SignInService (Scalekit workspace).
    * Absent in tests, in which case /admin/connect/* routes return 503.
@@ -391,7 +362,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const exitDelayMs = opts.exitDelayMs ?? 100;
   const scheduler = opts.scheduler ?? null;
   const auth = opts.auth ?? null;
-  const actions = opts.actions ?? null;
   const connect = opts.connect ?? null;
   const ssoSetup = opts.ssoSetup ?? null;
   const channels = opts.channels ?? null;
@@ -499,10 +469,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
     }
     if (req.method === "POST" && req.url === "/admin/sso/setup/check") {
       void handleSsoSetupCheck(req, res, ssoSetup);
-      return;
-    }
-    if (req.method === "GET" && req.url === "/admin/action-descriptors") {
-      json(res, 200, { descriptors: actions?.getActionDescriptors() ?? [] });
       return;
     }
     if (req.url === "/admin/graphjin/api-operations" && req.method === "GET") {

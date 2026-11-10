@@ -463,32 +463,11 @@ describe("worker solution-pack admin routes", () => {
   });
 });
 
-describe("worker admin /admin/action-descriptors", () => {
-  it("returns the built-in action descriptors", async () => {
-    const srv = await startServer(
-      createAdminHandler({
-        actions: {
-          getActionDescriptors: () => [{ kind: "crm.note", description: "Add a note", default_mode: "ask" }],
-        },
-      }),
-    );
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/action-descriptors`);
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({
-        descriptors: [{ kind: "crm.note", description: "Add a note", default_mode: "ask" }],
-      });
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("returns an empty list when no surface is wired, and the plugin routes are gone", async () => {
+describe("worker admin: removed plugin and action-descriptor routes", () => {
+  it("answers 404", async () => {
     const srv = await startServer(createAdminHandler());
     try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/action-descriptors`);
-      expect(await res.json()).toEqual({ descriptors: [] });
-      for (const path of ["/admin/plugins/status", "/admin/plugins/settings", "/admin/plugins/action-descriptors"]) {
+      for (const path of ["/admin/action-descriptors", "/admin/plugins/status", "/admin/plugins/settings", "/admin/plugins/action-descriptors"]) {
         expect((await fetch(`http://127.0.0.1:${srv.port}${path}`)).status).toBe(404);
       }
     } finally {

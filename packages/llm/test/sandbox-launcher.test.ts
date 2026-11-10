@@ -97,7 +97,6 @@ function input(
     runId: "run-1",
     workspace,
     backendState: undefined,
-    pluginActions: [],
     packActions: [{ kind: "slack.message", description: "Post", pack: "slack" }] as unknown as RunAgentBackendInput["packActions"],
     emit,
     ...(signal ? { signal } : {}),

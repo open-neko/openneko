@@ -18,7 +18,6 @@ import {
 } from "@neko/db";
 import { graphjinQuery, mintGraphjinToken } from "@neko/llm/graphjin";
 import { listWatchers, listWorkflows } from "@neko/llm/workflows";
-import { getActionDescriptors } from "@/lib/auth";
 import { listConnectProviders } from "@/lib/integrations";
 import { listWorkSkills } from "@/lib/work-files";
 
@@ -170,12 +169,11 @@ export async function listItemOptions(orgId: string, type: ItemType): Promise<It
       return operations.map((id) => ({ id, label: id.split(":").slice(1).join(" · "), detail: id.split(":")[0] }));
     }
     case "action": {
-      const builtIn = (await getActionDescriptors()).map((a) => ({ id: a.kind, label: a.kind, detail: a.description }));
-      const pack = (await db()
+      return (await db()
         .select({ kind: pack_action_definition.kind, description: pack_action_definition.description })
         .from(pack_action_definition)
-        .where(eq(pack_action_definition.org_id, orgId))).map((a) => ({ id: a.kind, label: a.kind, detail: a.description }));
-      return [...new Map([...builtIn, ...pack].map((a) => [a.id, a])).values()].sort((a, b) => a.label.localeCompare(b.label));
+        .where(eq(pack_action_definition.org_id, orgId))).map((a) => ({ id: a.kind, label: a.kind, detail: a.description }))
+        .sort((a, b) => a.label.localeCompare(b.label));
     }
     case "integration":
       return (await listConnectProviders()).map((p) => ({ id: p.pluginName, label: p.providerLabel, detail: p.pluginName }));

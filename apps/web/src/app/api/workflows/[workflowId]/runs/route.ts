@@ -16,7 +16,6 @@ import {
   runWorkflowTurn,
 } from "@neko/llm/workflows";
 import { errorCodeOf, observeSafely, type HarnessRunSummary } from "@neko/telemetry";
-import { getActionDescriptors } from "@/lib/auth";
 import { createCoalescingEmit } from "@/lib/coalescing-emit";
 import { getOrgId } from "@/lib/db";
 import { requireWorkflow } from "@/lib/entitlements";
@@ -125,7 +124,6 @@ async function postWorkflow(request: NextRequest, context: RouteContext) {
   void (async () => {
     let unregisterBrokerEvents: () => void = () => undefined;
     try {
-      const pluginActions = await startupPhase("context.plugin_actions", async () => getActionDescriptors());
       const broker = await startupPhase("broker.ready", async () => ensureAgentBroker());
       unregisterBrokerEvents = registerAgentBrokerEventSink(
         prepared.workRunId,
@@ -138,7 +136,6 @@ async function postWorkflow(request: NextRequest, context: RouteContext) {
           mode: "live",
           emit,
           signal: abortController.signal,
-          pluginActions,
           observer: runTelemetry.observer,
         },
         workflowRuntimeDepsFromConfig(agentRuntime, broker),

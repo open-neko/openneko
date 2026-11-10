@@ -626,99 +626,6 @@ turn ran long; never drop it.
 \`\`\`
 </closing>`;
 
-export interface PluginActionPromptDescriptor {
-  kind: string;
-  description: string;
-  scope?: "external" | "internal";
-  default_mode?:
-    | "auto"
-    | "ask"
-    | "deny"
-    | {
-        external?: "auto" | "ask" | "deny";
-        internal?: "auto" | "ask" | "deny";
-      };
-  example?: Record<string, unknown>;
-}
-
-function summarizeMode(
-  default_mode: PluginActionPromptDescriptor["default_mode"],
-): string {
-  if (default_mode === undefined) return "ask";
-  if (typeof default_mode === "string") return default_mode;
-  const parts: string[] = [];
-  if (default_mode.external) parts.push(`external:${default_mode.external}`);
-  if (default_mode.internal) parts.push(`internal:${default_mode.internal}`);
-  return parts.length > 0 ? parts.join("/") : "ask";
-}
-
-function isDeniedEverywhere(
-  default_mode: PluginActionPromptDescriptor["default_mode"],
-): boolean {
-  if (default_mode === "deny") return true;
-  if (default_mode && typeof default_mode === "object") {
-    const keys = Object.keys(default_mode) as Array<"external" | "internal">;
-    if (keys.length > 0 && keys.every((k) => default_mode[k] === "deny")) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function buildPluginActionsSection(
-  descriptors: readonly PluginActionPromptDescriptor[],
-  useFences: boolean,
-): string {
-  // Only emit the fence-syntax block when the runtime requests the fallback.
-  if (!useFences) return "";
-  const active = descriptors.filter((d) => !isDeniedEverywhere(d.default_mode));
-  if (active.length === 0) return "";
-  const rows = active
-    .map((d) => {
-      const head = `  - \`${d.kind}\` (scope:${d.scope ?? "external"}; mode:${summarizeMode(d.default_mode)}) — ${d.description.split("\n")[0]}`;
-      return d.example
-        ? `${head}\n    example payload: ${JSON.stringify(d.example)}`
-        : head;
-    })
-    .join("\n");
-  return `<action_tools>
-The following are policy-governed action tools. They can change OpenNeko's
-internal state or an external system. They are tools — not files, not session
-history. Don't search the filesystem or session memory for them. Call them by
-emitting a fenced JSON block; the runtime executes the call on the same turn.
-
-Available tools:
-${rows}
-
-How to call:
-
-\`\`\`neko_action_request
-{
-  "scope": "<the exact scope shown for the selected kind>",
-  "kind": "<one of the kinds above>",
-  "payload": { /* kind-specific */ },
-  "summary": "One sentence — what you're doing and why, written for the user.",
-  "risk_level": "low"
-}
-\`\`\`
-
-When the operator says something like "DM @someone on slack" or
-"post the briefing to #some-channel" — call the matching tool. The
-token and connection are already configured; nothing to look up first.
-
-For ask-mode tools: \`summary\` is the one-line text the operator sees
-on the approval card. Write it for them.
-
-Use each kind's displayed scope exactly. Never relabel an internal action as
-external, or an external integration action as internal.
-
-Auto-mode tools wait for execution and return their actual outcome in the same
-turn. Use that outcome to answer. If execution fails, report the failure; never
-claim the result is still queued. Only a returned \`running\` status means the
-action is still in progress.
-</action_tools>`;
-}
-
 export function buildBotSection(bot: { name: string; instructions: string }): string {
   const job = bot.instructions.trim()
     ? `Your job, as the operator described it:\n${bot.instructions.trim()}\nFollow it unless the operator asks for something else.`
@@ -765,8 +672,6 @@ export function buildWorkPrompt(args: {
   // True when prior turns must be inlined into the system prompt because the
   // backend can't reload them out-of-band (i.e. no session resume).
   inlineTranscript: boolean;
-  /** Installed plugin action kinds used by the fence fallback. */
-  pluginActions?: readonly PluginActionPromptDescriptor[];
   /** This chat belongs to one of the operator's bots. */
   bot?: { name: string; instructions: string };
 }): string {
@@ -792,7 +697,6 @@ export function buildWorkPrompt(args: {
     supportsClarificationTool = false,
     supportsNativeDelegation,
     inlineTranscript,
-    pluginActions,
     graphjinDataPath = "direct",
     bot,
   } = args;
@@ -833,7 +737,6 @@ that flags churn risk every Monday."
           knowledge,
           inlineKnowledge: "syntax",
         }),
-    buildPluginActionsSection(pluginActions ?? [], !supportsCardTool),
     RULES_SECTION,
     includeUxMetadata ? CLOSING_SECTION : "",
     // Prompt caches reuse the identical prefix: org-wide sections above, per-user to per-message below.

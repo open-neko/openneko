@@ -68,17 +68,13 @@ export async function runWorkflowFilter(
   };
 }
 
-/** Keeps action descriptors whose kind and, for plugin actions, whose integration the actor holds. */
-export async function filterHeldActions<T extends { kind: string; pluginName?: string }>(
+/** Keeps action descriptors whose kind the actor holds. */
+export async function filterHeldActions<T extends { kind: string }>(
   actor: EntitlementActor,
   actions: readonly T[],
 ): Promise<T[]> {
-  const [held, integrations] = await Promise.all([heldItems(actor, "action"), heldItems(actor, "integration")]);
-  return actions.filter(
-    (action) =>
-      (held === "*" || held.has(action.kind)) &&
-      (!action.pluginName || integrations === "*" || integrations.has(action.pluginName)),
-  );
+  const held = await heldItems(actor, "action");
+  return actions.filter((action) => held === "*" || held.has(action.kind));
 }
 
 /**

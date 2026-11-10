@@ -14,7 +14,6 @@ vi.mock("@neko/db", () => {
   };
   return { db: () => chain, and: () => null, eq: () => null, desc: () => null, isNull: () => null, ne: () => null, data_source: {}, channel_identity: {}, library_concept: {}, metric: {}, operator_profile: {}, pack_action_definition: {}, pack_install: {} };
 });
-vi.mock("@/lib/auth", () => ({ getActionDescriptors: vi.fn() }));
 vi.mock("@/lib/integrations", () => ({ listConnectProviders: vi.fn() }));
 vi.mock("@/lib/work-files", () => ({ listWorkSkills: vi.fn() }));
 

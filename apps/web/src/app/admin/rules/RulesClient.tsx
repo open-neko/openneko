@@ -100,76 +100,22 @@ function describeLimits(limits: Record<string, unknown>): string | null {
   return `Limits: ${parts.join(" · ")}`;
 }
 
-type ActionDescriptor = {
-  kind: string;
-  description: string;
-  default_mode?:
-    | "auto"
-    | "ask"
-    | "deny"
-    | {
-        external?: "auto" | "ask" | "deny";
-        internal?: "auto" | "ask" | "deny";
-      };
-};
-
-function resolveEffectiveMode(
-  kind: string,
-  policies: Policy[],
-): { mode: string; policyId: string | null } {
-  // Most specific match wins: a kind-explicit, external-scoped,
-  // enabled, highest-priority policy. Fall back to a kind-empty
-  // external_default if nothing kind-specific exists. Mirrors how
-  // evaluateActionPolicy walks policies at runtime — but kept
-  // visually simple here (a single "current mode" per kind).
-  const candidates = policies
-    .filter((p) => p.enabled)
-    .filter(
-      (p) => p.appliesToScopes.length === 0 || p.appliesToScopes.includes("external"),
-    );
-  const kindSpecific = candidates
-    .filter((p) => p.appliesToKinds.includes(kind))
-    .sort((a, b) => a.priority - b.priority);
-  if (kindSpecific[0]) {
-    return { mode: kindSpecific[0].mode, policyId: kindSpecific[0].id };
-  }
-  const generic = candidates
-    .filter((p) => p.appliesToKinds.length === 0)
-    .sort((a, b) => a.priority - b.priority);
-  if (generic[0]) {
-    return { mode: generic[0].mode, policyId: generic[0].id };
-  }
-  return { mode: "no policy", policyId: null };
-}
-
 export default function RulesClient() {
   const router = useRouter();
   const [policies, setPolicies] = useState<Policy[] | null>(null);
-  const [actionDescriptors, setActionDescriptors] = useState<
-    ActionDescriptor[]
-  >([]);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([
-      fetch("/api/policies", { cache: "no-store" }).then((r) => {
+    void fetch("/api/policies", { cache: "no-store" })
+      .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json() as Promise<{ policies: Policy[] }>;
-      }),
-      fetch("/api/action-descriptors", { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : { descriptors: [] }))
-        .then(
-          (data) =>
-            (data as { descriptors?: ActionDescriptor[] }).descriptors ?? [],
-        )
-        .catch(() => [] as ActionDescriptor[]),
-    ])
-      .then(([policiesResult, descriptors]) => {
+      })
+      .then((policiesResult) => {
         if (cancelled) return;
         setPolicies(policiesResult.policies ?? []);
-        setActionDescriptors(descriptors);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -220,10 +166,10 @@ export default function RulesClient() {
 
         <div className="mb-5 max-w-[520px]">
           <SearchInput
-            label="Search rules and action kinds"
+            label="Search rules"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search rules and action kinds"
+            placeholder="Search rules"
           />
         </div>
 
@@ -235,21 +181,6 @@ export default function RulesClient() {
           <SkeletonList rows={3} variant="row" label="Loading rules" />
         ) : (
           <>
-            {actionDescriptors.length > 0 ? (
-              <BuiltInActionsSection
-                descriptors={actionDescriptors}
-                policies={policies}
-                query={query}
-                onEditPolicy={(policyId) => {
-                  const policy = policies.find((p) => p.id === policyId);
-                  const name = policy?.name ?? "this rule";
-                  router.push(
-                    `/work?seed=${encodeURIComponent(`Update the '${name}' rule to `)}`,
-                  );
-                }}
-              />
-            ) : null}
-
             {policies.length === 0 ? (
               <div className="py-14 px-6 text-center text-sm text-text3 leading-[1.55] max-w-[520px] mx-auto">
                 No rules yet. Defaults are seeded automatically the first time a
@@ -379,135 +310,5 @@ function Row({
       </dt>
       <dd className="m-0 text-text break-words">{children}</dd>
     </div>
-  );
-}
-
-function groupNameFromKind(kind: string): string {
-  // Kinds are namespaced like `records.create` or `records_backfill`;
-  // group them for display by the leading token.
-  return kind.split(/[._]/)[0] ?? kind;
-}
-
-function describeDefaultMode(
-  mode: ActionDescriptor["default_mode"],
-): string {
-  if (mode === undefined) return "no default declared";
-  if (typeof mode === "string") {
-    if (mode === "auto") return "auto by default";
-    if (mode === "ask") return "asks by default";
-    if (mode === "deny") return "denied by default";
-    return "no default declared";
-  }
-  const parts: string[] = [];
-  if (mode.external) parts.push(`external: ${mode.external}`);
-  if (mode.internal) parts.push(`internal: ${mode.internal}`);
-  return parts.length > 0 ? parts.join(" · ") : "no default declared";
-}
-
-function BuiltInActionsSection({
-  descriptors,
-  policies,
-  query,
-  onEditPolicy,
-}: {
-  descriptors: ActionDescriptor[];
-  policies: Policy[];
-  query: string;
-  onEditPolicy: (policyId: string) => void;
-}) {
-  // Descriptors are flat; group them for display by the kind's leading token.
-  const normalizedQuery = query.trim().toLowerCase();
-  const visibleDescriptors = descriptors.filter((descriptor) =>
-    [descriptor.kind, descriptor.description, groupNameFromKind(descriptor.kind)]
-      .some((value) => value.toLowerCase().includes(normalizedQuery)),
-  );
-  const groups = new Map<string, ActionDescriptor[]>();
-  for (const d of visibleDescriptors) {
-    const key = groupNameFromKind(d.kind);
-    const list = groups.get(key) ?? [];
-    list.push(d);
-    groups.set(key, list);
-  }
-
-  return (
-    <section className="mt-8 mb-6">
-      <div className="flex items-baseline justify-between mb-2.5">
-        <h2 className="font-display text-ui-section font-bold tracking-[-0.01em] text-text">
-          Built-in actions
-        </h2>
-        <span className="font-mono text-ui-label text-text3">
-          {visibleDescriptors.length} of {descriptors.length} action kind
-          {descriptors.length === 1 ? "" : "s"}
-        </span>
-      </div>
-      <p className="text-ui-body-sm leading-[1.5] text-text2 mb-3 max-w-[640px]">
-        Built-in action kinds the agent can call from /work. Each
-        kind&apos;s effective approval mode comes from the rule whose
-        <em> applies-to-kinds </em>
-        includes it; everything else falls through to{" "}
-        <code className="font-mono text-ui-caption bg-neutral px-1 rounded">
-          external_default
-        </code>
-        . Click a kind to edit the rule that governs it.
-      </p>
-      {groups.size === 0 ? (
-        <div className="border-y border-border py-8 text-center text-ui-body-sm text-text2">
-          No action kinds match “{query}”.
-        </div>
-      ) : (
-        <ul className="list-none p-0 m-0 flex flex-col gap-2">
-          {[...groups.entries()].map(([groupName, kinds]) => (
-            <li key={groupName}>
-              <Disclosure
-                title={groupName}
-                meta={`${kinds.length} kind${kinds.length === 1 ? "" : "s"}`}
-                open={normalizedQuery ? true : undefined}
-              >
-                <div className="flex flex-col gap-2">
-                  {kinds.map((descriptor) => {
-                    const { mode, policyId } = resolveEffectiveMode(
-                      descriptor.kind,
-                      policies,
-                    );
-                    return (
-                      <div
-                        key={descriptor.kind}
-                        className="flex min-w-0 items-center justify-between gap-3 border-b border-border px-1 py-2.5 last:border-0 max-[640px]:items-stretch max-[640px]:flex-col"
-                      >
-                        <div className="flex flex-col gap-0.5 min-w-0">
-                          <code className="font-mono text-ui-caption text-text [overflow-wrap:anywhere]">
-                            {descriptor.kind}
-                          </code>
-                          <span className="text-ui-caption text-text3 max-[640px]:whitespace-normal [overflow-wrap:anywhere]">
-                            {descriptor.description}
-                          </span>
-                        </div>
-                        <div className="flex min-w-0 items-center justify-end gap-2 flex-wrap max-[640px]:justify-start">
-                          <Badge variant={modePillVariant(mode)}>
-                            {describeMode(mode)}
-                          </Badge>
-                          <span className="min-w-0 text-ui-label text-text3 [overflow-wrap:anywhere]">
-                            {describeDefaultMode(descriptor.default_mode)}
-                          </span>
-                          {policyId ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => onEditPolicy(policyId)}
-                            >
-                              Edit rule
-                            </Button>
-                          ) : null}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </Disclosure>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
   );
 }

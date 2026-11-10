@@ -16,7 +16,6 @@ import {
   buildGraphjinAgentServer,
   buildGraphjinMcpServer,
   buildFilesServer,
-  buildPluginActionServer,
   buildPackActionServer,
   buildRenderCardsServer,
   buildSkillBuilderServer,
@@ -31,7 +30,6 @@ import {
   GRAPHJIN_TOOL_POLICY_ENV,
   parseGraphjinMcpToolPolicy,
   type GraphjinMcpToolPolicy,
-  type PluginActionDescriptor,
   type PackActionDescriptor,
 } from "@neko/llm/sandbox-runtime";
 import { BrokerControlPlane, postAgentEvents } from "./broker-client";
@@ -65,7 +63,6 @@ export type BridgeServerContext = {
   threadId: string;
   runId: string;
   skillsRoot: string;
-  pluginActions: PluginActionDescriptor[];
   packActions: PackActionDescriptor[];
   controlPlane: BrokerControlPlane;
   brokerUrl?: string;
@@ -82,7 +79,7 @@ export function buildBridgeServer(
   name: string,
   ctx: BridgeServerContext,
 ): { instance: { connect: (t: Transport) => Promise<void> } } {
-  const { orgId, threadId, runId, skillsRoot, pluginActions, controlPlane } = ctx;
+  const { orgId, threadId, runId, skillsRoot, controlPlane } = ctx;
   const emit =
     ctx.brokerUrl && ctx.brokerToken
       ? (event: AgentEvent) =>
@@ -172,18 +169,6 @@ export function buildBridgeServer(
       return buildSourceConfigManagerServer(common);
     case "neko_audit":
       return buildAuditViewerServer({ orgId, runId, controlPlane });
-    case "neko_plugin_actions": {
-      const server = buildPluginActionServer({
-        orgId,
-        threadId,
-        runId,
-        descriptors: pluginActions,
-        emit,
-        controlPlane,
-      });
-      if (!server) throw new Error("mcp-bridge: no plugin actions in this run");
-      return server;
-    }
     case "neko_pack_actions": {
       const server = buildPackActionServer({
         orgId,
@@ -366,9 +351,6 @@ export function bridgeContextFromEnv(
     threadId: required("OPENNEKO_MCP_THREAD_ID"),
     runId: required("OPENNEKO_MCP_RUN_ID"),
     skillsRoot: required("OPENNEKO_MCP_SKILLS_ROOT"),
-    pluginActions: JSON.parse(
-      env.OPENNEKO_MCP_PLUGIN_ACTIONS ?? "[]",
-    ) as PluginActionDescriptor[],
     packActions: JSON.parse(
       env.OPENNEKO_MCP_PACK_ACTIONS ?? "[]",
     ) as PackActionDescriptor[],

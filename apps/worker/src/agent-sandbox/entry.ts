@@ -54,7 +54,6 @@ interface SandboxJob {
   ax?: AxBackendConfig;
   model?: string;
   backendState?: Record<string, unknown>;
-  pluginActions?: RunAgentBackendInput["pluginActions"];
   packActions?: RunAgentBackendInput["packActions"];
   sourceConfigEnabled?: boolean;
   graphjinToolPolicy?: RunAgentBackendInput["graphjinToolPolicy"];
@@ -264,7 +263,6 @@ async function runJob(
               OPENNEKO_MCP_THREAD_ID: job.threadId,
               OPENNEKO_MCP_RUN_ID: job.runId,
               OPENNEKO_MCP_SKILLS_ROOT: job.workspace.skillsRoot,
-              OPENNEKO_MCP_PLUGIN_ACTIONS: "[]",
               OPENNEKO_MCP_MEMORY_READ_ONLY: "1",
             }
           : undefined,
@@ -318,7 +316,6 @@ async function runJob(
       runId: job.runId,
       workspace: job.workspace,
       backendState: job.backendState,
-      pluginActions: job.pluginActions ?? [],
       packActions: job.packActions ?? [],
       sourceConfigEnabled: job.sourceConfigEnabled ?? false,
       ...(job.graphjinToolPolicy

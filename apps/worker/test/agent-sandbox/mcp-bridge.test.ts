@@ -28,7 +28,6 @@ const SERVERS = [
   "neko_data_source_manager",
   "neko_source_config_manager",
   "neko_audit",
-  "neko_plugin_actions",
   "neko_pack_actions",
 ];
 
@@ -41,13 +40,6 @@ function ctx() {
     skillsRoot: "/tmp/skills",
     workflowRunId: "33333333-3333-4333-8333-333333333333",
     triggeredByObservationId: null,
-    pluginActions: [
-      {
-        kind: "records.create",
-        description: "create",
-        scope: "external" as const,
-      },
-    ],
     packActions: [
       {
         kind: "magento.manage_catalog",
@@ -140,6 +132,7 @@ describe("mcp-bridge buildBridgeServer", () => {
 
   it("throws on unknown server names", () => {
     expect(() => buildBridgeServer("neko_nope", ctx())).toThrow(/unknown server/);
+    expect(() => buildBridgeServer("neko_plugin_actions", ctx())).toThrow(/unknown server/);
   });
 
   it("binds work GraphJin reads to the actor run", async () => {

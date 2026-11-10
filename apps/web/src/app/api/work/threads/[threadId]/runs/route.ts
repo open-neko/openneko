@@ -17,7 +17,6 @@ import {
 } from "@neko/llm/work";
 import { createRunSpendGuard, SpendBudgetExceeded } from "@neko/llm/spend";
 import { getCurrentActor } from "@/lib/actor";
-import { getActionDescriptors } from "@/lib/auth";
 import { createCoalescingEmit } from "@/lib/coalescing-emit";
 import { getOrgId } from "@/lib/db";
 import {
@@ -89,10 +88,7 @@ async function postRun(request: NextRequest, context: RouteContext) {
   // can retry cleanly.
   const agentRuntime = await startupPhase("config.provision", () => ensureHostConfigProvisioned(orgId));
 
-  const [pluginActions, packActions] = await Promise.all([
-    startupPhase("context.plugin_actions", () => getActionDescriptors()),
-    startupPhase("context.pack_actions", () => listPackActionDescriptors(orgId)),
-  ]);
+  const packActions = await startupPhase("context.pack_actions", () => listPackActionDescriptors(orgId));
 
   // The agent loop runs in a runner process whose turns run in openneko
   // serve. The web server stays the control plane, starts the runner, and
@@ -175,7 +171,6 @@ async function postRun(request: NextRequest, context: RouteContext) {
       channel: "web",
       emit: spendGuard.emit,
       signal: spendGuard.signal,
-      pluginActions,
       packActions,
       observer: runTelemetry.observer,
     },
