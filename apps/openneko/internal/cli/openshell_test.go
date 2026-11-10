@@ -10,7 +10,6 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/compose"
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/instance"
-	opennekoversion "github.com/open-neko/neko/apps/openneko/internal/version"
 )
 
 func TestAgentImageRef(t *testing.T) {
@@ -19,86 +18,6 @@ func TestAgentImageRef(t *testing.T) {
 	}
 	if got := agentImageRef("my.registry/agent:custom", "v1.2.3"); got != "my.registry/agent:custom" {
 		t.Fatalf("override should win: got %q", got)
-	}
-}
-
-func TestConfigurePinnedLibrarianImage(t *testing.T) {
-	previous := opennekoversion.LibrarianImage
-	t.Cleanup(func() { opennekoversion.LibrarianImage = previous })
-	t.Setenv("OPENNEKO_LIBRARIAN_IMAGE", "")
-	digest := strings.Repeat("a", 64)
-	want := "ghcr.io/open-neko/neko-librarian:v1.2.3@sha256:" + digest
-	opennekoversion.LibrarianImage = want
-
-	if err := configurePinnedLibrarianImage("v1.2.3"); err != nil {
-		t.Fatal(err)
-	}
-	if got := os.Getenv("OPENNEKO_LIBRARIAN_IMAGE"); got != want {
-		t.Fatalf("OPENNEKO_LIBRARIAN_IMAGE = %q, want %q", got, want)
-	}
-}
-
-func TestConfigurePinnedLibrarianImageRejectsWrongRelease(t *testing.T) {
-	previous := opennekoversion.LibrarianImage
-	t.Cleanup(func() { opennekoversion.LibrarianImage = previous })
-	t.Setenv("OPENNEKO_LIBRARIAN_IMAGE", "")
-	opennekoversion.LibrarianImage =
-		"ghcr.io/open-neko/neko-librarian:v1.2.2@sha256:" + strings.Repeat("b", 64)
-
-	if err := configurePinnedLibrarianImage("v1.2.3"); err != nil {
-		t.Fatal(err)
-	}
-	if got := os.Getenv("OPENNEKO_LIBRARIAN_IMAGE"); got != "" {
-		t.Fatalf("wrong-release digest was accepted: %q", got)
-	}
-}
-
-func TestConfigurePinnedLibrarianImagePreservesOverride(t *testing.T) {
-	previous := opennekoversion.LibrarianImage
-	t.Cleanup(func() { opennekoversion.LibrarianImage = previous })
-	t.Setenv("OPENNEKO_LIBRARIAN_IMAGE", "registry.example/librarian:custom")
-	opennekoversion.LibrarianImage =
-		"ghcr.io/open-neko/neko-librarian:v1.2.3@sha256:" + strings.Repeat("c", 64)
-
-	if err := configurePinnedLibrarianImage("v1.2.3"); err != nil {
-		t.Fatal(err)
-	}
-	if got := os.Getenv("OPENNEKO_LIBRARIAN_IMAGE"); got != "registry.example/librarian:custom" {
-		t.Fatalf("override changed: %q", got)
-	}
-}
-
-func TestConfigureLibrarianCPULimitTracksHostCapacity(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		hostCPUs int
-		want     string
-	}{
-		{name: "invalid host count", hostCPUs: 0, want: "1"},
-		{name: "single CPU host", hostCPUs: 1, want: "1"},
-		{name: "production VM", hostCPUs: 2, want: "2"},
-		{name: "maximum", hostCPUs: 4, want: "4"},
-		{name: "larger host", hostCPUs: 16, want: "4"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv(librarianCPULimitEnv, "")
-			if err := configureLibrarianCPULimit(tc.hostCPUs); err != nil {
-				t.Fatal(err)
-			}
-			if got := os.Getenv(librarianCPULimitEnv); got != tc.want {
-				t.Fatalf("%s = %q, want %q", librarianCPULimitEnv, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestConfigureLibrarianCPULimitPreservesOverride(t *testing.T) {
-	t.Setenv(librarianCPULimitEnv, "1.5")
-	if err := configureLibrarianCPULimit(8); err != nil {
-		t.Fatal(err)
-	}
-	if got := os.Getenv(librarianCPULimitEnv); got != "1.5" {
-		t.Fatalf("%s override changed: %q", librarianCPULimitEnv, got)
 	}
 }
 

@@ -16,8 +16,6 @@ import {
   QUEUE,
   type ActionExecutePayload,
   type ChannelDeliverPayload,
-  type LibraryExtractPayload,
-  type LibraryDistillPayload,
   type SkillLearnPayload,
   type ProcessingJobPayload,
   type RecordsIdentityLinkPayload,
@@ -137,10 +135,8 @@ import { runWorkflowRunFire } from "./jobs/workflow-run-fire.js";
 import { runWorkflowOutputTtlSweep } from "./jobs/workflow-output-ttl-sweep.js";
 import { runActionExecute } from "./jobs/action-execute.js";
 import { runRecordsImport } from "./jobs/records-import.js";
-import { sweepExpiredLibraryTransientState } from "./jobs/library-cleanup.js";
-import { runLibraryExtractJob } from "./jobs/library-extract.js";
-import { recoverUnqueuedLibraryUploads } from "./jobs/library-recovery.js";
-import { runLibraryDistillJob } from "./jobs/library-distill.js";
+import { moveLibraryDocumentsToStore } from "./jobs/library-recovery.js";
+import { filesEnabled } from "@neko/llm/files";
 import { runSkillLearnJob } from "./jobs/skill-learn.js";
 import { runRecordsIdentityLink } from "./jobs/records-identity-link.js";
 import { runRecordsBackupVerification } from "./jobs/records-backup-verify.js";
@@ -1173,23 +1169,6 @@ await b.work(QUEUE.METRIC_REFRESH_SCHEDULED_SWEEP, async () => {
       `[worker] memory TTL sweep failed: ${e instanceof Error ? e.message : e}`,
     );
   }
-  // Library staleness: stable concepts past stale_after become
-  // deprecated, and affected orgs get their team bundle re-materialized.
-  try {
-    const { sweepStaleLibraryConcepts } = await import("@neko/llm/work");
-    const { materializeTeamLibrary } = await import("@neko/llm");
-    const swept = await sweepStaleLibraryConcepts();
-    if (swept.deprecated > 0) {
-      console.log(`[worker] library staleness sweep: deprecated ${swept.deprecated}`);
-      for (const orgId of swept.orgIds) {
-        await materializeTeamLibrary(orgId);
-      }
-    }
-  } catch (e) {
-    console.warn(
-      `[worker] library staleness sweep failed: ${e instanceof Error ? e.message : e}`,
-    );
-  }
   // CV0: nightly memory checkpoint into the org config repo; CV4 also
   // checkpoints each member's personal layer onto their user/<id> ref.
   try {
@@ -1336,33 +1315,6 @@ await b.work(QUEUE.EMBEDDING_SWEEP, { batchSize: 1, pollingIntervalSeconds: 1 },
   async () => { await dispatchEmbeddingJobs(); });
 await b.schedule(QUEUE.EMBEDDING_SWEEP, '* * * * *', {}, { retryLimit: 3, retryDelay: 15 });
 await b.send(QUEUE.EMBEDDING_SWEEP, {}, { singletonKey: 'boot', singletonSeconds: 60 });
-
-await b.work(
-  QUEUE.LIBRARY_EXTRACT,
-  { batchSize: 1, pollingIntervalSeconds: 1 },
-  async (jobs: PgBossLib.Job<LibraryExtractPayload>[]) => {
-    for (const job of jobs) {
-      await runLibraryExtractJob(job.data);
-    }
-  },
-);
-
-await b.work(
-  QUEUE.LIBRARY_DISTILL,
-  { batchSize: 1, pollingIntervalSeconds: 1 },
-  async (jobs: PgBossLib.Job<LibraryDistillPayload>[]) => {
-    for (const job of jobs) {
-      try {
-        await runLibraryDistillJob(job.data);
-      } catch (e) {
-        console.warn(
-          `[library-distill] job ${job.id} failed; pg-boss may retry: ${e instanceof Error ? e.message : e}`,
-        );
-        throw e;
-      }
-    }
-  },
-);
 
 await b.work(
   QUEUE.SKILL_LEARN,
@@ -1744,39 +1696,19 @@ const reconcileTimer = setInterval(() => {
 }, RECONCILE_SWEEP_INTERVAL_MS);
 reconcileTimer.unref();
 
-const libraryCleanup = () => {
-  sweepExpiredLibraryTransientState()
-    .then((count) => {
-      if (count > 0) {
-        console.log(`[library-cleanup] removed ${count} expired transient state(s)`);
+if (filesEnabled()) {
+  moveLibraryDocumentsToStore()
+    .then(({ moved, missing }) => {
+      if (moved > 0 || missing > 0) {
+        console.log(`[library-move] moved ${moved} document(s) into openneko serve; ${missing} failed`);
       }
     })
     .catch((error) => {
       console.warn(
-        `[library-cleanup] sweep failed: ${error instanceof Error ? error.message : error}`,
+        `[library-move] failed: ${error instanceof Error ? error.message : error}`,
       );
     });
-};
-libraryCleanup();
-const libraryCleanupTimer = setInterval(libraryCleanup, 6 * 60 * 60 * 1_000);
-libraryCleanupTimer.unref();
-
-const libraryRecovery = () => {
-  recoverUnqueuedLibraryUploads()
-    .then((count) => {
-      if (count > 0) {
-        console.log(`[library-recovery] enqueued ${count} stranded upload(s)`);
-      }
-    })
-    .catch((error) => {
-      console.warn(
-        `[library-recovery] sweep failed: ${error instanceof Error ? error.message : error}`,
-      );
-    });
-};
-libraryRecovery();
-const libraryRecoveryTimer = setInterval(libraryRecovery, 60_000);
-libraryRecoveryTimer.unref();
+}
 
 const packOAuthRefresh = () => {
   packService.refreshOAuthConnections()
@@ -1802,8 +1734,6 @@ const channelInbound = startChannelInbound(ADMIN_ORG_ID);
 const shutdown = async (signal: string) => {
   console.log(`[worker] received ${signal}; shutting down`);
   clearInterval(reconcileTimer);
-  clearInterval(libraryCleanupTimer);
-  clearInterval(libraryRecoveryTimer);
   clearInterval(packOAuthRefreshTimer);
   clearInterval(knowledgeRefreshTimer);
   workflowScheduler.stop();

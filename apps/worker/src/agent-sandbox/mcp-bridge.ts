@@ -15,7 +15,6 @@ import {
   buildDataSourceManagerServer,
   buildGraphjinAgentServer,
   buildGraphjinMcpServer,
-  buildLibraryServer,
   buildFilesServer,
   buildPluginActionServer,
   buildPackActionServer,
@@ -124,8 +123,6 @@ export function buildBridgeServer(
       );
     case "neko_guides":
       return buildSkillSearchServer({ orgId, runId }, { controlPlane });
-    case "neko_library":
-      return buildLibraryServer({ orgId, threadId, runId }, { controlPlane });
     case "neko_files":
       return buildFilesServer({ orgId, threadId, runId }, { controlPlane });
     case "neko_records":

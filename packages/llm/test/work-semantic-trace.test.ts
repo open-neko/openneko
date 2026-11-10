@@ -78,20 +78,15 @@ describe("trusted broker semantic trace", () => {
         },
       },
     ];
-    const libraryResult = [
-      {
-        layer: "personal",
-        score: 0.93,
-        concept: {
-          id: "concept-1",
-          userId: "user-1",
-          status: "stable",
-          sourceDocumentId: "document-1",
-          body: "SECRET_LIBRARY_BODY",
-          sources: [{ resource: "SECRET_LIBRARY_SOURCE" }],
+    const libraryResult = {
+      matches: [
+        {
+          path: "library/abc/policy.md",
+          score: 0.93,
+          passages: [{ location: "SECRET_LIBRARY_SOURCE", snippet: "SECRET_LIBRARY_BODY" }],
         },
-      },
-    ];
+      ],
+    };
     const workflowResult = {
       total: 1,
       workflows: [
@@ -127,7 +122,7 @@ describe("trusted broker semantic trace", () => {
       return memoryResult;
     });
     const librarySearch = vi.fn(async () => {
-      executionOrder.push("cp:library.search");
+      executionOrder.push("cp:files.search");
       return libraryResult;
     });
     const workflowList = vi.fn(async () => {
@@ -159,7 +154,7 @@ describe("trusted broker semantic trace", () => {
     });
     const cp = stubControlPlane({
       searchWorkMemoryByContext: memorySearch,
-      searchLibraryForRun: librarySearch,
+      searchFilesForRun: librarySearch,
       listWorkflowsWithTriggers: workflowList,
       listGraphjinTools: toolsList,
       callGraphjinTool: toolCall,
@@ -189,7 +184,7 @@ describe("trusted broker semantic trace", () => {
           },
         ],
         [
-          "/v1/library/search",
+          "/v1/files/search",
           {
             query: "SECRET_LIBRARY_QUERY",
             limit: 3,
@@ -239,7 +234,7 @@ describe("trusted broker semantic trace", () => {
 
       expect(events.map((event) => event.operation)).toEqual([
         "memory.search",
-        "library.search",
+        "files.search",
         "workflow.list",
         "graphjin.tools_list",
         "graphjin.catalog",
@@ -253,8 +248,8 @@ describe("trusted broker semantic trace", () => {
       expect(executionOrder).toEqual([
         "cp:memory.search",
         "trace:memory.search",
-        "cp:library.search",
-        "trace:library.search",
+        "cp:files.search",
+        "trace:files.search",
         "cp:workflow.list",
         "trace:workflow.list",
         "cp:graphjin.tools_list",
@@ -299,18 +294,14 @@ describe("trusted broker semantic trace", () => {
           },
         ],
       });
-      const library = eventFor(events, "library.search");
+      const library = eventFor(events, "files.search");
       expect(library.evidence).toEqual({
         requestedLimit: 3,
         returnedCount: 1,
-        concepts: [
+        files: [
           {
-            id: "concept-1",
-            bodyDigest: workSemanticDigest("SECRET_LIBRARY_BODY"),
-            layer: "personal",
-            status: "stable",
-            sourceDocumentId: "document-1",
-            sourceDigests: [workSemanticDigest("SECRET_LIBRARY_SOURCE")],
+            id: "library/abc/policy.md",
+            bodyDigest: workSemanticDigest(libraryResult.matches[0]!.passages),
           },
         ],
       });

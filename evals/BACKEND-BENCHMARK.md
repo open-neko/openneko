@@ -66,10 +66,11 @@ each repetition and treatment it provisions and fingerprints:
 - target and decoy personal/team memories;
 - target and similarly named decoy skills, including effective content
   digests from `SKILL.md`;
-- current, stale, and adversarial library concepts with source metadata;
+- current, stale, and adversarial Library files in the member's private
+  folder of `openneko serve` (the run needs `OPENNEKO_SERVE_URL`);
 - target and similarly named workflows;
 - cross-tenant resources that must remain invisible;
-- the embedding model/cache identity used by memory and library retrieval.
+- the embedding model identity used by memory retrieval.
 
 Provisioning must prove that planted memory and library entries are
 searchable before a provider call. The dataset fingerprint is checked before
@@ -100,7 +101,7 @@ vocabulary includes:
 
 - `memory.prefetched`, `memory.search`;
 - `skill.loaded`;
-- `library.search`;
+- `files.search`;
 - `workflow.list`;
 - `graphjin.tools_list`, `graphjin.catalog`, `graphjin.call`,
   `graphjin.execute`.

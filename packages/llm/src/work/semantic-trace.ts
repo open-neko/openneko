@@ -67,18 +67,11 @@ export type WorkSemanticTraceEvent =
       };
     })
   | (WorkSemanticTraceBase & {
-      operation: "library.search";
+      operation: "files.search";
       evidence: {
         requestedLimit?: number;
         returnedCount: number;
-        concepts: Array<{
-          id: string;
-          bodyDigest: string;
-          layer: "team" | "personal";
-          status?: string;
-          sourceDocumentId?: string;
-          sourceDigests: string[];
-        }>;
+        files: Array<{ id: string; bodyDigest: string }>;
       };
     })
   | (WorkSemanticTraceBase & {
@@ -348,7 +341,7 @@ export function traceMemorySearch<T>(input: {
   });
 }
 
-export function traceLibrarySearch<T>(input: {
+export function traceFileSearch<T>(input: {
   binding: WorkSemanticTraceBinding;
   source?: WorkSemanticTraceSource;
   request: { query: string; limit?: number };
@@ -356,41 +349,22 @@ export function traceLibrarySearch<T>(input: {
 }): Promise<T> {
   return traced({
     ...input,
-    operation: "library.search",
+    operation: "files.search",
     event: (base, result) => {
-      const rows = asArray(result);
+      const rows = asArray(record(result)?.matches);
       return {
         ...base,
-        operation: "library.search",
+        operation: "files.search",
         evidence: {
           ...(input.request.limit !== undefined
             ? { requestedLimit: input.request.limit }
             : {}),
           returnedCount: rows.length,
-          concepts: rows.flatMap((row) => {
-            const resultRow = record(row);
-            const concept = record(resultRow?.concept);
-            const id = string(concept?.id);
-            if (!concept || !id) return [];
-            const explicitLayer = string(resultRow?.layer);
-            const sources = asArray(concept.sources);
-            const status = string(concept.status);
-            const sourceDocumentId = string(concept.sourceDocumentId);
-            return [
-              {
-                id,
-                bodyDigest: workSemanticDigest(concept.body ?? null),
-                layer:
-                  explicitLayer === "personal" || concept.userId
-                    ? ("personal" as const)
-                    : ("team" as const),
-                ...(status ? { status } : {}),
-                ...(sourceDocumentId ? { sourceDocumentId } : {}),
-                sourceDigests: sources.map((source) =>
-                  workSemanticDigest(record(source)?.resource ?? source),
-                ),
-              },
-            ];
+          files: rows.flatMap((row) => {
+            const match = record(row);
+            const id = string(match?.path);
+            if (!match || !id) return [];
+            return [{ id, bodyDigest: workSemanticDigest(match.passages ?? null) }];
           }),
         },
       };
@@ -755,15 +729,15 @@ export function traceAgentControlPlane(
         },
         execute: () => target.searchWorkMemoryByContext(args),
       }),
-    searchLibraryForRun: (args) =>
-      traceLibrarySearch({
+    searchFilesForRun: (args) =>
+      traceFileSearch({
         binding,
         source: "trusted-host",
         request: {
           query: args.query,
           ...(args.limit !== undefined ? { limit: args.limit } : {}),
         },
-        execute: () => target.searchLibraryForRun(args),
+        execute: () => target.searchFilesForRun(args),
       }),
     listWorkflowsWithTriggers: (args) =>
       traceWorkflowList({

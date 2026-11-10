@@ -5,13 +5,11 @@ import type {
   AgentRunResult,
   AgentWorkspace,
 } from "../agent-backend";
-import type { AllowedLibrary } from "../library/staging";
 import type { AgentControlPlane } from "../work/control-plane";
 import type { GraphjinDataPath } from "../work/graphjin-tool-policy";
 import {
   buildGraphjinAgentServer,
   buildGraphjinMcpServer,
-  buildLibraryServer,
   buildFilesServer,
   buildRecordsReadServer,
   buildWorkMemoryServer,
@@ -40,8 +38,6 @@ export interface RunWorkflowAgentBackendInput {
   workspace: AgentWorkspace;
   /** Skill names the run's actor holds. Undefined means every skill. */
   allowedSkills?: readonly string[];
-  /** Team library files the actor holds. Undefined means the whole team library. */
-  allowedLibrary?: AllowedLibrary;
   /** In-process on the host; broker-backed inside the agent sandbox. */
   controlPlane: AgentControlPlane;
   emit: (event: AgentEvent) => Promise<void>;
@@ -120,12 +116,6 @@ export async function runWorkflowAgentBackend(
             threadId,
             runId,
           },
-          { controlPlane },
-        ),
-        // Search-only: workflows consult the document library the same
-        // way chat turns do (layering resolved from the run binding).
-        neko_library: buildLibraryServer(
-          { orgId, threadId, runId },
           { controlPlane },
         ),
         ...(filesEnabled()

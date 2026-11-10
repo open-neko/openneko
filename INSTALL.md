@@ -259,6 +259,11 @@ Web and worker reach the service at `OPENNEKO_SERVE_URL` with a token that
 expires after one minute. When `OPENNEKO_SERVE_URL` is not set, the assistant
 does not get the file tools.
 
+Files a user adds to the Library go into that folder. When `OPENNEKO_SERVE_URL`
+is not set, the Library refuses uploads. After an upgrade, the worker moves
+Library files from older releases into the folder once, at start. It marks a
+document as failed when its original file is gone.
+
 
 ## Upgrade
 
@@ -419,7 +424,7 @@ pnpm dev
 
 Web and worker run on the host with hot reload. Everything else runs in Docker.
 
-- `pnpm dev:up` starts the backing services with `compose.dev.yml`: `neko-db`, `records-db`, both GraphJin data planes, `neko-graphjin`, `librarian`, the OpenShell gateway with the agent image, and AdventureWorks with its simulator. It installs the pinned GraphJin and OpenShell CLIs into `.openneko/dev/bin`, rebuilds a GraphJin image that reports another version than the pin, runs migrations from source, writes the GraphJin JWT secret, and registers the OpenShell gateway for host processes.
+- `pnpm dev:up` starts the backing services with `compose.dev.yml`: `neko-db`, `records-db`, both GraphJin data planes, `neko-graphjin`, the OpenShell gateway with the agent image, and AdventureWorks with its simulator. It installs the pinned GraphJin and OpenShell CLIs into `.openneko/dev/bin`, rebuilds a GraphJin image that reports another version than the pin, runs migrations from source, writes the GraphJin JWT secret, and registers the OpenShell gateway for host processes.
 - `pnpm dev:seed` seeds demo workflows. `pnpm dev:setup` runs both steps.
 - `pnpm dev` runs `next dev` on port 3000 and `tsx watch` for the worker. Edits to `apps/web`, `apps/worker`, and workspace packages reload without an image build.
 - `scripts/dev-env.sh` holds the host settings. Each service a host process calls has a loopback port; `pnpm dev:web` and `pnpm dev:worker` source the file.

@@ -26,8 +26,8 @@ x-neko-app-env: &neko-app-env
   NEKO_EMBEDDING_MODEL: ${NEKO_EMBEDDING_MODEL:-}
   NEKO_EMBEDDING_API_KEY: ${NEKO_EMBEDDING_API_KEY:-}
   NEKO_EMBEDDING_DIMENSIONS: ${NEKO_EMBEDDING_DIMENSIONS:-}
-  NO_PROXY: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,librarian,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
-  no_proxy: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,librarian,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
+  NO_PROXY: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
+  no_proxy: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
 
 services:
   neko-db:
@@ -507,55 +507,6 @@ services:
       timeout: 3s
       retries: 5
 
-  librarian:
-    # OpenNeko's digital-document extractor. Layout/table models are vendored
-    # in the release image and runtime network access is disabled at the model
-    # layer, so no first-use Hugging Face pull can occur.
-    # Deliberately its own container: the Torch stack and its CPU/RAM spikes
-    # have no place in the worker process that also runs watchers,
-    # actions, channels, and the sandbox broker. It is the ONLY extractor — the
-    # worker has no in-process fallback, so if this service is down, document
-    # distillation fails and is retried, rather than silently cataloging
-    # lower-fidelity text. A required part of the stack for the library feature.
-    # Release CLIs set OPENNEKO_LIBRARIAN_IMAGE to :release@sha256:manifest;
-    # the tag fallback keeps raw Compose use and source smoke tests workable.
-    image: ${OPENNEKO_LIBRARIAN_IMAGE:-ghcr.io/open-neko/neko-librarian:${OPENNEKO_VERSION:-latest}}
-    restart: unless-stopped
-    environment:
-      HF_HUB_OFFLINE: "1"
-      TRANSFORMERS_OFFLINE: "1"
-      DOCLING_ARTIFACTS_PATH: /opt/docling/models
-      NEKO_LIBRARIAN_RESULT_TTL_SECONDS: ${OPENNEKO_LIBRARIAN_RESULT_TTL_SECONDS:-900}
-      NEKO_LIBRARIAN_RESULT_MAX_BYTES: ${OPENNEKO_LIBRARIAN_RESULT_MAX_BYTES:-536870912}
-      OPENNEKO_SERVICE_IDLE_TIMEOUT: ${OPENNEKO_LIBRARIAN_IDLE_TIMEOUT:-5m}
-    volumes:
-      - librarian-results:/var/lib/neko-librarian/results
-    read_only: true
-    # The CLI sets this to min(host CPUs, 4). The one-CPU fallback keeps raw
-    # Compose use portable when the supervisor is not involved.
-    cpus: ${OPENNEKO_LIBRARIAN_CPUS:-1.0}
-    mem_limit: 4g
-    pids_limit: 256
-    cap_drop:
-      - ALL
-    tmpfs:
-      - /tmp:size=512m,mode=1777
-    security_opt:
-      - no-new-privileges:true
-    expose:
-      - "5001"
-    healthcheck:
-      # The owned image deliberately has no curl dependency.
-      test:
-        - "CMD"
-        - "python3"
-        - "-c"
-        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5001/health/ready', timeout=5).status==200 else 1)"
-      interval: 15s
-      timeout: 8s
-      retries: 10
-      start_period: 60s
-
   # openneko serve: each user's private files, their keyword index in
   # neko-db and SQL over sheet tables. Web and worker call it with
   # short-lived tokens signed from the secret-key.
@@ -635,8 +586,6 @@ services:
       # the GraphJin secret from.
       graphjin-secret-init:
         condition: service_completed_successfully
-      librarian:
-        condition: service_healthy
       records-db:
         condition: service_healthy
       neko-backup:
@@ -668,11 +617,6 @@ services:
       # in internal/plugin/install/) and the worker plugin-registry's runner
       # resolver use this path.
       OPENNEKO_PLUGIN_INSTALL_DIR: /var/lib/openneko/plugins
-      # The library distiller's sole document extractor (Docling). Required:
-      # if the librarian service is unreachable, extraction fails and the
-      # document is retried — there is no in-worker fallback.
-      NEKO_LIBRARIAN_URL: http://librarian:5001
-      NEKO_LIBRARIAN_FINGERPRINT: neko-librarian:${OPENNEKO_VERSION:-latest}:docling-slim-2.124.0:layout-8f39ad3:tableformer-fc0f2d4:digital-text-v1
     expose:
       - "4100"
     volumes:
@@ -691,7 +635,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  librarian-results:
   neko-db-data:
   neko-db-socket:
   records-db-data:

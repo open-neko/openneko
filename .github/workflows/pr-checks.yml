@@ -22,23 +22,6 @@ jobs:
       - run: go test -race ./...
         working-directory: recipes/lazy-service
 
-  librarian-image:
-    name: Librarian image
-    runs-on: ubuntu-22.04
-    timeout-minutes: 25
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Run owned API contract tests
-        run: docker build --target librarian-test -f apps/librarian/Dockerfile .
-
-      - name: Build image with vendored models
-        run: docker build --target librarian -t openneko-librarian:pr -f apps/librarian/Dockerfile .
-
-      - name: Verify lazy extraction and idle restart offline
-        run: docker run --rm --network none --memory 4g --cpus 1 --pids-limit 256 --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:size=512m --mount type=volume,target=/var/lib/neko-librarian/results --entrypoint python3 openneko-librarian:pr /app/smoke.py
-
   release-recovery-contract:
     name: Release recovery contract
     runs-on: ubuntu-latest

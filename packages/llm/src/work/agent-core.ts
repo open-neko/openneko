@@ -5,7 +5,6 @@ import type {
   AgentRunResult,
   AgentWorkspace,
 } from "../agent-backend";
-import type { AllowedLibrary } from "../library/staging";
 import { buildWorkflowBuilderServer } from "../workflows/builder-server";
 import { buildRuleBuilderServer } from "../workflows/rule-builder-server";
 import type { AgentControlPlane } from "./control-plane";
@@ -32,7 +31,6 @@ import {
   buildGraphjinMcpServer,
   buildSourceConfigManagerServer,
   buildUserManagerServer,
-  buildLibraryServer,
   buildFilesServer,
   buildRenderCardsServer,
   buildRecordsReadServer,
@@ -56,8 +54,6 @@ export interface RunAgentBackendInput {
   backendState?: Record<string, unknown>;
   /** Skill names the run's actor holds. Undefined means every skill. */
   allowedSkills?: readonly string[];
-  /** Team library files the actor holds. Undefined means the whole team library. */
-  allowedLibrary?: AllowedLibrary;
   pluginActions: readonly PluginActionDescriptor[];
   /** Installed pack actions, discovered independently of plugins. */
   packActions?: readonly PackActionDescriptor[];
@@ -195,7 +191,6 @@ export async function runAgentBackend(
         neko_memory: buildWorkMemoryServer({ orgId, threadId, runId }, { controlPlane }),
         // Ax's discover() reaches the semantic skill index through this server.
         ...(backend.id === "ax" ? { neko_guides: buildSkillSearchServer({ orgId, runId }, { controlPlane }) } : {}),
-        neko_library: buildLibraryServer({ orgId, threadId, runId }, { controlPlane }),
         ...(filesEnabled() ? { neko_files: buildFilesServer({ orgId, threadId, runId }, { controlPlane }) } : {}),
         neko_records: buildRecordsReadServer({ orgId, runId, controlPlane }),
         neko_workflow_builder: buildWorkflowBuilderServer({

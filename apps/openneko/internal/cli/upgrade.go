@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"runtime"
 	"sort"
 	"strings"
 
@@ -124,12 +123,6 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 			_ = os.Unsetenv("OPENNEKO_VERSION")
 		}
 	}()
-	if err := configurePinnedLibrarianImage(target); err != nil {
-		return err
-	}
-	if err := configureLibrarianCPULimit(runtime.NumCPU()); err != nil {
-		return err
-	}
 
 	files, err := sup.Materialize(m)
 	if err != nil {

@@ -6,6 +6,7 @@
 
 import type { KnowledgePackContents } from "../knowledge-pack";
 import type { AgentWorkspace } from "../agent-backend";
+import { filesEnabled } from "../files/client";
 
 export const GRAPHJIN_DATE_RULE = `- For GraphJin date/range filters, do not put multiple operators under
   the same column object. Use
@@ -72,12 +73,15 @@ silently ignore a relevant memory.`;
 \`mcp_neko_memory_search\` with a short natural-language query. Do
 this whenever the user's request mentions a domain, metric, or rule
 that isn't already covered by the preloaded list.`);
-    usageBlocks.push(`The document library holds knowledge distilled from uploaded
-business documents (policies, contracts, SOPs). When the operator asks
-about company documents, agreements, or written policy, call
-\`mcp_neko_library_search\` with a short query before answering from
-general knowledge. Each result cites its source upload — mention the
-source when you rely on one.`);
+    if (filesEnabled()) {
+      usageBlocks.push(`The operator's library holds the documents and spreadsheets they
+uploaded (policies, contracts, price lists, reports). When they ask about
+company documents, agreements, written policy, or figures from a file,
+call \`mcp_neko_files_search\` with a short query before answering from
+general knowledge. Read a whole file with \`mcp_neko_files_read_text\`
+and compute from a sheet with \`mcp_neko_files_query_tables\`. Name the
+file and the page, slide or sheet you relied on.`);
+    }
   }
 
   if (saveMode === "tool") {

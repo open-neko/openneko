@@ -14,7 +14,7 @@ import {
   traceGraphjinQuery,
   traceGraphjinToolCall,
   traceGraphjinToolsList,
-  traceLibrarySearch,
+  traceFileSearch,
   traceMemorySearch,
   traceRecordBlueprints,
   traceWorkflowList,
@@ -253,37 +253,22 @@ async function handle(
         }),
       );
     }
-    case "/v1/library/search": {
-      // Same rule as memory: the personal layer comes from the bound
-      // run's owner, never from agent-supplied identity.
-      delete body.userId;
+    case "/v1/files/search": {
       const query = String(body.query ?? "");
       const limit = typeof body.limit === "number" ? body.limit : undefined;
       return send(
         res,
         200,
-        await traceLibrarySearch({
+        await traceFileSearch({
           binding,
           request: { query, ...(limit !== undefined ? { limit } : {}) },
           execute: () =>
-            cp.searchLibraryForRun({
-              ...body,
+            cp.searchFilesForRun({
               orgId: binding.orgId,
               runId: binding.runId,
-            } as Parameters<AgentControlPlane["searchLibraryForRun"]>[0]),
-        }),
-      );
-    }
-    case "/v1/files/search": {
-      const limit = typeof body.limit === "number" ? body.limit : undefined;
-      return send(
-        res,
-        200,
-        await cp.searchFilesForRun({
-          orgId: binding.orgId,
-          runId: binding.runId,
-          query: String(body.query ?? ""),
-          ...(limit !== undefined ? { limit } : {}),
+              query,
+              ...(limit !== undefined ? { limit } : {}),
+            }),
         }),
       );
     }

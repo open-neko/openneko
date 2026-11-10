@@ -415,7 +415,7 @@ export function buildUserManagerServer(opts: {
     "request_item_grant",
     [
       "Propose granting or revoking one item for a group. itemType is one of",
-      "skill, workflow, library_collection, library_concept, metric, dashboard,",
+      "skill, workflow, metric, dashboard,",
       "watcher, team_memory, data_source, saved_query, api_operation, action,",
       "integration, channel, pack. itemId '*' means every current and future",
       "item of the type. NEVER applies directly — an ADMIN must approve.",
@@ -424,7 +424,7 @@ export function buildUserManagerServer(opts: {
       action: z.enum(["grant_item", "revoke_item"]),
       groupId: z.string().trim().min(1),
       itemType: z.enum([
-        "skill", "workflow", "library_collection", "library_concept", "metric", "dashboard", "watcher",
+        "skill", "workflow", "metric", "dashboard", "watcher",
         "team_memory", "data_source", "saved_query", "api_operation", "action", "integration", "channel", "pack",
       ]),
       itemId: z.string().trim().min(1).max(500),
@@ -1620,71 +1620,6 @@ export function buildWorkMemoryServer(
     name: "neko_memory",
     version: "1.0.0",
     tools: exposeSave ? [search, save, update] : [search],
-  });
-}
-
-// Search-only library surface. Layer visibility (team + the run owner's
-// personal concepts) is resolved server-side from the run binding —
-// never from agent input — so a compromised prompt can't read another
-// member's personal library.
-export type LibraryServerOptions = {
-  /** Explicit in-process or broker-backed control plane. */
-  controlPlane?: AgentControlPlane;
-};
-
-export function buildLibraryServer(
-  ctx: WorkMemoryContext,
-  options: LibraryServerOptions = {},
-) {
-  const controlPlane = requireControlPlane(options.controlPlane);
-  const search = defineMcpTool(
-    "search",
-    [
-      "Semantic search over the document library — knowledge distilled",
-      "from uploaded business documents (policies, contracts, SOPs).",
-      "Returns top-N concepts ranked by similarity, each citing its",
-      "source upload. Prefer this over guessing when the operator asks",
-      "about company documents, agreements, or written policy.",
-    ].join(" "),
-    {
-      query: z.string().min(2).max(800),
-      limit: z.number().int().min(1).max(20).optional(),
-    },
-    async (args) => {
-      const results = await controlPlane.searchLibraryForRun({
-        orgId: ctx.orgId,
-        query: args.query,
-        limit: args.limit ?? 5,
-        runId: ctx.runId ?? null,
-      });
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({
-              ok: true,
-              results: results.map((r) => ({
-                path: r.concept.path,
-                type: r.concept.type,
-                title: r.concept.title,
-                description: r.concept.description,
-                status: r.concept.status,
-                layer: r.layer,
-                score: r.score,
-                sources: r.concept.sources.map((s) => s.resource),
-                body: r.concept.body,
-              })),
-            }),
-          },
-        ],
-      };
-    },
-  );
-
-  return createMcpServer({
-    name: "neko_library",
-    version: "1.0.0",
-    tools: [search],
   });
 }
 

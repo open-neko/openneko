@@ -31,7 +31,7 @@ function staticServers(): NekoMcpServer[] {
     tools.buildGraphjinAgentServer(base),
     tools.buildRecordsReadServer(base),
     tools.buildWorkMemoryServer(memory, { controlPlane }),
-    tools.buildLibraryServer(memory, { controlPlane }),
+    tools.buildFilesServer(memory, { controlPlane }),
     tools.buildSkillBuilderServer("/tmp/openneko-portability-skills"),
     buildAskUserQuestionServer({ runId: "run", wantsCards: true, emit }),
   ];

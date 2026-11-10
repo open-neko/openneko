@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { enqueue, QUEUE, type LibraryExtractPayload } from "@neko/db/jobs";
+import { filesEnabled, FilesServiceError } from "@neko/llm/files";
+import { storeLibraryFile } from "@neko/llm/library/store";
 import { createLibraryDocument } from "@neko/llm/work";
 import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
@@ -8,21 +8,11 @@ import {
   MAX_LIBRARY_UPLOAD_REQUEST_BYTES,
   validateLibraryUploadBatch,
 } from "@/lib/library-upload-contract";
-import {
-  ALLOWED_UPLOAD_EXTENSIONS,
-  safeFileName,
-  saveLibraryUpload,
-} from "@/lib/work-files";
+import { ALLOWED_UPLOAD_EXTENSIONS, safeFileName } from "@/lib/work-files";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/**
- * Direct-to-library upload (no thread). Always catalogs — uploading
- * here IS the request to distill. A batch may contain up to 100 MB of files
- * in total. Files land under content-addressed paths beneath
- * library/uploads/<owner>/ and stay owner-readable only.
- */
 export async function POST(request: Request) {
   const contentLength = Number.parseInt(
     request.headers.get("content-length") ?? "0",
@@ -79,38 +69,46 @@ export async function POST(request: Request) {
     }
   }
 
+  if (!filesEnabled()) {
+    return NextResponse.json(
+      { error: "File storage is off: openneko serve is not configured." },
+      { status: 503 },
+    );
+  }
   const orgId = await getOrgId();
   const actor = await getCurrentActor();
+  if (!actor.userId) {
+    return NextResponse.json({ error: "Sign in to add files to your library." }, { status: 401 });
+  }
   const documents: Array<{
     document: Awaited<ReturnType<typeof createLibraryDocument>>["document"];
     created: boolean;
   }> = [];
   for (const file of files) {
-    const saved = await saveLibraryUpload(orgId, actor.userId, file);
+    let saved: Awaited<ReturnType<typeof storeLibraryFile>>;
+    try {
+      saved = await storeLibraryFile({
+        orgId,
+        userId: actor.userId,
+        filename: safeFileName(file.name || "upload.bin"),
+        data: Buffer.from(await file.arrayBuffer()),
+        ...(file.type ? { contentType: file.type } : {}),
+      });
+    } catch (error) {
+      if (!(error instanceof FilesServiceError)) throw error;
+      return NextResponse.json(
+        { error: `"${file.name}" was not stored: ${error.message}`, documents },
+        { status: error.status >= 500 ? 502 : error.status },
+      );
+    }
     const { document, created } = await createLibraryDocument({
       orgId,
       userId: actor.userId,
-      filename: saved.name,
-      relativePath: saved.relativePath.replace(/\\/g, "/"),
+      filename: safeFileName(file.name || "upload.bin"),
+      relativePath: saved.relativePath,
       contentHash: saved.contentHash,
       sizeBytes: saved.size,
     });
-    // `uploaded` also covers recovery from the narrow insert-before-enqueue
-    // failure window: an identical re-upload must be able to restore the job.
-    if (created || document.status === "uploaded" || document.status === "failed") {
-      const payload: LibraryExtractPayload = {
-        orgId,
-        documentId: document.id,
-        runId: randomUUID(),
-        sequence: 0,
-      };
-      await enqueue(QUEUE.LIBRARY_EXTRACT, payload, {
-        retryLimit: 8,
-        retryDelay: 15,
-        retryBackoff: true,
-        singletonKey: `library-extract:${document.id}`,
-      });
-    }
     documents.push({ document, created });
   }
 

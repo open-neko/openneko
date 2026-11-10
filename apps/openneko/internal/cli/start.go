@@ -9,8 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
-	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/spf13/cobra"
@@ -113,12 +111,6 @@ func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, op
 			imageVersion = "v" + version.Version
 		}
 		_ = os.Setenv("OPENNEKO_VERSION", imageVersion)
-	}
-	if err := configurePinnedLibrarianImage(os.Getenv("OPENNEKO_VERSION")); err != nil {
-		return err
-	}
-	if err := configureLibrarianCPULimit(runtime.NumCPU()); err != nil {
-		return err
 	}
 
 	// SEC9: OpenShell is the only agent runtime.
@@ -236,45 +228,6 @@ func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, op
 		return WithExit(code, nil)
 	}
 	return nil
-}
-
-// Release binaries carry the manifest-list digest produced by the same
-// release workflow. Keep the readable :release tag in the reference while
-// making Compose resolve exactly that immutable manifest. Explicit operator
-// overrides always win; source/dev binaries have no embedded digest.
-func configurePinnedLibrarianImage(imageVersion string) error {
-	if os.Getenv("OPENNEKO_LIBRARIAN_IMAGE") != "" {
-		return nil
-	}
-	pinned := strings.TrimSpace(version.LibrarianImage)
-	prefix := "ghcr.io/open-neko/neko-librarian:" + imageVersion + "@sha256:"
-	if !strings.HasPrefix(pinned, prefix) || len(pinned) != len(prefix)+64 {
-		return nil
-	}
-	for _, char := range pinned[len(prefix):] {
-		if !strings.ContainsRune("0123456789abcdef", char) {
-			return nil
-		}
-	}
-	return os.Setenv("OPENNEKO_LIBRARIAN_IMAGE", pinned)
-}
-
-const librarianCPULimitEnv = "OPENNEKO_LIBRARIAN_CPUS"
-
-// configureLibrarianCPULimit keeps the extractor bounded without requiring
-// more CPUs than Docker can allocate on the current host. Operators can still
-// provide an explicit fractional or lower limit through the environment.
-func configureLibrarianCPULimit(hostCPUs int) error {
-	if strings.TrimSpace(os.Getenv(librarianCPULimitEnv)) != "" {
-		return nil
-	}
-	if hostCPUs < 1 {
-		hostCPUs = 1
-	}
-	if hostCPUs > 4 {
-		hostCPUs = 4
-	}
-	return os.Setenv(librarianCPULimitEnv, strconv.Itoa(hostCPUs))
 }
 
 // agentImageRef resolves the agent sandbox image: an explicit override wins,

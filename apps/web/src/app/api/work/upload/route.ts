@@ -1,6 +1,6 @@
-import { createHash, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { enqueue, QUEUE, type LibraryExtractPayload } from "@neko/db/jobs";
+import { filesEnabled } from "@neko/llm/files";
+import { storeLibraryFile } from "@neko/llm/library/store";
 import { createLibraryDocument } from "@neko/llm/work";
 import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
@@ -53,13 +53,8 @@ export async function POST(request: Request) {
 
   const saved = await saveWorkUpload(orgId, threadId, file);
 
-  // Auto-add to the uploader's personal library: create the tracking row
-  // and queue the librarian. Best-effort — a library hiccup must never
-  // fail the upload itself. All accepted content is extracted and distilled.
-  // Callers can opt an upload out entirely with catalog=false (no library
-  // record at all — the file stays thread-only).
   const catalog = String(form.get("catalog") ?? "true") !== "false";
-  if (!catalog) {
+  if (!catalog || !filesEnabled()) {
     return NextResponse.json({
       file: {
         name: saved.name,
@@ -71,37 +66,22 @@ export async function POST(request: Request) {
   }
   try {
     const actor = await getCurrentActor();
-    const contentHash = createHash("sha256")
-      .update(Buffer.from(await file.arrayBuffer()))
-      .digest("hex");
-    const { document, created } = await createLibraryDocument({
+    if (!actor.userId) throw new Error("no signed-in user");
+    const stored = await storeLibraryFile({
+      orgId,
+      userId: actor.userId,
+      filename: saved.name,
+      data: Buffer.from(await file.arrayBuffer()),
+    });
+    await createLibraryDocument({
       orgId,
       userId: actor.userId,
       sourceThreadId: threadId,
       filename: saved.name,
-      relativePath: saved.relativePath.replace(/\\/g, "/"),
-      contentHash,
-      sizeBytes: saved.size,
+      relativePath: stored.relativePath,
+      contentHash: stored.contentHash,
+      sizeBytes: stored.size,
     });
-    // Extract and distill new documents, and retry a previously failed one on
-    // re-upload of the identical file (the environment may have been
-    // fixed since). Cataloged/skipped/in-flight documents are left alone.
-    // `uploaded` also covers recovery from the narrow insert-before-enqueue
-    // failure window: an identical re-upload must be able to restore the job.
-    if (created || document.status === "uploaded" || document.status === "failed") {
-      const payload: LibraryExtractPayload = {
-        orgId,
-        documentId: document.id,
-        runId: randomUUID(),
-        sequence: 0,
-      };
-      await enqueue(QUEUE.LIBRARY_EXTRACT, payload, {
-        retryLimit: 8,
-        retryDelay: 15,
-        retryBackoff: true,
-        singletonKey: `library-extract:${document.id}`,
-      });
-    }
   } catch (error) {
     console.warn(
       `[work-upload] library auto-add failed (upload succeeded): ${error instanceof Error ? error.message : error}`,

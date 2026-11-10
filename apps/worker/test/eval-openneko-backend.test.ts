@@ -234,16 +234,14 @@ describe("OpenNeko backend scorer", () => {
         },
       },
       {
-        ...evidenceBase(3, "library.search"),
-        operation: "library.search",
+        ...evidenceBase(3, "files.search"),
+        operation: "files.search",
         evidence: {
           returnedCount: 1,
-          concepts: [
+          files: [
             {
               id: ids.library,
               bodyDigest: workSemanticDigest("library"),
-              layer: "personal",
-              sourceDigests: [],
             },
           ],
         },
@@ -742,16 +740,14 @@ describe("OpenNeko backend scorer", () => {
     });
     const libraryId = "current-library-id";
     const librarySearch: WorkSemanticTraceEvent = {
-      ...evidenceBase(3, "library.search"),
-      operation: "library.search",
+      ...evidenceBase(3, "files.search"),
+      operation: "files.search",
       evidence: {
         returnedCount: 1,
-        concepts: [
+        files: [
           {
             id: libraryId,
             bodyDigest: workSemanticDigest("current library"),
-            layer: "personal",
-            sourceDigests: [],
           },
         ],
       },
@@ -1002,11 +998,11 @@ describe("OpenNeko backend scorer", () => {
       treatment: "adversarial",
     });
     const librarySearch: WorkSemanticTraceEvent = {
-      ...evidenceBase(1, "library.search"),
-      operation: "library.search",
+      ...evidenceBase(1, "files.search"),
+      operation: "files.search",
       evidence: {
         returnedCount: 1,
-        concepts: [{ id: "library-id", bodyDigest: workSemanticDigest("body") }],
+        files: [{ id: "library-id", bodyDigest: workSemanticDigest("body") }],
       },
     };
     const graphjinRead: WorkSemanticTraceEvent = {
@@ -1163,17 +1159,15 @@ describe("OpenNeko backend scorer", () => {
       treatment: "adversarial",
     });
     const librarySearch: WorkSemanticTraceEvent = {
-      ...evidenceBase(1, "library.search"),
-      operation: "library.search",
+      ...evidenceBase(1, "files.search"),
+      operation: "files.search",
       runKind: "workflow",
       evidence: {
         returnedCount: 1,
-        concepts: [
+        files: [
           {
             id: "library-id",
             bodyDigest: workSemanticDigest("body"),
-            layer: "personal",
-            sourceDigests: [],
           },
         ],
       },

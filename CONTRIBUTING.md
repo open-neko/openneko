@@ -24,9 +24,8 @@ apps/
   openneko/            `openneko` CLI + stack supervisor (Go), distributed as a single binary
 packages/
   db/                  Drizzle ORM client, schema, migrations, job queue
-  llm/                 Providers, agents, classifier, GraphJin work support; document
-                       library + OKF tooling (src/library), bundled skills and starter
-                       knowledge packs (assets/)
+  llm/                 Providers, agents, classifier, GraphJin work support; Library
+                       file storage (src/library), bundled skills (assets/)
   plugin-install/      Manifest, secrets store, marketplace client, install orchestrator (TS — consumed by worker)
   plugin-types/        Plugin RPC schemas (zod) + manifest types — shared with plugin authors
 db/

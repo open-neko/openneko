@@ -19,8 +19,6 @@ beforeAll(async () => {
   await state.pool.query(`CREATE EXTENSION IF NOT EXISTS vector;
     CREATE TABLE work_memory (id uuid PRIMARY KEY, org_id text, text text, embedding vector, embedding_model text,
       archived_at timestamptz, suppressed boolean DEFAULT false, expires_at timestamptz, updated_at timestamptz DEFAULT now());
-    CREATE TABLE library_concept (id uuid PRIMARY KEY, org_id text, title text, description text, body text,
-      embedding vector, embedding_model text, archived_at timestamptz, updated_at timestamptz DEFAULT now());
     CREATE TABLE skill_embedding (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), org_id text, skill_name text,
       document text DEFAULT '', embedding vector, embedding_model text, updated_at timestamptz DEFAULT now());`);
 });
@@ -70,12 +68,6 @@ it.skipIf(!url)('durably dispatches, deduplicates, retries, scopes updates and r
   state.model = 'model-b';
   await runEmbeddingIndexJob(job);
   expect((await state.pool.query('SELECT embedding_model FROM work_memory WHERE id=$1', [id])).rows[0].embedding_model).toBe('model-b');
-  const conceptId = '00000000-0000-4000-8000-000000000002';
-  await state.pool.query('INSERT INTO library_concept(id,org_id,title,description,body) VALUES($1,$2,$3,$4,$5)',
-    [conceptId, 'org-b', 'Title', null, 'Body']);
-  await runEmbeddingIndexJob({ kind: 'concept', orgId: 'org-b', id: conceptId });
-  expect(state.embed).toHaveBeenLastCalledWith('Title\n\nBody', 150_000);
-  expect((await state.pool.query('SELECT embedding IS NOT NULL AS indexed FROM library_concept WHERE id=$1', [conceptId])).rows[0].indexed).toBe(true);
   await state.pool.query('UPDATE work_memory SET embedding=NULL, archived_at=now() WHERE id=$1', [id]);
   const calls = state.embed.mock.calls.length;
   await runEmbeddingIndexJob(job);

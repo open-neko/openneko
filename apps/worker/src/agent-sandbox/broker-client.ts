@@ -101,12 +101,6 @@ export class BrokerControlPlane implements AgentControlPlane {
     return this.post("/v1/memory/search", args);
   }
 
-  searchLibraryForRun(
-    args: Parameters<AgentControlPlane["searchLibraryForRun"]>[0],
-  ): ReturnType<AgentControlPlane["searchLibraryForRun"]> {
-    return this.post("/v1/library/search", args);
-  }
-
   searchFilesForRun(
     args: Parameters<AgentControlPlane["searchFilesForRun"]>[0],
   ): ReturnType<AgentControlPlane["searchFilesForRun"]> {

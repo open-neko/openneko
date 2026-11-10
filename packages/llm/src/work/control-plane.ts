@@ -37,7 +37,6 @@ import {
   searchWorkMemoryByContext,
   updateWorkMemoryForRun,
 } from "./memory";
-import { searchLibraryForRun } from "./library";
 import {
   queryFileTablesForRun,
   readFileForRun,
@@ -81,10 +80,6 @@ type UpdateWorkMemoryInput = Parameters<typeof updateWorkMemoryForRun>[0];
 type WorkMemorySearchArgs = Parameters<typeof searchWorkMemoryByContext>[0];
 type WorkMemorySearchResult = Awaited<
   ReturnType<typeof searchWorkMemoryByContext>
->[number];
-type LibrarySearchArgs = Parameters<typeof searchLibraryForRun>[0];
-type LibrarySearchResult = Awaited<
-  ReturnType<typeof searchLibraryForRun>
 >[number];
 
 /**
@@ -564,7 +559,6 @@ export interface AgentControlPlane {
   searchWorkMemoryByContext(
     args: WorkMemorySearchArgs,
   ): Promise<WorkMemorySearchResult[]>;
-  searchLibraryForRun(args: LibrarySearchArgs): Promise<LibrarySearchResult[]>;
   searchFilesForRun(args: FileSearchForRunArgs): Promise<FileSearchResult>;
   readFileForRun(args: FileReadForRunArgs): Promise<FileReadResult>;
   queryFileTablesForRun(args: FileSqlForRunArgs): Promise<FileSqlResult>;
@@ -1029,12 +1023,6 @@ export class InProcessControlPlane implements AgentControlPlane {
   }): Promise<Array<{ name: string; score: number }>> {
     const { searchSkillsForRun } = await import("./skill-index");
     return searchSkillsForRun(input);
-  }
-
-  async searchLibraryForRun(
-    args: LibrarySearchArgs,
-  ): Promise<LibrarySearchResult[]> {
-    return searchLibraryForRun(args);
   }
 
   async searchFilesForRun(args: FileSearchForRunArgs): Promise<FileSearchResult> {

@@ -1,43 +1,73 @@
-import { randomUUID } from "node:crypto";
-import { enqueue, QUEUE, type LibraryExtractPayload } from "@neko/db/jobs";
-import { listStaleUploadedLibraryDocuments } from "@neko/llm";
+import { readFile, rm } from "node:fs/promises";
+import { join, resolve, sep } from "node:path";
+import {
+  getOrgAgentRoot,
+  listLibraryDocumentsOutsideStore,
+  markLibraryDocumentStored,
+  markLibraryDocumentFailed,
+} from "@neko/llm";
+import { storeLibraryFile } from "@neko/llm/library/store";
 
-const UPLOAD_QUEUE_GRACE_MS = 5 * 60 * 1_000;
+function workspaceUploadPath(orgId: string, relativePath: string): string {
+  const orgRoot = resolve(getOrgAgentRoot(orgId));
+  const absolute = resolve(join(orgRoot, relativePath.replace(/\\/g, "/").replace(/^\/+/, "")));
+  if (!absolute.startsWith(orgRoot + sep)) throw new Error("library upload path leaves the org workspace");
+  return absolute;
+}
 
-type RecoveryDependencies = {
-  list: typeof listStaleUploadedLibraryDocuments;
-  enqueue: typeof enqueue;
+type MoveDependencies = {
+  list: typeof listLibraryDocumentsOutsideStore;
+  read: (orgId: string, relativePath: string) => Promise<Buffer>;
+  save: typeof storeLibraryFile;
+  moved: typeof markLibraryDocumentStored;
+  failed: typeof markLibraryDocumentFailed;
+  removeOriginal: (orgId: string, relativePath: string) => Promise<void>;
 };
 
-const defaultDependencies: RecoveryDependencies = {
-  list: listStaleUploadedLibraryDocuments,
-  enqueue,
+const defaultDependencies: MoveDependencies = {
+  list: listLibraryDocumentsOutsideStore,
+  read: (orgId, relativePath) => readFile(workspaceUploadPath(orgId, relativePath)),
+  save: storeLibraryFile,
+  moved: markLibraryDocumentStored,
+  failed: markLibraryDocumentFailed,
+  removeOriginal: (orgId, relativePath) => rm(workspaceUploadPath(orgId, relativePath), { force: true }),
 };
 
-/** Recover the narrow committed-upload-before-queue-send failure window. */
-export async function recoverUnqueuedLibraryUploads(
-  now: Date = new Date(),
-  overrides: Partial<RecoveryDependencies> = {},
-): Promise<number> {
+// Thread attachments keep their thread copy; Library-only uploads leave the org workspace.
+export async function moveLibraryDocumentsToStore(
+  overrides: Partial<MoveDependencies> = {},
+): Promise<{ moved: number; missing: number }> {
   const deps = { ...defaultDependencies, ...overrides };
-  const documents = await deps.list(
-    new Date(now.getTime() - UPLOAD_QUEUE_GRACE_MS),
-  );
-  let enqueued = 0;
-  for (const document of documents) {
-    const payload: LibraryExtractPayload = {
-      orgId: document.orgId,
-      documentId: document.documentId,
-      runId: randomUUID(),
-      sequence: 0,
-    };
-    const jobId = await deps.enqueue(QUEUE.LIBRARY_EXTRACT, payload, {
-      retryLimit: 8,
-      retryDelay: 15,
-      retryBackoff: true,
-      singletonKey: `library-extract:${document.documentId}`,
-    });
-    if (jobId) enqueued += 1;
+  let moved = 0;
+  let missing = 0;
+  for (const document of await deps.list()) {
+    if (!document.userId) {
+      missing += 1;
+      await deps.failed({
+        orgId: document.orgId,
+        id: document.documentId,
+        error: "This document has no owner. Remove it and upload it again.",
+      });
+      continue;
+    }
+    let data: Buffer;
+    try {
+      data = await deps.read(document.orgId, document.relativePath);
+    } catch {
+      missing += 1;
+      await deps.failed({
+        orgId: document.orgId,
+        id: document.documentId,
+        error: "The original file is missing. Remove this document and upload it again.",
+      });
+      continue;
+    }
+    const stored = await deps.save({ orgId: document.orgId, userId: document.userId, filename: document.filename, data });
+    await deps.moved({ orgId: document.orgId, id: document.documentId, relativePath: stored.relativePath });
+    if (document.relativePath.startsWith("library/uploads/")) {
+      await deps.removeOriginal(document.orgId, document.relativePath).catch(() => {});
+    }
+    moved += 1;
   }
-  return enqueued;
+  return { moved, missing };
 }

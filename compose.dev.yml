@@ -14,10 +14,6 @@ services:
   records-db:
     command: [postgres, -c, archive_mode=off, -c, wal_compression=on, -c, temp_file_limit=5GB]
 
-  librarian:
-    ports:
-      - "127.0.0.1:${OPENNEKO_LIBRARIAN_PORT:-5001}:5001"
-
   records-graphjin-config-init:
     volumes: !override
       - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/records-graphjin:/config
