@@ -195,6 +195,29 @@ has the `neko-db-data` volume and no database URL, `openneko start` and
 `openneko upgrade` keep running `neko-db` with that volume, so the data stays
 where it is. A new prod install never gets `neko-db`.
 
+To move such an install to a database that you run, prepare the database as
+in [OpenNeko's database](#opennekos-database), with the stack running. Then:
+
+```bash
+openneko database move --database-url 'postgres://USER:PASSWORD@HOST:5432/DATABASE?sslmode=verify-full' --confirm MOVE
+```
+
+The command does these steps in order:
+
+1. It checks the new database. It stops when the URL's login already owns
+   tables there.
+2. It stops web, worker and `openneko-serve`, and runs the start steps on the
+   new database.
+3. It takes a backup of `neko-db` into the usual backup folder.
+4. It removes the `neko-db` container and restores the backup into the new
+   database.
+5. It starts the stack on the new database and stores the URL.
+
+Until step 5, the install still uses `neko-db`. When a step fails, fix the
+cause and run `openneko start -d` to go back, or run the move again. The
+`neko-db-data` volume stays. Remove it when you no longer need it; the command
+prints its name.
+
 ## Solution packs and skills
 
 ```bash

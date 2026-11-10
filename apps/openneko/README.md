@@ -95,7 +95,9 @@ from `OPENNEKO_DATABASE_URL_FILE` or `database_url` in the host config.json,
 and give it to the containers as the Compose secret `database-url`. A prod
 install from an older release, with the `neko-db-data` volume and no URL,
 keeps its bundled `neko-db` through the `bundled-db.yml` overlay. Dev and demo
-modes always load that overlay.
+modes always load that overlay. `openneko database move` moves such an install
+to a database URL: it takes a backup of `neko-db`, restores it into the URL's
+database, and stores the URL only after the stack starts on it.
 
 ### Backups
 

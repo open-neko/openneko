@@ -18,7 +18,7 @@ var errDatabaseNotReady = errors.New("OpenNeko's database is not ready; run the 
 func newDatabaseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "database",
-		Short: "Check OpenNeko's database",
+		Short: "Check OpenNeko's database, or move a bundled one to a database that you run",
 	}
 	cmd.AddCommand(&cobra.Command{
 		Use:   "check",
@@ -32,7 +32,7 @@ func newDatabaseCmd() *cobra.Command {
 			return checkDatabase(cmd.Context(), target.DSN(), cmd.OutOrStdout())
 		},
 	})
-	cmd.AddCommand(newDatabaseInfoCmd(), newDatabaseDumpCmd(), newDatabaseRestoreCmd())
+	cmd.AddCommand(newDatabaseInfoCmd(), newDatabaseDumpCmd(), newDatabaseRestoreCmd(), newDatabaseEmptyCmd(), newDatabaseMoveCmd())
 	return cmd
 }
 
