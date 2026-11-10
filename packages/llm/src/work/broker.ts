@@ -274,6 +274,44 @@ async function handle(
         }),
       );
     }
+    case "/v1/files/search": {
+      const limit = typeof body.limit === "number" ? body.limit : undefined;
+      return send(
+        res,
+        200,
+        await cp.searchFilesForRun({
+          orgId: binding.orgId,
+          runId: binding.runId,
+          query: String(body.query ?? ""),
+          ...(limit !== undefined ? { limit } : {}),
+        }),
+      );
+    }
+    case "/v1/files/read": {
+      const offset = typeof body.offset === "number" ? body.offset : undefined;
+      const maxChars = typeof body.maxChars === "number" ? body.maxChars : undefined;
+      return send(
+        res,
+        200,
+        await cp.readFileForRun({
+          orgId: binding.orgId,
+          runId: binding.runId,
+          path: String(body.path ?? ""),
+          ...(offset !== undefined ? { offset } : {}),
+          ...(maxChars !== undefined ? { maxChars } : {}),
+        }),
+      );
+    }
+    case "/v1/files/sql":
+      return send(
+        res,
+        200,
+        await cp.queryFileTablesForRun({
+          orgId: binding.orgId,
+          runId: binding.runId,
+          sql: String(body.sql ?? ""),
+        }),
+      );
     case "/v1/graphjin/query": {
       const query = String(body.query ?? "");
       const variables =

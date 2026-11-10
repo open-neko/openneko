@@ -1688,6 +1688,111 @@ export function buildLibraryServer(
   });
 }
 
+export type FilesServerOptions = {
+  controlPlane?: AgentControlPlane;
+};
+
+function toolText(value: unknown) {
+  return { content: [{ type: "text" as const, text: JSON.stringify(value) }] };
+}
+
+function toolError(err: unknown) {
+  return {
+    isError: true,
+    content: [{ type: "text" as const, text: err instanceof Error ? err.message : String(err) }],
+  };
+}
+
+export function buildFilesServer(ctx: WorkMemoryContext, options: FilesServerOptions = {}) {
+  const controlPlane = requireControlPlane(options.controlPlane);
+  const runId = ctx.runId ?? null;
+  const search = defineMcpTool(
+    "search",
+    [
+      "Keyword search over the files the user uploaded: PDF, Word, PowerPoint,",
+      "Excel, CSV, Markdown and text. Returns the best files with matching",
+      "passages and where they are (page, slide, sheet or section). For a",
+      "spreadsheet or CSV file it also lists its SQL tables and columns.",
+    ].join(" "),
+    {
+      query: z.string().min(1).max(800),
+      limit: z.number().int().min(1).max(20).optional(),
+    },
+    async (args) => {
+      try {
+        return toolText(
+          await controlPlane.searchFilesForRun({
+            orgId: ctx.orgId,
+            runId,
+            query: args.query,
+            ...(args.limit !== undefined ? { limit: args.limit } : {}),
+          }),
+        );
+      } catch (err) {
+        return toolError(err);
+      }
+    },
+  );
+  const readText = defineMcpTool(
+    "read_text",
+    [
+      "Read the text of one of the user's files, with page, slide and sheet",
+      "markers. Use the path from search. A long file comes back in parts:",
+      "when truncated is true, call again with offset set to offset plus the",
+      "length of the text already read.",
+    ].join(" "),
+    {
+      path: z.string().min(1).max(1024),
+      offset: z.number().int().min(0).optional(),
+      maxChars: z.number().int().min(1000).max(100000).optional(),
+    },
+    async (args) => {
+      try {
+        return toolText(
+          await controlPlane.readFileForRun({
+            orgId: ctx.orgId,
+            runId,
+            path: args.path,
+            ...(args.offset !== undefined ? { offset: args.offset } : {}),
+            ...(args.maxChars !== undefined ? { maxChars: args.maxChars } : {}),
+          }),
+        );
+      } catch (err) {
+        return toolError(err);
+      }
+    },
+  );
+  const queryTables = defineMcpTool(
+    "query_tables",
+    [
+      "Run one read-only DuckDB SELECT or WITH query over the sheet tables of",
+      "the user's spreadsheet and CSV files. Use the table names that search",
+      "or read_text list. Each sheet has a raw table (name ends in __raw) with",
+      "every cell as text by column letter. A sheet with a header row also has",
+      "a typed table with named columns. Use it for sums, counts, filters and",
+      "joins across sheets.",
+    ].join(" "),
+    {
+      sql: z.string().min(1).max(20000),
+    },
+    async (args) => {
+      try {
+        return toolText(
+          await controlPlane.queryFileTablesForRun({ orgId: ctx.orgId, runId, sql: args.sql }),
+        );
+      } catch (err) {
+        return toolError(err);
+      }
+    },
+  );
+
+  return createMcpServer({
+    name: "neko_files",
+    version: "1.0.0",
+    tools: [search, readText, queryTables],
+  });
+}
+
 /**
  * Plugin-installed action kinds, surfaced to the agent as MCP tools.
  * The worker collects these from PluginRegistry at turn start and

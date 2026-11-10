@@ -107,6 +107,24 @@ export class BrokerControlPlane implements AgentControlPlane {
     return this.post("/v1/library/search", args);
   }
 
+  searchFilesForRun(
+    args: Parameters<AgentControlPlane["searchFilesForRun"]>[0],
+  ): ReturnType<AgentControlPlane["searchFilesForRun"]> {
+    return this.post("/v1/files/search", args);
+  }
+
+  readFileForRun(
+    args: Parameters<AgentControlPlane["readFileForRun"]>[0],
+  ): ReturnType<AgentControlPlane["readFileForRun"]> {
+    return this.post("/v1/files/read", args);
+  }
+
+  queryFileTablesForRun(
+    args: Parameters<AgentControlPlane["queryFileTablesForRun"]>[0],
+  ): ReturnType<AgentControlPlane["queryFileTablesForRun"]> {
+    return this.post("/v1/files/sql", args);
+  }
+
   queryGraphjinRead(
     input: Parameters<AgentControlPlane["queryGraphjinRead"]>[0],
   ): ReturnType<AgentControlPlane["queryGraphjinRead"]> {

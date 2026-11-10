@@ -3,6 +3,7 @@ package config
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -179,4 +180,22 @@ func OpenShellDBPassword(overrideDir string) (string, error) {
 	}
 	sum := sha256.Sum256(append(key, []byte("openneko:openshell-db:v1")...))
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// SigningSecret matches deriveSigningSecret in packages/secret-crypt. It
+// never creates the key file: a reader with a missing key must fail.
+func SigningSecret(overrideDir, label string) ([]byte, error) {
+	path := keyPath(overrideDir)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	secret := strings.TrimSpace(string(raw))
+	if secret == "" {
+		return nil, fmt.Errorf("secret-key at %s is empty", path)
+	}
+	sum := sha256.Sum256([]byte(secret))
+	mac := hmac.New(sha256.New, sum[:])
+	mac.Write([]byte(label))
+	return mac.Sum(nil), nil
 }

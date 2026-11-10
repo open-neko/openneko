@@ -5,6 +5,7 @@
   "neko-graphjin": 60,
   "records-graphjin": 60,
   "neko-cli": 10,
+  "neko-serve": 50,
   "neko-db": 165,
   "records-db": 165,
   "neko-backup": 190,

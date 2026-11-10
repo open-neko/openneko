@@ -151,6 +151,7 @@ openneko status                    # docker compose ps proxy
 openneko logs [service…] [-f]
 openneko stop [--volumes]          # --volumes wipes data
 openneko migrate                   # apply pending migrations against running neko-db
+openneko serve                     # user files and file search (runs as the openneko-serve container)
 openneko seed adventureworks       # one-shot demo data load (already done by --mode demo)
 openneko [--instance name] graphjin import <customer-config.yml|->
 openneko reset [--all]             # tear down + clear local config (--all also wipes secrets/marketplaces)
@@ -161,8 +162,8 @@ openneko version
 Modes:
 
 - **`prod`** (default) — the production control, records, customer-data,
-  backup/storage, and OpenShell services. Ten containers remain running after
-  the four startup jobs complete.
+  backup/storage, file, and OpenShell services. Eleven containers remain
+  running after the four startup jobs complete.
 - **`dev`** — source-checkout workflow: use `pnpm dev:setup` for Docker-only dependencies plus AdventureWorks demo data, then `pnpm dev` for hot-reloaded web/worker from source.
 - **`demo`** — core + AdventureWorks: `adventureworks-db`, `adventureworks-init`, `neko-adventureworks-seed`. The full live-trial flow (continuous order trickle + scenario injector) lives in `compose.adventureworks.yml` and needs the [Build from source](#build-from-source-advanced) path.
 
@@ -238,6 +239,25 @@ background job embeds stored rows; until it reaches a row, and whenever the
 service fails, search uses full-text search. A change of model re-embeds
 every row. To run a model on your own machine, see
 `recipes/embedding-gemma/README.md`.
+
+### File search
+
+The `openneko-serve` container keeps each user's files in a private folder
+on the `openneko-files` volume. The assistant gets three tools over the files
+of the user who owns the run:
+
+- search: keyword search over PDF, Word, PowerPoint, Excel, CSV, Markdown and
+  text files, with the matching passages
+- read text: the text of one file, with page, slide and sheet markers
+- query sheet tables: one read-only DuckDB query over the sheets of
+  spreadsheet and CSV files
+
+The keyword index is in `neko-db`. The sheet tables are Parquet files on the
+same volume. OpenNeko rebuilds both from the files, so you can delete them.
+DuckDB runs with external access off and reads only the tables of that user.
+Web and worker reach the service at `OPENNEKO_SERVE_URL` with a token that
+expires after one minute. When `OPENNEKO_SERVE_URL` is not set, the assistant
+does not get the file tools.
 
 
 ## Upgrade
@@ -326,8 +346,8 @@ The packaged stack publishes only two host ports:
 - Web app: `3000` by default
 - OpenShell gateway: loopback-only `18080` by default
 
-Postgres, GraphJin, worker broker, backup API, and demo data services remain on
-the private Docker network. Web is the only port intended to be reachable from
+Postgres, GraphJin, worker broker, backup API, file service, and demo data
+services remain on the private Docker network. Web is the only port intended to be reachable from
 another machine; the OpenShell host mapping exists only for local sandbox
 callbacks.
 

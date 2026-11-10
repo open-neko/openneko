@@ -797,7 +797,7 @@ export async function searchLibraryForRun(input: {
   });
 }
 
-async function resolveRunOwnerUserId(
+export async function resolveRunOwnerUserId(
   orgId: string,
   runId: string,
 ): Promise<string | null> {

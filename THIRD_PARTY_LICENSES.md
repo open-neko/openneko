@@ -27,7 +27,7 @@ Those components remain under their own licenses.
 
 ## Other notable dependencies
 
-OpenNeko's runtime dependencies are listed in the various `package.json` files across the monorepo. The substantial ones with non-Apache-2.0 licenses:
+OpenNeko's runtime dependencies are listed in the `package.json` and `go.mod` files across the monorepo. The substantial ones with non-Apache-2.0 licenses:
 
 | Package | License | Notes |
 |---|---|---|
@@ -35,6 +35,10 @@ OpenNeko's runtime dependencies are listed in the various `package.json` files a
 | `next` | MIT | Web app framework |
 | `zod` | MIT | Schema validation |
 | `drizzle-orm` | Apache-2.0 | DB schema + queries |
+| DuckDB CLI | MIT | Shipped in the `neko-serve` image; runs SQL over sheet tables |
+| `github.com/xuri/excelize/v2` | BSD-3-Clause | Reads Excel files in `openneko serve` |
+| `github.com/ledongthuc/pdf` | BSD-3-Clause | Reads PDF text in `openneko serve` |
+| `github.com/parquet-go/parquet-go` | Apache-2.0 | Writes sheet tables as Parquet |
 
 Run `pnpm licenses ls -P` from the repo root to see the full transitive list at a given snapshot.
 

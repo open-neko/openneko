@@ -33,6 +33,7 @@ import {
   buildSourceConfigManagerServer,
   buildUserManagerServer,
   buildLibraryServer,
+  buildFilesServer,
   buildRenderCardsServer,
   buildRecordsReadServer,
   buildSkillBuilderServer,
@@ -41,6 +42,7 @@ import {
   type PluginActionDescriptor,
   type PackActionDescriptor,
 } from "./tools";
+import { filesEnabled } from "../files/client";
 
 export interface RunAgentBackendInput {
   /** Agent backend. In the sandbox it is reconstructed from config. */
@@ -194,6 +196,7 @@ export async function runAgentBackend(
         // Ax's discover() reaches the semantic skill index through this server.
         ...(backend.id === "ax" ? { neko_guides: buildSkillSearchServer({ orgId, runId }, { controlPlane }) } : {}),
         neko_library: buildLibraryServer({ orgId, threadId, runId }, { controlPlane }),
+        ...(filesEnabled() ? { neko_files: buildFilesServer({ orgId, threadId, runId }, { controlPlane }) } : {}),
         neko_records: buildRecordsReadServer({ orgId, runId, controlPlane }),
         neko_workflow_builder: buildWorkflowBuilderServer({
           orgId,

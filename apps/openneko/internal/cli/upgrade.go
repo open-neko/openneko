@@ -426,6 +426,7 @@ func oldOpenNekoImageRefs(imageListOutput, targetTag string) []string {
 func openNekoImageRepos() map[string]bool {
 	return map[string]bool{
 		"ghcr.io/open-neko/neko-cli":    true,
+		"ghcr.io/open-neko/neko-serve":  true,
 		"ghcr.io/open-neko/neko-db":     true,
 		"ghcr.io/open-neko/records-db":  true,
 		"ghcr.io/open-neko/neko-backup": true,

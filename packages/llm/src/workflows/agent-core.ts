@@ -12,9 +12,11 @@ import {
   buildGraphjinAgentServer,
   buildGraphjinMcpServer,
   buildLibraryServer,
+  buildFilesServer,
   buildRecordsReadServer,
   buildWorkMemoryServer,
 } from "../work/tools";
+import { filesEnabled } from "../files/client";
 import { buildWorkflowActionServer } from "./action-tool-server";
 import { buildWorkflowOutputServer } from "./output-tool-server";
 import { formatScriptStepResults, runScriptSteps } from "./script-steps";
@@ -126,6 +128,9 @@ export async function runWorkflowAgentBackend(
           { orgId, threadId, runId },
           { controlPlane },
         ),
+        ...(filesEnabled()
+          ? { neko_files: buildFilesServer({ orgId, threadId, runId }, { controlPlane }) }
+          : {}),
         neko_records: buildRecordsReadServer({ orgId, runId, controlPlane }),
       }
     : undefined;

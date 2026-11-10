@@ -503,6 +503,22 @@ COPY --from=go-build /out/openneko /openneko
 ENTRYPOINT ["/openneko"]
 CMD ["--help"]
 
+# ─── 5d. neko-serve runtime ────────────────────────────────────────────
+# `openneko serve`: each user's private files, their keyword index in neko-db
+# and SQL over sheet tables. DuckDB needs libstdc++, so the base is the
+# distroless cc image. /data is created here so a fresh named volume is owned
+# by the non-root user.
+FROM debian:bookworm-slim AS serve-data
+RUN mkdir -p /data/files /data/file-index && chown -R 1001:1001 /data
+
+FROM gcr.io/distroless/cc-debian12:latest AS neko-serve
+COPY --from=go-build /out/openneko /openneko
+COPY --from=duckdb-bin /usr/local/bin/duckdb /usr/local/bin/duckdb
+COPY --from=serve-data --chown=1001:1001 /data /data
+USER 1001:1001
+ENTRYPOINT ["/openneko"]
+CMD ["serve"]
+
 # ─── 6. neko-graphjin runtime ──────────────────────────────────────────
 # OpenNeko's own GraphJin instance — exposes the metadata Postgres
 # (workflow_definition, workflow_run, workflow_output, observation,

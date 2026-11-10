@@ -21,12 +21,13 @@ x-neko-app-env: &neko-app-env
   RECORDS_PG_PASSWORD: ${OPENNEKO_RECORDS_PG_PASSWORD:-records-secret}
   RECORDS_PG_DATABASE: ${OPENNEKO_RECORDS_PG_DATABASE:-records}
   OPENNEKO_RECORDS_GRAPHJIN_URL: http://records-graphjin:8090
+  OPENNEKO_SERVE_URL: http://openneko-serve:8090
   NEKO_EMBEDDING_URL: ${NEKO_EMBEDDING_URL:-}
   NEKO_EMBEDDING_MODEL: ${NEKO_EMBEDDING_MODEL:-}
   NEKO_EMBEDDING_API_KEY: ${NEKO_EMBEDDING_API_KEY:-}
   NEKO_EMBEDDING_DIMENSIONS: ${NEKO_EMBEDDING_DIMENSIONS:-}
-  NO_PROXY: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,librarian,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
-  no_proxy: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,librarian,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
+  NO_PROXY: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,librarian,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
+  no_proxy: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,librarian,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
 
 services:
   neko-db:
@@ -555,6 +556,32 @@ services:
       retries: 10
       start_period: 60s
 
+  # openneko serve: each user's private files, their keyword index in
+  # neko-db and SQL over sheet tables. Web and worker call it with
+  # short-lived tokens signed from the secret-key.
+  openneko-serve:
+    image: ghcr.io/open-neko/neko-serve:${OPENNEKO_VERSION:-latest}
+    command: ["serve"]
+    depends_on:
+      neko-migrate:
+        condition: service_completed_successfully
+      openneko-config-init:
+        condition: service_completed_successfully
+    environment:
+      NEKO_PG_HOST: neko-db
+      NEKO_PG_PORT: "5432"
+      NEKO_PG_USER: neko
+      NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
+      NEKO_PG_DATABASE: neko
+      XDG_CONFIG_HOME: /config
+      OPENNEKO_SERVE_ADDR: 0.0.0.0:8090
+      OPENNEKO_FILES_DIR: /data/files
+      OPENNEKO_FILES_INDEX_DIR: /data/file-index
+    volumes:
+      - openneko-config:/config/openneko:ro
+      - openneko-files:/data
+    restart: unless-stopped
+
   web:
     image: ghcr.io/open-neko/neko-web:${OPENNEKO_VERSION:-latest}
     depends_on:
@@ -670,6 +697,7 @@ volumes:
   records-db-data:
   records-db-socket:
   openneko-config:
+  openneko-files:
   openneko-graphjin-cli:
   openneko-records-graphjin:
   openneko-agent-home:

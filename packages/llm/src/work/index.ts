@@ -29,6 +29,7 @@ export {
   buildGraphjinMcpServer,
   buildGraphjinReadServer,
   buildLibraryServer,
+  buildFilesServer,
   buildRecordsReadServer,
   buildPluginActionServer,
   buildPackActionServer,

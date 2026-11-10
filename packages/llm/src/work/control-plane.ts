@@ -38,6 +38,15 @@ import {
   updateWorkMemoryForRun,
 } from "./memory";
 import { searchLibraryForRun } from "./library";
+import {
+  queryFileTablesForRun,
+  readFileForRun,
+  searchFilesForRun,
+  type FileReadForRunArgs,
+  type FileSearchForRunArgs,
+  type FileSqlForRunArgs,
+} from "./files";
+import type { FileReadResult, FileSearchResult, FileSqlResult } from "../files/client";
 import type {
   GraphjinAgentResponse,
   GraphjinAgentStatus,
@@ -556,6 +565,9 @@ export interface AgentControlPlane {
     args: WorkMemorySearchArgs,
   ): Promise<WorkMemorySearchResult[]>;
   searchLibraryForRun(args: LibrarySearchArgs): Promise<LibrarySearchResult[]>;
+  searchFilesForRun(args: FileSearchForRunArgs): Promise<FileSearchResult>;
+  readFileForRun(args: FileReadForRunArgs): Promise<FileReadResult>;
+  queryFileTablesForRun(args: FileSqlForRunArgs): Promise<FileSqlResult>;
   queryGraphjinRead(input: {
     orgId: string;
     /** Trusted work-run binding used to mint the same actor identity as chat. */
@@ -1023,6 +1035,18 @@ export class InProcessControlPlane implements AgentControlPlane {
     args: LibrarySearchArgs,
   ): Promise<LibrarySearchResult[]> {
     return searchLibraryForRun(args);
+  }
+
+  async searchFilesForRun(args: FileSearchForRunArgs): Promise<FileSearchResult> {
+    return searchFilesForRun(args);
+  }
+
+  async readFileForRun(args: FileReadForRunArgs): Promise<FileReadResult> {
+    return readFileForRun(args);
+  }
+
+  async queryFileTablesForRun(args: FileSqlForRunArgs): Promise<FileSqlResult> {
+    return queryFileTablesForRun(args);
   }
 
   async queryGraphjinRead(input: {
