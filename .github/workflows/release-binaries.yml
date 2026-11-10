@@ -92,15 +92,6 @@ jobs:
             target: agent
             platform: linux/arm64
             runner: ubuntu-24.04-arm
-          # plugin sandbox base image (own Dockerfile, single stage).
-          - image: plugin-base
-            file: docker/plugin-base.Dockerfile
-            platform: linux/amd64
-            runner: ubuntu-22.04
-          - image: plugin-base
-            file: docker/plugin-base.Dockerfile
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
           - image: openshell-supervisor
             file: docker/openshell-supervisor.Dockerfile
             platform: linux/amd64
@@ -193,7 +184,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [neko-web, neko-worker, neko-graphjin, neko-cli, neko-serve, neko-db, agent, plugin-base, openshell-supervisor]
+        image: [neko-web, neko-worker, neko-graphjin, neko-cli, neko-serve, neko-db, agent, openshell-supervisor]
     steps:
       - name: Resolve release tag
         id: tag
@@ -278,7 +269,7 @@ jobs:
             "${{ matrix.arch }}" \
             "$MAX_MIB" \
             neko-web neko-worker neko-graphjin neko-cli neko-serve \
-            neko-db agent plugin-base openshell-supervisor \
+            neko-db agent openshell-supervisor \
             postgres:16-alpine busybox:latest \
             "ghcr.io/nvidia/openshell/gateway:${OPENSHELL_VERSION:-0.1.2}"
 

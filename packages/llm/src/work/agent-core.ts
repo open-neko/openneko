@@ -18,7 +18,6 @@ import { buildAskUserQuestionServer } from "./interaction-server";
 import {
   buildPluginActionServer,
   buildPackActionServer,
-  buildPluginManagerServer,
   buildAuditViewerServer,
   buildChannelManagerServer,
   buildDataSourceManagerServer,
@@ -49,7 +48,7 @@ export interface RunAgentBackendInput {
   /** Skill names the run's actor holds. Undefined means every skill. */
   allowedSkills?: readonly string[];
   pluginActions: readonly PluginActionDescriptor[];
-  /** Installed pack actions, discovered independently of plugins. */
+  /** Installed pack actions, discovered independently of built-in actions. */
   packActions?: readonly PackActionDescriptor[];
   /** Mount the GraphJin source-config MCP server for this admin run. */
   sourceConfigEnabled?: boolean;
@@ -165,12 +164,6 @@ export async function runAgentBackend(
           orgId,
           createdByThreadId: threadId,
           createdByRunId: runId,
-          emit,
-          controlPlane,
-        }),
-        neko_plugin_manager: buildPluginManagerServer({
-          orgId,
-          runId,
           emit,
           controlPlane,
         }),

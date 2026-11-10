@@ -363,16 +363,8 @@ func normalizeUpgradeImageVersion(raw string) string {
 func extraUpgradeImageRefs(version string) []string {
 	return uniqueStrings([]string{
 		agentImageRef(os.Getenv("OPENNEKO_AGENT_IMAGE"), version),
-		pluginBaseImageRef(os.Getenv("OPENNEKO_PLUGIN_BASE_IMAGE"), version),
 		supervisorImageRef(os.Getenv("OPENNEKO_SUPERVISOR_IMAGE"), version),
 	})
-}
-
-func pluginBaseImageRef(override, version string) string {
-	if override != "" {
-		return override
-	}
-	return "ghcr.io/open-neko/plugin-base:" + version
 }
 
 func supervisorImageRef(override, version string) string {

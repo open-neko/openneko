@@ -33,11 +33,6 @@ export NEKO_PG_PORT="${OPENNEKO_DB_PORT:-5432}"
 # not provision the role, so dev-up.sh sets the role to the same value.
 export OPENNEKO_OPENSHELL_DB_PASSWORD="${OPENNEKO_OPENSHELL_DB_PASSWORD:-openneko-openshell-development-password}"
 
-# Plugins install into the dev state, not the repo root, so the host
-# worker reads the same manifest the openneko CLI writes.
-export OPENNEKO_PLUGINS_MANIFEST_PATH="${OPENNEKO_PLUGINS_MANIFEST_PATH:-$OPENNEKO_CONFIG_VOLUME/plugins.json}"
-export OPENNEKO_PLUGIN_INSTALL_DIR="${OPENNEKO_PLUGIN_INSTALL_DIR:-$OPENNEKO_DEV_STATE/plugins}"
-
 export OPENNEKO_GRAPHJIN_URL="http://127.0.0.1:${OPENNEKO_GRAPHJIN_PORT:-8089}"
 export OPENNEKO_GRAPHJIN_CONFIG="$OPENNEKO_DEV_STATE/graphjin/agentic.yml"
 

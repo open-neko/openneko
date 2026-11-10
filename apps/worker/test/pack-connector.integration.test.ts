@@ -23,10 +23,6 @@ const workspace = vi.hoisted(() => ({ root: "" }));
 vi.mock("@neko/db/jobs", () => ({ enqueue: async () => "fixture-job", QUEUE: { METRIC_REFRESH: "metric_refresh" } }));
 vi.mock("@neko/llm/work", () => ({ ensureOrgWorkspace: async () => ({ orgRoot: workspace.root, skillsRoot: join(workspace.root, "skills") }) }));
 
-// A connector accidentally entering either plugin lifecycle must fail this test.
-vi.mock("@open-neko/plugin-install", () => { throw new Error("pack connectors must not load the plugin installer"); });
-vi.mock("../src/plugins/plugin-registry.js", () => { throw new Error("pack connectors must not load the plugin registry"); });
-
 const exec = promisify(execFile);
 const docker = (...args: string[]) => exec("docker", args, { maxBuffer: 1024 * 1024 });
 const enabled = process.env.OPENNEKO_PACK_CONNECTOR_TEST === "1";

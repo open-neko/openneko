@@ -112,6 +112,17 @@ const oauthConnectionSchema = z
   })
   .strict();
 
+/**
+ * Built-in channels a pack can turn on for the org while it is installed.
+ * Optional rather than defaulted, so packs without it keep their manifest hash.
+ */
+export const PACK_CHANNELS = ["slack", "telegram", "hud"] as const;
+
+const channelsSchema = z
+  .array(z.enum(PACK_CHANNELS))
+  .refine((channels) => new Set(channels).size === channels.length, "duplicate channel")
+  .optional();
+
 const permissionsSchema = z
   .object({
     network: z
@@ -125,7 +136,7 @@ const graphjinArtifactsSchema = z
     sources: relativePath,
     relationships: relativePath,
     specs: z.array(relativePath),
-    savedQueries: relativePath,
+    savedQueries: relativePath.optional(),
   })
   .strict();
 
@@ -160,6 +171,7 @@ export const solutionPackManifestSchema = z
     inputs: z.array(inputSchema),
     secrets: z.array(secretSchema),
     oauth: z.array(oauthConnectionSchema).default([]),
+    channels: channelsSchema,
     permissions: permissionsSchema.default({ network: [] }),
     artifacts: artifactsSchema,
     health: healthSchema,

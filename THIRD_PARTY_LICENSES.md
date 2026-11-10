@@ -2,9 +2,8 @@
 
 The source code in this repository is distributed under the
 [Apache License 2.0](LICENSE) unless a file clearly states different terms.
-This file lists third-party software and modular components that are shipped
-alongside, referenced by, or designed to interoperate with OpenNeko, and the
-additional license obligations those carry.
+This file lists third-party software that ships with OpenNeko, and the
+additional license obligations it carries.
 
 This file complements [NOTICE](NOTICE). Operators who redistribute OpenNeko in
 any form should ship LICENSE, NOTICE, this file, and any applicable third-party
@@ -12,16 +11,15 @@ license texts alongside their distribution.
 
 ---
 
-## Modular agents, skills, and plugins
+## Modular agents and skills
 
-OpenNeko can invoke or interoperate with external agents, skills, and plugins.
+OpenNeko can invoke or interoperate with external agents and skills.
 Those components remain under their own licenses.
 
 | Component | License | Notes |
 |---|---|---|
 | Anthropic-authored bundled skills | As declared | Preserve the upstream terms and attribution shipped with each skill. |
 | Built-in skills with `license:` frontmatter | As declared in each skill | Some bundled skills are Apache-2.0, MIT, or proprietary to their upstream source. Check each `SKILL.md` and local `LICENSE.txt`. |
-| Third-party plugins | Plugin author's license | Plugins communicate across the OpenNeko plugin RPC boundary and are independent works unless their own license says otherwise. |
 
 ---
 

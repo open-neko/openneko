@@ -107,9 +107,7 @@ export {
 export {
   DEFAULT_INSTALL_POLICY,
   INSTALL_POLICY_SCOPE,
-  OFFICIAL_MARKETPLACE_URL,
   getInstallPolicyForOrg,
-  isInstallSourceAllowed,
   policyFromConfig,
   type InstallPolicy,
 } from "./install-policy";

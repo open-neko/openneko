@@ -3,8 +3,8 @@
 A solution pack bundles sources, API specifications, saved queries, metrics,
 workflows, watchers, actions, policies, and skills for an application or business
 use case. OpenNeko installs these artifacts through the shared pack lifecycle.
-Packs that need connectors ship their own declarations and specifications; they
-do not install runtime plugins.
+Packs that need connectors ship their own declarations and specifications.
+OpenNeko has no separate plugin system; channels and sign-in are built in.
 
 For operator instructions, see [installing and upgrading custom packs](docs/CUSTOM_PACKS.md).
 For contributing code, see [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -17,6 +17,11 @@ For contributing code, see [CONTRIBUTING.md](CONTRIBUTING.md).
   [README](packs/magento/README.md) explains application-specific prerequisites.
 - [Google Workspace](packs/google-workspace/pack.yaml) shows customer-owned
   per-user OAuth, REST reads, and generic governed API actions.
+- [Resend](packs/resend/pack.yaml), [Slack](packs/slack/pack.yaml),
+  [Shopify](packs/shopify/pack.yaml), and
+  [Parallel web search](packs/parallel-search/pack.yaml) replace the former
+  action plugins with API-key sources. Resend shows all three
+  [action safety fields](#action-safety-fields).
 
 Use the small example for read-only custom packs. Use Google Workspace as the
 reference for generic REST writes. Magento uses additional commerce-specific
@@ -77,6 +82,7 @@ Copy a working `pack.yaml` and edit these sections:
 | `inputs` | Named settings with a type: `string`, `url`, `integer`, `enum`, `timezone`, or `boolean`; defaults and required values as appropriate |
 | `secrets` | Secret keys, purpose, and whether required; never credential values |
 | `oauth` | Connection scope, provider label, setup/help copy, OAuth endpoints, input and secret references, account identity fields, and consent scopes |
+| `channels` | Optional built-in channels the pack turns on while installed: `slack`, `telegram`, `hud` |
 | `management` | Optional label and local path to an existing application management page |
 | `permissions.network` | Every host used by OAuth and the pack's API sources |
 | `artifacts` | Source/relationship files, spec paths, query and YAML directories, and skill directories |
@@ -107,7 +113,36 @@ collisions with other packs or operator-created artifacts.
 | Workflows | Define a goal, output contract, and optional schedule with a timezone input. A workflow may declare `networkHosts` for read-only external requests; OpenShell scopes those hosts to that workflow sandbox. See the [example workflow](apps/worker/test/fixtures/service-health/workflows/health.yaml). |
 | Watchers | Reference a workflow artifact key and define a query, value path, threshold, cadence, debounce, cooldown, and severity. |
 | Skills | Write Markdown instructions with `name` and `description` frontmatter. Explain data sources, expected outputs, and permitted actions. |
-| Actions and policies | Use `graphjin_api_operation` for reviewed REST writes. Group named operations by action kind and add a matching policy. Write policies install disabled. |
+| Actions and policies | Use `graphjin_api_operation` for reviewed REST writes. Group named operations by action kind and add a matching policy. Write policies install disabled. See [Action safety fields](#action-safety-fields). |
+
+### Action safety fields
+
+A `graphjin_api_operation` action can declare three checks:
+
+- `targets`: payload fields that hold the action's targets, as dot paths such
+  as `body.to`. With `as: email_domain` the policy engine reads each
+  address's domain, so a policy's `allowed_targets` can limit recipients.
+- `adapter.lockedBody`: body fields the agent cannot choose. Each one is set
+  from a pack input and replaces any value in the payload, for example
+  `from: { input: from_address }`.
+- `idempotencyHeader` on an operation: a header that the API spec declares,
+  such as `Idempotency-Key`. The runtime sends the action request id in it,
+  so a retried request cannot act twice.
+
+```yaml
+targets:
+  fields: [body.to, body.cc, body.bcc]
+  as: email_domain
+adapter:
+  kind: graphjin_api_operation
+  lockedBody:
+    from: { input: from_address }
+  operations:
+    send:
+      operationId: sendEmail
+      mutationRoot: resend_send_email
+      idempotencyHeader: Idempotency-Key
+```
 
 See the [artifact schemas](packages/packs/src/artifact-schema.ts) for exact fields
 and the [bundle loader](packages/packs/src/bundle.ts) for identity and reference
@@ -216,6 +251,21 @@ accept letters, digits, `/`, `_`, and `-`, and cannot be external URLs. Ordinary
 pack configuration needs no management route. Packs supply supported fields and
 copy; OpenNeko supplies shared controls, layout, accessibility, and account states.
 Packs cannot ship arbitrary UI components, HTML, or CSS.
+
+## Channels
+
+Slack, Telegram, and the HUD surface are built into OpenNeko. A pack turns one
+on for the workspace by listing it:
+
+```yaml
+channels: [slack]
+```
+
+The channel stays on while any installed pack lists it; removing the last such
+pack turns it off. Channel tokens are not pack secrets. An admin enters them
+once under **Admin → Settings → Channels**, and OpenNeko keeps them in the
+secrets store under `channel.<id>`. The HUD channel needs no tokens: OpenNeko
+generates its signing secret and scopes it to the pack that turned it on.
 
 ## Personal and deployment OAuth
 
