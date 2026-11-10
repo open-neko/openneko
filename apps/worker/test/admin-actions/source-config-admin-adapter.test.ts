@@ -9,6 +9,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parse } from "yaml";
 import {
   afterAll,
   afterEach,
@@ -344,6 +345,42 @@ describeIfDb("source_config_admin adapter (OL5)", () => {
     expect(durableConfig).toContain("createOrder:");
     expect(durableConfig).toContain("expose_mutation: true");
     expect(durableConfig).toContain("- admin");
+  });
+
+  it("add_role writes the role to the config file, so a restart keeps it", async () => {
+    await setEndpoint(CUSTOMER);
+    const { calls } = installFetchMock();
+    const { result } = await runAction({
+      action: "add_role",
+      name: "support",
+      match: "role = 'support'",
+    });
+    expect(result.ok, result.error).toBe(true);
+    expect(calls[1].body.query).toContain("roles:");
+    const durable = parse(await readFile(configFile, "utf8")) as {
+      roles: Array<Record<string, unknown>>;
+    };
+    expect(durable.roles).toEqual([{ name: "support", match: "role = 'support'" }]);
+  });
+
+  it("set_source_tables writes plain table lists to the config file", async () => {
+    await setEndpoint(CUSTOMER);
+    const { calls } = installFetchMock();
+    const { result } = await runAction({
+      action: "set_source_tables",
+      source: "adventureworks",
+      blockedTables: ["person.password"],
+      adminTables: ["humanresources.employee"],
+    });
+    expect(result.ok, result.error).toBe(true);
+    expect(calls[1].body.query).toContain("blocked_tables_add");
+    const raw = await readFile(configFile, "utf8");
+    expect(raw).not.toMatch(/_add|_remove/);
+    const durable = parse(raw) as { sources: Array<{ access: Record<string, unknown> }> };
+    expect(durable.sources[0]!.access).toMatchObject({
+      blocked_tables: ["person.password"],
+      admin_tables: ["humanresources.employee"],
+    });
   });
 
   it("register_source uses update_sources (upsert), never sources: (replace)", async () => {

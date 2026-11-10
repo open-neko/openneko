@@ -102,9 +102,12 @@ describe("present_source_form", () => {
       form: {
         name: "warehouse",
         kind: ["database"],
+        type: ["postgres"],
         host: "db.internal",
         port: 5432,
         secretRef: "warehouse-password",
+        blockedTables: "",
+        adminTables: "",
         backend: ["local"],
       },
     });
@@ -112,5 +115,84 @@ describe("present_source_form", () => {
     expect(components.find((component) => component.id === "root")).toMatchObject({ component: "Answer" });
     expect(components.filter((component) => component.component === "Button").map((component) => component.id))
       .toEqual(["submitDatabase", "submitApi", "submitLocalFile", "submitCloudFile"]);
+    expect(components.find((component) => component.id === "password")).toMatchObject({
+      component: "SourceSecretInput",
+      value: { path: "/form/secretRef" },
+    });
+    expect(components.find((component) => component.id === "type")).toMatchObject({
+      component: "ChoicePicker",
+      options: [
+        { label: "PostgreSQL", value: "postgres" },
+        { label: "MySQL", value: "mysql" },
+        { label: "MariaDB", value: "mariadb" },
+      ],
+    });
+    expect(JSON.stringify(surface.dataModel)).not.toMatch(/password"?\s*:/i);
+  });
+
+  it("prefills a MySQL type and refuses an unknown one", async () => {
+    const emit = vi.fn(async () => {});
+    const server = buildSourceConfigManagerServer({
+      orgId: "org",
+      runId: "run",
+      emit,
+      controlPlane: {} as never,
+    });
+    await withServer(server, async (client) => {
+      await client.callTool({ name: "present_source_form", arguments: { type: "mysql" } });
+      const refused = await client.callTool({ name: "present_source_form", arguments: { type: "oracle" } });
+      expect(refused.isError).toBe(true);
+    });
+    expect(emit).toHaveBeenCalledTimes(1);
+    const surface = (emit.mock.calls[0]?.[0] as { messages: Array<{ createSurface: { dataModel: { form: Record<string, unknown> } } }> })
+      .messages[0]!.createSurface;
+    expect(surface.dataModel.form.type).toEqual(["mysql"]);
+  });
+});
+
+describe("request_source_config_change", () => {
+  it("passes set_source_tables to the preview and refuses a bad table name", async () => {
+    const previewSourceConfigChange = vi.fn(async () => ({ denied: true }));
+    const server = buildSourceConfigManagerServer({
+      orgId: "org",
+      runId: "run",
+      emit: vi.fn(async () => {}),
+      controlPlane: { previewSourceConfigChange } as never,
+    });
+    await withServer(server, async (client) => {
+      const result = await client.callTool({
+        name: "request_source_config_change",
+        arguments: {
+          action: "set_source_tables",
+          source: "shop",
+          blockedTables: ["oauth_token"],
+          adminTables: ["sales_invoice"],
+          intent: "Hide the token table and keep invoices for admins.",
+        },
+      });
+      expect(JSON.parse(text(result))).toMatchObject({ ok: false, denied: true });
+      const refused = await client.callTool({
+        name: "request_source_config_change",
+        arguments: {
+          action: "set_source_tables",
+          source: "shop",
+          blockedTables: ["orders; drop table x"],
+          intent: "Hide orders.",
+        },
+      });
+      expect(refused.isError).toBe(true);
+    });
+    expect(previewSourceConfigChange).toHaveBeenCalledTimes(1);
+    expect(previewSourceConfigChange).toHaveBeenCalledWith({
+      orgId: "org",
+      runId: "run",
+      dataSourceId: undefined,
+      payload: {
+        action: "set_source_tables",
+        source: "shop",
+        blockedTables: ["oauth_token"],
+        adminTables: ["sales_invoice"],
+      },
+    });
   });
 });

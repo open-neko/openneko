@@ -423,3 +423,93 @@ describe("enable_api_writes", () => {
     ).toThrow('database source "erp" stays read-only');
   });
 });
+
+describe("database tables and types", () => {
+  it("accepts postgres, mysql and mariadb and rejects other types", async () => {
+    for (const type of ["postgres", ["mysql"], "MariaDB"]) {
+      const { update } = await buildGraphjinConfigUpdate({
+        action: "register_source",
+        name: "shop",
+        kind: "database",
+        type,
+      });
+      const [source] = (update as { update_sources: Array<Record<string, unknown>> })
+        .update_sources;
+      expect(["postgres", "mysql", "mariadb"]).toContain(source?.type);
+    }
+    await expect(
+      buildGraphjinConfigUpdate({
+        action: "register_source",
+        name: "shop",
+        kind: "database",
+        type: "oracle",
+      }),
+    ).rejects.toThrow(/postgres, mysql, mariadb/);
+  });
+
+  it("puts hidden and admin-only tables in the new source's access", async () => {
+    const { update } = await buildGraphjinConfigUpdate({
+      action: "register_source",
+      name: "shop",
+      kind: "database",
+      type: "mysql",
+      blockedTables: ["admin_user", "admin_user", "oauth_token"],
+      adminTables: ["sales_invoice"],
+    });
+    const [source] = (update as { update_sources: Array<Record<string, unknown>> })
+      .update_sources;
+    expect(source?.access).toEqual({
+      read: "authenticated",
+      write: "blocked",
+      delete: "blocked",
+      blocked_tables: ["admin_user", "oauth_token"],
+      admin_tables: ["sales_invoice"],
+    });
+  });
+
+  it("rejects a table in two lists and a name that is not a table", async () => {
+    await expect(
+      buildGraphjinConfigUpdate({
+        action: "register_source",
+        name: "shop",
+        kind: "database",
+        blockedTables: ["orders"],
+        adminTables: ["ORDERS"],
+      }),
+    ).rejects.toThrow(/"ORDERS" is in both blockedTables and adminTables/);
+    await expect(
+      buildGraphjinConfigUpdate({
+        action: "set_source_tables",
+        source: "shop",
+        blockedTables: ["orders; drop"],
+      }),
+    ).rejects.toThrow(/invalid table name/);
+  });
+
+  it("set_source_tables sends GraphJin's add and remove lists", async () => {
+    const { update } = await buildGraphjinConfigUpdate({
+      action: "set_source_tables",
+      source: "shop",
+      blockedTables: ["oauth_token"],
+      adminTables: ["sales.invoice"],
+      openTables: ["orders"],
+    });
+    expect(update).toEqual({
+      source_patches: [
+        {
+          name: "shop",
+          access: {
+            blocked_tables_add: ["oauth_token"],
+            admin_tables_add: ["sales.invoice"],
+            blocked_tables_remove: ["orders"],
+            admin_tables_remove: ["orders"],
+          },
+        },
+      ],
+    });
+    expect(() => assertDatabaseSourcesStayReadOnly(update, [])).not.toThrow();
+    await expect(
+      buildGraphjinConfigUpdate({ action: "set_source_tables", source: "shop" }),
+    ).rejects.toThrow(/needs blockedTables, adminTables or openTables/);
+  });
+});

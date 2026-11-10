@@ -440,8 +440,10 @@ export function registerSourceConfigAdminAdapter(): void {
       selectedKind === "file" &&
       selectedBackend === "local";
     const needsDurableSourceConfig =
+      action === "add_role" ||
       action === "register_source" ||
       action === "set_source_access" ||
+      action === "set_source_tables" ||
       action === "set_source_capabilities" ||
       action === "expose_api_operation" ||
       action === "enable_api_writes";

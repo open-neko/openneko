@@ -22,10 +22,15 @@ plan every change yourself. An admin approves each change before it applies.
    this file. Read it only when you need it.
 4. For a question, answer from the results of steps 1 and 2. Name the source,
    the role or the key that the answer depends on.
-5. For a database source registration, call
-   `mcp_neko_source_config_manager_list_source_secret_names` and use a stored
-   name as `secretRef`. When the required name is absent, tell the admin to
-   add it in Admin > Settings > GraphJin Config.
+5. For a database source, ask plain questions, one at a time: which system
+   (PostgreSQL, MySQL or MariaDB), where it runs (host and port), which
+   database, which read-only login, which tables no one may see, and which
+   tables only admins may see. Then call
+   `mcp_neko_source_config_manager_present_source_form` with the answers. The
+   admin types the password into the card. The card stores it and gives you
+   its name as `secretRef`. To reuse a stored password, call
+   `mcp_neko_source_config_manager_list_source_secret_names` and prefill that
+   name.
 6. For an API source, use the managed OpenAPI asset from the submitted card.
    When the admin gives a hosted HTTPS URL in chat, call
    `mcp_neko_source_config_manager_import_openapi_spec`. When the admin
@@ -65,7 +70,8 @@ attention.
 
 - `register_source`: give `name`, one customer source kind (`database`,
   `api` or `file`), and the fields for that kind. A database uses connection
-  metadata and a stored `secretRef`. An API uses a managed OpenAPI
+  metadata, a `type` (`postgres`, `mysql` or `mariadb`), a stored
+  `secretRef`, and optional `blockedTables` and `adminTables` lists. An API uses a managed OpenAPI
   `specAssetId`. A local file source uses the card's managed `localFiles`
   manifest. S3 and GCS use an object-store bucket and the deployment runtime
   identity. File sources get authenticated read-only access. A suitable
@@ -73,6 +79,10 @@ attention.
   `delete: blocked`.
 - `set_source_access`: give the source name and the confirmed `read`,
   `write` and `delete` access modes.
+- `set_source_tables`: give the database source name and one or more lists.
+  `blockedTables`: no one may read them. `adminTables`: only admins may read
+  them. `openTables`: they go back to the source's read mode. Use the table
+  names from `describe_source_graph`.
 - `add_role`: give the role name and the JWT match expression that the admin
   confirmed.
 - `enable_api_writes`: give the API source, the spec key, the operation ID and

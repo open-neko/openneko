@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { AgentSurfaceMessage } from "../agent-backend";
 import { A2UI_CATALOG_ID, A2UI_VERSION } from "./a2ui-contract";
+import { DATABASE_SOURCE_TYPES } from "../graphjin/source-types";
 
 const optionalText = (max: number) => z.string().trim().max(max).optional();
 
@@ -8,12 +9,14 @@ const optionalText = (max: number) => z.string().trim().max(max).optional();
 export const SOURCE_FORM_PREFILL_SHAPE = {
   name: optionalText(64),
   kind: z.enum(["database", "api", "file"]).optional(),
-  type: optionalText(32).describe("Database type, such as postgres or mysql."),
+  type: z.enum(DATABASE_SOURCE_TYPES).optional(),
   host: optionalText(255),
   port: z.number().int().min(1).max(65_535).optional(),
   dbname: optionalText(128),
   user: optionalText(128),
-  secretRef: optionalText(128).describe("A stored secret name from list_source_secret_names."),
+  secretRef: optionalText(128).describe("A stored secret name from list_source_secret_names. Leave it out to let the admin type the password in the card."),
+  blockedTables: optionalText(2_000).describe("Comma-separated tables that no one may read."),
+  adminTables: optionalText(2_000).describe("Comma-separated tables that only admins may read."),
   backend: z.enum(["local", "s3", "gcs"]).optional(),
   bucket: optionalText(255),
   prefix: optionalText(255),
@@ -32,15 +35,18 @@ const SOURCE_FORM_COMPONENTS: Array<Record<string, unknown>> = [
   {"id": "common", "component": "Column", "children": ["name", "kind"]},
   {"id": "name", "component": "TextField", "label": "Source name", "value": {"path": "/form/name"}, "placeholder": "warehouse"},
   {"id": "kind", "component": "ChoicePicker", "label": "Source kind", "options": [{"label": "Database", "value": "database"}, {"label": "API", "value": "api"}, {"label": "Files", "value": "file"}], "value": {"path": "/form/kind"}, "variant": "mutuallyExclusive"},
-  {"id": "databaseFields", "component": "Conditional", "when": {"path": "/form/kind"}, "equals": "database", "children": ["type", "network", "database"]},
-  {"id": "type", "component": "TextField", "label": "Database type", "value": {"path": "/form/type"}, "placeholder": "postgres"},
+  {"id": "databaseFields", "component": "Conditional", "when": {"path": "/form/kind"}, "equals": "database", "children": ["type", "network", "database", "password", "tables"]},
+  {"id": "type", "component": "ChoicePicker", "label": "Database type", "options": [{"label": "PostgreSQL", "value": "postgres"}, {"label": "MySQL", "value": "mysql"}, {"label": "MariaDB", "value": "mariadb"}], "value": {"path": "/form/type"}, "variant": "mutuallyExclusive"},
   {"id": "network", "component": "Row", "children": ["host", "port"]},
   {"id": "host", "component": "TextField", "label": "Host", "value": {"path": "/form/host"}, "placeholder": "db.internal"},
   {"id": "port", "component": "TextField", "label": "Port", "value": {"path": "/form/port"}, "variant": "number"},
-  {"id": "database", "component": "Row", "children": ["dbname", "user", "secretRef"]},
+  {"id": "database", "component": "Row", "children": ["dbname", "user"]},
   {"id": "dbname", "component": "TextField", "label": "Database", "value": {"path": "/form/dbname"}},
-  {"id": "user", "component": "TextField", "label": "User", "value": {"path": "/form/user"}},
-  {"id": "secretRef", "component": "TextField", "label": "Stored secret name", "value": {"path": "/form/secretRef"}, "placeholder": "warehouse-password"},
+  {"id": "user", "component": "TextField", "label": "Read-only login", "value": {"path": "/form/user"}},
+  {"id": "password", "component": "SourceSecretInput", "label": "Password", "sourceName": {"path": "/form/name"}, "value": {"path": "/form/secretRef"}},
+  {"id": "tables", "component": "Column", "children": ["blockedTables", "adminTables"]},
+  {"id": "blockedTables", "component": "TextField", "label": "Tables no one may read (optional)", "value": {"path": "/form/blockedTables"}, "placeholder": "admin_user, oauth_token"},
+  {"id": "adminTables", "component": "TextField", "label": "Tables only admins may read (optional)", "value": {"path": "/form/adminTables"}, "placeholder": "payroll"},
   {"id": "apiFields", "component": "Conditional", "when": {"path": "/form/kind"}, "equals": "api", "children": ["openApiSpec"]},
   {"id": "openApiSpec", "component": "OpenApiSpecInput", "label": "OpenAPI specification", "value": {"path": "/form/openApiSpec"}},
   {"id": "fileFields", "component": "Conditional", "when": {"path": "/form/kind"}, "equals": "file", "children": ["fileSecurity", "backend", "localFields", "objectFields", "s3Fields"]},
@@ -64,7 +70,7 @@ const SOURCE_FORM_COMPONENTS: Array<Record<string, unknown>> = [
   {"id": "localSubmit", "component": "Conditional", "when": {"path": "/form/backend"}, "equals": "local", "children": ["submitLocalFile"]},
   {"id": "s3Submit", "component": "Conditional", "when": {"path": "/form/backend"}, "equals": "s3", "children": ["submitCloudFile"]},
   {"id": "gcsSubmit", "component": "Conditional", "when": {"path": "/form/backend"}, "equals": "gcs", "children": ["submitCloudFile"]},
-  {"id": "submitDatabase", "component": "Button", "child": "submitLabel", "variant": "primary", "requires": {"path": "/form/name"}, "action": {"event": {"name": "submit_source_config", "context": {"prompt": "Review the selected source kind and its relevant values, then file the register_source configuration proposal.", "values": {"path": "/form"}}}}},
+  {"id": "submitDatabase", "component": "Button", "child": "submitLabel", "variant": "primary", "requires": [{"path": "/form/name"}, {"path": "/form/secretRef"}], "action": {"event": {"name": "submit_source_config", "context": {"prompt": "File the register_source database proposal from these values. Split blockedTables and adminTables at commas into lists. Use secretRef as given.", "values": {"path": "/form"}}}}},
   {"id": "submitApi", "component": "Button", "child": "submitLabel", "variant": "primary", "requires": [{"path": "/form/name"}, {"path": "/form/openApiSpec/id"}], "action": {"event": {"name": "submit_source_config", "context": {"prompt": "Use openApiSpec.id as specAssetId and file the register_source API configuration proposal.", "values": {"path": "/form"}}}}},
   {"id": "submitLocalFile", "component": "Button", "child": "submitLabel", "variant": "primary", "requires": [{"path": "/form/name"}, {"path": "/form/localFiles/sourceName"}], "action": {"event": {"name": "submit_source_config", "context": {"prompt": "Create the read-only local file source proposal using the managed localFiles manifest and selected source name.", "values": {"path": "/form"}}}}},
   {"id": "submitCloudFile", "component": "Button", "child": "submitLabel", "variant": "primary", "requires": [{"path": "/form/name"}, {"path": "/form/bucket"}], "action": {"event": {"name": "submit_source_config", "context": {"prompt": "Create the read-only cloud file source proposal using the selected backend, bucket, prefix, endpoint, public base URL, and bounded presign TTL values.", "values": {"path": "/form"}}}}},
@@ -75,16 +81,18 @@ export function buildSourceFormSurface(
   prefill: SourceFormPrefill,
   surfaceId: string,
 ): AgentSurfaceMessage[] {
-  const { kind, backend, ...fields } = sourceFormPrefillSchema.parse(prefill);
+  const { kind, backend, type, ...fields } = sourceFormPrefillSchema.parse(prefill);
   const form = {
     name: "",
     kind: [kind ?? "database"],
-    type: "postgres",
+    type: [type ?? "postgres"],
     host: "",
     port: 5432,
     dbname: "",
     user: "",
     secretRef: "",
+    blockedTables: "",
+    adminTables: "",
     openApiSpec: null,
     backend: [backend ?? "local"],
     localFiles: null,

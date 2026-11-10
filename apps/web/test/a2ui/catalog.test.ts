@@ -40,6 +40,7 @@ describe("A2UI catalog", () => {
       Conditional: "Conditional",
       OpenApiSpecInput: "OpenApiSpecInput",
       ManagedFileSourceInput: "ManagedFileSourceInput",
+      SourceSecretInput: "SourceSecretInput",
     });
   });
 

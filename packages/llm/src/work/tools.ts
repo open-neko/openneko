@@ -24,6 +24,7 @@ import {
   validateRenderCardsInput,
 } from "./a2ui-contract";
 import { OPENNEKO_GRAPHJIN_MCP_SERVER_NAME } from "../graphjin/mcp-names";
+import { DATABASE_SOURCE_TYPES, SOURCE_TABLE_NAME } from "../graphjin/source-types";
 import {
   applyGraphjinMcpToolPolicy,
   assertGraphjinMcpToolCallAllowed,
@@ -588,6 +589,12 @@ export function buildDataSourceManagerServer(opts: {
  * time. This only ever targets the customer source, never the OpenNeko
  * internal GraphJin (the adapter asserts that boundary).
  */
+const TABLE_NAME_SCHEMA = z
+  .string()
+  .trim()
+  .regex(SOURCE_TABLE_NAME, "a table name")
+  .max(128);
+
 export function buildSourceConfigManagerServer(opts: {
   orgId: string;
   runId?: string;
@@ -742,7 +749,8 @@ export function buildSourceConfigManagerServer(opts: {
       "- enable_api_writes { source, spec, operation, allowedRoles, write?, exposeAs?, apiDelete? }: one proposal that turns on api.write, sets access.write (authenticated by default, or admin), and exposes one OpenAPI POST/PUT/PATCH/DELETE operation as a GraphQL mutation for the listed roles. Prefer this for governed writes.",
       "- set_source_capabilities { source, apiWrite?, apiDelete? } and expose_api_operation { source, spec, operation, exposeMutation, allowedRoles, exposeAs? }: adjust one write setting on an API source that already has writes enabled.",
       "Database sources stay read-only; a proposal that opens a write path on one is rejected.",
-      "- register_source database { name, kind, type?, host?, port?, dbname?, user?, secretRef? }.",
+      "- set_source_tables { source, blockedTables?, adminTables?, openTables? }: per-table access on a database source. blockedTables: no one may read them. adminTables: only admins may read them. openTables: back to the source's read mode.",
+      "- register_source database { name, kind, type?, host?, port?, dbname?, user?, secretRef?, blockedTables?, adminTables? }. type is postgres, mysql or mariadb.",
       "- register_source api { name, kind, specAssetId } using an OpenAPI document already imported by URL or upload.",
       "- register_source file local { name, kind, backend, localFiles } using OpenNeko-managed isolated storage.",
       "- register_source file s3|gcs { name, kind, backend, bucket, prefix?, region?, endpoint?, publicBaseUrl?, presignTtl? } using deployment runtime credentials.",
@@ -753,6 +761,7 @@ export function buildSourceConfigManagerServer(opts: {
       action: z.enum([
         "add_role",
         "set_source_access",
+        "set_source_tables",
         "set_source_capabilities",
         "expose_api_operation",
         "enable_api_writes",
@@ -768,6 +777,10 @@ export function buildSourceConfigManagerServer(opts: {
         .optional(),
       write: z.enum(["authenticated", "account", "owner", "admin", "blocked"]).optional(),
       delete: z.enum(["authenticated", "account", "owner", "admin", "blocked"]).optional(),
+      // set_source_tables, and register_source database
+      blockedTables: z.array(TABLE_NAME_SCHEMA).max(500).optional(),
+      adminTables: z.array(TABLE_NAME_SCHEMA).max(500).optional(),
+      openTables: z.array(TABLE_NAME_SCHEMA).max(500).optional(),
       // set_source_capabilities
       apiWrite: z.boolean().optional(),
       apiDelete: z.boolean().optional(),
@@ -793,7 +806,13 @@ export function buildSourceConfigManagerServer(opts: {
           z.enum(["database", "api", "file"]),
         )
         .optional(),
-      type: z.string().trim().min(1).max(40).optional(),
+      type: z
+        .preprocess(
+          (value) =>
+            Array.isArray(value) && value.length === 1 ? value[0] : value,
+          z.enum(DATABASE_SOURCE_TYPES),
+        )
+        .optional(),
       host: z.string().trim().max(255).optional(),
       port: z.number().int().min(1).max(65535).optional(),
       dbname: z.string().trim().max(128).optional(),
@@ -849,11 +868,13 @@ export function buildSourceConfigManagerServer(opts: {
           ? `role:${args.name ?? ""}`
           : action === "set_source_access"
             ? `access:${args.source ?? ""}`
-            : action === "set_source_capabilities"
-              ? `capabilities:${args.source ?? ""}`
-              : action === "expose_api_operation" || action === "enable_api_writes"
-                ? `operation:${args.source ?? ""}/${args.spec ?? ""}#${args.operation ?? ""}`
-                : `source:${args.name ?? ""}`;
+            : action === "set_source_tables"
+              ? `tables:${args.source ?? ""}`
+              : action === "set_source_capabilities"
+                ? `capabilities:${args.source ?? ""}`
+                : action === "expose_api_operation" || action === "enable_api_writes"
+                  ? `operation:${args.source ?? ""}/${args.spec ?? ""}#${args.operation ?? ""}`
+                  : `source:${args.name ?? ""}`;
       const changePayload = {
         action,
         ...rest,

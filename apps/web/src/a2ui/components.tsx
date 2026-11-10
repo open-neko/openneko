@@ -55,6 +55,7 @@ import type {
   ConditionalProps,
   LayoutProps,
   ManagedFileSourceInputProps,
+  SourceSecretInputProps,
   OpenApiSpecInputProps,
   TabsProps,
   TextFieldProps,
@@ -1205,6 +1206,107 @@ registerComponent(
   (comp: A2UIComponent, ctx: RenderContext) => (
     <ManagedFileSourceInputView
       props={comp as unknown as ManagedFileSourceInputProps & { id: string }}
+      ctx={ctx}
+    />
+  ),
+);
+
+export function sourceSecretName(sourceName: string): string {
+  const base = sourceName.trim().replace(/[^A-Za-z0-9._-]+/g, "-").slice(0, 110);
+  return base ? `${base}-password` : "";
+}
+
+function SourceSecretInputView({
+  props,
+  ctx,
+}: {
+  props: SourceSecretInputProps & { id: string };
+  ctx: RenderContext;
+}) {
+  const path = bindingPath(ctx, props.id, "value");
+  const sourceName =
+    typeof props.sourceName === "string" ? props.sourceName.trim() : "";
+  const saved = typeof props.value === "string" ? props.value : "";
+  const secretName = sourceSecretName(sourceName);
+  const [password, setPassword] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  async function save() {
+    if (!path) return;
+    if (!secretName) {
+      setError("Enter a source name before you save the password.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/settings/source-secrets", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: secretName,
+          value: password,
+          description: `Password for the ${sourceName} source`,
+        }),
+      });
+      const result = (await response.json().catch(() => ({}))) as {
+        name?: string;
+        error?: string;
+      };
+      if (!response.ok || !result.name) {
+        throw new Error(result.error || "The password was not saved.");
+      }
+      setPassword("");
+      ctx.onDataChange?.(path, result.name);
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "The password was not saved.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="work-openapi-import work-source-secret">
+      <label className="work-a2ui-field">
+        <span className="work-a2ui-label">{props.label ?? "Password"}</span>
+        <Input
+          className="work-a2ui-input"
+          type="password"
+          autoComplete="new-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+      </label>
+      <Button
+        type="button"
+        className="work-a2ui-button"
+        disabled={busy || !password || !secretName}
+        onClick={() => void save()}
+      >
+        {busy ? "Saving…" : saved ? "Replace password" : "Save password"}
+      </Button>
+      {error ? (
+        <div className="work-openapi-error" role="alert">
+          {error}
+        </div>
+      ) : null}
+      <div className="work-managed-files-note">
+        {saved
+          ? `Saved as "${saved}". OpenNeko encrypts it. Chat sees the name only.`
+          : "OpenNeko encrypts the password. Chat sees its name only."}
+      </div>
+    </div>
+  );
+}
+
+registerComponent(
+  "SourceSecretInput",
+  (comp: A2UIComponent, ctx: RenderContext) => (
+    <SourceSecretInputView
+      props={comp as unknown as SourceSecretInputProps & { id: string }}
       ctx={ctx}
     />
   ),

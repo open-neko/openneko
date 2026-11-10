@@ -42,6 +42,7 @@ export const ComponentTypes = {
   Conditional: "Conditional",
   OpenApiSpecInput: "OpenApiSpecInput",
   ManagedFileSourceInput: "ManagedFileSourceInput",
+  SourceSecretInput: "SourceSecretInput",
   Compare: "Compare",
   WhatIf: "WhatIf",
   AnswerMap: "AnswerMap",
@@ -329,6 +330,13 @@ export interface ManagedFileSourceInputProps {
   value?: unknown;
 }
 
+export interface SourceSecretInputProps {
+  component: "SourceSecretInput";
+  label?: string;
+  sourceName?: string;
+  value?: unknown;
+}
+
 export interface ConfirmationProps {
   component: "Confirmation";
   label: string; // action eyebrow, e.g. "Created workflow"
@@ -382,6 +390,7 @@ export type ComponentProps =
   | ConditionalProps
   | OpenApiSpecInputProps
   | ManagedFileSourceInputProps
+  | SourceSecretInputProps
   | CompareProps
   | WhatIfProps
   | AnswerMapProps

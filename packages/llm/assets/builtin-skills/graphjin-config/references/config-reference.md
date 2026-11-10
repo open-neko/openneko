@@ -354,10 +354,11 @@ OpenNeko sends each action to `gj_config` as an additive patch.
 |--------|--------------|
 | `add_role` | `roles[]`: `name`, `match`, optional `comment`. |
 | `set_source_access` | `source_patches[]`: `name` and `access.read`, `access.write`, `access.delete`. |
+| `set_source_tables` | `source_patches[]`: `name` and `access.blocked_tables_add`, `access.admin_tables_add`; `openTables` sends both `*_remove` lists. An added table leaves the other lists. On disk, OpenNeko writes the resulting `blocked_tables` and `admin_tables` lists. |
 | `set_source_capabilities` | `update_sources[]`: `name` and `capabilities["api.write"]`, `capabilities["api.delete"]`. |
 | `expose_api_operation` | `update_sources[]`: `specs.<spec>.operations.<operationId>` with `expose_mutation`, `allowed_roles`, optional `expose_as`. |
 | `enable_api_writes` | `update_sources[]`: `read_only: false`, `capabilities["api.write"]` (and `api.delete` when asked), the operation override above. `source_patches[]`: `access.write` (`authenticated` or `admin`). |
-| `register_source` | `update_sources[]`: one new source with `name` and `kind`, and `access` (`read`, `write`, `delete`). Database: `read_only: true`, `type`, `host`, `port`, `dbname`, `user`, `password` from a stored secret. API: `specs_dir`. File: `backend`, `root` or `bucket`, `prefix`, `region`, `endpoint`, `public_base_url`, `presign_ttl`, `read_only: true`, `max_list_page_size: 500`, and `files.*` capabilities with only list and read on. |
+| `register_source` | `update_sources[]`: one new source with `name` and `kind`, and `access` (`read`, `write`, `delete`). Database: `read_only: true`, `type` (`postgres`, `mysql` or `mariadb`), `host`, `port`, `dbname`, `user`, `password` from a stored secret, and `access.blocked_tables` and `access.admin_tables` when given. API: `specs_dir`. File: `backend`, `root` or `bucket`, `prefix`, `region`, `endpoint`, `public_base_url`, `presign_ttl`, `read_only: true`, `max_list_page_size: 500`, and `files.*` capabilities with only list and read on. |
 
 `update_sources` merges by name. Omitted fields stay. `null` clears a field.
 Arrays replace. Nested objects merge. `source_patches` changes only the access

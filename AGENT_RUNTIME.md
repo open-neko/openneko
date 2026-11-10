@@ -96,7 +96,10 @@ hands a question to GraphJin's own agent, so GraphJin gets no provider key.
 Migration 0128 removed the setting that did that. Admin chat plans GraphJin
 config changes with OpenNeko's own model: the `graphjin-config` skill reads
 the redacted config through `describe_source_config`, and the seed configs
-set `agent.enabled: false`.
+set `agent.enabled: false`. The model fills a typed proposal
+(`request_source_config_change`) and never writes YAML. After an admin
+approves, the worker applies the change to the running GraphJin and writes it
+to `OPENNEKO_GRAPHJIN_CONFIG`: sources, access, table lists and roles.
 
 ## Start steps
 
