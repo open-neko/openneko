@@ -15,6 +15,11 @@ import (
 
 var errDatabaseNotReady = errors.New("OpenNeko's database is not ready; run the SQL above, then start OpenNeko again")
 
+const (
+	minPostgresMajor = 16
+	minPgvector      = "0.6.0"
+)
+
 func newDatabaseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "database",
@@ -82,10 +87,15 @@ func checkDatabase(ctx context.Context, dsn string, out io.Writer) error {
 func databaseFindings(ctx context.Context, conn *pgx.Conn, sslMode, user, database string) ([]databaseFinding, error) {
 	var findings []databaseFinding
 	var version string
-	if err := conn.QueryRow(ctx, "show server_version").Scan(&version); err != nil {
+	var versionNum int
+	if err := conn.QueryRow(ctx, "select current_setting('server_version'), current_setting('server_version_num')::int").Scan(&version, &versionNum); err != nil {
 		return nil, err
 	}
-	findings = append(findings, databaseFinding{level: "ok", text: "connected (PostgreSQL " + version + ")"})
+	if versionNum/10000 < minPostgresMajor {
+		findings = append(findings, databaseFinding{level: "FAIL", text: fmt.Sprintf("connected to PostgreSQL %s. OpenNeko needs PostgreSQL %d or later", version, minPostgresMajor)})
+	} else {
+		findings = append(findings, databaseFinding{level: "ok", text: "connected (PostgreSQL " + version + ")"})
+	}
 
 	var tlsOn bool
 	var tlsVersion string
@@ -102,15 +112,18 @@ func databaseFindings(ctx context.Context, conn *pgx.Conn, sslMode, user, databa
 	}
 
 	quotedUser := pgx.Identifier{user}.Sanitize()
-	var ownsDatabase, createInSchema bool
-	if err := conn.QueryRow(ctx, `select pg_has_role(d.datdba, 'USAGE'), has_schema_privilege('public', 'CREATE') from pg_database d where d.datname = current_database()`).Scan(&ownsDatabase, &createInSchema); err != nil {
+	var ownsDatabase, createInDatabase, createInSchema bool
+	if err := conn.QueryRow(ctx, `select pg_has_role(d.datdba, 'USAGE'), has_database_privilege(d.oid, 'CREATE'), has_schema_privilege('public', 'CREATE') from pg_database d where d.datname = current_database()`).Scan(&ownsDatabase, &createInDatabase, &createInSchema); err != nil {
 		return nil, err
 	}
-	if ownsDatabase {
+	switch {
+	case ownsDatabase:
 		findings = append(findings, databaseFinding{level: "ok", text: user + " owns " + database})
-	} else {
-		findings = append(findings, databaseFinding{level: "FAIL", text: user + " does not own " + database + ". The start steps create schemas and reindex the database",
-			sql: []string{fmt.Sprintf("ALTER DATABASE %s OWNER TO %s;", pgx.Identifier{database}.Sanitize(), quotedUser)}})
+	case createInDatabase:
+		findings = append(findings, databaseFinding{level: "ok", text: user + " can create schemas in " + database})
+	default:
+		findings = append(findings, databaseFinding{level: "FAIL", text: user + " cannot create schemas in " + database + ". The start steps and the job queue create their own schemas",
+			sql: []string{fmt.Sprintf("GRANT CREATE ON DATABASE %s TO %s;", pgx.Identifier{database}.Sanitize(), quotedUser)}})
 	}
 	if createInSchema {
 		findings = append(findings, databaseFinding{level: "ok", text: user + " can create tables in schema public"})
@@ -131,20 +144,62 @@ func databaseFindings(ctx context.Context, conn *pgx.Conn, sslMode, user, databa
 }
 
 func vectorFinding(ctx context.Context, conn *pgx.Conn, database string) databaseFinding {
-	var installed, available bool
-	_ = conn.QueryRow(ctx, `select exists (select from pg_extension where extname = 'vector'), exists (select from pg_available_extensions where name = 'vector')`).Scan(&installed, &available)
+	var installed, available string
+	_ = conn.QueryRow(ctx, `select coalesce((select extversion from pg_extension where extname = 'vector'), ''), coalesce((select default_version from pg_available_extensions where name = 'vector'), '')`).Scan(&installed, &available)
+	return vectorVerdict(installed, available, database, func() bool { return probe(ctx, conn, "create extension vector") })
+}
+
+func vectorVerdict(installed, available, database string, canCreate func() bool) databaseFinding {
 	switch {
-	case installed:
-		return databaseFinding{level: "ok", text: "the vector extension exists"}
-	case !available:
-		return databaseFinding{level: "FAIL", text: "the server has no pgvector. Install pgvector 0.8 or later on the Postgres server first",
+	case installed != "" && olderVersion(installed, minPgvector):
+		if available != "" && !olderVersion(available, minPgvector) {
+			return databaseFinding{level: "FAIL", text: fmt.Sprintf("the vector extension is version %s. OpenNeko needs pgvector %s or later, and the server has %s", installed, minPgvector, available),
+				sql: []string{"ALTER EXTENSION vector UPDATE;"}}
+		}
+		return databaseFinding{level: "FAIL", text: fmt.Sprintf("the vector extension is version %s. Install pgvector %s or later on the Postgres server, then update the extension", installed, minPgvector),
+			sql: []string{"ALTER EXTENSION vector UPDATE;"}}
+	case installed != "":
+		return databaseFinding{level: "ok", text: "the vector extension exists (pgvector " + installed + ")"}
+	case available == "":
+		return databaseFinding{level: "FAIL", text: "the server has no pgvector. Install pgvector " + minPgvector + " or later on the Postgres server first",
 			sql: []string{"CREATE EXTENSION vector;"}}
-	case probe(ctx, conn, "create extension vector"):
-		return databaseFinding{level: "ok", text: "the vector extension can be created"}
+	case olderVersion(available, minPgvector):
+		return databaseFinding{level: "FAIL", text: fmt.Sprintf("the server has pgvector %s. Install pgvector %s or later on the Postgres server first", available, minPgvector),
+			sql: []string{"CREATE EXTENSION vector;"}}
+	case canCreate():
+		return databaseFinding{level: "ok", text: "the vector extension can be created (pgvector " + available + ")"}
 	default:
 		return databaseFinding{level: "FAIL", text: "the vector extension does not exist, and this login cannot create it in " + database,
 			sql: []string{"CREATE EXTENSION vector;"}}
 	}
+}
+
+func olderVersion(version, floor string) bool {
+	have, want := versionParts(version), versionParts(floor)
+	for i := range want {
+		if i >= len(have) {
+			return true
+		}
+		if have[i] != want[i] {
+			return have[i] < want[i]
+		}
+	}
+	return false
+}
+
+func versionParts(version string) []int {
+	var parts []int
+	for _, field := range strings.Split(version, ".") {
+		n := 0
+		for _, r := range field {
+			if r < '0' || r > '9' {
+				break
+			}
+			n = n*10 + int(r-'0')
+		}
+		parts = append(parts, n)
+	}
+	return parts
 }
 
 func roleFinding(ctx context.Context, conn *pgx.Conn, role, quotedUser string) (databaseFinding, error) {

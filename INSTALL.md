@@ -126,7 +126,8 @@ with `--database-url`, or enter the URL when setup asks for it. Enter your Graph
 
 ## OpenNeko's database
 
-OpenNeko keeps its own data in Postgres 16 with the `vector` extension. In
+OpenNeko keeps its own data in Postgres 16 or later, with pgvector 0.6.0 or
+later for the `vector` extension. In
 prod mode you run that Postgres server, and OpenNeko connects to it by one URL.
 Dev and demo modes run a Postgres container (`neko-db`) for you.
 
@@ -159,21 +160,27 @@ name.
   database, `openneko-serve` included, as a Compose secret readable only by
   user 1001, and points the URL at the copy. Serve's `neko_files` and
   `neko_subscriptions` logins use the same files.
-- The `neko` role must own the database and have `CREATEROLE`. The
-  migrations create the `vector` extension and the `neko_files` and
-  `neko_subscriptions` roles.
+- Give OpenNeko a database of its own. The `neko` role needs `CREATE` on that
+  database and on schema `public`, and `CREATEROLE`. It does not need to own
+  the database, so a managed Postgres service works. The migrations create
+  the `vector` extension and the `neko_files` and `neko_subscriptions` roles.
+- Postgres 16 is the oldest version that OpenNeko supports. The storage check
+  needs Postgres 15, CI and the bundled database run 16, and
+  `openneko database move` restores a Postgres 16 dump. pgvector 0.6.0 is the
+  oldest version tested with every migration.
 
 Before the other start steps, `openneko start` and `setup` run
 `openneko database check` in a container. It connects with the URL, reports
-the TLS mode, and checks that the login owns the database, can create tables
-in schema `public`, can create the `vector` extension (or finds it), and can
-create the two roles or set their passwords. When a right is missing, start
-stops and prints the SQL to run as a superuser, for example:
+the Postgres and pgvector versions and the TLS mode. It checks that the login
+can create schemas in the database and tables in schema `public`, can create
+the `vector` extension (or finds it), and can create the two roles or set
+their passwords. When a version is too old or a right is missing, start stops
+and prints what to do, for example:
 
 ```text
-  FAIL  neko does not own neko. The start steps create schemas and reindex the database
+  FAIL  neko cannot create schemas in neko. The start steps and the job queue create their own schemas
         Run this SQL as a superuser, in database neko:
-          ALTER DATABASE "neko" OWNER TO "neko";
+          GRANT CREATE ON DATABASE "neko" TO "neko";
 ```
 
 Run the SQL, then run `openneko start`. A URL without `sslmode=verify-full`
