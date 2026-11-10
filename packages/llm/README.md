@@ -149,7 +149,10 @@ and `null` / `false` / `""` placeholders.
 
 The source configuration form is a separate tool, `present_source_form`, on the
 `neko_source_config_manager` server; the host builds that form from the
-agent's prefill values.
+agent's prefill values. `describe_source_config` on the same server returns
+GraphJin's `gj_config` row with GraphJin's redaction applied again on our
+side (`src/graphjin/config-redact.ts`). The server and the `graphjin-config`
+skill reach admin web runs only (`src/work/admin-skills.ts`).
 
 Every tool schema uses the portable JSON Schema subset in
 [`src/tool-schema-portability.ts`](src/tool-schema-portability.ts): declared

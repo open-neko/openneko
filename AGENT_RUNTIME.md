@@ -93,7 +93,10 @@ outside its zone.
 
 Agent runs read customer data only through the direct GraphJin tools. No run
 hands a question to GraphJin's own agent, so GraphJin gets no provider key.
-Migration 0128 removed the setting that did that.
+Migration 0128 removed the setting that did that. Admin chat plans GraphJin
+config changes with OpenNeko's own model: the `graphjin-config` skill reads
+the redacted config through `describe_source_config`, and the seed configs
+set `agent.enabled: false`.
 
 ## Start steps
 

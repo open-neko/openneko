@@ -227,10 +227,10 @@ export class BrokerControlPlane implements AgentControlPlane {
     return this.post("/v1/openapi/list", input);
   }
 
-  askSourceConfigAgent(
-    input: Parameters<AgentControlPlane["askSourceConfigAgent"]>[0],
-  ): ReturnType<AgentControlPlane["askSourceConfigAgent"]> {
-    return this.post("/v1/source-config/agent", input);
+  describeSourceConfig(
+    input: Parameters<AgentControlPlane["describeSourceConfig"]>[0],
+  ): ReturnType<AgentControlPlane["describeSourceConfig"]> {
+    return this.post("/v1/source-config/describe", input);
   }
 
   previewSourceConfigChange(

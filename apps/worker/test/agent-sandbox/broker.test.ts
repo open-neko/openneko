@@ -143,9 +143,9 @@ function makeFakeControlPlane() {
       calls.push({ method: "openapi-list", input: input as Record<string, unknown> });
       return { assets: [] };
     },
-    async askSourceConfigAgent(input) {
-      calls.push({ method: "source-config-agent", input: input as Record<string, unknown> });
-      return { response: { status: "answered", answer: "read-only" } };
+    async describeSourceConfig(input) {
+      calls.push({ method: "source-config-describe", input: input as Record<string, unknown> });
+      return { catalogRevision: "rev", config: { sources: [] } };
     },
     async previewSourceConfigChange(input) {
       calls.push({ method: "source-config-preview", input: input as Record<string, unknown> });

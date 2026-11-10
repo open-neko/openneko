@@ -55,7 +55,7 @@ approves.
 | Feature | What it does for you | Shipped in |
 |---|---|---|
 | Chat-first data sources | Register, enable, disable, or switch your data connections by asking — the assistant proposes the change as a card, and an admin approves it. | #96 |
-| Chat-first source configuration | Admins can add data sources, define roles, and set read/write access on the data engine itself from a conversation — no YAML, no redeploy. | #101 |
+| Chat-first source configuration | Admins can add data sources, define roles, and set read/write access on the data engine itself from a conversation — no YAML, no redeploy. The assistant reads the engine's current config with every secret hidden and explains it from a reference for the pinned GraphJin version. Only admins get these tools and the guide. | #101 |
 | Credentials stay out of chat | Passwords and keys are never typed into the conversation. They're entered once in a secure form, referred to by name afterwards, and stored sealed — the assistant never sees the value. | #101 |
 | Personal access passes | Every request to your data carries a short-lived pass identifying who's asking and what they're allowed to see — access is per-person, not one shared key. | #96 |
 | Multi-tenant isolation | In shared deployments, every query is automatically fenced to your organisation's rows — no way to read a neighbour's data. | #96 |

@@ -270,7 +270,9 @@ describe("buildWorkPrompt workflow + policy management", () => {
     expect(enabled).toContain("graphjin-config");
     expect(enabled).toContain(`${workspace.skillsRoot}/graphjin-config/SKILL.md`);
     expect(enabled).toContain("mcp_neko_source_config_manager_describe_source_graph");
-    expect(enabled).toContain("Call `ask_graphjin_config_agent`");
+    expect(enabled).toContain("Call `describe_source_config`");
+    expect(enabled).toContain("mcp_neko_source_config_manager_describe_source_config");
+    expect(enabled).not.toContain("ask_graphjin_config_agent");
     expect(enabled).toContain("Success for a view or explanation");
     expect(enabled).toContain("source_config_admin");
     expect(enabled).toContain("call `present_source_form` with the values you already know");

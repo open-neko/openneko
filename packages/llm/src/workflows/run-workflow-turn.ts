@@ -21,7 +21,8 @@ import {
   saveAssistantWorkMessage,
   setWorkRunValue,
 } from "../work/store";
-import { ensureWorkWorkspace } from "../work/workspace";
+import { ensureWorkWorkspace, listInstalledSkills } from "../work/workspace";
+import { runSkillScope } from "../work/admin-skills";
 import { WORKFLOW_API_INPUT_FILE } from "./api-contract";
 import { discoverRunArtifacts } from "../work/artifacts";
 import { botThreadForWorkflow } from "../work/bot";
@@ -294,7 +295,11 @@ async function runWorkflowTurnTraced(
       ...(backend.model ? { model: backend.model } : {}),
       inputBytes: Buffer.byteLength(`${prompt}\n\n${seedMessage}`, "utf8"),
     });
-    const allowedSkills = await startupPhase("identity.entitlements", () => runHeldItemIds(runActor, "skill"));
+    const allowedSkills = runSkillScope(
+      await startupPhase("identity.entitlements", () => runHeldItemIds(runActor, "skill")),
+      (await listInstalledSkills(workspace.skillsRoot)).map((skill) => skill.name),
+      false,
+    );
     const budget = workflowTurnBudget();
     const coreResult = await runCore({
       ...(allowedSkills ? { allowedSkills } : {}),

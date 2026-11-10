@@ -46,10 +46,6 @@ import {
   type FileSqlForRunArgs,
 } from "./files";
 import type { FileReadResult, FileSearchResult, FileSqlResult } from "../files/client";
-import type {
-  GraphjinAgentResponse,
-  GraphjinAgentStatus,
-} from "../graphjin/agent";
 import {
   callGraphjinMcpTool as callRemoteGraphjinMcpTool,
   listGraphjinMcpTools as listRemoteGraphjinMcpTools,
@@ -324,12 +320,26 @@ async function requireSourceConfigAccess(input: {
   return { ok: true, userId };
 }
 
-export type SourceConfigAgentResult = {
+const SOURCE_CONFIG_VIEW_FIELDS = [
+  "sources",
+  "roles",
+  "databases",
+  "tables",
+  "blocklist",
+  "system",
+  "mcp",
+  "serv",
+] as const;
+
+const SOURCE_CONFIG_VIEW_MAX_CHARS = 60_000;
+
+export type SourceConfigViewResult = {
   denied?: boolean;
   error?: string;
   source?: { id: string; name: string; host: string | null };
-  agentStatus?: GraphjinAgentStatus;
-  response?: GraphjinAgentResponse;
+  catalogRevision?: string;
+  config?: Record<string, unknown>;
+  truncated?: boolean;
 };
 
 export type SourceConfigPreviewResult = {
@@ -572,20 +582,13 @@ export interface AgentControlPlane {
     error?: string;
     assets: OpenApiSpecAssetView[];
   }>;
-  /**
-   * Ask the selected customer GraphJin's built-in server agent to inspect or
-   * explain its configuration. The host verifies the agent is globally
-   * read-only before forwarding an instruction, and authenticates with a
-   * short-lived admin JWT that never enters the sandbox.
-   */
-  askSourceConfigAgent(input: {
+  /** The selected customer GraphJin's current config, with every secret redacted. */
+  describeSourceConfig(input: {
     orgId: string;
     runId?: string | null;
     actorRole?: string | null;
     dataSourceId?: string;
-    instruction: string;
-    maxSteps?: number;
-  }): Promise<SourceConfigAgentResult>;
+  }): Promise<SourceConfigViewResult>;
   /** Validate the exact allowlisted patch before an approval is created. */
   previewSourceConfigChange(input: {
     orgId: string;
@@ -784,7 +787,12 @@ export class InProcessControlPlane implements AgentControlPlane {
     limit?: number;
   }): Promise<Array<{ name: string; score: number }>> {
     const { searchSkillsForRun } = await import("./skill-index");
-    return searchSkillsForRun(input);
+    const { ADMIN_ONLY_SKILLS } = await import("./admin-skills");
+    const gate = await requireSourceConfigAccess(input);
+    return searchSkillsForRun({
+      ...input,
+      ...(gate.ok ? {} : { exclude: [...ADMIN_ONLY_SKILLS] }),
+    });
   }
 
   async searchFilesForRun(args: FileSearchForRunArgs): Promise<FileSearchResult> {
@@ -1217,24 +1225,14 @@ export class InProcessControlPlane implements AgentControlPlane {
     };
   }
 
-  async askSourceConfigAgent(input: {
+  async describeSourceConfig(input: {
     orgId: string;
     runId?: string | null;
     actorRole?: string | null;
     dataSourceId?: string;
-    instruction: string;
-    maxSteps?: number;
-  }): Promise<SourceConfigAgentResult> {
+  }): Promise<SourceConfigViewResult> {
     const gate = await requireSourceConfigAccess(input);
-    if (!gate.ok) {
-      return { denied: true, error: gate.error };
-    }
-    const instruction = input.instruction.trim();
-    if (!instruction || instruction.length > 8_000) {
-      return {
-        error: "instruction must contain between 1 and 8,000 characters",
-      };
-    }
+    if (!gate.ok) return { denied: true, error: gate.error };
 
     const { and, data_source, db, eq } = await import("@neko/db");
     const rows = await db()
@@ -1261,81 +1259,69 @@ export class InProcessControlPlane implements AgentControlPlane {
     if (!input.dataSourceId && rows.length > 1) {
       return {
         error:
-          "multiple enabled data sources exist; choose a dataSourceId with list_data_sources before asking the configuration agent",
+          "multiple enabled data sources exist; choose a dataSourceId with list_data_sources first",
       };
     }
     const src = rows[0]!;
+    const source = { id: src.id, name: src.name, host: hostnameOf(src.graphqlUrl) };
     if (src.kind !== "graphjin") {
-      return { error: "the selected data source is not a GraphJin server" };
+      return { source, error: "the selected data source is not a GraphJin server" };
     }
     if (isInternalGraphjinURL(src.graphqlUrl)) {
       return {
         denied: true,
-        error: "refusing to inspect the OpenNeko internal GraphJin",
+        source,
+        error: "refusing to read the OpenNeko internal GraphJin config",
       };
     }
 
-    const { askGraphjinAgent, getGraphjinAgentStatus } = await import(
-      "../graphjin/agent"
-    );
+    const { graphjinQuery } = await import("../graphjin/client");
     const { mintGraphjinToken } = await import("../graphjin/token");
+    const { redactSourceConfig } = await import("../graphjin/config-redact");
     const token = mintGraphjinToken({
       orgId: input.orgId,
       userId: gate.userId,
       role: "admin",
+      ttlSeconds: 120,
     });
-    const timeout = AbortSignal.timeout(90_000);
+    const fields = SOURCE_CONFIG_VIEW_FIELDS.join(" ");
     try {
-      const agentStatus = await getGraphjinAgentStatus({
+      const res = await graphjinQuery<{ gj_config?: Record<string, unknown> }>({
         baseUrl: src.graphqlUrl,
-        token,
-        signal: timeout,
+        headers: { authorization: `Bearer ${token}` },
+        query: `query { gj_config(id: "current") { catalog_revision ${fields} } }`,
       });
-      const source = {
-        id: src.id,
-        name: src.name,
-        host: hostnameOf(src.graphqlUrl),
-      };
-      if (!agentStatus.ready) {
+      const row = res.data?.gj_config;
+      if (res.errors?.length || !row) {
         return {
           source,
-          agentStatus,
-          error: agentStatus.message || "GraphJin agent is not ready",
-        };
-      }
-      if (!agentStatus.read_only) {
-        return {
-          denied: true,
-          source,
-          agentStatus,
           error:
-            "GraphJin agent is not configured read-only; OpenNeko will not forward configuration instructions",
+            res.errors?.map((item) => item.message).join("; ").slice(0, 1_000) ||
+            "GraphJin did not return its config",
         };
       }
-      const response = await askGraphjinAgent({
-        baseUrl: src.graphqlUrl,
-        token,
-        signal: timeout,
-        request: {
-          instruction,
-          max_steps: Math.min(Math.max(input.maxSteps ?? 8, 1), 12),
-          return_trace: false,
-          context: {
-            caller: "OpenNeko admin chat",
-            purpose: "configuration inspection and planning",
-            constraint:
-              "Read-only advisory request. Do not apply configuration or schema changes.",
-          },
-        },
-      });
-      return { source, agentStatus, response };
+      const config: Record<string, unknown> = {};
+      let size = 0;
+      let truncated = false;
+      for (const field of SOURCE_CONFIG_VIEW_FIELDS) {
+        const redacted = redactSourceConfig(parseJsonColumn(row[field]) ?? null);
+        const length = JSON.stringify(redacted)?.length ?? 0;
+        if (size + length > SOURCE_CONFIG_VIEW_MAX_CHARS) {
+          truncated = true;
+          continue;
+        }
+        size += length;
+        config[field] = redacted;
+      }
+      return {
+        source,
+        catalogRevision: String(row.catalog_revision ?? ""),
+        config,
+        ...(truncated ? { truncated } : {}),
+      };
     } catch (err) {
       return {
-        source: {
-          id: src.id,
-          name: src.name,
-          host: hostnameOf(src.graphqlUrl),
-        },
+        source,
         error: (err instanceof Error ? err.message : String(err)).slice(0, 1_000),
       };
     }
@@ -1800,6 +1786,15 @@ export class InProcessControlPlane implements AgentControlPlane {
         verifiedAt: i.verifiedAt?.toISOString() ?? null,
       })),
     };
+  }
+}
+
+function parseJsonColumn(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
   }
 }
 

@@ -26,9 +26,12 @@ import {
 import {
   action_policy,
   and,
+  app_user,
   asc,
   db,
   eq,
+  GRAPHJIN_CONFIG_SCOPE,
+  llm_provider_config,
   pool,
   work_run,
   work_run_event,
@@ -163,6 +166,50 @@ describeIfDb("runChatTurn", () => {
       orgId, threadId: thread.id, runId: run.id, message: "Hello", emit: async () => {}, ...options,
     }, makeDeps({ runCore }));
     expect(runCore).toHaveBeenCalledWith(expect.objectContaining({ cardSchema }));
+  });
+
+  it("gives the graphjin-config skill and the source-config tools to an admin run only", async () => {
+    await db().insert(llm_provider_config).values({
+      org_id: orgId,
+      scope: GRAPHJIN_CONFIG_SCOPE,
+      provider: "graphjin-config",
+      enabled: true,
+      config: { sourceConfigEnabled: true },
+      secrets: {},
+    });
+    const skills = [
+      { name: "graphjin-config", description: "GraphJin config" },
+      { name: "internal-comms", description: "Write internal updates" },
+    ];
+    const turn = async (role: "admin" | "member") => {
+      const thread = await insertWorkThread(orgId);
+      const run = await insertWorkRun({ orgId, threadId: thread.id });
+      const userId = role === "member" ? `member-${run.id}` : null;
+      if (userId) await db().insert(app_user).values({ id: userId, org_id: orgId, email: `${userId}@example.test` });
+      await db().update(work_run).set({ actor_role: role, actor_user_id: userId }).where(eq(work_run.id, run.id));
+      const runCore = vi.fn(async () => ({ status: "completed" as const, finalText: "Done." }));
+      await runChatTurn(
+        { orgId, threadId: thread.id, runId: run.id, message: "Show the GraphJin config", emit: async () => {} },
+        makeDeps({ runCore, listInstalledSkills: vi.fn(async () => skills) }),
+      );
+      return runCore.mock.calls[0]![0] as unknown as {
+        prompt: string;
+        sourceConfigEnabled: boolean;
+        allowedSkills?: string[];
+      };
+    };
+
+    const admin = await turn("admin");
+    expect(admin.sourceConfigEnabled).toBe(true);
+    expect(admin.allowedSkills).toBeUndefined();
+    expect(admin.prompt).toContain("graphjin-config/SKILL.md");
+    expect(admin.prompt).toContain("mcp_neko_source_config_manager_describe_source_config");
+
+    const member = await turn("member");
+    expect(member.sourceConfigEnabled).toBe(false);
+    expect(member.allowedSkills).toEqual(["internal-comms"]);
+    expect(member.prompt).not.toContain("graphjin-config");
+    expect(member.prompt).not.toContain("mcp_neko_source_config_manager_");
   });
 
   it("happy path: writes events in id-monotonic order, finalizes work_run completed, emits done", async () => {

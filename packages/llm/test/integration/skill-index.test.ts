@@ -1,6 +1,6 @@
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { db, eq, pool, skill_embedding } from "@neko/db";
+import { db, eq, GRAPHJIN_CONFIG_SCOPE, llm_provider_config, pool, skill_embedding } from "@neko/db";
 import { createTestOrg, dbReachable, deleteTestOrg, uniqueOrgId } from "@neko/db/test-helpers";
 
 // Each topic is one axis, so texts that share a topic sit close together.
@@ -22,6 +22,7 @@ import { embeddingModel } from "../../src/embedding";
 import { runEmbeddingIndexJob } from "../../src/embedding-jobs";
 import { searchSkillsForRun, syncSkillIndex } from "../../src/work/skill-index";
 import { createWorkRun, createWorkThread } from "../../src/work/store";
+import { inProcessControlPlane } from "../../src/work/control-plane";
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
@@ -90,6 +91,38 @@ describeIfDb("skill index", () => {
       expect(results.map((s) => s.name)).not.toContain("docx");
     } finally {
       vi.stubEnv("OPENNEKO_SANDBOX_URL", "unix:///run/openneko/sandbox.sock");
+    }
+  });
+
+  it("finds the admin-only skill for an admin run with the config tools, and for no other run", async () => {
+    vi.mocked(embeddingModel).mockReturnValue(null);
+    const thread = await createWorkThread(orgId, "service");
+    const service = await createWorkRun(orgId, thread.id, "ax", { userId: null, role: "service" });
+    try {
+      await syncSkillIndex(orgId, [
+        { name: "xlsx", description: "Use this skill any time a spreadsheet file is the primary input or output" },
+        { name: "graphjin-config", description: "Use when viewing or proposing changes to GraphJin sources and roles" },
+      ]);
+      const search = (run: string) =>
+        inProcessControlPlane
+          .searchSkillsForRun({ orgId, runId: run, query: "GraphJin sources roles", limit: 3 })
+          .then((results) => results.map((s) => s.name));
+
+      expect(await search(runId)).not.toContain("graphjin-config");
+      await db().insert(llm_provider_config).values({
+        org_id: orgId,
+        scope: GRAPHJIN_CONFIG_SCOPE,
+        provider: "graphjin-config",
+        enabled: true,
+        config: { sourceConfigEnabled: true },
+        secrets: {},
+      });
+      expect(await search(runId)).toContain("graphjin-config");
+      expect(await search(service.id)).not.toContain("graphjin-config");
+      expect(await searchSkillsForRun({ orgId, runId: service.id, query: "GraphJin sources roles" }))
+        .toEqual([expect.objectContaining({ name: "graphjin-config" })]);
+    } finally {
+      vi.mocked(embeddingModel).mockReturnValue("test-model");
     }
   });
 

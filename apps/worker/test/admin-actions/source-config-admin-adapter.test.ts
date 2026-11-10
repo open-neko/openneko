@@ -597,7 +597,7 @@ describeIfDb("source_config_admin adapter (OL5)", () => {
     expect(graph.namespaces?.[0]?.id).toBe("namespace-1");
   });
 
-  it("server agent is admin-only, bearer-authenticated, and rechecks live role", async () => {
+  it("config view is admin-only, bearer-authenticated, redacted, and rechecks live role", async () => {
     await setEndpoint(CUSTOMER);
     const userId = `admin-${randomUUID()}`;
     const threadId = randomUUID();
@@ -624,55 +624,61 @@ describeIfDb("source_config_admin adapter (OL5)", () => {
       actor_role: "admin",
     });
 
-    const calls: Array<{ url: string; headers: Headers; body?: unknown }> = [];
+    const calls: Array<{ url: string; headers: Headers; body?: { query: string } }> = [];
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init: RequestInit = {}) => {
-        const headers = new Headers(init.headers);
         calls.push({
           url,
-          headers,
+          headers: new Headers(init.headers),
           body: typeof init.body === "string" ? JSON.parse(init.body) : undefined,
         });
-        if (url.endsWith("/api/v1/agent/status")) {
-          return new Response(
-            JSON.stringify({
-              status: "ready",
-              enabled: true,
-              ready: true,
-              endpoint: "/api/v1/agent",
-              provider: "openai",
-              api_key_configured: true,
-              max_steps: 8,
-              timeout_seconds: 50,
-              read_only: true,
-              return_trace: false,
-              message: "ready",
-            }),
-            { status: 200 },
-          );
-        }
         return new Response(
           JSON.stringify({
-            status: "answered",
-            answer: "The redacted configuration is healthy.",
-            trace_id: "gj-trace-1",
+            data: {
+              gj_config: {
+                catalog_revision: "rev-7",
+                sources: JSON.stringify([
+                  {
+                    name: "shop",
+                    kind: "database",
+                    connection: {
+                      type: "postgres",
+                      host: "db.internal",
+                      password: "hunter2",
+                      url: "postgres://shop:hunter2@db.internal/shop",
+                    },
+                    access: { read: "authenticated", write: "blocked" },
+                  },
+                ]),
+                roles: [{ name: "member", match: "role = 'member'" }],
+                serv: { auth: { jwt: { secret: "[REDACTED]" } }, reload_on_config_change: true },
+              },
+            },
           }),
           { status: 200 },
         );
       }),
     );
 
-    const answer = await inProcessControlPlane.askSourceConfigAgent({
-      orgId,
-      runId,
-      instruction: "Explain the current redacted configuration.",
-    });
-    expect(answer.response?.status).toBe("answered");
-    expect(answer.agentStatus?.read_only).toBe(true);
-    expect(calls).toHaveLength(2);
-    expect(calls.every((call) => call.headers.has("authorization"))).toBe(true);
-    expect(calls.every((call) => !call.headers.has("x-role"))).toBe(true);
+    const view = await inProcessControlPlane.describeSourceConfig({ orgId, runId });
+    expect(view.error).toBeUndefined();
+    expect(view.catalogRevision).toBe("rev-7");
+    const [shop] = view.config?.sources as Array<{
+      name: string;
+      connection: Record<string, string>;
+    }>;
+    expect(shop?.name).toBe("shop");
+    expect(shop?.connection.host).toBe("db.internal");
+    expect(shop?.connection.password).toBe("[REDACTED]");
+    expect(shop?.connection.url).toBe("postgres://[REDACTED]@db.internal/shop");
+    expect(JSON.stringify(view)).not.toContain("hunter2");
+    expect(view.config?.roles).toEqual([{ name: "member", match: "role = 'member'" }]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe(CUSTOMER);
+    expect(calls[0]?.body?.query).toContain('gj_config(id: "current")');
+    expect(calls[0]?.headers.has("authorization")).toBe(true);
+    expect(calls[0]?.headers.has("x-role")).toBe(false);
 
     // The guard keeps one administrator, so the org gets a second before the demotion.
     const keeperId = `keeper-${randomUUID()}`;
@@ -680,11 +686,7 @@ describeIfDb("source_config_admin adapter (OL5)", () => {
     await setLocalAdministrator(orgId, keeperId, true);
     await setLocalAdministrator(orgId, userId, false);
     calls.length = 0;
-    const denied = await inProcessControlPlane.askSourceConfigAgent({
-      orgId,
-      runId,
-      instruction: "Show configuration.",
-    });
+    const denied = await inProcessControlPlane.describeSourceConfig({ orgId, runId });
     expect(denied.denied).toBe(true);
     expect(denied.error).toMatch(/admin-only/i);
     expect(calls).toHaveLength(0);

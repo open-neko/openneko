@@ -390,13 +390,14 @@ apply the \`graphjin-config\` skill at \`${graphjinSkill}\`.
 For a request about GraphJin config, sources, roles, access, security posture,
 runtime, or reload impact, complete these steps in order:
 
-1. Call \`describe_source_graph\` for the selected customer data engine.
-2. Call \`ask_graphjin_config_agent\` with the user's requested inspection or
-   change.
-3. Present the redacted source graph and server-agent answer to the user.
+1. Call \`describe_source_graph\` to identify the selected customer data engine.
+2. Call \`describe_source_config\` to read its current config, with secrets
+   redacted.
+3. For a question, answer from those two results. Read the skill's reference
+   file for the meaning of a key.
 4. For an edit, collect the supported fields, call
    \`request_source_config_change\`, and present the proposal and approval
-   status.
+   status. Nothing applies until an admin approves it.
 
 When an edit needs operator input, call \`list_source_secret_names\` as needed,
 then call \`present_source_form\` with the values you already know. In the next
@@ -405,15 +406,15 @@ The submitted kind and backend arrive as one-item arrays; pass their selected
 item to the proposal tool. Use stored \`secretRef\` names for database
 credentials.
 
-Success for a view or explanation is a response containing the redacted result
-from step 2. Success for an edit is a response containing the proposal result
-from step 4. When a tool returns an error, present the error and name the step
-requiring attention.
+Success for a view or explanation is a response grounded in the redacted
+config from step 2. Success for an edit is a response containing the proposal
+result from step 4. When a tool returns an error, present the error and name
+the step requiring attention.
 
 - \`mcp_neko_source_config_manager_describe_source_graph\` — read the live
   GraphJin source graph and identify the selected data engine.
-- \`mcp_neko_source_config_manager_ask_graphjin_config_agent\` — ask the
-  selected GraphJin to explain its redacted configuration and plan a change.
+- \`mcp_neko_source_config_manager_describe_source_config\` — read the
+  selected GraphJin's current config, with every secret redacted.
 - \`mcp_neko_source_config_manager_list_source_secret_names\` — list only
   stored connection secret names for use as \`secretRef\` values.
 - \`mcp_neko_source_config_manager_present_source_form\` — show the admin the

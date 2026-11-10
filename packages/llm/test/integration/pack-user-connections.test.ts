@@ -17,7 +17,6 @@ import { maybeEncryptSecret } from "@neko/secret-crypt";
 import { packConnectionHeader, exchangePackOAuthCode } from "@neko/packs/oauth-client";
 import { beginPackUserConnection, completePackUserConnection, disconnectPackUserConnection, listPackUserConnections, packConnectionBindings, packUserConnectionHeaders } from "../../src/graphjin/pack-user-connections";
 import { mintGraphjinToken } from "../../src/graphjin/token";
-import { askGraphjinAgent } from "../../src/graphjin/agent";
 import { graphjinQuery } from "../../src/graphjin/client";
 import { callGraphjinMcpTool } from "../../src/graphjin/mcp-client";
 
@@ -112,7 +111,7 @@ describe.skipIf(!reachable)("personal pack credentials against PostgreSQL", () =
     await expect(connect()).rejects.toThrow("not installed");
     expect((await packUserConnectionHeaders(url, tokenHeaders("alice")))[header]).toBeUndefined();
   });
-  it("bridges GraphQL, MCP and agent requests and refuses redirects", async () => {
+  it("bridges GraphQL and MCP requests and refuses redirects", async () => {
     await connect();
     const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ data: { ok: true } }), { status: 200 }));
     await graphjinQuery({ baseUrl: url, headers: tokenHeaders("alice"), query: "{ me { id } }" });
@@ -120,9 +119,6 @@ describe.skipIf(!reachable)("personal pack credentials against PostgreSQL", () =
     spy.mockResolvedValue(new Response(JSON.stringify({ jsonrpc: "2.0", id: 2, result: { content: [] } }), { status: 200, headers: { "content-type": "application/json" } }));
     await callGraphjinMcpTool({ baseUrl: mcp, headers: tokenHeaders("alice") }, { name: "query", arguments: {} });
     expect(spy.mock.calls[1]?.[1]).toMatchObject({ headers: { [header]: "access-alice" }, redirect: "error" });
-    spy.mockResolvedValue(new Response(JSON.stringify({ status: "completed", answer: "done" }), { status: 200 }));
-    await askGraphjinAgent({ baseUrl: url, token: mintGraphjinToken({ orgId: "org", userId: "alice", role: "member" }), request: { instruction: "Read my account" } });
-    expect(spy.mock.calls[2]?.[1]).toMatchObject({ headers: { [header]: "access-alice" }, redirect: "error" });
     spy.mockRestore();
   });
 });

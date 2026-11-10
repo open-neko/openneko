@@ -76,6 +76,7 @@ import { errorCodeOf, type HarnessObserver } from "@neko/telemetry";
 import { SandboxFailure } from "./sandbox-failure";
 import { spendCapFromSignal } from "../spend/run-guard";
 import { skillRunnable } from "./sandbox-service";
+import { runSkillScope } from "./admin-skills";
 
 /**
  * Delivery channel for a run. "web" renders a2ui cards (the channel injects the
@@ -445,7 +446,7 @@ async function runChatTurnTraced(
         heldItems(runActor, "team_memory"),
         filterHeldActions(runActor, opts.packActions ?? []),
       ]));
-    const [memoryContext, installedSkills, profile] = await Promise.all([
+    const [memoryContext, availableSkills, profile] = await Promise.all([
       startupPhase("context.memory", () => formatWorkMemoryPromptContext(
         {
           orgId,
@@ -465,10 +466,18 @@ async function runChatTurnTraced(
           await startupPhase("context.skill_index", () => (deps.syncSkillIndex ?? syncSkillIndex)(orgId, skills))
             .catch((error) => console.warn("[work-run] skill index sync failed:", error instanceof Error ? error.message : error));
         }
-        return skills.filter((skill) => (!allowedSkills || allowedSkills.includes(skill.name)) && skillRunnable(skill.name));
+        return skills;
       }),
       startupPhase("context.persona", () => getOperatorProfile(orgId, actor.userId)),
     ]);
+    const runSkills = runSkillScope(
+      allowedSkills,
+      availableSkills.map((skill) => skill.name),
+      supportsSourceConfigTool,
+    );
+    const installedSkills = availableSkills.filter(
+      (skill) => (!runSkills || runSkills.includes(skill.name)) && skillRunnable(skill.name),
+    );
     const operatorProfile = buildOperatorProfileSection(profile);
 
     const prompt = buildWorkPrompt({
@@ -504,7 +513,7 @@ async function runChatTurnTraced(
       inputBytes: Buffer.byteLength(`${prompt}\n\n${message}`, "utf8"),
     });
     const coreResult = await runCore({
-      ...(allowedSkills ? { allowedSkills } : {}),
+      ...(runSkills ? { allowedSkills: runSkills } : {}),
       backend,
       prompt,
       userMessage: message,

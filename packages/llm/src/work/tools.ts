@@ -660,30 +660,24 @@ export function buildSourceConfigManagerServer(opts: {
     },
   );
 
-  const askConfigAgent = defineMcpTool(
-    "ask_graphjin_config_agent",
+  const describeConfig = defineMcpTool(
+    "describe_source_config",
     [
-      "Ask the selected GraphJin configuration agent to inspect, explain, or",
-      "plan against its redacted configuration. Use this for questions about",
-      "settings, roles, sources, access, security, runtime, and reload impact.",
-      "For multiple data sources, pass the selected dataSourceId.",
+      "Return the selected GraphJin data engine's current config: sources,",
+      "roles, databases, tables, blocklist, system, mcp and serv settings,",
+      "with every secret redacted. Use it to explain the config and to plan a",
+      "change. For multiple data sources, pass the selected dataSourceId.",
     ].join(" "),
-    {
-      instruction: z.string().trim().min(1).max(8_000),
-      dataSourceId: z.string().uuid().optional(),
-      maxSteps: z.number().int().min(1).max(12).optional(),
-    },
+    { dataSourceId: z.string().uuid().optional() },
     async (args) => ({
       content: [
         {
           type: "text" as const,
           text: JSON.stringify(
-            await controlPlane.askSourceConfigAgent({
+            await controlPlane.describeSourceConfig({
               orgId: opts.orgId,
               runId: opts.runId ?? null,
-              instruction: args.instruction,
               dataSourceId: args.dataSourceId,
-              maxSteps: args.maxSteps,
             }),
           ),
         },
@@ -907,10 +901,10 @@ export function buildSourceConfigManagerServer(opts: {
 
   return createMcpServer({
     name: "neko_source_config_manager",
-    version: "1.1.0",
+    version: "1.2.0",
     tools: [
       describe,
-      askConfigAgent,
+      describeConfig,
       listSecretNames,
       presentSourceForm,
       importOpenApi,

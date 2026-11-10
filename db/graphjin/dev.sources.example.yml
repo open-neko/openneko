@@ -103,18 +103,9 @@ mcp:
   # the caller's token; the knowledge prefetch does the same.
   legacy_discovery: false
 
-# GraphJin's built-in agent is an evidence-backed configuration specialist for
-# OpenNeko admin chat. This global read-only switch is verified through
-# /api/v1/agent/status before OpenNeko forwards every instruction.
+# Agentic mode turns GraphJin's own agent on unless the config says otherwise.
 agent:
-  enabled: true
-  provider: openai
-  model: gpt-4.1-mini
-  api_key_env: GRAPHJIN_AGENT_API_KEY
-  max_steps: 8
-  timeout_seconds: 50
-  read_only: true
-  return_trace: false
+  enabled: false
 
 analytics_mode: true
 

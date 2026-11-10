@@ -44,8 +44,8 @@ function stubControlPlane(): AgentControlPlane {
       unused as AgentControlPlane["listSourceSecretNames"],
     importOpenApiSpec: unused as AgentControlPlane["importOpenApiSpec"],
     listOpenApiSpecs: unused as AgentControlPlane["listOpenApiSpecs"],
-    askSourceConfigAgent:
-      unused as AgentControlPlane["askSourceConfigAgent"],
+    describeSourceConfig:
+      unused as AgentControlPlane["describeSourceConfig"],
     previewSourceConfigChange:
       unused as AgentControlPlane["previewSourceConfigChange"],
   };

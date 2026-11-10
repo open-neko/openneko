@@ -46,8 +46,9 @@ export async function syncSkillIndex(
   }
 }
 
-function runnableOnly() {
-  return sandboxConfig() ? [] : [notInArray(skill_embedding.skill_name, [...SANDBOX_SKILLS])];
+function runnableOnly(exclude: readonly string[] = []) {
+  const hidden = sandboxConfig() ? exclude : [...SANDBOX_SKILLS, ...exclude];
+  return hidden.length ? [notInArray(skill_embedding.skill_name, [...hidden])] : [];
 }
 
 async function keywordSkillSearch(
@@ -55,6 +56,7 @@ async function keywordSkillSearch(
   held: string[] | null | undefined,
   query: string,
   limit: number,
+  exclude: readonly string[],
   unindexedModel?: string,
 ): Promise<SkillSearchResult[]> {
   const tsquery = keywordTsQuery(query);
@@ -67,7 +69,7 @@ async function keywordSkillSearch(
       and(
         eq(skill_embedding.org_id, orgId),
         ...(held ? [inArray(skill_embedding.skill_name, held)] : []),
-        ...runnableOnly(),
+        ...runnableOnly(exclude),
         ...(unindexedModel
           ? [sql`(${skill_embedding.embedding} IS NULL OR ${skill_embedding.embedding_model} IS DISTINCT FROM ${unindexedModel})`]
           : []),
@@ -89,8 +91,10 @@ export async function searchSkillsForRun(input: {
   runId: string;
   query: string;
   limit?: number;
+  exclude?: readonly string[];
 }): Promise<SkillSearchResult[]> {
   const query = input.query.trim();
+  const exclude = input.exclude ?? [];
   if (!query) return [];
   const actor = await entitlementActorForRun(input.orgId, input.runId);
   if (!actor) return [];
@@ -99,7 +103,7 @@ export async function searchSkillsForRun(input: {
   const limit = Math.min(Math.max(input.limit ?? 3, 1), 10);
 
   const model = embeddingModel();
-  if (!model) return keywordSkillSearch(input.orgId, held, query, limit);
+  if (!model) return keywordSkillSearch(input.orgId, held, query, limit, exclude);
   let vector: string;
   try {
     vector = vectorLiteral(await embedText(query));
@@ -108,7 +112,7 @@ export async function searchSkillsForRun(input: {
       "[skill-index] embedding unavailable; searching by keyword:",
       error instanceof Error ? error.message : error,
     );
-    return keywordSkillSearch(input.orgId, held, query, limit);
+    return keywordSkillSearch(input.orgId, held, query, limit, exclude);
   }
   const distance = sql<number>`${skill_embedding.embedding} <=> ${vector}::vector`;
   const [rows, unindexed] = await Promise.all([
@@ -121,12 +125,12 @@ export async function searchSkillsForRun(input: {
           eq(skill_embedding.embedding_model, model),
           sql`${skill_embedding.embedding} IS NOT NULL`,
           ...(held ? [inArray(skill_embedding.skill_name, held)] : []),
-          ...runnableOnly(),
+          ...runnableOnly(exclude),
         ),
       )
       .orderBy(distance)
       .limit(limit),
-    keywordSkillSearch(input.orgId, held, query, limit, model),
+    keywordSkillSearch(input.orgId, held, query, limit, exclude, model),
   ]);
   const semantic = rows.map((row) => ({ name: row.name, score: 1 - Number(row.distance) }));
   return interleaveResults(semantic, unindexed, (result) => result.name, limit);

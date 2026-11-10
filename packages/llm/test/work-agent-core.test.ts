@@ -69,6 +69,34 @@ describe("runAgentBackend", () => {
     });
   });
 
+  it("mounts the source-config tools only when the run may use them", async () => {
+    const mounted: Array<AgentRunOptions["mcpServers"]> = [];
+    const backend: AgentBackend = {
+      id: "ax",
+      capabilities: { mcpTools: true, sessionResume: false, nativeDelegation: "ax-worker" },
+      async run(opts) {
+        mounted.push(opts.mcpServers);
+        return { status: "completed", finalText: "done" };
+      },
+    };
+    for (const sourceConfigEnabled of [false, true]) {
+      await runAgentBackend({
+        backend,
+        prompt: "prompt",
+        userMessage: "show the GraphJin config",
+        orgId: "org-1",
+        threadId: "thread-1",
+        runId: "run-1",
+        workspace,
+        controlPlane,
+        sourceConfigEnabled,
+        emit: async () => {},
+      });
+    }
+    expect(mounted[0]).not.toHaveProperty("neko_source_config_manager");
+    expect(mounted[1]).toHaveProperty("neko_source_config_manager");
+  });
+
   it("mounts pack actions and no plugin action server", async () => {
     let captured: AgentRunOptions | undefined;
     const backend: AgentBackend = {

@@ -460,20 +460,17 @@ async function handle(
           limit: typeof body.limit === "number" ? body.limit : undefined,
         }),
       );
-    case "/v1/source-config/agent":
+    case "/v1/source-config/describe":
       return send(
         res,
         200,
-        await cp.askSourceConfigAgent({
+        await cp.describeSourceConfig({
           orgId: binding.orgId,
           runId: binding.runId,
           dataSourceId:
             typeof body.dataSourceId === "string"
               ? body.dataSourceId
               : undefined,
-          instruction: String(body.instruction ?? ""),
-          maxSteps:
-            typeof body.maxSteps === "number" ? body.maxSteps : undefined,
         }),
       );
     case "/v1/source-config/preview":
