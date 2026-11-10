@@ -202,7 +202,7 @@ func runRestore(ctx context.Context, cmd *cobra.Command, path, keyFile string) e
 	fmt.Fprintf(out, "Backup of %s taken %s by openneko %s verified.\n",
 		manifest.Project, manifest.CreatedAt.Format("2006-01-02 15:04:05 UTC"), manifest.OpenNekoVersion)
 
-	sup, _, project, files, err := currentStackCompose()
+	sup, mode, project, files, err := currentStackCompose()
 	if err != nil {
 		return err
 	}
@@ -281,6 +281,10 @@ func runRestore(ctx context.Context, cmd *cobra.Command, path, keyFile string) e
 		return failed("reading the backup", errors.New("the database dump is missing"))
 	}
 
+	fmt.Fprintln(out, "Running the start steps...")
+	if err := runStartSteps(ctx, sup, project, files, mode, nil); err != nil {
+		return fmt.Errorf("restore completed but a start step failed: %w", err)
+	}
 	fmt.Fprintln(out, "Starting the stack...")
 	if err := stack.compose(ctx, nil, os.Stdout, "up", "-d", "--wait", "--wait-timeout", "180"); err != nil {
 		return fmt.Errorf("restore completed but the stack failed to start: %w", err)

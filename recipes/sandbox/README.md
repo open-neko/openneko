@@ -8,8 +8,13 @@ and no OpenNeko secret.
 ## Build and run beside the stack
 
 ```sh
-docker compose -f compose.yml -f recipes/sandbox/compose.yml up -d --build
+docker compose -f compose.yml -f recipes/sandbox/compose.yml --profile steps build
+docker compose -f compose.yml -f recipes/sandbox/compose.yml run --rm openneko-serve-init
+docker compose -f compose.yml -f recipes/sandbox/compose.yml up -d
 ```
+
+The `run` line runs the start steps (storage check, migrations, config
+volume, serve credentials) before `up`.
 
 The overlay adds the `openneko-sandbox` service and sets
 `OPENNEKO_SANDBOX_URL=unix:///run/openneko/sandbox.sock` for web, worker and

@@ -49,12 +49,15 @@ services:
       timeout: 5s
       retries: 20
 
-  # One-shot storage ABI gate. It repairs persisted indexes in the managed
-  # database after a libc/collation-runtime transition and records the
-  # enforced contract independently of schema migrations. Every database
-  # consumer waits for successful completion, so an incompatible image fails
-  # closed before application reads or writes begin.
+  # Start steps. Services in the "steps" profile are not part of `up`.
+  # `openneko start`, `upgrade` and `restore` run them in this order with
+  # `compose run --rm` and stop at the first failure. From a source checkout,
+  # `docker compose run --rm openneko-serve-init` runs the whole chain.
+  #
+  # Storage ABI gate: repairs persisted indexes after a libc/collation
+  # change, so an incompatible image fails closed before any read or write.
   storage-reconcile:
+    profiles: ["steps"]
     build:
       context: .
       target: neko-cli
@@ -78,10 +81,9 @@ services:
 
 
 
-  # One-shot: applies SQL migrations to neko-db after both database volumes
-  # satisfy the enforced storage contract. Every long-running service depends
-  # on this completing successfully, so schema and storage are ready together.
+  # Applies SQL migrations after the storage gate.
   neko-migrate:
+    profiles: ["steps"]
     build:
       context: .
       target: neko-cli
@@ -111,6 +113,7 @@ services:
   # and secret key on first boot. Repair ownership before the non-root worker
   # mounts the volume so a completely fresh Compose project can start.
   openneko-config-init:
+    profiles: ["steps"]
     image: alpine:3.22
     user: "0:0"
     entrypoint:
@@ -128,11 +131,12 @@ services:
       - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/config/openneko
     restart: "no"
 
-  # One-shot: sets the neko_files and neko_subscriptions role passwords,
+  # Sets the neko_files and neko_subscriptions role passwords,
   # writes serve's credentials
   # and creates the customer GraphJin config when it is missing. Serve holds
   # no main database login and no secret-key.
   openneko-serve-init:
+    profiles: ["steps"]
     build:
       context: .
       target: neko-serve
@@ -161,16 +165,16 @@ services:
   # 8080 and the subscriptions GraphJin on 8089 (workflow outputs, read as
   # neko_subscriptions).
   # Web and worker call it with short-lived tokens signed with a key derived
-  # from the secret-key. GraphJin does not reload auth keys, so serve starts
-  # after openneko-serve-init has written the per-org JWT secret.
+  # from the secret-key. GraphJin does not reload auth keys, so the start
+  # steps write the per-org JWT secret before serve starts.
   openneko-serve:
     build:
       context: .
       target: neko-serve
     command: ["serve"]
     depends_on:
-      openneko-serve-init:
-        condition: service_completed_successfully
+      neko-db:
+        condition: service_healthy
     networks:
       default:
         aliases: [graphjin]
@@ -203,11 +207,6 @@ services:
     depends_on:
       openneko-serve:
         condition: service_started
-      # Schema is guaranteed ready by neko-migrate before web boots.
-      neko-migrate:
-        condition: service_completed_successfully
-      openneko-serve-init:
-        condition: service_completed_successfully
       # Web is the user-facing readiness boundary. Do not serve the temporary
       # recovery screen while the control plane is still starting.
       worker:
@@ -245,17 +244,10 @@ services:
       context: .
       target: worker
     depends_on:
+      neko-db:
+        condition: service_healthy
       openneko-serve:
         condition: service_started
-      # Schema is guaranteed ready by neko-migrate before worker boots.
-      neko-migrate:
-        condition: service_completed_successfully
-      openneko-config-init:
-        condition: service_completed_successfully
-      # openneko-serve-init creates the org row and writes its GraphJin
-      # secret first, so the worker reads the same org.
-      openneko-serve-init:
-        condition: service_completed_successfully
     environment:
       <<: *neko-app-env
       OPENNEKO_GRAPHJIN_URL: http://openneko-serve:8089

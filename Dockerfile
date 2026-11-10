@@ -299,7 +299,7 @@ ENV OPENNEKO_VERSION=$OPENNEKO_VERSION OPENNEKO_COMMIT=$OPENNEKO_COMMIT
 LABEL org.opencontainers.image.revision=$OPENNEKO_COMMIT org.opencontainers.image.version=$OPENNEKO_VERSION
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git openssh-client postgresql-client \
+      git openssh-client postgresql-client unzip \
     && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
     PORT=4100 \
@@ -339,11 +339,9 @@ ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["node", "--import", "tsx/esm", "src/index.ts"]
 
 # ─── 5c. neko-cli runtime ──────────────────────────────────────────────
-# Minimal image containing just the openneko Go binary. Used as the
-# `neko-migrate` one-shot container in compose: starts, runs
-# `openneko storage reconcile` and `openneko migrate`, then exits. Every
-# database consumer is gated on those one-shots, so persisted indexes and the
-# schema are both valid before application startup.
+# Minimal image containing just the openneko Go binary. It runs the
+# `storage-reconcile` and `neko-migrate` start steps, which `openneko start`
+# runs before any database consumer starts.
 #
 # The binary is static (CGO_ENABLED=0), so the distroless static image is the
 # complete runtime. Its Debian CA bundle keeps managed-Postgres TLS working.

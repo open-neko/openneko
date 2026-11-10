@@ -138,6 +138,7 @@ services:
         exec /bin/sh /scripts/scenario-injector.sh loop
 
   neko-adventureworks-seed:
+    profiles: ["steps"]
     build:
       context: .
       target: init-tools

@@ -71,10 +71,8 @@ type bringUpOptions struct {
 	quiet       bool
 }
 
-// bringUpStack runs the staged bring-up shared by `start` and `setup`:
-// reconcile the database volume → private neko-migrate container → compose
-// up the rest. Extracted from newStartCmd so setup
-// reuses the exact same path.
+// bringUpStack runs the start steps in order, then `compose up`. `start` and
+// `setup` share it.
 func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, opts bringUpOptions) error {
 	m := mode
 	if m == "" {
@@ -133,44 +131,12 @@ func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, op
 		quietPull = []string{"--quiet-pull"}
 	}
 
-	// Stage 1: reconcile the persisted database volume before any
-	// application container can read or write it. `run --rm` starts the
-	// database service, waits for its healthcheck, and returns the storage
-	// gate's exit status directly. This step is never bypassed by --skip-migrate:
-	// schema changes may be operator-controlled, but an incompatible storage ABI
-	// must always fail closed.
-	reconcileArgs := append([]string{"run", "--rm", "-T"}, pullFlag...)
-	reconcileArgs = append(reconcileArgs, quietPull...)
-	reconcileArgs = append(reconcileArgs, "storage-reconcile")
-	if code, err := sup.Run(ctx, project, files, reconcileArgs, os.Stdout, os.Stderr); err != nil {
+	runFlags := append(append([]string{}, pullFlag...), quietPull...)
+	if err := runStartSteps(ctx, sup, project, files, m, runFlags); err != nil {
 		return err
-	} else if code != 0 {
-		return WithExit(code, fmt.Errorf("database storage reconciliation failed"))
 	}
 
-	// Stage 2: run the one-shot schema migration to completion and capture its
-	// exit code directly. Storage and database dependencies are already ready,
-	// so --no-deps prevents Compose from launching a duplicate reconciliation.
-	//
-	// We deliberately do NOT use `up -d neko-migrate` + a separate
-	// `compose wait`: on a re-deploy against an already-migrated database the
-	// migration is a fast no-op that exits before the separate `wait` can
-	// observe it, so `compose wait` reports "no containers for project" and
-	// exits non-zero — surfacing as a spurious "database preparation failed".
-	// A foreground `run` has no such race. No database port needs to cross the
-	// Docker network boundary.
-	migrateArgs := append([]string{"run", "--rm", "-T", "--no-deps"}, pullFlag...)
-	migrateArgs = append(migrateArgs, quietPull...)
-	migrateArgs = append(migrateArgs, "neko-migrate")
-	if code, err := sup.Run(ctx, project, files, migrateArgs, os.Stdout, os.Stderr); err != nil {
-		return err
-	} else if code != 0 {
-		return WithExit(code, fmt.Errorf("database preparation failed"))
-	}
-
-	// Stage 3: bring up the rest. --remove-orphans retires services a newer
-	// release dropped, such as the old agent gateway and its Docker-socket
-	// reaper.
+	// --remove-orphans retires services a newer release dropped.
 	upArgs := []string{"up", "--remove-orphans"}
 	if opts.detach {
 		upArgs = append(upArgs, "-d")

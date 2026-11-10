@@ -185,8 +185,9 @@ openneko version
 Modes:
 
 - **`prod`** (default) — the production control, customer-data, file, and
-  agent runtime services. Four containers remain running (`neko-db`,
-  `openneko-serve`, `web`, `worker`) after four startup jobs complete.
+  agent runtime services. `openneko start` runs four start steps in order,
+  then starts four containers: `neko-db`, `openneko-serve`, `web` and
+  `worker`.
 - **`dev`** — source-checkout workflow: use `pnpm dev:setup` for Docker-only dependencies plus AdventureWorks demo data, then `pnpm dev` for hot-reloaded web/worker from source.
 - **`demo`** — core + AdventureWorks: `adventureworks-db`, `adventureworks-init`, `neko-adventureworks-seed`. The full live-trial flow (continuous order trickle + scenario injector) lives in `compose.adventureworks.yml` and needs the [Build from source](#build-from-source-advanced) path.
 
@@ -311,7 +312,7 @@ expires after one minute. When `OPENNEKO_SERVE_URL` is not set, the assistant
 does not get the file tools.
 
 `openneko-serve` connects to `neko-db` as `neko_files`. That role can read
-and write only the file index tables. The startup job `openneko-serve-init`
+and write only the file index tables. The start step `openneko-serve-init`
 sets its password, derived from the secret key, and gives the service a key
 that checks the tokens. The service never gets the secret key or the `neko`
 password. On a database you manage yourself, give the `neko` login the
@@ -458,9 +459,15 @@ for a reverse-proxy deployment.
 ```bash
 git clone https://github.com/open-neko/openneko.git
 cd neko
-docker compose -f compose.yml -f compose.adventureworks.yml up -d --build
+docker compose -f compose.yml -f compose.adventureworks.yml --profile steps build
+docker compose -f compose.yml -f compose.adventureworks.yml run --rm openneko-serve-init
+docker compose -f compose.yml -f compose.adventureworks.yml up -d
 docker compose -f compose.yml -f compose.adventureworks.yml run --rm neko-adventureworks-seed
 ```
+
+The `run --rm openneko-serve-init` line runs the start steps in order:
+storage check, migrations, config volume, serve credentials. Run it again
+after each `git pull`, before `up`.
 
 ### Live trial data
 

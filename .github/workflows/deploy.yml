@@ -103,9 +103,9 @@ jobs:
             # idle older versions up front is what actually prevents that.
             reclaim_disk
 
-            # upgrade force-recreates one-shot init containers as well as the
-            # long-running services, which is required when the project
-            # network changes between releases.
+            # upgrade runs the start steps in fresh containers and
+            # force-recreates the services, which a project network change
+            # between releases needs.
             OPENNEKO_VERSION="$DEPLOY_IMAGE_TAG" OPENNEKO_PORT=80 \
               openneko upgrade --mode demo --version "$DEPLOY_IMAGE_TAG" --no-prune
             OPENNEKO_PORT=80 openneko status

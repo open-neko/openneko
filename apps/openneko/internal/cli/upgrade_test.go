@@ -60,6 +60,12 @@ func TestNormalizeUpgradeImageVersion(t *testing.T) {
 	}
 }
 
+func TestUpgradePullsTheStartStepImages(t *testing.T) {
+	if got := upgradePullArgs(); !reflect.DeepEqual(got, []string{"--profile", "steps", "pull"}) {
+		t.Fatalf("upgrade pull args = %v", got)
+	}
+}
+
 func TestUpgradeWaitsForEveryServiceReadinessCheck(t *testing.T) {
 	want := []string{
 		"up", "-d", "--wait", "--wait-timeout", "180",

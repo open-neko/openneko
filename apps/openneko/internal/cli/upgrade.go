@@ -139,14 +139,14 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 
 	fmt.Fprintf(out, "Upgrading OpenNeko %s stack to image tag %s\n", m, target)
 	fmt.Fprintln(out, "Pulling stack images...")
-	if code, err := sup.Run(ctx, project, files, []string{"pull"}, os.Stdout, os.Stderr); err != nil {
+	if code, err := sup.Run(ctx, project, files, upgradePullArgs(), os.Stdout, os.Stderr); err != nil {
 		return err
 	} else if code != 0 {
 		return WithExit(code, nil)
 	}
 
 	fmt.Fprintln(out, "Restarting stack with upgraded images...")
-	if err := restartUpgradedStack(ctx, sup, project, files); err != nil {
+	if err := restartUpgradedStack(ctx, sup, project, files, m); err != nil {
 		return err
 	}
 
@@ -177,10 +177,10 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 	return nil
 }
 
-func restartUpgradedStack(ctx context.Context, sup *compose.Supervisor, project string, files []string) error {
+func restartUpgradedStack(ctx context.Context, sup *compose.Supervisor, project string, files []string, mode compose.Mode) error {
 	// Enter a real maintenance boundary before replacing the database image.
 	// Without this, old worker/GraphJin containers can reconnect in the window
-	// between Postgres becoming healthy and the new storage-reconcile one-shot
+	// between Postgres becoming healthy and the storage-reconcile step
 	// acquiring its locks. Stopping the whole project is intentionally simple:
 	// no database consumer can be omitted as the service graph evolves.
 	if code, err := sup.Run(ctx, project, files, []string{"stop"}, os.Stdout, os.Stderr); err != nil {
@@ -188,10 +188,9 @@ func restartUpgradedStack(ctx context.Context, sup *compose.Supervisor, project 
 	} else if code != 0 {
 		return WithExit(code, fmt.Errorf("failed to enter upgrade maintenance mode"))
 	}
-	// Force the one-shot init containers onto the current network too. Compose
-	// otherwise reuses already-exited containers when the project network
-	// changes (<project>_runtime went with OpenShell), leaving them unable to
-	// resolve services on <project>_default.
+	if err := runStartSteps(ctx, sup, project, files, mode, []string{"--pull", "never"}); err != nil {
+		return err
+	}
 	code, err := sup.Run(ctx, project, files, upgradeStackUpArgs(), os.Stdout, os.Stderr)
 	if err != nil {
 		return err
@@ -200,6 +199,12 @@ func restartUpgradedStack(ctx context.Context, sup *compose.Supervisor, project 
 		return WithExit(code, errors.New("upgraded stack failed its readiness checks"))
 	}
 	return nil
+}
+
+// A plain pull skips services in an inactive profile, and the start steps
+// then run with --pull never.
+func upgradePullArgs() []string {
+	return []string{"--profile", "steps", "pull"}
 }
 
 func upgradeStackUpArgs() []string {

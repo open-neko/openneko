@@ -43,9 +43,9 @@ services:
 
   # The demo keeps its GraphJin config on the dedicated graphjin-config
   # volume, seeded from the AdventureWorks sources template. Compose replaces
-  # the core mount for the same container path. Serve-init runs after the
-  # seed, so the demo's 'adventureworks' org is the first org row and the
-  # GraphJin secret matches it.
+  # the core mount for the same container path. The seed step runs before
+  # serve-init, so the demo's 'adventureworks' org is the first org row and
+  # the GraphJin secret matches it.
   openneko-serve-init:
     depends_on:
       neko-adventureworks-seed:
@@ -65,6 +65,7 @@ services:
       - graphjin-config:/config/graphjin
 
   neko-adventureworks-seed:
+    profiles: ["steps"]
     image: ghcr.io/open-neko/neko-worker:${OPENNEKO_VERSION:-latest}
     depends_on:
       # neko-migrate completion guarantees the organization / data_source /
@@ -190,11 +191,6 @@ services:
       - graphjin-config:/graphjin-config
 
   worker:
-    depends_on:
-      # Ensure the known JWT mode is present before the worker provisions its
-      # actor-token config. This also repairs anonymous rows from older demos.
-      neko-adventureworks-seed:
-        condition: service_completed_successfully
     environment:
       # Sources mode: the worker substitutes the per-org JWT secret into
       # the seeded GraphJin config at boot (host-provision).

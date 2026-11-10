@@ -138,19 +138,73 @@ func TestSourceComposeOverlaysAreAcyclic(t *testing.T) {
 	}
 }
 
-// GraphJin reads its auth key only at start, and web and worker must not
-// race the org-row bootstrap, so all three wait for openneko-serve-init.
-func TestServeInitGatesTheGraphjinSecretConsumers(t *testing.T) {
-	for _, file := range []string{"core.yml", "demo.yml"} {
-		raws := [][]byte{readEmbeddedCompose(t, "core.yml")}
-		if file != "core.yml" {
-			raws = append(raws, readEmbeddedCompose(t, file))
-		}
-		graph := mergedDependencyGraph(t, raws...)
-		for _, consumer := range []string{"openneko-serve", "worker", "web"} {
-			if !slices.Contains(graph[consumer], "openneko-serve-init") {
-				t.Fatalf("%s: %s does not depend on openneko-serve-init (deps: %v)", file, consumer, graph[consumer])
+func stepServices(t *testing.T, rawFiles ...[]byte) map[string]bool {
+	t.Helper()
+	steps := map[string]bool{}
+	for _, raw := range rawFiles {
+		for name, service := range loadComposeParityDocument(t, raw).Services {
+			if slices.Contains(service.Profiles, "steps") {
+				steps[name] = true
 			}
 		}
+	}
+	return steps
+}
+
+// `openneko start` runs the steps before `up`, so a running service that
+// depends on one would make `up` run it again or refuse the project. The
+// chain inside the profile lets `compose run --rm openneko-serve-init` run
+// every step in order from a source checkout.
+func TestStartStepsStayOutOfTheUpGraph(t *testing.T) {
+	chain := map[string]string{
+		"neko-migrate":         "storage-reconcile",
+		"openneko-config-init": "neko-migrate",
+		"openneko-serve-init":  "openneko-config-init",
+	}
+	combos := map[string][][]byte{
+		"prod":                  {readEmbeddedCompose(t, "core.yml")},
+		"dev":                   {readEmbeddedCompose(t, "core.yml"), readEmbeddedCompose(t, "dev.yml")},
+		"demo":                  {readEmbeddedCompose(t, "core.yml"), readEmbeddedCompose(t, "demo.yml")},
+		"source":                {readRootCompose(t, "compose.yml")},
+		"source adventureworks": {readRootCompose(t, "compose.yml"), readRootCompose(t, "compose.adventureworks.yml")},
+		"source dev":            {readRootCompose(t, "compose.yml"), readRootCompose(t, "compose.adventureworks.yml"), readRootCompose(t, "compose.dev.yml")},
+	}
+	for name, raws := range combos {
+		graph := mergedDependencyGraph(t, raws...)
+		steps := stepServices(t, raws...)
+		for step, previous := range chain {
+			if !steps[step] || !steps[previous] {
+				t.Fatalf("%s: %s and %s must be in the steps profile (steps: %v)", name, step, previous, steps)
+			}
+			if !slices.Contains(graph[step], previous) {
+				t.Fatalf("%s: %s does not depend on %s", name, step, previous)
+			}
+		}
+		for service, deps := range graph {
+			if steps[service] {
+				continue
+			}
+			for _, dep := range deps {
+				if steps[dep] {
+					t.Fatalf("%s: %s depends on the start step %s", name, service, dep)
+				}
+			}
+		}
+	}
+
+	var running []string
+	for service := range mergedDependencyGraph(t, readEmbeddedCompose(t, "core.yml")) {
+		if !stepServices(t, readEmbeddedCompose(t, "core.yml"))[service] {
+			running = append(running, service)
+		}
+	}
+	sort.Strings(running)
+	if want := []string{"neko-db", "openneko-serve", "web", "worker"}; !slices.Equal(running, want) {
+		t.Fatalf("prod-mode compose runs %v, want %v", running, want)
+	}
+
+	demo := stepServices(t, readEmbeddedCompose(t, "core.yml"), readEmbeddedCompose(t, "demo.yml"))
+	if !demo["neko-adventureworks-seed"] {
+		t.Fatal("demo: the AdventureWorks seed must be a start step")
 	}
 }

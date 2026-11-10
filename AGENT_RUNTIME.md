@@ -81,7 +81,7 @@ zone is serve and the runner's turns. Serve holds only these:
   tokens that web and the worker sign. It cannot decrypt a stored value.
 - a turn's model key, while the turn runs.
 
-The one-shot `openneko-serve-init` step writes the first three into the
+The `openneko-serve-init` start step writes the first three into the
 `openneko-serve-credentials` volume before serve starts. It runs on every
 start, so a new secret key reaches serve on the next start. Serve does not
 mount the config volume.
@@ -94,6 +94,24 @@ outside its zone.
 Agent runs read customer data only through the direct GraphJin tools. No run
 hands a question to GraphJin's own agent, so GraphJin gets no provider key.
 Migration 0128 removed the setting that did that.
+
+## Start steps
+
+`openneko start` runs these steps in order, each in its own container with
+`docker compose run --rm`, and stops at the first failure:
+
+1. `storage-reconcile` checks the database storage contract.
+2. `neko-migrate` applies the migrations (`--skip-migrate` turns it off).
+3. `openneko-config-init` gives the config volume to user 1001.
+4. Demo mode only: `adventureworks-init` loads the sample data and
+   `neko-adventureworks-seed` creates the demo organization.
+5. `openneko-serve-init` writes serve's credentials and the GraphJin config.
+
+Then `docker compose up` starts the services. `openneko upgrade` and
+`openneko restore` run the same steps. The steps are in the compose profile
+`steps`, so `up` does not start them and no running service waits for them.
+From a source checkout, `docker compose run --rm openneko-serve-init` runs
+steps 1, 2, 3 and 5 in order.
 
 ## The customer GraphJin
 
@@ -109,7 +127,8 @@ own container.
   when the file is missing, with a new keystore key. It then finds or creates
   the organization row and writes the per-org JWT secret, the write policy and
   the `system` block into the file. GraphJin reads auth keys only when it
-  starts, so serve, web and the worker wait for this step.
+  starts, so `openneko start` runs this step before it starts serve, web
+  and the worker.
 - When the worker changes the config, it writes a new token to
   `.openneko-graphjin-restart`. Serve then starts a new child with the file
   and writes the token to `.openneko-graphjin-restart-ack` when the child
@@ -128,7 +147,8 @@ own container.
   `GJ_*`, `GO_ENV`, `PATH`, `HOME`, `TZ`, the locale, the CA file paths and
   the Go runtime settings. It gets no serve credentials path, no agent
   socket and no sandbox key. It runs as the same user in the same
-  container, so it can still read files that serve can read.
+  container, so it can still read files that serve can read. Those files
+  hold agent-zone secrets only, so this crosses no zone line.
 
 ## The subscriptions GraphJin
 

@@ -128,11 +128,6 @@ func TestCustomerGraphJinRunsInServe(t *testing.T) {
 		if got := composeNetworkAliases(serve, "default"); !reflect.DeepEqual(got, []string{"graphjin"}) {
 			t.Errorf("%s serve must answer as graphjin for existing configs, aliases = %v", path, got)
 		}
-		for _, name := range []string{"openneko-serve", "web", "worker"} {
-			if got := doc.Services[name].DependsOn["openneko-serve-init"].Condition; got != "service_completed_successfully" {
-				t.Errorf("%s: %s must start after serve-init writes the per-org JWT secret, got %q", path, name, got)
-			}
-		}
 		volume := composeMountSourceAt(serve.Volumes, "/config/graphjin")
 		for _, name := range []string{"openneko-serve-init", "web", "worker"} {
 			if got := composeMountSourceAt(doc.Services[name].Volumes, "/config/graphjin"); got != volume || got == "" {
@@ -509,10 +504,6 @@ func TestPackagedDemoBootstrapsJWTBeforeServingWeb(t *testing.T) {
 		t.Fatalf("demo auth reconciliation = %#v, want 1", got)
 	}
 
-	worker := demo.Services["worker"]
-	if got := worker.DependsOn["neko-adventureworks-seed"].Condition; got != "service_completed_successfully" {
-		t.Fatalf("worker demo-seed dependency = %q, want service_completed_successfully", got)
-	}
 	web := demo.Services["web"]
 	if got := web.DependsOn["worker"].Condition; got != "service_healthy" {
 		t.Fatalf("web worker dependency = %q, want service_healthy", got)
@@ -563,6 +554,31 @@ func TestOpenShellIsGone(t *testing.T) {
 	for _, name := range []string{"compose.openshell.yml", "compose.openshell-host.yml", "apps/openneko/assets/compose/openshell.yml"} {
 		if _, err := os.Stat(filepath.Join(root, name)); !os.IsNotExist(err) {
 			t.Fatalf("%s must not exist: %v", name, err)
+		}
+	}
+}
+
+func TestPackagedDemoLoaderHasItsTools(t *testing.T) {
+	demo := loadComposeParityDocument(t, readEmbeddedCompose(t, "demo.yml"))
+	if image := demo.Services["adventureworks-init"].Image; !strings.Contains(image, "/neko-worker:") {
+		t.Fatalf("demo adventureworks-init image = %q, want the worker image", image)
+	}
+	raw, err := os.ReadFile(filepath.Join(repoRootForTest(t), "Dockerfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage := string(raw)
+	start := strings.Index(stage, " AS worker\n")
+	if start < 0 {
+		t.Fatal("Dockerfile has no worker stage")
+	}
+	stage = stage[start:]
+	if end := strings.Index(stage, "\nFROM "); end >= 0 {
+		stage = stage[:end]
+	}
+	for _, tool := range []string{"unzip", "postgresql-client"} {
+		if !strings.Contains(stage, " "+tool+" ") {
+			t.Errorf("the worker image does not install %s, which the demo AdventureWorks loader runs", tool)
 		}
 	}
 }

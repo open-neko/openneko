@@ -89,11 +89,7 @@ if (force || !fs.existsSync(secretPath)) {
 }
 JS
 
-# Migrations: a dedicated `neko-migrate` compose service (ghcr.io/open-neko/neko-cli)
-# runs `openneko migrate` once before web/worker start, gated via
-# `depends_on: neko-migrate: service_completed_successfully`. So web and worker
-# can trust the schema is in place by the time their entrypoints run and we don't
-# repeat the migrate here. Bare-Docker users (no compose orchestration) need to
-# run `openneko migrate` against the DB themselves before starting these images.
+# Migrations: `openneko start` runs the `neko-migrate` start step before it
+# starts web and the worker. Bare-Docker users run `openneko migrate` first.
 
 exec "$@"

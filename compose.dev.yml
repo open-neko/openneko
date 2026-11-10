@@ -14,12 +14,11 @@ services:
       - openneko-serve-credentials:/credentials
       - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/graphjin:/config/graphjin
 
-  # scripts/dev-up.sh writes the JWT secret from source before serve
-  # starts, so serve does not wait on the worker-image secret init.
+  # scripts/dev-up.sh runs openneko-serve-init before it starts serve.
   openneko-serve:
     depends_on: !override
-      openneko-serve-init:
-        condition: service_completed_successfully
+      neko-db:
+        condition: service_healthy
       adventureworks-init:
         condition: service_completed_successfully
     environment: !override
