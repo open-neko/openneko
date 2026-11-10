@@ -130,3 +130,28 @@ func TestServeInitGivesServeOnlyTheFileTables(t *testing.T) {
 		}
 	}
 }
+
+func TestRoleDatabaseURLKeepsHostAndTLS(t *testing.T) {
+	got, err := roleDatabaseURL(db.ConnConfig{
+		URL: "postgres://neko:old@db.example.com:6432/meta?sslmode=verify-full&sslrootcert=%2Fetc%2Fca.pem",
+	}, filesRole, "p@ss/word")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "postgres://neko_files:p%40ss%2Fword@db.example.com:6432/meta?sslmode=verify-full&sslrootcert=%2Fetc%2Fca.pem"
+	if got != want {
+		t.Fatalf("got %s, want %s", got, want)
+	}
+
+	got, err = roleDatabaseURL(db.ConnConfig{Host: "neko-db", Port: 5432, User: "neko", Password: "x", Database: "neko"}, filesRole, "pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "postgres://neko_files:pw@neko-db:5432/neko?sslmode=disable" {
+		t.Fatalf("fields: got %s", got)
+	}
+
+	if _, err := roleDatabaseURL(db.ConnConfig{URL: "mysql://x@y/z"}, filesRole, "pw"); err == nil {
+		t.Fatal("a non-postgres URL must fail")
+	}
+}

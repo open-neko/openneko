@@ -1,8 +1,7 @@
 import pg from "pg";
+import { buildPoolConfig } from "@neko/db/connection";
 import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
-import { join } from "node:path";
 
 import {
   atomicWriteFile,
@@ -35,52 +34,7 @@ const CONFIG_PATH =
     ? process.env.GRAPHJIN_SOURCES_CONFIG.trim()
     : "/config/graphjin/agentic.yml";
 
-function configBase() {
-  const xdg = process.env.XDG_CONFIG_HOME?.trim();
-  return xdg && xdg.length > 0
-    ? xdg
-    : join(process.env.HOME || homedir(), ".config");
-}
-
-async function readLocalConfig() {
-  const paths = [
-    join(configBase(), "openneko", "config.json"),
-    join(configBase(), "neko", "config.json"),
-  ];
-  for (const path of paths) {
-    try {
-      const parsed = JSON.parse(await readFile(path, "utf8"));
-      if (parsed && typeof parsed === "object") return parsed;
-    } catch {
-      // Missing or malformed local config; try the next path.
-    }
-  }
-  return {};
-}
-
-const localConfig = await readLocalConfig();
-const localPg =
-  localConfig.pg && typeof localConfig.pg === "object" ? localConfig.pg : {};
-if (typeof localPg.password === "string" && localPg.password.startsWith("enc:")) {
-  const { maybeDecryptSecret } = await import("@neko/secret-crypt");
-  localPg.password = maybeDecryptSecret(localPg.password);
-}
-// OPENNEKO_PG_ENV_OVERRIDE=1 puts set environment values ahead of
-// config.json, as @neko/db does for host processes in development.
-const envFirst = process.env.OPENNEKO_PG_ENV_OVERRIDE?.trim() === "1";
-const setting = (fromConfig, envName, fallback) => {
-  const fromEnv = process.env[envName]?.trim() || undefined;
-  return (envFirst ? fromEnv ?? fromConfig : fromConfig ?? fromEnv) ?? fallback;
-};
-const sslmode = setting(localPg.sslmode, "NEKO_PG_SSLMODE", undefined);
-const client = new pg.Client({
-  host: setting(localPg.host, "NEKO_PG_HOST", "localhost"),
-  port: Number(setting(localPg.port, "NEKO_PG_PORT", 5432)),
-  user: setting(localPg.user, "NEKO_PG_USER", "neko"),
-  password: setting(localPg.password, "NEKO_PG_PASSWORD", "secret"),
-  database: setting(localPg.database, "NEKO_PG_DATABASE", "neko"),
-  ssl: sslmode === "require" ? { rejectUnauthorized: false } : undefined,
-});
+const client = new pg.Client(buildPoolConfig());
 
 await client.connect();
 

@@ -122,5 +122,9 @@ func serveKeyAndDatabase(credentials string) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("read the secret-key: %w", err)
 	}
-	return key, defaultConn().DSN(), nil
+	conn, err := defaultConn()
+	if err != nil {
+		return nil, "", err
+	}
+	return key, conn.DSN(), nil
 }

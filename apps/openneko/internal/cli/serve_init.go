@@ -37,7 +37,11 @@ func newServeInitCmd() *cobra.Command {
 			if dir == "" {
 				return fmt.Errorf("--dir is required")
 			}
-			if err := writeServeCredentials(cmd.Context(), defaultConn(), "", dir); err != nil {
+			admin, err := defaultConn()
+			if err != nil {
+				return err
+			}
+			if err := writeServeCredentials(cmd.Context(), admin, "", dir); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "openneko serve credentials written to %s\n", dir)
@@ -74,16 +78,25 @@ func writeServeCredentials(ctx context.Context, admin db.ConnConfig, configDir, 
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	role := admin
-	role.User = filesRole
-	role.Password = password
-	if err := writeFileAtomic(filepath.Join(dir, serveDatabaseFile), []byte(databaseURL(role)+"\n")); err != nil {
+	roleURL, err := roleDatabaseURL(admin, filesRole, password)
+	if err != nil {
+		return err
+	}
+	if err := writeFileAtomic(filepath.Join(dir, serveDatabaseFile), []byte(roleURL+"\n")); err != nil {
 		return err
 	}
 	return writeFileAtomic(filepath.Join(dir, serveTokenKeyFile), []byte(hex.EncodeToString(tokenKey)+"\n"))
 }
 
-func databaseURL(c db.ConnConfig) string {
+func roleDatabaseURL(c db.ConnConfig, user, password string) (string, error) {
+	if c.URL != "" {
+		u, err := url.Parse(c.URL)
+		if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
+			return "", fmt.Errorf("the database URL must start with postgres:// or postgresql://")
+		}
+		u.User = url.UserPassword(user, password)
+		return u.String(), nil
+	}
 	host := c.Host
 	if host == "" {
 		host = "localhost"
@@ -102,12 +115,12 @@ func databaseURL(c db.ConnConfig) string {
 	}
 	u := url.URL{
 		Scheme:   "postgres",
-		User:     url.UserPassword(c.User, c.Password),
+		User:     url.UserPassword(user, password),
 		Host:     host + ":" + strconv.Itoa(port),
 		Path:     "/" + database,
 		RawQuery: url.Values{"sslmode": {ssl}}.Encode(),
 	}
-	return u.String()
+	return u.String(), nil
 }
 
 func writeFileAtomic(path string, data []byte) error {
