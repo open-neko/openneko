@@ -60,6 +60,10 @@ var GoRoutes = map[string][]string{
 	"/api/v1/sso/setup/check":                           {"POST"},
 	"/api/v1/profile":                                   {"GET", "PATCH"},
 	"/api/v1/my/pack-accounts/{packId}/{connectionKey}": {"POST", "DELETE"},
+	"/api/v1/observations":                              {"GET"},
+	"/api/v1/approvals":                                 {"GET"},
+	"/api/v1/action-requests":                           {"GET"},
+	"/api/v1/action-requests/{actionRequestId}":         {"GET"},
 }
 
 func (a *API) table() map[string]map[string]http.HandlerFunc {
@@ -84,12 +88,17 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/sso/setup/check":                           {"POST": a.ssoSetupCheck},
 			"/api/v1/profile":                                   {"GET": a.profileGet, "PATCH": a.profilePatch},
 			"/api/v1/my/pack-accounts/{packId}/{connectionKey}": {"POST": a.personalPackAccount, "DELETE": a.personalPackAccount},
+			"/api/v1/observations":                              {"GET": a.observations},
+			"/api/v1/approvals":                                 {"GET": a.approvals},
+			"/api/v1/action-requests":                           {"GET": a.actionRequests},
+			"/api/v1/action-requests/{actionRequestId}":         {"GET": a.actionRequest, "PATCH": nil},
 		}
 	})
 	return a.routes
 }
 
 // Handler returns the Go handler for the request, or nil to pass it to Node.
+// A method with a nil handler in the table stays with Node.
 func (a *API) Handler(r *http.Request) http.HandlerFunc {
 	if a == nil {
 		return nil

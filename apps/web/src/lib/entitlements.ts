@@ -97,7 +97,7 @@ export async function requireWorkflowRun(workflowRunId: string): Promise<NextRes
 }
 
 /** Visibility by workflow id; items without a workflow stay visible. */
-export async function workflowIdVisibility(): Promise<(workflowId: string | null | undefined) => boolean> {
+async function workflowIdVisibility(): Promise<(workflowId: string | null | undefined) => boolean> {
   const visible = await workflowVisibility();
   const owners = new Map(
     (await db()
@@ -131,7 +131,7 @@ export async function watcherRunVisibility(runIds: Array<string | null | undefin
  * Action requests from visible workflows. External and pack actions also need
  * the action item; admin proposals and internal host actions do not.
  */
-export async function actionRequestVisibility(): Promise<
+async function actionRequestVisibility(): Promise<
   (row: { kind: string; scope?: string | null; workflowId?: string | null }) => boolean
 > {
   const workflowVisible = await workflowIdVisibility();
