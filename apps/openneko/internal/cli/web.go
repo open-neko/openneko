@@ -32,9 +32,12 @@ the server pages to the Node server on --node-addr. With a command after
 --, web starts that command as Node with PORT and HOSTNAME set from
 --node-addr, and stops when it stops, with its exit code.
 
-Web answers the version, sign-in, session, sign-out and device sign-in
-routes itself. It marks its cookies Secure when NODE_ENV is production. It reads and writes users, sessions, devices, groups
-and the audit chain with the main database login.`,
+Web answers the version, sign-in, session, sign-out, device sign-in and
+SSO setup routes, the business profile route and the personal pack
+connection route itself. It marks its cookies Secure when NODE_ENV is
+production. It reads and writes users, sessions, devices, groups, the
+business profile, personal pack connections and the audit chain with the
+main database login, and reads secrets.json for pack OAuth client IDs.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()

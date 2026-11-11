@@ -3,9 +3,9 @@
  *
  * Without a sign-in provider OpenNeko runs in single-operator mode —
  * fine for a laptop deployment, fatal for any org with an IdP. This
- * module wires the web's sign-in flow through the provider the admin
- * chose (Scalekit SSO or email-link sign-in) so an enterprise operator
- * gets standard OIDC SSO without the web knowing which IdP they use.
+ * module reads the session that `openneko web` writes at sign-in, and asks
+ * the worker which provider the admin chose (Scalekit SSO or email-link
+ * sign-in). The sign-in routes themselves are in Go.
  *
  * Topology: the providers run in the worker, not in this Next process.
  * We reach them through the worker's admin HTTP endpoint on localhost
@@ -42,25 +42,13 @@ import {
   db,
   eq,
   isNull,
-  sql,
-  ADMINISTRATORS_GROUP_SLUG,
   deviceTokenFromAuthorization,
-  user_group_membership,
   verifyDeviceToken,
-  GroupError,
-  reconcileSignInGroups,
-  user_group,
 } from "@neko/db";
 import { getOrgId } from "@/lib/db";
 import { publicBaseUrl } from "@/lib/public-url";
 
 export const SESSION_COOKIE_NAME = "openneko_session";
-export const STATE_COOKIE_NAME = "openneko_sso_state";
-
-/** Session lifetime — 12h. Re-auths after this; refresh-on-use is a v2. */
-const SESSION_TTL_SECONDS = 60 * 60 * 12;
-/** State cookie lifetime — short window for the user to complete the IdP dance. */
-const STATE_TTL_SECONDS = 10 * 60;
 
 export interface AuthProviderInfo {
   pluginName: string;
@@ -92,14 +80,6 @@ export interface PendingAuthProviderInfo extends AuthProviderInfo {
 export interface AuthGateStatus {
   provider: AuthProviderInfo | null;
   pending: PendingAuthProviderInfo | null;
-}
-
-export interface AuthIdentity {
-  sub: string;
-  email: string;
-  name?: string | null;
-  orgId?: string | null;
-  groups?: Array<string | { id: string; name?: string | null }>;
 }
 
 export interface SessionPayload {
@@ -282,27 +262,6 @@ export async function beginAuth(params: {
   return (await res.json()) as { authorizationUrl: string };
 }
 
-export async function completeAuth(params: {
-  code: string;
-  redirectUri: string;
-  state: string;
-}): Promise<AuthIdentity> {
-  const res = await fetch(`${workerAdminBase()}/admin/auth/complete`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(
-      `sign-in complete failed (${res.status}): ${text || res.statusText}`,
-    );
-  }
-  const body = (await res.json()) as { identity: AuthIdentity };
-  return body.identity;
-}
-
 /**
  * Mint a state token: random nonce paired with the path the user was
  * trying to reach. The path is stashed in the cookie too so callback
@@ -312,198 +271,7 @@ export function newStateToken(): string {
   return randomBytes(24).toString("base64url");
 }
 
-/**
- * Upsert `app_user` for an SSO identity. Match priority:
- *   1. existing row with the same `sub` (IdP-stable);
- *   2. existing row with the same `email` (initial migration when an
- *      operator first turns SSO on against a pre-existing email-only
- *      user) — `sub` is then attached for future logins.
- * Otherwise insert a new row in the only org — unless the provider
- * declares manual provisioning, in which case an unmatched identity is
- * rejected: possession of a mailbox must never mint an account.
- */
-export async function upsertUserFromIdentity(
-  identity: AuthIdentity,
-): Promise<{ id: string; email: string; name: string | null }> {
-  const orgId = await getOrgId();
-  // Use the full gate status so the manual-provisioning backstop holds
-  // even while the provider is still pending (not yet live).
-  const gate = await getAuthGateStatus();
-  const providerInfo = gate.provider ?? gate.pending;
-  const provider = providerInfo?.pluginName ?? "oidc";
-  // Serialize sign-ins per org. Two concurrent first sign-ins (two tabs,
-  // an IdP callback retry) could each miss both lookups AND both pass the
-  // has-admin check — minting duplicate identities and duplicate admins,
-  // after which later sign-ins threw permanently. Under the lock the
-  // second caller simply finds the first's row; the unique indexes from
-  // migration 0061 are the loud backstop should the lock ever be bypassed.
-  const resolved = await db().transaction(async (tx) => {
-    await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtext(${"openneko.app_user:" + orgId}))`,
-    );
-    // Primary lookup: sub. Anything matching wins, regardless of email
-    // changes (people get married, change addresses — sub doesn't).
-    const bySub = await tx
-      .select({
-        id: app_user.id,
-        email: app_user.email,
-        name: app_user.name,
-      })
-      .from(app_user)
-      .where(and(eq(app_user.org_id, orgId), eq(app_user.sub, identity.sub)))
-      .limit(1);
-    if (bySub[0]) {
-      await tx
-        .update(app_user)
-        .set({
-          email: identity.email,
-          name: identity.name ?? null,
-          last_login_at: new Date(),
-          updated_at: new Date(),
-        })
-        .where(eq(app_user.id, bySub[0].id));
-      return { id: bySub[0].id, name: identity.name ?? null };
-    }
-    // Migration lookup: same email, no sub yet. Attach the sub.
-    const byEmail = await tx
-      .select({
-        id: app_user.id,
-        email: app_user.email,
-        name: app_user.name,
-        sub: app_user.sub,
-      })
-      .from(app_user)
-      .where(and(eq(app_user.org_id, orgId), sql`lower(${app_user.email}) = ${identity.email.trim().toLowerCase()}`))
-      .limit(1);
-    if (byEmail[0] && !byEmail[0].sub) {
-      await tx
-        .update(app_user)
-        .set({
-          sub: identity.sub,
-          name: identity.name ?? byEmail[0].name ?? null,
-          last_login_at: new Date(),
-          updated_at: new Date(),
-        })
-        .where(eq(app_user.id, byEmail[0].id));
-      return { id: byEmail[0].id, name: identity.name ?? byEmail[0].name ?? null };
-    }
-    if (byEmail[0]) {
-      // Same email, *different* sub already on file. Refuse rather than
-      // silently take over — the operator should resolve this manually
-      // (likely two IdP accounts pointing at the same mailbox).
-      throw new Error(
-        `app_user.email ${identity.email} is already bound to a different SSO subject; remove the row or update sub manually before re-attempting`,
-      );
-    }
-    if (providerInfo?.provisioning === "manual") {
-      // Self-asserted identity (e.g. magic link) with no pre-provisioned
-      // user. The begin route already drops unknown emails silently; this
-      // is the defense-in-depth backstop.
-      throw new Error(
-        `no user is provisioned for ${identity.email} — ask an administrator to add you`,
-      );
-    }
-    // Brand new user. Bootstrap the first active admin so installing an SSO
-    // plugin cannot leave an org with no administrator.
-    const newId = `usr_${randomBytes(9).toString("base64url")}`;
-    await tx.insert(app_user).values({
-      id: newId,
-      sub: identity.sub,
-      email: identity.email,
-      name: identity.name ?? null,
-      org_id: orgId,
-      source: provider,
-      last_login_at: new Date(),
-    });
-    // An IdP group name never grants administration; an IdP rule or an
-    // administrator does. The first account of an org with no administrator
-    // still gets one, so a sign-in plugin cannot leave an org locked out.
-    if (!(await orgHasActiveAdmin(orgId, tx))) {
-      await tx.execute(sql`
-        insert into user_group_membership (org_id, group_id, user_id, source)
-        select ${orgId}, g.id, ${newId}, 'local' from user_group g
-        where g.org_id = ${orgId} and g.slug = ${ADMINISTRATORS_GROUP_SLUG}
-        on conflict do nothing`);
-    }
-    return { id: newId, name: identity.name ?? null };
-  });
-  await syncIdentityGroups({ orgId, userId: resolved.id, identity });
-  return {
-    id: resolved.id,
-    email: identity.email,
-    name: resolved.name,
-  };
-}
 
-
-async function orgHasActiveAdmin(
-  orgId: string,
-  runner: Pick<ReturnType<typeof db>, "select">= db(),
-): Promise<boolean> {
-  const [admin] = await runner
-    .select({ id: app_user.id })
-    .from(app_user)
-    .innerJoin(user_group_membership, eq(user_group_membership.user_id, app_user.id))
-    .innerJoin(user_group, eq(user_group.id, user_group_membership.group_id))
-    .where(
-      and(
-        eq(app_user.org_id, orgId),
-        eq(user_group.slug, ADMINISTRATORS_GROUP_SLUG),
-        isNull(app_user.disabled_at),
-      ),
-    )
-    .limit(1);
-  return Boolean(admin);
-}
-
-
-function normalizedIdentityGroups(identity: AuthIdentity): Array<{
-  externalId: string;
-  displayName: string | null;
-}> {
-  const groups = new Map<string, string | null>();
-  for (const group of identity.groups ?? []) {
-    const externalId = (typeof group === "string" ? group : group.id).trim();
-    if (!externalId) continue;
-    const displayName = typeof group === "string"
-      ? group
-      : group.name?.trim() || null;
-    groups.set(externalId, displayName);
-  }
-  return [...groups].map(([externalId, displayName]) => ({
-    externalId,
-    displayName,
-  }));
-}
-
-/**
- * Sign-in claim sync. Records the user's IdP groups and applies IdP rules.
- * A sync that would remove the last administrator is skipped so sign-in
- * still succeeds with the previous groups.
- */
-async function syncIdentityGroups(input: {
-  orgId: string;
-  userId: string;
-  identity: AuthIdentity;
-}): Promise<void> {
-  const provider = (await getAuthProvider())?.pluginName ?? "oidc";
-  const tenantId = input.identity.orgId?.trim() || input.orgId;
-  try {
-    await reconcileSignInGroups({
-      orgId: input.orgId,
-      userId: input.userId,
-      provider,
-      tenantId,
-      groups: normalizedIdentityGroups(input.identity),
-    });
-  } catch (err) {
-    if (err instanceof GroupError && err.code === "lockout") {
-      console.warn(`[auth] kept previous groups for ${input.userId}: ${err.message}`);
-      return;
-    }
-    throw err;
-  }
-}
 
 export function encodeSession(payload: SessionPayload): string {
   const body = `${payload.userId}.${payload.expiresAt}`;
@@ -528,83 +296,6 @@ export function decodeSession(value: string): SessionPayload | null {
   if (!Number.isFinite(expiresAt)) return null;
   if (expiresAt < Math.floor(Date.now() / 1000)) return null;
   return { userId, expiresAt, email: "", name: null };
-}
-
-export async function writeSessionCookie(userId: string) {
-  const expiresAt = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
-  const token = encodeSession({ userId, expiresAt, email: "", name: null });
-  const jar = await cookies();
-  jar.set(SESSION_COOKIE_NAME, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_TTL_SECONDS,
-  });
-}
-
-export async function clearSessionCookie() {
-  const jar = await cookies();
-  jar.delete(SESSION_COOKIE_NAME);
-}
-
-export async function writeStateCookie(state: string, returnPath: string) {
-  // State + intended landing path are kept server-side via a signed
-  // cookie so the callback can verify both without an extra DB lookup
-  // and without trusting the redirect_uri query string.
-  const payload = `${state}|${encodeReturnPath(returnPath)}`;
-  const mac = createHmac("sha256", sessionSecret()).update(payload).digest("base64url");
-  const value = `${payload}.${mac}`;
-  const jar = await cookies();
-  jar.set(STATE_COOKIE_NAME, value, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: STATE_TTL_SECONDS,
-  });
-}
-
-export async function readAndClearStateCookie(): Promise<
-  { state: string; returnPath: string } | null
-> {
-  const jar = await cookies();
-  const raw = jar.get(STATE_COOKIE_NAME)?.value;
-  if (!raw) return null;
-  jar.delete(STATE_COOKIE_NAME);
-  const split = raw.lastIndexOf(".");
-  if (split <= 0) return null;
-  const payload = raw.slice(0, split);
-  const mac = raw.slice(split + 1);
-  const expected = createHmac("sha256", sessionSecret())
-    .update(payload)
-    .digest("base64url");
-  const a = Buffer.from(mac);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
-  const pipe = payload.indexOf("|");
-  if (pipe <= 0) return null;
-  const state = payload.slice(0, pipe);
-  const returnPath = decodeReturnPath(payload.slice(pipe + 1));
-  return { state, returnPath };
-}
-
-function encodeReturnPath(p: string): string {
-  // Whitelist to internal paths only. An attacker who controls the
-  // sign-in link cannot smuggle an external redirect through the
-  // state cookie.
-  if (!p.startsWith("/") || p.startsWith("//")) return "/";
-  return Buffer.from(p).toString("base64url");
-}
-
-function decodeReturnPath(encoded: string): string {
-  try {
-    const raw = Buffer.from(encoded, "base64url").toString("utf8");
-    if (!raw.startsWith("/") || raw.startsWith("//")) return "/";
-    return raw;
-  } catch {
-    return "/";
-  }
 }
 
 /**

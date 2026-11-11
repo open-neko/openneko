@@ -15,7 +15,7 @@ vi.mock("@neko/db", async (original) => {
   };
   return { ...actual, reconcileSignInGroups: state.reconcile, getOrCreateSoloAdmin: vi.fn(async () => state.rows.shift()?.[0] ?? null), db: () => ({ ...runner, transaction: async (fn: (tx: typeof runner) => unknown) => fn(runner) }) };
 });
-import { _resetAuthProviderCache, encodeSession, getCurrentUser, upsertUserFromIdentity } from "@/lib/auth";
+import { _resetAuthProviderCache, encodeSession, getCurrentUser } from "@/lib/auth";
 
 const owner = { id: "usr_owner", email: "owner@example.com", name: "Owner", role: "admin", sub: null, disabledAt: null };
 function provider(live: boolean) {
@@ -31,16 +31,9 @@ it("uses the persisted solo owner without requiring a cookie or redirect", async
   expect((await getCurrentUser())?.id).toBe(owner.id);
 });
 
-it("links SSO to the solo account without creating a second identity, and requires a session once live", async () => {
+it("requires a session once sign-in is live", async () => {
   provider(true);
   expect(await getCurrentUser()).toBeNull();
-  state.rows = [[], [owner]];
-  const linked = await upsertUserFromIdentity({ sub: "idp-owner", email: "Owner@Example.com", name: "Owner" });
-  expect(linked.id).toBe(owner.id);
-  expect(state.updates[0]).toMatchObject({ sub: "idp-owner" });
-  expect(state.updates[0]).not.toHaveProperty("role");
-  expect(state.inserts).toEqual([]);
-  expect(state.reconcile).toHaveBeenCalledWith({ orgId: "org", userId: owner.id, provider: "oidc", tenantId: "org", groups: [] });
   state.token = encodeSession({ userId: owner.id, email: owner.email, name: owner.name, expiresAt: Math.floor(Date.now() / 1000) + 60 });
   state.rows = [[{ id: owner.id, email: owner.email, name: owner.name }]];
   expect((await getCurrentUser())?.id).toBe(owner.id);

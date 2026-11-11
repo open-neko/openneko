@@ -277,42 +277,56 @@ func (a *API) workerCall(ctx context.Context, path string, timeout time.Duration
 	if err != nil {
 		return err
 	}
+	status, reply, err := a.workerDo(ctx, http.MethodPost, path, timeout, raw)
+	if err != nil {
+		log.Printf("%s: %v", what, err)
+		return fmt.Errorf("%s failed: the worker did not answer", what)
+	}
+	if status < 200 || status > 299 {
+		text := string(reply)
+		if text == "" {
+			text = http.StatusText(status)
+		}
+		return fmt.Errorf("%s failed (%d): %s", what, status, text)
+	}
+	if err := json.Unmarshal(reply, out); err != nil {
+		return fmt.Errorf("%s failed: %w", what, err)
+	}
+	return nil
+}
+
+func (a *API) workerDo(ctx context.Context, method, path string, timeout time.Duration, body []byte) (int, []byte, error) {
 	base := strings.TrimRight(a.Gate.WorkerURL, "/")
 	if base == "" {
 		base = "http://127.0.0.1:4100"
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+path, bytes.NewReader(raw))
-	if err != nil {
-		return err
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req, err := http.NewRequestWithContext(ctx, method, base+path, reader)
+	if err != nil {
+		return 0, nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	client := a.Gate.Client
 	if client == nil {
 		client = http.DefaultClient
 	}
 	res, err := client.Do(req)
 	if err != nil {
-		log.Printf("%s: %v", what, err)
-		return fmt.Errorf("%s failed: the worker did not answer", what)
+		return 0, nil, err
 	}
 	defer res.Body.Close()
 	reply, err := io.ReadAll(io.LimitReader(res.Body, workerReplyLimit))
 	if err != nil {
-		return fmt.Errorf("%s failed: %w", what, err)
+		return 0, nil, err
 	}
-	if res.StatusCode < 200 || res.StatusCode > 299 {
-		text := string(reply)
-		if text == "" {
-			text = http.StatusText(res.StatusCode)
-		}
-		return fmt.Errorf("%s failed (%d): %s", what, res.StatusCode, text)
-	}
-	if err := json.Unmarshal(reply, out); err != nil {
-		return fmt.Errorf("%s failed: %w", what, err)
-	}
-	return nil
+	return res.StatusCode, reply, nil
 }
 
 func parseIdentity(raw json.RawMessage) (identity, error) {
