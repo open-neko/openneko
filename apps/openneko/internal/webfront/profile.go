@@ -11,6 +11,12 @@ import (
 // maxProfileField counts UTF-16 code units, as JavaScript's String.length does.
 const maxProfileField = 200_000
 
+// researchOff is resolveResearchStatus() in apps/web/src/lib/provider-settings.ts
+// for org $1: a stored row with a known provider decides, and with none
+// research is on.
+const researchOff = `coalesce((select not c.enabled or c.provider = 'disabled' from llm_provider_config c
+	where c.org_id = $1 and c.scope = 'research' and c.provider in ('disabled', 'perplexity') limit 1), false)`
+
 type profileAnswer struct {
 	BusinessProfile        string `json:"businessProfile"`
 	IndustryInsights       string `json:"industryInsights"`
@@ -26,15 +32,14 @@ func (a *API) profileGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var business, insights, note *string
-	var researchOff, building bool
+	var off, building bool
 	err = a.DB.QueryRow(ctx, `
 		select p.business_profile, p.industry_insights, p.company_note,
-		  coalesce((select not c.enabled or c.provider = 'disabled' from llm_provider_config c
-		    where c.org_id = $1 and c.scope = 'research' and c.provider in ('disabled', 'perplexity') limit 1), false),
+		  `+researchOff+`,
 		  exists (select 1 from processing_job j where j.org_id = $1 and j.kind = 'industry_insights_build'
 		    and j.status in ('queued', 'running'))
 		from customer_profile p where p.org_id = $1 and p.is_current limit 1`, orgID).
-		Scan(&business, &insights, &note, &researchOff, &building)
+		Scan(&business, &insights, &note, &off, &building)
 	if errors.Is(err, pgx.ErrNoRows) {
 		sendError(w, http.StatusNotFound, "no profile")
 		return
@@ -47,7 +52,7 @@ func (a *API) profileGet(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case out.IndustryInsights != "":
 		out.IndustryInsightsStatus = "ready"
-	case researchOff:
+	case off:
 		out.IndustryInsightsStatus = "disabled"
 	case building:
 		out.IndustryInsightsStatus = "processing"

@@ -8,6 +8,7 @@ import {
   sql,
   startDeviceRequest,
 } from "@neko/db";
+import { boss, stopBoss } from "@neko/db/jobs";
 import { FIXTURE as F } from "../src/fixtures";
 
 async function deviceToken(orgId: string, userId: string, name: string): Promise<string> {
@@ -56,6 +57,9 @@ await seedWork(orgId, F.memberUserId, {
   workflow: F.memberWorkflowId, thread: F.memberThreadId, workRun: F.memberWorkRunId,
   workflowRun: F.memberWorkflowRunId, output: F.memberOutputId, action: F.memberActionRequestId,
 }, "watch");
+
+await boss();
+await stopBoss();
 
 const lines = [
   `OPENNEKO_CONTRACT_ADMIN_TOKEN=${await deviceToken(orgId, F.adminUserId, "Contract admin")}`,

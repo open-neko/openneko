@@ -30,10 +30,13 @@ type API struct {
 	SecureCookies bool
 	// SecretsDir overrides the config folder that holds secrets.json.
 	SecretsDir string
+	// BossSchema overrides the pg-boss schema, pgboss; tests set it.
+	BossSchema string
 
 	once   sync.Once
 	routes map[string]map[string]http.HandlerFunc
 	orgMu  sync.Mutex
+	queues sync.Map
 	orgID  string
 }
 
@@ -63,7 +66,8 @@ var GoRoutes = map[string][]string{
 	"/api/v1/observations":                              {"GET"},
 	"/api/v1/approvals":                                 {"GET"},
 	"/api/v1/action-requests":                           {"GET"},
-	"/api/v1/action-requests/{actionRequestId}":         {"GET"},
+	"/api/v1/action-requests/{actionRequestId}":         {"GET", "PATCH"},
+	"/api/v1/insights/ensure":                           {"POST"},
 }
 
 func (a *API) table() map[string]map[string]http.HandlerFunc {
@@ -91,7 +95,8 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/observations":                              {"GET": a.observations},
 			"/api/v1/approvals":                                 {"GET": a.approvals},
 			"/api/v1/action-requests":                           {"GET": a.actionRequests},
-			"/api/v1/action-requests/{actionRequestId}":         {"GET": a.actionRequest, "PATCH": nil},
+			"/api/v1/action-requests/{actionRequestId}":         {"GET": a.actionRequest, "PATCH": a.actionRequestDecision},
+			"/api/v1/insights/ensure":                           {"POST": a.ensureInsights},
 		}
 	})
 	return a.routes

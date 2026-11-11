@@ -4,7 +4,6 @@ import {
   db,
   eq,
   inArray,
-  pack_action_definition,
   workflow_definition,
   workflow_run,
   filterHeld,
@@ -96,18 +95,6 @@ export async function requireWorkflowRun(workflowRunId: string): Promise<NextRes
   return denied ? itemNotFound("Run not found") : null;
 }
 
-/** Visibility by workflow id; items without a workflow stay visible. */
-async function workflowIdVisibility(): Promise<(workflowId: string | null | undefined) => boolean> {
-  const visible = await workflowVisibility();
-  const owners = new Map(
-    (await db()
-      .select({ id: workflow_definition.id, ownerUserId: workflow_definition.owner_user_id })
-      .from(workflow_definition)
-      .where(eq(workflow_definition.org_id, await getOrgId()))).map((w) => [w.id, w.ownerUserId]),
-  );
-  return (workflowId) => !workflowId || (owners.has(workflowId) && visible({ id: workflowId, ownerUserId: owners.get(workflowId) }));
-}
-
 /** Hides outputs of watcher-triggered runs when the user does not hold the watcher. */
 export async function watcherRunVisibility(runIds: Array<string | null | undefined>): Promise<(runId: string | null | undefined) => boolean> {
   const ids = [...new Set(runIds.filter((id): id is string => Boolean(id)))];
@@ -125,48 +112,4 @@ export async function watcherRunVisibility(runIds: Array<string | null | undefin
       .map((r) => r.id),
   );
   return (runId) => !runId || !hidden.has(runId);
-}
-
-/**
- * Action requests from visible workflows. External and pack actions also need
- * the action item; admin proposals and internal host actions do not.
- */
-async function actionRequestVisibility(): Promise<
-  (row: { kind: string; scope?: string | null; workflowId?: string | null }) => boolean
-> {
-  const workflowVisible = await workflowIdVisibility();
-  const held = await heldItemIds("action");
-  const packKinds = held === "*"
-    ? new Set<string>()
-    : new Set(
-        (await db()
-          .select({ kind: pack_action_definition.kind })
-          .from(pack_action_definition)
-          .where(eq(pack_action_definition.org_id, await getOrgId()))).map((r) => r.kind),
-      );
-  return (row) => {
-    if (!workflowVisible(row.workflowId)) return false;
-    if (held === "*" || (row.scope !== "external" && !packKinds.has(row.kind))) return true;
-    return held.has(row.kind);
-  };
-}
-
-/** actionRequestVisibility for stored requests, which name a run and not a workflow. */
-export async function actionRecordVisibility(
-  records: Array<{ workflowRunId: string | null }>,
-): Promise<(row: { kind: string; scope?: string | null; workflowRunId: string | null }) => boolean> {
-  const visible = await actionRequestVisibility();
-  const runIds = [...new Set(records.map((r) => r.workflowRunId).filter((id): id is string => Boolean(id)))];
-  const runs = runIds.length === 0
-    ? []
-    : await db()
-        .select({ id: workflow_run.id, workflowId: workflow_run.workflow_id })
-        .from(workflow_run)
-        .where(and(eq(workflow_run.org_id, await getOrgId()), inArray(workflow_run.id, runIds)));
-  const workflowOf = new Map(runs.map((r) => [r.id, r.workflowId]));
-  return (row) => visible({
-    kind: row.kind,
-    scope: row.scope,
-    workflowId: row.workflowRunId ? workflowOf.get(row.workflowRunId) ?? null : null,
-  });
 }

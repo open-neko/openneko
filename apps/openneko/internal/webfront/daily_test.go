@@ -266,13 +266,6 @@ func TestActionRequests(t *testing.T) {
 			t.Errorf("detail lacks %s: %s", part, w.Body.String())
 		}
 	}
-
-	if w := call(f, "PATCH", "/api/v1/action-requests/"+arHeldRun, `{"decision":"approve"}`, admin); w.Code != 418 {
-		t.Errorf("PATCH stayed in Go: %d", w.Code)
-	}
-	if hits := f.Node.(*recorder).hits; len(hits) != 1 || hits[0] != "PATCH /api/v1/action-requests/"+arHeldRun {
-		t.Errorf("node hits: %v", hits)
-	}
 }
 
 func TestJSJSON(t *testing.T) {

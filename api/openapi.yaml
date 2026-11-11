@@ -399,6 +399,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '403':
+          description: The action's policy needs a member of its approver group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The action request is not found or not visible
           content:
@@ -5756,7 +5762,6 @@ paths:
                 type: object
                 required:
                 - state
-                - jobId
                 additionalProperties: false
                 properties:
                   state:
