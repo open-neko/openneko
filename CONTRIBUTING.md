@@ -53,17 +53,15 @@ go test -tags=integration -count=1 -timeout 10m ./internal/db/...
 ```
 
 For changes to an API route or to `api/openapi.yaml`, run the contract tests.
-They need a Postgres login that may create databases, Go, and a web build:
+They run through `openneko web` in front of Next, as the web image does.
+They need a Postgres login that may create databases, Go, and both web builds:
 
 ```bash
 pnpm --filter @neko/web build
+pnpm --filter @neko/web build:spa
 OPENNEKO_CONTRACT_PG=postgres://neko:secret@127.0.0.1:5432/postgres \
   pnpm --filter @neko/contract local
 ```
-
-To run the tests through `openneko web` in front of Next, as the web image
-does, also run `pnpm --filter @neko/web build:spa` and set
-`OPENNEKO_CONTRACT_FRONT=go`.
 
 To test another server, point `OPENNEKO_DATABASE_URL_FILE` at its new,
 migrated database and run `pnpm --filter @neko/contract seed <file>`. The

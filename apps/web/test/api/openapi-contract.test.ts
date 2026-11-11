@@ -8,6 +8,7 @@ const webDirectory = join(import.meta.dirname, "..", "..");
 const sourceDirectory = join(webDirectory, "src");
 const apiDirectory = join(sourceDirectory, "app", "api");
 const contractFile = join(webDirectory, "..", "..", "api", "openapi.yaml");
+const goRoutesFile = join(webDirectory, "..", "openneko", "internal", "webfront", "api.go");
 const GRAPHJIN_PATHS = new Set(["/api/v1/graphql", "/api/v1/mcp"]);
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 
@@ -47,6 +48,16 @@ async function routeOperations(): Promise<string[]> {
   return operations.sort();
 }
 
+async function goOperations(): Promise<string[]> {
+  const source = await readFile(goRoutesFile, "utf8");
+  const block = /^var GoRoutes = map\[string\]\[\]string\{\n([\s\S]*?)^\}/m.exec(source)?.[1] ?? "";
+  const operations: string[] = [];
+  for (const [, path, methods] of block.matchAll(/^\s*"\/api\/v1(\/[^"]+)":\s*\{([^}]*)\}/gm)) {
+    for (const [, method] of methods!.matchAll(/"([A-Z]+)"/g)) operations.push(`${method} ${path}`);
+  }
+  return operations.sort();
+}
+
 const contract = parse(await readFile(contractFile, "utf8")) as Contract;
 
 function contractOperations(): [string, Operation][] {
@@ -73,8 +84,12 @@ describe("OpenAPI contract", () => {
     expect(contract.servers).toEqual([{ url: "/api/v1" }]);
   });
 
-  it("lists every route and method, and nothing else", async () => {
-    expect(contractOperations().map(([key]) => key).sort()).toEqual(await routeOperations());
+  it("lists every route and method that Next or Go answers, and nothing else", async () => {
+    const node = await routeOperations();
+    const go = await goOperations();
+    expect(go.length).toBeGreaterThan(20);
+    expect(node.filter((op) => go.includes(op))).toEqual([]);
+    expect(contractOperations().map(([key]) => key).sort()).toEqual([...node, ...go].sort());
   });
 
   it("gives each operation a unique id, a summary, a tag and the gate's access rule", () => {

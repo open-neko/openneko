@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -27,6 +28,8 @@ type API struct {
 	AuditWebhook string
 	// SecureCookies marks the session and sign-in state cookies Secure.
 	SecureCookies bool
+	// SecretsDir overrides the config folder that holds secrets.json.
+	SecretsDir string
 
 	once   sync.Once
 	routes map[string]map[string]http.HandlerFunc
@@ -35,31 +38,52 @@ type API struct {
 }
 
 // GoRoutes lists the /api/v1 routes that Go answers, by method.
-// TestGoRoutesInContract checks each one against api/openapi.yaml.
+// TestGoRoutesInContract checks each one against api/openapi.yaml, and
+// apps/web/test/api/openapi-contract.test.ts reads this map as text.
 var GoRoutes = map[string][]string{
-	"/api/v1/version":             {"GET"},
-	"/api/v1/auth/status":         {"GET"},
-	"/api/v1/auth/session":        {"GET"},
-	"/api/v1/auth/begin":          {"GET"},
-	"/api/v1/auth/callback":       {"GET"},
-	"/api/v1/auth/logout":         {"POST"},
-	"/api/v1/auth/device/code":    {"POST"},
-	"/api/v1/auth/device/token":   {"POST"},
-	"/api/v1/auth/device/approve": {"POST"},
+	"/api/v1/version":                                   {"GET"},
+	"/api/v1/auth/status":                               {"GET"},
+	"/api/v1/auth/session":                              {"GET"},
+	"/api/v1/auth/begin":                                {"GET"},
+	"/api/v1/auth/callback":                             {"GET"},
+	"/api/v1/auth/logout":                               {"POST"},
+	"/api/v1/auth/device/code":                          {"POST"},
+	"/api/v1/auth/device/token":                         {"POST"},
+	"/api/v1/auth/device/approve":                       {"POST"},
+	"/api/v1/sso/setup/status":                          {"GET"},
+	"/api/v1/sso/setup/environments":                    {"GET"},
+	"/api/v1/sso/setup/organizations":                   {"GET"},
+	"/api/v1/sso/setup/credentials-info":                {"GET"},
+	"/api/v1/sso/setup/ids":                             {"POST"},
+	"/api/v1/sso/setup/credentials":                     {"POST"},
+	"/api/v1/sso/setup/generate-portal-link":            {"POST"},
+	"/api/v1/sso/setup/check":                           {"POST"},
+	"/api/v1/profile":                                   {"GET", "PATCH"},
+	"/api/v1/my/pack-accounts/{packId}/{connectionKey}": {"POST", "DELETE"},
 }
 
 func (a *API) table() map[string]map[string]http.HandlerFunc {
 	a.once.Do(func() {
 		a.routes = map[string]map[string]http.HandlerFunc{
-			"/api/v1/version":             {"GET": a.version},
-			"/api/v1/auth/status":         {"GET": a.authStatus},
-			"/api/v1/auth/session":        {"GET": a.authSession},
-			"/api/v1/auth/begin":          {"GET": a.authBegin},
-			"/api/v1/auth/callback":       {"GET": a.authCallback},
-			"/api/v1/auth/logout":         {"POST": a.logout},
-			"/api/v1/auth/device/code":    {"POST": a.deviceCode},
-			"/api/v1/auth/device/token":   {"POST": a.deviceToken},
-			"/api/v1/auth/device/approve": {"POST": a.deviceApprove},
+			"/api/v1/version":                                   {"GET": a.version},
+			"/api/v1/auth/status":                               {"GET": a.authStatus},
+			"/api/v1/auth/session":                              {"GET": a.authSession},
+			"/api/v1/auth/begin":                                {"GET": a.authBegin},
+			"/api/v1/auth/callback":                             {"GET": a.authCallback},
+			"/api/v1/auth/logout":                               {"POST": a.logout},
+			"/api/v1/auth/device/code":                          {"POST": a.deviceCode},
+			"/api/v1/auth/device/token":                         {"POST": a.deviceToken},
+			"/api/v1/auth/device/approve":                       {"POST": a.deviceApprove},
+			"/api/v1/sso/setup/status":                          {"GET": a.ssoSetupStatus},
+			"/api/v1/sso/setup/environments":                    {"GET": a.ssoSetupEnvironments},
+			"/api/v1/sso/setup/organizations":                   {"GET": a.ssoSetupOrganizations},
+			"/api/v1/sso/setup/credentials-info":                {"GET": a.ssoSetupCredentialsInfo},
+			"/api/v1/sso/setup/ids":                             {"POST": a.ssoSetupIDs},
+			"/api/v1/sso/setup/credentials":                     {"POST": a.ssoSetupCredentials},
+			"/api/v1/sso/setup/generate-portal-link":            {"POST": a.ssoSetupPortalLink},
+			"/api/v1/sso/setup/check":                           {"POST": a.ssoSetupCheck},
+			"/api/v1/profile":                                   {"GET": a.profileGet, "PATCH": a.profilePatch},
+			"/api/v1/my/pack-accounts/{packId}/{connectionKey}": {"POST": a.personalPackAccount, "DELETE": a.personalPackAccount},
 		}
 	})
 	return a.routes
@@ -72,7 +96,10 @@ func (a *API) Handler(r *http.Request) http.HandlerFunc {
 	}
 	methods, ok := a.table()[APIV1Path(r.URL.Path)]
 	if !ok {
-		return nil
+		methods = a.templateMatch(r)
+		if methods == nil {
+			return nil
+		}
 	}
 	method := r.Method
 	if method == http.MethodHead {
@@ -90,6 +117,43 @@ func (a *API) Handler(r *http.Request) http.HandlerFunc {
 		w.Header().Set("Allow", strings.Join(allow, ", "))
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+// templateMatch finds a route with {name} segments and sets the path values,
+// decoded per segment as Next does.
+func (a *API) templateMatch(r *http.Request) map[string]http.HandlerFunc {
+	got := strings.Split(APIV1Path(r.URL.EscapedPath()), "/")
+	for route, methods := range a.table() {
+		if !strings.Contains(route, "{") {
+			continue
+		}
+		want := strings.Split(route, "/")
+		if len(want) != len(got) {
+			continue
+		}
+		values := map[string]string{}
+		matched := true
+		for i, seg := range want {
+			if strings.HasPrefix(seg, "{") && strings.HasSuffix(seg, "}") {
+				v, err := url.PathUnescape(got[i])
+				if err != nil || v == "" {
+					matched = false
+					break
+				}
+				values[seg[1:len(seg)-1]] = v
+			} else if seg != got[i] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			for k, v := range values {
+				r.SetPathValue(k, v)
+			}
+			return methods
+		}
+	}
+	return nil
 }
 
 func sendJSON(w http.ResponseWriter, status int, body any) {

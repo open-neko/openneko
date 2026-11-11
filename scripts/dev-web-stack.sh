@@ -148,4 +148,4 @@ export OPENNEKO_BROKER_PORT="${OPENNEKO_WEB_BROKER_PORT:-4198}"
 
 echo "OpenNeko web: http://localhost:${web_port} (hot reload)"
 echo "Backing services: Docker Compose project ${project_name}"
-exec pnpm --filter @neko/web exec next dev --port "$web_port"
+exec sh scripts/dev-web.sh "$web_port"

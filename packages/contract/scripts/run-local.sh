@@ -1,9 +1,8 @@
 #!/bin/sh
-# Runs the contract tests against a local `next start` on a new database.
+# Runs the contract tests against a local `openneko web` in front of
+# `next start`, as the web image runs them, on a new database.
 # OPENNEKO_CONTRACT_PG: a Postgres URL that may create and drop databases.
-# Build the web app first: pnpm --filter @neko/web build
-# OPENNEKO_CONTRACT_FRONT=go puts `openneko web` in front of Next, as the web
-# image does; build the static app first: pnpm --filter @neko/web build:spa
+# Build the web app first: pnpm --filter @neko/web build && pnpm --filter @neko/web build:spa
 set -eu
 
 : "${OPENNEKO_CONTRACT_PG:?set OPENNEKO_CONTRACT_PG to a Postgres URL that may create databases}"
@@ -37,14 +36,11 @@ export OPENNEKO_DATABASE_URL_FILE="$work/database-url"
 (cd "$root/apps/openneko" && OPENNEKO_WORKSPACE_ROOT="$root" go run ./cmd/openneko migrate --local >"$work/migrate.log")
 (cd "$here" && pnpm exec tsx scripts/seed.ts "$work/tokens")
 
-node_port="$port"
-if [ "${OPENNEKO_CONTRACT_FRONT:-}" = go ]; then
-  node_port="$(node -e 'const s = require("net").createServer().listen(0, "127.0.0.1", () => { console.log(s.address().port); s.close(); })')"
-  (cd "$root/apps/openneko" && go build -o "$work/openneko" ./cmd/openneko)
-  "$work/openneko" web --addr "127.0.0.1:$port" --dir "$root/apps/web/dist" \
-    --node-addr "127.0.0.1:$node_port" --worker-admin-url "http://127.0.0.1:$closed" >"$work/front.log" 2>&1 &
-  front=$!
-fi
+node_port="$(node -e 'const s = require("net").createServer().listen(0, "127.0.0.1", () => { console.log(s.address().port); s.close(); })')"
+(cd "$root/apps/openneko" && go build -o "$work/openneko" ./cmd/openneko)
+"$work/openneko" web --addr "127.0.0.1:$port" --dir "$root/apps/web/dist" \
+  --node-addr "127.0.0.1:$node_port" --worker-admin-url "http://127.0.0.1:$closed" >"$work/front.log" 2>&1 &
+front=$!
 
 (cd "$root/apps/web" && \
   WORKER_ADMIN_URL="http://127.0.0.1:$closed" \
@@ -59,7 +55,7 @@ until curl -fsS "http://127.0.0.1:$port/api/v1/version" >/dev/null 2>&1; do
   tries=$((tries + 1))
   if [ "$tries" -gt 60 ]; then
     cat "$work/web.log" >&2
-    [ -z "$front" ] || cat "$work/front.log" >&2
+    cat "$work/front.log" >&2
     exit 1
   fi
   sleep 1
