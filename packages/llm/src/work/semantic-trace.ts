@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AgentControlPlane } from "./control-plane";
+import { scrubJson, type Scrubber } from "./secret-scrubber";
 
 export const WORK_SEMANTIC_TRACE_SCHEMA_VERSION =
   "openneko.work.semantic-trace/v1" as const;
@@ -124,13 +125,29 @@ export type WorkSemanticTraceEvent =
       };
     });
 
+export const WORK_SEMANTIC_STEP_ROWS_MAX_BYTES = 16 * 1024;
+
+export type WorkSemanticStepContent = {
+  sequence: number;
+  operation: WorkSemanticTraceEvent["operation"];
+  request: unknown;
+  rows?: unknown[];
+  rowCount?: number;
+  truncated?: boolean;
+  error?: string;
+};
+
 export type WorkSemanticTraceSink = (
   event: WorkSemanticTraceEvent,
+  content?: WorkSemanticStepContent,
 ) => Promise<void> | void;
+
+export type WorkSemanticContentCapture = { scrub: Scrubber };
 
 type RegisteredSink = {
   sink: WorkSemanticTraceSink;
   nextSequence: number;
+  capture?: WorkSemanticContentCapture;
 };
 
 const runSinks = new Map<string, RegisteredSink>();
@@ -143,8 +160,13 @@ const runSinks = new Map<string, RegisteredSink>();
 export function registerWorkSemanticTraceSink(
   runId: string,
   sink: WorkSemanticTraceSink,
+  options: { captureContent?: WorkSemanticContentCapture } = {},
 ): () => void {
-  const registration = { sink, nextSequence: 1 };
+  const registration: RegisteredSink = {
+    sink,
+    nextSequence: 1,
+    ...(options.captureContent ? { capture: options.captureContent } : {}),
+  };
   runSinks.set(runId, registration);
   return () => {
     if (runSinks.get(runId) === registration) runSinks.delete(runId);
@@ -166,6 +188,7 @@ type TraceContext = {
   operation: TraceOperation;
   source: WorkSemanticTraceSource;
   requestDigest: string;
+  request: unknown;
 };
 
 function beginTrace(
@@ -186,16 +209,27 @@ function beginTrace(
     operation,
     source,
     requestDigest: workSemanticDigest(request),
+    request,
   };
 }
 
 async function deliver(
   context: TraceContext | null,
   buildEvent: () => WorkSemanticTraceEvent,
+  outcome?: { result?: unknown; error?: unknown },
 ): Promise<void> {
   if (!context) return;
   try {
-    await context.registration.sink(buildEvent());
+    const event = buildEvent();
+    const capture = context.registration.capture;
+    if (capture && outcome) {
+      await context.registration.sink(
+        event,
+        stepContent(context, outcome, capture.scrub),
+      );
+    } else {
+      await context.registration.sink(event);
+    }
   } catch {
     // Evidence collection must never change the product call's result. Eval
     // drivers detect a missing event and classify the episode as unscorable.
@@ -268,8 +302,11 @@ async function traced<T>(input: {
     result = await input.execute();
   } catch (error) {
     if (context) {
-      await deliver(context, () =>
-        input.event(baseEvent(context, "error", undefined, error), undefined),
+      await deliver(
+        context,
+        () =>
+          input.event(baseEvent(context, "error", undefined, error), undefined),
+        { error },
       );
     }
     throw error;
@@ -283,7 +320,7 @@ async function traced<T>(input: {
         base.errorDigest = workSemanticDigest(result);
       }
       return input.event(base, result);
-    });
+    }, { result });
   }
   return result;
 }
@@ -740,6 +777,74 @@ export function unwrapWorkSemanticTraceControlPlane(
   controlPlane: AgentControlPlane,
 ): AgentControlPlane {
   return tracedControlPlanes.get(controlPlane)?.target ?? controlPlane;
+}
+
+function stepContent(
+  context: TraceContext,
+  outcome: { result?: unknown; error?: unknown },
+  scrub: Scrubber,
+): WorkSemanticStepContent {
+  const base = {
+    sequence: context.sequence,
+    operation: context.operation,
+    request: scrubJson(scrub, toJsonValue(context.request)),
+  };
+  if ("error" in outcome) {
+    const message =
+      outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
+    return { ...base, error: scrub(message) };
+  }
+  const rows = scrubJson(scrub, toJsonValue(resultRows(outcome.result)) as unknown[]);
+  const kept: unknown[] = [];
+  let bytes = 2;
+  for (const row of rows) {
+    const size = Buffer.byteLength(JSON.stringify(row) ?? "null") + (kept.length ? 1 : 0);
+    if (bytes + size > WORK_SEMANTIC_STEP_ROWS_MAX_BYTES) break;
+    kept.push(row);
+    bytes += size;
+  }
+  return {
+    ...base,
+    rows: kept,
+    rowCount: rows.length,
+    truncated: kept.length < rows.length,
+  };
+}
+
+function resultRows(result: unknown): unknown[] {
+  if (result === undefined || result === null) return [];
+  if (Array.isArray(result)) return result;
+  const value = record(result);
+  if (!value) return [result];
+  const content = asArray(value.content);
+  if (content.length > 0) {
+    return content.flatMap((entry) => {
+      const text = string(record(entry)?.text);
+      if (text === undefined) return [entry];
+      try {
+        return resultRows(JSON.parse(text));
+      } catch {
+        return [text];
+      }
+    });
+  }
+  if ("data" in value) return graphqlRows(value.data);
+  for (const key of ["matches", "workflows", "rows"]) {
+    if (Array.isArray(value[key])) return value[key] as unknown[];
+  }
+  return [result];
+}
+
+function graphqlRows(data: unknown): unknown[] {
+  const value = record(data);
+  if (!value) return data === undefined || data === null ? [] : [data];
+  return Object.values(value).flatMap((field) =>
+    Array.isArray(field) ? field : field === null ? [] : [field],
+  );
+}
+
+function toJsonValue(value: unknown): unknown {
+  return JSON.parse(canonicalJson(value));
 }
 
 function graphjinOperation(

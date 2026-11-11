@@ -3,12 +3,15 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentControlPlane } from "../src/work/control-plane";
 import { startAgentBroker } from "../src/work/broker";
+import { createScrubber } from "../src/work/secret-scrubber";
 import {
+  WORK_SEMANTIC_STEP_ROWS_MAX_BYTES,
   WORK_SEMANTIC_TRACE_SCHEMA_VERSION,
   recordWorkSemanticHostEvent,
   registerWorkSemanticTraceSink,
   traceAgentControlPlane,
   workSemanticDigest,
+  type WorkSemanticStepContent,
   type WorkSemanticTraceEvent,
 } from "../src/work/semantic-trace";
 import { buildWorkMemoryServer } from "../src/work/tools";
@@ -777,5 +780,149 @@ describe("trusted broker semantic trace", () => {
       warning.mockRestore();
       await handle.close();
     }
+  });
+
+  describe("step content for evals", () => {
+    const binding = { runId: "content-run", orgId: "org-1", kind: "work" as const };
+    const planted = "pw-planted-7f3a9c21";
+
+    function controlPlane(rows: unknown[]) {
+      return stubControlPlane({
+        queryGraphjinRead: async () => ({ data: { orders: rows } }),
+        callGraphjinTool: async () => ({
+          content: [{ type: "text", text: JSON.stringify({ data: { customers: rows } }) }],
+        }),
+        searchFilesForRun: async () => ({ matches: rows }),
+      });
+    }
+
+    async function collect(
+      capture: boolean,
+      run: (cp: AgentControlPlane) => Promise<unknown>,
+      rows: unknown[],
+    ) {
+      const events: WorkSemanticTraceEvent[] = [];
+      const contents: Array<WorkSemanticStepContent | undefined> = [];
+      const sinkArgs: number[] = [];
+      const unregister = registerWorkSemanticTraceSink(
+        binding.runId,
+        (...args) => {
+          sinkArgs.push(args.length);
+          events.push(args[0]);
+          contents.push(args[1]);
+        },
+        capture ? { captureContent: { scrub: createScrubber([planted]) } } : {},
+      );
+      try {
+        await run(traceAgentControlPlane(controlPlane(rows), binding));
+      } finally {
+        unregister();
+      }
+      return { events, contents, sinkArgs };
+    }
+
+    it("keeps the query text and the returned rows, scrubbed", async () => {
+      const rows = [{ id: 1, note: `password ${planted}` }, { id: 2, note: "ok" }];
+      const { contents } = await collect(
+        true,
+        async (cp) => {
+          await cp.queryGraphjinRead({
+            query: `query { orders(where: { pw: "${planted}" }) { id note } }`,
+          } as never);
+          await cp.callGraphjinTool({
+            name: "execute_graphql",
+            arguments: { query: "query { customers { id } }" },
+          } as never);
+          await cp.searchFilesForRun({ query: "invoice" } as never);
+        },
+        rows,
+      );
+      const scrubbed = [{ id: 1, note: "password [REDACTED]" }, { id: 2, note: "ok" }];
+      expect(contents[0]).toEqual({
+        sequence: 1,
+        operation: "graphjin.execute",
+        request: { query: 'query { orders(where: { pw: "[REDACTED]" }) { id note } }' },
+        rows: scrubbed,
+        rowCount: 2,
+        truncated: false,
+      });
+      expect(contents[1]).toMatchObject({
+        operation: "graphjin.execute",
+        request: { name: "execute_graphql", arguments: { query: "query { customers { id } }" } },
+        rows: scrubbed,
+      });
+      expect(contents[2]).toMatchObject({
+        operation: "files.search",
+        request: { query: "invoice" },
+        rows: scrubbed,
+      });
+      expect(JSON.stringify(contents)).not.toContain(planted);
+    });
+
+    it("caps rows at 16 KB on a row boundary and keeps the full count", async () => {
+      const rows = Array.from({ length: 1000 }, (_, id) => ({ id, text: "x".repeat(90) }));
+      const { contents } = await collect(
+        true,
+        (cp) => cp.queryGraphjinRead({ query: "query { orders { id text } }" } as never),
+        rows,
+      );
+      const content = contents[0]!;
+      expect(content.rowCount).toBe(1000);
+      expect(content.truncated).toBe(true);
+      expect(content.rows!.length).toBeGreaterThan(0);
+      expect(content.rows).toEqual(rows.slice(0, content.rows!.length));
+      expect(Buffer.byteLength(JSON.stringify(content.rows))).toBeLessThanOrEqual(
+        WORK_SEMANTIC_STEP_ROWS_MAX_BYTES,
+      );
+      const next = JSON.stringify([...content.rows!, rows[content.rows!.length]]);
+      expect(Buffer.byteLength(next)).toBeGreaterThan(WORK_SEMANTIC_STEP_ROWS_MAX_BYTES);
+    });
+
+    it("keeps the error text of a failed step", async () => {
+      const contents: Array<WorkSemanticStepContent | undefined> = [];
+      const unregister = registerWorkSemanticTraceSink(
+        binding.runId,
+        (_event, content) => {
+          contents.push(content);
+        },
+        { captureContent: { scrub: createScrubber([planted]) } },
+      );
+      const cp = stubControlPlane({
+        queryGraphjinRead: async () => {
+          throw new Error(`login failed for ${planted}`);
+        },
+      });
+      try {
+        await expect(
+          traceAgentControlPlane(cp, binding).queryGraphjinRead({ query: "query { a }" } as never),
+        ).rejects.toThrow();
+      } finally {
+        unregister();
+      }
+      expect(contents[0]).toEqual({
+        sequence: 1,
+        operation: "graphjin.execute",
+        request: { query: "query { a }" },
+        error: "login failed for [REDACTED]",
+      });
+    });
+
+    it("gives a production sink the same events and no content", async () => {
+      const rows = [{ id: 1, note: planted }];
+      const run = (cp: AgentControlPlane) =>
+        cp.queryGraphjinRead({ query: "query { orders { id note } }" } as never);
+      const plain = await collect(false, run, rows);
+      const captured = await collect(true, run, rows);
+      expect(plain.sinkArgs).toEqual([1]);
+      expect(plain.contents).toEqual([undefined]);
+      const stable = (event: WorkSemanticTraceEvent) => ({
+        ...event,
+        timestamp: "",
+        durationMs: 0,
+      });
+      expect(plain.events.map(stable)).toEqual(captured.events.map(stable));
+      expect(JSON.stringify(plain.events)).not.toContain(planted);
+      expect(JSON.stringify(plain.events)).not.toContain("note");
+    });
   });
 });

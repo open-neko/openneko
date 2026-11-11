@@ -548,11 +548,9 @@ export const AttemptSchema = z
   .strict();
 
 /**
- * Private, scorer-facing evidence captured at trusted product boundaries.
- *
- * Evidence belongs only in the resumable state store. Producers should retain
- * stable identifiers and digests instead of raw customer content; promoted
- * result artifacts omit the complete document regardless.
+ * Private evidence captured at trusted product boundaries. Scorers read only
+ * the digest events. v2 adds scrubbed step content and model turns. It stays
+ * in the resumable state store; promoted results omit the whole document.
  */
 export const EvalSemanticEvidenceEventSchema = z
   .object({
@@ -574,16 +572,52 @@ export const EvalSemanticEvidenceEventSchema = z
   })
   .strict();
 
-export const EvalSemanticEvidenceSchema = z
+export const EvalStepContentSchema = z
   .object({
-    schemaVersion: z.literal("openneko.eval.semantic-evidence/v1"),
-    events: z.array(EvalSemanticEvidenceEventSchema),
+    sequence: z.number().int().positive(),
+    operation: Id,
+    request: z.unknown(),
+    rows: z.array(z.unknown()).optional(),
+    rowCount: z.number().int().nonnegative().optional(),
+    truncated: z.boolean().optional(),
+    error: z.string().optional(),
   })
   .strict();
 
+export const EvalModelTurnSchema = z
+  .object({
+    afterToolCalls: z.number().int().nonnegative(),
+    text: z.string(),
+  })
+  .strict();
+
+export const EvalSemanticEvidenceSchema = z.discriminatedUnion("schemaVersion", [
+  z
+    .object({
+      schemaVersion: z.literal("openneko.eval.semantic-evidence/v1"),
+      events: z.array(EvalSemanticEvidenceEventSchema),
+    })
+    .strict(),
+  z
+    .object({
+      schemaVersion: z.literal("openneko.eval.semantic-evidence/v2"),
+      events: z.array(EvalSemanticEvidenceEventSchema),
+      steps: z.array(EvalStepContentSchema),
+      modelTurns: z.array(EvalModelTurnSchema).optional(),
+    })
+    .strict(),
+]);
+
+export const EPISODE_SCHEMA_VERSION = "openneko.eval.episode/v2" as const;
+export const SEMANTIC_EVIDENCE_SCHEMA_VERSION =
+  "openneko.eval.semantic-evidence/v2" as const;
+
 export const EpisodeSchema = z
   .object({
-    schemaVersion: z.literal("openneko.eval.episode/v1"),
+    schemaVersion: z.enum([
+      "openneko.eval.episode/v1",
+      EPISODE_SCHEMA_VERSION,
+    ]),
     runId: Id,
     slotKey: z.string().min(1),
     // Optional for compatibility with episode/v1 checkpoints written before

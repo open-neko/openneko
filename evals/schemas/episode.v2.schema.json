@@ -4,7 +4,10 @@
   "properties": {
     "schemaVersion": {
       "type": "string",
-      "const": "openneko.eval.episode/v1"
+      "enum": [
+        "openneko.eval.episode/v1",
+        "openneko.eval.episode/v2"
+      ]
     },
     "runId": {
       "$ref": "#/$defs/__schema0"
@@ -146,116 +149,108 @@
       "items": {}
     },
     "semanticEvidence": {
-      "type": "object",
-      "properties": {
-        "schemaVersion": {
-          "type": "string",
-          "const": "openneko.eval.semantic-evidence/v1"
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "type": "string",
+              "const": "openneko.eval.semantic-evidence/v1"
+            },
+            "events": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema3"
+              }
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "events"
+          ],
+          "additionalProperties": false
         },
-        "events": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "schemaVersion": {
-                "type": "string",
-                "const": "openneko.work.semantic-trace/v1"
-              },
-              "sequence": {
-                "type": "integer",
-                "exclusiveMinimum": 0,
-                "maximum": 9007199254740991
-              },
-              "timestamp": {
-                "type": "string",
-                "format": "date-time",
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-              },
-              "runId": {
-                "type": "string",
-                "minLength": 1
-              },
-              "orgId": {
-                "type": "string",
-                "minLength": 1
-              },
-              "runKind": {
-                "type": "string",
-                "enum": [
-                  "work",
-                  "workflow",
-                  "agent-job"
-                ]
-              },
-              "source": {
-                "type": "string",
-                "enum": [
-                  "trusted-broker",
-                  "trusted-host"
-                ]
-              },
-              "operation": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "status": {
-                "type": "string",
-                "enum": [
-                  "ok",
-                  "error"
-                ]
-              },
-              "durationMs": {
-                "type": "number",
-                "minimum": 0
-              },
-              "requestDigest": {
-                "type": "string",
-                "pattern": "^sha256:.*"
-              },
-              "responseDigest": {
-                "type": "string",
-                "pattern": "^sha256:.*"
-              },
-              "errorType": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 128
-              },
-              "errorDigest": {
-                "type": "string",
-                "pattern": "^sha256:.*"
-              },
-              "evidence": {
-                "type": "object",
-                "propertyNames": {
-                  "type": "string"
-                },
-                "additionalProperties": {}
+        {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "type": "string",
+              "const": "openneko.eval.semantic-evidence/v2"
+            },
+            "events": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema3"
               }
             },
-            "required": [
-              "schemaVersion",
-              "sequence",
-              "timestamp",
-              "runId",
-              "orgId",
-              "runKind",
-              "source",
-              "operation",
-              "status",
-              "durationMs",
-              "requestDigest",
-              "evidence"
-            ],
-            "additionalProperties": false
-          }
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "sequence": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "operation": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "request": {},
+                  "rows": {
+                    "type": "array",
+                    "items": {}
+                  },
+                  "rowCount": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  },
+                  "error": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "sequence",
+                  "operation",
+                  "request"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "modelTurns": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "afterToolCalls": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "afterToolCalls",
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "events",
+            "steps"
+          ],
+          "additionalProperties": false
         }
-      },
-      "required": [
-        "schemaVersion",
-        "events"
-      ],
-      "additionalProperties": false
+      ]
     },
     "score": {
       "type": "object",
@@ -623,6 +618,101 @@
       "minLength": 1,
       "maxLength": 128,
       "pattern": "^[A-Z0-9][A-Z0-9._-]*$"
+    },
+    "__schema3": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "const": "openneko.work.semantic-trace/v1"
+        },
+        "sequence": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+        },
+        "runId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "orgId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runKind": {
+          "type": "string",
+          "enum": [
+            "work",
+            "workflow",
+            "agent-job"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "trusted-broker",
+            "trusted-host"
+          ]
+        },
+        "operation": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "error"
+          ]
+        },
+        "durationMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "requestDigest": {
+          "type": "string",
+          "pattern": "^sha256:.*"
+        },
+        "responseDigest": {
+          "type": "string",
+          "pattern": "^sha256:.*"
+        },
+        "errorType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "errorDigest": {
+          "type": "string",
+          "pattern": "^sha256:.*"
+        },
+        "evidence": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "sequence",
+        "timestamp",
+        "runId",
+        "orgId",
+        "runKind",
+        "source",
+        "operation",
+        "status",
+        "durationMs",
+        "requestDigest",
+        "evidence"
+      ],
+      "additionalProperties": false
     }
   }
 }
