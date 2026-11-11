@@ -215,6 +215,13 @@ and applying that configuration activates the pack through the shared lifecycle.
 In particular, an administrator cannot configure a personal OAuth client for an
 uninstalled pack. Custom packs retain the upload, review, and install flow.
 
+An admin can also start a pack from chat. When the admin names a system that
+has a pack, the assistant shows the pack's setup card. It is the same
+component and the same review and install as the settings page, so a pack
+needs no extra file for it. A pack whose `graphjin/sources.yaml` holds a
+ready config must be named in the `graphjin-config` skill and the
+`present_pack_setup` tool; a test checks this for the built-in packs.
+
 ### Install into any GraphJin
 
 OpenNeko installs a pack into the GraphJin of the selected data connection,

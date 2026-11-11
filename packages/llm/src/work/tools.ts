@@ -12,6 +12,8 @@ import {
   buildSourceFormSurface,
   SOURCE_FORM_PREFILL_SHAPE,
   sourceFormPrefillFromAnswers,
+  buildPackSetupSurface,
+  PACK_ID_SCHEMA,
   type SourceFormPrefill,
 } from "./source-form";
 import type { AgentEvent } from "../agent-backend";
@@ -668,6 +670,34 @@ export function buildSourceConfigManagerServer(opts: {
     },
   );
 
+  const presentPackSetup = defineMcpTool(
+    "present_pack_setup",
+    [
+      "Show the admin a pack's setup card in chat, for a system that has a pack",
+      "with a ready config (magento, shopify, google-workspace, slack, resend,",
+      "parallel-search, or an uploaded pack the admin names). The card installs",
+      "the pack, asks for the address and the login, shows the review, and",
+      "applies it when the admin approves. Credentials go from the card to the",
+      "pack store and never reach you. A message arrives when the admin applies it.",
+    ].join(" "),
+    { packId: PACK_ID_SCHEMA },
+    async (args) => {
+      await opts.emit({
+        type: "surface",
+        messages: buildPackSetupSurface(args.packId, `pack-setup-${randomUUID()}`),
+      });
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({
+            ok: true,
+            next: "Card shown. Tell the admin to enter the address and the login in the card, then review and approve it. Wait for their message. Do not file a register_source proposal for this system.",
+          }),
+        }],
+      };
+    },
+  );
+
   const describeConfig = defineMcpTool(
     "describe_source_config",
     [
@@ -952,6 +982,7 @@ export function buildSourceConfigManagerServer(opts: {
       describeConfig,
       listSecretNames,
       presentSourceForm,
+      presentPackSetup,
       importOpenApi,
       listOpenApi,
       requestChange,

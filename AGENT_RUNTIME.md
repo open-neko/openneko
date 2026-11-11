@@ -131,6 +131,17 @@ control plane and the approval worker replace it with `[REDACTED]` in every
 error text, so GraphJin's errors cannot carry it to the model, a log line or
 the thread.
 
+For a system with a pack, `present_pack_setup` shows the pack's setup card
+in chat. The card is the same component as Admin settings, Packs
+(`apps/web/src/components/admin/PackSetup.tsx`) and calls the same admin pack
+routes: install, review, then install or configure with the review hash. The
+pack's own `graphjin/sources.yaml` is the ready config, so the admin enters
+only the inputs and secrets that the pack declares. The secrets go from the
+card to the pack API. The model gets the pack ID and, after apply, one
+message that names the pack and its status. A pack source does not file a
+`source_config_admin` request: the admin's approval in the card is the
+approval, as it is on the settings page.
+
 The org setting "Ask-based config" (Admin settings, Data access rules) turns
 these tools on. It is on for an organization made after migration 0130.
 Migration 0130 saves "off" for each organization that had no saved value, so

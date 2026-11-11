@@ -286,3 +286,30 @@ describe("request_source_config_change", () => {
     expect(emit).not.toHaveBeenCalled();
   });
 });
+
+describe("present_pack_setup", () => {
+  it("emits the pack setup card with the pack ID and refuses a bad ID", async () => {
+    const emit = vi.fn(async () => {});
+    const server = buildSourceConfigManagerServer({
+      orgId: "org",
+      runId: "run",
+      emit,
+      controlPlane: {} as never,
+    });
+    await withServer(server, async (client) => {
+      const result = await client.callTool({ name: "present_pack_setup", arguments: { packId: "magento" } });
+      expect(JSON.parse(text(result)!)).toMatchObject({ ok: true });
+      const refused = await client.callTool({ name: "present_pack_setup", arguments: { packId: "../magento" } });
+      expect(refused.isError).toBe(true);
+    });
+    expect(emit).toHaveBeenCalledTimes(1);
+    const surface = (emit.mock.calls[0]?.[0] as { messages: Array<{ createSurface: Record<string, unknown> }> })
+      .messages[0]!.createSurface;
+    expect(surface.surfaceId).toMatch(/^pack-setup-/);
+    expect(surface.components).toEqual([
+      expect.objectContaining({ id: "root", component: "Answer", children: ["setup"] }),
+      { id: "setup", component: "PackSetup", packId: "magento" },
+    ]);
+    expect(surface.dataModel).toEqual({});
+  });
+});

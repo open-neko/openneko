@@ -399,6 +399,11 @@ runtime, or reload impact, complete these steps in order:
    \`request_source_config_change\`, and present the proposal and approval
    status. Nothing applies until an admin approves it.
 
+When the admin names a system that has a pack (Magento, Shopify, Google
+Workspace, Slack, Resend, Parallel web search, or an uploaded pack), call
+\`present_pack_setup\` with its pack ID. The pack carries a ready config, so the
+admin enters only the address and the login in the card.
+
 When an edit needs operator input, call \`list_source_secret_names\` as needed,
 then call \`present_source_form\` with the values you already know. In the next
 turn, validate the submitted values and call \`request_source_config_change\`.
@@ -419,6 +424,8 @@ the step requiring attention.
   stored connection secret names for use as \`secretRef\` values.
 - \`mcp_neko_source_config_manager_present_source_form\` — show the admin the
   source form, prefilled with the values you already know.
+- \`mcp_neko_source_config_manager_present_pack_setup\` — show the admin a
+  pack's setup card for a system that has a pack.
 - \`mcp_neko_source_config_manager_import_openapi_spec\` — import and validate
   an OpenAPI document from an admin-provided hosted HTTPS URL.
 - \`mcp_neko_source_config_manager_list_openapi_specs\` — list managed

@@ -71,6 +71,7 @@ import "./answer-blocks";
 import "./answer-diagram";
 import "./answer-map";
 import "./answer-tool";
+import "./pack-setup";
 
 // ─── Answer / Briefing root ───
 // The card frame for a conversational answer (Answer) and the dashboard's daily

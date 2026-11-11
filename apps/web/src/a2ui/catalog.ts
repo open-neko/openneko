@@ -43,6 +43,7 @@ export const ComponentTypes = {
   OpenApiSpecInput: "OpenApiSpecInput",
   ManagedFileSourceInput: "ManagedFileSourceInput",
   SourceSecretInput: "SourceSecretInput",
+  PackSetup: "PackSetup",
   Compare: "Compare",
   WhatIf: "WhatIf",
   AnswerMap: "AnswerMap",
@@ -343,6 +344,11 @@ export interface SourceSecretInputProps {
   error?: string;
 }
 
+export interface PackSetupProps {
+  component: "PackSetup";
+  packId: string;
+}
+
 export interface ConfirmationProps {
   component: "Confirmation";
   label: string; // action eyebrow, e.g. "Created workflow"
@@ -397,6 +403,7 @@ export type ComponentProps =
   | OpenApiSpecInputProps
   | ManagedFileSourceInputProps
   | SourceSecretInputProps
+  | PackSetupProps
   | CompareProps
   | WhatIfProps
   | AnswerMapProps

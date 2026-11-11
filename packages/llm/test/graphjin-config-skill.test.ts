@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { GRAPHJIN_VERSION } from "../src/graphjin/version";
@@ -22,5 +22,25 @@ describe("graphjin-config skill", () => {
     expect(skill).toContain("describe_source_config");
     expect(skill).toContain("references/config-reference.md");
     expect(skill).not.toMatch(/ask_graphjin|config agent|configuration agent/i);
+  });
+
+  it("names every built-in pack that carries a ready source config", async () => {
+    const packsRoot = resolve(__dirname, "../../../packs");
+    const withSources: string[] = [];
+    for (const entry of await readdir(packsRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      if (await stat(resolve(packsRoot, entry.name, "graphjin/sources.yaml")).then(() => true, () => false)) {
+        withSources.push(entry.name);
+      }
+    }
+    expect(withSources.length).toBeGreaterThan(0);
+    const skill = await readFile(resolve(skillRoot, "SKILL.md"), "utf8");
+    const tools = await readFile(resolve(__dirname, "../src/work/tools.ts"), "utf8");
+    const toolText = tools.slice(tools.indexOf('"present_pack_setup"'), tools.indexOf("{ packId: PACK_ID_SCHEMA }"));
+    const listed = (text: string) => [...text.matchAll(/`?\b([a-z]+(?:-[a-z]+)*)\b`?/g)].map((match) => match[1]);
+    for (const pack of withSources) {
+      expect(skill).toContain(`\`${pack}\``);
+      expect(listed(toolText)).toContain(pack);
+    }
   });
 });

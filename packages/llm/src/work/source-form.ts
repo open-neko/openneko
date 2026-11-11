@@ -152,3 +152,21 @@ export function sourceFormPrefillFromAnswers(answers: Record<string, unknown>): 
   if (admin) prefill.adminTables = admin;
   return sourceFormPrefillSchema.parse(prefill);
 }
+
+export const PACK_ID_SCHEMA = z.string().trim().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "a pack ID such as magento").max(64);
+
+/** Show a pack's own install and configuration card; the card calls the pack APIs directly. */
+export function buildPackSetupSurface(packId: string, surfaceId: string): AgentSurfaceMessage[] {
+  return [{
+    version: A2UI_VERSION,
+    createSurface: {
+      surfaceId,
+      catalogId: A2UI_CATALOG_ID,
+      dataModel: {},
+      components: [
+        { id: "root", component: "Answer", eyebrow: "PACK SETUP", title: "Connect with a pack", subtitle: "The pack holds a ready config. Enter the address and the login.", children: ["setup"] },
+        { id: "setup", component: "PackSetup", packId: PACK_ID_SCHEMA.parse(packId) },
+      ],
+    },
+  } as AgentSurfaceMessage];
+}

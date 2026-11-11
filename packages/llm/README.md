@@ -156,6 +156,9 @@ GraphJin's `gj_config` row with GraphJin's redaction applied again on our
 side (`src/graphjin/config-redact.ts`), and `summary`, the same config in
 plain sentences (`src/graphjin/config-describe.ts`). The server and the `graphjin-config`
 skill reach admin web runs only (`src/work/admin-skills.ts`).
+`present_pack_setup` shows a pack's setup card (`PackSetup` in the web
+catalog) for a system that has a pack. The card calls the admin pack routes
+itself; the model passes only the pack ID.
 `request_source_config_change` returns `problems` (`{ field, message,
 detail? }`, from `src/graphjin/config-problems.ts`) when a check fails. For a
 `register_source` proposal it shows the form again with each message bound to
