@@ -1,8 +1,8 @@
 # Adds the sandbox to the stack in compose.yml:
 #   docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml run --rm openneko-serve-init
 #   docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml up -d
-# The sandbox shares the agent-runs volume with web, worker and serve, and
-# reaches them only through the socket in openneko-run.
+# The sandbox keeps each run's files in its own volume and reaches web,
+# worker and serve only through the socket in openneko-run.
 x-sandbox-env: &sandbox-env
   OPENNEKO_SANDBOX_URL: unix:///run/openneko/sandbox.sock
   OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
@@ -14,13 +14,13 @@ services:
     command: ["--listen", "unix:///run/openneko/sandbox.sock"]
     restart: unless-stopped
     environment:
-      OPENNEKO_SANDBOX_WORKSPACES: /var/lib/openneko/agent-runs
+      OPENNEKO_SANDBOX_WORKSPACES: /var/lib/openneko/sandbox-runs
       OPENNEKO_SANDBOX_HOMES: /var/lib/openneko/sandbox-homes
       OPENNEKO_SANDBOX_GID: "1001"
       OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
     volumes:
       - openneko-run:/run/openneko
-      - openneko-agent-runs:/var/lib/openneko/agent-runs
+      - openneko-sandbox-runs:/var/lib/openneko/sandbox-runs
       - openneko-sandbox-homes:/var/lib/openneko/sandbox-homes
     networks:
       - openneko-sandbox
@@ -48,6 +48,7 @@ services:
     environment: *sandbox-env
 
 volumes:
+  openneko-sandbox-runs:
   openneko-sandbox-homes:
 
 networks:

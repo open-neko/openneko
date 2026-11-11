@@ -404,11 +404,13 @@ services:
 ```
 
 Without a URL the agent has no terminal, the script skills are hidden from
-every run, and a workflow script step fails with a message. The sandbox
-gets each command, the run folder and the skill folder. It never gets a
-model key, the broker token or a database password. The first sandbox
-service is `recipes/sandbox`. It needs the `openneko-agent-runs` volume, so
-it runs on the same host as the stack; see `recipes/sandbox/README.md`.
+every run, and a workflow script step fails with a message. Each command
+carries the files of the run that changed since the last command, and the
+sandbox returns the files that the command changed. The sandbox keeps its
+own copy of each run and shares no folder with the stack, so it can run on
+another host: use an `https://` URL and a key. It never gets a model key,
+the broker token, the run's job file or a database password. The first
+sandbox service is `recipes/sandbox`; see `recipes/sandbox/README.md`.
 
 With a sandbox connected, each organization has a **Terminal** setting at
 Admin, Settings, Agent. It is on by default. An admin who turns it off

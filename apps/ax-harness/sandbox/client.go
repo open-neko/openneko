@@ -1,5 +1,6 @@
 // Package sandbox reaches the external sandbox service that runs the agent's
-// terminal commands. recipes/sandbox is its first implementation.
+// terminal commands. recipes/sandbox is its first implementation. The
+// sandbox shares no folder with OpenNeko and gets no secret.
 package sandbox
 
 import (
@@ -8,12 +9,15 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/open-neko/openneko/apps/ax-harness/internal/localtool"
@@ -40,13 +44,20 @@ func (c Config) Check() error {
 	return err
 }
 
-// Client sends one run's terminal commands to the sandbox.
+// Client sends one run's terminal commands to the sandbox. The sandbox keeps
+// its own copy of the workspace: each command carries the files that changed
+// here, and its answer carries the files that changed there.
 type Client struct {
 	http      *http.Client
 	base      string
 	key       string
 	run       string
 	workspace string
+
+	mu      sync.Mutex
+	started bool
+	synced  map[string]fileState
+	dirs    map[string]bool
 }
 
 // NewClient accepts unix:///path, http:// and https:// URLs.
@@ -57,7 +68,7 @@ func NewClient(cfg Config, workspace string) (*Client, error) {
 	}
 	var id [12]byte
 	_, _ = rand.Read(id[:])
-	return &Client{http: httpClient, base: base, key: cfg.Key, run: "run-" + hex.EncodeToString(id[:]), workspace: workspace}, nil
+	return &Client{http: httpClient, base: base, key: cfg.Key, run: "run-" + hex.EncodeToString(id[:]), workspace: filepath.Clean(workspace), synced: map[string]fileState{}, dirs: map[string]bool{}}, nil
 }
 
 func transport(raw string) (*http.Client, string, error) {
@@ -103,36 +114,103 @@ func (c *Client) request(ctx context.Context, method, path string, body []byte) 
 	return c.http.Do(req)
 }
 
-// Exec runs one command in the sandbox.
+// Exec runs one command in the sandbox. skillDir and the env values are
+// paths in the workspace.
 func (c *Client) Exec(ctx context.Context, command, skillDir string, env map[string]string, timeoutSeconds, maxOutput int) (localtool.ExecResult, error) {
-	body, _ := json.Marshal(map[string]any{
-		"workspace": c.workspace, "command": command, "skill_dir": skillDir, "env": env,
-		"timeout_seconds": timeoutSeconds, "max_output": maxOutput,
-	})
-	resp, err := c.request(ctx, http.MethodPost, "/v1/runs/"+url.PathEscape(c.run)+"/exec", body)
-	if err != nil {
-		if ctx.Err() != nil {
-			return localtool.ExecResult{}, ctx.Err()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	body := execBody{Root: c.workspace, Command: command, TimeoutSeconds: timeoutSeconds, MaxOutput: maxOutput}
+	if skillDir != "" {
+		rel, err := c.relative(skillDir)
+		if err != nil {
+			return localtool.ExecResult{}, fmt.Errorf("terminal refused the command: the skill folder is outside the workspace")
 		}
-		return localtool.ExecResult{}, fmt.Errorf("terminal unavailable: the sandbox did not answer")
+		body.SkillDir = rel
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return localtool.ExecResult{}, fmt.Errorf("terminal refused the command: %s", bytes.TrimSpace(msg))
+	for name, value := range env {
+		var parts []string
+		for _, part := range filepath.SplitList(value) {
+			rel, err := c.relative(part)
+			if err != nil {
+				return localtool.ExecResult{}, fmt.Errorf("terminal refused the command: %s points outside the workspace", name)
+			}
+			parts = append(parts, rel)
+		}
+		if body.Env == nil {
+			body.Env = map[string]string{}
+		}
+		body.Env[name] = strings.Join(parts, ":")
 	}
-	var result localtool.ExecResult
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&result); err != nil {
-		return localtool.ExecResult{}, fmt.Errorf("terminal answered badly: %w", err)
+	answer, err := c.send(ctx, body)
+	if errors.Is(err, errLostRun) && c.started {
+		c.started, c.synced, c.dirs = false, map[string]fileState{}, map[string]bool{}
+		answer, err = c.send(ctx, body)
+	}
+	if err != nil {
+		return localtool.ExecResult{}, err
+	}
+	c.started = true
+	if err := c.apply(answer); err != nil {
+		return localtool.ExecResult{}, fmt.Errorf("terminal output files could not be saved: %w", err)
+	}
+	result := answer.ExecResult
+	if note := skippedNote(answer.Skipped); note != "" {
+		result.Output += note
 	}
 	return result, nil
+}
+
+var errLostRun = errors.New("the sandbox lost the run")
+
+func (c *Client) send(ctx context.Context, body execBody) (execAnswer, error) {
+	dirs, put, remove, err := c.changes()
+	if err != nil {
+		return execAnswer{}, fmt.Errorf("terminal refused the command: %w", err)
+	}
+	body.Fresh, body.Dirs, body.Put, body.Delete = !c.started, dirs, put, remove
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return execAnswer{}, err
+	}
+	resp, err := c.request(ctx, http.MethodPost, "/v2/runs/"+url.PathEscape(c.run)+"/exec", raw)
+	if err != nil {
+		if ctx.Err() != nil {
+			return execAnswer{}, ctx.Err()
+		}
+		return execAnswer{}, fmt.Errorf("terminal unavailable: the sandbox did not answer")
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusConflict:
+		return execAnswer{}, errLostRun
+	case http.StatusNotFound:
+		return execAnswer{}, fmt.Errorf("terminal unavailable: the sandbox is older than this release; rebuild it from recipes/sandbox")
+	default:
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return execAnswer{}, fmt.Errorf("terminal refused the command: %s", bytes.TrimSpace(msg))
+	}
+	var answer execAnswer
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBody)).Decode(&answer); err != nil {
+		return execAnswer{}, fmt.Errorf("terminal answered badly: %w", err)
+	}
+	for _, dir := range dirs {
+		c.dirs[dir] = true
+	}
+	for _, file := range put {
+		c.synced[file.Path] = file.state
+	}
+	for _, name := range remove {
+		delete(c.synced, name)
+	}
+	return answer, nil
 }
 
 // Close ends the run: the sandbox kills its commands and removes its home.
 func (c *Client) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	resp, err := c.request(ctx, http.MethodDelete, "/v1/runs/"+url.PathEscape(c.run), nil)
+	resp, err := c.request(ctx, http.MethodDelete, "/v2/runs/"+url.PathEscape(c.run), nil)
 	if err != nil {
 		return err
 	}

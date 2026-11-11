@@ -14,8 +14,7 @@ func main() {
 	listen := flags.String("listen", envOr("OPENNEKO_SANDBOX_LISTEN", "unix:///run/openneko/sandbox.sock"), "unix:///path or host:port")
 	_ = flags.Parse(os.Args[1:])
 	server := &Server{
-		Workspaces:  envOr("OPENNEKO_SANDBOX_WORKSPACES", "/var/lib/openneko/agent-runs"),
-		Skills:      os.Getenv("OPENNEKO_SANDBOX_SKILLS"),
+		Workspaces:  envOr("OPENNEKO_SANDBOX_WORKSPACES", "/var/lib/openneko/sandbox-runs"),
 		Homes:       envOr("OPENNEKO_SANDBOX_HOMES", "/var/lib/openneko/sandbox"),
 		Key:         os.Getenv("OPENNEKO_SANDBOX_KEY"),
 		BaseUID:     intEnv("OPENNEKO_SANDBOX_BASE_UID", defaultBaseUID),

@@ -6,13 +6,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -20,18 +20,12 @@ import (
 	"time"
 )
 
-func startSandbox(t *testing.T, switchUsers bool) (*Server, string, string) {
+func startSandbox(t *testing.T, switchUsers bool) (*Server, string) {
 	t.Helper()
 	root := t.TempDir()
-	workspaces := filepath.Join(root, "workspaces")
-	workspace := filepath.Join(workspaces, "org-1")
-	if err := os.MkdirAll(workspace, 0o777); err != nil {
-		t.Fatal(err)
-	}
-	_ = os.Chmod(workspace, 0o777)
 	_ = os.Chmod(root, 0o755)
 	_ = os.Chmod(filepath.Dir(root), 0o755)
-	server := &Server{Workspaces: workspaces, Homes: filepath.Join(root, "homes"), BaseUID: 23000, Users: 2, GID: os.Getgid(), SwitchUsers: switchUsers, PATH: "/usr/bin:/bin"}
+	server := &Server{Workspaces: filepath.Join(root, "runs"), Homes: filepath.Join(root, "homes"), BaseUID: 23000, Users: 4, GID: os.Getgid(), SwitchUsers: switchUsers, PATH: "/usr/bin:/bin"}
 	socket := filepath.Join(root, "sandbox.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -46,17 +40,93 @@ func startSandbox(t *testing.T, switchUsers bool) (*Server, string, string) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	return server, socket, workspace
+	return server, socket
+}
+
+type testClient struct {
+	http    *http.Client
+	base    string
+	key     string
+	run     string
+	started bool
+}
+
+func newClient(socket string) *testClient {
+	var id [12]byte
+	_, _ = rand.Read(id[:])
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, "unix", socket)
+	}}
+	return &testClient{http: &http.Client{Transport: transport}, base: "http://sandbox", run: "run-" + hex.EncodeToString(id[:])}
+}
+
+func (c *testClient) do(ctx context.Context, method, path string, body any) (*http.Response, error) {
+	var reader io.Reader
+	if body != nil {
+		raw, _ := json.Marshal(body)
+		reader = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.base+path, reader)
+	if err != nil {
+		return nil, err
+	}
+	if c.key != "" {
+		req.Header.Set("Authorization", "Bearer "+c.key)
+	}
+	return c.http.Do(req)
+}
+
+func (c *testClient) send(ctx context.Context, body execBody) (execAnswer, error) {
+	body.Fresh = !c.started
+	if body.TimeoutSeconds == 0 {
+		body.TimeoutSeconds = 10
+	}
+	if body.MaxOutput == 0 {
+		body.MaxOutput = 10_000
+	}
+	resp, err := c.do(ctx, http.MethodPost, "/v2/runs/"+c.run+"/exec", body)
+	if err != nil {
+		return execAnswer{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		msg, _ := io.ReadAll(resp.Body)
+		return execAnswer{}, fmt.Errorf("%d %s", resp.StatusCode, bytes.TrimSpace(msg))
+	}
+	c.started = true
+	var answer execAnswer
+	return answer, json.NewDecoder(resp.Body).Decode(&answer)
+}
+
+func (c *testClient) Exec(ctx context.Context, cmd string) (execAnswer, error) {
+	return c.send(ctx, execBody{Command: cmd})
+}
+
+func (c *testClient) Close() error {
+	resp, err := c.do(context.Background(), http.MethodDelete, "/v2/runs/"+c.run, nil)
+	if err != nil {
+		return err
+	}
+	return resp.Body.Close()
+}
+
+func paths(files []fileData) []string {
+	var out []string
+	for _, file := range files {
+		out = append(out, file.Path)
+	}
+	return out
 }
 
 func TestSandboxRunsCommandsWithoutSecretsAsTheRunUser(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "must-not-leak")
 	switchUsers := os.Geteuid() == 0
-	server, socket, workspace := startSandbox(t, switchUsers)
-	client := newClient(socket, workspace)
+	server, socket := startSandbox(t, switchUsers)
+	client := newClient(socket)
 	ctx := context.Background()
 
-	result, err := client.Exec(ctx, "id -u; env; echo hi > out.txt", "", nil, 10, 10_000)
+	result, err := client.Exec(ctx, "id -u; env; pwd")
 	if err != nil || result.ExitCode != 0 {
 		t.Fatalf("exec = %+v, %v", result, err)
 	}
@@ -66,43 +136,282 @@ func TestSandboxRunsCommandsWithoutSecretsAsTheRunUser(t *testing.T) {
 	if !strings.Contains(result.Output, "HOME="+filepath.Join(server.Homes, client.run)) {
 		t.Fatalf("the run has no home of its own:\n%s", result.Output)
 	}
+	if !strings.Contains(result.Output, "\n"+filepath.Join(server.Workspaces, client.run)+"\n") {
+		t.Fatalf("the command did not start in the run's folder:\n%s", result.Output)
+	}
 	if switchUsers {
 		if first := strings.SplitN(result.Output, "\n", 2)[0]; first != strconv.Itoa(server.BaseUID) {
 			t.Fatalf("command ran as uid %s, want %d", first, server.BaseUID)
 		}
-		info, err := os.Stat(filepath.Join(workspace, "out.txt"))
-		if err != nil || info.Mode().Perm()&0o020 == 0 {
-			t.Fatalf("a file the run wrote is not group-writable: %v %v", info.Mode(), err)
-		}
 	}
 
-	other := newClient(socket, workspace)
-	if result, _ := other.Exec(ctx, "id -u", "", nil, 10, 10_000); switchUsers && strings.TrimSpace(result.Output) == strconv.Itoa(server.BaseUID) {
+	other := newClient(socket)
+	if result, _ := other.Exec(ctx, "id -u"); switchUsers && strings.TrimSpace(result.Output) == strconv.Itoa(server.BaseUID) {
 		t.Fatal("two runs share a user")
 	}
 
-	if _, err := newClient(socket, "/etc").Exec(ctx, "true", "", nil, 10, 10_000); err == nil || !strings.Contains(err.Error(), "outside") {
-		t.Fatalf("a workspace outside the sandbox was admitted: %v", err)
-	}
-
-	if _, err := client.Exec(ctx, "sleep 60 >/dev/null 2>&1 &", "", nil, 10, 10_000); err != nil {
+	if _, err := client.Exec(ctx, "setsid sleep 60 >/dev/null 2>&1 &"); err != nil {
 		t.Fatal(err)
+	}
+	if switchUsers && len(processesOf(server.BaseUID)) > 0 {
+		t.Fatal("a command left a background process running")
 	}
 	if err := client.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if switchUsers && len(processesOf(server.BaseUID)) > 0 {
-		t.Fatal("ending the run left its background process running")
+	for _, dir := range []string{filepath.Join(server.Homes, client.run), filepath.Join(server.Workspaces, client.run)} {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Fatalf("ending the run left %s: %v", dir, err)
+		}
 	}
-	if _, err := os.Stat(filepath.Join(server.Homes, client.run)); !os.IsNotExist(err) {
-		t.Fatalf("ending the run left its home: %v", err)
+	if _, err := client.Exec(ctx, "true"); err == nil || !strings.HasPrefix(err.Error(), "409") {
+		t.Fatalf("an ended run took a command: %v", err)
 	}
-	if _, err := other.Exec(ctx, "true", "", nil, 10, 10_000); err != nil {
+	if _, err := other.Exec(ctx, "true"); err != nil {
 		t.Fatal(err)
 	}
-	third := newClient(socket, workspace)
-	if _, err := third.Exec(ctx, "true", "", nil, 10, 10_000); err != nil {
+	third := newClient(socket)
+	if _, err := third.Exec(ctx, "true"); err != nil {
 		t.Fatalf("an ended run's user was not freed: %v", err)
+	}
+}
+
+func TestSandboxCarriesFilesBothWays(t *testing.T) {
+	_, socket := startSandbox(t, os.Geteuid() == 0)
+	client := newClient(socket)
+	ctx := context.Background()
+
+	answer, err := client.send(ctx, execBody{
+		Command: "cat in/a.txt; ./tool.sh; echo changed > in/a.txt; mkdir -p out; echo new > out/b.txt; rm gone.txt; ln -s in/a.txt link",
+		Put: []fileData{
+			{Path: "in/a.txt", Mode: 0o644, Data: []byte("from the core\n")},
+			{Path: "tool.sh", Mode: 0o755, Data: []byte("#!/bin/sh\necho tool ran\n")},
+			{Path: "gone.txt", Mode: 0o644, Data: []byte("x")},
+		},
+	})
+	if err != nil || answer.ExitCode != 0 {
+		t.Fatalf("exec = %+v, %v", answer, err)
+	}
+	if answer.Output != "from the core\ntool ran\n" {
+		t.Fatalf("output = %q", answer.Output)
+	}
+	if got := paths(answer.Changed); !slices.Equal(got, []string{"in/a.txt", "out/b.txt"}) {
+		t.Fatalf("changed = %v", got)
+	}
+	if string(answer.Changed[0].Data) != "changed\n" || string(answer.Changed[1].Data) != "new\n" {
+		t.Fatalf("changed data = %q, %q", answer.Changed[0].Data, answer.Changed[1].Data)
+	}
+	if !slices.Equal(answer.Dirs, []string{"out"}) {
+		t.Fatalf("dirs = %v", answer.Dirs)
+	}
+	if !slices.Equal(answer.Deleted, []string{"gone.txt"}) {
+		t.Fatalf("deleted = %v", answer.Deleted)
+	}
+	if len(answer.Skipped) != 1 || answer.Skipped[0].Path != "link" {
+		t.Fatalf("skipped = %+v", answer.Skipped)
+	}
+
+	answer, err = client.send(ctx, execBody{Command: "test ! -e out && echo removed", Delete: []string{"out"}})
+	if err != nil || strings.TrimSpace(answer.Output) != "removed" {
+		t.Fatalf("a folder the core removed is still there: %+v %v", answer, err)
+	}
+	if len(answer.Changed) != 0 || len(answer.Deleted) != 0 || len(answer.Skipped) != 0 {
+		t.Fatalf("an idle command reported files: %+v", answer)
+	}
+
+	answer, err = client.send(ctx, execBody{Command: "test -d runs/r2/artifacts && echo there", Dirs: []string{"runs/r2/artifacts"}})
+	if err != nil || strings.TrimSpace(answer.Output) != "there" || len(answer.Dirs) != 0 {
+		t.Fatalf("an empty folder the core sent is missing: %+v %v", answer, err)
+	}
+
+	answer, err = client.send(ctx, execBody{Command: "mkfifo pipe.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.send(ctx, execBody{Command: "cat pipe.txt", Put: []fileData{{Path: "pipe.txt", Data: []byte("plain")}}})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a file sent over a pipe the run made blocked the sandbox")
+	}
+}
+
+func TestSandboxHoldsBackFilesOverTheLimit(t *testing.T) {
+	_, socket := startSandbox(t, os.Geteuid() == 0)
+	old := maxTransfer
+	maxTransfer = 10
+	t.Cleanup(func() { maxTransfer = old })
+	client := newClient(socket)
+	ctx := context.Background()
+	answer, err := client.Exec(ctx, "printf 123456 > a; printf 123456 > b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(paths(answer.Changed), []string{"a"}) || len(answer.Skipped) != 1 || answer.Skipped[0].Path != "b" {
+		t.Fatalf("answer = %+v", answer)
+	}
+	answer, err = client.Exec(ctx, "true")
+	if err != nil || !slices.Equal(paths(answer.Changed), []string{"b"}) {
+		t.Fatalf("a held-back file was not sent later: %+v %v", answer, err)
+	}
+	if _, err := client.send(ctx, execBody{Command: "true", Put: []fileData{{Path: "big", Data: []byte("12345678901")}}}); err == nil || !strings.HasPrefix(err.Error(), "400") {
+		t.Fatalf("an upload over the limit was taken: %v", err)
+	}
+}
+
+func TestSandboxRewritesTheCallersFolder(t *testing.T) {
+	server, socket := startSandbox(t, os.Geteuid() == 0)
+	client := newClient(socket)
+	host := `C:\Users\neko\runs\org-1`
+	answer, err := client.send(context.Background(), execBody{
+		Root:    host,
+		Command: "cat '" + host + "/a.txt'; pwd",
+		Put:     []fileData{{Path: "a.txt", Data: []byte("ok\n")}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer.Output != "ok\n"+host+"\n" {
+		t.Fatalf("output = %q", answer.Output)
+	}
+	if strings.Contains(answer.Output, server.Workspaces) {
+		t.Fatal("the output shows the sandbox's own path")
+	}
+}
+
+func TestSandboxAsksForTheFilesAgainWhenItLostTheRun(t *testing.T) {
+	_, socket := startSandbox(t, os.Geteuid() == 0)
+	client := newClient(socket)
+	client.started = true
+	if _, err := client.Exec(context.Background(), "true"); err == nil || !strings.HasPrefix(err.Error(), "409") {
+		t.Fatalf("an unknown run took a command: %v", err)
+	}
+	client.started = false
+	if _, err := client.Exec(context.Background(), "true"); err != nil {
+		t.Fatal(err)
+	}
+	client.started = false
+	if _, err := client.Exec(context.Background(), "true"); err == nil || !strings.HasPrefix(err.Error(), "409") {
+		t.Fatalf("a run was started twice: %v", err)
+	}
+}
+
+func TestSandboxRefusesPathsOutsideTheRun(t *testing.T) {
+	_, socket := startSandbox(t, os.Geteuid() == 0)
+	client := newClient(socket)
+	ctx := context.Background()
+	for _, body := range []execBody{
+		{Put: []fileData{{Path: "../escape", Data: []byte("x")}}},
+		{Put: []fileData{{Path: "/etc/escape", Data: []byte("x")}}},
+		{Put: []fileData{{Path: `a\..\..\b`, Data: []byte("x")}}},
+		{Put: []fileData{{Path: ".", Data: []byte("x")}}},
+		{Delete: []string{"../.."}},
+		{Dirs: []string{"../up"}},
+		{Dir: "../.."},
+		{SkillDir: "/etc"},
+		{Env: map[string]string{"ARTIFACT_DIR": "/etc"}},
+		{Env: map[string]string{"RUN_DIR": "runs/../../.."}},
+		{Env: map[string]string{"PYTHONPATH": "lib:/usr/lib/evil"}},
+		{Env: map[string]string{"OPENAI_API_KEY": "leak"}},
+		{Env: map[string]string{"NODE_PATH": "/tmp/evil"}},
+	} {
+		body.Command = "true"
+		if _, err := client.send(ctx, body); err == nil || !strings.HasPrefix(err.Error(), "400") {
+			t.Fatalf("the sandbox took %+v: %v", body, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(socket), "escape")); !os.IsNotExist(err) {
+		t.Fatal("a file landed outside the run")
+	}
+}
+
+func TestSandboxMapsRunPathsIntoTheRun(t *testing.T) {
+	server, socket := startSandbox(t, os.Geteuid() == 0)
+	client := newClient(socket)
+	answer, err := client.send(context.Background(), execBody{
+		Command:  `echo "$ARTIFACT_DIR|$PYTHONPATH|$SKILL_DIR"; pwd`,
+		Dir:      "runs/r1",
+		SkillDir: "skills/xlsx",
+		Env:      map[string]string{"ARTIFACT_DIR": "runs/r1/artifacts", "PYTHONPATH": "lib:skills/xlsx"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(server.Workspaces, client.run)
+	want := fmt.Sprintf("%s/runs/r1/artifacts|%s/lib:%s/skills/xlsx|%s/skills/xlsx\n%s/runs/r1\n", dir, dir, dir, dir, dir)
+	if answer.Output != want {
+		t.Fatalf("output = %q, want %q", answer.Output, want)
+	}
+}
+
+func TestSandboxPassesItsOwnNodePathOnly(t *testing.T) {
+	server, socket := startSandbox(t, os.Geteuid() == 0)
+	server.NodePath = "/opt/openneko/skills/node_modules"
+	res, err := newClient(socket).Exec(context.Background(), `echo "[$NODE_PATH]"`)
+	if err != nil || strings.TrimSpace(res.Output) != "[/opt/openneko/skills/node_modules]" {
+		t.Fatalf("NODE_PATH = %+v, %v", res, err)
+	}
+}
+
+func TestSandboxClearsRunFoldersFromAnEarlierStart(t *testing.T) {
+	root := t.TempDir()
+	runs := filepath.Join(root, "runs")
+	for _, name := range []string{"run-aaaaaaaaaaaa", "keep"} {
+		if err := os.MkdirAll(filepath.Join(runs, name), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := (&Server{Workspaces: runs}).prepareWorkspaces(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(runs, "run-aaaaaaaaaaaa")); !os.IsNotExist(err) {
+		t.Fatal("an old run folder is still there")
+	}
+	if _, err := os.Stat(filepath.Join(runs, "keep")); err != nil {
+		t.Fatal("a folder that is not a run was removed")
+	}
+	if info, _ := os.Stat(runs); info.Mode().Perm() != 0o711 {
+		t.Fatalf("runs folder mode = %v, want 711", info.Mode().Perm())
+	}
+}
+
+func TestSandboxKeepsRunsApart(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("switching run users needs root")
+	}
+	server, socket := startSandbox(t, true)
+	ctx := context.Background()
+	runA, runB := newClient(socket), newClient(socket)
+	res, err := runA.Exec(ctx, "id -G; echo made > mine.txt")
+	if err != nil || res.ExitCode != 0 {
+		t.Fatalf("run A could not use its own folder: %+v %v", res, err)
+	}
+	if groups := strings.Fields(strings.SplitN(res.Output, "\n", 2)[0]); len(groups) != 1 || groups[0] != strconv.Itoa(server.BaseUID) {
+		t.Fatalf("run A's groups = %v, want only its own", groups)
+	}
+	if _, err := runB.send(ctx, execBody{Command: "true", Put: []fileData{{Path: "secret.txt", Data: []byte("run b only")}}}); err != nil {
+		t.Fatal(err)
+	}
+	b := filepath.Join(server.Workspaces, runB.run)
+	for _, cmd := range []string{"cat " + filepath.Join(b, "secret.txt"), "ls " + server.Workspaces, "touch " + filepath.Join(b, "planted"), "ls " + server.Homes} {
+		res, err := runA.Exec(ctx, cmd)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.ExitCode == 0 {
+			t.Fatalf("run A could %q: %s", cmd, res.Output)
+		}
+	}
+	info, err := os.Stat(filepath.Join(b, "secret.txt"))
+	if err != nil || info.Sys().(*syscall.Stat_t).Uid != uint32(server.BaseUID+1) || info.Mode().Perm() != 0o600 {
+		t.Fatalf("run B's file: %v %v", info, err)
 	}
 }
 
@@ -111,7 +420,7 @@ func TestSandboxSocketBelongsToTheSharedGroup(t *testing.T) {
 		t.Skip("only root can hand the socket to another group")
 	}
 	root := t.TempDir()
-	server := &Server{Workspaces: root, Homes: filepath.Join(root, "homes"), BaseUID: 23000, Users: 1, GID: 23999, SwitchUsers: true, PATH: "/usr/bin:/bin"}
+	server := &Server{Workspaces: filepath.Join(root, "runs"), Homes: filepath.Join(root, "homes"), BaseUID: 23000, Users: 1, GID: 23999, SwitchUsers: true, PATH: "/usr/bin:/bin"}
 	socket := filepath.Join(root, "sandbox.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -157,246 +466,8 @@ func processesOf(uid int) []int {
 	return pids
 }
 
-// TestSandboxKeepsRunsApart stages two runs as the launcher does: owned by
-// the host, shared with its group, closed to others. Each run's user reaches
-// only its own stage, and what it writes stays readable by the shared group.
-func TestSandboxKeepsRunsApart(t *testing.T) {
-	if os.Geteuid() != 0 {
-		t.Skip("switching run users needs root")
-	}
-	const shared = 4242
-	root := t.TempDir()
-	_ = os.Chmod(root, 0o755)
-	_ = os.Chmod(filepath.Dir(root), 0o755)
-	workspaces := filepath.Join(root, "runs")
-	stage := func(name string) string {
-		dir := filepath.Join(workspaces, name, "workspace", "org")
-		if err := os.MkdirAll(dir, 0o770); err != nil {
-			t.Fatal(err)
-		}
-		for p := dir; p != workspaces; p = filepath.Dir(p) {
-			_ = os.Chown(p, 0, shared)
-			_ = os.Chmod(p, 0o2770)
-		}
-		return dir
-	}
-	_ = os.MkdirAll(workspaces, 0o770)
-	_ = os.Chown(workspaces, 0, shared)
-	_ = os.Chmod(workspaces, 0o2770)
-	a, b := stage("owner.boot.aaaa"), stage("owner.boot.bbbb")
-	if err := os.WriteFile(filepath.Join(b, "secret.txt"), []byte("run b only"), 0o660); err != nil {
-		t.Fatal(err)
-	}
-	_ = os.Chown(filepath.Join(b, "secret.txt"), 0, shared)
-
-	server := &Server{Workspaces: workspaces, Homes: filepath.Join(root, "homes"), BaseUID: 23100, Users: 4, GID: shared, SwitchUsers: true, PATH: "/usr/bin:/bin"}
-	socket := filepath.Join(root, "sandbox.sock")
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- server.ListenAndServe(ctx, "unix://"+socket) }()
-	t.Cleanup(func() { cancel(); <-done })
-	for i := 0; i < 100; i++ {
-		if _, err := os.Stat(socket); err == nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	runA, runB := newClient(socket, a), newClient(socket, b)
-	res, err := runA.Exec(context.Background(), "id -G; echo made > mine.txt; cat mine.txt", "", nil, 10, 10_000)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if errors.Is(err, errNoACL) || strings.Contains(res.Output, "POSIX ACL") {
-		t.Skip("this filesystem has no POSIX ACLs")
-	}
-	if res.ExitCode != 0 || !strings.Contains(res.Output, "made") {
-		t.Fatalf("run A could not use its own stage: %+v", res)
-	}
-	if groups := strings.Fields(strings.SplitN(res.Output, "\n", 2)[0]); len(groups) != 1 || groups[0] == strconv.Itoa(shared) {
-		t.Fatalf("run A's groups = %v, want only its own", groups)
-	}
-	if _, err := runB.Exec(context.Background(), "true", "", nil, 10, 10_000); err != nil {
-		t.Fatal(err)
-	}
-	for _, cmd := range []string{"cat " + filepath.Join(b, "secret.txt"), "ls " + workspaces, "touch " + filepath.Join(b, "planted")} {
-		res, err := runA.Exec(context.Background(), cmd, "", nil, 10, 10_000)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if res.ExitCode == 0 {
-			t.Fatalf("run A could %q in another run's stage: %s", cmd, res.Output)
-		}
-	}
-	// What run A wrote carries the shared group's grant, so the host can
-	// copy it back.
-	acl := make([]byte, 256)
-	n, err := syscall.Getxattr(filepath.Join(a, "mine.txt"), "system.posix_acl_access", acl)
-	if err != nil {
-		t.Fatalf("run A's file has no ACL: %v", err)
-	}
-	if !aclHasGroup(acl[:n], shared) {
-		t.Fatal("run A's file is not shared with the host's group")
-	}
-	if !aclHasGroup(acl[:n], server.BaseUID) {
-		t.Fatal("run A's file is not granted to run A's group")
-	}
-	// Ending the run takes its group off the stage, so a later run that gets
-	// the same ID cannot reach it.
-	if err := runA.Close(); err != nil {
-		t.Fatal(err)
-	}
-	n, err = syscall.Getxattr(filepath.Join(a, "mine.txt"), "system.posix_acl_access", acl)
-	if err != nil || aclHasGroup(acl[:n], server.BaseUID) || !aclHasGroup(acl[:n], shared) {
-		t.Fatalf("ending run A left its group on the stage (err %v)", err)
-	}
-}
-
-func aclHasGroup(acl []byte, gid int) bool {
-	for i := 4; i+8 <= len(acl); i += 8 {
-		tag := uint16(acl[i]) | uint16(acl[i+1])<<8
-		id := uint32(acl[i+4]) | uint32(acl[i+5])<<8 | uint32(acl[i+6])<<16 | uint32(acl[i+7])<<24
-		perm := uint16(acl[i+2]) | uint16(acl[i+3])<<8
-		if tag == aclGroup && int(id) == gid && perm&6 == 6 {
-			return true
-		}
-	}
-	return false
-}
-
-func TestSandboxPassesOnlyRunPathsInsideTheRunsFolder(t *testing.T) {
-	_, socket, workspace := startSandbox(t, os.Geteuid() == 0)
-	client := newClient(socket, workspace)
-	ctx := context.Background()
-	artifacts := filepath.Join(workspace, "artifacts")
-	res, err := client.Exec(ctx, "echo $ARTIFACT_DIR", "", map[string]string{"ARTIFACT_DIR": artifacts}, 10, 10_000)
-	if err != nil || strings.TrimSpace(res.Output) != artifacts {
-		t.Fatalf("ARTIFACT_DIR did not reach the command: %+v %v", res, err)
-	}
-	for _, env := range []map[string]string{
-		{"ARTIFACT_DIR": "/etc"},
-		{"OPENAI_API_KEY": "leak"},
-		{"PYTHONPATH": workspace + ":/usr/lib/evil"},
-		{"RUN_DIR": filepath.Join(workspace, "..", "..", "etc")},
-	} {
-		if _, err := client.Exec(ctx, "true", "", env, 10, 10_000); err == nil {
-			t.Fatalf("the sandbox passed %v", env)
-		}
-	}
-}
-
-// TestSandboxReopensTheRunsFolder: Docker puts the runs folder back to its
-// image mode (closed to others) whenever a container starts on the empty
-// volume. A run's command must still start after that.
-func TestSandboxReopensTheRunsFolder(t *testing.T) {
-	if os.Geteuid() != 0 {
-		t.Skip("switching run users needs root")
-	}
-	const shared = 4243
-	root := t.TempDir()
-	_ = os.Chmod(root, 0o755)
-	_ = os.Chmod(filepath.Dir(root), 0o755)
-	workspaces := filepath.Join(root, "runs")
-	dir := filepath.Join(workspaces, "owner.boot.cccc", "workspace")
-	if err := os.MkdirAll(dir, 0o770); err != nil {
-		t.Fatal(err)
-	}
-	for p := dir; p != root; p = filepath.Dir(p) {
-		_ = os.Chown(p, 0, shared)
-		_ = os.Chmod(p, 0o2770)
-	}
-	server := &Server{Workspaces: workspaces, Homes: filepath.Join(root, "homes"), BaseUID: 23200, Users: 2, GID: shared, SwitchUsers: true, PATH: "/usr/bin:/bin"}
-	socket := filepath.Join(root, "sandbox.sock")
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- server.ListenAndServe(ctx, "unix://"+socket) }()
-	t.Cleanup(func() { cancel(); <-done })
-	for i := 0; i < 100; i++ {
-		if _, err := os.Stat(socket); err == nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	// Another container started after the sandbox and reset the folder.
-	_ = os.Chmod(workspaces, 0o2770)
-
-	res, err := newClient(socket, dir).Exec(context.Background(), "pwd", "", nil, 10, 10_000)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(res.Output, "POSIX ACL") {
-		t.Skip("this filesystem has no POSIX ACLs")
-	}
-	if res.ExitCode != 0 || strings.TrimSpace(res.Output) != dir {
-		t.Fatalf("the run's command did not start in its workspace: %+v", res)
-	}
-	if info, _ := os.Stat(workspaces); info.Mode().Perm()&0o001 == 0 {
-		t.Fatalf("runs folder mode = %v, want others' execute bit", info.Mode())
-	}
-}
-
-type testClient struct {
-	http      *http.Client
-	base      string
-	key       string
-	run       string
-	workspace string
-}
-
-func newClient(socket, workspace string) *testClient {
-	var id [12]byte
-	_, _ = rand.Read(id[:])
-	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		var d net.Dialer
-		return d.DialContext(ctx, "unix", socket)
-	}}
-	return &testClient{http: &http.Client{Transport: transport}, base: "http://sandbox", run: "run-" + hex.EncodeToString(id[:]), workspace: workspace}
-}
-
-func (c *testClient) do(ctx context.Context, method, path string, body any) (*http.Response, error) {
-	var reader io.Reader
-	if body != nil {
-		raw, _ := json.Marshal(body)
-		reader = bytes.NewReader(raw)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, c.base+path, reader)
-	if err != nil {
-		return nil, err
-	}
-	if c.key != "" {
-		req.Header.Set("Authorization", "Bearer "+c.key)
-	}
-	return c.http.Do(req)
-}
-
-func (c *testClient) Exec(ctx context.Context, cmd, skillDir string, env map[string]string, timeoutSeconds, maxOutput int) (execResult, error) {
-	resp, err := c.do(ctx, http.MethodPost, "/v1/runs/"+c.run+"/exec", execBody{Workspace: c.workspace, Command: cmd, SkillDir: skillDir, Env: env, TimeoutSeconds: timeoutSeconds, MaxOutput: maxOutput})
-	if err != nil {
-		return execResult{}, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		msg, _ := io.ReadAll(resp.Body)
-		return execResult{}, fmt.Errorf("%d %s", resp.StatusCode, bytes.TrimSpace(msg))
-	}
-	var result execResult
-	return result, json.NewDecoder(resp.Body).Decode(&result)
-}
-
-func (c *testClient) Close() error {
-	resp, err := c.do(context.Background(), http.MethodDelete, "/v1/runs/"+c.run, nil)
-	if err != nil {
-		return err
-	}
-	return resp.Body.Close()
-}
-
 func TestSandboxChecksTheKey(t *testing.T) {
 	root := t.TempDir()
-	workspace := filepath.Join(root, "runs", "org-1")
-	if err := os.MkdirAll(workspace, 0o777); err != nil {
-		t.Fatal(err)
-	}
 	server := &Server{Workspaces: filepath.Join(root, "runs"), Homes: filepath.Join(root, "homes"), Key: "sandbox-key", BaseUID: 23300, Users: 1, GID: os.Getgid(), PATH: "/usr/bin:/bin"}
 	listener, err := server.listen("127.0.0.1:0")
 	if err != nil {
@@ -407,20 +478,20 @@ func TestSandboxChecksTheKey(t *testing.T) {
 	go func() { done <- server.Serve(ctx, listener) }()
 	t.Cleanup(func() { cancel(); <-done })
 
-	client := &testClient{http: http.DefaultClient, base: "http://" + listener.Addr().String(), run: "run-key", workspace: workspace}
-	resp, err := client.do(ctx, http.MethodGet, "/v1/health", nil)
+	client := &testClient{http: http.DefaultClient, base: "http://" + listener.Addr().String(), run: "run-keykeykey"}
+	resp, err := client.do(ctx, http.MethodGet, "/v2/health", nil)
 	if err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatalf("health = %v, %v", resp, err)
 	}
 	resp.Body.Close()
 	for _, key := range []string{"", "wrong"} {
 		client.key = key
-		if _, err := client.Exec(ctx, "true", "", nil, 10, 10_000); err == nil || !strings.HasPrefix(err.Error(), "401") {
+		if _, err := client.Exec(ctx, "true"); err == nil || !strings.HasPrefix(err.Error(), "401") {
 			t.Fatalf("key %q: err = %v, want 401", key, err)
 		}
 	}
 	client.key = "sandbox-key"
-	if res, err := client.Exec(ctx, "echo ok", "", nil, 10, 10_000); err != nil || strings.TrimSpace(res.Output) != "ok" {
+	if res, err := client.Exec(ctx, "echo ok"); err != nil || strings.TrimSpace(res.Output) != "ok" {
 		t.Fatalf("exec with the key = %+v, %v", res, err)
 	}
 }
@@ -428,39 +499,5 @@ func TestSandboxChecksTheKey(t *testing.T) {
 func TestSandboxRefusesTCPWithoutAKey(t *testing.T) {
 	if _, err := (&Server{}).listen("127.0.0.1:0"); err == nil {
 		t.Fatal("a TCP listener without a key was opened")
-	}
-}
-
-func TestSandboxSetsSkillDirOnlyInsideTheRunsFolder(t *testing.T) {
-	_, socket, workspace := startSandbox(t, os.Geteuid() == 0)
-	skill := filepath.Join(workspace, "skills", "xlsx")
-	if err := os.MkdirAll(skill, 0o777); err != nil {
-		t.Fatal(err)
-	}
-	client := newClient(socket, workspace)
-	for dir, want := range map[string]string{skill: skill, "/etc": "", filepath.Join(skill, "..", "..", "..", ".."): ""} {
-		res, err := client.Exec(context.Background(), `echo "[$SKILL_DIR]"`, dir, nil, 10, 10_000)
-		resolved := want
-		if want != "" {
-			resolved, _ = filepath.EvalSymlinks(want)
-		}
-		if err != nil || strings.TrimSpace(res.Output) != "["+resolved+"]" {
-			t.Fatalf("skill dir %s: %+v %v", dir, res, err)
-		}
-	}
-}
-
-func TestSandboxPassesItsOwnNodePathOnly(t *testing.T) {
-	server, socket, workspace := startSandbox(t, os.Geteuid() == 0)
-	client := newClient(socket, workspace)
-	ctx := context.Background()
-	res, err := client.Exec(ctx, `echo "[$NODE_PATH]"`, "", map[string]string{"NODE_PATH": "/tmp/evil"}, 10, 10_000)
-	if err == nil && strings.TrimSpace(res.Output) != "[]" {
-		t.Fatalf("a caller set NODE_PATH: %+v", res)
-	}
-	server.NodePath = "/opt/openneko/skills/node_modules"
-	res, err = client.Exec(ctx, `echo "[$NODE_PATH]"`, "", nil, 10, 10_000)
-	if err != nil || strings.TrimSpace(res.Output) != "[/opt/openneko/skills/node_modules]" {
-		t.Fatalf("NODE_PATH = %+v, %v", res, err)
 	}
 }
