@@ -9,6 +9,7 @@ export const PRIMARY_PROVIDER_OPTIONS = [
   { value: "together", label: "Together", description: "Together API" },
   { value: "deepseek", label: "DeepSeek", description: "DeepSeek API" },
   { value: "ollama", label: "Ollama", description: "Local or remote Ollama endpoint" },
+  { value: "openai-compatible", label: "OpenAI-compatible URL", description: "Any server that speaks the OpenAI chat API" },
   { value: "huggingface", label: "Hugging Face", description: "Hugging Face Inference API" },
   { value: "openrouter", label: "OpenRouter", description: "OpenRouter API" },
   { value: "reka", label: "Reka", description: "Reka API" },
@@ -90,6 +91,8 @@ export function getDefaultPrimaryModel(provider: PrimaryProviderId): string {
       return "deepseek-chat";
     case "ollama":
       return "llama3.2";
+    case "openai-compatible":
+      return "";
     case "huggingface":
       return "meta-llama/Llama-3.3-70B-Instruct";
     case "openrouter":
@@ -123,6 +126,24 @@ export function getPrimaryProviderFields(provider: PrimaryProviderId): SettingsF
           required: true,
           placeholder: "http://host.docker.internal:11434/v1",
           help: "Use host.docker.internal for Ollama running on the OpenNeko host, or a remote OpenAI-compatible URL.",
+        },
+      ];
+    case "openai-compatible":
+      return [
+        {
+          key: "url",
+          label: "Base URL",
+          kind: "url",
+          required: true,
+          placeholder: "https://models.example.com/v1",
+          help: "The address before /chat/completions. Use host.docker.internal for a server on the OpenNeko host.",
+        },
+        {
+          key: "apiKey",
+          label: "API key",
+          kind: "secret",
+          required: false,
+          placeholder: "Leave empty when the server needs no key",
         },
       ];
     case "azure-openai":

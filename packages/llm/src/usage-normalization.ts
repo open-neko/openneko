@@ -1,4 +1,3 @@
-import type { AxProgramUsage } from "@ax-llm/ax";
 import type { AgentTokenUsage } from "./agent-backend";
 
 function addOptional(
@@ -7,48 +6,6 @@ function addOptional(
 ): number | undefined {
   if (left === undefined && right === undefined) return undefined;
   return (left ?? 0) + (right ?? 0);
-}
-
-/** Normalize every provider call made by an Ax program, including retries. */
-export function normalizeAxProgramUsage(
-  usages: readonly AxProgramUsage[],
-): AgentTokenUsage {
-  const tokenUsages = usages.flatMap((usage) =>
-    usage.tokens ? [usage.tokens] : [],
-  );
-  if (tokenUsages.length === 0) {
-    return {
-      coverage: "unavailable",
-      missingReasons: ["Ax program returned no token usage"],
-    };
-  }
-  const complete = tokenUsages.length === usages.length;
-  const sum = (select: (usage: (typeof tokenUsages)[number]) => number) =>
-    tokenUsages.reduce((total, usage) => total + select(usage), 0);
-  const optionalSum = (
-    select: (usage: (typeof tokenUsages)[number]) => number | undefined,
-  ): number | undefined => {
-    const values = tokenUsages
-      .map(select)
-      .filter((value): value is number => value !== undefined);
-    return values.length > 0
-      ? values.reduce((total, value) => total + value, 0)
-      : undefined;
-  };
-  return {
-    inputTokens: sum((usage) => usage.promptTokens),
-    outputTokens: sum((usage) => usage.completionTokens),
-    cacheReadTokens: optionalSum((usage) => usage.cacheReadTokens),
-    cacheWriteTokens: optionalSum((usage) => usage.cacheCreationTokens),
-    reasoningTokens: optionalSum(
-      (usage) => usage.reasoningTokens ?? usage.thoughtsTokens,
-    ),
-    totalTokens: sum((usage) => usage.totalTokens),
-    coverage: complete ? "complete" : "partial",
-    ...(!complete
-      ? { missingReasons: ["Some Ax program calls omitted token usage"] }
-      : {}),
-  };
 }
 
 /** Add token/cost scopes without turning a missing scope into a zero. */

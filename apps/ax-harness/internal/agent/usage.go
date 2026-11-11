@@ -1,9 +1,8 @@
 package agent
 
 import (
-	"encoding/json"
-
 	ax "github.com/ax-llm/ax/packages/go"
+	"github.com/open-neko/openneko/apps/ax-harness/inference"
 )
 
 // ModelUsage is content-free accounting. Requests includes calls with no
@@ -54,44 +53,10 @@ func (u *ModelUsage) setCoverage() {
 }
 
 func modelTokens(response ax.Value) (ModelUsage, bool) {
-	value, ok := response.(map[string]ax.Value)
+	tokens, ok := inference.Tokens(response)
 	if !ok {
 		return ModelUsage{}, false
 	}
-	model, ok := value["model_usage"].(map[string]ax.Value)
-	if !ok {
-		return ModelUsage{}, false
-	}
-	raw, err := json.Marshal(model["tokens"])
-	if err != nil || string(raw) == "null" {
-		return ModelUsage{}, false
-	}
-	var tokens struct {
-		Input      *int64 `json:"prompt_tokens"`
-		Output     *int64 `json:"completion_tokens"`
-		Total      *int64 `json:"total_tokens"`
-		CacheRead  *int64 `json:"cache_read_tokens"`
-		CacheWrite *int64 `json:"cache_creation_tokens"`
-		Reasoning  *int64 `json:"reasoning_tokens"`
-	}
-	if json.Unmarshal(raw, &tokens) != nil || tokens.Input == nil || tokens.Output == nil || tokens.Total == nil {
-		return ModelUsage{}, false
-	}
-	usage := ModelUsage{Reported: 1, InputTokens: *tokens.Input, OutputTokens: *tokens.Output, TotalTokens: *tokens.Total}
-	if tokens.CacheRead != nil {
-		usage.CacheReadTokens = *tokens.CacheRead
-	}
-	if tokens.CacheWrite != nil {
-		usage.CacheWriteTokens = *tokens.CacheWrite
-	}
-	if tokens.Reasoning != nil {
-		usage.ReasoningTokens = *tokens.Reasoning
-	}
-	const maxTokens = 1_000_000_000_000
-	for _, count := range []int64{usage.InputTokens, usage.OutputTokens, usage.TotalTokens, usage.CacheReadTokens, usage.CacheWriteTokens, usage.ReasoningTokens} {
-		if count < 0 || count > maxTokens {
-			return ModelUsage{}, false
-		}
-	}
-	return usage, true
+	return ModelUsage{Reported: tokens.Reported, InputTokens: tokens.InputTokens, OutputTokens: tokens.OutputTokens, TotalTokens: tokens.TotalTokens,
+		CacheReadTokens: tokens.CacheReadTokens, CacheWriteTokens: tokens.CacheWriteTokens, ReasoningTokens: tokens.ReasoningTokens}, true
 }

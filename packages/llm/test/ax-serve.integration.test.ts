@@ -13,6 +13,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { AxBackend } from "../src/agent-backends/ax";
 import { registerServeToolBridge } from "../src/agent-backends/harness-turn";
+import { callGateway } from "../src/inference";
 
 function hasGo(): boolean {
   try {
@@ -243,5 +244,23 @@ const runnable = Boolean(binary) || (process.env.OPENNEKO_SERVE_IT === "1" && ha
     expect(result.status, result.error).toBe("completed");
     expect(result.finalText).toContain("REF-7");
     expect(new Set(keys)).toEqual(new Set(["Bearer none"]));
+  });
+
+  it("runs a host model call through serve's gateway with the caller's key", async () => {
+    calls = 0;
+    responses = ["Answer: 42"];
+    keys.length = 0;
+    const result = await callGateway(
+      {
+        route: { provider: "openai-compatible", model: "fixture", url: modelUrl },
+        signature: `question:string "a question" -> answer:string "the answer"`,
+        instruction: "Answer the question.",
+        values: { question: "six times seven" },
+      },
+      "host-call-key",
+    );
+    expect(result.outputs).toEqual({ answer: "42" });
+    expect(result.usage.requests).toBe(1);
+    expect(keys).toEqual(["Bearer host-call-key"]);
   });
 });

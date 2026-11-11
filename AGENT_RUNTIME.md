@@ -5,8 +5,8 @@ pieces run it, and each holds only what its job needs:
 
 - the **runner**, a short-lived Node process that web or the worker starts for
   one run;
-- **`openneko serve`**, which runs each agent turn: the Ax harness, the model
-  calls and the agent's file tools;
+- **`openneko serve`**, which runs each agent turn and every other model call:
+  the Ax harness, the inference gateway and the agent's file tools;
 - the optional **sandbox service** ([recipes/sandbox](recipes/sandbox/README.md)),
   which runs terminal commands, script skills and workflow script steps.
 
@@ -64,12 +64,35 @@ trusted host. Only the agent loop runs in the runner and serve.
 | Piece | Runs as | Holds | Network |
 |---|---|---|---|
 | Runner | the web or worker user (`neko`, 1001) | the run's broker token and the org's model key, for this run only | that of web or the worker |
-| `openneko serve` | `neko`, 1001 | a turn's model key while the turn runs; the files service; the `neko_files` database login and the derived token key; the customer GraphJin and its config | the stack's network, for the model APIs and the customer's data sources |
+| `openneko serve` | `neko`, 1001 | a turn's or a host call's model key while it runs; the files service; the `neko_files` database login and the derived token key; the customer GraphJin and its config | the stack's network, for the model APIs and the customer's data sources |
 | Sandbox service | root, to give each run its own user | **no secrets**; a command gets only `PATH`, `HOME`, `TMPDIR`, `LANG`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH` | only its own network |
 
 Model keys exist only in the runner and in serve. Serve drops every
 `OPENNEKO_SANDBOX_*` value that a turn sends, and the sandbox request carries
 no model key, so the terminal cannot read one.
+
+## The inference gateway
+
+Every model call goes through one Go package, `apps/ax-harness/inference`.
+Agent turns use it, and so do the host's own calls: question
+classification, the briefing summary, transcript compaction, bot names and
+job descriptions, skill lessons, the research mission and the provider test
+in Admin, Settings.
+
+A host call is an Ax signature program. Web or the worker resolves the
+org's model route and loads its key, then sends one `generate` frame over
+the serve socket. The key travels in its own field, as it does for a turn.
+Serve runs the program, returns the output fields and the token counts, and
+keeps the key for that call only. Error text never carries the key. Where no
+serve socket exists, as in a test, the host runs `ax-harness generate` for
+the call.
+
+The gateway takes every Ax provider and any OpenAI-compatible URL. Ollama,
+vLLM, LM Studio and other local servers use the OpenAI-compatible route with
+no key. Web and the worker hold no provider client of their own.
+
+The industry research step still calls Perplexity directly from the worker,
+because the gateway does not yet return Perplexity's citations.
 
 ## Two zones
 
@@ -83,7 +106,7 @@ zone is serve and the runner's turns. Serve holds only these:
   `workflow_output` and nothing else (migration 0129).
 - the token key, `HMAC(secret key, "openneko-serve:v1")`. It checks the
   tokens that web and the worker sign. It cannot decrypt a stored value.
-- a turn's model key, while the turn runs.
+- a turn's or a host call's model key, while it runs.
 
 The `openneko-serve-init` start step writes the first three into the
 `openneko-serve-credentials` volume before serve starts. It runs on every

@@ -20,7 +20,6 @@
  * customer_profile.business_profile.
  */
 
-import { ax } from "@ax-llm/ax";
 import { and, db, eq, llm_provider_config } from "@neko/db";
 import {
   type EditableProviderConfig,
@@ -31,7 +30,7 @@ import {
   readResearchProviderConfigFromEnv,
 } from "./config";
 import { maybeDecryptSecret } from "./secrets";
-import { buildLlm } from "./llm";
+import { generate, hostProgram } from "./inference";
 
 const PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions";
 const PERPLEXITY_MODEL = "sonar-deep-research";
@@ -82,6 +81,11 @@ Hard rules:
 - If the business_profile is thin or vague on a dimension, instruct the
   researcher to use industry defaults appropriate to the named industry and
   geographies — do NOT make up facts about the company itself.`;
+
+const MISSION_WRITER = hostProgram(
+  "companyName:string, companyNote:string, businessProfile:string -> missionCharter:string",
+  MISSION_WRITER_INSTRUCTIONS,
+);
 
 const DEEP_RESEARCH_SYSTEM_PROMPT = `You are a McKinsey-style industry analyst
 writing for downstream LLMs FIRST and executives SECOND. Both want to scan,
@@ -270,14 +274,7 @@ export async function runIndustryResearcher(args: {
 
   // 1. Mission writer (main LLM — vertex or anthropic per env).
   onProgress?.("Drafting research mission");
-  const llm = await buildLlm(orgId);
-
-  const missionWriter = ax(
-    "companyName:string, companyNote:string, businessProfile:string -> missionCharter:string",
-    { description: MISSION_WRITER_INSTRUCTIONS },
-  );
-
-  const missionResult = await missionWriter.forward(llm, {
+  const { outputs: missionResult } = await generate(orgId, MISSION_WRITER, {
     companyName: orgName,
     companyNote,
     businessProfile,
