@@ -180,11 +180,11 @@ html body[data-scroll-locked] { overflow: visible !important; }
 /* Phones: the dock owns navigation, brand, and sign-out, so every page
    opens on its title. Pages with a back link keep only that link. */
 @media (max-width: 720px) {
-  body:has(> .app-rail-wrap) .app-header.is-nav-only:not(.is-auth-header) {
+  body:has(.app-rail-wrap) .app-header.is-nav-only:not(.is-auth-header) {
     display: none;
   }
 
-  body:has(> .app-rail-wrap) .app-header.has-context :is(.topbar-brand, .topbar-ver, .topbar-nav, .density-seg, .topbar-credit, .topbar-signout) {
+  body:has(.app-rail-wrap) .app-header.has-context :is(.topbar-brand, .topbar-ver, .topbar-nav, .density-seg, .topbar-credit, .topbar-signout) {
     display: none;
   }
 }

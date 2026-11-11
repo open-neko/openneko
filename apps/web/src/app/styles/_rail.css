@@ -173,13 +173,13 @@ body {
 }
 
 @media (min-width: 721px) {
-  body:has(> .app-rail-wrap) {
+  body:has(.app-rail-wrap) {
     --rail-w: 84px;
     padding-left: var(--rail-w);
   }
 
   /* Scroll locking must not reset the navigation offset to zero. */
-  body[data-scroll-locked]:has(> .app-rail-wrap) {
+  body[data-scroll-locked]:has(.app-rail-wrap) {
     padding-left: var(--rail-w);
   }
 
@@ -404,30 +404,30 @@ body {
     letter-spacing: 0;
   }
 
-  body:has(> .app-rail-wrap) .app-header {
+  body:has(.app-rail-wrap) .app-header {
     margin-left: calc(-50vw + 50% + (var(--rail-w) / 2));
     margin-right: calc(-50vw + 50% + (var(--rail-w) / 2));
     width: calc(100vw - var(--rail-w));
   }
 
-  body:has(> .app-rail-wrap) .app-header.is-nav-only:not(.is-auth-header) {
+  body:has(.app-rail-wrap) .app-header.is-nav-only:not(.is-auth-header) {
     display: none;
   }
 
-  body:has(> .app-rail-wrap) .app-header.has-context .topbar-brand,
-  body:has(> .app-rail-wrap) .app-header .topbar-ver,
-  body:has(> .app-rail-wrap) .app-header .topbar-nav,
-  body:has(> .app-rail-wrap) .app-header .density-seg,
-  body:has(> .app-rail-wrap) .app-header .topbar-credit,
-  body:has(> .app-rail-wrap) .app-header .topbar-signout {
+  body:has(.app-rail-wrap) .app-header.has-context .topbar-brand,
+  body:has(.app-rail-wrap) .app-header .topbar-ver,
+  body:has(.app-rail-wrap) .app-header .topbar-nav,
+  body:has(.app-rail-wrap) .app-header .density-seg,
+  body:has(.app-rail-wrap) .app-header .topbar-credit,
+  body:has(.app-rail-wrap) .app-header .topbar-signout {
     display: none;
   }
 
-  body:has(> .app-rail-wrap) .app-header.has-context .topbar-inner {
+  body:has(.app-rail-wrap) .app-header.has-context .topbar-inner {
     justify-content: flex-start;
   }
 
-  body:has(> .app-rail-wrap) .root:has(> .app-header.is-nav-only) {
+  body:has(.app-rail-wrap) .root:has(> .app-header.is-nav-only) {
     padding-top: 28px;
   }
 }
@@ -479,7 +479,7 @@ body {
 }
 
 @media (min-width: 1025px) {
-  body:has(> .app-rail-wrap) {
+  body:has(.app-rail-wrap) {
     --rail-w: 232px;
   }
 

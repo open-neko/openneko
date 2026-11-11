@@ -1,0 +1,67 @@
+import { readdirSync, statSync } from "node:fs";
+import path from "node:path";
+import { matchRoutes } from "react-router";
+import { describe, expect, it } from "vitest";
+import { hrefToString } from "@/spa/next/link";
+import { redirects, routes } from "@/spa/routes";
+import { serverPagePattern, serverPages } from "@/spa/server-pages";
+
+const appDir = path.join(__dirname, "../src/app");
+
+function nextPagePaths(dir = appDir, prefix = ""): string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const full = path.join(dir, entry);
+    if (statSync(full).isDirectory()) {
+      if (entry === "api" && dir === appDir) continue;
+      const segment = /^\(.*\)$/.test(entry) ? "" : `/${entry.replace(/^\[(.+)\]$/, ":$1")}`;
+      found.push(...nextPagePaths(full, prefix + segment));
+    } else if (entry === "page.tsx") {
+      found.push(prefix || "/");
+    }
+  }
+  return found;
+}
+
+function concrete(page: string): string {
+  return page.replace(/:[^/]+/g, "sample");
+}
+
+describe("static web app routes", () => {
+  const pages = nextPagePaths().filter((page) => !page.startsWith("/dev/"));
+
+  it("gives every Next page a route that is not the not-found route", () => {
+    expect(pages.length).toBeGreaterThan(50);
+    const missing = pages.filter((page) => {
+      const matches = matchRoutes(routes, concrete(page)) ?? [];
+      return matches.length === 0 || matches.at(-1)?.route.path === "*";
+    });
+    expect(missing).toEqual([]);
+  });
+
+  it("lists only real Next pages as server pages", () => {
+    expect(serverPages.filter((page) => !pages.includes(page))).toEqual([]);
+  });
+
+  it("passes server pages to Node and keeps ported pages in the app", () => {
+    const pattern = serverPagePattern();
+    expect(pattern.test("/admin/settings/models")).toBe(true);
+    expect(pattern.test("/admin/users/groups/g1?tab=members")).toBe(true);
+    expect(pattern.test("/chat")).toBe(false);
+    expect(pattern.test("/admin/settings/models/extra")).toBe(false);
+    expect(pattern.test("/api/v1/version")).toBe(false);
+  });
+
+  it("keeps each redirect target of the Next pages", () => {
+    expect(redirects["/"]).toBe("/chat");
+    expect(redirects["/approvals"]).toBe("/actions");
+    expect(Object.keys(redirects).every((from) => pages.includes(from))).toBe(true);
+  });
+});
+
+describe("Link href", () => {
+  it("writes an object href as a path with a query and a hash", () => {
+    expect(hrefToString("/runs?x=1")).toBe("/runs?x=1");
+    expect(hrefToString({ pathname: "/runs", query: { status: "failed", skip: undefined }, hash: "top" })).toBe("/runs?status=failed#top");
+  });
+});

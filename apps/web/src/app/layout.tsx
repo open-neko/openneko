@@ -1,10 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Toaster } from "sonner";
 import { DensityProvider } from "@/components/DensityProvider";
 import AppRail, { type RailIdentity } from "@/components/AppRail";
 import { railIdentity } from "@/lib/rail-identity";
 import CommandDock from "@/components/CommandDock";
 import CommandBar from "@/components/CommandBar";
+import AppToaster from "@/components/AppToaster";
 import { THEME_COLOR } from "@/lib/theme-color";
 import "@fontsource-variable/archivo/wght.css";
 import "@fontsource-variable/manrope/wght.css";
@@ -54,32 +54,7 @@ export default async function RootLayout({
           <CommandDock />
           <CommandBar />
         </DensityProvider>
-        <Toaster
-          position="bottom-right"
-          expand
-          closeButton
-          gap={10}
-          offset={20}
-          visibleToasts={4}
-          toastOptions={{
-            duration: 4500,
-            unstyled: true,
-            classNames: {
-              toast: "app-toast",
-              title: "app-toast-title",
-              description: "app-toast-desc",
-              closeButton: "app-toast-close",
-              icon: "app-toast-icon",
-              content: "app-toast-content",
-              actionButton: "app-toast-action",
-              cancelButton: "app-toast-cancel",
-              success: "app-toast-success",
-              error: "app-toast-error",
-              info: "app-toast-info",
-              warning: "app-toast-warning",
-            },
-          }}
-        />
+        <AppToaster />
       </body>
     </html>
   );

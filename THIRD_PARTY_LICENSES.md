@@ -66,6 +66,7 @@ OpenNeko's runtime dependencies are listed in the `package.json` and `go.mod` fi
 | `pg`, `pg-boss` | MIT | Postgres client + job queue |
 | `mysql2` | MIT | MySQL and MariaDB client for the Magento pack and the source check |
 | `next` | MIT | Web app framework |
+| `react-router` (with `cookie`, `set-cookie-parser`) | MIT | Client router of the static web app build |
 | `zod` | MIT | Schema validation |
 | `drizzle-orm` | Apache-2.0 | DB schema + queries |
 | DuckDB CLI | MIT | Shipped in the `neko-serve` image; runs SQL over sheet tables |
