@@ -68,6 +68,12 @@ var GoRoutes = map[string][]string{
 	"/api/v1/action-requests":                           {"GET"},
 	"/api/v1/action-requests/{actionRequestId}":         {"GET", "PATCH"},
 	"/api/v1/insights/ensure":                           {"POST"},
+	"/api/v1/work/memories":                             {"GET"},
+	"/api/v1/work/memories/decide":                      {"POST"},
+	"/api/v1/work/memories/pending":                     {"GET"},
+	"/api/v1/work/memories/pull":                        {"GET", "POST"},
+	"/api/v1/work/memories/{id}":                        {"GET", "PATCH", "DELETE"},
+	"/api/v1/work/memories/{id}/promote":                {"POST"},
 }
 
 func (a *API) table() map[string]map[string]http.HandlerFunc {
@@ -97,6 +103,12 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/action-requests":                           {"GET": a.actionRequests},
 			"/api/v1/action-requests/{actionRequestId}":         {"GET": a.actionRequest, "PATCH": a.actionRequestDecision},
 			"/api/v1/insights/ensure":                           {"POST": a.ensureInsights},
+			"/api/v1/work/memories":                             {"GET": a.workMemories},
+			"/api/v1/work/memories/decide":                      {"POST": a.decidePendingMemory},
+			"/api/v1/work/memories/pending":                     {"GET": a.pendingMemories},
+			"/api/v1/work/memories/pull":                        {"GET": a.memoryPullUpdates, "POST": a.applyMemoryPull},
+			"/api/v1/work/memories/{id}":                        {"GET": a.workMemory, "PATCH": a.personalizeMemory, "DELETE": a.forgetMemory},
+			"/api/v1/work/memories/{id}/promote":                {"POST": a.promoteMemory},
 		}
 	})
 	return a.routes

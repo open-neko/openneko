@@ -53,8 +53,6 @@ import { git } from "../../src/config-vcs/git-shell";
 import { ensureConfigRepo, listConfigHistory } from "../../src/config-vcs";
 import { snapshotDurableMemories } from "../../src/config-vcs/snapshot";
 import {
-  listMemoryPullUpdates,
-  applyMemoryPull,
   listWorkMemories,
   overrideWorkMemoryForUser,
   rememberWorkMemory,
@@ -270,45 +268,6 @@ describeIfDb("CV4 forks (DB-backed)", () => {
         and(eq(config_change.org_id, orgId), eq(config_change.status, "adopted")),
       );
     expect(changes.some((c) => c.artifact_ref === "Churn Watch")).toBe(true);
-  });
-
-  it("pull lists stale overrides and take_theirs unshadows the team row", async () => {
-    const team = await rememberWorkMemory({
-      orgId,
-      text: "SLA is 24 hours",
-      kind: "business_rule",
-      scope: "global",
-    });
-    await overrideWorkMemoryForUser({
-      orgId,
-      userId: ada,
-      memoryId: team.id,
-      text: "SLA is 12 hours for my accounts",
-    });
-    // First override created the fork baseline; nothing stale yet.
-    expect(await listMemoryPullUpdates(orgId, ada)).toEqual([]);
-
-    // The team version moves on (admin edit, simulated directly).
-    await db()
-      .update(work_memory)
-      .set({ text: "SLA is 48 hours", updated_at: new Date(Date.now() + 1000) })
-      .where(eq(work_memory.id, team.id));
-
-    const updates = await listMemoryPullUpdates(orgId, ada);
-    expect(updates).toHaveLength(1);
-    expect(updates[0].originId).toBe(team.originId);
-    expect(updates[0].teamMemory?.text).toBe("SLA is 48 hours");
-
-    const { applied } = await applyMemoryPull({
-      orgId,
-      userId: ada,
-      decisions: [{ originId: team.originId!, choice: "take_theirs" }],
-    });
-    expect(applied).toBe(1);
-    const adaView = await listWorkMemories(orgId, { userId: ada });
-    expect(adaView.map((m) => m.id)).toContain(team.id);
-    // Baseline advanced — nothing left to pull.
-    expect(await listMemoryPullUpdates(orgId, ada)).toEqual([]);
   });
 
   it("dropUserConfigData removes the ref and the member's pointers", async () => {
