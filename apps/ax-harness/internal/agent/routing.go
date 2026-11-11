@@ -41,8 +41,6 @@ type RoutedClient struct {
 // classifies provider errors; a nonretryable denial, cancellation, or a call
 // that returned content never reaches the alternate route. The second call
 // enters the selected provider's own admission hook and is charged separately.
-// Stream is intentionally not retried: the AIClient slice API cannot prove
-// whether a failed stream already emitted content.
 type transientRouteFallback struct {
 	ax.AIClient
 	fallbacks map[string]string
@@ -51,17 +49,49 @@ type transientRouteFallback struct {
 
 func (r *transientRouteFallback) Chat(ctx context.Context, request, options map[string]ax.Value) (ax.Value, error) {
 	result, err := r.AIClient.Chat(ctx, request, options)
-	if err == nil || result != nil || ctx.Err() != nil || !ax.IsRetryable(err) {
+	if err == nil || result != nil {
 		return result, err
+	}
+	rerouted, ok, recordErr := r.reroute(ctx, request, err)
+	if recordErr != nil || !ok {
+		return nil, firstError(recordErr, err)
+	}
+	return r.AIClient.Chat(ctx, rerouted, options)
+}
+
+// A stream moves to the fallback only when it fails before its first value;
+// after that the caller may already show content.
+func (r *transientRouteFallback) StreamEvents(ctx context.Context, request, options map[string]ax.Value) (ax.AxChatStream, error) {
+	stream, err := streamEvents(ctx, r.AIClient, request, options)
+	if err == nil {
+		if stream.Next() {
+			return &peekedStream{AxChatStream: stream, first: stream.Value()}, nil
+		}
+		err = stream.Err()
+		if err == nil {
+			return &peekedStream{AxChatStream: stream, empty: true}, nil
+		}
+		_ = stream.Close()
+	}
+	rerouted, ok, recordErr := r.reroute(ctx, request, err)
+	if recordErr != nil || !ok {
+		return nil, firstError(recordErr, err)
+	}
+	return streamEvents(ctx, r.AIClient, rerouted, options)
+}
+
+func (r *transientRouteFallback) reroute(ctx context.Context, request map[string]ax.Value, err error) (map[string]ax.Value, bool, error) {
+	if ctx.Err() != nil || !ax.IsRetryable(err) {
+		return nil, false, nil
 	}
 	from, _ := request["model"].(string)
 	to := r.fallbacks[from]
 	if to == "" || to == from {
-		return result, err
+		return nil, false, nil
 	}
 	if r.before != nil {
 		if recordErr := r.before(from, to); recordErr != nil {
-			return nil, recordErr
+			return nil, false, recordErr
 		}
 	}
 	copy := make(map[string]ax.Value, len(request))
@@ -69,13 +99,46 @@ func (r *transientRouteFallback) Chat(ctx context.Context, request, options map[
 		copy[key] = value
 	}
 	copy["model"] = to
-	return r.AIClient.Chat(ctx, copy, options)
+	return copy, true, nil
 }
 
-func (r *transientRouteFallback) StreamEvents(ctx context.Context, request, options map[string]ax.Value) (ax.AxChatStream, error) {
-	// A stream error may follow visible content. Do not retry on another route.
-	return streamEvents(ctx, r.AIClient, request, options)
+func firstError(errs ...error) error {
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
+
+type peekedStream struct {
+	ax.AxChatStream
+	first   ax.Value
+	empty   bool
+	started bool
+	current ax.Value
+}
+
+func (s *peekedStream) Next() bool {
+	if !s.started {
+		s.started = true
+		if s.empty {
+			return false
+		}
+		s.current = s.first
+		return true
+	}
+	if s.empty {
+		return false
+	}
+	if !s.AxChatStream.Next() {
+		return false
+	}
+	s.current = s.AxChatStream.Value()
+	return true
+}
+
+func (s *peekedStream) Value() ax.Value { return s.current }
 
 func (r *transientRouteFallback) GetFeatures(model string) map[string]ax.Value {
 	if features, ok := r.AIClient.(interface {

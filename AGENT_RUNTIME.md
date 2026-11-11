@@ -113,7 +113,9 @@ A refused key or a bad request does not go to the fallback. For a host call,
 the frame carries the fallback route and its key in `fallback_key`. For a
 turn, the runner gets the fallback key as `FALLBACK_MODEL_API_KEY`, and the
 harness reads a two-route profile in `HARNESS_MODEL_ROUTES`. The fallback
-route never runs a tool call again.
+route never runs a tool call again. A streamed answer goes to the fallback
+only when the first model fails before it sends any text. After the first
+text, the error stands, because the user may already see part of the answer.
 
 Each model may carry a price in USD per million tokens. That price wins over
 the model price list. Every host call writes a `spend_ledger` row with its
