@@ -10,6 +10,7 @@ import {
   revokeItem,
   setLocalAdministrator,
 } from "@neko/db";
+import { setDataBackend, type DataBackend } from "../../src/data-access";
 import { inProcessControlPlane } from "../../src/work/control-plane";
 import { entitlementActorForRun, filterHeldActions, runHeldItemIds } from "../../src/work/entitlement-scope";
 import { createWorkRun, createWorkThread } from "../../src/work/store";
@@ -119,6 +120,43 @@ describeIfDb("run entitlements", () => {
       await revokeItem(orgId, { groupId: everyone, itemType: "data_source", itemId: "*" });
       await expect(inProcessControlPlane.listGraphjinTools({ orgId, runId: run.id })).rejects.toThrow("No data source is available");
       await expect(inProcessControlPlane.queryGraphjinRead({ orgId, runId: run.id, query: "query { x }" })).rejects.toThrow("No data source is available");
+    });
+  });
+
+  it("lets a run reach the data backend only with the grants its user holds", async () => {
+    await withOrg(async (orgId) => {
+      const seen: Array<{ method: string; runId?: string | null }> = [];
+      const backend: DataBackend = {
+        name: "fake",
+        async query(input) { seen.push({ method: "query", runId: input.runId }); return { data: {} }; },
+        async listTools(caller) { seen.push({ method: "listTools", runId: caller.runId }); return []; },
+        async callTool(input) { seen.push({ method: input.name, runId: input.runId }); return { content: [] }; },
+      };
+      setDataBackend(backend);
+      try {
+        await db().insert(app_user).values({ id: `${orgId}-ann`, org_id: orgId, role: "member", email: "ann@example.test" });
+        const thread = await createWorkThread(orgId, "t");
+        const run = await createWorkRun(orgId, thread.id, "ax", { userId: `${orgId}-ann`, role: "member" });
+        await inProcessControlPlane.queryGraphjinRead({ orgId, runId: run.id, query: "{ x }" });
+        await inProcessControlPlane.listGraphjinTools({ orgId, runId: run.id });
+        await inProcessControlPlane.callGraphjinTool({ orgId, runId: run.id, name: "execute_saved_query", arguments: { name: "q" } });
+        expect(seen).toEqual([
+          { method: "query", runId: run.id },
+          { method: "listTools", runId: run.id },
+          { method: "execute_saved_query", runId: run.id },
+        ]);
+
+        const everyone = await builtinGroupId(orgId, "everyone");
+        await revokeItem(orgId, { groupId: everyone, itemType: "saved_query", itemId: "*" });
+        const refused = await inProcessControlPlane.callGraphjinTool({ orgId, runId: run.id, name: "execute_saved_query", arguments: { name: "q" } });
+        expect(refused.isError).toBe(true);
+        await revokeItem(orgId, { groupId: everyone, itemType: "data_source", itemId: "*" });
+        await expect(inProcessControlPlane.queryGraphjinRead({ orgId, runId: run.id, query: "{ x }" })).rejects.toThrow("No data source is available");
+        await expect(inProcessControlPlane.callGraphjinTool({ orgId, runId: run.id, name: "list_tables" })).rejects.toThrow("No data source is available");
+        expect(seen).toHaveLength(3);
+      } finally {
+        setDataBackend(undefined);
+      }
     });
   });
 

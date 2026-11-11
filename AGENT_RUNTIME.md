@@ -136,6 +136,23 @@ the host runs `ax-harness embed`, with the key in
 `HARNESS_EMBEDDING_API_KEY`. When embedding is off, nothing calls out and
 search uses Postgres full-text search.
 
+### The data access interface
+
+The agent's data tools (`neko_graphjin`: the tool list and each tool
+call) and the broker's read-query route reach the customer's data through
+one interface, `packages/llm/src/data-access`. The broker calls it with
+the run's org and run id. The interface checks the run's grants first: a
+run whose user holds no data source gets an error, a saved query the user
+does not hold returns a refusal, and the read query accepts query
+operations only. Then it passes the call to the data backend.
+
+The backend today is GraphJin (`data-access/graphjin.ts`). It finds the
+org's data source, signs the run's GraphJin token with the user's group
+roles, refuses the internal GraphJin, applies the config's write guard
+and calls GraphJin's MCP or GraphQL route. Another backend implements
+`DataBackend` (`query`, `listTools`, `callTool`); the grant checks stay
+the same.
+
 ## Two zones
 
 The stack has two zones. The control zone is web and the worker. It holds
