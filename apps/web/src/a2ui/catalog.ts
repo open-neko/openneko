@@ -43,6 +43,7 @@ export const ComponentTypes = {
   OpenApiSpecInput: "OpenApiSpecInput",
   ManagedFileSourceInput: "ManagedFileSourceInput",
   SourceSecretInput: "SourceSecretInput",
+  SourceConnectionCheck: "SourceConnectionCheck",
   PackSetup: "PackSetup",
   Compare: "Compare",
   WhatIf: "WhatIf",
@@ -344,6 +345,18 @@ export interface SourceSecretInputProps {
   error?: string;
 }
 
+export interface SourceConnectionCheckProps {
+  component: "SourceConnectionCheck";
+  label?: string;
+  type?: unknown;
+  host?: unknown;
+  port?: unknown;
+  dbname?: unknown;
+  user?: unknown;
+  secretRef?: unknown;
+  value?: unknown;
+}
+
 export interface PackSetupProps {
   component: "PackSetup";
   packId: string;
@@ -403,6 +416,7 @@ export type ComponentProps =
   | OpenApiSpecInputProps
   | ManagedFileSourceInputProps
   | SourceSecretInputProps
+  | SourceConnectionCheckProps
   | PackSetupProps
   | CompareProps
   | WhatIfProps

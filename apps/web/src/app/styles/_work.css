@@ -1351,6 +1351,31 @@ textarea.work-a2ui-input { resize: vertical; }
   font-size: var(--type-label);
 }
 
+.work-source-check-findings { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.work-source-check-findings li { display: grid; grid-template-columns: minmax(84px, auto) 1fr; gap: 10px; min-width: 0; font-size: var(--type-caption); color: var(--text2); }
+.work-source-check-findings li > div { min-width: 0; overflow-wrap: anywhere; }
+.work-source-check-findings p { margin: 0; }
+.work-source-check-status { font-weight: 700; color: var(--text3); }
+.work-source-check-findings .is-ok .work-source-check-status { color: var(--success-mid); }
+.work-source-check-findings .is-warn .work-source-check-status { color: var(--warn-ink); }
+.work-source-check-findings .is-fail .work-source-check-status { color: var(--danger); }
+.work-source-check-sql {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--type-label);
+}
+.work-source-check-tables { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.work-source-check-tables-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--text3); font-size: var(--type-caption); }
+.work-source-check-tables-head > span { flex: 1 1 auto; }
+.work-source-check-tables ul { display: grid; gap: 6px; max-height: 280px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.work-source-check-tables li { display: flex; min-width: 0; justify-content: space-between; gap: 12px; }
+.work-source-check-tables li code { flex-shrink: 0; color: var(--text3); font-family: var(--font-mono); font-size: var(--type-label); }
+
 @media (max-width: 520px) {
   .work-openapi-summary-head,
   .work-managed-files-list li {

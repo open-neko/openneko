@@ -411,6 +411,12 @@ The submitted kind and backend arrive as one-item arrays; pass their selected
 item to the proposal tool. Use stored \`secretRef\` names for database
 credentials.
 
+The database form has a "Check connection" step. It tests the source and lists
+the tables the login can read, all selected; the tables the admin clears arrive
+as \`blockedTables\`. When a database source fails, or before you file one
+the admin did not check, call \`check_source\` and report the failed step, its
+fix, and any SQL for the database administrator.
+
 Success for a view or explanation is a response grounded in the redacted
 config from step 2. Success for an edit is a response containing the proposal
 result from step 4. When a tool returns an error, present the error and name
@@ -424,6 +430,8 @@ the step requiring attention.
   stored connection secret names for use as \`secretRef\` values.
 - \`mcp_neko_source_config_manager_present_source_form\` — show the admin the
   source form, prefilled with the values you already know.
+- \`mcp_neko_source_config_manager_check_source\` — test a PostgreSQL, MySQL
+  or MariaDB source step by step and list the tables its login can read.
 - \`mcp_neko_source_config_manager_present_pack_setup\` — show the admin a
   pack's setup card for a system that has a pack.
 - \`mcp_neko_source_config_manager_import_openapi_spec\` — import and validate

@@ -13,6 +13,7 @@ import {
   type UpsertActionPolicyResult,
 } from "../workflows/action-store";
 import type { ActionExecutionOutcome } from "../workflows/action-executor";
+import type { SourceCheckAnswers, SourceCheckResult } from "../graphjin/source-check";
 import { evaluateActionPolicy } from "../workflows/policy-engine";
 import { withActionTargets } from "../workflows/action-targets";
 import {
@@ -596,6 +597,13 @@ export interface AgentControlPlane {
     actorRole?: string | null;
     dataSourceId?: string;
   }): Promise<SourceConfigViewResult>;
+  /** Test one database source from the admin's answers; the password comes from the stored secret. */
+  checkSource(input: {
+    orgId: string;
+    runId?: string | null;
+    actorRole?: string | null;
+    answers: SourceCheckAnswers;
+  }): Promise<{ denied?: boolean; error?: string; check?: SourceCheckResult }>;
   /** Validate the exact allowlisted patch before an approval is created. */
   previewSourceConfigChange(input: {
     orgId: string;
@@ -1355,6 +1363,18 @@ export class InProcessControlPlane implements AgentControlPlane {
       userId: gate.userId,
       dataSourceId: input.dataSourceId,
     });
+  }
+
+  async checkSource(input: {
+    orgId: string;
+    runId?: string | null;
+    actorRole?: string | null;
+    answers: SourceCheckAnswers;
+  }) {
+    const gate = await requireSourceConfigAccess(input);
+    if (!gate.ok) return { denied: true, error: gate.error };
+    const { checkSourceForOrg } = await import("../graphjin/source-check");
+    return { check: await checkSourceForOrg({ orgId: input.orgId, answers: input.answers }) };
   }
 
   async previewSourceConfigChange(input: {

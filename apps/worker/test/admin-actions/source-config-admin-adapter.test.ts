@@ -774,6 +774,48 @@ describeIfDb("source_config_admin adapter (OL5)", () => {
     expect(calls.some((call) => call.body.query.includes('mode: "preview"'))).toBe(false);
   });
 
+  it("SOURCE CHECK: runs with the stored password for an admin, and is denied when the setting is off", async () => {
+    await setSourceConfigEnabled(true);
+    const password = "planted-Reader-5521";
+    await pool().query("drop role if exists source_check_reader");
+    await pool().query(`create role source_check_reader login password '${password}'`);
+    await pool().query("grant select on organization to source_check_reader");
+    await db()
+      .insert(data_source_secret)
+      .values({ org_id: orgId, name: "self-check-password", value_enc: maybeEncryptSecret(password), updated_at: new Date() })
+      .onConflictDoNothing();
+    const answers = {
+      type: "postgres",
+      host: process.env.NEKO_PG_HOST ?? "localhost",
+      port: Number(process.env.NEKO_PG_PORT ?? 5432),
+      dbname: process.env.NEKO_PG_DATABASE ?? "neko",
+      user: "source_check_reader",
+      secretRef: "self-check-password",
+    };
+    const result = await inProcessControlPlane.checkSource({ orgId, actorRole: "admin", answers });
+    expect(result.denied).toBeUndefined();
+    const login = result.check?.findings.find((finding) => finding.step === "login");
+    expect(login).toMatchObject({ status: "ok" });
+    expect(result.check?.ok).toBe(true);
+    expect(result.check?.tables.map((table) => table.name)).toEqual(["organization"]);
+    expect(JSON.stringify(result)).not.toContain(password);
+
+    const missing = await inProcessControlPlane.checkSource({ orgId, actorRole: "admin", answers: { ...answers, secretRef: "no-such-secret" } });
+    expect(missing.check?.findings.find((finding) => finding.step === "login")).toMatchObject({
+      status: "fail",
+      field: "secretRef",
+      message: 'No stored password is named "no-such-secret". Save the password in the card first.',
+    });
+
+    await setSourceConfigEnabled(false);
+    const denied = await inProcessControlPlane.checkSource({ orgId, actorRole: "admin", answers });
+    expect(denied.denied).toBe(true);
+    expect(denied.check).toBeUndefined();
+    await setSourceConfigEnabled(true);
+    await pool().query("revoke all on organization from source_check_reader");
+    await pool().query("drop role source_check_reader");
+  });
+
   it("CHECK: ties a refused login to the password answer and keeps the password out", async () => {
     await setEndpoint(CUSTOMER);
     await setSourceConfigEnabled(true);

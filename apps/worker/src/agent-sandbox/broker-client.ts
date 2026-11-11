@@ -233,6 +233,12 @@ export class BrokerControlPlane implements AgentControlPlane {
     return this.post("/v1/source-config/describe", input);
   }
 
+  checkSource(
+    input: Parameters<AgentControlPlane["checkSource"]>[0],
+  ): ReturnType<AgentControlPlane["checkSource"]> {
+    return this.post("/v1/source-check", input);
+  }
+
   previewSourceConfigChange(
     input: Parameters<AgentControlPlane["previewSourceConfigChange"]>[0],
   ): ReturnType<AgentControlPlane["previewSourceConfigChange"]> {

@@ -41,6 +41,7 @@ describe("A2UI catalog", () => {
       OpenApiSpecInput: "OpenApiSpecInput",
       ManagedFileSourceInput: "ManagedFileSourceInput",
       SourceSecretInput: "SourceSecretInput",
+      SourceConnectionCheck: "SourceConnectionCheck",
     });
   });
 

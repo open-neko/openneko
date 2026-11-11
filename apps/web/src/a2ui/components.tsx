@@ -72,6 +72,7 @@ import "./answer-diagram";
 import "./answer-map";
 import "./answer-tool";
 import "./pack-setup";
+import "./source-check";
 
 // ─── Answer / Briefing root ───
 // The card frame for a conversational answer (Answer) and the dashboard's daily

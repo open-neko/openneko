@@ -214,6 +214,33 @@ describe("worker admin HTTP handler", () => {
     }
   });
 
+  it("POST /admin/sources/check passes only the source answers and the password", async () => {
+    const check = vi.fn(async () => ({ ok: true, findings: [] }));
+    const srv = await startServer(createAdminHandler({ sources: { check } }));
+    try {
+      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/sources/check`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "mysql", host: "db", port: 3306, dbname: "shop", user: "r", password: "pw", orgId: "other-org" }),
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ check: { ok: true, findings: [] } });
+      expect(check).toHaveBeenCalledWith({
+        answers: { type: "mysql", host: "db", port: 3306, dbname: "shop", user: "r", secretRef: undefined },
+        password: "pw",
+      });
+      const closed = await startServer(createAdminHandler());
+      try {
+        const off = await fetch(`http://127.0.0.1:${closed.port}/admin/sources/check`, { method: "POST", body: "{}" });
+        expect(off.status).toBe(503);
+      } finally {
+        await closed.close();
+      }
+    } finally {
+      await srv.close();
+    }
+  });
+
   it("POST /admin/action-requests/create fails closed before preflight is ready", async () => {
     const srv = await startServer(createAdminHandler());
     try {

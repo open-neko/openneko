@@ -259,6 +259,8 @@ openneko serve [--agent-socket path]  # user files and file search; agent turns 
 openneko seed adventureworks       # one-shot demo data load (already done by --mode demo)
 openneko [--instance name] graphjin import <customer-config.yml|->
 openneko graphjin check [--config file]  # load a GraphJin config with the pinned loader; exit 1 and the reason when it is not valid
+openneko source check --type postgres|mysql|mariadb --host H [--port N] \
+  --database D --user U (--secret NAME | --password-stdin) [-o json]
 openneko reset [--all]             # tear down + clear local config (--all also wipes secrets)
 openneko doctor                    # host check, docker daemon, stack health
 openneko version
@@ -279,6 +281,16 @@ Modes:
 `relationships`. Use `-` to read it from standard input. It requires a running
 production installation, validates the change through GraphJin, seals source
 credentials, and preserves OpenNeko-managed authentication and keystore settings.
+
+`source check` tests one customer database before you connect it, in this
+order: the host resolves, the port answers, TLS, the login, the rights to read
+the schema, and read-only rights. A failed step gives one sentence and, where
+SQL fixes it, the SQL for the database administrator, for example how to create
+a read-only login. A passed check lists the tables the login can read, with
+row estimates. `--secret` names a password saved in Admin settings, GraphJin
+config; `--password-stdin` reads it from standard input. The check runs in the
+worker, so the stack must be running. It exits 1 when a step fails. It checks
+PostgreSQL, MySQL and MariaDB, and says so for any other type.
 
 `graphjin check` loads a GraphJin config file with the GraphJin version built
 into `openneko` and runs the checks GraphJin runs at start. It prints the first

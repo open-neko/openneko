@@ -473,6 +473,19 @@ async function handle(
               : undefined,
         }),
       );
+    case "/v1/source-check":
+      return send(
+        res,
+        200,
+        await cp.checkSource({
+          orgId: binding.orgId,
+          runId: binding.runId,
+          answers:
+            body.answers && typeof body.answers === "object"
+              ? (body.answers as Record<string, unknown>)
+              : {},
+        }),
+      );
     case "/v1/source-config/preview":
       return send(
         res,

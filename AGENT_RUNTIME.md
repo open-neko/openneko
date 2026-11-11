@@ -131,6 +131,23 @@ control plane and the approval worker replace it with `[REDACTED]` in every
 error text, so GraphJin's errors cannot carry it to the model, a log line or
 the thread.
 
+The source check (`packages/llm/src/graphjin/source-check.ts`) tests one
+PostgreSQL, MySQL or MariaDB source in order: the host resolves, the port
+answers, TLS, the login, the rights to read the schema, and read-only rights.
+It stops at the first failed step. Each failure names the answer at fault and,
+where SQL fixes it, gives the SQL for the database administrator. A passed
+check lists the tables the login can read, with the planner's row estimates.
+The check runs in the control zone, because it needs the stored password.
+Three callers use it: the `check_source` tool (through the broker, admin runs
+only), the "Check connection" part of the source form
+(`POST /api/settings/source-check`, admins only), and `openneko source check`
+(the worker's `POST /admin/sources/check`). The form shows the tables with all
+selected; the tables the admin clears become `blockedTables` in the proposal.
+TLS: the check reports whether the server offers TLS and whether its
+certificate verifies against the system's trusted certificates. It then signs
+in with TLS when the server offers it, without certificate checks, as pgx does
+by default for GraphJin.
+
 For a system with a pack, `present_pack_setup` shows the pack's setup card
 in chat. The card is the same component as Admin settings, Packs
 (`apps/web/src/components/admin/PackSetup.tsx`) and calls the same admin pack

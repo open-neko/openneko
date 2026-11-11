@@ -127,6 +127,20 @@ describe("present_source_form", () => {
         { label: "MariaDB", value: "mariadb" },
       ],
     });
+    expect(components.find((component) => component.id === "connectionCheck")).toEqual({
+      id: "connectionCheck",
+      component: "SourceConnectionCheck",
+      label: "Check connection",
+      type: { path: "/form/type" },
+      host: { path: "/form/host" },
+      port: { path: "/form/port" },
+      dbname: { path: "/form/dbname" },
+      user: { path: "/form/user" },
+      secretRef: { path: "/form/secretRef" },
+      value: { path: "/form/blockedTables" },
+    });
+    expect((components.find((component) => component.id === "databaseFields") as unknown as { children: string[] }).children)
+      .toEqual(["type", "network", "database", "password", "connectionCheck", "tables"]);
     expect(JSON.stringify(surface.dataModel)).not.toMatch(/password"?\s*:/i);
   });
 
@@ -311,5 +325,48 @@ describe("present_pack_setup", () => {
       { id: "setup", component: "PackSetup", packId: "magento" },
     ]);
     expect(surface.dataModel).toEqual({});
+  });
+});
+
+describe("check_source", () => {
+  const answers = { type: "mysql", host: "db.internal", port: 3306, dbname: "shop", user: "reader", secretRef: "shop-password" };
+
+  it("passes the answers to the control plane and returns the findings and tables", async () => {
+    const checkSource = vi.fn(async () => ({
+      check: {
+        ok: true,
+        supported: true,
+        type: "mysql",
+        host: "db.internal",
+        port: 3306,
+        database: "shop",
+        user: "reader",
+        serverVersion: "MySQL 8.4.7",
+        findings: [{ step: "login", status: "ok", message: "reader signs in to MySQL 8.4.7." }],
+        tables: Array.from({ length: 250 }, (_, index) => ({ name: `t${index}`, rows: index })),
+        moreTables: 5,
+      },
+    }));
+    const server = buildSourceConfigManagerServer({ orgId: "org", runId: "run", emit: vi.fn(), controlPlane: { checkSource } as never });
+    await withServer(server, async (client) => {
+      const listed = await client.listTools();
+      expect(listed.tools.map((tool) => tool.name)).toContain("check_source");
+      const result = JSON.parse(text(await client.callTool({ name: "check_source", arguments: answers }))!);
+      expect(result).toMatchObject({ ok: true, serverVersion: "MySQL 8.4.7", moreTables: 55 });
+      expect(result.tables).toHaveLength(200);
+      expect(result.next).toContain("cleared tables become blockedTables");
+    });
+    expect(checkSource).toHaveBeenCalledWith({ orgId: "org", runId: "run", answers });
+  });
+
+  it("returns a denial as is, and refuses a password in secretRef", async () => {
+    const checkSource = vi.fn(async () => ({ denied: true, error: "admin only" }));
+    const server = buildSourceConfigManagerServer({ orgId: "org", runId: "run", emit: vi.fn(), controlPlane: { checkSource } as never });
+    await withServer(server, async (client) => {
+      expect(JSON.parse(text(await client.callTool({ name: "check_source", arguments: answers }))!)).toEqual({ denied: true, error: "admin only" });
+      const refused = await client.callTool({ name: "check_source", arguments: { ...answers, secretRef: "my secret pw" } });
+      expect(refused.isError).toBe(true);
+    });
+    expect(checkSource).toHaveBeenCalledTimes(1);
   });
 });

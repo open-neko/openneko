@@ -388,6 +388,12 @@ const server = createServer(
         return listConfigApiOperations(await readFile(configFile, "utf8"));
       },
     },
+    sources: {
+      check: async ({ answers, password }) => {
+        const { checkSourceForOrg } = await import("@neko/llm/graphjin/source-check");
+        return checkSourceForOrg({ orgId: await getOrgId(), answers, password });
+      },
+    },
     directory: {
       status: async () => directoryStatus(signInService, await getOrgId()),
       sync: async () => runDirectorySync(signIn(), await getOrgId()),

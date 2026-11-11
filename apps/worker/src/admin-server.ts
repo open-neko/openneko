@@ -327,7 +327,12 @@ export type AdminHandlerOptions = {
   directory?: DirectoryHandlerSurface | null;
   /** Writes group grants into the GraphJin config, now or batched. */
   groupGrants?: GroupGrantsHandlerSurface | null;
+  sources?: SourceCheckHandlerSurface | null;
 };
+
+export interface SourceCheckHandlerSurface {
+  check(input: { answers: Record<string, unknown>; password?: string }): Promise<unknown>;
+}
 
 export interface GroupGrantsHandlerSurface {
   apply(): Promise<unknown>;
@@ -371,6 +376,7 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const packs = opts.packs ?? null;
   const directory = opts.directory ?? null;
   const groupGrants = opts.groupGrants ?? null;
+  const sources = opts.sources ?? null;
 
   return function handle(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "GET" && req.url === "/health") {
@@ -542,6 +548,10 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       req.url === "/admin/action-requests/create"
     ) {
       void handleActionRequestCreate(req, res, actionRequests);
+      return;
+    }
+    if (req.method === "POST" && req.url === "/admin/sources/check") {
+      void handleSourceCheck(req, res, sources);
       return;
     }
     if (req.method === "GET" && req.url === "/admin/install-policy") {
@@ -1662,6 +1672,32 @@ function json(res: ServerResponse, status: number, body: unknown) {
     "Content-Length": Buffer.byteLength(payload).toString(),
   });
   res.end(payload);
+}
+
+async function handleSourceCheck(
+  req: IncomingMessage,
+  res: ServerResponse,
+  sources: SourceCheckHandlerSurface | null,
+): Promise<void> {
+  if (!sources) {
+    json(res, 503, { error: "source check is not available" });
+    return;
+  }
+  try {
+    const body = ((await readJson(req)) ?? {}) as Record<string, unknown>;
+    const answers = {
+      type: body.type,
+      host: body.host,
+      port: body.port,
+      dbname: body.dbname,
+      user: body.user,
+      secretRef: body.secretRef,
+    };
+    const password = typeof body.password === "string" ? body.password : undefined;
+    json(res, 200, { check: await sources.check({ answers, password }) });
+  } catch (error) {
+    json(res, 500, { error: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 async function readJson(req: IncomingMessage): Promise<unknown> {

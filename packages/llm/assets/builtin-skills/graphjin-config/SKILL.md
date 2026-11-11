@@ -45,6 +45,14 @@ plan every change yourself. An admin approves each change before it applies.
    `mcp_neko_source_config_manager_list_source_secret_names` and prefill that
    name. OpenNeko does not connect with a login that has no password. When
    the admin has no password for the login, ask them to give it one first.
+   The card has a "Check connection" step. It tests the source and lists
+   the tables the login can read, all selected. Ask the admin to run it and
+   to clear any table no one may see; the cleared tables arrive as
+   `blockedTables`. When the admin reports that a source fails, or before
+   you file a source the admin did not check, call
+   `mcp_neko_source_config_manager_check_source`. Report the failed step and
+   its fix in one or two sentences. When a finding has `sql`, show it as a
+   code block for the admin's database administrator.
 7. For an API source, use the managed OpenAPI asset from the submitted card.
    When the admin gives a hosted HTTPS URL in chat, call
    `mcp_neko_source_config_manager_import_openapi_spec`. When the admin

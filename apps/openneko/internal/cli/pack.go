@@ -673,6 +673,10 @@ func packReadinessReason(reason string) string {
 }
 
 func requestPackAPI(ctx context.Context, method, path string, body any, destination any) ([]byte, error) {
+	return requestWorkerAPI(ctx, "pack service", method, path, body, destination)
+}
+
+func requestWorkerAPI(ctx context.Context, service, method, path string, body any, destination any) ([]byte, error) {
 	base := strings.TrimRight(os.Getenv("WORKER_ADMIN_URL"), "/")
 	if base == "" {
 		base = defaultWorkerAdminURL
@@ -704,7 +708,7 @@ func requestPackAPI(ctx context.Context, method, path string, body any, destinat
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("pack service at %s is unreachable: %w", base, err)
+		return nil, fmt.Errorf("%s at %s is unreachable: %w", service, base, err)
 	}
 	defer res.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(res.Body, 2<<20))
@@ -722,11 +726,11 @@ func requestPackAPI(ctx context.Context, method, path string, body any, destinat
 		if errorBody.Error == "" {
 			errorBody.Error = http.StatusText(res.StatusCode)
 		}
-		return nil, fmt.Errorf("pack service: %s (HTTP %s)", errorBody.Error, strconv.Itoa(res.StatusCode))
+		return nil, fmt.Errorf("%s: %s (HTTP %s)", service, errorBody.Error, strconv.Itoa(res.StatusCode))
 	}
 	if destination != nil {
 		if err := json.Unmarshal(raw, destination); err != nil {
-			return nil, fmt.Errorf("pack service returned invalid JSON: %w", err)
+			return nil, fmt.Errorf("%s returned invalid JSON: %w", service, err)
 		}
 	}
 	return raw, nil

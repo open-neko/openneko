@@ -670,6 +670,61 @@ export function buildSourceConfigManagerServer(opts: {
     },
   );
 
+  const checkSource = defineMcpTool(
+    "check_source",
+    [
+      "Test one PostgreSQL, MySQL or MariaDB source before you file it, or when",
+      "the admin says a source fails. The check runs in order: the host",
+      "resolves, the port answers, TLS, the login, the rights to read the",
+      "schema, and read-only rights. Each failed step names the answer at fault",
+      "and, where SQL fixes it, the SQL for the database administrator. When",
+      "the login works, `tables` lists the tables it can read. The password",
+      "comes from the stored secret named by secretRef and never reaches you.",
+    ].join(" "),
+    {
+      type: z.enum(DATABASE_SOURCE_TYPES),
+      host: z.string().trim().min(1).max(255),
+      port: z.number().int().min(1).max(65535).optional(),
+      dbname: z.string().trim().min(1).max(128),
+      user: z.string().trim().min(1).max(128),
+      secretRef: z
+        .string()
+        .trim()
+        .min(1)
+        .max(128)
+        .regex(/^[A-Za-z0-9._-]*$/, "a secret name, not a value"),
+    },
+    async (args) => {
+      const response = await controlPlane.checkSource({
+        orgId: opts.orgId,
+        runId: opts.runId ?? null,
+        answers: args,
+      });
+      const check = response.check;
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              check
+                ? {
+                    ok: check.ok,
+                    serverVersion: check.serverVersion,
+                    findings: check.findings,
+                    tables: check.tables.slice(0, 200),
+                    moreTables: check.moreTables + Math.max(0, check.tables.length - 200),
+                    next: check.ok
+                      ? "Tell the admin the check passed. In the form card, the admin chooses the tables under Check connection; cleared tables become blockedTables."
+                      : "Tell the admin which step failed and why, in one or two sentences. When a finding has `sql`, show it as a code block for their database administrator.",
+                  }
+                : response,
+            ),
+          },
+        ],
+      };
+    },
+  );
+
   const presentPackSetup = defineMcpTool(
     "present_pack_setup",
     [
@@ -976,12 +1031,13 @@ export function buildSourceConfigManagerServer(opts: {
 
   return createMcpServer({
     name: "neko_source_config_manager",
-    version: "1.2.0",
+    version: "1.3.0",
     tools: [
       describe,
       describeConfig,
       listSecretNames,
       presentSourceForm,
+      checkSource,
       presentPackSetup,
       importOpenApi,
       listOpenApi,
