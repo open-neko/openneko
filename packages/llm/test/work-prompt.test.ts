@@ -82,6 +82,12 @@ describe("buildWorkPrompt GraphJin data path", () => {
     expect(direct).toContain("`mcp_neko_graphjin_query_catalog`");
     expect(direct).not.toContain("mcp_neko_graphjin_agent_ask");
   });
+
+  it("states the house rule for relative periods", () => {
+    const prompt = build("ax", { supportsWorkflowTool: true });
+    expect(prompt).toContain("A year or 12 months is 365 days");
+    expect(prompt).toContain("Never count back to the same calendar date");
+  });
 });
 
 describe("buildWorkPrompt attachments guidance", () => {

@@ -121,6 +121,7 @@ describe("buildWorkflowRunnerPrompt", () => {
     expect(prompt).toContain("<data_access>");
     expect(prompt).toContain("mcp_neko_graphjin_execute_graphql");
     expect(prompt).toContain("mcp_neko_graphjin_query_catalog");
+    expect(prompt).toContain("Never count back to the same calendar date");
     expect(prompt).not.toContain("graphjin cli");
   });
 
