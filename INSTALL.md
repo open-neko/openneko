@@ -342,8 +342,8 @@ a terminal only when a sandbox is connected.
 
 OpenNeko runs no command for the agent. To give the agent a terminal, and to
 turn on workflow script steps and the bundled skills that run scripts
-(`xlsx`, `docx`, `document-extraction` and `skill-creator`), connect a sandbox
-service.
+(`xlsx`, `docx`, `pptx`, `document-extraction` and `skill-creator`), connect
+a sandbox service.
 Give web, worker and `openneko-serve` its URL and key, then run
 `openneko stop` and `openneko start`:
 
@@ -374,13 +374,13 @@ takes the terminal, the script skills and workflow script steps away from
 that organization's runs, from the next run. Without a sandbox URL the
 setting shows as unavailable.
 
-This release replaces the bundled `xlsx` and `docx` skills with new ones and
-removes the bundled `pptx`, `pdf`, `internal-comms`, `excel-author`,
+This release replaces the bundled `xlsx`, `docx` and `pptx` skills with new
+ones and removes the bundled `pdf`, `internal-comms`, `excel-author`,
 `pptx-author` and five financial-model skills. On upgrade, OpenNeko deletes
-each organization's unchanged copy of the old skills and adds the new `xlsx`
-and `docx`. An admin's changed copy stays as that organization's own skill,
-and the new skill does not replace it. To get the new skill, delete the
-changed copy in Skills.
+each organization's unchanged copy of the old skills and adds the new `xlsx`,
+`docx` and `pptx`. An admin's changed copy stays as that organization's own
+skill, and the new skill does not replace it. To get the new skill, delete
+the changed copy in Skills.
 
 ### Semantic search (optional)
 

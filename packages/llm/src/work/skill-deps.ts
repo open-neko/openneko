@@ -36,6 +36,15 @@ export const KNOWN_SKILL_DEPS: Record<string, SkillDeps> = {
     apt: [],
     brew: ["node"],
   },
+  pptx: {
+    python: [],
+    pip: [],
+    node: ["fflate", "fast-xml-parser"],
+    npm: ["fflate@0.8.3", "fast-xml-parser@5.12.0"],
+    binaries: ["node"],
+    apt: [],
+    brew: ["node"],
+  },
   xlsx: {
     python: [],
     pip: [],

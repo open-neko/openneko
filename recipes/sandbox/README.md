@@ -38,6 +38,7 @@ CommonJS (`.cjs`), because `import` does not read `NODE_PATH`.
 |---|---|
 | `xlsx` | Creates, reads and edits Excel workbooks and calculates their formulas |
 | `docx` | Creates, reads and edits Word documents, with tracked changes and comments |
+| `pptx` | Creates, reads and edits PowerPoint decks, from a blank deck or a company template |
 
 ## How it keeps runs apart
 

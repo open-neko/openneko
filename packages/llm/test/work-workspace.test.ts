@@ -70,7 +70,7 @@ describe("work workspace", () => {
     expect(resolveSandboxSkillsRoot("file:///x/y.js", "/opt/skills", () => false)).toBe("/opt/skills");
   });
 
-  it.each(["xlsx", "docx"])("seeds the %s skill from the sandbox recipe without its packages or tests", async (name) => {
+  it.each(["xlsx", "docx", "pptx"])("seeds the %s skill from the sandbox recipe without its packages or tests", async (name) => {
     const home = await mkdtemp(join(tmpdir(), "neko-work-home-"));
     cleanupPaths.push(home);
     process.env.HOME = home;
@@ -194,7 +194,7 @@ describe("work workspace", () => {
     const workspace = await ensureOrgWorkspace("org-test");
     const seeded = await readdir(workspace.skillsRoot);
     expect(seeded).toContain("graphjin-config");
-    for (const name of ["document-extraction", "docx", "skill-creator", "xlsx"]) expect(seeded).not.toContain(name);
+    for (const name of ["document-extraction", "docx", "pptx", "skill-creator", "xlsx"]) expect(seeded).not.toContain(name);
 
     await mkdir(join(workspace.skillsRoot, "document-extraction"), { recursive: true });
     await writeFile(join(workspace.skillsRoot, "document-extraction", "SKILL.md"), "Seeded before the sandbox went away.");
@@ -267,6 +267,7 @@ describe("work workspace", () => {
     const workspace = await ensureOrgWorkspace("org-test");
     const seed = async (name: string, body: string, origin: boolean) => {
       const dir = join(workspace.skillsRoot, name);
+      await rm(dir, { recursive: true, force: true });
       await mkdir(join(dir, "scripts"), { recursive: true });
       await writeFile(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: old\n---\n`);
       await writeFile(join(dir, "scripts", "run.py"), body);
@@ -288,7 +289,7 @@ describe("work workspace", () => {
     expect(await readdir(join(workspace.skillsRoot, "xlsx", "scripts"))).not.toContain("run.py");
     expect(after).not.toContain("dcf-model");
     expect(await readFile(join(workspace.skillsRoot, "docx", "SKILL.md"), "utf8")).toBe("Edited by an admin.");
-    expect(after).toContain("pptx");
+    expect(await readdir(join(workspace.skillsRoot, "pptx", "scripts"))).toEqual(["run.py"]);
     expect(after).toContain("quarterly-review");
     expect(after).toContain("skill-creator");
   }, 30_000);
