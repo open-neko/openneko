@@ -297,7 +297,7 @@ describe("makeSandboxRunCore", () => {
       captured = await readFile(capture, "utf8").then((t) => JSON.parse(t) as Capture).catch(() => undefined);
     }
     expect(captured).toBeDefined();
-    // Serve and the sandbox's run user share the stage through the group;
+    // Serve shares the stage through the group;
     // others get nothing.
     const mode = (await stat(captured!.job.workspace.skillsRoot)).mode & 0o077;
     expect(mode).toBe(0o070);

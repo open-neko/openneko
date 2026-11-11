@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentEvent, AgentWorkspace } from "../src/agent-backend";
 import {
@@ -16,18 +17,45 @@ let workspace: AgentWorkspace;
 let sandbox: Server;
 const sandboxCalls: Array<{ method?: string; url?: string; auth?: string; body?: Record<string, unknown> }> = [];
 
-/** Runs commands as the sandbox service does: /bin/sh in the workspace, with only the paths it was given. */
+/**
+ * Runs commands as the sandbox service does: in a folder of its own that
+ * holds the files the run sent, with only the paths it was given. It returns
+ * the files the command changed.
+ */
 function fakeSandbox(socket: string): Promise<Server> {
+  const runs = new Map<string, { dir: string; known: Map<string, string> }>();
+  const walk = (dir: string, base = dir): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+      entry.isDirectory() ? walk(join(dir, entry.name), base) : entry.isFile() ? [relative(base, join(dir, entry.name))] : [],
+    );
+  const stamp = (file: string) => {
+    const info = statSync(file);
+    return `${info.size}:${info.mtimeMs}`;
+  };
   const server = createServer((req, res) => {
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
     req.on("end", () => {
       const body = raw ? (JSON.parse(raw) as Record<string, any>) : undefined;
       sandboxCalls.push({ method: req.method, url: req.url, auth: req.headers.authorization, body });
+      const id = req.url!.split("/")[3]!;
       if (req.method === "DELETE") return res.writeHead(204).end();
-      const child = spawn("/bin/sh", ["-c", body!.command], {
-        cwd: body!.workspace,
-        env: { PATH: process.env.PATH, ...body!.env, ...(body!.skill_dir ? { SKILL_DIR: body!.skill_dir } : {}) },
+      if (body!.fresh) runs.set(id, { dir: mkdtempSync(join(tmpdir(), "neko-fake-sandbox-")), known: new Map() });
+      const run = runs.get(id)!;
+      for (const dir of body!.dirs ?? []) mkdirSync(join(run.dir, dir), { recursive: true });
+      for (const file of body!.put ?? []) {
+        mkdirSync(dirname(join(run.dir, file.path)), { recursive: true });
+        writeFileSync(join(run.dir, file.path), Buffer.from(file.data, "base64"), { mode: file.mode });
+        run.known.set(file.path, stamp(join(run.dir, file.path)));
+      }
+      const at = (rel: string) => join(run.dir, rel);
+      const child = spawn("/bin/sh", ["-c", String(body!.command).split(body!.root).join(run.dir)], {
+        cwd: at(body!.dir ?? "."),
+        env: {
+          PATH: process.env.PATH,
+          ...Object.fromEntries(Object.entries(body!.env ?? {}).map(([k, v]) => [k, at(String(v))])),
+          ...(body!.skill_dir ? { SKILL_DIR: at(body!.skill_dir) } : {}),
+        },
         detached: true,
       });
       let output = "";
@@ -40,8 +68,14 @@ function fakeSandbox(socket: string): Promise<Server> {
       }, body!.timeout_seconds * 1000);
       child.on("close", (code) => {
         clearTimeout(timer);
+        const changed = walk(run.dir)
+          .filter((rel) => run.known.get(rel) !== stamp(at(rel)))
+          .map((rel) => {
+            run.known.set(rel, stamp(at(rel)));
+            return { path: rel, mode: 0o644, data: readFileSync(at(rel)).toString("base64") };
+          });
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ exit_code: timedOut ? -1 : code, output, timed_out: timedOut }));
+        res.end(JSON.stringify({ exit_code: timedOut ? -1 : code, output: output.split(run.dir).join(body!.root), timed_out: timedOut, changed }));
       });
     });
   });
@@ -82,6 +116,9 @@ beforeEach(async () => {
       "print(json.dumps({'day': day, 'input': json.loads(os.environ['OPENNEKO_WORKFLOW_INPUT'])}))",
     ].join("\n"),
   );
+  await mkdir(join(workspace.runRoot, ".openneko"), { recursive: true });
+  await writeFile(join(workspace.runRoot, ".openneko", "job.json"), '{"token":"planted-job-secret"}');
+  await writeFile(join(workspace.runRoot, ".openneko-keep"), "");
   events.length = 0;
   sandboxCalls.length = 0;
   sandbox = await fakeSandbox(join(root, "sandbox.sock"));
@@ -143,11 +180,19 @@ describe("runScriptSteps", () => {
     const [exec, end] = sandboxCalls;
     expect(exec).toMatchObject({ method: "POST", auth: "Bearer sandbox-key" });
     expect(exec!.body).toMatchObject({
-      workspace: workspace.runRoot,
-      skill_dir: join(workspace.skillsRoot, "lead-union"),
-      env: { RUN_DIR: workspace.runRoot, ARTIFACT_DIR: workspace.artifactRoot },
+      fresh: true,
+      root: workspace.orgRoot,
+      dir: "runs/r",
+      skill_dir: "skills/lead-union",
+      env: { RUN_DIR: "runs/r", ARTIFACT_DIR: "runs/r/artifacts" },
     });
+    expect((exec!.body!.put as Array<{ path: string }>).map((f) => f.path).sort()).toEqual([
+      "runs/r/.openneko-keep",
+      "runs/r/steps/union.input.json",
+      "skills/lead-union/scripts/run.py",
+    ]);
     expect(JSON.stringify(exec!.body)).not.toContain("broker-secret");
+    expect(JSON.stringify(exec!.body)).not.toContain("planted-job-secret");
     expect(end).toMatchObject({ method: "DELETE", url: exec!.url!.replace(/\/exec$/, "") });
   });
 

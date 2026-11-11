@@ -55,7 +55,7 @@ function agentEntry(): string {
 }
 const SANDBOX_RUNTIME_DIR = ".openneko";
 
-/** Where each run's staged workspace lives; shared with serve and the sandbox. */
+/** Where each run's staged workspace lives; shared with serve. */
 function runsRoot(): string {
   return process.env.OPENNEKO_AGENT_RUNS_DIR || path.join(tmpdir(), "openneko-agent-runs");
 }
@@ -406,7 +406,7 @@ export function closeSandboxLauncher(): void {
   reaperHost.__opennekoStrandedReaper = undefined;
 }
 
-/** Makes the stage readable and writable by the group serve and the sandbox share. */
+/** Makes the stage readable and writable by the group that serve shares. */
 async function shareWithGroup(dir: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn("chmod", ["-R", "g+rwX,o-rwx", dir], { stdio: "ignore" });
@@ -461,7 +461,7 @@ function makeSandboxCore(
       (input as RunAgentBackendInput | RunWorkflowAgentBackendInput).prompt;
 
     // The run sees a staged copy of the least it needs, under the runs root
-    // that serve and the sandbox share; workspace paths and the prompt are
+    // that serve shares; workspace paths and the prompt are
     // remapped from the host org root to the stage.
     const hostOrgRoot = input.workspace.orgRoot;
     const root = runsRoot();

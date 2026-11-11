@@ -83,7 +83,7 @@ const runnable = Boolean(binary) || (process.env.OPENNEKO_SERVE_IT === "1" && ha
       stdio: ["ignore", "ignore", "pipe"],
       env: {
         PATH: process.env.PATH ?? "/usr/bin:/bin",
-        OPENNEKO_SANDBOX_WORKSPACES: dir,
+        OPENNEKO_SANDBOX_WORKSPACES: join(dir, "sandbox-runs"),
         OPENNEKO_SANDBOX_HOMES: join(dir, "sandbox-homes"),
         OPENNEKO_SANDBOX_KEY: "sandbox-key",
       },
@@ -177,7 +177,7 @@ const runnable = Boolean(binary) || (process.env.OPENNEKO_SERVE_IT === "1" && ha
     vi.stubEnv("OPENAI_API_KEY", "org-stored-key");
     expect(result.status, result.error).toBe("completed");
     const env = await readFile(join(workspace.runRoot, "env.txt"), "utf8");
-    expect(env).toContain(`RUN_DIR=${workspace.runRoot}`);
+    expect(env).toMatch(new RegExp(`^RUN_DIR=${join(dir, "sandbox-runs")}/run-[0-9a-f]+/runs/r2$`, "m"));
     expect(env).not.toContain("org-stored-key");
     expect(env).not.toContain("sandbox-key");
     expect(env).not.toMatch(/OPENNEKO_(BROKER|SANDBOX|MCP)_/);

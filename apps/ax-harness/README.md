@@ -17,7 +17,7 @@ owns history, approvals, the sandbox and scheduling.
 | `internal/command` | Run input, model routes for any Ax provider, and the event stream. |
 | `internal/mcp` | A stdio MCP client that exposes server tools as capabilities. |
 | `internal/localtool` | File, upload and skill tools confined to one directory, and the `terminal` tool. |
-| `sandbox` | The client that sends `terminal` commands to the external sandbox service. |
+| `sandbox` | The client that sends `terminal` commands, with the run's changed files, to the external sandbox service and writes back the files they changed. |
 | `harness` | One turn in-process (`Run`, `RunTurn`). It is the only OpenNeko-aware code. |
 | `embedding` | The gateway to an OpenAI-compatible embedding service at a URL. |
 | `serve` | Turns, host model calls and embedding calls over a Unix socket for `openneko serve`. The socket protocol is in `serve/serve.go`. |

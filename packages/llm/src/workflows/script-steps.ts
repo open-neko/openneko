@@ -34,7 +34,7 @@ export async function runScriptSteps(opts: {
 }): Promise<ScriptStepResult[]> {
   const results: ScriptStepResult[] = [];
   const config = sandboxConfig();
-  const sandbox = config ? new SandboxRun(config) : undefined;
+  const sandbox = config ? new SandboxRun(config, opts.workspace.orgRoot) : undefined;
   let blocked: string | null = null;
   try {
     for (const step of opts.steps) {
@@ -117,7 +117,7 @@ async function runOne(
   let outcome: { code: number | null; timedOut: boolean; output: string; error?: string };
   try {
     const result = await sandbox.exec({
-      workspace: opts.workspace.runRoot,
+      dir: opts.workspace.runRoot,
       command,
       skillDir,
       env: { RUN_DIR: opts.workspace.runRoot, ARTIFACT_DIR: opts.workspace.artifactRoot },

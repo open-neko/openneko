@@ -1,9 +1,10 @@
 # Sandbox service
 
 This recipe runs the agent's terminal commands, the script skills and
-workflow script steps away from OpenNeko. OpenNeko sends it a command; it runs
-the command and returns the exit code and the output. It holds no model key
-and no OpenNeko secret.
+workflow script steps away from OpenNeko. OpenNeko sends it a command with
+the run's files; it runs the command and returns the exit code, the output
+and the files the command changed. It holds no model key and no OpenNeko
+secret.
 
 ## Build and run beside the stack
 
@@ -51,38 +52,73 @@ CommonJS (`.cjs`), because `import` does not read `NODE_PATH`.
   needs to switch users. Each run gets its own user and group, from
   `OPENNEKO_SANDBOX_BASE_UID` (default 20000) up to
   `OPENNEKO_SANDBOX_USERS` (default 256) runs at once.
-- A command runs in the run's folder, which must sit under
-  `OPENNEKO_SANDBOX_WORKSPACES`. POSIX ACLs give the run's group its own
-  staged folder and nothing else. A runs folder without ACL support is
-  refused.
+- Each run gets its own folder under `OPENNEKO_SANDBOX_WORKSPACES` (default
+  `/var/lib/openneko/sandbox-runs`), owned by the run's user, mode 0700. The
+  runs folder is mode 0711, so a run cannot list it. The sandbox shares no
+  folder with OpenNeko.
 - A command's environment holds only `PATH`, `HOME`, `TMPDIR`, `LANG`,
   `NODE_PATH`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH`.
   `PATH` and `NODE_PATH` come from the service's own environment. The last
-  four must be paths inside the runs folder.
-- Ending a run kills its processes, removes its home and takes its group off
-  the staged folder.
+  four are paths in the run's folder.
+- When a command ends, the sandbox kills every process of the run's user.
+  Ending a run removes its folder and its home. At start, the sandbox
+  removes the run folders of an earlier start.
 - In the overlay, the service sits on its own network. Commands reach the
   internet but no service of the stack.
+
+## How files travel
+
+OpenNeko sends each command with the files of the run that changed since
+the last command. The sandbox writes them into the run's folder, runs the
+command, and returns the files and folders that the command made, changed
+or removed. OpenNeko writes them back into its own copy of the run.
+
+- The first command of a run carries the whole run folder. Later commands
+  carry only what changed.
+- OpenNeko never sends the run's `.openneko` folder, which holds the job
+  file, and refuses a returned file inside it. It sends regular files and
+  folders only; it does not follow links.
+- The sandbox returns regular files and folders only. It names each link,
+  pipe or device it does not return, once, and OpenNeko adds those names to
+  the command's output.
+- One command carries at most 128 MiB of files each way. A changed file
+  that does not fit stays in the sandbox and travels with a later command.
+- OpenNeko sends its own path for the run as `root`. The sandbox swaps it
+  for the run's folder in the command, and back in the output, so commands
+  can use the paths that the agent sees. File contents keep the sandbox's
+  paths.
+- When the sandbox does not know the run (it restarted), it answers 409.
+  OpenNeko then sends the whole run folder again, once.
 
 ## API
 
 | Request | Body | Answer |
 |---|---|---|
-| `GET /v1/health` | | `{"status":"ok"}`, no key needed |
-| `POST /v1/runs/{run}/exec` | `workspace`, `command`, `skill_dir`, `env`, `timeout_seconds` (1 to 3600), `max_output` (1,000 to 1,000,000) | `exit_code`, `output`, `timed_out`, `truncated` |
-| `DELETE /v1/runs/{run}` | | 204 |
+| `GET /v2/health` | | `{"status":"ok"}`, no key needed |
+| `POST /v2/runs/{run}/exec` | `fresh` (true on the run's first command), `root`, `command`, `dir`, `skill_dir`, `env`, `timeout_seconds` (1 to 3600), `max_output` (1,000 to 1,000,000), `dirs`, `put` (`path`, `mode`, `data` in base64), `delete` | `exit_code`, `output`, `timed_out`, `truncated`, `dirs`, `changed` (`path`, `mode`, `data`), `deleted`, `skipped` (`path`, `reason`) |
+| `DELETE /v2/runs/{run}` | | 204 |
 
-With `OPENNEKO_SANDBOX_KEY` set, every request except health needs
-`Authorization: Bearer <key>`. `--listen` takes `unix:///path` (default
-`unix:///run/openneko/sandbox.sock`) or `host:port`. A TCP listener needs a
-key.
+`{run}` is `run-` and 8 to 64 letters or digits. Every path in the body
+and the answer is relative to the run's folder, with `/` between parts.
+`dir`, `skill_dir` and the `env` values must stay inside the run;
+`PYTHONPATH` takes a `:` list. With `OPENNEKO_SANDBOX_KEY` set, every
+request except health needs `Authorization: Bearer <key>`. `--listen` takes
+`unix:///path` (default `unix:///run/openneko/sandbox.sock`) or
+`host:port`. A TCP listener needs a key.
+
+## Another host
+
+The sandbox can run on another host. Start it with a TCP listener and a key,
+put TLS in front of it, and set `OPENNEKO_SANDBOX_URL` to
+`https://host:port` and `OPENNEKO_SANDBOX_KEY` to the key in OpenNeko's
+`.env`.
 
 ## Limits
 
-- The service reads and writes the run's files in place, so it must share the
-  runs folder with OpenNeko. It runs on the same host.
 - Skill scripts cannot query GraphJin through `neko-query` from the sandbox.
   The data socket stays in the runner.
+- A run's folder lives in the sandbox until the run ends. Plan disk space
+  for the largest run folder times the runs at once.
 
 ## Test
 
@@ -96,6 +132,6 @@ container:
 
 ```sh
 (cd recipes/sandbox && CGO_ENABLED=0 go test -c -o /tmp/sandbox.test .)
-docker run --rm --tmpfs /tmp:exec,mode=1777 -v /tmp/sandbox.test:/sandbox.test:ro \
+docker run --rm --init --tmpfs /tmp:exec,mode=1777 -v /tmp/sandbox.test:/sandbox.test:ro \
   debian:bookworm-slim /sandbox.test -test.v
 ```

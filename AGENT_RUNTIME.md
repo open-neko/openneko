@@ -330,10 +330,16 @@ with the same restarts, 503 answer and state file.
 ## The sandbox service
 
 The sandbox gives each run its own user and group from
-`OPENNEKO_SANDBOX_BASE_UID` (default 20000). It runs a command only when the
-workspace is under `OPENNEKO_SANDBOX_WORKSPACES`. POSIX ACLs give the run's
-group its own staged folder and nothing else, so one run cannot read another.
-Ending a run kills every process its user started and removes its home.
+`OPENNEKO_SANDBOX_BASE_UID` (default 20000), and its own folder, mode 0700,
+under `OPENNEKO_SANDBOX_WORKSPACES`. One run cannot read another. The
+sandbox shares no folder with the stack. Each command carries the run's
+files that changed since the last command, and the answer carries the files
+that the command changed; serve, or the runner for a workflow script step,
+writes them into the staged run. The run's `.openneko` folder, which holds
+the job file, never goes to the sandbox, and nothing the sandbox returns may
+land in it. When a command ends, the sandbox kills every process of the
+run's user. Ending a run removes its folder and its home. The protocol is in
+`recipes/sandbox/README.md`.
 
 In the Compose overlay the sandbox container:
 
@@ -343,8 +349,9 @@ In the Compose overlay the sandbox container:
   network from it;
 - drops every capability except `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `KILL`,
   `SETGID` and `SETUID`, and sets `no-new-privileges`;
-- mounts only the sockets folder, the runs folder and the sandbox homes. It
-  mounts no configuration, no secret and no Docker socket.
+- mounts only the sockets folder and its own volumes for run folders and
+  homes. It mounts no configuration, no secret, no Docker socket and no
+  folder of the stack.
 
 The OpenNeko product does not limit the internet egress of terminal commands.
 Put an egress proxy or firewall on the sandbox network if you need that.
@@ -352,7 +359,8 @@ Put an egress proxy or firewall on the sandbox network if you need that.
 ## Shared folders
 
 - `openneko-agent-runs` → `/var/lib/openneko/agent-runs`, owned by
-  `1001:1001`. Web, the worker, serve and the sandbox share it.
+  `1001:1001`. Web, the worker and serve share it. The sandbox does not
+  mount it.
 - `openneko-run` → `/run/openneko`, `1001:1001`, mode `0770`. It holds
   `serve.sock` and, with the overlay, `sandbox.sock`.
 
