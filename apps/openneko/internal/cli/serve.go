@@ -25,7 +25,7 @@ import (
 )
 
 func newServeCmd() *cobra.Command {
-	var addr, filesDir, indexDir, duckdb, agentSocket, checkSocket, sandboxURL, credentials, gjConfig, gjAddr, subsAddr, subsDir, webAddr, webDir, workerURL string
+	var addr, filesDir, indexDir, duckdb, agentSocket, checkSocket, sandboxURL, credentials, gjConfig, gjAddr, subsAddr, subsDir string
 	var maxTurns int
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -90,16 +90,6 @@ func newServeCmd() *cobra.Command {
 				}
 				subsDone <- nil
 			}
-			webDone := make(chan error, 1)
-			if webAddr != "" {
-				web, err := startWebFront(ctx, cmd.OutOrStdout(), webAddr, webDir, workerURL)
-				if err != nil {
-					_ = ln.Close()
-					return err
-				}
-				defer web.close()
-				webDone = web.done
-			}
 			srv := &http.Server{Handler: svc.Handler(), ReadHeaderTimeout: 10 * time.Second}
 			fmt.Fprintf(cmd.OutOrStdout(), "openneko serve listening on %s\n", ln.Addr())
 			errc := make(chan error, 1)
@@ -116,10 +106,6 @@ func newServeCmd() *cobra.Command {
 				stop()
 				_ = srv.Close()
 				return fmt.Errorf("config check socket: %w", err)
-			case err := <-webDone:
-				stop()
-				_ = srv.Close()
-				return fmt.Errorf("web front: %w", err)
 			case <-ctx.Done():
 			}
 			shut, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -156,9 +142,6 @@ func newServeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&gjAddr, "graphjin-addr", envOr("OPENNEKO_GRAPHJIN_ADDR", "127.0.0.1:8080"), "Listen address for the customer GraphJin")
 	cmd.Flags().StringVar(&subsAddr, "subscriptions-addr", envOr("OPENNEKO_SUBSCRIPTIONS_ADDR", "127.0.0.1:8089"), "Listen address for the subscriptions GraphJin, which serves workflow output subscriptions as the subscriptions role; empty turns it off")
 	cmd.Flags().StringVar(&subsDir, "subscriptions-dir", subscriptionsDir(), "Private folder for the subscriptions GraphJin config and state")
-	cmd.Flags().StringVar(&webAddr, "web-addr", os.Getenv("OPENNEKO_WEB_ADDR"), "Listen address for the web app and its request gate; empty turns it off")
-	cmd.Flags().StringVar(&webDir, "web-dir", envOr("OPENNEKO_WEB_DIR", "apps/web/dist"), "Folder of the built web app (`pnpm --filter @neko/web build:spa`)")
-	cmd.Flags().StringVar(&workerURL, "worker-admin-url", envOr("WORKER_ADMIN_URL", "http://127.0.0.1:4100"), "Worker admin address that reports whether sign-in is on")
 	cmd.Flags().StringVar(&duckdb, "duckdb", envOr("OPENNEKO_DUCKDB", "duckdb"), "DuckDB CLI for SQL over sheet tables")
 	return cmd
 }
