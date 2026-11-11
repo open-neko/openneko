@@ -27,6 +27,7 @@
     "./graphjin/sources-config": "./src/graphjin/sources-config.ts",
     "./graphjin/pack-user-connections": "./src/graphjin/pack-user-connections.ts",
     "./graphjin/client": "./src/graphjin/client.ts",
+    "./graphjin/config-file-view": "./src/graphjin/config-file-view.ts",
     "./graphjin/file-source-assets": "./src/graphjin/file-source-assets.ts",
     "./graphjin/openapi-assets": "./src/graphjin/openapi-assets.ts",
     "./graphjin/openapi-spec": "./src/graphjin/openapi-spec.ts",

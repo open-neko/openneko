@@ -11,6 +11,7 @@ import { StatCard, StatGrid } from "@/components/ui/stat-card";
 import GraphjinConfigControls from "./GraphjinConfigControls";
 import SourceSecretsPanel from "./SourceSecretsPanel";
 import { ConfigDescription } from "./ConfigDescription";
+import { ConfigFileView } from "./ConfigFileView";
 
 export default async function AdminGraphjinPage() {
   await connection();
@@ -90,6 +91,16 @@ export default async function AdminGraphjinPage() {
             .slice(0, 5)
             .map((source) => ({ id: source.id, name: source.name }))}
         />
+      </Suspense>
+
+      <Suspense
+        fallback={
+          <section className="settings-card">
+            <p className="text-ui-body-sm text-text2">Reading the config file…</p>
+          </section>
+        }
+      >
+        <ConfigFileView />
       </Suspense>
 
       <section className="settings-card">

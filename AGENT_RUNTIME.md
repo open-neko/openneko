@@ -124,6 +124,14 @@ A valid preview also carries `summary` with the touched sources and roles
 before and after the change, and their redacted YAML. The approval card shows
 the sentences side by side and keeps the YAML diff behind a disclosure.
 
+Admin settings, GraphJin config also shows the config file as read-only YAML
+(`packages/llm/src/graphjin/config-file-view.ts`). The page names the file's
+path on the server and GraphJin's state from `.openneko-graphjin-state`:
+running, or restarting with the reason. The same redaction code as
+`describe_source_config` hides the secrets, and the view drops comments. The
+page has no edit control and no route behind it. Admins edit the file on the
+server and run `openneko graphjin check`.
+
 A database source needs a login with a password. OpenNeko refuses a
 proposal with no saved password, or with a saved password that is empty, at
 the answer check and again at apply. The password goes to GraphJin only. The

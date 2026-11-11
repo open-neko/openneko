@@ -297,6 +297,10 @@ into `openneko` and runs the checks GraphJin runs at start. It prints the first
 problem and exits 1, or prints "valid" and exits 0. The default file is
 `OPENNEKO_GRAPHJIN_CONFIG`.
 
+Admin settings, GraphJin config shows this file read-only, with secrets and
+comments hidden, and says whether GraphJin is running. Edit the file on the
+server, then run `openneko graphjin check`.
+
 ### Audit logging failure alerts
 
 Every failed tamper-evident audit append emits a structured
