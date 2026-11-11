@@ -8,10 +8,13 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/spf13/cobra"
+
+	"github.com/open-neko/neko/apps/openneko/internal/db"
 )
 
 func newDatabaseInfoCmd() *cobra.Command {
@@ -201,9 +204,10 @@ END $$`
 
 // restoreExternalDatabase replaces OpenNeko's objects in a database that the
 // operator runs. It cannot drop and recreate the database, so it clears what
-// the login owns, then restores the archive in one transaction. The archive's
-// owners and extension entries are skipped: the login owns what it restores,
-// and the extensions stay as the operator made them.
+// the login owns, then restores the archive in one transaction and its grants
+// in a second. The archive's owners, its extension entries and its grants to
+// serve roles are skipped: the login owns what it restores, the extensions
+// stay as the operator made them, and another install's role may not exist.
 func restoreExternalDatabase(ctx context.Context, dsn string, archive io.Reader, out io.Writer, dropForeign bool) error {
 	spool, err := spoolArchive(archive)
 	if err != nil {
@@ -224,11 +228,24 @@ func restoreExternalDatabase(ctx context.Context, dsn string, archive io.Reader,
 		return err
 	}
 	defer os.Remove(list.Name())
-	if _, err := io.WriteString(list, restoreList(contents)); err != nil {
+	mainList, grantList := restoreList(contents)
+	if _, err := io.WriteString(list, mainList); err != nil {
 		list.Close()
 		return err
 	}
 	if err := list.Close(); err != nil {
+		return err
+	}
+	grantFile, err := os.CreateTemp("", "openneko-restore-grants-*.list")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(grantFile.Name())
+	if _, err := io.WriteString(grantFile, grantList); err != nil {
+		grantFile.Close()
+		return err
+	}
+	if err := grantFile.Close(); err != nil {
 		return err
 	}
 
@@ -256,23 +273,76 @@ func restoreExternalDatabase(ctx context.Context, dsn string, archive io.Reader,
 		return fmt.Errorf("database %s has no vector extension, and %s cannot create it: %w", database, user, err)
 	}
 	fmt.Fprintf(out, "Restoring database %s...\n", database)
-	return runPostgresTool(ctx, nil, io.Discard, password, "pg_restore",
+	if err := runPostgresTool(ctx, nil, io.Discard, password, "pg_restore",
 		"--no-owner", "--exit-on-error", "--single-transaction", "--no-password",
-		"--use-list="+list.Name(), "--dbname="+plain, spool)
+		"--use-list="+list.Name(), "--dbname="+plain, spool); err != nil {
+		return err
+	}
+	if strings.TrimSpace(grantList) == "" {
+		return nil
+	}
+	var script strings.Builder
+	if err := runPostgresTool(ctx, nil, &script, "", "pg_restore", "--use-list="+grantFile.Name(), "--file=-", spool); err != nil {
+		return err
+	}
+	grants := grantStatements(script.String())
+	if grants == "" {
+		return nil
+	}
+	if _, err := conn.Exec(ctx, grants); err != nil {
+		return fmt.Errorf("restore the grants: %w", err)
+	}
+	return nil
 }
 
-// restoreList drops the extension entries from a pg_restore --list table of
-// contents.
-func restoreList(contents string) string {
-	var b strings.Builder
+// restoreList splits a pg_restore --list table of contents. The first list
+// holds every entry except extensions and grants; the second holds the grants.
+func restoreList(contents string) (string, string) {
+	var main, grants strings.Builder
 	for _, line := range strings.Split(contents, "\n") {
 		fields := strings.Fields(line)
-		if len(fields) >= 4 && !strings.HasPrefix(line, ";") &&
-			(fields[3] == "EXTENSION" || (fields[3] == "COMMENT" && len(fields) >= 6 && fields[5] == "EXTENSION")) {
-			continue
+		if len(fields) >= 4 && !strings.HasPrefix(line, ";") {
+			if fields[3] == "EXTENSION" || (fields[3] == "COMMENT" && len(fields) >= 6 && fields[5] == "EXTENSION") {
+				continue
+			}
+			if fields[3] == "ACL" {
+				grants.WriteString(line)
+				grants.WriteByte('\n')
+				continue
+			}
 		}
-		b.WriteString(line)
-		b.WriteByte('\n')
+		main.WriteString(line)
+		main.WriteByte('\n')
+	}
+	return main.String(), grants.String()
+}
+
+var grantee = regexp.MustCompile(`(?i)\s(?:TO|FROM)\s+("(?:[^"]|"")+"|[a-z0-9_$]+)`)
+
+// grantStatements keeps the GRANT and REVOKE lines of a pg_restore script,
+// except those that name a serve role of any install or release. serve-init
+// grants this install's roles at the next start.
+func grantStatements(script string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(script, "\n") {
+		upper := strings.ToUpper(line)
+		if (strings.HasPrefix(upper, "GRANT ") || strings.HasPrefix(upper, "REVOKE ")) && !servesRole(line) {
+			b.WriteString(line)
+			b.WriteByte('\n')
+		}
 	}
 	return b.String()
+}
+
+func servesRole(line string) bool {
+	for _, m := range grantee.FindAllStringSubmatch(line, -1) {
+		name := m[1]
+		if strings.HasPrefix(name, `"`) {
+			name = strings.ReplaceAll(name[1:len(name)-1], `""`, `"`)
+		}
+		if db.IsServeRole(name) {
+			return true
+		}
+	}
+	return false
 }

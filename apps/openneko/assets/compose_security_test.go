@@ -217,7 +217,7 @@ func TestServeHoldsNoControlZoneSecrets(t *testing.T) {
 			if forbidden(key) {
 				t.Fatalf("%s: openneko-serve names %s", name, key)
 			}
-			if key == "NEKO_PG_USER" && value != nil && value != "neko_files" {
+			if key == "NEKO_PG_USER" && value != nil {
 				t.Fatalf("%s: openneko-serve logs in as %v", name, value)
 			}
 		}

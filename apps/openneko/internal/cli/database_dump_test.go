@@ -39,14 +39,42 @@ func TestRestoreListDropsTheExtensionEntries(t *testing.T) {
 4300; 0 16401 TABLE DATA public file_content_file neko
 4400; 0 0 ACL public TABLE file_content_file neko
 `
-	got := restoreList(contents)
-	if strings.Contains(got, "EXTENSION") {
-		t.Fatalf("an extension entry is left:\n%s", got)
+	got, grants := restoreList(contents)
+	if strings.Contains(got, "EXTENSION") || strings.Contains(got, "ACL") {
+		t.Fatalf("an extension or grant entry is left:\n%s", got)
 	}
-	for _, want := range []string{"TABLE public file_content_file", "COMMENT public TABLE", "TABLE DATA", "ACL public TABLE"} {
+	for _, want := range []string{"TABLE public file_content_file", "COMMENT public TABLE", "TABLE DATA"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("%q was dropped:\n%s", want, got)
 		}
+	}
+	if grants != "4400; 0 0 ACL public TABLE file_content_file neko\n" {
+		t.Fatalf("grants = %q", grants)
+	}
+}
+
+func TestGrantStatementsDropTheServeRoles(t *testing.T) {
+	script := `--
+-- PostgreSQL database dump
+--
+SET statement_timeout = 0;
+SET transaction_timeout = 0;
+SELECT pg_catalog.set_config('search_path', '', false);
+GRANT USAGE ON SCHEMA public TO neko_files;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.file_content_file TO neko_files_neko;
+GRANT SELECT ON TABLE public.workflow_output TO neko_subscriptions;
+GRANT SELECT ON TABLE public.workflow_output TO "neko_subscriptions_my-db_1a2b3c4d";
+REVOKE ALL ON TABLE public.workflow_output FROM neko_subscriptions_neko;
+GRANT SELECT ON TABLE public.workflow_output TO reporting;
+GRANT SELECT ON TABLE public.neko_files_log TO "Neko Readers";
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+`
+	want := `GRANT SELECT ON TABLE public.workflow_output TO reporting;
+GRANT SELECT ON TABLE public.neko_files_log TO "Neko Readers";
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+`
+	if got := grantStatements(script); got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
 

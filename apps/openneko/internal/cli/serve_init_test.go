@@ -42,8 +42,11 @@ func TestServeInitGivesEachServeRoleOnlyItsTables(t *testing.T) {
 	if _, err := admin.Exec(ctx, "create database "+name); err != nil {
 		t.Fatal(err)
 	}
+	filesRole, subsRole := db.FilesRole(name), db.SubscriptionsRole(name)
 	t.Cleanup(func() {
 		admin.Exec(context.Background(), "drop database "+name+" with (force)") //nolint:errcheck
+		admin.Exec(context.Background(), "drop role if exists "+filesRole)      //nolint:errcheck
+		admin.Exec(context.Background(), "drop role if exists "+subsRole)       //nolint:errcheck
 		admin.Close(context.Background())
 	})
 
@@ -167,7 +170,7 @@ func TestServeInitGivesEachServeRoleOnlyItsTables(t *testing.T) {
 func TestRoleDatabaseURLKeepsHostAndTLS(t *testing.T) {
 	got, err := roleDatabaseURL(db.ConnConfig{
 		URL: "postgres://neko:old@db.example.com:6432/meta?sslmode=verify-full&sslrootcert=%2Fetc%2Fca.pem",
-	}, filesRole, "p@ss/word")
+	}, db.FilesRolePrefix, "p@ss/word")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +179,7 @@ func TestRoleDatabaseURLKeepsHostAndTLS(t *testing.T) {
 		t.Fatalf("got %s, want %s", got, want)
 	}
 
-	got, err = roleDatabaseURL(db.ConnConfig{Host: "neko-db", Port: 5432, User: "neko", Password: "x", Database: "neko"}, filesRole, "pw")
+	got, err = roleDatabaseURL(db.ConnConfig{Host: "neko-db", Port: 5432, User: "neko", Password: "x", Database: "neko"}, db.FilesRolePrefix, "pw")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +187,7 @@ func TestRoleDatabaseURLKeepsHostAndTLS(t *testing.T) {
 		t.Fatalf("fields: got %s", got)
 	}
 
-	if _, err := roleDatabaseURL(db.ConnConfig{URL: "mysql://x@y/z"}, filesRole, "pw"); err == nil {
+	if _, err := roleDatabaseURL(db.ConnConfig{URL: "mysql://x@y/z"}, db.FilesRolePrefix, "pw"); err == nil {
 		t.Fatal("a non-postgres URL must fail")
 	}
 }

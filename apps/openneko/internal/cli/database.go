@@ -11,6 +11,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/spf13/cobra"
+
+	"github.com/open-neko/neko/apps/openneko/internal/db"
 )
 
 var errDatabaseNotReady = errors.New("OpenNeko's database is not ready; run the SQL above, then start OpenNeko again")
@@ -133,12 +135,23 @@ func databaseFindings(ctx context.Context, conn *pgx.Conn, sslMode, user, databa
 	}
 
 	findings = append(findings, vectorFinding(ctx, conn, database))
-	for _, role := range []string{filesRole, subsRole} {
+	for _, role := range []string{db.FilesRole(database), db.SubscriptionsRole(database)} {
 		f, err := roleFinding(ctx, conn, role, quotedUser)
 		if err != nil {
 			return nil, err
 		}
 		findings = append(findings, f)
+	}
+	for _, role := range db.LegacyServeRoles {
+		var exists bool
+		if err := conn.QueryRow(ctx, `select exists (select from pg_roles where rolname = $1)`, role).Scan(&exists); err != nil {
+			return nil, err
+		}
+		if exists {
+			quotedRole := pgx.Identifier{role}.Sanitize()
+			findings = append(findings, databaseFinding{level: "warn", text: fmt.Sprintf("the %s role is from an earlier release, and this release does not use it. When no install on this server runs an earlier release, run the first line in each database where it has rights, then the second line once", role),
+				sql: []string{"DROP OWNED BY " + quotedRole + ";", "DROP ROLE " + quotedRole + ";"}})
+		}
 	}
 	foreign, err := foreignObjects(ctx, conn, nil)
 	if err != nil {

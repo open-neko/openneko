@@ -64,7 +64,7 @@ trusted host. Only the agent loop runs in the runner and serve.
 | Piece | Runs as | Holds | Network |
 |---|---|---|---|
 | Runner | the web or worker user (`neko`, 1001) | the run's broker token and the org's model key, for this run only | that of web or the worker |
-| `openneko serve` | `neko`, 1001 | a turn's or a host call's model key while it runs; the files service; the `neko_files` database login and the derived token key; the customer GraphJin and its config | the stack's network, for the model APIs and the customer's data sources |
+| `openneko serve` | `neko`, 1001 | a turn's or a host call's model key while it runs; the files service; the `neko_files_<database>` login and the derived token key; the customer GraphJin and its config | the stack's network, for the model APIs and the customer's data sources |
 | Sandbox service | root, to give each run its own user | **no secrets**; a command gets only `PATH`, `HOME`, `TMPDIR`, `LANG`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH` | only its own network |
 
 Model keys exist only in the runner and in serve. Serve drops every
@@ -127,10 +127,11 @@ The stack has two zones. The control zone is web and the worker. It holds
 the secret key, the `neko` database login and the provider keys. The agent
 zone is serve and the runner's turns. Serve holds only these:
 
-- the `neko_files` database login. The role can read and write the three
-  `file_content_*` tables and nothing else (migration 0127).
-- the `neko_subscriptions` database login. The role can read
-  `workflow_output` and nothing else (migration 0129).
+- the `neko_files_<database>` login. The role can read and write the three
+  `file_content_*` tables and nothing else. `openneko serve-init` creates it
+  and grants its rights at each start.
+- the `neko_subscriptions_<database>` login. The role can read
+  `workflow_output` and nothing else, and comes from the same step.
 - the token key, `HMAC(secret key, "openneko-serve:v1")`. It checks the
   tokens that web and the worker sign. It cannot decrypt a stored value.
 - a turn's or a host call's model key, while it runs.
@@ -298,7 +299,7 @@ Serve also runs the GraphJin that serves the worker's workflow output
 subscriptions, on port 8089. It is a second child process of the same kind,
 with the same restarts, 503 answer and state file.
 
-- It connects as `neko_subscriptions`. Serve reads the role's URL from
+- It connects as `neko_subscriptions_<database>`. Serve reads the role's URL from
   `subscriptions.url` in the credentials folder and writes the GraphJin config
   into a private folder (`OPENNEKO_SUBSCRIPTIONS_DIR`, default
   `$TMPDIR/openneko-subscriptions`, mode 0700). When the URL changes, serve
