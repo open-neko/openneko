@@ -106,7 +106,8 @@ database, and stores the URL only after the stack starts on it.
 (the bundled neko-db, or the database that the URL names, dumped from a worker
 container) and archives of the volumes `openneko-config`, `openneko-graphjin-cli` (the
 customer GraphJin config), `openneko-files` (each user's files) and, in the
-demo, `graphjin-config`. The stack must be running. Files
+demo, `graphjin-config`. With `OPENNEKO_FILES_BUCKET` set, the user files are
+in a bucket and not in the backup. The stack must be running. Files
 go to `${XDG_DATA_HOME:-$HOME/.local/share}/openneko/backups/<installation>/<project>/`
 unless `--to` or `OPENNEKO_BACKUP_DIR` names another place, such as a NAS.
 There is no backup service and no point-in-time restore: a backup is a file.

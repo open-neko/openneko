@@ -298,6 +298,7 @@ openneko logs [service…] [-f]
 openneko stop [--volumes]          # --volumes wipes data
 openneko migrate                   # apply pending migrations to OpenNeko's database
 openneko serve [--agent-socket path]  # user files and file search; agent turns on a Unix socket when set (runs as the openneko-serve container)
+openneko files copy-to-bucket      # copy user files from the files folder to OPENNEKO_FILES_BUCKET
 openneko seed adventureworks       # one-shot demo data load (already done by --mode demo)
 openneko [--instance name] graphjin import <customer-config.yml|->
 openneko graphjin check [--config file]  # load a GraphJin config with the pinned loader; exit 1 and the reason when it is not valid
@@ -511,6 +512,53 @@ is not set, the Library refuses uploads. After an upgrade, the worker moves
 Library files from older releases into the folder once, at start. It marks a
 document as failed when its original file is gone.
 
+### Files in a bucket (optional)
+
+By default `openneko-serve` keeps the files in a folder on the
+`openneko-files` volume. To keep them in a bucket on Amazon S3 or another
+S3-compatible service, give `openneko-serve` these settings, then run
+`openneko stop` and `openneko start`:
+
+```yaml
+# ~/.config/openneko/compose.override.yml
+services:
+  openneko-serve:
+    environment:
+      OPENNEKO_FILES_BUCKET: s3://my-bucket/openneko      # the prefix is optional
+      OPENNEKO_FILES_BUCKET_REGION: eu-west-1             # us-east-1 when not set
+      OPENNEKO_FILES_BUCKET_ENDPOINT: https://s3.example.com  # only for a service other than Amazon S3
+      OPENNEKO_FILES_BUCKET_KEY_ID: <access key id>
+      OPENNEKO_FILES_BUCKET_SECRET: <secret access key>
+```
+
+Without a key ID and secret, serve uses the host's AWS credentials, for
+example an instance role. The endpoint must use `https://`; serve accepts
+`http://` only for `localhost`. The login needs list, read, write and delete
+rights on the prefix. Two installs can share one bucket with two prefixes.
+
+The keyword index stays in OpenNeko's database, and the sheet tables stay on
+the `openneko-files` volume. Serve rebuilds both from the bucket.
+
+Serve checks the bucket at start and logs the result. When it cannot reach
+the bucket, serve still starts: agent turns and GraphJin work, and the file
+tools fail with the bucket's error until it is back. `GET /healthz` on serve
+reports `file_store` and `file_store_ok`.
+
+Serve does not read the folder after the switch, and it logs how many files
+the folder still holds. To copy them to the bucket, run the copy in the
+running serve container:
+
+```bash
+docker exec openneko-prod-openneko-serve-1 /openneko files copy-to-bucket
+```
+
+A named instance has another container name; `openneko status` shows it.
+
+The copy skips a file that the bucket already holds with the same size, so
+you can run it again. It does not delete the files in the folder. Remove them
+after you check the bucket. To go back to the folder, remove the settings and
+copy the files back with your bucket tool.
+
 
 ## Backup and restore
 
@@ -520,7 +568,9 @@ holds a `pg_dump` of OpenNeko's database and the config and file volumes
 database URL, `pg_dump` runs in a worker container and connects by the URL and
 its TLS files, so the host needs no Postgres tools. The dump holds the objects
 that the URL's login owns. It leaves out the schemas and tables of other roles.
-Files go to
+With `OPENNEKO_FILES_BUCKET` set, the backup does not hold the files in the
+bucket; back up the bucket with your storage service, for example with
+versioning. Files go to
 `${XDG_DATA_HOME:-$HOME/.local/share}/openneko/backups/`. Use `--to` or
 `OPENNEKO_BACKUP_DIR` to write them somewhere else, such as a NAS.
 

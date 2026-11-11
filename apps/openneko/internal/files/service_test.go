@@ -2,11 +2,13 @@ package files
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -20,6 +22,8 @@ import (
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/filecontent"
+	"github.com/open-neko/neko/apps/openneko/internal/filestore"
+	"github.com/open-neko/neko/apps/openneko/internal/filestore/s3test"
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
@@ -42,14 +46,19 @@ func newServer(t *testing.T) (*httptest.Server, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return newServerOn(t, store, 0), root
+}
+
+func newServerOn(t *testing.T, store fstable.Backend, maxFileBytes int64) *httptest.Server {
+	t.Helper()
 	ix, err := filecontent.Open(testpg.Pool(t, "0121_file_content.sql"), t.TempDir(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := New(store, ix, testKey, Options{DuckDB: os.Getenv("OPENNEKO_TEST_DUCKDB"), Refresh: time.Millisecond})
+	svc := New(store, ix, testKey, Options{DuckDB: os.Getenv("OPENNEKO_TEST_DUCKDB"), Refresh: time.Millisecond, MaxFileBytes: maxFileBytes})
 	srv := httptest.NewServer(svc.Handler())
 	t.Cleanup(srv.Close)
-	return srv, root
+	return srv
 }
 
 func call(t *testing.T, srv *httptest.Server, token, method, path string, body []byte) (int, map[string]any) {
@@ -86,7 +95,75 @@ func TestFilesArePrivateToTheirUser(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "orgs", "org1", "users", "alice", "policies", "travel.md")); err != nil {
 		t.Fatalf("file not in alice's folder: %v", err)
 	}
+	checkPrivateFiles(t, srv, alice, bob)
+}
 
+func TestFilesInABucket(t *testing.T) {
+	endpoint := s3test.Start(t)
+	name := s3test.Bucket(t, endpoint, "files-service")
+	store, err := filestore.Open(context.Background(), filestore.Config{Dir: t.TempDir(), Bucket: "s3://" + name + "/neko", Endpoint: endpoint, AccessKeyID: s3test.KeyID, SecretKey: s3test.Secret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newServerOn(t, store, 64)
+	alice := mint(testKey, "org1", "alice", time.Now().Add(time.Minute))
+	bob := mint(testKey, "org1", "bob", time.Now().Add(time.Minute))
+
+	code, out := call(t, srv, "", http.MethodGet, "/healthz", nil)
+	if code != 200 || out["file_store"] != "s3" || out["file_store_ok"] != true {
+		t.Fatalf("healthz = %d %v", code, out)
+	}
+	put(t, srv, alice, "policies/travel.md", []byte("# Per diem\nTier 1 cities pay 70 per day.\n"))
+	put(t, srv, alice, "pricing/q4 prices.csv", []byte("SKU,Price\nHI-1,12.5\nHI-2,7\n"))
+	put(t, srv, bob, "notes.md", []byte("# Per diem\nBob's per diem notes.\n"))
+	if _, err := store.Stat(context.Background(), "orgs/org1/users/alice/policies/travel.md"); err != nil {
+		t.Fatalf("file not in alice's folder in the bucket: %v", err)
+	}
+	checkTooLargeKeepsTheOldFile(t, srv, alice)
+	checkPrivateFiles(t, srv, alice, bob)
+
+	down, _ := filestore.Open(context.Background(), filestore.Config{Dir: t.TempDir(), Bucket: "s3://" + name, Endpoint: "http://127.0.0.1:1", AccessKeyID: s3test.KeyID, SecretKey: s3test.Secret})
+	srv = newServerOn(t, down, 0)
+	code, out = call(t, srv, "", http.MethodGet, "/healthz", nil)
+	if code != 200 || out["file_store_ok"] != false || out["file_store_error"] == nil {
+		t.Fatalf("healthz with the bucket down = %d %v", code, out)
+	}
+	if code, out := call(t, srv, alice, http.MethodPost, "/v1/files/search", []byte(`{"query":"per diem"}`)); code == 200 {
+		t.Fatalf("search with the bucket down = %d %v", code, out)
+	}
+}
+
+func TestTooLargeUploadKeepsTheOldFile(t *testing.T) {
+	root := t.TempDir()
+	store, err := fstable.NewLocal(fstable.LocalConfig{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newServerOn(t, store, 64)
+	alice := mint(testKey, "org1", "alice", time.Now().Add(time.Minute))
+	put(t, srv, alice, "policies/travel.md", []byte("# Per diem\nTier 1 cities pay 70 per day.\n"))
+	checkTooLargeKeepsTheOldFile(t, srv, alice)
+}
+
+func checkTooLargeKeepsTheOldFile(t *testing.T, srv *httptest.Server, token string) {
+	t.Helper()
+	exact := bytes.Repeat([]byte("x"), 64)
+	put(t, srv, token, "exact.txt", exact)
+	code, out := call(t, srv, token, http.MethodPut, "/v1/files/content?path=policies/travel.md", bytes.Repeat([]byte("y"), 65))
+	if code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("65 bytes over a 64-byte limit = %d %v", code, out)
+	}
+	code, out = call(t, srv, token, http.MethodPost, "/v1/files/read", []byte(`{"path":"policies/travel.md"}`))
+	if code != 200 || !strings.HasPrefix(fmt.Sprint(out["text"]), "# Per diem") {
+		t.Fatalf("the refused upload replaced the old file: %d %v", code, out)
+	}
+	if code, _ := call(t, srv, token, http.MethodDelete, "/v1/files/content?path=exact.txt", nil); code != 200 {
+		t.Fatalf("delete exact.txt = %d", code)
+	}
+}
+
+func checkPrivateFiles(t *testing.T, srv *httptest.Server, alice, bob string) {
+	t.Helper()
 	code, out := call(t, srv, alice, http.MethodPost, "/v1/files/search", []byte(`{"query":"per diem tier 1"}`))
 	matches, _ := out["matches"].([]any)
 	if code != 200 || len(matches) == 0 {
