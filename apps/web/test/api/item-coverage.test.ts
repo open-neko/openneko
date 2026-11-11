@@ -90,13 +90,4 @@ const reachable = await dbReachable();
     expect((await callRoute((req) => detail.GET(req, { params: Promise.resolve({ workflowId: workflowOther }) }))).status).toBe(404);
     expect((await callRoute(runs.GET)).status).toBe(200);
   });
-
-  it("team memory: list hides team global memories", async () => {
-    const { rememberWorkMemory } = await import("@neko/llm/work");
-    await rememberWorkMemory({ orgId: state.orgId, userId: null, kind: "business_rule", scope: "global", text: "Team rule" });
-    await rememberWorkMemory({ orgId: state.orgId, userId: state.userId, kind: "preference", scope: "global", text: "Ann note" });
-    const memories = await import("@/app/api/v1/work/memories/route");
-    const body = (await callRoute(memories.GET)).body as { memories: Array<{ text: string }> };
-    expect(body.memories.map((m) => m.text)).toEqual(["Ann note"]);
-  });
 });

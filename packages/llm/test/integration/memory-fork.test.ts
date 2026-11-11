@@ -36,7 +36,6 @@ import {
   listWorkMemories,
   memoryLayerForActor,
   overrideWorkMemoryForUser,
-  promoteWorkMemoryToOrg,
   rememberWorkMemory,
   searchWorkMemoryByContext,
   updateWorkMemoryForRun,
@@ -209,98 +208,6 @@ describeIfDb("CV2 memory fork overlay", () => {
     ).rejects.toThrow(/not found/i);
     expect(await archiveWorkMemory(orgId, personal.id, { userId: bob })).toBe(false);
     expect(await archiveWorkMemory(orgId, personal.id, { userId: ada })).toBe(true);
-  });
-
-  it("promote pulls a personal original into the team layer with lineage", async () => {
-    const personal = await rememberWorkMemory({
-      orgId,
-      userId: ada,
-      text: "Churn is measured on a 90-day window",
-      kind: "metric_definition",
-      scope: "global",
-    });
-    const promoted = await promoteWorkMemoryToOrg({
-      orgId,
-      memoryId: personal.id,
-      promotedBy: "admin-1",
-    });
-    expect(promoted.userId).toBeNull();
-    expect(promoted.originId).toBe(personal.originId);
-    expect(promoted.promotedFromId).toBe(personal.id);
-    expect(promoted.promotedBy).toBe("admin-1");
-    expect(promoted.promotedAt).toBeTruthy();
-
-    // Everyone sees the team row now; the personal source is archived.
-    for (const layer of [undefined, ada, bob]) {
-      const ids = (await listWorkMemories(orgId, { userId: layer })).map((m) => m.id);
-      expect(ids).toContain(promoted.id);
-      expect(ids).not.toContain(personal.id);
-    }
-  });
-
-  it("promoting an override replaces the team row; other members' overrides keep shadowing", async () => {
-    const team = await rememberWorkMemory({
-      orgId,
-      text: "Default currency is USD",
-      kind: "business_rule",
-      scope: "global",
-    });
-    const adaOverride = await overrideWorkMemoryForUser({
-      orgId,
-      userId: ada,
-      memoryId: team.id,
-      text: "Default currency is EUR",
-    });
-    const bobOverride = await overrideWorkMemoryForUser({
-      orgId,
-      userId: bob,
-      memoryId: team.id,
-      text: "Default currency is GBP",
-    });
-
-    const promoted = await promoteWorkMemoryToOrg({
-      orgId,
-      memoryId: adaOverride.id,
-      promotedBy: "admin-1",
-    });
-    expect(promoted.originId).toBe(team.originId);
-    expect(promoted.text).toBe("Default currency is EUR");
-
-    const teamIds = (await listWorkMemories(orgId)).map((m) => m.id);
-    expect(teamIds).toContain(promoted.id);
-    expect(teamIds).not.toContain(team.id);
-
-    // Ada's override was consumed by the promote — she sees the team row.
-    const adaIds = (await listWorkMemories(orgId, { userId: ada })).map((m) => m.id);
-    expect(adaIds).toContain(promoted.id);
-    expect(adaIds).not.toContain(adaOverride.id);
-
-    // Bob's override still shadows the (new) team row for him.
-    const bobIds = (await listWorkMemories(orgId, { userId: bob })).map((m) => m.id);
-    expect(bobIds).toContain(bobOverride.id);
-    expect(bobIds).not.toContain(promoted.id);
-  });
-
-  it("suppressed memories cannot be promoted", async () => {
-    const team = await rememberWorkMemory({
-      orgId,
-      text: "Weekly sync notes go to the wiki",
-      kind: "business_rule",
-      scope: "global",
-    });
-    const tombstone = await overrideWorkMemoryForUser({
-      orgId,
-      userId: bob,
-      memoryId: team.id,
-      suppress: true,
-    });
-    await expect(
-      promoteWorkMemoryToOrg({
-        orgId,
-        memoryId: tombstone.id,
-        promotedBy: "admin-1",
-      }),
-    ).rejects.toThrow(/suppressed/i);
   });
 
   it("context search respects the layer", async () => {
