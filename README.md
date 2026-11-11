@@ -29,8 +29,8 @@ The demo seeds three watchers against sample data — kick off **Slow-Ship Opera
 Full propose-and-approve walkthrough, the live trial (order simulator + scenario injector), and connecting your own data → **[INSTALL.md](INSTALL.md)**.
 
 Hosting several smaller customers on one VM? Named installations isolate each
-customer's Compose project, databases, secrets, sandbox state, backups, ports,
-and Docker network. See [Multiple customer instances](INSTALL.md#multiple-customer-instances-on-one-host).
+customer's Compose project, databases, secrets, files, backups, ports and
+Docker network. See [Multiple customer instances](INSTALL.md#multiple-customer-instances-on-one-host).
 
 ## What you get
 
@@ -48,6 +48,7 @@ OpenNeko reads through **[GraphJin](https://graphjin.com)**, a GraphQL gateway y
 
 - **Databases** — Postgres, MySQL, and [more](https://graphjin.com), with an auto-generated query surface.
 - **Files, external APIs, custom code** — first-class GraphQL fields via GraphJin's script layer.
+- **From chat or a pack.** An admin connects a database by answering a few questions in a card. OpenNeko checks the connection, shows what the config will do, and applies it after the admin approves. For Magento, Shopify and the other packed systems, the card asks only for the address and the login.
 
 One consistent surface no matter where the data lives — you don't write per-connector plumbing.
 
@@ -76,16 +77,19 @@ Integrations ship as **solution packs** — sources, API specs, actions, workflo
 ## Under the hood
 
 - **Self-hosted via Docker.** One binary, one `start` command. Data lives on your Postgres.
-- **Bring your own LLM.** The Ax agent runs against Anthropic, OpenAI, Google, Ollama, and other compatible providers. Change providers without changing the sandboxed agent runtime.
+- **Bring your own LLM.** The Ax agent runs against Anthropic, OpenAI, Google, Ollama, and other compatible providers. Change providers without changing the agent runtime.
 - **The agent runs no code in OpenNeko.** The agent loop runs in `openneko serve`, apart from the control plane, and reaches data only through a per-run broker. Its terminal runs only in an optional sandbox service that holds no secrets. See [AGENT_RUNTIME.md](AGENT_RUNTIME.md).
+- **Optional services by URL.** An embedding service (search by meaning), a sandbox service (the terminal and the document skills) and a trace collector each connect by URL. OpenNeko works with each one off.
 - **Apache-2.0.** Read the source, self-host, fork, and build on it. OpenNeko trademarks are separately controlled — see [LICENSING.md](LICENSING.md) and [TRADEMARKS.md](TRADEMARKS.md).
 
 ## Evaluations
 
 OpenNeko evaluates an agent backend through the production Work runtime, not as
-an isolated model call. The suite exercises skills, memories, library retrieval,
-workflows, Records, governed actions, channel delivery, compaction, and GraphJin
-tools against a frozen AdventureWorks snapshot.
+an isolated model call. The suite exercises skills, memories, file search,
+workflows, governed actions, channel delivery, compaction, and GraphJin tools
+against a frozen AdventureWorks snapshot. The rows below come from earlier
+releases. The Hermes backend and the Records task (`s05`) are no longer in the
+product, so the current v4 suite has 64 tasks.
 
 | Backend / model | Suite | Tasks × repetitions | Tasks passed | Execution failures | Unsafe effects | Source commit | Evidence | Latency p50 / p95 | Total tool calls | Total tokens | Estimated run cost |
 | --- | --- | ---: | ---: | ---: | ---: | --- | --- | ---: | ---: | ---: | ---: |
@@ -116,7 +120,7 @@ to the customer GraphJin config at runtime.
 
 ## Docs
 
-- [ROADMAP.md](ROADMAP.md) — implementation follow-ups, including RBAC and warm sandbox access revisions
+- [ROADMAP.md](ROADMAP.md) — implementation follow-ups, including per-request access checks
 - [PACKS.md](PACKS.md) — authoring solution packs, directory layout, connectors, validation, and contributions
 - [CONTEXT_REPOSITORY.md](CONTEXT_REPOSITORY.md) — version history of skills and workflows, and an optional GitHub, GitLab or other git remote
 - [INSTALL.md](INSTALL.md) — install, [upgrade](INSTALL.md#upgrade), requirements, troubleshooting, connecting your data, full demo trial

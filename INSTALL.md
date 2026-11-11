@@ -34,7 +34,7 @@ Then run `openneko setup` (guided), or `openneko start` to bring the stack up wi
 `openneko setup` walks through the steps below **in the terminal**. Prefer a browser? Choose **browser** at the first prompt (or pass `--skip-onboarding`, or just run `openneko start`) and open [http://localhost:3000](http://localhost:3000) for the same wizard. Either way:
 
 1. With the bundled database (`--mode demo` or `--mode dev`), choose an admin database password. In prod mode, setup asks for [OpenNeko's database](#opennekos-database) URL before it starts the stack.
-2. Confirm the pre-filled GraphJin URL (`--mode demo`) or enter your own (`--mode prod`).
+2. Confirm the pre-filled GraphJin URL, `http://graphjin:8080`. It names the GraphJin that runs inside `openneko-serve`. Change it only when you run a GraphJin of your own.
 3. Pick the model provider the agent should use (Anthropic / OpenAI / Google / Ollama / others). The agent (Ax) runs in `openneko serve` with the full tool set, including the chat-first management tools. It gets a terminal only when you connect a [sandbox](#sandbox-optional).
 4. Add your provider API key.
 5. Add an industry research provider, or skip.
@@ -122,7 +122,11 @@ openneko setup --mode prod --database-url 'postgres://neko:PASSWORD@db.example.c
 ```
 
 Prod mode runs no database of its own. Give it [OpenNeko's database](#opennekos-database)
-with `--database-url`, or enter the URL when setup asks for it. Enter your GraphJin base URL when setup asks for it (terminal or browser). If GraphJin runs on your host, use `http://host.docker.internal:8080` — OpenNeko appends the GraphQL and MCP paths automatically.
+with `--database-url`, or enter the URL when setup asks for it. Keep the pre-filled GraphJin URL.
+
+Then connect your data from chat. As an admin, ask the assistant to connect a database, and it shows a card for a PostgreSQL, MySQL or MariaDB source: where the database runs, the read-only login and its password. **Check connection** tests each step and lists the tables the login can read. You approve the change in the card, and OpenNeko writes the GraphJin config. For a system with a pack, such as Magento or Shopify, the assistant shows the pack's setup card. You enter the address and the login only. See [Solution packs and skills](#solution-packs-and-skills).
+
+If you run your own GraphJin on the host, give setup `http://host.docker.internal:8080`. OpenNeko adds the GraphQL and MCP paths.
 
 ## OpenNeko's database
 
@@ -404,7 +408,7 @@ services:
 ```
 
 Semantic search is off until both the URL and the model are set. When it is
-on, web and worker send memory, skill and Library text to that service. A
+on, web and worker send memory and skill text, and each search query, to that service. A
 background job embeds stored rows; until it reaches a row, and whenever the
 service fails, search uses full-text search. A change of model re-embeds
 every row. To run a model on your own machine, see
@@ -523,7 +527,7 @@ chunks, so a wrong key, a cut file or any edit fails the check.
 `openneko upgrade` is the normal stack upgrade path. It:
 
 1. Takes an `openneko backup` of the running stack and stops if the backup fails. Pass `--skip-backup` to upgrade without one.
-2. Pulls the latest OpenNeko service, agent, and sandbox supervisor images.
+2. Pulls the new OpenNeko images: `neko-cli`, `neko-serve`, `neko-web`, `neko-worker`, and `neko-db` when the install uses the bundled database.
 3. Detects the mode recorded by your last `setup` or `start` (`prod`, `dev`, or `demo`) and recreates that stack detached.
 4. Re-runs every idempotent initializer against the existing volumes, including runtime-artifact repair and pending migrations.
 5. Waits for every declared service health check; a crash loop or unreachable data plane fails the upgrade instead of being reported as success.
@@ -554,6 +558,35 @@ openneko upgrade --mode demo
 The command persists the selected image tag in `.openneko/runtime/.image-version`,
 so later `openneko start` runs the same tag. Upgrading the host binary is still
 recommended when a release includes CLI changes.
+
+### Upgrade from a release before November 2026
+
+This release has fewer parts. The upgrade migrates your data in place:
+
+- **Records** is gone. The migrations drop its tables, policies and workflows.
+  Take a backup first if you need that data (`upgrade` takes one).
+- **Plugins** are gone. Scalekit and email-link sign-in are built in. Slack,
+  Telegram and the HUD are built-in channels. The upgrade moves their
+  credentials, workspaces, identities and grants to the built-in names. A
+  channel is on only while an installed pack lists it in `channels:`
+  ([PACKS.md](PACKS.md#channels)). Resend, Slack, Shopify and Parallel web
+  search actions are packs now; install them from **Admin → Settings →
+  Packs**.
+- **The Library** keeps your files. At start, the worker moves each uploaded
+  file into its owner's private folder for [file search](#file-search).
+  Concepts and distillation are gone.
+- **The OpenShell runtime, the embedding container and the separate GraphJin
+  containers** are gone. `openneko-serve` runs agent turns and both GraphJins.
+  Search by meaning is off until you connect an
+  [embedding service](#semantic-search-optional), and the terminal is off
+  until you connect a [sandbox](#sandbox-optional).
+- **A prod install** keeps its bundled `neko-db`. Move it to a database that
+  you run with [`openneko database move`](#the-bundled-database-of-an-older-release).
+
+The upgrade removes the old containers and images. It leaves the
+`openneko-plugins` and `openshell-config` volumes and the
+`<project>_runtime` network, which nothing uses. Remove them with
+`docker volume rm` and `docker network rm` when you no longer need them.
 
 ### macOS
 
@@ -586,8 +619,8 @@ openneko upgrade
 
 ### What `openneko start` does
 
-1. **Migrate.** Connects to OpenNeko's database, takes a Postgres advisory lock, applies pending embedded migrations, releases the lock. Idempotent.
-2. **Compose up.** Writes embedded compose files to `.openneko/runtime/` and runs `docker compose up`. Docker pulls the pinned image tags.
+1. **Start steps.** Writes the embedded compose files to `.openneko/runtime/`, then runs the start steps in order, each in its own container: the database check (prod mode), the storage check, the migrations under a Postgres advisory lock, the config volume, and serve's credentials and GraphJin config. Demo mode also loads the sample data. A failed step stops the start. [AGENT_RUNTIME.md](AGENT_RUNTIME.md#start-steps) lists each step.
+2. **Compose up.** Runs `docker compose up` for web, worker and `openneko-serve`. Docker pulls the pinned image tags.
 
 `openneko stop` doesn't touch volumes. Use `--volumes` for a clean slate (wipes the metadata DB, demo state, agent workspaces).
 
@@ -623,7 +656,7 @@ for a reverse-proxy deployment.
 
 ```bash
 git clone https://github.com/open-neko/openneko.git
-cd neko
+cd openneko
 docker compose -f compose.yml -f compose.db.yml -f compose.adventureworks.yml --profile steps build
 docker compose -f compose.yml -f compose.db.yml -f compose.adventureworks.yml run --rm openneko-serve-init
 docker compose -f compose.yml -f compose.db.yml -f compose.adventureworks.yml up -d
@@ -727,7 +760,7 @@ environment override.
 
 **Worker crashes on boot.** Check `openneko logs worker`. `ERR_MODULE_NOT_FOUND` for a workspace dep means an old binary — `brew upgrade openneko` (≥ 1.7.3).
 
-**GraphJin connection fails.** `--mode demo` uses internal `http://graphjin:8080` (pre-filled). Dev mode (`pnpm dev`) on the host uses `http://localhost:8080`.
+**GraphJin connection fails.** Prod and demo modes use `http://graphjin:8080` (pre-filled), the GraphJin inside `openneko-serve`. Dev mode (`pnpm dev`) on the host uses `http://localhost:8080`. Run `openneko status` and read the `graphjin` line: it says whether GraphJin runs or restarts, with the reason.
 
 **Workflow subscriptions don't fire.** Run `openneko status` and check the `subscriptions` line. The worker logs `subscription manager ready (N active)` on boot. If `N=0` while the database holds subscriptions, the subscriptions GraphJin in `openneko-serve` is unreachable. `openneko stop && openneko start` writes its login again.
 

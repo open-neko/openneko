@@ -91,7 +91,7 @@ the right workspace.
 |---|---|---|
 | Slack & Telegram | Talk to your assistant from the tools your team already uses — replies are formatted natively for each app. | #68, #96 |
 | Built-in channels | Slack, Telegram and the HUD are built into the core behind one modality-free interface. A solution pack turns a channel on, and an admin adds its credentials in settings. | #68, #70 |
-| Zero-config inbound | Install a channel and it just starts listening — inbound polling auto-enables and the first contact auto-binds to your workspace. No env flags. | #72 |
+| Zero-config inbound | When a pack turns a channel on, it starts listening: inbound polling starts and the first contact binds to your workspace. No env flags. | #72 |
 | It knows who's asking | Every inbound message is tied to the actual sender, so permissions and personalisation follow the person, not the channel. | #96 |
 | Workspace routing | Messages from a connected Slack workspace or phone number land in the right organisation automatically. | #96 |
 | Identity linking | Chat accounts link to OpenNeko accounts — automatically by matching email, or with an admin's approval. Unlinked strangers get safe, read-only treatment. | #96 |
@@ -177,6 +177,7 @@ truth when something is wrong — in language an operator can act on.
 | One-command install | `openneko start` brings up the full stack, the agent runtime included, with migrations applied before anything that needs them. In prod mode the stack is three containers, and OpenNeko's database is a Postgres server you run, given by one URL. Start checks that database first and prints the SQL for any missing right. `openneko database move` moves an older install off its bundled database. Demo mode runs its own. | #82, #49, #54 |
 | A demo with living data | The trial workspace ships with simulated sales trickling in and scripted scenarios firing, so briefings move and workflows have something real to find. | #47, #118, #121 |
 | Encrypted backups | `openneko backup` writes one file with the database and config, encrypted with AES-256-GCM. It works with the bundled database and with a database URL. `openneko restore` checks the whole file before it changes anything. With a database URL, it stops when the login owns objects that OpenNeko did not make. `upgrade` takes a backup first. | — |
+| Optional services by URL | An embedding service, a sandbox service and a trace collector each connect by a URL and a key. Each one is off until you set it, and OpenNeko works without it: search falls back to full-text search, and the agent has no terminal. | Phase 1 |
 | Honest status | `openneko status` probes what's actually serving — failures read as what they are (transient, cosmetic, or real) instead of all looking fatal. | #86 |
 | Releases that gate themselves | Every release is installed and smoke-tested after it builds; a broken one is automatically demoted so installers always get the last good version. | #86, #105, #106, #107 |
 | Deploys follow smoked releases | Production updates only when a release has passed its smoke — never on raw merges. Disk is garbage-collected on the way. | #116, #124, #125, #127 |
