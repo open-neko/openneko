@@ -673,8 +673,9 @@ export function buildSourceConfigManagerServer(opts: {
     [
       "Return the selected GraphJin data engine's current config: sources,",
       "roles, databases, tables, blocklist, system, mcp and serv settings,",
-      "with every secret redacted. Use it to explain the config and to plan a",
-      "change. For multiple data sources, pass the selected dataSourceId.",
+      "with every secret redacted, and `summary`: plain sentences per source",
+      "and role. Explain the config to the admin from `summary`. Use `config`",
+      "to plan a change. For multiple data sources, pass the selected dataSourceId.",
     ].join(" "),
     { dataSourceId: z.string().uuid().optional() },
     async (args) => ({

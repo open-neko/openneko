@@ -1,5 +1,7 @@
 import { cn } from "@/lib/cn";
 import { describeActionChanges, diffWords, trimDiffContext, type ActionChange } from "@/lib/action-changes";
+import { configChangeItems, readConfigChangeSummary } from "@/lib/config-summary";
+import { ConfigChangeSummary } from "@/components/ConfigChangeSummary";
 
 const MAX_CHANGES = 8;
 
@@ -55,7 +57,12 @@ export function ActionChanges({
   className?: string;
 }) {
   const sets = describeActionChanges(payload);
-  if (!sets) return null;
+  if (!sets) {
+    const summary = readConfigChangeSummary(payload);
+    return summary ? (
+      <ConfigChangeSummary summary={summary} compact={limit < MAX_CHANGES} className={className} />
+    ) : null;
+  }
   const multiple = sets.length > 1;
   return (
     <div className={cn("grid gap-3", className)} data-slot="action-changes">
@@ -93,5 +100,7 @@ export function ActionChanges({
 }
 
 export function hasActionChanges(payload: unknown): boolean {
-  return describeActionChanges(payload) !== null;
+  if (describeActionChanges(payload) !== null) return true;
+  const summary = readConfigChangeSummary(payload);
+  return summary !== null && configChangeItems(summary).length > 0;
 }

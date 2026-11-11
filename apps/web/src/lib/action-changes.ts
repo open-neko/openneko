@@ -136,17 +136,8 @@ export function describeActionChanges(payload: unknown): ActionChangeSet[] | nul
   return null;
 }
 
-// Word-level diff by longest common subsequence. Whitespace stays attached
-// to the following word so the output reads as prose.
-export function diffWords(before: string, after: string): DiffToken[] {
-  const a = before.split(/(?=\s)/);
-  const b = after.split(/(?=\s)/);
-  if (a.length * b.length > MAX_DIFF_TOKENS * MAX_DIFF_TOKENS) {
-    return [
-      { text: before, kind: "removed" },
-      { text: after, kind: "added" },
-    ];
-  }
+function diffTokens(a: string[], b: string[], whole: () => DiffToken[]): DiffToken[] {
+  if (a.length * b.length > MAX_DIFF_TOKENS * MAX_DIFF_TOKENS) return whole();
   const dp: number[][] = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
   for (let i = a.length - 1; i >= 0; i--) {
     for (let j = b.length - 1; j >= 0; j--) {
@@ -174,6 +165,36 @@ export function diffWords(before: string, after: string): DiffToken[] {
   }
   while (i < a.length) push(a[i++], "removed");
   while (j < b.length) push(b[j++], "added");
+  return out;
+}
+
+// Word-level diff by longest common subsequence. Whitespace stays attached
+// to the following word so the output reads as prose.
+export function diffWords(before: string, after: string): DiffToken[] {
+  return diffTokens(before.split(/(?=\s)/), after.split(/(?=\s)/), () => [
+    { text: before, kind: "removed" },
+    { text: after, kind: "added" },
+  ]);
+}
+
+export type DiffLine = { text: string; kind: DiffToken["kind"] };
+
+export function diffLines(before: string, after: string): DiffLine[] {
+  const lines = (value: string) => (value ? value.replace(/\n$/, "").split("\n") : []);
+  const a = lines(before);
+  const b = lines(after);
+  const tag = (values: string[], kind: DiffToken["kind"]) => values.map((text) => ({ text, kind }));
+  const out: DiffLine[] = [];
+  for (const token of diffTokens(
+    a.map((line) => `${line}\n`),
+    b.map((line) => `${line}\n`),
+    () => [
+      { text: a.map((line) => `${line}\n`).join(""), kind: "removed" },
+      { text: b.map((line) => `${line}\n`).join(""), kind: "added" },
+    ],
+  )) {
+    out.push(...tag(token.text.replace(/\n$/, "").split("\n"), token.kind));
+  }
   return out;
 }
 

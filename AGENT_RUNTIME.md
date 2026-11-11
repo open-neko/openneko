@@ -115,6 +115,15 @@ candidate after the check. Each problem names the answer at fault, and the
 source form shows it beside that field. API and local-file sources skip the
 file check, because their files exist only after approval.
 
+OpenNeko says what a config does in plain sentences
+(`packages/llm/src/graphjin/config-describe.ts`): for each source, its kind,
+host and database, whether GraphJin blocks changes, who may read, change and
+delete, and which tables are hidden, admin-only or open. `describe_source_config`
+returns them as `summary`, and Admin settings, GraphJin config shows them.
+A valid preview also carries `summary` with the touched sources and roles
+before and after the change, and their redacted YAML. The approval card shows
+the sentences side by side and keeps the YAML diff behind a disclosure.
+
 A database source needs a login with a password. OpenNeko refuses a
 proposal with no saved password, or with a saved password that is empty, at
 the answer check and again at apply. The password goes to GraphJin only. The

@@ -47,7 +47,10 @@ export {
 export {
   InProcessControlPlane,
   inProcessControlPlane,
+  readSourceConfigView,
   type AgentControlPlane,
+  type SourceConfigPreviewResult,
+  type SourceConfigViewResult,
 } from "./control-plane";
 export {
   createAgentBroker,

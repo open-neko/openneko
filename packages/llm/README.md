@@ -153,7 +153,8 @@ agent's prefill values. Its password field (`SourceSecretInput` in the web
 catalog) posts to the source-secrets API and puts only the stored name in the
 form, so a password never reaches the model. `describe_source_config` on the same server returns
 GraphJin's `gj_config` row with GraphJin's redaction applied again on our
-side (`src/graphjin/config-redact.ts`). The server and the `graphjin-config`
+side (`src/graphjin/config-redact.ts`), and `summary`, the same config in
+plain sentences (`src/graphjin/config-describe.ts`). The server and the `graphjin-config`
 skill reach admin web runs only (`src/work/admin-skills.ts`).
 `request_source_config_change` returns `problems` (`{ field, message,
 detail? }`, from `src/graphjin/config-problems.ts`) when a check fails. For a

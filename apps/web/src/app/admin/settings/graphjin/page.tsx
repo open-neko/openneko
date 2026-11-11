@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import Link from "next/link";
 import { connection } from "next/server";
 import { asc, data_source, data_source_secret, db, desc, eq } from "@neko/db";
@@ -10,6 +10,7 @@ import { Button, buttonClassName } from "@/components/ui/button";
 import { StatCard, StatGrid } from "@/components/ui/stat-card";
 import GraphjinConfigControls from "./GraphjinConfigControls";
 import SourceSecretsPanel from "./SourceSecretsPanel";
+import { ConfigDescription } from "./ConfigDescription";
 
 export default async function AdminGraphjinPage() {
   await connection();
@@ -73,6 +74,23 @@ export default async function AdminGraphjinPage() {
       </StatGrid>
 
       <GraphjinConfigControls initial={graphjinConfig.settings} />
+
+      <Suspense
+        fallback={
+          <section className="settings-card">
+            <p className="text-ui-body-sm text-text2">Reading the GraphJin config…</p>
+          </section>
+        }
+      >
+        <ConfigDescription
+          orgId={orgId}
+          userId={actor.userId}
+          sources={enabled
+            .filter((source) => source.kind === "graphjin")
+            .slice(0, 5)
+            .map((source) => ({ id: source.id, name: source.name }))}
+        />
+      </Suspense>
 
       <section className="settings-card">
         <div className="settings-card-head">

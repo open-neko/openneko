@@ -24,3 +24,4 @@ export * from "./row-filter";
 export * from "./restart";
 export * from "./config-problems";
 export * from "./config-file-check";
+export * from "./config-describe";

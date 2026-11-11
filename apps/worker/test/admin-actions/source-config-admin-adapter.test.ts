@@ -722,6 +722,11 @@ describeIfDb("source_config_admin adapter (OL5)", () => {
     expect(shop?.connection.url).toBe("postgres://[REDACTED]@db.internal/shop");
     expect(JSON.stringify(view)).not.toContain("hunter2");
     expect(view.config?.roles).toEqual([{ name: "member", match: "role = 'member'" }]);
+    expect(view.summary?.sources[0]).toMatchObject({ name: "shop", kind: "database" });
+    expect(view.summary?.sources[0]?.sentences).toContain("Who may read: everyone who is signed in.");
+    expect(view.summary?.roles).toEqual([
+      { name: "member", sentence: "A person gets this role when role = 'member'." },
+    ]);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toBe(CUSTOMER);
     expect(calls[0]?.body?.query).toContain('gj_config(id: "current")');
@@ -858,6 +863,14 @@ describeIfDb("source_config_admin adapter (OL5)", () => {
       const accepted = await inProcessControlPlane.previewSourceConfigChange({ orgId, actorRole: "admin", payload });
       expect(accepted.preview).toMatchObject({ valid: true, fileCheck: { checked: true, valid: true } });
       expect(accepted.problems).toBeUndefined();
+      expect(accepted.preview?.summary?.before.sources[0]?.sentences).toContain(
+        "OpenNeko only reads it. GraphJin blocks every change to this database.",
+      );
+      expect(accepted.preview?.summary?.after.sources[0]?.sentences).toContain(
+        "Who may read: everyone who is signed in, only rows where user_id is their own user.",
+      );
+      expect(accepted.preview?.summary?.after.sources.map((source) => source.name)).toEqual(["adventureworks"]);
+      expect(accepted.preview?.summary?.yaml.after).toContain("read: owner");
     } finally {
       vi.unstubAllEnvs();
       await new Promise((resolve) => server.close(resolve));

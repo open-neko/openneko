@@ -339,6 +339,8 @@ export type SourceConfigViewResult = {
   source?: { id: string; name: string; host: string | null };
   catalogRevision?: string;
   config?: Record<string, unknown>;
+  /** Plain sentences per source and role, from the same redacted config. */
+  summary?: import("../graphjin/config-describe").ConfigDescription;
   truncated?: boolean;
 };
 
@@ -360,6 +362,8 @@ export type SourceConfigPreviewResult = {
     findings: unknown;
     errors: unknown;
     fileCheck?: import("../graphjin/config-file-check").GraphjinFileCheck;
+    /** The touched sources and roles, before and after, as sentences and redacted YAML. */
+    summary?: import("../graphjin/config-describe").ConfigChangeDescription;
   };
 };
 
@@ -656,6 +660,116 @@ export interface AgentControlPlane {
       verifiedAt: string | null;
     }>;
   }>;
+}
+
+/**
+ * The customer GraphJin's current config, redacted, with plain sentences.
+ * The caller has already checked that the actor is an admin.
+ */
+export async function readSourceConfigView(input: {
+  orgId: string;
+  userId: string | null;
+  dataSourceId?: string;
+  signal?: AbortSignal;
+}): Promise<SourceConfigViewResult> {
+  const { and, data_source, db, eq } = await import("@neko/db");
+  const rows = await db()
+    .select({
+      id: data_source.id,
+      name: data_source.name,
+      kind: data_source.kind,
+      graphqlUrl: data_source.graphql_url,
+    })
+    .from(data_source)
+    .where(
+      and(
+        eq(data_source.org_id, input.orgId),
+        eq(data_source.enabled, true),
+        ...(input.dataSourceId
+          ? [eq(data_source.id, input.dataSourceId)]
+          : []),
+      ),
+    )
+    .limit(input.dataSourceId ? 1 : 3);
+  if (rows.length === 0) {
+    return { error: "no enabled customer GraphJin data source was found" };
+  }
+  if (!input.dataSourceId && rows.length > 1) {
+    return {
+      error:
+        "multiple enabled data sources exist; choose a dataSourceId with list_data_sources first",
+    };
+  }
+  const src = rows[0]!;
+  const source = { id: src.id, name: src.name, host: hostnameOf(src.graphqlUrl) };
+  if (src.kind !== "graphjin") {
+    return { source, error: "the selected data source is not a GraphJin server" };
+  }
+  if (isInternalGraphjinURL(src.graphqlUrl)) {
+    return {
+      denied: true,
+      source,
+      error: "refusing to read the OpenNeko internal GraphJin config",
+    };
+  }
+
+  const { graphjinQuery } = await import("../graphjin/client");
+  const { mintGraphjinToken } = await import("../graphjin/token");
+  const { redactSourceConfig } = await import("../graphjin/config-redact");
+  const token = mintGraphjinToken({
+    orgId: input.orgId,
+    userId: input.userId,
+    role: "admin",
+    ttlSeconds: 120,
+  });
+  const fields = SOURCE_CONFIG_VIEW_FIELDS.join(" ");
+  try {
+    const res = await graphjinQuery<{ gj_config?: Record<string, unknown> }>({
+      baseUrl: src.graphqlUrl,
+      headers: { authorization: `Bearer ${token}` },
+      query: `query { gj_config(id: "current") { catalog_revision ${fields} } }`,
+      signal: input.signal,
+    });
+    const row = res.data?.gj_config;
+    if (res.errors?.length || !row) {
+      return {
+        source,
+        error:
+          res.errors?.map((item) => item.message).join("; ").slice(0, 1_000) ||
+          "GraphJin did not return its config",
+      };
+    }
+    const { describeGraphjinConfig } = await import("../graphjin/config-describe");
+    const summary = describeGraphjinConfig({
+      sources: redactSourceConfig(parseJsonColumn(row.sources) ?? []),
+      roles: redactSourceConfig(parseJsonColumn(row.roles) ?? []),
+    });
+    const config: Record<string, unknown> = {};
+    let size = 0;
+    let truncated = false;
+    for (const field of SOURCE_CONFIG_VIEW_FIELDS) {
+      const redacted = redactSourceConfig(parseJsonColumn(row[field]) ?? null);
+      const length = JSON.stringify(redacted)?.length ?? 0;
+      if (size + length > SOURCE_CONFIG_VIEW_MAX_CHARS) {
+        truncated = true;
+        continue;
+      }
+      size += length;
+      config[field] = redacted;
+    }
+    return {
+      source,
+      catalogRevision: String(row.catalog_revision ?? ""),
+      config,
+      summary,
+      ...(truncated ? { truncated } : {}),
+    };
+  } catch (err) {
+    return {
+      source,
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 1_000),
+    };
+  }
 }
 
 export class InProcessControlPlane implements AgentControlPlane {
@@ -1236,98 +1350,11 @@ export class InProcessControlPlane implements AgentControlPlane {
   }): Promise<SourceConfigViewResult> {
     const gate = await requireSourceConfigAccess(input);
     if (!gate.ok) return { denied: true, error: gate.error };
-
-    const { and, data_source, db, eq } = await import("@neko/db");
-    const rows = await db()
-      .select({
-        id: data_source.id,
-        name: data_source.name,
-        kind: data_source.kind,
-        graphqlUrl: data_source.graphql_url,
-      })
-      .from(data_source)
-      .where(
-        and(
-          eq(data_source.org_id, input.orgId),
-          eq(data_source.enabled, true),
-          ...(input.dataSourceId
-            ? [eq(data_source.id, input.dataSourceId)]
-            : []),
-        ),
-      )
-      .limit(input.dataSourceId ? 1 : 3);
-    if (rows.length === 0) {
-      return { error: "no enabled customer GraphJin data source was found" };
-    }
-    if (!input.dataSourceId && rows.length > 1) {
-      return {
-        error:
-          "multiple enabled data sources exist; choose a dataSourceId with list_data_sources first",
-      };
-    }
-    const src = rows[0]!;
-    const source = { id: src.id, name: src.name, host: hostnameOf(src.graphqlUrl) };
-    if (src.kind !== "graphjin") {
-      return { source, error: "the selected data source is not a GraphJin server" };
-    }
-    if (isInternalGraphjinURL(src.graphqlUrl)) {
-      return {
-        denied: true,
-        source,
-        error: "refusing to read the OpenNeko internal GraphJin config",
-      };
-    }
-
-    const { graphjinQuery } = await import("../graphjin/client");
-    const { mintGraphjinToken } = await import("../graphjin/token");
-    const { redactSourceConfig } = await import("../graphjin/config-redact");
-    const token = mintGraphjinToken({
+    return readSourceConfigView({
       orgId: input.orgId,
       userId: gate.userId,
-      role: "admin",
-      ttlSeconds: 120,
+      dataSourceId: input.dataSourceId,
     });
-    const fields = SOURCE_CONFIG_VIEW_FIELDS.join(" ");
-    try {
-      const res = await graphjinQuery<{ gj_config?: Record<string, unknown> }>({
-        baseUrl: src.graphqlUrl,
-        headers: { authorization: `Bearer ${token}` },
-        query: `query { gj_config(id: "current") { catalog_revision ${fields} } }`,
-      });
-      const row = res.data?.gj_config;
-      if (res.errors?.length || !row) {
-        return {
-          source,
-          error:
-            res.errors?.map((item) => item.message).join("; ").slice(0, 1_000) ||
-            "GraphJin did not return its config",
-        };
-      }
-      const config: Record<string, unknown> = {};
-      let size = 0;
-      let truncated = false;
-      for (const field of SOURCE_CONFIG_VIEW_FIELDS) {
-        const redacted = redactSourceConfig(parseJsonColumn(row[field]) ?? null);
-        const length = JSON.stringify(redacted)?.length ?? 0;
-        if (size + length > SOURCE_CONFIG_VIEW_MAX_CHARS) {
-          truncated = true;
-          continue;
-        }
-        size += length;
-        config[field] = redacted;
-      }
-      return {
-        source,
-        catalogRevision: String(row.catalog_revision ?? ""),
-        config,
-        ...(truncated ? { truncated } : {}),
-      };
-    } catch (err) {
-      return {
-        source,
-        error: (err instanceof Error ? err.message : String(err)).slice(0, 1_000),
-      };
-    }
   }
 
   async previewSourceConfigChange(input: {
@@ -1472,11 +1499,11 @@ export class InProcessControlPlane implements AgentControlPlane {
       });
       const headers = { authorization: `Bearer ${token}` };
       const revisionResponse = await graphjinQuery<{
-        gj_config?: { catalog_revision?: string; sources?: unknown };
+        gj_config?: { catalog_revision?: string; sources?: unknown; roles?: unknown };
       }>({
         baseUrl: src.graphqlUrl,
         headers,
-        query: 'query { gj_config(id: "current") { catalog_revision sources } }',
+        query: 'query { gj_config(id: "current") { catalog_revision sources roles } }',
       });
       const revision = revisionResponse.data?.gj_config?.catalog_revision;
       if (!revision || revisionResponse.errors?.length) {
@@ -1595,6 +1622,27 @@ export class InProcessControlPlane implements AgentControlPlane {
           error: `a GraphJin source named "${sourceName}" already exists`,
         };
       }
+      const summary = await (async () => {
+        try {
+          const { describeGraphjinConfigChange } = await import("../graphjin/config-describe");
+          const described = describeGraphjinConfigChange({
+            current: {
+              sources: currentSources,
+              roles: parseJsonColumn(revisionResponse.data?.gj_config?.roles),
+            },
+            update,
+          });
+          return {
+            ...described,
+            yaml: {
+              before: scrub(described.yaml.before),
+              after: scrub(described.yaml.after),
+            },
+          };
+        } catch {
+          return undefined;
+        }
+      })();
       const checkConfigFile = async (candidate: Record<string, unknown>) => {
         const { checkGraphjinConfigCandidate } = await import(
           "../graphjin/config-file-check"
@@ -1632,6 +1680,7 @@ export class InProcessControlPlane implements AgentControlPlane {
             },
             findings: specAsset.warnings,
             errors: null,
+            ...(summary ? { summary } : {}),
           },
         };
       }
@@ -1659,6 +1708,7 @@ export class InProcessControlPlane implements AgentControlPlane {
             },
             findings: [],
             errors: null,
+            ...(summary ? { summary } : {}),
           },
         };
       }
@@ -1701,6 +1751,7 @@ export class InProcessControlPlane implements AgentControlPlane {
         changes: parseConfigPreviewJSON(scrub(row?.change_summary_json)),
         findings: parseConfigPreviewJSON(scrub(row?.findings_json)),
         errors,
+        ...(summary ? { summary } : {}),
       };
       if (!valid) {
         const problems = mapGraphjinConfigErrors(errors, input.payload);

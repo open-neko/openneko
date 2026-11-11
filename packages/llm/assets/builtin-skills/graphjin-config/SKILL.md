@@ -16,12 +16,14 @@ plan every change yourself. An admin approves each change before it applies.
    namespaces.
 2. Call `mcp_neko_source_config_manager_describe_source_config`. It returns
    the current config: sources, roles, databases, tables, blocklist, system,
-   mcp and serv. Every secret shows as `[REDACTED]`. When more than one data
-   source is enabled, pass the `dataSourceId` that the admin chose.
+   mcp and serv. Every secret shows as `[REDACTED]`. Its `summary` gives
+   plain sentences for each source and role. When more than one data source
+   is enabled, pass the `dataSourceId` that the admin chose.
 3. For the meaning of a key, read `references/config-reference.md` beside
    this file. Read it only when you need it.
-4. For a question, answer from the results of steps 1 and 2. Name the source,
-   the role or the key that the answer depends on.
+4. For a question, answer from the results of steps 1 and 2. Use the
+   sentences in `summary` when the admin asks what the config does. Name the
+   source, the role or the key that the answer depends on.
 5. For a database source, ask plain questions, one at a time: which system
    (PostgreSQL, MySQL or MariaDB), where it runs (host and port), which
    database, which read-only login, which tables no one may see, and which
