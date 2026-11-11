@@ -136,7 +136,7 @@ class Package {
     const files = unzipSync(bytes, {
       filter(file) {
         total += file.originalSize;
-        if (total > MAX_UNZIPPED_BYTES) throw new Error("the workbook unpacks to more than 512 MB");
+        if (total > MAX_UNZIPPED_BYTES) throw new Error("the file unpacks to more than 512 MB");
         return true;
       },
     });

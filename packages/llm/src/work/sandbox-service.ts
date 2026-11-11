@@ -3,7 +3,7 @@ import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 
 /** The bundled skills that run scripts. Without a sandbox no run sees them. */
-export const SANDBOX_SKILLS: ReadonlySet<string> = new Set(["document-extraction", "skill-creator", "xlsx"]);
+export const SANDBOX_SKILLS: ReadonlySet<string> = new Set(["document-extraction", "docx", "skill-creator", "xlsx"]);
 
 export type SandboxConfig = { url: string; key?: string };
 

@@ -70,20 +70,20 @@ describe("work workspace", () => {
     expect(resolveSandboxSkillsRoot("file:///x/y.js", "/opt/skills", () => false)).toBe("/opt/skills");
   });
 
-  it("seeds the xlsx skill from the sandbox recipe without its packages or tests", async () => {
+  it.each(["xlsx", "docx"])("seeds the %s skill from the sandbox recipe without its packages or tests", async (name) => {
     const home = await mkdtemp(join(tmpdir(), "neko-work-home-"));
     cleanupPaths.push(home);
     process.env.HOME = home;
 
     const workspace = await ensureOrgWorkspace("org-test");
-    const recipe = join(__dirname, "..", "..", "..", "recipes", "sandbox", "skills", "xlsx");
-    const seeded = join(workspace.skillsRoot, "xlsx");
+    const recipe = join(__dirname, "..", "..", "..", "recipes", "sandbox", "skills", name);
+    const seeded = join(workspace.skillsRoot, name);
     expect(await readFile(join(seeded, "SKILL.md"), "utf8")).toBe(await readFile(join(recipe, "SKILL.md"), "utf8"));
-    expect((await readdir(join(seeded, "scripts"))).sort()).toEqual(["lib", "xlsx.cjs"]);
+    expect((await readdir(join(seeded, "scripts"))).sort()).toEqual(["lib", `${name}.cjs`].sort());
     expect(await readdir(seeded)).not.toContain("node_modules");
     expect(await readdir(workspace.skillsRoot)).not.toContain("node_modules");
     expect(await readdir(workspace.skillsRoot)).not.toContain("test");
-    expect(await unmodifiedBuiltinSkills(workspace.skillsRoot)).toContain("xlsx");
+    expect(await unmodifiedBuiltinSkills(workspace.skillsRoot)).toContain(name);
   }, 30_000);
 
   it("supports an isolated agent home in explicit host-web development mode", async () => {
@@ -194,7 +194,7 @@ describe("work workspace", () => {
     const workspace = await ensureOrgWorkspace("org-test");
     const seeded = await readdir(workspace.skillsRoot);
     expect(seeded).toContain("graphjin-config");
-    for (const name of ["document-extraction", "skill-creator", "xlsx"]) expect(seeded).not.toContain(name);
+    for (const name of ["document-extraction", "docx", "skill-creator", "xlsx"]) expect(seeded).not.toContain(name);
 
     await mkdir(join(workspace.skillsRoot, "document-extraction"), { recursive: true });
     await writeFile(join(workspace.skillsRoot, "document-extraction", "SKILL.md"), "Seeded before the sandbox went away.");
@@ -287,7 +287,7 @@ describe("work workspace", () => {
     expect(await readFile(join(workspace.skillsRoot, "xlsx", "SKILL.md"), "utf8")).toContain("# Excel workbooks");
     expect(await readdir(join(workspace.skillsRoot, "xlsx", "scripts"))).not.toContain("run.py");
     expect(after).not.toContain("dcf-model");
-    expect(after).toContain("docx");
+    expect(await readFile(join(workspace.skillsRoot, "docx", "SKILL.md"), "utf8")).toBe("Edited by an admin.");
     expect(after).toContain("pptx");
     expect(after).toContain("quarterly-review");
     expect(after).toContain("skill-creator");
