@@ -17,6 +17,9 @@
  * top-level area has no entry, and the test names it until it is listed.
  * A `*` segment matches any one path segment.
  *
+ * The Go web front keeps a copy (apps/openneko/internal/webfront/policy.go);
+ * its TestPoliciesMatchWeb fails when the two differ.
+ *
  * Every API route lives under /api/v1. An older /api/<path> is an alias that
  * next.config.ts rewrites, so it takes the rule of /api/v1/<path>.
  */
