@@ -33,12 +33,17 @@ describe("isPrimaryProvider / isResearchProvider", () => {
 });
 
 describe("getDefaultPrimaryModel", () => {
-  it("returns a non-empty model for every supported provider", () => {
+  it("returns a non-empty model for every provider with a fixed catalog", () => {
     for (const opt of PRIMARY_PROVIDER_OPTIONS) {
+      if (opt.value === "openai-compatible") continue;
       const model = getDefaultPrimaryModel(opt.value);
       expect(model).toBeTruthy();
       expect(model.length).toBeGreaterThan(2);
     }
+  });
+
+  it("leaves the model empty for an OpenAI-compatible URL, so the admin names it", () => {
+    expect(getDefaultPrimaryModel("openai-compatible")).toBe("");
   });
 
   it("uses Gemini 3.6 Flash for Google Gemini", () => {

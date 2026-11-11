@@ -1,6 +1,5 @@
-import { ax } from "@ax-llm/ax";
 import { and, asc, bot, db, eq, work_message, work_thread } from "@neko/db";
-import { buildLlm } from "../llm";
+import { generate, hostProgram } from "../inference";
 
 const NAME_MAX = 24;
 const MESSAGES = 6;
@@ -9,9 +8,9 @@ const BATCH = 20;
 
 const DESCRIPTION = `You name a chat bot. Read the chat title, the bot's job description and the operator's first messages. Write a short, friendly name of 1 to 3 words that says what the bot does, such as "Stock watcher" or "Weekly sales". Use sentence case. Use no quotes, emoji or end punctuation.`;
 
-export const botNamer = ax(
+export const botNamer = hostProgram(
   `chatTitle:string "the chat title the bot carries now", instructions?:string "the bot's job description, absent when it has none", operatorMessages:string "the operator's first messages in the chat" -> name:string "the new bot name, 1 to 3 words"`,
-  { description: DESCRIPTION },
+  DESCRIPTION,
 );
 
 export type NameBotFn = (input: {
@@ -22,7 +21,7 @@ export type NameBotFn = (input: {
 }) => Promise<string>;
 
 const defaultName: NameBotFn = async ({ orgId, instructions, ...input }) => {
-  const result = await botNamer.forward(await buildLlm(orgId), {
+  const { outputs: result } = await generate(orgId, botNamer, {
     ...input,
     ...(instructions ? { instructions } : {}),
   });

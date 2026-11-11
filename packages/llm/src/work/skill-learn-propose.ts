@@ -60,21 +60,14 @@ export async function proposeSkillLearn(input: {
 }
 
 async function defaultSkillLearnLlm(orgId: string): Promise<SkillLearnLlm> {
-  const [{ ax }, { buildLlm }] = await Promise.all([
-    import("@ax-llm/ax"),
-    import("../llm"),
-  ]);
-  const llm = await buildLlm(orgId);
-  const generator = ax(
+  const { generate, hostProgram } = await import("../inference");
+  const generator = hostProgram(
     `learningPrompt:string "instructions plus skill excerpt and run ids" -> skillLearningProposal:string "a JSON object with lesson, rationale, learnedMarkdown, evidenceRunIds"`,
-    {
-      description:
-        "You propose one additive skill lesson. Reply with JSON only. No tools.",
-    },
+    "You propose one additive skill lesson. Reply with JSON only. No tools.",
   );
   return async (prompt: string) => {
-    const result = await generator.forward(llm, { learningPrompt: prompt });
-    return String(result.skillLearningProposal ?? "");
+    const { outputs } = await generate(orgId, generator, { learningPrompt: prompt });
+    return String(outputs.skillLearningProposal ?? "");
   };
 }
 

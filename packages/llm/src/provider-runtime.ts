@@ -77,24 +77,27 @@ export function vertexOpenAiBaseUrl(config: Record<string, unknown>): string {
   return `https://${host}/v1beta1/projects/${encodeURIComponent(projectId)}/locations/${encodeURIComponent(region)}/endpoints/openapi`;
 }
 
-function ollamaBaseUrl(config: Record<string, unknown>): string {
-  const configured = requiredConfig(config, "url", "Ollama Base URL");
+function localBaseUrl(config: Record<string, unknown>, label: string, defaultPath?: string): string {
+  const configured = requiredConfig(config, "url", `${label} Base URL`);
   let url: URL;
   try {
     url = new URL(configured);
   } catch {
-    throw new Error(`Invalid Ollama Base URL: ${configured}`);
+    throw new Error(`Invalid ${label} Base URL: ${configured}`);
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("Ollama Base URL must use http or https.");
+    throw new Error(`${label} Base URL must use http or https.`);
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error(`${label} Base URL must not carry credentials, a query or a fragment.`);
   }
 
   // openneko serve calls the model from its own container, where loopback is
-  // not the host. Route host-local Ollama through Docker's host gateway.
+  // not the host. Route a host-local server through Docker's host gateway.
   if (["localhost", "127.0.0.1", "[::1]", "::1"].includes(url.hostname)) {
     url.hostname = "host.docker.internal";
   }
-  if (url.pathname === "/" || url.pathname === "") url.pathname = "/v1";
+  if (defaultPath && (url.pathname === "/" || url.pathname === "")) url.pathname = defaultPath;
   return url.toString().replace(/\/$/, "");
 }
 
@@ -136,11 +139,21 @@ export function resolveProviderRuntime(args: {
     case "deepseek":
       return fixedRuntime(args.model, "https://api.deepseek.com/v1", "DEEPSEEK_API_KEY");
     case "ollama": {
-      const baseUrl = ollamaBaseUrl(config);
+      const baseUrl = localBaseUrl(config, "Ollama", "/v1");
       return {
         model: args.model,
         baseUrl,
         credentialSource: "none",
+        endpoint: endpointFromUrl(baseUrl),
+      };
+    }
+    case "openai-compatible": {
+      const baseUrl = localBaseUrl(config, "OpenAI-compatible");
+      return {
+        model: args.model,
+        baseUrl,
+        keyEnv: "OPENAI_COMPATIBLE_API_KEY",
+        credentialSource: "stored-api-key",
         endpoint: endpointFromUrl(baseUrl),
       };
     }

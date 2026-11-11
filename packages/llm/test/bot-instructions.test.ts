@@ -47,9 +47,8 @@ describe("keepBotInstructionsCurrent", () => {
   });
 
   it("declares a boolean change flag and the whole description", () => {
-    const inputs = instructionsKeeper.getSignature().getInputFields();
-    expect(inputs.filter((f) => f.isOptional).map((f) => f.name)).toEqual(["currentInstructions", "earlierOperatorMessages"]);
-    const outputs = instructionsKeeper.getSignature().getOutputFields().map((f) => f.name);
-    expect(outputs).toEqual(["changed", "instructions"]);
+    const [inputs, outputs] = instructionsKeeper.signature.split("->");
+    expect([...inputs.matchAll(/(\w+)\?:/g)].map((m) => m[1])).toEqual(["currentInstructions", "earlierOperatorMessages"]);
+    expect([...outputs.matchAll(/(\w+):\w+/g)].map((m) => m[1])).toEqual(["changed", "instructions"]);
   });
 });

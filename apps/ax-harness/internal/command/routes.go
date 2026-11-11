@@ -4,60 +4,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/url"
 	"strings"
 
 	ax "github.com/ax-llm/ax/packages/go"
+	"github.com/open-neko/openneko/apps/ax-harness/inference"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/catalog"
 )
 
 type modelRoute struct {
-	Key       string `json:"key"`
-	Provider  string `json:"provider,omitempty"`
-	Model     string `json:"model"`
-	URL       string `json:"url,omitempty"`
-	APIKeyEnv string `json:"api_key_env"`
-	// Options are Ax provider settings, for example Azure's resource_name,
-	// deployment_name and api_version.
-	Options map[string]string `json:"options,omitempty"`
+	Key       string            `json:"key"`
+	Provider  string            `json:"provider,omitempty"`
+	Model     string            `json:"model"`
+	URL       string            `json:"url,omitempty"`
+	APIKeyEnv string            `json:"api_key_env"`
+	Options   map[string]string `json:"options,omitempty"`
 }
 
-// reservedOptions belong to the harness: the key, the endpoint, the model and the transport.
-var reservedOptions = map[string]bool{"api_key": true, "apiKey": true, "base_url": true, "baseUrl": true, "model": true,
-	"credential_provider": true, "credentialProvider": true, "transport": true, "runtimeHooks": true, "retry": true}
+func (r modelRoute) provider() string { return r.route().ProviderName() }
 
-func validOptions(options map[string]string) bool {
-	if len(options) > 16 {
-		return false
-	}
-	for key, value := range options {
-		if reservedOptions[key] || !validOptionKey(key) || len(value) > 256 {
-			return false
-		}
-	}
-	return true
-}
-
-func validOptionKey(key string) bool {
-	if key == "" || len(key) > 64 {
-		return false
-	}
-	for _, c := range key {
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_') {
-			return false
-		}
-	}
-	return true
-}
-
-const openAICompatible = "openai-compatible"
-
-func (r modelRoute) provider() string {
-	if r.Provider == "" {
-		return openAICompatible
-	}
-	return r.Provider
+func (r modelRoute) route() inference.Route {
+	return inference.Route{Provider: r.Provider, Model: r.Model, URL: r.URL, Options: r.Options}
 }
 
 type modelFallback struct {
@@ -73,39 +40,6 @@ type routeConfig struct {
 	Responder           string          `json:"responder"`
 	Fallbacks           []modelFallback `json:"fallbacks,omitempty"`
 	Routes              []modelRoute    `json:"routes"`
-}
-
-// noClientRetry turns off Ax's request-layer retry. The harness owns retries,
-// route fallback and the model-call ceiling; a hidden retry would bypass all three.
-func noClientRetry() ax.Value { return ax.Object("max_retries", 0) }
-
-// newClient builds one provider client with Ax client retry off. A native
-// provider without a URL uses Ax's default base URL.
-func newClient(provider, base, key, model string, extra map[string]string) (client ax.AxAIService, err error) {
-	// Ax checks Azure's endpoint only at the first request; fail at start instead.
-	if provider == "azure-openai" && base == "" && (extra["resource_name"] == "" || extra["deployment_name"] == "") {
-		return nil, fmt.Errorf("azure-openai needs a URL, or resource_name and deployment_name options")
-	}
-	options := ax.Object("api_key", key, "model", model, "retry", noClientRetry())
-	for name, value := range extra {
-		options[name] = value
-	}
-	if base != "" {
-		options["base_url"] = base
-	}
-	if provider == openAICompatible {
-		return ax.NewOpenAICompatibleClient(options), nil
-	}
-	defer func() {
-		if recover() != nil {
-			client, err = nil, fmt.Errorf("model provider %q is unsupported or needs a URL", provider)
-		}
-	}()
-	service, ok := ax.NewAI(provider, options).(ax.AxAIService)
-	if !ok {
-		return nil, fmt.Errorf("model provider %q is unsupported", provider)
-	}
-	return service, nil
 }
 
 // setRouteName makes the rate-limit hook report the route key, which keys
@@ -126,13 +60,6 @@ func setRouteName(client ax.AxAIService, key string) error {
 	return nil
 }
 
-func validProviderURL(provider, base string) error {
-	if base == "" && provider != openAICompatible {
-		return nil
-	}
-	return validModelURL(base)
-}
-
 // loadModelClient reads a host-owned allowlist. The run JSON cannot add a
 // provider, change a stage model, or name a credential.
 func loadModelClient(getenv func(string) string) (ax.AIClient, error) {
@@ -140,15 +67,15 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, error) {
 	if raw == "" {
 		route := modelRoute{Key: "default", Provider: getenv("HARNESS_MODEL_PROVIDER"), Model: getenv("HARNESS_MODEL"), URL: getenv("HARNESS_MODEL_URL")}
 		key := getenv("HARNESS_MODEL_API_KEY")
-		if err := validProviderURL(route.provider(), route.URL); err != nil || route.Model == "" || key == "" {
+		if err := inference.ValidProviderURL(route.provider(), route.URL); err != nil || route.Model == "" || key == "" {
 			return nil, fmt.Errorf("configure HARNESS_MODEL_URL, HARNESS_MODEL and HARNESS_MODEL_API_KEY")
 		}
 		if raw := getenv("HARNESS_MODEL_OPTIONS"); raw != "" {
-			if len(raw) > 8192 || json.Unmarshal([]byte(raw), &route.Options) != nil || !validOptions(route.Options) {
+			if len(raw) > 8192 || json.Unmarshal([]byte(raw), &route.Options) != nil || !inference.ValidOptions(route.Options) {
 				return nil, fmt.Errorf("invalid HARNESS_MODEL_OPTIONS")
 			}
 		}
-		client, err := newClient(route.provider(), route.URL, key, route.Model, route.Options)
+		client, err := inference.NewClient(route.route(), key, inference.NoRetry)
 		if err != nil {
 			return nil, err
 		}
@@ -169,7 +96,7 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, error) {
 		if getenv(route.APIKeyEnv) == "" {
 			return nil, fmt.Errorf("HARNESS_MODEL_ROUTES route missing credential")
 		}
-		service, err := newClient(route.provider(), route.URL, getenv(route.APIKeyEnv), route.Model, route.Options)
+		service, err := inference.NewClient(route.route(), getenv(route.APIKeyEnv), inference.NoRetry)
 		if err != nil {
 			return nil, err
 		}
@@ -244,8 +171,8 @@ func parseRouteConfig(raw string) (routeConfig, error) {
 	}
 	known := make(map[string]bool, len(cfg.Routes))
 	for _, route := range cfg.Routes {
-		if !validRouteKey(route.Key) || route.Model == "" || len(route.Model) > 128 || known[route.Key] || len(route.Provider) > 64 || validProviderURL(route.provider(), route.URL) != nil ||
-			!validEnvName(route.APIKeyEnv) || !validOptions(route.Options) {
+		if !validRouteKey(route.Key) || route.Model == "" || len(route.Model) > 128 || known[route.Key] || len(route.Provider) > 64 || inference.ValidProviderURL(route.provider(), route.URL) != nil ||
+			!validEnvName(route.APIKeyEnv) || !inference.ValidOptions(route.Options) {
 			return routeConfig{}, fmt.Errorf("invalid HARNESS_MODEL_ROUTES route")
 		}
 		known[route.Key] = true
@@ -278,14 +205,6 @@ func parseRouteConfig(raw string) (routeConfig, error) {
 		fallbackSources[fallback.From] = true
 	}
 	return cfg, nil
-}
-
-func validModelURL(base string) error {
-	u, err := url.Parse(base)
-	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return fmt.Errorf("invalid model URL")
-	}
-	return nil
 }
 
 func validEnvName(name string) bool {

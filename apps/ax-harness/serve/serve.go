@@ -8,6 +8,12 @@
 //	serve → worker  {"type":"mcp","message":{...}}    the harness's tool client
 //	serve → worker  {"type":"exit","code":0,"error":""}
 //
+// A host model call is one connection too:
+//
+//	host → serve   {"type":"generate","generate":{...},"model_key":"..."}
+//	serve → host   {"type":"result","result":{...}}
+//	serve → host   {"type":"exit","code":0,"error":""}
+//
 // Closing the connection cancels the turn. Serve holds the model keys for
 // the turn: the worker names the variable and sends the org's key in
 // model_keys, or serve reads it from its own environment. A key never goes
@@ -30,6 +36,7 @@ import (
 	"syscall"
 
 	"github.com/open-neko/openneko/apps/ax-harness/harness"
+	"github.com/open-neko/openneko/apps/ax-harness/inference"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
@@ -48,6 +55,9 @@ type Frame struct {
 	Bridge      bool              `json:"bridge,omitempty"`
 	ModelKeyEnv string            `json:"model_key_env,omitempty"`
 	ModelKeys   map[string]string `json:"model_keys,omitempty"`
+	ModelKey    string            `json:"model_key,omitempty"`
+	Generate    json.RawMessage   `json:"generate,omitempty"`
+	Result      json.RawMessage   `json:"result,omitempty"`
 	Event       json.RawMessage   `json:"event,omitempty"`
 	Message     json.RawMessage   `json:"message,omitempty"`
 	Code        *int              `json:"code,omitempty"`
@@ -64,6 +74,7 @@ type Server struct {
 	Sandbox sandbox.Config
 	// Run runs one turn; tests replace it.
 	Run func(context.Context, harness.Turn) (int, error)
+	Generate func(context.Context, inference.Request, string) (inference.Result, error)
 
 	mu      sync.Mutex
 	running int
@@ -90,6 +101,9 @@ func Listen(path string) (net.Listener, error) {
 func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 	if s.Run == nil {
 		s.Run = harness.RunTurn
+	}
+	if s.Generate == nil {
+		s.Generate = inference.Generate
 	}
 	if s.Getenv == nil {
 		s.Getenv = func(string) string { return "" }
@@ -146,6 +160,10 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 		_ = out.write(frame)
 	}
 	start, err := readFrame(reader)
+	if err == nil && start.Type == "generate" {
+		s.generate(parent, conn, reader, start, out, exit)
+		return
+	}
 	if err != nil || start.Type != "start" || len(start.Spec) == 0 {
 		exit(2, errors.New("expected a start frame with a run specification"))
 		return
@@ -194,6 +212,38 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 	}()
 	code, runErr := s.Run(ctx, turn)
 	exit(code, runErr)
+}
+
+func (s *Server) generate(parent context.Context, conn net.Conn, reader *bufio.Reader, frame Frame, out *frameWriter, exit func(int, error)) {
+	var request inference.Request
+	if len(frame.Generate) == 0 || json.Unmarshal(frame.Generate, &request) != nil {
+		exit(2, errors.New("expected a generate frame with a request"))
+		return
+	}
+	if !s.acquire() {
+		exit(2, errors.New("serve is at its turn limit"))
+		return
+	}
+	defer s.release()
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+	go func() {
+		defer cancel()
+		_, _ = io.Copy(io.Discard, reader)
+	}()
+	result, err := s.Generate(ctx, request, frame.ModelKey)
+	if err != nil {
+		exit(1, err)
+		return
+	}
+	raw, err := json.Marshal(result)
+	if err != nil {
+		exit(1, err)
+		return
+	}
+	if out.write(Frame{Type: "result", Result: raw}) == nil {
+		exit(0, nil)
+	}
 }
 
 // environ drops what the worker may not set: model credentials and the

@@ -44,6 +44,7 @@ results as readable cards and charts — not raw data dumps.
 | Briefing → deep dive | Any briefing card opens into a full Ask thread seeded with that card's context — from "what's this number?" to a real investigation in one click. | #8 |
 | Editable business profile | The assistant's understanding of your company is right there to read — click into it and edit it like a document. | #10 |
 | One runtime, any model provider | Ax is the agent runtime for every organisation. It keeps the full administrative toolset, works with Anthropic, Google, OpenAI-compatible and other providers, and prices each run from the model price list. | #3, #112, #436, #449 |
+| One gateway for every model call | Agent turns and the app's own short calls, such as card titles and the briefing summary, go through one Go gateway in `openneko serve`. It works with every Ax provider and any OpenAI-compatible URL, and the key stays with the call. The provider test in Admin, Settings now works for Ollama. | Phase 2 |
 | Information-dense Compact mode | A density toggle switches the whole app between a comfortable reading layout and an information-dense operator view. | #88 |
 
 ## Connect your data, conversationally

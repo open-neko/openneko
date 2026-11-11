@@ -44,7 +44,6 @@
     "catalog:ax": "cd ../../apps/ax-harness && go run ./cmd/ax-harness catalog > ../../packages/llm/src/spend/ax-model-catalog.json.tmp && mv ../../packages/llm/src/spend/ax-model-catalog.json.tmp ../../packages/llm/src/spend/ax-model-catalog.json"
   },
   "dependencies": {
-    "@ax-llm/ax": "^20.0.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@neko/db": "workspace:*",
     "@neko/interaction": "workspace:*",

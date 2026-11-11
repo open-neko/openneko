@@ -6,7 +6,7 @@ What you're installing, feature by feature, in plain language: **[FEATURES.md](F
 ## Requirements
 
 - Docker Desktop on macOS, or Docker Engine + Docker Compose on Linux
-- An API key for at least one supported model provider
+- An API key for at least one supported model provider, or the URL of a model server that speaks the OpenAI chat API (Ollama, vLLM, LM Studio)
 
 ## Install
 
@@ -35,7 +35,7 @@ Then run `openneko setup` (guided), or `openneko start` to bring the stack up wi
 
 1. With the bundled database (`--mode demo` or `--mode dev`), choose an admin database password. In prod mode, setup asks for [OpenNeko's database](#opennekos-database) URL before it starts the stack.
 2. Confirm the pre-filled GraphJin URL, `http://graphjin:8080`. It names the GraphJin that runs inside `openneko-serve`. Change it only when you run a GraphJin of your own.
-3. Pick the model provider the agent should use (Anthropic / OpenAI / Google / Ollama / others). The agent (Ax) runs in `openneko serve` with the full tool set, including the chat-first management tools. It gets a terminal only when you connect a [sandbox](#sandbox-optional).
+3. Pick the model provider the agent should use (Anthropic / OpenAI / Google / Ollama / others). For any other server that speaks the OpenAI chat API, pick **OpenAI-compatible URL** and enter its Base URL, the model name and, when the server needs one, a key. Every model call, the agent's and the app's own, runs in `openneko serve`. The agent (Ax) runs there with the full tool set, including the chat-first management tools. It gets a terminal only when you connect a [sandbox](#sandbox-optional).
 4. Add your provider API key.
 5. Add an industry research provider, or skip.
 
