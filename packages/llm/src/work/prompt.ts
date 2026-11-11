@@ -484,10 +484,9 @@ function buildSkillsSection(
 agentskills.io-style files to
 \`${workspace.skillsRoot}/<skill-name>/SKILL.md\` using your shell tool.`;
 
-  const libraries = `The host image ships
-Python 3, LibreOffice (\`soffice\`), Poppler (\`pdftotext\`), qpdf, plus
-pip libs: pypdf, pdfplumber, reportlab, Pillow, openpyxl, python-pptx,
-python-docx, PyYAML.`;
+  const libraries = `The sandbox ships
+Node, Python 3, Poppler (\`pdftotext\`) and Tesseract, plus pip libs: pypdf,
+openpyxl, python-pptx, python-docx, PyYAML.`;
 
   if (catalog === "search") {
     return `<skills>

@@ -272,7 +272,39 @@ export async function materializeBuiltinSkills(
   allowedSkills?: readonly string[],
 ): Promise<void> {
   await mkdir(skillsRoot, { recursive: true });
+  await removeRetiredBuiltinSkills(skillsRoot);
   await seedBuiltinSkills(skillsRoot, allowedSkills);
+}
+
+const RETIRED_BUILTIN_SKILLS: readonly string[] = [
+  "3-statement-model",
+  "comps-analysis",
+  "dcf-model",
+  "docx",
+  "excel-author",
+  "internal-comms",
+  "lbo-model",
+  "merger-model",
+  "pdf",
+  "pptx",
+  "pptx-author",
+  "xlsx",
+];
+
+/**
+ * Removes unchanged seeded copies of retired built-ins, so a later built-in
+ * with the same name seeds fresh. A changed copy stays as the org's own skill.
+ */
+async function removeRetiredBuiltinSkills(skillsRoot: string): Promise<void> {
+  for (const name of RETIRED_BUILTIN_SKILLS) {
+    const dir = join(skillsRoot, name);
+    const origin = await readSkillOrigin(dir);
+    if (!origin) continue;
+    if ((await fingerprintSkillTree(dir).catch(() => "")) !== origin.sourceHash) continue;
+    const bundled = join(BUILTIN_SKILLS_ROOT, name);
+    if (existsSync(bundled) && origin.sourceHash === (await builtinFingerprint(name, bundled))) continue;
+    await rm(dir, { recursive: true, force: true });
+  }
 }
 
 const builtinSkillFingerprints = new Map<string, Promise<string>>();

@@ -47,8 +47,8 @@ describeIfDb("skill index", () => {
 
   it("finds the guide closest in meaning and follows installs and removals", async () => {
     await syncSkillIndex(orgId, [
-      { name: "xlsx", description: "Use this skill any time a spreadsheet file is the primary input or output" },
-      { name: "docx", description: "Create and edit Word documents" },
+      { name: "document-extraction", description: "Use this skill any time a spreadsheet file is the primary input or output" },
+      { name: "skill-creator", description: "Create and edit Word documents" },
       { name: "customer-reply", description: "Answer a customer complaint in the house voice" },
     ]);
     const rows = await db().select().from(skill_embedding).where(eq(skill_embedding.org_id, orgId));
@@ -59,24 +59,24 @@ describeIfDb("skill index", () => {
     expect(indexed.every((row) => row.embedding !== null && row.embedding_model === "test-model")).toBe(true);
 
     const excel = await searchSkillsForRun({ orgId, runId, query: "Make me an Excel file of stock", limit: 1 });
-    expect(excel.map((s) => s.name)).toEqual(["xlsx"]);
+    expect(excel.map((s) => s.name)).toEqual(["document-extraction"]);
     const reply = await searchSkillsForRun({ orgId, runId, query: "draft a reply to an upset customer", limit: 1 });
     expect(reply.map((s) => s.name)).toEqual(["customer-reply"]);
 
     await syncSkillIndex(orgId, [
-      { name: "xlsx", description: "Use this skill any time a spreadsheet file is the primary input or output" },
-      { name: "docx", description: "Draft letters as Word documents" },
+      { name: "document-extraction", description: "Use this skill any time a spreadsheet file is the primary input or output" },
+      { name: "skill-creator", description: "Draft letters as Word documents" },
     ]);
     const after = await db().select().from(skill_embedding).where(eq(skill_embedding.org_id, orgId));
-    expect(after.map((row) => row.skill_name).sort()).toEqual(["docx", "xlsx"]);
-    expect(after.find((row) => row.skill_name === "docx")?.document).toBe("docx\nDraft letters as Word documents");
+    expect(after.map((row) => row.skill_name).sort()).toEqual(["document-extraction", "skill-creator"]);
+    expect(after.find((row) => row.skill_name === "skill-creator")?.document).toBe("skill-creator\nDraft letters as Word documents");
   });
 
   it("searches by keyword when embedding is off", async () => {
     vi.mocked(embeddingModel).mockReturnValue(null);
     try {
       const results = await searchSkillsForRun({ orgId, runId, query: "spreadsheet output", limit: 1 });
-      expect(results.map((s) => s.name)).toEqual(["xlsx"]);
+      expect(results.map((s) => s.name)).toEqual(["document-extraction"]);
       expect(await searchSkillsForRun({ orgId, runId, query: "the and of" })).toEqual([]);
     } finally {
       vi.mocked(embeddingModel).mockReturnValue("test-model");
@@ -87,8 +87,8 @@ describeIfDb("skill index", () => {
     vi.stubEnv("OPENNEKO_SANDBOX_URL", "");
     try {
       const results = await searchSkillsForRun({ orgId, runId, query: "Make me an Excel file of stock", limit: 3 });
-      expect(results.map((s) => s.name)).not.toContain("xlsx");
-      expect(results.map((s) => s.name)).not.toContain("docx");
+      expect(results.map((s) => s.name)).not.toContain("document-extraction");
+      expect(results.map((s) => s.name)).not.toContain("skill-creator");
     } finally {
       vi.stubEnv("OPENNEKO_SANDBOX_URL", "unix:///run/openneko/sandbox.sock");
     }
@@ -100,13 +100,13 @@ describeIfDb("skill index", () => {
     });
     try {
       const results = await searchSkillsForRun({ orgId, runId, query: "Make me an Excel file of stock", limit: 3 });
-      expect(results.map((s) => s.name)).not.toContain("xlsx");
+      expect(results.map((s) => s.name)).not.toContain("document-extraction");
     } finally {
       await db().delete(llm_provider_config)
         .where(and(eq(llm_provider_config.org_id, orgId), eq(llm_provider_config.scope, "agent")));
     }
     const on = await searchSkillsForRun({ orgId, runId, query: "Make me an Excel file of stock", limit: 1 });
-    expect(on.map((s) => s.name)).toEqual(["xlsx"]);
+    expect(on.map((s) => s.name)).toEqual(["document-extraction"]);
   });
 
   it("finds the admin-only skill for an admin run with the config tools, and for no other run", async () => {
@@ -115,7 +115,7 @@ describeIfDb("skill index", () => {
     const service = await createWorkRun(orgId, thread.id, "ax", { userId: null, role: "service" });
     try {
       await syncSkillIndex(orgId, [
-        { name: "xlsx", description: "Use this skill any time a spreadsheet file is the primary input or output" },
+        { name: "document-extraction", description: "Use this skill any time a spreadsheet file is the primary input or output" },
         { name: "graphjin-config", description: "Use when viewing or proposing changes to GraphJin sources and roles" },
       ]);
       const search = (run: string) =>

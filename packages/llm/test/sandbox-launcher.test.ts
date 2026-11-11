@@ -132,11 +132,11 @@ describe("stageSandboxWorkspace", () => {
     const root = await mkdtemp(join(tmpdir(), "sandbox-stage-terminal-"));
     try {
       const workspace = fullWorkspace(join(root, "org"));
-      await mkdir(join(workspace.skillsRoot, "xlsx"), { recursive: true });
-      await writeFile(join(workspace.skillsRoot, "xlsx", "SKILL.md"), "---\nname: xlsx\ndescription: edited\n---\n");
+      await mkdir(join(workspace.skillsRoot, "skill-creator"), { recursive: true });
+      await writeFile(join(workspace.skillsRoot, "skill-creator", "SKILL.md"), "---\nname: skill-creator\ndescription: edited\n---\n");
       const on = await stageSandboxWorkspace(workspace, join(root, "on"), { terminal: true });
       const off = await stageSandboxWorkspace(workspace, join(root, "off"), { terminal: false });
-      expect(on.skillOverrides).toEqual(["xlsx"]);
+      expect(on.skillOverrides).toEqual(["skill-creator"]);
       expect(off.skillOverrides).toEqual([]);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
@@ -155,8 +155,8 @@ describe("stageSandboxWorkspace", () => {
         mkdir(join(workspace.skillsRoot, "quarterly-review"), { recursive: true }),
       ]);
       await cp(
-        join(process.cwd(), "assets", "builtin-skills", "pdf"),
-        join(workspace.skillsRoot, "pdf"),
+        join(process.cwd(), "assets", "builtin-skills", "document-extraction"),
+        join(workspace.skillsRoot, "document-extraction"),
         { recursive: true },
       );
       await Promise.all([
@@ -172,21 +172,21 @@ describe("stageSandboxWorkspace", () => {
         ),
         // Simulate a durable workspace left behind by an older release.
         writeFile(
-          join(workspace.skillsRoot, "pdf", "SKILL.md"),
-          "---\nname: pdf\ndescription: stale system skill\n---\n",
+          join(workspace.skillsRoot, "document-extraction", "SKILL.md"),
+          "---\nname: document-extraction\ndescription: stale system skill\n---\n",
         ),
       ]);
 
       const staged = await stageSandboxWorkspace(workspace, stage, {
-        requiredSkillNames: ["pdf"],
+        requiredSkillNames: ["document-extraction"],
       });
-      expect(staged.skillOverrides).toEqual(["pdf", "quarterly-review"]);
+      expect(staged.skillOverrides).toEqual(["document-extraction", "quarterly-review"]);
       await expect(
-        access(join(staged.workspace.skillsRoot, "pdf", "SKILL.md")),
+        access(join(staged.workspace.skillsRoot, "document-extraction", "SKILL.md")),
       ).resolves.toBeUndefined();
       expect(
-        await readFile(join(staged.workspace.skillsRoot, "pdf", "SKILL.md"), "utf8"),
-      ).toBe(await readFile(join(process.cwd(), "assets", "builtin-skills", "pdf", "SKILL.md"), "utf8"));
+        await readFile(join(staged.workspace.skillsRoot, "document-extraction", "SKILL.md"), "utf8"),
+      ).toBe(await readFile(join(process.cwd(), "assets", "builtin-skills", "document-extraction", "SKILL.md"), "utf8"));
       expect(await readFile(join(staged.workspace.knowledgeRoot, "schema.json"), "utf8"))
         .toBe("{}");
       expect(await readFile(join(staged.workspace.threadUploadsRoot, "current.csv"), "utf8"))

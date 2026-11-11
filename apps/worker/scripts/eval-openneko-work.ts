@@ -280,8 +280,8 @@ async function skillRoundTrip(): Promise<Record<string, unknown>> {
       escapeBlocked,
       badNameRejected,
       depsAggregated:
-        Boolean(KNOWN_SKILL_DEPS.pdf) &&
-        KNOWN_SKILL_DEPS.pdf!.pip.every((pkg) => deps.pip.includes(pkg)),
+        Boolean(KNOWN_SKILL_DEPS["document-extraction"]) &&
+        KNOWN_SKILL_DEPS["document-extraction"]!.pip.every((pkg) => deps.pip.includes(pkg)),
       depsDeduped: new Set(deps.pip).size === deps.pip.length,
     };
   } finally {

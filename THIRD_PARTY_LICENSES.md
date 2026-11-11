@@ -18,8 +18,7 @@ Those components remain under their own licenses.
 
 | Component | License | Notes |
 |---|---|---|
-| Anthropic-authored bundled skills | As declared | Preserve the upstream terms and attribution shipped with each skill. |
-| Built-in skills with `license:` frontmatter | As declared in each skill | Some bundled skills are Apache-2.0, MIT, or proprietary to their upstream source. Check each `SKILL.md` and local `LICENSE.txt`. |
+| Built-in skills with `license:` frontmatter | As declared in each skill | Check each `SKILL.md` and local `LICENSE.txt`. |
 
 ---
 

@@ -21,8 +21,8 @@ The overlay adds the `openneko-sandbox` service and sets
 `openneko-serve`. Set `OPENNEKO_SANDBOX_KEY` in the shell or in `.env` to
 require a key on the socket as well.
 
-The image carries Python, LibreOffice, Poppler, qpdf, Tesseract and the Node
-packages the bundled skills use. Keep it in step with `KNOWN_SKILL_DEPS` in
+The image carries Node, Python, Poppler, Tesseract and the Python packages
+the bundled skills use. Keep it in step with `KNOWN_SKILL_DEPS` in
 `packages/llm/src/work/skill-deps.ts`.
 
 ## How it keeps runs apart

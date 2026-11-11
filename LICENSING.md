@@ -25,7 +25,6 @@ keep their own licenses. Examples:
 
 - Runtime dependencies and container-layer software listed in
   [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
-- Anthropic-authored bundled skills under their declared upstream terms.
 - Built-in skills that carry their own `license:` frontmatter or local
   `LICENSE.txt` files.
 
