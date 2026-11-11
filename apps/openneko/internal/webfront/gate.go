@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -161,6 +162,7 @@ func (g *Gate) sessionSecret() string {
 	}
 	secret, err := read()
 	if err != nil {
+		log.Printf("session secret: %v", err)
 		return ""
 	}
 	g.secret = secret
@@ -171,6 +173,9 @@ func (g *Gate) sessionSecret() string {
 func DefaultSessionSecret() (string, error) {
 	if s := os.Getenv("OPENNEKO_SESSION_SECRET"); s != "" {
 		return s, nil
+	}
+	if err := config.EnsureSecretKey(""); err != nil {
+		return "", err
 	}
 	key, err := config.SigningSecret("", "session-cookie:v1")
 	if err != nil {

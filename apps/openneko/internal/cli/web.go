@@ -32,8 +32,8 @@ the server pages to the Node server on --node-addr. With a command after
 --, web starts that command as Node with PORT and HOSTNAME set from
 --node-addr, and stops when it stops, with its exit code.
 
-Web answers the version, sign-in status, session, sign-out and device
-sign-in routes itself. It reads and writes users, sessions, devices, groups
+Web answers the version, sign-in, session, sign-out and device sign-in
+routes itself. It marks its cookies Secure when NODE_ENV is production. It reads and writes users, sessions, devices, groups
 and the audit chain with the main database login.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
@@ -74,7 +74,8 @@ and the audit chain with the main database login.`,
 			front := &webfront.Front{
 				App:  os.DirFS(dir),
 				Gate: gate,
-				API:  &webfront.API{Gate: gate, DB: pool, Version: webfront.AppVersion(dir, version.Version)},
+				API: &webfront.API{Gate: gate, DB: pool, Version: webfront.AppVersion(dir, version.Version),
+					SecureCookies: os.Getenv("NODE_ENV") == "production"},
 				Node: webfront.NodeProxy(&url.URL{Scheme: "http", Host: nodeAddr}),
 			}
 			srv := &http.Server{Handler: front, ReadHeaderTimeout: 10 * time.Second}
