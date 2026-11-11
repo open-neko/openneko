@@ -178,6 +178,9 @@ export function resolveProviderRuntime(args: {
   }
 }
 
+/** The variable that carries the turn fallback model's key to the runner. */
+export const FALLBACK_KEY_ENV = "FALLBACK_MODEL_API_KEY";
+
 /** Non-secret Ax Harness model route. The key, loaded per run, goes to serve under keyEnv. */
 export type AxModelRoute = {
   /** An Ax provider profile, or openai-compatible. */
@@ -187,6 +190,8 @@ export type AxModelRoute = {
   keyEnv?: string;
   /** Ax provider settings, for example Azure's resource and deployment. */
   options?: Record<string, string>;
+  /** The admin's price on the model record, in USD per million tokens. */
+  price?: { inputUsdPer1M: number; outputUsdPer1M: number };
 };
 
 // Ax has a profile for each of these. A profile keeps the provider's auth

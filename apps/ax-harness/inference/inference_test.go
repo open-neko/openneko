@@ -53,7 +53,7 @@ func TestGenerateRunsProgramAtAnyOpenAICompatibleURL(t *testing.T) {
 		Signature:   `question:string "what to answer" -> answer:string "the answer"`,
 		Instruction: "Answer the question.",
 		Values:      map[string]any{"question": "six times seven"},
-	}, "key-1")
+	}, "key-1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestGenerateKeepsTheKeyOutOfErrors(t *testing.T) {
 	server := chatServer(t, http.StatusUnauthorized, "bad key "+key, nil, nil)
 	_, err := Generate(context.Background(), Request{
 		Route: Route{URL: server.URL, Model: "m"}, Signature: "question:string -> answer:string", Values: map[string]any{"question": "q"},
-	}, key)
+	}, key, "")
 	if err == nil {
 		t.Fatal("expected an error")
 	}
@@ -91,7 +91,7 @@ func TestAnthropicRouteSendsNoTemperature(t *testing.T) {
 	result, err := Generate(context.Background(), Request{
 		Route: Route{Provider: "anthropic", URL: server.URL, Model: "claude-sonnet-5-5"}, Signature: "prompt:string -> reply:string",
 		Values: map[string]any{"prompt": "Reply with READY only."},
-	}, "key")
+	}, "key", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestGenerateRefusesBadRequests(t *testing.T) {
 		"unknown provider":       {Route: Route{Provider: "no-such-provider", Model: "m"}, Signature: "question:string -> answer:string"},
 	}
 	for name, request := range cases {
-		if _, err := Generate(context.Background(), request, "key"); err == nil {
+		if _, err := Generate(context.Background(), request, "key", ""); err == nil {
 			t.Errorf("%s: expected an error", name)
 		}
 	}
@@ -227,5 +227,82 @@ func TestEveryHostProgramSignatureParses(t *testing.T) {
 	}
 	if found < 8 {
 		t.Fatalf("found %d host programs, want at least 8", found)
+	}
+}
+
+func withoutHostRetry(t *testing.T) {
+	saved := HostRetry
+	HostRetry = NoRetry
+	t.Cleanup(func() { HostRetry = saved })
+}
+
+func TestGenerateFallsBackAfterAProviderOutage(t *testing.T) {
+	withoutHostRetry(t)
+	const key, fallbackKey = "sk-primary-71c0", "sk-fallback-93aa"
+	var primaryCalls []map[string]any
+	primary := chatServer(t, http.StatusServiceUnavailable, "overloaded", &primaryCalls, nil)
+	var seen []map[string]any
+	var auth []string
+	fallback := chatServer(t, http.StatusOK, "Answer: 42", &seen, &auth)
+	result, err := Generate(context.Background(), Request{
+		Route:     Route{URL: primary.URL, Model: "primary-model"},
+		Fallback:  &Route{URL: fallback.URL, Model: "fallback-model"},
+		Signature: "question:string -> answer:string", Values: map[string]any{"question": "q"},
+	}, key, fallbackKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fallback || result.Model != "fallback-model" || result.Outputs["answer"] != "42" {
+		t.Fatalf("result = %+v", result)
+	}
+	if len(primaryCalls) == 0 || len(seen) != 1 || auth[0] != "Bearer "+fallbackKey {
+		t.Fatalf("primary calls = %d, fallback calls = %d, auth = %v", len(primaryCalls), len(seen), auth)
+	}
+	if result.Usage.Requests != len(primaryCalls)+1 || result.Usage.Reported != 1 || result.Usage.Coverage != "partial" {
+		t.Fatalf("usage = %+v", result.Usage)
+	}
+}
+
+func TestGenerateKeepsTheFallbackForOutages(t *testing.T) {
+	withoutHostRetry(t)
+	primary := chatServer(t, http.StatusUnauthorized, "bad key", nil, nil)
+	var seen []map[string]any
+	fallback := chatServer(t, http.StatusOK, "Answer: 42", &seen, nil)
+	_, err := Generate(context.Background(), Request{
+		Route:     Route{URL: primary.URL, Model: "m"},
+		Fallback:  &Route{URL: fallback.URL, Model: "f"},
+		Signature: "question:string -> answer:string", Values: map[string]any{"question": "q"},
+	}, "key", "fallback-key")
+	if err == nil || len(seen) != 0 {
+		t.Fatalf("a refused key went to the fallback: err = %v, fallback calls = %d", err, len(seen))
+	}
+}
+
+func TestGenerateKeepsBothKeysOutOfErrors(t *testing.T) {
+	withoutHostRetry(t)
+	const key, fallbackKey = "sk-primary-5e01", "sk-fallback-77d2"
+	primary := chatServer(t, http.StatusServiceUnavailable, "down "+key, nil, nil)
+	fallback := chatServer(t, http.StatusServiceUnavailable, "down "+fallbackKey+" "+key, nil, nil)
+	_, err := Generate(context.Background(), Request{
+		Route:     Route{URL: primary.URL, Model: "m"},
+		Fallback:  &Route{URL: fallback.URL, Model: "f"},
+		Signature: "question:string -> answer:string", Values: map[string]any{"question": "q"},
+	}, key, fallbackKey)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if strings.Contains(err.Error(), key) || strings.Contains(err.Error(), fallbackKey) {
+		t.Fatalf("error carries a key: %v", err)
+	}
+}
+
+func TestGenerateRefusesABadFallback(t *testing.T) {
+	_, err := Generate(context.Background(), Request{
+		Route:     Route{Provider: "openai", Model: "m"},
+		Fallback:  &Route{URL: "https://user:pw@example.test/v1", Model: "f"},
+		Signature: "question:string -> answer:string",
+	}, "key", "")
+	if err == nil {
+		t.Fatal("expected an error")
 	}
 }

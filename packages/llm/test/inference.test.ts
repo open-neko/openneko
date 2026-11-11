@@ -62,13 +62,13 @@ describe("host model calls through the inference gateway", () => {
     ["vertex", draft("vertex", "gemini-3", { projectId: "p1", region: "global" }), { provider: "vertex-ai", model: "gemini-3" }, "adc-token"],
   ])("sends the %s route and key, and the program", async (_name, config, route, key) => {
     const calls = capture();
-    const result = await generate(undefined, PROGRAM, { question: "q" }, { draft: config });
+    const result = await generate(undefined, PROGRAM, { question: "q" }, { task: "classify", draft: config });
     expect(calls).toHaveLength(1);
     expect(calls[0].request.route).toMatchObject(route);
     expect(calls[0].key).toBe(key);
     expect(calls[0].request).toMatchObject({ signature: PROGRAM.signature, instruction: "Answer it.", values: { question: "q" } });
     expect(result.outputs).toEqual({ answer: "42" });
-    expect(result.usage).toEqual({ inputTokens: 7, outputTokens: 2, totalTokens: 9, coverage: "complete" });
+    expect(result.usage).toMatchObject({ inputTokens: 7, outputTokens: 2, totalTokens: 9, coverage: "complete" });
   });
 
   it("tests a keyless provider without asking for a key", async () => {
@@ -83,7 +83,7 @@ describe("host model calls through the inference gateway", () => {
 
   it("refuses an OpenAI-compatible provider without a model name", async () => {
     capture();
-    await expect(generate(undefined, PROGRAM, { question: "q" }, { draft: draft("openai-compatible", "", { url: "https://m.example.com/v1" }) })).rejects.toThrow(/model name/);
+    await expect(generate(undefined, PROGRAM, { question: "q" }, { task: "classify", draft: draft("openai-compatible", "", { url: "https://m.example.com/v1" }) })).rejects.toThrow(/model name/);
   });
 
   it("fails the provider test on an empty reply", async () => {
@@ -125,7 +125,7 @@ describe("the serve socket transport", () => {
       { type: "result", result: { outputs: { answer: "42" }, usage: { requests: 1, reported: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0, coverage: "unavailable" } } },
       { type: "exit", code: 0 },
     ]);
-    const result = await generate(undefined, PROGRAM, { question: "q" }, { draft: draft("openai", "gpt", {}, "sk-openai") });
+    const result = await generate(undefined, PROGRAM, { question: "q" }, { task: "classify", draft: draft("openai", "gpt", {}, "sk-openai") });
     expect(result.outputs).toEqual({ answer: "42" });
     expect(result.usage.coverage).toBe("unavailable");
     expect(seen).toHaveLength(1);
@@ -135,6 +135,6 @@ describe("the serve socket transport", () => {
 
   it("reports serve's error", async () => {
     await fakeServe(() => [{ type: "exit", code: 1, error: "provider said no" }]);
-    await expect(generate(undefined, PROGRAM, { question: "q" }, { draft: draft("openai", "gpt", {}, "k") })).rejects.toThrow("provider said no");
+    await expect(generate(undefined, PROGRAM, { question: "q" }, { task: "classify", draft: draft("openai", "gpt", {}, "k") })).rejects.toThrow("provider said no");
   });
 });

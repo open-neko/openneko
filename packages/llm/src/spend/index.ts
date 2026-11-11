@@ -29,6 +29,8 @@ export {
   saveSpendLimits,
   saveWorkflowSpendOverride,
   SpendSettingsError,
+  SPEND_METER_DAYS,
+  type SpendByModelRow,
   type SpendLimitsUsd,
   type SpendSettings,
   type SpendWindowUsage,

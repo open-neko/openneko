@@ -9,7 +9,10 @@ import { serveSocket } from "./agent-backends/harness-turn";
 import { AX_HARNESS_BINARY } from "./agent-runtime-contract";
 import type { EditableProviderConfig, PrimaryProviderId } from "./config";
 import { getGoogleToken, resolvePrimaryProviderConfig, type ProviderSource, type ResolvedPrimaryProviderConfig } from "./llm";
+import { resolveTaskRoute, type ModelTask, type RoutedModel, type TaskRoute } from "./model-routes";
 import { resolveAxModelRoute } from "./provider-runtime";
+import { recordUsageSpend } from "./spend/ledger";
+import { estimateRecordCost, estimateTokenCost } from "./spend/model-prices";
 
 export type HostProgram = { signature: string; instruction: string };
 
@@ -27,6 +30,7 @@ export type GatewayRoute = {
 
 export type GatewayRequest = {
   route: GatewayRoute;
+  fallback?: GatewayRoute;
   signature: string;
   instruction: string;
   values: Record<string, unknown>;
@@ -49,15 +53,18 @@ export type GatewayResult = {
   usage: GatewayUsage;
   provider: string;
   model: string;
+  fallback?: boolean;
 };
 
-export type GatewayTransport = (request: GatewayRequest, key: string) => Promise<GatewayResult>;
+export type GatewayTransport = (request: GatewayRequest, key: string, fallbackKey?: string) => Promise<GatewayResult>;
 
 export type GenerateResult<T> = {
   outputs: T;
   usage: AgentTokenUsage;
   provider: PrimaryProviderId;
   model: string;
+  /** True when the task's fallback model answered. */
+  fallback: boolean;
 };
 
 let transportOverride: GatewayTransport | undefined;
@@ -69,7 +76,7 @@ export function setGatewayTransport(transport: GatewayTransport | undefined): vo
 const CALL_TIMEOUT_MS = 10 * 60_000;
 
 function viaServe(socket: string): GatewayTransport {
-  return (request, key) =>
+  return (request, key, fallbackKey) =>
     new Promise<GatewayResult>((resolve, reject) => {
       const conn = createConnection(socket);
       let result: GatewayResult | undefined;
@@ -87,7 +94,7 @@ function viaServe(socket: string): GatewayTransport {
       conn.on("error", (error) => finish(new Error(`openneko serve unavailable: ${error.message}`)));
       conn.on("close", () => finish());
       conn.on("connect", () => {
-        conn.write(`${JSON.stringify({ type: "generate", generate: request, model_key: key })}\n`);
+        conn.write(`${JSON.stringify({ type: "generate", generate: request, model_key: key, ...(fallbackKey ? { fallback_key: fallbackKey } : {}) })}\n`);
       });
       const lines = createInterface({ input: conn });
       lines.on("line", (line) => {
@@ -108,11 +115,15 @@ function viaServe(socket: string): GatewayTransport {
 }
 
 function viaBinary(binary: string): GatewayTransport {
-  return (request, key) =>
+  return (request, key, fallbackKey) =>
     new Promise<GatewayResult>((resolve, reject) => {
       const child = spawn(binary, ["generate"], {
         stdio: ["pipe", "pipe", "pipe"],
-        env: { PATH: process.env.PATH ?? "", HARNESS_MODEL_API_KEY: key } as unknown as NodeJS.ProcessEnv,
+        env: {
+          PATH: process.env.PATH ?? "",
+          HARNESS_MODEL_API_KEY: key,
+          ...(fallbackKey ? { HARNESS_FALLBACK_API_KEY: fallbackKey } : {}),
+        } as unknown as NodeJS.ProcessEnv,
         timeout: CALL_TIMEOUT_MS,
       });
       const stdout: Buffer[] = [];
@@ -142,8 +153,8 @@ function gatewayTransport(): GatewayTransport {
   return socket ? viaServe(socket) : viaBinary(process.env.OPENNEKO_AX_HARNESS_BINARY || AX_HARNESS_BINARY);
 }
 
-export function callGateway(request: GatewayRequest, key: string): Promise<GatewayResult> {
-  return gatewayTransport()(request, key);
+export function callGateway(request: GatewayRequest, key: string, fallbackKey?: string): Promise<GatewayResult> {
+  return gatewayTransport()(request, key, fallbackKey);
 }
 
 async function gatewayKey(resolved: ResolvedPrimaryProviderConfig): Promise<string> {
@@ -167,29 +178,91 @@ export function gatewayUsage(usage: GatewayUsage | undefined): AgentTokenUsage {
   };
 }
 
-export async function generate<T extends Record<string, unknown> = Record<string, unknown>>(
-  orgId: string | undefined,
-  program: HostProgram,
-  values: Record<string, unknown>,
-  opts: { draft?: EditableProviderConfig } = {},
-): Promise<GenerateResult<T>> {
-  const resolved = await resolvePrimaryProviderConfig(orgId, opts.draft);
+function gatewayRoute(resolved: ResolvedPrimaryProviderConfig): GatewayRoute {
   const axRoute = resolveAxModelRoute({ provider: resolved.provider, model: resolved.model, config: resolved.config });
-  const route: GatewayRoute = {
+  return {
     provider: axRoute.provider,
     model: axRoute.model,
     ...(axRoute.url ? { url: axRoute.url } : {}),
     ...(axRoute.options ? { options: axRoute.options } : {}),
   };
+}
+
+/** The model record's price wins, then the catalog. A model with neither stays unpriced. */
+export function priceHostUsage(usage: AgentTokenUsage, served: RoutedModel, route: GatewayRoute): AgentTokenUsage {
+  if (usage.coverage === "unavailable") return { ...usage, costStatus: "unknown" };
+  const tokens = {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.cacheReadTokens,
+    cacheWriteTokens: usage.cacheWriteTokens,
+    totalTokens: usage.totalTokens,
+  };
+  const cost = served.price ? estimateRecordCost(served.price, tokens) : estimateTokenCost(route.provider ?? "", route.model, tokens);
+  if (!cost) return { ...usage, costStatus: "unknown" };
+  return {
+    ...usage,
+    costStatus: cost.usd === 0 ? "included" : "estimated",
+    estimatedCostUsd: cost.usd,
+    currency: "USD",
+    costSource: cost.costSource,
+    pricingCatalogVersion: cost.pricingCatalogVersion,
+  };
+}
+
+export async function generate<T extends Record<string, unknown> = Record<string, unknown>>(
+  orgId: string | undefined,
+  program: HostProgram,
+  values: Record<string, unknown>,
+  opts: { task: ModelTask; draft?: EditableProviderConfig },
+): Promise<GenerateResult<T>> {
+  const taskRoute: TaskRoute = orgId && !opts.draft
+    ? await resolveTaskRoute(orgId, opts.task)
+    : { task: "default", primary: { ref: "default", name: "default", config: await resolvePrimaryProviderConfig(orgId, opts.draft) } };
+  return generateOnRoute<T>(orgId, taskRoute, program, values, opts.task);
+}
+
+async function generateOnRoute<T extends Record<string, unknown>>(
+  orgId: string | undefined,
+  taskRoute: TaskRoute,
+  program: HostProgram,
+  values: Record<string, unknown>,
+  task?: ModelTask,
+): Promise<GenerateResult<T>> {
+  const { primary, fallback } = taskRoute;
+  const route = gatewayRoute(primary.config);
+  const fallbackRoute = fallback ? gatewayRoute(fallback.config) : undefined;
   const result = await callGateway(
-    { route, signature: program.signature, instruction: program.instruction, values },
-    await gatewayKey(resolved),
+    {
+      route,
+      ...(fallbackRoute ? { fallback: fallbackRoute } : {}),
+      signature: program.signature,
+      instruction: program.instruction,
+      values,
+    },
+    await gatewayKey(primary.config),
+    fallback ? await gatewayKey(fallback.config) : undefined,
   );
+  const servedByFallback = Boolean(result.fallback && fallback && fallbackRoute);
+  const served = servedByFallback ? fallback! : primary;
+  const usage = priceHostUsage(gatewayUsage(result.usage), served, servedByFallback ? fallbackRoute! : route);
+  if (orgId && task) {
+    await recordUsageSpend({
+      orgId,
+      usage,
+      source: "system",
+      task,
+      provider: served.config.provider,
+      model: served.config.model,
+      unpriced: "zero",
+    }).catch((error) => console.warn(`[spend] host call not recorded: ${error instanceof Error ? error.message : error}`));
+  }
   return {
     outputs: (result.outputs ?? {}) as T,
-    usage: gatewayUsage(result.usage),
-    provider: resolved.provider,
-    model: resolved.model,
+    usage,
+    provider: served.config.provider,
+    model: served.config.model,
+    fallback: servedByFallback,
   };
 }
 
@@ -200,7 +273,12 @@ export async function testPrimaryProvider(
   draft?: EditableProviderConfig,
 ): Promise<{ provider: string; model: string; source: ProviderSource }> {
   const resolved = await resolvePrimaryProviderConfig(orgId, draft);
-  const result = await generate<{ reply?: unknown }>(orgId, PROVIDER_TEST, { prompt: "Reply with READY only." }, { draft });
+  const result = await generateOnRoute<{ reply?: unknown }>(
+    orgId,
+    { task: "default", primary: { ref: "default", name: "default", config: resolved } },
+    PROVIDER_TEST,
+    { prompt: "Reply with READY only." },
+  );
   if (!String(result.outputs.reply ?? "").trim()) {
     throw new Error("Provider test returned an empty response");
   }

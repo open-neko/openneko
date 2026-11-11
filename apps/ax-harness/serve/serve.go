@@ -10,7 +10,7 @@
 //
 // A host model call is one connection too:
 //
-//	host → serve   {"type":"generate","generate":{...},"model_key":"..."}
+//	host → serve   {"type":"generate","generate":{...},"model_key":"...","fallback_key":"..."}
 //	serve → host   {"type":"result","result":{...}}
 //	serve → host   {"type":"exit","code":0,"error":""}
 //
@@ -56,6 +56,7 @@ type Frame struct {
 	ModelKeyEnv string            `json:"model_key_env,omitempty"`
 	ModelKeys   map[string]string `json:"model_keys,omitempty"`
 	ModelKey    string            `json:"model_key,omitempty"`
+	FallbackKey string            `json:"fallback_key,omitempty"`
 	Generate    json.RawMessage   `json:"generate,omitempty"`
 	Result      json.RawMessage   `json:"result,omitempty"`
 	Event       json.RawMessage   `json:"event,omitempty"`
@@ -74,7 +75,7 @@ type Server struct {
 	Sandbox sandbox.Config
 	// Run runs one turn; tests replace it.
 	Run func(context.Context, harness.Turn) (int, error)
-	Generate func(context.Context, inference.Request, string) (inference.Result, error)
+	Generate func(context.Context, inference.Request, string, string) (inference.Result, error)
 
 	mu      sync.Mutex
 	running int
@@ -231,7 +232,7 @@ func (s *Server) generate(parent context.Context, conn net.Conn, reader *bufio.R
 		defer cancel()
 		_, _ = io.Copy(io.Discard, reader)
 	}()
-	result, err := s.Generate(ctx, request, frame.ModelKey)
+	result, err := s.Generate(ctx, request, frame.ModelKey, frame.FallbackKey)
 	if err != nil {
 		exit(1, err)
 		return

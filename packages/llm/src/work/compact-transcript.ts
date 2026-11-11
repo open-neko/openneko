@@ -32,7 +32,7 @@ export const compactor = hostProgram(
 );
 
 const defaultSummarize: SummarizeFn = async (priorSummary, transcript, orgId) => {
-  const { outputs } = await generate(orgId, compactor, { ...(priorSummary ? { priorSummary } : {}), transcript });
+  const { outputs } = await generate(orgId, compactor, { ...(priorSummary ? { priorSummary } : {}), transcript }, { task: "compact" });
   return String(outputs.summary ?? "").trim();
 };
 

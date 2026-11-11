@@ -59,3 +59,17 @@ describe("resolveAxModelRoute", () => {
     }
   });
 });
+
+describe("fallbackRouteProfile", () => {
+  it("builds the profile that apps/ax-harness TestHostFallbackProfileLoads parses", async () => {
+    const { fallbackRouteProfile } = await import("../src/agent-backends/ax");
+    expect(
+      fallbackRouteProfile(
+        { provider: "openai-compatible", model: "qwen3", url: "https://models.example.test/v1" },
+        { provider: "openai", model: "gpt-5", keyEnv: "OPENAI_API_KEY", price: { inputUsdPer1M: 1, outputUsdPer1M: 2 } },
+      ),
+    ).toBe(
+      `{"context":"primary","executor":"primary","responder":"primary","fallbacks":[{"from":"primary","to":"fallback"}],"routes":[{"key":"primary","provider":"openai-compatible","model":"qwen3","url":"https://models.example.test/v1","api_key_env":"PRIMARY_MODEL_API_KEY"},{"key":"fallback","provider":"openai","model":"gpt-5","api_key_env":"FALLBACK_MODEL_API_KEY"}]}`,
+    );
+  });
+});

@@ -33,7 +33,7 @@ func Main() {
 		return
 	}
 	if len(os.Args) == 2 && os.Args[1] == "generate" {
-		os.Exit(generateMain(os.Stdin, os.Stdout, os.Stderr, os.Getenv("HARNESS_MODEL_API_KEY")))
+		os.Exit(generateMain(os.Stdin, os.Stdout, os.Stderr, os.Getenv("HARNESS_MODEL_API_KEY"), os.Getenv("HARNESS_FALLBACK_API_KEY")))
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	environ := withoutSandbox(os.Environ())

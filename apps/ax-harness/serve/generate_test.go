@@ -31,14 +31,14 @@ func frames(t *testing.T, c *client) []Frame {
 }
 
 func TestServeRunsAHostModelCallWithTheCallersKey(t *testing.T) {
-	var gotKey string
+	var gotKey, gotFallbackKey string
 	var gotRequest inference.Request
-	socket := startServer(t, &Server{Generate: func(_ context.Context, request inference.Request, key string) (inference.Result, error) {
-		gotKey, gotRequest = key, request
+	socket := startServer(t, &Server{Generate: func(_ context.Context, request inference.Request, key, fallbackKey string) (inference.Result, error) {
+		gotKey, gotFallbackKey, gotRequest = key, fallbackKey, request
 		return inference.Result{Outputs: map[string]any{"answer": "42"}, Usage: inference.Usage{Requests: 1, Reported: 1, InputTokens: 3, OutputTokens: 1, TotalTokens: 4, Coverage: "complete"}}, nil
 	}})
 	request, _ := json.Marshal(inference.Request{Route: inference.Route{Provider: "openai", Model: "m"}, Signature: "question:string -> answer:string", Values: map[string]any{"question": "q"}})
-	got := frames(t, dial(t, socket, Frame{Type: "generate", Generate: request, ModelKey: "org-key"}))
+	got := frames(t, dial(t, socket, Frame{Type: "generate", Generate: request, ModelKey: "org-key", FallbackKey: "fallback-key"}))
 	if len(got) != 2 || got[0].Type != "result" || got[1].Type != "exit" || *got[1].Code != 0 {
 		t.Fatalf("frames = %+v", got)
 	}
@@ -46,13 +46,13 @@ func TestServeRunsAHostModelCallWithTheCallersKey(t *testing.T) {
 	if err := json.Unmarshal(got[0].Result, &result); err != nil || result.Outputs["answer"] != "42" || result.Usage.InputTokens != 3 {
 		t.Fatalf("result = %+v, %v", result, err)
 	}
-	if gotKey != "org-key" || gotRequest.Route.Model != "m" || gotRequest.Values["question"] != "q" {
+	if gotKey != "org-key" || gotFallbackKey != "fallback-key" || gotRequest.Route.Model != "m" || gotRequest.Values["question"] != "q" {
 		t.Fatalf("key = %q, request = %+v", gotKey, gotRequest)
 	}
 }
 
 func TestServeReportsAFailedHostModelCall(t *testing.T) {
-	socket := startServer(t, &Server{Generate: func(context.Context, inference.Request, string) (inference.Result, error) {
+	socket := startServer(t, &Server{Generate: func(context.Context, inference.Request, string, string) (inference.Result, error) {
 		return inference.Result{}, errors.New("provider said no")
 	}})
 	request, _ := json.Marshal(inference.Request{Route: inference.Route{Provider: "openai", Model: "m"}, Signature: "question:string -> answer:string"})

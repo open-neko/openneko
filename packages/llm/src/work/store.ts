@@ -551,6 +551,7 @@ export async function appendWorkRunEvent(args: {
       usage: args.event.usage,
       provider: args.event.provider,
       model: args.event.model,
+      task: "turn",
     });
   }
   if (args.event.type === "tool_start" && eventId > 0) {

@@ -131,6 +131,35 @@ export const adminCases: Case[] = [
   { op: "POST /admin/signin/provider", name: "refuses an unknown provider", status: 400, request: { body: { provider: "nothing" } } },
   { op: "POST /admin/signin/email-provider", name: "refuses an unknown provider", status: 400, request: { body: { provider: "nothing", from: "a@b.test" } } },
   { op: "POST /admin/signin/test", name: "needs an email address", status: 400, request: { body: { email: "nope" } } },
+  { op: "GET /admin/models", name: "lists the models and routes", status: 200 },
+  {
+    op: "POST /admin/models", name: "adds a model and shows its key only as a mask", status: 201,
+    request: {
+      body: {
+        name: "contract-cheap", provider: "openai-compatible", model: "qwen3",
+        config: { url: "https://models.contract.test/v1" }, secrets: { apiKey: "sk-contract-planted-0193" },
+        price: { inputUsdPer1M: 0.5, outputUsdPer1M: 2 },
+      },
+    },
+    check: (r, c) => {
+      c.ids.modelId = id(r, "model");
+      expect(JSON.stringify(r.body)).not.toContain("sk-contract-planted-0193");
+    },
+  },
+  {
+    op: "POST /admin/models", name: "refuses a name in use", status: 409,
+    request: { body: { name: "contract-cheap", provider: "openai-compatible", model: "q", config: { url: "https://models.contract.test/v1" } } },
+  },
+  { op: "POST /admin/models", name: "refuses a provider not in the list", status: 400, request: { body: { name: "x", provider: "no-such" } } },
+  { op: "PUT /admin/models/{modelId}", name: "changes the model", status: 200, request: (c) => ({ params: { modelId: c.ids.modelId }, body: { model: "qwen3-large" } }) },
+  { op: "PUT /admin/models/{modelId}", name: "refuses an unknown model", status: 404, request: (c) => ({ params: { modelId: c.ids.unknownId }, body: {} }) },
+  { op: "PUT /admin/model-routes", name: "routes agent turns to the model", status: 200, request: (c) => ({ body: { task: "turn", modelId: c.ids.modelId } }) },
+  { op: "PUT /admin/model-routes", name: "keeps the default route on the default model", status: 400, request: (c) => ({ body: { task: "default", modelId: c.ids.modelId } }) },
+  { op: "PUT /admin/model-routes", name: "refuses an unknown model", status: 404, request: (c) => ({ body: { task: "classify", modelId: c.ids.unknownId } }) },
+  { op: "DELETE /admin/models/{modelId}", name: "refuses a model a route uses", status: 409, request: (c) => ({ params: { modelId: c.ids.modelId } }) },
+  { op: "PUT /admin/model-routes", name: "clears the turn route", status: 200, request: { body: { task: "turn" } } },
+  { op: "DELETE /admin/models/{modelId}", name: "removes the model", status: 200, request: (c) => ({ params: { modelId: c.ids.modelId } }) },
+  { op: "DELETE /admin/models/{modelId}", name: "refuses an unknown model", status: 404, request: (c) => ({ params: { modelId: c.ids.unknownId } }) },
   { op: "GET /admin/spend", name: "reports the limits", status: 200 },
   {
     op: "PUT /admin/spend", name: "saves the limits", status: 200,

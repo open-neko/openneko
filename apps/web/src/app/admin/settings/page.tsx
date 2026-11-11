@@ -175,6 +175,11 @@ export default async function SettingsPage() {
           statusTone: primaryReady ? "success" : "watch",
         },
         {
+          href: "/admin/settings/models",
+          title: "Models and task routes",
+          copy: "More models, a model for each task, and a fallback model when a provider fails.",
+        },
+        {
           href: "/admin/settings/repository",
           title: "Context repository",
           copy: "Version history of skills and workflows, published to GitHub, GitLab or another git host.",

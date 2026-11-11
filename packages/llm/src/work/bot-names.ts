@@ -24,7 +24,7 @@ const defaultName: NameBotFn = async ({ orgId, instructions, ...input }) => {
   const { outputs: result } = await generate(orgId, botNamer, {
     ...input,
     ...(instructions ? { instructions } : {}),
-  });
+  }, { task: "bot_names" });
   return String(result.name ?? "");
 };
 

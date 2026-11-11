@@ -125,7 +125,10 @@ func NewClient(route Route, key string, retry Retry) (client ax.AxAIService, err
 }
 
 type Request struct {
-	Route       Route          `json:"route"`
+	Route Route `json:"route"`
+	// Fallback serves the call only after the route fails with an error Ax
+	// classifies as retryable, once the route's own retries are spent.
+	Fallback    *Route         `json:"fallback,omitempty"`
 	Signature   string         `json:"signature"`
 	Instruction string         `json:"instruction,omitempty"`
 	Values      map[string]any `json:"values"`
@@ -136,6 +139,7 @@ type Result struct {
 	Usage    Usage          `json:"usage"`
 	Provider string         `json:"provider"`
 	Model    string         `json:"model"`
+	Fallback bool           `json:"fallback,omitempty"`
 }
 
 // Requests counts calls with no provider usage too, so coverage stays honest.
@@ -233,9 +237,14 @@ func CheckSignature(signature string) (err error) {
 	return nil
 }
 
-func Generate(ctx context.Context, request Request, key string) (Result, error) {
+func Generate(ctx context.Context, request Request, key, fallbackKey string) (Result, error) {
 	if err := request.Route.Validate(); err != nil {
 		return Result{}, err
+	}
+	if request.Fallback != nil {
+		if err := request.Fallback.Validate(); err != nil {
+			return Result{}, fmt.Errorf("fallback: %w", err)
+		}
 	}
 	if len(request.Instruction) > maxInstructionBytes {
 		return Result{}, errors.New("program instruction too long")
@@ -243,7 +252,21 @@ func Generate(ctx context.Context, request Request, key string) (Result, error) 
 	if err := CheckSignature(request.Signature); err != nil {
 		return Result{}, err
 	}
-	client, err := NewClient(request.Route, key, HostRetry)
+	result, err := generateOn(ctx, request, request.Route, key)
+	if err == nil || request.Fallback == nil || ctx.Err() != nil || !ax.IsRetryable(err) {
+		return result, redact(err, key)
+	}
+	failed := result.Usage
+	result, err = generateOn(ctx, request, *request.Fallback, fallbackKey)
+	result.Usage.Requests += failed.Requests
+	result.Usage.Add(failed)
+	result.Usage.setCoverage()
+	result.Fallback = err == nil
+	return result, redact(redact(err, fallbackKey), key)
+}
+
+func generateOn(ctx context.Context, request Request, route Route, key string) (Result, error) {
+	client, err := NewClient(route, key, HostRetry)
 	if err != nil {
 		return Result{}, err
 	}
@@ -269,13 +292,13 @@ func Generate(ctx context.Context, request Request, key string) (Result, error) 
 	usage.setCoverage()
 	mu.Unlock()
 	if err != nil {
-		return Result{Usage: usage}, redact(err, key)
+		return Result{Usage: usage}, err
 	}
 	outputs, ok := out.(map[string]ax.Value)
 	if !ok {
 		return Result{Usage: usage}, errors.New("model returned no program output")
 	}
-	result := Result{Outputs: make(map[string]any, len(outputs)), Usage: usage, Provider: request.Route.ProviderName(), Model: request.Route.Model}
+	result := Result{Outputs: make(map[string]any, len(outputs)), Usage: usage, Provider: route.ProviderName(), Model: route.Model}
 	for name, value := range outputs {
 		result.Outputs[name] = value
 	}
@@ -284,7 +307,7 @@ func Generate(ctx context.Context, request Request, key string) (Result, error) 
 
 // redact keeps the key out of error text, which reaches logs and the caller.
 func redact(err error, key string) error {
-	if key == "" || !strings.Contains(err.Error(), key) {
+	if err == nil || key == "" || !strings.Contains(err.Error(), key) {
 		return err
 	}
 	return errors.New(strings.ReplaceAll(err.Error(), key, "[redacted]"))

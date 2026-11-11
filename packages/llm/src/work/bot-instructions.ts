@@ -25,7 +25,7 @@ const defaultKeep: KeepInstructionsFn = async ({ orgId, currentInstructions, ear
     ...input,
     ...(currentInstructions ? { currentInstructions } : {}),
     ...(earlierOperatorMessages ? { earlierOperatorMessages } : {}),
-  });
+  }, { task: "bot_instructions" });
   return { changed: result.changed === true, instructions: String(result.instructions ?? "") };
 };
 

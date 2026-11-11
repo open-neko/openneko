@@ -6,7 +6,7 @@ import { loadSpendLimits, microsToUsd, SpendLimitsMissing, usdToMicros, type Spe
 
 export type SpendPricing = {
   costMicros: number;
-  priced: "billed" | "estimated" | "included" | "fallback";
+  priced: "billed" | "estimated" | "included" | "fallback" | "unpriced";
 };
 
 /**
@@ -39,6 +39,9 @@ export async function recordUsageSpend(input: {
   workflowId?: string | null;
   provider?: string;
   model?: string;
+  task?: string;
+  /** A host call with no price records its tokens at zero cost; a turn is charged the run cap. */
+  unpriced?: "cap" | "zero";
   client?: SpendQueryable;
   now?: Date;
 }): Promise<SpendPricing> {
@@ -62,13 +65,14 @@ export async function recordUsageSpend(input: {
     if (!(error instanceof SpendLimitsMissing)) throw error;
     runCapMicros = usdToMicros(5);
   }
-  const pricing = priceUsage(input.usage, runCapMicros);
+  const capped = priceUsage(input.usage, runCapMicros);
+  const pricing: SpendPricing = capped.priced === "fallback" && input.unpriced === "zero" ? { costMicros: 0, priced: "unpriced" } : capped;
   const tokens = input.usage.totalTokens;
   await client.query(
     `insert into spend_ledger (
        org_id, reservation_id, work_run_id, workflow_id, source, provider, model,
-       cost_micros, tokens, priced, cost_source, pricing_version, created_at
-     ) values ($1, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+       cost_micros, tokens, priced, cost_source, pricing_version, created_at, task
+     ) values ($1, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
     [
       input.orgId,
       reservation?.id ?? null,
@@ -83,6 +87,7 @@ export async function recordUsageSpend(input: {
       input.usage.costSource ?? null,
       input.usage.pricingCatalogVersion ?? null,
       input.now ?? new Date(),
+      input.task ?? null,
     ],
   );
   try {
