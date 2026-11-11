@@ -20,7 +20,7 @@ import {
   UnsafeActionRetryError,
 } from "@neko/llm/workflows";
 import { getOrgId } from "@/lib/db";
-import { actionRequestVisibility } from "@/lib/entitlements";
+import { actionRecordVisibility } from "@/lib/entitlements";
 import { getCurrentActor } from "@/lib/actor";
 
 export const runtime = "nodejs";
@@ -38,7 +38,7 @@ export async function GET(_req: Request, context: RouteContext) {
   if (
     !request ||
     (request.kind === "source_config_admin" && actor.role !== "admin") ||
-    !(await actionRequestVisibility())(request)
+    !(await actionRecordVisibility([request]))(request)
   ) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
@@ -173,7 +173,7 @@ export async function PATCH(req: Request, context: RouteContext) {
   if (
     !existing ||
     (existing.kind === "source_config_admin" && actor.role !== "admin") ||
-    !(await actionRequestVisibility())(existing)
+    !(await actionRecordVisibility([existing]))(existing)
   ) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }

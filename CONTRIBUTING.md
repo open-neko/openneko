@@ -27,6 +27,7 @@ packages/
   llm/                 Providers, agents, classifier, GraphJin work support; Library
                        file storage (src/library), bundled skills (assets/)
   secrets/             Deployment secrets store, at-rest cipher, Infisical resolver (TS, used by the worker)
+  contract/            Contract tests for every route in api/openapi.yaml; they run against any server
 db/
   migrations/          Metadata database migrations (mirrored into apps/openneko/assets/migrations/ for embedding)
   graphjin/            Sample GraphJin config
@@ -50,6 +51,22 @@ go test ./... -count=1
 # Integration tests (need docker on the host):
 go test -tags=integration -count=1 -timeout 10m ./internal/db/...
 ```
+
+For changes to an API route or to `api/openapi.yaml`, run the contract tests.
+They need a Postgres login that may create databases, Go, and a web build:
+
+```bash
+pnpm --filter @neko/web build
+OPENNEKO_CONTRACT_PG=postgres://neko:secret@127.0.0.1:5432/postgres \
+  pnpm --filter @neko/contract local
+```
+
+To test another server, point `OPENNEKO_DATABASE_URL_FILE` at its new,
+migrated database and run `pnpm --filter @neko/contract seed <file>`. The
+command writes two device tokens to the file. Sign-in must be on for that
+server. Then set `OPENNEKO_CONTRACT_URL` and the two tokens, and run
+`pnpm --filter @neko/contract contract`. The tests change data, so use a test
+server.
 
 Keep PRs focused — one change per PR makes review tractable. Include a short description of the user-visible behavior change, and link the issue it closes if there is one.
 

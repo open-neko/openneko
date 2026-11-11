@@ -26,11 +26,17 @@ export async function requestPackWorker(
   path: string,
   init: RequestInit = {},
 ): Promise<{ status: number; body: unknown }> {
-  const response = await fetch(`${workerAdminBase()}${path}`, {
-    ...init,
-    cache: "no-store",
-    signal: AbortSignal.any([AbortSignal.timeout(120_000), ...(init.signal ? [init.signal] : [])]),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${workerAdminBase()}${path}`, {
+      ...init,
+      cache: "no-store",
+      signal: AbortSignal.any([AbortSignal.timeout(120_000), ...(init.signal ? [init.signal] : [])]),
+    });
+  } catch (error) {
+    if (error instanceof TypeError) return { status: 502, body: { error: "worker is unavailable" } };
+    throw error;
+  }
   const body = await response.json().catch(() => ({ error: `Worker returned HTTP ${response.status}` }));
   return { status: response.status, body };
 }
