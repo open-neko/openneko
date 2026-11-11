@@ -592,11 +592,6 @@
     gap: 7px;
   }
 
-  .run-finding-pin-control {
-    align-self: flex-end;
-    margin-right: -7px;
-  }
-
   .run-no-actions {
     align-items: flex-start;
     margin-top: -12px;
@@ -620,7 +615,6 @@
 
   .run-finding-card,
   .run-followup-control svg,
-  .run-finding-pin-control svg,
   .run-api-progress-track > span {
     transition: none;
   }

@@ -12,7 +12,6 @@ export * from "./config";
 export * from "./llm";
 export { generate, hostProgram, testPrimaryProvider, type GenerateResult, type HostProgram } from "./inference";
 export * from "./classifier";
-export * from "./summarize-briefing";
 export * from "./metric-agent";
 export * from "./usage-normalization";
 export * from "./discovery-pathways";

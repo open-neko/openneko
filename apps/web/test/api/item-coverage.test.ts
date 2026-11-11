@@ -10,7 +10,6 @@ import {
   createUserGroup,
   db,
   grantItem,
-  metric,
   pool,
   revokeItem,
 } from "@neko/db";
@@ -34,8 +33,6 @@ const reachable = await dbReachable();
   let home: string;
   let workflowHeld: string;
   let workflowOther: string;
-  let metricHeld: string;
-  let metricOther: string;
 
   beforeAll(async () => {
     home = await mkdtemp(join(tmpdir(), "item-coverage-home-"));
@@ -65,12 +62,6 @@ const reachable = await dbReachable();
     workflowOther = (await saveWorkflow({ orgId: state.orgId, name: "Promotions", steps: [] })).workflow.id;
     await grantItem(state.orgId, { groupId: finance.id, itemType: "workflow", itemId: workflowHeld });
 
-    const [held] = await db().insert(metric).values({ org_id: state.orgId, role: "CFO", slug: "revenue", source: "persona", title: "Revenue", why: "" }).returning({ id: metric.id });
-    const [other] = await db().insert(metric).values({ org_id: state.orgId, role: "CFO", slug: "refunds", source: "persona", title: "Refunds", why: "" }).returning({ id: metric.id });
-    metricHeld = held!.id;
-    metricOther = other!.id;
-    await grantItem(state.orgId, { groupId: finance.id, itemType: "metric", itemId: metricHeld });
-    await grantItem(state.orgId, { groupId: finance.id, itemType: "dashboard", itemId: "CFO" });
   });
 
   afterAll(async () => {
@@ -98,18 +89,6 @@ const reachable = await dbReachable();
     expect((await callRoute((req) => detail.GET(req, { params: Promise.resolve({ workflowId: workflowHeld }) }))).status).toBe(200);
     expect((await callRoute((req) => detail.GET(req, { params: Promise.resolve({ workflowId: workflowOther }) }))).status).toBe(404);
     expect((await callRoute(runs.GET)).status).toBe(200);
-  });
-
-  it("dashboards and metrics: briefing tiles and metric detail", async () => {
-    const briefing = await import("@/app/api/v1/briefing/route");
-    const byMetric = await import("@/app/api/v1/briefing/by-metric/route");
-    expect((await callRoute(briefing.GET, { query: { role: "COO" } })).status).toBe(404);
-    const cfo = await callRoute(briefing.GET, { query: { role: "CFO" } });
-    expect(cfo.status).toBe(200);
-    const text = JSON.stringify(cfo.body);
-    expect(text).toContain(metricHeld);
-    expect(text).not.toContain(metricOther);
-    expect((await callRoute(byMetric.GET, { query: { metricId: metricOther } })).status).toBe(404);
   });
 
   it("team memory: list hides team global memories", async () => {

@@ -14,7 +14,7 @@ import {
   deleteTestOrg,
   uniqueOrgId,
 } from "@neko/db/test-helpers";
-import { action_request, briefing, db, pool } from "@neko/db";
+import { action_request, db, pool } from "@neko/db";
 import { callRoute } from "../_helpers/route";
 
 const { mockGetOrgId, mockGetCurrentActor } = vi.hoisted(() => ({
@@ -36,18 +36,16 @@ const describeIfDb = reachable ? describe : describe.skip;
 
 if (!reachable) {
   console.warn(
-    "[api/approvals-briefing-findings] skipping: Postgres unreachable.",
+    "[api/approvals-runless] skipping: Postgres unreachable.",
   );
 }
 
 describeIfDb("run-less approvals", () => {
   let orgId: string;
   let approvalsGET: typeof import("@/app/api/v1/approvals/route").GET;
-  let findingsGET: typeof import("@/app/api/v1/briefing/findings/route").GET;
 
   beforeAll(async () => {
     approvalsGET = (await import("@/app/api/v1/approvals/route")).GET;
-    findingsGET = (await import("@/app/api/v1/briefing/findings/route")).GET;
   });
 
   beforeEach(async () => {
@@ -55,17 +53,6 @@ describeIfDb("run-less approvals", () => {
     await createTestOrg(orgId);
     mockGetOrgId.mockResolvedValue(orgId);
     mockGetCurrentActor.mockResolvedValue({ userId: "admin-1", role: "admin" });
-
-    // Keep the findings route on its read path; this test is about approval
-    // projection, not live-summary generation.
-    await db().insert(briefing).values({
-      org_id: orgId,
-      role: "_summary",
-      for_date: new Date().toISOString().slice(0, 10),
-      profile_version: 1,
-      summary_md: "One approval is queued.",
-      insights: [],
-    });
   });
 
   afterEach(async () => {
@@ -77,7 +64,7 @@ describeIfDb("run-less approvals", () => {
     await pool().end();
   });
 
-  it("appears in both approvals endpoints with a nullable workflow contract", async () => {
+  it("appears in the approvals endpoint with a nullable workflow contract", async () => {
     const [inserted] = await db()
       .insert(action_request)
       .values({
@@ -106,25 +93,9 @@ describeIfDb("run-less approvals", () => {
         },
       ],
     });
-
-    const findings = await callRoute(findingsGET);
-    expect(findings.status).toBe(200);
-    expect(findings.body).toMatchObject({
-      awaitingYou: {
-        approvals: [
-          {
-            id: inserted!.id,
-            kind: "approval",
-            workflowRunId: null,
-            workflow: null,
-            title: "user_admin",
-          },
-        ],
-      },
-    });
   });
 
-  it("applies the same source-config visibility rule in both endpoints", async () => {
+  it("applies the source-config visibility rule", async () => {
     mockGetCurrentActor.mockResolvedValue({ userId: "member-1", role: "member" });
     await db().insert(action_request).values([
       {
@@ -144,19 +115,11 @@ describeIfDb("run-less approvals", () => {
     const approvals = await callRoute(approvalsGET, {
       url: "http://localhost/api/approvals?filter=awaiting",
     });
-    const findings = await callRoute(findingsGET);
 
     expect(
       (approvals.body as { actions: Array<{ kind: string }> }).actions.map(
         (action) => action.kind,
       ),
-    ).toEqual(["user_admin"]);
-    expect(
-      (
-        findings.body as {
-          awaitingYou: { approvals: Array<{ title: string }> };
-        }
-      ).awaitingYou.approvals.map((approval) => approval.title),
     ).toEqual(["user_admin"]);
   });
 });

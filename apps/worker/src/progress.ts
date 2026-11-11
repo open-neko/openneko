@@ -1,9 +1,8 @@
 /**
  * Shared progress writer for processing_job.
  *
- * Worker job handlers call this to push status messages that the web
- * client polls via /api/v1/briefing/status?jobId=. Uses JSONB concat (`||`)
- * so existing keys survive an update.
+ * Worker job handlers call this to push status messages into the job's
+ * progress. Uses JSONB concat (`||`) so existing keys survive an update.
  */
 
 import { db, eq, processing_job, sql } from "@neko/db";
