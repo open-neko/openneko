@@ -11,7 +11,7 @@ export async function fetchAssistantTextFromRun(
   runId: string,
 ): Promise<string> {
   try {
-    const res = await fetch(`/api/work/runs/${runId}/events`, {
+    const res = await fetch(`/api/v1/work/runs/${runId}/events`, {
       cache: "no-store",
     });
     if (!res.ok) return "";

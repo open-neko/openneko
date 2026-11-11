@@ -83,8 +83,8 @@ vi.mock("@neko/db", () => {
   };
 });
 
-import { POST } from "@/app/api/admin/users/route";
-import { PATCH } from "@/app/api/admin/users/[userId]/route";
+import { POST } from "@/app/api/v1/admin/users/route";
+import { PATCH } from "@/app/api/v1/admin/users/[userId]/route";
 
 function postRequest(body: unknown): Request {
   return new Request("http://localhost/api/admin/users", {

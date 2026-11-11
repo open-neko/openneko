@@ -9,7 +9,7 @@ export function useThreadBot(threadId: string | null, enabled = true) {
   useEffect(() => {
     if (!threadId || !enabled) return;
     let cancelled = false;
-    fetch(`/api/bots/thread/${threadId}`)
+    fetch(`/api/v1/bots/thread/${threadId}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { bot: BotSummary | null; starters: string[] } | null) => {
         if (!cancelled && data?.bot) setState({ bot: data.bot, starters: data.starters });

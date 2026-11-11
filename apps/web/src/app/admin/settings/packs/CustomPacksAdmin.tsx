@@ -31,7 +31,7 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
   }, []);
   const refresh = useCallback(async () => {
     try {
-      const result = await packApi<{ packs: CatalogPack[] }>("/api/admin/packs");
+      const result = await packApi<{ packs: CatalogPack[] }>("/api/v1/admin/packs");
       setCatalog(result.packs);
     } catch (error) { fail(error, "The pack list could not be loaded. Try again."); }
   }, [fail]);
@@ -66,7 +66,7 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
     }
     setBusy("upload"); setError("");
     try {
-      const response = await fetch("/api/admin/packs/upload", { method: "POST", headers: { "Content-Type": "application/zip" }, body: file });
+      const response = await fetch("/api/v1/admin/packs/upload", { method: "POST", headers: { "Content-Type": "application/zip" }, body: file });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Upload failed");
       await refresh();

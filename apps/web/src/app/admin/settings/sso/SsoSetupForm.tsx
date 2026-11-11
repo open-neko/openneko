@@ -84,7 +84,7 @@ export default function SsoSetupForm({
     setAutofilling(true);
     try {
       const res = await fetch(
-        `/api/sso/setup/credentials-info?environmentId=${encodeURIComponent(environmentId)}`,
+        `/api/v1/sso/setup/credentials-info?environmentId=${encodeURIComponent(environmentId)}`,
         { cache: "no-store" },
       );
       if (!res.ok) {
@@ -113,7 +113,7 @@ export default function SsoSetupForm({
     (async () => {
       setPickerBusy(true);
       try {
-        const res = await fetch("/api/sso/setup/environments", {
+        const res = await fetch("/api/v1/sso/setup/environments", {
           cache: "no-store",
         });
         if (!res.ok) {
@@ -147,7 +147,7 @@ export default function SsoSetupForm({
     if (!envId) return;
     try {
       const res = await fetch(
-        `/api/sso/setup/organizations?environmentId=${encodeURIComponent(envId)}`,
+        `/api/v1/sso/setup/organizations?environmentId=${encodeURIComponent(envId)}`,
         { cache: "no-store" },
       );
       if (!res.ok) return;
@@ -184,7 +184,7 @@ export default function SsoSetupForm({
   async function saveIds() {
     setSavingIds(true);
     try {
-      const res = await fetch("/api/sso/setup/ids", {
+      const res = await fetch("/api/v1/sso/setup/ids", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ environmentId, organizationId, tier }),
@@ -211,7 +211,7 @@ export default function SsoSetupForm({
   async function saveCredentials() {
     setSavingCreds(true);
     try {
-      const res = await fetch("/api/sso/setup/credentials", {
+      const res = await fetch("/api/v1/sso/setup/credentials", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ environmentUrl, clientId, clientSecret }),
@@ -240,7 +240,7 @@ export default function SsoSetupForm({
   async function generate() {
     setGenerating(true);
     try {
-      const res = await fetch("/api/sso/setup/generate-portal-link", {
+      const res = await fetch("/api/v1/sso/setup/generate-portal-link", {
         method: "POST",
       });
       if (!res.ok) {
@@ -269,7 +269,7 @@ export default function SsoSetupForm({
   async function check() {
     setChecking(true);
     try {
-      const res = await fetch("/api/sso/setup/check", { method: "POST" });
+      const res = await fetch("/api/v1/sso/setup/check", { method: "POST" });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(body?.error ?? `HTTP ${res.status}`);
@@ -365,7 +365,7 @@ export default function SsoSetupForm({
                   there; the consent screen names the scopes and endpoint.
                 </p>
                 <ButtonLink
-                  href="/api/integrations/connect/scalekit/start?returnTo=%2Fadmin%2Fsettings%2Fsso"
+                  href="/api/v1/integrations/connect/scalekit/start?returnTo=%2Fadmin%2Fsettings%2Fsso"
                 >
                   Connect Scalekit workspace
                 </ButtonLink>

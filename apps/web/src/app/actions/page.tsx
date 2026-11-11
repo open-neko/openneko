@@ -171,7 +171,7 @@ function ActionsPageInner() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/approvals?filter=${filter}`, {
+      const res = await fetch(`/api/v1/approvals?filter=${filter}`, {
         cache: "no-store",
       });
       if (!res.ok) {

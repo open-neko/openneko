@@ -467,7 +467,7 @@ export interface AgentControlPlane {
   /**
    * Hard-delete a workflow and its dependents (triggers, runs, outputs,
    * proposed actions cascade via FK). Org-scoped: `found: false` when the id
-   * doesn't belong to the org. Mirrors `DELETE /api/workflows/[id]`.
+   * doesn't belong to the org. Mirrors `DELETE /api/v1/workflows/[id]`.
    */
   deleteWorkflow(input: {
     orgId: string;

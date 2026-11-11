@@ -29,8 +29,8 @@ export function ItemAccessPanel({ itemType, itemId, label }: { itemType: string;
 
   const load = useCallback(async () => {
     const [holding, allGroups] = await Promise.all([
-      adminApi<{ holders: Holder[] }>(`/api/admin/item-grants?itemType=${itemType}&itemId=${encodeURIComponent(itemId)}`),
-      adminApi<{ groups: Group[] }>("/api/admin/groups"),
+      adminApi<{ holders: Holder[] }>(`/api/v1/admin/item-grants?itemType=${itemType}&itemId=${encodeURIComponent(itemId)}`),
+      adminApi<{ groups: Group[] }>("/api/v1/admin/groups"),
     ]);
     if (!holding.ok || !allGroups.ok) return setHolders(null);
     setHolders(holding.body.holders);
@@ -49,7 +49,7 @@ export function ItemAccessPanel({ itemType, itemId, label }: { itemType: string;
   async function change(groupId: string, grant: boolean) {
     setBusy(true);
     setError(null);
-    const result = await adminApi("/api/admin/item-grants", grant ? "POST" : "DELETE", { groupId, itemType, itemId });
+    const result = await adminApi("/api/v1/admin/item-grants", grant ? "POST" : "DELETE", { groupId, itemType, itemId });
     setBusy(false);
     if (!result.ok) return setError(result.error);
     await load();

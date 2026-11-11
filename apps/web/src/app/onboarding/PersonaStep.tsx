@@ -28,7 +28,7 @@ export default function PersonaStep({
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/settings/persona", {
+      const res = await fetch("/api/v1/settings/persona", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

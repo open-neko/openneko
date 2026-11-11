@@ -96,7 +96,7 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
     setBusy(pluginName);
     try {
       const res = await fetch(
-        `/api/integrations/disconnect/${encodeURIComponent(pluginName)}`,
+        `/api/v1/integrations/disconnect/${encodeURIComponent(pluginName)}`,
         { method: "POST" },
       );
       if (!res.ok) {
@@ -126,7 +126,7 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
     if (disconnect && !await confirmDialog({ title: `Disconnect ${row.providerLabel}?`, description: "Your automations will lose access. Pending approvals using this connection will need to be requested again.", confirmLabel: "Disconnect", destructive: true })) return;
     setBusy(`${row.packId}:${row.key}`);
     try {
-      const response = await fetch(`/api/my/pack-accounts/${encodeURIComponent(row.packId)}/${encodeURIComponent(row.key)}${returnQuery}`, { method: disconnect ? "DELETE" : "POST" });
+      const response = await fetch(`/api/v1/my/pack-accounts/${encodeURIComponent(row.packId)}/${encodeURIComponent(row.key)}${returnQuery}`, { method: disconnect ? "DELETE" : "POST" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Connection failed");
       if (!disconnect) { window.location.assign(result.authorizationUrl); return; }
@@ -179,7 +179,7 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
                 {busy === row.pluginName ? "Disconnecting…" : "Disconnect"}
               </Button>
             ) : disabled ? <Button disabled>Connect account</Button> : (
-              <ButtonLink variant="primary" href={`/api/integrations/connect/${encodeURIComponent(row.pluginName)}/start${returnQuery}`}>Connect account</ButtonLink>
+              <ButtonLink variant="primary" href={`/api/v1/integrations/connect/${encodeURIComponent(row.pluginName)}/start${returnQuery}`}>Connect account</ButtonLink>
             )}
           </ActionGroup>
         </CardFooter>

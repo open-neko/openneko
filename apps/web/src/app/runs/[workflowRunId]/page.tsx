@@ -288,7 +288,7 @@ export default function RunPage() {
   const load = useCallback(async () => {
     if (!workflowRunId) return;
     try {
-      const res = await fetch(`/api/workflow-runs/${workflowRunId}`, {
+      const res = await fetch(`/api/v1/workflow-runs/${workflowRunId}`, {
         cache: "no-store",
       });
       if (!res.ok) {
@@ -325,7 +325,7 @@ export default function RunPage() {
     async (id: string, decision: "approve" | "reject", reason?: string) => {
       setActionBusyId(id);
       try {
-        await fetch(`/api/action-requests/${id}`, {
+        await fetch(`/api/v1/action-requests/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ decision, reason }),
@@ -355,7 +355,7 @@ export default function RunPage() {
   const pinOutput = useCallback(async (outputId: string) => {
     setPinningOutputId(outputId);
     try {
-      const res = await fetch("/api/briefing/pins", {
+      const res = await fetch("/api/v1/briefing/pins", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ outputId }),
@@ -377,7 +377,7 @@ export default function RunPage() {
   const askFollowUp = useCallback(async () => {
     if (!workflowRunId) return;
     try {
-      const res = await fetch("/api/work/threads", {
+      const res = await fetch("/api/v1/work/threads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ seedWorkflowRunId: workflowRunId }),

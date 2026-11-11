@@ -27,7 +27,7 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
     let cancelled = false;
     const check = async () => {
       try {
-        const res = await fetch("/api/version", { cache: "no-store" });
+        const res = await fetch("/api/v1/version", { cache: "no-store" });
         if (!res.ok) return;
         const data = (await res.json()) as { version?: string };
         if (cancelled) return;
@@ -48,7 +48,7 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/auth/session", { cache: "no-store" });
+        const res = await fetch("/api/v1/auth/session", { cache: "no-store" });
         if (cancelled || !res.ok) return;
         const data = (await res.json()) as {
           user: { id: string; email: string; name: string | null } | null;
@@ -66,7 +66,7 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
 
   async function handleSignOut() {
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await fetch("/api/v1/auth/logout", { method: "POST" });
     } finally {
       window.location.href = "/signin";
     }

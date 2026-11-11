@@ -3,7 +3,7 @@
 import type { AnchorHTMLAttributes, ReactNode } from "react";
 
 // Shared markdown preprocessor that rewrites agent-mentioned absolute workspace
-// paths into clickable links to /api/work/files. Applied wherever assistant
+// paths into clickable links to /api/v1/work/files. Applied wherever assistant
 // prose is rendered — RunTimeline's ReactMarkdown invocations and the A2UI
 // Markdown component used in synthesized surfaces.
 
@@ -35,7 +35,7 @@ export function openFileLink(href: string): void {
   document.body.removeChild(a);
 }
 
-// ReactMarkdown components map. Routes /api/work/files anchors through
+// ReactMarkdown components map. Routes /api/v1/work/files anchors through
 // openFileLink (new tab + popup fallback) and leaves other anchors alone.
 // Used by both the work RunTimeline and the a2ui Markdown component.
 export const WORKSPACE_MARKDOWN_COMPONENTS = {
@@ -45,7 +45,7 @@ export const WORKSPACE_MARKDOWN_COMPONENTS = {
     onClick,
     ...props
   }: AnchorHTMLAttributes<HTMLAnchorElement> & { children?: ReactNode }) {
-    const isFile = typeof href === "string" && href.startsWith("/api/work/files/");
+    const isFile = typeof href === "string" && (href.startsWith("/api/v1/work/files/") || href.startsWith("/api/work/files/"));
     if (isFile) {
       return (
         <a
@@ -76,12 +76,12 @@ export function linkifyWorkspacePaths(md: string): string {
       const rel = relPathFor(path);
       if (!rel) return `\`${path}\``;
       const filename = path.split("/").slice(-1)[0];
-      return `[\`${filename}\`](/api/work/files/${rel})`;
+      return `[\`${filename}\`](/api/v1/work/files/${rel})`;
     })
     .replace(BARE_FILE_RE, (full: string, path: string) => {
       const rel = relPathFor(path);
       if (!rel) return full;
       const filename = path.split("/").slice(-1)[0];
-      return `[${filename}](/api/work/files/${rel})`;
+      return `[${filename}](/api/v1/work/files/${rel})`;
     });
 }

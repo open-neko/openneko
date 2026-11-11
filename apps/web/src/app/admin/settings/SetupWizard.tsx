@@ -170,7 +170,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
   async function savePasswordAndAdvance() {
     setSavingPassword(true);
     try {
-      const res = await fetch("/api/admin/change-password", {
+      const res = await fetch("/api/v1/admin/change-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password: newPassword }),
@@ -194,7 +194,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
     setTestingData(true);
     try {
       const { graphqlUrl, mcpUrl } = deriveEndpoints(data.rootUrl);
-      const res = await fetch("/api/settings/data-source/test", {
+      const res = await fetch("/api/v1/settings/data-source/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ graphqlUrl, mcpUrl }),
@@ -222,7 +222,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
       // the explicit Test button uses; on failure we surface the error
       // inline and DO NOT save — the user shouldn't move past a step with
       // a broken URL only to fail mid-onboarding minutes later.
-      const testRes = await fetch("/api/settings/data-source/test", {
+      const testRes = await fetch("/api/v1/settings/data-source/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ graphqlUrl, mcpUrl }),
@@ -231,7 +231,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
       if (!testRes.ok) {
         throw new Error(testBody.error ?? "Connection test failed.");
       }
-      const res = await fetch("/api/settings/data-source", {
+      const res = await fetch("/api/v1/settings/data-source", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ graphqlUrl, mcpUrl, label: data.label }),
@@ -263,7 +263,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
       // silently and only manifest minutes later as a failed
       // business_profile_build job — surfacing the error here saves
       // the user from a long-tail failure.
-      const testRes = await fetch("/api/settings/provider/test", {
+      const testRes = await fetch("/api/v1/settings/provider/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -281,7 +281,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
       }
       // Save worker-wide agent concurrency.
       const cap = Number(concurrentJobs) || initial.agent.defaults.globalCap;
-      const agentRes = await fetch("/api/settings/agent", {
+      const agentRes = await fetch("/api/v1/settings/agent", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ globalCap: cap }),
@@ -291,7 +291,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
         throw new Error(body.error ?? "Agent settings save failed");
       }
       // Save primary provider (with secrets)
-      const providerRes = await fetch("/api/settings/provider", {
+      const providerRes = await fetch("/api/v1/settings/provider", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -343,7 +343,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
       // saving — only when enabled. Skipping the test for the explicit
       // "disabled" path lets users finish setup without a Perplexity key.
       if (researchEnabled) {
-        const testRes = await fetch("/api/settings/provider/test", {
+        const testRes = await fetch("/api/v1/settings/provider/test", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -353,7 +353,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
           throw new Error(testBody.error ?? "Research provider test failed.");
         }
       }
-      const res = await fetch("/api/settings/provider", {
+      const res = await fetch("/api/v1/settings/provider", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -373,7 +373,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
       else {
         // When skipping, persist the explicit "disabled" state so the
         // worker won't try to chain industry research later.
-        await fetch("/api/settings/provider", {
+        await fetch("/api/v1/settings/provider", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

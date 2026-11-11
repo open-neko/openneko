@@ -34,8 +34,8 @@ type PendingRow = {
 
 async function fetchMemoryData(signal?: AbortSignal) {
   const [memoryResponse, pendingResponse] = await Promise.all([
-    fetch("/api/work/memories", { cache: "no-store", signal }),
-    fetch("/api/work/memories/pending", { cache: "no-store", signal }),
+    fetch("/api/v1/work/memories", { cache: "no-store", signal }),
+    fetch("/api/v1/work/memories/pending", { cache: "no-store", signal }),
   ]);
   if (!memoryResponse.ok || !pendingResponse.ok) {
     throw new Error("Memory could not be loaded.");
@@ -104,7 +104,7 @@ export default function MemoryPage() {
       setBusyId(id);
       try {
         const response = await fetch(
-          `/api/work/memories/${encodeURIComponent(id)}`,
+          `/api/v1/work/memories/${encodeURIComponent(id)}`,
           {
             method: "DELETE",
             headers: { "content-type": "application/json" },
@@ -128,7 +128,7 @@ export default function MemoryPage() {
     async (id: string, action: "accept" | "decline") => {
       setBusyId(id);
       try {
-        const response = await fetch("/api/work/memories/decide", {
+        const response = await fetch("/api/v1/work/memories/decide", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({

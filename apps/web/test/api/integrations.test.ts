@@ -65,7 +65,7 @@ function jsonResponse(status: number, body: unknown): Response {
 describe("/api/integrations/list", () => {
   it("401 when signed out", async () => {
     mockGetCurrentUser.mockResolvedValue(null);
-    const { GET } = await import("@/app/api/integrations/list/route");
+    const { GET } = await import("@/app/api/v1/integrations/list/route");
     const res = await callRoute(GET);
     expect(res.status).toBe(401);
   });
@@ -118,7 +118,7 @@ describe("/api/integrations/list", () => {
       }
       throw new Error(`unexpected fetch: ${url}`);
     });
-    const { GET } = await import("@/app/api/integrations/list/route");
+    const { GET } = await import("@/app/api/v1/integrations/list/route");
     const res = await callRoute(GET);
     expect(res.status).toBe(200);
     const body = res.body as {
@@ -145,7 +145,7 @@ describe("/api/integrations/disconnect/[plugin]", () => {
   it("401 when signed out", async () => {
     mockGetCurrentUser.mockResolvedValue(null);
     const { POST } = await import(
-      "@/app/api/integrations/disconnect/[plugin]/route"
+      "@/app/api/v1/integrations/disconnect/[plugin]/route"
     );
     const res = await callRoute(
       (req) =>
@@ -167,7 +167,7 @@ describe("/api/integrations/disconnect/[plugin]", () => {
       throw new Error(`unexpected fetch: ${url}`);
     });
     const { POST } = await import(
-      "@/app/api/integrations/disconnect/[plugin]/route"
+      "@/app/api/v1/integrations/disconnect/[plugin]/route"
     );
     const res = await callRoute(
       (req) =>
@@ -203,7 +203,7 @@ describe("/api/integrations/connect/[plugin]/start", () => {
       throw new Error(`unexpected fetch: ${url}`);
     });
     const { GET } = await import(
-      "@/app/api/integrations/connect/[plugin]/start/route"
+      "@/app/api/v1/integrations/connect/[plugin]/start/route"
     );
     const res = await callRoute(
       (req) =>
@@ -241,7 +241,7 @@ describe("/api/integrations/connect/[plugin]/start", () => {
       throw new Error(`unexpected fetch: ${url}`);
     });
     const { GET } = await import(
-      "@/app/api/integrations/connect/[plugin]/start/route"
+      "@/app/api/v1/integrations/connect/[plugin]/start/route"
     );
     // The synthetic callRoute helper has no request scope, so cookies()
     // throws once the route reaches the state-cookie write. That throw
@@ -274,7 +274,7 @@ describe("/api/integrations/connect/[plugin]/start", () => {
       throw new Error(`unexpected fetch: ${url}`);
     });
     const { GET } = await import(
-      "@/app/api/integrations/connect/[plugin]/start/route"
+      "@/app/api/v1/integrations/connect/[plugin]/start/route"
     );
     const res = await callRoute(
       (req) =>

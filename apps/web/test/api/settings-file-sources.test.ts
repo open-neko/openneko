@@ -37,11 +37,11 @@ vi.mock("@neko/llm/graphjin/persist-source-config", () => ({
 }));
 
 describe("/api/settings/file-sources", () => {
-  let POST: typeof import("@/app/api/settings/file-sources/route").POST;
+  let POST: typeof import("@/app/api/v1/settings/file-sources/route").POST;
   const previousConfig = process.env.OPENNEKO_GRAPHJIN_CONFIG;
 
   beforeAll(async () => {
-    ({ POST } = await import("@/app/api/settings/file-sources/route"));
+    ({ POST } = await import("@/app/api/v1/settings/file-sources/route"));
   });
 
   beforeEach(() => {

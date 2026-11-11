@@ -127,7 +127,7 @@ export function useApprovalsCount(enabled = true) {
     let cancelled = false;
     const tick = async () => {
       try {
-        const res = await fetch("/api/approvals?countOnly=true", {
+        const res = await fetch("/api/v1/approvals?countOnly=true", {
           cache: "no-store",
         });
         if (cancelled || !res.ok) return;

@@ -94,7 +94,7 @@ export function UsersClient({
   async function createUser(event: React.FormEvent) {
     event.preventDefault();
     setBusy("create");
-    const created = await callApi("/api/admin/users", {
+    const created = await callApi("/api/v1/admin/users", {
       method: "POST",
       body: JSON.stringify({
         email,
@@ -120,7 +120,7 @@ export function UsersClient({
     patch: { role?: string; disabled?: boolean },
   ) {
     setBusy(id);
-    await callApi(`/api/admin/users/${encodeURIComponent(id)}`, {
+    await callApi(`/api/v1/admin/users/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: JSON.stringify(patch),
     });

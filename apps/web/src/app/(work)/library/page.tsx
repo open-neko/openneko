@@ -78,7 +78,7 @@ function LibraryBrowser() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetch(`/api/library?${requestKey}`, { cache: "no-store", signal: controller.signal })
+    void fetch(`/api/v1/library?${requestKey}`, { cache: "no-store", signal: controller.signal })
       .then(async response => {
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error ?? "Library could not be loaded. Try again.");
@@ -93,7 +93,7 @@ function LibraryBrowser() {
   useEffect(() => {
     if (!selectedId) return;
     const controller = new AbortController();
-    void fetch(`/api/library/documents/${encodeURIComponent(selectedId)}`, { cache: "no-store", signal: controller.signal })
+    void fetch(`/api/v1/library/documents/${encodeURIComponent(selectedId)}`, { cache: "no-store", signal: controller.signal })
       .then(async response => {
         if (!response.ok) throw new Error(response.status === 404
           ? "This document is no longer available. Close it and refresh the list."
@@ -119,7 +119,7 @@ function LibraryBrowser() {
       try {
         const body = new FormData();
         for (const file of selected) body.append("files", file);
-        const response = await fetch("/api/library/upload", { method: "POST", body });
+        const response = await fetch("/api/v1/library/upload", { method: "POST", body });
         if (!response.ok) {
           const payload = (await response.json().catch(() => null)) as { error?: string } | null;
           throw new Error(payload?.error ?? "The documents could not be imported.");
@@ -147,7 +147,7 @@ function LibraryBrowser() {
       if (!ok) return;
       setBusyId(id);
       try {
-        const response = await fetch(`/api/library/documents/${encodeURIComponent(id)}`, { method: "DELETE" });
+        const response = await fetch(`/api/v1/library/documents/${encodeURIComponent(id)}`, { method: "DELETE" });
         if (!response.ok) throw new Error("Document could not be removed.");
         if (id === selectedId) change({ id: null });
         await refresh();

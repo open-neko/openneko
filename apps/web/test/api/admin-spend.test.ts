@@ -31,8 +31,8 @@ const reachable = await dbReachable();
   });
 
   it("reads and saves limits and a workflow override", async () => {
-    const spend = await import("@/app/api/admin/spend/route");
-    const override = await import("@/app/api/admin/spend/workflows/[workflowId]/route");
+    const spend = await import("@/app/api/v1/admin/spend/route");
+    const override = await import("@/app/api/v1/admin/spend/workflows/[workflowId]/route");
     const { rows } = await pool().query<{ id: string }>(
       "insert into workflow_definition (org_id, name) values ($1, 'Daily report') returning id",
       [mocks.orgId],
@@ -69,14 +69,14 @@ const reachable = await dbReachable();
   });
 
   it("acknowledges an open spend alert once", async () => {
-    const alerts = await import("@/app/api/admin/spend/alerts/[alertId]/route");
+    const alerts = await import("@/app/api/v1/admin/spend/alerts/[alertId]/route");
     const { rows } = await pool().query<{ id: string }>(
       `insert into behavior_alert (org_id, kind, subject, observed, threshold, window_seconds, details)
        values ($1, 'spend.budget_warning', 'org', 16000, 16000, 3600, $2::jsonb) returning id`,
       [mocks.orgId, JSON.stringify({ message: "Spend is at 80%.", windowStart: "2026-09-17T09:00:00.000Z" })],
     );
     const ctx = { params: Promise.resolve({ alertId: rows[0]!.id }) };
-    const spend = await import("@/app/api/admin/spend/route");
+    const spend = await import("@/app/api/v1/admin/spend/route");
     expect((await callRoute(spend.GET)).body).toMatchObject({ alerts: [{ id: rows[0]!.id, message: "Spend is at 80%." }] });
 
     const acknowledged = await callRoute((req) => alerts.DELETE(req, ctx), { method: "DELETE" });
@@ -86,7 +86,7 @@ const reachable = await dbReachable();
 
   it("refuses non-administrators", async () => {
     mocks.role = "member";
-    const spend = await import("@/app/api/admin/spend/route");
+    const spend = await import("@/app/api/v1/admin/spend/route");
     expect((await callRoute(spend.GET)).status).toBe(403);
     expect((await callRoute(spend.PUT, { method: "PUT", body: {} })).status).toBe(403);
   });

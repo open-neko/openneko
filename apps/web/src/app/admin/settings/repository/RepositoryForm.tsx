@@ -55,7 +55,7 @@ export default function RepositoryForm({ initial }: { initial: ContextRemoteSett
 
   const loadPreview = useCallback(async () => {
     setPreview((p) => ({ ...p, loading: true, error: null }));
-    const result = await adminApi<{ items: PublishPreviewItem[] }>("/api/admin/context-remote/publish");
+    const result = await adminApi<{ items: PublishPreviewItem[] }>("/api/v1/admin/context-remote/publish");
     setPreview(result.ok ? { items: result.body.items, error: null, loading: false } : { items: null, error: result.error, loading: false });
   }, []);
 
@@ -70,7 +70,7 @@ export default function RepositoryForm({ initial }: { initial: ContextRemoteSett
     setBusy("save");
     setError(null);
     const { token, ...rest } = draft;
-    const result = await adminApi<{ remote: ContextRemoteSettings }>("/api/admin/context-remote", "PUT", {
+    const result = await adminApi<{ remote: ContextRemoteSettings }>("/api/v1/admin/context-remote", "PUT", {
       ...rest,
       ...(token.trim() ? { token } : {}),
     });
@@ -84,11 +84,11 @@ export default function RepositoryForm({ initial }: { initial: ContextRemoteSett
   async function publish() {
     setBusy("publish");
     setError(null);
-    const result = await adminApi<{ result: PublishResult; remote: ContextRemoteSettings }>("/api/admin/context-remote/publish", "POST");
+    const result = await adminApi<{ result: PublishResult; remote: ContextRemoteSettings }>("/api/v1/admin/context-remote/publish", "POST");
     setBusy(null);
     if (!result.ok) {
       setError(result.error);
-      const refreshed = await adminApi<{ remote: ContextRemoteSettings | null }>("/api/admin/context-remote");
+      const refreshed = await adminApi<{ remote: ContextRemoteSettings | null }>("/api/v1/admin/context-remote");
       if (refreshed.ok) setRemote(refreshed.body.remote);
       return;
     }
@@ -99,7 +99,7 @@ export default function RepositoryForm({ initial }: { initial: ContextRemoteSett
   async function disconnect() {
     setBusy("remove");
     setError(null);
-    const result = await adminApi<{ remote: null }>("/api/admin/context-remote", "DELETE");
+    const result = await adminApi<{ remote: null }>("/api/v1/admin/context-remote", "DELETE");
     setBusy(null);
     if (!result.ok) return setError(result.error);
     setRemote(null);
@@ -113,7 +113,7 @@ export default function RepositoryForm({ initial }: { initial: ContextRemoteSett
     if (!remote) return;
     setBusy("save");
     setError(null);
-    const result = await adminApi<{ remote: ContextRemoteSettings }>("/api/admin/context-remote", "PUT", {
+    const result = await adminApi<{ remote: ContextRemoteSettings }>("/api/v1/admin/context-remote", "PUT", {
       url: remote.url, mode: remote.mode, branch: remote.branch, kinds: remote.kinds, username: remote.username, newSshKey: true,
     });
     setBusy(null);
@@ -125,7 +125,7 @@ export default function RepositoryForm({ initial }: { initial: ContextRemoteSett
   async function confirmHostKey() {
     setBusy("save");
     setError(null);
-    const result = await adminApi<{ remote: ContextRemoteSettings }>("/api/admin/context-remote/host-key", "POST");
+    const result = await adminApi<{ remote: ContextRemoteSettings }>("/api/v1/admin/context-remote/host-key", "POST");
     setBusy(null);
     if (!result.ok) return setError(result.error);
     setRemote(result.body.remote);
@@ -407,7 +407,7 @@ function PublishPreview({ items, error, loading }: { items: PublishPreviewItem[]
         {items.map((item) => (
           <li key={`${item.kind}/${item.name}`} className="flex flex-col gap-1 text-ui-body-sm text-text2">
             <span>{KIND_LABELS[item.kind]}: {item.name} · {total(item)} {total(item) === 1 ? "file" : "files"} ({counts(item)})</span>
-            <ChangesToggle url={`/api/admin/context-remote/publish?kind=${encodeURIComponent(item.kind)}&name=${encodeURIComponent(item.name)}`} />
+            <ChangesToggle url={`/api/v1/admin/context-remote/publish?kind=${encodeURIComponent(item.kind)}&name=${encodeURIComponent(item.name)}`} />
           </li>
         ))}
       </ul>
@@ -424,7 +424,7 @@ function Updates({ onApplied }: { onApplied: () => void }) {
   async function check() {
     setBusy("check");
     setError(null);
-    const result = await adminApi<{ updates: RemoteUpdates }>("/api/admin/context-remote/updates");
+    const result = await adminApi<{ updates: RemoteUpdates }>("/api/v1/admin/context-remote/updates");
     setBusy(null);
     if (!result.ok) return setError(result.error);
     setUpdates(result.body.updates);
@@ -434,7 +434,7 @@ function Updates({ onApplied }: { onApplied: () => void }) {
     setBusy(key);
     setError(null);
     const result = await adminApi<{ updates: RemoteUpdates; packs: Array<{ id: string; ok: boolean; error?: string }> }>(
-      "/api/admin/context-remote/updates",
+      "/api/v1/admin/context-remote/updates",
       "POST",
       choices,
     );
@@ -473,7 +473,7 @@ function Updates({ onApplied }: { onApplied: () => void }) {
                     ? "Changed in the repository."
                     : "Changed in both OpenNeko and the repository. Choose which version to keep."}
                 </span>
-                <ChangesToggle url={`/api/admin/context-remote/updates?skill=${encodeURIComponent(skill.name)}`} />
+                <ChangesToggle url={`/api/v1/admin/context-remote/updates?skill=${encodeURIComponent(skill.name)}`} />
               </div>
               <div className="flex gap-2">
                 {skill.status === "both_changed" ? (

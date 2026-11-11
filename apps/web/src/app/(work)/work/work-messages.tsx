@@ -41,7 +41,7 @@ function UserCopy({ content }: { content: string }) {
       <ul className="work-user-attachments" aria-label="Attached files">
         {files.map(([, path, name, kb]) => (
           <li key={path}>
-            <a href={`/api/work/files/${path}`} download={name}>{name}</a>
+            <a href={`/api/v1/work/files/${path}`} download={name}>{name}</a>
             <span>{kb} KB</span>
           </li>
         ))}

@@ -23,7 +23,7 @@ export default function SourceSecretsPanel({
   const [saving, setSaving] = useState(false);
 
   async function refresh() {
-    const res = await fetch("/api/settings/source-secrets");
+    const res = await fetch("/api/v1/settings/source-secrets");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const body = (await res.json()) as { secrets?: SourceSecretSummary[] };
     setSecrets(body.secrets ?? []);
@@ -33,7 +33,7 @@ export default function SourceSecretsPanel({
     setSaving(true);
     try {
       const trimmedName = name.trim();
-      const res = await fetch("/api/settings/source-secrets", {
+      const res = await fetch("/api/v1/settings/source-secrets", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -62,7 +62,7 @@ export default function SourceSecretsPanel({
     setSaving(true);
     try {
       const res = await fetch(
-        `/api/settings/source-secrets?name=${encodeURIComponent(secretName)}`,
+        `/api/v1/settings/source-secrets?name=${encodeURIComponent(secretName)}`,
         { method: "DELETE" },
       );
       const body = (await res.json().catch(() => null)) as

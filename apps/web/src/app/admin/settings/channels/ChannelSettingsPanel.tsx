@@ -15,7 +15,7 @@ export default function ChannelSettingsPanel() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const result = await adminApi<{ channels: ChannelSettings[] }>("/api/admin/channels/settings");
+    const result = await adminApi<{ channels: ChannelSettings[] }>("/api/v1/admin/channels/settings");
     if (result.ok) {
       setChannels(result.body.channels);
       setLoadError(null);
@@ -85,7 +85,7 @@ function ChannelSettingsForm({ channel, onSaved }: { channel: ChannelSettings; o
   const save = async (next: Record<string, string | null>) => {
     setBusy(true);
     setStatus(null);
-    const result = await adminApi("/api/admin/channels/settings", "POST", { channel: channel.id, values: next });
+    const result = await adminApi("/api/v1/admin/channels/settings", "POST", { channel: channel.id, values: next });
     setBusy(false);
     if (!result.ok) {
       setStatus({ tone: "error", text: result.error });

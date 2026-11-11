@@ -22,7 +22,7 @@ type SkillSummary = {
 };
 
 async function fetchSkills(signal?: AbortSignal): Promise<{ skills: SkillSummary[]; canImport: boolean }> {
-  const response = await fetch("/api/work/skills", {
+  const response = await fetch("/api/v1/work/skills", {
     cache: "no-store",
     signal,
   });
@@ -85,7 +85,7 @@ export default function SkillsPage() {
     try {
       const form = new FormData();
       form.set("file", file);
-      const response = await fetch("/api/work/skills", { method: "POST", body: form });
+      const response = await fetch("/api/v1/work/skills", { method: "POST", body: form });
       const data = await response.json() as { name?: string; error?: string };
       if (!response.ok || !data.name) throw new Error(data.error ?? "Skill could not be imported.");
       toast.success(`Imported ${data.name}.`);
@@ -110,7 +110,7 @@ export default function SkillsPage() {
       setBusyName(skillName);
       try {
         const response = await fetch(
-          `/api/work/skills/${encodeURIComponent(skillName)}`,
+          `/api/v1/work/skills/${encodeURIComponent(skillName)}`,
           { method: "DELETE" },
         );
         if (!response.ok) throw new Error("Skill could not be deleted.");

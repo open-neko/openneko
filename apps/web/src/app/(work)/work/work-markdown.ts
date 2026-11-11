@@ -7,7 +7,7 @@ import remarkGfm from "remark-gfm";
 //   - bare workspace-relative paths, e.g. `uploads/<threadId>/file.csv` — the
 //     same form `joinMessageWithAttachments` emits into the user's outgoing
 //     message and that the agent passes back when it cites files.
-// Capture group 1 is the workspace-relative path the /api/work/files route serves.
+// Capture group 1 is the workspace-relative path the /api/v1/work/files route serves.
 const WORKSPACE_FILE_RE =
   /(?:\/agents\/orgs\/[A-Za-z0-9-]+\/|(?<![A-Za-z0-9._\-/]))((?:runs|uploads|skills|memory)\/[A-Za-z0-9._\-/]+\.[A-Za-z0-9]+)/g;
 
@@ -32,7 +32,7 @@ function walkMdNode(node: unknown, parent: MdNode | null): void {
       if (idx !== -1) {
         parent.children.splice(idx, 1, {
           type: "link",
-          url: `/api/work/files/${match[1]}`,
+          url: `/api/v1/work/files/${match[1]}`,
           children: [{ type: "inlineCode", value: n.value.split("/").slice(-1)[0] }],
         });
       }
@@ -54,7 +54,7 @@ function walkMdNode(node: unknown, parent: MdNode | null): void {
       }
       replacement.push({
         type: "link",
-        url: `/api/work/files/${m[1]}`,
+        url: `/api/v1/work/files/${m[1]}`,
         children: [{ type: "text", value: m[0].split("/").slice(-1)[0] }],
       });
       cursor = end;

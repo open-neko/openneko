@@ -46,7 +46,7 @@ export default function DataSourceForm({ initial }: { initial: DataSourcePayload
     setTesting(true);
     try {
       const { graphqlUrl, mcpUrl } = deriveEndpoints(data.rootUrl);
-      const res = await fetch("/api/settings/data-source/test", {
+      const res = await fetch("/api/v1/settings/data-source/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ graphqlUrl, mcpUrl }),
@@ -67,7 +67,7 @@ export default function DataSourceForm({ initial }: { initial: DataSourcePayload
     setSaving(true);
     try {
       const { graphqlUrl, mcpUrl } = deriveEndpoints(data.rootUrl);
-      const res = await fetch("/api/settings/data-source", {
+      const res = await fetch("/api/v1/settings/data-source", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ graphqlUrl, mcpUrl, label: data.label }),

@@ -48,7 +48,7 @@ export function IdpRulesPanel({
 
   useEffect(() => {
     if (!directoryProvider) return;
-    void adminApi<DirectoryStatus>("/api/admin/directory").then((result) => {
+    void adminApi<DirectoryStatus>("/api/v1/admin/directory").then((result) => {
       if (result.ok) setDirectory(result.body);
     });
   }, [directoryProvider]);
@@ -92,8 +92,8 @@ export function IdpRulesPanel({
             disabled={busy === "sync"}
             onClick={() =>
               run("sync", async () => {
-                const result = await adminApi("/api/admin/directory", "POST");
-                const status = await adminApi<DirectoryStatus>("/api/admin/directory");
+                const result = await adminApi("/api/v1/admin/directory", "POST");
+                const status = await adminApi<DirectoryStatus>("/api/v1/admin/directory");
                 if (status.ok) setDirectory(status.body);
                 return result;
               })
@@ -113,7 +113,7 @@ export function IdpRulesPanel({
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            void run("create", () => adminApi("/api/admin/idp-rules", "POST", { ssoGroupId, userGroupId }));
+            void run("create", () => adminApi("/api/v1/admin/idp-rules", "POST", { ssoGroupId, userGroupId }));
           }}
           className="mb-6 grid grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_auto] items-end gap-3 max-[820px]:grid-cols-1"
         >
@@ -165,7 +165,7 @@ export function IdpRulesPanel({
                       size="sm"
                       variant="danger"
                       disabled={busy === rule.id}
-                      onClick={() => run(rule.id, () => adminApi(`/api/admin/idp-rules/${rule.id}`, "DELETE"))}
+                      onClick={() => run(rule.id, () => adminApi(`/api/v1/admin/idp-rules/${rule.id}`, "DELETE"))}
                     >
                       Remove
                     </Button>

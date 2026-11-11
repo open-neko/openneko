@@ -38,11 +38,11 @@ const ASSET = {
 };
 
 describe("/api/settings/openapi-specs", () => {
-  let GET: typeof import("@/app/api/settings/openapi-specs/route").GET;
-  let POST: typeof import("@/app/api/settings/openapi-specs/route").POST;
+  let GET: typeof import("@/app/api/v1/settings/openapi-specs/route").GET;
+  let POST: typeof import("@/app/api/v1/settings/openapi-specs/route").POST;
 
   beforeAll(async () => {
-    ({ GET, POST } = await import("@/app/api/settings/openapi-specs/route"));
+    ({ GET, POST } = await import("@/app/api/v1/settings/openapi-specs/route"));
   });
 
   beforeEach(() => {

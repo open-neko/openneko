@@ -133,7 +133,7 @@ export default function ActionPage() {
   const load = useCallback(async () => {
     if (!actionRequestId) return;
     try {
-      const res = await fetch(`/api/action-requests/${actionRequestId}`, {
+      const res = await fetch(`/api/v1/action-requests/${actionRequestId}`, {
         cache: "no-store",
       });
       if (!res.ok) {
@@ -174,7 +174,7 @@ export default function ActionPage() {
       setBusy(true);
       setDecisionError(null);
       try {
-        const response = await fetch(`/api/action-requests/${actionRequestId}`, {
+        const response = await fetch(`/api/v1/action-requests/${actionRequestId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ decision, reason }),
@@ -204,7 +204,7 @@ export default function ActionPage() {
   const askFollowUp = useCallback(async () => {
     if (!actionRequestId) return;
     try {
-      const res = await fetch("/api/work/threads", {
+      const res = await fetch("/api/v1/work/threads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ seedActionRequestId: actionRequestId }),

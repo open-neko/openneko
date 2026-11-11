@@ -27,7 +27,7 @@ export function ProfileClient({ email, signInEnabled }: { email: string; signInE
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch("/api/settings/persona", { cache: "no-store" });
+        const res = await fetch("/api/v1/settings/persona", { cache: "no-store" });
         if (!res.ok) throw new Error(`could not load your profile (${res.status})`);
         const body = (await res.json()) as { profile: Profile | null };
         if (cancelled) return;
@@ -51,7 +51,7 @@ export function ProfileClient({ email, signInEnabled }: { email: string; signInE
     setError(null);
     setSaved(false);
     try {
-      const res = await fetch("/api/settings/persona", {
+      const res = await fetch("/api/v1/settings/persona", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -74,7 +74,7 @@ export function ProfileClient({ email, signInEnabled }: { email: string; signInE
 
   async function signOut() {
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await fetch("/api/v1/auth/logout", { method: "POST" });
     } finally {
       window.location.href = "/signin";
     }

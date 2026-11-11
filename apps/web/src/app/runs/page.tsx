@@ -152,7 +152,7 @@ function RunsPageInner() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/workflow-runs?status=${filter}`, {
+      const res = await fetch(`/api/v1/workflow-runs?status=${filter}`, {
         cache: "no-store",
       });
       if (!res.ok) {

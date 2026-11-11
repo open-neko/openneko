@@ -4,7 +4,7 @@ const state = vi.hoisted(() => ({ authorized: true, threadId: "thread" }));
 vi.mock("@/lib/db", () => ({ getOrgId: async () => "org" }));
 vi.mock("@/lib/work-thread-auth", () => ({ getAuthorizedWorkThread: async () => state.authorized ? {} : null }));
 vi.mock("@/lib/work-store", () => ({ getWorkRun: async () => ({ thread_id: state.threadId }) }));
-import { POST } from "@/app/api/work/threads/[threadId]/runs/[runId]/timing/route";
+import { POST } from "@/app/api/v1/work/threads/[threadId]/runs/[runId]/timing/route";
 beforeEach(() => { state.authorized = true; state.threadId = "thread"; vi.restoreAllMocks(); });
 const send = (body: unknown) => POST(new NextRequest("http://localhost/timing", { method: "POST", body: JSON.stringify(body) }), { params: Promise.resolve({ threadId: "thread", runId: "run" }) });
 it("accepts bounded timings only for an authorized run and never logs arbitrary data", async () => {

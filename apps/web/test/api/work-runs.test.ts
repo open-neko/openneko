@@ -57,7 +57,7 @@ if (!reachable) {
 }
 
 async function callRunsPost(
-  POST: typeof import("@/app/api/work/threads/[threadId]/runs/route").POST,
+  POST: typeof import("@/app/api/v1/work/threads/[threadId]/runs/route").POST,
   args: { threadId: string; body?: unknown },
 ): Promise<{ status: number; body: unknown }> {
   const req = new NextRequest("http://localhost:3000/test", {
@@ -79,7 +79,7 @@ async function callRunsPost(
 }
 
 async function callCancelPost(
-  POST: typeof import("@/app/api/work/runs/[runId]/cancel/route").POST,
+  POST: typeof import("@/app/api/v1/work/runs/[runId]/cancel/route").POST,
   runId: string,
 ): Promise<{ status: number; body: unknown }> {
   const res = await POST(new Request("http://localhost:3000/test", {
@@ -93,10 +93,10 @@ async function callCancelPost(
 describeIfDb("/api/work/threads/[threadId]/runs POST", () => {
   let orgId: string;
   let threadId: string;
-  let POST: typeof import("@/app/api/work/threads/[threadId]/runs/route").POST;
+  let POST: typeof import("@/app/api/v1/work/threads/[threadId]/runs/route").POST;
 
   beforeAll(async () => {
-    const mod = await import("@/app/api/work/threads/[threadId]/runs/route");
+    const mod = await import("@/app/api/v1/work/threads/[threadId]/runs/route");
     POST = mod.POST;
   });
 
@@ -214,7 +214,7 @@ describeIfDb("/api/work/threads/[threadId]/runs POST", () => {
       })
       .returning({ id: work_run.id });
     const { POST: cancel } = await import(
-      "@/app/api/work/runs/[runId]/cancel/route"
+      "@/app/api/v1/work/runs/[runId]/cancel/route"
     );
 
     const res = await callCancelPost(cancel, runId);

@@ -48,7 +48,7 @@ function ApproverGroupPicker({
   const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    void adminApi<{ groups: Array<{ id: string; name: string; slug: string }> }>("/api/admin/groups").then((result) => {
+    void adminApi<{ groups: Array<{ id: string; name: string; slug: string }> }>("/api/v1/admin/groups").then((result) => {
       if (result.ok) setGroups(result.body.groups.filter((g) => g.slug !== "everyone"));
     });
   }, []);
@@ -63,7 +63,7 @@ function ApproverGroupPicker({
         size="sm"
         disabled={selected === (value ?? "")}
         onClick={async () => {
-          const result = await adminApi(`/api/policies/${policyId}`, "PATCH", { approverGroupId: selected || null });
+          const result = await adminApi(`/api/v1/policies/${policyId}`, "PATCH", { approverGroupId: selected || null });
           setStatus(result.ok ? "Saved" : result.error);
           if (result.ok) onSaved(selected || null);
         }}
@@ -83,7 +83,7 @@ export default function PolicyDetailClient({ policyId }: { policyId: string }) {
   useEffect(() => {
     if (!policyId) return;
     let cancelled = false;
-    void fetch(`/api/policies/${policyId}`, { cache: "no-store" })
+    void fetch(`/api/v1/policies/${policyId}`, { cache: "no-store" })
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json() as Promise<PolicyDetail>;
@@ -162,7 +162,7 @@ export default function PolicyDetailClient({ policyId }: { policyId: string }) {
                 onMiss={policy.allowedTargets?.on_miss === "next" ? "next" : "deny"}
                 onSave={async (text, onMiss) => {
                   const result = await adminApi<{ policy: { allowedTargets: Record<string, unknown> | null } }>(
-                    `/api/policies/${policy.id}`,
+                    `/api/v1/policies/${policy.id}`,
                     "PATCH",
                     { allowedTargets: { patterns: text, onMiss } },
                   );

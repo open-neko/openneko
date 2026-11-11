@@ -75,10 +75,10 @@ async function insertFailedMetric(orgId: string, slug: string): Promise<string> 
 
 describeIfDb("/api/briefing/retry POST", () => {
   let orgId: string;
-  let POST: typeof import("@/app/api/briefing/retry/route").POST;
+  let POST: typeof import("@/app/api/v1/briefing/retry/route").POST;
 
   beforeAll(async () => {
-    const mod = await import("@/app/api/briefing/retry/route");
+    const mod = await import("@/app/api/v1/briefing/retry/route");
     POST = mod.POST;
   });
 

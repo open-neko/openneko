@@ -37,7 +37,7 @@ async function followOutcome(id: string, label: string, open: (href: string) => 
     await new Promise((resolve) => window.setTimeout(resolve, FOLLOW_INTERVAL_MS));
     let detail: ActionDetail;
     try {
-      const res = await fetch(`/api/action-requests/${id}`, { cache: "no-store" });
+      const res = await fetch(`/api/v1/action-requests/${id}`, { cache: "no-store" });
       if (!res.ok) continue;
       detail = (await res.json()) as ActionDetail;
     } catch {
@@ -69,7 +69,7 @@ type Decision = "approve" | "reject";
 type Pending = { decision: Decision; label: string; reason?: string; timer: number };
 
 function send(id: string, decision: Decision, reason?: string, keepalive = false) {
-  return fetch(`/api/action-requests/${id}`, {
+  return fetch(`/api/v1/action-requests/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ decision, reason }),

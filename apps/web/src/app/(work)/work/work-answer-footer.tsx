@@ -21,7 +21,7 @@ import { workDuration } from "./work-progress";
 import type { RunArtifact, RunRecord } from "./work-types";
 
 function artifactHref(path: string): string {
-  return `/api/work/files/${path.replace(
+  return `/api/v1/work/files/${path.replace(
     /^.*\/(runs|uploads|skills|memory)\//,
     "$1/",
   )}`;

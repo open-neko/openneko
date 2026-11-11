@@ -16,7 +16,7 @@ async function fetchActionRequestSnapshot(
   actionRequestId: string,
   actionKind: string,
 ): Promise<ActionRequestSnapshot | null> {
-  const res = await fetch(`/api/action-requests/${actionRequestId}`, {
+  const res = await fetch(`/api/v1/action-requests/${actionRequestId}`, {
     cache: "no-store",
   });
   if (!res.ok) return null;
@@ -189,7 +189,7 @@ export function ActionApprovalRow({
     setLocalError(null);
     try {
       const res = await fetch(
-        `/api/work/threads/${threadId}/runs/${runId}/approve-action`,
+        `/api/v1/work/threads/${threadId}/runs/${runId}/approve-action`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

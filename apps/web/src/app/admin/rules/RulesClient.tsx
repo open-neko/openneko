@@ -108,7 +108,7 @@ export default function RulesClient() {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/policies", { cache: "no-store" })
+    void fetch("/api/v1/policies", { cache: "no-store" })
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json() as Promise<{ policies: Policy[] }>;

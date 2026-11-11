@@ -78,7 +78,7 @@ export default function CommandBar() {
   useEffect(() => {
     if (!open || workflows.length > 0) return;
     let cancelled = false;
-    void fetch("/api/workflows", { cache: "no-store" })
+    void fetch("/api/v1/workflows", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : { workflows: [] }))
       .then((data: { workflows?: WorkflowSummary[] }) => {
         if (!cancelled) setWorkflows(data.workflows ?? []);

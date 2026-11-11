@@ -120,7 +120,7 @@ export default function AppRail({ initial }: { initial?: RailIdentity }) {
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await fetch("/api/auth/session", { cache: "no-store" });
+        const res = await fetch("/api/v1/auth/session", { cache: "no-store" });
         if (cancelled || !res.ok) return;
         const data = (await res.json()) as {
           user: { id: string; email: string; name: string | null } | null;
@@ -164,7 +164,7 @@ export default function AppRail({ initial }: { initial?: RailIdentity }) {
     let cancelled = false;
     const check = async () => {
       try {
-        const res = await fetch("/api/version", { cache: "no-store" });
+        const res = await fetch("/api/v1/version", { cache: "no-store" });
         if (!res.ok) return;
         const data = (await res.json()) as { version?: string };
         if (!cancelled && typeof data.version === "string") {
@@ -184,7 +184,7 @@ export default function AppRail({ initial }: { initial?: RailIdentity }) {
 
   async function handleSignOut() {
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await fetch("/api/v1/auth/logout", { method: "POST" });
     } finally {
       window.location.href = "/signin";
     }

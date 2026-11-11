@@ -40,11 +40,11 @@ const reachable = await dbReachable();
   });
 
   it("creates a group, manages members and grants, and reports effective access", async () => {
-    const groups = await import("@/app/api/admin/groups/route");
-    const group = await import("@/app/api/admin/groups/[groupId]/route");
-    const members = await import("@/app/api/admin/groups/[groupId]/members/route");
-    const grants = await import("@/app/api/admin/item-grants/route");
-    const access = await import("@/app/api/admin/users/[userId]/access/route");
+    const groups = await import("@/app/api/v1/admin/groups/route");
+    const group = await import("@/app/api/v1/admin/groups/[groupId]/route");
+    const members = await import("@/app/api/v1/admin/groups/[groupId]/members/route");
+    const grants = await import("@/app/api/v1/admin/item-grants/route");
+    const access = await import("@/app/api/v1/admin/users/[userId]/access/route");
 
     const created = await callRoute(groups.POST, { method: "POST", body: { name: "Finance", description: "Money" } });
     expect(created.status).toBe(201);
@@ -76,9 +76,9 @@ const reachable = await dbReachable();
   });
 
   it("protects Administrators and refuses to remove the last administrator", async () => {
-    const groups = await import("@/app/api/admin/groups/route");
-    const group = await import("@/app/api/admin/groups/[groupId]/route");
-    const members = await import("@/app/api/admin/groups/[groupId]/members/route");
+    const groups = await import("@/app/api/v1/admin/groups/route");
+    const group = await import("@/app/api/v1/admin/groups/[groupId]/route");
+    const members = await import("@/app/api/v1/admin/groups/[groupId]/members/route");
     const list = (await callRoute(groups.GET)).body as { groups: Array<{ id: string; slug: string }> };
     const admins = list.groups.find((g) => g.slug === "administrators")!;
     const params = { params: Promise.resolve({ groupId: admins.id }) };
@@ -90,9 +90,9 @@ const reachable = await dbReachable();
   });
 
   it("validates data access rules and row filters", async () => {
-    const groups = await import("@/app/api/admin/groups/route");
-    const rules = await import("@/app/api/admin/data-access/route");
-    const ruleRoute = await import("@/app/api/admin/data-access/[ruleId]/route");
+    const groups = await import("@/app/api/v1/admin/groups/route");
+    const rules = await import("@/app/api/v1/admin/data-access/route");
+    const ruleRoute = await import("@/app/api/v1/admin/data-access/[ruleId]/route");
     const groupId = ((await callRoute(groups.POST, { method: "POST", body: { name: "Sales" } })).body as { group: { id: string } }).group.id;
 
     const bad = await callRoute(rules.POST, { method: "POST", body: { groupId, source: "shop", tableName: "orders", columns: ["id"], rowFilter: { column: "id", op: "like", value: 1 } } });

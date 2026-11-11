@@ -46,11 +46,11 @@ if (!reachable) {
 
 describeIfDb("/api/settings/provider", () => {
   let orgId: string;
-  let GET: typeof import("@/app/api/settings/provider/route").GET;
-  let PUT: typeof import("@/app/api/settings/provider/route").PUT;
+  let GET: typeof import("@/app/api/v1/settings/provider/route").GET;
+  let PUT: typeof import("@/app/api/v1/settings/provider/route").PUT;
 
   beforeAll(async () => {
-    const mod = await import("@/app/api/settings/provider/route");
+    const mod = await import("@/app/api/v1/settings/provider/route");
     GET = mod.GET;
     PUT = mod.PUT;
   });

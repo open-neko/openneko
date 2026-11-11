@@ -43,7 +43,7 @@ export async function packApi<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export function installBuiltinPack(packId: string, version?: string): Promise<Status> {
-  return packApi<Status>(`/api/admin/packs/${encodeURIComponent(packId)}/install`, { ...(version ? { version } : {}), deferConfiguration: true, idempotencyKey: newRequestId() });
+  return packApi<Status>(`/api/v1/admin/packs/${encodeURIComponent(packId)}/install`, { ...(version ? { version } : {}), deferConfiguration: true, idempotencyKey: newRequestId() });
 }
 
 function label(key: string): string {
@@ -99,7 +99,7 @@ export default function PackSetup({ packId, variant = "settings", onChanged, onD
     if (confirmDiscard && dirty && !await confirmDialog({ title: "Discard pack changes?", description: "The current configuration has not been applied.", confirmLabel: "Discard changes" })) { trigger?.focus(); return; }
     setBusy("loading"); setError(""); setMissing(false); setReview(null); setDetail(null); setDirty(false); setSecrets({}); setClearedSecrets([]); setOauth({});
     try {
-      const path = `/api/admin/packs/${encodeURIComponent(packId)}`;
+      const path = `/api/v1/admin/packs/${encodeURIComponent(packId)}`;
       const response = await fetch(`${path}/status`, { cache: "no-store" });
       const current = response.status === 404 ? null : await response.json() as Status;
       if (!response.ok && response.status !== 404) throw new Error("Could not load pack status");
@@ -109,12 +109,12 @@ export default function PackSetup({ packId, variant = "settings", onChanged, onD
       const inspection = await inspected.json() as Inspection & { error?: string };
       if (!inspected.ok) throw new Error(inspection.error ?? `Request failed (${inspected.status})`);
       const available = inspection.manifest.artifacts.graphjin
-        ? await packApi<{ sources: Source[] }>("/api/settings/data-sources")
+        ? await packApi<{ sources: Source[] }>("/api/v1/settings/data-sources")
         : { sources: [] };
       const usable = available.sources.filter(source => source.enabled && source.graphqlUrl);
       setSources(usable);
       const oauthStatuses = await Promise.all(inspection.manifest.oauth.map(connection =>
-        packApi<OAuthStatus>(`/api/pack-accounts/${encodeURIComponent(packId)}/${encodeURIComponent(connection.key)}`),
+        packApi<OAuthStatus>(`/api/v1/pack-accounts/${encodeURIComponent(packId)}/${encodeURIComponent(connection.key)}`),
       ));
       setOauth(Object.fromEntries(oauthStatuses.map(value => [value.key, value])));
       setDetail(inspection); setStatus(current); setOperation(action);
@@ -147,7 +147,7 @@ export default function PackSetup({ packId, variant = "settings", onChanged, onD
     setBusy(`oauth-${connection.key}`); setError("");
     try {
       if (connection.scope === "user") {
-        const result = await packApi<OAuthStatus>(`/api/pack-accounts/${encodeURIComponent(packId)}/${encodeURIComponent(connection.key)}`, { clientId, clientSecret });
+        const result = await packApi<OAuthStatus>(`/api/v1/pack-accounts/${encodeURIComponent(packId)}/${encodeURIComponent(connection.key)}`, { clientId, clientSecret });
         setOauth(current => ({ ...current, [connection.key]: { ...current[connection.key], ...result } }));
         setSecrets(current => ({ ...current, [connection.clientSecret]: "" }));
         toast.success("Setup saved. Each user can connect on Integrations.");
@@ -155,7 +155,7 @@ export default function PackSetup({ packId, variant = "settings", onChanged, onD
         return;
       }
       const result = await packApi<{ authorizationUrl: string }>(
-        `/api/pack-accounts/${encodeURIComponent(packId)}/${encodeURIComponent(connection.key)}/start`,
+        `/api/v1/pack-accounts/${encodeURIComponent(packId)}/${encodeURIComponent(connection.key)}/start`,
         { clientId, clientSecret, returnTo: `/admin/settings/packs` },
       );
       window.location.assign(result.authorizationUrl);
@@ -168,7 +168,7 @@ export default function PackSetup({ packId, variant = "settings", onChanged, onD
   async function disconnectOAuth(connection: Inspection["manifest"]["oauth"][number]) {
     setBusy(`oauth-${connection.key}`); setError("");
     try {
-      const response = await fetch(`/api/pack-accounts/${encodeURIComponent(packId)}/${encodeURIComponent(connection.key)}`, { method: "DELETE" });
+      const response = await fetch(`/api/v1/pack-accounts/${encodeURIComponent(packId)}/${encodeURIComponent(connection.key)}`, { method: "DELETE" });
       if (!response.ok) throw new Error((await response.json().catch(() => null))?.error ?? `Request failed (${response.status})`);
       setOauth({ ...oauth, [connection.key]: { ...oauth[connection.key]!, connected: false, account: null, expiresAt: null } });
       setReview(null);
@@ -196,7 +196,7 @@ export default function PackSetup({ packId, variant = "settings", onChanged, onD
     setBusy("review"); setReview(null); setError("");
     const request = { operation, version: detail.manifest.metadata.version, inputs: Object.fromEntries(Object.entries(inputs).filter(([, value]) => value !== "")), secrets: { ...Object.fromEntries(Object.entries(secrets).filter(([, value]) => value !== "")), ...Object.fromEntries(clearedSecrets.map(key => [key, ""])) }, sourceBindings: bindings, ...(sourceId ? { dataSourceId: sourceId } : {}) };
     try {
-      const result = await packApi<Review>(`/api/admin/packs/${encodeURIComponent(packId)}/review`, request);
+      const result = await packApi<Review>(`/api/v1/admin/packs/${encodeURIComponent(packId)}/review`, request);
       setReview({ result, request });
     } catch (error) { fail(error, "The pack could not be reviewed. Check the configuration and try again."); }
     finally { setBusy(null); }
@@ -206,7 +206,7 @@ export default function PackSetup({ packId, variant = "settings", onChanged, onD
     if (!review || !detail) return;
     setBusy(operation); setError("");
     try {
-      const result = await packApi<Status>(`/api/admin/packs/${encodeURIComponent(packId)}/${operation}`, { ...review.request, reviewHash: review.result.reviewHash, idempotencyKey: newRequestId() });
+      const result = await packApi<Status>(`/api/v1/admin/packs/${encodeURIComponent(packId)}/${operation}`, { ...review.request, reviewHash: review.result.reviewHash, idempotencyKey: newRequestId() });
       setStatus(result); setReview(null); setSecrets({}); setDirty(false);
       toast.success("Pack changes applied."); await onChanged?.();
       onApplied?.({ packId, name: detail.manifest.metadata.name, operation, status: result.status });
@@ -214,7 +214,7 @@ export default function PackSetup({ packId, variant = "settings", onChanged, onD
     } catch (error) {
       setReview(null);
       fail(error, "The pack could not be applied. Share the error details with the pack author, then review the corrected pack again.");
-      const response = await fetch(`/api/admin/packs/${encodeURIComponent(packId)}/status`, { cache: "no-store" }).catch(() => null);
+      const response = await fetch(`/api/v1/admin/packs/${encodeURIComponent(packId)}/status`, { cache: "no-store" }).catch(() => null);
       if (response?.ok) setStatus(await response.json() as Status);
       await onChanged?.();
     }
@@ -225,7 +225,7 @@ export default function PackSetup({ packId, variant = "settings", onChanged, onD
     if (!await confirmDialog({ title: "Remove this pack?", description: "Its automations and connector access will stop. History and business data are retained.", confirmLabel: "Remove pack", destructive: true })) { removeButton.current?.focus(); return; }
     setBusy("uninstall"); setError("");
     try {
-      setStatus(await packApi<Status>(`/api/admin/packs/${encodeURIComponent(packId)}/uninstall`, { idempotencyKey: newRequestId() }));
+      setStatus(await packApi<Status>(`/api/v1/admin/packs/${encodeURIComponent(packId)}/uninstall`, { idempotencyKey: newRequestId() }));
       setReview(null); setSecrets({}); setDirty(false); setOperation("install");
       toast.success("Pack removed. History and data retained."); await onChanged?.();
     } catch (error) { fail(error, "The pack could not be removed. Check its status and try again."); }

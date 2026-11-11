@@ -2,7 +2,7 @@
 type Timing = { threadId: string; started: number; values: Record<string, number>; output: boolean };
 const pending = new Map<string, Timing>();
 function report(runId: string, timing: Timing): void {
-  void fetch(`/api/work/threads/${timing.threadId}/runs/${runId}/timing`, {
+  void fetch(`/api/v1/work/threads/${timing.threadId}/runs/${runId}/timing`, {
     method: "POST", headers: { "content-type": "application/json" }, keepalive: true,
     body: JSON.stringify(timing.values),
   }).catch(() => {});

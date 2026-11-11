@@ -22,7 +22,7 @@ export function GroupsPanel({ groups }: { groups: UserGroupRow[] }) {
     event.preventDefault();
     setBusy(true);
     setError(null);
-    const result = await adminApi<{ group: { id: string } }>("/api/admin/groups", "POST", { name, description });
+    const result = await adminApi<{ group: { id: string } }>("/api/v1/admin/groups", "POST", { name, description });
     setBusy(false);
     if (!result.ok) return setError(result.error);
     router.push(`/admin/users/groups/${result.body.group.id}`);

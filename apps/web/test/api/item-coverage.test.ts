@@ -80,8 +80,8 @@ const reachable = await dbReachable();
   });
 
   it("skills: list and detail", async () => {
-    const list = await import("@/app/api/work/skills/route");
-    const detail = await import("@/app/api/work/skills/[name]/route");
+    const list = await import("@/app/api/v1/work/skills/route");
+    const detail = await import("@/app/api/v1/work/skills/[name]/route");
     const skills = (await callRoute(list.GET)).body as { skills: Array<{ name: string }> };
     expect(skills.skills.map((s) => s.name)).toContain("finance-close");
     expect(skills.skills.map((s) => s.name)).not.toContain("sales-playbook");
@@ -90,9 +90,9 @@ const reachable = await dbReachable();
   });
 
   it("workflows: list, detail and runs", async () => {
-    const list = await import("@/app/api/workflows/route");
-    const detail = await import("@/app/api/workflows/[workflowId]/route");
-    const runs = await import("@/app/api/workflow-runs/route");
+    const list = await import("@/app/api/v1/workflows/route");
+    const detail = await import("@/app/api/v1/workflows/[workflowId]/route");
+    const runs = await import("@/app/api/v1/workflow-runs/route");
     const workflows = (await callRoute(list.GET)).body as { workflows: Array<{ id: string }> };
     expect(workflows.workflows.map((w) => w.id)).toEqual([workflowHeld]);
     expect((await callRoute((req) => detail.GET(req, { params: Promise.resolve({ workflowId: workflowHeld }) }))).status).toBe(200);
@@ -101,8 +101,8 @@ const reachable = await dbReachable();
   });
 
   it("dashboards and metrics: briefing tiles and metric detail", async () => {
-    const briefing = await import("@/app/api/briefing/route");
-    const byMetric = await import("@/app/api/briefing/by-metric/route");
+    const briefing = await import("@/app/api/v1/briefing/route");
+    const byMetric = await import("@/app/api/v1/briefing/by-metric/route");
     expect((await callRoute(briefing.GET, { query: { role: "COO" } })).status).toBe(404);
     const cfo = await callRoute(briefing.GET, { query: { role: "CFO" } });
     expect(cfo.status).toBe(200);
@@ -116,7 +116,7 @@ const reachable = await dbReachable();
     const { rememberWorkMemory } = await import("@neko/llm/work");
     await rememberWorkMemory({ orgId: state.orgId, userId: null, kind: "business_rule", scope: "global", text: "Team rule" });
     await rememberWorkMemory({ orgId: state.orgId, userId: state.userId, kind: "preference", scope: "global", text: "Ann note" });
-    const memories = await import("@/app/api/work/memories/route");
+    const memories = await import("@/app/api/v1/work/memories/route");
     const body = (await callRoute(memories.GET)).body as { memories: Array<{ text: string }> };
     expect(body.memories.map((m) => m.text)).toEqual(["Ann note"]);
   });

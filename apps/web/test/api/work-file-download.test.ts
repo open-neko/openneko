@@ -28,7 +28,7 @@ vi.mock("@/lib/work-files", () => ({ readRunArtifact: mockReadRunArtifact }));
 const runId = "11111111-1111-4111-8111-111111111111";
 
 async function download(path: string[]) {
-  const { GET } = await import("@/app/api/work/files/[...path]/route");
+  const { GET } = await import("@/app/api/v1/work/files/[...path]/route");
   return GET(new NextRequest("http://localhost:3000/test"), {
     params: Promise.resolve({ path }),
   });

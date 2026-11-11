@@ -26,7 +26,7 @@ const reachable = await dbReachable();
   afterAll(async () => { await pool().end(); });
 
   it("validates and persists the organization budget for admins", async () => {
-    const route = await import("@/app/api/admin/workflow-api-limits/route");
+    const route = await import("@/app/api/v1/admin/workflow-api-limits/route");
     const invalid = await callRoute(route.PUT, { method: "PUT", body: { rollingTokenBudget: 0, rollingCostMicrosBudget: 50_000_000 } });
     expect(invalid.status).toBe(400);
     const saved = await callRoute(route.PUT, { method: "PUT", body: { rollingTokenBudget: 10_000_000, rollingCostMicrosBudget: 200_000_000 } });

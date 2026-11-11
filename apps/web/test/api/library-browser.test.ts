@@ -3,7 +3,7 @@ const mocks = vi.hoisted(() => ({ browse: vi.fn(), parse: vi.fn(), actor: vi.fn(
 vi.mock("@/lib/actor", () => ({ getCurrentActor: mocks.actor }));
 vi.mock("@/lib/db", () => ({ getOrgId: async () => "trusted-org" }));
 vi.mock("@neko/llm/work", () => ({ browseLibrary: mocks.browse, parseLibraryBrowseOptions: mocks.parse }));
-import { GET as browse } from "@/app/api/library/route";
+import { GET as browse } from "@/app/api/v1/library/route";
 
 beforeEach(() => {
   vi.clearAllMocks();

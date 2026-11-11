@@ -40,7 +40,7 @@ function ItemTypeGrants({
 
   async function load() {
     if (options) return;
-    const result = await adminApi<{ items: ItemOption[] }>(`/api/admin/items?type=${type.type}`);
+    const result = await adminApi<{ items: ItemOption[] }>(`/api/v1/admin/items?type=${type.type}`);
     if (!result.ok) {
       setLoadError(result.error);
       return;
@@ -52,7 +52,7 @@ function ItemTypeGrants({
   async function change(itemId: string, grant: boolean) {
     setBusy(true);
     onError(null);
-    const result = await adminApi("/api/admin/item-grants", grant ? "POST" : "DELETE", { groupId, itemType: type.type, itemId });
+    const result = await adminApi("/api/v1/admin/item-grants", grant ? "POST" : "DELETE", { groupId, itemType: type.type, itemId });
     setBusy(false);
     if (!result.ok) return onError(result.error);
     router.refresh();
@@ -63,7 +63,7 @@ function ItemTypeGrants({
     if (itemIds.length === 0) return;
     setBusy(true);
     onError(null);
-    const result = await adminApi("/api/admin/item-grants", "POST", {
+    const result = await adminApi("/api/v1/admin/item-grants", "POST", {
       groupId, itemType: type.type, itemIds,
     });
     setBusy(false);

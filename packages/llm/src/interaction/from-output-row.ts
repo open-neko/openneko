@@ -19,7 +19,7 @@ export interface OutputRow {
 }
 
 /**
- * Generalizes today's /api/briefing row→A2UI projector to row→InteractionEvent,
+ * Generalizes today's /api/v1/briefing row→A2UI projector to row→InteractionEvent,
  * so the OUDA loop's persisted outputs reach any channel, not just the web.
  */
 export const outputRowToInteractionEvent = (row: OutputRow): InteractionEvent => ({

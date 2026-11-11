@@ -41,10 +41,10 @@ if (!reachable) {
 
 describeIfDb("/api/briefing GET", () => {
   let orgId: string;
-  let GET: typeof import("@/app/api/briefing/route").GET;
+  let GET: typeof import("@/app/api/v1/briefing/route").GET;
 
   beforeAll(async () => {
-    const mod = await import("@/app/api/briefing/route");
+    const mod = await import("@/app/api/v1/briefing/route");
     GET = mod.GET;
   });
 

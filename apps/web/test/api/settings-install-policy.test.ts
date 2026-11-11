@@ -48,11 +48,11 @@ if (!reachable) {
 
 describeIfDb("/api/settings/install-policy", () => {
   let orgId: string;
-  let GET: typeof import("@/app/api/settings/install-policy/route").GET;
-  let PATCH: typeof import("@/app/api/settings/install-policy/route").PATCH;
+  let GET: typeof import("@/app/api/v1/settings/install-policy/route").GET;
+  let PATCH: typeof import("@/app/api/v1/settings/install-policy/route").PATCH;
 
   beforeAll(async () => {
-    const mod = await import("@/app/api/settings/install-policy/route");
+    const mod = await import("@/app/api/v1/settings/install-policy/route");
     GET = mod.GET;
     PATCH = mod.PATCH;
   });

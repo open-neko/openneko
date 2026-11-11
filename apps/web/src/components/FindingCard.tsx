@@ -108,7 +108,7 @@ export default function FindingCard({
   const muteScope = async (duration: (typeof MUTE_DURATIONS)[number]) => {
     if (!data.scope) return;
     try {
-      await fetch("/api/briefing/mute", {
+      await fetch("/api/v1/briefing/mute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scope: data.scope, duration }),

@@ -97,7 +97,7 @@ export default function AgentForm({
         }
       }
 
-      const providerRes = await fetch("/api/settings/provider", {
+      const providerRes = await fetch("/api/v1/settings/provider", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -113,7 +113,7 @@ export default function AgentForm({
       if (!providerRes.ok) throw new Error(providerBody.error ?? "Primary provider save failed");
 
       const cap = Number(concurrentJobs) || initial.agent.defaults.globalCap;
-      const agentRes = await fetch("/api/settings/agent", {
+      const agentRes = await fetch("/api/v1/settings/agent", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(terminalAvailable ? { globalCap: cap, terminal } : { globalCap: cap }),
