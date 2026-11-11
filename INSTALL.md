@@ -446,7 +446,8 @@ services:
 ```
 
 Semantic search is off until both the URL and the model are set. When it is
-on, web and worker send memory and skill text, and each search query, to that service. A
+on, openneko-serve sends memory and skill text, and each search query, to that
+service for web and worker. The service must answer on the stack's network. A
 background job embeds stored rows; until it reaches a row, and whenever the
 service fails, search uses full-text search. A change of model re-embeds
 every row. To run a model on your own machine, see

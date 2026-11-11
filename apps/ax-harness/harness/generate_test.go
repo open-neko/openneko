@@ -32,3 +32,26 @@ func TestGenerateModeAnswersOneHostCall(t *testing.T) {
 		t.Fatalf("bad request code = %d", code)
 	}
 }
+
+func TestEmbedModeAnswersOneEmbeddingCall(t *testing.T) {
+	var auth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte(`{"data":[{"index":0,"embedding":[0.5,0.5]}]}`))
+	}))
+	defer server.Close()
+	in := strings.NewReader(`{"url":"` + server.URL + `","model":"m","input":["hello"]}`)
+	var out, errOut bytes.Buffer
+	if code := embedMain(in, &out, &errOut, "env-key"); code != 0 {
+		t.Fatalf("code %d: %s", code, errOut.String())
+	}
+	var result struct {
+		Vectors [][]float64 `json:"vectors"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil || len(result.Vectors) != 1 || auth != "Bearer env-key" {
+		t.Fatalf("out = %s, auth = %q", out.String(), auth)
+	}
+	if code := embedMain(strings.NewReader("not json"), &out, &errOut, ""); code != 2 {
+		t.Fatalf("bad request code = %d", code)
+	}
+}

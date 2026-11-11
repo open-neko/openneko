@@ -14,6 +14,8 @@
 //	serve → host   {"type":"result","result":{...}}
 //	serve → host   {"type":"exit","code":0,"error":""}
 //
+// An embedding call has the same shape, with {"type":"embed","embed":{...},"model_key":"..."}.
+//
 // Closing the connection cancels the turn. Serve holds the model keys for
 // the turn: the worker names the variable and sends the org's key in
 // model_keys, or serve reads it from its own environment. A key never goes
@@ -35,6 +37,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/open-neko/openneko/apps/ax-harness/embedding"
 	"github.com/open-neko/openneko/apps/ax-harness/harness"
 	"github.com/open-neko/openneko/apps/ax-harness/inference"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
@@ -58,6 +61,7 @@ type Frame struct {
 	ModelKey    string            `json:"model_key,omitempty"`
 	FallbackKey string            `json:"fallback_key,omitempty"`
 	Generate    json.RawMessage   `json:"generate,omitempty"`
+	Embed       json.RawMessage   `json:"embed,omitempty"`
 	Result      json.RawMessage   `json:"result,omitempty"`
 	Event       json.RawMessage   `json:"event,omitempty"`
 	Message     json.RawMessage   `json:"message,omitempty"`
@@ -74,8 +78,9 @@ type Server struct {
 	// Sandbox runs every turn's terminal commands. The worker cannot set it.
 	Sandbox sandbox.Config
 	// Run runs one turn; tests replace it.
-	Run func(context.Context, harness.Turn) (int, error)
+	Run      func(context.Context, harness.Turn) (int, error)
 	Generate func(context.Context, inference.Request, string, string) (inference.Result, error)
+	Embed    func(context.Context, embedding.Request, string) (embedding.Result, error)
 
 	mu      sync.Mutex
 	running int
@@ -105,6 +110,9 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 	}
 	if s.Generate == nil {
 		s.Generate = inference.Generate
+	}
+	if s.Embed == nil {
+		s.Embed = embedding.Embed
 	}
 	if s.Getenv == nil {
 		s.Getenv = func(string) string { return "" }
@@ -162,7 +170,25 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 	}
 	start, err := readFrame(reader)
 	if err == nil && start.Type == "generate" {
-		s.generate(parent, conn, reader, start, out, exit)
+		var request inference.Request
+		if len(start.Generate) == 0 || json.Unmarshal(start.Generate, &request) != nil {
+			exit(2, errors.New("expected a generate frame with a request"))
+			return
+		}
+		s.call(parent, reader, out, exit, func(ctx context.Context) (any, error) {
+			return s.Generate(ctx, request, start.ModelKey, start.FallbackKey)
+		})
+		return
+	}
+	if err == nil && start.Type == "embed" {
+		var request embedding.Request
+		if len(start.Embed) == 0 || json.Unmarshal(start.Embed, &request) != nil {
+			exit(2, errors.New("expected an embed frame with a request"))
+			return
+		}
+		s.call(parent, reader, out, exit, func(ctx context.Context) (any, error) {
+			return s.Embed(ctx, request, start.ModelKey)
+		})
 		return
 	}
 	if err != nil || start.Type != "start" || len(start.Spec) == 0 {
@@ -215,12 +241,7 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 	exit(code, runErr)
 }
 
-func (s *Server) generate(parent context.Context, conn net.Conn, reader *bufio.Reader, frame Frame, out *frameWriter, exit func(int, error)) {
-	var request inference.Request
-	if len(frame.Generate) == 0 || json.Unmarshal(frame.Generate, &request) != nil {
-		exit(2, errors.New("expected a generate frame with a request"))
-		return
-	}
+func (s *Server) call(parent context.Context, reader *bufio.Reader, out *frameWriter, exit func(int, error), run func(context.Context) (any, error)) {
 	if !s.acquire() {
 		exit(2, errors.New("serve is at its turn limit"))
 		return
@@ -232,7 +253,7 @@ func (s *Server) generate(parent context.Context, conn net.Conn, reader *bufio.R
 		defer cancel()
 		_, _ = io.Copy(io.Discard, reader)
 	}()
-	result, err := s.Generate(ctx, request, frame.ModelKey, frame.FallbackKey)
+	result, err := run(ctx)
 	if err != nil {
 		exit(1, err)
 		return

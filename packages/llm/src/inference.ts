@@ -1,13 +1,9 @@
 // Protocol: apps/ax-harness/serve/serve.go. The key leaves this process only
 // in the frame's model_key field, never in the request.
 
-import { spawn } from "node:child_process";
-import { createConnection } from "node:net";
-import { createInterface } from "node:readline";
 import type { AgentTokenUsage } from "./agent-backend";
-import { serveSocket } from "./agent-backends/harness-turn";
-import { AX_HARNESS_BINARY } from "./agent-runtime-contract";
 import type { EditableProviderConfig, PrimaryProviderId } from "./config";
+import { gatewayCall } from "./gateway-call";
 import { getGoogleToken, resolvePrimaryProviderConfig, type ProviderSource, type ResolvedPrimaryProviderConfig } from "./llm";
 import { resolveTaskRoute, type ModelTask, type RoutedModel, type TaskRoute } from "./model-routes";
 import { resolveAxModelRoute } from "./provider-runtime";
@@ -75,82 +71,18 @@ export function setGatewayTransport(transport: GatewayTransport | undefined): vo
 
 const CALL_TIMEOUT_MS = 10 * 60_000;
 
-function viaServe(socket: string): GatewayTransport {
-  return (request, key, fallbackKey) =>
-    new Promise<GatewayResult>((resolve, reject) => {
-      const conn = createConnection(socket);
-      let result: GatewayResult | undefined;
-      let settled = false;
-      const finish = (error?: Error) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        conn.destroy();
-        if (error) reject(error);
-        else if (result) resolve(result);
-        else reject(new Error("openneko serve returned no model result"));
-      };
-      const timer = setTimeout(() => finish(new Error("model call timed out")), CALL_TIMEOUT_MS);
-      conn.on("error", (error) => finish(new Error(`openneko serve unavailable: ${error.message}`)));
-      conn.on("close", () => finish());
-      conn.on("connect", () => {
-        conn.write(`${JSON.stringify({ type: "generate", generate: request, model_key: key, ...(fallbackKey ? { fallback_key: fallbackKey } : {}) })}\n`);
-      });
-      const lines = createInterface({ input: conn });
-      lines.on("line", (line) => {
-        if (!line.trim()) return;
-        let frame: { type?: string; result?: GatewayResult; code?: number; error?: string };
-        try {
-          frame = JSON.parse(line);
-        } catch {
-          finish(new Error("openneko serve wrote a line that is not JSON"));
-          return;
-        }
-        if (frame.type === "result" && frame.result) result = frame.result;
-        else if (frame.type === "exit") {
-          finish(frame.code === 0 ? undefined : new Error(frame.error || `model call failed (code ${frame.code})`));
-        }
-      });
-    });
-}
-
-function viaBinary(binary: string): GatewayTransport {
-  return (request, key, fallbackKey) =>
-    new Promise<GatewayResult>((resolve, reject) => {
-      const child = spawn(binary, ["generate"], {
-        stdio: ["pipe", "pipe", "pipe"],
-        env: {
-          PATH: process.env.PATH ?? "",
-          HARNESS_MODEL_API_KEY: key,
-          ...(fallbackKey ? { HARNESS_FALLBACK_API_KEY: fallbackKey } : {}),
-        } as unknown as NodeJS.ProcessEnv,
-        timeout: CALL_TIMEOUT_MS,
-      });
-      const stdout: Buffer[] = [];
-      const stderr: Buffer[] = [];
-      child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-      child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-      child.on("error", (error) => reject(new Error(`ax-harness unavailable: ${error.message}`)));
-      child.on("close", (code) => {
-        if (code !== 0) {
-          reject(new Error(Buffer.concat(stderr).toString("utf8").trim().slice(-2000) || `model call failed (code ${code})`));
-          return;
-        }
-        try {
-          resolve(JSON.parse(Buffer.concat(stdout).toString("utf8")) as GatewayResult);
-        } catch {
-          reject(new Error("ax-harness returned a result that is not JSON"));
-        }
-      });
-      child.stdin.on("error", () => {});
-      child.stdin.end(JSON.stringify(request));
-    });
-}
+const defaultTransport: GatewayTransport = (request, key, fallbackKey) =>
+  gatewayCall<GatewayResult>({
+    frame: { type: "generate", generate: request, model_key: key, ...(fallbackKey ? { fallback_key: fallbackKey } : {}) },
+    mode: "generate",
+    env: { HARNESS_MODEL_API_KEY: key, ...(fallbackKey ? { HARNESS_FALLBACK_API_KEY: fallbackKey } : {}) },
+    input: request,
+    label: "model",
+    timeoutMs: CALL_TIMEOUT_MS,
+  });
 
 function gatewayTransport(): GatewayTransport {
-  if (transportOverride) return transportOverride;
-  const socket = serveSocket();
-  return socket ? viaServe(socket) : viaBinary(process.env.OPENNEKO_AX_HARNESS_BINARY || AX_HARNESS_BINARY);
+  return transportOverride ?? defaultTransport;
 }
 
 export function callGateway(request: GatewayRequest, key: string, fallbackKey?: string): Promise<GatewayResult> {

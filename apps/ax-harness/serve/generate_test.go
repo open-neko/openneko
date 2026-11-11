@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/open-neko/openneko/apps/ax-harness/embedding"
 	"github.com/open-neko/openneko/apps/ax-harness/inference"
 )
 
@@ -63,5 +64,30 @@ func TestServeReportsAFailedHostModelCall(t *testing.T) {
 	got = frames(t, dial(t, socket, Frame{Type: "generate"}))
 	if len(got) != 1 || *got[0].Code != 2 {
 		t.Fatalf("a generate frame without a request: %+v", got)
+	}
+}
+
+func TestServeRunsAnEmbeddingCallWithTheCallersKey(t *testing.T) {
+	var gotKey string
+	var gotRequest embedding.Request
+	socket := startServer(t, &Server{Embed: func(_ context.Context, request embedding.Request, key string) (embedding.Result, error) {
+		gotKey, gotRequest = key, request
+		return embedding.Result{Vectors: [][]float64{{0.5, 0.25}}, Model: request.Model}, nil
+	}})
+	request, _ := json.Marshal(embedding.Request{URL: "http://embedder/v1", Model: "m", Input: []string{"hello"}})
+	got := frames(t, dial(t, socket, Frame{Type: "embed", Embed: request, ModelKey: "embed-key"}))
+	if len(got) != 2 || got[0].Type != "result" || *got[1].Code != 0 {
+		t.Fatalf("frames = %+v", got)
+	}
+	var result embedding.Result
+	if err := json.Unmarshal(got[0].Result, &result); err != nil || len(result.Vectors) != 1 || result.Vectors[0][1] != 0.25 {
+		t.Fatalf("result = %+v, %v", result, err)
+	}
+	if gotKey != "embed-key" || gotRequest.Input[0] != "hello" {
+		t.Fatalf("key = %q, request = %+v", gotKey, gotRequest)
+	}
+	got = frames(t, dial(t, socket, Frame{Type: "embed"}))
+	if len(got) != 1 || *got[0].Code != 2 {
+		t.Fatalf("an embed frame without a request: %+v", got)
 	}
 }
