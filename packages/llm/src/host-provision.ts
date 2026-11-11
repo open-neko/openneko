@@ -18,11 +18,13 @@ import { maybeDecryptSecret } from "./secrets";
 import { isPrimaryProvider } from "./config";
 import { getGoogleToken } from "./llm";
 import {
+  FALLBACK_KEY_ENV,
   resolveProviderRuntime,
   type ProviderRuntime,
   type ProviderEndpoint,
 } from "./provider-runtime";
 import { createConnection } from "node:net";
+import { taskRouteRecords } from "./model-routes";
 import type { AgentRuntimeLaunchConfig } from "./work/sandbox-launcher";
 
 
@@ -300,15 +302,7 @@ function agentModelRuntime(row: StoredRow): ProviderRuntime {
   });
 }
 
-/**
- * The org's model key for one agent run, by variable name: the variable the
- * provider's route reads, and MODEL_API_KEY. Loaded fresh for every run, so a
- * key rotation applies at once and no key stays in process state. The keys
- * reach only the run's runner, which hands them to openneko serve.
- */
-export async function loadAgentModelKeys(orgId: string): Promise<Record<string, string>> {
-  const row = await loadProviderRow(orgId, "primary");
-  if (!row || !row.enabled) return {};
+async function rowKey(row: StoredRow): Promise<{ apiKey?: string; keyEnv?: string }> {
   const runtime = agentModelRuntime(row);
   const apiKey =
     runtime.credentialSource === "google-adc"
@@ -316,9 +310,26 @@ export async function loadAgentModelKeys(orgId: string): Promise<Record<string, 
       : runtime.credentialSource === "stored-api-key"
         ? decryptSecrets(row.secrets).apiKey
         : undefined;
-  if (!apiKey) return {};
-  const keyEnv = process.env.OPENNEKO_AGENT_MODEL_KEY_ENV || runtime.keyEnv;
-  return { MODEL_API_KEY: apiKey, ...(keyEnv ? { [keyEnv]: apiKey } : {}) };
+  return { ...(apiKey ? { apiKey } : {}), ...(runtime.keyEnv ? { keyEnv: runtime.keyEnv } : {}) };
+}
+
+/**
+ * The org's model keys for one agent run, by variable name: the variable the
+ * turn model's route reads, MODEL_API_KEY, and FALLBACK_MODEL_API_KEY when
+ * the "turn" route names a fallback. Loaded fresh for every run, so a key
+ * rotation applies at once and no key stays in process state. The keys reach
+ * only the run's runner, which hands them to openneko serve.
+ */
+export async function loadAgentModelKeys(orgId: string): Promise<Record<string, string>> {
+  const records = await taskRouteRecords(orgId, "turn").catch(() => undefined);
+  const row = records?.primary ?? (await loadProviderRow(orgId, "primary"));
+  if (!row || !row.enabled) return {};
+  const primary = await rowKey(row);
+  const fallback = records?.fallback ? await rowKey(records.fallback).catch(() => ({ apiKey: undefined })) : {};
+  const keys: Record<string, string> = fallback.apiKey ? { [FALLBACK_KEY_ENV]: fallback.apiKey } : {};
+  if (!primary.apiKey) return keys;
+  const keyEnv = process.env.OPENNEKO_AGENT_MODEL_KEY_ENV || primary.keyEnv;
+  return { ...keys, MODEL_API_KEY: primary.apiKey, ...(keyEnv ? { [keyEnv]: primary.apiKey } : {}) };
 }
 
 /**

@@ -97,6 +97,8 @@ export function serveHarnessTurn(opts: {
   env: NodeJS.ProcessEnv;
   modelKeyEnv: string;
   modelKey: string;
+  /** More route keys by variable name, for a turn with a fallback model. */
+  extraKeys?: Record<string, string>;
   servers: string[];
   bridgeEnv?: Record<string, string>;
   debug?: boolean;
@@ -158,7 +160,7 @@ export function serveHarnessTurn(opts: {
         spec: opts.spec,
         bridge: Boolean(transport),
         model_key_env: opts.modelKeyEnv,
-        model_keys: opts.modelKey ? { [opts.modelKeyEnv]: opts.modelKey } : {},
+        model_keys: { ...(opts.modelKey ? { [opts.modelKeyEnv]: opts.modelKey } : {}), ...(opts.extraKeys ?? {}) },
       });
     })();
   });

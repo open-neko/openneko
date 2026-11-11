@@ -60,7 +60,7 @@ export async function classifyQuestion(
     },
   });
   try {
-    const { outputs: result, usage, provider, model } = await generate(orgId, CLASSIFIER, { question, role });
+    const { outputs: result, usage, provider, model } = await generate(orgId, CLASSIFIER, { question, role }, { task: "classify" });
     const diagnostics: QuestionClassificationDiagnostics = {
       durationMs: Date.now() - startedAt,
       usage,

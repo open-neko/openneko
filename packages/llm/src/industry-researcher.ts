@@ -278,7 +278,7 @@ export async function runIndustryResearcher(args: {
     companyName: orgName,
     companyNote,
     businessProfile,
-  });
+  }, { task: "research_mission" });
   const missionCharter = String(missionResult.missionCharter ?? "").trim();
   if (!missionCharter) {
     throw new Error("mission writer returned empty charter");

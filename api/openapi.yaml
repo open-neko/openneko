@@ -72,6 +72,128 @@ components:
                 type: string
         code:
           type: string
+    ModelPrice:
+      type:
+      - object
+      - 'null'
+      required:
+      - inputUsdPer1M
+      - outputUsdPer1M
+      properties:
+        inputUsdPer1M:
+          type: number
+        outputUsdPer1M:
+          type: number
+    ModelRecord:
+      type: object
+      required:
+      - id
+      - name
+      - provider
+      - model
+      - enabled
+      - config
+      - secretStatus
+      - price
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        enabled:
+          type: boolean
+        config:
+          type: object
+        secretStatus:
+          type: object
+          description: Each stored key as a mask
+          additionalProperties:
+            type: string
+        price:
+          $ref: '#/components/schemas/ModelPrice'
+    ModelSettings:
+      type: object
+      required:
+      - defaultModel
+      - models
+      - routes
+      - catalog
+      additionalProperties: false
+      properties:
+        defaultModel:
+          type: object
+          properties:
+            provider:
+              type: string
+            model:
+              type: string
+            source:
+              type: string
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelRecord'
+        routes:
+          type: array
+          items:
+            type: object
+            required:
+            - task
+            - label
+            - description
+            - modelId
+            - fallbackModelId
+            properties:
+              task:
+                type: string
+              label:
+                type: string
+              description:
+                type: string
+              modelId:
+                type:
+                - string
+                - 'null'
+              fallbackModelId:
+                type:
+                - string
+                - 'null'
+        catalog:
+          type: object
+    ModelSaved:
+      type: object
+      required:
+      - model
+      - settings
+      additionalProperties: false
+      properties:
+        model:
+          $ref: '#/components/schemas/ModelRecord'
+        settings:
+          $ref: '#/components/schemas/ModelSettings'
+    ModelDraft:
+      type: object
+      properties:
+        name:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        enabled:
+          type: boolean
+        config:
+          type: object
+        secrets:
+          type: object
+          description: A key set to null is removed
+        price:
+          $ref: '#/components/schemas/ModelPrice'
 paths:
   /action-requests:
     get:
@@ -2585,6 +2707,258 @@ paths:
                 properties:
                   error:
                     type: string
+  /admin/model-routes:
+    put:
+      operationId: putAdminModelRoutes
+      tags:
+      - admin
+      summary: Set the model and the fallback model of one task
+      description: A route with no model and no fallback is removed, and the task follows the default route again.
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - task
+              properties:
+                task:
+                  type: string
+                  enum:
+                  - default
+                  - turn
+                  - classify
+                  - briefing_summary
+                  - compact
+                  - bot_instructions
+                  - bot_names
+                  - skill_lessons
+                  - research_mission
+                modelId:
+                  type:
+                  - string
+                  - 'null'
+                fallbackModelId:
+                  type:
+                  - string
+                  - 'null'
+      responses:
+        '200':
+          description: The model settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelSettings'
+        '400':
+          description: The task is not in the list, the default route names a model, or the fallback is the same model
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an administrator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: A model id does not exist in this organisation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/models:
+    get:
+      operationId: getAdminModels
+      tags:
+      - admin
+      summary: List the model records, the task routes and the default model
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      responses:
+        '200':
+          description: The model settings. Keys show only as a mask.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelSettings'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an administrator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      operationId: postAdminModels
+      tags:
+      - admin
+      summary: Add a model record
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelDraft'
+      responses:
+        '201':
+          description: The new model and the model settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelSaved'
+        '400':
+          description: A field is missing or not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an administrator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: A model with this name exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/models/{modelId}:
+    put:
+      operationId: putAdminModelsByModelId
+      tags:
+      - admin
+      summary: Change a model record
+      description: A key left out keeps its stored value. A key set to null is removed.
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      parameters:
+      - name: modelId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelDraft'
+      responses:
+        '200':
+          description: The changed model and the model settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelSaved'
+        '400':
+          description: A field is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an administrator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: The model does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: A model with this name exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      operationId: deleteAdminModelsByModelId
+      tags:
+      - admin
+      summary: Remove a model record
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      parameters:
+      - name: modelId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The model settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelSettings'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an administrator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: The model does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: A task route uses the model
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /admin/packs:
     get:
       operationId: getAdminPacks
@@ -3526,6 +3900,7 @@ paths:
                 - org
                 - workflows
                 - alerts
+                - byModel
                 additionalProperties: false
                 properties:
                   limits:
@@ -3541,6 +3916,8 @@ paths:
                   workflows:
                     type: array
                   alerts:
+                    type: array
+                  byModel:
                     type: array
         '401':
           description: The session or device token is not valid
@@ -3599,6 +3976,7 @@ paths:
                 - org
                 - workflows
                 - alerts
+                - byModel
                 additionalProperties: false
                 properties:
                   limits:
@@ -3614,6 +3992,8 @@ paths:
                   workflows:
                     type: array
                   alerts:
+                    type: array
+                  byModel:
                     type: array
         '400':
           description: The body is missing or a limit is not valid
@@ -3676,6 +4056,8 @@ paths:
                     type: array
                   alerts:
                     type: array
+                  byModel:
+                    type: array
         '401':
           description: The session or device token is not valid
           content:
@@ -3730,6 +4112,7 @@ paths:
                 - org
                 - workflows
                 - alerts
+                - byModel
                 additionalProperties: false
                 properties:
                   limits:
@@ -3743,6 +4126,8 @@ paths:
                   workflows:
                     type: array
                   alerts:
+                    type: array
+                  byModel:
                     type: array
         '400':
           description: The override is not valid
@@ -3819,6 +4204,7 @@ paths:
                 - org
                 - workflows
                 - alerts
+                - byModel
                 additionalProperties: false
                 properties:
                   limits:
@@ -3832,6 +4218,8 @@ paths:
                   workflows:
                     type: array
                   alerts:
+                    type: array
+                  byModel:
                     type: array
         '400':
           description: The override is not valid

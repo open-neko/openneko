@@ -19,7 +19,7 @@ func TestGenerateModeAnswersOneHostCall(t *testing.T) {
 	defer server.Close()
 	in := strings.NewReader(`{"route":{"url":"` + server.URL + `","model":"m"},"signature":"question:string -> answer:string","values":{"question":"q"}}`)
 	var out, errOut bytes.Buffer
-	if code := generateMain(in, &out, &errOut, "env-key"); code != 0 {
+	if code := generateMain(in, &out, &errOut, "env-key", ""); code != 0 {
 		t.Fatalf("code %d: %s", code, errOut.String())
 	}
 	var result struct {
@@ -28,7 +28,7 @@ func TestGenerateModeAnswersOneHostCall(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &result); err != nil || result.Outputs["answer"] != "42" || auth != "Bearer env-key" {
 		t.Fatalf("out = %s, auth = %q", out.String(), auth)
 	}
-	if code := generateMain(strings.NewReader("not json"), &out, &errOut, ""); code != 2 {
+	if code := generateMain(strings.NewReader("not json"), &out, &errOut, "", ""); code != 2 {
 		t.Fatalf("bad request code = %d", code)
 	}
 }

@@ -68,7 +68,7 @@ async function loadStoredPrimaryConfig(
   }
 }
 
-function decryptSecrets(row: StoredProviderConfigRow | null): Record<string, string> {
+export function decryptSecrets(row: Pick<StoredProviderConfigRow, "secrets"> | null): Record<string, string> {
   const secrets = row?.secrets ?? {};
   const decoded: Record<string, string> = {};
 
@@ -80,7 +80,7 @@ function decryptSecrets(row: StoredProviderConfigRow | null): Record<string, str
   return decoded;
 }
 
-function validateResolvedConfig(config: ResolvedPrimaryProviderConfig): void {
+export function validateResolvedConfig(config: ResolvedPrimaryProviderConfig): void {
   switch (config.provider) {
     case "ollama":
       if (!String(config.config.url ?? "").trim()) {

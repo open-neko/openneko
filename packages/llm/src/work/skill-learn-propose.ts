@@ -66,7 +66,7 @@ async function defaultSkillLearnLlm(orgId: string): Promise<SkillLearnLlm> {
     "You propose one additive skill lesson. Reply with JSON only. No tools.",
   );
   return async (prompt: string) => {
-    const { outputs } = await generate(orgId, generator, { learningPrompt: prompt });
+    const { outputs } = await generate(orgId, generator, { learningPrompt: prompt }, { task: "skill_lessons" });
     return String(outputs.skillLearningProposal ?? "");
   };
 }

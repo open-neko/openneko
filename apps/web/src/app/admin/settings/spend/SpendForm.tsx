@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import type { MetricRefresh, SpendLimitsUsd, SpendSettings, SpendWindowUsage, WorkflowSpendRow } from "@neko/llm/spend";
+import { taskLabel } from "@neko/llm/model-tasks";
 import { AdminError } from "@/components/admin/AdminError";
 import { adminApi } from "@/components/admin/admin-api";
 import AppHeader from "@/components/AppHeader";
@@ -78,6 +79,8 @@ export default function SpendForm({ initial }: { initial: SpendSettings }) {
           <UsageCard title="This hour" usage={settings.org.hour} warnPercent={settings.limits.warnPercent} />
           <UsageCard title="Today" usage={settings.org.day} warnPercent={settings.limits.warnPercent} />
         </section>
+
+        <SpendByModel settings={settings} />
 
         <form onSubmit={saveLimits} className="settings-card mt-6 flex flex-col gap-5">
           <div>
@@ -245,6 +248,49 @@ function UsageCard({ title, usage, warnPercent }: { title: string; usage: SpendW
       </div>
       <p className="text-ui-caption text-text3">Resets at {utcTime(usage.resetsAt)}.</p>
     </div>
+  );
+}
+
+function SpendByModel({ settings }: { settings: SpendSettings }) {
+  return (
+    <section className="settings-card mt-6 flex flex-col gap-4" aria-label="Spend by task and model">
+      <div>
+        <h2 className="settings-card-title">Last 30 days by task and model</h2>
+        <p className="settings-card-copy">
+          Agent turns and the short calls OpenNeko makes for itself. A short call with no price counts as no cost; a turn
+          with no price is charged the per-run cap. Add a price to a model in Models.
+        </p>
+      </div>
+      {settings.byModel.length === 0 ? (
+        <p className="text-ui-body-sm text-text3">No model calls in the last 30 days.</p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Task</TableHead>
+              <TableHead>Model</TableHead>
+              <TableHead className="text-right">Calls</TableHead>
+              <TableHead className="text-right">Tokens</TableHead>
+              <TableHead className="text-right">Spend</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {settings.byModel.map((row) => (
+              <TableRow key={`${row.task}:${row.provider}:${row.model}`}>
+                <TableCell>{taskLabel(row.task)}</TableCell>
+                <TableCell className="break-all">{row.provider && row.model ? `${row.provider}/${row.model}` : "Not recorded"}</TableCell>
+                <TableCell className="text-right tabular-nums">{row.calls.toLocaleString("en-US")}</TableCell>
+                <TableCell className="text-right tabular-nums">{row.tokens.toLocaleString("en-US")}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {usd(row.spentUsd)}
+                  {row.unpricedCalls > 0 ? <span className="block text-ui-caption text-text3">{row.unpricedCalls} with no price</span> : null}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </section>
   );
 }
 

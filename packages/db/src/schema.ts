@@ -1036,6 +1036,45 @@ export const llm_provider_config = pgTable(
   }),
 );
 
+export const llm_model = pgTable(
+  "llm_model",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    config: jsonb("config").notNull().default(sql`'{}'::jsonb`),
+    secrets: jsonb("secrets").notNull().default(sql`'{}'::jsonb`),
+    enabled: boolean("enabled").notNull().default(true),
+    input_usd_per_1m: numeric("input_usd_per_1m", { precision: 12, scale: 4 }),
+    output_usd_per_1m: numeric("output_usd_per_1m", { precision: 12, scale: 4 }),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_name_unique: uniqueIndex("llm_model_org_id_name_key").on(t.org_id, t.name),
+  }),
+);
+
+export const llm_task_route = pgTable(
+  "llm_task_route",
+  {
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    task: text("task").notNull(),
+    model_id: uuid("model_id"),
+    fallback_model_id: uuid("fallback_model_id"),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.org_id, t.task] }),
+  }),
+);
+
 export const work_thread = pgTable(
   "work_thread",
   {
@@ -3019,6 +3058,7 @@ export const spend_ledger = pgTable(
     priced: text("priced").notNull(),
     cost_source: text("cost_source"),
     pricing_version: text("pricing_version"),
+    task: text("task"),
     created_at: ts("created_at").notNull().defaultNow(),
   },
   (t) => ({

@@ -1,6 +1,6 @@
 // Ax backend: one ax-harness turn, as a child process or in openneko serve. Protocol: apps/ax-harness/docs/RUN-PROTOCOL.md.
 
-import { axCatalogPricingVersion, estimateTokenCost, hasPriceOverride } from "../spend/model-prices";
+import { axCatalogPricingVersion, estimateRecordCost, estimateTokenCost, hasPriceOverride } from "../spend/model-prices";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,7 +15,7 @@ import {
   type AgentTokenUsage,
 } from "../agent-backend";
 import { registerAgentCanceller } from "../agent-shutdown";
-import type { AxModelRoute } from "../provider-runtime";
+import { FALLBACK_KEY_ENV, type AxModelRoute } from "../provider-runtime";
 import { A2UI_RENDER_ACP_TITLE, A2UI_RENDER_SERVER_NAME } from "../work/a2ui-contract";
 import { splitStablePrompt } from "../prompts/stable-prefix";
 import { extractMarkdownText, outsideFenceText } from "./output";
@@ -28,6 +28,35 @@ function modelKey(route: AxModelRoute): string {
   return (route.keyEnv && process.env[route.keyEnv]) || process.env.MODEL_API_KEY || "none";
 }
 
+const PRIMARY_ROUTE_KEY_ENV = "PRIMARY_MODEL_API_KEY";
+
+function fallbackKey(): string {
+  return process.env[FALLBACK_KEY_ENV] || "none";
+}
+
+/**
+ * The harness route profile for a turn with a fallback model. Every stage uses
+ * the primary route; the harness moves a failed call to the fallback only on
+ * an error Ax classifies as retryable. See apps/ax-harness/internal/command/routes.go.
+ */
+export function fallbackRouteProfile(primary: AxModelRoute, fallback: AxModelRoute): string {
+  const entry = (key: string, route: AxModelRoute, keyEnv: string) => ({
+    key,
+    ...(route.provider ? { provider: route.provider } : {}),
+    model: route.model,
+    ...(route.url ? { url: route.url } : {}),
+    api_key_env: keyEnv,
+    ...(route.options ? { options: route.options } : {}),
+  });
+  return JSON.stringify({
+    context: "primary",
+    executor: "primary",
+    responder: "primary",
+    fallbacks: [{ from: "primary", to: "fallback" }],
+    routes: [entry("primary", primary, PRIMARY_ROUTE_KEY_ENV), entry("fallback", fallback, FALLBACK_KEY_ENV)],
+  });
+}
+
 /** The org prompt goes in `instructions` and the per-turn rest in `prompt`, so providers cache the org prompt on its own. */
 export function axRunPrompt(prompt: string, userMessage?: string): { instructions?: string; prompt: string } {
   const { stable, turn } = splitStablePrompt(prompt);
@@ -38,6 +67,8 @@ export function axRunPrompt(prompt: string, userMessage?: string): { instruction
 /** Trusted, non-secret model settings, resolved on the host from admin settings. */
 export type AxBackendConfig = {
   route: AxModelRoute;
+  /** Serves a model call after the route fails with a retryable provider error. */
+  fallback?: AxModelRoute;
   contextWindowTokens?: number;
   maxOutputTokens?: number;
   reasoningEffort?: AgentReasoningEffort;
@@ -84,7 +115,7 @@ type AxEvent = {
 const KILL_GRACE_MS = 15_000;
 
 
-export function normalizeAxUsage(usage: AxUsage | undefined, route?: { provider: string; model: string }): AgentTokenUsage {
+export function normalizeAxUsage(usage: AxUsage | undefined, route?: Pick<AxModelRoute, "provider" | "model" | "price">): AgentTokenUsage {
   if (!usage) return { coverage: "unavailable", missingReasons: ["Ax Harness reported no usage"] };
   const tokens = {
     inputTokens: usage.input_tokens,
@@ -98,21 +129,24 @@ export function normalizeAxUsage(usage: AxUsage | undefined, route?: { provider:
   const scale = usage.coverage === "complete" ? 1
     : usage.coverage === "partial" && usage.reported && usage.requests ? usage.requests / usage.reported
     : 0;
-  // The harness priced each call on the route that served it; a host price override for the route wins.
+  // The harness priced each call on the route that served it; a host price override or a model record price wins.
   const harnessPriced = usage.priced_by === "catalog" && typeof usage.cost_micros === "number" && Number.isFinite(usage.cost_micros) &&
-    !!usage.catalog_version && !(route && hasPriceOverride(route.provider, route.model));
+    !!usage.catalog_version && !(route && (route.price || hasPriceOverride(route.provider, route.model)));
+  const tokenCounts = {
+    inputTokens: usage.input_tokens,
+    outputTokens: usage.output_tokens,
+    cacheReadTokens: usage.cache_read_tokens,
+    cacheWriteTokens: usage.cache_write_tokens,
+    totalTokens: usage.total_tokens,
+    calls: usage.reported,
+  };
   const reported = scale <= 0 ? undefined
+    : route?.price
+      ? estimateRecordCost(route.price, tokenCounts)
     : harnessPriced
       ? { usd: usage.cost_micros! / 1_000_000, costSource: "ax_harness_catalog", pricingCatalogVersion: axCatalogPricingVersion(usage.catalog_version!) }
       : route
-        ? estimateTokenCost(route.provider, route.model, {
-            inputTokens: usage.input_tokens,
-            outputTokens: usage.output_tokens,
-            cacheReadTokens: usage.cache_read_tokens,
-            cacheWriteTokens: usage.cache_write_tokens,
-            totalTokens: usage.total_tokens,
-            calls: usage.reported,
-          })
+        ? estimateTokenCost(route.provider, route.model, tokenCounts)
         : undefined;
   return {
     ...Object.fromEntries(Object.entries(tokens).filter(([, v]) => typeof v === "number")),
@@ -120,7 +154,7 @@ export function normalizeAxUsage(usage: AxUsage | undefined, route?: { provider:
     ...(reported === undefined
       ? { costStatus: "unknown" as const }
       : {
-          costStatus: "estimated" as const,
+          costStatus: reported.usd === 0 ? ("included" as const) : ("estimated" as const),
           estimatedCostUsd: reported.usd * scale,
           currency: "USD",
           costSource: reported.costSource,
@@ -226,6 +260,9 @@ export class AxBackend implements AgentBackend {
           env,
           modelKeyEnv: this.ax.route.keyEnv || "MODEL_API_KEY",
           modelKey: modelKey(this.ax.route),
+          ...(this.ax.fallback
+            ? { extraKeys: { [PRIMARY_ROUTE_KEY_ENV]: modelKey(this.ax.route), [FALLBACK_KEY_ENV]: fallbackKey() } }
+            : {}),
           servers,
           ...(opts.mcpBridgeEnv ? { bridgeEnv: { ...opts.mcpBridgeEnv, OPENNEKO_MCP_SERVERS: servers.join(",") } } : {}),
           debug: opts.debug === true,
@@ -345,7 +382,7 @@ export class AxBackend implements AgentBackend {
     const env: NodeJS.ProcessEnv = { ...process.env };
     if (workspace) env.PATH = `${workspace.binRoot}:${process.env.PATH || ""}`;
     const key = modelKey(route);
-    for (const name of ["MODEL_API_KEY", route.keyEnv, "HARNESS_MODEL_ROUTES"]) if (name) delete env[name];
+    for (const name of ["MODEL_API_KEY", route.keyEnv, "HARNESS_MODEL_ROUTES", PRIMARY_ROUTE_KEY_ENV, FALLBACK_KEY_ENV]) if (name) delete env[name];
     Object.assign(env, {
       HARNESS_MODEL_PROVIDER: route.provider,
       HARNESS_MODEL: route.model,
@@ -353,6 +390,13 @@ export class AxBackend implements AgentBackend {
       HARNESS_MODEL_URL: route.url ?? "",
       HARNESS_MODEL_OPTIONS: route.options ? JSON.stringify(route.options) : "",
     });
+    if (this.ax!.fallback) {
+      Object.assign(env, {
+        HARNESS_MODEL_ROUTES: fallbackRouteProfile(route, this.ax!.fallback),
+        [PRIMARY_ROUTE_KEY_ENV]: key,
+        [FALLBACK_KEY_ENV]: fallbackKey(),
+      });
+    }
     Object.assign(env, limitEnv);
 
     const names = this.bridgeServers(opts);
@@ -507,7 +551,7 @@ export class AxEventMapper {
       source: "outer",
       ...(this.observed ?? {}),
       modelIdentity: { configured, ...(this.observed ? { observed: this.observed } : {}) },
-      usage: normalizeAxUsage(usage, configured),
+      usage: normalizeAxUsage(usage, this.route),
     });
   }
 

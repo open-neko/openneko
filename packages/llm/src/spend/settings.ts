@@ -39,6 +39,18 @@ export type WorkflowSpendRow = {
   spentTodayUsd: number;
 };
 
+export type SpendByModelRow = {
+  task: string | null;
+  provider: string | null;
+  model: string | null;
+  calls: number;
+  tokens: number;
+  spentUsd: number;
+  unpricedCalls: number;
+};
+
+export const SPEND_METER_DAYS = 30;
+
 export type SpendSettings = {
   limits: SpendLimitsUsd;
   metricRefresh: MetricRefresh;
@@ -46,6 +58,8 @@ export type SpendSettings = {
   org: { hour: SpendWindowUsage; day: SpendWindowUsage };
   workflows: WorkflowSpendRow[];
   alerts: SpendAlert[];
+  /** The last SPEND_METER_DAYS days by task and model, most spent first. */
+  byModel: SpendByModelRow[];
 };
 
 export class SpendSettingsError extends Error {
@@ -85,6 +99,24 @@ export async function getSpendSettings(orgId: string, now = new Date()): Promise
       where w.org_id = $1
       order by spent_today desc, w.name`,
     [orgId, windows.dayStart],
+  );
+  const meter = await db.query<{
+    task: string | null;
+    provider: string | null;
+    model: string | null;
+    calls: string;
+    tokens: string;
+    spent: string;
+    unpriced: string;
+  }>(
+    `select task, provider, model, count(*) as calls, coalesce(sum(tokens), 0) as tokens,
+            coalesce(sum(cost_micros), 0) as spent, count(*) filter (where priced in ('unpriced', 'fallback')) as unpriced
+       from spend_ledger
+      where org_id = $1 and created_at >= $2
+      group by task, provider, model
+      order by spent desc, calls desc
+      limit 100`,
+    [orgId, new Date(now.getTime() - SPEND_METER_DAYS * 86_400_000)],
   );
   const override = (value: string | null) => (value === null ? null : microsToUsd(Number(value)));
   return {
@@ -129,6 +161,15 @@ export async function getSpendSettings(orgId: string, now = new Date()): Promise
       spentTodayUsd: microsToUsd(Number(row.spent_today)),
     })),
     alerts,
+    byModel: meter.rows.map((row) => ({
+      task: row.task,
+      provider: row.provider,
+      model: row.model,
+      calls: Number(row.calls),
+      tokens: Number(row.tokens),
+      spentUsd: microsToUsd(Number(row.spent)),
+      unpricedCalls: Number(row.unpriced),
+    })),
   };
 }
 

@@ -31,7 +31,7 @@ export async function summarizeBriefing(
     windowHours: input.windowHours,
     topApprovalTitle: input.topApprovalTitle ?? "",
     topActTitle: input.topActTitle ?? "",
-  });
+  }, { task: "briefing_summary" });
   const text = String(result.briefing ?? "").trim();
   return text;
 }

@@ -94,6 +94,33 @@ no key. Web and the worker hold no provider client of their own.
 The industry research step still calls Perplexity directly from the worker,
 because the gateway does not yet return Perplexity's citations.
 
+### Models and task routes
+
+The model in Admin, Settings, Model provider is the default model. At Admin,
+Settings, Models, an admin adds more models (`llm_model`, one row per model,
+keys sealed like the provider key) and gives each task a route
+(`llm_task_route`). The tasks are agent turns, the question classifier, the
+briefing summary, compaction, bot instructions, bot names, skill lessons and
+the research mission. A task with no route follows the "default" route. The
+default route always uses the default model and may name a fallback. A
+disabled model counts as unset, so its tasks use the default model.
+
+A route may name a fallback model. The gateway sends a call to the fallback
+only when the first model fails with an error that Ax classifies as
+retryable, such as a 503 or a timeout, after the first model's own retries.
+A refused key or a bad request does not go to the fallback. For a host call,
+the frame carries the fallback route and its key in `fallback_key`. For a
+turn, the runner gets the fallback key as `FALLBACK_MODEL_API_KEY`, and the
+harness reads a two-route profile in `HARNESS_MODEL_ROUTES`. The fallback
+route never runs a tool call again.
+
+Each model may carry a price in USD per million tokens. That price wins over
+the model price list. Every host call writes a `spend_ledger` row with its
+task, provider and model. A host call with no price costs nothing in the
+ledger and raises no alert; a turn with no price is still charged the
+per-run cap. Admin, Settings, Spend shows the last 30 days by task and
+model. Each change to a model or a route goes in the audit chain.
+
 ## Two zones
 
 The stack has two zones. The control zone is web and the worker. It holds

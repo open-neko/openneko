@@ -524,3 +524,26 @@ func TestMissingUsageRetainsCostReservation(t *testing.T) {
 		t.Fatalf("reservation or coverage lost: %+v", terminal)
 	}
 }
+
+const hostFallbackProfile = `{"context":"primary","executor":"primary","responder":"primary","fallbacks":[{"from":"primary","to":"fallback"}],"routes":[{"key":"primary","provider":"openai-compatible","model":"qwen3","url":"https://models.example.test/v1","api_key_env":"PRIMARY_MODEL_API_KEY"},{"key":"fallback","provider":"openai","model":"gpt-5","api_key_env":"FALLBACK_MODEL_API_KEY"}]}`
+
+func TestHostFallbackProfileLoads(t *testing.T) {
+	env := map[string]string{
+		"HARNESS_MODEL_ROUTES":   hostFallbackProfile,
+		"PRIMARY_MODEL_API_KEY":  "primary-key",
+		"FALLBACK_MODEL_API_KEY": "fallback-key",
+	}
+	getenv := func(name string) string { return env[name] }
+	client, err := loadModelClient(getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routed := client.(*agent.RoutedClient)
+	if routed.Fallbacks["primary"] != "fallback" || routed.ModelNames["fallback"] != "gpt-5" || routed.Stages.Executor != "primary" {
+		t.Fatalf("routed = %+v", routed)
+	}
+	held := strings.Join(KeyEnvNames(getenv), ",")
+	if !strings.Contains(held, "PRIMARY_MODEL_API_KEY") || !strings.Contains(held, "FALLBACK_MODEL_API_KEY") {
+		t.Fatalf("held key names = %s", held)
+	}
+}
