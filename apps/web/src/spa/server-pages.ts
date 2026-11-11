@@ -1,3 +1,5 @@
+// The Go web front keeps a copy (apps/openneko/internal/webfront/front.go);
+// its TestServerPagesMatchWeb fails when the two differ.
 export const serverPages: string[] = [
   "/chat/connectors",
   "/profile",
