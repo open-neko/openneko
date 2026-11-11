@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -12,13 +13,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dosco/graphjin/core/v3/fstable"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/filecontent"
 	"github.com/open-neko/neko/apps/openneko/internal/files"
+	"github.com/open-neko/neko/apps/openneko/internal/filestore"
 	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
@@ -43,13 +44,11 @@ func newServeCmd() *cobra.Command {
 				return err
 			}
 			defer pool.Close()
-			if err := os.MkdirAll(filesDir, 0o750); err != nil {
-				return err
-			}
-			store, err := fstable.NewLocal(fstable.LocalConfig{Root: filesDir})
+			store, err := filestore.Open(ctx, filestore.FromEnv(filesDir))
 			if err != nil {
 				return err
 			}
+			reportFileStore(ctx, cmd.ErrOrStderr(), store, filesDir)
 			ix, err := filecontent.Open(pool, indexDir, 0)
 			if err != nil {
 				return err
@@ -130,13 +129,9 @@ func newServeCmd() *cobra.Command {
 			return nil
 		},
 	}
-	data := os.Getenv("XDG_DATA_HOME")
-	if data == "" {
-		home, _ := os.UserHomeDir()
-		data = filepath.Join(home, ".local", "share")
-	}
+	data := dataHome()
 	cmd.Flags().StringVar(&addr, "addr", envOr("OPENNEKO_SERVE_ADDR", "127.0.0.1:8090"), "Listen address")
-	cmd.Flags().StringVar(&filesDir, "files-dir", envOr("OPENNEKO_FILES_DIR", filepath.Join(data, "openneko", "files")), "Folder that holds each user's private files")
+	cmd.Flags().StringVar(&filesDir, "files-dir", envOr("OPENNEKO_FILES_DIR", filepath.Join(data, "openneko", "files")), "Folder that holds each user's private files. OPENNEKO_FILES_BUCKET=s3://bucket[/prefix] keeps them in a bucket instead")
 	cmd.Flags().StringVar(&indexDir, "index-dir", envOr("OPENNEKO_FILES_INDEX_DIR", filepath.Join(data, "openneko", "file-index")), "Folder for the sheet tables derived from the files; safe to delete")
 	cmd.Flags().StringVar(&agentSocket, "agent-socket", os.Getenv("OPENNEKO_SERVE_SOCKET"), "Unix socket for agent turns; empty turns them off")
 	cmd.Flags().StringVar(&checkSocket, "config-check-socket", os.Getenv("OPENNEKO_CONFIG_CHECK_SOCKET"), "Unix socket where web and worker ask serve to load a candidate GraphJin config with the pinned loader; empty turns the check off")
@@ -172,4 +167,24 @@ func serveKeyAndDatabase(credentials string) ([]byte, string, error) {
 
 func subscriptionsDir() string {
 	return envOr("OPENNEKO_SUBSCRIPTIONS_DIR", filepath.Join(os.TempDir(), "openneko-subscriptions"))
+}
+
+func reportFileStore(ctx context.Context, w io.Writer, store filestore.Store, dir string) {
+	if err := store.Check(ctx); err != nil {
+		fmt.Fprintf(w, "file store: cannot reach it: %v. The file tools fail until serve can reach it\n", err)
+	} else {
+		fmt.Fprintf(w, "file store: %s\n", store.Describe())
+	}
+	if store.Name() == "local" {
+		return
+	}
+	if n := filestore.LocalFilesLeft(dir, 1000); n > 0 {
+		count := fmt.Sprintf("%d files", n)
+		if n == 1 {
+			count = "1 file"
+		} else if n >= 1000 {
+			count = "1000 or more files"
+		}
+		fmt.Fprintf(w, "file store: the local folder %s still holds %s, and serve does not read them. To copy them to the bucket, run `openneko files copy-to-bucket`. When the bucket holds them, remove them from the folder\n", dir, count)
+	}
 }

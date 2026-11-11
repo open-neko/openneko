@@ -193,8 +193,19 @@ func (s *Service) duckDBAvailable() bool {
 	return err == nil
 }
 
-func (s *Service) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "sheet_sql": s.duckDBAvailable()})
+type checker interface {
+	Check(ctx context.Context) error
+}
+
+func (s *Service) health(w http.ResponseWriter, r *http.Request) {
+	out := map[string]any{"ok": true, "sheet_sql": s.duckDBAvailable(), "file_store": s.store.Name(), "file_store_ok": true}
+	if c, ok := s.store.(checker); ok {
+		if err := c.Check(r.Context()); err != nil {
+			out["file_store_ok"] = false
+			out["file_store_error"] = err.Error()
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 type FileInfo struct {
@@ -244,17 +255,40 @@ func (s *Service) put(ctx context.Context, c caller, r *http.Request) (any, erro
 	if err != nil {
 		return nil, badRequest("%v", err)
 	}
-	body := io.LimitReader(r.Body, s.opts.MaxFileBytes+1)
+	body := &capped{r: r.Body, left: s.opts.MaxFileBytes}
 	e, err := s.store.Put(ctx, key, body, fstable.PutMeta{ContentType: r.Header.Get("Content-Type")})
+	if errors.Is(err, errTooLarge) {
+		return nil, httpError{http.StatusRequestEntityTooLarge, fmt.Sprintf("file is larger than %d bytes", s.opts.MaxFileBytes)}
+	}
 	if err != nil {
 		return nil, err
 	}
-	if e.Size > s.opts.MaxFileBytes {
-		s.store.Delete(ctx, key) //nolint:errcheck
-		return nil, httpError{http.StatusRequestEntityTooLarge, fmt.Sprintf("file is larger than %d bytes", s.opts.MaxFileBytes)}
-	}
 	s.index.Forget(c.scope())
 	return info(c, e), nil
+}
+
+var errTooLarge = errors.New("file too large")
+
+// capped fails the read past the limit, so the store drops the partial write
+// and keeps the file that was there before.
+type capped struct {
+	r    io.Reader
+	left int64
+}
+
+func (c *capped) Read(p []byte) (int, error) {
+	if c.left < 0 {
+		return 0, errTooLarge
+	}
+	if int64(len(p)) > c.left+1 {
+		p = p[:c.left+1]
+	}
+	n, err := c.r.Read(p)
+	c.left -= int64(n)
+	if c.left < 0 {
+		return n, errTooLarge
+	}
+	return n, err
 }
 
 func (s *Service) delete(ctx context.Context, c caller, r *http.Request) (any, error) {
