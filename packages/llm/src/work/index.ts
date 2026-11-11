@@ -65,6 +65,7 @@ export {
   type StartAgentBrokerOptions,
 } from "./broker";
 export {
+  WORK_SEMANTIC_STEP_ROWS_MAX_BYTES,
   WORK_SEMANTIC_TRACE_SCHEMA_VERSION,
   recordWorkSemanticHostEvent,
   registerWorkSemanticTraceSink,
@@ -72,7 +73,9 @@ export {
   traceAgentControlPlane,
   workSemanticDigest,
   type WorkSemanticHostEventInput,
+  type WorkSemanticContentCapture,
   type WorkSemanticMemoryEvidence,
+  type WorkSemanticStepContent,
   type WorkSemanticTraceBinding,
   type WorkSemanticTraceEvent,
   type WorkSemanticTraceSink,

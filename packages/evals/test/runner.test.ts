@@ -559,7 +559,18 @@ describe("durable eval execution", () => {
     const loaded = await loadEval(paths.configPath);
     const plan = createEvalPlan(loaded);
     const evidence: EvalSemanticEvidence = {
-      schemaVersion: "openneko.eval.semantic-evidence/v1",
+      schemaVersion: "openneko.eval.semantic-evidence/v2",
+      steps: [
+        {
+          sequence: 1,
+          operation: "graphjin.execute",
+          request: { query: "query { orders { id } }" },
+          rows: [{ id: "private-row-marker" }],
+          rowCount: 1,
+          truncated: false,
+        },
+      ],
+      modelTurns: [{ afterToolCalls: 1, text: "private-turn-marker" }],
       events: [
         {
           schemaVersion: "openneko.work.semantic-trace/v1",
@@ -638,6 +649,9 @@ describe("durable eval execution", () => {
     expect(stored.map((episode) => episode.semanticEvidence)).toEqual(
       plan.slots.map(() => evidence),
     );
+    expect(new Set(stored.map((episode) => episode.schemaVersion))).toEqual(
+      new Set(["openneko.eval.episode/v2"]),
+    );
 
     const rescoreSeen: Array<EvalSemanticEvidence | undefined> = [];
     const rescored = await rescoreEvaluation({
@@ -659,6 +673,8 @@ describe("durable eval execution", () => {
     );
     expect(publicLines).not.toContain("semanticEvidence");
     expect(publicLines).not.toContain("private-evidence-marker");
+    expect(publicLines).not.toContain("private-row-marker");
+    expect(publicLines).not.toContain("private-turn-marker");
     const rescoreDocument = await readFile(rescored.path, "utf8");
     expect(rescoreDocument).not.toContain("semanticEvidence");
     expect(rescoreDocument).not.toContain("private-evidence-marker");
@@ -712,6 +728,43 @@ describe("durable eval execution", () => {
     expect(restoredLegacy?.semanticEvidence).toBeUndefined();
     expect(restoredLegacy?.pairKey).toBeUndefined();
     expect(restoredLegacy?.treatment).toBeUndefined();
+
+    const v1EvidenceEpisode = {
+      ...legacyEpisode,
+      slotKey: "fixture/v1-evidence-slot",
+      semanticEvidence: {
+        schemaVersion: "openneko.eval.semantic-evidence/v1" as const,
+        events: [
+          {
+            schemaVersion: "openneko.work.semantic-trace/v1" as const,
+            sequence: 1,
+            timestamp: "2026-08-10T00:00:00.000Z",
+            runId: "legacy-run",
+            orgId: "legacy-org",
+            runKind: "work" as const,
+            source: "trusted-broker" as const,
+            operation: "graphjin.execute",
+            status: "ok" as const,
+            durationMs: 1,
+            requestDigest: `sha256:${"7".repeat(64)}`,
+            evidence: { queryDigest: `sha256:${"8".repeat(64)}` },
+          },
+        ],
+      },
+    };
+    await put(
+      store.episodePath(v1EvidenceEpisode.runId, v1EvidenceEpisode.slotKey),
+      `${JSON.stringify({
+        ...v1EvidenceEpisode,
+        integrityDigest: contentDigest(v1EvidenceEpisode),
+      })}\n`,
+    );
+    const restoredV1 = await store.readEpisode(
+      v1EvidenceEpisode.runId,
+      v1EvidenceEpisode.slotKey,
+    );
+    expect(restoredV1?.schemaVersion).toBe("openneko.eval.episode/v1");
+    expect(restoredV1?.semanticEvidence).toEqual(v1EvidenceEpisode.semanticEvidence);
   });
 
   it("blocks publication and verification when required episode metrics are missing", async () => {

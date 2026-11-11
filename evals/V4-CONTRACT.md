@@ -116,6 +116,14 @@ only stable kind/scope/decision/mode and keyed digests. That trace lets the
 oracle distinguish no attempt, blocked attempt, allowed attempt, and an actual
 execution without trusting model-reported tool events.
 
+From episode v2, the private semantic evidence also keeps the content of each
+step: the query text or tool arguments, and up to 16 KB of returned rows, cut
+at a row boundary, with a `truncated` flag and the full row count. It also
+keeps the text of each model turn. The eval scrubs secret values from this
+content before it stores it. Only an eval sink asks for this content; a
+production run stores nothing new. Scorers read the digest events only, so
+verdicts do not change. The reader still loads episode v1 files.
+
 ## 5. Independent qualification
 
 The policy produces four decisions:

@@ -4,6 +4,7 @@ import { contentDigest, textDigest } from "./canonical";
 import { redactText } from "@neko/telemetry";
 import { summarizeEpisodes } from "./scoring";
 import {
+  EPISODE_SCHEMA_VERSION,
   EpisodeSchema,
   ManifestSchema,
   ResultLineSchema,
@@ -1000,7 +1001,7 @@ export async function verifyResult(resultDirInput: string): Promise<{
   }
   const episodes = lines.map((line) =>
     EpisodeSchema.parse({
-      schemaVersion: "openneko.eval.episode/v1",
+      schemaVersion: EPISODE_SCHEMA_VERSION,
       runId: line.runId,
       slotKey: line.slotKey,
       ...(line.pairKey ? { pairKey: line.pairKey } : {}),

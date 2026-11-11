@@ -9,6 +9,7 @@ import {
   createWorkThread,
   appendWorkRunEvent,
   agentRuntimeDepsFromConfig,
+  createScrubber,
   detectSkillUse,
   ensureAgentBroker,
   formatWorkMemoryPromptContext,
@@ -29,6 +30,8 @@ import {
   type AgentBrokerHandle,
   type AgentControlPlane,
   type RunBinding,
+  type Scrubber,
+  type WorkSemanticStepContent,
   type WorkSemanticTraceEvent,
 } from "@neko/llm/work";
 import {
@@ -806,6 +809,41 @@ export function backendGraphjinActorProbe(
   // read. In particular, workflow runs use the service role, which must not be
   // required to execute the member-only eval API mutation.
   return caseId === "b00-api-selection" ? "api-mutation" : "read";
+}
+
+export function evalContentScrubber(
+  environment: NodeJS.ProcessEnv = process.env,
+): Scrubber {
+  const values: string[] = [];
+  for (const [name, value] of Object.entries(environment)) {
+    if (!value) continue;
+    if (/(KEY|TOKEN|SECRET|PASSWORD)$/i.test(name)) values.push(value);
+    if (/URL$/i.test(name)) {
+      try {
+        const password = decodeURIComponent(new URL(value).password);
+        if (password) values.push(password);
+      } catch {}
+    }
+  }
+  return createScrubber(values);
+}
+
+export function backendModelTurns(
+  events: readonly AgentEvent[],
+  scrub: Scrubber,
+): Array<{ afterToolCalls: number; text: string }> {
+  let toolCalls = 0;
+  const turns: Array<{ afterToolCalls: number; text: string }> = [];
+  for (const event of events) {
+    if (event.type === "tool_start") toolCalls += 1;
+    const text =
+      (event.type === "message" && event.role === "assistant") ||
+      event.type === "interim"
+        ? event.content
+        : "";
+    if (text) turns.push({ afterToolCalls: toolCalls, text: scrub(text) });
+  }
+  return turns;
 }
 
 export function backendToolCallLimit(variant: EvalVariant): number | undefined {
@@ -2705,6 +2743,8 @@ export function createOpenNekoBackendDriver(context: {
         threadId: "",
       };
       const evidence: WorkSemanticTraceEvent[] = [];
+      const steps: WorkSemanticStepContent[] = [];
+      const scrub = evalContentScrubber();
       const events: AgentEvent[] = [];
       const pendingSkills = new Map<string, string>();
       const recordedSkills = new Set<string>();
@@ -2730,8 +2770,10 @@ export function createOpenNekoBackendDriver(context: {
       let stateMachine: StateMachineObservation | undefined;
       const partialExecution = (): EvalExecution => ({
         semanticEvidence: {
-          schemaVersion: "openneko.eval.semantic-evidence/v1",
+          schemaVersion: "openneko.eval.semantic-evidence/v2",
           events: evidence,
+          steps,
+          modelTurns: backendModelTurns(events, scrub),
         },
         measurements: {
           wallDurationMs: Date.now() - started,
@@ -2874,9 +2916,14 @@ export function createOpenNekoBackendDriver(context: {
           );
         }
 
-        unregisterEvidence = registerWorkSemanticTraceSink(workRun.id, (event) => {
-          evidence.push(event);
-        });
+        unregisterEvidence = registerWorkSemanticTraceSink(
+          workRun.id,
+          (event, content) => {
+            evidence.push(event);
+            if (content) steps.push(content);
+          },
+          { captureContent: { scrub } },
+        );
 
         const emit = async (event: AgentEvent): Promise<void> => {
           events.push(event);
@@ -3100,8 +3147,10 @@ export function createOpenNekoBackendDriver(context: {
             ...(stateMachine ? { stateMachine } : {}),
           } satisfies WorkBackendOutput,
           semanticEvidence: {
-            schemaVersion: "openneko.eval.semantic-evidence/v1",
+            schemaVersion: "openneko.eval.semantic-evidence/v2",
             events: evidence,
+            steps,
+            modelTurns: backendModelTurns(events, scrub),
           },
           measurements: {
             wallDurationMs,
