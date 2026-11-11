@@ -75,7 +75,7 @@ func TestWebPassesToNodeAndStopsIt(t *testing.T) {
 	var body []byte
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		res, err := http.Get(base + "/api/v1/version")
+		res, err := http.Get(base + "/api/v1/work")
 		if err == nil {
 			body, _ = io.ReadAll(res.Body)
 			_ = res.Body.Close()
@@ -88,7 +88,7 @@ func TestWebPassesToNodeAndStopsIt(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	if !bytes.HasPrefix(body, []byte("node /api/v1/version 127.0.0.1:")) {
+	if !bytes.HasPrefix(body, []byte("node /api/v1/work 127.0.0.1:")) {
 		t.Fatalf("body %q", body)
 	}
 	res, err := http.Get(base + "/chat")

@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 
+	"github.com/open-neko/neko/apps/openneko/internal/version"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 )
 
@@ -31,7 +32,9 @@ the server pages to the Node server on --node-addr. With a command after
 --, web starts that command as Node with PORT and HOSTNAME set from
 --node-addr, and stops when it stops, with its exit code.
 
-Web reads sessions, devices and groups with the main database login.`,
+Web answers the version, sign-in status, session, sign-out and device
+sign-in routes itself. It reads and writes users, sessions, devices, groups
+and the audit chain with the main database login.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
@@ -67,9 +70,11 @@ Web reads sessions, devices and groups with the main database login.`,
 				}
 				go func() { nodeDone <- node.Wait() }()
 			}
+			gate := &webfront.Gate{WorkerURL: workerURL, DB: pool}
 			front := &webfront.Front{
 				App:  os.DirFS(dir),
-				Gate: &webfront.Gate{WorkerURL: workerURL, DB: pool},
+				Gate: gate,
+				API:  &webfront.API{Gate: gate, DB: pool, Version: webfront.AppVersion(dir, version.Version)},
 				Node: webfront.NodeProxy(&url.URL{Scheme: "http", Host: nodeAddr}),
 			}
 			srv := &http.Server{Handler: front, ReadHeaderTimeout: 10 * time.Second}

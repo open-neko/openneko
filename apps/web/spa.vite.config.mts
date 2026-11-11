@@ -1,4 +1,4 @@
-import { copyFileSync } from "node:fs";
+import { copyFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
@@ -18,6 +18,7 @@ function appIcons(): Plugin {
     apply: "build",
     writeBundle() {
       for (const file of ["favicon.ico", "icon.png"]) copyFileSync(path.join(src, "app", file), path.join(outDir, file));
+      writeFileSync(path.join(outDir, "version.json"), JSON.stringify({ version: pkg.version }));
     },
   };
 }

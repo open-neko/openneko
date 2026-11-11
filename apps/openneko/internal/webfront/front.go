@@ -4,6 +4,7 @@
 package webfront
 
 import (
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"net/http"
@@ -58,8 +59,26 @@ var ServerPages = []string{
 type Front struct {
 	App  fs.FS
 	Gate *Gate
+	// API answers the routes that moved to Go; nil passes them to Node.
+	API *API
 	// Node answers the API and the server pages; nil answers 502.
 	Node http.Handler
+}
+
+// AppVersion reads the version that build:spa writes beside the app, or
+// returns fallback when the build holds none.
+func AppVersion(dir, fallback string) string {
+	raw, err := os.ReadFile(path.Join(dir, "version.json"))
+	if err != nil {
+		return fallback
+	}
+	var v struct {
+		Version string `json:"version"`
+	}
+	if json.Unmarshal(raw, &v) != nil || v.Version == "" {
+		return fallback
+	}
+	return v.Version
 }
 
 // Check confirms that the app folder holds a built app.
@@ -86,6 +105,10 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if p == "/" {
 		http.Redirect(w, r, "/chat", http.StatusFound)
+		return
+	}
+	if h := f.API.Handler(r); h != nil {
+		h(w, r)
 		return
 	}
 	if p == "/api" || strings.HasPrefix(p, "/api/") || serverPage.MatchString(p) ||
