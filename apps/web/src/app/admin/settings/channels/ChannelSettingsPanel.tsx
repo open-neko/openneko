@@ -36,8 +36,8 @@ export default function ChannelSettingsPanel() {
           <h2 className="settings-card-title">Channel settings</h2>
           <p className="settings-card-copy">
             Enter the tokens each channel needs. OpenNeko stores secrets
-            encrypted and never shows them again. A channel delivers and
-            listens only while an installed pack turns it on.
+            encrypted and never shows them again. A channel turns on when its
+            required settings are saved. Turn off removes its stored settings.
           </p>
         </div>
       </div>
@@ -82,10 +82,10 @@ function ChannelSettingsForm({ channel, onSaved }: { channel: ChannelSettings; o
   }
   const changed = Object.keys(changes).length > 0;
 
-  const save = async (next: Record<string, string | null>) => {
+  const post = async (body: { values: Record<string, string | null> } | { state: "on" | "off" }) => {
     setBusy(true);
     setStatus(null);
-    const result = await adminApi("/api/v1/admin/channels/settings", "POST", { channel: channel.id, values: next });
+    const result = await adminApi("/api/v1/admin/channels/settings", "POST", { channel: channel.id, ...body });
     setBusy(false);
     if (!result.ok) {
       setStatus({ tone: "error", text: result.error });
@@ -94,6 +94,7 @@ function ChannelSettingsForm({ channel, onSaved }: { channel: ChannelSettings; o
     setStatus({ tone: "ok", text: "Saved" });
     await onSaved();
   };
+  const save = (next: Record<string, string | null>) => post({ values: next });
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -104,16 +105,16 @@ function ChannelSettingsForm({ channel, onSaved }: { channel: ChannelSettings; o
     <form onSubmit={submit}>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h3 className="font-display text-base font-bold text-text">{channel.providerLabel}</h3>
-        {!channel.enabled ? (
-          <Badge variant="muted">Off</Badge>
-        ) : channel.missing.length > 0 ? (
-          <Badge variant="watch">Needs {channel.missing.length} {channel.missing.length === 1 ? "setting" : "settings"}</Badge>
-        ) : (
+        {channel.enabled ? (
           <Badge variant="success">On</Badge>
+        ) : channel.missing.length > 0 ? (
+          <Badge variant="muted">Off · needs {channel.missing.length} {channel.missing.length === 1 ? "setting" : "settings"}</Badge>
+        ) : (
+          <Badge variant="muted">Off</Badge>
         )}
       </div>
       {channel.fields.length === 0 ? (
-        <p className="text-sm text-text3">OpenNeko sets this channel up when a pack turns it on.</p>
+        <p className="text-sm text-text3">This channel needs no settings from you. OpenNeko makes its secret when you turn it on.</p>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {channel.fields.map((field) => (
@@ -139,18 +140,27 @@ function ChannelSettingsForm({ channel, onSaved }: { channel: ChannelSettings; o
           ))}
         </div>
       )}
-      {channel.fields.length > 0 ? (
-        <ActionGroup className="mt-4">
+      <ActionGroup className="mt-4">
+        {channel.fields.length > 0 ? (
           <Button type="submit" variant="primary" disabled={busy || !changed}>
             {busy ? "Saving…" : "Save settings"}
           </Button>
-          {status ? (
-            <span role="status" className={`text-sm ${status.tone === "error" ? "text-danger" : "text-text2"}`}>
-              {status.text}
-            </span>
-          ) : null}
-        </ActionGroup>
-      ) : null}
+        ) : null}
+        {channel.enabled ? (
+          <Button type="button" variant="ghost" disabled={busy} onClick={() => void post({ state: "off" })}>
+            Turn off
+          </Button>
+        ) : channel.missing.length === 0 ? (
+          <Button type="button" variant="secondary" disabled={busy} onClick={() => void post({ state: "on" })}>
+            Turn on
+          </Button>
+        ) : null}
+        {status ? (
+          <span role="status" className={`text-sm ${status.tone === "error" ? "text-danger" : "text-text2"}`}>
+            {status.text}
+          </span>
+        ) : null}
+      </ActionGroup>
     </form>
   );
 }

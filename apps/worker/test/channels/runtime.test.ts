@@ -3,19 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Built-in channel runtime: which channels installed packs turn on, where their
-// credentials live, and how the plugin-era settings move over. The secrets
-// store is real (in a temp config dir); the pack_install query is stubbed.
-const h = vi.hoisted(() => ({ rows: [] as Array<{ config: Record<string, unknown> }> }));
-vi.mock("@neko/db", () => ({
-  and: (...args: unknown[]) => args,
-  eq: (...args: unknown[]) => args,
-  pack_install: { config: "config", org_id: "org_id", status: "status" },
-  db: () => ({
-    select: () => ({ from: () => ({ where: async () => h.rows }) }),
-  }),
-}));
-
 import { readSecretsStore, writeSecretsStore } from "@neko/secrets";
 import {
   channelEnv,
@@ -24,8 +11,8 @@ import {
   enabledChannelIds,
   getChannelProviders,
   migrateLegacyChannelSecrets,
-  prepareChannelsForPack,
   setChannelSettings,
+  setChannelState,
   verifyChannelInbound,
 } from "../../src/channels/runtime.js";
 
@@ -42,55 +29,98 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  h.rows = [];
   await writeSecretsStore({});
 });
 
 describe("enabled channels", () => {
-  it("turns on the union of channels listed by installed packs", async () => {
-    h.rows = [
-      { config: { _channels: ["telegram"] } },
-      { config: { _channels: ["slack", "telegram", "discord"] } },
-      { config: {} },
-    ];
-    expect(await enabledChannelIds("org-1")).toEqual(["slack", "telegram"]);
-    expect((await getChannelProviders("org-1")).map((p) => [p.id, p.ingress])).toEqual([
+  it("turns on each channel whose required settings are stored", async () => {
+    await writeSecretsStore({
+      "channel.slack": { SLACK_BOT_TOKEN: "xoxb-1" },
+      "channel.telegram": { TELEGRAM_BOT_TOKEN: "123:abc" },
+      "channel.hud": { HUD_CHANNEL_WORKSPACE: "demo" },
+    });
+    expect(await enabledChannelIds()).toEqual(["slack", "telegram"]);
+    expect((await getChannelProviders()).map((p) => [p.id, p.ingress])).toEqual([
       ["slack", "socket"],
       ["telegram", "webhook"],
     ]);
   });
 
-  it("refuses delivery and webhooks for a channel no pack turned on", async () => {
-    await expect(deliverOnChannel("org-1", "telegram", { chatId: 1 }, [])).rejects.toThrow(/not turned on/);
-    expect(await verifyChannelInbound("org-1", "telegram", {}, "{}")).toBe(false);
+  it("keeps a channel off while a required setting is empty", async () => {
+    await writeSecretsStore({ "channel.slack": { SLACK_BOT_TOKEN: "  ", SLACK_APP_TOKEN: "xapp-1" } });
+    expect(await enabledChannelIds()).toEqual([]);
+  });
+
+  it("refuses delivery and webhooks for a channel that is off", async () => {
+    await expect(deliverOnChannel("telegram", { chatId: 1 }, [])).rejects.toThrow(/not turned on/);
+    expect(await verifyChannelInbound("telegram", {}, "{}")).toBe(false);
+  });
+});
+
+describe("upgrade from the channel plugins", () => {
+  it("turns Slack on when its credentials moved from the plugin", async () => {
+    await writeSecretsStore({
+      "@open-neko/plugin-slack": { SLACK_BOT_TOKEN: "xoxb-old", SLACK_APP_TOKEN: "xapp-old" },
+    });
+    await migrateLegacyChannelSecrets();
+    expect(await enabledChannelIds()).toEqual(["slack"]);
+    expect((await channelSettings()).find((c) => c.id === "slack")).toMatchObject({ enabled: true, missing: [] });
+  });
+
+  it("leaves every channel off when no credentials moved", async () => {
+    await writeSecretsStore({ "pack.magento": { KEY: "keep" } });
+    expect(await migrateLegacyChannelSecrets()).toEqual([]);
+    expect(await enabledChannelIds()).toEqual([]);
+    expect((await channelSettings()).map((c) => c.enabled)).toEqual([false, false, false]);
   });
 });
 
 describe("channel settings", () => {
-  it("writes declared settings and reports secrets only as set", async () => {
-    h.rows = [{ config: { _channels: ["telegram"] } }];
+  it("writes declared settings, turns the channel on and reports secrets only as set", async () => {
     await setChannelSettings("telegram", { TELEGRAM_BOT_TOKEN: "123:abc" });
     expect(await channelEnv("telegram")).toEqual({ TELEGRAM_BOT_TOKEN: "123:abc" });
-    const telegram = (await channelSettings("org-1")).find((c) => c.id === "telegram")!;
+    const telegram = (await channelSettings()).find((c) => c.id === "telegram")!;
     expect(telegram.enabled).toBe(true);
     expect(telegram.missing).toEqual([]);
     expect(telegram.fields.find((f) => f.key === "TELEGRAM_BOT_TOKEN")).toMatchObject({ set: true });
     expect(JSON.stringify(telegram)).not.toContain("123:abc");
   });
 
-  it("refuses undeclared keys and clearing a required one", async () => {
+  it("refuses undeclared and generated keys; clearing a required one turns the channel off", async () => {
     await expect(setChannelSettings("slack", { NOPE: "x" })).rejects.toThrow(/does not declare/);
-    await expect(setChannelSettings("slack", { SLACK_BOT_TOKEN: null })).rejects.toThrow(/required/);
+    await expect(setChannelSettings("hud", { HUD_CHANNEL_SECRET: "mine" })).rejects.toThrow(/does not declare/);
+    await setChannelSettings("slack", { SLACK_BOT_TOKEN: "xoxb-1" });
+    expect(await enabledChannelIds()).toEqual(["slack"]);
+    await setChannelSettings("slack", { SLACK_BOT_TOKEN: null });
+    expect(await enabledChannelIds()).toEqual([]);
   });
+});
 
-  it("mints the HUD secret and scopes the HUD channel to the installing pack", async () => {
-    await prepareChannelsForPack("fujairah-live", ["hud"]);
+describe("setChannelState", () => {
+  it("turns the HUD on by minting its secret once, with no pack", async () => {
+    expect(await enabledChannelIds()).toEqual([]);
+    await setChannelState("hud", "on");
     const env = await channelEnv("hud");
     expect(env.HUD_CHANNEL_SECRET).toMatch(/^[A-Za-z0-9_-]{64}$/);
-    expect(env.HUD_CHANNEL_WORKSPACE).toBe("fujairah-live");
-    const secret = env.HUD_CHANNEL_SECRET;
-    await prepareChannelsForPack("fujairah-live", ["hud"]);
-    expect((await channelEnv("hud")).HUD_CHANNEL_SECRET).toBe(secret);
+    expect(await enabledChannelIds()).toEqual(["hud"]);
+    await setChannelState("hud", "on");
+    expect((await channelEnv("hud")).HUD_CHANNEL_SECRET).toBe(env.HUD_CHANNEL_SECRET);
+  });
+
+  it("refuses to turn on a channel that lacks an admin-entered setting", async () => {
+    await expect(setChannelState("slack", "on")).rejects.toThrow(/needs SLACK_BOT_TOKEN/);
+    expect(await enabledChannelIds()).toEqual([]);
+  });
+
+  it("turns a channel off by removing its stored settings and leaves others alone", async () => {
+    await writeSecretsStore({
+      "channel.slack": { SLACK_BOT_TOKEN: "xoxb-1", SLACK_APP_TOKEN: "xapp-1" },
+      "channel.telegram": { TELEGRAM_BOT_TOKEN: "123:abc" },
+    });
+    await setChannelState("slack", "off");
+    const store = await readSecretsStore();
+    expect(store["channel.slack"]).toBeUndefined();
+    expect(await enabledChannelIds()).toEqual(["telegram"]);
   });
 });
 

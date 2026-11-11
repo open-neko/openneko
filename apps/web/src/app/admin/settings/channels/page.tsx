@@ -11,7 +11,7 @@ export default async function SettingsChannelsPage() {
   return (
     <AdminShell
       title="Channels"
-      subtitle="Slack, Telegram, and other places where people talk to OpenNeko. A solution pack turns a channel on."
+      subtitle="Slack, Telegram, and other places where people talk to OpenNeko. A channel turns on when its settings are saved."
       back={{ href: "/admin/settings", label: "Settings" }}
     >
       <ChannelSettingsPanel />

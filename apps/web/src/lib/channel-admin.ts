@@ -16,7 +16,7 @@ export type ChannelSettings = {
   providerLabel: string;
   directions: string[];
   ingress: string;
-  /** An installed pack lists the channel, so the worker delivers and listens on it. */
+  /** Every required setting is stored, so the worker delivers and listens on it. */
   enabled: boolean;
   fields: ChannelSettingField[];
   missing: string[];

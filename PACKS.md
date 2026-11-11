@@ -82,7 +82,7 @@ Copy a working `pack.yaml` and edit these sections:
 | `inputs` | Named settings with a type: `string`, `url`, `integer`, `enum`, `timezone`, or `boolean`; defaults and required values as appropriate |
 | `secrets` | Secret keys, purpose, and whether required; never credential values |
 | `oauth` | Connection scope, provider label, setup/help copy, OAuth endpoints, input and secret references, account identity fields, and consent scopes |
-| `channels` | Optional built-in channels the pack turns on while installed: `slack`, `telegram`, `hud` |
+| `channels` | Optional built-in channel names: `slack`, `telegram`, `hud`. Accepted for older packs; it does not turn a channel on ([Channels](#channels)) |
 | `management` | Optional label and local path to an existing application management page |
 | `permissions.network` | Every host used by OAuth and the pack's API sources |
 | `artifacts` | Source/relationship files, spec paths, query and YAML directories, and skill directories |
@@ -261,18 +261,21 @@ Packs cannot ship arbitrary UI components, HTML, or CSS.
 
 ## Channels
 
-Slack, Telegram, and the HUD surface are built into OpenNeko. A pack turns one
-on for the workspace by listing it:
+Slack, Telegram, and the HUD surface are built into OpenNeko. A channel is on
+while its required settings are stored. An admin enters them under
+**Admin → Settings → Channels**, and OpenNeko keeps them in the secrets store
+under `channel.<id>`. Slack needs `SLACK_BOT_TOKEN`; Telegram needs
+`TELEGRAM_BOT_TOKEN`. The HUD needs no tokens: **Turn on** generates its
+signing secret. **Turn off** removes the channel's stored settings.
+
+Channel tokens are not pack secrets. A manifest may still list channels:
 
 ```yaml
 channels: [slack]
 ```
 
-The channel stays on while any installed pack lists it; removing the last such
-pack turns it off. Channel tokens are not pack secrets. An admin enters them
-once under **Admin → Settings → Channels**, and OpenNeko keeps them in the
-secrets store under `channel.<id>`. The HUD channel needs no tokens: OpenNeko
-generates its signing secret and scopes it to the pack that turned it on.
+OpenNeko accepts the field so older packs still validate, but it does not turn
+a channel on or off.
 
 ## Personal and deployment OAuth
 

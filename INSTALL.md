@@ -41,7 +41,7 @@ Then run `openneko setup` (guided), or `openneko start` to bring the stack up wi
 
 Both paths drive the same web endpoints with the same validation (a live provider-key test, a data-source connectivity check), and each step persists independently — so you can start in the terminal and finish in the browser, or vice versa. For unattended installs (CI), pass `--admin-password`, `--provider`, `--provider-key`, etc. to run setup headless.
 
-Integrations come from **solution packs**, installed after setup from **Admin → Settings → Solution packs** or with `openneko pack install`. Slack, Telegram and the HUD are built-in channels that a pack turns on; sign-in (Scalekit SSO or email link) is configured under **Admin → Settings**. (`--skip-plugins` and `--plugins` are still accepted by `setup` but do nothing.)
+Integrations come from **solution packs**, installed after setup from **Admin → Settings → Solution packs** or with `openneko pack install`. Slack, Telegram and the HUD are built-in channels that turn on when an admin saves their settings under **Admin → Settings → Channels**; sign-in (Scalekit SSO or email link) is configured under **Admin → Settings**. (`--skip-plugins` and `--plugins` are still accepted by `setup` but do nothing.)
 
 The AdventureWorks seed pre-fills business onboarding (`AdventureWorks Cycles`, fiscal year `July`, seats `CEO`/`CFO`/`COO`, priorities `Defend wholesale margins` / `Grow DTC in Europe`). Otherwise fill it in at `/onboarding`.
 
@@ -569,8 +569,8 @@ This release has fewer parts. The upgrade migrates your data in place:
 - **Plugins** are gone. Scalekit and email-link sign-in are built in. Slack,
   Telegram and the HUD are built-in channels. The upgrade moves their
   credentials, workspaces, identities and grants to the built-in names. A
-  channel is on only while an installed pack lists it in `channels:`
-  ([PACKS.md](PACKS.md#channels)). Resend, Slack, Shopify and Parallel web
+  channel that had credentials is on after the upgrade, with no step from
+  you ([PACKS.md](PACKS.md#channels)). Resend, Slack, Shopify and Parallel web
   search actions are packs now; install them from **Admin → Settings →
   Packs**.
 - **The Library** keeps your files. At start, the worker moves each uploaded

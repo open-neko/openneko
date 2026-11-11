@@ -64,9 +64,9 @@ export async function runPollIteration(
 }
 
 /**
- * Start inbound transports for the org's turned-on inbound channels. `refresh`
- * starts loops for newly turned-on channels and stops loops for channels no
- * installed pack lists any more.
+ * Start inbound transports for the turned-on inbound channels. `refresh`
+ * starts loops for newly turned-on channels and stops loops for channels that
+ * were turned off.
  */
 export function startChannelInbound(orgId: string): { stop: () => void; refresh: () => Promise<void> } {
   let stopped = false;
@@ -84,7 +84,7 @@ export function startChannelInbound(orgId: string): { stop: () => void; refresh:
   async function refresh(): Promise<void> {
     if (stopped) return;
     const hasPublicWebhook = Boolean(process.env.OPENNEKO_PUBLIC_URL);
-    const inboundProviders = (await getChannelProviders(orgId)).filter((p) =>
+    const inboundProviders = (await getChannelProviders()).filter((p) =>
       p.directions.includes("inbound"),
     );
     const wanted = new Set<string>(inboundProviders.map((p) => p.id));

@@ -145,7 +145,7 @@ export default async function SettingsPage() {
         {
           href: "/admin/settings/channels",
           title: "Channels",
-          copy: "Slack, Telegram, and other places where people talk to OpenNeko. A pack turns each one on.",
+          copy: "Slack, Telegram, and other places where people talk to OpenNeko. Each one turns on when its settings are saved.",
         },
         {
           href: "/admin/settings/graphjin",

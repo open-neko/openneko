@@ -20,7 +20,7 @@ import { TELEGRAM_CHANNEL } from "./telegram/channel";
 
 const localSend = async (): Promise<DeliverResult> => ({ delivered: true, ref: "local" });
 
-/** Channels a pack can turn on (manifest `channels:`). Web is always on. */
+/** Channels an admin turns on with their settings. Web is always on. */
 export const BUILT_IN_CHANNELS = {
   slack: SLACK_CHANNEL,
   telegram: TELEGRAM_CHANNEL,

@@ -113,7 +113,8 @@ const oauthConnectionSchema = z
   .strict();
 
 /**
- * Built-in channels a pack can turn on for the org while it is installed.
+ * Built-in channels a pack names. Accepted for older packs; a channel is on
+ * when its settings are stored, whatever a pack lists.
  * Optional rather than defaulted, so packs without it keep their manifest hash.
  */
 export const PACK_CHANNELS = ["slack", "telegram", "hud"] as const;

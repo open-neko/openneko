@@ -276,7 +276,6 @@ describe("runChannelDelivery (durable CHANNEL_DELIVER job body)", () => {
       events: [{ kind: "converse", text: "hi" }],
     });
     expect(deliverOnChannel).toHaveBeenCalledWith(
-      "org-1",
       "telegram",
       { chatId: 7 },
       [{ kind: "converse", text: "hi" }],
@@ -430,7 +429,7 @@ describe("ingestInboundWebhook", () => {
   it("accepts the legacy plugin package name in the webhook path", async () => {
     const res = await ingestInboundWebhook("org-1", "@open-neko/channel-telegram", { "x-secret": "s" }, '{"callback_query":{}}');
     expect(res).toEqual({ ok: true, dispatched: 1 });
-    expect(fakeReg.verifyInbound).toHaveBeenCalledWith("org-1", "telegram", { "x-secret": "s" }, '{"callback_query":{}}');
+    expect(fakeReg.verifyInbound).toHaveBeenCalledWith("telegram", { "x-secret": "s" }, '{"callback_query":{}}');
     expect(fakeReg.parseInbound).toHaveBeenCalledWith("telegram", { callback_query: {} });
   });
 });

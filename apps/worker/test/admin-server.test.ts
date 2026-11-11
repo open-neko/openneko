@@ -1193,6 +1193,7 @@ describe("worker channel routes", () => {
       ingestInbound: overrides.ingestInbound ?? (async () => ({ ok: true, dispatched: 0 })),
       ...(overrides.settings ? { settings: overrides.settings } : {}),
       ...(overrides.setSettings ? { setSettings: overrides.setSettings } : {}),
+      ...(overrides.setState ? { setState: overrides.setState } : {}),
     };
   }
 
@@ -1355,6 +1356,35 @@ describe("worker channel routes", () => {
         body: JSON.stringify({ channel: "@open-neko/plugin-slack", values: { SLACK_BOT_TOKEN: "x" } }),
       });
       expect(bad.status).toBe(400);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("POST /admin/channels/settings turns a channel on or off", async () => {
+    const states: Array<[string, string]> = [];
+    const srv = await startServer(
+      createAdminHandler({
+        channels: fakeChannel({
+          setSettings: async () => {},
+          setState: async (channel, state) => {
+            states.push([channel, state]);
+          },
+        }),
+      }),
+    );
+    const post = (body: unknown) =>
+      fetch(`http://127.0.0.1:${srv.port}/admin/channels/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    try {
+      expect((await post({ channel: "hud", state: "on" })).status).toBe(200);
+      expect((await post({ channel: "slack", state: "off" })).status).toBe(200);
+      expect((await post({ channel: "slack", state: "maybe" })).status).toBe(400);
+      expect((await post({ channel: "slack", state: "on", values: { SLACK_BOT_TOKEN: "x" } })).status).toBe(400);
+      expect(states).toEqual([["hud", "on"], ["slack", "off"]]);
     } finally {
       await srv.close();
     }
