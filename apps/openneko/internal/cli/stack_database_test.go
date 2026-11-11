@@ -2,8 +2,10 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -126,8 +128,8 @@ func TestDevAndDemoAlwaysRunTheBundledDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	for mode, want := range map[compose.Mode]string{
-		compose.ModeDev:  "core.yml,dev.yml,bundled-db.yml",
-		compose.ModeDemo: "core.yml,demo.yml,bundled-db.yml",
+		compose.ModeDev:  "core.yml,bundled-db.yml,dev.yml",
+		compose.ModeDemo: "core.yml,bundled-db.yml,demo.yml",
 	} {
 		files, err := stackFiles(context.Background(), sup, mode, "openneko-"+string(mode))
 		if err != nil {
@@ -290,5 +292,70 @@ func TestDatabaseTLSOverlayCoversEveryDatabaseService(t *testing.T) {
 	}
 	if overlay.Secrets["database-ca"].Environment != "OPENNEKO_DATABASE_CA" || overlay.Secrets["database-key"].Environment != "OPENNEKO_DATABASE_KEY" || len(overlay.Secrets) != 2 {
 		t.Fatalf("overlay secrets = %+v", overlay.Secrets)
+	}
+}
+
+func TestEveryStackCommandUsesTheStoredImageVersion(t *testing.T) {
+	sup := isolateStackDatabase(t, "openneko_neko-db-data")
+	t.Setenv("OPENNEKO_VERSION", "")
+	if err := sup.WriteImageVersion("v9.9.9-pinned"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stackFiles(context.Background(), sup, compose.ModeProd, "openneko"); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv("OPENNEKO_VERSION"); got != "v9.9.9-pinned" {
+		t.Fatalf("OPENNEKO_VERSION = %q, want the stored tag", got)
+	}
+	t.Setenv("OPENNEKO_VERSION", "v1.2.3")
+	if _, err := stackFiles(context.Background(), sup, compose.ModeProd, "openneko"); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv("OPENNEKO_VERSION"); got != "v1.2.3" {
+		t.Fatalf("OPENNEKO_VERSION = %q, want the caller's tag", got)
+	}
+}
+
+func TestBundledDatabaseSurvivesTheComposeMerge(t *testing.T) {
+	if exec.Command("docker", "compose", "version").Run() != nil {
+		t.Skip("docker compose is not installed")
+	}
+	cases := []struct {
+		mode    compose.Mode
+		project string
+	}{{compose.ModeProd, "openneko"}, {compose.ModeDev, "openneko-dev"}, {compose.ModeDemo, "openneko-demo"}}
+	for _, tc := range cases {
+		sup := isolateStackDatabase(t, tc.project+"_neko-db-data")
+		files, err := stackFiles(context.Background(), sup, tc.mode, tc.project)
+		if err != nil {
+			t.Fatal(err)
+		}
+		args := []string{"compose", "-p", tc.project}
+		for _, file := range files {
+			args = append(args, "-f", file)
+		}
+		cmd := exec.Command("docker", append(args, "--profile", "steps", "config", "--format", "json")...)
+		cmd.Env = append(os.Environ(), "OPENNEKO_VERSION=test")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("%s: compose config: %v", tc.mode, err)
+		}
+		var merged struct {
+			Services map[string]struct {
+				Environment map[string]*string `json:"environment"`
+				Secrets     []any              `json:"secrets"`
+			} `json:"services"`
+		}
+		if err := json.Unmarshal(out, &merged); err != nil {
+			t.Fatal(err)
+		}
+		for name, service := range merged.Services {
+			if _, set := service.Environment["OPENNEKO_DATABASE_URL_FILE"]; set {
+				t.Errorf("%s: %s reads the database URL secret, which a bundled database does not write", tc.mode, name)
+			}
+			if len(service.Secrets) > 0 {
+				t.Errorf("%s: %s mounts secrets %v", tc.mode, name, service.Secrets)
+			}
+		}
 	}
 }

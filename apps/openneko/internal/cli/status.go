@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -176,6 +177,12 @@ func classifyStack(services []composeService) (health, []string) {
 			}
 		default:
 			lines = append(lines, fmt.Sprintf("  ❌ %s — %s", s.Service, describeState(s)))
+			worst = down
+		}
+	}
+	for _, name := range []string{"web", "worker"} {
+		if !slices.ContainsFunc(services, func(s composeService) bool { return s.Service == name }) {
+			lines = append(lines, fmt.Sprintf("  ❌ %s — not created", name))
 			worst = down
 		}
 	}

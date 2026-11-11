@@ -13,7 +13,6 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/setup"
-	"github.com/open-neko/neko/apps/openneko/internal/version"
 )
 
 func newStartCmd() *cobra.Command {
@@ -83,22 +82,6 @@ func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, op
 	if err != nil {
 		return err
 	}
-	// Pin compose's image tags to this binary's version unless the caller has
-	// already set OPENNEKO_VERSION or an install-level image version marker.
-	// That lets the smoke workflow (which builds openneko fresh from source, so
-	// its embedded version is "0.0.0-dev") test against a real release tag, and
-	// lets `openneko upgrade --version ...` keep using the requested tag.
-	if os.Getenv("OPENNEKO_VERSION") == "" {
-		imageVersion, err := sup.ImageVersion()
-		if err != nil {
-			return err
-		}
-		if imageVersion == "" {
-			imageVersion = "v" + version.Version
-		}
-		_ = os.Setenv("OPENNEKO_VERSION", imageVersion)
-	}
-
 	files, err := stackFiles(ctx, sup, m, project)
 	if err != nil {
 		return err

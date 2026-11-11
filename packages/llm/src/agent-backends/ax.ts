@@ -23,9 +23,9 @@ import { extractCardFences, extractSurfaceMessages } from "./surface";
 import { serveHarnessTurn, serveSocket, spawnHarnessTurn } from "./harness-turn";
 import { sandboxConfig } from "../work/sandbox-service";
 
-/** The run's model key: a stored key the worker loaded, or a key in the environment. */
+/** The run's model key: a stored key the worker loaded, a key in the environment, or "none" for a keyless provider such as Ollama. */
 function modelKey(route: AxModelRoute): string {
-  return (route.keyEnv && process.env[route.keyEnv]) || process.env.MODEL_API_KEY || "";
+  return (route.keyEnv && process.env[route.keyEnv]) || process.env.MODEL_API_KEY || "none";
 }
 
 /** The org prompt goes in `instructions` and the per-turn rest in `prompt`, so providers cache the org prompt on its own. */
@@ -344,7 +344,7 @@ export class AxBackend implements AgentBackend {
     const { workspace } = opts;
     const env: NodeJS.ProcessEnv = { ...process.env };
     if (workspace) env.PATH = `${workspace.binRoot}:${process.env.PATH || ""}`;
-    const key = modelKey(route) || "none";
+    const key = modelKey(route);
     for (const name of ["MODEL_API_KEY", route.keyEnv, "HARNESS_MODEL_ROUTES"]) if (name) delete env[name];
     Object.assign(env, {
       HARNESS_MODEL_PROVIDER: route.provider,

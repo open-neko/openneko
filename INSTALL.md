@@ -556,7 +556,8 @@ openneko upgrade --mode demo
 ```
 
 The command persists the selected image tag in `.openneko/runtime/.image-version`,
-so later `openneko start` runs the same tag. Upgrading the host binary is still
+so later `openneko start`, `backup`, `restore` and `database move` run the
+same tag. Upgrading the host binary is still
 recommended when a release includes CLI changes.
 
 ### Upgrade from a release before November 2026

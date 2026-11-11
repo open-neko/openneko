@@ -82,7 +82,7 @@ import {
 import { resolveDeclarativePackActionAdapter, registerPackConnectionPreflight } from "./packs/declarative-action-runtime.js";
 import { ensureOrgWorkspace, getOrgAgentRoot, nameBackfilledBots, reportDeploymentProfile, setAgentSlotLimit } from "@neko/llm/work";
 import { checkOrgUpdates } from "@neko/llm/config-vcs/updates";
-import { ensureQueueExists } from "./pg-boss-helpers.js";
+import { ensureQueueExists, removeRetiredQueue } from "./pg-boss-helpers.js";
 import { setCoreSecretsInstance } from "./secrets/instance.js";
 import {
   ingestInboundWebhook,
@@ -640,11 +640,11 @@ const b = await boss();
 for (const name of Object.values(QUEUE)) {
   await ensureQueueExists((qName, opts) => b.createQueue(qName, opts), name);
 }
-// The Records queues are gone. Deleting each queue also drops its pending
-// jobs and recurring schedules, so upgraded installs stop firing them.
+// The Records queues are gone. Removing them also drops their jobs and
+// schedules, so upgraded installs stop firing them.
 for (const name of RETIRED_QUEUES) {
   try {
-    await b.deleteQueue(name);
+    await removeRetiredQueue(b, name);
   } catch (e) {
     console.warn(
       `[worker] could not remove retired queue ${name}: ${e instanceof Error ? e.message : e}`,

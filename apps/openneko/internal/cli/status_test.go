@@ -27,12 +27,18 @@ func TestClassifyStack(t *testing.T) {
 		}, serving},
 		{"running without a healthcheck counts as serving", []composeService{
 			{Service: "web", State: "running", Health: ""},
+			{Service: "worker", State: "running", Health: ""},
 		}, serving},
+		{"a stack whose web and worker were never created is down", []composeService{
+			{Service: "neko-db", State: "running", Health: "healthy"},
+			{Service: "adventureworks-db", State: "running", Health: "healthy"},
+		}, down},
 		{"unhealthy is degraded, not down", []composeService{
 			{Service: "web", State: "running", Health: "healthy"},
 			{Service: "worker", State: "running", Health: "unhealthy"},
 		}, degraded},
 		{"starting is degraded", []composeService{
+			{Service: "web", State: "running", Health: "healthy"},
 			{Service: "worker", State: "running", Health: "starting"},
 		}, degraded},
 		{"a long-running service exited non-zero is down", []composeService{
@@ -60,8 +66,8 @@ func TestClassifyStack(t *testing.T) {
 			if got != tc.want {
 				t.Fatalf("classifyStack = %v, want %v", got, tc.want)
 			}
-			if len(tc.services) > 0 && len(lines) != len(tc.services) {
-				t.Fatalf("expected one line per service, got %d for %d", len(lines), len(tc.services))
+			if len(tc.services) > 0 && len(lines) < len(tc.services) {
+				t.Fatalf("expected a line per service, got %d for %d", len(lines), len(tc.services))
 			}
 		})
 	}

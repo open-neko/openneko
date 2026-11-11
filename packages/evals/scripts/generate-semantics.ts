@@ -55,8 +55,7 @@ const ownerBySection: Record<number, string[]> = {
   4: ["packages/llm/src/work"],
   5: ["packages/llm/src/workflows", "apps/worker/src/jobs"],
   6: ["packages/channels", "apps/worker/src/channels"],
-  7: ["packages/records"],
-  8: ["packages/llm/src/work", "packages/records/src/policy"],
+  8: ["packages/llm/src/work"],
   9: ["apps/worker/src", "apps/openneko/internal"],
 };
 const categoryBySection: Record<number, string> = {
@@ -66,7 +65,6 @@ const categoryBySection: Record<number, string> = {
   4: "work-context",
   5: "workflow-automation",
   6: "channels-plugins",
-  7: "records",
   8: "security-governance",
   9: "operability-recovery",
 };

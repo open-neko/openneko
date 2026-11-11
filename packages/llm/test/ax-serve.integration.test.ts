@@ -219,4 +219,29 @@ const runnable = Boolean(binary) || (process.env.OPENNEKO_SERVE_IT === "1" && ha
     expect(new Set(keys)).toEqual(new Set(["Bearer org-stored-key"]));
     expect(toolLists).toEqual([["neko_memory"]]);
   });
+
+  it("answers for a provider with no key, such as Ollama", async () => {
+    calls = 0;
+    responses = [
+      `{"javascriptCode":"final('Find reference', {})"}`,
+      `{"javascriptCode":"final('Report', {reference:'REF-7'});"}`,
+      "Answer: REF-7",
+    ];
+    keys.length = 0;
+    vi.stubEnv("MODEL_API_KEY", "");
+    const backend = new AxBackend({ route: { provider: "openai-compatible", model: "fixture", url: modelUrl } });
+    const workspace = await workspaceIn(await mkdtemp(join(dir, "ws-")), "r3");
+    const result = await backend.run({
+      prompt: "Find reference",
+      orgId: "org-1",
+      tag: "run-serve-3",
+      workspace,
+      mcpServers: {},
+      mcpBridgeEnv: { OPENNEKO_MCP_ORG_ID: "org-1", OPENNEKO_MCP_THREAD_ID: "thread-3", OPENNEKO_MCP_RUN_ID: "run-serve-3" },
+      nativeDelegation: "disabled",
+    });
+    expect(result.status, result.error).toBe("completed");
+    expect(result.finalText).toContain("REF-7");
+    expect(new Set(keys)).toEqual(new Set(["Bearer none"]));
+  });
 });

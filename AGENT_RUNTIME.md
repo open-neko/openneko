@@ -37,8 +37,9 @@ per-run broker.
 2. It starts the runner, `node $OPENNEKO_AGENT_ENTRY` (default
    `/opt/openneko-agent/entry.js`), as a child process in its own process
    group. The runner gets the broker URL on loopback, a token bound to
-   `{run, org, thread}`, the serve socket and the org's model key. The
-   launcher loads the key again for each run.
+   `{run, org, thread}`, the serve socket, serve's address
+   (`OPENNEKO_SERVE_URL`, which turns on the file search tools) and the
+   org's model key. The launcher loads the key again for each run.
 3. The runner sends each turn to `openneko serve` over the Unix socket
    `OPENNEKO_SERVE_SOCKET`. The turn carries the model key. Serve uses the key
    for the model calls of that turn and keeps it nowhere else. The agent's MCP

@@ -11,6 +11,7 @@ import (
 
 	"github.com/open-neko/neko/apps/openneko/internal/compose"
 	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/version"
 )
 
 const bundledDatabaseVolume = "neko-db-data"
@@ -56,6 +57,9 @@ func resolveStackDatabase(ctx context.Context, sup *compose.Supervisor, mode com
 // URL into this process's environment, where compose reads the
 // database-url secret.
 func stackFiles(ctx context.Context, sup *compose.Supervisor, mode compose.Mode, project string) ([]string, error) {
+	if err := pinImageVersion(sup); err != nil {
+		return nil, err
+	}
 	database, err := resolveStackDatabase(ctx, sup, mode, project)
 	if err != nil {
 		return nil, err
@@ -205,4 +209,21 @@ func usesBundledDatabase(files []string) bool {
 		}
 	}
 	return false
+}
+
+// pinImageVersion pins compose's image tags for every command that runs the
+// stack: OPENNEKO_VERSION when the caller set it, else the tag that
+// `openneko upgrade` stored, else this binary's version.
+func pinImageVersion(sup *compose.Supervisor) error {
+	if os.Getenv("OPENNEKO_VERSION") != "" {
+		return nil
+	}
+	imageVersion, err := sup.ImageVersion()
+	if err != nil {
+		return err
+	}
+	if imageVersion == "" {
+		imageVersion = "v" + version.Version
+	}
+	return os.Setenv("OPENNEKO_VERSION", imageVersion)
 }

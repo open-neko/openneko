@@ -75,6 +75,7 @@ beforeAll(async () => {
   vi.stubEnv("OPENNEKO_AGENT_ENTRY", runner);
   vi.stubEnv("OPENNEKO_AGENT_RUNS_DIR", runs);
   vi.stubEnv("OPENNEKO_SERVE_SOCKET", "/run/openneko/serve.sock");
+  vi.stubEnv("OPENNEKO_SERVE_URL", "http://openneko-serve:8090");
   vi.stubEnv("NEKO_PG_PASSWORD", "must-not-reach-the-runner");
 });
 
@@ -244,12 +245,14 @@ describe("makeSandboxRunCore", () => {
     expect(job).toMatchObject({ kind: "work", orgId: "org-1", threadId: "thr-1", runId: "run-1", backendId: "ax" });
     expect(job.ax).toEqual({ route: { provider: "anthropic", model: "m", keyEnv: "ANTHROPIC_API_KEY" } });
     expect(job.packActions).toEqual([{ kind: "slack.message", description: "Post", pack: "slack" }]);
-    // The runner gets the broker binding, serve's socket and the org's key, and
-    // nothing else of this host's environment.
+    // The runner gets the broker binding, serve's socket and address (the
+    // address turns file search on) and the org's key, and nothing else of
+    // this host's environment.
     expect(env).toMatchObject({
       OPENNEKO_BROKER_URL: "http://127.0.0.1:4200",
       OPENNEKO_BROKER_TOKEN: "run-token",
       OPENNEKO_SERVE_SOCKET: "/run/openneko/serve.sock",
+      OPENNEKO_SERVE_URL: "http://openneko-serve:8090",
       ANTHROPIC_API_KEY: "org-key",
       MODEL_API_KEY: "org-key",
     });

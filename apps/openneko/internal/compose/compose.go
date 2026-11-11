@@ -115,6 +115,11 @@ func (s *Supervisor) MaterializeStack(mode Mode, bundledDB bool, overlays ...Ove
 		return nil, err
 	}
 	files := []string{"compose/core.yml"}
+	// The bundled database goes before the mode file: Compose 2.40 drops its
+	// !reset of the URL secret when demo.yml sits between it and core.yml.
+	if bundledDB {
+		files = append(files, "compose/bundled-db.yml")
+	}
 	switch mode {
 	case ModeDev:
 		files = append(files, "compose/dev.yml")
@@ -124,9 +129,6 @@ func (s *Supervisor) MaterializeStack(mode Mode, bundledDB bool, overlays ...Ove
 		// core only
 	default:
 		return nil, fmt.Errorf("compose: unknown mode %q (want prod|dev|demo)", mode)
-	}
-	if bundledDB {
-		files = append(files, "compose/bundled-db.yml")
 	}
 	var out []string
 	for _, name := range files {

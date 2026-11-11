@@ -699,12 +699,12 @@ function makeSandboxCore(
   };
 }
 
-/** The runner's environment from this host: the search path, proxies and CA bundle, and serve's socket. Nothing else. */
+/** The runner's environment from this host: the search path, proxies and CA bundle, and serve's socket and address. Nothing else. */
 function passThroughEnv(terminal: boolean): Record<string, string> {
   const names = [
     "PATH", "LANG", "TZ", "NODE_ENV", "NODE_EXTRA_CA_CERTS",
     "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy", "ALL_PROXY", "NODE_USE_ENV_PROXY",
-    "OPENNEKO_SERVE_SOCKET", "OPENNEKO_SANDBOX_URL", "OPENNEKO_SANDBOX_KEY", "OPENNEKO_MCP_BRIDGE", "OPENNEKO_AX_SKILL_RERANK", "OPENNEKO_AGENT_TURN_TIMEOUT_MS",
+    "OPENNEKO_SERVE_SOCKET", "OPENNEKO_SERVE_URL", "OPENNEKO_SANDBOX_URL", "OPENNEKO_SANDBOX_KEY", "OPENNEKO_MCP_BRIDGE", "OPENNEKO_AX_SKILL_RERANK", "OPENNEKO_AGENT_TURN_TIMEOUT_MS",
   ];
   return Object.fromEntries(
     names

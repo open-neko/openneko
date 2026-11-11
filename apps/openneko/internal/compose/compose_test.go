@@ -54,7 +54,7 @@ func TestMaterializeDemo(t *testing.T) {
 	for _, f := range files {
 		got = append(got, filepath.Base(f))
 	}
-	want := []string{"core.yml", "demo.yml", "bundled-db.yml"}
+	want := []string{"core.yml", "bundled-db.yml", "demo.yml"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("unexpected order: %v", got)
 	}
@@ -70,7 +70,7 @@ func TestMaterializeStackGivesProdTheBundledDatabaseOnlyOnRequest(t *testing.T) 
 	}{
 		{ModeProd, false, "core.yml"},
 		{ModeProd, true, "core.yml,bundled-db.yml"},
-		{ModeDev, true, "core.yml,dev.yml,bundled-db.yml"},
+		{ModeDev, true, "core.yml,bundled-db.yml,dev.yml"},
 	} {
 		files, err := s.MaterializeStack(tc.mode, tc.bundled)
 		if err != nil {
