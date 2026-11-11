@@ -6,7 +6,8 @@ pieces run it, and each holds only what its job needs:
 - the **runner**, a short-lived Node process that web or the worker starts for
   one run;
 - **`openneko serve`**, which runs each agent turn and every other model call:
-  the Ax harness, the inference gateway and the agent's file tools;
+  the Ax harness, the inference and embedding gateways and the agent's file
+  tools;
 - the optional **sandbox service** ([recipes/sandbox](recipes/sandbox/README.md)),
   which runs terminal commands, script skills and workflow script steps.
 
@@ -120,6 +121,20 @@ task, provider and model. A host call with no price costs nothing in the
 ledger and raises no alert; a turn with no price is still charged the
 per-run cap. Admin, Settings, Spend shows the last 30 days by task and
 model. Each change to a model or a route goes in the audit chain.
+
+### The embedding gateway
+
+Every embedding call goes through one Go package,
+`apps/ax-harness/embedding`. It calls an OpenAI-compatible `/embeddings`
+route at `NEKO_EMBEDDING_URL`. Web and the worker read the URL, the model
+and the dimensions, and decide whether embedding is on. They send one
+`embed` frame over the serve socket with up to 64 texts and the key in
+`model_key`. Serve returns one vector per text, in order. It refuses a
+redirect, a URL with credentials or a query, and a vector of the wrong
+size, and keeps the key out of error text. Where no serve socket exists,
+the host runs `ax-harness embed`, with the key in
+`HARNESS_EMBEDDING_API_KEY`. When embedding is off, nothing calls out and
+search uses Postgres full-text search.
 
 ## Two zones
 

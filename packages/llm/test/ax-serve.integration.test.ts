@@ -13,6 +13,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { AxBackend } from "../src/agent-backends/ax";
 import { registerServeToolBridge } from "../src/agent-backends/harness-turn";
+import { embedTexts } from "../src/embedding";
 import { callGateway } from "../src/inference";
 
 function hasGo(): boolean {
@@ -262,5 +263,29 @@ const runnable = Boolean(binary) || (process.env.OPENNEKO_SERVE_IT === "1" && ha
     expect(result.outputs).toEqual({ answer: "42" });
     expect(result.usage.requests).toBe(1);
     expect(keys).toEqual(["Bearer host-call-key"]);
+  });
+  it("embeds through serve, with the key in the header only", async () => {
+    const seen: Array<{ auth: string; body: { input: string[]; dimensions?: number } }> = [];
+    const embedder = createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        const parsed = JSON.parse(body) as { input: string[]; dimensions?: number };
+        seen.push({ auth: String(req.headers.authorization), body: parsed });
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ data: parsed.input.map((_, index) => ({ index, embedding: [index, 0.5, 0.25] })) }));
+      });
+    });
+    await new Promise<void>((done) => embedder.listen(0, "127.0.0.1", done));
+    try {
+      vi.stubEnv("NEKO_EMBEDDING_URL", `http://127.0.0.1:${(embedder.address() as { port: number }).port}/v1`);
+      vi.stubEnv("NEKO_EMBEDDING_MODEL", "fixture-embed");
+      vi.stubEnv("NEKO_EMBEDDING_API_KEY", "embed-key-0451");
+      vi.stubEnv("NEKO_EMBEDDING_DIMENSIONS", "3");
+      expect(await embedTexts(["first", "second"])).toEqual([[0, 0.5, 0.25], [1, 0.5, 0.25]]);
+      expect(seen).toEqual([{ auth: "Bearer embed-key-0451", body: { model: "fixture-embed", input: ["first", "second"], encoding_format: "float", dimensions: 3 } }]);
+    } finally {
+      await new Promise<void>((done) => embedder.close(() => done()));
+    }
   });
 });

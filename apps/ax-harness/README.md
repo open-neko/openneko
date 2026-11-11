@@ -19,7 +19,8 @@ owns history, approvals, the sandbox and scheduling.
 | `internal/localtool` | File, upload and skill tools confined to one directory, and the `terminal` tool. |
 | `sandbox` | The client that sends `terminal` commands to the external sandbox service. |
 | `harness` | One turn in-process (`Run`, `RunTurn`). It is the only OpenNeko-aware code. |
-| `serve` | Turns over a Unix socket for `openneko serve`. The socket protocol is in `serve/serve.go`. |
+| `embedding` | The gateway to an OpenAI-compatible embedding service at a URL. |
+| `serve` | Turns, host model calls and embedding calls over a Unix socket for `openneko serve`. The socket protocol is in `serve/serve.go`. |
 | `cmd/ax-harness` | The binary: one turn per process. |
 | `compat` | Checks of the pinned Ax behavior that the harness uses. |
 
