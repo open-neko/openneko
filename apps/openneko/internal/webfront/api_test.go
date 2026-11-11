@@ -140,10 +140,10 @@ func TestAPIRouting(t *testing.T) {
 	if w := call(f, "POST", "/api/v1/version", "", nil); w.Code != 405 || w.Header().Get("Allow") != "GET" {
 		t.Errorf("POST: %d %q", w.Code, w.Header().Get("Allow"))
 	}
-	for _, p := range []string{"/api/v1/auth/begin", "/api/v1/version/", "/api/v1/work"} {
+	for _, p := range []string{"/api/v1/auth/sso", "/api/v1/version/", "/api/v1/work"} {
 		call(f, "GET", p, "", nil)
 	}
-	if strings.Join(node.hits, ",") != "GET /api/v1/auth/begin,GET /api/v1/version/,GET /api/v1/work" {
+	if strings.Join(node.hits, ",") != "GET /api/v1/auth/sso,GET /api/v1/version/,GET /api/v1/work" {
 		t.Errorf("Node got %v", node.hits)
 	}
 }

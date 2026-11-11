@@ -25,6 +25,8 @@ type API struct {
 	PublicURL string
 	// AuditWebhook overrides OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL.
 	AuditWebhook string
+	// SecureCookies marks the session and sign-in state cookies Secure.
+	SecureCookies bool
 
 	once   sync.Once
 	routes map[string]map[string]http.HandlerFunc
@@ -38,6 +40,8 @@ var GoRoutes = map[string][]string{
 	"/api/v1/version":             {"GET"},
 	"/api/v1/auth/status":         {"GET"},
 	"/api/v1/auth/session":        {"GET"},
+	"/api/v1/auth/begin":          {"GET"},
+	"/api/v1/auth/callback":       {"GET"},
 	"/api/v1/auth/logout":         {"POST"},
 	"/api/v1/auth/device/code":    {"POST"},
 	"/api/v1/auth/device/token":   {"POST"},
@@ -50,6 +54,8 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/version":             {"GET": a.version},
 			"/api/v1/auth/status":         {"GET": a.authStatus},
 			"/api/v1/auth/session":        {"GET": a.authSession},
+			"/api/v1/auth/begin":          {"GET": a.authBegin},
+			"/api/v1/auth/callback":       {"GET": a.authCallback},
 			"/api/v1/auth/logout":         {"POST": a.logout},
 			"/api/v1/auth/device/code":    {"POST": a.deviceCode},
 			"/api/v1/auth/device/token":   {"POST": a.deviceToken},
