@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  assertReadOnlyGraphql,
-  graphjinDevelopmentAuthHeaders,
-} from "../src/work/control-plane";
+import { assertReadOnlyGraphql } from "../src/data-access";
+import { graphjinDevelopmentAuthHeaders } from "../src/data-access/graphjin";
 
 describe("GraphJin job broker read gate", () => {
   it("accepts explicit and shorthand query operations", () => {

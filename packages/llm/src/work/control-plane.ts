@@ -47,11 +47,8 @@ import {
   type FileSqlForRunArgs,
 } from "./files";
 import type { FileReadResult, FileSearchResult, FileSqlResult } from "../files/client";
-import {
-  callGraphjinMcpTool as callRemoteGraphjinMcpTool,
-  listGraphjinMcpTools as listRemoteGraphjinMcpTools,
-} from "../graphjin/mcp-client";
-import { assertGraphjinMutationAllowed } from "../graphjin/sources-config";
+import { dataAccess } from "../data-access";
+import { isInternalGraphjinURL } from "../data-access/graphjin";
 import type {
   CallToolResult,
   Tool,
@@ -116,129 +113,6 @@ export async function createActionRequestViaWorker(
     throw new Error("worker action preflight returned an invalid response");
   }
   return { id: body.id, status: body.status };
-}
-
-export function assertReadOnlyGraphql(query: string): void {
-  const text = query.trim();
-  if (!text) throw new Error("GraphJin read query is empty");
-  // Deliberately conservative: rejecting the words even in a string/comment
-  // can cause a harmless false positive, while accepting either operation
-  // would turn the broker into a write bypass for legacy GraphJin sources.
-  if (/\b(?:mutation|subscription)\b/i.test(text)) {
-    throw new Error("GraphJin agent broker allows query operations only");
-  }
-  if (!text.startsWith("{") && !/^query\b/i.test(text)) {
-    throw new Error("GraphJin agent broker requires an explicit query operation");
-  }
-}
-
-/** A run's GraphJin token: the K1 principal plus group roles when group grants are on. */
-async function runGraphjinToken(orgId: string, runId: string | null | undefined): Promise<string> {
-  const { mintGraphjinToken } = await import("../graphjin/token");
-  const { getWorkRunActor } = await import("./personas");
-  const principal = runId ? graphjinReadPrincipal(await getWorkRunActor(runId, orgId)) : { userId: null, role: "service" as const };
-  let claims: { roles: string[]; groups: string[] } | null = null;
-  if (principal.userId && principal.role === "member") {
-    const { getGroupGrantsEnabled, graphjinGroupClaims } = await import("@neko/db");
-    if (await getGroupGrantsEnabled(orgId)) claims = await graphjinGroupClaims(orgId, principal.userId);
-  }
-  return mintGraphjinToken({
-    orgId,
-    userId: principal.userId,
-    role: principal.role,
-    ...(claims ? { groupRoles: claims.roles, groups: claims.groups } : {}),
-  });
-}
-
-export function graphjinReadPrincipal(actor: {
-  userId: string | null;
-  role: string | null;
-}): { userId: string | null; role: "admin" | "member" | "service" } {
-  if (actor.role === "admin" || actor.role === "member") {
-    return { userId: actor.userId, role: actor.role };
-  }
-  if (actor.role === "service") {
-    return { userId: null, role: "service" };
-  }
-  throw new Error("GraphJin read actor has an invalid role");
-}
-
-export function graphjinDevelopmentAuthHeaders(
-  principal: ReturnType<typeof graphjinReadPrincipal>,
-  nodeEnv = process.env.NODE_ENV,
-): Record<string, string> {
-  if (nodeEnv === "production") {
-    throw new Error(
-      "GraphJin development header auth is forbidden in production",
-    );
-  }
-  return {
-    "X-User-ID": principal.userId ?? "openneko-service",
-    "X-User-Role": principal.role,
-  };
-}
-
-/** A run needs at least one data_source item to reach GraphJin. */
-async function assertRunHoldsDataSource(orgId: string, runId: string | null | undefined): Promise<void> {
-  if (!runId) return;
-  const actor = await entitlementActorForRun(orgId, runId);
-  const { heldItems } = await import("@neko/db");
-  const held = actor ? await heldItems(actor, "data_source") : new Set<string>();
-  if (held !== "*" && held.size === 0) throw new Error("No data source is available to this run.");
-}
-
-async function graphjinMcpAccess(input: {
-  orgId: string;
-  runId?: string | null;
-}): Promise<{ mcpUrl: string; headers: Record<string, string> }> {
-  await assertRunHoldsDataSource(input.orgId, input.runId);
-  const { and, data_source, db, desc, eq } = await import("@neko/db");
-  const [source] = await db()
-    .select({
-      mcpUrl: data_source.mcp_url,
-      graphqlUrl: data_source.graphql_url,
-      kind: data_source.kind,
-      authMode: data_source.auth_mode,
-    })
-    .from(data_source)
-    .where(
-      and(
-        eq(data_source.org_id, input.orgId),
-        eq(data_source.enabled, true),
-      ),
-    )
-    .orderBy(desc(data_source.is_default), data_source.created_at)
-    .limit(1);
-  if (!source?.mcpUrl) {
-    throw new Error("no enabled GraphJin MCP endpoint configured");
-  }
-  if (source.kind !== "graphjin") {
-    throw new Error("the default enabled data source is not a GraphJin server");
-  }
-  if (
-    isInternalGraphjinURL(source.graphqlUrl) ||
-    isInternalGraphjinURL(source.mcpUrl)
-  ) {
-    throw new Error("refusing to expose the OpenNeko internal GraphJin MCP");
-  }
-
-  const headers: Record<string, string> = {};
-  if (source.authMode === "jwt") {
-    headers.authorization = `Bearer ${await runGraphjinToken(input.orgId, input.runId)}`;
-  } else if (source.authMode === "development") {
-    let principal: ReturnType<typeof graphjinReadPrincipal> = {
-      userId: null,
-      role: "service",
-    };
-    if (input.runId) {
-      const { getWorkRunActor } = await import("./personas");
-      principal = graphjinReadPrincipal(
-        await getWorkRunActor(input.runId, input.orgId),
-      );
-    }
-    Object.assign(headers, graphjinDevelopmentAuthHeaders(principal));
-  }
-  return { mcpUrl: source.mcpUrl, headers };
 }
 
 async function requireSourceConfigAccess(input: {
@@ -939,47 +813,11 @@ export class InProcessControlPlane implements AgentControlPlane {
     variables?: Record<string, unknown>;
     operationName?: string;
   }) {
-    assertReadOnlyGraphql(input.query);
-    await assertRunHoldsDataSource(input.orgId, input.runId);
-    const { data_source, db, desc, eq } = await import("@neko/db");
-    const [source] = await db()
-      .select({
-        graphqlUrl: data_source.graphql_url,
-        authMode: data_source.auth_mode,
-      })
-      .from(data_source)
-      .where(eq(data_source.org_id, input.orgId))
-      .orderBy(desc(data_source.is_default), data_source.created_at)
-      .limit(1);
-    if (!source?.graphqlUrl) {
-      throw new Error("no GraphJin GraphQL endpoint configured");
-    }
-
-    const headers: Record<string, string> = {};
-    if (source.authMode === "jwt") {
-      headers.authorization = `Bearer ${await runGraphjinToken(input.orgId, input.runId)}`;
-    }
-    const { graphjinQuery } = await import("../graphjin/client");
-    return graphjinQuery({
-      baseUrl: source.graphqlUrl,
-      query: input.query,
-      variables: input.variables,
-      operationName: input.operationName,
-      headers,
-      signal: AbortSignal.timeout(60_000),
-    });
+    return dataAccess.query(input);
   }
 
-  async listGraphjinTools(input: {
-    orgId: string;
-    runId?: string | null;
-  }): Promise<Tool[]> {
-    const access = await graphjinMcpAccess(input);
-    return listRemoteGraphjinMcpTools({
-      baseUrl: access.mcpUrl,
-      headers: access.headers,
-      signal: AbortSignal.timeout(60_000),
-    });
+  async listGraphjinTools(input: { orgId: string; runId?: string | null }): Promise<Tool[]> {
+    return dataAccess.listTools(input);
   }
 
   async callGraphjinTool(input: {
@@ -988,32 +826,7 @@ export class InProcessControlPlane implements AgentControlPlane {
     name: string;
     arguments?: Record<string, unknown>;
   }): Promise<CallToolResult> {
-    if (input.name === "execute_graphql") {
-      await assertGraphjinMutationAllowed(
-        String(input.arguments?.query ?? ""),
-        process.env.OPENNEKO_GRAPHJIN_CONFIG,
-      );
-    }
-    if (input.name === "execute_saved_query" && input.runId) {
-      const actor = await entitlementActorForRun(input.orgId, input.runId);
-      const name = String(input.arguments?.name ?? "");
-      if (!actor || !(await holds(actor, "saved_query", name)).allowed) {
-        return {
-          isError: true,
-          content: [{ type: "text", text: `Saved query "${name}" is not available to this run.` }],
-        };
-      }
-    }
-    const access = await graphjinMcpAccess(input);
-    return callRemoteGraphjinMcpTool(
-      {
-        baseUrl: access.mcpUrl,
-        headers: access.headers,
-        // Governed operations can outlive a normal query.
-        signal: AbortSignal.timeout(180_000),
-      },
-      { name: input.name, arguments: input.arguments },
-    );
+    return dataAccess.callTool(input);
   }
 
   async saveWorkflowWithTrigger(
@@ -1960,18 +1773,6 @@ function hostnameOf(url: string | null): string | null {
     return new URL(url).hostname;
   } catch {
     return null;
-  }
-}
-
-function isInternalGraphjinURL(url: string): boolean {
-  try {
-    const candidate = new URL(url).host;
-    const internal = new URL(
-      process.env.OPENNEKO_GRAPHJIN_URL ?? "http://127.0.0.1:8089",
-    ).host;
-    return candidate === internal;
-  } catch {
-    return true;
   }
 }
 
