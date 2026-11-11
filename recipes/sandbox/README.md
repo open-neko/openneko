@@ -95,6 +95,7 @@ or removed. OpenNeko writes them back into its own copy of the run.
 | Request | Body | Answer |
 |---|---|---|
 | `GET /v2/health` | | `{"status":"ok"}`, no key needed |
+| `GET /v2/check` | | `{"status":"ok"}` with the key, 401 without it. The status page uses it. |
 | `POST /v2/runs/{run}/exec` | `fresh` (true on the run's first command), `root`, `command`, `dir`, `skill_dir`, `env`, `timeout_seconds` (1 to 3600), `max_output` (1,000 to 1,000,000), `dirs`, `put` (`path`, `mode`, `data` in base64), `delete` | `exit_code`, `output`, `timed_out`, `truncated`, `dirs`, `changed` (`path`, `mode`, `data`), `deleted`, `skipped` (`path`, `reason`) |
 | `DELETE /v2/runs/{run}` | | 204 |
 

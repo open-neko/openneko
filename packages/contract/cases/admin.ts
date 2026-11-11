@@ -4,6 +4,14 @@ import { body, type Case } from "../src/case";
 const id = (r: { body: unknown }, key: string) => String((body(r as never)[key] as { id: string }).id);
 
 export const adminCases: Case[] = [
+  {
+    op: "GET /admin/services", name: "reports each external service", status: 200, request: { query: { refresh: "1" } },
+    check: (r) => {
+      const services = body(r).services as { id: string; state: string }[];
+      expect(services.map((s) => s.id)).toEqual(["inference", "embedding", "sandbox", "file-store"]);
+    },
+  },
+  { op: "GET /admin/services", name: "is for administrators only", as: "member", status: 403 },
   { op: "GET /admin/change-password", name: "reports the password state", status: 200 },
   {
     op: "POST /admin/change-password", name: "refuses an install that connects by URL", status: 409,

@@ -110,7 +110,7 @@ func TestFilesInABucket(t *testing.T) {
 	bob := mint(testKey, "org1", "bob", time.Now().Add(time.Minute))
 
 	code, out := call(t, srv, "", http.MethodGet, "/healthz", nil)
-	if code != 200 || out["file_store"] != "s3" || out["file_store_ok"] != true {
+	if code != 200 || out["file_store"] != "s3" || out["file_store_ok"] != true || !strings.Contains(fmt.Sprint(out["file_store_where"]), "s3://"+name) {
 		t.Fatalf("healthz = %d %v", code, out)
 	}
 	put(t, srv, alice, "policies/travel.md", []byte("# Per diem\nTier 1 cities pay 70 per day.\n"))

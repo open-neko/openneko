@@ -199,6 +199,9 @@ type checker interface {
 
 func (s *Service) health(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"ok": true, "sheet_sql": s.duckDBAvailable(), "file_store": s.store.Name(), "file_store_ok": true}
+	if d, ok := s.store.(interface{ Describe() string }); ok {
+		out["file_store_where"] = d.Describe()
+	}
 	if c, ok := s.store.(checker); ok {
 		if err := c.Check(r.Context()); err != nil {
 			out["file_store_ok"] = false
