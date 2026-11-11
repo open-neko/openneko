@@ -1,3 +1,4 @@
+import { traceContextHeaders } from "@neko/telemetry";
 import { packUserConnectionHeaders } from "./pack-user-connections";
 import {
   CallToolResultSchema,
@@ -191,6 +192,7 @@ async function graphjinMcpRequest(
       ...(method === "tools/call" && typeof params.name === "string"
         ? { "Mcp-Name": params.name }
         : {}),
+      ...traceContextHeaders(),
       ...(opts.headers ?? {}),
     }),
     redirect: "error",

@@ -68,14 +68,14 @@ var childEnvNames = map[string]bool{
 	"USERPROFILE": true, "APPDATA": true, "LOCALAPPDATA": true,
 }
 
-// ChildEnv keeps only what GraphJin reads. Serve's credentials, socket and
+// ChildEnv keeps only what GraphJin and its trace exporter read. Serve's credentials, socket and
 // sandbox key stay in the parent.
 func ChildEnv(env []string) []string {
 	var out []string
 	for _, kv := range env {
 		name, _, _ := strings.Cut(kv, "=")
 		upper := strings.ToUpper(name)
-		if childEnvNames[upper] || strings.HasPrefix(upper, "GJ_") {
+		if childEnvNames[upper] || strings.HasPrefix(upper, "GJ_") || strings.HasPrefix(upper, "OTEL_") || upper == "OPENNEKO_OTEL_ENABLED" {
 			out = append(out, kv)
 		}
 	}

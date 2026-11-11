@@ -1,3 +1,4 @@
+import { traceContextHeaders } from "@neko/telemetry";
 import { packUserConnectionHeaders, type ConnectionBinding } from "./pack-user-connections";
 import { randomUUID } from "node:crypto";
 import { Agent } from "undici";
@@ -42,6 +43,7 @@ export async function graphjinQuery<T = unknown>(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(opts.role ? { "X-Role": opts.role } : {}),
+    ...traceContextHeaders(),
     ...(opts.headers ?? {}),
   };
   const res = await fetch(opts.baseUrl, {

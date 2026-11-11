@@ -391,6 +391,32 @@ service fails, search uses full-text search. A change of model re-embeds
 every row. To run a model on your own machine, see
 `recipes/embedding-gemma/README.md`.
 
+### Traces (optional)
+
+OpenNeko sends no traces until you give it an OTLP/HTTP collector. Give web,
+worker and openneko-serve the endpoint, then run `openneko stop` and
+`openneko start`:
+
+```yaml
+# ~/.config/openneko/compose.override.yml
+x-traces: &traces
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
+services:
+  web:
+    environment: *traces
+  worker:
+    environment: *traces
+  openneko-serve:
+    environment: *traces
+```
+
+Each agent run is one trace. A GraphJin query or tool call that the run
+makes appears inside that trace, under the run. The spans hold names, times,
+roles and status codes. They hold no prompt, query text, query variables or
+model output. GraphJin's spans also drop error text. `OTEL_SDK_DISABLED=true`
+turns traces off in each service. For the full list of settings, see
+`evals/README.md`.
+
 ### File search
 
 The `openneko-serve` container keeps each user's files in a private folder

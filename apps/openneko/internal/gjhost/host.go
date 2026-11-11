@@ -35,6 +35,15 @@ type instance struct {
 // Serve runs one GraphJin engine on addr ("unix:/path" or host:port) until
 // ctx ends or the engine stops. GraphJin's own Fatal calls end the process.
 func Serve(ctx context.Context, configFile, addr string, log io.Writer) error {
+	stopTelemetry, err := startTelemetry(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		flush, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		stopTelemetry(flush)
+	}()
 	in, err := start(configFile, addr, log)
 	if err != nil {
 		return err
@@ -83,7 +92,7 @@ func start(configFile, addr string, log io.Writer) (*instance, error) {
 	// The write timeout matches upstream's server; config mutations extend
 	// their own deadline per request.
 	srv := &http.Server{
-		Handler:           mux,
+		Handler:           withTraceContext(mux),
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
 		ReadHeaderTimeout: 10 * time.Second,

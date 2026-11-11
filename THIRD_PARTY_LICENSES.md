@@ -38,6 +38,8 @@ OpenNeko's runtime dependencies are listed in the `package.json` and `go.mod` fi
 | `github.com/xuri/excelize/v2` | BSD-3-Clause | Reads Excel files in `openneko serve` |
 | `github.com/ledongthuc/pdf` | BSD-3-Clause | Reads PDF text in `openneko serve` |
 | `github.com/parquet-go/parquet-go` | Apache-2.0 | Writes sheet tables as Parquet |
+| `github.com/cenkalti/backoff/v5` | MIT | Retries in the OTLP trace exporter of `openneko serve` |
+| `github.com/grpc-ecosystem/grpc-gateway/v2` | BSD-3-Clause | Linked by the OTLP trace exporter of `openneko serve` |
 
 Run `pnpm licenses ls -P` from the repo root to see the full transitive list at a given snapshot.
 

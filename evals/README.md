@@ -125,6 +125,12 @@ export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer ...'
 
 `OPENNEKO_OTEL_ENABLED=true` enables the SDK when endpoint configuration comes
 from another supported OTel mechanism. `OTEL_SDK_DISABLED=true` always wins.
+
+`openneko serve` follows the same rule for its GraphJin engines (default
+service name `openneko-graphjin`). The worker sends W3C trace context on each
+GraphJin GraphQL and MCP call that a run makes, so GraphJin's spans join the
+run's trace. Serve removes error text, exception events and URL query
+strings from these spans before export.
 Current production export is traces. Normalized per-run usage, cost, latency,
 tool, delegation, retry, and validation summaries are also persisted in the
 existing work-run event and processing-job client surfaces, and emitted as

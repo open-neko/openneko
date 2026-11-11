@@ -2,6 +2,7 @@ import {
   SpanKind,
   SpanStatusCode,
   context,
+  propagation,
   trace,
   type Attributes,
   type Span,
@@ -43,6 +44,25 @@ export type OpenTelemetryObservationSinkOptions = {
   /** Used by the Node runtime to shut down its provider/exporter. */
   shutdown?: () => Promise<void>;
 };
+
+// Next loads this module once per route bundle in one process; the run broker
+// and the run's sink must see the same map.
+const runSpanHost = globalThis as typeof globalThis & { __opennekoRunSpans?: Map<string, Span> };
+const runSpans: Map<string, Span> = (runSpanHost.__opennekoRunSpans ??= new Map());
+
+/** Run fn with the run's root span as the active context, when it has one. */
+export function withRunTraceContext<T>(runId: string, fn: () => T): T {
+  const span = runSpans.get(runId);
+  if (!span) return fn();
+  return context.with(trace.setSpan(context.active(), span), fn);
+}
+
+/** W3C trace context headers for the active span; empty without one. */
+export function traceContextHeaders(): Record<string, string> {
+  const carrier: Record<string, string> = {};
+  propagation.inject(context.active(), carrier);
+  return carrier;
+}
 
 type ActiveSpan = {
   span: Span;
@@ -87,6 +107,9 @@ export class OpenTelemetryObservationSink implements ObservationSink {
       active.span.end();
     }
     this.active.clear();
+    for (const [runId, span] of this.roots) {
+      if (runSpans.get(runId) === span) runSpans.delete(runId);
+    }
     this.roots.clear();
     await this.options.forceFlush?.();
     await this.options.shutdown?.();
@@ -120,7 +143,10 @@ export class OpenTelemetryObservationSink implements ObservationSink {
       runId: observation.runId,
       operationId: observation.operationId,
     });
-    if (observation.kind === "run.start") this.roots.set(observation.runId, span);
+    if (observation.kind === "run.start") {
+      this.roots.set(observation.runId, span);
+      runSpans.set(observation.runId, span);
+    }
   }
 
   private end(observation: HarnessObservation): void {
@@ -139,7 +165,10 @@ export class OpenTelemetryObservationSink implements ObservationSink {
     applyStatus(resolved.span, observation);
     resolved.span.end(new Date(observation.timestamp));
     this.active.delete(observation.operationId);
-    if (observation.kind === "run.end") this.roots.delete(observation.runId);
+    if (observation.kind === "run.end") {
+      this.roots.delete(observation.runId);
+      if (runSpans.get(observation.runId) === resolved.span) runSpans.delete(observation.runId);
+    }
   }
 
   private addEvent(observation: HarnessObservation): void {

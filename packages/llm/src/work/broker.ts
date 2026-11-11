@@ -5,6 +5,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import { randomUUID } from "node:crypto";
+import { withRunTraceContext } from "@neko/telemetry";
 import type { AgentEvent } from "../agent-backend";
 import { inProcessControlPlane, type AgentControlPlane } from "./control-plane";
 import {
@@ -97,7 +98,15 @@ async function handle(
   const binding = deps.resolveRun(token);
   if (!binding) return send(res, 401, { error: "unauthorized" });
   if (req.method !== "POST") return send(res, 405, { error: "method_not_allowed" });
+  return withRunTraceContext(binding.runId, () => handleRunRequest(deps, req, res, binding));
+}
 
+async function handleRunRequest(
+  deps: AgentBrokerDeps,
+  req: IncomingMessage,
+  res: ServerResponse,
+  binding: RunBinding,
+): Promise<void> {
   const body = (await readJson(req)) as Record<string, unknown>;
   const path = (req.url ?? "").split("?")[0];
   // A trusted in-process eval may pass an already-decorated control plane.
