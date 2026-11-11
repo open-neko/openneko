@@ -164,6 +164,7 @@ approval policies as everything else. See [PACKS.md](PACKS.md).
 |---|---|---|
 | Pack actions as agent tools | Installed packs surface their actions directly to the assistant, governed by the same approval policies as everything else. | #24, #66 |
 | Per-person integrations | Each operator connects their own accounts (OAuth) on the /integrations page — tokens are stored per-person, never shared. | #42 |
+| One API contract | Every server route is under `/api/v1` and is listed in one OpenAPI file, `api/openapi.yaml`, with the access rule for each route. A test fails when a route, the file and the web app disagree. Older `/api/<path>` URLs still work, so sign-in callbacks, OAuth apps and webhooks that hold them keep working after an upgrade. | Phase 2 |
 | Community skills | Install a skill straight from a git URL once an admin allows it; the policy is enforced at the CLI and the worker. | #42, #44 |
 
 ## Install in one command, operate calmly

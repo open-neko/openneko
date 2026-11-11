@@ -41,6 +41,11 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: [{ key: "Content-Security-Policy", value: "frame-src 'self'" }] }];
   },
+  // Identity providers, OAuth apps and webhooks hold /api/<path> URLs from
+  // older releases, so each one still reaches its /api/v1 route.
+  async rewrites() {
+    return { beforeFiles: [], afterFiles: [], fallback: [{ source: "/api/:path((?!v1(?:/|$)).*)", destination: "/api/v1/:path" }] };
+  },
   experimental: {
     // Turbopack's FS cache (default-on since Next 16.1) was serving stale
     // globals.css after edits in dev. Disabling for dev only.

@@ -190,7 +190,7 @@ export default function WorkflowsPage() {
 
   const fetchList = useCallback(async () => {
     try {
-      const res = await fetch("/api/workflows", { cache: "no-store" });
+      const res = await fetch("/api/v1/workflows", { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setError(null);
@@ -226,7 +226,7 @@ export default function WorkflowsPage() {
         destructive: true,
       });
       if (!ok) return;
-      const res = await fetch(`/api/workflows/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/v1/workflows/${id}`, { method: "DELETE" });
       if (!res.ok) {
         setError(`Couldn't delete (HTTP ${res.status})`);
         return;
@@ -568,7 +568,7 @@ function WorkflowRow({
   useEffect(() => {
     if (sparkline) return;
     let cancelled = false;
-    void fetch(`/api/workflows/${w.id}`, { cache: "no-store" })
+    void fetch(`/api/v1/workflows/${w.id}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((data: DrawerPayload) => {
         if (cancelled) return;
@@ -662,7 +662,7 @@ function WorkflowDetail({
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/workflows/${workflowId}`, {
+      const res = await fetch(`/api/v1/workflows/${workflowId}`, {
         cache: "no-store",
       });
       if (!res.ok) {
@@ -686,7 +686,7 @@ function WorkflowDetail({
     // Policies are org-level today (no per-workflow override). Fetch the
     // active set so the drawer's Policy section reflects what's actually
     // gating actions for this org.
-    void fetch("/api/policies", { cache: "no-store" })
+    void fetch("/api/v1/policies", { cache: "no-store" })
       .then((r) => r.json())
       .then((d: { policies: PolicySummary[] }) =>
         setPolicies(
@@ -702,7 +702,7 @@ function WorkflowDetail({
     if (!data) return;
     setBusy(true);
     try {
-      await fetch(`/api/workflows/${workflowId}`, {
+      await fetch(`/api/v1/workflows/${workflowId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: !data.workflow.enabled }),
@@ -719,7 +719,7 @@ function WorkflowDetail({
     if (!data) return;
     setBusy(true);
     try {
-      await fetch(`/api/workflows/${workflowId}`, {
+      await fetch(`/api/v1/workflows/${workflowId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pauseForToday: true }),
@@ -735,7 +735,7 @@ function WorkflowDetail({
     if (!data) return;
     setBusy(true);
     try {
-      await fetch(`/api/workflows/${workflowId}`, {
+      await fetch(`/api/v1/workflows/${workflowId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cronEnabled: !data.workflow.cronEnabled }),
@@ -750,7 +750,7 @@ function WorkflowDetail({
   const runNow = useCallback(async () => {
     setBusy(true);
     try {
-      const res = await fetch(`/api/workflows/${workflowId}/runs`, {
+      const res = await fetch(`/api/v1/workflows/${workflowId}/manual-runs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),

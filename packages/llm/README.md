@@ -158,7 +158,7 @@ plain sentences (`src/graphjin/config-describe.ts`). The server and the `graphji
 skill reach admin web runs only (`src/work/admin-skills.ts`).
 `check_source` runs the source check (`src/graphjin/source-check.ts`) with the
 stored password named by `secretRef`. The form's `SourceConnectionCheck`
-component runs the same check through `POST /api/settings/source-check` and
+component runs the same check through `POST /api/v1/settings/source-check` and
 writes the tables the admin clears into `/form/blockedTables`.
 `present_pack_setup` shows a pack's setup card (`PackSetup` in the web
 catalog) for a system that has a pack. The card calls the admin pack routes

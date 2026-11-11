@@ -89,3 +89,30 @@ describe("access policy", () => {
     }
   });
 });
+
+describe("api v1 paths", () => {
+  it("gives an /api alias the rule of its /api/v1 route", () => {
+    for (const [alias, rule] of [
+      ["/api/auth/callback", "public"],
+      ["/api/admin/groups", "admin"],
+      ["/api/work/threads", "signed-in"],
+      ["/api/hooks/reckon", "token"],
+      ["/api/pack-accounts/magento/main/callback", "token"],
+    ] as const) {
+      expect(accessPolicyFor(alias)?.rule).toBe(rule);
+      expect(accessPolicyFor(alias.replace("/api/", "/api/v1/"))?.rule).toBe(rule);
+    }
+  });
+
+  it("keeps the bearer-token workflow API apart from the signed-in workflow routes", () => {
+    expect(accessPolicyFor("/api/v1/workflows/wf_1/runs")?.rule).toBe("token");
+    expect(accessPolicyFor("/api/v1/workflows/wf_1/runs/run_1/artifact")?.rule).toBe("token");
+    expect(accessPolicyFor("/api/v1/workflows/wf_1/manual-runs")?.rule).toBe("signed-in");
+    expect(accessPolicyFor("/api/v1/workflows/wf_1")?.rule).toBe("signed-in");
+    expect(accessPolicyFor("/api/v1/workflows")?.rule).toBe("signed-in");
+  });
+
+  it("refuses an unknown area under /api/v1", () => {
+    expect(accessPolicyFor("/api/v1/brand-new-area")).toBeNull();
+  });
+});

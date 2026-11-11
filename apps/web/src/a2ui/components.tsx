@@ -923,7 +923,7 @@ function OpenApiSpecInputView({
       let response: Response;
       if (mode === "url") {
         if (!url.trim()) throw new Error("Enter the hosted OpenAPI URL.");
-        response = await fetch("/api/settings/openapi-specs", {
+        response = await fetch("/api/v1/settings/openapi-specs", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -936,7 +936,7 @@ function OpenApiSpecInputView({
         const body = new FormData();
         body.set("file", file);
         if (baseUrl.trim()) body.set("baseUrl", baseUrl.trim());
-        response = await fetch("/api/settings/openapi-specs", {
+        response = await fetch("/api/v1/settings/openapi-specs", {
           method: "POST",
           body,
         });
@@ -1129,7 +1129,7 @@ function ManagedFileSourceInputView({
       const body = new FormData();
       body.set("sourceName", sourceName);
       files.forEach((file) => body.append("files", file));
-      const response = await fetch("/api/settings/file-sources", {
+      const response = await fetch("/api/v1/settings/file-sources", {
         method: "POST",
         body,
       });
@@ -1259,7 +1259,7 @@ function SourceSecretInputView({
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch("/api/settings/source-secrets", {
+      const response = await fetch("/api/v1/settings/source-secrets", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

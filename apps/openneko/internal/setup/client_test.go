@@ -61,7 +61,7 @@ func TestClientTestDataSourceMcpOk(t *testing.T) {
 
 func TestClientReady(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/admin/change-password" {
+		if r.URL.Path != "/api/v1/admin/change-password" {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}

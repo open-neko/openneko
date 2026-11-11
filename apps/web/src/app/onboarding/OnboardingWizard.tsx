@@ -91,7 +91,7 @@ export default function OnboardingWizard({
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/onboarding/status");
+        const res = await fetch("/api/v1/onboarding/status");
         const status = await res.json();
         if (cancelled) return;
         if (status.state === "failed" && typeof status.message === "string") {
@@ -128,7 +128,7 @@ export default function OnboardingWizard({
         .split("\n")
         .map((s) => s.trim())
         .filter(Boolean);
-      const res = await fetch("/api/onboarding/submit", {
+      const res = await fetch("/api/v1/onboarding/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

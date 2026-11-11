@@ -48,11 +48,11 @@ if (!reachable) {
 
 describeIfDb("/api/settings/skill-learn", () => {
   let orgId: string;
-  let GET: typeof import("@/app/api/settings/skill-learn/route").GET;
-  let PATCH: typeof import("@/app/api/settings/skill-learn/route").PATCH;
+  let GET: typeof import("@/app/api/v1/settings/skill-learn/route").GET;
+  let PATCH: typeof import("@/app/api/v1/settings/skill-learn/route").PATCH;
 
   beforeAll(async () => {
-    const mod = await import("@/app/api/settings/skill-learn/route");
+    const mod = await import("@/app/api/v1/settings/skill-learn/route");
     GET = mod.GET;
     PATCH = mod.PATCH;
   });

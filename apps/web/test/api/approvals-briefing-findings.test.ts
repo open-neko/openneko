@@ -42,12 +42,12 @@ if (!reachable) {
 
 describeIfDb("run-less approvals", () => {
   let orgId: string;
-  let approvalsGET: typeof import("@/app/api/approvals/route").GET;
-  let findingsGET: typeof import("@/app/api/briefing/findings/route").GET;
+  let approvalsGET: typeof import("@/app/api/v1/approvals/route").GET;
+  let findingsGET: typeof import("@/app/api/v1/briefing/findings/route").GET;
 
   beforeAll(async () => {
-    approvalsGET = (await import("@/app/api/approvals/route")).GET;
-    findingsGET = (await import("@/app/api/briefing/findings/route")).GET;
+    approvalsGET = (await import("@/app/api/v1/approvals/route")).GET;
+    findingsGET = (await import("@/app/api/v1/briefing/findings/route")).GET;
   });
 
   beforeEach(async () => {

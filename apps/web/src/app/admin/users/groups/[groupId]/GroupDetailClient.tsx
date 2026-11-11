@@ -70,7 +70,7 @@ export function GroupDetailClient({
             className="grid grid-cols-[minmax(200px,1fr)_minmax(240px,1.4fr)_auto] items-end gap-3 max-[820px]:grid-cols-1"
             onSubmit={(event) => {
               event.preventDefault();
-              void run("details", () => adminApi(`/api/admin/groups/${group.id}`, "PATCH", { name, description: description || null }));
+              void run("details", () => adminApi(`/api/v1/admin/groups/${group.id}`, "PATCH", { name, description: description || null }));
             }}
           >
             <Field label="Name" htmlFor="group-name">
@@ -92,7 +92,7 @@ export function GroupDetailClient({
                     confirmLabel: "Delete group",
                     destructive: true,
                   });
-                  if (ok) void run("delete", () => adminApi(`/api/admin/groups/${group.id}`, "DELETE"), () => router.push("/admin/users?tab=groups"));
+                  if (ok) void run("delete", () => adminApi(`/api/v1/admin/groups/${group.id}`, "DELETE"), () => router.push("/admin/users?tab=groups"));
                 }}
               >
                 Delete group
@@ -121,7 +121,7 @@ export function GroupDetailClient({
             className="mb-5 grid grid-cols-[minmax(240px,1fr)_auto] items-end gap-3 max-[520px]:grid-cols-1"
             onSubmit={(event) => {
               event.preventDefault();
-              void run("add-member", () => adminApi(`/api/admin/groups/${group.id}/members`, "POST", { userId: newMember }));
+              void run("add-member", () => adminApi(`/api/v1/admin/groups/${group.id}/members`, "POST", { userId: newMember }));
             }}
           >
             <Field label="Add member" htmlFor="add-member">
@@ -168,7 +168,7 @@ export function GroupDetailClient({
                         size="sm"
                         variant="danger"
                         disabled={busy === member.userId}
-                        onClick={() => run(member.userId, () => adminApi(`/api/admin/groups/${group.id}/members`, "DELETE", { userId: member.userId }))}
+                        onClick={() => run(member.userId, () => adminApi(`/api/v1/admin/groups/${group.id}/members`, "DELETE", { userId: member.userId }))}
                       >
                         Remove
                       </Button>

@@ -27,7 +27,7 @@ function SignInBody() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/auth/status", { cache: "no-store" });
+        const res = await fetch("/api/v1/auth/status", { cache: "no-store" });
         const body = (await res.json()) as {
           provider: ProviderInfo | null;
           pending?: { providerLabel: string } | null;
@@ -77,7 +77,7 @@ function SignInBody() {
           Checking sign-in options…
         </div>
       ) : provider ? (
-        <form action="/api/auth/begin" method="GET" className="entry-fields">
+        <form action="/api/v1/auth/begin" method="GET" className="entry-fields">
           <input
             data-ui-bespoke-reason="sign-in entry fields"
             type="hidden"

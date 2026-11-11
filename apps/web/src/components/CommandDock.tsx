@@ -86,7 +86,7 @@ export default function CommandDock() {
     let cancelled = false;
     (async () => {
       try {
-        const response = await fetch("/api/auth/session", {
+        const response = await fetch("/api/v1/auth/session", {
           cache: "no-store",
         });
         if (!response.ok || cancelled) return;
@@ -110,7 +110,7 @@ export default function CommandDock() {
 
   async function handleSignOut() {
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await fetch("/api/v1/auth/logout", { method: "POST" });
     } finally {
       window.location.href = "/signin";
     }

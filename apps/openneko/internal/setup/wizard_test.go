@@ -24,16 +24,16 @@ func mockSetupServer(changed bool, recs *[]recorded) *httptest.Server {
 		*recs = append(*recs, recorded{r.Method, r.URL.Path, body})
 		enc := json.NewEncoder(w)
 		switch r.Method + " " + r.URL.Path {
-		case "GET /api/admin/change-password":
+		case "GET /api/v1/admin/change-password":
 			_ = enc.Encode(map[string]bool{"changed": changed})
-		case "GET /api/settings/data-source":
+		case "GET /api/v1/settings/data-source":
 			_ = enc.Encode(map[string]any{"source": "unset"})
-		case "GET /api/settings/agent":
+		case "GET /api/v1/settings/agent":
 			_ = enc.Encode(map[string]any{
 				"agent":    map[string]any{"source": "default", "globalCap": 5},
 				"defaults": map[string]any{"globalCap": 5},
 			})
-		case "GET /api/settings/provider":
+		case "GET /api/v1/settings/provider":
 			_ = enc.Encode(map[string]any{
 				"primary":  map[string]any{"scope": "primary", "source": "default", "provider": "anthropic", "model": "", "enabled": false, "config": map[string]any{}},
 				"research": map[string]any{"scope": "research", "source": "default", "provider": "disabled", "model": "", "enabled": false, "config": map[string]any{}},
@@ -87,30 +87,30 @@ func TestHeadlessConfigure(t *testing.T) {
 		t.Errorf("PasswordSet = %q, want supersecret", outcome.PasswordSet)
 	}
 
-	if _, ok := findWhere(recs, "POST", "/api/admin/change-password", func(b map[string]any) bool {
+	if _, ok := findWhere(recs, "POST", "/api/v1/admin/change-password", func(b map[string]any) bool {
 		return b["password"] == "supersecret"
 	}); !ok {
 		t.Error("missing password change with the supplied password")
 	}
 	// Data source saved with demo's internal GraphJin root, canonical suffix.
-	if _, ok := findWhere(recs, "PUT", "/api/settings/data-source", func(b map[string]any) bool {
+	if _, ok := findWhere(recs, "PUT", "/api/v1/settings/data-source", func(b map[string]any) bool {
 		return b["graphqlUrl"] == "http://graphjin:8080/api/v1/graphql"
 	}); !ok {
 		t.Error("data source not saved with derived demo endpoint")
 	}
 	// Provider key tested before save, keyed by the provider's secret field.
-	if _, ok := findWhere(recs, "POST", "/api/settings/provider/test", func(b map[string]any) bool {
+	if _, ok := findWhere(recs, "POST", "/api/v1/settings/provider/test", func(b map[string]any) bool {
 		s, _ := b["secrets"].(map[string]any)
 		return s != nil && s["apiKey"] == "sk-test"
 	}); !ok {
 		t.Error("provider key not tested with apiKey secret")
 	}
-	if _, ok := findWhere(recs, "PUT", "/api/settings/agent", func(b map[string]any) bool {
+	if _, ok := findWhere(recs, "PUT", "/api/v1/settings/agent", func(b map[string]any) bool {
 		return b["globalCap"] == float64(5) && b["backend"] == nil
 	}); !ok {
 		t.Error("agent concurrency not saved")
 	}
-	if _, ok := findWhere(recs, "PUT", "/api/settings/provider", func(b map[string]any) bool {
+	if _, ok := findWhere(recs, "PUT", "/api/v1/settings/provider", func(b map[string]any) bool {
 		return b["scope"] == "research" && b["provider"] == "disabled"
 	}); !ok {
 		t.Error("research not explicitly disabled")
@@ -139,7 +139,7 @@ func TestHeadlessAllowsAnyProvider(t *testing.T) {
 		t.Errorf("PasswordSet = %q, want empty (password already set)", outcome.PasswordSet)
 	}
 	// Setup preserves the selected provider.
-	if _, ok := findWhere(recs, "PUT", "/api/settings/provider", func(b map[string]any) bool {
+	if _, ok := findWhere(recs, "PUT", "/api/v1/settings/provider", func(b map[string]any) bool {
 		return b["scope"] == "primary" && b["provider"] == "openai"
 	}); !ok {
 		t.Error("setup should preserve the selected primary provider")
@@ -224,13 +224,13 @@ func TestHeadlessErrorAfterPasswordRotationCarriesPasswordSet(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		enc := json.NewEncoder(w)
 		switch r.Method + " " + r.URL.Path {
-		case "GET /api/admin/change-password":
+		case "GET /api/v1/admin/change-password":
 			_ = enc.Encode(map[string]bool{"changed": false})
-		case "POST /api/admin/change-password":
+		case "POST /api/v1/admin/change-password":
 			_ = enc.Encode(map[string]bool{"ok": true})
-		case "GET /api/settings/data-source":
+		case "GET /api/v1/settings/data-source":
 			_ = enc.Encode(map[string]any{"source": "unset"})
-		case "POST /api/settings/data-source/test":
+		case "POST /api/v1/settings/data-source/test":
 			// The step after the rotation fails.
 			w.WriteHeader(http.StatusBadGateway)
 			_ = enc.Encode(map[string]string{"error": "graphjin still starting"})

@@ -10,8 +10,8 @@ vi.mock("@/lib/admin-auth", () => ({ requireAdminActor: mocks.admin, isDenied: (
 vi.mock("@/lib/solution-packs", () => ({ validPackId: () => true, requestPackWorker: mocks.worker }));
 vi.mock("@neko/db", () => ({ getOrgId: async () => "org" }));
 vi.mock("@/lib/entitlements", () => ({ holdsItem: mocks.holds }));
-import { POST, DELETE } from "../src/app/api/my/pack-accounts/[packId]/[connectionKey]/route";
-import { GET } from "../src/app/api/pack-accounts/[packId]/[connectionKey]/callback/route";
+import { POST, DELETE } from "../src/app/api/v1/my/pack-accounts/[packId]/[connectionKey]/route";
+import { GET } from "../src/app/api/v1/pack-accounts/[packId]/[connectionKey]/callback/route";
 const params = { params: Promise.resolve({ packId: "fixture", connectionKey: "account" }) };
 const actor = { userId: "alice", orgId: "org" };
 beforeEach(() => { vi.clearAllMocks(); mocks.actor.mockResolvedValue(actor); mocks.begin.mockResolvedValue({ authorizationUrl: "https://provider.test" }); mocks.complete.mockResolvedValue(undefined); mocks.read.mockResolvedValue({ packId: "fixture", connectionKey: "account", personal: true, userId: "alice", orgId: "org", state: "state", codeVerifier: "verifier", returnPath: "/integrations" }); });

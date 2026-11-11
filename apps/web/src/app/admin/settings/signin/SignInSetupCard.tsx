@@ -47,7 +47,7 @@ export default function SignInSetupCard() {
 
   const reload = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/signin/status", { cache: "no-store" });
+      const res = await fetch("/api/v1/admin/signin/status", { cache: "no-store" });
       if (!res.ok) throw new Error(`status read failed (${res.status})`);
       setStatus((await res.json()) as Status);
       setLoadError(null);
@@ -140,7 +140,7 @@ function UseMagicLinkButton({ label, onDone }: { label: string; onDone: () => Pr
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/signin/provider", {
+      const res = await fetch("/api/v1/admin/signin/provider", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider: MAGIC_LINK }),
@@ -254,7 +254,7 @@ function DeliverySection({
     setError(null);
     setSaved(false);
     try {
-      const res = await fetch("/api/admin/signin/email-provider", {
+      const res = await fetch("/api/v1/admin/signin/email-provider", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -380,7 +380,7 @@ function UsersSection({
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/users", {
+      const res = await fetch("/api/v1/admin/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -495,7 +495,7 @@ function TestSection({ status }: { status: Status }) {
     setBusy(true);
     setResult(null);
     try {
-      const res = await fetch("/api/admin/signin/test", {
+      const res = await fetch("/api/v1/admin/signin/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),

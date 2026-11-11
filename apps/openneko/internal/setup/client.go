@@ -114,7 +114,7 @@ type ProviderDraft struct {
 // then fail preflight with a misleading port-in-use error.
 func (c *Client) Ready(ctx context.Context) bool {
 	probe := &http.Client{Timeout: 2 * time.Second}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/api/admin/change-password", nil)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/api/v1/admin/change-password", nil)
 	resp, err := probe.Do(req)
 	if err != nil {
 		return false
@@ -155,7 +155,7 @@ func (c *Client) PasswordChanged(ctx context.Context) (bool, error) {
 	var out struct {
 		Changed bool `json:"changed"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/api/admin/change-password", nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodGet, "/api/v1/admin/change-password", nil, &out); err != nil {
 		return false, err
 	}
 	return out.Changed, nil
@@ -163,7 +163,7 @@ func (c *Client) PasswordChanged(ctx context.Context) (bool, error) {
 
 func (c *Client) GetProvider(ctx context.Context) (*ProviderSettings, error) {
 	var out ProviderSettings
-	if err := c.do(ctx, http.MethodGet, "/api/settings/provider", nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodGet, "/api/v1/settings/provider", nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -171,7 +171,7 @@ func (c *Client) GetProvider(ctx context.Context) (*ProviderSettings, error) {
 
 func (c *Client) GetAgent(ctx context.Context) (*AgentSettings, error) {
 	var out AgentSettings
-	if err := c.do(ctx, http.MethodGet, "/api/settings/agent", nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodGet, "/api/v1/settings/agent", nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -179,7 +179,7 @@ func (c *Client) GetAgent(ctx context.Context) (*AgentSettings, error) {
 
 func (c *Client) GetDataSource(ctx context.Context) (*DataSource, error) {
 	var out DataSource
-	if err := c.do(ctx, http.MethodGet, "/api/settings/data-source", nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodGet, "/api/v1/settings/data-source", nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -188,7 +188,7 @@ func (c *Client) GetDataSource(ctx context.Context) (*DataSource, error) {
 // ----- mutations + gates -----
 
 func (c *Client) ChangePassword(ctx context.Context, password string) error {
-	return c.do(ctx, http.MethodPost, "/api/admin/change-password",
+	return c.do(ctx, http.MethodPost, "/api/v1/admin/change-password",
 		map[string]string{"password": password}, nil)
 }
 
@@ -199,7 +199,7 @@ func (c *Client) TestDataSource(ctx context.Context, graphqlURL, mcpURL string) 
 	var out struct {
 		MCPOk *bool `json:"mcpOk"`
 	}
-	if err := c.do(ctx, http.MethodPost, "/api/settings/data-source/test",
+	if err := c.do(ctx, http.MethodPost, "/api/v1/settings/data-source/test",
 		map[string]string{"graphqlUrl": graphqlURL, "mcpUrl": mcpURL}, &out); err != nil {
 		return false, err
 	}
@@ -207,23 +207,23 @@ func (c *Client) TestDataSource(ctx context.Context, graphqlURL, mcpURL string) 
 }
 
 func (c *Client) SaveDataSource(ctx context.Context, graphqlURL, mcpURL, label string) error {
-	return c.do(ctx, http.MethodPut, "/api/settings/data-source",
+	return c.do(ctx, http.MethodPut, "/api/v1/settings/data-source",
 		map[string]string{"graphqlUrl": graphqlURL, "mcpUrl": mcpURL, "label": label}, nil)
 }
 
 // TestProvider validates a provider key with a real one-shot call — the same
 // gate the wizard runs before saving.
 func (c *Client) TestProvider(ctx context.Context, draft ProviderDraft) error {
-	return c.do(ctx, http.MethodPost, "/api/settings/provider/test", draft, nil)
+	return c.do(ctx, http.MethodPost, "/api/v1/settings/provider/test", draft, nil)
 }
 
 func (c *Client) SaveAgent(ctx context.Context, globalCap int) error {
-	return c.do(ctx, http.MethodPut, "/api/settings/agent",
+	return c.do(ctx, http.MethodPut, "/api/v1/settings/agent",
 		map[string]any{"globalCap": globalCap}, nil)
 }
 
 func (c *Client) SaveProvider(ctx context.Context, draft ProviderDraft) error {
-	return c.do(ctx, http.MethodPut, "/api/settings/provider", draft, nil)
+	return c.do(ctx, http.MethodPut, "/api/v1/settings/provider", draft, nil)
 }
 
 func (c *Client) Finish(ctx context.Context) error {

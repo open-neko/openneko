@@ -24,7 +24,7 @@ export default function GraphjinConfigControls({
     setEnabled(next);
     setSaving(true);
     try {
-      const res = await fetch("/api/settings/graphjin-config", {
+      const res = await fetch("/api/v1/settings/graphjin-config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sourceConfigEnabled: next }),

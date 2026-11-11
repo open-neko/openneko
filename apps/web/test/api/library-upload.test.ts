@@ -51,10 +51,10 @@ function request(
 }
 
 describe("/api/library/upload", () => {
-  let POST: typeof import("@/app/api/library/upload/route").POST;
+  let POST: typeof import("@/app/api/v1/library/upload/route").POST;
 
   beforeAll(async () => {
-    ({ POST } = await import("@/app/api/library/upload/route"));
+    ({ POST } = await import("@/app/api/v1/library/upload/route"));
   });
 
   beforeEach(() => {

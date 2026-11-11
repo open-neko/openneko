@@ -18,7 +18,7 @@ export default function SkillLearnCard() {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/settings/skill-learn", { cache: "no-store" })
+    void fetch("/api/v1/settings/skill-learn", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json() as Promise<Payload>;
@@ -46,7 +46,7 @@ export default function SkillLearnCard() {
     setEnabled(next);
     setSaving(true);
     try {
-      const response = await fetch("/api/settings/skill-learn", {
+      const response = await fetch("/api/v1/settings/skill-learn", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: next }),

@@ -124,7 +124,7 @@ function SourceConnectionCheckView({
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch("/api/settings/source-check", {
+      const response = await fetch("/api/v1/settings/source-check", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: key,

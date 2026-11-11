@@ -82,11 +82,11 @@ async function insertTestMetric(
 
 describeIfDb("/api/work/threads", () => {
   let orgId: string;
-  let POST: typeof import("@/app/api/work/threads/route").POST;
-  let loadBriefingCardForSeed: typeof import("@/app/api/work/threads/route").loadBriefingCardForSeed;
+  let POST: typeof import("@/app/api/v1/work/threads/route").POST;
+  let loadBriefingCardForSeed: typeof import("@/app/api/v1/work/threads/route").loadBriefingCardForSeed;
 
   beforeAll(async () => {
-    const mod = await import("@/app/api/work/threads/route");
+    const mod = await import("@/app/api/v1/work/threads/route");
     POST = mod.POST;
     loadBriefingCardForSeed = mod.loadBriefingCardForSeed;
   });

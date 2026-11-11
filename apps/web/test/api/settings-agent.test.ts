@@ -40,11 +40,11 @@ if (!reachable) console.warn("[api/settings/agent] skipping: Postgres unreachabl
 
 describeIfDb("/api/settings/agent", () => {
   let orgId: string;
-  let GET: typeof import("@/app/api/settings/agent/route").GET;
-  let PUT: typeof import("@/app/api/settings/agent/route").PUT;
+  let GET: typeof import("@/app/api/v1/settings/agent/route").GET;
+  let PUT: typeof import("@/app/api/v1/settings/agent/route").PUT;
 
   beforeAll(async () => {
-    ({ GET, PUT } = await import("@/app/api/settings/agent/route"));
+    ({ GET, PUT } = await import("@/app/api/v1/settings/agent/route"));
   });
 
   beforeEach(async () => {

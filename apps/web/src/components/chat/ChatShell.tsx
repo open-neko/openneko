@@ -68,7 +68,7 @@ function ProfileMenu({ identity }: { identity?: RailIdentity }) {
 
   async function signOut() {
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await fetch("/api/v1/auth/logout", { method: "POST" });
     } finally {
       window.location.href = "/signin";
     }

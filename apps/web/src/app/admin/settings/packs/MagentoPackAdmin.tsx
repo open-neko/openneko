@@ -267,15 +267,15 @@ export default function MagentoPackAdmin({ fixture }: { fixture?: MagentoPackAdm
   const refresh = useCallback(async (runDoctor = false) => {
     setLoading(true);
     try {
-      const nextStatus = await api<PackStatus>("/api/admin/packs/magento/status").catch((error) => {
+      const nextStatus = await api<PackStatus>("/api/v1/admin/packs/magento/status").catch((error) => {
         if (error instanceof Error && error.message.includes("not installed")) return null;
         throw error;
       });
       setStatus(nextStatus);
       if (nextStatus && nextStatus.status !== "removed") {
         const [nextManagement, nextDoctor] = await Promise.all([
-          api<StoreManagement>("/api/admin/packs/magento/store-management"),
-          runDoctor ? api<DoctorResult>("/api/admin/packs/magento/doctor") : Promise.resolve(null),
+          api<StoreManagement>("/api/v1/admin/packs/magento/store-management"),
+          runDoctor ? api<DoctorResult>("/api/v1/admin/packs/magento/doctor") : Promise.resolve(null),
         ]);
         setManagement(nextManagement);
         if (nextDoctor) setDoctor(nextDoctor);
@@ -301,10 +301,10 @@ export default function MagentoPackAdmin({ fixture }: { fixture?: MagentoPackAdm
     setBusy(action);
     try {
       if (action === "doctor") {
-        setDoctor(await api<DoctorResult>("/api/admin/packs/magento/doctor"));
+        setDoctor(await api<DoctorResult>("/api/v1/admin/packs/magento/doctor"));
         toast.success("Connection and permissions checked.");
       } else {
-        await api<PackStatus>(`/api/admin/packs/magento/${action}`, {
+        await api<PackStatus>(`/api/v1/admin/packs/magento/${action}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: "{}",
@@ -326,7 +326,7 @@ export default function MagentoPackAdmin({ fixture }: { fixture?: MagentoPackAdm
   ) {
     setBusy(key);
     try {
-      const next = await api<StoreManagement>("/api/admin/packs/magento/store-management", {
+      const next = await api<StoreManagement>("/api/v1/admin/packs/magento/store-management", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),

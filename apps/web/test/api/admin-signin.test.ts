@@ -31,9 +31,9 @@ vi.mock("@/lib/auth", () => ({
   buildRedirectUri: () => "http://localhost/api/auth/callback",
 }));
 
-import { POST as postProvider } from "@/app/api/admin/signin/email-provider/route";
-import { POST as postTest } from "@/app/api/admin/signin/test/route";
-import { POST as postSignInProvider } from "@/app/api/admin/signin/provider/route";
+import { POST as postProvider } from "@/app/api/v1/admin/signin/email-provider/route";
+import { POST as postTest } from "@/app/api/v1/admin/signin/test/route";
+import { POST as postSignInProvider } from "@/app/api/v1/admin/signin/provider/route";
 
 function request(url: string, body: unknown): Request {
   return new Request(url, {

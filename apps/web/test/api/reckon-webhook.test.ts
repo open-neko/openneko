@@ -67,8 +67,8 @@ async function call(
       token: TOKEN,
       params: ["account", "accounts"],
     });
-    POST = (await import("@/app/api/hooks/[workflowId]/route")).POST as unknown as Handler;
-    RESULT = (await import("@/app/api/hooks/[workflowId]/result/[runId]/route")).GET as unknown as Handler;
+    POST = (await import("@/app/api/v1/hooks/[workflowId]/route")).POST as unknown as Handler;
+    RESULT = (await import("@/app/api/v1/hooks/[workflowId]/result/[runId]/route")).GET as unknown as Handler;
   });
 
   afterEach(async () => {

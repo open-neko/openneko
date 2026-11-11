@@ -33,7 +33,7 @@ export async function uploadFiles(
     body.append("file", file);
     let res: Response;
     try {
-      res = await fetch("/api/work/upload", { method: "POST", body });
+      res = await fetch("/api/v1/work/upload", { method: "POST", body });
     } catch (err) {
       errors.push(`"${file.name}": ${err instanceof Error ? err.message : "network error"}`);
       continue;

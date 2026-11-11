@@ -97,7 +97,7 @@ export function DataAccessSection({
   }
 
   async function openEditor() {
-    const result = await adminApi<{ items: Array<{ id: string; label: string }> }>("/api/admin/items?type=data_source");
+    const result = await adminApi<{ items: Array<{ id: string; label: string }> }>("/api/v1/admin/items?type=data_source");
     const items = result.ok ? result.body.items : [];
     setSources(items);
     if (items[0]) void chooseSource(items[0].id);
@@ -108,7 +108,7 @@ export function DataAccessSection({
     setTableKey("");
     setColumns([]);
     setConditions([]);
-    const result = await adminApi<{ tables: SourceTable[] }>(`/api/admin/data-access/tables?source=${encodeURIComponent(next)}`);
+    const result = await adminApi<{ tables: SourceTable[] }>(`/api/v1/admin/data-access/tables?source=${encodeURIComponent(next)}`);
     setTables(result.ok ? result.body.tables : []);
   }
 
@@ -124,7 +124,7 @@ export function DataAccessSection({
     const filters = conditions.filter((c) => c.column).map(conditionFilter);
     const rowFilter = filters.length === 0 ? null : filters.length === 1 ? filters[0] : { [match]: filters };
     await run("save", () =>
-      adminApi("/api/admin/data-access", "POST", {
+      adminApi("/api/v1/admin/data-access", "POST", {
         groupId: group.id,
         source,
         tableSchema: table.schema,
@@ -158,7 +158,7 @@ export function DataAccessSection({
             size="sm"
             variant="primary"
             disabled={busy === "enable"}
-            onClick={() => run("enable", () => adminApi("/api/admin/data-access/settings", "PATCH", { enabled: true }))}
+            onClick={() => run("enable", () => adminApi("/api/v1/admin/data-access/settings", "PATCH", { enabled: true }))}
           >
             {busy === "enable" ? "Turning on…" : "Turn on"}
           </Button>
@@ -186,7 +186,7 @@ export function DataAccessSection({
                   <TableCell className="px-3 py-3 text-text2">{rule.columns.join(", ")}</TableCell>
                   <TableCell className="px-3 py-3 text-text2">{describeFilter(rule.rowFilter)}</TableCell>
                   <TableCell className="px-3 py-3">
-                    <Button size="sm" variant="danger" disabled={busy === rule.id} onClick={() => run(rule.id, () => adminApi(`/api/admin/data-access/${rule.id}`, "DELETE"))}>
+                    <Button size="sm" variant="danger" disabled={busy === rule.id} onClick={() => run(rule.id, () => adminApi(`/api/v1/admin/data-access/${rule.id}`, "DELETE"))}>
                       Remove
                     </Button>
                   </TableCell>

@@ -73,7 +73,7 @@ export function useWorkMentions(
     setMentionSourceState({ skills: "loading", workflows: "loading" });
 
     const [workflowResult, skillResult] = await Promise.allSettled([
-      fetch("/api/workflows").then(async (res) => {
+      fetch("/api/v1/workflows").then(async (res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as {
           workflows?: Array<{
@@ -95,7 +95,7 @@ export function useWorkMentions(
           }),
         );
       }),
-      fetch("/api/work/skills").then(async (res) => {
+      fetch("/api/v1/work/skills").then(async (res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as {
           skills?: Array<{ name: string; description?: string | null }>;

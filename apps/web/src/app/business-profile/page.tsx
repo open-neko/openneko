@@ -64,7 +64,7 @@ export default function ProcessingPage() {
   const insightsEditedRef = useRef(false);
 
   const saveProfile = useCallback(async (v: string) => {
-    const res = await fetch("/api/profile", {
+    const res = await fetch("/api/v1/profile", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ businessProfile: v }),
@@ -72,7 +72,7 @@ export default function ProcessingPage() {
     if (!res.ok) throw new Error(`save failed: ${res.status}`);
   }, []);
   const saveInsights = useCallback(async (v: string) => {
-    const res = await fetch("/api/profile", {
+    const res = await fetch("/api/v1/profile", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ industryInsights: v }),
@@ -114,11 +114,11 @@ export default function ProcessingPage() {
     const poll = async () => {
       while (!cancelled) {
         try {
-          const res = await fetch("/api/onboarding/status");
+          const res = await fetch("/api/v1/onboarding/status");
           const status = await res.json();
           if (status.state === "ready" || status.state === "needs_persona") {
             setNeedsPersona(status.state === "needs_persona");
-            const pRes = await fetch("/api/profile");
+            const pRes = await fetch("/api/v1/profile");
             if (pRes.ok) {
               const data = await pRes.json();
               if (!profileEditedRef.current) setProfile(data.businessProfile ?? "");
@@ -176,12 +176,12 @@ export default function ProcessingPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/insights/ensure", { method: "POST" });
+        const res = await fetch("/api/v1/insights/ensure", { method: "POST" });
         if (!res.ok || cancelled) return;
         const body = await res.json();
         if (body.state === "disabled") setInsightsStatus("disabled");
         else if (body.state === "ready") {
-          const pRes = await fetch("/api/profile");
+          const pRes = await fetch("/api/v1/profile");
           if (pRes.ok && !cancelled) {
             const pData = await pRes.json();
             if (pData.industryInsights && !insightsEditedRef.current) {
@@ -205,7 +205,7 @@ export default function ProcessingPage() {
     const poll = async () => {
       while (!cancelled) {
         try {
-          const res = await fetch("/api/profile");
+          const res = await fetch("/api/v1/profile");
           if (res.ok) {
             const data = await res.json();
             setInsightsStatus(data.industryInsightsStatus ?? "processing");
@@ -377,7 +377,7 @@ export default function ProcessingPage() {
             onClick={async () => {
               await flushAll();
               try {
-                const res = await fetch("/api/insights/ensure", {
+                const res = await fetch("/api/v1/insights/ensure", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ force: true }),

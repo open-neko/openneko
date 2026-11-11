@@ -44,7 +44,7 @@ import {
   GET,
   PATCH,
   POST,
-} from "@/app/api/workflows/[workflowId]/api-access/route";
+} from "@/app/api/v1/workflows/[workflowId]/api-access/route";
 
 const context = { params: Promise.resolve({ workflowId: "workflow-a" }) };
 const access = {

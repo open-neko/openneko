@@ -162,7 +162,7 @@ export async function listWorkAssets(orgId: string): Promise<{
     .filter((entry) => entry.isDirectory())
     .map((entry) => ({
       name: entry.name,
-      path: `/api/work/files/skills/${entry.name}/SKILL.md`,
+      path: `/api/v1/work/files/skills/${entry.name}/SKILL.md`,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -170,7 +170,7 @@ export async function listWorkAssets(orgId: string): Promise<{
     .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
     .map((entry) => ({
       name: entry.name,
-      path: `/api/work/files/memory/${entry.name}`,
+      path: `/api/v1/work/files/memory/${entry.name}`,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 

@@ -1,7 +1,7 @@
 /**
  * Chat-question classifier — natural language → dashboard card metadata.
  *
- * Used by web's POST /api/briefing on the chat path: classify the question
+ * Used by web's POST /api/v1/briefing on the chat path: classify the question
  * to derive a card title, slug, rationale, and chart hint *before*
  * enqueueing the metric_refresh job. No tools, no DB lookups — pure
  * intent classification, ~2-5s LLM call.

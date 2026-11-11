@@ -21,7 +21,7 @@ export function rememberThread(threadId: string, bundle: unknown) {
 export function fetchThreadPage<T>(threadId: string): Promise<T | null> {
   const inFlight = pending.get(threadId);
   if (inFlight) return inFlight as Promise<T | null>;
-  const request = fetch(`/api/work/threads/${threadId}?limit=${CHAT_PAGE_RUNS}`)
+  const request = fetch(`/api/v1/work/threads/${threadId}?limit=${CHAT_PAGE_RUNS}`)
     .then((res) => (res.ok ? (res.json() as Promise<T>) : null))
     .then((bundle) => {
       if (bundle) rememberThread(threadId, bundle);

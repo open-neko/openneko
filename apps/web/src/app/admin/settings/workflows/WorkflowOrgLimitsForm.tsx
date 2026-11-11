@@ -18,7 +18,7 @@ export default function WorkflowOrgLimitsForm({ initial }: { initial: Limits }) 
     setSaving(true);
     setError(null);
     try {
-      const response = await fetch("/api/admin/workflow-api-limits", {
+      const response = await fetch("/api/v1/admin/workflow-api-limits", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

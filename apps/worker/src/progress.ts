@@ -2,7 +2,7 @@
  * Shared progress writer for processing_job.
  *
  * Worker job handlers call this to push status messages that the web
- * client polls via /api/briefing/status?jobId=. Uses JSONB concat (`||`)
+ * client polls via /api/v1/briefing/status?jobId=. Uses JSONB concat (`||`)
  * so existing keys survive an update.
  */
 

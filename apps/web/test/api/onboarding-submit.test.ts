@@ -75,10 +75,10 @@ if (!reachable) {
 
 describeIfDb("/api/onboarding/submit", () => {
   let orgId: string;
-  let POST: typeof import("@/app/api/onboarding/submit/route").POST;
+  let POST: typeof import("@/app/api/v1/onboarding/submit/route").POST;
 
   beforeAll(async () => {
-    const mod = await import("@/app/api/onboarding/submit/route");
+    const mod = await import("@/app/api/v1/onboarding/submit/route");
     POST = mod.POST;
   });
 

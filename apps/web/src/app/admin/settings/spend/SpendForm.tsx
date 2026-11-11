@@ -51,7 +51,7 @@ export default function SpendForm({ initial }: { initial: SpendSettings }) {
       ...Object.fromEntries(Object.entries(draft).map(([key, value]) => [key, Number(value)])),
       metricRefresh,
     };
-    const result = await adminApi<SpendSettings>("/api/admin/spend", "PUT", body);
+    const result = await adminApi<SpendSettings>("/api/v1/admin/spend", "PUT", body);
     setSaving(false);
     if (!result.ok) return setError(result.error);
     setSettings(result.body);
@@ -164,7 +164,7 @@ function SpendAlerts({ settings, onSaved }: { settings: SpendSettings; onSaved: 
   async function acknowledge(alertId: string) {
     setBusy(alertId);
     setError(null);
-    const result = await adminApi<SpendSettings>(`/api/admin/spend/alerts/${alertId}`, "DELETE");
+    const result = await adminApi<SpendSettings>(`/api/v1/admin/spend/alerts/${alertId}`, "DELETE");
     setBusy(null);
     if (!result.ok) return setError(result.error);
     onSaved(result.body);
@@ -318,7 +318,7 @@ function WorkflowBudgetRow({
       method === "PUT"
         ? { hourlyUsd: hourly.trim() ? Number(hourly) : null, dailyUsd: daily.trim() ? Number(daily) : null }
         : undefined;
-    const result = await adminApi<SpendSettings>(`/api/admin/spend/workflows/${row.workflowId}`, method, body);
+    const result = await adminApi<SpendSettings>(`/api/v1/admin/spend/workflows/${row.workflowId}`, method, body);
     setBusy(false);
     if (!result.ok) return onError(`${row.name}: ${result.error}`);
     onSaved(result.body);

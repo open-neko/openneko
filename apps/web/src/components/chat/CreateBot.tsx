@@ -16,7 +16,7 @@ export default function CreateBot() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch("/api/bots", {
+      const res = await fetch("/api/v1/bots", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(look),

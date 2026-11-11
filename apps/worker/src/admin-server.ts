@@ -7,7 +7,7 @@
  *   GET  /health/security     → process-local security subsystem health
  *   POST /admin/reconnect     → 202 + clean exit so the supervisor restarts
  *                               us with fresh DB credentials. Used by the
- *                               web app's /api/admin/change-password handler
+ *                               web app's /api/v1/admin/change-password handler
  *                               after rotating the Postgres password — the
  *                               pg-boss singleton holds the old creds and
  *                               there's no clean way to re-register handlers

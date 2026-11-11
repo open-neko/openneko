@@ -45,7 +45,7 @@ vi.mock("@neko/db", () => ({
   sql: () => "sql",
 }));
 
-import { GET } from "@/app/api/auth/begin/route";
+import { GET } from "@/app/api/v1/auth/begin/route";
 
 function request(query: string): Request {
   return new Request(`http://localhost/api/auth/begin${query}`);

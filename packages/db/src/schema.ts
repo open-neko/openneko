@@ -427,7 +427,7 @@ export const metric = pgTable(
     definition_version: integer("definition_version"),
     definition_hash: text("definition_hash"),
     created_by_job: uuid("created_by_job").references(() => processing_job.id),
-    // Denormalized refresh status — read by /api/briefing so the dashboard
+    // Denormalized refresh status — read by /api/v1/briefing so the dashboard
     // can render pending vs failed cards without joining processing_job.
     // Writers: metric-refresh.ts (success/failure) and bootstrap-metrics-build.ts
     // ('pending' on insert).

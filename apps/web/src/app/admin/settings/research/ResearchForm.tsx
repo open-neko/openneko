@@ -97,7 +97,7 @@ export default function ResearchForm({
             config: {},
             secrets: {},
           };
-      const res = await fetch("/api/settings/provider", {
+      const res = await fetch("/api/v1/settings/provider", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

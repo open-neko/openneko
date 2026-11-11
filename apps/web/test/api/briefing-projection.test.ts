@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { briefingCardsViaChannel } from "@/app/api/briefing/route";
+import { briefingCardsViaChannel } from "@/app/api/v1/briefing/route";
 
 describe("briefingCardsViaChannel", () => {
   it("preserves metric display fields from the web channel projection", () => {

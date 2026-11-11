@@ -29,7 +29,7 @@ export default function SecurityForm({
   async function save() {
     setSaving(true);
     try {
-      const res = await fetch("/api/settings/install-policy", {
+      const res = await fetch("/api/v1/settings/install-policy", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(policy),

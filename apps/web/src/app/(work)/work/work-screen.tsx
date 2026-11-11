@@ -154,7 +154,7 @@ export default function WorkScreen() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/onboarding/status");
+        const res = await fetch("/api/v1/onboarding/status");
         const status = await res.json().catch(() => ({ state: "db_error", message: "Could not reach server" }));
         if (cancelled) return;
         if (status.state === "db_error") {
@@ -422,7 +422,7 @@ export default function WorkScreen() {
     try {
       const data = inBotChat
         ? await fetchThreadPage<ThreadBundle>(threadId)
-        : await fetch(`/api/work/threads/${threadId}`).then((res) => (res.ok ? (res.json() as Promise<ThreadBundle>) : null));
+        : await fetch(`/api/v1/work/threads/${threadId}`).then((res) => (res.ok ? (res.json() as Promise<ThreadBundle>) : null));
       if (routeThreadIdRef.current !== threadId) return;
       if (!data) {
         if (cached) return;
@@ -451,7 +451,7 @@ export default function WorkScreen() {
     setLoadingOlder(true);
     try {
       const res = await fetch(
-        `/api/work/threads/${threadId}?limit=${CHAT_PAGE_RUNS}&before=${encodeURIComponent(before)}`,
+        `/api/v1/work/threads/${threadId}?limit=${CHAT_PAGE_RUNS}&before=${encodeURIComponent(before)}`,
       );
       if (!res.ok || activeThreadIdRef.current !== threadId) return false;
       const older = withAssistantTimelinePlaceholders((await res.json()) as ThreadBundle);
@@ -466,7 +466,7 @@ export default function WorkScreen() {
   async function loadAllOlder() {
     const threadId = activeThreadIdRef.current;
     if (!threadId || !bundle?.hasOlder) return;
-    const res = await fetch(`/api/work/threads/${threadId}`);
+    const res = await fetch(`/api/v1/work/threads/${threadId}`);
     if (!res.ok || activeThreadIdRef.current !== threadId) return;
     const full = withAssistantTimelinePlaceholders((await res.json()) as ThreadBundle);
     setBundle((prev) => (prev ? prependOlder(prev, { ...full, hasOlder: false }) : prev));
@@ -474,14 +474,14 @@ export default function WorkScreen() {
   }
 
   async function loadPendingMemories(threadId: string) {
-    const res = await fetch(`/api/work/memories/pending?threadId=${encodeURIComponent(threadId)}`);
+    const res = await fetch(`/api/v1/work/memories/pending?threadId=${encodeURIComponent(threadId)}`);
     if (!res.ok) return;
     const data = (await res.json()) as { pending: PendingMemory[] };
     setPendingMemories(data.pending ?? []);
   }
 
   async function createThread(): Promise<string> {
-    const res = await fetch("/api/work/threads", {
+    const res = await fetch("/api/v1/work/threads", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
@@ -604,11 +604,11 @@ export default function WorkScreen() {
     setSending(true);
     setStreamError(null);
     if (activeRunId) {
-      await fetch(`/api/work/runs/${activeRunId}/cancel`, { method: "POST" }).catch(
+      await fetch(`/api/v1/work/runs/${activeRunId}/cancel`, { method: "POST" }).catch(
         () => {},
       );
     }
-    const res = await fetch(`/api/work/threads/${threadId}/truncate`, {
+    const res = await fetch(`/api/v1/work/threads/${threadId}/truncate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messageId }),
@@ -646,7 +646,7 @@ export default function WorkScreen() {
     // earlier run remains in flight.
     setSending(true);
     const body = JSON.stringify({ message });
-    const res = await fetch(`/api/work/threads/${threadId}/runs`, {
+    const res = await fetch(`/api/v1/work/threads/${threadId}/runs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       ...(body.length < 60_000 ? { keepalive: true } : {}),
@@ -773,7 +773,7 @@ export default function WorkScreen() {
     return new Promise<StreamResult>((resolve) => {
       let settled = false;
       const es = new EventSource(
-        `/api/work/threads/${threadId}/runs/${runId}/events${params}`,
+        `/api/v1/work/threads/${threadId}/runs/${runId}/events${params}`,
       );
       const settle = (result: StreamResult) => {
         if (settled) return;
@@ -873,7 +873,7 @@ export default function WorkScreen() {
 
   async function cancelRun() {
     if (!activeRunId) return;
-    await fetch(`/api/work/runs/${activeRunId}/cancel`, { method: "POST" });
+    await fetch(`/api/v1/work/runs/${activeRunId}/cancel`, { method: "POST" });
   }
 
   async function decidePendingMemory(
@@ -881,7 +881,7 @@ export default function WorkScreen() {
     action: "accept" | "decline",
     overrides: { scope?: string; scopeId?: string | null } = {},
   ) {
-    const res = await fetch("/api/work/memories/decide", {
+    const res = await fetch("/api/v1/work/memories/decide", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, action, ...overrides }),

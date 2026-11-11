@@ -39,7 +39,7 @@ async function fetchSkill(
   name: string,
   signal?: AbortSignal,
 ): Promise<SkillDetail | null> {
-  const response = await fetch(`/api/work/skills/${encodeURIComponent(name)}`, {
+  const response = await fetch(`/api/v1/work/skills/${encodeURIComponent(name)}`, {
     cache: "no-store",
     signal,
   });
@@ -202,7 +202,7 @@ function SkillWorkspace({
     async (path: string, signal?: AbortSignal) => {
       try {
         const res = await fetch(
-          `/api/work/skills/${encodeURIComponent(skillName)}/file?path=${encodeURIComponent(path)}`,
+          `/api/v1/work/skills/${encodeURIComponent(skillName)}/file?path=${encodeURIComponent(path)}`,
           { cache: "no-store", signal },
         );
         if (!res.ok) {
@@ -260,7 +260,7 @@ function SkillWorkspace({
     setSaveError(null);
     try {
       const res = await fetch(
-        `/api/work/skills/${encodeURIComponent(skillName)}/file?path=${encodeURIComponent(selected)}`,
+        `/api/v1/work/skills/${encodeURIComponent(skillName)}/file?path=${encodeURIComponent(selected)}`,
         {
           method: "PUT",
           headers: { "content-type": "application/json" },

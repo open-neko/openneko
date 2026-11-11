@@ -72,7 +72,7 @@ describe("skill archive import", () => {
   });
 
   it("requires an admin and accepts a multi-file upload through the route", async () => {
-    const { POST } = await import("@/app/api/work/skills/route");
+    const { POST } = await import("@/app/api/v1/work/skills/route");
     const archive = zipFixture([
       { name: "api-demo/SKILL.md", data: markdown.replace("multi-file-demo", "api-demo") },
       { name: "api-demo/scripts/run.py", data: "print('ready')\n" },

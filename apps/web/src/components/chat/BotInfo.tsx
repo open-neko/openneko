@@ -33,7 +33,7 @@ const RUN_STATUS: Record<string, string> = {
 type Part = "name" | "instructions" | "look";
 
 async function patchBot(botId: string, body: Record<string, unknown>): Promise<BotSummary> {
-  const res = await fetch(`/api/bots/${botId}`, {
+  const res = await fetch(`/api/v1/bots/${botId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -65,7 +65,7 @@ export default function BotInfo({ botId }: { botId: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/bots/${botId}`)
+    fetch(`/api/v1/bots/${botId}`)
       .then((res) => (res.ok ? res.json() : Promise.reject(res)))
       .then((data: Detail) => {
         if (cancelled) return;
@@ -141,7 +141,7 @@ export default function BotInfo({ botId }: { botId: string }) {
     setDeleting(true);
     setDeleteError(null);
     try {
-      const res = await fetch(`/api/bots/${botId}`, { method: "DELETE" });
+      const res = await fetch(`/api/v1/bots/${botId}`, { method: "DELETE" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "The bot was not deleted. Try again.");
       reloadBots();
@@ -157,7 +157,7 @@ export default function BotInfo({ botId }: { botId: string }) {
     setRunsBusy(routine.id);
     try {
       const res = await fetch(
-        `/api/bots/${botId}/routines/${routine.id}${last ? `?before=${encodeURIComponent(last.id)}` : ""}`,
+        `/api/v1/bots/${botId}/routines/${routine.id}${last ? `?before=${encodeURIComponent(last.id)}` : ""}`,
       );
       if (!res.ok) return;
       const page = (await res.json()) as { runs: BotRoutineRun[]; more: boolean };
@@ -179,7 +179,7 @@ export default function BotInfo({ botId }: { botId: string }) {
   async function toggleRoutine(routine: BotRoutine) {
     setRoutineBusy(routine.id);
     try {
-      const res = await fetch(`/api/bots/${botId}/routines/${routine.id}`, {
+      const res = await fetch(`/api/v1/bots/${botId}/routines/${routine.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: !routine.enabled }),

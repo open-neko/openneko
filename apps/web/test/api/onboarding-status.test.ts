@@ -89,10 +89,10 @@ async function insertJob(
 
 describeIfDb("/api/onboarding/status GET (enriched)", () => {
   let orgId: string;
-  let GET: typeof import("@/app/api/onboarding/status/route").GET;
+  let GET: typeof import("@/app/api/v1/onboarding/status/route").GET;
 
   beforeAll(async () => {
-    const mod = await import("@/app/api/onboarding/status/route");
+    const mod = await import("@/app/api/v1/onboarding/status/route");
     GET = mod.GET;
   });
 

@@ -31,7 +31,7 @@ vi.mock("@/lib/admin-auth", () => ({
   isDenied: () => false,
 }));
 
-import { GET, POST } from "@/app/api/admin/change-password/route";
+import { GET, POST } from "@/app/api/v1/admin/change-password/route";
 
 function request(password: string): Request {
   return new Request("http://localhost/api/admin/change-password", {

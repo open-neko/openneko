@@ -55,7 +55,7 @@ describeIfDb("briefing mute + stats + cards", () => {
 
   it("mute POST/GET/DELETE round-trips and validates duration", async () => {
     const { POST, GET, DELETE } = await import(
-      "../../src/app/api/briefing/mute/route"
+      "../../src/app/api/v1/briefing/mute/route"
     );
 
     const bad = await callRoute(POST, {
@@ -101,7 +101,7 @@ describeIfDb("briefing mute + stats + cards", () => {
   });
 
   it("stats returns zeroed counts for a quiet org", async () => {
-    const { GET } = await import("../../src/app/api/briefing/stats/route");
+    const { GET } = await import("../../src/app/api/v1/briefing/stats/route");
     const res = await callRoute(GET);
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
@@ -124,7 +124,7 @@ describeIfDb("briefing mute + stats + cards", () => {
       .returning({ id: observation.id });
 
     const { POST, PATCH } = await import(
-      "../../src/app/api/briefing/cards/route"
+      "../../src/app/api/v1/briefing/cards/route"
     );
     const created = await callRoute(POST, {
       method: "POST",

@@ -32,7 +32,7 @@ afterEach(() => {
 
 describe("/api/admin/packs", () => {
   it("bounds ZIP uploads and assigns the authenticated uploader", async () => {
-    const { POST } = await import("@/app/api/admin/packs/upload/route");
+    const { POST } = await import("@/app/api/v1/admin/packs/upload/route");
     const request = (body: BodyInit) => new Request("http://localhost/api/admin/packs/upload", {
       method: "POST", headers: { "content-type": "application/zip", "x-openneko-actor": "forged" }, body,
     });
@@ -49,7 +49,7 @@ describe("/api/admin/packs", () => {
   });
   it("proxies the embedded pack list", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { packs: [{ id: "magento" }] }));
-    const { GET } = await import("@/app/api/admin/packs/route");
+    const { GET } = await import("@/app/api/v1/admin/packs/route");
     const result = await callRoute(GET);
     expect(result.status).toBe(200);
     expect(result.body).toEqual({ packs: [{ id: "magento" }] });
@@ -60,7 +60,7 @@ describe("/api/admin/packs", () => {
     mockRequireAdminActor.mockResolvedValue(
       NextResponse.json({ error: "admin only" }, { status: 403 }),
     );
-    const { GET } = await import("@/app/api/admin/packs/route");
+    const { GET } = await import("@/app/api/v1/admin/packs/route");
     const result = await callRoute(GET);
     expect(result.status).toBe(403);
     expect(fetchMock).not.toHaveBeenCalled();
@@ -70,7 +70,7 @@ describe("/api/admin/packs", () => {
 describe("/api/admin/packs/[packId]/[action]", () => {
   it("proxies status reads", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { packId: "magento", status: "installed" }));
-    const { GET } = await import("@/app/api/admin/packs/[packId]/[action]/route");
+    const { GET } = await import("@/app/api/v1/admin/packs/[packId]/[action]/route");
     const result = await callRoute(
       (request) => GET(request, { params: Promise.resolve({ packId: "magento", action: "status" }) }),
     );
@@ -80,7 +80,7 @@ describe("/api/admin/packs/[packId]/[action]", () => {
 
   it("adds a server-owned actor and idempotency key to writes", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { packId: "magento", status: "installed" }));
-    const { POST } = await import("@/app/api/admin/packs/[packId]/[action]/route");
+    const { POST } = await import("@/app/api/v1/admin/packs/[packId]/[action]/route");
     const result = await callRoute(
       (request) => POST(request, { params: Promise.resolve({ packId: "magento", action: "install" }) }),
       {
@@ -97,7 +97,7 @@ describe("/api/admin/packs/[packId]/[action]", () => {
 
   it("uses the same authenticated actor for review and forwards exact approval on install", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { reviewHash: "exact-review" }));
-    const { POST } = await import("@/app/api/admin/packs/[packId]/[action]/route");
+    const { POST } = await import("@/app/api/v1/admin/packs/[packId]/[action]/route");
     for (const action of ["review", "install"]) {
       const result = await callRoute(request => POST(request, { params: Promise.resolve({ packId: "service-health", action }) }), {
         method: "POST", body: { actorUserId: "forged", operation: "install", version: "0.1.0", reviewHash: "exact-review" },
@@ -108,7 +108,7 @@ describe("/api/admin/packs/[packId]/[action]", () => {
   });
 
   it("rejects unknown operations before contacting the worker", async () => {
-    const { GET } = await import("@/app/api/admin/packs/[packId]/[action]/route");
+    const { GET } = await import("@/app/api/v1/admin/packs/[packId]/[action]/route");
     const result = await callRoute(
       (request) => GET(request, { params: Promise.resolve({ packId: "magento", action: "erase" }) }),
     );
@@ -117,7 +117,7 @@ describe("/api/admin/packs/[packId]/[action]", () => {
   });
 
   it("rejects malformed JSON as a client error", async () => {
-    const { POST } = await import("@/app/api/admin/packs/[packId]/[action]/route");
+    const { POST } = await import("@/app/api/v1/admin/packs/[packId]/[action]/route");
     const request = new Request("http://localhost/api/admin/packs/magento/install", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -131,7 +131,7 @@ describe("/api/admin/packs/[packId]/[action]", () => {
   });
 
   it("rejects oversized bodies even without a content-length header", async () => {
-    const { POST } = await import("@/app/api/admin/packs/[packId]/[action]/route");
+    const { POST } = await import("@/app/api/v1/admin/packs/[packId]/[action]/route");
     const request = new Request("http://localhost/api/admin/packs/magento/install", {
       method: "POST",
       body: JSON.stringify({ value: "x".repeat(65 * 1024) }),
@@ -148,7 +148,7 @@ describe("/api/admin/packs/[packId]/[action]", () => {
 describe("/api/admin/packs/magento/store-management", () => {
   it("proxies the admin control surface", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { controls: [{ domain: "catalog" }] }));
-    const { GET } = await import("@/app/api/admin/packs/magento/store-management/route");
+    const { GET } = await import("@/app/api/v1/admin/packs/magento/store-management/route");
     const result = await callRoute(GET);
     expect(result.status).toBe(200);
     expect(result.body).toEqual({ controls: [{ domain: "catalog" }] });
@@ -159,7 +159,7 @@ describe("/api/admin/packs/magento/store-management", () => {
 
   it("replaces a forged actor on domain and rule writes", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { controls: [] }));
-    const { POST } = await import("@/app/api/admin/packs/magento/store-management/route");
+    const { POST } = await import("@/app/api/v1/admin/packs/magento/store-management/route");
     const result = await callRoute(POST, {
       method: "POST",
       body: { action: "update_domain", domain: "catalog", enabled: true, actorUserId: "forged" },
@@ -178,7 +178,7 @@ describe("/api/admin/packs/magento/store-management", () => {
     mockRequireAdminActor.mockResolvedValue(
       NextResponse.json({ error: "admin only" }, { status: 403 }),
     );
-    const { GET } = await import("@/app/api/admin/packs/magento/store-management/route");
+    const { GET } = await import("@/app/api/v1/admin/packs/magento/store-management/route");
     const result = await callRoute(GET);
     expect(result.status).toBe(403);
     expect(fetchMock).not.toHaveBeenCalled();
