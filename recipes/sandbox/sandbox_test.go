@@ -489,8 +489,18 @@ func TestSandboxChecksTheKey(t *testing.T) {
 		if _, err := client.Exec(ctx, "true"); err == nil || !strings.HasPrefix(err.Error(), "401") {
 			t.Fatalf("key %q: err = %v, want 401", key, err)
 		}
+		if resp, err := client.do(ctx, http.MethodGet, "/v2/check", nil); err != nil || resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("check with key %q = %v, %v", key, resp, err)
+		} else {
+			resp.Body.Close()
+		}
 	}
 	client.key = "sandbox-key"
+	if resp, err := client.do(ctx, http.MethodGet, "/v2/check", nil); err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("check with the key = %v, %v", resp, err)
+	} else {
+		resp.Body.Close()
+	}
 	if res, err := client.Exec(ctx, "echo ok"); err != nil || strings.TrimSpace(res.Output) != "ok" {
 		t.Fatalf("exec with the key = %+v, %v", res, err)
 	}

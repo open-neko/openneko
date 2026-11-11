@@ -381,6 +381,23 @@ variable out of the agent's tools. The agent reads and writes files in its
 run folder and reaches data only through the OpenNeko broker. The agent has
 a terminal only when a sandbox is connected.
 
+### External services
+
+OpenNeko uses four services outside the core. Each one has a URL and a key.
+Each one has a health check. Admin, Administration, External services shows
+each service as On, Off or Failing, with what the check found.
+
+| Service | URL | Key | Health check | When it is off |
+|---|---|---|---|---|
+| Inference | the default model at Admin, Settings, Models | the model's key | one short prompt to the default model | agent turns and summaries stop |
+| Embedding | `NEKO_EMBEDDING_URL` and `NEKO_EMBEDDING_MODEL` | `NEKO_EMBEDDING_API_KEY` | one short text through the embedding gateway | search uses Postgres full-text search |
+| Sandbox | `OPENNEKO_SANDBOX_URL` | `OPENNEKO_SANDBOX_KEY` | `GET /v2/check` with the key | no terminal and no script skills |
+| File store | `OPENNEKO_FILES_BUCKET` on `openneko-serve` | `OPENNEKO_FILES_BUCKET_KEY_ID` and `_SECRET` | `openneko serve` checks the bucket | files stay in the local folder |
+
+The inference and embedding checks each make one small paid call. The page
+keeps the results for one minute. "Check again" runs every check at once. No
+key appears in a result: a URL shows only its scheme and host.
+
 ### Sandbox (optional)
 
 OpenNeko runs no command for the agent. To give the agent a terminal, and to

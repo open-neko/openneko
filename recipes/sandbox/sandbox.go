@@ -157,11 +157,16 @@ func (s *Server) prepareWorkspaces() error {
 // Handler is the sandbox API:
 //
 //	GET    /v2/health
+//	GET    /v2/check            the health check with the key
 //	POST   /v2/runs/{run}/exec  writes the files sent, runs the command, returns the files it changed
 //	DELETE /v2/runs/{run}       kills the run's commands and removes its folder and home
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v2/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+	mux.HandleFunc("GET /v2/check", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})

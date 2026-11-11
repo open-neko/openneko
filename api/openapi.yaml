@@ -116,6 +116,43 @@ components:
             type: string
         price:
           $ref: '#/components/schemas/ModelPrice'
+    ExternalServiceStatus:
+      type: object
+      required:
+      - id
+      - label
+      - state
+      - where
+      - detail
+      - checkedAt
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          enum:
+          - inference
+          - embedding
+          - sandbox
+          - file-store
+        label:
+          type: string
+        state:
+          type: string
+          enum:
+          - 'off'
+          - ok
+          - failing
+        where:
+          type:
+          - string
+          - 'null'
+          description: The scheme and host of the service, or the bucket. Never a key or a path with credentials.
+        detail:
+          type: string
+          description: What the check found, or what still works when the service is off
+        checkedAt:
+          type: string
+          format: date-time
     ModelSettings:
       type: object
       required:
@@ -3622,6 +3659,52 @@ paths:
                 properties:
                   error:
                     type: string
+  /admin/services:
+    get:
+      operationId: getAdminServices
+      tags:
+      - admin
+      summary: Check each external service and report it as on, off or failing
+      description: The inference and embedding checks each make one small paid call. Results stay for one minute; refresh=1 checks again.
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      parameters:
+      - name: refresh
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '1'
+      responses:
+        '200':
+          description: One status per external service. No key appears in a status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - services
+                additionalProperties: false
+                properties:
+                  services:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ExternalServiceStatus'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an administrator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /admin/signin/email-provider:
     post:
       operationId: postAdminSigninEmailProvider

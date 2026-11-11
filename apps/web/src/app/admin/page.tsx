@@ -17,6 +17,7 @@ import { getOrgId } from "@/lib/db";
 import { getSetupCompleteAt } from "@/lib/org-state";
 import { getAuthGateStatus } from "@/lib/auth";
 import { AdminDenied, AdminShell } from "./AdminShell";
+import { ExternalServicesPanel } from "./ExternalServicesPanel";
 import { Card } from "@/components/ui/card";
 import { StatCard, StatGrid } from "@/components/ui/stat-card";
 
@@ -172,6 +173,8 @@ export default async function AdminPage() {
           }
         />
       </StatGrid>
+
+      <ExternalServicesPanel />
 
       <AdminCardGroup title="Core" cards={coreCards} />
       <AdminCardGroup title="Operate" cards={operateCards} />
