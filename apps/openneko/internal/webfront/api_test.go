@@ -53,7 +53,13 @@ func TestGoRoutesInContract(t *testing.T) {
 	}
 	api := &API{}
 	for route, methods := range GoRoutes {
-		if len(api.table()[route]) != len(methods) {
+		held := 0
+		for _, h := range api.table()[route] {
+			if h != nil {
+				held++
+			}
+		}
+		if held != len(methods) {
 			t.Errorf("%s: GoRoutes and the handler table differ", route)
 		}
 		for _, m := range methods {
