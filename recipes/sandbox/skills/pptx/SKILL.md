@@ -11,7 +11,7 @@ metadata:
     tags: [powerpoint, pptx, slides, presentation, deck, template]
     category: documents
     requires_toolsets: [terminal]
-    related_skills: [xlsx, docx]
+    related_skills: [xlsx, docx, pdf]
 ---
 
 # PowerPoint decks

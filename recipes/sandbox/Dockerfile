@@ -7,7 +7,8 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/openneko-sandbox .
 
 FROM node:24.22.1-bookworm-slim
 # The script skills' toolchain. Keep it in step with KNOWN_SKILL_DEPS in
-# packages/llm/src/work/skill-deps.ts and with skills/package.json.
+# packages/llm/src/work/skill-deps.ts and with skills/package.json. The Python
+# document libraries serve terminal commands and the skill tests.
 RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80-retries \
     && apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates git jq ripgrep file python3 python3-pip poppler-utils \
@@ -17,7 +18,7 @@ RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\n' > /etc/apt/ap
     && pip3 install --no-cache-dir --break-system-packages \
       pypdf python-docx python-pptx openpyxl PyYAML
 COPY skills/package.json skills/package-lock.json /opt/openneko/skills/
-RUN cd /opt/openneko/skills && npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
+RUN cd /opt/openneko/skills && npm ci --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund \
     && npm cache clean --force
 ENV NODE_PATH=/opt/openneko/skills/node_modules
 COPY --from=build /out/openneko-sandbox /usr/local/bin/openneko-sandbox

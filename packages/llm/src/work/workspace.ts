@@ -312,6 +312,7 @@ const RETIRED_BUILTIN_SKILLS: readonly string[] = [
   "3-statement-model",
   "comps-analysis",
   "dcf-model",
+  "document-extraction",
   "docx",
   "excel-author",
   "internal-comms",

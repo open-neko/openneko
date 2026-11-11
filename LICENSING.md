@@ -20,16 +20,16 @@ holders and is licensed under the applicable contribution terms. See
 
 ## Third-party components
 
-OpenNeko depends on software that OpenNeko does not own. Those components
-keep their own licenses. Examples:
+OpenNeko depends on software that OpenNeko does not own. Those dependencies
+keep their own licenses. [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
+lists the runtime dependencies and container-layer software.
 
-- Runtime dependencies and container-layer software listed in
-  [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
-- Built-in skills that carry their own `license:` frontmatter or local
-  `LICENSE.txt` files.
+Every bundled skill and every skill in a bundled solution pack is Apache 2.0.
+The `skill-creator` skill comes from Anthropic and keeps its `LICENSE.txt`
+and attribution.
 
-If an individual file, package, bundled skill or dependency includes a
-different license notice, that notice controls that component.
+If an individual file, package or dependency includes a different license
+notice, that notice controls that component.
 
 ## Trademarks and hosted services
 

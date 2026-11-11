@@ -127,7 +127,7 @@ describe("work workspace", () => {
     const skills = await readdir(workspace.skillsRoot);
     expect(skills).not.toContain("records");
     expect(skills).toContain("skill-creator");
-    expect(skills).toContain("document-extraction");
+    expect(skills).toContain("pdf");
   }, 30_000);
 
   it("creates per-thread and per-run directories", async () => {
@@ -160,10 +160,10 @@ describe("work workspace", () => {
     const copied = await copySkillOverrides(workspace.skillsRoot, stagedSkills);
     expect(copied).toContain("quarterly-review");
     expect(copied).toContain("skill-creator");
-    expect(copied).not.toContain("document-extraction");
+    expect(copied).not.toContain("pdf");
 
     await materializeBuiltinSkills(stagedSkills);
-    expect(await readdir(stagedSkills)).toContain("document-extraction");
+    expect(await readdir(stagedSkills)).toContain("pdf");
     expect(await readFile(join(stagedSkills, "skill-creator", "SKILL.md"), "utf8"))
       .toContain("Org override.");
   }, 30_000);
@@ -173,14 +173,14 @@ describe("work workspace", () => {
     cleanupPaths.push(skills);
     await materializeBuiltinSkills(skills);
     const seeded = await unmodifiedBuiltinSkills(skills);
-    expect(seeded).toContain("document-extraction");
+    expect(seeded).toContain("pdf");
     expect(seeded).toContain("skill-creator");
 
-    await writeFile(join(skills, "document-extraction", "SKILL.md"), "Edited by an admin.");
+    await writeFile(join(skills, "pdf", "SKILL.md"), "Edited by an admin.");
     await mkdir(join(skills, "quarterly-review"), { recursive: true });
     await writeFile(join(skills, "quarterly-review", "SKILL.md"), "Org skill.");
     const after = await unmodifiedBuiltinSkills(skills);
-    expect(after).not.toContain("document-extraction");
+    expect(after).not.toContain("pdf");
     expect(after).not.toContain("quarterly-review");
     expect(after).toContain("skill-creator");
   }, 30_000);
@@ -194,14 +194,14 @@ describe("work workspace", () => {
     const workspace = await ensureOrgWorkspace("org-test");
     const seeded = await readdir(workspace.skillsRoot);
     expect(seeded).toContain("graphjin-config");
-    for (const name of ["document-extraction", "docx", "pptx", "skill-creator", "xlsx"]) expect(seeded).not.toContain(name);
+    for (const name of ["docx", "pdf", "pptx", "skill-creator", "xlsx"]) expect(seeded).not.toContain(name);
 
-    await mkdir(join(workspace.skillsRoot, "document-extraction"), { recursive: true });
-    await writeFile(join(workspace.skillsRoot, "document-extraction", "SKILL.md"), "Seeded before the sandbox went away.");
+    await mkdir(join(workspace.skillsRoot, "pdf"), { recursive: true });
+    await writeFile(join(workspace.skillsRoot, "pdf", "SKILL.md"), "Seeded before the sandbox went away.");
     const stagedSkills = join(stage, "skills");
-    expect(await copySkillOverrides(workspace.skillsRoot, stagedSkills)).not.toContain("document-extraction");
+    expect(await copySkillOverrides(workspace.skillsRoot, stagedSkills)).not.toContain("pdf");
     await materializeBuiltinSkills(stagedSkills);
-    expect(await readdir(stagedSkills)).not.toContain("document-extraction");
+    expect(await readdir(stagedSkills)).not.toContain("pdf");
   }, 30_000);
 
   it("stages and seeds only the skills the run's actor holds", async () => {
@@ -217,13 +217,13 @@ describe("work workspace", () => {
     }
 
     const stagedSkills = join(stage, "skills");
-    const allowed = ["quarterly-review", "document-extraction"];
+    const allowed = ["quarterly-review", "pdf"];
     expect(await copySkillOverrides(workspace.skillsRoot, stagedSkills, [], allowed)).toEqual(["quarterly-review"]);
     await materializeBuiltinSkills(stagedSkills, allowed);
-    expect((await readdir(stagedSkills)).sort()).toEqual(["document-extraction", "quarterly-review"]);
+    expect((await readdir(stagedSkills)).sort()).toEqual(["pdf", "quarterly-review"]);
 
     const forced = join(stage, "forced");
-    expect(await copySkillOverrides(workspace.skillsRoot, forced, ["document-extraction"], [])).toEqual(["document-extraction"]);
+    expect(await copySkillOverrides(workspace.skillsRoot, forced, ["pdf"], [])).toEqual(["pdf"]);
   }, 30_000);
 
   it("records a builtin seed origin and skips a stale unmodified seed", async () => {
@@ -233,7 +233,7 @@ describe("work workspace", () => {
     process.env.HOME = home;
 
     const workspace = await ensureOrgWorkspace("org-test");
-    const seedDir = join(workspace.skillsRoot, "document-extraction");
+    const seedDir = join(workspace.skillsRoot, "pdf");
     const origin = await readSkillOrigin(seedDir);
     expect(origin?.kind).toBe("builtin");
     expect(origin?.sourceHash).toBe(await fingerprintSkillTree(seedDir));
@@ -252,10 +252,10 @@ describe("work workspace", () => {
 
     const stagedSkills = join(stage, "skills");
     const copied = await copySkillOverrides(workspace.skillsRoot, stagedSkills);
-    expect(copied).not.toContain("document-extraction");
+    expect(copied).not.toContain("pdf");
 
     await materializeBuiltinSkills(stagedSkills);
-    expect(await readFile(join(stagedSkills, "document-extraction", "SKILL.md"), "utf8")).not.toContain(
+    expect(await readFile(join(stagedSkills, "pdf", "SKILL.md"), "utf8")).not.toContain(
       "Stale seed body.",
     );
   }, 30_000);
@@ -282,6 +282,8 @@ describe("work workspace", () => {
     await writeFile(join(workspace.skillsRoot, "docx", "SKILL.md"), "Edited by an admin.");
     await seed("pptx", "print(1)\n", false);
     await seed("quarterly-review", "print(1)\n", true);
+    await seed("document-extraction", "print(1)\n", true);
+    await seed("pdf", "print(1)\n", true);
 
     await ensureOrgWorkspace("org-test");
     const after = await readdir(workspace.skillsRoot);
@@ -292,6 +294,9 @@ describe("work workspace", () => {
     expect(await readdir(join(workspace.skillsRoot, "pptx", "scripts"))).toEqual(["run.py"]);
     expect(after).toContain("quarterly-review");
     expect(after).toContain("skill-creator");
+    expect(after).not.toContain("document-extraction");
+    expect(await readFile(join(workspace.skillsRoot, "pdf", "SKILL.md"), "utf8")).toContain("# PDF files");
+    expect(await readdir(join(workspace.skillsRoot, "pdf", "scripts"))).not.toContain("run.py");
   }, 30_000);
 
   it("creates an empty disposable tree for non-interactive agent jobs", async () => {

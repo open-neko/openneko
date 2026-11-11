@@ -13,13 +13,6 @@ export interface SkillDeps {
 }
 
 export const KNOWN_SKILL_DEPS: Record<string, SkillDeps> = {
-  "document-extraction": {
-    python: ["pypdf", "docx", "pptx", "openpyxl"],
-    pip: ["pypdf", "python-docx", "python-pptx", "openpyxl"],
-    binaries: ["pdftotext", "tesseract", "file"],
-    apt: ["poppler-utils", "tesseract-ocr", "file"],
-    brew: ["poppler", "tesseract"],
-  },
   "skill-creator": {
     python: ["yaml"],
     pip: ["PyYAML"],
@@ -35,6 +28,15 @@ export const KNOWN_SKILL_DEPS: Record<string, SkillDeps> = {
     binaries: ["node"],
     apt: [],
     brew: ["node"],
+  },
+  pdf: {
+    python: [],
+    pip: [],
+    node: ["pdf-lib", "@pdf-lib/fontkit", "pdfjs-dist"],
+    npm: ["pdf-lib@1.17.1", "@pdf-lib/fontkit@1.1.1", "pdfjs-dist@6.5.438"],
+    binaries: ["node", "pdftoppm", "tesseract"],
+    apt: ["poppler-utils", "tesseract-ocr"],
+    brew: ["node", "poppler", "tesseract"],
   },
   pptx: {
     python: [],

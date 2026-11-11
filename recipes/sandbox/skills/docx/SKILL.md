@@ -11,7 +11,7 @@ metadata:
     tags: [word, docx, document, tracked-changes, redline]
     category: documents
     requires_toolsets: [terminal]
-    related_skills: [xlsx, document-extraction]
+    related_skills: [xlsx, pdf]
 ---
 
 # Word documents
@@ -155,7 +155,7 @@ the author and the date. A single op can set its own `"track"` and `"author"`.
 ## Limits
 
 - `.doc`, `.rtf`, `.odt` and Word templates (`.dotx`) are not supported. Ask
-  for a `.docx`, or use the `document-extraction` skill to read their text.
+  for a `.docx`, or for a PDF that the `pdf` skill can read.
 - A file that unpacks to more than 512 MB is refused.
 - `find` does not cross paragraphs, links, fields or tracked changes. Text in
   a field (a page number, a date field, a table of contents) is refused; the

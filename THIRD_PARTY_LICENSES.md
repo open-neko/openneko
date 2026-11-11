@@ -11,22 +11,21 @@ license texts alongside their distribution.
 
 ---
 
-## Modular agents and skills
+## Bundled skills
 
-OpenNeko can invoke or interoperate with external agents and skills.
-Those components remain under their own licenses.
+Every bundled skill and every skill in a bundled solution pack is Apache-2.0.
 
 | Component | License | Notes |
 |---|---|---|
-| Built-in skills with `license:` frontmatter | As declared in each skill | Check each `SKILL.md` and local `LICENSE.txt`. |
+| `skill-creator` skill | Apache-2.0 | Authored by Anthropic. Keep its `LICENSE.txt` and attribution. |
 
 ---
 
 ## Sandbox skill packages
 
 The sandbox recipe image installs these npm packages from
-`recipes/sandbox/skills/package-lock.json`. The bundled `xlsx`, `docx` and
-`pptx` skills use them. The OpenNeko images do not carry them.
+`recipes/sandbox/skills/package-lock.json`. The bundled `xlsx`, `docx`,
+`pptx` and `pdf` skills use them. The OpenNeko images do not carry them.
 
 | Package | Version | License | Notes |
 |---|---|---|---|
@@ -39,6 +38,13 @@ The sandbox recipe image installs these npm packages from
 | `@formulajs/formulajs` | 4.6.1 | MIT | Calculates the functions that `fast-formula-parser` lacks |
 | `bessel` | 1.0.2 | Apache-2.0 | Engineering functions for both formula packages |
 | `jstat` | 1.9.6 | MIT | Statistics functions for both formula packages |
+| `pdf-lib` | 1.17.1 | MIT | Creates and changes PDF files, pages and forms |
+| `@pdf-lib/fontkit` | 1.1.1 | MIT | Embeds TrueType and OpenType fonts in a PDF |
+| `@pdf-lib/standard-fonts`, `@pdf-lib/upng` | 1.0.0, 1.0.1 | MIT | Dependencies of `pdf-lib` |
+| `pako` | 1.0.11 | MIT AND Zlib | Compresses PDF streams for `pdf-lib`; holds a port of zlib under the Zlib license |
+| `tslib` | 1.14.1 | 0BSD | Runtime helpers of `pdf-lib` |
+| `pdfjs-dist` | 6.5.438 | Apache-2.0 | Reads PDF text, form fields and bookmarks. It carries Adobe CMap files (BSD-3-Clause), which the skill uses to read CJK text, and Foxit and Liberation fonts (BSD-style and SIL OFL 1.1), which the skill does not use |
+| `@napi-rs/canvas` | 1.1.0 | MIT | Optional package of `pdfjs-dist`. The CI test run installs it; the sandbox image leaves it out |
 
 ---
 

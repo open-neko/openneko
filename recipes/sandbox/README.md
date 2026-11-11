@@ -22,7 +22,8 @@ The overlay adds the `openneko-sandbox` service and sets
 require a key on the socket as well.
 
 The image carries Node, Python, Poppler, Tesseract, and the Python and npm
-packages the bundled skills use. Keep it in step with `KNOWN_SKILL_DEPS` in
+packages the bundled skills use. It leaves out the optional native canvas
+package of `pdfjs-dist`; the `pdf` skill draws pages with Poppler. Keep it in step with `KNOWN_SKILL_DEPS` in
 `packages/llm/src/work/skill-deps.ts`.
 
 ## Skills
@@ -39,6 +40,8 @@ CommonJS (`.cjs`), because `import` does not read `NODE_PATH`.
 | `xlsx` | Creates, reads and edits Excel workbooks and calculates their formulas |
 | `docx` | Creates, reads and edits Word documents, with tracked changes and comments |
 | `pptx` | Creates, reads and edits PowerPoint decks, from a blank deck or a company template |
+| `pdf` | Reads PDFs and scanned pages, creates PDF reports, fills forms, merges, splits and changes pages |
+| `skill-creator` | Writes, tests and packages a new skill |
 
 ## How it keeps runs apart
 

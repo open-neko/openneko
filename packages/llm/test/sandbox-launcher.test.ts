@@ -155,8 +155,8 @@ describe("stageSandboxWorkspace", () => {
         mkdir(join(workspace.skillsRoot, "quarterly-review"), { recursive: true }),
       ]);
       await cp(
-        join(process.cwd(), "assets", "builtin-skills", "document-extraction"),
-        join(workspace.skillsRoot, "document-extraction"),
+        join(process.cwd(), "..", "..", "recipes", "sandbox", "skills", "pdf"),
+        join(workspace.skillsRoot, "pdf"),
         { recursive: true },
       );
       await Promise.all([
@@ -172,21 +172,21 @@ describe("stageSandboxWorkspace", () => {
         ),
         // Simulate a durable workspace left behind by an older release.
         writeFile(
-          join(workspace.skillsRoot, "document-extraction", "SKILL.md"),
-          "---\nname: document-extraction\ndescription: stale system skill\n---\n",
+          join(workspace.skillsRoot, "pdf", "SKILL.md"),
+          "---\nname: pdf\ndescription: stale system skill\n---\n",
         ),
       ]);
 
       const staged = await stageSandboxWorkspace(workspace, stage, {
-        requiredSkillNames: ["document-extraction"],
+        requiredSkillNames: ["pdf"],
       });
-      expect(staged.skillOverrides).toEqual(["document-extraction", "quarterly-review"]);
+      expect(staged.skillOverrides).toEqual(["pdf", "quarterly-review"]);
       await expect(
-        access(join(staged.workspace.skillsRoot, "document-extraction", "SKILL.md")),
+        access(join(staged.workspace.skillsRoot, "pdf", "SKILL.md")),
       ).resolves.toBeUndefined();
       expect(
-        await readFile(join(staged.workspace.skillsRoot, "document-extraction", "SKILL.md"), "utf8"),
-      ).toBe(await readFile(join(process.cwd(), "assets", "builtin-skills", "document-extraction", "SKILL.md"), "utf8"));
+        await readFile(join(staged.workspace.skillsRoot, "pdf", "SKILL.md"), "utf8"),
+      ).toBe(await readFile(join(process.cwd(), "..", "..", "recipes", "sandbox", "skills", "pdf", "SKILL.md"), "utf8"));
       expect(await readFile(join(staged.workspace.knowledgeRoot, "schema.json"), "utf8"))
         .toBe("{}");
       expect(await readFile(join(staged.workspace.threadUploadsRoot, "current.csv"), "utf8"))

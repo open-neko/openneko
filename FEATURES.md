@@ -131,6 +131,7 @@ restorable.
 | Excel workbooks | With a sandbox connected, the assistant creates and edits Excel workbooks with formulas, styles, dates and named inputs. It calculates every formula and checks the results for errors before it gives you the file. | Phase 1 |
 | Word documents | With a sandbox connected, the assistant creates, reads and edits Word documents with headings, lists, tables, images and page numbers. It can make its edits as tracked changes with comments, so you accept or reject each one in Word. | Phase 1 |
 | PowerPoint decks | With a sandbox connected, the assistant creates, reads and edits PowerPoint decks with bullets, tables, charts, pictures and speaker notes. Give it your company template and it builds the deck from your layouts, or fills the markers in a deck you already use. | Phase 1 |
+| PDF files | With a sandbox connected, the assistant reads PDFs page by page and reads scanned pages with OCR. It creates PDF reports, fills and flattens forms, merges and splits files, and rotates, deletes, stamps and numbers pages. It refuses to change a signed file until you agree, and it tells you that a box on a page does not redact the text under it. | Phase 1 |
 | Open Knowledge Format | Your memories, workflows, and skills are written to disk as plain Markdown in the vendor-neutral [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf) v0.2 format: readable in any editor, versioned invisibly, and portable beyond OpenNeko. | #220 |
 
 ## Security you can verify

@@ -11,7 +11,7 @@ metadata:
     tags: [spreadsheet, excel, xlsx, formulas]
     category: documents
     requires_toolsets: [terminal]
-    related_skills: [document-extraction]
+    related_skills: [docx, pdf]
 ---
 
 # Excel workbooks
@@ -169,8 +169,7 @@ or array formulas. Do not use dynamic array functions; use `SUMIFS`,
 
 ## Limits
 
-- `.xls`, `.xlsb` and `.ods` files are not supported. Ask for `.xlsx`, or use
-  the `document-extraction` skill to read their text.
+- `.xls`, `.xlsb` and `.ods` files are not supported. Ask for `.xlsx`.
 - A file that unpacks to more than 512 MB is refused.
 - The tool does not make charts or pivot tables. It keeps the ones that a file
   already holds, but their cached data does not change until Excel refreshes
