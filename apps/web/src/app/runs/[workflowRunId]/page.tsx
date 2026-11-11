@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { SkeletonList } from "@/components/ui/skeleton";
 import { useParams, useRouter } from "next/navigation";
-import { Check, Download, MessageCircle, Pin, TriangleAlert } from "lucide-react";
+import { Download, MessageCircle, TriangleAlert } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import AppHeader from "@/components/AppHeader";
@@ -280,10 +280,6 @@ export default function RunPage() {
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
-  const [pinningOutputId, setPinningOutputId] = useState<string | null>(null);
-  const [pinnedOutputIds, setPinnedOutputIds] = useState<Set<string>>(
-    () => new Set(),
-  );
 
   const load = useCallback(async () => {
     if (!workflowRunId) return;
@@ -350,28 +346,6 @@ export default function RunPage() {
   const cancelReject = useCallback(() => {
     setRejectingId(null);
     setRejectReason("");
-  }, []);
-
-  const pinOutput = useCallback(async (outputId: string) => {
-    setPinningOutputId(outputId);
-    try {
-      const res = await fetch("/api/v1/briefing/pins", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ outputId }),
-      });
-      if (res.ok) {
-        setPinnedOutputIds((current) => {
-          const next = new Set(current);
-          next.add(outputId);
-          return next;
-        });
-      }
-    } catch {
-      // Best-effort: leave the control available so the operator can retry.
-    } finally {
-      setPinningOutputId(null);
-    }
   }, []);
 
   const askFollowUp = useCallback(async () => {
@@ -513,33 +487,6 @@ export default function RunPage() {
                         <span>{formatTaxonomy(o.topic)}</span>
                       )}
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className={cn(
-                        "run-finding-pin-control",
-                        pinnedOutputIds.has(o.id) &&
-                          "disabled:text-success-mid disabled:opacity-100",
-                      )}
-                      disabled={
-                        pinningOutputId === o.id || pinnedOutputIds.has(o.id)
-                      }
-                      onClick={() => void pinOutput(o.id)}
-                      title="Pin this finding to the Briefing"
-                    >
-                      {pinnedOutputIds.has(o.id) ? (
-                        <Check aria-hidden="true" />
-                      ) : (
-                        <Pin aria-hidden="true" />
-                      )}
-                      <span>
-                        {pinnedOutputIds.has(o.id)
-                          ? "Pinned"
-                          : pinningOutputId === o.id
-                            ? "Pinning…"
-                            : "Pin to briefing"}
-                      </span>
-                    </Button>
                   </footer>
                 </li>
               ))}

@@ -1,7 +1,6 @@
 export const MODEL_TASKS = [
   { task: "turn", label: "Agent turns", description: "Questions, workflows, metric runs and channel replies." },
   { task: "classify", label: "Question classifier", description: "Sorts a new question before the agent starts." },
-  { task: "briefing_summary", label: "Briefing summary", description: "Writes the summary at the top of a briefing." },
   { task: "compact", label: "Conversation compaction", description: "Shortens a long conversation so the agent can go on." },
   { task: "bot_instructions", label: "Bot instructions", description: "Keeps a bot's standing instructions up to date." },
   { task: "bot_names", label: "Bot names", description: "Suggests a name for a new bot." },

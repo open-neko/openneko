@@ -80,7 +80,7 @@ and proposing actions, with brakes so it never runs away from you.
 | Outside-world triggers | External systems can ping OpenNeko to kick off a workflow — so it reacts to events, not just schedules. | #96 |
 | Action receipts | When a rule auto-approves an action, the receipt doesn't vanish — every fired action has a deep-dive page showing what ran, why, and on whose authority. | #15 |
 | Code actions | The assistant can file issues and draft code patches as proposals — a human always reviews and applies them. | #96 |
-| Mute and pause | Tired of a noisy topic? Mute it, or pause the assistant for the day with one tap — it resumes on its own tomorrow. | #96 |
+| Pause for today | Pause a noisy workflow for the rest of the day with one tap. It resumes on its own at midnight UTC. | #96 |
 | Safety brakes | Daily run budgets and fan-out caps mean a misbehaving workflow runs out of rope quickly instead of flooding you. | #11 |
 | "Seen 3× today" dedupe | Repeat findings collapse into one card with a counter, instead of stacking up as noise. | #96 |
 

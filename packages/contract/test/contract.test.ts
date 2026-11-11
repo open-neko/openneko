@@ -51,3 +51,21 @@ run("access", () => {
     });
   }
 });
+
+run("removed routes", () => {
+  const removed = ["/api/v1/briefing", "/api/v1/briefing/findings", "/api/v1/briefing/pins", "/api/briefing", "/api/briefing/stats"];
+  for (const path of removed) {
+    for (const method of ["GET", "POST"]) {
+      it(`${method} ${path}: is gone`, async () => {
+        const response = await fetch(`${target!.baseUrl}${path}`, {
+          method,
+          headers: { authorization: `Bearer ${target!.tokens.admin}`, "content-type": "application/json" },
+          body: method === "POST" ? "{}" : undefined,
+          redirect: "manual",
+        });
+        await response.body?.cancel();
+        expect(response.status).toBe(404);
+      });
+    }
+  }
+});
