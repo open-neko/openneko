@@ -9,10 +9,14 @@ FROM node:24.22.1-bookworm-slim
 # The script skills' toolchain. Keep it in step with KNOWN_SKILL_DEPS in
 # packages/llm/src/work/skill-deps.ts and with skills/package.json. The Python
 # document libraries serve terminal commands and the skill tests.
+# The pdf skill's fallback fonts. Only the faces that it uses stay in the image.
 RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80-retries \
+    && printf '%s\n' 'path-exclude=/usr/share/fonts/truetype/dejavu/DejaVuSerif*' \
+      'path-exclude=/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf' \
+      'path-exclude=/usr/share/fonts/truetype/droid/*' > /etc/dpkg/dpkg.cfg.d/90-fonts \
     && apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates git jq ripgrep file python3 python3-pip poppler-utils \
-      tesseract-ocr \
+      tesseract-ocr fonts-dejavu-core fonts-droid-fallback \
     && rm -rf /var/lib/apt/lists/* \
     && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2 \
     && pip3 install --no-cache-dir --break-system-packages \

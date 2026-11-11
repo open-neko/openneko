@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { PDFDocument, PDFName, PDFString, StandardFonts, rgb } = require("pdf-lib");
 const { cm, fail, pageSize } = require("./common.cjs");
-const { clean, family, pick, setOutline } = require("./fonts.cjs");
+const { clean, cover, draw, family, mark, measure, pick, setOutline } = require("./fonts.cjs");
 
 const HEADING_SIZES = [0, 18, 15, 13, 12];
 const BULLETS = ["•", "–", "·"];
@@ -178,7 +178,7 @@ class Layout {
           link: style.link,
           underline: style.underline ?? Boolean(style.link),
           kind: piece === "\n" ? "break" : /^[  ]+$/.test(piece) && !piece.includes(" ") ? "space" : "word",
-          width: piece === "\n" ? 0 : font.widthOfTextAtSize(piece, size),
+          width: piece === "\n" ? 0 : measure(piece, font, size),
         });
       }
     }
@@ -213,15 +213,15 @@ class Layout {
       if (seg.width > maxWidth) {
         let chunk = "";
         for (const ch of seg.text) {
-          const w = seg.font.widthOfTextAtSize(chunk + ch, seg.size);
+          const w = measure(chunk + ch, seg.font, seg.size);
           if (w > maxWidth - line.width && (chunk || line.segs.length)) {
-            if (chunk) line.segs.push({ ...seg, text: chunk, width: seg.font.widthOfTextAtSize(chunk, seg.size) });
+            if (chunk) line.segs.push({ ...seg, text: chunk, width: measure(chunk, seg.font, seg.size) });
             push();
             chunk = ch;
           } else chunk += ch;
         }
         if (chunk) {
-          const width = seg.font.widthOfTextAtSize(chunk, seg.size);
+          const width = measure(chunk, seg.font, seg.size);
           line.segs.push({ ...seg, text: chunk, width });
           line.width += width;
         }
@@ -241,7 +241,7 @@ class Layout {
     let cx = x + (align === "center" ? (maxWidth - line.width) / 2 : align === "right" ? maxWidth - line.width : 0);
     for (const seg of line.segs) {
       if (seg.kind === "word") {
-        page.drawText(seg.text, { x: cx, y: baseline, font: seg.font, size: seg.size, color: color(seg.color) });
+        draw(page, seg.text, { x: cx, y: baseline, font: seg.font, size: seg.size, color: color(seg.color) });
       }
       const k = line.segs.indexOf(seg);
       const inside = seg.kind === "word" || (k > 0 && k < line.segs.length - 1 && line.segs[k - 1].link === seg.link && line.segs[k + 1].link === seg.link);
@@ -336,8 +336,8 @@ class Layout {
       chunk.forEach((text, k) => {
         const clipped = clean(text, this.mono);
         let shown = clipped;
-        while (shown && this.mono.widthOfTextAtSize(shown, size) > this.contentWidth - pad * 2) shown = shown.slice(0, -1);
-        if (shown) this.page.drawText(shown, { x: this.margin.left + pad, y: this.y - pad - (k + 1) * lh + size * 0.3, font: this.mono, size, color: color(undefined) });
+        while (shown && measure(shown, this.mono, size) > this.contentWidth - pad * 2) shown = shown.slice(0, -1);
+        if (shown) draw(this.page, shown, { x: this.margin.left + pad, y: this.y - pad - (k + 1) * lh + size * 0.3, font: this.mono, size, color: color(undefined) });
       });
       this.y -= height;
       this.atTop = false;
@@ -564,7 +564,9 @@ async function create(spec) {
   if (!spec || typeof spec !== "object" || !Array.isArray(spec.blocks)) fail('the spec needs "blocks": a list of blocks');
   const doc = await PDFDocument.create();
   const fonts = await family(doc, typeof spec.font === "string" ? spec.font : spec.font?.regular ? spec.font : spec.font?.name);
-  const mono = await doc.embedFont(StandardFonts.Courier);
+  const mono = mark(await doc.embedFont(StandardFonts.Courier), "mono");
+  const sample = JSON.stringify(spec);
+  for (const font of [fonts.regular, fonts.bold, fonts.italic, fonts.boldItalic, mono]) await cover(doc, font, sample);
   const layout = new Layout(doc, fonts, mono, spec);
   for (const block of spec.blocks) await layout.block(block);
   decorate(layout, spec);
