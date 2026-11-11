@@ -94,6 +94,21 @@ describeIfDb("skill index", () => {
     }
   });
 
+  it("hides the script skills when an admin turned the org's Terminal off", async () => {
+    await db().insert(llm_provider_config).values({
+      org_id: orgId, scope: "agent", provider: "ax", enabled: true, config: { terminal: false }, secrets: {},
+    });
+    try {
+      const results = await searchSkillsForRun({ orgId, runId, query: "Make me an Excel file of stock", limit: 3 });
+      expect(results.map((s) => s.name)).not.toContain("xlsx");
+    } finally {
+      await db().delete(llm_provider_config)
+        .where(and(eq(llm_provider_config.org_id, orgId), eq(llm_provider_config.scope, "agent")));
+    }
+    const on = await searchSkillsForRun({ orgId, runId, query: "Make me an Excel file of stock", limit: 1 });
+    expect(on.map((s) => s.name)).toEqual(["xlsx"]);
+  });
+
   it("finds the admin-only skill for an admin run with the config tools, and for no other run", async () => {
     vi.mocked(embeddingModel).mockReturnValue(null);
     const thread = await createWorkThread(orgId, "service");

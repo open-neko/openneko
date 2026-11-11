@@ -23,7 +23,7 @@ export async function PUT(request: NextRequest) {
       throw new Error("Agent settings payload must be an object");
     }
     const unsupported = Object.keys(body).filter(
-      (key) => key !== "backend" && key !== "globalCap",
+      (key) => key !== "backend" && key !== "globalCap" && key !== "terminal",
     );
     if (unsupported.length > 0) {
       throw new Error(`Unsupported agent setting: ${unsupported.join(", ")}`);
@@ -31,6 +31,7 @@ export async function PUT(request: NextRequest) {
     const saved = await saveAgentSettingsDraft((await getOrgId()), {
       backend: body.backend,
       globalCap: body.globalCap,
+      terminal: body.terminal,
     });
     // Reprovision so the agent uses the latest provider settings.
     await provisionHostConfig((await getOrgId()));

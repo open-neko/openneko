@@ -6,6 +6,7 @@ import {
   AGENT_DEFAULT_GLOBAL_CAP,
   isAgentBackendId,
   resolveAgentBackendId,
+  sandboxConfig,
   type AgentBackendId,
 } from "@neko/llm";
 
@@ -15,13 +16,17 @@ export type AgentSettings = {
   /** Org-wide agent backend. */
   backend: AgentBackendId;
   globalCap: number;
+  terminal: boolean;
 };
 
 export type AgentSettingsPayload = {
   agent: AgentSettings;
   options: typeof AGENT_BACKEND_OPTIONS;
+  /** False when the install has no sandbox URL; the Terminal setting then has no effect. */
+  terminalAvailable: boolean;
   defaults: {
     globalCap: number;
+    terminal: boolean;
   };
 };
 
@@ -67,12 +72,14 @@ export async function getAgentSettings(
   const cfg = (row?.config ?? {}) as {
     backend?: unknown;
     globalCap?: unknown;
+    terminal?: unknown;
   };
   const globalCap = readPositiveInt(cfg.globalCap, AGENT_DEFAULT_GLOBAL_CAP);
   return {
     source: row ? "org" : "default",
     backend: await resolveAgentBackendId(orgId),
     globalCap,
+    terminal: cfg.terminal !== false,
   };
 }
 
@@ -83,8 +90,10 @@ export async function getAgentSettingsPayload(
   return {
     agent,
     options: AGENT_BACKEND_OPTIONS,
+    terminalAvailable: sandboxConfig() !== undefined,
     defaults: {
       globalCap: AGENT_DEFAULT_GLOBAL_CAP,
+      terminal: true,
     },
   };
 }
@@ -92,6 +101,7 @@ export async function getAgentSettingsPayload(
 export type AgentSaveDraft = {
   backend?: unknown;
   globalCap?: number | string;
+  terminal?: unknown;
 };
 
 export async function saveAgentSettingsDraft(
@@ -101,10 +111,14 @@ export async function saveAgentSettingsDraft(
   if (draft.backend !== undefined && (typeof draft.backend !== "string" || !isAgentBackendId(draft.backend))) {
     throw new Error(`Unsupported agent backend: ${String(draft.backend)}`);
   }
+  if (draft.terminal !== undefined && typeof draft.terminal !== "boolean") {
+    throw new Error("terminal must be true or false");
+  }
   const existing = await loadAgentRow(orgId);
   const existingCfg = (existing?.config ?? {}) as {
     backend?: unknown;
     globalCap?: unknown;
+    terminal?: unknown;
   };
   const backend: AgentBackendId =
     (draft.backend as AgentBackendId | undefined) ?? (await resolveAgentBackendId(orgId));
@@ -112,7 +126,8 @@ export async function saveAgentSettingsDraft(
     draft.globalCap ?? existingCfg.globalCap,
     AGENT_DEFAULT_GLOBAL_CAP,
   );
-  const config = { backend, globalCap };
+  const terminal = (draft.terminal as boolean | undefined) ?? existingCfg.terminal !== false;
+  const config = { backend, globalCap, terminal };
 
   if (existing) {
     await db()
@@ -134,5 +149,5 @@ export async function saveAgentSettingsDraft(
     });
   }
 
-  return { source: "org", backend, globalCap };
+  return { source: "org", backend, globalCap, terminal };
 }

@@ -34,8 +34,8 @@ export function sandboxConfig(env: NodeJS.ProcessEnv = process.env): SandboxConf
   return { url, ...(env.OPENNEKO_SANDBOX_KEY ? { key: env.OPENNEKO_SANDBOX_KEY } : {}) };
 }
 
-export function skillRunnable(name: string, env: NodeJS.ProcessEnv = process.env): boolean {
-  return !SANDBOX_SKILLS.has(name) || sandboxConfig(env) !== undefined;
+export function skillRunnable(name: string, sandboxOn: boolean = sandboxConfig() !== undefined): boolean {
+  return !SANDBOX_SKILLS.has(name) || sandboxOn;
 }
 
 type Target = { socketPath?: string; protocol: "http:" | "https:"; host?: string; port?: string; base: string };

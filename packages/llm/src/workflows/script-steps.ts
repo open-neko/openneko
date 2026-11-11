@@ -82,7 +82,7 @@ async function runOne(
   });
 
   if (!sandbox) {
-    return fail("script steps run in the sandbox service, and this install has none (OPENNEKO_SANDBOX_URL is not set)");
+    return fail("script steps run in the sandbox service, and this run has none: OPENNEKO_SANDBOX_URL is not set, or an admin turned the Terminal off at Admin, Settings, Agent");
   }
   if (opts.allowedSkills && !opts.allowedSkills.includes(script.skill)) {
     return fail(`skill ${script.skill} is not available to this run`);

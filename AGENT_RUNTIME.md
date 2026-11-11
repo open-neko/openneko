@@ -46,7 +46,10 @@ per-run broker.
    the runner, which calls the broker.
 4. When `OPENNEKO_SANDBOX_URL` is set, serve sends terminal commands to the
    sandbox service. Without it, the agent has no terminal and the script
-   skills are off.
+   skills are off. An admin can also turn the terminal off for one
+   organization at Admin, Settings, Agent. The launcher then gives the
+   runner no sandbox URL or key, does not stage the script skills, and the
+   prompt and skill search leave them out.
 5. When the run ends, the launcher kills the runner's process group, copies
    artifacts and skill edits back, and deletes the run folder. The next start
    deletes folders that a restart left behind.

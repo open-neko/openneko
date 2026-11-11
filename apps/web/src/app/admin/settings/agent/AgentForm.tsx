@@ -6,6 +6,7 @@ import PageHeading from "@/components/PageHeading";
 import { toast } from "sonner";
 import Select from "@/components/Select";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Field, Input } from "@/components/ui/field";
 
 type ProviderOption = { value: string; label: string; description: string };
@@ -38,9 +39,11 @@ type AgentSettingsPayload = {
     source: "org" | "default";
     backend: string;
     globalCap: number;
+    terminal: boolean;
   };
   options: readonly ProviderOption[];
-  defaults: { globalCap: number };
+  terminalAvailable: boolean;
+  defaults: { globalCap: number; terminal: boolean };
 };
 
 export default function AgentForm({
@@ -49,6 +52,8 @@ export default function AgentForm({
   initial: { agent: AgentSettingsPayload; providers: SettingsPayload };
 }) {
   const [concurrentJobs, setConcurrentJobs] = useState(String(initial.agent.agent.globalCap));
+  const [terminal, setTerminal] = useState(initial.agent.agent.terminal);
+  const terminalAvailable = initial.agent.terminalAvailable;
   const [primary, setPrimary] = useState({
     provider: initial.providers.primary.provider,
     model: initial.providers.primary.model,
@@ -111,7 +116,7 @@ export default function AgentForm({
       const agentRes = await fetch("/api/settings/agent", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ globalCap: cap }),
+        body: JSON.stringify(terminalAvailable ? { globalCap: cap, terminal } : { globalCap: cap }),
       });
       const agentBody = await agentRes.json();
       if (!agentRes.ok) throw new Error(agentBody.error ?? "Agent settings save failed");
@@ -165,6 +170,22 @@ export default function AgentForm({
               max={1000}
               value={concurrentJobs}
               onChange={(e) => setConcurrentJobs(e.target.value)}
+            />
+          </Field>
+
+          <Field
+            label="Terminal"
+            hint={
+              terminalAvailable
+                ? "Lets the agent run commands, script skills and workflow script steps in the sandbox service. The sandbox gets no model key and no database login. Applies from the next run."
+                : "Unavailable: this install has no sandbox service. Set OPENNEKO_SANDBOX_URL on the server to use it."
+            }
+          >
+            <Checkbox
+              label="Let the agent use the terminal"
+              checked={terminalAvailable && terminal}
+              disabled={!terminalAvailable}
+              onCheckedChange={(checked) => setTerminal(checked === true)}
             />
           </Field>
 

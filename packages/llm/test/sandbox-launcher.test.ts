@@ -29,6 +29,12 @@ vi.mock("../src/work/personas", async (importOriginal) => ({
   },
 }));
 
+const terminal = vi.hoisted(() => ({ on: true }));
+vi.mock("../src/work/sandbox-org", async () => {
+  const { sandboxConfig } = await import("../src/work/sandbox-service");
+  return { sandboxForOrg: async () => (terminal.on ? sandboxConfig() : undefined) };
+});
+
 const {
   makeSandboxRunCore,
   makeSandboxWorkflowRunCore,
@@ -120,6 +126,18 @@ describe("stageSandboxWorkspace", () => {
       const staged = await stageSandboxWorkspace(workspace, join(root, "stage"));
       expect((await readdir(staged.workspace.knowledgeRoot)).sort()).toEqual([...KNOWLEDGE_FILES].sort());
       expect(await readFile(join(staged.workspace.knowledgeRoot, "tables.json"), "utf8")).toBe('{"current":true}');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+  it("stages a changed script skill only when the run has the terminal", async () => {
+    const root = await mkdtemp(join(tmpdir(), "sandbox-stage-terminal-"));
+    try {
+      const workspace = fullWorkspace(join(root, "org"));
+      await mkdir(join(workspace.skillsRoot, "xlsx"), { recursive: true });
+      await writeFile(join(workspace.skillsRoot, "xlsx", "SKILL.md"), "---\nname: xlsx\ndescription: edited\n---\n");
+      const on = await stageSandboxWorkspace(workspace, join(root, "on"), { terminal: true });
+      const off = await stageSandboxWorkspace(workspace, join(root, "off"), { terminal: false });
+      expect(on.skillOverrides).toEqual(["xlsx"]);
+      expect(off.skillOverrides).toEqual([]);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
   it("exposes only the current run, current thread uploads, knowledge, and skill overrides", async () => {
@@ -238,6 +256,25 @@ describe("makeSandboxRunCore", () => {
     expect(env.NEKO_PG_PASSWORD).toBeUndefined();
     // The stage is gone once the run ends.
     await expect(access(job.workspace.orgRoot)).rejects.toThrow();
+  });
+
+  it("gives the runner the sandbox only when the org's Terminal is on", async () => {
+    vi.stubEnv("OPENNEKO_SANDBOX_URL", "unix:///run/openneko/sandbox.sock");
+    vi.stubEnv("OPENNEKO_SANDBOX_KEY", "sandbox-key");
+    try {
+      for (const on of [true, false]) {
+        terminal.on = on;
+        await makeSandboxRunCore(opts())(input(await hostWorkspace()));
+        const { env } = JSON.parse(await readFile(capture, "utf8")) as Capture;
+        expect(env.OPENNEKO_SANDBOX_URL).toBe(on ? "unix:///run/openneko/sandbox.sock" : undefined);
+        expect(env.OPENNEKO_SANDBOX_KEY).toBe(on ? "sandbox-key" : undefined);
+        expect(env.OPENNEKO_SERVE_SOCKET).toBe("/run/openneko/serve.sock");
+      }
+    } finally {
+      terminal.on = true;
+      vi.stubEnv("OPENNEKO_SANDBOX_URL", "");
+      vi.stubEnv("OPENNEKO_SANDBOX_KEY", "");
+    }
   });
 
   it("rejects an empty completed result with no answer event", async () => {

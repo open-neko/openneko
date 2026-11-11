@@ -2,7 +2,8 @@ import { and, db, eq, inArray, notInArray, skill_embedding, sql } from "@neko/db
 import { embedText, embeddingModel, vectorLiteral } from "../embedding";
 import { entitlementActorForRun, runHeldItemIds } from "./entitlement-scope";
 import { interleaveResults, keywordTsQuery } from "./keyword-search";
-import { SANDBOX_SKILLS, sandboxConfig } from "./sandbox-service";
+import { sandboxForOrg } from "./sandbox-org";
+import { SANDBOX_SKILLS } from "./sandbox-service";
 
 export type SkillSearchResult = { name: string; score: number };
 
@@ -46,8 +47,8 @@ export async function syncSkillIndex(
   }
 }
 
-function runnableOnly(exclude: readonly string[] = []) {
-  const hidden = sandboxConfig() ? exclude : [...SANDBOX_SKILLS, ...exclude];
+function runnableOnly(terminal: boolean, exclude: readonly string[] = []) {
+  const hidden = terminal ? exclude : [...SANDBOX_SKILLS, ...exclude];
   return hidden.length ? [notInArray(skill_embedding.skill_name, [...hidden])] : [];
 }
 
@@ -56,7 +57,7 @@ async function keywordSkillSearch(
   held: string[] | null | undefined,
   query: string,
   limit: number,
-  exclude: readonly string[],
+  runnable: ReturnType<typeof runnableOnly>,
   unindexedModel?: string,
 ): Promise<SkillSearchResult[]> {
   const tsquery = keywordTsQuery(query);
@@ -69,7 +70,7 @@ async function keywordSkillSearch(
       and(
         eq(skill_embedding.org_id, orgId),
         ...(held ? [inArray(skill_embedding.skill_name, held)] : []),
-        ...runnableOnly(exclude),
+        ...runnable,
         ...(unindexedModel
           ? [sql`(${skill_embedding.embedding} IS NULL OR ${skill_embedding.embedding_model} IS DISTINCT FROM ${unindexedModel})`]
           : []),
@@ -101,9 +102,10 @@ export async function searchSkillsForRun(input: {
   const held = await runHeldItemIds(actor, "skill");
   if (held && held.length === 0) return [];
   const limit = Math.min(Math.max(input.limit ?? 3, 1), 10);
+  const runnable = runnableOnly((await sandboxForOrg(input.orgId)) !== undefined, exclude);
 
   const model = embeddingModel();
-  if (!model) return keywordSkillSearch(input.orgId, held, query, limit, exclude);
+  if (!model) return keywordSkillSearch(input.orgId, held, query, limit, runnable);
   let vector: string;
   try {
     vector = vectorLiteral(await embedText(query));
@@ -112,7 +114,7 @@ export async function searchSkillsForRun(input: {
       "[skill-index] embedding unavailable; searching by keyword:",
       error instanceof Error ? error.message : error,
     );
-    return keywordSkillSearch(input.orgId, held, query, limit, exclude);
+    return keywordSkillSearch(input.orgId, held, query, limit, runnable);
   }
   const distance = sql<number>`${skill_embedding.embedding} <=> ${vector}::vector`;
   const [rows, unindexed] = await Promise.all([
@@ -125,12 +127,12 @@ export async function searchSkillsForRun(input: {
           eq(skill_embedding.embedding_model, model),
           sql`${skill_embedding.embedding} IS NOT NULL`,
           ...(held ? [inArray(skill_embedding.skill_name, held)] : []),
-          ...runnableOnly(exclude),
+          ...runnable,
         ),
       )
       .orderBy(distance)
       .limit(limit),
-    keywordSkillSearch(input.orgId, held, query, limit, exclude, model),
+    keywordSkillSearch(input.orgId, held, query, limit, runnable, model),
   ]);
   const semantic = rows.map((row) => ({ name: row.name, score: 1 - Number(row.distance) }));
   return interleaveResults(semantic, unindexed, (result) => result.name, limit);

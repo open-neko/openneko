@@ -23,6 +23,7 @@ import type { RunAgentBackendInput } from "./agent-core";
 import type { AxBackend } from "../agent-backends/ax";
 import type { RunBinding } from "./broker";
 import type { RunChatTurnDeps } from "./run-chat-turn";
+import { sandboxForOrg } from "./sandbox-org";
 import { copySkillOverrides } from "./workspace";
 import {
   captureSandboxSkillEdits,
@@ -235,7 +236,7 @@ async function copyDirectoryIfPresent(
 export async function stageSandboxWorkspace(
   workspace: AgentWorkspace,
   stageDir: string,
-  options: { requiredSkillNames?: readonly string[]; allowedSkills?: readonly string[] } = {},
+  options: { requiredSkillNames?: readonly string[]; allowedSkills?: readonly string[]; terminal?: boolean } = {},
 ): Promise<StagedSandboxWorkspace> {
   const stageOrgRoot = path.join(
     stageDir,
@@ -276,6 +277,7 @@ export async function stageSandboxWorkspace(
     stagedWorkspace.skillsRoot,
     options.requiredSkillNames,
     options.allowedSkills,
+    options.terminal,
   );
 
   return {
@@ -489,8 +491,10 @@ function makeSandboxCore(
         type: "status",
         message: "Preparing secure agent workspace…",
       });
+      const terminal = (await sandboxForOrg(input.orgId)) !== undefined;
       staged = await timed("stage", () => stageSandboxWorkspace(input.workspace, stageDir, {
         ...(input.allowedSkills ? { allowedSkills: input.allowedSkills } : {}),
+        terminal,
       }));
       const stagedWorkspace = staged.workspace;
       if (!isJob) {
@@ -581,7 +585,7 @@ function makeSandboxCore(
       await input.emit({ type: "status", message: "Agent is working…" });
       const entry = agentEntry();
       const env: Record<string, string> = {
-        ...passThroughEnv(),
+        ...passThroughEnv(terminal),
         HOME: stageDir,
         OPENNEKO_RUN_JOB_FILE: jobFile,
         ...(opts.brokerUrl ? { OPENNEKO_BROKER_URL: opts.brokerUrl } : {}),
@@ -696,14 +700,16 @@ function makeSandboxCore(
 }
 
 /** The runner's environment from this host: the search path, proxies and CA bundle, and serve's socket. Nothing else. */
-function passThroughEnv(): Record<string, string> {
+function passThroughEnv(terminal: boolean): Record<string, string> {
   const names = [
     "PATH", "LANG", "TZ", "NODE_ENV", "NODE_EXTRA_CA_CERTS",
     "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy", "ALL_PROXY", "NODE_USE_ENV_PROXY",
     "OPENNEKO_SERVE_SOCKET", "OPENNEKO_SANDBOX_URL", "OPENNEKO_SANDBOX_KEY", "OPENNEKO_MCP_BRIDGE", "OPENNEKO_AX_SKILL_RERANK", "OPENNEKO_AGENT_TURN_TIMEOUT_MS",
   ];
   return Object.fromEntries(
-    names.flatMap((name) => (process.env[name] ? [[name, process.env[name]!]] : [])),
+    names
+      .filter((name) => terminal || !name.startsWith("OPENNEKO_SANDBOX_"))
+      .flatMap((name) => (process.env[name] ? [[name, process.env[name]!]] : [])),
   );
 }
 

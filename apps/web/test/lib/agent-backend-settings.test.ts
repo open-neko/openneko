@@ -8,7 +8,7 @@ import {
   uniqueOrgId,
 } from "@neko/db/test-helpers";
 import { and, db, eq, llm_provider_config, pool } from "@neko/db";
-import { AGENT_BACKEND_OPTIONS, AGENT_DEFAULT_GLOBAL_CAP } from "@neko/llm";
+import { AGENT_BACKEND_OPTIONS, AGENT_DEFAULT_GLOBAL_CAP, sandboxForOrg } from "@neko/llm";
 import {
   getAgentSettings,
   getAgentSettingsPayload,
@@ -45,6 +45,7 @@ describeIfDb("agent-settings", () => {
       source: "default",
       backend: "ax",
       globalCap: AGENT_DEFAULT_GLOBAL_CAP,
+      terminal: true,
     });
   });
 
@@ -54,9 +55,11 @@ describeIfDb("agent-settings", () => {
         source: "default",
         backend: "ax",
         globalCap: AGENT_DEFAULT_GLOBAL_CAP,
+        terminal: true,
       },
       options: AGENT_BACKEND_OPTIONS,
-      defaults: { globalCap: AGENT_DEFAULT_GLOBAL_CAP },
+      terminalAvailable: false,
+      defaults: { globalCap: AGENT_DEFAULT_GLOBAL_CAP, terminal: true },
     });
     expect(AGENT_BACKEND_OPTIONS.map((o) => o.value)).toEqual(["ax"]);
   });
@@ -78,7 +81,7 @@ describeIfDb("agent-settings", () => {
         ),
       );
     expect(row.provider).toBe("ax");
-    expect(row.config).toEqual({ backend: "ax", globalCap: 50 });
+    expect(row.config).toEqual({ backend: "ax", globalCap: 50, terminal: true });
   });
 
   it("falls back to the default for an invalid cap", async () => {
@@ -91,7 +94,7 @@ describeIfDb("agent-settings", () => {
   it("accepts Ax and rejects the removed Hermes backend", async () => {
     await expect(
       saveAgentSettingsDraft(orgId, { backend: "ax", globalCap: 8 }),
-    ).resolves.toEqual({ source: "org", backend: "ax", globalCap: 8 });
+    ).resolves.toEqual({ source: "org", backend: "ax", globalCap: 8, terminal: true });
     await expect(
       saveAgentSettingsDraft(orgId, { backend: "hermes", globalCap: 8 }),
     ).rejects.toThrow("Unsupported agent backend: hermes");
@@ -102,7 +105,20 @@ describeIfDb("agent-settings", () => {
       source: "org",
       backend: "ax",
       globalCap: 9,
+      terminal: true,
     });
+  });
+
+  it("turns the terminal off for the org's runs and back on", async () => {
+    await saveAgentSettingsDraft(orgId, { terminal: false });
+    expect((await getAgentSettings(orgId)).terminal).toBe(false);
+    await saveAgentSettingsDraft(orgId, { globalCap: 4 });
+    await expect(getAgentSettings(orgId)).resolves.toMatchObject({ globalCap: 4, terminal: false });
+    await expect(saveAgentSettingsDraft(orgId, { terminal: "no" })).rejects.toThrow("terminal must be true or false");
+    const env = { ...process.env, OPENNEKO_SANDBOX_URL: "unix:///run/openneko/sandbox.sock" };
+    await expect(sandboxForOrg(orgId, env)).resolves.toBeUndefined();
+    await saveAgentSettingsDraft(orgId, { terminal: true });
+    await expect(sandboxForOrg(orgId, env)).resolves.toMatchObject({ url: env.OPENNEKO_SANDBOX_URL });
   });
 
   it("does not alter the primary provider", async () => {

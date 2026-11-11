@@ -196,6 +196,8 @@ export {
   type StagedSandboxWorkspace,
   type SandboxLauncherOptions,
 } from "./sandbox-launcher";
+export { sandboxConfig } from "./sandbox-service";
+export { orgTerminalSetting, sandboxForOrg } from "./sandbox-org";
 
 export { BOT_INSTRUCTIONS_MAX, getThreadBot, updateThreadBotInstructions, type ThreadBot } from "./bot";
 export { nameBackfilledBots } from "./bot-names";

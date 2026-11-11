@@ -370,6 +370,7 @@ export async function copySkillOverrides(
   destinationRoot: string,
   forceNames: readonly string[] = [],
   allowedSkills?: readonly string[],
+  terminal?: boolean,
 ): Promise<string[]> {
   await mkdir(destinationRoot, { recursive: true });
   const forced = new Set(forceNames);
@@ -385,7 +386,7 @@ export async function copySkillOverrides(
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (!entry.isDirectory()) continue;
     if (allowed && !allowed.has(entry.name)) continue;
-    if (!forced.has(entry.name) && !skillRunnable(entry.name)) continue;
+    if (!forced.has(entry.name) && !skillRunnable(entry.name, terminal)) continue;
     const workspaceSource = join(skillsRoot, entry.name);
     const bundled = join(BUILTIN_SKILLS_ROOT, entry.name);
     const source = forced.has(entry.name) ? bundled : workspaceSource;

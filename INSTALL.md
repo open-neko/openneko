@@ -368,6 +368,12 @@ model key, the broker token or a database password. The first sandbox
 service is `recipes/sandbox`. It needs the `openneko-agent-runs` volume, so
 it runs on the same host as the stack; see `recipes/sandbox/README.md`.
 
+With a sandbox connected, each organization has a **Terminal** setting at
+Admin, Settings, Agent. It is on by default. An admin who turns it off
+takes the terminal, the script skills and workflow script steps away from
+that organization's runs, from the next run. Without a sandbox URL the
+setting shows as unavailable.
+
 ### Semantic search (optional)
 
 OpenNeko finds memories and skills with Postgres full-text search. To find

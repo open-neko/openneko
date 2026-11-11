@@ -75,6 +75,7 @@ import {
 import { errorCodeOf, type HarnessObserver } from "@neko/telemetry";
 import { SandboxFailure } from "./sandbox-failure";
 import { spendCapFromSignal } from "../spend/run-guard";
+import { sandboxForOrg } from "./sandbox-org";
 import { skillRunnable } from "./sandbox-service";
 import { runSkillScope } from "./admin-skills";
 
@@ -475,8 +476,9 @@ async function runChatTurnTraced(
       availableSkills.map((skill) => skill.name),
       supportsSourceConfigTool,
     );
+    const terminal = (await sandboxForOrg(orgId)) !== undefined;
     const installedSkills = availableSkills.filter(
-      (skill) => (!runSkills || runSkills.includes(skill.name)) && skillRunnable(skill.name),
+      (skill) => (!runSkills || runSkills.includes(skill.name)) && skillRunnable(skill.name, terminal),
     );
     const operatorProfile = buildOperatorProfileSection(profile);
 
