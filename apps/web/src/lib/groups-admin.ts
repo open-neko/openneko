@@ -26,13 +26,19 @@ function workerAdminBase(): string {
 }
 
 export async function requestWorker(path: string, body?: unknown): Promise<{ status: number; body: unknown }> {
-  const response = await fetch(`${workerAdminBase()}${path}`, {
-    method: body === undefined ? "GET" : "POST",
-    headers: body === undefined ? undefined : { "content-type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    cache: "no-store",
-    signal: AbortSignal.timeout(120_000),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${workerAdminBase()}${path}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: body === undefined ? undefined : { "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      cache: "no-store",
+      signal: AbortSignal.timeout(120_000),
+    });
+  } catch (error) {
+    if (error instanceof TypeError) return { status: 503, body: { error: "worker is unavailable" } };
+    throw error;
+  }
   return { status: response.status, body: await response.json().catch(() => ({ error: `Worker returned HTTP ${response.status}` })) };
 }
 

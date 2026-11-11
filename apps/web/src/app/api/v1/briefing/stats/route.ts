@@ -12,6 +12,7 @@ import {
   workflow_run,
 } from "@neko/db";
 import { getOrgId } from "@/lib/db";
+import { actionRequestVisibility, watcherRunVisibility, workflowIdVisibility } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,17 +30,22 @@ function startOfTodayUtc(): Date {
 export async function GET() {
   const orgId = await getOrgId();
   const dayStart = startOfTodayUtc();
+  const [workflowVisible, actionVisible] = await Promise.all([
+    workflowIdVisibility(),
+    actionRequestVisibility(),
+  ]);
 
-  const [runs] = await db()
-    .select({ n: sql<number>`count(*)::int` })
+  const runs = await db()
+    .select({ id: workflow_run.id, workflowId: workflow_run.workflow_id })
     .from(workflow_run)
     .where(
       and(eq(workflow_run.org_id, orgId), gte(workflow_run.created_at, dayStart)),
     );
 
-  const [findings] = await db()
-    .select({ n: sql<number>`count(*)::int` })
+  const findings = await db()
+    .select({ runId: workflow_output.workflow_run_id, workflowId: workflow_run.workflow_id })
     .from(workflow_output)
+    .innerJoin(workflow_run, eq(workflow_run.id, workflow_output.workflow_run_id))
     .where(
       and(
         eq(workflow_output.org_id, orgId),
@@ -48,9 +54,16 @@ export async function GET() {
       ),
     );
 
-  const [approvals] = await db()
-    .select({ n: sql<number>`count(*)::int` })
+  const watcherVisible = await watcherRunVisibility([
+    ...runs.map((r) => r.id),
+    ...findings.map((f) => f.runId),
+  ]);
+  const visibleRuns = runs.filter((r) => workflowVisible(r.workflowId) && watcherVisible(r.id));
+
+  const approvals = await db()
+    .select({ kind: action_request.kind, scope: action_request.scope, workflowId: workflow_run.workflow_id })
     .from(action_request)
+    .leftJoin(workflow_run, eq(workflow_run.id, action_request.workflow_run_id))
     .where(
       and(
         eq(action_request.org_id, orgId),
@@ -58,17 +71,11 @@ export async function GET() {
       ),
     );
 
+  const ranToday = new Map<string, number>();
+  for (const run of runs) ranToday.set(run.workflowId, (ranToday.get(run.workflowId) ?? 0) + 1);
+
   const budgeted = await db()
-    .select({
-      workflowId: workflow_definition.id,
-      budget: workflow_definition.daily_run_budget,
-      ran: sql<number>`(
-        select count(*)::int from workflow_run r
-        where r.workflow_id = ${workflow_definition.id}
-          and r.org_id = ${orgId}
-          and r.created_at >= ${dayStart}
-      )`,
-    })
+    .select({ workflowId: workflow_definition.id, budget: workflow_definition.daily_run_budget })
     .from(workflow_definition)
     .where(
       and(
@@ -79,15 +86,15 @@ export async function GET() {
 
   let budgetPct: number | null = null;
   for (const row of budgeted) {
-    if (!row.budget || row.budget <= 0) continue;
-    const pct = Math.round((row.ran / row.budget) * 100);
+    if (!row.budget || row.budget <= 0 || !workflowVisible(row.workflowId)) continue;
+    const pct = Math.round(((ranToday.get(row.workflowId) ?? 0) / row.budget) * 100);
     if (budgetPct === null || pct > budgetPct) budgetPct = pct;
   }
 
   return NextResponse.json({
-    runsToday: runs?.n ?? 0,
-    findingsToday: findings?.n ?? 0,
-    pendingApprovals: approvals?.n ?? 0,
+    runsToday: visibleRuns.length,
+    findingsToday: findings.filter((f) => workflowVisible(f.workflowId) && watcherVisible(f.runId)).length,
+    pendingApprovals: approvals.filter((a) => actionVisible(a)).length,
     budgetPct,
   });
 }

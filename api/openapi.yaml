@@ -52,6 +52,26 @@ components:
       type: apiKey
       in: header
       name: X-Webhook-Token
+  schemas:
+    Error:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          oneOf:
+          - type: string
+          - type: object
+            required:
+            - code
+            - message
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+        code:
+          type: string
 paths:
   /action-requests:
     get:
@@ -89,9 +109,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - actionRequests
+                additionalProperties: false
                 properties:
                   actionRequests:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /action-requests/{actionRequestId}:
     get:
       operationId: getActionRequestsByActionRequestId
@@ -115,6 +144,15 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - actionRequest
+                - executions
+                - workflow
+                - policy
+                - upstreamOutput
+                - approverKind
+                - canRetry
+                additionalProperties: false
                 properties:
                   actionRequest:
                     type: object
@@ -123,15 +161,31 @@ paths:
                   workflow:
                     type: object
                   policy:
-                    type: object
+                    type:
+                    - object
+                    - 'null'
                   upstreamOutput:
-                    type: object
+                    type:
+                    - object
+                    - 'null'
                   approverKind:
-                    type: string
+                    type:
+                    - string
+                    - 'null'
                   canRetry:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The action request is not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     patch:
       operationId: patchActionRequestsByActionRequestId
       tags:
@@ -169,15 +223,36 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - actionRequest
+                additionalProperties: false
                 properties:
                   actionRequest:
                     type: object
         '400':
           description: The decision is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The action request is not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '409':
           description: The status change is not allowed or the retry is not safe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /admin/change-password:
     get:
       operationId: getAdminChangePassword
@@ -195,9 +270,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - changed
+                additionalProperties: false
                 properties:
                   changed:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -235,6 +319,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -249,6 +334,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -293,9 +384,16 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   channels:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -346,9 +444,16 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -384,9 +489,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - remote
+                additionalProperties: false
                 properties:
                   remote:
                     type: 'null'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -412,9 +526,20 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - remote
+                additionalProperties: false
                 properties:
                   remote:
-                    type: object
+                    type:
+                    - object
+                    - 'null'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -469,6 +594,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   remote:
                     type: object
@@ -481,6 +607,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -507,6 +639,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   remote:
                     type: object
@@ -519,6 +652,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -558,6 +697,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   items:
                     type: array
@@ -574,6 +714,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -599,6 +745,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   result:
                     type: object
@@ -614,7 +761,15 @@ paths:
                   error:
                     type: string
                   remote:
-                    type: object
+                    type:
+                    - object
+                    - 'null'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -648,6 +803,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   updates:
                     type: object
@@ -664,6 +820,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -702,6 +864,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   sha:
                     type: string
@@ -718,6 +881,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -751,11 +920,21 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - rules
+                - enabled
+                additionalProperties: false
                 properties:
                   rules:
                     type: array
                   enabled:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -807,6 +986,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   rule:
                     type: object
@@ -821,6 +1001,12 @@ paths:
                     type: string
                   code:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -880,9 +1066,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - enabled
+                additionalProperties: false
                 properties:
                   enabled:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -919,6 +1114,8 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
+                properties: {}
         '400':
           description: enabled is not a boolean
           content:
@@ -928,6 +1125,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -937,6 +1140,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '503':
+          description: The worker is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /admin/data-access/tables:
     get:
       operationId: getAdminDataAccessTables
@@ -961,6 +1170,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   tables:
                     type: array
@@ -973,6 +1183,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -1005,9 +1221,16 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -1043,6 +1266,9 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - devices
+                additionalProperties: false
                 properties:
                   devices:
                     type: array
@@ -1077,6 +1303,12 @@ paths:
                           - active
                           - idle
                           - revoked
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin
           content:
@@ -1109,9 +1341,16 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin
           content:
@@ -1147,6 +1386,14 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
+                properties: {}
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -1181,9 +1428,16 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   stats:
                     type: object
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -1219,9 +1473,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - groups
+                additionalProperties: false
                 properties:
                   groups:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -1260,6 +1523,9 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - group
+                additionalProperties: false
                 properties:
                   group:
                     type: object
@@ -1274,6 +1540,12 @@ paths:
                     type: string
                   code:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -1339,6 +1611,9 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -1353,6 +1628,12 @@ paths:
                     type: string
                   code:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -1417,6 +1698,13 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - group
+                - members
+                - grants
+                - rules
+                - idpRules
+                additionalProperties: false
                 properties:
                   group:
                     type: object
@@ -1428,6 +1716,12 @@ paths:
                     type: array
                   idpRules:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -1480,6 +1774,9 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - group
+                additionalProperties: false
                 properties:
                   group:
                     type: object
@@ -1494,6 +1791,12 @@ paths:
                     type: string
                   code:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -1570,6 +1873,12 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - stillMember
+                additionalProperties: false
+                properties:
+                  stillMember:
+                    type: boolean
         '400':
           description: userId is missing or the input is not valid
           content:
@@ -1581,6 +1890,12 @@ paths:
                     type: string
                   code:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -1656,6 +1971,9 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -1670,6 +1988,12 @@ paths:
                     type: string
                   code:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -1729,6 +2053,11 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - rules
+                - idpGroups
+                - groups
+                additionalProperties: false
                 properties:
                   rules:
                     type: array
@@ -1736,6 +2065,12 @@ paths:
                     type: array
                   groups:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -1775,6 +2110,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   rule:
                     type: object
@@ -1789,6 +2125,12 @@ paths:
                     type: string
                   code:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -1854,6 +2196,9 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -1868,6 +2213,12 @@ paths:
                     type: string
                   code:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -1944,6 +2295,12 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - removed
+                additionalProperties: false
+                properties:
+                  removed:
+                    type: boolean
         '400':
           description: A required field is missing or the input is not valid
           content:
@@ -1955,6 +2312,12 @@ paths:
                     type: string
                   code:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -2026,6 +2389,9 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - holders
+                additionalProperties: false
                 properties:
                   holders:
                     type: array
@@ -2038,6 +2404,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -2083,6 +2455,12 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - created
+                additionalProperties: false
+                properties:
+                  created:
+                    type: boolean
         '400':
           description: A required field is missing or the input is not valid
           content:
@@ -2094,6 +2472,12 @@ paths:
                     type: string
                   code:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -2160,6 +2544,9 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - types
+                additionalProperties: false
                 properties:
                   types:
                     type: array
@@ -2174,6 +2561,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -2209,6 +2602,14 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
+                properties: {}
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -2244,6 +2645,14 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
+                properties: {}
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -2284,6 +2693,8 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
+                properties: {}
         '400':
           description: The body is not a valid JSON object
           content:
@@ -2293,6 +2704,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -2344,6 +2761,8 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
+                properties: {}
         '400':
           description: The body could not be read
           content:
@@ -2353,6 +2772,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -2423,6 +2848,14 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
+                properties: {}
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -2487,6 +2920,8 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
+                properties: {}
         '400':
           description: The body is not a valid JSON object
           content:
@@ -2496,6 +2931,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -2549,11 +2990,23 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - saved
+                - environment
+                additionalProperties: false
                 properties:
                   saved:
-                    type: string
+                    type:
+                    - string
+                    - 'null'
                   environment:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -2589,9 +3042,15 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - saved
+                - environment
+                additionalProperties: false
                 properties:
                   saved:
-                    type: string
+                    type:
+                    - string
+                    - 'null'
                   environment:
                     type: string
         '400':
@@ -2603,6 +3062,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -2629,9 +3094,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - webhooks
+                additionalProperties: false
                 properties:
                   webhooks:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -2680,6 +3154,9 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - webhook
+                additionalProperties: false
                 properties:
                   webhook:
                     type: object
@@ -2692,6 +3169,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -2724,9 +3207,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -2781,6 +3273,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -2793,6 +3286,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -2849,6 +3348,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -2861,6 +3361,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -2896,17 +3402,32 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - provider
+                - pending
+                - users
+                - selfEmail
+                - selfNeedsEmail
+                additionalProperties: false
                 properties:
                   provider:
                     type: object
                   pending:
-                    type: object
+                    type:
+                    - object
+                    - 'null'
                   users:
                     type: object
                   selfEmail:
                     type: string
                   selfNeedsEmail:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -2944,6 +3465,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -2956,6 +3478,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -2991,11 +3519,21 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - limits
+                - metricRefresh
+                - ceilings
+                - org
+                - workflows
+                - alerts
+                additionalProperties: false
                 properties:
                   limits:
                     type: object
                   metricRefresh:
-                    type: object
+                    type:
+                    - object
+                    - string
                   ceilings:
                     type: object
                   org:
@@ -3004,6 +3542,12 @@ paths:
                     type: array
                   alerts:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -3048,11 +3592,21 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - limits
+                - metricRefresh
+                - ceilings
+                - org
+                - workflows
+                - alerts
+                additionalProperties: false
                 properties:
                   limits:
                     type: object
                   metricRefresh:
-                    type: object
+                    type:
+                    - object
+                    - string
                   ceilings:
                     type: object
                   org:
@@ -3070,6 +3624,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -3102,6 +3662,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   limits:
                     type: object
@@ -3115,6 +3676,12 @@ paths:
                     type: array
                   alerts:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -3156,6 +3723,27 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - limits
+                - metricRefresh
+                - ceilings
+                - org
+                - workflows
+                - alerts
+                additionalProperties: false
+                properties:
+                  limits:
+                    type: object
+                  metricRefresh:
+                    type: string
+                  ceilings:
+                    type: object
+                  org:
+                    type: object
+                  workflows:
+                    type: array
+                  alerts:
+                    type: array
         '400':
           description: The override is not valid
           content:
@@ -3165,6 +3753,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -3218,6 +3812,27 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - limits
+                - metricRefresh
+                - ceilings
+                - org
+                - workflows
+                - alerts
+                additionalProperties: false
+                properties:
+                  limits:
+                    type: object
+                  metricRefresh:
+                    type: string
+                  ceilings:
+                    type: object
+                  org:
+                    type: object
+                  workflows:
+                    type: array
+                  alerts:
+                    type: array
         '400':
           description: The override is not valid
           content:
@@ -3227,6 +3842,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -3284,6 +3905,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   user:
                     type: object
@@ -3293,6 +3915,9 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - user
+                additionalProperties: false
                 properties:
                   user:
                     type: object
@@ -3307,6 +3932,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -3360,6 +3991,9 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - user
+                additionalProperties: false
                 properties:
                   user:
                     type: object
@@ -3372,6 +4006,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -3422,6 +4062,11 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - administrator
+                - items
+                - groupSlugs
+                additionalProperties: false
                 properties:
                   administrator:
                     type: boolean
@@ -3429,6 +4074,12 @@ paths:
                     type: array
                   groupSlugs:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -3455,9 +4106,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - limits
+                additionalProperties: false
                 properties:
                   limits:
                     type: object
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -3499,6 +4159,9 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - limits
+                additionalProperties: false
                 properties:
                   limits:
                     type: object
@@ -3511,6 +4174,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
           content:
@@ -3549,14 +4218,33 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  actions:
-                    type: array
-                  count:
-                    type: integer
-                  filter:
-                    type: string
+                oneOf:
+                - type: object
+                  required:
+                  - actions
+                  - count
+                  - filter
+                  additionalProperties: false
+                  properties:
+                    actions:
+                      type: array
+                    count:
+                      type: integer
+                    filter:
+                      type: string
+                - type: object
+                  required:
+                  - count
+                  additionalProperties: false
+                  properties:
+                    count:
+                      type: integer
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /auth/begin:
     get:
       operationId: getAuthBegin
@@ -3667,6 +4355,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -3735,6 +4424,14 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - deviceCode
+                - userCode
+                - verificationUri
+                - verificationUriComplete
+                - expiresIn
+                - interval
+                additionalProperties: false
                 properties:
                   deviceCode:
                     type: string
@@ -3765,7 +4462,8 @@ paths:
       summary: Get the device token after approval
       x-access: public
       security: []
-      description: Poll no faster than the interval. The token is returned once. Error names follow RFC 8628.
+      description: Poll no faster than the interval. The token is returned once. Error names follow RFC
+        8628.
       requestBody:
         required: true
         content:
@@ -3784,6 +4482,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   token:
                     type: string
@@ -3815,6 +4514,9 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -3833,11 +4535,21 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - user
+                - role
+                - authEnabled
+                - signedIn
+                additionalProperties: false
                 properties:
                   user:
-                    type: object
+                    type:
+                    - object
+                    - 'null'
                   role:
-                    type: string
+                    type:
+                    - string
+                    - 'null'
                   authEnabled:
                     type: boolean
                   signedIn:
@@ -3857,11 +4569,17 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - provider
+                - pending
+                additionalProperties: false
                 properties:
                   provider:
                     type: object
                   pending:
-                    type: object
+                    type:
+                    - object
+                    - 'null'
   /bots:
     get:
       operationId: getBots
@@ -3879,11 +4597,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - bots
+                additionalProperties: false
                 properties:
                   bots:
                     type: array
         '401':
           description: No signed-in user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     post:
       operationId: postBots
       tags:
@@ -3920,13 +4645,24 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - bot
+                additionalProperties: false
                 properties:
                   bot:
                     type: object
         '400':
           description: Name, coat or pattern is missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           description: No signed-in user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /bots/thread/{threadId}:
     get:
       operationId: getBotsThreadByThreadId
@@ -3950,13 +4686,23 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - bot
+                - starters
+                additionalProperties: false
                 properties:
                   bot:
-                    type: object
+                    type:
+                    - object
+                    - 'null'
                   starters:
                     type: array
         '401':
           description: No signed-in user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /bots/thread/{threadId}/seen:
     post:
       operationId: postBotsThreadByThreadIdSeen
@@ -3980,13 +4726,22 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
         '401':
           description: No signed-in user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /bots/{botId}:
     delete:
       operationId: deleteBotsByBotId
@@ -4010,15 +4765,30 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
         '401':
           description: No signed-in user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '409':
           description: The bot has a run in progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     get:
       operationId: getBotsByBotId
       tags:
@@ -4041,6 +4811,10 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - bot
+                - routines
+                additionalProperties: false
                 properties:
                   bot:
                     type: object
@@ -4048,8 +4822,16 @@ paths:
                     type: array
         '401':
           description: No signed-in user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     patch:
       operationId: patchBotsByBotId
       tags:
@@ -4089,15 +4871,30 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - bot
+                additionalProperties: false
                 properties:
                   bot:
                     type: object
         '400':
           description: Invalid field or nothing to change
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           description: No signed-in user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /bots/{botId}/routines/{workflowId}:
     get:
       operationId: getBotsByBotIdRoutinesByWorkflowId
@@ -4132,6 +4929,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   runs:
                     type: array
@@ -4139,8 +4937,16 @@ paths:
                     type: boolean
         '401':
           description: No signed-in user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Routine or cursor run not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     patch:
       operationId: patchBotsByBotIdRoutinesByWorkflowId
       tags:
@@ -4179,15 +4985,28 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
         '400':
           description: enabled is not a boolean
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           description: No signed-in user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /briefing:
     get:
       operationId: getBriefing
@@ -4210,8 +5029,18 @@ paths:
           description: An array of A2UI messages (createSurface, updateDataModel, updateComponents)
           content:
             application/a2ui+json: {}
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The dashboard is not found or not held
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     post:
       operationId: postBriefing
       tags:
@@ -4243,6 +5072,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   jobId:
                     type: string
@@ -4256,8 +5086,22 @@ paths:
                     type: object
         '400':
           description: The message is empty
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           description: Classification failed or the job did not enqueue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /briefing/by-metric:
     get:
       operationId: getBriefingByMetric
@@ -4282,6 +5126,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   metricId:
                     type: string
@@ -4297,8 +5142,22 @@ paths:
                     type: object
         '400':
           description: metricId is missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The metric is not found or not held
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /briefing/cards:
     patch:
       operationId: patchBriefingCards
@@ -4327,13 +5186,28 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
         '400':
           description: cardId is missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The card is not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     post:
       operationId: postBriefingCards
       tags:
@@ -4361,6 +5235,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -4368,8 +5243,22 @@ paths:
                     type: string
         '400':
           description: observationId is missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The observation is not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /briefing/findings:
     get:
       operationId: getBriefingFindings
@@ -4387,6 +5276,15 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - summary
+                - awaitingYou
+                - pinned
+                - worthKnowing
+                - elevated
+                - mutedScopes
+                - quiet
+                additionalProperties: false
                 properties:
                   summary:
                     type: object
@@ -4402,6 +5300,12 @@ paths:
                     type: array
                   quiet:
                     type: object
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /briefing/mute:
     delete:
       operationId: deleteBriefingMute
@@ -4426,11 +5330,24 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
         '400':
           description: scope is missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     get:
       operationId: getBriefingMute
       tags:
@@ -4447,9 +5364,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - mutes
+                additionalProperties: false
                 properties:
                   mutes:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     post:
       operationId: postBriefingMute
       tags:
@@ -4481,6 +5407,11 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                - scope
+                - mutedUntil
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -4490,6 +5421,16 @@ paths:
                     type: string
         '400':
           description: scope is missing or duration is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /briefing/pin:
     patch:
       operationId: patchBriefingPin
@@ -4522,13 +5463,30 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
         '400':
           description: metricId or active is missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The metric is not found or not held
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /briefing/pins:
     get:
       operationId: getBriefingPins
@@ -4546,9 +5504,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - pins
+                additionalProperties: false
                 properties:
                   pins:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     post:
       operationId: postBriefingPins
       tags:
@@ -4577,6 +5544,10 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - pin
+                - created
+                additionalProperties: false
                 properties:
                   pin:
                     type: object
@@ -4584,6 +5555,16 @@ paths:
                     type: boolean
         '400':
           description: outputId is missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /briefing/pins/{pinId}:
     delete:
       operationId: deleteBriefingPinsByPinId
@@ -4607,11 +5588,24 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The pin is not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /briefing/recent-actions:
     get:
       operationId: getBriefingRecentActions
@@ -4629,11 +5623,21 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - receipts
+                - windowHours
+                additionalProperties: false
                 properties:
                   receipts:
                     type: array
                   windowHours:
                     type: integer
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /briefing/retry:
     post:
       operationId: postBriefingRetry
@@ -4662,6 +5666,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   jobId:
                     type: string
@@ -4669,10 +5674,28 @@ paths:
                     type: boolean
         '400':
           description: The body is not valid JSON or metricId is missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The metric is not found or not held
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           description: The retry job did not enqueue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /briefing/stats:
     get:
       operationId: getBriefingStats
@@ -4690,6 +5713,12 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - runsToday
+                - findingsToday
+                - pendingApprovals
+                - budgetPct
+                additionalProperties: false
                 properties:
                   runsToday:
                     type: integer
@@ -4699,6 +5728,12 @@ paths:
                     type: integer
                   budgetPct:
                     type: integer
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /briefing/status:
     get:
       operationId: getBriefingStatus
@@ -4723,6 +5758,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   status:
                     type: string
@@ -4740,8 +5776,22 @@ paths:
                     type: object
         '400':
           description: jobId is missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The job is not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /briefing/value:
     get:
       operationId: getBriefingValue
@@ -4759,6 +5809,14 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - windowHours
+                - windowMinutes
+                - totalMinutes
+                - windowTasks
+                - dailyMinutes
+                - sinceISO
+                additionalProperties: false
                 properties:
                   windowHours:
                     type: integer
@@ -4772,6 +5830,12 @@ paths:
                     type: array
                   sinceISO:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /hooks/{workflowId}:
     post:
       operationId: postHooksByWorkflowId
@@ -4822,6 +5886,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -4943,6 +6008,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -5037,11 +6103,21 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - state
+                - jobId
+                additionalProperties: false
                 properties:
                   state:
                     type: string
                   jobId:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /integrations/connect/{plugin}/callback:
     get:
       operationId: getIntegrationsConnectByPluginCallback
@@ -5177,6 +6253,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   removed:
                     type: boolean
@@ -5233,6 +6310,10 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - workspace
+                - connectors
+                additionalProperties: false
                 properties:
                   workspace:
                     type: array
@@ -5295,6 +6376,12 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - total
+                - page
+                - pageSize
+                - documents
+                additionalProperties: false
                 properties:
                   total:
                     type: integer
@@ -5306,8 +6393,22 @@ paths:
                     type: array
         '400':
           description: Invalid filters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '503':
           description: The Library could not be loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /library/documents/{id}:
     delete:
       operationId: deleteLibraryDocumentsById
@@ -5331,11 +6432,22 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     get:
       operationId: getLibraryDocumentsById
       tags:
@@ -5358,11 +6470,22 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   document:
                     type: object
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /library/upload:
     post:
       operationId: postLibraryUpload
@@ -5393,6 +6516,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -5404,16 +6528,40 @@ paths:
                     type: boolean
         '400':
           description: Invalid multipart body, invalid batch, or two files with the same clean name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           description: No signed-in user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '413':
           description: The request or the batch is too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '415':
           description: Unsupported file type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '502':
           description: File storage failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '503':
           description: File storage is off
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /my/pack-accounts/{packId}/{connectionKey}:
     delete:
       operationId: deleteMyPackAccountsByPackIdByConnectionKey
@@ -5442,13 +6590,28 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   disconnected:
                     type: boolean
         '400':
           description: Invalid pack connection or the operation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: Invalid request origin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     post:
       operationId: postMyPackAccountsByPackIdByConnectionKey
       tags:
@@ -5482,15 +6645,34 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   authorizationUrl:
                     type: string
         '400':
           description: Invalid pack connection or the operation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: Invalid request origin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Pack not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /observations:
     get:
       operationId: getObservations
@@ -5533,9 +6715,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - observations
+                additionalProperties: false
                 properties:
                   observations:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /onboarding/status:
     get:
       operationId: getOnboardingStatus
@@ -5553,6 +6744,9 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - state
+                additionalProperties: false
                 properties:
                   state:
                     type: string
@@ -5570,6 +6764,18 @@ paths:
                     type: object
                   message:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an administrator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '503':
           description: The database is unavailable
           content:
@@ -5617,6 +6823,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -5631,6 +6838,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -5698,6 +6911,8 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
+                properties: {}
         '400':
           description: Invalid pack ID or connection key
           content:
@@ -5716,6 +6931,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '502':
+          description: The worker is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     get:
       operationId: getPackAccountsByPackIdByConnectionKey
       tags:
@@ -5742,6 +6963,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   callbackUrl:
                     type: string
@@ -5763,6 +6985,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '502':
+          description: The worker is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         default:
           description: Status and body passed through from the worker
           content:
@@ -5808,6 +7036,8 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
+                properties: {}
         '400':
           description: Invalid pack connection, or clientId is missing
           content:
@@ -5826,6 +7056,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '502':
+          description: The worker is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /pack-accounts/{packId}/{connectionKey}/callback:
     get:
       operationId: getPackAccountsByPackIdByConnectionKeyCallback
@@ -5879,6 +7115,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '502':
+          description: The worker is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         default:
           description: Worker error status and body passed through
           content:
@@ -5928,6 +7170,8 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
+                properties: {}
         '400':
           description: Invalid pack connection, or clientId is missing
           content:
@@ -5946,6 +7190,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '502':
+          description: The worker is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /policies:
     get:
       operationId: getPolicies
@@ -5963,9 +7213,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - policies
+                additionalProperties: false
                 properties:
                   policies:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -5998,9 +7257,16 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   policy:
                     type: object
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -6054,6 +7320,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   policy:
                     type: object
@@ -6066,6 +7333,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -6101,6 +7374,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   businessProfile:
                     type: string
@@ -6111,8 +7385,18 @@ paths:
                   industryInsightsStatus:
                     type: string
                     description: ready, disabled, processing or pending
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: No profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     patch:
       operationId: patchProfile
       tags:
@@ -6140,6 +7424,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   businessProfile:
                     type: string
@@ -6147,10 +7432,28 @@ paths:
                     type: string
         '400':
           description: Invalid body or no fields to update
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: No profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '413':
           description: A field is over 200,000 characters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /settings/agent:
     get:
       operationId: getSettingsAgent
@@ -6168,6 +7471,12 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - agent
+                - options
+                - terminalAvailable
+                - defaults
+                additionalProperties: false
                 properties:
                   agent:
                     type: object
@@ -6177,6 +7486,12 @@ paths:
                     type: boolean
                   defaults:
                     type: object
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -6215,6 +7530,12 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - source
+                - backend
+                - globalCap
+                - terminal
+                additionalProperties: false
                 properties:
                   source:
                     type: string
@@ -6233,6 +7554,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -6259,9 +7586,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - identities
+                additionalProperties: false
                 properties:
                   identities:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin
           content:
@@ -6309,6 +7645,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   identity:
                     type: object
@@ -6321,6 +7658,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin
           content:
@@ -6356,6 +7699,13 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - source
+                - kind
+                - graphqlUrl
+                - mcpUrl
+                - label
+                additionalProperties: false
                 properties:
                   source:
                     type: string
@@ -6367,6 +7717,12 @@ paths:
                     type: string
                   label:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -6407,6 +7763,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   source:
                     type: string
@@ -6427,6 +7784,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -6466,6 +7829,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   graphqlOk:
                     type: boolean
@@ -6480,6 +7844,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -6506,9 +7876,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - sources
+                additionalProperties: false
                 properties:
                   sources:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin
           content:
@@ -6564,6 +7943,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -6580,6 +7960,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin
           content:
@@ -6621,6 +8007,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   managedLocalFiles:
                     type: object
@@ -6633,6 +8020,18 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an administrator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Not an admin, or source config is disabled
           content:
@@ -6677,11 +8076,21 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - settings
+                - source
+                additionalProperties: false
                 properties:
                   settings:
                     type: object
                   source:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -6716,6 +8125,10 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - settings
+                - source
+                additionalProperties: false
                 properties:
                   settings:
                     type: object
@@ -6730,6 +8143,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -6756,11 +8175,21 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - policy
+                - source
+                additionalProperties: false
                 properties:
                   policy:
                     type: object
                   source:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -6795,6 +8224,10 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - policy
+                - source
+                additionalProperties: false
                 properties:
                   policy:
                     type: object
@@ -6809,6 +8242,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -6835,9 +8274,24 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - assets
+                additionalProperties: false
                 properties:
                   assets:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an administrator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Not an admin, or source config is disabled
           content:
@@ -6878,6 +8332,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   asset:
                     type: object
@@ -6890,6 +8345,18 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an administrator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Not an admin, or source config is disabled
           content:
@@ -6916,11 +8383,23 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - profile
+                - promptPreview
+                additionalProperties: false
                 properties:
                   profile:
-                    type: object
+                    type:
+                    - object
+                    - 'null'
                   promptPreview:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     put:
       operationId: putSettingsPersona
       tags:
@@ -6957,11 +8436,21 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - profile
+                - promptPreview
+                additionalProperties: false
                 properties:
                   profile:
                     type: object
                   promptPreview:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller may not write this persona
           content:
@@ -6988,6 +8477,13 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - primary
+                - research
+                - options
+                - defaults
+                - fields
+                additionalProperties: false
                 properties:
                   primary:
                     type: object
@@ -6999,6 +8495,12 @@ paths:
                     type: object
                   fields:
                     type: object
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -7049,6 +8551,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   scope:
                     type: string
@@ -7075,6 +8578,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -7121,6 +8630,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -7139,6 +8649,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -7174,11 +8690,21 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - enabled
+                - source
+                additionalProperties: false
                 properties:
                   enabled:
                     type: boolean
                   source:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -7215,6 +8741,10 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - enabled
+                - source
+                additionalProperties: false
                 properties:
                   enabled:
                     type: boolean
@@ -7229,6 +8759,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -7274,9 +8810,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - check
+                additionalProperties: false
                 properties:
                   check:
                     type: object
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin
           content:
@@ -7310,6 +8855,9 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -7322,6 +8870,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin
           content:
@@ -7347,9 +8901,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - secrets
+                additionalProperties: false
                 properties:
                   secrets:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin
           content:
@@ -7392,6 +8955,10 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                - name
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -7406,6 +8973,12 @@ paths:
                 properties:
                   error:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin
           content:
@@ -7430,6 +9003,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   status:
                     type: string
@@ -7489,6 +9063,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -7541,6 +9116,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   environmentUrl:
                     type: string
@@ -7588,6 +9164,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   environments:
                     type: array
@@ -7624,6 +9201,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   portalLink:
                     type: string
@@ -7679,6 +9257,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -7731,6 +9310,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   organizations:
                     type: array
@@ -7776,6 +9356,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   status:
                     type: string
@@ -7840,11 +9421,24 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     patch:
       operationId: patchSubscriptionsBySubscriptionId
       tags:
@@ -7876,11 +9470,24 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /version:
     get:
       operationId: getVersion
@@ -7896,6 +9503,9 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - version
+                additionalProperties: false
                 properties:
                   version:
                     type: string
@@ -7916,11 +9526,21 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - skills
+                - memory
+                additionalProperties: false
                 properties:
                   skills:
                     type: array
                   memory:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/audit/export:
     get:
       operationId: getWorkAuditExport
@@ -7944,8 +9564,18 @@ paths:
             headers give the check result
           content:
             application/x-ndjson: {}
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/config/history:
     get:
       operationId: getWorkConfigHistory
@@ -7976,9 +9606,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - history
+                additionalProperties: false
                 properties:
                   history:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/config/restore:
     post:
       operationId: postWorkConfigRestore
@@ -8012,6 +9651,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -8019,10 +9659,28 @@ paths:
                     type: string
         '400':
           description: Invalid sha or path
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Unknown path or already at that version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/files/{path}:
     get:
       operationId: getWorkFilesByPath
@@ -8045,8 +9703,18 @@ paths:
           description: The file as an attachment; content type follows the file
           content:
             application/octet-stream: {}
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Not found or not allowed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/memories:
     get:
       operationId: getWorkMemories
@@ -8071,9 +9739,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - memories
+                additionalProperties: false
                 properties:
                   memories:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/memories/decide:
     post:
       operationId: postWorkMemoriesDecide
@@ -8121,6 +9798,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -8130,8 +9808,22 @@ paths:
                     type: object
         '400':
           description: Missing id, invalid action, or the decision failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/memories/pending:
     get:
       operationId: getWorkMemoriesPending
@@ -8162,11 +9854,24 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - pending
+                additionalProperties: false
                 properties:
                   pending:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Thread or run not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/memories/pull:
     get:
       operationId: getWorkMemoriesPull
@@ -8184,9 +9889,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - updates
+                additionalProperties: false
                 properties:
                   updates:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     post:
       operationId: postWorkMemoriesPull
       tags:
@@ -8213,13 +9927,27 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                - applied
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
                   applied:
                     type: integer
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: Members only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/memories/{id}:
     delete:
       operationId: deleteWorkMemoriesById
@@ -8252,13 +9980,24 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
                   suppressed:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Not found or already archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     get:
       operationId: getWorkMemoriesById
       tags:
@@ -8281,11 +10020,22 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   memory:
                     type: object
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     patch:
       operationId: patchWorkMemoriesById
       tags:
@@ -8321,15 +10071,34 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   memory:
                     type: object
         '400':
           description: Neither text nor suppress given
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: Members only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/memories/{id}/promote:
     post:
       operationId: postWorkMemoriesByIdPromote
@@ -8353,13 +10122,28 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   memory:
                     type: object
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Not found or the promote failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/runs/{runId}/cancel:
     post:
       operationId: postWorkRunsByRunIdCancel
@@ -8383,13 +10167,24 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
                   recovered:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Run not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/runs/{runId}/events:
     get:
       operationId: getWorkRunsByRunIdEvents
@@ -8413,13 +10208,27 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - runId
+                - events
+                additionalProperties: false
                 properties:
                   runId:
                     type: string
                   events:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Run not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/skills:
     get:
       operationId: getWorkSkills
@@ -8437,11 +10246,21 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - skills
+                - canImport
+                additionalProperties: false
                 properties:
                   skills:
                     type: array
                   canImport:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     post:
       operationId: postWorkSkills
       tags:
@@ -8470,17 +10289,42 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - name
+                additionalProperties: false
                 properties:
                   name:
                     type: string
         '400':
           description: No .skill or ZIP file, or the archive is invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '409':
           description: A skill with this name exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '413':
           description: The archive is over 16 MB or empty
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/skills/{name}:
     delete:
       operationId: deleteWorkSkillsByName
@@ -8504,11 +10348,24 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Skill not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     get:
       operationId: getWorkSkillsByName
       tags:
@@ -8531,11 +10388,24 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - skill
+                additionalProperties: false
                 properties:
                   skill:
                     type: object
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Skill not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/skills/{name}/file:
     get:
       operationId: getWorkSkillsByNameFile
@@ -8565,13 +10435,30 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - file
+                additionalProperties: false
                 properties:
                   file:
                     type: object
         '400':
           description: Missing file path
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: File not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     put:
       operationId: putWorkSkillsByNameFile
       tags:
@@ -8611,6 +10498,10 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                - bytes
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -8618,12 +10509,34 @@ paths:
                     type: integer
         '400':
           description: Missing or invalid path, or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: File not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '413':
           description: File is too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '415':
           description: File is not text
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/threads:
     get:
       operationId: getWorkThreads
@@ -8641,9 +10554,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - threads
+                additionalProperties: false
                 properties:
                   threads:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     post:
       operationId: postWorkThreads
       tags:
@@ -8678,9 +10600,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - thread
+                additionalProperties: false
                 properties:
                   thread:
                     type: object
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/threads/{threadId}:
     delete:
       operationId: deleteWorkThreadsByThreadId
@@ -8704,11 +10635,24 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Thread not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     get:
       operationId: getWorkThreadsByThreadId
       tags:
@@ -8743,6 +10687,12 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - thread
+                - runs
+                - messages
+                - eventsByRun
+                additionalProperties: false
                 properties:
                   thread:
                     type: object
@@ -8754,8 +10704,18 @@ paths:
                     type: object
                   hasOlder:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Thread not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/threads/{threadId}/runs:
     post:
       operationId: postWorkThreadsByThreadIdRuns
@@ -8790,6 +10750,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   runId:
                     type: string
@@ -8801,8 +10762,22 @@ paths:
                     type: string
         '400':
           description: message is missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Thread not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '429':
           description: Spend budget exceeded; Retry-After header set
           content:
@@ -8869,6 +10844,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
@@ -8880,12 +10856,34 @@ paths:
                     type: string
         '400':
           description: Missing actionRequestId or invalid decision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The action request belongs to another run
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Thread or action request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '409':
           description: The action request is not pending approval
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/threads/{threadId}/runs/{runId}/events:
     get:
       operationId: getWorkThreadsByThreadIdRunsByRunIdEvents
@@ -8924,6 +10922,12 @@ paths:
           description: Server-sent events; frames carry event IDs
           content:
             text/event-stream: {}
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Thread or run not found
           content:
@@ -8975,6 +10979,16 @@ paths:
           description: Recorded
         '400':
           description: Invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Thread or run not found
   /work/threads/{threadId}/truncate:
@@ -9011,13 +11025,28 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
         '400':
           description: Missing messageId or not a user message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Thread, message or run not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /work/upload:
     post:
       operationId: postWorkUpload
@@ -9053,17 +11082,40 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   file:
                     type: object
         '400':
           description: Invalid body or missing threadId or file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Thread not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '413':
           description: File is too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '415':
           description: Image or unsupported file type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /workflow-runs:
     get:
       operationId: getWorkflowRuns
@@ -9094,11 +11146,21 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - runs
+                - status
+                additionalProperties: false
                 properties:
                   runs:
                     type: array
                   status:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /workflow-runs/{workflowRunId}:
     get:
       operationId: getWorkflowRunsByWorkflowRunId
@@ -9128,6 +11190,14 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - workflow
+                - run
+                - outputs
+                - actions
+                - events
+                - lineage
+                additionalProperties: false
                 properties:
                   workflow:
                     type: object
@@ -9141,8 +11211,18 @@ paths:
                     type: array
                   lineage:
                     type: object
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The run is not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /workflow-runs/{workflowRunId}/artifact:
     get:
       operationId: getWorkflowRunsByWorkflowRunIdArtifact
@@ -9164,12 +11244,30 @@ paths:
           description: The artifact file as an attachment; the content type comes from the artifact
           content:
             application/octet-stream: {}
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The run is not found, not visible, or the artifact is not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '410':
           description: The result or the artifact has expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           description: The download failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /workflows:
     get:
       operationId: getWorkflows
@@ -9187,9 +11285,18 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - workflows
+                additionalProperties: false
                 properties:
                   workflows:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /workflows/{workflowId}:
     delete:
       operationId: deleteWorkflowsByWorkflowId
@@ -9213,11 +11320,24 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The workflow is not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     get:
       operationId: getWorkflowsByWorkflowId
       tags:
@@ -9240,6 +11360,13 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - workflow
+                - subscriptions
+                - recentRuns
+                - recentActions
+                - activitySparkline
+                additionalProperties: false
                 properties:
                   workflow:
                     type: object
@@ -9251,8 +11378,18 @@ paths:
                     type: array
                   activitySparkline:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The workflow is not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     patch:
       operationId: patchWorkflowsByWorkflowId
       tags:
@@ -9289,13 +11426,30 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - ok
+                additionalProperties: false
                 properties:
                   ok:
                     type: boolean
         '400':
           description: The body has no recognized fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The workflow is not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /workflows/{workflowId}/adopt:
     post:
       operationId: postWorkflowsByWorkflowIdAdopt
@@ -9319,13 +11473,28 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   workflow:
                     type: object
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The workflow is not found, not visible, or the copy failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /workflows/{workflowId}/api-access:
     delete:
       operationId: deleteWorkflowsByWorkflowIdApiAccess
@@ -9349,15 +11518,36 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - access
+                additionalProperties: false
                 properties:
                   access:
                     type: object
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The workflow is not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           description: The request failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     get:
       operationId: getWorkflowsByWorkflowIdApiAccess
       tags:
@@ -9380,17 +11570,38 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - access
+                - lastRequest
+                - publicUrl
+                additionalProperties: false
                 properties:
                   access:
                     type: object
                   lastRequest:
-                    type: object
+                    type:
+                    - object
+                    - 'null'
                   publicUrl:
                     type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The workflow is not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     patch:
       operationId: patchWorkflowsByWorkflowIdApiAccess
       tags:
@@ -9426,17 +11637,42 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - access
+                additionalProperties: false
                 properties:
                   access:
                     type: object
         '400':
           description: The limits or includeTelemetry are not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The workflow is not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           description: The request failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     post:
       operationId: postWorkflowsByWorkflowIdApiAccess
       tags:
@@ -9471,6 +11707,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   access:
                     type: object
@@ -9482,6 +11719,10 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - access
+                - token
+                additionalProperties: false
                 properties:
                   access:
                     type: object
@@ -9489,14 +11730,40 @@ paths:
                     type: string
         '400':
           description: The action is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The workflow is not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '409':
           description: API access is already enabled, or it is disabled for rotate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           description: The request failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /workflows/{workflowId}/manual-runs:
     post:
       operationId: postWorkflowsByWorkflowIdManualRuns
@@ -9530,6 +11797,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   workflowRunId:
                     type: string
@@ -9539,8 +11807,22 @@ paths:
                     type: string
         '400':
           description: The run could not be prepared
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The workflow is not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /workflows/{workflowId}/runs:
     post:
       operationId: postWorkflowsByWorkflowIdRuns
@@ -9575,6 +11857,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   runId:
                     type: string
@@ -9590,22 +11873,58 @@ paths:
                     type: string
         '400':
           description: The mode, JSON, idempotency key, or input is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           description: The bearer token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '409':
           description: The workflow is disabled or the idempotency key conflicts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '413':
           description: The request or payload is too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '415':
           description: Content-Type is not application/json
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '422':
           description: The batch contract is not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '429':
           description: A rate limit, queue, or budget is exhausted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           description: The request could not be completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '503':
           description: The server is busy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /workflows/{workflowId}/runs/{runId}:
     get:
       operationId: getWorkflowsByWorkflowIdRunsByRunId
@@ -9633,6 +11952,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   runId:
                     type: string
@@ -9666,16 +11986,40 @@ paths:
                     type: integer
         '401':
           description: The bearer token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The run is not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '410':
           description: The retained result has expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '429':
           description: A rate limit is exhausted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           description: The request could not be completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '503':
           description: The server is busy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /workflows/{workflowId}/runs/{runId}/artifact:
     get:
       operationId: getWorkflowsByWorkflowIdRunsByRunIdArtifact
@@ -9703,16 +12047,40 @@ paths:
             application/octet-stream: {}
         '401':
           description: The bearer token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The run is not found or the artifact is not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '410':
           description: The result or the artifact has expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '429':
           description: A rate limit is exhausted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           description: The request could not be completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '503':
           description: The server is busy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /workflows/{workflowId}/subscriptions:
     get:
       operationId: getWorkflowsByWorkflowIdSubscriptions
@@ -9736,11 +12104,24 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - subscriptions
+                additionalProperties: false
                 properties:
                   subscriptions:
                     type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The workflow is not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     post:
       operationId: postWorkflowsByWorkflowIdSubscriptions
       tags:
@@ -9793,16 +12174,37 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - subscription
+                additionalProperties: false
                 properties:
                   subscription:
                     type: object
         '400':
           description: sourceKind or the source_change filter is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The workflow is not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '422':
           description: The subscription loops on itself, no data source exists, or a mutation loop is
             found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /workflows/{workflowId}/subscriptions/dry-run:
     post:
       operationId: postWorkflowsByWorkflowIdSubscriptionsDryRun
@@ -9845,6 +12247,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   compiledQuery:
                     type: string
@@ -9856,7 +12259,31 @@ paths:
                     type: array
         '400':
           description: The sourceKind or filter is not valid, or the filter did not compile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: The workflow is not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '422':
           description: No data source exists or GraphJin returned errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '502':
           description: The GraphJin query failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

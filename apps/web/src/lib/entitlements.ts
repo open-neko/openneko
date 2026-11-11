@@ -150,3 +150,23 @@ export async function actionRequestVisibility(): Promise<
     return held.has(row.kind);
   };
 }
+
+/** actionRequestVisibility for stored requests, which name a run and not a workflow. */
+export async function actionRecordVisibility(
+  records: Array<{ workflowRunId: string | null }>,
+): Promise<(row: { kind: string; scope?: string | null; workflowRunId: string | null }) => boolean> {
+  const visible = await actionRequestVisibility();
+  const runIds = [...new Set(records.map((r) => r.workflowRunId).filter((id): id is string => Boolean(id)))];
+  const runs = runIds.length === 0
+    ? []
+    : await db()
+        .select({ id: workflow_run.id, workflowId: workflow_run.workflow_id })
+        .from(workflow_run)
+        .where(and(eq(workflow_run.org_id, await getOrgId()), inArray(workflow_run.id, runIds)));
+  const workflowOf = new Map(runs.map((r) => [r.id, r.workflowId]));
+  return (row) => visible({
+    kind: row.kind,
+    scope: row.scope,
+    workflowId: row.workflowRunId ? workflowOf.get(row.workflowRunId) ?? null : null,
+  });
+}

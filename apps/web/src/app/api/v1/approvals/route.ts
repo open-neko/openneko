@@ -78,9 +78,10 @@ export async function GET(request: NextRequest) {
   // current view — the operator should always know how many actions need
   // their call.
   if (countOnly) {
-    const [row] = await db()
-      .select({ count: sql<number>`count(*)::int` })
+    const pending = await db()
+      .select({ kind: action_request.kind, scope: action_request.scope, workflowId: workflow_run.workflow_id })
       .from(action_request)
+      .leftJoin(workflow_run, eq(workflow_run.id, action_request.workflow_run_id))
       .where(
         and(
           eq(action_request.org_id, orgId),
@@ -90,7 +91,8 @@ export async function GET(request: NextRequest) {
             : [ne(action_request.kind, "source_config_admin")]),
         ),
       );
-    return NextResponse.json({ count: row?.count ?? 0 });
+    const visible = await actionRequestVisibility();
+    return NextResponse.json({ count: pending.filter((row) => visible(row)).length });
   }
 
   const statusCondition = conditionForFilter(filter);

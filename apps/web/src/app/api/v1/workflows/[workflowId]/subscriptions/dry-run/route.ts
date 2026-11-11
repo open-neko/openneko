@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   buildSourceChangeDryRunQuery,
   getDataSourceForOrg,
+  getWorkflow,
   parseSourceChangeFilter,
 } from "@neko/llm/workflows";
 import { graphjinQuery } from "@neko/llm/graphjin/client";
 import { getOrgId } from "@/lib/db";
+import { itemNotFound, requireWorkflow } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +21,16 @@ const DRY_RUN_LIMIT = 5;
  *
  * Body: { sourceKind: "source_change", filter: { table, where, primary_key, ... } }
  */
-export async function POST(req: NextRequest) {
+type RouteContext = {
+  params: Promise<{ workflowId: string }>;
+};
+
+export async function POST(req: NextRequest, context: RouteContext) {
+  const { workflowId } = await context.params;
+  const orgId = await getOrgId();
+  if (!(await getWorkflow(orgId, workflowId))) return itemNotFound("Workflow not found");
+  const deniedWorkflow = await requireWorkflow(workflowId);
+  if (deniedWorkflow) return deniedWorkflow;
   const body = await req.json().catch(() => ({}));
   const sourceKind = body.sourceKind as string | undefined;
 
@@ -56,7 +67,6 @@ export async function POST(req: NextRequest) {
       ? Math.floor(body.limit)
       : DRY_RUN_LIMIT;
 
-  const orgId = await getOrgId();
   const dataSource = await getDataSourceForOrg(orgId);
   if (!dataSource) {
     return NextResponse.json(
