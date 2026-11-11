@@ -332,8 +332,8 @@ exec tar --numeric-owner -xpf - -C /target`)
 }
 
 // restoreDatabase replaces the neko database with the dump: the database is
-// dropped and recreated empty, then pg_restore runs in a single transaction.
-// The role's password verifier from the backup is reinstated so it matches
+// dropped and recreated empty, then pg_restore runs in a single transaction
+// with no grants; serve-init grants the serve roles in the start steps. The role's password verifier from the backup is reinstated so it matches
 // the restored config volume.
 func (s backupStack) restoreDatabase(ctx context.Context, dump io.Reader, rolePassword string) error {
 	recreate := `psql -X -q -v ON_ERROR_STOP=1 -v db="$POSTGRES_DB" -v owner="$POSTGRES_USER" -U "$POSTGRES_USER" -d postgres <<'SQL'
@@ -344,7 +344,7 @@ SQL`
 		return err
 	}
 	if err := s.compose(ctx, bufio.NewReaderSize(dump, 1<<20), io.Discard, "exec", "-T", "neko-db", "sh", "-ec",
-		`exec pg_restore --clean --if-exists --exit-on-error --single-transaction --no-password -U "$POSTGRES_USER" -d "$POSTGRES_DB"`); err != nil {
+		`exec pg_restore --clean --if-exists --no-privileges --exit-on-error --single-transaction --no-password -U "$POSTGRES_USER" -d "$POSTGRES_DB"`); err != nil {
 		return err
 	}
 	if rolePassword == "" {

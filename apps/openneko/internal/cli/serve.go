@@ -142,10 +142,10 @@ func newServeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&checkSocket, "config-check-socket", os.Getenv("OPENNEKO_CONFIG_CHECK_SOCKET"), "Unix socket where web and worker ask serve to load a candidate GraphJin config with the pinned loader; empty turns the check off")
 	cmd.Flags().StringVar(&sandboxURL, "sandbox-url", os.Getenv("OPENNEKO_SANDBOX_URL"), "Sandbox service for agent terminal commands (unix:///path or http(s)://host:port); empty turns the terminal off. Its key is read from OPENNEKO_SANDBOX_KEY")
 	cmd.Flags().IntVar(&maxTurns, "max-turns", envInt("OPENNEKO_SERVE_MAX_TURNS", 32), "Agent turns that run at once; more are refused")
-	cmd.Flags().StringVar(&credentials, "credentials", os.Getenv(serveCredentialsEnv), "Folder written by `openneko serve-init`: the token key and the neko_files database URL. Empty reads the secret-key and the main database login")
+	cmd.Flags().StringVar(&credentials, "credentials", os.Getenv(serveCredentialsEnv), "Folder written by `openneko serve-init`: the token key and the files role database URL. Empty reads the secret-key and the main database login")
 	cmd.Flags().StringVar(&gjConfig, "graphjin-config", os.Getenv("OPENNEKO_GRAPHJIN_CONFIG"), "Customer GraphJin config file (agentic.yml); empty runs no GraphJin. GraphJin runs as a child process; a new token in .openneko-graphjin-restart beside it restarts the child")
 	cmd.Flags().StringVar(&gjAddr, "graphjin-addr", envOr("OPENNEKO_GRAPHJIN_ADDR", "127.0.0.1:8080"), "Listen address for the customer GraphJin")
-	cmd.Flags().StringVar(&subsAddr, "subscriptions-addr", envOr("OPENNEKO_SUBSCRIPTIONS_ADDR", "127.0.0.1:8089"), "Listen address for the subscriptions GraphJin, which serves workflow output subscriptions as neko_subscriptions; empty turns it off")
+	cmd.Flags().StringVar(&subsAddr, "subscriptions-addr", envOr("OPENNEKO_SUBSCRIPTIONS_ADDR", "127.0.0.1:8089"), "Listen address for the subscriptions GraphJin, which serves workflow output subscriptions as the subscriptions role; empty turns it off")
 	cmd.Flags().StringVar(&subsDir, "subscriptions-dir", subscriptionsDir(), "Private folder for the subscriptions GraphJin config and state")
 	cmd.Flags().StringVar(&duckdb, "duckdb", envOr("OPENNEKO_DUCKDB", "duckdb"), "DuckDB CLI for SQL over sheet tables")
 	return cmd

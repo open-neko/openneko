@@ -14,12 +14,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/open-neko/neko/apps/openneko/internal/db"
 )
 
-const (
-	SubscriptionsRole   = "neko_subscriptions"
-	SubscriptionsConfig = "subscriptions.yml"
-)
+const SubscriptionsConfig = "subscriptions.yml"
 
 const subscriptionsTemplate = `app_name: OpenNeko subscriptions
 production: false
@@ -50,17 +49,17 @@ databases:
 `
 
 // RenderSubscriptionsConfig builds the subscriptions GraphJin config for a
-// neko_subscriptions database URL.
+// database URL that logs in as the database's subscriptions role.
 func RenderSubscriptionsConfig(url string) (string, error) {
 	parsed, err := pgx.ParseConfig(url)
 	if err != nil {
 		return "", fmt.Errorf("subscriptions database URL: %w", err)
 	}
-	if parsed.User != SubscriptionsRole {
-		return "", fmt.Errorf("the subscriptions database URL must log in as %s, not %q", SubscriptionsRole, parsed.User)
-	}
 	if parsed.Database == "" {
 		return "", fmt.Errorf("the subscriptions database URL names no database")
+	}
+	if role := db.SubscriptionsRole(parsed.Database); parsed.User != role {
+		return "", fmt.Errorf("the subscriptions database URL must log in as %s, not %q", role, parsed.User)
 	}
 	quote := func(v string) string {
 		b, _ := json.Marshal(v)

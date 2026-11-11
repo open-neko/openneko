@@ -102,7 +102,7 @@ services:
       - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/config/openneko
     restart: "no"
 
-  # Sets the neko_files and neko_subscriptions role passwords,
+  # Creates the serve roles of this database and sets their passwords,
   # writes serve's credentials
   # and creates the customer GraphJin config when it is missing. Serve holds
   # no main database login and no secret-key.
@@ -131,7 +131,7 @@ services:
   # openneko serve: each user's private files, their keyword index in
   # OpenNeko's database, SQL over sheet tables, agent turns, the customer GraphJin on
   # 8080 and the subscriptions GraphJin on 8089 (workflow outputs, read as
-  # neko_subscriptions).
+  # the subscriptions role).
   # Web and worker call it with short-lived tokens signed with a key derived
   # from the secret-key. GraphJin does not reload auth keys, so the start
   # steps write the per-org JWT secret before serve starts.

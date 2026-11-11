@@ -161,11 +161,6 @@ func TestDatabaseCheckPassesALoginThatDoesNotOwnTheDatabase(t *testing.T) {
 	if _, err := super.Exec(ctx, "create extension vector; grant create on schema public to "+name); err != nil {
 		t.Fatal(err)
 	}
-	for _, role := range []string{filesRole, subsRole} {
-		if _, err := super.Exec(ctx, fmt.Sprintf("do $$ begin if exists (select from pg_roles where rolname = '%s') then grant %s to %s with admin option; end if; end $$", role, role, name)); err != nil {
-			t.Fatal(err)
-		}
-	}
 
 	var out bytes.Buffer
 	if err := checkDatabase(ctx, at(name, "pw"), &out); err != nil {

@@ -21,9 +21,7 @@ import (
 )
 
 const (
-	filesRole           = "neko_files"
 	filesRoleLabel      = "openneko-files-role:v1"
-	subsRole            = "neko_subscriptions"
 	subsRoleLabel       = "openneko-subscriptions-role:v1"
 	serveTokenKeyFile   = "token.key"
 	serveDatabaseFile   = "database.url"
@@ -84,17 +82,24 @@ func writeServeCredentials(ctx context.Context, admin db.ConnConfig, configDir, 
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	for _, r := range []struct{ role, label, migration, file string }{
-		{filesRole, filesRoleLabel, "0127", serveDatabaseFile},
-		{subsRole, subsRoleLabel, "0129", serveSubsFile},
+	var database string
+	if err := conn.QueryRow(ctx, "select current_database()").Scan(&database); err != nil {
+		return err
+	}
+	for _, r := range []struct {
+		role, label, file string
+		grants            []string
+	}{
+		{db.FilesRole(database), filesRoleLabel, serveDatabaseFile, filesRoleGrants},
+		{db.SubscriptionsRole(database), subsRoleLabel, serveSubsFile, subsRoleGrants},
 	} {
 		pw, err := config.SigningSecret(configDir, r.label)
 		if err != nil {
 			return err
 		}
 		password := hex.EncodeToString(pw)
-		if _, err := conn.Exec(ctx, fmt.Sprintf("alter role %s with login password '%s'", r.role, password)); err != nil {
-			return fmt.Errorf("set the %s password (the role comes from migration %s; the database login needs the right to alter it): %w", r.role, r.migration, err)
+		if err := ensureServeRole(ctx, conn, r.role, password, r.grants); err != nil {
+			return err
 		}
 		roleURL, err := roleDatabaseURL(admin, r.role, password)
 		if err != nil {
@@ -105,6 +110,40 @@ func writeServeCredentials(ctx context.Context, admin db.ConnConfig, configDir, 
 		}
 	}
 	return writeFileAtomic(filepath.Join(dir, serveTokenKeyFile), []byte(hex.EncodeToString(tokenKey)+"\n"))
+}
+
+var (
+	filesRoleGrants = []string{
+		"grant usage on schema public to %s",
+		"grant select, insert, update, delete on file_content_file, file_content_unit, file_content_table to %s",
+		"grant usage, select on sequence file_content_unit_id_seq to %s",
+	}
+	subsRoleGrants = []string{
+		"grant usage on schema public to %s",
+		"grant select on workflow_output to %s",
+	}
+)
+
+func ensureServeRole(ctx context.Context, conn *pgx.Conn, role, password string, grants []string) error {
+	quoted := pgx.Identifier{role}.Sanitize()
+	var exists bool
+	if err := conn.QueryRow(ctx, "select exists (select from pg_roles where rolname = $1)", role).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		if _, err := conn.Exec(ctx, "create role "+quoted+" nologin"); err != nil {
+			return fmt.Errorf("create the %s role (the database login needs CREATEROLE; `openneko database check` prints the SQL): %w", role, err)
+		}
+	}
+	for _, grant := range grants {
+		if _, err := conn.Exec(ctx, fmt.Sprintf(grant, quoted)); err != nil {
+			return fmt.Errorf("grant the %s role its rights: %w", role, err)
+		}
+	}
+	if _, err := conn.Exec(ctx, fmt.Sprintf("alter role %s with login password '%s'", quoted, password)); err != nil {
+		return fmt.Errorf("set the %s password (the database login needs CREATEROLE or ADMIN on the role): %w", role, err)
+	}
+	return nil
 }
 
 const graphjinKeystorePlaceholder = "REPLACE_WITH_BASE64_32_BYTE_KEY"

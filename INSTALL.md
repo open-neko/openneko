@@ -162,14 +162,15 @@ name.
   server that asks for one. Give paths on the host where you run `openneko`.
   `openneko start` copies each file into the containers that connect to the
   database, `openneko-serve` included, as a Compose secret readable only by
-  user 1001, and points the URL at the copy. Serve's `neko_files` and
-  `neko_subscriptions` logins use the same files.
+  user 1001, and points the URL at the copy. Serve's two
+  [role logins](#the-serve-roles) use the same files.
 - Give OpenNeko a database of its own and a login of its own. Restore drops
   every object that the login owns in that database (see
   [Backup and restore](#backup-and-restore)). The `neko` role needs `CREATE`
   on that database and on schema `public`, and `CREATEROLE`. It does not need to own
   the database, so a managed Postgres service works. The migrations create
-  the `vector` extension and the `neko_files` and `neko_subscriptions` roles.
+  the `vector` extension, and each start creates the
+  [serve roles](#the-serve-roles).
 - Postgres 16 is the oldest version that OpenNeko supports. The storage check
   needs Postgres 15, CI and the bundled database run 16, and
   `openneko database move` restores a Postgres 16 dump. pgvector 0.6.0 is the
@@ -203,6 +204,40 @@ on the database server, it prints the `REINDEX DATABASE` and
 `ALTER DATABASE ... REFRESH COLLATION VERSION` lines to run. It changes
 nothing. With the bundled `neko-db`, it rebuilds the indexes itself.
 
+### The serve roles
+
+`openneko-serve` connects to the database with two narrow roles. Each role
+has the database name in it, so two installs can use two databases on one
+Postgres server:
+
+- `neko_files_<database>` can read and write the file index tables.
+- `neko_subscriptions_<database>` can read `workflow_output`.
+
+Postgres keeps 63 bytes of a role name. When the name does not fit, or the
+database name has a character other than `a` to `z`, `0` to `9` or `_`,
+OpenNeko changes each other character to `_`, keeps the start of the name and
+adds 8 hex characters of the database name's SHA-256. For example, database
+`My-Shop` gets `neko_files_my_shop_` and 8 hex characters.
+`openneko database check` prints the two names.
+
+The start step `openneko-serve-init` runs at each start. It creates the two
+roles when they are missing, grants their rights again and sets their
+passwords, which it derives from the secret key. The `neko` login needs
+`CREATEROLE` for this. Without it, a superuser can create the roles and
+give the login `ADMIN` on them:
+
+```sql
+CREATE ROLE "neko_files_neko" NOLOGIN;
+GRANT "neko_files_neko" TO "neko" WITH ADMIN OPTION;
+```
+
+Releases before this one used two roles for the whole server, `neko_files`
+and `neko_subscriptions`. An upgraded install gets the new roles at its next
+start, with the same rights. The old roles stay, because an install on the
+same server that runs an older release may still use them.
+`openneko database check` names each old role it finds and prints the SQL to
+drop it. Run that SQL when no install on the server runs an older release.
+
 ### The bundled database of an older release
 
 Releases before this one ran `neko-db` in prod mode too. When a prod install
@@ -227,6 +262,9 @@ The command does these steps in order:
 4. It removes the `neko-db` container and restores the backup into the new
    database.
 5. It starts the stack on the new database and stores the URL.
+
+The new database gets serve roles with its own name, and the restore skips
+the grants of the old ones ([the serve roles](#the-serve-roles)).
 
 Until step 5, the install still uses `neko-db`. When a step fails, fix the
 cause and run `openneko start -d` to go back, or run the move again. The
@@ -459,12 +497,11 @@ Web and worker reach the service at `OPENNEKO_SERVE_URL` with a token that
 expires after one minute. When `OPENNEKO_SERVE_URL` is not set, the assistant
 does not get the file tools.
 
-`openneko-serve` connects to OpenNeko's database as `neko_files`. That role can read
-and write only the file index tables. The start step `openneko-serve-init`
-sets its password, derived from the secret key, and gives the service a key
-that checks the tokens. The service never gets the secret key or the `neko`
-password. On a database you manage yourself, give the `neko` login the
-`CREATEROLE` right, so it can create `neko_files` and set its password.
+`openneko-serve` connects to OpenNeko's database as `neko_files_<database>`
+([the serve roles](#the-serve-roles)). That role can read and write only the
+file index tables. The start step `openneko-serve-init` sets its password,
+derived from the secret key, and gives the service a key that checks the
+tokens. The service never gets the secret key or the `neko` password.
 
 Files a user adds to the Library go into that folder. When `OPENNEKO_SERVE_URL`
 is not set, the Library refuses uploads. After an upgrade, the worker moves
@@ -499,8 +536,11 @@ With the bundled `neko-db`, restore drops and recreates the database. With a
 database URL, restore cannot do that. It drops every object that the URL's
 login owns in the database the URL names, then restores the dump in one
 transaction. It keeps the extensions, the objects that other roles own and the
-grants that you gave the login. Restore does not put a backup of an external
-database into a bundled `neko-db`.
+grants that you gave the login. It restores the grants of the dump, except the
+grants to a [serve role](#the-serve-roles) of any install or release. The
+start step `openneko-serve-init` then grants this install's serve roles again.
+A restore into the bundled `neko-db` restores no grants. Restore does not put
+a backup of an external database into a bundled `neko-db`.
 
 Before restore stops the stack, it lists the objects that the login owns and
 that OpenNeko did not make. An object is OpenNeko's when the backup holds it,
@@ -581,6 +621,10 @@ This release has fewer parts. The upgrade migrates your data in place:
   Search by meaning is off until you connect an
   [embedding service](#semantic-search-optional), and the terminal is off
   until you connect a [sandbox](#sandbox-optional).
+- **The serve roles** now have the database name in them. The first start
+  creates `neko_files_<database>` and `neko_subscriptions_<database>` with the
+  rights of the old roles. On a database that you run, the `neko` login needs
+  `CREATEROLE` or `ADMIN` on the new roles ([the serve roles](#the-serve-roles)).
 - **A prod install** keeps its bundled `neko-db`. Move it to a database that
   you run with [`openneko database move`](#the-bundled-database-of-an-older-release).
 

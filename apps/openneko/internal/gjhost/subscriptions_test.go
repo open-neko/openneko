@@ -21,12 +21,12 @@ import (
 )
 
 func TestRenderSubscriptionsConfigNeedsTheNarrowRole(t *testing.T) {
-	conf, err := RenderSubscriptionsConfig(`postgres://neko_subscriptions:p%22w@db:5432/neko?sslmode=verify-full`)
+	conf, err := RenderSubscriptionsConfig(`postgres://neko_subscriptions_neko:p%22w@db:5432/neko?sslmode=verify-full`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		`connection_string: "postgres://neko_subscriptions:p%22w@db:5432/neko?sslmode=verify-full"`,
+		`connection_string: "postgres://neko_subscriptions_neko:p%22w@db:5432/neko?sslmode=verify-full"`,
 		`dbname: "neko"`,
 		"mcp:\n  disable: true",
 		"reload_on_config_change: false",
@@ -37,7 +37,9 @@ func TestRenderSubscriptionsConfigNeedsTheNarrowRole(t *testing.T) {
 	}
 	for _, bad := range []string{
 		"postgres://neko:secret@db:5432/neko",
-		"postgres://neko_subscriptions:p@db:5432",
+		"postgres://neko_subscriptions:p@db:5432/neko",
+		"postgres://neko_subscriptions_other:p@db:5432/neko",
+		"postgres://neko_subscriptions_neko:p@db:5432",
 		"not a url",
 	} {
 		if _, err := RenderSubscriptionsConfig(bad); err == nil {
@@ -92,8 +94,10 @@ func TestSubscriptionsServeWorkflowOutputsAsTheNarrowRole(t *testing.T) {
 	if _, err := admin.Exec(ctx, "create database "+name); err != nil {
 		t.Fatal(err)
 	}
+	role := db.SubscriptionsRole(name)
 	t.Cleanup(func() {
 		admin.Exec(context.Background(), "drop database "+name+" with (force)") //nolint:errcheck
+		admin.Exec(context.Background(), "drop role if exists "+role)           //nolint:errcheck
 		admin.Close(context.Background())
 	})
 	base, _ := url.Parse(dsn)
@@ -109,6 +113,9 @@ func TestSubscriptionsServeWorkflowOutputsAsTheNarrowRole(t *testing.T) {
 	if _, err := conn.Exec(ctx, `insert into organization (id, name) values ('org-1', 'x')`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := conn.Exec(ctx, "create role "+role+" nologin; grant usage on schema public to "+role+"; grant select on workflow_output to "+role); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := conn.Exec(ctx, `set session_replication_role = replica`); err != nil {
 		t.Fatal(err)
 	}
@@ -119,11 +126,11 @@ func TestSubscriptionsServeWorkflowOutputsAsTheNarrowRole(t *testing.T) {
 	urlPath := filepath.Join(t.TempDir(), "subscriptions.url")
 	setPassword := func(pw string) {
 		t.Helper()
-		if _, err := admin.Exec(ctx, fmt.Sprintf("alter role %s with login password '%s'", SubscriptionsRole, pw)); err != nil {
+		if _, err := admin.Exec(ctx, fmt.Sprintf("alter role %s with login password '%s'", role, pw)); err != nil {
 			t.Fatal(err)
 		}
 		u := *base
-		u.User = url.UserPassword(SubscriptionsRole, pw)
+		u.User = url.UserPassword(role, pw)
 		q := u.Query()
 		q.Set("sslmode", "disable")
 		u.RawQuery = q.Encode()
@@ -174,7 +181,7 @@ func TestSubscriptionsServeWorkflowOutputsAsTheNarrowRole(t *testing.T) {
 	if err := os.WriteFile(urlPath, []byte("postgres://neko:secret@db/neko\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "the bad URL in the log", func() bool { return strings.Contains(log.String(), "must log in as neko_subscriptions") })
+	waitFor(t, "the bad URL in the log", func() bool { return strings.Contains(log.String(), "must log in as "+db.SubscriptionsRole("neko")) })
 	if _, out := graphql(t, addr, `{ workflow_output { title } }`); !strings.Contains(out, "stock is low") {
 		t.Fatalf("a bad URL must keep the running engine, got %s", out)
 	}

@@ -599,7 +599,7 @@ console.log(
 );
 
 // The subscriptions GraphJin in openneko serve serves workflow outputs as
-// the read-only neko_subscriptions role. Compose sets
+// its read-only subscriptions role. Compose sets
 // OPENNEKO_GRAPHJIN_URL=http://openneko-serve:8089; `pnpm dev` reaches the
 // port the dev stack publishes.
 // Normalize any GraphJin base (origin or full) to the full GraphQL endpoint.
