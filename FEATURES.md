@@ -92,8 +92,8 @@ the right workspace.
 | Feature | What it does for you | Shipped in |
 |---|---|---|
 | Slack & Telegram | Talk to your assistant from the tools your team already uses — replies are formatted natively for each app. | #68, #96 |
-| Built-in channels | Slack, Telegram and the HUD are built into the core behind one modality-free interface. A solution pack turns a channel on, and an admin adds its credentials in settings. | #68, #70 |
-| Zero-config inbound | When a pack turns a channel on, it starts listening: inbound polling starts and the first contact binds to your workspace. No env flags. | #72 |
+| Built-in channels | Slack, Telegram and the HUD are built into the core behind one modality-free interface. A channel turns on when an admin saves its credentials in settings; no pack is needed. | #68, #70 |
+| Zero-config inbound | When a channel turns on, it starts listening: inbound polling starts and the first contact binds to your workspace. No env flags. | #72 |
 | It knows who's asking | Every inbound message is tied to the actual sender, so permissions and personalisation follow the person, not the channel. | #96 |
 | Workspace routing | Messages from a connected Slack workspace or phone number land in the right organisation automatically. | #96 |
 | Identity linking | Chat accounts link to OpenNeko accounts — automatically by matching email, or with an admin's approval. Unlinked strangers get safe, read-only treatment. | #96 |

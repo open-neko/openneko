@@ -26,7 +26,8 @@
  *                               Finishes sign-in with the chosen provider.
  *   GET  /admin/channels/settings → each built-in channel's declared settings
  *                               (secrets report only whether they are set).
- *   POST /admin/channels/settings → { channel, values: { KEY: string | null } }.
+ *   POST /admin/channels/settings → { channel, values: { KEY: string | null } }
+ *                               or { channel, state: "on" | "off" }.
  *   GET  /admin/directory/status → directory provider and last sync state.
  *   POST /admin/directory/sync  → run a full directory sync now.
  *   POST /admin/directory/users → create a user in the identity provider ({ email, name? }).
@@ -200,7 +201,7 @@ export interface SsoSetupHandlerSurface {
 
 /**
  * Channel (frontend) surface. The built-in channels (Slack, Telegram, HUD)
- * run in-process; a pack turns each one on. `ingestInbound` hands webhooks
+ * run in-process; each is on while its required settings are stored. `ingestInbound` hands webhooks
  * to the channel delivery module (verify → parse → dispatch to the existing
  * agent entry points).
  */
@@ -224,6 +225,7 @@ export interface ChannelHandlerSurface {
   /** Each channel's declared settings; secrets report only whether they are set. */
   settings?(): Promise<unknown[]>;
   setSettings?(channelId: string, values: Record<string, string | null>): Promise<void>;
+  setState?(channelId: string, state: "on" | "off"): Promise<void>;
 }
 
 /**
@@ -1568,10 +1570,17 @@ async function handleChannelSettings(
     }
     if (req.method === "POST") {
       if (!channels?.setSettings) return json(res, 503, { error: "channel subsystem disabled" });
-      const body = (await readJson(req).catch(() => null)) as { channel?: unknown; values?: unknown } | null;
+      const body = (await readJson(req).catch(() => null)) as { channel?: unknown; values?: unknown; state?: unknown } | null;
       const channel = typeof body?.channel === "string" ? body.channel : "";
       const values = body?.values;
       if (!CHANNEL_ID.test(channel)) return json(res, 400, { error: "channel must be a channel id" });
+      if (body?.state !== undefined) {
+        if (values !== undefined) return json(res, 400, { error: "send values or state, not both" });
+        if (body.state !== "on" && body.state !== "off") return json(res, 400, { error: "state must be on or off" });
+        if (!channels.setState) return json(res, 503, { error: "channel subsystem disabled" });
+        await channels.setState(channel, body.state);
+        return json(res, 200, { ok: true });
+      }
       if (!values || typeof values !== "object" || Array.isArray(values) || Object.keys(values).length === 0) {
         return json(res, 400, { error: "values must map at least one setting to a string or null" });
       }

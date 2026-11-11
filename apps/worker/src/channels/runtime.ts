@@ -1,9 +1,7 @@
 // Built-in channel runtime. Slack, Telegram and the HUD channel ship in
-// @neko/channels and run in-process; a channel is on for an org while an
-// installed pack lists it under `channels:`. Credentials live in the secrets
-// store under `channel.<id>`, the same store packs use for their secrets.
+// @neko/channels and run in-process. A channel is on while every required
+// setting has a value in the secrets store under `channel.<id>`.
 import { randomBytes } from "node:crypto";
-import { and, db, eq, pack_install } from "@neko/db";
 import {
   BUILT_IN_CHANNELS,
   BUILT_IN_CHANNEL_IDS,
@@ -58,25 +56,20 @@ const providerInfo = (channel: ChannelSubstrate): ChannelProviderInfo => ({
   ingress: channel.ingress,
 });
 
-/** Channels turned on by the org's installed packs, in declaration order. */
-export async function enabledChannelIds(orgId: string): Promise<BuiltInChannelId[]> {
-  const rows = await db()
-    .select({ config: pack_install.config })
-    .from(pack_install)
-    .where(and(eq(pack_install.org_id, orgId), eq(pack_install.status, "installed")));
-  const enabled = new Set<BuiltInChannelId>();
-  for (const row of rows) {
-    const channels = (row.config as { _channels?: unknown })._channels;
-    if (!Array.isArray(channels)) continue;
-    for (const id of channels) {
-      if (typeof id === "string" && isBuiltInChannelId(id)) enabled.add(id);
-    }
-  }
-  return BUILT_IN_CHANNEL_IDS.filter((id) => enabled.has(id));
+function hasRequiredSettings(channel: ChannelSubstrate, env: ChannelEnv): boolean {
+  return channel.settings.every((setting) => !setting.required || Boolean(env[setting.key]?.trim()));
 }
 
-export async function getChannelProviders(orgId: string): Promise<ChannelProviderInfo[]> {
-  return (await enabledChannelIds(orgId)).map((id) => providerInfo(BUILT_IN_CHANNELS[id]));
+/** Channels whose required settings are all stored, in declaration order. */
+export async function enabledChannelIds(store?: SecretsStore): Promise<BuiltInChannelId[]> {
+  const secrets = store ?? (await readSecretsStore());
+  return BUILT_IN_CHANNEL_IDS.filter((id) =>
+    hasRequiredSettings(BUILT_IN_CHANNELS[id], secrets[channelSecretSection(id)] ?? {}),
+  );
+}
+
+export async function getChannelProviders(): Promise<ChannelProviderInfo[]> {
+  return (await enabledChannelIds()).map((id) => providerInfo(BUILT_IN_CHANNELS[id]));
 }
 
 /** A channel's credentials and settings from the secrets store. */
@@ -86,21 +79,20 @@ export async function channelEnv(id: string, store?: SecretsStore): Promise<Chan
   return { ...(secrets[channelSecretSection(channel.id as BuiltInChannelId)] ?? {}) };
 }
 
-async function requireEnabled(orgId: string, id: string): Promise<ChannelSubstrate> {
+async function requireEnabled(id: string): Promise<ChannelSubstrate> {
   const channel = requireChannel(id);
-  if (!(await enabledChannelIds(orgId)).includes(channel.id as BuiltInChannelId)) {
-    throw new Error(`channel ${channel.id} is not turned on — install a pack that lists it under channels`);
+  if (!(await enabledChannelIds()).includes(channel.id as BuiltInChannelId)) {
+    throw new Error(`channel ${channel.id} is not turned on: set its required settings in Admin, Settings, Channels`);
   }
   return channel;
 }
 
 export async function deliverOnChannel(
-  orgId: string,
   id: string,
   recipient: Record<string, unknown>,
   events: unknown[],
 ): Promise<DeliverResult> {
-  const channel = await requireEnabled(orgId, id);
+  const channel = await requireEnabled(id);
   return channel.deliver({
     recipient: recipient as ChannelRecipient,
     events: events as InteractionEvent[],
@@ -114,14 +106,13 @@ export async function parseChannelInbound(id: string, raw: unknown): Promise<Par
 }
 
 export async function verifyChannelInbound(
-  orgId: string,
   id: string,
   headers: Record<string, string>,
   body: string,
 ): Promise<boolean> {
   const channel = builtInChannel(id);
   if (!channel?.verifyInbound) return false;
-  if (!(await enabledChannelIds(orgId)).includes(channel.id as BuiltInChannelId)) return false;
+  if (!(await enabledChannelIds()).includes(channel.id as BuiltInChannelId)) return false;
   return channel.verifyInbound(headers, body, await channelEnv(channel.id));
 }
 
@@ -135,8 +126,9 @@ export async function pollChannelInbound(
 }
 
 /** Declared settings of every built-in channel; secrets report only whether they are set. */
-export async function channelSettings(orgId: string): Promise<ChannelSettingsView[]> {
-  const [enabled, store] = await Promise.all([enabledChannelIds(orgId), readSecretsStore()]);
+export async function channelSettings(): Promise<ChannelSettingsView[]> {
+  const store = await readSecretsStore();
+  const enabled = await enabledChannelIds(store);
   return BUILT_IN_CHANNEL_IDS.map((id) => {
     const channel = BUILT_IN_CHANNELS[id];
     const env = store[channelSecretSection(id)] ?? {};
@@ -163,14 +155,12 @@ export async function channelSettings(orgId: string): Promise<ChannelSettingsVie
   });
 }
 
-/** Writes or clears declared settings of one channel. Refuses undeclared keys and clearing a required one. */
+/** Writes or clears declared settings of one channel. Refuses undeclared keys. */
 export async function setChannelSettings(id: string, values: Record<string, string | null>): Promise<void> {
   const channel = requireChannel(id);
-  const declared = new Map(channel.settings.filter((s) => !s.autogenerate).map((s) => [s.key, s]));
-  for (const [key, value] of Object.entries(values)) {
-    const setting = declared.get(key);
-    if (!setting) throw new ChannelSettingsError(`${channel.id} does not declare ${key}`);
-    if (value === null && setting.required) throw new ChannelSettingsError(`${key} is required and cannot be cleared`);
+  const declared = new Set(channel.settings.filter((s) => !s.autogenerate).map((s) => s.key));
+  for (const key of Object.keys(values)) {
+    if (!declared.has(key)) throw new ChannelSettingsError(`${channel.id} does not declare ${key}`);
   }
   const store = await readSecretsStore();
   const section = channelSecretSection(channel.id as BuiltInChannelId);
@@ -183,30 +173,34 @@ export async function setChannelSettings(id: string, values: Record<string, stri
 }
 
 /**
- * Called when a pack that lists channels is installed: mint any host-generated
- * secret the channel still lacks, and scope the HUD channel to that pack.
+ * Turns a channel on by minting the secrets OpenNeko generates for it, or off
+ * by removing every stored setting. Turning on refuses while an admin-entered
+ * required setting is missing.
  */
-export async function prepareChannelsForPack(packId: string, ids: readonly string[]): Promise<void> {
+export async function setChannelState(id: string, state: "on" | "off"): Promise<void> {
+  const channel = requireChannel(id);
   const store = await readSecretsStore();
+  const section = channelSecretSection(channel.id as BuiltInChannelId);
+  if (state === "off") {
+    if (!(section in store)) return;
+    const next = { ...store };
+    delete next[section];
+    await writeSecretsStore(next);
+    return;
+  }
+  const env = { ...(store[section] ?? {}) };
+  const missing = channel.settings.filter((s) => s.required && !s.autogenerate && !env[s.key]?.trim());
+  if (missing.length > 0) {
+    throw new ChannelSettingsError(`${channel.id} needs ${missing.map((s) => s.key).join(", ")} before it can turn on`);
+  }
   let changed = false;
-  const next: SecretsStore = { ...store };
-  for (const id of ids) {
-    if (!isBuiltInChannelId(id)) continue;
-    const section = channelSecretSection(id);
-    const env = { ...(next[section] ?? {}) };
-    for (const setting of BUILT_IN_CHANNELS[id].settings) {
-      if (setting.autogenerate && !env[setting.key]) {
-        env[setting.key] = randomBytes(48).toString("base64url");
-        changed = true;
-      }
-    }
-    if (id === "hud" && env.HUD_CHANNEL_WORKSPACE !== packId) {
-      env.HUD_CHANNEL_WORKSPACE = packId;
+  for (const setting of channel.settings) {
+    if (setting.autogenerate && !env[setting.key]) {
+      env[setting.key] = randomBytes(48).toString("base64url");
       changed = true;
     }
-    next[section] = env;
   }
-  if (changed) await writeSecretsStore(next);
+  if (changed) await writeSecretsStore({ ...store, [section]: env });
 }
 
 /**
@@ -232,13 +226,13 @@ export async function migrateLegacyChannelSecrets(): Promise<string[]> {
   return moved;
 }
 
-/** Hook the pack lifecycle calls after it changes which channels are on. */
-let channelsChanged: ((orgId: string) => void) | null = null;
+/** Hook the settings routes call after they change which channels are on. */
+let channelsChanged: (() => void) | null = null;
 
-export function setChannelsChangedHook(hook: ((orgId: string) => void) | null): void {
+export function setChannelsChangedHook(hook: (() => void) | null): void {
   channelsChanged = hook;
 }
 
-export function notifyChannelsChanged(orgId: string): void {
-  channelsChanged?.(orgId);
+export function notifyChannelsChanged(): void {
+  channelsChanged?.();
 }

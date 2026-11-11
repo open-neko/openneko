@@ -95,7 +95,9 @@ import {
   deliverOnChannel,
   getChannelProviders,
   migrateLegacyChannelSecrets,
+  notifyChannelsChanged,
   setChannelSettings,
+  setChannelState,
   setChannelsChangedHook,
 } from "./channels/runtime.js";
 import type PgBossLib from "pg-boss";
@@ -436,13 +438,20 @@ const server = createServer(
     },
     ssoSetup: ssoSetupSurface(),
     channels: {
-      getChannelProviders: () => getChannelProviders(ADMIN_ORG_ID),
+      getChannelProviders: () => getChannelProviders(),
       deliver: (channelId, recipient, events) =>
-        deliverOnChannel(ADMIN_ORG_ID, channelId, recipient, events),
+        deliverOnChannel(channelId, recipient, events),
       ingestInbound: (channelId, headers, body) =>
         ingestInboundWebhook(ADMIN_ORG_ID, channelId, headers, body),
-      settings: () => channelSettings(ADMIN_ORG_ID),
-      setSettings: (channelId, values) => setChannelSettings(channelId, values),
+      settings: () => channelSettings(),
+      setSettings: async (channelId, values) => {
+        await setChannelSettings(channelId, values);
+        notifyChannelsChanged();
+      },
+      setState: async (channelId, state) => {
+        await setChannelState(channelId, state);
+        notifyChannelsChanged();
+      },
     },
   }),
 );
@@ -1057,8 +1066,7 @@ server.listen(PORT, () => {
 });
 
 const channelInbound = startChannelInbound(ADMIN_ORG_ID);
-setChannelsChangedHook((orgId) => {
-  if (orgId !== ADMIN_ORG_ID) return;
+setChannelsChangedHook(() => {
   void channelInbound.refresh().catch((err) => {
     console.warn(`[channel-inbound] refresh failed: ${err instanceof Error ? err.message : err}`);
   });

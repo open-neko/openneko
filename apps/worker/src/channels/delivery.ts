@@ -97,7 +97,6 @@ async function enqueueChannelDelivery(
  */
 export async function runChannelDelivery(payload: ChannelDeliverPayload): Promise<void> {
   const res = await deliverOnChannel(
-    payload.orgId,
     payload.channelPlugin,
     payload.recipient,
     payload.events,
@@ -537,7 +536,7 @@ export async function ingestInboundWebhook(
   // Webhooks registered while the channel was a plugin still post to its package name.
   const channelId = builtInChannel(pluginName)?.id;
   if (!channelId) return { ok: false, dispatched: 0 };
-  const verified = await verifyChannelInbound(orgId, channelId, headers, rawBody);
+  const verified = await verifyChannelInbound(channelId, headers, rawBody);
   if (!verified) return { ok: false, dispatched: 0 };
   let raw: unknown;
   try {

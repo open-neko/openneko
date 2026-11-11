@@ -54,7 +54,6 @@ import {
   readSecretsStore,
   writeSecretsStore,
 } from "@neko/secrets";
-import { notifyChannelsChanged, prepareChannelsForPack } from "../channels/runtime.js";
 import { PackOAuthService, packOAuthBinding } from "./oauth.js";
 import {
   assertOwnedPath,
@@ -145,21 +144,6 @@ function storedRuntime(config: Record<string, unknown>): PackRuntime | undefined
 function graphjinEndpoint(url: string): string {
   const clean = url.replace(/\/+$/, "");
   return clean.endsWith("/api/v1/graphql") ? clean : `${clean}/api/v1/graphql`;
-}
-
-/** Built-in channels the pack turns on, persisted on the install row. */
-function packChannels(manifest: SolutionPackBundle["manifest"]): Record<string, unknown> {
-  return manifest.channels?.length ? { _channels: [...manifest.channels] } : {};
-}
-
-/** Turn on the pack's channels: mint their generated secrets, then restart inbound. */
-async function activatePackChannels(orgId: string, packId: string, channels: readonly string[] | undefined): Promise<void> {
-  if (channels?.length) {
-    await prepareChannelsForPack(packId, channels).catch((error) => {
-      console.warn(`[packs] could not prepare channels for ${packId}: ${error instanceof Error ? error.message : String(error)}`);
-    });
-  }
-  notifyChannelsChanged(orgId);
 }
 
 function packRoot(): string {
@@ -1120,7 +1104,6 @@ export class PackService {
           console.warn(`[packs] uninstall cleanup warning: ${error instanceof Error ? error.message : String(error)}`);
         });
       }
-      notifyChannelsChanged(this.orgId);
       const removed = await this.status(packId);
       if (!removed) throw new Error("pack status missing after uninstall");
       return removed;
@@ -1213,7 +1196,7 @@ export class PackService {
             org_id: this.orgId, pack_id: packId, version: authoredBundle.manifest.metadata.version,
             manifest_hash: authoredBundle.manifestHash, source: "embedded", status: "installed",
             installed_by_user_id: request.actorUserId ?? null, installed_at: new Date(),
-            config: { _definitionOnly: true, _userOAuth: authoredBundle.manifest.oauth.filter(connection => connection.scope === "user"), ...packChannels(authoredBundle.manifest) },
+            config: { _definitionOnly: true, _userOAuth: authoredBundle.manifest.oauth.filter(connection => connection.scope === "user") },
           }).returning({ id: pack_install.id });
           await tx.insert(pack_operation).values({
             org_id: this.orgId, pack_install_id: created!.id, operation_type: "install",
@@ -1222,7 +1205,6 @@ export class PackService {
             plan_hash: authoredBundle.manifestHash, completed_at: new Date(),
           });
         });
-        await activatePackChannels(this.orgId, packId, authoredBundle.manifest.channels);
         return (await this.status(packId))!;
       }
       let bundle: SolutionPackBundle = authoredBundle;
@@ -1922,7 +1904,6 @@ export class PackService {
             } : {}),
             ...(authoredBundle.upload ? { _bundle: authoredBundle.upload } : {}),
             ...(preflight ? { magentoVersion: preflight.magentoVersion } : {}),
-            ...packChannels(bundle.manifest),
           },
           installed_at: new Date(),
           updated_at: new Date(),
@@ -1949,7 +1930,6 @@ export class PackService {
       await enqueuePackMetricRefreshes(this.orgId, bundle).catch((error) => {
         console.warn(`[packs] initial metric refresh setup failed: ${error instanceof Error ? error.message : String(error)}`);
       });
-      await activatePackChannels(this.orgId, packId, bundle.manifest.channels);
       const status = await this.status(packId);
       if (!status) throw new Error("pack status missing after install");
       return status;

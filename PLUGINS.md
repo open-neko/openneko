@@ -5,9 +5,8 @@ see [PACKS.md](PACKS.md).
 
 What moved where:
 
-- **Slack, Telegram and the HUD** are built-in channels. A pack turns one on by
-  listing it under `channels:` in its manifest, and an admin adds the channel's
-  credentials at **Admin → Settings → Channels**.
+- **Slack, Telegram and the HUD** are built-in channels. A channel turns on when
+  an admin saves its credentials at **Admin → Settings → Channels**.
 - **Scalekit SSO, directory sync and email-link (magic-link) sign-in** are built
   into the core. Configure them at **Admin → Settings → Sign-in** and
   **Admin → Settings → Single sign-on**.

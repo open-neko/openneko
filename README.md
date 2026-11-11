@@ -70,7 +70,7 @@ Apache-2.0 core, self-hosted, single Postgres. Take a backup, take it with you �
 
 Integrations ship as **solution packs** — sources, API specs, actions, workflows and skills for an application, installed from **Admin → Settings → Solution packs** or `openneko pack install`. See **[PACKS.md](PACKS.md)**.
 
-- **Channels are built in.** Slack, Telegram and the HUD come with the core; a pack turns a channel on by listing it in its manifest, and you add the credentials at **Admin → Settings → Channels**.
+- **Channels are built in.** Slack, Telegram and the HUD come with the core; a channel turns on when you save its credentials at **Admin → Settings → Channels**.
 - **Sign-in is built in.** Enterprise SSO and directory sync come from Scalekit: authorize the workspace from **Admin → Settings → Single sign-on** (a guided checklist) and every Scalekit-backed IdP (Okta, Entra ID, Google Workspace…) lights up. Email-link sign-in is the lighter option for small teams.
 - **Secrets never reach the model context.** Channel, sign-in and pack credentials live in the encrypted secrets store.
 

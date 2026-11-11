@@ -555,10 +555,15 @@ paths:
                   description: Channel id
                 values:
                   type: object
-                  description: Setting key to a string, or null to clear
+                  description: Setting key to a string, or null to clear. A channel is on while its required settings are set
+                state:
+                  type: string
+                  enum:
+                  - 'on'
+                  - 'off'
+                  description: on mints the settings OpenNeko generates; off removes every stored setting. Send values or state
               required:
               - channel
-              - values
       responses:
         '200':
           description: Worker response, passed through with the worker status
@@ -570,6 +575,12 @@ paths:
                 properties:
                   ok:
                     type: boolean
+        '400':
+          description: Unknown channel or setting, values and state together, or a required setting missing for on
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           description: The session or device token is not valid
           content:
