@@ -110,11 +110,14 @@ Numbers in a table align right unless the cell says otherwise.
 
 The built-in fonts are `Helvetica`, `Times` and `Courier`. They draw Western
 European letters, curly quotes, dashes and the euro sign. For other
-characters, such as ₹, →, Greek, Cyrillic or Chinese, give a TrueType or
-OpenType font: `"font": { "name": "fonts/NotoSans-Regular.ttf" }`, or
-`{ "regular": ..., "bold": ..., "italic": ..., "boldItalic": ... }`. If no
-font is at hand, ask the user for one. The tool stops and names the first
-character that the font cannot draw.
+characters, the tool uses the fonts in the sandbox image: DejaVu Sans for ₹,
+arrows, Greek and Cyrillic, and Droid Sans Fallback for Chinese, Japanese and
+Korean. It picks the font for each character, so one line can mix scripts.
+To use your own font, give a TrueType or OpenType file:
+`"font": { "name": "fonts/NotoSans-Regular.ttf" }`, or
+`{ "regular": ..., "bold": ..., "italic": ..., "boldItalic": ... }`. The tool
+stops and names the first character that no font can draw, for example
+Devanagari. Then ask the user for a font that has it.
 
 ## Fill a form
 
@@ -139,8 +142,9 @@ character that the font cannot draw.
 Fill refuses an unknown field name, a value that is not an option, text over
 the field's limit and a read-only field. Read the message, then correct the
 value. Change a read-only field only when the user asks: write
-`{ "values": { ... }, "force": true }`. For characters outside the built-in
-fonts, add `--font FONT.ttf`. A form that is XFA only cannot be filled. A form
+`{ "values": { ... }, "force": true }`. Each text field takes Helvetica, or one font
+of the image when Helvetica cannot draw its value. For a field that mixes
+Latin letters and CJK, add `--font FONT.ttf`. A form that is XFA only cannot be filled. A form
 with both an XFA and a normal copy is filled, and the XFA copy is removed so
 that every viewer shows the values.
 

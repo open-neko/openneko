@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { PDFDocument, StandardFonts, degrees } = require("pdf-lib");
 const { cm, fail, loadForWrite, pageSize, parseRanges } = require("./common.cjs");
-const { clean, family, pick, setOutline } = require("./fonts.cjs");
+const { clean, cover, draw, fallbackFor, family, measure, pick, setOutline } = require("./fonts.cjs");
 const { color, setProperties } = require("./build.cjs");
 const { copyAcroForm, fill, pruneFields } = require("./forms.cjs");
 
@@ -84,7 +84,9 @@ function pagesOf(doc, op) {
 async function fontFor(doc, cache, op) {
   const key = JSON.stringify(op.font ?? "Helvetica");
   if (!cache.has(key)) cache.set(key, await family(doc, op.font));
-  return pick(cache.get(key), op);
+  const font = pick(cache.get(key), op);
+  await cover(doc, font, JSON.stringify(op));
+  return font;
 }
 
 function place(page, op, width, height) {
@@ -177,14 +179,14 @@ async function applyOp(doc, op, state) {
       for (const i of pagesOf(doc, op)) {
         const page = doc.getPage(i);
         const lines = clean(String(op.text).replace(/\{PAGE\}/g, String(i + 1)).replace(/\{PAGES\}/g, String(count)), font).split("\n");
-        const width = Math.max(...lines.map((l) => font.widthOfTextAtSize(l, size)));
+        const width = Math.max(...lines.map((l) => measure(l, font, size)));
         const lh = size * 1.25;
         const { x, y } = place(page, op, width, lines.length * lh);
         if (op.background) page.drawRectangle({ x: x - 2, y: y - 2, width: width + 4, height: lines.length * lh + 4, color: color(op.background) });
         lines.forEach((line, k) => {
-          const w = font.widthOfTextAtSize(line, size);
+          const w = measure(line, font, size);
           const lx = op.align === "right" ? x + width - w : op.align === "center" ? x + (width - w) / 2 : x;
-          page.drawText(line, { x: lx, y: y + (lines.length - k - 1) * lh + size * 0.25, font, size, color: color(op.color), opacity: opacity(op, 1) });
+          draw(page, line, { x: lx, y: y + (lines.length - k - 1) * lh + size * 0.25, font, size, color: color(op.color), opacity: opacity(op, 1) });
         });
       }
       return;
@@ -210,15 +212,15 @@ async function applyOp(doc, op, state) {
       for (const i of pagesOf(doc, op)) {
         const page = doc.getPage(i);
         const box = page.getCropBox();
-        const fit = (Math.hypot(box.width, box.height) * 0.7) / font.widthOfTextAtSize(text, 1);
+        const fit = (Math.hypot(box.width, box.height) * 0.7) / measure(text, font, 1);
         const size = op.size ?? Math.min(fit, 96);
-        const width = font.widthOfTextAtSize(text, size);
+        const width = measure(text, font, size);
         const rad = (angle * Math.PI) / 180;
         const cx = box.x + box.width / 2;
         const cy = box.y + box.height / 2;
         const x = cx - (Math.cos(rad) * width) / 2 + (Math.sin(rad) * size * 0.35);
         const y = cy - (Math.sin(rad) * width) / 2 - (Math.cos(rad) * size * 0.35);
-        page.drawText(text, { x, y, font, size, color: color(op.color ?? "#C00000"), opacity: opacity(op, 0.15), rotate: degrees(angle) });
+        draw(page, text, { x, y, font, size, color: color(op.color ?? "#C00000"), opacity: opacity(op, 0.15), angle });
       }
       return;
     }
@@ -232,9 +234,9 @@ async function applyOp(doc, op, state) {
       selected.forEach((i, k) => {
         const page = doc.getPage(i);
         const text = clean(format.replace(/\{PAGE\}/g, String(start + k)).replace(/\{PAGES\}/g, String(total)), font);
-        const width = font.widthOfTextAtSize(text, size);
+        const width = measure(text, font, size);
         const { x, y } = place(page, { ...op, position: op.position ?? "bottom-center", margin: op.margin ?? 1 }, width, size);
-        page.drawText(text, { x, y: y + size * 0.2, font, size, color: color(op.color ?? "#404040") });
+        draw(page, text, { x, y: y + size * 0.2, font, size, color: color(op.color ?? "#404040") });
       });
       return;
     }
@@ -289,14 +291,24 @@ async function applyOp(doc, op, state) {
 }
 
 async function updateAppearances(doc, state, op) {
-  const form = doc.getForm();
   const font = op.font ? await fontFor(doc, state.fonts, op) : await doc.embedFont(StandardFonts.Helvetica);
-  try {
-    form.updateFieldAppearances(font);
-  } catch (error) {
-    if (/cannot encode|WinAnsi/i.test(error.message)) fail(`a field value has a character that Helvetica cannot draw; give "font": a .ttf or .otf path in the op`);
-    throw error;
+  for (const field of doc.getForm().getFields()) {
+    if (!field.needsAppearancesUpdate()) continue;
+    try {
+      field.defaultUpdateAppearances(font);
+    } catch (error) {
+      if (!/cannot encode|WinAnsi/i.test(error.message)) throw error;
+      const fallback = op.font ? null : await fallbackFor(doc, fieldText(field));
+      if (!fallback) fail(`field "${field.getName()}" has a character that ${op.font ? "the font" : "Helvetica and the sandbox image's fonts"} cannot draw; give "font": a .ttf or .otf path that has it`);
+      field.defaultUpdateAppearances(fallback);
+    }
   }
+}
+
+function fieldText(field) {
+  if (typeof field.getText === "function") return field.getText() ?? "";
+  if (typeof field.getOptions === "function") return field.getOptions().join("");
+  return "";
 }
 
 async function edit(file, ops, options = {}) {

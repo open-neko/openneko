@@ -331,7 +331,7 @@ test("edit refuses what it cannot do safely", async () => {
   assert.match(tryOps([{ op: "reorder", order: "1,1" }]), /each of the 1 pages once/);
   assert.match(tryOps([{ op: "spin" }]), /unknown op "spin"/);
   assert.match(tryOps([{ op: "rotate", pages: "1" }, { op: "text", pages: "1", text: "x" }]), /op 2 \(text\): .*needs x and y/);
-  assert.match(tryOps([{ op: "text", pages: "1", text: "中文", x: 1, y: 1 }]), /cannot draw "中"/);
+  assert.match(tryOps([{ op: "text", pages: "1", text: "नमस्ते", x: 1, y: 1 }]), /cannot draw "न"/);
   assert.match(tryOps([{ op: "rotate", pages: "2" }]), /outside 1-1/);
   assert.equal(fs.existsSync(file("bad-out.pdf")), false);
   assert.match(cliFails("read", file("spec.json")), /not a PDF/);
@@ -345,6 +345,43 @@ test("a custom font draws text that the built-in fonts cannot", (t) => {
   if (!font) return t.skip("no TrueType font on this machine");
   json("create", writeJson("uni.json", { font: { name: font }, blocks: ["Margin ₹ 1,200 → Āž"] }), file("uni.pdf"));
   assert.match(cli("read", file("uni.pdf")), /Margin ₹ 1,200 → Āž/);
+});
+
+const IMAGE_FONTS = ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts-droid-fallback/truetype/DroidSansFallback.ttf"];
+
+async function fontNames(pdfFile) {
+  const doc = await PDFDocument.load(fs.readFileSync(pdfFile));
+  return doc.context
+    .enumerateIndirectObjects()
+    .map(([, obj]) => obj.get?.(PDFName.of("Type")) === PDFName.of("Font") && obj.get(PDFName.of("BaseFont")))
+    .filter(Boolean)
+    .map((name) => name.decodeText().replace(/-\d+$/, ""));
+}
+
+test("the sandbox image's fonts draw the rupee sign, arrows, Greek, Cyrillic and CJK", async (t) => {
+  if (!IMAGE_FONTS.every((f) => fs.existsSync(f))) return t.skip("the sandbox image's fallback fonts are not on this machine");
+  const samples = ["Margin ₹ 1,200", "Up ↑ down ↓ next →", "Αθήνα λόγος", "Москва отчёт", "東京 日本語", "中文 报告", "한국어 보고서"];
+  json("create", writeJson("fallback.json", { blocks: [{ heading: "Отчёт ₹" }, ...samples, { paragraph: [{ text: "Bold 東京 ₹", bold: true }] }, { table: [["Город", "金额"], ["Пуна", "₹ 4,200"]] }, { code: "total → ₹ 中" }] }), file("fallback.pdf"));
+  const text = cli("read", file("fallback.pdf"));
+  for (const sample of [...samples, "Отчёт ₹", "Bold 東京 ₹", "Город", "金额", "₹ 4,200", "total → ₹ 中"]) assert.ok(text.includes(sample), `the PDF lacks "${sample}":\n${text}`);
+  const names = await fontNames(file("fallback.pdf"));
+  for (const name of ["Helvetica", "DejaVuSans", "DejaVuSans-Bold", "DejaVuSansMono", "DroidSansFallback"]) assert.ok(names.includes(name), `no ${name} in ${names}`);
+
+  json("create", writeJson("latin.json", { blocks: ["Plain text only"] }), file("latin.pdf"));
+  assert.deepEqual((await fontNames(file("latin.pdf"))).filter((n) => !/^(Helvetica|Courier)/.test(n)), []);
+
+  await textPdf("fallback-edit-in.pdf", ["Page one"]);
+  json("edit", file("fallback-edit-in.pdf"), writeJson("fallback-ops.json", [
+    { op: "text", pages: "1", text: "Δ ₹ 東京", x: 2, y: 2 },
+    { op: "watermark", pages: "1", text: "ЧЕРНОВИК 草稿" },
+    { op: "pageNumbers", format: "{PAGE} → {PAGES}" },
+  ]), file("fallback-edit.pdf"));
+  const edited = cli("read", file("fallback-edit.pdf"));
+  for (const sample of ["Δ ₹ 東京", "ЧЕРНОВИК", "草稿", "1 → 1"]) assert.ok(edited.includes(sample), `the edited PDF lacks "${sample}":\n${edited}`);
+
+  await formPdf("fallback-form.pdf");
+  json("fill", file("fallback-form.pdf"), writeJson("fallback-values.json", { "supplier.name": "株式会社" }), file("fallback-filled.pdf"), "--flatten");
+  assert.ok(cli("read", file("fallback-filled.pdf")).includes("株式会社"));
 });
 
 test("read gives the text of a font with a predefined CJK CMap", async () => {

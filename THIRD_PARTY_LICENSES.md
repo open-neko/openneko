@@ -46,6 +46,15 @@ The sandbox recipe image installs these npm packages from
 | `pdfjs-dist` | 6.5.438 | Apache-2.0 | Reads PDF text, form fields and bookmarks. It carries Adobe CMap files (BSD-3-Clause), which the skill uses to read CJK text, and Foxit and Liberation fonts (BSD-style and SIL OFL 1.1), which the skill does not use |
 | `@napi-rs/canvas` | 1.1.0 | MIT | Optional package of `pdfjs-dist`. The CI test run installs it; the sandbox image leaves it out |
 
+The sandbox recipe image also installs two Debian font packages. The `pdf`
+skill embeds a subset of them in a PDF when its built-in fonts cannot draw a
+character. The image keeps only the faces in the table.
+
+| Package | Version | License | Faces kept |
+|---|---|---|---|
+| `fonts-dejavu-core` | 2.37-6 | Bitstream Vera license; DejaVu changes are public domain | DejaVu Sans, DejaVu Sans Bold, DejaVu Sans Mono. They draw ₹, arrows, Greek and Cyrillic |
+| `fonts-droid-fallback` | 6.0.1r16-1.1 | Apache-2.0 | Droid Sans Fallback. It draws Chinese, Japanese and Korean |
+
 ---
 
 ## Other notable dependencies

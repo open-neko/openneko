@@ -21,8 +21,10 @@ The overlay adds the `openneko-sandbox` service and sets
 `openneko-serve`. Set `OPENNEKO_SANDBOX_KEY` in the shell or in `.env` to
 require a key on the socket as well.
 
-The image carries Node, Python, Poppler, Tesseract, and the Python and npm
-packages the bundled skills use. It leaves out the optional native canvas
+The image carries Node, Python, Poppler, Tesseract, the Python and npm
+packages the bundled skills use, and the DejaVu Sans and Droid Sans Fallback
+fonts. The `pdf` skill uses the fonts for ₹, arrows, Greek, Cyrillic and CJK
+text. It leaves out the optional native canvas
 package of `pdfjs-dist`; the `pdf` skill draws pages with Poppler. Keep it in step with `KNOWN_SKILL_DEPS` in
 `packages/llm/src/work/skill-deps.ts`.
 
