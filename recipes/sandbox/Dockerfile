@@ -15,6 +15,7 @@ RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\n' > /etc/apt/ap
       libreoffice-core libreoffice-common libreoffice-writer libreoffice-calc \
       libreoffice-impress libreoffice-draw poppler-utils qpdf tesseract-ocr \
     && rm -rf /var/lib/apt/lists/* \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2 \
     && pip3 install --no-cache-dir --break-system-packages \
       openpyxl python-pptx Pillow python-docx pypdf pdfplumber reportlab PyYAML \
       defusedxml lxml \

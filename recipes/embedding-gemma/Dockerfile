@@ -7,11 +7,13 @@ COPY lazy-service .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/lazy-service .
 
 # torchvision and pillow are required by the model's processor even for text.
-FROM python:3.13-slim-bookworm AS embedding-python
+FROM python:3.13.17-slim-bookworm AS embedding-python
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2
 COPY embedding-gemma/requirements.txt /tmp/embedding-requirements.txt
-RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
+RUN pip install --no-cache-dir pip==26.2.2 \
+    && pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
       torch==2.14.1 torchvision==0.29.1 \
     && pip install --no-cache-dir -r /tmp/embedding-requirements.txt \
     && rm /tmp/embedding-requirements.txt

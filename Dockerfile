@@ -82,6 +82,7 @@ FROM debian:bookworm-slim AS graphjin-bin
 ARG GRAPHJIN_VERSION=3.21.18
 ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2 \
     && case "${TARGETARCH}" in amd64|arm64) ;; *) exit 1 ;; esac \
     && curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors \
       -o /tmp/graphjin.tgz \
@@ -165,6 +166,7 @@ ARG TARGETARCH
 ARG DUCKDB_VERSION=v1.5.5
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2 \
     && case "$TARGETARCH" in \
          amd64) sum=c61f21485e6e41d3a0c28ce9904ea18346309cf427b4cf9479bc3564348dc885 ;; \
          arm64) sum=50c719e603a4e599d435e5321542458edc1cfc5f7eed65979fe9bc5ae4e3ba23 ;; \
@@ -191,7 +193,7 @@ RUN mkdir -p /out/init-tools \
 FROM node:24.22.1-alpine AS node-alpine-distribution
 
 FROM alpine:3.22 AS node-alpine-runtime
-RUN apk add --no-cache libstdc++
+RUN apk add --no-cache --upgrade libstdc++ ca-certificates-bundle
 COPY --from=node-alpine-distribution /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-alpine-distribution /usr/local/share/doc/node /usr/local/share/doc/node
 
@@ -207,7 +209,7 @@ RUN pnpm --dir apps/worker exec esbuild scripts/load-adventureworks.ts \
       --outfile=/out/load-adventureworks.js
 
 FROM node-alpine-runtime AS adventureworks-loader
-RUN apk add --no-cache ca-certificates curl postgresql-client unzip
+RUN apk add --no-cache --upgrade ca-certificates ca-certificates-bundle curl postgresql-client unzip
 WORKDIR /app
 COPY --from=adventureworks-loader-deploy /out/load-adventureworks.js /app/load-adventureworks.js
 ENTRYPOINT ["node", "/app/load-adventureworks.js"]
@@ -383,6 +385,6 @@ CMD ["serve"]
 # ─── 6. graphjin-runtime ───────────────────────────────────────────────
 # The GraphJin binary alone, for the backend eval stack.
 FROM alpine:3.22 AS graphjin-runtime
-RUN apk add --no-cache ca-certificates curl tini
+RUN apk add --no-cache --upgrade ca-certificates ca-certificates-bundle curl tini
 COPY --from=graphjin-bin /usr/local/bin/graphjin /usr/local/bin/graphjin
 

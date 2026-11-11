@@ -50,6 +50,16 @@ jobs:
       - name: Verify failed-to-recovered release transitions
         run: bash scripts/check-release-recovery-contract.sh
 
+  trust-floors:
+    name: Runtime and CA bundle floors
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify runtimes and CA bundles carry the eMudhra fixes
+        run: bash scripts/check-trust-floors.sh
+
   design-system:
     name: Web design system
     runs-on: ubuntu-24.04
