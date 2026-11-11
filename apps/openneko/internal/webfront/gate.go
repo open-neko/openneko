@@ -1,6 +1,7 @@
 package webfront
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -8,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -18,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
@@ -59,9 +62,18 @@ type Gate struct {
 }
 
 type providerProbe struct {
-	live bool
-	at   time.Time
+	status AuthStatus
+	at     time.Time
 }
+
+// AuthStatus is the worker's sign-in answer. Provider holds the provider
+// object as the worker sent it, or nil when sign-in is off.
+type AuthStatus struct {
+	Provider json.RawMessage
+	Pending  json.RawMessage
+}
+
+func (s AuthStatus) Live() bool { return s.Provider != nil }
 
 type adminProbe struct {
 	admin bool
@@ -70,7 +82,7 @@ type adminProbe struct {
 
 type markerState struct {
 	found    bool
-	provider string
+	provider json.RawMessage
 }
 
 func (g *Gate) now() time.Time {
@@ -194,20 +206,27 @@ func (g *Gate) SessionUserID(value string) string {
 }
 
 func (g *Gate) deviceUserID(ctx context.Context, authorization string) string {
+	_, userID, _ := g.Device(ctx, authorization)
+	return userID
+}
+
+// Device returns the installed app's device and user behind a bearer device
+// token, or "" for both when the header holds no valid token.
+func (g *Gate) Device(ctx context.Context, authorization string) (deviceID, userID string, err error) {
 	m := bearerDevice.FindStringSubmatch(authorization)
 	if m == nil || g.DB == nil {
-		return ""
+		return "", "", nil
 	}
 	token := m[1]
 	parsed := deviceToken.FindStringSubmatch(token)
 	if parsed == nil {
-		return ""
+		return "", "", nil
 	}
 	sum := sha256.Sum256([]byte(token))
 	digest := hex.EncodeToString(sum[:])
-	var id, userID, verifier string
+	var id, verifier string
 	var stale bool
-	err := g.DB.QueryRow(ctx, `
+	err = g.DB.QueryRow(ctx, `
 		select d.id, d.user_id, d.token_verifier,
 		       d.last_used_at < now() - make_interval(secs => $3) as stale
 		from app_device d
@@ -216,13 +235,19 @@ func (g *Gate) deviceUserID(ctx context.Context, authorization string) string {
 		  and d.token_prefix = $1 and d.revoked_at is null
 		  and d.last_used_at > now() - make_interval(days => $2)`,
 		parsed[1], deviceIdleDays, lastUsedResolution).Scan(&id, &userID, &verifier, &stale)
-	if err != nil || subtle.ConstantTimeCompare([]byte(digest), []byte(verifier)) != 1 {
-		return ""
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", nil
+	}
+	if err != nil {
+		return "", "", err
+	}
+	if subtle.ConstantTimeCompare([]byte(digest), []byte(verifier)) != 1 {
+		return "", "", nil
 	}
 	if stale {
 		_, _ = g.DB.Exec(ctx, `update app_device set last_used_at = now() where id = $1`, id)
 	}
-	return userID
+	return id, userID, nil
 }
 
 func (g *Gate) isAdministrator(ctx context.Context, userID string) bool {
@@ -259,29 +284,34 @@ func (g *Gate) isAdministrator(ctx context.Context, userID string) bool {
 }
 
 func (g *Gate) signInLive(ctx context.Context) bool {
+	return g.Status(ctx).Live()
+}
+
+// Status asks the worker which sign-in provider is live, at most once a
+// second. When the worker does not answer, the last answer in the marker
+// file decides, as in apps/web/src/lib/auth.ts.
+func (g *Gate) Status(ctx context.Context) AuthStatus {
 	now := g.now()
 	g.mu.Lock()
 	if g.provider != nil && now.Sub(g.provider.at) < providerCacheTTL {
-		live := g.provider.live
+		status := g.provider.status
 		g.mu.Unlock()
-		return live
+		return status
 	}
 	g.mu.Unlock()
-	provider, err := g.fetchProvider(ctx)
-	var live bool
+	status, err := g.fetchStatus(ctx)
 	if err != nil {
-		live = g.readMarker().provider != ""
+		status = AuthStatus{Provider: g.readMarker().provider}
 	} else {
-		live = provider != ""
-		g.writeMarker(provider)
+		g.writeMarker(status.Provider)
 	}
 	g.mu.Lock()
-	g.provider = &providerProbe{live: live, at: now}
+	g.provider = &providerProbe{status: status, at: now}
 	g.mu.Unlock()
-	return live
+	return status
 }
 
-func (g *Gate) fetchProvider(ctx context.Context) (string, error) {
+func (g *Gate) fetchStatus(ctx context.Context) (AuthStatus, error) {
 	base := strings.TrimRight(g.WorkerURL, "/")
 	if base == "" {
 		base = "http://127.0.0.1:4100"
@@ -290,7 +320,7 @@ func (g *Gate) fetchProvider(ctx context.Context) (string, error) {
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/admin/auth/status", nil)
 	if err != nil {
-		return "", err
+		return AuthStatus{}, err
 	}
 	req.Header.Set("Accept", "application/json")
 	client := g.Client
@@ -299,34 +329,46 @@ func (g *Gate) fetchProvider(ctx context.Context) (string, error) {
 	}
 	res, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return AuthStatus{}, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode > 299 {
-		return "", errStatus
+		return AuthStatus{}, errStatus
 	}
 	raw, err := io.ReadAll(io.LimitReader(res.Body, workerStatusMaxBytes+1))
 	if err != nil {
-		return "", err
+		return AuthStatus{}, err
 	}
 	if len(raw) > workerStatusMaxBytes {
-		return "", errStatus
+		return AuthStatus{}, errStatus
 	}
 	var body struct {
-		Provider *struct {
-			PluginName string `json:"pluginName"`
-		} `json:"provider"`
+		Provider json.RawMessage `json:"provider"`
+		Pending  json.RawMessage `json:"pending"`
 	}
 	if err := json.Unmarshal(raw, &body); err != nil {
-		return "", err
+		return AuthStatus{}, err
 	}
-	if body.Provider == nil {
-		return "", nil
+	return AuthStatus{Provider: object(body.Provider), Pending: object(body.Pending)}, nil
+}
+
+func object(raw json.RawMessage) json.RawMessage {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return nil
 	}
-	if body.Provider.PluginName == "" {
-		return "provider", nil
+	return trimmed
+}
+
+func pluginName(provider json.RawMessage) string {
+	if provider == nil {
+		return ""
 	}
-	return body.Provider.PluginName, nil
+	var p struct {
+		PluginName string `json:"pluginName"`
+	}
+	_ = json.Unmarshal(provider, &p)
+	return p.PluginName
 }
 
 type statusError string
@@ -367,15 +409,7 @@ func (g *Gate) readMarker() markerState {
 		if json.Unmarshal(raw, &parsed) == nil {
 			if p, ok := parsed["provider"]; ok {
 				state.found = true
-				var provider struct {
-					PluginName string `json:"pluginName"`
-				}
-				if string(p) != "null" && json.Unmarshal(p, &provider) == nil {
-					state.provider = provider.PluginName
-					if state.provider == "" {
-						state.provider = "provider"
-					}
-				}
+				state.provider = object(p)
 			}
 		}
 	}
@@ -385,28 +419,28 @@ func (g *Gate) readMarker() markerState {
 
 // writeMarker keeps the file format of auth-gate-marker.ts. A read-only config
 // folder leaves the marker stale and must not fail the request.
-func (g *Gate) writeMarker(provider string) {
+func (g *Gate) writeMarker(provider json.RawMessage) {
 	previous := g.readMarker()
 	g.mu.Lock()
 	g.marker = &markerState{found: true, provider: provider}
 	g.mu.Unlock()
-	if previous.found && previous.provider == provider {
+	if previous.found && (previous.provider == nil) == (provider == nil) && pluginName(previous.provider) == pluginName(provider) {
 		return
 	}
-	var body any = map[string]any{"provider": nil}
-	if provider != "" {
-		body = map[string]any{"provider": map[string]string{"pluginName": provider}}
-	}
-	raw, err := json.Marshal(body)
-	if err != nil {
-		return
+	body := []byte(`{"provider":null}`)
+	if provider != nil {
+		var compact bytes.Buffer
+		if json.Compact(&compact, provider) != nil {
+			return
+		}
+		body = append(append([]byte(`{"provider":`), compact.Bytes()...), '}')
 	}
 	path := g.markerPath()
 	if os.MkdirAll(filepath.Dir(path), 0o700) != nil {
 		return
 	}
 	tmp := path + ".tmp-" + strconv.Itoa(os.Getpid())
-	if os.WriteFile(tmp, raw, 0o600) != nil {
+	if os.WriteFile(tmp, body, 0o600) != nil {
 		return
 	}
 	if os.Rename(tmp, path) != nil {

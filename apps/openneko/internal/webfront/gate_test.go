@@ -170,7 +170,7 @@ func TestGateMarker(t *testing.T) {
 		t.Fatal("gate open with a live provider")
 	}
 	raw, err := os.ReadFile(g.MarkerPath)
-	if err != nil || string(raw) != `{"provider":{"pluginName":"oidc"}}` {
+	if err != nil || string(raw) != `{"provider":{"pluginName":"oidc","issuer":"x"}}` {
 		t.Fatalf("marker %q %v", raw, err)
 	}
 

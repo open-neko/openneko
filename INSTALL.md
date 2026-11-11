@@ -750,8 +750,9 @@ openneko reset --all      # wipes everything including secrets
 
 The packaged stack publishes one host port: the web app, `3000` by default.
 In the web container, `openneko web` answers that port. It serves the web app
-and passes the API and the admin pages to the Next server on
-`127.0.0.1:3001` inside the container. The bundled Postgres, GraphJin, the worker broker, the file service, the agent runtime and
+and answers the version, sign-in status, session, sign-out and device sign-in
+routes. It passes the rest of the API and the admin pages to the Next server
+on `127.0.0.1:3001` inside the container. The bundled Postgres, GraphJin, the worker broker, the file service, the agent runtime and
 the demo data services stay on the private Docker network.
 
 Configure and persist the port during guided installation:
@@ -833,7 +834,7 @@ Web and worker run on the host with hot reload. Everything else runs in Docker.
 - `pnpm dev:up` starts the backing services with `compose.db.yml` and `compose.dev.yml`: `neko-db`, the `openneko-serve` container with the customer GraphJin and the subscriptions GraphJin, and AdventureWorks with its simulator. It installs the pinned GraphJin CLI into `.openneko/dev/bin`, builds the serve image, runs migrations from source, and writes the GraphJin JWT secret.
 - `pnpm dev:seed` seeds demo workflows. `pnpm dev:setup` runs both steps.
 - `pnpm dev` runs `next dev` on port 3000 and `tsx watch` for the worker. Edits to `apps/web`, `apps/worker`, and workspace packages reload without an image build.
-- `pnpm --filter @neko/web build:spa` builds the web app as static files in `apps/web/dist`, with a client router. `dev:spa` serves that build on port 5173 and passes `/api` and the admin pages to the Next server on port 3000 (set `OPENNEKO_SPA_API` for another address). `openneko web --addr 127.0.0.1:3002 --node-addr 127.0.0.1:3000` serves that build from Go, as the release does, and passes `/api` and the admin pages to `next dev`. It applies the sign-in and admin checks of `proxy.ts` to each request and sets the `Content-Security-Policy` header of `next.config.ts` on the app. It reads sessions, devices and groups with the main database login and asks the worker at `--worker-admin-url` whether sign-in is on.
+- `pnpm --filter @neko/web build:spa` builds the web app as static files in `apps/web/dist`, with a client router. `dev:spa` serves that build on port 5173 and passes `/api` and the admin pages to the Next server on port 3000 (set `OPENNEKO_SPA_API` for another address). `openneko web --addr 127.0.0.1:3002 --node-addr 127.0.0.1:3000` serves that build from Go, as the release does, and passes `/api` and the admin pages to `next dev`. It applies the sign-in and admin checks of `proxy.ts` to each request and sets the `Content-Security-Policy` header of `next.config.ts` on the app. It reads sessions, devices and groups with the main database login and asks the worker at `--worker-admin-url` whether sign-in is on. Go answers `/api/v1/version`, `/api/v1/auth/status`, `/api/v1/auth/session`, `/api/v1/auth/logout` and `/api/v1/auth/device/*`; `next dev` keeps its own copy of these routes until the whole sign-in group moves to Go.
 - `scripts/dev-env.sh` holds the host settings. Each service a host process calls has a loopback port; `pnpm dev:web` and `pnpm dev:worker` source the file.
 - The customer GraphJin runs in sources mode from `db/graphjin/dev.sources.example.yml`. Its config lives in `.openneko/dev/graphjin`, and the worker manages it like the core stack.
 - OpenNeko state uses your XDG config home. Set `OPENNEKO_DEV_CONFIG_HOME=$PWD/.openneko/dev/config` to keep a worktree's stack separate, and a distinct `COMPOSE_PROJECT_NAME` with its ports when two stacks run at once.

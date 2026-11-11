@@ -4,7 +4,9 @@ package testpg
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"testing"
 	"time"
 
@@ -16,6 +18,25 @@ import (
 // Pool returns a pool on a new schema with the given embedded migrations
 // applied. It skips the test when OPENNEKO_TEST_DATABASE_URL is unset.
 func Pool(t testing.TB, migrations ...string) *pgxpool.Pool {
+	t.Helper()
+	return pool(t, false, migrations)
+}
+
+// Migrated returns a pool on a new schema with every embedded migration
+// applied. The public schema stays on the search path for the vector type.
+func Migrated(t testing.TB) *pgxpool.Pool {
+	t.Helper()
+	names, err := fs.Glob(assets.MigrationsFS, "migrations/*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, name := range names {
+		names[i] = path.Base(name)
+	}
+	return pool(t, true, names)
+}
+
+func pool(t testing.TB, public bool, migrations []string) *pgxpool.Pool {
 	t.Helper()
 	url := os.Getenv("OPENNEKO_TEST_DATABASE_URL")
 	if url == "" {
@@ -39,6 +60,9 @@ func Pool(t testing.TB, migrations ...string) *pgxpool.Pool {
 		t.Fatal(err)
 	}
 	cfg.ConnConfig.RuntimeParams["search_path"] = schema
+	if public {
+		cfg.ConnConfig.RuntimeParams["search_path"] = schema + ", public"
+	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
