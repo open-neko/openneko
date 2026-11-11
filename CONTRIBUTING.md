@@ -61,6 +61,10 @@ OPENNEKO_CONTRACT_PG=postgres://neko:secret@127.0.0.1:5432/postgres \
   pnpm --filter @neko/contract local
 ```
 
+To run the tests through `openneko web` in front of Next, as the web image
+does, also run `pnpm --filter @neko/web build:spa` and set
+`OPENNEKO_CONTRACT_FRONT=go`.
+
 To test another server, point `OPENNEKO_DATABASE_URL_FILE` at its new,
 migrated database and run `pnpm --filter @neko/contract seed <file>`. The
 command writes two device tokens to the file. Sign-in must be on for that

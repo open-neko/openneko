@@ -91,6 +91,13 @@ func TestServeInitGivesEachServeRoleOnlyItsTables(t *testing.T) {
 	if !bytes.Equal(key, want) {
 		t.Fatal("token key does not match the key web and worker sign with")
 	}
+	session, err := config.SigningSecret(configDir, "session-cookie:v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(key, session) {
+		t.Fatal("the serve token key is the session cookie secret")
+	}
 	secret, err := os.ReadFile(filepath.Join(configDir, "secret-key"))
 	if err != nil {
 		t.Fatal(err)
@@ -125,6 +132,9 @@ func TestServeInitGivesEachServeRoleOnlyItsTables(t *testing.T) {
 	for _, sql := range []string{
 		`select count(*) from organization`,
 		`select count(*) from app_user`,
+		`select count(*) from app_device`,
+		`select count(*) from user_group`,
+		`select count(*) from user_group_membership`,
 		`select count(*) from data_source_secret`,
 		`select count(*) from llm_provider_config`,
 		`select count(*) from workflow_output`,
@@ -156,6 +166,9 @@ func TestServeInitGivesEachServeRoleOnlyItsTables(t *testing.T) {
 		`select count(*) from organization`,
 		`select count(*) from file_content_unit`,
 		`select count(*) from llm_provider_config`,
+		`select count(*) from app_user`,
+		`select count(*) from app_device`,
+		`select count(*) from user_group_membership`,
 		`delete from workflow_output`,
 		`create table subs_owned (id int)`,
 	} {

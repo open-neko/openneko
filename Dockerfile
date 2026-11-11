@@ -133,7 +133,7 @@ RUN mkdir -p packages/llm/assets/sandbox-skills \
 
 FROM source AS build
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm --filter @neko/web build
+RUN pnpm --filter @neko/web build && pnpm --filter @neko/web build:spa
 
 # Next's standalone tree and its manually copied native dependency use the same
 # server-only pruning contract as the worker deployment.
@@ -253,7 +253,8 @@ WORKDIR /app
 # convention (Cloud Run, Heroku, Fly, Railway).
 ENV NODE_ENV=production \
     PORT=8080 \
-    HOSTNAME=0.0.0.0 \
+    OPENNEKO_WEB_DIR=/app/apps/web/dist \
+    OPENNEKO_WEB_NODE_ADDR=127.0.0.1:3001 \
     HOME=/tmp/openneko-home \
     XDG_CONFIG_HOME=/tmp/openneko-config \
     NEXT_TELEMETRY_DISABLED=1
@@ -267,6 +268,7 @@ RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-
 COPY --from=web-deploy --chown=neko:neko /app/apps/web/.next/standalone ./
 COPY --from=web-deploy --chown=neko:neko /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=web-deploy --chown=neko:neko /app/apps/web/public ./apps/web/public
+COPY --from=build --chown=neko:neko /app/apps/web/dist ./apps/web/dist
 # Next.js standalone tracing misses static asset dirs — copy explicitly.
 COPY --from=web-deploy --chown=neko:neko /app/packages/llm/assets ./packages/llm/assets
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
@@ -281,7 +283,7 @@ RUN chmod -R a+rX /opt/openneko-agent
 USER neko
 EXPOSE 8080
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
-CMD ["node", "apps/web/server.js"]
+CMD ["openneko", "web", "--", "node", "apps/web/server.js"]
 
 # ─── 5b. worker runtime ────────────────────────────────────────────────
 # Trimmed prod closure of @neko/worker: drops devDeps + other apps' sources +
