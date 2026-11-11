@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({ user: null as { id: string } | null, provider: false, rows: [] as unknown[] }));
-vi.mock("@/lib/auth", () => ({ SESSION_COOKIE_NAME: "openneko_session", getCurrentUser: async () => state.user, getAuthProvider: async () => state.provider ? {} : null }));
+vi.mock("@/lib/auth", () => ({ SESSION_COOKIE_NAME: "openneko_session", getCurrentUser: async () => state.user, currentDevice: async () => null, getAuthProvider: async () => state.provider ? {} : null }));
 vi.mock("@neko/db", () => ({ app_user: {}, eq: vi.fn(), getOrgId: async () => "org", resolveUserGroups: async () => ({ administrator: (state.rows[0] as { role?: string } | undefined)?.role === "admin", groupIds: [], slugs: [], ssoGroupIds: [] }), db: () => ({ select: () => ({ from: () => ({ where: () => ({ limit: async () => state.rows }) }) }) }) }));
 import { getCurrentActor } from "@/lib/actor";
 import { GET as session } from "@/app/api/v1/auth/session/route";

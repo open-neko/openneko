@@ -38,6 +38,12 @@ components:
       type: apiKey
       in: cookie
       name: openneko_session
+    deviceToken:
+      type: http
+      scheme: bearer
+      description: A device token (onk_dev_...) for the installed app, from /auth/device/token. It works
+        on every signed-in and admin route. An admin can revoke it; it also stops after 30 days without
+        use or when the user is disabled.
     workflowApiKey:
       type: http
       scheme: bearer
@@ -56,6 +62,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: status
         in: query
@@ -94,6 +101,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: actionRequestId
         in: path
@@ -132,6 +140,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: actionRequestId
         in: path
@@ -178,6 +187,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Password status
@@ -205,6 +215,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -274,6 +285,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Worker response, passed through with the worker status
@@ -310,6 +322,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -363,6 +376,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The remote is removed
@@ -390,6 +404,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The remote settings, or null
@@ -417,6 +432,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -483,6 +499,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The updated remote
@@ -520,6 +537,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: kind
         in: query
@@ -573,6 +591,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The publish result
@@ -614,6 +633,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: skill
         in: query
@@ -661,6 +681,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: false
         content:
@@ -715,6 +736,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: groupId
         in: query
@@ -751,6 +773,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -849,6 +872,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The setting
@@ -876,6 +900,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -921,6 +946,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: source
         in: query
@@ -965,6 +991,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: ruleId
         in: path
@@ -999,6 +1026,110 @@ paths:
                 properties:
                   error:
                     type: string
+  /admin/devices:
+    get:
+      operationId: getAdminDevices
+      tags:
+      - admin
+      summary: List the installed-app devices that signed in
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      responses:
+        '200':
+          description: Every device, active first, then by last use
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  devices:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        userId:
+                          type: string
+                        userEmail:
+                          type: string
+                        userName:
+                          type:
+                          - string
+                          - 'null'
+                        name:
+                          type: string
+                        tokenPrefix:
+                          type: string
+                        createdAt:
+                          type: string
+                        lastUsedAt:
+                          type: string
+                        revokedAt:
+                          type:
+                          - string
+                          - 'null'
+                        status:
+                          type: string
+                          enum:
+                          - active
+                          - idle
+                          - revoked
+        '403':
+          description: The caller is not an admin
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /admin/devices/{deviceId}:
+    delete:
+      operationId: deleteAdminDevicesByDeviceId
+      tags:
+      - admin
+      summary: Revoke a device's token at once
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      parameters:
+      - name: deviceId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The device is revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '403':
+          description: The caller is not an admin
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: No active device has this id
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
   /admin/directory:
     get:
       operationId: getAdminDirectory
@@ -1008,6 +1139,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Worker response, passed through with the worker status
@@ -1041,6 +1173,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Worker response, passed through with the worker status
@@ -1078,6 +1211,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The groups
@@ -1105,6 +1239,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -1190,6 +1325,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: groupId
         in: path
@@ -1267,6 +1403,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: groupId
         in: path
@@ -1317,6 +1454,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: groupId
         in: path
@@ -1407,6 +1545,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: groupId
         in: path
@@ -1492,6 +1631,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: groupId
         in: path
@@ -1581,6 +1721,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The rules and groups
@@ -1612,6 +1753,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -1698,6 +1840,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: ruleId
         in: path
@@ -1776,6 +1919,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -1861,6 +2005,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: itemType
         in: query
@@ -1910,6 +2055,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -1999,6 +2145,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: type
         in: query
@@ -2054,6 +2201,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Worker response, passed through with the worker status
@@ -2088,6 +2236,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Worker response, passed through with the worker status
@@ -2121,6 +2270,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: false
         content:
@@ -2179,6 +2329,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -2247,6 +2398,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: packId
         in: path
@@ -2306,6 +2458,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: packId
         in: path
@@ -2388,6 +2541,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The public URL
@@ -2417,6 +2571,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -2466,6 +2621,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The webhooks
@@ -2493,6 +2649,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -2553,6 +2710,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: reckonWorkflowId
         in: path
@@ -2596,6 +2754,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -2670,6 +2829,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -2728,6 +2888,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The status
@@ -2764,6 +2925,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -2821,6 +2983,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The spend settings
@@ -2858,6 +3021,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -2924,6 +3088,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: alertId
         in: path
@@ -2977,6 +3142,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: workflowId
         in: path
@@ -3025,6 +3191,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: workflowId
         in: path
@@ -3087,6 +3254,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -3166,6 +3334,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: userId
         in: path
@@ -3239,6 +3408,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: userId
         in: path
@@ -3277,6 +3447,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The limits
@@ -3304,6 +3475,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -3357,6 +3529,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: filter
         in: query
@@ -3462,12 +3635,177 @@ paths:
       responses:
         '302':
           description: Redirect to the return path on success, or to /signin with an error
+  /auth/device/approve:
+    post:
+      operationId: postAuthDeviceApprove
+      tags:
+      - auth
+      summary: Approve or deny the code that the installed app shows
+      x-access: public
+      security:
+      - session: []
+      description: The route needs a browser session. A request with a device token gets 403.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - userCode
+              - approve
+              properties:
+                userCode:
+                  type: string
+                  description: The eight-letter code, with or without the dash
+                approve:
+                  type: boolean
+      responses:
+        '200':
+          description: The decision is stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  approved:
+                    type: boolean
+                  name:
+                    type: string
+        '400':
+          description: approve is not a boolean
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '401':
+          description: No signed-in user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '403':
+          description: The request carries a device token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: The code is not valid, has expired or was already used
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /auth/device/code:
+    post:
+      operationId: postAuthDeviceCode
+      tags:
+      - auth
+      summary: Start a device sign-in for the installed app
+      x-access: public
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: The device name that the approval page and the device list show
+      responses:
+        '200':
+          description: The codes, valid for ten minutes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deviceCode:
+                    type: string
+                  userCode:
+                    type: string
+                  verificationUri:
+                    type: string
+                  verificationUriComplete:
+                    type: string
+                  expiresIn:
+                    type: integer
+                  interval:
+                    type: integer
+        '429':
+          description: Twenty sign-ins already wait for approval
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /auth/device/token:
+    post:
+      operationId: postAuthDeviceToken
+      tags:
+      - auth
+      summary: Get the device token after approval
+      x-access: public
+      security: []
+      description: Poll no faster than the interval. The token is returned once. Error names follow RFC 8628.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - deviceCode
+              properties:
+                deviceCode:
+                  type: string
+      responses:
+        '200':
+          description: The device token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  deviceId:
+                    type: string
+        '400':
+          description: authorization_pending, slow_down, access_denied, expired_token or invalid_request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  message:
+                    type: string
   /auth/logout:
     post:
       operationId: postAuthLogout
       tags:
       - auth
-      summary: Clear the session cookie
+      summary: Clear the session cookie, or revoke the calling device token
       x-access: public
       security: []
       responses:
@@ -3533,6 +3871,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The bots
@@ -3553,6 +3892,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -3596,6 +3936,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: threadId
         in: path
@@ -3625,6 +3966,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: threadId
         in: path
@@ -3654,6 +3996,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: botId
         in: path
@@ -3684,6 +4027,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: botId
         in: path
@@ -3714,6 +4058,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: botId
         in: path
@@ -3762,6 +4107,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: botId
         in: path
@@ -3803,6 +4149,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: botId
         in: path
@@ -3850,6 +4197,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: role
         in: query
@@ -3872,6 +4220,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -3918,6 +4267,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: metricId
         in: query
@@ -3958,6 +4308,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -3991,6 +4342,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -4027,6 +4379,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The briefing tributaries
@@ -4058,6 +4411,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: scope
         in: query
@@ -4085,6 +4439,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The active mutes
@@ -4103,6 +4458,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -4143,6 +4499,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -4181,6 +4538,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The pins in sort order
@@ -4199,6 +4557,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -4234,6 +4593,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: pinId
         in: path
@@ -4261,6 +4621,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The action receipts
@@ -4282,6 +4643,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -4320,6 +4682,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Counts for today and the highest daily budget use
@@ -4345,6 +4708,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: jobId
         in: query
@@ -4387,6 +4751,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Minutes saved in the window, in total, and per day
@@ -4654,6 +5019,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: false
         content:
@@ -4797,6 +5163,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: plugin
         in: path
@@ -4858,6 +5225,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Workspace and per-operator connectors
@@ -4888,6 +5256,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: q
         in: query
@@ -4948,6 +5317,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: id
         in: path
@@ -4974,6 +5344,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: id
         in: path
@@ -5001,6 +5372,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -5051,6 +5423,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: packId
         in: path
@@ -5084,6 +5457,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: packId
         in: path
@@ -5126,6 +5500,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: consumerWorkflowId
         in: query
@@ -5170,6 +5545,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Onboarding state
@@ -5214,6 +5590,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -5578,6 +5955,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Action policies in priority order
@@ -5606,6 +5984,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: policyId
         in: path
@@ -5648,6 +6027,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: policyId
         in: path
@@ -5713,6 +6093,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The profile
@@ -5740,6 +6121,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -5778,6 +6160,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Agent settings and options
@@ -5811,6 +6194,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -5867,6 +6251,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Up to 500 channel identities
@@ -5895,6 +6280,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: id
         in: path
@@ -5962,6 +6348,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Data source settings
@@ -5997,6 +6384,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -6057,6 +6445,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -6109,6 +6498,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Data sources
@@ -6136,6 +6526,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -6207,6 +6598,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -6277,6 +6669,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: GraphJin config settings
@@ -6306,6 +6699,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -6354,6 +6748,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Install policy
@@ -6383,6 +6778,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -6431,6 +6827,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: OpenAPI spec assets
@@ -6458,6 +6855,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -6510,6 +6908,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Persona and prompt preview
@@ -6530,6 +6929,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -6580,6 +6980,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Primary and research provider settings
@@ -6615,6 +7016,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -6691,6 +7093,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -6763,6 +7166,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Skill learning setting
@@ -6792,6 +7196,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -6842,6 +7247,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -6889,6 +7295,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: name
         in: query
@@ -6932,6 +7339,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: Secret names and descriptions
@@ -6959,6 +7367,7 @@ paths:
       x-access: admin
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -7417,6 +7826,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: subscriptionId
         in: path
@@ -7443,6 +7853,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: subscriptionId
         in: path
@@ -7497,6 +7908,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The files
@@ -7518,6 +7930,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: since
         in: query
@@ -7542,6 +7955,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: path
         in: query
@@ -7574,6 +7988,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -7617,6 +8032,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: path
         in: path
@@ -7640,6 +8056,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: includeArchived
         in: query
@@ -7666,6 +8083,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -7723,6 +8141,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: threadId
         in: query
@@ -7757,6 +8176,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The updates; empty for non-members
@@ -7775,6 +8195,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -7808,6 +8229,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: id
         in: path
@@ -7845,6 +8267,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: id
         in: path
@@ -7871,6 +8294,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: id
         in: path
@@ -7915,6 +8339,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: id
         in: path
@@ -7944,6 +8369,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: runId
         in: path
@@ -7973,6 +8399,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: runId
         in: path
@@ -8002,6 +8429,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The skills
@@ -8022,6 +8450,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -8061,6 +8490,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: name
         in: path
@@ -8087,6 +8517,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: name
         in: path
@@ -8114,6 +8545,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: name
         in: path
@@ -8148,6 +8580,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: name
         in: path
@@ -8200,6 +8633,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The threads
@@ -8218,6 +8652,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: false
         content:
@@ -8255,6 +8690,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: threadId
         in: path
@@ -8281,6 +8717,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: threadId
         in: path
@@ -8328,6 +8765,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: threadId
         in: path
@@ -8395,6 +8833,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: threadId
         in: path
@@ -8456,6 +8895,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: threadId
         in: path
@@ -8497,6 +8937,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: threadId
         in: path
@@ -8545,6 +8986,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: threadId
         in: path
@@ -8585,6 +9027,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       requestBody:
         required: true
         content:
@@ -8630,6 +9073,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: status
         in: query
@@ -8664,6 +9108,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: workflowRunId
         in: path
@@ -8707,6 +9152,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: workflowRunId
         in: path
@@ -8733,6 +9179,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       responses:
         '200':
           description: The visible workflows
@@ -8752,6 +9199,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: workflowId
         in: path
@@ -8778,6 +9226,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: workflowId
         in: path
@@ -8812,6 +9261,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: workflowId
         in: path
@@ -8855,6 +9305,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: workflowId
         in: path
@@ -8884,6 +9335,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: workflowId
         in: path
@@ -8914,6 +9366,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: workflowId
         in: path
@@ -8946,6 +9399,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: workflowId
         in: path
@@ -8991,6 +9445,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: workflowId
         in: path
@@ -9051,6 +9506,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: workflowId
         in: path
@@ -9266,6 +9722,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: workflowId
         in: path
@@ -9292,6 +9749,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: workflowId
         in: path
@@ -9354,6 +9812,7 @@ paths:
       x-access: signed-in
       security:
       - session: []
+      - deviceToken: []
       parameters:
       - name: workflowId
         in: path

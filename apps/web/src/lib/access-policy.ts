@@ -62,6 +62,7 @@ export const ACCESS_POLICIES: AccessPolicy[] = [
   { prefix: "/runs", rule: "signed-in" },
   { prefix: "/skills", rule: "signed-in" },
   { prefix: "/chat", rule: "signed-in" },
+  { prefix: "/device", rule: "signed-in", why: "approve the installed app's sign-in code" },
   { prefix: "/work", rule: "signed-in" },
   { prefix: "/workflows", rule: "signed-in" },
   { prefix: "/api/v1/action-requests", rule: "signed-in" },

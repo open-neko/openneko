@@ -18,6 +18,10 @@
  * tampering and binds the cookie to OPENNEKO_SESSION_SECRET. Logging
  * a user out is a cookie delete; rotating the secret invalidates
  * every existing session globally.
+ *
+ * The installed app sends a device token (`Authorization: Bearer
+ * onk_dev_...`) in place of the cookie. Each request checks the token
+ * against app_device, so a revoke applies at once.
  */
 
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
@@ -29,7 +33,7 @@ import {
   writeAuthGateMarker,
   type PersistedAuthProvider,
 } from "./auth-gate-marker";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import {
   and,
   app_user,
@@ -40,7 +44,9 @@ import {
   isNull,
   sql,
   ADMINISTRATORS_GROUP_SLUG,
+  deviceTokenFromAuthorization,
   user_group_membership,
+  verifyDeviceToken,
   GroupError,
   reconcileSignInGroups,
   user_group,
@@ -619,11 +625,8 @@ export async function getCurrentUser(): Promise<{
     const owner = await getOrCreateSoloAdmin(await getOrgId());
     return owner ? { id: owner.id, email: isUnclaimedSoloEmail(owner.email) ? "" : owner.email, name: owner.name } : null;
   }
-  const jar = await cookies();
-  const token = jar.get(SESSION_COOKIE_NAME)?.value;
-  if (!token) return null;
-  const session = decodeSession(token);
-  if (!session) return null;
+  const userId = await sessionOrDeviceUserId();
+  if (!userId) return null;
   const rows = await db()
     .select({
       id: app_user.id,
@@ -632,10 +635,25 @@ export async function getCurrentUser(): Promise<{
     })
     .from(app_user)
     // ADM1: a deactivated user's cookie is dead, not just their sign-in.
-    .where(and(eq(app_user.id, session.userId), isNull(app_user.disabled_at)))
+    .where(and(eq(app_user.id, userId), isNull(app_user.disabled_at)))
     .limit(1);
   if (!rows[0]) return null;
   return rows[0];
+}
+
+async function sessionOrDeviceUserId(): Promise<string | null> {
+  const jar = await cookies();
+  const cookie = jar.get(SESSION_COOKIE_NAME)?.value;
+  if (cookie) return decodeSession(cookie)?.userId ?? null;
+  const device = await currentDevice();
+  return device?.userId ?? null;
+}
+
+/** The installed app's device behind this request's bearer token, if any. */
+export async function currentDevice(): Promise<{ deviceId: string; userId: string } | null> {
+  const token = deviceTokenFromAuthorization((await headers()).get("authorization"));
+  if (!token) return null;
+  return verifyDeviceToken(await getOrgId(), token);
 }
 
 /**

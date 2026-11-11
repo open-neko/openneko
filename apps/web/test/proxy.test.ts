@@ -12,7 +12,12 @@ import {
 } from "../src/proxy";
 
 const resolveUserGroups = vi.fn(async () => ({ administrator: false, groupIds: [], slugs: [], ssoGroupIds: [] }));
-vi.mock("@neko/db", () => ({ resolveUserGroups: (...args: unknown[]) => resolveUserGroups(...(args as [])) }));
+const verifyDeviceToken = vi.fn<(orgId: string, token: string) => Promise<{ deviceId: string; userId: string } | null>>(async () => null);
+vi.mock("@neko/db", () => ({
+  resolveUserGroups: (...args: unknown[]) => resolveUserGroups(...(args as [])),
+  deviceTokenFromAuthorization: (header: string | null) => header?.match(/^Bearer[ \t]+(onk_dev_\S+)$/i)?.[1] ?? null,
+  verifyDeviceToken: (orgId: string, token: string) => verifyDeviceToken(orgId, token),
+}));
 vi.mock("../src/lib/db", () => ({ getOrgId: async () => "org-1" }));
 
 const SECRET = "a".repeat(64);
@@ -252,6 +257,35 @@ describe("proxy", () => {
     const res = await proxy(request("https://app.example.com/api/work/skills", mintCookie()));
     expect(res.headers.get("x-middleware-next")).toBe("1");
     expect(resolveUserGroups).not.toHaveBeenCalled();
+  });
+
+  it("lets an installed app in with a device token and stops a revoked one", async () => {
+    _setProviderStatusRequestForTest(
+      freshFetch(() => Response.json({ provider: { pluginName: "@x/y", providerLabel: "X" } })),
+    );
+    _resetAdministratorCacheForTest();
+    resolveUserGroups.mockResolvedValue({ administrator: false, groupIds: [], slugs: [], ssoGroupIds: [] });
+    const token = "onk_dev_0123456789ab_secret";
+    const withToken = (path: string, value = token) =>
+      new NextRequest(`https://app.example.com${path}`, { headers: { authorization: `Bearer ${value}` } });
+
+    verifyDeviceToken.mockResolvedValueOnce({ deviceId: "d1", userId: "usr_phone" });
+    const allowed = await proxy(withToken("/api/v1/work/threads"));
+    expect(allowed.headers.get("x-middleware-next")).toBe("1");
+    expect(verifyDeviceToken).toHaveBeenLastCalledWith("org-1", token);
+
+    verifyDeviceToken.mockResolvedValueOnce({ deviceId: "d1", userId: "usr_phone" });
+    expect((await proxy(withToken("/api/v1/admin/devices"))).status).toBe(403);
+
+    verifyDeviceToken.mockResolvedValueOnce(null);
+    const revoked = await proxy(withToken("/api/v1/work/threads"));
+    expect(revoked.status).toBe(401);
+    expect(await revoked.json()).toEqual({ error: "sign in again" });
+
+    verifyDeviceToken.mockClear();
+    expect((await proxy(withToken("/api/v1/work/threads", "onk_wf_0123456789ab_x"))).status).toBe(401);
+    expect(verifyDeviceToken).not.toHaveBeenCalled();
+    expect((await proxy(withToken("/chat"))).status).toBe(302);
   });
 
   it("redirects when the session cookie has expired", async () => {

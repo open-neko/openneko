@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ rows: [] as Record<string, unknown>[][], updates: [] as unknown[], inserts: [] as unknown[], token: undefined as string | undefined, reconcile: vi.fn(async (input: unknown) => void input) }));
-vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => state.token ? { value: state.token } : undefined }) }));
+vi.mock("next/headers", () => ({ headers: async () => new Headers(), cookies: async () => ({ get: () => state.token ? { value: state.token } : undefined }) }));
 vi.mock("@/lib/db", () => ({ getOrgId: async () => "org" }));
 vi.mock("@neko/llm/work", () => ({ upsertOperatorProfile: vi.fn() }));
 vi.mock("@neko/db", async (original) => {
