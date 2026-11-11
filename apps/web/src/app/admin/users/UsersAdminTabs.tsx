@@ -1,13 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import type { IdpGroupRow, UserGroupRow } from "@neko/db";
+import type { DeviceRow, IdpGroupRow, UserGroupRow } from "@neko/db";
 import { Tab, Tabs } from "@/components/ui/tabs";
+import { DevicesPanel } from "./DevicesPanel";
 import { GroupsPanel } from "./GroupsPanel";
 import { IdpRulesPanel, type IdpRuleView } from "./IdpRulesPanel";
 import { UsersClient, type AdminUserRow } from "./UsersClient";
 
-export type UsersAdminTab = "users" | "groups" | "idp-rules";
+export type UsersAdminTab = "users" | "groups" | "idp-rules" | "devices";
 
 export function UsersAdminTabs({
   tab,
@@ -16,6 +17,7 @@ export function UsersAdminTabs({
   groups,
   idpGroups,
   rules,
+  devices,
   signInProvider,
   directoryProvider,
   directoryCreateLabel,
@@ -26,6 +28,7 @@ export function UsersAdminTabs({
   groups: UserGroupRow[];
   idpGroups: IdpGroupRow[];
   rules: IdpRuleView[];
+  devices: DeviceRow[];
   signInProvider: string | null;
   directoryProvider: string | null;
   directoryCreateLabel: string | null;
@@ -40,6 +43,7 @@ export function UsersAdminTabs({
           <Tab selected={tab === "users"} onClick={() => select("users")}>Users</Tab>
           <Tab selected={tab === "groups"} onClick={() => select("groups")}>Groups</Tab>
           <Tab selected={tab === "idp-rules"} onClick={() => select("idp-rules")}>IdP rules</Tab>
+          <Tab selected={tab === "devices"} onClick={() => select("devices")}>Devices</Tab>
         </Tabs>
       )}
       {tab === "users" && (
@@ -68,6 +72,7 @@ export function UsersAdminTabs({
         </>
       )}
       {tab === "groups" && <GroupsPanel groups={groups} />}
+      {tab === "devices" && <DevicesPanel devices={devices} />}
       {tab === "idp-rules" && (
         <IdpRulesPanel groups={groups} idpGroups={idpGroups} rules={rules} directoryProvider={directoryProvider} />
       )}

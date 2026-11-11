@@ -164,6 +164,7 @@ approval policies as everything else. See [PACKS.md](PACKS.md).
 |---|---|---|
 | Pack actions as agent tools | Installed packs surface their actions directly to the assistant, governed by the same approval policies as everything else. | #24, #66 |
 | Per-person integrations | Each operator connects their own accounts (OAuth) on the /integrations page — tokens are stored per-person, never shared. | #42 |
+| Device sign-in for the installed app | The app shows an eight-letter code. The person approves it on `/device` in a browser that is signed in through SSO, and the app gets a device token that works on every route a browser session reaches. Admin, Users, Devices lists every device; Revoke signs one out at once. A token also stops after 30 days without use, when its user is disabled, or when the app signs out. Only a SHA-256 digest of each token is stored, and approvals, revokes and sign-outs go into the audit chain. | Phase 2 |
 | One API contract | Every server route is under `/api/v1` and is listed in one OpenAPI file, `api/openapi.yaml`, with the access rule for each route. A test fails when a route, the file and the web app disagree. Older `/api/<path>` URLs still work, so sign-in callbacks, OAuth apps and webhooks that hold them keep working after an upgrade. | Phase 2 |
 | Community skills | Install a skill straight from a git URL once an admin allows it; the policy is enforced at the CLI and the worker. | #42, #44 |
 

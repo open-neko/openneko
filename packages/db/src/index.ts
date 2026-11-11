@@ -104,6 +104,26 @@ export {
   type DataAccessRuleRow,
 } from "./data-access";
 export {
+  DEVICE_IDLE_DAYS,
+  DEVICE_POLL_INTERVAL_SECONDS,
+  DEVICE_REQUEST_TTL_SECONDS,
+  DeviceError,
+  decideDeviceRequest,
+  deviceTokenFromAuthorization,
+  findDeviceRequest,
+  formatUserCode,
+  listDevices,
+  normalizeUserCode,
+  redeemDeviceRequest,
+  revokeDevice,
+  startDeviceRequest,
+  verifyDeviceToken,
+  type DeviceErrorCode,
+  type DeviceRequestView,
+  type DeviceRow,
+  type RedeemResult,
+} from "./devices";
+export {
   readLocalConfig,
   writeLocalConfig,
   hasCustomPassword,

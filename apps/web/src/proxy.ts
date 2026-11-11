@@ -9,8 +9,9 @@
  *
  *   2. A sign-in provider is live (worker reports a provider on
  *      /admin/auth/status) → every route is gated. A request without a
- *      valid signed session cookie is 302'd to /signin with returnTo
- *      pointing at the original URL.
+ *      valid signed session cookie or device token is 302'd to /signin
+ *      with returnTo pointing at the original URL. An API request that
+ *      sends an Authorization header that does not verify gets 401.
  *
  * The mode is detected per-request (cached 1s) by asking the worker,
  * so turning sign-in on or off takes effect on the next cache miss
@@ -21,9 +22,10 @@
  *   - /api/auth/*            — the SSO flow endpoints
  *   - _next/static, _next/image, favicon.ico — static assets
  *
- * Session verification here is the HMAC check ONLY. We do not hit the
+ * Cookie verification here is the HMAC check ONLY. We do not hit the
  * database — the per-route handler (or `getCurrentUser`) does the
- * follow-up DB lookup if it needs the user row. Per the Next.js docs,
+ * follow-up DB lookup if it needs the user row. A device token needs one
+ * lookup, because only the database knows whether it was revoked. Per the Next.js docs,
  * proxy should not be the sole authorisation layer; we use it for
  * optimistic redirects.
  *
@@ -205,6 +207,24 @@ export function sessionUserId(value: string | undefined): string | null {
   return userId;
 }
 
+/**
+ * The user behind an installed app's device token. Read from the database on
+ * every request, so a revoked device stops at once.
+ */
+async function deviceUserId(authorization: string | null): Promise<string | null> {
+  try {
+    const [{ deviceTokenFromAuthorization, verifyDeviceToken }, { getOrgId }] = await Promise.all([
+      import("@neko/db"),
+      import("./lib/db"),
+    ]);
+    const token = deviceTokenFromAuthorization(authorization);
+    if (!token) return null;
+    return (await verifyDeviceToken(await getOrgId(), token))?.userId ?? null;
+  } catch {
+    return null;
+  }
+}
+
 const ADMIN_CACHE_TTL_MS = 5_000;
 const administrators = new Map<string, { administrator: boolean; at: number }>();
 
@@ -278,7 +298,13 @@ async function gate(request: NextRequest): Promise<NextResponse> {
     // Single-operator install: one person runs everything.
     return NextResponse.next();
   }
-  const userId = sessionUserId(request.cookies.get(SESSION_COOKIE_NAME)?.value);
+  const authorization = request.headers.get("authorization");
+  const userId =
+    sessionUserId(request.cookies.get(SESSION_COOKIE_NAME)?.value) ??
+    (await deviceUserId(authorization));
+  if (!userId && authorization && pathname.startsWith("/api/")) {
+    return NextResponse.json({ error: "sign in again" }, { status: 401 });
+  }
   if (!userId) {
     const returnTo = pathname + request.nextUrl.search;
     const url = request.nextUrl.clone();

@@ -1085,6 +1085,60 @@ export const skill_embedding = pgTable(
   }),
 );
 
+export const app_device_request = pgTable(
+  "app_device_request",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    device_code_verifier: text("device_code_verifier").notNull().unique(),
+    user_code: text("user_code").notNull().unique(),
+    name: text("name").notNull(),
+    approved_by_user_id: text("approved_by_user_id").references(() => app_user.id, {
+      onDelete: "cascade",
+    }),
+    approved_at: ts("approved_at"),
+    denied_at: ts("denied_at"),
+    last_polled_at: ts("last_polled_at"),
+    expires_at: ts("expires_at").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_idx: index("app_device_request_org_idx").on(t.org_id, t.expires_at),
+  }),
+);
+
+export const app_device = pgTable(
+  "app_device",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => app_user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    token_prefix: text("token_prefix").notNull().unique(),
+    token_verifier: text("token_verifier").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+    last_used_at: ts("last_used_at").notNull().defaultNow(),
+    revoked_at: ts("revoked_at"),
+    revoked_by_user_id: text("revoked_by_user_id").references(() => app_user.id, {
+      onDelete: "set null",
+    }),
+  },
+  (t) => ({
+    org_idx: index("app_device_org_idx").on(t.org_id, t.created_at.desc()),
+    user_idx: index("app_device_user_idx").on(t.user_id),
+    prefix_shape_check: check(
+      "app_device_token_prefix_check",
+      sql`${t.token_prefix} ~ '^onk_dev_[0-9a-f]{12}$'`,
+    ),
+  }),
+);
+
 export const bot = pgTable(
   "bot",
   {

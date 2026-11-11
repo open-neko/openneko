@@ -6,6 +6,7 @@ import {
   db,
   eq,
   isUnclaimedSoloEmail,
+  listDevices,
   listIdpGroupRules,
   listIdpGroups,
   listUserGroups,
@@ -20,7 +21,7 @@ import { AdminDenied, AdminShell } from "../AdminShell";
 import { UsersAdminTabs, type UsersAdminTab } from "./UsersAdminTabs";
 import type { AdminUserRow } from "./UsersClient";
 
-const TABS: UsersAdminTab[] = ["users", "groups", "idp-rules"];
+const TABS: UsersAdminTab[] = ["users", "groups", "idp-rules", "devices"];
 
 export default async function AdminUsersPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   await connection();
@@ -28,7 +29,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
   if (actor.role !== "admin") return <AdminDenied />;
 
   const orgId = await getOrgId();
-  const [users, memberships, administrators, groups, idpGroups, rules, directoryStatus, authGate, query] = await Promise.all([
+  const [users, memberships, administrators, groups, idpGroups, rules, devices, directoryStatus, authGate, query] = await Promise.all([
     db()
       .select({
         id: app_user.id,
@@ -52,6 +53,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
     listUserGroups(orgId),
     listIdpGroups(orgId),
     listIdpGroupRules(orgId),
+    listDevices(orgId),
     requestWorker("/admin/directory/status").catch(() => null),
     getAuthGateStatus(),
     searchParams,
@@ -109,6 +111,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
         groups={groups}
         idpGroups={idpGroups.map((g) => ({ ...g }))}
         rules={rules.map((r) => ({ ...r, createdAt: new Date(r.createdAt).toISOString() }))}
+        devices={devices}
         signInProvider={signInLabel ?? authGate.pending?.providerLabel ?? null}
         directoryProvider={directory?.provider?.pluginName ?? null}
         directoryCreateLabel={directoryCreateLabel}
