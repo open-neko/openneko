@@ -126,6 +126,10 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 FROM deps AS source
 WORKDIR /app
 COPY . .
+RUN mkdir -p packages/llm/assets/sandbox-skills \
+    && for skill in recipes/sandbox/skills/*/SKILL.md; do \
+         cp -R "$(dirname "$skill")" packages/llm/assets/sandbox-skills/; \
+       done
 
 FROM source AS build
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -234,7 +238,7 @@ RUN cd apps/worker && pnpm exec esbuild \
       --outdir=/out/agent-app \
     && printf '{"type":"module"}\n' > /out/agent-app/package.json \
     && mkdir -p /out/agent-app/assets \
-    && cp -R ../../packages/llm/assets/builtin-skills /out/agent-app/assets/
+    && cp -R ../../packages/llm/assets/builtin-skills ../../packages/llm/assets/sandbox-skills /out/agent-app/assets/
 
 # ─── 5a. web runtime ───────────────────────────────────────────────────
 # Web runs each agent run's runner from /opt/openneko-agent; turns run in serve.

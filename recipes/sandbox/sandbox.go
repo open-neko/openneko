@@ -48,6 +48,7 @@ type Server struct {
 	BaseUID, Users, GID int
 	SwitchUsers         bool
 	PATH                string
+	NodePath            string
 
 	mu     sync.Mutex
 	runs   map[string]int
@@ -171,6 +172,9 @@ func (s *Server) exec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	env := []string{"PATH=" + s.PATH, "HOME=" + home, "TMPDIR=" + filepath.Join(home, "tmp"), "LANG=C.UTF-8"}
+	if s.NodePath != "" {
+		env = append(env, "NODE_PATH="+s.NodePath)
+	}
 	if req.SkillDir != "" {
 		dir, ok := within(s.Skills, req.SkillDir)
 		if !ok {

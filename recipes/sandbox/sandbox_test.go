@@ -449,3 +449,18 @@ func TestSandboxSetsSkillDirOnlyInsideTheRunsFolder(t *testing.T) {
 		}
 	}
 }
+
+func TestSandboxPassesItsOwnNodePathOnly(t *testing.T) {
+	server, socket, workspace := startSandbox(t, os.Geteuid() == 0)
+	client := newClient(socket, workspace)
+	ctx := context.Background()
+	res, err := client.Exec(ctx, `echo "[$NODE_PATH]"`, "", map[string]string{"NODE_PATH": "/tmp/evil"}, 10, 10_000)
+	if err == nil && strings.TrimSpace(res.Output) != "[]" {
+		t.Fatalf("a caller set NODE_PATH: %+v", res)
+	}
+	server.NodePath = "/opt/openneko/skills/node_modules"
+	res, err = client.Exec(ctx, `echo "[$NODE_PATH]"`, "", nil, 10, 10_000)
+	if err != nil || strings.TrimSpace(res.Output) != "[/opt/openneko/skills/node_modules]" {
+		t.Fatalf("NODE_PATH = %+v, %v", res, err)
+	}
+}

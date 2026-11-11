@@ -486,7 +486,8 @@ agentskills.io-style files to
 
   const libraries = `The sandbox ships
 Node, Python 3, Poppler (\`pdftotext\`) and Tesseract, plus pip libs: pypdf,
-openpyxl, python-pptx, python-docx, PyYAML.`;
+openpyxl, python-pptx, python-docx, PyYAML, and npm libs: fflate,
+fast-xml-parser, fast-formula-parser, @formulajs/formulajs.`;
 
   if (catalog === "search") {
     return `<skills>

@@ -33,6 +33,12 @@ jobs:
           cache: false
       - run: go vet ./... && go test -race ./...
         working-directory: recipes/sandbox
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.22.1
+      - name: Test the sandbox skills
+        working-directory: recipes/sandbox/skills
+        run: npm ci --ignore-scripts --no-audit --no-fund && npm test
       - name: Run the user-switching and ACL tests as root
         working-directory: recipes/sandbox
         run: |

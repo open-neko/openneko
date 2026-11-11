@@ -20,6 +20,7 @@ import {
   materializeBuiltinSkills,
   readSkillOrigin,
   resolveBuiltinSkillsRoot,
+  resolveSandboxSkillsRoot,
   unmodifiedBuiltinSkills,
 } from "../src/work/workspace";
 
@@ -56,6 +57,34 @@ describe("work workspace", () => {
       ),
     ).toBe("/app/assets/builtin-skills");
   });
+
+  it("finds the sandbox skills beside the agent bundle, in the package assets, then in the recipe", () => {
+    const all = () => true;
+    expect(resolveSandboxSkillsRoot("file:///app/agent-entry.js", undefined, all)).toBe("/app/assets/sandbox-skills");
+    expect(
+      resolveSandboxSkillsRoot("file:///app/packages/llm/src/work/workspace.ts", undefined, (candidate) => candidate === "/app/packages/llm/assets/sandbox-skills"),
+    ).toBe("/app/packages/llm/assets/sandbox-skills");
+    expect(
+      resolveSandboxSkillsRoot("file:///repo/packages/llm/src/work/workspace.ts", undefined, (candidate) => candidate === "/repo/recipes/sandbox/skills"),
+    ).toBe("/repo/recipes/sandbox/skills");
+    expect(resolveSandboxSkillsRoot("file:///x/y.js", "/opt/skills", () => false)).toBe("/opt/skills");
+  });
+
+  it("seeds the xlsx skill from the sandbox recipe without its packages or tests", async () => {
+    const home = await mkdtemp(join(tmpdir(), "neko-work-home-"));
+    cleanupPaths.push(home);
+    process.env.HOME = home;
+
+    const workspace = await ensureOrgWorkspace("org-test");
+    const recipe = join(__dirname, "..", "..", "..", "recipes", "sandbox", "skills", "xlsx");
+    const seeded = join(workspace.skillsRoot, "xlsx");
+    expect(await readFile(join(seeded, "SKILL.md"), "utf8")).toBe(await readFile(join(recipe, "SKILL.md"), "utf8"));
+    expect((await readdir(join(seeded, "scripts"))).sort()).toEqual(["lib", "xlsx.cjs"]);
+    expect(await readdir(seeded)).not.toContain("node_modules");
+    expect(await readdir(workspace.skillsRoot)).not.toContain("node_modules");
+    expect(await readdir(workspace.skillsRoot)).not.toContain("test");
+    expect(await unmodifiedBuiltinSkills(workspace.skillsRoot)).toContain("xlsx");
+  }, 30_000);
 
   it("supports an isolated agent home in explicit host-web development mode", async () => {
     const agentHome = await mkdtemp(join(tmpdir(), "neko-agent-home-"));
@@ -165,7 +194,7 @@ describe("work workspace", () => {
     const workspace = await ensureOrgWorkspace("org-test");
     const seeded = await readdir(workspace.skillsRoot);
     expect(seeded).toContain("graphjin-config");
-    for (const name of ["document-extraction", "skill-creator"]) expect(seeded).not.toContain(name);
+    for (const name of ["document-extraction", "skill-creator", "xlsx"]) expect(seeded).not.toContain(name);
 
     await mkdir(join(workspace.skillsRoot, "document-extraction"), { recursive: true });
     await writeFile(join(workspace.skillsRoot, "document-extraction", "SKILL.md"), "Seeded before the sandbox went away.");
@@ -255,7 +284,8 @@ describe("work workspace", () => {
 
     await ensureOrgWorkspace("org-test");
     const after = await readdir(workspace.skillsRoot);
-    expect(after).not.toContain("xlsx");
+    expect(await readFile(join(workspace.skillsRoot, "xlsx", "SKILL.md"), "utf8")).toContain("# Excel workbooks");
+    expect(await readdir(join(workspace.skillsRoot, "xlsx", "scripts"))).not.toContain("run.py");
     expect(after).not.toContain("dcf-model");
     expect(after).toContain("docx");
     expect(after).toContain("pptx");

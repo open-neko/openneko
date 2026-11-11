@@ -1,8 +1,8 @@
 #!/usr/bin/env -S node --experimental-strip-types
 // Report which skill deps are present locally. Walks two roots:
 //
-//   1. packages/llm/assets/builtin-skills/   — first-party skills the
-//      Dockerfile bakes into the image. Driven by the hand-maintained
+//   1. packages/llm/assets/builtin-skills/ and recipes/sandbox/skills/ —
+//      first-party skills the images carry. Driven by the hand-maintained
 //      KNOWN_SKILL_DEPS manifest.
 //
 //   2. ~/.openneko/skills/                   — community skills the
@@ -38,6 +38,7 @@ const BUILTIN_SKILLS_ROOT = resolve(
   "assets",
   "builtin-skills",
 );
+const SANDBOX_SKILLS_ROOT = resolve(HERE, "..", "recipes", "sandbox", "skills");
 const INSTALLED_SKILLS_ROOT =
   process.env.OPENNEKO_SKILLS_DIR ?? join(homedir(), ".openneko", "skills");
 
@@ -150,7 +151,7 @@ function checkDeps(name: string, source: "bundled" | "installed", deps: SkillDep
 }
 
 // Bundled skills.
-for (const name of readSkillDirs(BUILTIN_SKILLS_ROOT)) {
+for (const name of [...readSkillDirs(BUILTIN_SKILLS_ROOT), ...readSkillDirs(SANDBOX_SKILLS_ROOT)]) {
   const deps = KNOWN_SKILL_DEPS[name];
   if (!deps) continue;
   reports.push(checkDeps(name, "bundled", deps));

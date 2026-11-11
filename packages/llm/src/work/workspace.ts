@@ -50,6 +50,21 @@ export function resolveBuiltinSkillsRoot(
   );
 }
 
+export function resolveSandboxSkillsRoot(
+  moduleUrl = import.meta.url,
+  configuredRoot = process.env.OPENNEKO_SANDBOX_SKILLS_ROOT,
+  pathExists: (candidate: string) => boolean = existsSync,
+): string {
+  if (configuredRoot?.trim()) return resolve(configuredRoot);
+  const moduleDir = dirname(fileURLToPath(moduleUrl));
+  const candidates = [
+    resolve(moduleDir, "assets", "sandbox-skills"),
+    resolve(/* turbopackIgnore: true */ moduleDir, "..", "..", "assets", "sandbox-skills"),
+    resolve(/* turbopackIgnore: true */ moduleDir, "..", "..", "..", "..", "recipes", "sandbox", "skills"),
+  ];
+  return candidates.find((candidate) => pathExists(candidate)) ?? candidates[0];
+}
+
 export const SKILL_ORIGIN_FILE = ".openneko-origin";
 
 export type SkillOriginRecord = {
@@ -58,9 +73,26 @@ export type SkillOriginRecord = {
 };
 
 const BUILTIN_SKILLS_ROOT = resolveBuiltinSkillsRoot();
+const SANDBOX_SKILLS_ROOT = resolveSandboxSkillsRoot();
 
 export function getBuiltinSkillsRoot(): string {
   return BUILTIN_SKILLS_ROOT;
+}
+
+export function bundledSkillDir(name: string): string {
+  const sandboxCopy = join(SANDBOX_SKILLS_ROOT, name);
+  return existsSync(join(sandboxCopy, "SKILL.md")) ? sandboxCopy : join(BUILTIN_SKILLS_ROOT, name);
+}
+
+async function bundledSkillNames(): Promise<string[]> {
+  const names = new Set<string>();
+  for (const entry of await readdir(BUILTIN_SKILLS_ROOT, { withFileTypes: true })) {
+    if (entry.isDirectory()) names.add(entry.name);
+  }
+  for (const entry of await readdir(SANDBOX_SKILLS_ROOT, { withFileTypes: true }).catch(() => [] as Dirent[])) {
+    if (entry.isDirectory() && existsSync(join(SANDBOX_SKILLS_ROOT, entry.name, "SKILL.md"))) names.add(entry.name);
+  }
+  return [...names].sort();
 }
 
 function useHostWebDevelopmentHome(): boolean {
@@ -301,7 +333,7 @@ async function removeRetiredBuiltinSkills(skillsRoot: string): Promise<void> {
     const origin = await readSkillOrigin(dir);
     if (!origin) continue;
     if ((await fingerprintSkillTree(dir).catch(() => "")) !== origin.sourceHash) continue;
-    const bundled = join(BUILTIN_SKILLS_ROOT, name);
+    const bundled = bundledSkillDir(name);
     if (existsSync(bundled) && origin.sourceHash === (await builtinFingerprint(name, bundled))) continue;
     await rm(dir, { recursive: true, force: true });
   }
@@ -374,7 +406,7 @@ async function isUnmodifiedBuiltin(skillDir: string, name: string): Promise<bool
     const workspaceHash = await fingerprintSkillTree(skillDir);
     const origin = await readSkillOrigin(skillDir);
     if (origin?.kind === "builtin") return origin.sourceHash === workspaceHash;
-    return workspaceHash === (await builtinFingerprint(name, join(BUILTIN_SKILLS_ROOT, name)));
+    return workspaceHash === (await builtinFingerprint(name, bundledSkillDir(name)));
   } catch {
     return false;
   }
@@ -382,12 +414,11 @@ async function isUnmodifiedBuiltin(skillDir: string, name: string): Promise<bool
 
 /** Built-in skills in a workspace that nobody has changed. */
 export async function unmodifiedBuiltinSkills(skillsRoot: string): Promise<string[]> {
-  const builtins = await readdir(BUILTIN_SKILLS_ROOT, { withFileTypes: true }).catch(() => [] as Dirent[]);
   const names: string[] = [];
-  for (const entry of builtins) {
-    if (entry.isDirectory() && (await isUnmodifiedBuiltin(join(skillsRoot, entry.name), entry.name))) names.push(entry.name);
+  for (const name of await bundledSkillNames().catch(() => [] as string[])) {
+    if (await isUnmodifiedBuiltin(join(skillsRoot, name), name)) names.push(name);
   }
-  return names.sort();
+  return names;
 }
 
 /**
@@ -420,7 +451,7 @@ export async function copySkillOverrides(
     if (allowed && !allowed.has(entry.name)) continue;
     if (!forced.has(entry.name) && !skillRunnable(entry.name, terminal)) continue;
     const workspaceSource = join(skillsRoot, entry.name);
-    const bundled = join(BUILTIN_SKILLS_ROOT, entry.name);
+    const bundled = bundledSkillDir(entry.name);
     const source = forced.has(entry.name) ? bundled : workspaceSource;
     let isUnmodifiedBuiltin = false;
     let workspaceHash = "";
@@ -465,22 +496,20 @@ export async function copySkillOverrides(
 
 async function seedBuiltinSkills(skillsRoot: string, allowedSkills?: readonly string[]): Promise<void> {
   const allowed = allowedSkills ? new Set(allowedSkills) : null;
-  const entries = await readdir(BUILTIN_SKILLS_ROOT, { withFileTypes: true });
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    if (allowed && !allowed.has(entry.name)) continue;
-    if (!skillRunnable(entry.name)) continue;
-    const dest = join(skillsRoot, entry.name);
+  for (const name of await bundledSkillNames()) {
+    if (allowed && !allowed.has(name)) continue;
+    if (!skillRunnable(name)) continue;
+    const dest = join(skillsRoot, name);
     try {
       await access(dest, fsConstants.F_OK);
       continue;
     } catch {
-      const source = join(BUILTIN_SKILLS_ROOT, entry.name);
+      const source = bundledSkillDir(name);
       await cp(source, dest, {
         recursive: true,
         errorOnExist: false,
       });
-      const sourceHash = await builtinFingerprint(entry.name, source);
+      const sourceHash = await builtinFingerprint(name, source);
       await writeBuiltinOrigin(dest, sourceHash);
     }
   }

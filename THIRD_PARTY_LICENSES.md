@@ -22,6 +22,26 @@ Those components remain under their own licenses.
 
 ---
 
+## Sandbox skill packages
+
+The sandbox recipe image installs these npm packages from
+`recipes/sandbox/skills/package-lock.json`. The bundled `xlsx` skill uses
+them. The OpenNeko images do not carry them.
+
+| Package | Version | License | Notes |
+|---|---|---|---|
+| `fflate` | 0.8.3 | MIT | Reads and writes the zip container of a workbook |
+| `fast-xml-parser` | 5.12.0 | MIT | Reads and writes workbook XML |
+| `fast-xml-builder`, `strnum`, `anynum`, `path-expression-matcher`, `xml-naming`, `is-unsafe`, `@nodable/entities` | as locked | MIT | Dependencies of `fast-xml-parser` |
+| `fast-formula-parser` | 1.0.19 | MIT | Calculates formulas; holds a copy of SheetJS SSF (Apache-2.0) to format numbers |
+| `chevrotain`, `regexp-to-ast` | 7.1.2, 0.5.0 | Apache-2.0, MIT | Parser toolkit of `fast-formula-parser` |
+| `bahttext` | 1.1.0 | MIT | Dependency of `fast-formula-parser` |
+| `@formulajs/formulajs` | 4.6.1 | MIT | Calculates the functions that `fast-formula-parser` lacks |
+| `bessel` | 1.0.2 | Apache-2.0 | Engineering functions for both formula packages |
+| `jstat` | 1.9.6 | MIT | Statistics functions for both formula packages |
+
+---
+
 ## Other notable dependencies
 
 OpenNeko's runtime dependencies are listed in the `package.json` and `go.mod` files across the monorepo. The substantial ones with non-Apache-2.0 licenses:

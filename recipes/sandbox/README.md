@@ -21,9 +21,22 @@ The overlay adds the `openneko-sandbox` service and sets
 `openneko-serve`. Set `OPENNEKO_SANDBOX_KEY` in the shell or in `.env` to
 require a key on the socket as well.
 
-The image carries Node, Python, Poppler, Tesseract and the Python packages
-the bundled skills use. Keep it in step with `KNOWN_SKILL_DEPS` in
+The image carries Node, Python, Poppler, Tesseract, and the Python and npm
+packages the bundled skills use. Keep it in step with `KNOWN_SKILL_DEPS` in
 `packages/llm/src/work/skill-deps.ts`.
+
+## Skills
+
+`skills/` holds the bundled skills that run only here, one folder each, and
+one `package.json` for their npm packages. OpenNeko seeds each folder into
+an organization's skills, and a run stages it into the run folder. The image
+installs the packages under `/opt/openneko/skills/node_modules` and sets
+`NODE_PATH`, so a staged script finds them with `require`. Skill scripts are
+CommonJS (`.cjs`), because `import` does not read `NODE_PATH`.
+
+| Skill | What it does |
+|---|---|
+| `xlsx` | Creates, reads and edits Excel workbooks and calculates their formulas |
 
 ## How it keeps runs apart
 
@@ -36,8 +49,9 @@ the bundled skills use. Keep it in step with `KNOWN_SKILL_DEPS` in
   staged folder and nothing else. A runs folder without ACL support is
   refused.
 - A command's environment holds only `PATH`, `HOME`, `TMPDIR`, `LANG`,
-  `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH`. The last four must
-  be paths inside the runs folder.
+  `NODE_PATH`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH`.
+  `PATH` and `NODE_PATH` come from the service's own environment. The last
+  four must be paths inside the runs folder.
 - Ending a run kills its processes, removes its home and takes its group off
   the staged folder.
 - In the overlay, the service sits on its own network. Commands reach the
@@ -67,6 +81,7 @@ key.
 
 ```sh
 (cd recipes/sandbox && go test ./...)
+(cd recipes/sandbox/skills && npm ci && npm test)
 ```
 
 The tests that switch users and set ACLs run only as root, for example in a

@@ -23,6 +23,7 @@ func main() {
 		GID:         intEnv("OPENNEKO_SANDBOX_GID", os.Getgid()),
 		SwitchUsers: os.Geteuid() == 0,
 		PATH:        envOr("PATH", "/usr/local/bin:/usr/bin:/bin"),
+		NodePath:    os.Getenv("NODE_PATH"),
 	}
 	if !server.SwitchUsers {
 		fmt.Fprintln(os.Stderr, "openneko sandbox: not root, so commands run as this user")

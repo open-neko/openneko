@@ -1,5 +1,6 @@
-// What the bundled skills in packages/llm/assets/builtin-skills need. Keep
-// recipes/sandbox/Dockerfile and scripts/skill-doctor.ts in step with it.
+// What the bundled skills in packages/llm/assets/builtin-skills and
+// recipes/sandbox/skills need. Keep recipes/sandbox/Dockerfile,
+// recipes/sandbox/skills/package.json and scripts/skill-doctor.ts in step.
 
 export interface SkillDeps {
   python: string[];
@@ -25,6 +26,15 @@ export const KNOWN_SKILL_DEPS: Record<string, SkillDeps> = {
     binaries: [],
     apt: [],
     brew: [],
+  },
+  xlsx: {
+    python: [],
+    pip: [],
+    node: ["fflate", "fast-xml-parser", "fast-formula-parser", "@formulajs/formulajs"],
+    npm: ["fflate@0.8.3", "fast-xml-parser@5.12.0", "fast-formula-parser@1.0.19", "@formulajs/formulajs@4.6.1"],
+    binaries: ["node"],
+    apt: [],
+    brew: ["node"],
   },
   "graphjin-config": {
     python: [],
