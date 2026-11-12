@@ -396,7 +396,7 @@ export function mysqlGrantProblems(grants: readonly string[]): string[] {
     const match = /^GRANT\s+(.+?)\s+ON\s+/i.exec(grant);
     if (!match) continue;
     if (/WITH\s+GRANT\s+OPTION/i.test(grant)) problems.add("GRANT OPTION");
-    for (const privilege of match[1]!.split(",").map((value) => value.trim().toUpperCase().replace(/\s*\(.*\)$/, ""))) {
+    for (const privilege of match[1]!.split(/,(?![^(]*\))/).map((value) => value.trim().toUpperCase().replace(/\s*\(.*\)$/, ""))) {
       if (privilege && !MYSQL_READ_PRIVILEGES.has(privilege)) problems.add(privilege);
     }
   }

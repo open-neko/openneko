@@ -85,6 +85,7 @@ describe("source check without a database", () => {
     expect(mysqlGrantProblems(["GRANT SELECT, INSERT ON `shop`.* TO `w`@`%`"])).toEqual(["INSERT"]);
     expect(mysqlGrantProblems(["GRANT SELECT ON `shop`.* TO `w`@`%` WITH GRANT OPTION"])).toEqual(["GRANT OPTION"]);
     expect(mysqlGrantProblems(["GRANT ALL PRIVILEGES ON *.* TO `root`@`%`"])).toEqual(["ALL PRIVILEGES"]);
+    expect(mysqlGrantProblems(["GRANT SELECT (`a`, `b`), INSERT (`c`) ON `shop`.`t` TO `w`@`%`"])).toEqual(["INSERT"]);
   });
 });
 
