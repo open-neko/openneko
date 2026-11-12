@@ -76,6 +76,7 @@ OpenNeko's runtime dependencies are listed in the `package.json` and `go.mod` fi
 | `github.com/aws/aws-sdk-go-v2` (`config`, `credentials`, `service/s3`) | Apache-2.0 | Reads and writes the files bucket in `openneko serve` when `OPENNEKO_FILES_BUCKET` is set; GraphJin already links it |
 | `github.com/cenkalti/backoff/v5` | MIT | Retries in the OTLP trace exporter of `openneko serve` |
 | `github.com/grpc-ecosystem/grpc-gateway/v2` | BSD-3-Clause | Linked by the OTLP trace exporter of `openneko serve` |
+| `golang.org/x/text` | BSD-3-Clause | Sorts skill names in `openneko web` in the same order as the Node server; GraphJin already links it |
 
 Run `pnpm licenses ls -P` from the repo root to see the full transitive list at a given snapshot.
 

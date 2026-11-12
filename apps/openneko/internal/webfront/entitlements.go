@@ -39,6 +39,7 @@ func (h heldSet) has(id string) bool { return h.All || h.IDs[id] }
 
 var packItemJoins = map[string]struct{ kind, idExpr, join string }{
 	"action":   {"action", "a.target_ref", ""},
+	"skill":    {"skill", "a.target_ref", ""},
 	"workflow": {"workflow", "w.id::text", "join workflow_definition w on w.org_id = a.org_id and w.name = a.target_ref"},
 }
 

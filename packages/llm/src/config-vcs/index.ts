@@ -145,37 +145,6 @@ export async function listConfigHistory(
 }
 
 /**
- * Restore one artifact path to its state at `sha`, recorded as a NEW
- * commit (history only moves forward; no resets).
- */
-export async function restoreConfigPath(opts: {
-  workspaceRoot: string;
-  sha: string;
-  path: string;
-}): Promise<string | null> {
-  const root = resolve(opts.workspaceRoot);
-  if (!existsSync(join(root, ".git"))) return null;
-  return withRepoLock(root, async () => {
-    await git(root, ["checkout", opts.sha, "--", opts.path]);
-    await git(root, ["add", "-A", "--", opts.path]);
-    const { stdout: status } = await git(root, [
-      "status",
-      "--porcelain",
-      "--",
-      opts.path,
-    ]);
-    if (!status.trim()) return null;
-    await git(root, [
-      "commit",
-      "-m",
-      `Restored ${basename(opts.path)} to ${opts.sha.slice(0, 8)}`,
-    ]);
-    const { stdout } = await git(root, ["rev-parse", "HEAD"]);
-    return stdout.trim();
-  });
-}
-
-/**
  * Best-effort hook used by artifact writers: commit + record the team
  * ref pointer. Never throws — a versioning failure must not fail the
  * write that triggered it.
