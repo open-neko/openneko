@@ -1,9 +1,3 @@
-import { createHash } from "node:crypto";
-
-export function sha256Hex(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
-
 /** The Go web front writes this key into the admission payload. */
 export const RECKON_SEED_KEY = "openneko_reckon_webhook";
 
