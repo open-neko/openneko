@@ -1,14 +1,13 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { and, app_user, audit_chain, db, eq } from "@neko/db";
+import { app_user, db, eq } from "@neko/db";
 import { createTestOrg, dbReachable, deleteTestOrg, uniqueOrgId } from "@neko/db/test-helpers";
 
 const state = vi.hoisted(() => ({
   orgId: "",
   cookie: undefined as string | undefined,
   authorization: undefined as string | undefined,
-  admin: null as { userId: string; role: "admin" } | null,
 }));
 
 vi.mock("@/lib/db", () => ({ getOrgId: async () => state.orgId }));
@@ -22,16 +21,9 @@ vi.mock("next/headers", () => ({
   }),
   headers: async () => new Headers(state.authorization ? { authorization: state.authorization } : {}),
 }));
-vi.mock("@/lib/admin-auth", () => ({
-  requireAdminActor: async () =>
-    state.admin ?? Response.json({ error: "admin only" }, { status: 403 }),
-  isDenied: (value: unknown) => value instanceof Response,
-}));
 
 const { getCurrentUser, _resetAuthProviderCache } = await import("@/lib/auth");
 const { decideDeviceRequest, redeemDeviceRequest, sql, startDeviceRequest } = await import("@neko/db");
-const adminList = await import("@/app/api/v1/admin/devices/route");
-const adminRevoke = await import("@/app/api/v1/admin/devices/[deviceId]/route");
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
@@ -84,7 +76,6 @@ describeIfDb("device sign-in", () => {
     _resetAuthProviderCache();
     state.cookie = undefined;
     state.authorization = undefined;
-    state.admin = null;
   });
 
   it("lets a device token act as its user until a forged token fails", async () => {
@@ -96,30 +87,11 @@ describeIfDb("device sign-in", () => {
     expect(await getCurrentUser()).toBeNull();
   });
 
-  it("lets an admin list and revoke a device, and the token stops at once", async () => {
+  it("stops a revoked device token at once", async () => {
     const issued = await signIn("Work phone", member);
-    expect((await adminList.GET()).status).toBe(403);
-
-    state.admin = { userId: admin, role: "admin" };
-    const listed = (await (await adminList.GET()).json()) as { devices: Array<{ id: string; name: string; status: string; tokenPrefix: string }> };
-    const device = listed.devices.find((d) => d.id === issued.deviceId);
-    expect(device).toMatchObject({ name: "Work phone", status: "active" });
-    expect(JSON.stringify(listed)).not.toContain(issued.token);
-
-    const context = { params: Promise.resolve({ deviceId: issued.deviceId }) };
-    expect((await adminRevoke.DELETE(new Request("https://x"), context)).status).toBe(200);
-    expect((await adminRevoke.DELETE(new Request("https://x"), context)).status).toBe(404);
+    await db().execute(sql`update app_device set revoked_at = now(), revoked_by_user_id = ${admin} where id = ${issued.deviceId}`);
     asDevice(issued.token);
     expect(await getCurrentUser()).toBeNull();
-
-    const [revoked] = await db()
-      .select({ event: audit_chain.event, payload: audit_chain.payload })
-      .from(audit_chain)
-      .where(and(eq(audit_chain.org_id, state.orgId), eq(audit_chain.entity_id, issued.deviceId)));
-    expect(revoked).toEqual({
-      event: "revoked",
-      payload: { byUserId: admin, userId: member, deviceName: "Work phone" },
-    });
   });
 
   it("ends every device of a disabled user", async () => {

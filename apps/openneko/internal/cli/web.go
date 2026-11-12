@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 
@@ -37,7 +38,11 @@ SSO setup routes, the business profile route and the personal pack
 connection route itself. It marks its cookies Secure when NODE_ENV is
 production. It reads and writes users, sessions, devices, groups, the
 business profile, personal pack connections and the audit chain with the
-main database login, and reads secrets.json for pack OAuth client IDs.`,
+main database login, and reads secrets.json for pack OAuth client IDs.
+
+The admin password route changes the neko role's password and writes it to
+config.json. With OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE=1, web then stops
+with exit code 0, so its supervisor starts it again.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
@@ -52,7 +57,19 @@ main database login, and reads secrets.json for pack OAuth client IDs.`,
 			if err != nil {
 				return err
 			}
-			pool, err := pgxpool.New(ctx, conn.DSN())
+			pcfg, err := pgxpool.ParseConfig(conn.DSN())
+			if err != nil {
+				return err
+			}
+			if conn.URL == "" {
+				pcfg.BeforeConnect = func(_ context.Context, cc *pgx.ConnConfig) error {
+					if fresh, err := defaultConn(); err == nil && fresh.URL == "" {
+						cc.Password = fresh.Password
+					}
+					return nil
+				}
+			}
+			pool, err := pgxpool.NewWithConfig(ctx, pcfg)
 			if err != nil {
 				return err
 			}
@@ -78,7 +95,7 @@ main database login, and reads secrets.json for pack OAuth client IDs.`,
 				App:  os.DirFS(dir),
 				Gate: gate,
 				API: &webfront.API{Gate: gate, DB: pool, Version: webfront.AppVersion(dir, version.Version),
-					SecureCookies: os.Getenv("NODE_ENV") == "production"},
+					SecureCookies: os.Getenv("NODE_ENV") == "production", Restart: stop},
 				Node: webfront.NodeProxy(&url.URL{Scheme: "http", Host: nodeAddr}),
 			}
 			srv := &http.Server{Handler: front, ReadHeaderTimeout: 10 * time.Second}

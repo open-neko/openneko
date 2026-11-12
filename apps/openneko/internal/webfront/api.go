@@ -33,6 +33,11 @@ type API struct {
 	SecretsDir string
 	// BossSchema overrides the pg-boss schema, pgboss; tests set it.
 	BossSchema string
+	// DBRole is the role that a password change rotates; "" means neko.
+	DBRole string
+	// Restart stops the web process after a password change when
+	// OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE is 1.
+	Restart func()
 
 	once   sync.Once
 	routes map[string]map[string]http.HandlerFunc
@@ -133,6 +138,12 @@ var GoRoutes = map[string][]string{
 	"/api/v1/admin/data-access/settings":                          {"GET", "PATCH"},
 	"/api/v1/admin/data-access/tables":                            {"GET"},
 	"/api/v1/admin/data-access/{ruleId}":                          {"DELETE"},
+	"/api/v1/admin/users":                                         {"POST"},
+	"/api/v1/admin/users/{userId}":                                {"PATCH"},
+	"/api/v1/admin/users/{userId}/access":                         {"GET"},
+	"/api/v1/admin/change-password":                               {"GET", "POST"},
+	"/api/v1/admin/devices":                                       {"GET"},
+	"/api/v1/admin/devices/{deviceId}":                            {"DELETE"},
 }
 
 // In a catchAll route the last {name} takes the rest of the path, as a Next
@@ -229,6 +240,12 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/admin/data-access/settings":                   {"GET": a.adminDataAccessSettings, "PATCH": a.adminDataAccessSettingsPatch},
 			"/api/v1/admin/data-access/tables":                     {"GET": a.adminDataAccessTables},
 			"/api/v1/admin/data-access/{ruleId}":                   {"DELETE": a.adminDataAccessDelete},
+			"/api/v1/admin/users":                                  {"POST": a.adminUserCreate},
+			"/api/v1/admin/users/{userId}":                         {"PATCH": a.adminUserPatch},
+			"/api/v1/admin/users/{userId}/access":                  {"GET": a.adminUserAccess},
+			"/api/v1/admin/change-password":                        {"GET": a.passwordChanged, "POST": a.changePassword},
+			"/api/v1/admin/devices":                                {"GET": a.adminDevices},
+			"/api/v1/admin/devices/{deviceId}":                     {"DELETE": a.adminDeviceRevoke},
 		}
 	})
 	return a.routes

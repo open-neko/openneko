@@ -265,17 +265,3 @@ export async function listDevices(orgId: string): Promise<DeviceRow[]> {
     status: row.revoked_at ? "revoked" : row.idle ? "idle" : "active",
   }));
 }
-
-export async function revokeDevice(input: {
-  orgId: string;
-  deviceId: string;
-  byUserId: string | null;
-}): Promise<{ id: string; userId: string; name: string } | null> {
-  if (!/^[0-9a-f-]{36}$/i.test(input.deviceId)) return null;
-  const result = await db().execute<{ id: string; user_id: string; name: string }>(sql`
-    update app_device set revoked_at = now(), revoked_by_user_id = ${input.byUserId}
-    where org_id = ${input.orgId} and id = ${input.deviceId} and revoked_at is null
-    returning id, user_id, name`);
-  const row = result.rows[0];
-  return row ? { id: row.id, userId: row.user_id, name: row.name } : null;
-}
