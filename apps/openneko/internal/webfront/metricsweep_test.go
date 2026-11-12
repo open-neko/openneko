@@ -79,7 +79,7 @@ func TestMetricSweep(t *testing.T) {
 	if status != "pending" || kind != "metric_refresh" || trigger != "scheduled" || payload != `{"metricId": "`+due+`"}` {
 		t.Errorf("due metric: %s %s %s %s", status, kind, trigger, payload)
 	}
-	got := jobs(t, db, f, queueMetricRefresh)
+	got := bossJobs(t, db, f, queueMetricRefresh)
 	for i := range got {
 		got[i].Data = regexp.MustCompile(`"queuedAt": \d{13}, `).ReplaceAllString(got[i].Data, "")
 	}
@@ -142,7 +142,7 @@ func TestMetricSweep(t *testing.T) {
 	if err := f.API.MetricSweep(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if got := jobs(t, db, f, queueMetricRefresh); len(got) != 1 {
+	if got := bossJobs(t, db, f, queueMetricRefresh); len(got) != 1 {
 		t.Errorf("second sweep queued again: %+v", got)
 	}
 	if again := gitOut("rev-parse", "refs/heads/user/member"); again != head {

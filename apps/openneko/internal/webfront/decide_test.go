@@ -6,8 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
@@ -26,13 +28,55 @@ func seedPgBoss(t *testing.T, db *pgxpool.Pool, f *Front) {
 	f.API.BossSchema = schema
 }
 
+func seedRiver(t *testing.T, db *pgxpool.Pool, f *Front) {
+	t.Helper()
+	ctx := context.Background()
+	var schema string
+	if err := db.QueryRow(ctx, `select current_schema() || '_river'`).Scan(&schema); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), "drop schema if exists "+schema+" cascade") }) //nolint:errcheck
+	if err := (&jobs.Queue{Pool: db, Schema: schema, BossSchema: schema + "_none"}).Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	inserter, err := jobs.NewInserter(db, schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.API.Jobs = inserter
+}
+
+type riverJob struct {
+	Args        string
+	MaxAttempts int
+}
+
+func actionJobs(t *testing.T, db *pgxpool.Pool) []riverJob {
+	t.Helper()
+	ctx := context.Background()
+	var schema string
+	if err := db.QueryRow(ctx, `select current_schema() || '_river'`).Scan(&schema); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := db.Query(ctx, `select args::text, max_attempts from `+schema+`.river_job
+		where kind = 'action_execute' and queue = 'default' and state = 'available' order by id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := pgx.CollectRows(rows, pgx.RowToStructByPos[riverJob])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 type queuedJob struct {
 	Data                  string
 	RetryLimit, RetryWait int
 	KeepDays              float64
 }
 
-func jobs(t *testing.T, db *pgxpool.Pool, f *Front, queue string) []queuedJob {
+func bossJobs(t *testing.T, db *pgxpool.Pool, f *Front, queue string) []queuedJob {
 	t.Helper()
 	rows, err := db.Query(context.Background(), `select data::text, retry_limit, retry_delay,
 		extract(epoch from keep_until - start_after) / 86400 from `+f.API.BossSchema+`.job where name = $1 order by created_on`, queue)
@@ -68,6 +112,7 @@ func TestActionRequestDecision(t *testing.T) {
 	seedDaily(t, db)
 	f, _ := newSetupFront(t, `{"provider":{"pluginName":"scalekit"}}`, db)
 	seedPgBoss(t, db, f)
+	seedRiver(t, db, f)
 	admin, member := sessionCookie("admin"), sessionCookie("member")
 	patch := func(id, body string, who map[string]string) (int, string) {
 		w := call(f, "PATCH", "/api/v1/action-requests/"+id, body, who)
@@ -124,10 +169,19 @@ func TestActionRequestDecision(t *testing.T) {
 	if s := row(arOwnedRun); s != "rejected member - true" {
 		t.Errorf("reason that is not text: %s", s)
 	}
-	if j := jobs(t, db, f, queueActionExecute); len(j) != 0 {
+	if j := actionJobs(t, db); len(j) != 0 {
 		t.Errorf("a rejection queued a job: %v", j)
 	}
 
+	inserter := f.API.Jobs
+	f.API.Jobs = nil
+	if code, _ := patch(arHeldRun, `{"decision":"approve"}`, member); code != 500 {
+		t.Errorf("approve with no job queue: %d", code)
+	}
+	if s := row(arHeldRun); s != "pending_approval - - false" {
+		t.Errorf("an approve whose job insert failed changed the row: %s", s)
+	}
+	f.API.Jobs = inserter
 	if code, body := patch(arHeldRun, `{"decision":"approve","reason":"ignored"}`, member); code != 200 ||
 		body != `{"actionRequest":{"id":"`+arHeldRun+`","status":"approved"}}` {
 		t.Fatalf("approve: %d %s", code, body)
@@ -138,8 +192,8 @@ func TestActionRequestDecision(t *testing.T) {
 	if a := lastAudit(t, db, arHeldRun); a != `approved {"kind": "note", "approvedBy": "member", "soloOperator": false}` {
 		t.Errorf("approve audit: %s", a)
 	}
-	want := queuedJob{`{"orgId": "org", "actionRequestId": "` + arHeldRun + `"}`, 2, 30, 7}
-	if j := jobs(t, db, f, queueActionExecute); len(j) != 1 || j[0] != want {
+	want := riverJob{`{"orgId": "org", "actionRequestId": "` + arHeldRun + `"}`, 3}
+	if j := actionJobs(t, db); len(j) != 1 || j[0] != want {
 		t.Errorf("approve job: %+v", j)
 	}
 
@@ -175,7 +229,7 @@ func TestActionRequestDecision(t *testing.T) {
 	if a := lastAudit(t, db, arRetry); a != `retried {"kind": "user_admin", "retriedBy": "member"}` {
 		t.Errorf("retry audit: %s", a)
 	}
-	if j := jobs(t, db, f, queueActionExecute); len(j) != 2 || !strings.Contains(j[1].Data, arRetry) {
+	if j := actionJobs(t, db); len(j) != 2 || !strings.Contains(j[1].Args, arRetry) {
 		t.Errorf("retry job: %+v", j)
 	}
 	if code, body := patch(arRetry, `{"decision":"retry"}`, member); code != 409 ||
@@ -193,7 +247,7 @@ func TestActionRequestDecision(t *testing.T) {
 	if err := db.QueryRow(ctx, `select status || ' ' || failure_reason from action_request where id = $1`, arRetry).Scan(&failure); err != nil || failure != "failed boom" {
 		t.Errorf("unsafe retry changed the row: %s %v", failure, err)
 	}
-	if j := jobs(t, db, f, queueActionExecute); len(j) != 2 {
+	if j := actionJobs(t, db); len(j) != 2 {
 		t.Errorf("unsafe retry queued a job: %d", len(j))
 	}
 }
@@ -223,7 +277,7 @@ func TestEnsureInsights(t *testing.T) {
 		t.Fatalf("no profile: %v", got)
 	}
 	want := queuedJob{`{"orgId": "org", "processingJobId": "` + id + `"}`, 2, 30, 7}
-	if j := jobs(t, db, f, queueIndustryInsights); len(j) != 1 || j[0] != want {
+	if j := bossJobs(t, db, f, queueIndustryInsights); len(j) != 1 || j[0] != want {
 		t.Errorf("queued job: %+v", j)
 	}
 	if w := call(f, "POST", "/api/v1/insights/ensure", `{"force":true}`, member); w.Body.String() != `{"state":"live","jobId":"`+id+`"}` {
@@ -246,7 +300,7 @@ func TestEnsureInsights(t *testing.T) {
 		(select industry_insights from customer_profile where not is_current)`).Scan(&insights, &old); err != nil || insights != "null" || old != "old insights" {
 		t.Errorf("force cleared %q, kept %q: %v", insights, old, err)
 	}
-	if j := jobs(t, db, f, queueIndustryInsights); len(j) != 2 {
+	if j := bossJobs(t, db, f, queueIndustryInsights); len(j) != 2 {
 		t.Errorf("jobs after force: %d", len(j))
 	}
 

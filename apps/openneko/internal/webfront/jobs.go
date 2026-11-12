@@ -14,7 +14,6 @@ import (
 // The queue names and send options of packages/db/src/jobs.ts. The worker
 // creates the pgboss schema when it starts.
 const (
-	queueActionExecute    = "action_execute"
 	queueIndustryInsights = "industry_insights_build"
 )
 

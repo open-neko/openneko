@@ -46,6 +46,7 @@ func threadsFront(t *testing.T) (*Front, *pgxpool.Pool) {
 	t.Cleanup(func() { time.Local = saved })
 	f, _ := newSetupFront(t, `{"provider":{"pluginName":"scalekit"}}`, db)
 	seedPgBoss(t, db, f)
+	seedRiver(t, db, f)
 	seed(t, db, `insert into work_thread (id, org_id, title, channel, created_by_user_id, backend_state, created_at, updated_at, last_message_at) values
 		($1, 'org', '', 'web', 'member', '{"session":"s1","n":1}', '2026-11-05T08:00:00Z', '2026-11-05T08:00:00Z', '2026-11-05T09:00:00Z'),
 		($2, 'org', 'Stock check', 'web', 'member', '{}', '2026-11-05T07:00:00Z', '2026-11-05T07:00:00Z', '2026-11-05T10:00:00Z'),
@@ -459,7 +460,7 @@ func TestApproveRunAction(t *testing.T) {
 			t.Errorf("%s %s: %d %s", c.run[len(c.run)-1:], c.body, code, got)
 		}
 	}
-	if j := jobs(t, db, f, queueActionExecute); len(j) != 1 || j[0].Data != `{"orgId": "org", "actionRequestId": "`+arChat+`"}` {
+	if j := actionJobs(t, db); len(j) != 1 || j[0].Args != `{"orgId": "org", "actionRequestId": "`+arChat+`"}` {
 		t.Errorf("jobs: %+v", j)
 	}
 	var row string

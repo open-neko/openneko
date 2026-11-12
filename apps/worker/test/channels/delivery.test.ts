@@ -11,8 +11,8 @@ vi.mock("@neko/llm/workflows", () => ({
 }));
 vi.mock("@neko/db/jobs", () => ({
   enqueue: vi.fn(async () => "job-1"),
+  enqueueActionExecute: vi.fn(async () => "1"),
   QUEUE: {
-    ACTION_EXECUTE: "action_execute",
     WORK_RUN: "work_run",
     CHANNEL_DELIVER: "channel_deliver",
   },
@@ -71,7 +71,7 @@ vi.mock("../../src/channels/runtime.js", () => ({
   verifyChannelInbound: vi.fn(),
 }));
 
-import { enqueue } from "@neko/db/jobs";
+import { enqueue, enqueueActionExecute } from "@neko/db/jobs";
 import {
   approveActionRequest,
   getActionRequest,
@@ -107,7 +107,7 @@ beforeEach(() => {
 afterEach(() => vi.clearAllMocks());
 
 describe("dispatchInboundIntent — decision", () => {
-  it("approve on a pending request approves + enqueues ACTION_EXECUTE", async () => {
+  it("approve on a pending request approves + enqueues the action_execute job", async () => {
     vi.mocked(getActionRequest).mockResolvedValue({ id: "ar-1", status: "pending_approval", kind: "k" } as never);
     await dispatchInboundIntent("org-1", { kind: "decision", decisionRef: "ar-1", choice: "approve" });
     expect(approveActionRequest).toHaveBeenCalledWith({
@@ -116,14 +116,14 @@ describe("dispatchInboundIntent — decision", () => {
       approverUserId: null,
       approver: { userId: null, role: "member" },
     });
-    expect(enqueue).toHaveBeenCalledWith("action_execute", { orgId: "org-1", actionRequestId: "ar-1" });
+    expect(enqueueActionExecute).toHaveBeenCalledWith({ orgId: "org-1", actionRequestId: "ar-1" });
   });
 
   it("is idempotent — an already-executed request is NOT re-approved or re-enqueued", async () => {
     vi.mocked(getActionRequest).mockResolvedValue({ id: "ar-1", status: "executed", kind: "k" } as never);
     await dispatchInboundIntent("org-1", { kind: "decision", decisionRef: "ar-1", choice: "approve" });
     expect(approveActionRequest).not.toHaveBeenCalled();
-    expect(enqueue).not.toHaveBeenCalled();
+    expect(enqueueActionExecute).not.toHaveBeenCalled();
   });
 
   it("reject on a pending request rejects it", async () => {
@@ -136,7 +136,7 @@ describe("dispatchInboundIntent — decision", () => {
       reason: "nope",
       approver: { userId: null, role: "member" },
     });
-    expect(enqueue).not.toHaveBeenCalled();
+    expect(enqueueActionExecute).not.toHaveBeenCalled();
   });
 
   it("a decision for an unknown action_request is a no-op", async () => {

@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 	"github.com/open-neko/neko/apps/openneko/internal/llm"
 )
 
@@ -34,6 +35,8 @@ type API struct {
 	SecretsDir string
 	// BossSchema overrides the pg-boss schema, pgboss; tests set it.
 	BossSchema string
+	// Jobs adds River jobs in a route's transaction.
+	Jobs *jobs.Inserter
 	// DBRole is the role that a password change rotates; "" means neko.
 	DBRole string
 	// Restart stops the web process after a password change when

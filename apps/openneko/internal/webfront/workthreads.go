@@ -1206,12 +1206,6 @@ func (a *API) approveRunAction(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusConflict, `action_request status is "`+status+`"; only pending_approval can be approved or rejected`)
 		return
 	}
-	if decision == "approve" {
-		if err := a.ensureQueue(ctx, queueActionExecute); err != nil {
-			a.fail(w, r, err)
-			return
-		}
-	}
 	next := map[bool]string{true: "approved", false: "rejected"}[decision == "approve"]
 	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
 		var current string
@@ -1232,8 +1226,7 @@ func (a *API) approveRunAction(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		if next == "approved" {
-			_, err := a.enqueue(ctx, tx, queueActionExecute, map[string]string{"orgId": act.OrgID, "actionRequestId": id})
-			return err
+			return a.enqueueActionExecute(ctx, tx, act.OrgID, id)
 		}
 		event := map[string]any{"type": "action_request_result", "action_request_id": id, "kind": kind, "status": "rejected"}
 		if reason != nil && *reason != "" {

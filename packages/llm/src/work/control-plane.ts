@@ -1,4 +1,4 @@
-import { enqueue, QUEUE } from "@neko/db/jobs";
+import { enqueueActionExecute } from "@neko/db/jobs";
 import { holds } from "@neko/db";
 import { actionKindIsGranted, entitlementActorForRun, runWorkflowFilter } from "./entitlement-scope";
 import {
@@ -694,7 +694,7 @@ export class InProcessControlPlane implements AgentControlPlane {
     orgId: string;
     actionRequestId: string;
   }): Promise<void> {
-    await enqueue(QUEUE.ACTION_EXECUTE, input);
+    await enqueueActionExecute(input);
   }
 
   async waitForActionExecution(input: {

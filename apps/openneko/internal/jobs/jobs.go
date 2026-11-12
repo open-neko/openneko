@@ -23,7 +23,7 @@ const (
 
 // Moved lists the queues that River runs. MOVED_QUEUES in
 // packages/db/src/jobs.ts must hold the same names.
-var Moved = []string{KindOutputSweep, KindMetricSweep, KindCronSweep, KindEmbeddingIndex, KindEmbeddingSweep, KindDirectorySync}
+var Moved = []string{KindOutputSweep, KindMetricSweep, KindCronSweep, KindEmbeddingIndex, KindEmbeddingSweep, KindDirectorySync, KindActionExecute}
 
 type Queue struct {
 	Pool        *pgxpool.Pool
@@ -35,6 +35,9 @@ type Queue struct {
 	// DirectorySync asks the Node worker to sync the directory; the
 	// worker alone reads secrets from Infisical.
 	DirectorySync func(context.Context) error
+	// ActionExecute asks the Node worker to run an approved action; the
+	// action adapters live in the worker until the packs runtime moves.
+	ActionExecute func(ctx context.Context, orgID, actionRequestID string) error
 	Embedding     Embedding
 }
 
@@ -145,6 +148,7 @@ func (q *Queue) Start(ctx context.Context) (*Runner, error) {
 	river.AddWorker(workers, &embeddingSweep{q: q})
 	river.AddWorker(workers, &embeddingIndex{q: q})
 	river.AddWorker(workers, &directorySync{run: q.DirectorySync})
+	river.AddWorker(workers, &actionExecute{run: q.ActionExecute})
 	client, err := river.NewClient(riverpgxv5.New(q.Pool), &river.Config{
 		Schema:       q.schema(),
 		Logger:       quietLogger(),
