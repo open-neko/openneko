@@ -1,6 +1,7 @@
 package webfront
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -309,10 +310,10 @@ func graphjinConfigHasSource(configFile, name string) (bool, error) {
 	return false, nil
 }
 
-func (a *API) sourceConfigEnabled(r *http.Request, orgID string) (bool, error) {
+func (a *API) sourceConfigEnabled(ctx context.Context, orgID string) (bool, error) {
 	var enabled bool
 	var raw []byte
-	err := a.DB.QueryRow(r.Context(), `select enabled, config from llm_provider_config
+	err := a.DB.QueryRow(ctx, `select enabled, config from llm_provider_config
 		where org_id = $1 and scope = 'graphjin-config' limit 1`, orgID).Scan(&enabled, &raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return true, nil
@@ -349,7 +350,7 @@ func (a *API) fileSourceUpload(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusNotFound, "not found")
 		return
 	}
-	if on, err := a.sourceConfigEnabled(r, act.OrgID); err != nil {
+	if on, err := a.sourceConfigEnabled(r.Context(), act.OrgID); err != nil {
 		a.fail(w, r, err)
 		return
 	} else if !on {
