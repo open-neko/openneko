@@ -150,6 +150,10 @@ var GoRoutes = map[string][]string{
 	"/api/v1/admin/signin/test":                                   {"POST"},
 	"/api/v1/admin/public-url":                                    {"GET", "PUT"},
 	"/api/v1/admin/channels/settings":                             {"GET", "POST"},
+	"/api/v1/admin/spend":                                         {"GET", "PUT"},
+	"/api/v1/admin/spend/alerts/{alertId}":                        {"DELETE"},
+	"/api/v1/admin/spend/workflows/{workflowId}":                  {"PUT", "DELETE"},
+	"/api/v1/admin/workflow-api-limits":                           {"GET", "PUT"},
 }
 
 // In a catchAll route the last {name} takes the rest of the path, as a Next
@@ -258,6 +262,10 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/admin/signin/test":                            {"POST": a.adminSigninTest},
 			"/api/v1/admin/public-url":                             {"GET": a.adminPublicURL, "PUT": a.adminPublicURLSave},
 			"/api/v1/admin/channels/settings":                      {"GET": a.adminChannelSettings, "POST": a.adminChannelSettings},
+			"/api/v1/admin/spend":                                  {"GET": a.adminSpend, "PUT": a.adminSpendSave},
+			"/api/v1/admin/spend/alerts/{alertId}":                 {"DELETE": a.adminSpendAlertAck},
+			"/api/v1/admin/spend/workflows/{workflowId}":           {"PUT": a.adminWorkflowSpend, "DELETE": a.adminWorkflowSpend},
+			"/api/v1/admin/workflow-api-limits":                    {"GET": a.adminWorkflowAPILimits, "PUT": a.adminWorkflowAPILimitsSave},
 		}
 	})
 	return a.routes
