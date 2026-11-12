@@ -100,11 +100,18 @@ because the gateway does not yet return Perplexity's citations.
 The model in Admin, Settings, Model provider is the default model. At Admin,
 Settings, Models, an admin adds more models (`llm_model`, one row per model,
 keys sealed like the provider key) and gives each task a route
-(`llm_task_route`). The tasks are agent turns, the question classifier, the
-briefing summary, compaction, bot instructions, bot names, skill lessons and
-the research mission. A task with no route follows the "default" route. The
-default route always uses the default model and may name a fallback. A
-disabled model counts as unset, so its tasks use the default model.
+(`llm_task_route`). The tasks are agent turns, the question classifier,
+compaction, bot instructions, bot names, skill lessons and the research
+mission. A task with no route follows the "default" route. The default route
+always uses the default model and may name a fallback. A disabled model counts
+as unset, so its tasks use the default model.
+
+`openneko web` answers the model routes (`/api/v1/admin/models/*` and
+`/api/v1/admin/model-routes`). The provider list, the default models, the
+form fields and the provider checks are in `apps/openneko/internal/llm`.
+`packages/llm` keeps a copy until the host model code moves to Go. Both
+copies must match `packages/llm/test/fixtures/model-catalog.json`; a Go test
+and a TypeScript test check this.
 
 A route may name a fallback model. The gateway sends a call to the fallback
 only when the first model fails with an error that Ax classifies as
