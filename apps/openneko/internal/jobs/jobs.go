@@ -141,21 +141,9 @@ type Runner struct {
 // Start runs the moved queues' workers and their schedules. Only the elected
 // leader among running clients inserts the scheduled jobs.
 func (q *Queue) Start(ctx context.Context) (*Runner, error) {
-	workers := river.NewWorkers()
-	river.AddWorker(workers, &outputSweep{pool: q.Pool, logf: q.logf})
-	river.AddWorker(workers, &metricSweep{run: q.MetricSweep})
-	river.AddWorker(workers, &cronSweep{run: q.CronSweep})
-	river.AddWorker(workers, &embeddingSweep{q: q})
-	river.AddWorker(workers, &embeddingIndex{q: q})
-	river.AddWorker(workers, &directorySync{run: q.DirectorySync})
-	river.AddWorker(workers, &actionExecute{run: q.ActionExecute})
-	client, err := river.NewClient(riverpgxv5.New(q.Pool), &river.Config{
-		Schema:       q.schema(),
-		Logger:       quietLogger(),
-		Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 4}, QueueEmbedding: {MaxWorkers: 1}},
-		Workers:      workers,
-		PeriodicJobs: periodicJobs(),
-	})
+	config := q.config()
+	config.PeriodicJobs = periodicJobs()
+	client, err := river.NewClient(riverpgxv5.New(q.Pool), config)
 	if err != nil {
 		return nil, err
 	}
@@ -165,6 +153,23 @@ func (q *Queue) Start(ctx context.Context) (*Runner, error) {
 	return &Runner{client: client}, nil
 }
 
+func (q *Queue) config() *river.Config {
+	workers := river.NewWorkers()
+	river.AddWorker(workers, &outputSweep{pool: q.Pool, logf: q.logf})
+	river.AddWorker(workers, &metricSweep{run: q.MetricSweep})
+	river.AddWorker(workers, &cronSweep{run: q.CronSweep})
+	river.AddWorker(workers, &embeddingSweep{q: q})
+	river.AddWorker(workers, &embeddingIndex{q: q})
+	river.AddWorker(workers, &directorySync{run: q.DirectorySync})
+	river.AddWorker(workers, &actionExecute{run: q.ActionExecute})
+	return &river.Config{
+		Schema:  q.schema(),
+		Logger:  quietLogger(),
+		Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 4}, QueueEmbedding: {MaxWorkers: 1}},
+		Workers: workers,
+	}
+}
+
 // Stop waits up to the context's deadline for running jobs, then cancels them.
 func (r *Runner) Stop(ctx context.Context) {
 	if err := r.client.Stop(ctx); err != nil {
@@ -172,24 +177,29 @@ func (r *Runner) Stop(ctx context.Context) {
 	}
 }
 
+type cronJob struct {
+	schedule   river.PeriodicSchedule
+	period     time.Duration
+	args       river.JobArgs
+	runOnStart bool
+}
+
+var cronJobs = []cronJob{
+	{schedule: Hourly{}, period: time.Hour, args: OutputSweepArgs{}},
+	{schedule: Hourly{}, period: time.Hour, args: MetricSweepArgs{}},
+	{schedule: EveryMinute{}, period: time.Minute, args: CronSweepArgs{}},
+	{schedule: EveryMinute{}, period: time.Minute, args: EmbeddingSweepArgs{}, runOnStart: true},
+	{schedule: SixHourly{}, period: 6 * time.Hour, args: DirectorySyncArgs{}},
+}
+
 func periodicJobs() []*river.PeriodicJob {
-	return []*river.PeriodicJob{
-		river.NewPeriodicJob(Hourly{}, func() (river.JobArgs, *river.InsertOpts) {
-			return OutputSweepArgs{}, nil
-		}, &river.PeriodicJobOpts{ID: KindOutputSweep}),
-		river.NewPeriodicJob(Hourly{}, func() (river.JobArgs, *river.InsertOpts) {
-			return MetricSweepArgs{}, nil
-		}, &river.PeriodicJobOpts{ID: KindMetricSweep}),
-		river.NewPeriodicJob(EveryMinute{}, func() (river.JobArgs, *river.InsertOpts) {
-			return CronSweepArgs{}, nil
-		}, &river.PeriodicJobOpts{ID: KindCronSweep}),
-		river.NewPeriodicJob(EveryMinute{}, func() (river.JobArgs, *river.InsertOpts) {
-			return EmbeddingSweepArgs{}, nil
-		}, &river.PeriodicJobOpts{ID: KindEmbeddingSweep, RunOnStart: true}),
-		river.NewPeriodicJob(SixHourly{}, func() (river.JobArgs, *river.InsertOpts) {
-			return DirectorySyncArgs{}, nil
-		}, &river.PeriodicJobOpts{ID: KindDirectorySync}),
+	out := make([]*river.PeriodicJob, len(cronJobs))
+	for i, c := range cronJobs {
+		out[i] = river.NewPeriodicJob(c.schedule, func() (river.JobArgs, *river.InsertOpts) {
+			return c.args, nil
+		}, &river.PeriodicJobOpts{ID: c.args.Kind(), RunOnStart: c.runOnStart})
 	}
+	return out
 }
 
 // Hourly fires at the top of each UTC hour, as the cron "0 * * * *" did.
