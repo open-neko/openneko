@@ -94,7 +94,7 @@ func Check(dir string) error {
 
 func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
-	if strings.HasPrefix(p, "/_next/") || fileExtension.MatchString(p) {
+	if !strings.HasPrefix(p, "/api/") && (strings.HasPrefix(p, "/_next/") || fileExtension.MatchString(p)) {
 		if !f.serveFile(w, r, p, true) {
 			f.node(w, r)
 		}

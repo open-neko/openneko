@@ -499,3 +499,15 @@ func (s *Service) sql(ctx context.Context, c caller, r *http.Request) (any, erro
 	}
 	return res, nil
 }
+
+// MintToken signs a short-lived caller token as the control zone does in
+// packages/llm/src/files/client.ts.
+func MintToken(key []byte, org, user string, exp time.Time) string {
+	enc := base64.RawURLEncoding
+	head := enc.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
+	body, _ := json.Marshal(claims{Org: org, Sub: user, Exp: exp.Unix()})
+	msg := head + "." + enc.EncodeToString(body)
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(msg))
+	return msg + "." + enc.EncodeToString(mac.Sum(nil))
+}

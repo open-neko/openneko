@@ -1,26 +1,9 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   ALLOWED_UPLOAD_EXTENSIONS,
-  MAX_UPLOAD_SIZE,
   joinMessageWithAttachments,
-  readRunArtifact,
-  readWorkFile,
   safeFileName,
-  saveWorkUpload,
 } from "@/lib/work-files";
-
-const cleanupPaths: string[] = [];
-
-afterEach(async () => {
-  while (cleanupPaths.length > 0) {
-    const path = cleanupPaths.pop();
-    if (path) await rm(path, { recursive: true, force: true });
-  }
-  delete process.env.HOME;
-});
 
 describe("safeFileName", () => {
   it("replaces unsafe characters with underscores", () => {
@@ -93,10 +76,6 @@ describe("joinMessageWithAttachments", () => {
 });
 
 describe("upload constants", () => {
-  it("caps uploads at 10 MB", () => {
-    expect(MAX_UPLOAD_SIZE).toBe(10 * 1024 * 1024);
-  });
-
   it("allows the standard document extensions", () => {
     for (const ext of [
       ".csv",
@@ -126,70 +105,4 @@ describe("upload constants", () => {
       expect(ALLOWED_UPLOAD_EXTENSIONS.has(ext)).toBe(false);
     }
   });
-});
-
-describe("saveWorkUpload + readWorkFile round-trip", () => {
-  it("writes the file under uploads/<threadId>/ and reads it back", async () => {
-    const home = await mkdtemp(join(tmpdir(), "neko-work-files-"));
-    cleanupPaths.push(home);
-    process.env.HOME = home;
-
-    const payload = Buffer.from("col1,col2\n1,2\n3,4\n");
-    const file = new File([payload], "report.csv", { type: "text/csv" });
-
-    const saved = await saveWorkUpload("org-test", "thread-7", file);
-    expect(saved.name).toBe("report.csv");
-    expect(saved.relativePath).toBe(join("uploads", "thread-7", "report.csv"));
-    expect(saved.size).toBe(payload.byteLength);
-    expect(saved.absolutePath).toContain("thread-7");
-
-    const onDisk = await readFile(saved.absolutePath);
-    expect(onDisk.toString()).toBe(payload.toString());
-
-    const served = await readWorkFile("org-test", "uploads/thread-7/report.csv");
-    expect(served.filename).toBe("report.csv");
-    expect(served.mimeType.startsWith("text/csv")).toBe(true);
-    expect(served.data.toString()).toBe(payload.toString());
-  }, 30_000);
-
-  it("sanitises filenames and refuses path escapes when reading", async () => {
-    const home = await mkdtemp(join(tmpdir(), "neko-work-files-"));
-    cleanupPaths.push(home);
-    process.env.HOME = home;
-
-    const file = new File(["x"], "../../etc/passwd", { type: "text/plain" });
-    const saved = await saveWorkUpload("org-test", "thread-x", file);
-    expect(saved.name).not.toContain("/");
-    expect(saved.name).not.toContain("..");
-
-    await expect(readWorkFile("org-test", "secrets/foo.txt")).rejects.toThrow();
-  }, 30_000);
-});
-
-describe("readRunArtifact", () => {
-  it("reads a contained artifact and rejects traversal or symlink escapes", async () => {
-    const home = await mkdtemp(join(tmpdir(), "neko-work-artifact-"));
-    cleanupPaths.push(home);
-    process.env.HOME = home;
-    const upload = await saveWorkUpload(
-      "org-test",
-      "thread-1",
-      new File(["private"], "private.txt", { type: "text/plain" }),
-    );
-    const orgRoot = upload.absolutePath.split(`${join("uploads", "thread-1")}`)[0]!;
-    const runId = "11111111-1111-4111-8111-111111111111";
-    const artifactRoot = join(orgRoot, "runs", runId, "artifacts");
-    await mkdir(artifactRoot, { recursive: true });
-    await writeFile(join(artifactRoot, "report.csv"), "a,b\n1,2\n");
-    await symlink(upload.absolutePath, join(artifactRoot, "private-link.txt"));
-
-    const artifact = await readRunArtifact("org-test", runId, "report.csv");
-    expect(artifact.data.toString()).toContain("a,b");
-    await expect(
-      readRunArtifact("org-test", runId, "../private.txt"),
-    ).rejects.toThrow(/Invalid artifact path/);
-    await expect(
-      readRunArtifact("org-test", runId, "private-link.txt"),
-    ).rejects.toThrow(/outside the run/);
-  }, 30_000);
 });

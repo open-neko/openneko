@@ -3,9 +3,6 @@ package files
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -29,15 +26,7 @@ import (
 
 var testKey = []byte("0123456789abcdef0123456789abcdef")
 
-func mint(key []byte, org, user string, exp time.Time) string {
-	enc := base64.RawURLEncoding
-	head := enc.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
-	body, _ := json.Marshal(claims{Org: org, Sub: user, Exp: exp.Unix()})
-	msg := head + "." + enc.EncodeToString(body)
-	mac := hmac.New(sha256.New, key)
-	mac.Write([]byte(msg))
-	return msg + "." + enc.EncodeToString(mac.Sum(nil))
-}
+func mint(key []byte, org, user string, exp time.Time) string { return MintToken(key, org, user, exp) }
 
 func newServer(t *testing.T) (*httptest.Server, string) {
 	t.Helper()

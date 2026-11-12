@@ -1,31 +1,11 @@
 import "server-only";
 
-import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
-import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { readFile, readdir, stat } from "node:fs/promises";
+import { basename, join } from "node:path";
 import { ensureOrgWorkspace } from "@neko/llm/work";
 import { LIBRARY_SUPPORTED_EXTENSIONS } from "@neko/llm/library/formats";
 
-export const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
-
 export const ALLOWED_UPLOAD_EXTENSIONS = new Set<string>(LIBRARY_SUPPORTED_EXTENSIONS);
-
-const MIME_BY_EXT: Record<string, string> = {
-  ".csv": "text/csv; charset=utf-8",
-  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  ".md": "text/markdown; charset=utf-8",
-  ".markdown": "text/markdown; charset=utf-8",
-  ".pdf": "application/pdf",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  ".txt": "text/plain; charset=utf-8",
-  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-};
-
-// Office docs browsers can't preview — the file-serving route uses this set
-// to force download instead of trying (and failing) to render inline.
-export const FORCE_DOWNLOAD_EXTENSIONS = new Set([".docx", ".pptx", ".xlsx"]);
 
 export function safeFileName(name: string): string {
   const base = basename(name).split("\\").pop() ?? name;
@@ -33,26 +13,6 @@ export function safeFileName(name: string): string {
     .replace(/[^a-zA-Z0-9._-]/g, "_")
     .replace(/^\.+/, "_")
     .slice(0, 200) || "upload.bin";
-}
-
-export async function saveWorkUpload(
-  orgId: string,
-  threadId: string,
-  file: File,
-): Promise<{ relativePath: string; absolutePath: string; name: string; size: number }> {
-  const roots = await ensureOrgWorkspace(orgId);
-  const dir = join(roots.uploadsRoot, threadId);
-  await mkdir(dir, { recursive: true });
-  const safeName = safeFileName(file.name || "upload.bin");
-  const absolutePath = join(dir, safeName);
-  const buffer = Buffer.from(await file.arrayBuffer());
-  await writeFile(absolutePath, buffer);
-  return {
-    relativePath: join("uploads", threadId, safeName),
-    absolutePath,
-    name: safeName,
-    size: buffer.byteLength,
-  };
 }
 
 export function joinMessageWithAttachments(
@@ -67,84 +27,6 @@ export function joinMessageWithAttachments(
   });
   const header = `I've attached ${attachments.length === 1 ? "a file" : "files"}:`;
   return prefix ? `${prefix}\n\n${header}\n${lines.join("\n")}` : `${header}\n${lines.join("\n")}`;
-}
-
-export async function readWorkFile(orgId: string, relativePath: string): Promise<{
-  data: Buffer;
-  mimeType: string;
-  filename: string;
-}> {
-  const roots = await ensureOrgWorkspace(orgId);
-  const normalized = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");
-  if (
-    !normalized.startsWith("uploads/") &&
-    !normalized.startsWith("runs/") &&
-    !normalized.startsWith("skills/") &&
-    !normalized.startsWith("memory/") &&
-    !normalized.startsWith("library/uploads/")
-  ) {
-    throw new Error("Unsupported work file path.");
-  }
-  const absolute = resolve(roots.orgRoot, normalized);
-  if (!absolute.startsWith(resolve(roots.orgRoot))) {
-    throw new Error("Work file path escapes the org workspace.");
-  }
-  const [buffer, meta] = await Promise.all([readFile(absolute), stat(absolute)]);
-  if (!meta.isFile()) throw new Error("Work file is not a regular file.");
-  const ext = extname(absolute).toLowerCase();
-  return {
-    data: buffer,
-    mimeType: MIME_BY_EXT[ext] ?? "application/octet-stream",
-    filename: basename(absolute),
-  };
-}
-
-function isWithin(root: string, candidate: string): boolean {
-  const rel = relative(root, candidate);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-}
-
-/** Read a regular file physically contained by one run's artifact root. */
-export async function readRunArtifact(
-  orgId: string,
-  runId: string,
-  artifactPath: string,
-): Promise<{ data: Buffer; mimeType: string; filename: string }> {
-  if (basename(runId) !== runId || !runId) {
-    throw new Error("Invalid work run id.");
-  }
-  const normalized = artifactPath.replace(/\\/g, "/");
-  if (
-    !normalized ||
-    normalized.startsWith("/") ||
-    normalized.split("/").some((part) => !part || part === "." || part === "..")
-  ) {
-    throw new Error("Invalid artifact path.");
-  }
-  const roots = await ensureOrgWorkspace(orgId);
-  const declaredRoot = resolve(roots.runsRoot, runId, "artifacts");
-  const declaredFile = resolve(declaredRoot, normalized);
-  if (!isWithin(declaredRoot, declaredFile)) {
-    throw new Error("Artifact path escapes the run.");
-  }
-  const [physicalRoot, physicalFile] = await Promise.all([
-    realpath(declaredRoot),
-    realpath(declaredFile),
-  ]);
-  if (!isWithin(physicalRoot, physicalFile)) {
-    throw new Error("Artifact resolves outside the run.");
-  }
-  const [buffer, meta] = await Promise.all([
-    readFile(physicalFile),
-    stat(physicalFile),
-  ]);
-  if (!meta.isFile()) throw new Error("Artifact is not a regular file.");
-  const ext = extname(physicalFile).toLowerCase();
-  return {
-    data: buffer,
-    mimeType: MIME_BY_EXT[ext] ?? "application/octet-stream",
-    filename: basename(physicalFile),
-  };
 }
 
 export type WorkSkillSummary = {

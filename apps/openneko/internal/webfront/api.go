@@ -80,7 +80,14 @@ var GoRoutes = map[string][]string{
 	"/api/v1/work/config/history":                       {"GET"},
 	"/api/v1/work/config/restore":                       {"POST"},
 	"/api/v1/work/assets":                               {"GET"},
+	"/api/v1/work/audit/export":                         {"GET"},
+	"/api/v1/work/files/{path}":                         {"GET"},
+	"/api/v1/work/upload":                               {"POST"},
 }
+
+// In a catchAll route the last {name} takes the rest of the path, as a Next
+// [...name] route does.
+var catchAll = map[string]bool{"/api/v1/work/files/{path}": true}
 
 func (a *API) table() map[string]map[string]http.HandlerFunc {
 	a.once.Do(func() {
@@ -121,6 +128,9 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/work/config/history":                       {"GET": a.configHistory},
 			"/api/v1/work/config/restore":                       {"POST": a.configRestore},
 			"/api/v1/work/assets":                               {"GET": a.workAssets},
+			"/api/v1/work/audit/export":                         {"GET": a.auditExport},
+			"/api/v1/work/files/{path}":                         {"GET": a.workFile},
+			"/api/v1/work/upload":                               {"POST": a.workUpload},
 		}
 	})
 	return a.routes
@@ -166,19 +176,30 @@ func (a *API) templateMatch(r *http.Request) map[string]http.HandlerFunc {
 			continue
 		}
 		want := strings.Split(route, "/")
-		if len(want) != len(got) {
+		if len(want) != len(got) && !(catchAll[route] && len(got) > len(want)) {
 			continue
 		}
 		values := map[string]string{}
 		matched := true
 		for i, seg := range want {
 			if strings.HasPrefix(seg, "{") && strings.HasSuffix(seg, "}") {
-				v, err := url.PathUnescape(got[i])
-				if err != nil || v == "" {
-					matched = false
+				rest := got[i : i+1]
+				if catchAll[route] && i == len(want)-1 {
+					rest = got[i:]
+				}
+				decoded := make([]string, len(rest))
+				for j, raw := range rest {
+					v, err := url.PathUnescape(raw)
+					if err != nil || v == "" {
+						matched = false
+						break
+					}
+					decoded[j] = v
+				}
+				if !matched {
 					break
 				}
-				values[seg[1:len(seg)-1]] = v
+				values[seg[1:len(seg)-1]] = strings.Join(decoded, "/")
 			} else if seg != got[i] {
 				matched = false
 				break
