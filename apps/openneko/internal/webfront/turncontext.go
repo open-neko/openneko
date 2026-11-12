@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -75,6 +76,9 @@ func (a *API) loadTurnContext(ctx context.Context, o turnOptions) (*turnContext,
 	if err != nil {
 		return nil, err
 	}
+	if r := a.prefetchKnowledge(ctx, o.OrgID, ws.KnowledgeRoot, false); !r.OK {
+		log.Printf("[work-run] org=%s knowledge refresh failed (%s); proceeding with on-disk pack", o.OrgID, r.Error)
+	}
 	knowledge := readKnowledgePack(ws.KnowledgeRoot)
 	act, err := a.runActor(ctx, o.RunID)
 	if err != nil {
@@ -141,6 +145,9 @@ func (a *API) loadTurnContext(ctx context.Context, o turnOptions) (*turnContext,
 	}
 
 	available := listInstalledSkills(ws.SkillsRoot)
+	if err := a.syncSkillIndex(ctx, o.OrgID, available); err != nil {
+		log.Printf("[work-run] skill index sync failed: %v", err)
+	}
 	names := make([]string, len(available))
 	for i, s := range available {
 		names[i] = s.Name
@@ -335,24 +342,8 @@ var knowledgeSnapshotFiles = []string{"tables.json", "namespaces.json", "insight
 // the snapshot when it is whole, else the loose files.
 func readKnowledgePack(root string) knowledgePack {
 	files := map[string]string{}
-	if raw, err := os.ReadFile(filepath.Join(root, ".knowledge-snapshot.json")); err == nil {
-		var snap struct {
-			Format   int                        `json:"format"`
-			Source   *string                    `json:"source"`
-			Revision *string                    `json:"revision"`
-			Files    map[string]json.RawMessage `json:"files"`
-		}
-		if json.Unmarshal(raw, &snap) == nil && snap.Format == 1 && snap.Source != nil && snap.Revision != nil {
-			for _, name := range knowledgeSnapshotFiles {
-				var text string
-				if json.Unmarshal(snap.Files[name], &text) != nil ||
-					strings.HasSuffix(name, ".json") && !json.Valid([]byte(text)) {
-					files = map[string]string{}
-					break
-				}
-				files[name] = text
-			}
-		}
+	if snap := readKnowledgeSnapshot(root); snap != nil {
+		files = snap.Files
 	}
 	read := func(name string) string {
 		if text, ok := files[name]; ok {

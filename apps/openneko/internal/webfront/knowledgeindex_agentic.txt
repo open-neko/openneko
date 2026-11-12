@@ -1,0 +1,48 @@
+# GraphJin knowledge pack (agentic mode)
+
+This directory holds a SLIM bootstrap prefetched from the role-aware
+`gj_catalog` root: table, database, and API operation summaries, the help-card index,
+and the query-DSL essentials. It is deliberately not the whole schema.
+
+Everything deeper you discover ON DEMAND with catalog queries through the
+runtime's native GraphQL query tool. The trusted broker executes them under
+your actor identity, so you only ever see what your role allows:
+
+```graphql
+query { gj_catalog(search: "orders customers join", limit: 10) { id kind name summary } }
+query { gj_catalog(id: "table:<db>:<schema>.<table>") { id name summary details_json examples_json edges_json } }
+query { gj_catalog(where: { kind: { eq: "column" } }, search: "<table name>", limit: 30) { id name summary } }
+```
+
+Catalog row kinds: help, database, table, api_operation, column, relationship,
+function, capability. `gj_catalog(id: "...")` returns one detailed
+card (details_json, examples_json, edges_json, safety_json). Start from
+`help:discovery` when unsure.
+
+For join planning, use relationship catalog rows plus table-card
+`details_json`, `examples_json`, and `edges_json`. Source-mode
+deployments may disable GraphJin dev tools, so do not call `find_path`,
+`explore_relationships`, `get_table_sample`, `list_tables`,
+`describe_table`, or `health`.
+
+## Files
+
+- **`tables.json`** — every table visible to the service role
+  (catalog id, name, one-line summary). Use the catalog id with
+  `gj_catalog(id:)` for column-level detail.
+- **`namespaces.json`** — the configured databases/sources.
+- **`insights.json`** — the help-card index: what the catalog can
+  teach you and which card to pull for each topic, plus API operations.
+- **`syntax.json`** — query-DSL essentials (filters + query shape)
+  pulled from the catalog's help cards. Pull other help cards on
+  demand for mutations, fragments, workflows, errors.
+
+## Running queries
+
+```json
+{ "query": "<read-only graphql>" }
+```
+
+If a query returns errors, use `errors[].extensions.graphjin_repair`
+when present, correct the query, and call the same native tool again.
+Mutations and subscriptions are denied at the broker.

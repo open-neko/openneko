@@ -1,0 +1,270 @@
+{
+ "agentic": {
+  "base": {
+   "query { gj_catalog(where: { kind: { eq: \"table\" } }, limit: 500) { id name summary } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":[{\"10\":\"int key\",\"id\":\"table:main:sales.salesorderheader\",\"name\":\"salesorderheader\",\"summary\":\"Order headers · ₹ totals\"},{\"id\":\"table:main:sales.salesorderdetail\",\"name\":\"salesorderdetail\",\"summary\":\"salesorderdetail in sales\"},{\"id\":\"table:main:sales.customer\",\"name\":\"customer\",\"summary\":\"customer in sales\"},{\"id\":\"table:main:production.product\",\"name\":\"product\",\"summary\":\"product in production\"},{\"id\":\"table:main:production.unitmeasure\",\"name\":\"unitmeasure\",\"summary\":\"unitmeasure in production\"},{\"id\":\"table:main:production.productcategory\",\"name\":\"productcategory\",\"summary\":\"productcategory in production\"},{\"id\":\"table:main:hr.employee\",\"name\":\"employee\",\"summary\":\"employee in hr\"},{\"id\":\"table:main:hr.department\",\"name\":\"department\",\"summary\":\"department in hr\"},{\"id\":\"table:main:person.person\",\"name\":\"person\",\"summary\":\"person in person\"},{\"id\":\"table:main:person.address\",\"name\":\"address\",\"summary\":\"address in person\"},{\"id\":\"table:main:sales.store\",\"name\":\"store\",\"summary\":\"store in sales\"},{\"id\":\"table:main:sales.territory\",\"name\":\"territory\",\"summary\":\"territory in sales\"},{\"name\":\"noid\"},{\"id\":\"table:main:x.blank\",\"name\":\"\"},{\"id\":\"table:main:sales.überkunde\",\"name\":\"überkunde\",\"summary\":\"überkunde in sales\"}]}}"
+   },
+   "query { gj_catalog(where: { kind: { eq: \"database\" } }, limit: 50) { id name summary } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":[{\"id\":\"database:main\",\"name\":\"main\",\"summary\":\"AdventureWorks · PostgreSQL\"}]}}"
+   },
+   "query { gj_catalog(where: { kind: { eq: \"api_operation\" } }, limit: 500) { id name summary } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":[{\"id\":\"api:listOrders\",\"name\":\"listOrders\",\"summary\":\"List orders\"},{\"id\":\"api:x\",\"name\":\"x\"}]}}"
+   },
+   "query { gj_catalog(where: { kind: { eq: \"help\" } }, limit: 50) { id name summary } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":[{\"id\":\"help:discovery\",\"name\":\"discovery\",\"summary\":\"Start here\"},{\"id\":\"help:query\",\"name\":\"query\",\"summary\":\"Query shape\"},{\"id\":\"help:filters\",\"name\":\"filters\",\"summary\":\"Filters\"}]}}"
+   },
+   "query { gj_catalog(id: \"help:query\") { id name summary details_json examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"help:query\",\"name\":\"query\",\"summary\":\"help:query card\",\"details_json\":\"{\\\"rules\\\":[\\\"one\\\",\\\"two\\\"],\\\"n\\\":1.5}\",\"examples_json\":\"[\\\"query { a }\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"help:filters\") { id name summary details_json examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"help:filters\",\"name\":\"filters\",\"summary\":\"help:filters card\",\"details_json\":\"{\\\"rules\\\":[\\\"one\\\",\\\"two\\\"],\\\"n\\\":1.5}\",\"examples_json\":\"[\\\"query { a }\\\"]\"}}}"
+   },
+   "query { gj_catalog(where: { kind: { eq: \"relationship\" } }, limit: 1000) { id name summary } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":[{\"id\":\"relationship:main:sales.salesorderdetail.salesorderid->main:sales.salesorderheader.salesorderid\",\"name\":\"sales.salesorderdetail.salesorderid->sales.salesorderheader.salesorderid\",\"summary\":null},{\"id\":\"relationship:main:sales.salesorderdetail.productid->main:production.product.productid\",\"name\":\"sales.salesorderdetail.productid->production.product.productid\",\"summary\":null},{\"id\":\"relationship:main:sales.salesorderheader.customerid->main:sales.customer.customerid\",\"name\":\"sales.salesorderheader.customerid->sales.customer.customerid\",\"summary\":null},{\"id\":\"relationship:main:sales.salesorderheader.territoryid->main:sales.territory.territoryid\",\"name\":\"sales.salesorderheader.territoryid->sales.territory.territoryid\",\"summary\":null},{\"id\":\"relationship:main:sales.customer.storeid->main:sales.store.businessentityid\",\"name\":\"sales.customer.storeid->sales.store.businessentityid\",\"summary\":null},{\"id\":\"relationship:main:sales.customer.personid->main:person.person.businessentityid\",\"name\":\"sales.customer.personid->person.person.businessentityid\",\"summary\":null},{\"id\":\"relationship:main:production.product.unitmeasurecode->main:production.unitmeasure.code\",\"name\":\"production.product.unitmeasurecode->production.unitmeasure.code\",\"summary\":null},{\"id\":\"relationship:main:production.product.categoryid->main:production.productcategory.id\",\"name\":\"production.product.categoryid->production.productcategory.id\",\"summary\":null},{\"id\":\"relationship:main:hr.employee.departmentid->main:hr.department.id\",\"name\":\"hr.employee.departmentid->hr.department.id\",\"summary\":null},{\"id\":\"relationship:main:hr.employee.personid->main:person.person.businessentityid\",\"name\":\"hr.employee.personid->person.person.businessentityid\",\"summary\":null},{\"id\":\"relationship:main:person.address.personid->main:person.person.businessentityid\",\"name\":\"person.address.personid->person.person.businessentityid\",\"summary\":null},{\"id\":\"relationship:main:sales.store.territoryid->main:sales.territory.territoryid\",\"name\":\"sales.store.territoryid->sales.territory.territoryid\",\"summary\":null},{\"id\":\"relationship:main:sales.überkunde.customerid->main:sales.customer.customerid\",\"name\":\"sales.überkunde.customerid->sales.customer.customerid\",\"summary\":null},{\"id\":\"relationship::odd.left->plain\"},{\"id\":\"relationship:no-arrow-here\"},{\"id\":\"relationship:a->b->c.d.e\"},{\"name\":\"no id\"},{\"id\":\"relationship:main:x.y\\nz->main:p.q.r\"}]}}"
+   },
+   "query { gj_catalog(where: { kind: { in: [\"query_pattern\", \"directive\", \"operator_set\"] } }, limit: 50) { id kind name summary } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":[{\"id\":\"directive:card_0\",\"kind\":\"directive\",\"name\":\"card 0\",\"summary\":\"Card 0\"},{\"id\":\"query_pattern:card_1\",\"kind\":\"query_pattern\",\"name\":\"card 1\",\"summary\":\"Card 1\"},{\"id\":\"operator_set:card_2\",\"kind\":\"operator_set\",\"name\":\"card 2\",\"summary\":\"Card 2\"},{\"id\":\"other:card_3\",\"kind\":\"other\",\"name\":\"card 3\",\"summary\":\"Card 3\"},{\"id\":\"nokind:card_4\",\"name\":\"card 4\",\"summary\":\"Card 4\"},{\"id\":\"directive:card_5\",\"kind\":\"directive\",\"name\":\"card 5\",\"summary\":\"Card 5\"},{\"id\":\"query_pattern:card_6\",\"kind\":\"query_pattern\",\"name\":\"card 6\",\"summary\":\"Card 6\"},{\"id\":\"operator_set:card_7\",\"kind\":\"operator_set\",\"name\":\"card 7\",\"summary\":\"Card 7\"},{\"id\":\"other:card_8\",\"kind\":\"other\",\"name\":\"card 8\",\"summary\":\"Card 8\"},{\"id\":\"nokind:card_9\",\"name\":\"card 9\",\"summary\":\"Card 9\"},{\"id\":\"directive:card_10\",\"kind\":\"directive\",\"name\":\"card 10\",\"summary\":\"Card 10\"},{\"id\":\"query_pattern:card_11\",\"kind\":\"query_pattern\",\"name\":\"card 11\",\"summary\":\"Card 11\"},{\"id\":\"operator_set:card_12\",\"kind\":\"operator_set\",\"name\":\"card 12\",\"summary\":\"Card 12\"},{\"id\":\"other:card_13\",\"kind\":\"other\",\"name\":\"card 13\",\"summary\":\"Card 13\"},{\"id\":\"nokind:card_14\",\"name\":\"card 14\",\"summary\":\"Card 14\"},{\"id\":\"directive:card_15\",\"kind\":\"directive\",\"name\":\"card 15\",\"summary\":\"Card 15\"},{\"id\":\"query_pattern:card_16\",\"kind\":\"query_pattern\",\"name\":\"card 16\",\"summary\":\"Card 16\"},{\"id\":\"operator_set:card_17\",\"kind\":\"operator_set\",\"name\":\"card 17\",\"summary\":\"Card 17\"},{\"id\":\"other:card_18\",\"kind\":\"other\",\"name\":\"card 18\",\"summary\":\"Card 18\"},{\"id\":\"nokind:card_19\",\"name\":\"card 19\",\"summary\":\"Card 19\"},{\"id\":\"directive:card_20\",\"kind\":\"directive\",\"name\":\"card 20\",\"summary\":\"Card 20\"},{\"id\":\"query_pattern:card_21\",\"kind\":\"query_pattern\",\"name\":\"card 21\",\"summary\":\"Card 21\"},{\"id\":\"operator_set:card_22\",\"kind\":\"operator_set\",\"name\":\"card 22\",\"summary\":\"Card 22\"},{\"id\":\"other:card_23\",\"kind\":\"other\",\"name\":\"card 23\",\"summary\":\"Card 23\"},{\"id\":\"nokind:card_24\",\"name\":\"card 24\",\"summary\":\"Card 24\"},{\"id\":\"directive:card_25\",\"kind\":\"directive\",\"name\":\"card 25\",\"summary\":\"Card 25\"},{\"id\":\"query_pattern:card_26\",\"kind\":\"query_pattern\",\"name\":\"card 26\",\"summary\":\"Card 26\"},{\"id\":\"operator_set:card_27\",\"kind\":\"operator_set\",\"name\":\"card 27\",\"summary\":\"Card 27\"},{\"id\":\"other:card_28\",\"kind\":\"other\",\"name\":\"card 28\",\"summary\":\"Card 28\"},{\"id\":\"nokind:card_29\",\"name\":\"card 29\",\"summary\":\"Card 29\"},{\"kind\":\"query_pattern\",\"name\":\"no id\"},{\"id\":0,\"kind\":\"query_pattern\"}]}}"
+   },
+   "query { gj_catalog(id: \"directive:card_0\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"directive:card_0\",\"kind\":\"directive\",\"name\":\"card 0\",\"summary\":\"Card 0 — summary\",\"examples_json\":\"[\\\"q1 0\\\",\\\"q2\\\",\\\"q3\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"query_pattern:card_1\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"query_pattern:card_1\",\"kind\":\"query_pattern\",\"name\":\"card 1\",\"summary\":\"Card 1 — summary\",\"examples_json\":\"{\\\"single\\\":1}\"}}}"
+   },
+   "query { gj_catalog(id: \"operator_set:card_2\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"operator_set:card_2\",\"kind\":\"operator_set\",\"name\":\"card 2\",\"summary\":\"Card 2 — summary\",\"examples_json\":\"{not json\"}}}"
+   },
+   "query { gj_catalog(id: \"other:card_3\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"other:card_3\",\"kind\":\"other\",\"name\":\"card 3\",\"examples_json\":null}}}"
+   },
+   "query { gj_catalog(id: \"nokind:card_4\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"nokind:card_4\",\"kind\":null,\"name\":\"card 4\",\"summary\":\"Card 4 — summary\",\"examples_json\":\"[]\"}}}"
+   },
+   "query { gj_catalog(id: \"directive:card_5\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"directive:card_5\",\"kind\":\"directive\",\"name\":\"card 5\",\"summary\":\"Card 5 — summary\",\"examples_json\":\"[\\\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\\",\\\"\\\",0,\\\"keep\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"query_pattern:card_6\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"query_pattern:card_6\",\"kind\":\"query_pattern\",\"name\":\"card 6\",\"summary\":\"Card 6 — summary\",\"examples_json\":\"[{\\\"query\\\":\\\"query { t6 { id } }\\\",\\\"b\\\":[1,2.5,true,null]}]\"}}}"
+   },
+   "query { gj_catalog(id: \"operator_set:card_7\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"operator_set:card_7\",\"kind\":\"operator_set\",\"name\":\"card 7\",\"summary\":\"Card 7 — summary\",\"examples_json\":\"[\\\"q1 7\\\",\\\"q2\\\",\\\"q3\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"other:card_8\") { id kind name summary examples_json } }": {
+    "status": 500,
+    "body": "{}"
+   },
+   "query { gj_catalog(id: \"nokind:card_9\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":[{\"id\":\"nokind:card_9\",\"kind\":null,\"name\":\"card 9\",\"summary\":\"Card 9 — summary\",\"examples_json\":\"{not json\"},{\"id\":\"nokind:card_9_dup\",\"kind\":null,\"name\":\"card 9\",\"summary\":\"Card 9 — summary\",\"examples_json\":\"{not json\"}]}}"
+   },
+   "query { gj_catalog(id: \"directive:card_10\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"directive:card_10\",\"kind\":\"directive\",\"name\":\"card 10\",\"examples_json\":null}}}"
+   },
+   "query { gj_catalog(id: \"query_pattern:card_11\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"query_pattern:card_11\",\"kind\":\"query_pattern\",\"name\":\"card 11\",\"summary\":\"Card 11 — summary\",\"examples_json\":\"[]\"}}}"
+   },
+   "query { gj_catalog(id: \"operator_set:card_12\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"operator_set:card_12\",\"kind\":\"operator_set\",\"name\":\"card 12\",\"summary\":\"Card 12 — summary\",\"examples_json\":\"[\\\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\\",\\\"\\\",0,\\\"keep\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"other:card_13\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"other:card_13\",\"kind\":\"other\",\"name\":\"card 13\",\"summary\":\"Card 13 — summary\",\"examples_json\":\"[{\\\"query\\\":\\\"query { t13 { id } }\\\",\\\"b\\\":[1,2.5,true,null]}]\"}}}"
+   },
+   "query { gj_catalog(id: \"nokind:card_14\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"nokind:card_14\",\"kind\":null,\"name\":\"card 14\",\"summary\":\"Card 14 — summary\",\"examples_json\":\"[\\\"q1 14\\\",\\\"q2\\\",\\\"q3\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"directive:card_15\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"directive:card_15\",\"kind\":\"directive\",\"name\":\"card 15\",\"summary\":\"Card 15 — summary\",\"examples_json\":\"{\\\"single\\\":15}\"}}}"
+   },
+   "query { gj_catalog(id: \"query_pattern:card_16\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"query_pattern:card_16\",\"kind\":\"query_pattern\",\"name\":\"card 16\",\"summary\":\"Card 16 — summary\",\"examples_json\":\"{not json\"}}}"
+   },
+   "query { gj_catalog(id: \"operator_set:card_17\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"operator_set:card_17\",\"kind\":\"operator_set\",\"name\":\"card 17\",\"examples_json\":null}}}"
+   },
+   "query { gj_catalog(id: \"other:card_18\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"other:card_18\",\"kind\":\"other\",\"name\":\"card 18\",\"summary\":\"Card 18 — summary\",\"examples_json\":\"[]\"}}}"
+   },
+   "query { gj_catalog(id: \"nokind:card_19\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"nokind:card_19\",\"kind\":null,\"name\":\"card 19\",\"summary\":\"Card 19 — summary\",\"examples_json\":\"[\\\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\\",\\\"\\\",0,\\\"keep\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"directive:card_20\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"directive:card_20\",\"kind\":\"directive\",\"name\":\"card 20\",\"summary\":\"Card 20 — summary\",\"examples_json\":\"[{\\\"query\\\":\\\"query { t20 { id } }\\\",\\\"b\\\":[1,2.5,true,null]}]\"}}}"
+   },
+   "query { gj_catalog(id: \"query_pattern:card_21\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"query_pattern:card_21\",\"kind\":\"query_pattern\",\"name\":\"card 21\",\"summary\":\"Card 21 — summary\",\"examples_json\":\"[\\\"q1 21\\\",\\\"q2\\\",\\\"q3\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"operator_set:card_22\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"operator_set:card_22\",\"kind\":\"operator_set\",\"name\":\"card 22\",\"summary\":\"Card 22 — summary\",\"examples_json\":\"{\\\"single\\\":22}\"}}}"
+   },
+   "query { gj_catalog(id: \"other:card_23\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"other:card_23\",\"kind\":\"other\",\"name\":\"card 23\",\"summary\":\"Card 23 — summary\",\"examples_json\":\"{not json\"}}}"
+   },
+   "query { gj_catalog(id: \"nokind:card_24\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"nokind:card_24\",\"kind\":null,\"name\":\"card 24\",\"examples_json\":null}}}"
+   },
+   "query { gj_catalog(id: \"directive:card_25\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"directive:card_25\",\"kind\":\"directive\",\"name\":\"card 25\",\"summary\":\"Card 25 — summary\",\"examples_json\":\"[]\"}}}"
+   },
+   "query { gj_catalog(id: \"query_pattern:card_26\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"query_pattern:card_26\",\"kind\":\"query_pattern\",\"name\":\"card 26\",\"summary\":\"Card 26 — summary\",\"examples_json\":\"[\\\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\\",\\\"\\\",0,\\\"keep\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"operator_set:card_27\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"operator_set:card_27\",\"kind\":\"operator_set\",\"name\":\"card 27\",\"summary\":\"Card 27 — summary\",\"examples_json\":\"[{\\\"query\\\":\\\"query { t27 { id } }\\\",\\\"b\\\":[1,2.5,true,null]}]\"}}}"
+   },
+   "query { gj_catalog(id: \"other:card_28\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"other:card_28\",\"kind\":\"other\",\"name\":\"card 28\",\"summary\":\"Card 28 — summary\",\"examples_json\":\"[\\\"q1 28\\\",\\\"q2\\\",\\\"q3\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"nokind:card_29\") { id kind name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"nokind:card_29\",\"kind\":null,\"name\":\"card 29\",\"summary\":\"Card 29 — summary\",\"examples_json\":\"{\\\"single\\\":29}\"}}}"
+   },
+   "query { gj_catalog(id: \"table:main:sales.salesorderheader\") { id name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"table:main:sales.salesorderheader\",\"name\":\"salesorderheader\",\"summary\":\"Order headers · ₹ totals\",\"examples_json\":\"[\\\"query { salesorderheader(limit: 5) { id } }\\\",{\\\"q\\\":\\\"second\\\"},\\\"third\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"table:main:sales.salesorderdetail\") { id name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"table:main:sales.salesorderdetail\",\"name\":\"salesorderdetail\",\"summary\":\"salesorderdetail in sales\",\"examples_json\":\"[\\\"query { salesorderdetail(limit: 5) { id } }\\\",{\\\"q\\\":\\\"second\\\"},\\\"third\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"table:main:sales.customer\") { id name summary examples_json } }": {
+    "status": 502,
+    "body": "bad gateway"
+   },
+   "query { gj_catalog(id: \"table:main:production.product\") { id name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"table:main:production.product\",\"name\":\"product\",\"summary\":\"product in production\",\"examples_json\":\"[\\\"query { product(limit: 5) { id } }\\\",{\\\"q\\\":\\\"second\\\"},\\\"third\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"table:main:production.unitmeasure\") { id name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"table:main:production.unitmeasure\",\"name\":\"unitmeasure\",\"summary\":\"unitmeasure in production\",\"examples_json\":\"[\\\"query { unitmeasure(limit: 5) { id } }\\\",{\\\"q\\\":\\\"second\\\"},\\\"third\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"table:main:production.productcategory\") { id name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"table:main:production.productcategory\",\"name\":\"productcategory\",\"summary\":\"productcategory in production\",\"examples_json\":\"[\\\"query { productcategory(limit: 5) { id } }\\\",{\\\"q\\\":\\\"second\\\"},\\\"third\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"table:main:hr.employee\") { id name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"table:main:hr.employee\",\"name\":\"employee\",\"summary\":\"employee in hr\"}}}"
+   },
+   "query { gj_catalog(id: \"table:main:hr.department\") { id name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"table:main:hr.department\",\"name\":\"department\",\"summary\":\"department in hr\",\"examples_json\":\"[\\\"query { department(limit: 5) { id } }\\\",{\\\"q\\\":\\\"second\\\"},\\\"third\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"table:main:person.person\") { id name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"table:main:person.person\",\"name\":\"person\",\"summary\":\"person in person\",\"examples_json\":\"[\\\"query { person(limit: 5) { id } }\\\",{\\\"q\\\":\\\"second\\\"},\\\"third\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"table:main:person.address\") { id name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"table:main:person.address\",\"name\":\"address\",\"summary\":\"address in person\",\"examples_json\":\"[\\\"query { address(limit: 5) { id } }\\\",{\\\"q\\\":\\\"second\\\"},\\\"third\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"table:main:sales.store\") { id name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"table:main:sales.store\",\"name\":\"store\",\"summary\":\"store in sales\",\"examples_json\":\"[\\\"query { store(limit: 5) { id } }\\\",{\\\"q\\\":\\\"second\\\"},\\\"third\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"table:main:sales.territory\") { id name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"table:main:sales.territory\",\"name\":\"territory\",\"summary\":\"territory in sales\",\"examples_json\":\"[\\\"query { territory(limit: 5) { id } }\\\",{\\\"q\\\":\\\"second\\\"},\\\"third\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"table:main:x.blank\") { id name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"table:main:x.blank\",\"name\":\"\",\"examples_json\":\"[\\\"query { (limit: 5) { id } }\\\",{\\\"q\\\":\\\"second\\\"},\\\"third\\\"]\"}}}"
+   },
+   "query { gj_catalog(id: \"table:main:sales.überkunde\") { id name summary examples_json } }": {
+    "status": 200,
+    "body": "{\"data\":{\"gj_catalog\":{\"id\":\"table:main:sales.überkunde\",\"name\":\"überkunde\",\"summary\":\"überkunde in sales\",\"examples_json\":\"[\\\"query { überkunde(limit: 5) { id } }\\\",{\\\"q\\\":\\\"second\\\"},\\\"third\\\"]\"}}}"
+   }
+  },
+  "cases": {
+   "full": {},
+   "failing": {
+    "query { gj_catalog(where: { kind: { eq: \"database\" } }, limit: 50) { id name summary } }": {
+     "status": 200,
+     "body": "{\"errors\":[{\"message\":\"denied\"},{\"message\":\"role service\"}]}"
+    }
+   },
+   "noRows": {
+    "query { gj_catalog(where: { kind: { eq: \"help\" } }, limit: 50) { id name summary } }": {
+     "status": 200,
+     "body": "{\"data\":{\"gj_catalog\":null}}"
+    }
+   },
+   "httpFail": {
+    "query { gj_catalog(where: { kind: { eq: \"relationship\" } }, limit: 1000) { id name summary } }": {
+     "status": 503,
+     "body": "{}"
+    }
+   },
+   "noLanguage": {
+    "query { gj_catalog(where: { kind: { in: [\"query_pattern\", \"directive\", \"operator_set\"] } }, limit: 50) { id kind name summary } }": {
+     "status": 400,
+     "body": "{}"
+    }
+   }
+  }
+ },
+ "legacy": {
+  "base": {
+   "tables?limit=500": {
+    "status": 200,
+    "body": "{\"tables\":[{\"name\":\"orders\",\"n\":1.50,\"big\":1e21,\"small\":0.0000001,\"neg\":-0,\"u\":\"\\u00e9\\u2028<&>\",\"10\":\"x\",\"2\":\"y\"}],\"empty\":[],\"o\":{}}"
+   },
+   "namespaces": {
+    "status": 200,
+    "body": "[\"public\",\"sales\"]"
+   },
+   "insights": {
+    "status": 200,
+    "body": "{\"hub_tables\":[]}"
+   },
+   "syntax": {
+    "status": 200,
+    "body": "{\"operators\":[\"eq\",\"gt\"],\"nested\":{\"a\":{\"b\":[1,[2,[]]]}}}"
+   }
+  },
+  "cases": {
+   "full": {},
+   "failing": {
+    "insights": {
+     "status": 404,
+     "body": "{}"
+    }
+   }
+  }
+ }
+}

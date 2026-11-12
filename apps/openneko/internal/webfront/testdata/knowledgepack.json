@@ -1,0 +1,231 @@
+[
+  {
+    "mode": "agentic",
+    "name": "full",
+    "result": {
+      "ok": true,
+      "files": [
+        {
+          "file": "tables.json",
+          "bytes": 1752
+        },
+        {
+          "file": "namespaces.json",
+          "bytes": 134
+        },
+        {
+          "file": "insights.json",
+          "bytes": 4349
+        },
+        {
+          "file": "syntax.json",
+          "bytes": 4160
+        }
+      ]
+    },
+    "files": {
+      "tables.json": {
+        "bytes": 1758,
+        "sha256": "86df57d7c964b907bc9f82ba62f7013ebfe01fcffb57905a735e6fc947e6643d"
+      },
+      "namespaces.json": {
+        "bytes": 135,
+        "sha256": "7e5dac564ebe1f271e1dcdbe517084012b3db5ba3829912df16080811fa773ac"
+      },
+      "insights.json": {
+        "bytes": 4357,
+        "sha256": "f39dfea78fb74fe74e745a1f0c84cfb22181d143b5e87c6383c566d51646f981"
+      },
+      "syntax.json": {
+        "bytes": 4190,
+        "sha256": "2a78af67736dc8838eaba15a34b7a2171e71cb363d195442dfc060beaaa96574"
+      },
+      "INDEX.md": {
+        "bytes": 2192,
+        "sha256": "179c1c82d07d2ab2ea8d7750f758172b9760250b82430552e2db33b4b49f56c5"
+      },
+      "mode.json": {
+        "bytes": 18,
+        "sha256": "dbc3bf29c1ceaf1382cb3371c608b30d511cd76d8e5a5e3c4e1f42f18da28b49"
+      }
+    }
+  },
+  {
+    "mode": "agentic",
+    "name": "failing",
+    "result": {
+      "ok": false,
+      "files": [],
+      "error": "gj_catalog query failed: denied; role service"
+    },
+    "files": {
+      "tables.json": null,
+      "namespaces.json": null,
+      "insights.json": null,
+      "syntax.json": null,
+      "INDEX.md": null,
+      "mode.json": null
+    }
+  },
+  {
+    "mode": "agentic",
+    "name": "noRows",
+    "result": {
+      "ok": false,
+      "files": [],
+      "error": "gj_catalog returned no rows"
+    },
+    "files": {
+      "tables.json": null,
+      "namespaces.json": null,
+      "insights.json": null,
+      "syntax.json": null,
+      "INDEX.md": null,
+      "mode.json": null
+    }
+  },
+  {
+    "mode": "agentic",
+    "name": "httpFail",
+    "result": {
+      "ok": false,
+      "files": [],
+      "error": "gj_catalog HTTP 503"
+    },
+    "files": {
+      "tables.json": null,
+      "namespaces.json": null,
+      "insights.json": null,
+      "syntax.json": null,
+      "INDEX.md": null,
+      "mode.json": null
+    }
+  },
+  {
+    "mode": "agentic",
+    "name": "noLanguage",
+    "result": {
+      "ok": true,
+      "files": [
+        {
+          "file": "tables.json",
+          "bytes": 1752
+        },
+        {
+          "file": "namespaces.json",
+          "bytes": 134
+        },
+        {
+          "file": "insights.json",
+          "bytes": 4349
+        },
+        {
+          "file": "syntax.json",
+          "bytes": 419
+        }
+      ]
+    },
+    "files": {
+      "tables.json": {
+        "bytes": 1758,
+        "sha256": "86df57d7c964b907bc9f82ba62f7013ebfe01fcffb57905a735e6fc947e6643d"
+      },
+      "namespaces.json": {
+        "bytes": 135,
+        "sha256": "7e5dac564ebe1f271e1dcdbe517084012b3db5ba3829912df16080811fa773ac"
+      },
+      "insights.json": {
+        "bytes": 4357,
+        "sha256": "f39dfea78fb74fe74e745a1f0c84cfb22181d143b5e87c6383c566d51646f981"
+      },
+      "syntax.json": {
+        "bytes": 419,
+        "sha256": "db682a4695d6af2bf436a9c50ba88ffcf7e564762add71791931a61264a89d6b"
+      },
+      "INDEX.md": {
+        "bytes": 2192,
+        "sha256": "179c1c82d07d2ab2ea8d7750f758172b9760250b82430552e2db33b4b49f56c5"
+      },
+      "mode.json": {
+        "bytes": 18,
+        "sha256": "dbc3bf29c1ceaf1382cb3371c608b30d511cd76d8e5a5e3c4e1f42f18da28b49"
+      }
+    }
+  },
+  {
+    "mode": "legacy",
+    "name": "full",
+    "result": {
+      "ok": true,
+      "files": [
+        {
+          "file": "tables.json",
+          "bytes": 208
+        },
+        {
+          "file": "namespaces.json",
+          "bytes": 25
+        },
+        {
+          "file": "insights.json",
+          "bytes": 22
+        },
+        {
+          "file": "syntax.json",
+          "bytes": 157
+        }
+      ]
+    },
+    "files": {
+      "tables.json": {
+        "bytes": 211,
+        "sha256": "57ad697174960166f62b6c3d8197677e359983c2af3ca18d1cf75f09a699be40"
+      },
+      "namespaces.json": {
+        "bytes": 25,
+        "sha256": "c7d3102d6bd1a579fc484fbe03ca52816f445beb0355f5fbc6c6224d47fca8e2"
+      },
+      "insights.json": {
+        "bytes": 22,
+        "sha256": "075c098b5942f93f9ecb506fa6614e3a3ba69ffef811b47b3a6b6b76fa859143"
+      },
+      "syntax.json": {
+        "bytes": 157,
+        "sha256": "07157de894600858c0ddbf3edf35a6dc05f2d334a59fb44953a9452f7c659a87"
+      },
+      "INDEX.md": {
+        "bytes": 1866,
+        "sha256": "a6c62926c5d3e9ab7a91459e1c836102b8106e2dc9d52141ed032b2ba91f0edd"
+      },
+      "mode.json": {
+        "bytes": 17,
+        "sha256": "34d9138f8730c19cf513642f86a3e12b63076447a1fd377ffb7a8d7de2395757"
+      }
+    }
+  },
+  {
+    "mode": "legacy",
+    "name": "failing",
+    "result": {
+      "ok": false,
+      "files": [],
+      "error": "discovery insights fetch failed after 3 attempts: 404 Not Found"
+    },
+    "files": {
+      "tables.json": null,
+      "namespaces.json": null,
+      "insights.json": null,
+      "syntax.json": null,
+      "INDEX.md": null,
+      "mode.json": null
+    }
+  },
+  {
+    "mode": "clear",
+    "name": "none",
+    "snapshot": {
+      "bytes": 184,
+      "sha256": "eafed8e0c370084c7903f72bed23c29332ebc441e220d3958c3a5c42da9239c9"
+    }
+  }
+]
