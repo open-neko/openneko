@@ -296,6 +296,14 @@ func (a *API) workerCall(ctx context.Context, path string, timeout time.Duration
 }
 
 func (a *API) workerDo(ctx context.Context, method, path string, timeout time.Duration, body []byte) (int, []byte, error) {
+	var header http.Header
+	if body != nil {
+		header = http.Header{"Content-Type": {"application/json"}}
+	}
+	return a.workerSend(ctx, method, path, timeout, header, body)
+}
+
+func (a *API) workerSend(ctx context.Context, method, path string, timeout time.Duration, header http.Header, body []byte) (int, []byte, error) {
 	base := strings.TrimRight(a.Gate.WorkerURL, "/")
 	if base == "" {
 		base = "http://127.0.0.1:4100"
@@ -310,8 +318,8 @@ func (a *API) workerDo(ctx context.Context, method, path string, timeout time.Du
 	if err != nil {
 		return 0, nil, err
 	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	for k, v := range header {
+		req.Header[k] = v
 	}
 	client := a.Gate.Client
 	if client == nil {

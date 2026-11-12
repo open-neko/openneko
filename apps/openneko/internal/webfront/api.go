@@ -154,6 +154,12 @@ var GoRoutes = map[string][]string{
 	"/api/v1/admin/spend/alerts/{alertId}":                        {"DELETE"},
 	"/api/v1/admin/spend/workflows/{workflowId}":                  {"PUT", "DELETE"},
 	"/api/v1/admin/workflow-api-limits":                           {"GET", "PUT"},
+	"/api/v1/admin/packs":                                         {"GET"},
+	"/api/v1/admin/packs/upload":                                  {"POST"},
+	"/api/v1/admin/packs/{packId}/{action}":                       {"GET", "POST"},
+	"/api/v1/admin/packs/magento/store-management":                {"GET", "POST"},
+	"/api/v1/admin/reckon-webhooks":                               {"GET", "POST"},
+	"/api/v1/admin/reckon-webhooks/{reckonWorkflowId}":            {"DELETE"},
 }
 
 // In a catchAll route the last {name} takes the rest of the path, as a Next
@@ -266,6 +272,12 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/admin/spend/alerts/{alertId}":                 {"DELETE": a.adminSpendAlertAck},
 			"/api/v1/admin/spend/workflows/{workflowId}":           {"PUT": a.adminWorkflowSpend, "DELETE": a.adminWorkflowSpend},
 			"/api/v1/admin/workflow-api-limits":                    {"GET": a.adminWorkflowAPILimits, "PUT": a.adminWorkflowAPILimitsSave},
+			"/api/v1/admin/packs":                                  {"GET": a.adminPacks},
+			"/api/v1/admin/packs/upload":                           {"POST": a.adminPackUpload},
+			"/api/v1/admin/packs/{packId}/{action}":                {"GET": a.adminPackRead, "POST": a.adminPackWrite},
+			"/api/v1/admin/packs/magento/store-management":         {"GET": a.adminStoreManagement, "POST": a.adminStoreManagement},
+			"/api/v1/admin/reckon-webhooks":                        {"GET": a.adminCompatWebhooks, "POST": a.adminCompatWebhookImport},
+			"/api/v1/admin/reckon-webhooks/{reckonWorkflowId}":     {"DELETE": a.adminCompatWebhookRemove},
 		}
 	})
 	return a.routes
