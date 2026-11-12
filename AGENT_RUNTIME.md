@@ -113,6 +113,19 @@ form fields and the provider checks are in `apps/openneko/internal/llm`.
 copies must match `packages/llm/test/fixtures/model-catalog.json`; a Go test
 and a TypeScript test check this.
 
+`openneko web` also makes host model calls in Go. It answers the provider
+test (`/api/v1/settings/provider/test`), the external service checks
+(`/api/v1/admin/services`) and the onboarding submit
+(`/api/v1/onboarding/submit`). A Go host call reads the task route and its
+fallback, loads each key (a Vertex key is a token from Google Application
+Default Credentials), sends the `generate` frame to serve's socket and writes
+the `spend_ledger` row. With no `OPENNEKO_SERVE_SOCKET`, the call runs inside
+`openneko web`. The worker keeps the TypeScript host calls until its jobs
+move to Go. The Go and TypeScript code must give the same Ax route for each
+provider and the same price for each case in
+`packages/llm/test/fixtures/host-calls.json`; a Go test and a TypeScript
+test check this.
+
 A route may name a fallback model. The gateway sends a call to the fallback
 only when the first model fails with an error that Ax classifies as
 retryable, such as a 503 or a timeout, after the first model's own retries.

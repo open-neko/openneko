@@ -10,7 +10,7 @@
 
 export * from "./config";
 export * from "./llm";
-export { generate, hostProgram, testPrimaryProvider, type GenerateResult, type HostProgram } from "./inference";
+export { generate, hostProgram, type GenerateResult, type HostProgram } from "./inference";
 export * from "./classifier";
 export * from "./metric-agent";
 export * from "./usage-normalization";

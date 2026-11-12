@@ -225,8 +225,8 @@ func TestEveryHostProgramSignatureParses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if found < 8 {
-		t.Fatalf("found %d host programs, want at least 8", found)
+	if found < 6 {
+		t.Fatalf("found %d host programs, want at least 6", found)
 	}
 }
 

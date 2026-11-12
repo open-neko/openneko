@@ -1,0 +1,362 @@
+{
+  "routes": [
+    {
+      "provider": "openai",
+      "model": "gpt-5",
+      "config": {},
+      "route": {
+        "provider": "openai",
+        "model": "gpt-5",
+        "keyEnv": "OPENAI_API_KEY"
+      }
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-opus-4-7",
+      "config": {},
+      "route": {
+        "provider": "anthropic",
+        "model": "claude-opus-4-7",
+        "keyEnv": "ANTHROPIC_API_KEY"
+      }
+    },
+    {
+      "provider": "google-gemini",
+      "model": "gemini-3.6-flash",
+      "config": {},
+      "route": {
+        "provider": "google-gemini",
+        "model": "gemini-3.6-flash",
+        "keyEnv": "GEMINI_API_KEY"
+      }
+    },
+    {
+      "provider": "azure-openai",
+      "model": "ignored",
+      "config": {
+        "resourceName": "acme-ai",
+        "deploymentName": "gpt-41"
+      },
+      "route": {
+        "provider": "azure-openai",
+        "model": "gpt-41",
+        "keyEnv": "AZURE_FOUNDRY_API_KEY",
+        "options": {
+          "resource_name": "acme-ai",
+          "deployment_name": "gpt-41",
+          "api_version": "2024-10-21"
+        }
+      }
+    },
+    {
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "config": {},
+      "route": {
+        "provider": "mistral",
+        "model": "mistral-large-latest",
+        "url": "https://api.mistral.ai/v1",
+        "keyEnv": "MISTRAL_API_KEY"
+      }
+    },
+    {
+      "provider": "groq",
+      "model": "llama",
+      "config": {},
+      "route": {
+        "provider": "groq",
+        "model": "llama",
+        "url": "https://api.groq.com/openai/v1",
+        "keyEnv": "GROQ_API_KEY"
+      }
+    },
+    {
+      "provider": "cohere",
+      "model": "command-a",
+      "config": {},
+      "route": {
+        "provider": "cohere",
+        "model": "command-a",
+        "url": "https://api.cohere.ai/compatibility/v1",
+        "keyEnv": "COHERE_API_KEY"
+      }
+    },
+    {
+      "provider": "together",
+      "model": "meta/x",
+      "config": {},
+      "route": {
+        "provider": "together",
+        "model": "meta/x",
+        "url": "https://api.together.ai/v1",
+        "keyEnv": "TOGETHER_API_KEY"
+      }
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "config": {},
+      "route": {
+        "provider": "deepseek",
+        "model": "deepseek-chat",
+        "url": "https://api.deepseek.com/v1",
+        "keyEnv": "DEEPSEEK_API_KEY"
+      }
+    },
+    {
+      "provider": "ollama",
+      "model": "llama3",
+      "config": {
+        "url": "http://localhost:11434"
+      },
+      "route": {
+        "provider": "openai-compatible",
+        "model": "llama3",
+        "url": "http://host.docker.internal:11434/v1"
+      }
+    },
+    {
+      "provider": "openai-compatible",
+      "model": "qwen3",
+      "config": {
+        "url": "https://models.example.test/v1/"
+      },
+      "route": {
+        "provider": "openai-compatible",
+        "model": "qwen3",
+        "url": "https://models.example.test/v1",
+        "keyEnv": "OPENAI_COMPATIBLE_API_KEY"
+      }
+    },
+    {
+      "provider": "huggingface",
+      "model": "meta/l",
+      "config": {},
+      "route": {
+        "provider": "huggingface-router",
+        "model": "meta/l",
+        "url": "https://router.huggingface.co/v1",
+        "keyEnv": "HF_TOKEN"
+      }
+    },
+    {
+      "provider": "openrouter",
+      "model": "openai/gpt",
+      "config": {},
+      "route": {
+        "provider": "openrouter",
+        "model": "openai/gpt",
+        "url": "https://openrouter.ai/api/v1",
+        "keyEnv": "OPENROUTER_API_KEY"
+      }
+    },
+    {
+      "provider": "reka",
+      "model": "reka-core",
+      "config": {},
+      "route": {
+        "provider": "reka",
+        "model": "reka-core",
+        "url": "https://api.reka.ai/v1",
+        "keyEnv": "REKA_API_KEY"
+      }
+    },
+    {
+      "provider": "x-grok",
+      "model": "grok-3",
+      "config": {},
+      "route": {
+        "provider": "grok",
+        "model": "grok-3",
+        "url": "https://api.x.ai/v1",
+        "keyEnv": "XAI_API_KEY"
+      }
+    },
+    {
+      "provider": "vertex",
+      "model": "zai-org/glm-5-maas",
+      "config": {
+        "projectId": "p1",
+        "region": "us-central1"
+      },
+      "route": {
+        "provider": "vertex-ai",
+        "model": "zai-org/glm-5-maas",
+        "url": "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/p1/locations/us-central1/endpoints/openapi",
+        "keyEnv": "VERTEX_ACCESS_TOKEN"
+      }
+    }
+  ],
+  "prices": [
+    {
+      "provider": "openai",
+      "model": "gpt-4.1-mini",
+      "usage": {
+        "inputTokens": 1234,
+        "outputTokens": 567,
+        "totalTokens": 1801,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      },
+      "at": "2026-11-12T00:00:00Z",
+      "cost": {
+        "micros": 1401,
+        "source": "ax_model_catalog",
+        "version": "ax-go@v0.0.0-20261029090635-42fceae3d6cd+overrides-2026-10"
+      }
+    },
+    {
+      "provider": "openai-compatible",
+      "model": "gpt-4.1",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 100,
+        "totalTokens": 1300,
+        "cacheReadTokens": 50,
+        "cacheWriteTokens": 0
+      },
+      "at": "2026-11-12T00:00:00Z",
+      "cost": {
+        "micros": 4100,
+        "source": "ax_model_catalog",
+        "version": "ax-go@v0.0.0-20261029090635-42fceae3d6cd+overrides-2026-10"
+      }
+    },
+    {
+      "provider": "azure-openai",
+      "model": "gpt-4.1",
+      "usage": {
+        "inputTokens": 7,
+        "outputTokens": 3,
+        "totalTokens": 10,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      },
+      "at": "2026-11-12T00:00:00Z",
+      "cost": {
+        "micros": 38,
+        "source": "ax_model_catalog",
+        "version": "ax-go@v0.0.0-20261029090635-42fceae3d6cd+overrides-2026-10"
+      }
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-opus-4-7",
+      "usage": {
+        "inputTokens": 2000,
+        "outputTokens": 800,
+        "totalTokens": 4000,
+        "cacheReadTokens": 700,
+        "cacheWriteTokens": 300
+      },
+      "at": "2026-11-12T00:00:00Z",
+      "cost": {
+        "micros": 37225,
+        "source": "ax_model_catalog",
+        "version": "ax-go@v0.0.0-20261029090635-42fceae3d6cd+overrides-2026-10"
+      }
+    },
+    {
+      "provider": "google-gemini",
+      "model": "gemini-3.7-flash",
+      "usage": {
+        "inputTokens": 10000,
+        "outputTokens": 2000,
+        "totalTokens": 12500,
+        "cacheReadTokens": 400,
+        "cacheWriteTokens": 0
+      },
+      "at": "2026-11-12T00:00:00Z",
+      "cost": {
+        "micros": 15405,
+        "source": "price_override",
+        "version": "ax-go@v0.0.0-20261029090635-42fceae3d6cd+overrides-2026-10"
+      }
+    },
+    {
+      "provider": "google-gemini",
+      "model": "gemini-3.7-flash",
+      "usage": {
+        "inputTokens": 10000,
+        "outputTokens": 2000,
+        "totalTokens": 12500,
+        "cacheReadTokens": 400,
+        "cacheWriteTokens": 0
+      },
+      "at": "2027-02-01T00:00:00Z",
+      "cost": {
+        "micros": 30810,
+        "source": "price_override",
+        "version": "ax-go@v0.0.0-20261029090635-42fceae3d6cd+overrides-2026-10"
+      }
+    },
+    {
+      "provider": "google-gemini",
+      "model": "gemini-2.5-pro",
+      "usage": {
+        "inputTokens": 250000,
+        "outputTokens": 1000,
+        "totalTokens": 251000,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      },
+      "at": "2026-11-12T00:00:00Z",
+      "cost": {
+        "micros": 640000,
+        "source": "ax_model_catalog",
+        "version": "ax-go@v0.0.0-20261029090635-42fceae3d6cd+overrides-2026-10"
+      }
+    },
+    {
+      "provider": "vertex-ai",
+      "model": "gemini-2.5-flash",
+      "usage": {
+        "inputTokens": 999,
+        "outputTokens": 1,
+        "totalTokens": 1000,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      },
+      "at": "2026-11-12T00:00:00Z",
+      "cost": {
+        "micros": 303,
+        "source": "ax_model_catalog",
+        "version": "ax-go@v0.0.0-20261029090635-42fceae3d6cd+overrides-2026-10"
+      }
+    },
+    {
+      "provider": "groq",
+      "model": "no-such-model",
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 10,
+        "totalTokens": 20,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      },
+      "at": "2026-11-12T00:00:00Z",
+      "cost": null
+    },
+    {
+      "provider": "groq",
+      "model": "no-such-model",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "totalTokens": 1500,
+        "cacheReadTokens": 100,
+        "cacheWriteTokens": 50
+      },
+      "at": "2026-11-12T00:00:00Z",
+      "price": {
+        "inputUsdPer1M": 0.5,
+        "outputUsdPer1M": 2.25
+      },
+      "cost": {
+        "micros": 1363,
+        "source": "model_record",
+        "version": "model_record"
+      }
+    }
+  ]
+}

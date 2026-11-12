@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 
 	ax "github.com/ax-llm/ax/packages/go"
-	"github.com/open-neko/openneko/apps/ax-harness/internal/catalog"
+	"github.com/open-neko/openneko/apps/ax-harness/catalog"
 )
 
 // StageModels is host configuration, never a field supplied by a run or a tool.

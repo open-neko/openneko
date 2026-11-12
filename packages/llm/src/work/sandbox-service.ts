@@ -75,19 +75,6 @@ function call(
   });
 }
 
-export async function checkSandbox(config: SandboxConfig, signal?: AbortSignal): Promise<void> {
-  let res: { status: number; text: string };
-  try {
-    res = await call(config, "GET", "/v2/check", undefined, signal);
-  } catch (error) {
-    if (signal?.aborted) throw error;
-    throw new Error("the sandbox did not answer");
-  }
-  if (res.status === 401) throw new Error("the sandbox refused the key");
-  if (res.status === 404) throw new Error("the sandbox is older than this release; rebuild it from recipes/sandbox");
-  if (res.status !== 200) throw new Error(`the sandbox answered HTTP ${res.status}`);
-}
-
 const MAX_TRANSFER = 128 << 20;
 
 /** The run's job file and runtime state; they never go to the sandbox. */

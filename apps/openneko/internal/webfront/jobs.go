@@ -87,13 +87,17 @@ func (a *API) ensureQueue(ctx context.Context, name string) error {
 // enqueue sends a job as enqueue() in packages/db/src/jobs.ts does: retry
 // limit 2, retry delay 30 s, and the 7-day retention of the shared boss.
 func (a *API) enqueue(ctx context.Context, tx pgx.Tx, queue string, data any) (string, error) {
+	return a.enqueueWith(ctx, tx, queue, data, 2)
+}
+
+func (a *API) enqueueWith(ctx context.Context, tx pgx.Tx, queue string, data any, retryLimit int) (string, error) {
 	raw, err := json.Marshal(data)
 	if err != nil {
 		return "", err
 	}
 	var id string
 	err = tx.QueryRow(ctx, fmt.Sprintf(insertJob, a.bossSchema()), nil, queue, string(raw), 0, nil, nil, nil, 0.0, nil, nil, nil, nil,
-		"7 days", 2, nil, 30, nil, nil, nil).Scan(&id)
+		"7 days", retryLimit, nil, 30, nil, nil, nil).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}

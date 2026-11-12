@@ -218,3 +218,30 @@ func (c *Client) Close() error {
 	c.http.CloseIdleConnections()
 	return nil
 }
+
+// Probe asks the sandbox to check the key, as checkSandbox() in
+// packages/llm/src/work/sandbox-service.ts does.
+func Probe(ctx context.Context, cfg Config) error {
+	httpClient, base, err := transport(cfg.URL)
+	if err != nil {
+		return err
+	}
+	c := &Client{http: httpClient, base: base, key: cfg.Key}
+	res, err := c.request(ctx, http.MethodGet, "/v2/check", nil)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("the sandbox did not answer")
+	}
+	defer res.Body.Close()
+	switch res.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusUnauthorized:
+		return fmt.Errorf("the sandbox refused the key")
+	case http.StatusNotFound:
+		return fmt.Errorf("the sandbox is older than this release; rebuild it from recipes/sandbox")
+	}
+	return fmt.Errorf("the sandbox answered HTTP %d", res.StatusCode)
+}

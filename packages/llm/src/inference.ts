@@ -197,22 +197,3 @@ async function generateOnRoute<T extends Record<string, unknown>>(
     fallback: servedByFallback,
   };
 }
-
-const PROVIDER_TEST = hostProgram(`prompt:string -> reply:string "the word READY"`, "Reply with READY only.");
-
-export async function testPrimaryProvider(
-  orgId?: string,
-  draft?: EditableProviderConfig,
-): Promise<{ provider: string; model: string; source: ProviderSource }> {
-  const resolved = await resolvePrimaryProviderConfig(orgId, draft);
-  const result = await generateOnRoute<{ reply?: unknown }>(
-    orgId,
-    { task: "default", primary: { ref: "default", name: "default", config: resolved } },
-    PROVIDER_TEST,
-    { prompt: "Reply with READY only." },
-  );
-  if (!String(result.outputs.reply ?? "").trim()) {
-    throw new Error("Provider test returned an empty response");
-  }
-  return { provider: resolved.provider, model: resolved.model, source: resolved.source };
-}

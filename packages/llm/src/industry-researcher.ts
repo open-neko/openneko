@@ -418,37 +418,3 @@ async function runDeepResearch(
     throw e;
   }
 }
-
-export async function testResearchProvider(
-  orgId?: string,
-  draft?: EditableProviderConfig,
-): Promise<{ provider: string; model: string; source: ProviderSource }> {
-  const resolved = await resolveResearchProviderConfig(orgId, draft);
-  if (!resolved.enabled || resolved.provider === "disabled") {
-    return { provider: "disabled", model: "", source: resolved.source };
-  }
-
-  const res = await fetch(PERPLEXITY_API_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${resolved.secrets.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: resolved.model || PERPLEXITY_MODEL,
-      messages: [{ role: "user", content: "Reply with READY only." }],
-    }),
-    signal: AbortSignal.timeout(30_000),
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`perplexity ${res.status} ${res.statusText}: ${body.slice(0, 300)}`);
-  }
-
-  return {
-    provider: resolved.provider,
-    model: resolved.model,
-    source: resolved.source,
-  };
-}
