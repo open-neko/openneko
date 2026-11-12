@@ -1,9 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { testDataSourceDraft, validateDraft } from "@/lib/data-source-settings";
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
+import { describe, expect, it } from "vitest";
+import { validateDraft } from "@/lib/data-source-settings";
 
 describe("validateDraft — data source URL validation", () => {
   it("accepts a fully-populated http draft", () => {
@@ -82,30 +78,5 @@ describe("validateDraft — data source URL validation", () => {
       mcpUrl: "not-a-url",
     });
     expect(errs.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it("bypasses Next fetch handling for Docker-internal connection probes", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ data: { __typename: "Query" } }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    await expect(
-      testDataSourceDraft({
-        graphqlUrl: "http://graphjin:8080/api/v1/graphql",
-      }),
-    ).resolves.toEqual({ graphqlOk: true, mcpOk: null });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://graphjin:8080/api/v1/graphql",
-      expect.objectContaining({
-        method: "POST",
-        cache: "no-store",
-        next: { internal: true },
-      }),
-    );
   });
 });

@@ -124,7 +124,7 @@ type ResearchSettings struct {
 
 func (r ResearchSettings) Off() bool { return !r.Enabled || r.Provider == "disabled" }
 
-func defaultResearchModel(provider string) string {
+func DefaultResearchModel(provider string) string {
 	if provider == "perplexity" {
 		return "sonar-deep-research"
 	}
@@ -150,7 +150,7 @@ func ResearchFromDraft(ctx context.Context, db Querier, secretsDir, orgID string
 	_, secrets := merged(stored, d)
 	r := ResearchSettings{Source: "draft", Provider: d.Provider, Model: d.Model, Enabled: d.Enabled, Secrets: secrets}
 	if r.Model == "" {
-		r.Model = defaultResearchModel(d.Provider)
+		r.Model = DefaultResearchModel(d.Provider)
 	}
 	if !r.Off() && r.Provider == "perplexity" && r.Secrets["apiKey"] == "" {
 		return r, fmt.Errorf("Perplexity research provider requires an API key")
@@ -164,7 +164,7 @@ const PerplexityURL = "https://api.perplexity.ai/chat/completions"
 func TestResearch(ctx context.Context, client *http.Client, url string, r ResearchSettings) error {
 	model := r.Model
 	if model == "" {
-		model = defaultResearchModel("perplexity")
+		model = DefaultResearchModel("perplexity")
 	}
 	body, _ := json.Marshal(map[string]any{
 		"model":    model,

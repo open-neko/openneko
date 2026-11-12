@@ -4,7 +4,6 @@ import { and, db, eq, llm_provider_config } from "@neko/db";
 import {
   AGENT_BACKEND_OPTIONS,
   AGENT_DEFAULT_GLOBAL_CAP,
-  isAgentBackendId,
   resolveAgentBackendId,
   sandboxConfig,
   type AgentBackendId,
@@ -96,58 +95,4 @@ export async function getAgentSettingsPayload(
       terminal: true,
     },
   };
-}
-
-export type AgentSaveDraft = {
-  backend?: unknown;
-  globalCap?: number | string;
-  terminal?: unknown;
-};
-
-export async function saveAgentSettingsDraft(
-  orgId: string,
-  draft: AgentSaveDraft,
-): Promise<AgentSettings> {
-  if (draft.backend !== undefined && (typeof draft.backend !== "string" || !isAgentBackendId(draft.backend))) {
-    throw new Error(`Unsupported agent backend: ${String(draft.backend)}`);
-  }
-  if (draft.terminal !== undefined && typeof draft.terminal !== "boolean") {
-    throw new Error("terminal must be true or false");
-  }
-  const existing = await loadAgentRow(orgId);
-  const existingCfg = (existing?.config ?? {}) as {
-    backend?: unknown;
-    globalCap?: unknown;
-    terminal?: unknown;
-  };
-  const backend: AgentBackendId =
-    (draft.backend as AgentBackendId | undefined) ?? (await resolveAgentBackendId(orgId));
-  const globalCap = readPositiveInt(
-    draft.globalCap ?? existingCfg.globalCap,
-    AGENT_DEFAULT_GLOBAL_CAP,
-  );
-  const terminal = (draft.terminal as boolean | undefined) ?? existingCfg.terminal !== false;
-  const config = { backend, globalCap, terminal };
-
-  if (existing) {
-    await db()
-      .update(llm_provider_config)
-      .set({
-        provider: "ax",
-        config,
-        updated_at: new Date(),
-      })
-      .where(eq(llm_provider_config.id, existing.id));
-  } else {
-    await db().insert(llm_provider_config).values({
-      org_id: orgId,
-      scope: AGENT_SCOPE,
-      provider: "ax",
-      enabled: true,
-      config,
-      secrets: {},
-    });
-  }
-
-  return { source: "org", backend, globalCap, terminal };
 }
