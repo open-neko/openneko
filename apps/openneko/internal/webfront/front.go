@@ -63,6 +63,8 @@ type Front struct {
 	API *API
 	// Node answers the API and the server pages; nil answers 502.
 	Node http.Handler
+	// Wake answers WakePath; nil leaves it to the gate, which answers 404.
+	Wake http.Handler
 }
 
 // AppVersion reads the version that build:spa writes beside the app, or
@@ -94,6 +96,10 @@ func Check(dir string) error {
 
 func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
+	if p == WakePath && f.Wake != nil {
+		f.Wake.ServeHTTP(w, r)
+		return
+	}
 	if !strings.HasPrefix(p, "/api/") && (strings.HasPrefix(p, "/_next/") || fileExtension.MatchString(p)) {
 		if !f.serveFile(w, r, p, true) {
 			f.node(w, r)
