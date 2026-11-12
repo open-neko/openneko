@@ -537,3 +537,108 @@ func (a *API) skillLearnPatch(w http.ResponseWriter, r *http.Request) {
 	}
 	sendJSON(w, http.StatusOK, skillLearnSettings{enabled, "org"})
 }
+
+type graphjinConfigSettings struct {
+	SourceConfigEnabled bool `json:"sourceConfigEnabled"`
+}
+
+// graphjinConfigSettingsFrom is graphjinConfigSettingsFromRow() in
+// packages/db/src/graphjin-config.ts.
+func graphjinConfigSettingsFrom(found, enabled bool, raw []byte) graphjinConfigSettings {
+	if !found {
+		return graphjinConfigSettings{true}
+	}
+	if raw == nil {
+		return graphjinConfigSettings{enabled}
+	}
+	var config map[string]any
+	_ = json.Unmarshal(raw, &config)
+	on, isBool := config["sourceConfigEnabled"].(bool)
+	return graphjinConfigSettings{enabled && (!isBool || on)}
+}
+
+func (a *API) graphjinConfigGet(w http.ResponseWriter, r *http.Request) {
+	act, ok := a.accessAdmin(w, r)
+	if !ok {
+		return
+	}
+	var enabled bool
+	var raw []byte
+	source := "org"
+	err := a.DB.QueryRow(r.Context(), `select enabled, config from llm_provider_config
+		where org_id = $1 and scope = 'graphjin-config' limit 1`, act.OrgID).Scan(&enabled, &raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		source = "default"
+	} else if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	sendJSON(w, http.StatusOK, struct {
+		Settings graphjinConfigSettings `json:"settings"`
+		Source   string                 `json:"source"`
+	}{graphjinConfigSettingsFrom(source == "org", enabled, raw), source})
+}
+
+func (a *API) graphjinConfigPatch(w http.ResponseWriter, r *http.Request) {
+	act, ok := a.accessAdmin(w, r)
+	if !ok {
+		return
+	}
+	body, ok := readSettingsJSON(w, r)
+	if !ok {
+		return
+	}
+	if body == nil {
+		sendError(w, http.StatusBadRequest, "Cannot read properties of null (reading 'sourceConfigEnabled')")
+		return
+	}
+	var want *bool
+	if o, isObj := body.(*jsObj); isObj {
+		if b, isBool := o.vals["sourceConfigEnabled"].(bool); isBool {
+			want = &b
+		}
+	}
+	ctx := r.Context()
+	tx, err := a.DB.Begin(ctx)
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock(hashtext('llm_provider_config:graphjin-config:' || $1))`, act.OrgID); err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	var id string
+	var enabled bool
+	var raw []byte
+	err = tx.QueryRow(ctx, `select id::text, enabled, config from llm_provider_config
+		where org_id = $1 and scope = 'graphjin-config' limit 1`, act.OrgID).Scan(&id, &enabled, &raw)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		a.fail(w, r, err)
+		return
+	}
+	settings := graphjinConfigSettingsFrom(id != "", enabled, raw)
+	if want != nil {
+		settings.SourceConfigEnabled = *want
+	}
+	stored, _ := json.Marshal(settings)
+	if id != "" {
+		_, err = tx.Exec(ctx, `update llm_provider_config set enabled = $2, config = $3, updated_at = now() where id = $1`,
+			id, settings.SourceConfigEnabled, stored)
+	} else {
+		_, err = tx.Exec(ctx, `insert into llm_provider_config (org_id, scope, provider, enabled, config, secrets)
+			values ($1, 'graphjin-config', 'graphjin-config', $2, $3, '{}')`, act.OrgID, settings.SourceConfigEnabled, stored)
+	}
+	if err == nil {
+		err = tx.Commit(ctx)
+	}
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	sendJSON(w, http.StatusOK, struct {
+		Settings graphjinConfigSettings `json:"settings"`
+		Source   string                 `json:"source"`
+	}{settings, "org"})
+}

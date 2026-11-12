@@ -15,16 +15,12 @@ export type GraphjinConfigSettingsPayload = {
   source: "org" | "default";
 };
 
-const PROVIDER_TAG = "graphjin-config";
-
 async function loadRow(orgId: string): Promise<{
-  id: string;
   enabled: boolean;
   config: Record<string, unknown> | null;
 } | null> {
   const rows = await db()
     .select({
-      id: llm_provider_config.id,
       enabled: llm_provider_config.enabled,
       config: llm_provider_config.config,
     })
@@ -39,7 +35,6 @@ async function loadRow(orgId: string): Promise<{
   return (
     (rows[0] as
       | {
-          id: string;
           enabled: boolean;
           config: Record<string, unknown> | null;
         }
@@ -55,41 +50,4 @@ export async function getGraphjinConfigSettingsPayload(
     settings: graphjinConfigSettingsFromRow(row ?? undefined),
     source: row ? "org" : "default",
   };
-}
-
-export async function saveGraphjinConfigSettingsDraft(
-  orgId: string,
-  draft: Partial<GraphjinConfigSettings>,
-): Promise<GraphjinConfigSettings> {
-  const existing = await loadRow(orgId);
-  const current = graphjinConfigSettingsFromRow(existing ?? undefined);
-  const merged: GraphjinConfigSettings = {
-    sourceConfigEnabled:
-      typeof draft.sourceConfigEnabled === "boolean"
-        ? draft.sourceConfigEnabled
-        : current.sourceConfigEnabled,
-  };
-  const config = { sourceConfigEnabled: merged.sourceConfigEnabled };
-
-  if (existing) {
-    await db()
-      .update(llm_provider_config)
-      .set({
-        enabled: merged.sourceConfigEnabled,
-        config,
-        updated_at: new Date(),
-      })
-      .where(eq(llm_provider_config.id, existing.id));
-  } else {
-    await db().insert(llm_provider_config).values({
-      org_id: orgId,
-      scope: GRAPHJIN_CONFIG_SCOPE,
-      provider: PROVIDER_TAG,
-      enabled: merged.sourceConfigEnabled,
-      config,
-      secrets: {},
-    });
-  }
-
-  return merged;
 }

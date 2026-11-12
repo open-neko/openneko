@@ -113,6 +113,10 @@ var GoRoutes = map[string][]string{
 	"/api/v1/settings/source-secrets":                             {"GET", "PUT", "DELETE"},
 	"/api/v1/settings/install-policy":                             {"GET", "PATCH"},
 	"/api/v1/settings/skill-learn":                                {"GET", "PATCH"},
+	"/api/v1/settings/graphjin-config":                            {"GET", "PATCH"},
+	"/api/v1/settings/persona":                                    {"GET", "PUT"},
+	"/api/v1/policies":                                            {"GET"},
+	"/api/v1/policies/{policyId}":                                 {"GET", "PATCH"},
 }
 
 // In a catchAll route the last {name} takes the rest of the path, as a Next
@@ -189,6 +193,10 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/settings/source-secrets":                      {"GET": a.sourceSecrets, "PUT": a.sourceSecretPut, "DELETE": a.sourceSecretDelete},
 			"/api/v1/settings/install-policy":                      {"GET": a.installPolicyGet, "PATCH": a.installPolicyPatch},
 			"/api/v1/settings/skill-learn":                         {"GET": a.skillLearnGet, "PATCH": a.skillLearnPatch},
+			"/api/v1/settings/graphjin-config":                     {"GET": a.graphjinConfigGet, "PATCH": a.graphjinConfigPatch},
+			"/api/v1/settings/persona":                             {"GET": a.personaGet, "PUT": a.personaPut},
+			"/api/v1/policies":                                     {"GET": a.actionPolicies},
+			"/api/v1/policies/{policyId}":                          {"GET": a.actionPolicyGet, "PATCH": a.actionPolicyPatch},
 		}
 	})
 	return a.routes
