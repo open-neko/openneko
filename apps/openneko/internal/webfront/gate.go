@@ -288,6 +288,15 @@ func (g *Gate) isAdministrator(ctx context.Context, userID string) bool {
 	return admin
 }
 
+// Reset drops the cached sign-in answer and marker, as resetAuthGateCaches()
+// does in Node, so a settings change shows on the next request.
+func (g *Gate) Reset() {
+	g.mu.Lock()
+	g.provider = nil
+	g.marker = nil
+	g.mu.Unlock()
+}
+
 func (g *Gate) signInLive(ctx context.Context) bool {
 	return g.Status(ctx).Live()
 }

@@ -144,6 +144,12 @@ var GoRoutes = map[string][]string{
 	"/api/v1/admin/change-password":                               {"GET", "POST"},
 	"/api/v1/admin/devices":                                       {"GET"},
 	"/api/v1/admin/devices/{deviceId}":                            {"DELETE"},
+	"/api/v1/admin/signin/status":                                 {"GET"},
+	"/api/v1/admin/signin/provider":                               {"POST"},
+	"/api/v1/admin/signin/email-provider":                         {"POST"},
+	"/api/v1/admin/signin/test":                                   {"POST"},
+	"/api/v1/admin/public-url":                                    {"GET", "PUT"},
+	"/api/v1/admin/channels/settings":                             {"GET", "POST"},
 }
 
 // In a catchAll route the last {name} takes the rest of the path, as a Next
@@ -246,6 +252,12 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/admin/change-password":                        {"GET": a.passwordChanged, "POST": a.changePassword},
 			"/api/v1/admin/devices":                                {"GET": a.adminDevices},
 			"/api/v1/admin/devices/{deviceId}":                     {"DELETE": a.adminDeviceRevoke},
+			"/api/v1/admin/signin/status":                          {"GET": a.adminSigninStatus},
+			"/api/v1/admin/signin/provider":                        {"POST": a.adminSigninProvider},
+			"/api/v1/admin/signin/email-provider":                  {"POST": a.adminSigninEmailProvider},
+			"/api/v1/admin/signin/test":                            {"POST": a.adminSigninTest},
+			"/api/v1/admin/public-url":                             {"GET": a.adminPublicURL, "PUT": a.adminPublicURLSave},
+			"/api/v1/admin/channels/settings":                      {"GET": a.adminChannelSettings, "POST": a.adminChannelSettings},
 		}
 	})
 	return a.routes

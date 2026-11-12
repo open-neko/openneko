@@ -6,7 +6,25 @@ import { ActionGroup } from "@/components/ui/action-group";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FieldInput } from "@/components/ui/field";
-import type { ChannelSettings } from "@/lib/channel-admin";
+
+type ChannelSettingField = {
+  key: string;
+  required: boolean;
+  secret: boolean;
+  description: string;
+  set: boolean;
+  value?: string;
+};
+
+type ChannelSettings = {
+  id: string;
+  providerLabel: string;
+  directions: string[];
+  ingress: string;
+  enabled: boolean;
+  fields: ChannelSettingField[];
+  missing: string[];
+};
 
 type Notice = { tone: "ok" | "error"; text: string } | null;
 
