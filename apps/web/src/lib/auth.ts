@@ -46,7 +46,6 @@ import {
   verifyDeviceToken,
 } from "@neko/db";
 import { getOrgId } from "@/lib/db";
-import { publicBaseUrl } from "@/lib/public-url";
 
 export const SESSION_COOKIE_NAME = "openneko_session";
 
@@ -193,76 +192,6 @@ export function _resetAuthProviderCache() {
 }
 
 /**
- * Choose the sign-in provider ("scalekit" or "magic-link"); null turns
- * sign-in off. Admin routes only — callers must already be behind
- * requireAdminActor.
- */
-export async function selectSignInProvider(
-  provider: "scalekit" | "magic-link" | null,
-): Promise<void> {
-  const res = await fetch(`${workerAdminBase()}/admin/auth/provider`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ provider }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(body?.error ?? `sign-in provider change failed (${res.status})`);
-  }
-  _resetAuthProviderCache();
-}
-
-/**
- * Write (string) or delete (null) values of the chosen sign-in provider,
- * restricted worker-side to its declared keys. Admin routes only —
- * callers must already be behind requireAdminActor.
- */
-export async function setSignInSecrets(
-  values: Record<string, string | null>,
-): Promise<void> {
-  const res = await fetch(`${workerAdminBase()}/admin/auth/secrets`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ values }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    throw new Error(
-      body?.error ?? `auth secrets write failed (${res.status})`,
-    );
-  }
-  // The gate may have just flipped — drop the 1s cache so the next
-  // status read reflects it immediately.
-  _resetAuthProviderCache();
-}
-
-export async function beginAuth(params: {
-  redirectUri: string;
-  state: string;
-  loginHint?: string | null;
-}): Promise<{ authorizationUrl: string }> {
-  const res = await fetch(`${workerAdminBase()}/admin/auth/begin`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-    // Sending the email-link can take a while on a slow provider. Giving
-    // up early sends no email at all, which reads to the person as silence.
-    signal: AbortSignal.timeout(45_000),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(
-      `sign-in begin failed (${res.status}): ${text || res.statusText}`,
-    );
-  }
-  return (await res.json()) as { authorizationUrl: string };
-}
-
-/**
  * Mint a state token: random nonce paired with the path the user was
  * trying to reach. The path is stashed in the cookie too so callback
  * can redirect back without trusting an open redirect parameter.
@@ -345,15 +274,4 @@ export async function currentDevice(): Promise<{ deviceId: string; userId: strin
   const token = deviceTokenFromAuthorization((await headers()).get("authorization"));
   if (!token) return null;
   return verifyDeviceToken(await getOrgId(), token);
-}
-
-/**
- * Build the absolute callback URL the IdP will redirect to. We compute
- * it from the incoming request rather than env so dev and prod work
- * with the same code. Operators wanting to force a canonical host can
- * set OPENNEKO_PUBLIC_URL (e.g. behind a load balancer that strips
- * Host headers).
- */
-export function buildRedirectUri(requestUrl: string): string {
-  return `${publicBaseUrl(requestUrl)}/api/auth/callback`;
 }
