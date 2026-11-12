@@ -247,7 +247,6 @@ function memoryIntegrityHmac(row: {
 
 /** DATA_LIFECYCLE §4: thread notes are short-lived; durable kinds never expire by default. */
 const THREAD_NOTE_TTL_DAYS = 30;
-const PENDING_MEMORY_TTL_DAYS = 14;
 
 function expiryForKind(kind: WorkMemoryKind, now: Date): Date | null {
   if (kind !== "thread_note") return null;
@@ -916,58 +915,6 @@ async function ensureMemoryFork(orgId: string, userId: string): Promise<void> {
     .insert(memory_fork)
     .values({ org_id: orgId, user_id: userId, baseline_at: new Date() })
     .onConflictDoNothing();
-}
-
-/**
- * SEC6 TTL sweep (DATA_LIFECYCLE §4): archive memories past their
- * expires_at and expire stale proposed pending-memories. Called from
- * the worker's nightly sweep; cheap when nothing qualifies.
- */
-export async function sweepExpiredWorkMemories(): Promise<{
-  archived: number;
-  expiredPending: number;
-}> {
-  const now = new Date();
-  const archivedRows = await db()
-    .update(work_memory)
-    .set({ archived_at: now, updated_at: now })
-    .where(
-      and(
-        sql`${work_memory.expires_at} is not null`,
-        sql`${work_memory.expires_at} <= now()`,
-        isNull(work_memory.archived_at),
-      ),
-    )
-    .returning({ id: work_memory.id, org_id: work_memory.org_id });
-  for (const row of archivedRows) {
-    await insertWorkMemoryEvent({
-      orgId: row.org_id,
-      memoryId: row.id,
-      runId: null,
-      threadId: null,
-      action: "expired",
-      payload: {},
-    });
-  }
-  const cutoff = new Date(
-    now.getTime() - PENDING_MEMORY_TTL_DAYS * 24 * 60 * 60 * 1000,
-  );
-  const expiredPending = await db()
-    .update(work_pending_memory)
-    .set({
-      status: "declined",
-      decision_text: "expired (unreviewed past TTL)",
-      decided_at: now,
-      updated_at: now,
-    })
-    .where(
-      and(
-        eq(work_pending_memory.status, "proposed"),
-        sql`${work_pending_memory.created_at} <= ${cutoff}`,
-      ),
-    )
-    .returning({ id: work_pending_memory.id });
-  return { archived: archivedRows.length, expiredPending: expiredPending.length };
 }
 
 export async function createPendingWorkMemory(input: {

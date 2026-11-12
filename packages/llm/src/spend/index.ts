@@ -13,7 +13,6 @@ export {
 } from "./admission";
 export { priceUsage, recordUsageSpend, type SpendPricing } from "./ledger";
 export {
-  loadMetricRefreshSettings,
   loadSpendLimits,
   METRIC_REFRESH_VALUES,
   microsToUsd,

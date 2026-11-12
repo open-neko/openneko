@@ -193,3 +193,65 @@ func TestMovedMatchesTypeScript(t *testing.T) {
 		t.Fatalf("MOVED_QUEUES = %q, jobs.Moved = %q", ts, Moved)
 	}
 }
+
+func TestRunnerRunsMetricSweep(t *testing.T) {
+	ctx := context.Background()
+	pool := testpg.Pool(t)
+	q := testQueue(t, pool)
+	if err := q.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	calls := make(chan struct{}, 4)
+	fail := true
+	q.MetricSweep = func(context.Context) error {
+		calls <- struct{}{}
+		if fail {
+			fail = false
+			return fmt.Errorf("planted failure")
+		}
+		return nil
+	}
+	if _, err := pool.Exec(ctx, `insert into `+q.Schema+`.river_job (kind, args, max_attempts) values ($1, '{}', 3)`, KindMetricSweep); err != nil {
+		t.Fatal(err)
+	}
+	runner, err := q.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runner.Stop(ctx)
+	state := func() (string, time.Time) {
+		var s string
+		var at time.Time
+		_ = pool.QueryRow(ctx, `select state::text, scheduled_at from `+q.Schema+`.river_job where kind = $1`, KindMetricSweep).Scan(&s, &at)
+		return s, at
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		s, at := state()
+		if s == "retryable" {
+			if wait := time.Until(at); wait < 20*time.Second || wait > 31*time.Second {
+				t.Fatalf("retry in %v, want 30 s", wait)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the metric sweep is %q after 20 s", s)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if _, err := pool.Exec(ctx, `update `+q.Schema+`.river_job set state = 'available', scheduled_at = now() where kind = $1`, KindMetricSweep); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		if s, _ := state(); s == "completed" {
+			break
+		}
+		if time.Now().After(deadline.Add(10 * time.Second)) {
+			t.Fatal("the metric sweep did not complete after the retry")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("the sweep ran %d times, want 2", len(calls))
+	}
+}

@@ -23,14 +23,6 @@ export function metricRefreshFromColumn(value: string | null | undefined): Metri
   return value === "daily" || value === "weekly" || value === "off" ? value : "card";
 }
 
-/** Each organization's metric refresh setting, keyed by organization ID. */
-export async function loadMetricRefreshSettings(client: SpendQueryable): Promise<Map<string, MetricRefresh>> {
-  const { rows } = await client.query<{ org_id: string; metric_refresh: string | null }>(
-    "select org_id, metric_refresh from spend_limit where workflow_id is null",
-  );
-  return new Map(rows.map((row) => [row.org_id, metricRefreshFromColumn(row.metric_refresh)]));
-}
-
 type CeilingKey = Exclude<keyof SpendLimits, "warnPercent">;
 
 const DEFAULT_CEILINGS_USD: Record<CeilingKey, number> = {
