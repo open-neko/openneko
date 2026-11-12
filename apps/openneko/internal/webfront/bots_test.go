@@ -45,7 +45,6 @@ func TestDescribeSchedule(t *testing.T) {
 	}
 }
 
-
 func TestBotTextHelpers(t *testing.T) {
 	for in, want := range map[string]string{
 		"## Stock\n**12** units left. See [the report](https://x.test).": "Stock 12 units left. See the report.",

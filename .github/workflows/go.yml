@@ -7,6 +7,8 @@ on:
       - "apps/openneko/**"
       - "apps/ax-harness/**"
       - "db/migrations/**"
+      - "packages/**"
+      - "apps/web/**"
       - "Dockerfile"
       - "compose.yml"
       - ".github/workflows/deploy.yml"
@@ -16,6 +18,8 @@ on:
       - "apps/openneko/**"
       - "apps/ax-harness/**"
       - "db/migrations/**"
+      - "packages/**"
+      - "apps/web/**"
       - "Dockerfile"
       - "compose.yml"
       - ".github/workflows/deploy.yml"
@@ -59,6 +63,56 @@ jobs:
 
       - name: go build
         run: go build ./...
+
+  test-database:
+    name: test (ubuntu-22.04, postgres)
+    runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: neko
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: openneko_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U neko -d openneko_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      OPENNEKO_TEST_DATABASE_URL: postgres://neko:secret@127.0.0.1:5432/openneko_test?sslmode=disable
+      OPENNEKO_TEST_DUCKDB: ${{ github.workspace }}/.bin/duckdb
+      OPENNEKO_TEST_REQUIRE_DB: "1"
+    defaults:
+      run:
+        working-directory: apps/openneko
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.10"
+          cache-dependency-path: apps/openneko/go.sum
+
+      - name: Install the DuckDB CLI (the version and checksum in the Dockerfile)
+        run: |
+          version=$(sed -n 's/^ARG DUCKDB_VERSION=//p' "$GITHUB_WORKSPACE/Dockerfile")
+          sum=$(grep -o 'amd64) sum=[0-9a-f]*' "$GITHUB_WORKSPACE/Dockerfile" | head -1 | cut -d= -f2)
+          test -n "$version" && test -n "$sum"
+          curl -fsSL --retry 5 -o /tmp/duckdb.gz \
+            "https://github.com/duckdb/duckdb/releases/download/${version}/duckdb_cli-linux-amd64.gz"
+          echo "$sum  /tmp/duckdb.gz" | sha256sum -c -
+          mkdir -p "$GITHUB_WORKSPACE/.bin"
+          gunzip -c /tmp/duckdb.gz > "$OPENNEKO_TEST_DUCKDB"
+          chmod 0755 "$OPENNEKO_TEST_DUCKDB"
+          "$OPENNEKO_TEST_DUCKDB" --version
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test (with the database)
+        run: go test -count=1 -timeout 20m ./...
 
   integration-migrator:
     name: integration - migrator (real postgres)

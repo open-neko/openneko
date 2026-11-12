@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
 func TestSplitDatabasePasswordKeepsItOffTheCommandLine(t *testing.T) {
@@ -85,10 +85,7 @@ func TestDescribeDatabaseURLNamesTheTarget(t *testing.T) {
 }
 
 func TestClearOwnedObjectsKeepsExtensionsGrantsAndOthersObjects(t *testing.T) {
-	dsn := os.Getenv("OPENNEKO_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("set OPENNEKO_TEST_DATABASE_URL to a Postgres database")
-	}
+	dsn := testpg.URL(t)
 	ctx := context.Background()
 	admin, err := pgx.Connect(ctx, dsn)
 	if err != nil {

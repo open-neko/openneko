@@ -19,13 +19,11 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/files"
 	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
+	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
 func TestServeInitGivesEachServeRoleOnlyItsTables(t *testing.T) {
-	url := os.Getenv("OPENNEKO_TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("set OPENNEKO_TEST_DATABASE_URL to a Postgres database")
-	}
+	url := testpg.URL(t)
 	ctx := context.Background()
 	base, err := pgx.ParseConfig(url)
 	if err != nil {

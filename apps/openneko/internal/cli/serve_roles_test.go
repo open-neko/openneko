@@ -16,6 +16,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/assets"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
+	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
 type testInstall struct {
@@ -89,10 +90,7 @@ func (i testInstall) checkLogins(t *testing.T, ctx context.Context) {
 
 func testServerAdmin(t *testing.T, ctx context.Context) (*pgx.Conn, *pgx.ConnConfig) {
 	t.Helper()
-	dsn := os.Getenv("OPENNEKO_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("set OPENNEKO_TEST_DATABASE_URL to a Postgres database")
-	}
+	dsn := testpg.URL(t)
 	base, err := pgx.ParseConfig(dsn)
 	if err != nil {
 		t.Fatal(err)

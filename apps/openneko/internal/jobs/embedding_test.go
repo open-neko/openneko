@@ -45,7 +45,7 @@ func (f *fakeEmbedding) Embedding() Embedding {
 }
 
 func (f *fakeEmbedding) setModel(m string) { f.mu.Lock(); f.model = m; f.mu.Unlock() }
-func (f *fakeEmbedding) count() int      { f.mu.Lock(); defer f.mu.Unlock(); return len(f.calls) }
+func (f *fakeEmbedding) count() int        { f.mu.Lock(); defer f.mu.Unlock(); return len(f.calls) }
 
 func embeddingSetup(t *testing.T) (*pgxpool.Pool, *Queue, *river.Client[pgx.Tx]) {
 	t.Helper()

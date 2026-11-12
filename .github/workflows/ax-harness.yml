@@ -5,10 +5,14 @@ on:
     branches: [main]
     paths:
       - "apps/ax-harness/**"
+      - "packages/**"
+      - "apps/web/**"
       - ".github/workflows/ax-harness.yml"
   pull_request:
     paths:
       - "apps/ax-harness/**"
+      - "packages/**"
+      - "apps/web/**"
       - ".github/workflows/ax-harness.yml"
 
 jobs:
