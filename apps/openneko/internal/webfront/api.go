@@ -121,6 +121,12 @@ var GoRoutes = map[string][]string{
 	"/api/v1/policies":                                            {"GET"},
 	"/api/v1/onboarding/status":                                   {"GET"},
 	"/api/v1/policies/{policyId}":                                 {"GET", "PATCH"},
+	"/api/v1/admin/directory":                                     {"GET", "POST"},
+	"/api/v1/admin/groups":                                        {"GET", "POST"},
+	"/api/v1/admin/groups/{groupId}":                              {"GET", "PATCH", "DELETE"},
+	"/api/v1/admin/groups/{groupId}/members":                      {"POST", "DELETE"},
+	"/api/v1/admin/idp-rules":                                     {"GET", "POST"},
+	"/api/v1/admin/idp-rules/{ruleId}":                            {"DELETE"},
 }
 
 // In a catchAll route the last {name} takes the rest of the path, as a Next
@@ -205,6 +211,12 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/policies":                                     {"GET": a.actionPolicies},
 			"/api/v1/onboarding/status":                            {"GET": a.onboardingStatus},
 			"/api/v1/policies/{policyId}":                          {"GET": a.actionPolicyGet, "PATCH": a.actionPolicyPatch},
+			"/api/v1/admin/directory":                              {"GET": a.directoryStatus, "POST": a.directorySync},
+			"/api/v1/admin/groups":                                 {"GET": a.adminGroups, "POST": a.adminGroupCreate},
+			"/api/v1/admin/groups/{groupId}":                       {"GET": a.adminGroup, "PATCH": a.adminGroupPatch, "DELETE": a.adminGroupDelete},
+			"/api/v1/admin/groups/{groupId}/members":               {"POST": a.adminGroupMember, "DELETE": a.adminGroupMember},
+			"/api/v1/admin/idp-rules":                              {"GET": a.adminIdpRules, "POST": a.adminIdpRuleCreate},
+			"/api/v1/admin/idp-rules/{ruleId}":                     {"DELETE": a.adminIdpRuleDelete},
 		}
 	})
 	return a.routes

@@ -513,7 +513,7 @@ func (a *API) syncIdentityGroups(ctx context.Context, orgID, userID string, id i
 			values ($1, $2, $3, $4, $5::text[])`, orgID, userID, provider, tenantID, externalIDs); err != nil {
 			return err
 		}
-		if err := recomputeRuleMemberships(ctx, tx, orgID, userID); err != nil {
+		if err := recomputeRuleMemberships(ctx, tx, orgID, &userID); err != nil {
 			return err
 		}
 		after, err := activeAdministrators(ctx, tx, orgID)
@@ -544,17 +544,17 @@ func activeAdministrators(ctx context.Context, tx pgx.Tx, orgID string) (int, er
 }
 
 // recomputeRuleMemberships matches the function of that name in
-// packages/db/src/groups.ts, for one user.
-func recomputeRuleMemberships(ctx context.Context, tx pgx.Tx, orgID, userID string) error {
+// packages/db/src/groups.ts; a nil userID covers every user.
+func recomputeRuleMemberships(ctx context.Context, tx pgx.Tx, orgID string, userID *string) error {
 	const desired = `
 		select distinct r.user_group_id as group_id, m.user_id, 'rule:' || r.id::text as source
 		from idp_group_rule r
 		join sso_group s on s.id = r.sso_group_id and s.org_id = r.org_id and s.active
 		join sso_group_membership m on m.group_id = r.sso_group_id and m.org_id = r.org_id
-		where r.org_id = $1 and m.user_id = $2`
+		where r.org_id = $1 and ($2::text is null or m.user_id = $2::text)`
 	if _, err := tx.Exec(ctx, `
 		delete from user_group_membership um
-		where um.org_id = $1 and um.source like 'rule:%' and um.user_id = $2
+		where um.org_id = $1 and um.source like 'rule:%' and ($2::text is null or um.user_id = $2::text)
 		  and not exists (
 		    select 1 from (`+desired+`) d
 		    where d.group_id = um.group_id and d.user_id = um.user_id and d.source = um.source)`, orgID, userID); err != nil {

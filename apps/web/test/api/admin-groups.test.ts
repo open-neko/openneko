@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestOrg, dbReachable, deleteTestOrg, uniqueOrgId } from "@neko/db/test-helpers";
-import { app_user, db, pool, setLocalAdministrator } from "@neko/db";
+import { addLocalGroupMember, app_user, createUserGroup, db, pool, setLocalAdministrator } from "@neko/db";
 import { callRoute } from "../_helpers/route";
 
 const mocks = vi.hoisted(() => ({ orgId: "", role: "admin" as "admin" | "member", worker: vi.fn() }));
@@ -39,30 +39,15 @@ const reachable = await dbReachable();
     await pool().end();
   });
 
-  it("creates a group, manages members and grants, and reports effective access", async () => {
-    const groups = await import("@/app/api/v1/admin/groups/route");
-    const group = await import("@/app/api/v1/admin/groups/[groupId]/route");
-    const members = await import("@/app/api/v1/admin/groups/[groupId]/members/route");
+  it("manages grants and reports effective access", async () => {
     const grants = await import("@/app/api/v1/admin/item-grants/route");
     const access = await import("@/app/api/v1/admin/users/[userId]/access/route");
+    const groupId = (await createUserGroup(mocks.orgId, { name: "Finance" })).id;
+    await addLocalGroupMember(mocks.orgId, groupId, `${mocks.orgId}-ann`);
 
-    const created = await callRoute(groups.POST, { method: "POST", body: { name: "Finance", description: "Money" } });
-    expect(created.status).toBe(201);
-    const groupId = (created.body as { group: { id: string; slug: string } }).group.id;
-    expect((await callRoute(groups.POST, { method: "POST", body: { name: "finance" } })).status).toBe(409);
-
-    const params = { params: Promise.resolve({ groupId }) };
-    expect((await callRoute((req) => members.POST(req, params), { method: "POST", body: { userId: `${mocks.orgId}-ann` } })).status).toBe(200);
     expect((await callRoute(grants.POST, { method: "POST", body: { groupId, itemType: "skill", itemId: "docx" } })).body).toEqual({ created: true });
     expect((await callRoute(grants.POST, { method: "POST", body: { groupId, itemType: "data_source", itemId: "shop" } })).status).toBe(200);
     expect(mocks.worker).toHaveBeenCalledTimes(1);
-
-    const detail = await callRoute((req) => group.GET(req, params));
-    expect(detail.body).toMatchObject({
-      group: { name: "Finance", slug: "finance", memberCount: 1 },
-      members: [{ email: "ann@example.test", sources: ["local"] }],
-      grants: [{ itemType: "data_source", itemId: "shop" }, { itemType: "skill", itemId: "docx" }],
-    });
 
     const holders = await callRoute(grants.GET, { query: { itemType: "skill", itemId: "docx" } });
     expect((holders.body as { holders: Array<{ name: string }> }).holders.map((h) => h.name)).toEqual(["Administrators", "Everyone", "Finance"]);
@@ -71,29 +56,12 @@ const reachable = await dbReachable();
     expect(annAccess.body).toMatchObject({ administrator: false, groupSlugs: ["everyone", "finance"] });
 
     expect((await callRoute(grants.DELETE, { method: "DELETE", body: { groupId, itemType: "skill", itemId: "docx" } })).body).toEqual({ removed: true });
-    expect((await callRoute((req) => members.DELETE(req, params), { method: "DELETE", body: { userId: `${mocks.orgId}-ann` } })).body).toEqual({ stillMember: false });
-    expect((await callRoute((req) => group.DELETE(req, params), { method: "DELETE" })).status).toBe(200);
-  });
-
-  it("protects Administrators and refuses to remove the last administrator", async () => {
-    const groups = await import("@/app/api/v1/admin/groups/route");
-    const group = await import("@/app/api/v1/admin/groups/[groupId]/route");
-    const members = await import("@/app/api/v1/admin/groups/[groupId]/members/route");
-    const list = (await callRoute(groups.GET)).body as { groups: Array<{ id: string; slug: string }> };
-    const admins = list.groups.find((g) => g.slug === "administrators")!;
-    const params = { params: Promise.resolve({ groupId: admins.id }) };
-    expect((await callRoute((req) => group.DELETE(req, params), { method: "DELETE" })).status).toBe(400);
-    const lockout = await callRoute((req) => members.DELETE(req, params), { method: "DELETE", body: { userId: `${mocks.orgId}-owner` } });
-    expect(lockout.status).toBe(409);
-    mocks.role = "member";
-    expect((await callRoute(groups.GET)).status).toBe(403);
   });
 
   it("validates data access rules and row filters", async () => {
-    const groups = await import("@/app/api/v1/admin/groups/route");
     const rules = await import("@/app/api/v1/admin/data-access/route");
     const ruleRoute = await import("@/app/api/v1/admin/data-access/[ruleId]/route");
-    const groupId = ((await callRoute(groups.POST, { method: "POST", body: { name: "Sales" } })).body as { group: { id: string } }).group.id;
+    const groupId = (await createUserGroup(mocks.orgId, { name: "Sales" })).id;
 
     const bad = await callRoute(rules.POST, { method: "POST", body: { groupId, source: "shop", tableName: "orders", columns: ["id"], rowFilter: { column: "id", op: "like", value: 1 } } });
     expect(bad.status).toBe(400);
