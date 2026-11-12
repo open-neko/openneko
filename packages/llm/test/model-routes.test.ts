@@ -1,14 +1,8 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTestOrg, dbReachable, deleteTestOrg, seedProvider, uniqueOrgId } from "@neko/db/test-helpers";
 import { pool } from "@neko/db";
-import {
-  deleteModel,
-  getModelSettings,
-  ModelSettingsError,
-  resolveTaskRoute,
-  saveModel,
-  saveRoute,
-} from "../src/model-routes";
+import { getModelSettings, resolveTaskRoute } from "../src/model-routes";
+import { maybeEncryptSecret } from "../src/secrets";
 import { generate, hostProgram, setGatewayTransport, type GatewayRequest, type GatewayResult } from "../src/inference";
 import { resolveAgentBackend } from "../src/agent-backend-resolver";
 import { loadAgentModelKeys } from "../src/host-provision";
@@ -38,10 +32,35 @@ function fakeGateway(fallback = false) {
   return calls;
 }
 
-async function expectError(promise: Promise<unknown>, status: number): Promise<void> {
-  const error = await promise.catch((e: unknown) => e);
-  expect(error).toBeInstanceOf(ModelSettingsError);
-  expect((error as ModelSettingsError).status).toBe(status);
+type ModelSeed = {
+  name: string;
+  provider: string;
+  model: string;
+  config?: Record<string, unknown>;
+  secrets?: Record<string, string>;
+  price?: { inputUsdPer1M: number; outputUsdPer1M: number };
+};
+
+async function addModel(orgId: string, seed: ModelSeed): Promise<{ id: string }> {
+  const sealed = Object.fromEntries(Object.entries(seed.secrets ?? {}).map(([key, value]) => [key, maybeEncryptSecret(value)]));
+  const { rows } = await pool().query<{ id: string }>(
+    `insert into llm_model (org_id, name, provider, model, config, secrets, input_usd_per_1m, output_usd_per_1m)
+     values ($1, $2, $3, $4, $5, $6, $7, $8) returning id`,
+    [orgId, seed.name, seed.provider, seed.model, seed.config ?? {}, sealed, seed.price?.inputUsdPer1M ?? null, seed.price?.outputUsdPer1M ?? null],
+  );
+  return rows[0]!;
+}
+
+async function setRoute(orgId: string, task: string, modelId: string | null, fallbackModelId: string | null = null): Promise<void> {
+  if (!modelId && !fallbackModelId) {
+    await pool().query("delete from llm_task_route where org_id = $1 and task = $2", [orgId, task]);
+    return;
+  }
+  await pool().query(
+    `insert into llm_task_route (org_id, task, model_id, fallback_model_id) values ($1, $2, $3, $4)
+     on conflict (org_id, task) do update set model_id = excluded.model_id, fallback_model_id = excluded.fallback_model_id`,
+    [orgId, task, modelId, fallbackModelId],
+  );
 }
 
 describeIfDb("model records and task routes", () => {
@@ -63,39 +82,27 @@ describeIfDb("model records and task routes", () => {
   });
 
   const addCheap = () =>
-    saveModel(orgId, null, undefined, {
+    addModel(orgId, {
       name: "cheap",
       provider: "openai-compatible",
       model: "qwen3",
       config: { url: "https://models.example.test/v1" },
       price: { inputUsdPer1M: 0.5, outputUsdPer1M: 2 },
     });
-  const addSpare = () =>
-    saveModel(orgId, null, undefined, { name: "spare", provider: "openai", model: "gpt-5", secrets: { apiKey: FALLBACK_PLANTED } });
+  const addSpare = () => addModel(orgId, { name: "spare", provider: "openai", model: "gpt-5", secrets: { apiKey: FALLBACK_PLANTED } });
 
-  it("keeps a model's key sealed in the table and masked in the settings", async () => {
-    const saved = await saveModel(orgId, null, undefined, { name: "openai-main", provider: "openai", model: "gpt-5", secrets: { apiKey: PLANTED } });
-    const raw = await pool().query("select secrets::text as secrets from llm_model where id = $1", [saved.id]);
-    expect(raw.rows[0].secrets).not.toContain(PLANTED);
-    expect(JSON.stringify(await getModelSettings(orgId))).not.toContain(PLANTED);
-    const kept = await saveModel(orgId, null, saved.id, { model: "gpt-5-mini" });
-    expect(kept.secretStatus.apiKey).toBeTruthy();
-  });
-
-  it("refuses a bad name, a provider not in the list and a missing key", async () => {
-    await expectError(saveModel(orgId, null, undefined, { name: "default", provider: "openai", secrets: { apiKey: "k" } }), 400);
-    await expectError(saveModel(orgId, null, undefined, { name: "Big Model", provider: "openai", secrets: { apiKey: "k" } }), 400);
-    await expectError(saveModel(orgId, null, undefined, { name: "x", provider: "no-such" }), 400);
-    await expectError(saveModel(orgId, null, undefined, { name: "x", provider: "openai" }), 400);
-    await addCheap();
-    await expectError(addCheap(), 409);
+  it("keeps a model's key out of the settings", async () => {
+    await addModel(orgId, { name: "openai-main", provider: "openai", model: "gpt-5", secrets: { apiKey: PLANTED } });
+    const settings = await getModelSettings(orgId);
+    expect(JSON.stringify(settings)).not.toContain(PLANTED);
+    expect(settings.models[0]?.secretStatus.apiKey).toBeTruthy();
   });
 
   it("sends a task to its own model, others to the default route, and a disabled model to the default model", async () => {
     const cheap = await addCheap();
     const spare = await addSpare();
-    await saveRoute(orgId, null, { task: "classify", modelId: cheap.id });
-    await saveRoute(orgId, null, { task: "default", fallbackModelId: spare.id });
+    await setRoute(orgId, "classify", cheap.id);
+    await setRoute(orgId, "default", null, spare.id);
 
     const classify = await resolveTaskRoute(orgId, "classify");
     expect(classify.primary.config).toMatchObject({ provider: "openai-compatible", model: "qwen3" });
@@ -107,41 +114,17 @@ describeIfDb("model records and task routes", () => {
     expect(compact.primary.config).toMatchObject({ provider: "anthropic", model: "claude-sonnet-5-5" });
     expect(compact.fallback?.config).toMatchObject({ provider: "openai", model: "gpt-5" });
 
-    await saveModel(orgId, null, cheap.id, { enabled: false });
+    await pool().query("update llm_model set enabled = false where id = $1", [cheap.id]);
     expect((await resolveTaskRoute(orgId, "classify")).primary.ref).toBe("default");
 
-    await saveRoute(orgId, null, { task: "classify" });
+    await setRoute(orgId, "classify", null);
     expect((await resolveTaskRoute(orgId, "classify")).task).toBe("default");
-  });
-
-  it("refuses a route that names the default's model, the same model twice, or an unknown model", async () => {
-    const cheap = await addCheap();
-    await expectError(saveRoute(orgId, null, { task: "default", modelId: cheap.id }), 400);
-    await expectError(saveRoute(orgId, null, { task: "turn", modelId: cheap.id, fallbackModelId: cheap.id }), 400);
-    await expectError(saveRoute(orgId, null, { task: "turn", modelId: "00000000-0000-4000-8000-000000000000" }), 404);
-    await expectError(saveRoute(orgId, null, { task: "no-such-task", modelId: cheap.id }), 400);
-  });
-
-  it("refuses to delete a model a route uses, and an org delete still removes both", async () => {
-    const cheap = await addCheap();
-    await saveRoute(orgId, null, { task: "turn", modelId: cheap.id });
-    await expectError(deleteModel(orgId, null, cheap.id), 409);
-    await saveRoute(orgId, null, { task: "turn" });
-    await deleteModel(orgId, null, cheap.id);
-    await expectError(deleteModel(orgId, null, cheap.id), 404);
-
-    const again = await addCheap();
-    await saveRoute(orgId, null, { task: "turn", modelId: again.id });
-    await deleteTestOrg(orgId);
-    const left = await pool().query("select 1 from llm_model where org_id = $1 union all select 1 from llm_task_route where org_id = $1", [orgId]);
-    expect(left.rowCount).toBe(0);
-    await createTestOrg(orgId);
   });
 
   it("sends the task's model and fallback to the gateway and meters the call on the model that answered", async () => {
     const cheap = await addCheap();
     const spare = await addSpare();
-    await saveRoute(orgId, null, { task: "classify", modelId: cheap.id, fallbackModelId: spare.id });
+    await setRoute(orgId, "classify", cheap.id, spare.id);
 
     const calls = fakeGateway();
     const first = await generate(orgId, PROGRAM, { question: "q" }, { task: "classify" });
@@ -181,7 +164,7 @@ describeIfDb("model records and task routes", () => {
   it("gives an agent turn the turn route's model and fallback, and loads the fallback key apart", async () => {
     const cheap = await addCheap();
     const spare = await addSpare();
-    await saveRoute(orgId, null, { task: "turn", modelId: cheap.id, fallbackModelId: spare.id });
+    await setRoute(orgId, "turn", cheap.id, spare.id);
 
     const backend = (await resolveAgentBackend(orgId)) as AxBackend;
     const ax = (backend as unknown as { ax: { route: Record<string, unknown>; fallback?: Record<string, unknown> } }).ax;

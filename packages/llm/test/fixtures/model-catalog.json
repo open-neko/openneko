@@ -1,0 +1,316 @@
+{
+  "providers": [
+    {
+      "value": "openai",
+      "label": "OpenAI",
+      "description": "Direct OpenAI API key"
+    },
+    {
+      "value": "anthropic",
+      "label": "Anthropic",
+      "description": "Claude via Anthropic API"
+    },
+    {
+      "value": "google-gemini",
+      "label": "Google Gemini",
+      "description": "Gemini via Google AI API"
+    },
+    {
+      "value": "azure-openai",
+      "label": "Azure OpenAI",
+      "description": "Azure resource + deployment"
+    },
+    {
+      "value": "mistral",
+      "label": "Mistral",
+      "description": "Mistral API"
+    },
+    {
+      "value": "groq",
+      "label": "Groq",
+      "description": "Groq API"
+    },
+    {
+      "value": "cohere",
+      "label": "Cohere",
+      "description": "Cohere API"
+    },
+    {
+      "value": "together",
+      "label": "Together",
+      "description": "Together API"
+    },
+    {
+      "value": "deepseek",
+      "label": "DeepSeek",
+      "description": "DeepSeek API"
+    },
+    {
+      "value": "ollama",
+      "label": "Ollama",
+      "description": "Local or remote Ollama endpoint"
+    },
+    {
+      "value": "openai-compatible",
+      "label": "OpenAI-compatible URL",
+      "description": "Any server that speaks the OpenAI chat API"
+    },
+    {
+      "value": "huggingface",
+      "label": "Hugging Face",
+      "description": "Hugging Face Inference API"
+    },
+    {
+      "value": "openrouter",
+      "label": "OpenRouter",
+      "description": "OpenRouter API"
+    },
+    {
+      "value": "reka",
+      "label": "Reka",
+      "description": "Reka API"
+    },
+    {
+      "value": "x-grok",
+      "label": "xAI Grok",
+      "description": "xAI Grok API"
+    },
+    {
+      "value": "vertex",
+      "label": "Vertex MaaS",
+      "description": "Vertex OpenAI-compatible endpoint via Google ADC"
+    }
+  ],
+  "defaults": {
+    "openai": "gpt-4.1-mini",
+    "anthropic": "claude-opus-4-7",
+    "google-gemini": "gemini-3.6-flash",
+    "azure-openai": "gpt-4.1",
+    "mistral": "mistral-large-latest",
+    "groq": "llama-3.3-70b-versatile",
+    "cohere": "command-a-03-2025",
+    "together": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    "deepseek": "deepseek-chat",
+    "ollama": "llama3.2",
+    "openai-compatible": "",
+    "huggingface": "meta-llama/Llama-3.3-70B-Instruct",
+    "openrouter": "openai/gpt-4.1-mini",
+    "reka": "reka-core",
+    "x-grok": "grok-3-mini",
+    "vertex": "zai-org/glm-5-maas"
+  },
+  "fields": {
+    "openai": [
+      {
+        "key": "apiKey",
+        "label": "API key",
+        "kind": "secret",
+        "required": true,
+        "placeholder": "Paste your provider key"
+      }
+    ],
+    "anthropic": [
+      {
+        "key": "apiKey",
+        "label": "API key",
+        "kind": "secret",
+        "required": true,
+        "placeholder": "Paste your provider key"
+      }
+    ],
+    "google-gemini": [
+      {
+        "key": "apiKey",
+        "label": "API key",
+        "kind": "secret",
+        "required": true,
+        "placeholder": "Paste your provider key"
+      }
+    ],
+    "azure-openai": [
+      {
+        "key": "apiKey",
+        "label": "API key",
+        "kind": "secret",
+        "required": true,
+        "placeholder": "your-azure-key"
+      },
+      {
+        "key": "resourceName",
+        "label": "Resource name",
+        "kind": "text",
+        "required": true,
+        "placeholder": "my-openai-resource"
+      },
+      {
+        "key": "deploymentName",
+        "label": "Deployment name",
+        "kind": "text",
+        "required": true,
+        "placeholder": "gpt-4.1"
+      }
+    ],
+    "mistral": [
+      {
+        "key": "apiKey",
+        "label": "API key",
+        "kind": "secret",
+        "required": true,
+        "placeholder": "Paste your provider key"
+      }
+    ],
+    "groq": [
+      {
+        "key": "apiKey",
+        "label": "API key",
+        "kind": "secret",
+        "required": true,
+        "placeholder": "Paste your provider key"
+      }
+    ],
+    "cohere": [
+      {
+        "key": "apiKey",
+        "label": "API key",
+        "kind": "secret",
+        "required": true,
+        "placeholder": "Paste your provider key"
+      }
+    ],
+    "together": [
+      {
+        "key": "apiKey",
+        "label": "API key",
+        "kind": "secret",
+        "required": true,
+        "placeholder": "Paste your provider key"
+      }
+    ],
+    "deepseek": [
+      {
+        "key": "apiKey",
+        "label": "API key",
+        "kind": "secret",
+        "required": true,
+        "placeholder": "Paste your provider key"
+      }
+    ],
+    "ollama": [
+      {
+        "key": "url",
+        "label": "Base URL",
+        "kind": "url",
+        "required": true,
+        "placeholder": "http://host.docker.internal:11434/v1",
+        "help": "Use host.docker.internal for Ollama running on the OpenNeko host, or a remote OpenAI-compatible URL."
+      }
+    ],
+    "openai-compatible": [
+      {
+        "key": "url",
+        "label": "Base URL",
+        "kind": "url",
+        "required": true,
+        "placeholder": "https://models.example.com/v1",
+        "help": "The address before /chat/completions. Use host.docker.internal for a server on the OpenNeko host."
+      },
+      {
+        "key": "apiKey",
+        "label": "API key",
+        "kind": "secret",
+        "required": false,
+        "placeholder": "Leave empty when the server needs no key"
+      }
+    ],
+    "huggingface": [
+      {
+        "key": "apiKey",
+        "label": "API key",
+        "kind": "secret",
+        "required": true,
+        "placeholder": "Paste your provider key"
+      }
+    ],
+    "openrouter": [
+      {
+        "key": "apiKey",
+        "label": "API key",
+        "kind": "secret",
+        "required": true,
+        "placeholder": "Paste your provider key"
+      }
+    ],
+    "reka": [
+      {
+        "key": "apiKey",
+        "label": "API key",
+        "kind": "secret",
+        "required": true,
+        "placeholder": "Paste your provider key"
+      }
+    ],
+    "x-grok": [
+      {
+        "key": "apiKey",
+        "label": "API key",
+        "kind": "secret",
+        "required": true,
+        "placeholder": "Paste your provider key"
+      }
+    ],
+    "vertex": [
+      {
+        "key": "projectId",
+        "label": "GCP project ID",
+        "kind": "text",
+        "required": true,
+        "placeholder": "my-gcp-project",
+        "help": "OpenNeko uses host-side Google Application Default Credentials to mint a short-lived token; the agent sandbox never receives the credential."
+      },
+      {
+        "key": "region",
+        "label": "Region",
+        "kind": "text",
+        "required": true,
+        "placeholder": "global"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "task": "turn",
+      "label": "Agent turns",
+      "description": "Questions, workflows, metric runs and channel replies."
+    },
+    {
+      "task": "classify",
+      "label": "Question classifier",
+      "description": "Sorts a new question before the agent starts."
+    },
+    {
+      "task": "compact",
+      "label": "Conversation compaction",
+      "description": "Shortens a long conversation so the agent can go on."
+    },
+    {
+      "task": "bot_instructions",
+      "label": "Bot instructions",
+      "description": "Keeps a bot's standing instructions up to date."
+    },
+    {
+      "task": "bot_names",
+      "label": "Bot names",
+      "description": "Suggests a name for a new bot."
+    },
+    {
+      "task": "skill_lessons",
+      "label": "Skill lessons",
+      "description": "Proposes a skill change from a finished run."
+    },
+    {
+      "task": "research_mission",
+      "label": "Research mission",
+      "description": "Writes the company mission during setup."
+    }
+  ]
+}
