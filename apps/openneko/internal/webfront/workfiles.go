@@ -336,12 +336,32 @@ type formFile struct {
 // readForm reads a form body as Request.formData() does, keeping the first
 // entry of each name. tooLarge is set when the body passes the upload cap.
 func readForm(w http.ResponseWriter, r *http.Request) (fields map[string]any, tooLarge bool, err error) {
-	body := http.MaxBytesReader(w, r.Body, maxUploadSize+64*1024)
+	entries, tooLarge, err := readFormEntries(w, r, maxUploadSize+64*1024)
+	if err != nil {
+		return nil, tooLarge, err
+	}
+	fields = map[string]any{}
+	for _, e := range entries {
+		if _, seen := fields[e.name]; !seen && e.name != "" {
+			fields[e.name] = e.value
+		}
+	}
+	return fields, false, nil
+}
+
+type formEntry struct {
+	name  string
+	value any
+}
+
+// readFormEntries reads every entry of a form body in order. A value is a
+// string or a formFile.
+func readFormEntries(w http.ResponseWriter, r *http.Request, limit int64) (entries []formEntry, tooLarge bool, err error) {
+	body := http.MaxBytesReader(w, r.Body, limit)
 	mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil {
 		return nil, false, err
 	}
-	fields = map[string]any{}
 	if mediaType == "application/x-www-form-urlencoded" {
 		raw, err := io.ReadAll(body)
 		if err != nil {
@@ -352,9 +372,11 @@ func readForm(w http.ResponseWriter, r *http.Request) (fields map[string]any, to
 			return nil, false, err
 		}
 		for k, v := range values {
-			fields[k] = v[0]
+			for _, one := range v {
+				entries = append(entries, formEntry{k, one})
+			}
 		}
-		return fields, false, nil
+		return entries, false, nil
 	}
 	if mediaType != "multipart/form-data" || params["boundary"] == "" {
 		return nil, false, errors.New("not a form body")
@@ -363,7 +385,7 @@ func readForm(w http.ResponseWriter, r *http.Request) (fields map[string]any, to
 	for {
 		part, err := mr.NextPart()
 		if errors.Is(err, io.EOF) {
-			return fields, false, nil
+			return entries, false, nil
 		}
 		if err != nil {
 			return nil, isMaxBytes(err), err
@@ -373,14 +395,11 @@ func readForm(w http.ResponseWriter, r *http.Request) (fields map[string]any, to
 			return nil, isMaxBytes(err), err
 		}
 		name := part.FormName()
-		if _, seen := fields[name]; seen || name == "" {
-			continue
-		}
 		_, dp, _ := mime.ParseMediaType(part.Header.Get("Content-Disposition"))
 		if filename, isFile := dp["filename"]; isFile {
-			fields[name] = formFile{name: filename, contentType: strings.ToLower(part.Header.Get("Content-Type")), data: data}
+			entries = append(entries, formEntry{name, formFile{name: filename, contentType: strings.ToLower(part.Header.Get("Content-Type")), data: data}})
 		} else {
-			fields[name] = string(data)
+			entries = append(entries, formEntry{name, string(data)})
 		}
 	}
 }
@@ -520,44 +539,77 @@ func serveURL() string {
 }
 
 // catalogUpload copies the upload into the user's folder in openneko serve
-// and records it, as storeLibraryFile() and createLibraryDocument() do.
+// and records it, as the Library upload does.
 func (a *API) catalogUpload(ctx context.Context, act actor, threadID, name string, data []byte) error {
 	if act.UserID == "" {
 		return errors.New("no signed-in user")
 	}
-	key, err := config.SigningSecret(a.SecretsDir, files.TokenLabel)
-	if err != nil {
+	hash, path := libraryPath(name, data)
+	if err := a.putServeFile(ctx, act, path, data, ""); err != nil {
 		return err
 	}
-	sum := sha256.Sum256(data)
-	hash := hex.EncodeToString(sum[:])
-	path := "library/" + hash + "/" + name
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, serveURL()+"/v1/files/content?path="+encodeURIComponent(path), bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+files.MintToken(key, act.OrgID, act.UserID, time.Now().Add(time.Minute)))
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	body, _ := io.ReadAll(io.LimitReader(res.Body, 64*1024))
-	res.Body.Close()
-	if res.StatusCode < 200 || res.StatusCode > 299 {
-		var e struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(body, &e) == nil && e.Error != "" {
-			return errors.New(e.Error)
-		}
-		return fmt.Errorf("openneko serve answered %d", res.StatusCode)
-	}
-	_, err = a.DB.Exec(ctx, `
+	_, err := a.DB.Exec(ctx, `
 		insert into library_document (org_id, user_id, source_thread_id, filename, relative_path, content_hash, size_bytes, status)
 		select $1, $2, $3, $4, $5, $6, $7, 'ready'
 		where not exists (select 1 from library_document where org_id = $1 and user_id = $2 and content_hash = $6)`,
 		act.OrgID, act.UserID, threadID, name, "files/"+path, hash, len(data))
 	return err
+}
+
+// libraryPath is the content-addressed path in the user's folder, so two
+// uploads with the same cleaned name never overwrite each other.
+func libraryPath(name string, data []byte) (hash, path string) {
+	sum := sha256.Sum256(data)
+	hash = hex.EncodeToString(sum[:])
+	return hash, "library/" + hash + "/" + name
+}
+
+type serveError struct {
+	status  int
+	message string
+}
+
+func (e *serveError) Error() string { return e.message }
+
+// serveFile sends a file call to openneko serve as the user. A refusal is a
+// *serveError with the status and the error text of the reply.
+func (a *API) serveFile(ctx context.Context, act actor, method, path string, body []byte, contentType string) error {
+	key, err := config.SigningSecret(a.SecretsDir, files.TokenLabel)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, serveURL()+"/v1/files/content?path="+encodeURIComponent(path), reader)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+files.MintToken(key, act.OrgID, act.UserID, time.Now().Add(time.Minute)))
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	reply, _ := io.ReadAll(io.LimitReader(res.Body, 64*1024))
+	res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode > 299 {
+		var e struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(reply, &e) == nil && e.Error != "" {
+			return &serveError{res.StatusCode, e.Error}
+		}
+		return &serveError{res.StatusCode, fmt.Sprintf("openneko serve answered %d", res.StatusCode)}
+	}
+	return nil
+}
+
+func (a *API) putServeFile(ctx context.Context, act actor, path string, data []byte, contentType string) error {
+	return a.serveFile(ctx, act, http.MethodPut, path, data, contentType)
 }

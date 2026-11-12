@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, FileText, Trash2, Upload } from "lucide-react";
-import type { browseLibrary, LibraryDocument } from "@neko/llm/work";
+import type { LibraryDocument, LibraryPage } from "@neko/llm/work";
 import { LIBRARY_UPLOAD_ACCEPT } from "@neko/llm/library/formats";
 import { confirmDialog } from "@/components/ConfirmModal";
 import PageHeading from "@/components/PageHeading";
@@ -18,7 +18,7 @@ import { Field, Input, NativeSelect } from "@/components/ui/field";
 import { LocalDateTime } from "@/components/ui/local-date-time";
 import { validateLibraryUploadBatch } from "@/lib/library-upload-contract";
 
-type LibraryData = Awaited<ReturnType<typeof browseLibrary>>;
+type LibraryData = LibraryPage;
 
 const STATUS: Record<string, { label: string; variant: BadgeVariant }> = {
   ready: { label: "Ready", variant: "success" },

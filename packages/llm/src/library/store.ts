@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { deleteFile, putFile } from "../files/client";
+import { putFile } from "../files/client";
 
 export const LIBRARY_STORE_PREFIX = "files/";
 
@@ -29,12 +29,4 @@ export async function storeLibraryFile(input: {
     input.contentType,
   );
   return { relativePath: LIBRARY_STORE_PREFIX + path, contentHash, size: input.data.byteLength };
-}
-
-export async function removeLibraryFile(input: {
-  orgId: string;
-  userId: string;
-  relativePath: string;
-}): Promise<void> {
-  await deleteFile({ orgId: input.orgId, userId: input.userId }, libraryStoreFilePath(input.relativePath));
 }
