@@ -169,6 +169,10 @@ var GoRoutes = map[string][]string{
 	"/api/v1/bots/{botId}/routines/{workflowId}":                  {"GET", "PATCH"},
 	"/api/v1/bots/thread/{threadId}":                              {"GET"},
 	"/api/v1/bots/thread/{threadId}/seen":                         {"POST"},
+	"/api/v1/integrations/list":                                   {"GET"},
+	"/api/v1/integrations/disconnect/{plugin}":                    {"POST"},
+	"/api/v1/integrations/connect/{plugin}/start":                 {"GET"},
+	"/api/v1/integrations/connect/{plugin}/callback":              {"GET"},
 }
 
 // In a catchAll route the last {name} takes the rest of the path, as a Next
@@ -296,6 +300,10 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/bots/{botId}/routines/{workflowId}":           {"GET": a.botRoutineRunsPage, "PATCH": a.botRoutineEnable},
 			"/api/v1/bots/thread/{threadId}":                       {"GET": a.botByThread},
 			"/api/v1/bots/thread/{threadId}/seen":                  {"POST": a.botSeen},
+			"/api/v1/integrations/list":                            {"GET": a.integrationsList},
+			"/api/v1/integrations/disconnect/{plugin}":             {"POST": a.integrationDisconnect},
+			"/api/v1/integrations/connect/{plugin}/start":          {"GET": a.integrationConnectStart},
+			"/api/v1/integrations/connect/{plugin}/callback":       {"GET": a.integrationConnectCallback},
 		}
 	})
 	return a.routes
