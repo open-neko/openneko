@@ -164,6 +164,11 @@ var GoRoutes = map[string][]string{
 	"/api/v1/admin/context-remote/host-key":                       {"POST"},
 	"/api/v1/admin/context-remote/publish":                        {"GET", "POST"},
 	"/api/v1/admin/context-remote/updates":                        {"GET", "POST"},
+	"/api/v1/bots":                                                {"GET", "POST"},
+	"/api/v1/bots/{botId}":                                        {"GET", "PATCH", "DELETE"},
+	"/api/v1/bots/{botId}/routines/{workflowId}":                  {"GET", "PATCH"},
+	"/api/v1/bots/thread/{threadId}":                              {"GET"},
+	"/api/v1/bots/thread/{threadId}/seen":                         {"POST"},
 }
 
 // In a catchAll route the last {name} takes the rest of the path, as a Next
@@ -286,6 +291,11 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/admin/context-remote/host-key":                {"POST": a.contextRemoteHostKey},
 			"/api/v1/admin/context-remote/publish":                 {"GET": a.contextRemotePreview, "POST": a.contextRemotePublish},
 			"/api/v1/admin/context-remote/updates":                 {"GET": a.contextRemoteUpdates, "POST": a.contextRemoteApply},
+			"/api/v1/bots":                                         {"GET": a.bots, "POST": a.botCreate},
+			"/api/v1/bots/{botId}":                                 {"GET": a.botDetail, "PATCH": a.botPatch, "DELETE": a.botDelete},
+			"/api/v1/bots/{botId}/routines/{workflowId}":           {"GET": a.botRoutineRunsPage, "PATCH": a.botRoutineEnable},
+			"/api/v1/bots/thread/{threadId}":                       {"GET": a.botByThread},
+			"/api/v1/bots/thread/{threadId}/seen":                  {"POST": a.botSeen},
 		}
 	})
 	return a.routes
