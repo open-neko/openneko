@@ -89,6 +89,11 @@ var GoRoutes = map[string][]string{
 	"/api/v1/work/threads/{threadId}/runs/{runId}/timing":         {"POST"},
 	"/api/v1/work/threads/{threadId}/runs/{runId}/approve-action": {"POST"},
 	"/api/v1/work/runs/{runId}/events":                            {"GET"},
+	"/api/v1/workflows":                                           {"GET"},
+	"/api/v1/workflows/{workflowId}":                              {"GET"},
+	"/api/v1/workflow-runs":                                       {"GET"},
+	"/api/v1/workflow-runs/{workflowRunId}":                       {"GET"},
+	"/api/v1/workflow-runs/{workflowRunId}/artifact":              {"GET"},
 }
 
 // In a catchAll route the last {name} takes the rest of the path, as a Next
@@ -143,6 +148,11 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/work/threads/{threadId}/runs/{runId}/timing":         {"POST": a.runTiming},
 			"/api/v1/work/threads/{threadId}/runs/{runId}/approve-action": {"POST": a.approveRunAction},
 			"/api/v1/work/runs/{runId}/events":                            {"GET": a.workRunEvents},
+			"/api/v1/workflows":                                           {"GET": a.workflows},
+			"/api/v1/workflows/{workflowId}":                              {"GET": a.workflowDetail, "PATCH": nil, "DELETE": nil},
+			"/api/v1/workflow-runs":                                       {"GET": a.workflowRuns},
+			"/api/v1/workflow-runs/{workflowRunId}":                       {"GET": a.workflowRunDetail},
+			"/api/v1/workflow-runs/{workflowRunId}/artifact":              {"GET": a.workflowRunArtifact},
 		}
 	})
 	return a.routes

@@ -84,17 +84,6 @@ export async function requireWorkflow(workflowId: string): Promise<NextResponse 
   return (await workflowVisibility())(row) ? null : itemNotFound("Workflow not found");
 }
 
-export async function requireWorkflowRun(workflowRunId: string): Promise<NextResponse | null> {
-  const [row] = await db()
-    .select({ workflowId: workflow_run.workflow_id })
-    .from(workflow_run)
-    .where(and(eq(workflow_run.org_id, await getOrgId()), eq(workflow_run.id, workflowRunId)))
-    .limit(1);
-  if (!row) return null;
-  const denied = await requireWorkflow(row.workflowId);
-  return denied ? itemNotFound("Run not found") : null;
-}
-
 /** Hides outputs of watcher-triggered runs when the user does not hold the watcher. */
 export async function watcherRunVisibility(runIds: Array<string | null | undefined>): Promise<(runId: string | null | undefined) => boolean> {
   const ids = [...new Set(runIds.filter((id): id is string => Boolean(id)))];
