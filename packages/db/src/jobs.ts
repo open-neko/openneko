@@ -17,7 +17,6 @@ export const QUEUE = {
   BOOTSTRAP_METRICS_BUILD: "bootstrap_metrics_build",
   METRIC_REFRESH: "metric_refresh",
   WORK_RUN: "work_run",
-  WORKFLOW_CRON_SWEEP: "workflow_cron_sweep",
   WORKFLOW_RUN_FIRE: "workflow_run_fire",
   BOT_NAME_SWEEP: "bot_name_sweep",
   ACTION_EXECUTE: "action_execute",
@@ -35,6 +34,7 @@ export const QUEUE = {
 export const MOVED_QUEUES = [
   "workflow_output_ttl_sweep",
   "metric_refresh_scheduled_sweep",
+  "workflow_cron_sweep",
 ] as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];

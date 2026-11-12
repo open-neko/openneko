@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -91,12 +93,27 @@ func (a *API) enqueue(ctx context.Context, tx pgx.Tx, queue string, data any) (s
 }
 
 func (a *API) enqueueWith(ctx context.Context, tx pgx.Tx, queue string, data any, retryLimit int) (string, error) {
+	return a.send(ctx, tx, queue, data, retryLimit, nil, nil)
+}
+
+// enqueueSingleton is enqueue() with singletonKey and singletonSeconds: a
+// second job with the key in the same window is not queued.
+func (a *API) enqueueSingleton(ctx context.Context, tx pgx.Tx, queue string, data any, key string, seconds int) (string, error) {
+	return a.send(ctx, tx, queue, data, 2, &key, &seconds)
+}
+
+func (a *API) send(ctx context.Context, tx pgx.Tx, queue string, data any, retryLimit int, singletonKey *string, singletonSeconds *int) (string, error) {
 	raw, err := json.Marshal(data)
 	if err != nil {
 		return "", err
 	}
+	if queue == queueMetricRefresh || queue == queueWorkflowRunFire {
+		if raw, err = withQueuedAt(raw); err != nil {
+			return "", err
+		}
+	}
 	var id string
-	err = tx.QueryRow(ctx, fmt.Sprintf(insertJob, a.bossSchema()), nil, queue, string(raw), 0, nil, nil, nil, 0.0, nil, nil, nil, nil,
+	err = tx.QueryRow(ctx, fmt.Sprintf(insertJob, a.bossSchema()), nil, queue, string(raw), 0, nil, singletonKey, singletonSeconds, 0.0, nil, nil, nil, nil,
 		"7 days", retryLimit, nil, 30, nil, nil, nil).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
@@ -109,4 +126,15 @@ func (a *API) bossSchema() string {
 		return pgx.Identifier{a.BossSchema}.Sanitize()
 	}
 	return "pgboss"
+}
+
+// withQueuedAt adds the queuedAt that enqueue() sets on the queues whose
+// worker reports the queue wait.
+func withQueuedAt(raw []byte) ([]byte, error) {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, err
+	}
+	obj["queuedAt"] = json.RawMessage(strconv.FormatInt(time.Now().UnixMilli(), 10))
+	return json.Marshal(obj)
 }

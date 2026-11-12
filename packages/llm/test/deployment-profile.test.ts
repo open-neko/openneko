@@ -3,7 +3,6 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  profileBehaviorThresholds,
   reportDeploymentProfile,
   resolveDeploymentProfile,
 } from "../src/work/deployment-profile";
@@ -26,19 +25,6 @@ describe("SEC8 deployment profiles", () => {
     expect(resolveDeploymentProfile()).toBe("solo");
     process.env.OPENNEKO_PROFILE = "Hardened";
     expect(resolveDeploymentProfile()).toBe("hardened");
-  });
-
-  it("tightens behavior envelopes as the posture hardens", () => {
-    const solo = profileBehaviorThresholds("solo");
-    const org = profileBehaviorThresholds("org");
-    const hardened = profileBehaviorThresholds("hardened");
-    expect(org.controlPlaneCallsPerRun).toBe(
-      Math.floor(solo.controlPlaneCallsPerRun / 2),
-    );
-    expect(hardened.actionRequestsPerHour).toBe(
-      Math.floor(solo.actionRequestsPerHour / 4),
-    );
-    expect(hardened.memoryWritesPerHour).toBeGreaterThanOrEqual(1);
   });
 
   it("hardened warns when the model host is a public cloud API", () => {

@@ -3,6 +3,7 @@ package webfront
 import (
 	"context"
 	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -79,6 +80,9 @@ func TestMetricSweep(t *testing.T) {
 		t.Errorf("due metric: %s %s %s %s", status, kind, trigger, payload)
 	}
 	got := jobs(t, db, f, queueMetricRefresh)
+	for i := range got {
+		got[i].Data = regexp.MustCompile(`"queuedAt": \d{13}, `).ReplaceAllString(got[i].Data, "")
+	}
 	if len(got) != 1 || got[0].Data != `{"orgId": "org", "processingJobId": "`+jobRef+`"}` || got[0].RetryLimit != 2 || got[0].RetryWait != 30 || got[0].KeepDays != 7 {
 		t.Errorf("queued jobs: %+v", got)
 	}

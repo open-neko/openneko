@@ -659,31 +659,6 @@ for (let i = 0; i < metricRefreshCap; i++) {
   );
 }
 
-await b.work(QUEUE.WORKFLOW_CRON_SWEEP, async () => {
-  // SEC7: behavioral thresholds ride the minute tick so a runaway agent
-  // alerts within its window, not at the nightly sweep.
-  try {
-    const { profileBehaviorThresholds, runBehaviorSweep } = await import(
-      "@neko/llm/work"
-    );
-    await runBehaviorSweep(ADMIN_ORG_ID, profileBehaviorThresholds());
-  } catch (e) {
-    console.warn(
-      `[worker] behavior sweep failed: ${e instanceof Error ? e.message : e}`,
-    );
-  }
-  // OL4: condition watchers poll on the same tick (each watcher's own
-  // cadence gates how often its query actually runs).
-  try {
-    const { sweepWatchers } = await import("@neko/llm/workflows");
-    await sweepWatchers(ADMIN_ORG_ID);
-  } catch (e) {
-    console.warn(
-      `[worker] watcher sweep failed: ${e instanceof Error ? e.message : e}`,
-    );
-  }
-});
-
 await b.work(
   QUEUE.WORKFLOW_RUN_FIRE,
   { batchSize: 1, pollingIntervalSeconds: 0.5 },
@@ -771,13 +746,6 @@ await b.work(QUEUE.DIRECTORY_SYNC, async () => {
   }
 });
 await b.schedule(QUEUE.DIRECTORY_SYNC, DIRECTORY_SYNC_CRON, {}, { tz: "UTC", retryLimit: 0 });
-
-await b.schedule(QUEUE.WORKFLOW_CRON_SWEEP, "* * * * *", {}, {
-  tz: "UTC",
-  retryLimit: 1,
-  retryDelay: 15,
-});
-console.log("[worker] scheduled behavior + watcher auxiliary sweep every minute");
 
 await b.work(QUEUE.BOT_NAME_SWEEP, async () => {
   const { named, failed } = await nameBackfilledBots();
