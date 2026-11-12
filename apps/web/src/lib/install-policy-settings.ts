@@ -27,7 +27,6 @@ export type InstallPolicyPayload = {
 };
 
 export const INSTALL_POLICY_SCOPE = "install-policy";
-const PROVIDER_TAG = "install-policy";
 
 /** Secure-by-default: new deployments don't allow git-URL skill installs. */
 export const DEFAULT_POLICY: InstallPolicy = {
@@ -76,41 +75,4 @@ export async function getInstallPolicyPayload(
     policy: policyFromConfig(row?.config ?? null),
     source: row ? "org" : "default",
   };
-}
-
-/** Partial draft from the UI. Anything absent leaves the existing value alone. */
-export type InstallPolicyDraft = {
-  allowGitUrlInstalls?: boolean;
-};
-
-export async function saveInstallPolicyDraft(
-  orgId: string,
-  draft: InstallPolicyDraft,
-): Promise<InstallPolicy> {
-  const existing = await loadRow(orgId);
-  const current = policyFromConfig(existing?.config ?? null);
-  const merged: InstallPolicy = {
-    allowGitUrlInstalls:
-      draft.allowGitUrlInstalls !== undefined
-        ? draft.allowGitUrlInstalls
-        : current.allowGitUrlInstalls,
-  };
-
-  if (existing) {
-    await db()
-      .update(llm_provider_config)
-      .set({ config: merged, updated_at: new Date() })
-      .where(eq(llm_provider_config.id, existing.id));
-  } else {
-    await db().insert(llm_provider_config).values({
-      org_id: orgId,
-      scope: INSTALL_POLICY_SCOPE,
-      provider: PROVIDER_TAG,
-      enabled: true,
-      config: merged,
-      secrets: {},
-    });
-  }
-
-  return merged;
 }

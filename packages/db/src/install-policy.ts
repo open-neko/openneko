@@ -4,8 +4,8 @@
  * llm_provider_config with scope="install-policy" — same overload
  * pattern as the "agent" scope.
  *
- * The write path lives in apps/web/src/lib/install-policy-settings.ts
- * (admin-only, has UI affordances). The worker only reads.
+ * The write path is PATCH /api/v1/settings/install-policy in openneko web
+ * (apps/openneko/internal/webfront/settings.go). The worker only reads.
  */
 
 import { db, and, eq } from "./index";

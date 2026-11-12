@@ -107,6 +107,12 @@ var GoRoutes = map[string][]string{
 	"/api/v1/workflows/{workflowId}/runs":                         {"POST"},
 	"/api/v1/workflows/{workflowId}/runs/{runId}":                 {"GET"},
 	"/api/v1/workflows/{workflowId}/runs/{runId}/artifact":        {"GET"},
+	"/api/v1/settings/channel-identities":                         {"GET"},
+	"/api/v1/settings/channel-identities/{id}":                    {"PATCH"},
+	"/api/v1/settings/data-sources":                               {"GET", "PUT"},
+	"/api/v1/settings/source-secrets":                             {"GET", "PUT", "DELETE"},
+	"/api/v1/settings/install-policy":                             {"GET", "PATCH"},
+	"/api/v1/settings/skill-learn":                                {"GET", "PATCH"},
 }
 
 // In a catchAll route the last {name} takes the rest of the path, as a Next
@@ -177,6 +183,12 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/workflows/{workflowId}/runs":                  {"POST": a.workflowAPIStart},
 			"/api/v1/workflows/{workflowId}/runs/{runId}":          {"GET": a.workflowAPIRun},
 			"/api/v1/workflows/{workflowId}/runs/{runId}/artifact": {"GET": a.workflowAPIArtifact},
+			"/api/v1/settings/channel-identities":                  {"GET": a.channelIdentities},
+			"/api/v1/settings/channel-identities/{id}":             {"PATCH": a.channelIdentityPatch},
+			"/api/v1/settings/data-sources":                        {"GET": a.dataSources, "PUT": a.dataSourcePut},
+			"/api/v1/settings/source-secrets":                      {"GET": a.sourceSecrets, "PUT": a.sourceSecretPut, "DELETE": a.sourceSecretDelete},
+			"/api/v1/settings/install-policy":                      {"GET": a.installPolicyGet, "PATCH": a.installPolicyPatch},
+			"/api/v1/settings/skill-learn":                         {"GET": a.skillLearnGet, "PATCH": a.skillLearnPatch},
 		}
 	})
 	return a.routes
