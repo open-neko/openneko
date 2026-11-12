@@ -1,44 +1,6 @@
 import { db, sql } from "@neko/db";
-import {
-  listRecentOutputsByWorkflow as defaultListRecent,
-  type RecentOutputSummary,
-  type WorkflowRecord,
-} from "./store";
-import type {
-  SourceChangeFilter,
-  WorkflowOutputFilter,
-} from "./subscription-query";
-
-export type FilterableOutput = {
-  scope: string | null;
-  topic: string | null;
-  mood: string | null;
-  kind: string;
-};
-
-/**
- * Mirrors the GraphJin subscription semantics in `buildSubscriptionQuery`
- * for workflow_output. Used at save-time to detect whether a proposed
- * subscription would loop a workflow's own outputs back to itself.
- *
- * Keep in sync with subscription-query.ts.
- */
-export function outputMatchesFilter(
-  output: FilterableOutput,
-  filter: Record<string, unknown>,
-): boolean {
-  const f = filter as WorkflowOutputFilter;
-  if (f.scope && output.scope !== f.scope) return false;
-  if (f.topic && output.topic !== f.topic) return false;
-  if (f.mood) {
-    const moods = Array.isArray(f.mood) ? f.mood : [f.mood];
-    if (output.mood === null || !moods.includes(output.mood)) return false;
-  }
-  if (f.kinds && f.kinds.length > 0 && !f.kinds.includes(output.kind)) {
-    return false;
-  }
-  return true;
-}
+import type { WorkflowRecord } from "./store";
+import type { SourceChangeFilter } from "./subscription-query";
 
 /**
  * Walk the lineage chain backwards from `producingRunId` and return true
@@ -83,52 +45,6 @@ export async function isWorkflowInAncestorChain(
   );
   const row = (result.rows ?? result)[0] as { exists: boolean } | undefined;
   return Boolean(row?.exists);
-}
-
-export class SubscriptionSelfLoopError extends Error {
-  constructor(
-    message: string,
-    public readonly matchingOutputIds: string[],
-  ) {
-    super(message);
-    this.name = "SubscriptionSelfLoopError";
-  }
-}
-
-export type CheckSubscriptionWouldLoopOptions = {
-  orgId: string;
-  workflowId: string;
-  filter: Record<string, unknown>;
-  sampleSize?: number;
-  /** DI for tests. */
-  listRecentOutputs?: typeof defaultListRecent;
-};
-
-/**
- * Save-time self-loop check. Scans the workflow's recent outputs against
- * the proposed filter; any matches imply this subscription would re-fire
- * the workflow on its own outputs. Throws SubscriptionSelfLoopError when
- * the loop is found. Misses workflows that haven't yet produced any
- * matching output — runtime cycle detection in match-handler catches
- * those.
- */
-export async function checkSubscriptionWouldLoop(
-  opts: CheckSubscriptionWouldLoopOptions,
-): Promise<void> {
-  const listRecent = opts.listRecentOutputs ?? defaultListRecent;
-  const recent = await listRecent(
-    opts.orgId,
-    opts.workflowId,
-    opts.sampleSize ?? 100,
-  );
-  const matches = recent.filter((row: RecentOutputSummary) =>
-    outputMatchesFilter(row, opts.filter),
-  );
-  if (matches.length === 0) return;
-  throw new SubscriptionSelfLoopError(
-    `Subscription filter matches ${matches.length} of this workflow's recent output(s) — this would create a self-loop. Narrow the filter (scope, mood, kinds) so the workflow's own outputs no longer match.`,
-    matches.map((m) => m.id),
-  );
 }
 
 export type MutationLoopCheck =

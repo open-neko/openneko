@@ -93,6 +93,9 @@ var GoRoutes = map[string][]string{
 	"/api/v1/workflows/{workflowId}":                              {"GET", "PATCH", "DELETE"},
 	"/api/v1/workflows/{workflowId}/adopt":                        {"POST"},
 	"/api/v1/workflows/{workflowId}/api-access":                   {"GET", "POST", "PATCH", "DELETE"},
+	"/api/v1/workflows/{workflowId}/subscriptions":                {"GET", "POST"},
+	"/api/v1/workflows/{workflowId}/subscriptions/dry-run":        {"POST"},
+	"/api/v1/subscriptions/{subscriptionId}":                      {"PATCH", "DELETE"},
 	"/api/v1/workflow-runs":                                       {"GET"},
 	"/api/v1/workflow-runs/{workflowRunId}":                       {"GET"},
 	"/api/v1/workflow-runs/{workflowRunId}/artifact":              {"GET"},
@@ -155,9 +158,12 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/workflows/{workflowId}/adopt":                        {"POST": a.workflowAdopt},
 			"/api/v1/workflows/{workflowId}/api-access": {"GET": a.workflowAPIAccessGet, "POST": a.workflowAPIAccessPost,
 				"PATCH": a.workflowAPIAccessPatch, "DELETE": a.workflowAPIAccessDelete},
-			"/api/v1/workflow-runs":                          {"GET": a.workflowRuns},
-			"/api/v1/workflow-runs/{workflowRunId}":          {"GET": a.workflowRunDetail},
-			"/api/v1/workflow-runs/{workflowRunId}/artifact": {"GET": a.workflowRunArtifact},
+			"/api/v1/workflows/{workflowId}/subscriptions":         {"GET": a.workflowSubscriptions, "POST": a.createSubscription},
+			"/api/v1/workflows/{workflowId}/subscriptions/dry-run": {"POST": a.subscriptionDryRun},
+			"/api/v1/subscriptions/{subscriptionId}":               {"PATCH": a.subscriptionPatch, "DELETE": a.subscriptionDelete},
+			"/api/v1/workflow-runs":                                {"GET": a.workflowRuns},
+			"/api/v1/workflow-runs/{workflowRunId}":                {"GET": a.workflowRunDetail},
+			"/api/v1/workflow-runs/{workflowRunId}/artifact":       {"GET": a.workflowRunArtifact},
 		}
 	})
 	return a.routes
