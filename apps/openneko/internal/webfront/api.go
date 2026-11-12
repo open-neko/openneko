@@ -127,6 +127,12 @@ var GoRoutes = map[string][]string{
 	"/api/v1/admin/groups/{groupId}/members":                      {"POST", "DELETE"},
 	"/api/v1/admin/idp-rules":                                     {"GET", "POST"},
 	"/api/v1/admin/idp-rules/{ruleId}":                            {"DELETE"},
+	"/api/v1/admin/items":                                         {"GET"},
+	"/api/v1/admin/item-grants":                                   {"GET", "POST", "DELETE"},
+	"/api/v1/admin/data-access":                                   {"GET", "POST"},
+	"/api/v1/admin/data-access/settings":                          {"GET", "PATCH"},
+	"/api/v1/admin/data-access/tables":                            {"GET"},
+	"/api/v1/admin/data-access/{ruleId}":                          {"DELETE"},
 }
 
 // In a catchAll route the last {name} takes the rest of the path, as a Next
@@ -217,6 +223,12 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/admin/groups/{groupId}/members":               {"POST": a.adminGroupMember, "DELETE": a.adminGroupMember},
 			"/api/v1/admin/idp-rules":                              {"GET": a.adminIdpRules, "POST": a.adminIdpRuleCreate},
 			"/api/v1/admin/idp-rules/{ruleId}":                     {"DELETE": a.adminIdpRuleDelete},
+			"/api/v1/admin/items":                                  {"GET": a.adminItems},
+			"/api/v1/admin/item-grants":                            {"GET": a.adminItemHolders, "POST": a.adminItemGrant, "DELETE": a.adminItemGrant},
+			"/api/v1/admin/data-access":                            {"GET": a.adminDataAccess, "POST": a.adminDataAccessCreate},
+			"/api/v1/admin/data-access/settings":                   {"GET": a.adminDataAccessSettings, "PATCH": a.adminDataAccessSettingsPatch},
+			"/api/v1/admin/data-access/tables":                     {"GET": a.adminDataAccessTables},
+			"/api/v1/admin/data-access/{ruleId}":                   {"DELETE": a.adminDataAccessDelete},
 		}
 	})
 	return a.routes

@@ -1,6 +1,5 @@
 import "server-only";
 
-import { NextResponse } from "next/server";
 import {
   and,
   channel_identity,
@@ -8,7 +7,6 @@ import {
   db,
   desc,
   eq,
-  GroupError,
   metric,
   operator_profile,
   pack_action_definition,
@@ -40,19 +38,6 @@ export async function requestWorker(path: string, body?: unknown): Promise<{ sta
     throw error;
   }
   return { status: response.status, body: await response.json().catch(() => ({ error: `Worker returned HTTP ${response.status}` })) };
-}
-
-/** Group changes that can alter GraphJin roles apply in a worker batch. */
-export async function scheduleGroupGrantsApply(): Promise<void> {
-  await requestWorker("/admin/graphjin/group-grants", {}).catch(() => undefined);
-}
-
-export function groupErrorResponse(error: unknown): NextResponse {
-  if (error instanceof GroupError) {
-    const status = error.code === "not_found" ? 404 : error.code === "conflict" || error.code === "lockout" ? 409 : 400;
-    return NextResponse.json({ error: error.message, code: error.code }, { status });
-  }
-  return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
 }
 
 export async function readJsonBody(request: Request): Promise<Record<string, unknown> | null> {
@@ -119,20 +104,6 @@ export async function graphjinCatalog(orgId: string, kind: string, databaseName?
     if (page.length < pageSize) break;
   }
   return rows;
-}
-
-/** Tables and columns of one GraphJin source, for the data access editor. */
-export async function sourceTables(orgId: string, source: string): Promise<Array<{ schema: string; table: string; columns: string[] }>> {
-  const rows = await graphjinCatalog(orgId, "column", source);
-  const tables = new Map<string, { schema: string; table: string; columns: string[] }>();
-  for (const row of rows) {
-    if (!row.table_name || !row.column_name) continue;
-    const key = `${row.schema_name ?? ""}.${row.table_name}`;
-    const entry = tables.get(key) ?? { schema: row.schema_name ?? "", table: row.table_name, columns: [] };
-    if (!entry.columns.includes(row.column_name)) entry.columns.push(row.column_name);
-    tables.set(key, entry);
-  }
-  return [...tables.values()].sort((a, b) => `${a.schema}.${a.table}`.localeCompare(`${b.schema}.${b.table}`));
 }
 
 /** Every grantable item of a type, for pickers and access panels. */
