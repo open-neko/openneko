@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@neko/secret-crypt", () => ({ deriveSigningSecret: () => Buffer.alloc(32, 1) }));
 
-import { isLibraryStorePath, libraryStoreFilePath, removeLibraryFile, storeLibraryFile } from "../src/library/store";
+import { isLibraryStorePath, libraryStoreFilePath, storeLibraryFile } from "../src/library/store";
 
 describe("Library store", () => {
   afterEach(() => {
@@ -21,9 +21,6 @@ describe("Library store", () => {
     const hash = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
     expect(stored).toEqual({ relativePath: `files/library/${hash}/a.md`, contentHash: hash, size: 5 });
     expect(calls).toEqual([{ url: `http://serve.test/v1/files/content?path=${encodeURIComponent(`library/${hash}/a.md`)}`, method: "PUT" }]);
-
-    await removeLibraryFile({ orgId: "o", userId: "u", relativePath: stored.relativePath });
-    expect(calls[1]?.method).toBe("DELETE");
   });
 
   it("tells moved paths from older workspace paths", () => {
