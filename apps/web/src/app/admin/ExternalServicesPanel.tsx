@@ -1,9 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { ExternalServiceStatus } from "@neko/llm/external-services";
 import { Button } from "@/components/ui/button";
 import { StatCard, StatGrid } from "@/components/ui/stat-card";
+
+type ExternalServiceStatus = {
+  id: string;
+  label: string;
+  state: "off" | "ok" | "failing";
+  where: string | null;
+  detail: string;
+  checkedAt: string;
+};
 
 const STATE_WORDS = { ok: "On", off: "Off", failing: "Failing" } as const;
 

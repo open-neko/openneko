@@ -207,7 +207,6 @@ func (a *API) recordBudgetBlocked(ctx context.Context, e *spendExceeded) {
 	if strings.HasSuffix(e.budget, "hourly") {
 		windowSeconds = 3_600
 	}
-	cents := func(micros float64) float64 { return math.Min(2_147_483_647, math.Floor(micros/10_000+0.5)) }
 	details := struct {
 		Budget         string  `json:"budget"`
 		Source         string  `json:"source"`
@@ -221,20 +220,27 @@ func (a *API) recordBudgetBlocked(ctx context.Context, e *spendExceeded) {
 		log.Printf("[spend] could not record blocked alert: %v", err)
 		return
 	}
+	a.raiseSpendAlert(ctx, e.orgID, "spend.budget_blocked", subject, e.committedMicros, e.limitMicros, windowSeconds, details.WindowStart, raw)
+}
+
+// raiseSpendAlert is raiseSpendAlert(): details is a JSON object that holds
+// message, windowStart, observedMicros and thresholdMicros.
+func (a *API) raiseSpendAlert(ctx context.Context, orgID, kind, subject string, observed, threshold float64, windowSeconds int, windowStart string, details []byte) {
+	cents := func(micros float64) float64 { return math.Min(2_147_483_647, math.Floor(micros/10_000+0.5)) }
 	tag, err := a.DB.Exec(ctx, `insert into behavior_alert (org_id, kind, subject, observed, threshold, window_seconds, details)
-	     values ($1, 'spend.budget_blocked', $2, $3, $4, $5, $6::jsonb)
+	     values ($1, $2, $3, $4, $5, $6, $7::jsonb)
 	     on conflict (org_id, kind, subject, (details->>'windowStart')) where kind like 'spend.%' do nothing`,
-		e.orgID, subject, int64(cents(e.committedMicros)), int64(cents(e.limitMicros)), windowSeconds, string(raw))
+		orgID, kind, subject, int64(cents(observed)), int64(cents(threshold)), windowSeconds, string(details))
 	if err != nil {
-		log.Printf("[spend] could not record blocked alert: %v", err)
+		log.Printf("[spend] could not record %s alert: %v", kind, err)
 		return
 	}
 	if tag.RowsAffected() == 0 {
 		return
 	}
-	payload := append([]byte(`{"subject":`+jsStringify(subject, false)+","), raw[1:]...)
-	body := fmt.Sprintf(`{"orgId":%s,"name":"spend.budget_blocked","source":"spend-governance","payload":%s,"dedupeKey":%s}`,
-		jsStringify(e.orgID, false), payload, jsStringify("spend.budget_blocked:"+subject+":"+details.WindowStart, false))
+	payload := append([]byte(`{"subject":`+jsStringify(subject, false)+","), details[1:]...)
+	body := fmt.Sprintf(`{"orgId":%s,"name":%s,"source":"spend-governance","payload":%s,"dedupeKey":%s}`,
+		jsStringify(orgID, false), jsStringify(kind, false), payload, jsStringify(kind+":"+subject+":"+windowStart, false))
 	status, reply, err := a.workerDo(ctx, http.MethodPost, "/admin/events/external", 10*time.Second, []byte(body))
 	if err != nil || status != http.StatusOK {
 		log.Printf("[spend] alert dispatch failed: %d %v %s", status, err, reply)

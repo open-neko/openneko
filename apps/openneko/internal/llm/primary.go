@@ -37,37 +37,58 @@ func DefaultSettings() Settings {
 	return Settings{Source: "default", Provider: "google-gemini", Model: DefaultModel("google-gemini"), Enabled: true, Config: map[string]any{}, Secrets: map[string]string{}}
 }
 
-// PrimarySettings is resolvePrimaryProviderConfig(orgId) in llm.ts. A stored
-// row that does not pass Validate is an error; no stored row gives the default.
-func PrimarySettings(ctx context.Context, db Querier, secretsDir, orgID string) (Settings, error) {
+type DB interface {
+	Querier
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+type storedRow struct {
+	Provider string
+	Model    *string
+	Label    *string
+	Enabled  bool
+	Config   map[string]any
+	Secrets  map[string]string
+}
+
+func loadStored(ctx context.Context, db Querier, secretsDir, orgID, scope string) (*storedRow, error) {
 	var (
-		provider        string
-		model, label    *string
-		enabled         bool
+		row             storedRow
 		rawCfg, rawSecr []byte
 	)
 	err := db.QueryRow(ctx, `select provider, model, label, enabled, config, secrets from llm_provider_config
-	  where org_id = $1 and scope = 'primary' limit 1`, orgID).Scan(&provider, &model, &label, &enabled, &rawCfg, &rawSecr)
-	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !IsPrimaryProvider(provider)) {
-		return DefaultSettings(), nil
+	  where org_id = $1 and scope = $2 limit 1`, orgID, scope).Scan(&row.Provider, &row.Model, &row.Label, &row.Enabled, &rawCfg, &rawSecr)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
 	}
 	if err != nil {
-		return Settings{}, err
+		return nil, err
 	}
-	cfg := map[string]any{}
-	_ = json.Unmarshal(rawCfg, &cfg)
-	if cfg == nil {
-		cfg = map[string]any{}
+	_ = json.Unmarshal(rawCfg, &row.Config)
+	if row.Config == nil {
+		row.Config = map[string]any{}
 	}
 	var sealed map[string]any
 	_ = json.Unmarshal(rawSecr, &sealed)
-	secrets, err := DecryptSecrets(secretsDir, sealed)
+	if row.Secrets, err = DecryptSecrets(secretsDir, sealed); err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// PrimarySettings is resolvePrimaryProviderConfig(orgId) in llm.ts. A stored
+// row that does not pass Validate is an error; no stored row gives the default.
+func PrimarySettings(ctx context.Context, db Querier, secretsDir, orgID string) (Settings, error) {
+	row, err := loadStored(ctx, db, secretsDir, orgID, "primary")
 	if err != nil {
 		return Settings{}, err
 	}
-	s := Settings{Source: "org", Provider: provider, Model: DefaultModel(provider), Enabled: enabled, Label: label, Config: cfg, Secrets: secrets}
-	if model != nil {
-		s.Model = *model
+	if row == nil || !IsPrimaryProvider(row.Provider) {
+		return DefaultSettings(), nil
+	}
+	s := Settings{Source: "org", Provider: row.Provider, Model: DefaultModel(row.Provider), Enabled: row.Enabled, Label: row.Label, Config: row.Config, Secrets: row.Secrets}
+	if row.Model != nil {
+		s.Model = *row.Model
 	}
 	return s, s.Validate()
 }

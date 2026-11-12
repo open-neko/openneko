@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/open-neko/neko/apps/openneko/internal/llm"
 )
 
 // API answers the routes that moved from Node to Go. A route it does not
@@ -38,6 +39,13 @@ type API struct {
 	// Restart stops the web process after a password change when
 	// OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE is 1.
 	Restart func()
+	// Gateway, Embedder and GoogleToken override the host model calls; tests
+	// set them.
+	Gateway     llm.Gateway
+	Embedder    llm.Embedder
+	GoogleToken llm.TokenFunc
+	// ResearchURL overrides the Perplexity chat URL; tests set it.
+	ResearchURL string
 
 	once   sync.Once
 	routes map[string]map[string]http.HandlerFunc
@@ -128,6 +136,9 @@ var GoRoutes = map[string][]string{
 	"/api/v1/settings/openapi-specs":                              {"GET", "POST"},
 	"/api/v1/policies":                                            {"GET"},
 	"/api/v1/onboarding/status":                                   {"GET"},
+	"/api/v1/onboarding/submit":                                   {"POST"},
+	"/api/v1/settings/provider/test":                              {"POST"},
+	"/api/v1/admin/services":                                      {"GET"},
 	"/api/v1/policies/{policyId}":                                 {"GET", "PATCH"},
 	"/api/v1/admin/directory":                                     {"GET", "POST"},
 	"/api/v1/admin/groups":                                        {"GET", "POST"},
@@ -268,6 +279,9 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/settings/openapi-specs":                       {"GET": a.openAPISpecList, "POST": a.openAPISpecImport},
 			"/api/v1/policies":                                     {"GET": a.actionPolicies},
 			"/api/v1/onboarding/status":                            {"GET": a.onboardingStatus},
+			"/api/v1/onboarding/submit":                            {"POST": a.onboardingSubmit},
+			"/api/v1/settings/provider/test":                       {"POST": a.settingsProviderTest},
+			"/api/v1/admin/services":                               {"GET": a.adminServices},
 			"/api/v1/policies/{policyId}":                          {"GET": a.actionPolicyGet, "PATCH": a.actionPolicyPatch},
 			"/api/v1/admin/directory":                              {"GET": a.directoryStatus, "POST": a.directorySync},
 			"/api/v1/admin/groups":                                 {"GET": a.adminGroups, "POST": a.adminGroupCreate},

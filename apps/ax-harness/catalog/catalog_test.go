@@ -100,7 +100,7 @@ func TestCostMatchesAxEstimator(t *testing.T) {
 
 func pinnedAxVersion(t *testing.T) string {
 	t.Helper()
-	mod, err := os.ReadFile(filepath.Join("..", "..", "go.mod"))
+	mod, err := os.ReadFile(filepath.Join("..", "go.mod"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestHostSnapshotMatchesPinnedModule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "packages", "llm", "src", "spend", "ax-model-catalog.json"))
+	got, err := os.ReadFile(filepath.Join("..", "..", "..", "packages", "llm", "src", "spend", "ax-model-catalog.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

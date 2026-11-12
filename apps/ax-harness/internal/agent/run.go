@@ -15,7 +15,7 @@ import (
 
 	ax "github.com/ax-llm/ax/packages/go"
 	axgoja "github.com/ax-llm/ax/packages/go/runtime/goja"
-	"github.com/open-neko/openneko/apps/ax-harness/internal/catalog"
+	"github.com/open-neko/openneko/apps/ax-harness/catalog"
 )
 
 // Spec is trusted host input. It cannot select credentials, endpoints or capabilities.

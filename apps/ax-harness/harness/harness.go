@@ -15,7 +15,7 @@ import (
 	"syscall"
 
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
-	"github.com/open-neko/openneko/apps/ax-harness/internal/catalog"
+	"github.com/open-neko/openneko/apps/ax-harness/catalog"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/command"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/localtool"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/mcp"

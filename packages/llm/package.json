@@ -37,7 +37,6 @@
     "./spend": "./src/spend/index.ts",
     "./model-tasks": "./src/model-tasks.ts",
     "./model-routes": "./src/model-routes.ts",
-    "./external-services": "./src/external-services.ts",
     "./files": "./src/files/client.ts",
     "./workflows/compat": "./src/workflows/compat/index.ts"
   },

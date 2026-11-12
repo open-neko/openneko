@@ -3,7 +3,7 @@ package agent
 import (
 	"testing"
 
-	"github.com/open-neko/openneko/apps/ax-harness/internal/catalog"
+	"github.com/open-neko/openneko/apps/ax-harness/catalog"
 )
 
 func TestRunUsageIsCatalogPricedOnlyWhenEveryCallIs(t *testing.T) {

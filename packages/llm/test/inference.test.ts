@@ -13,7 +13,7 @@ vi.mock("google-auth-library", () => ({
   },
 }));
 
-const { generate, hostProgram, setGatewayTransport, testPrimaryProvider } = await import("../src/inference");
+const { generate, hostProgram, setGatewayTransport } = await import("../src/inference");
 import type { GatewayRequest, GatewayResult } from "../src/inference";
 import type { EditableProviderConfig } from "../src/config";
 
@@ -71,24 +71,9 @@ describe("host model calls through the inference gateway", () => {
     expect(result.usage).toMatchObject({ inputTokens: 7, outputTokens: 2, totalTokens: 9, coverage: "complete" });
   });
 
-  it("tests a keyless provider without asking for a key", async () => {
-    const calls = capture({ reply: "READY" });
-    await expect(testPrimaryProvider(undefined, draft("ollama", "llama3", { url: "http://localhost:11434" }))).resolves.toMatchObject({
-      provider: "ollama",
-      model: "llama3",
-      source: "draft",
-    });
-    expect(calls[0].key).toBe("none");
-  });
-
   it("refuses an OpenAI-compatible provider without a model name", async () => {
     capture();
     await expect(generate(undefined, PROGRAM, { question: "q" }, { task: "classify", draft: draft("openai-compatible", "", { url: "https://m.example.com/v1" }) })).rejects.toThrow(/model name/);
-  });
-
-  it("fails the provider test on an empty reply", async () => {
-    capture({ reply: " " });
-    await expect(testPrimaryProvider(undefined, draft("openai", "gpt", {}, "k"))).rejects.toThrow(/empty response/);
   });
 });
 
