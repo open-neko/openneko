@@ -78,6 +78,7 @@ OpenNeko's runtime dependencies are listed in the `package.json` and `go.mod` fi
 | `github.com/grpc-ecosystem/grpc-gateway/v2` | BSD-3-Clause | Linked by the OTLP trace exporter of `openneko serve` |
 | `github.com/go-sql-driver/mysql` | MPL-2.0 | MySQL and MariaDB client of the source check in `openneko web`; GraphJin already links it. MPL-2.0 covers its own files only; OpenNeko ships them unchanged |
 | `golang.org/x/text` | BSD-3-Clause | Sorts skill names in `openneko web` in the same order as the Node server; GraphJin already links it |
+| `golang.org/x/net` (`idna`) | BSD-3-Clause | Converts the host of an OpenAPI import URL to ASCII in `openneko web`; GraphJin already links it |
 
 Run `pnpm licenses ls -P` from the repo root to see the full transitive list at a given snapshot.
 

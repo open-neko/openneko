@@ -8022,6 +8022,15 @@ paths:
                 properties:
                   error:
                     type: string
+        '413':
+          description: The body is larger than 3 MB
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
   /settings/persona:
     get:
       operationId: getSettingsPersona

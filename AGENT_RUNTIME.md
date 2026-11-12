@@ -211,6 +211,16 @@ GraphJin config, or under `OPENNEKO_GRAPHJIN_FILES_LOCAL_DIR`. It refuses
 new files for a source that GraphJin already serves or that an admin
 approved. The upload and the approval worker take the same lock file.
 
+An admin adds an API source from an OpenAPI 3 document in the source form
+(`GET` and `POST /api/v1/settings/openapi-specs`; the Go web front answers
+them). The admin uploads a YAML or JSON file of up to 2 MB, or gives an
+HTTPS URL. Go fetches a URL only when every address of its host is public,
+connects to the address it checked, and follows at most three redirects.
+It refuses a document with an external `$ref`, sets the one base URL in
+`servers`, counts the read and mutating operations, and stores the
+document as YAML with its SHA-256 checksum. The approval worker checks
+that checksum before it writes the file for GraphJin.
+
 OpenNeko says what a config does in plain sentences
 (`packages/llm/src/graphjin/config-describe.ts`): for each source, its kind,
 host and database, whether GraphJin blocks changes, who may read, change and
