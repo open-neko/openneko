@@ -122,7 +122,6 @@ export {
   createObservation,
   createSubscription,
   createWorkflowRun,
-  deleteSubscription,
   emitWorkflowOutput,
   deleteWorkflow,
   finishWorkflowRun,
@@ -144,7 +143,6 @@ export {
   listWorkflows,
   personalWorkflowFiles,
   saveWorkflow,
-  setSubscriptionEnabled,
   startOfTodayUtc,
   writeSourceChangeLog,
   type CreateObservationInput,
@@ -165,7 +163,6 @@ export {
   type WorkflowTriggers,
 } from "./store";
 export {
-  buildSourceChangeDryRunQuery,
   buildSubscriptionQuery,
   parseSourceChangeFilter,
   parseSourceChangeMatch,
@@ -202,13 +199,8 @@ export {
   type DispatchExternalEventResult,
 } from "./external-events";
 export {
-  checkSubscriptionWouldLoop,
   detectMutationLoop,
   isWorkflowInAncestorChain,
-  outputMatchesFilter,
-  SubscriptionSelfLoopError,
-  type CheckSubscriptionWouldLoopOptions,
-  type FilterableOutput,
   type MutationLoopCheck,
 } from "./cycle-detection";
 export {

@@ -140,22 +140,6 @@ function buildSourceChangeSubscription(
   });
 }
 
-/**
- * Build a one-shot read against the data source using the same filter as the
- * subscription, for the dry-run endpoint. Same projection, ordering, and where
- * clause; just a `query` instead of a `subscription` and a configurable limit.
- */
-export function buildSourceChangeDryRunQuery(
-  filter: Record<string, unknown>,
-  limit = 5,
-): SubscriptionQueryPayload | null {
-  return buildSourceChangeOperation(filter, {
-    kind: "query",
-    operationName: "SourceChangeDryRun",
-    limit,
-  });
-}
-
 // Serialize a JSON value to a GraphQL literal: object keys unquoted, string
 // values quoted/escaped, scalars verbatim. GraphJin where-clauses key on
 // columns / operators / nested tables and use quoted strings for values,

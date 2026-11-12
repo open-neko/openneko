@@ -851,20 +851,6 @@ export async function listSubscriptionsByWorkflow(
   return rows.map(toSubscriptionRecord);
 }
 
-export async function setSubscriptionEnabled(
-  id: string,
-  enabled: boolean,
-): Promise<void> {
-  await db()
-    .update(subscription)
-    .set({ enabled, updated_at: new Date() })
-    .where(eq(subscription.id, id));
-}
-
-export async function deleteSubscription(id: string): Promise<void> {
-  await db().delete(subscription).where(eq(subscription.id, id));
-}
-
 export type ObservationConsumerKind = "workflow" | "human";
 
 export type ObservationRecord = {

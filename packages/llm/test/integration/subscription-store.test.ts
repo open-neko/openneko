@@ -4,7 +4,6 @@ import { dbReachable, withTestOrg } from "@neko/db/test-helpers";
 import {
   createObservation,
   createSubscription,
-  deleteSubscription,
   emitWorkflowOutput,
   getObservation,
   linkOutputSourceObservations,
@@ -12,7 +11,6 @@ import {
   listObservationsForOutput,
   listSubscriptionsByWorkflow,
   saveWorkflow,
-  setSubscriptionEnabled,
 } from "../../src/workflows/store";
 import { createWorkRun, createWorkThread } from "../../src/work/store";
 import { createWorkflowRun } from "../../src/workflows/store";
@@ -76,27 +74,6 @@ describeIfDb("subscription + observation store", () => {
       const ids = enabledRows.map((r) => r.id);
       expect(ids).toContain(live.id);
       expect(ids).not.toContain(disabled.id);
-    });
-  });
-
-  it("setSubscriptionEnabled and deleteSubscription mutate as expected", async () => {
-    await withTestOrg(async (orgId) => {
-      const { workflow } = await saveWorkflow({
-        orgId,
-        name: "mut-consumer",
-        steps: [{ id: "s1", description: "react" }],
-      });
-      const sub = await createSubscription({
-        orgId,
-        workflowId: workflow.id,
-        sourceKind: "workflow_output",
-      });
-      await setSubscriptionEnabled(sub.id, false);
-      const after = await listSubscriptionsByWorkflow(orgId, workflow.id);
-      expect(after.find((s) => s.id === sub.id)?.enabled).toBe(false);
-      await deleteSubscription(sub.id);
-      const after2 = await listSubscriptionsByWorkflow(orgId, workflow.id);
-      expect(after2.find((s) => s.id === sub.id)).toBeUndefined();
     });
   });
 
