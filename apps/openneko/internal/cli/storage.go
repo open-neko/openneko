@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/spf13/cobra"
 
 	"github.com/open-neko/neko/apps/openneko/internal/db"
@@ -45,7 +44,7 @@ operator runs, report the collation state and the SQL to run, and change nothing
 			if err != nil {
 				return err
 			}
-			conn, err := pgx.Connect(ctx, target.DSN())
+			conn, err := db.Connect(ctx, target, "openneko storage reconcile")
 			if err != nil {
 				return fmt.Errorf("connect to database: %w", err)
 			}

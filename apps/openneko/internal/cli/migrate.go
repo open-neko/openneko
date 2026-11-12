@@ -5,7 +5,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/spf13/cobra"
 
 	"github.com/open-neko/neko/apps/openneko/assets"
@@ -27,7 +26,7 @@ func newMigrateCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				conn, err := pgx.Connect(ctx, target.DSN())
+				conn, err := db.Connect(ctx, target, "openneko migrate")
 				if err != nil {
 					return err
 				}

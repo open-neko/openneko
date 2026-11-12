@@ -74,32 +74,21 @@ type Conn interface {
 	Close(ctx context.Context) error
 }
 
-// migrateAdvisoryLockKey serializes concurrent migrators. Both web's and
-// worker's container entrypoints call `openneko migrate` at boot; whichever
-// gets the lock first runs the SQL, the other blocks at pg_advisory_lock and
-// then no-ops because every file is already recorded in schema_migrations.
-// The value is an arbitrary 64-bit constant pinned for this codebase — only
-// other things calling pg_advisory_lock with this same key need to coordinate
-// with the migrator (currently nothing does).
-const migrateAdvisoryLockKey int64 = 7283264971838383631
+// migrateLockKey is the advisory lock that every migrator of this codebase
+// takes.
+const migrateLockKey int64 = 7283264971838383631
 
-// Apply runs every pending *.sql migration. Returns the number applied.
-// Safe to call concurrently from multiple processes against the same DB —
-// callers serialize on a pg_advisory_lock so only one runs the SQL while
-// the others wait, then observe an empty pending set.
+// Apply runs every pending *.sql migration under migrateLockKey and returns
+// the number it applied. A second migrator waits, then finds nothing pending.
 func (m *Migrator) Apply(ctx context.Context, conn Conn, logf func(string, ...any)) (int, error) {
 	if logf == nil {
 		logf = func(string, ...any) {}
 	}
-	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrateAdvisoryLockKey); err != nil {
-		return 0, fmt.Errorf("acquire migrate lock: %w", err)
+	unlock, err := Lock(ctx, conn, migrateLockKey, "migration", logf)
+	if err != nil {
+		return 0, err
 	}
-	defer func() {
-		// Best-effort release. Postgres also drops session-level advisory locks
-		// when the connection closes, so a missed unlock here is recoverable
-		// by the caller closing the conn (which start.go does).
-		_, _ = conn.Exec(ctx, `SELECT pg_advisory_unlock($1)`, migrateAdvisoryLockKey)
-	}()
+	defer unlock()
 	if _, err := conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (name text primary key, applied_at timestamptz not null default now())`); err != nil {
 		return 0, err
 	}
@@ -153,6 +142,51 @@ func (m *Migrator) Apply(ctx context.Context, conn Conn, logf func(string, ...an
 	return ran, nil
 }
 
+// SchemaState compares the database's migration ledger with this binary.
+type SchemaState struct {
+	Pending []string
+	Unknown []string
+}
+
+type Querier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// Status reads the ledger without the lock. A database with no ledger has
+// every migration pending.
+func (m *Migrator) Status(ctx context.Context, q Querier) (SchemaState, error) {
+	files, err := m.listFiles()
+	if err != nil {
+		return SchemaState{}, err
+	}
+	var ledger *string
+	if err := q.QueryRow(ctx, `select to_regclass('schema_migrations')::text`).Scan(&ledger); err != nil {
+		return SchemaState{}, err
+	}
+	applied := map[string]bool{}
+	if ledger != nil {
+		if applied, err = loadApplied(ctx, q); err != nil {
+			return SchemaState{}, err
+		}
+	}
+	var st SchemaState
+	known := map[string]bool{}
+	for _, f := range files {
+		known[f] = true
+		if !applied[f] {
+			st.Pending = append(st.Pending, f)
+		}
+	}
+	for name := range applied {
+		if !known[name] {
+			st.Unknown = append(st.Unknown, name)
+		}
+	}
+	sort.Strings(st.Unknown)
+	return st, nil
+}
+
 func (m *Migrator) listFiles() ([]string, error) {
 	entries, err := fs.ReadDir(m.FS, m.Dir)
 	if err != nil {
@@ -169,7 +203,7 @@ func (m *Migrator) listFiles() ([]string, error) {
 	return files, nil
 }
 
-func loadApplied(ctx context.Context, conn Conn) (map[string]bool, error) {
+func loadApplied(ctx context.Context, conn Querier) (map[string]bool, error) {
 	rows, err := conn.Query(ctx, `SELECT name FROM schema_migrations`)
 	if err != nil {
 		return nil, err

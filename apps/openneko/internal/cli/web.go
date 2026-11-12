@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -13,10 +14,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 
+	"github.com/open-neko/neko/apps/openneko/assets"
+	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/version"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 )
@@ -40,6 +41,9 @@ production. It reads and writes users, sessions, devices, groups, the
 business profile, personal pack connections and the audit chain with the
 main database login, and reads secrets.json for pack OAuth client IDs.
 
+Web refuses to start on a database that lacks a migration of this release,
+unless OPENNEKO_SKIP_MIGRATE is set.
+
 The admin password route changes the neko role's password and writes it to
 config.json. With OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE=1, web then stops
 with exit code 0, so its supervisor starts it again.`,
@@ -57,23 +61,14 @@ with exit code 0, so its supervisor starts it again.`,
 			if err != nil {
 				return err
 			}
-			pcfg, err := pgxpool.ParseConfig(conn.DSN())
-			if err != nil {
-				return err
-			}
-			if conn.URL == "" {
-				pcfg.BeforeConnect = func(_ context.Context, cc *pgx.ConnConfig) error {
-					if fresh, err := defaultConn(); err == nil && fresh.URL == "" {
-						cc.Password = fresh.Password
-					}
-					return nil
-				}
-			}
-			pool, err := pgxpool.NewWithConfig(ctx, pcfg)
+			pool, err := db.Open(ctx, conn, "openneko web", defaultConn)
 			if err != nil {
 				return err
 			}
 			defer pool.Close()
+			if err := checkSchema(ctx, cmd.ErrOrStderr(), pool); err != nil {
+				return err
+			}
 			ln, err := net.Listen("tcp", addr)
 			if err != nil {
 				return err
@@ -135,6 +130,31 @@ with exit code 0, so its supervisor starts it again.`,
 	cmd.Flags().StringVar(&nodeAddr, "node-addr", envOr("OPENNEKO_WEB_NODE_ADDR", "127.0.0.1:3001"), "Address of the Node server")
 	cmd.Flags().StringVar(&workerURL, "worker-admin-url", envOr("WORKER_ADMIN_URL", "http://127.0.0.1:4100"), "Worker admin address that reports whether sign-in is on")
 	return cmd
+}
+
+const schemaCheckTimeout = 10 * time.Second
+
+// checkSchema refuses to serve a database that lacks a migration of this
+// release. A database that cannot be read yet does not stop web.
+func checkSchema(ctx context.Context, w io.Writer, q db.Querier) error {
+	ctx, cancel := context.WithTimeout(ctx, schemaCheckTimeout)
+	defer cancel()
+	st, err := (&db.Migrator{FS: assets.MigrationsFS, Dir: "migrations"}).Status(ctx, q)
+	if err != nil {
+		fmt.Fprintf(w, "openneko web: the migration check did not run: %v\n", err)
+		return nil
+	}
+	if n := len(st.Unknown); n > 0 {
+		fmt.Fprintf(w, "openneko web: the database holds %d migration(s) that this release does not know, the last %s. A newer release migrated it.\n", n, st.Unknown[n-1])
+	}
+	if len(st.Pending) == 0 {
+		return nil
+	}
+	if envTruthy("OPENNEKO_SKIP_MIGRATE") {
+		fmt.Fprintf(w, "openneko web: the database lacks %d migration(s), the first %s; OPENNEKO_SKIP_MIGRATE is set, so web starts\n", len(st.Pending), st.Pending[0])
+		return nil
+	}
+	return fmt.Errorf("the database lacks %d migration(s) of this release, the first %s: run `openneko migrate`, then start web again", len(st.Pending), st.Pending[0])
 }
 
 func nodeExit(err error) error {

@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/filecontent"
 	"github.com/open-neko/neko/apps/openneko/internal/files"
 	"github.com/open-neko/neko/apps/openneko/internal/filestore"
@@ -39,7 +39,7 @@ func newServeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			pool, err := pgxpool.New(ctx, dsn)
+			pool, err := db.Open(ctx, db.ConnConfig{URL: dsn}, "openneko serve", nil)
 			if err != nil {
 				return err
 			}

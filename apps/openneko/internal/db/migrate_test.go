@@ -46,7 +46,11 @@ func (f *fakeConn) Query(_ context.Context, sql string, _ ...any) (pgx.Rows, err
 	return &fakeRows{}, nil
 }
 
-func (f *fakeConn) QueryRow(_ context.Context, _ string, _ ...any) pgx.Row {
+func (f *fakeConn) QueryRow(_ context.Context, sql string, _ ...any) pgx.Row {
+	if strings.Contains(sql, "pg_try_advisory_lock") {
+		f.exec = append(f.exec, sql)
+		return &fakeRow{lock: true}
+	}
 	return &fakeRow{regclass: f.orgRegclass}
 }
 
@@ -58,6 +62,7 @@ func (f *fakeConn) Close(_ context.Context) error { return nil }
 
 type fakeRow struct {
 	regclass *uint32
+	lock     bool
 }
 
 func (r *fakeRow) Scan(dest ...any) error {
@@ -67,6 +72,9 @@ func (r *fakeRow) Scan(dest ...any) error {
 	switch d := dest[0].(type) {
 	case **uint32:
 		*d = r.regclass
+		return nil
+	case *bool:
+		*d = r.lock
 		return nil
 	default:
 		return errors.New("fakeRow Scan: unsupported dest type")
@@ -211,8 +219,8 @@ func TestApplyAcquiresAndReleasesAdvisoryLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	// First exec must be the lock; some later exec must be the unlock.
-	if len(c.exec) == 0 || !strings.Contains(c.exec[0], "pg_advisory_lock") {
-		t.Fatalf("expected first exec to acquire pg_advisory_lock, got: %v", c.exec)
+	if len(c.exec) == 0 || !strings.Contains(c.exec[0], "pg_try_advisory_lock") {
+		t.Fatalf("expected the first statement to take the advisory lock, got: %v", c.exec)
 	}
 	unlocked := false
 	for _, s := range c.exec {

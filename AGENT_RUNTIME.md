@@ -289,6 +289,8 @@ an upgrade changes nothing. Every change still needs an admin's approval.
    and changes nothing. With the bundled database, it rebuilds the indexes
    after a libc or collation change.
 3. `neko-migrate` applies the migrations (`--skip-migrate` turns it off).
+   It holds a Postgres advisory lock while it runs. A second migrator
+   waits for the lock and names the process that holds it every 15 seconds.
 4. `openneko-config-init` gives the config volume to user 1001.
 5. Demo mode only: `adventureworks-init` loads the sample data and
    `neko-adventureworks-seed` creates the demo organization.
