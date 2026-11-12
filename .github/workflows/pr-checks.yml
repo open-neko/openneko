@@ -231,14 +231,6 @@ jobs:
           graphjin version
 
 
-      - name: Verify durable embedding queue
-        env:
-          PGPASSWORD: secret
-          EMBEDDING_TEST_DATABASE_URL: postgres://neko:secret@127.0.0.1:5432/embedding_jobs_test
-        run: |
-          createdb -h 127.0.0.1 -U neko embedding_jobs_test
-          pnpm --filter @neko/worker exec vitest run test/embedding-jobs.test.ts
-
       - name: Run migrations
         env:
           NEKO_PG_HOST: localhost

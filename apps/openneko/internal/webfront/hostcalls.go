@@ -629,3 +629,44 @@ func (a *API) onboardingSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	sendJSON(w, http.StatusOK, map[string]string{"jobId": jobID})
 }
+
+// EmbeddingModel is embeddingModel() in packages/llm/src/embedding.ts.
+func (a *API) EmbeddingModel() string {
+	c := embeddingConfig()
+	if c == nil {
+		return ""
+	}
+	if c.Dimensions > 0 {
+		return fmt.Sprintf("%s@%d", c.Model, c.Dimensions)
+	}
+	return c.Model
+}
+
+// EmbedText is embedText(text, 150_000) in packages/llm/src/embedding.ts.
+func (a *API) EmbedText(ctx context.Context, text string) ([]float64, error) {
+	c := embeddingConfig()
+	if c == nil {
+		return nil, errors.New("embedding is off: NEKO_EMBEDDING_URL and NEKO_EMBEDDING_MODEL are not both set")
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil, errors.New("embedText: text is empty")
+	}
+	if len(utf16.Encode([]rune(text))) > 32000 {
+		return nil, errors.New("embedText: text exceeds 32000 characters")
+	}
+	embed := a.Embedder
+	if embed == nil {
+		embed = llm.ServeEmbedder(a.serveSocket())
+	}
+	ctx, cancel := context.WithTimeout(ctx, 150*time.Second)
+	defer cancel()
+	result, err := embed(ctx, embedding.Request{URL: c.URL, Model: c.Model, Dimensions: c.Dimensions, Input: []string{text}}, c.key)
+	if err != nil {
+		return nil, err
+	}
+	if len(result.Vectors) != 1 || !validVector(result.Vectors[0], c.Dimensions) {
+		return nil, errors.New("embedding service returned an incompatible vector")
+	}
+	return result.Vectors[0], nil
+}

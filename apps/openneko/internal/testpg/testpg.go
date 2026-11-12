@@ -51,6 +51,13 @@ func pool(t testing.TB, public bool, migrations []string) *pgxpool.Pool {
 	if _, err := admin.Exec(ctx, "create schema "+schema); err != nil {
 		t.Fatal(err)
 	}
+	if public {
+		// Created inside the test schema, the extension would go when that
+		// schema is dropped, under the tests of other packages.
+		if err := publicVector(ctx, admin); err != nil {
+			t.Fatal(err)
+		}
+	}
 	t.Cleanup(func() {
 		admin.Exec(context.Background(), "drop schema "+schema+" cascade") //nolint:errcheck
 		admin.Close()
@@ -78,4 +85,19 @@ func pool(t testing.TB, public bool, migrations []string) *pgxpool.Pool {
 		}
 	}
 	return pool
+}
+
+func publicVector(ctx context.Context, admin *pgxpool.Pool) error {
+	tx, err := admin.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock(hashtext('testpg-vector'))`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `create extension if not exists vector schema public`); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
