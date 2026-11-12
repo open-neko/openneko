@@ -650,7 +650,7 @@ func (a *API) openAPISpecAdmin(w http.ResponseWriter, r *http.Request) (actor, b
 		sendError(w, http.StatusNotFound, "not found")
 		return act, false
 	}
-	if on, err := a.sourceConfigEnabled(r, act.OrgID); err != nil {
+	if on, err := a.sourceConfigEnabled(r.Context(), act.OrgID); err != nil {
 		a.fail(w, r, err)
 		return act, false
 	} else if !on {
