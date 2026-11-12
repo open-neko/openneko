@@ -90,7 +90,9 @@ var GoRoutes = map[string][]string{
 	"/api/v1/work/threads/{threadId}/runs/{runId}/approve-action": {"POST"},
 	"/api/v1/work/runs/{runId}/events":                            {"GET"},
 	"/api/v1/workflows":                                           {"GET"},
-	"/api/v1/workflows/{workflowId}":                              {"GET"},
+	"/api/v1/workflows/{workflowId}":                              {"GET", "PATCH", "DELETE"},
+	"/api/v1/workflows/{workflowId}/adopt":                        {"POST"},
+	"/api/v1/workflows/{workflowId}/api-access":                   {"GET", "POST", "PATCH", "DELETE"},
 	"/api/v1/workflow-runs":                                       {"GET"},
 	"/api/v1/workflow-runs/{workflowRunId}":                       {"GET"},
 	"/api/v1/workflow-runs/{workflowRunId}/artifact":              {"GET"},
@@ -149,10 +151,13 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/work/threads/{threadId}/runs/{runId}/approve-action": {"POST": a.approveRunAction},
 			"/api/v1/work/runs/{runId}/events":                            {"GET": a.workRunEvents},
 			"/api/v1/workflows":                                           {"GET": a.workflows},
-			"/api/v1/workflows/{workflowId}":                              {"GET": a.workflowDetail, "PATCH": nil, "DELETE": nil},
-			"/api/v1/workflow-runs":                                       {"GET": a.workflowRuns},
-			"/api/v1/workflow-runs/{workflowRunId}":                       {"GET": a.workflowRunDetail},
-			"/api/v1/workflow-runs/{workflowRunId}/artifact":              {"GET": a.workflowRunArtifact},
+			"/api/v1/workflows/{workflowId}":                              {"GET": a.workflowDetail, "PATCH": a.workflowPatch, "DELETE": a.workflowDelete},
+			"/api/v1/workflows/{workflowId}/adopt":                        {"POST": a.workflowAdopt},
+			"/api/v1/workflows/{workflowId}/api-access": {"GET": a.workflowAPIAccessGet, "POST": a.workflowAPIAccessPost,
+				"PATCH": a.workflowAPIAccessPatch, "DELETE": a.workflowAPIAccessDelete},
+			"/api/v1/workflow-runs":                          {"GET": a.workflowRuns},
+			"/api/v1/workflow-runs/{workflowRunId}":          {"GET": a.workflowRunDetail},
+			"/api/v1/workflow-runs/{workflowRunId}/artifact": {"GET": a.workflowRunArtifact},
 		}
 	})
 	return a.routes

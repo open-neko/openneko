@@ -38,7 +38,7 @@ export OPENNEKO_DATABASE_URL_FILE="$work/database-url"
 
 node_port="$(node -e 'const s = require("net").createServer().listen(0, "127.0.0.1", () => { console.log(s.address().port); s.close(); })')"
 (cd "$root/apps/openneko" && go build -o "$work/openneko" ./cmd/openneko)
-"$work/openneko" web --addr "127.0.0.1:$port" --dir "$root/apps/web/dist" \
+OPENNEKO_PUBLIC_URL="http://127.0.0.1:$port" "$work/openneko" web --addr "127.0.0.1:$port" --dir "$root/apps/web/dist" \
   --node-addr "127.0.0.1:$node_port" --worker-admin-url "http://127.0.0.1:$closed" >"$work/front.log" 2>&1 &
 front=$!
 

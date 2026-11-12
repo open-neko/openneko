@@ -123,7 +123,7 @@ func restoreConfigPath(root, sha, path string) (string, error) {
 }
 
 type configChange struct {
-	OrgID, Kind, Ref, Actor, SHA, Summary, Status string
+	OrgID, Kind, Ref, Actor, SHA, Summary, Status, UserID string
 }
 
 // insertConfigChange is insertConfigChangeRow(): a failure is logged only.
@@ -132,8 +132,8 @@ func (a *API) insertConfigChange(ctx context.Context, c configChange) {
 		c.Status = "recorded"
 	}
 	_, err := a.DB.Exec(ctx, `insert into config_change (org_id, artifact_kind, artifact_ref, scope, user_id, actor_user_id, commit_sha, summary, status)
-		values ($1, $2, $3, 'team', '', nullif($4, ''), nullif($5, ''), $6, $7)`,
-		c.OrgID, c.Kind, c.Ref, c.Actor, c.SHA, c.Summary, c.Status)
+		values ($1, $2, $3, 'team', $8, nullif($4, ''), nullif($5, ''), $6, $7)`,
+		c.OrgID, c.Kind, c.Ref, c.Actor, c.SHA, c.Summary, c.Status, c.UserID)
 	if err != nil {
 		log.Printf("[config-vcs] config_change insert failed: %v", err)
 	}

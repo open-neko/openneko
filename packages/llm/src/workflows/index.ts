@@ -142,7 +142,6 @@ export {
   listObservationsForOutput,
   listSubscriptionsByWorkflow,
   listWorkflows,
-  adoptWorkflowForTeam,
   personalWorkflowFiles,
   saveWorkflow,
   setSubscriptionEnabled,

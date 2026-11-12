@@ -445,59 +445,6 @@ async function versionWorkflowDefinition(
   }
 }
 
-/**
- * CV4 "Adopt for the team": copy a member's personal workflow into the
- * team layer as a new team-owned definition (content cherry-pick — the
- * member's ref is never merged). The personal copy stays theirs.
- */
-export async function adoptWorkflowForTeam(
-  orgId: string,
-  workflowId: string,
-  adoptedBy: string | null,
-): Promise<WorkflowRecord> {
-  const source = await getWorkflow(orgId, workflowId);
-  if (!source || !source.ownerUserId) {
-    throw new Error(`Personal workflow not found: ${workflowId}`);
-  }
-  const { workflow } = await saveWorkflow({
-    orgId,
-    name: source.name,
-    description: source.description,
-    systemPromptOverlay: source.systemPromptOverlay,
-    steps: source.steps,
-    goal: source.goal,
-    triggers: {
-      cron: source.cron ?? undefined,
-      timezone: source.cronTimezone,
-      enabled: source.cronEnabled,
-    },
-    dailyRunBudget: source.dailyRunBudget,
-    outputContract: source.outputContract,
-    ownerUserId: "",
-  });
-  const [row] = await db()
-    .update(workflow_definition)
-    .set({ parent_id: source.id, updated_at: new Date() })
-    .where(eq(workflow_definition.id, workflow.id))
-    .returning();
-  try {
-    const { insertConfigChangeRow } = await import("../config-vcs");
-    await insertConfigChangeRow({
-      orgId,
-      artifactKind: "workflow",
-      artifactRef: source.name,
-      actorUserId: adoptedBy,
-      summary: `Adopted workflow for the team: ${source.name}`,
-      scope: "team",
-      userId: source.ownerUserId,
-      status: "adopted",
-    });
-  } catch {
-    // audit row is best-effort
-  }
-  return toRecord(row);
-}
-
 export type WorkflowRunRecord = {
   id: string;
   orgId: string;
