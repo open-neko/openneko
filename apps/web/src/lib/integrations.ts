@@ -6,7 +6,6 @@
  */
 
 import "server-only";
-import { createHash, randomBytes } from "node:crypto";
 
 export interface ConnectProvider {
   pluginId: string;
@@ -70,18 +69,4 @@ export async function getDeploymentConnectStatus(): Promise<ConnectStatus[]> {
   } catch {
     return [];
   }
-}
-
-export function newStateToken(): string {
-  return randomBytes(24).toString("base64url");
-}
-
-export function newPkceVerifier(): string {
-  // RFC 7636: 43-128 chars, [A-Z / a-z / 0-9 / "-" / "." / "_" / "~"].
-  // 32 random bytes → 43-char base64url is the most common shape.
-  return randomBytes(32).toString("base64url");
-}
-
-export function pkceChallenge(verifier: string): string {
-  return createHash("sha256").update(verifier).digest("base64url");
 }

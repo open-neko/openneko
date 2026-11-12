@@ -173,6 +173,9 @@ var GoRoutes = map[string][]string{
 	"/api/v1/integrations/disconnect/{plugin}":                    {"POST"},
 	"/api/v1/integrations/connect/{plugin}/start":                 {"GET"},
 	"/api/v1/integrations/connect/{plugin}/callback":              {"GET"},
+	"/api/v1/pack-accounts/{packId}/{connectionKey}":              {"GET", "POST", "DELETE"},
+	"/api/v1/pack-accounts/{packId}/{connectionKey}/start":        {"POST"},
+	"/api/v1/pack-accounts/{packId}/{connectionKey}/callback":     {"GET"},
 }
 
 // In a catchAll route the last {name} takes the rest of the path, as a Next
@@ -304,6 +307,10 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/integrations/disconnect/{plugin}":             {"POST": a.integrationDisconnect},
 			"/api/v1/integrations/connect/{plugin}/start":          {"GET": a.integrationConnectStart},
 			"/api/v1/integrations/connect/{plugin}/callback":       {"GET": a.integrationConnectCallback},
+			"/api/v1/pack-accounts/{packId}/{connectionKey}": {"GET": a.packOAuthStatus, "POST": a.packOAuthConfigure,
+				"DELETE": a.packOAuthDisconnect},
+			"/api/v1/pack-accounts/{packId}/{connectionKey}/start":    {"POST": a.packOAuthStart},
+			"/api/v1/pack-accounts/{packId}/{connectionKey}/callback": {"GET": a.packOAuthCallback},
 		}
 	})
 	return a.routes

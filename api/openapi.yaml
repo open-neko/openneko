@@ -6751,7 +6751,7 @@ paths:
           type: string
         description: CSRF state
       responses:
-        '307':
+        '302':
           description: Redirect to the return path or /integrations with connected or error
         '400':
           description: The OAuth state is missing or invalid

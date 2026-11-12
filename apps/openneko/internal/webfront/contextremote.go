@@ -538,7 +538,7 @@ func (a *API) sendUpdatesFailure(w http.ResponseWriter, r *http.Request, err err
 }
 
 // sendJSValue writes a body that holds values from jsParse.
-func sendJSValue(w http.ResponseWriter, status int, body *jsObj) {
+func sendJSValue(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_, _ = w.Write([]byte(jsStringify(body, false)))
