@@ -1,7 +1,6 @@
 import { createMcpServer, defineMcpTool } from "../mcp-server";
 import {
-  enqueue as defaultEnqueue,
-  QUEUE,
+  enqueueActionExecute as defaultEnqueueActionExecute,
 } from "@neko/db/jobs";
 import type { AgentEvent } from "../agent-backend";
 import {
@@ -36,7 +35,7 @@ export type WorkflowActionContext = {
   controlPlane?: AgentControlPlane;
   /** DI for tests. */
   listPolicies?: typeof defaultListEnabledPolicies;
-  enqueue?: typeof defaultEnqueue;
+  enqueueActionExecute?: typeof defaultEnqueueActionExecute;
 };
 
 const REQUEST_DESCRIPTION = [
@@ -100,7 +99,7 @@ export async function handleActionRequest(
   if (ctx.controlPlane) return handleActionRequestViaControlPlane(ctx, args);
 
   const listPolicies = ctx.listPolicies ?? defaultListEnabledPolicies;
-  const enqueue = ctx.enqueue ?? defaultEnqueue;
+  const enqueueActionExecute = ctx.enqueueActionExecute ?? defaultEnqueueActionExecute;
 
   const policies = await listPolicies(ctx.orgId);
   const decision = evaluateActionPolicy(
@@ -157,7 +156,7 @@ export async function handleActionRequest(
   await emitActionRequestEvent(ctx, request, decision);
 
   if (request.status === "approved") {
-    await enqueue(QUEUE.ACTION_EXECUTE, {
+    await enqueueActionExecute({
       orgId: ctx.orgId,
       actionRequestId: request.id,
     });
@@ -280,7 +279,7 @@ export type WorkActionContext = {
   /** Defaults to "external" when the agent's fence omits it. */
   emit: (event: AgentEvent) => Promise<void> | void;
   listPolicies?: typeof defaultListEnabledPolicies;
-  enqueue?: typeof defaultEnqueue;
+  enqueueActionExecute?: typeof defaultEnqueueActionExecute;
 };
 
 export type HandleWorkActionRequestResult =
@@ -299,7 +298,7 @@ export async function handleWorkActionRequest(
   agentIntent?: string,
 ): Promise<HandleWorkActionRequestResult> {
   const listPolicies = ctx.listPolicies ?? defaultListEnabledPolicies;
-  const enqueue = ctx.enqueue ?? defaultEnqueue;
+  const enqueueActionExecute = ctx.enqueueActionExecute ?? defaultEnqueueActionExecute;
 
   const policies = await listPolicies(ctx.orgId);
   const decision = evaluateActionPolicy(
@@ -367,7 +366,7 @@ export async function handleWorkActionRequest(
   });
 
   if (request.status === "approved") {
-    await enqueue(QUEUE.ACTION_EXECUTE, {
+    await enqueueActionExecute({
       orgId: ctx.orgId,
       actionRequestId: request.id,
     });

@@ -10,6 +10,7 @@
 
 import PgBoss from "pg-boss";
 import { buildPoolConfig } from "./connection";
+import { pool } from "./index";
 
 export const QUEUE = {
   BUSINESS_PROFILE_BUILD: "business_profile_build",
@@ -19,7 +20,6 @@ export const QUEUE = {
   WORK_RUN: "work_run",
   WORKFLOW_RUN_FIRE: "workflow_run_fire",
   BOT_NAME_SWEEP: "bot_name_sweep",
-  ACTION_EXECUTE: "action_execute",
   CHANNEL_DELIVER: "channel_deliver",
   SKILL_LEARN: "skill_learn",
 } as const;
@@ -35,6 +35,7 @@ export const MOVED_QUEUES = [
   "embedding_index",
   "embedding_sweep",
   "directory_sync",
+  "action_execute",
 ] as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
@@ -128,6 +129,20 @@ export type ActionExecutePayload = {
   orgId: string;
   actionRequestId: string;
 };
+
+/**
+ * Queues an approved action on River. `jobs.ActionExecuteArgs` in
+ * apps/openneko/internal/jobs reads the row; max_attempts matches
+ * `jobs.ActionExecuteAttempts`.
+ */
+export async function enqueueActionExecute(payload: ActionExecutePayload): Promise<string> {
+  const { rows } = await pool().query<{ id: string }>(
+    `insert into river.river_job (kind, args, max_attempts, queue)
+     values ('action_execute', $1::jsonb, 3, 'default') returning id::text`,
+    [JSON.stringify({ orgId: payload.orgId, actionRequestId: payload.actionRequestId })],
+  );
+  return rows[0]!.id;
+}
 
 export type SkillLearnPayload = {
   orgId: string;

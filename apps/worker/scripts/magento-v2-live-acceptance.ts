@@ -8,7 +8,7 @@ import {
   organization,
   pack_install,
 } from "@neko/db";
-import { enqueue, QUEUE } from "@neko/db/jobs";
+import { enqueueActionExecute } from "@neko/db/jobs";
 import {
   approveActionRequest,
   getActionRequest,
@@ -65,7 +65,7 @@ async function executePrepared(input: {
       approver: { userId: input.adminUserId, role: "admin" },
     });
   }
-  await enqueue(QUEUE.ACTION_EXECUTE, {
+  await enqueueActionExecute({
     orgId: input.orgId,
     actionRequestId: input.prepared.id,
   });

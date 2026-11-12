@@ -503,6 +503,44 @@ describe("worker admin: removed plugin and action-descriptor routes", () => {
   });
 });
 
+describe("worker admin /admin/actions/execute", () => {
+  it("runs an approved action once the adapters are ready", async () => {
+    let ready = false;
+    const execute = vi.fn(async (input: { orgId: string; actionRequestId: string }) => {
+      if (input.actionRequestId === "ar-boom") throw new Error("adapter failed");
+    });
+    const srv = await startServer(createAdminHandler({ actions: { ready: () => ready, execute } }));
+    const post = async (body: unknown) => {
+      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/actions/execute`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return [res.status, await res.json()];
+    };
+    try {
+      expect(await post({ orgId: "org", actionRequestId: "ar-1" })).toEqual([503, { error: "action adapters are not ready" }]);
+      ready = true;
+      expect(await post({ orgId: "org" })).toEqual([400, { error: "orgId and actionRequestId are required" }]);
+      expect(await post({ orgId: "org", actionRequestId: "ar-1" })).toEqual([200, { ok: true }]);
+      expect(await post({ orgId: "org", actionRequestId: "ar-boom" })).toEqual([500, { error: "adapter failed" }]);
+      expect(execute.mock.calls).toEqual([[{ orgId: "org", actionRequestId: "ar-1" }], [{ orgId: "org", actionRequestId: "ar-boom" }]]);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("answers 503 with no surface", async () => {
+    const srv = await startServer(createAdminHandler());
+    try {
+      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/actions/execute`, { method: "POST", body: "{}" });
+      expect(res.status).toBe(503);
+    } finally {
+      await srv.close();
+    }
+  });
+});
+
 describe("worker admin /admin/auth/*", () => {
   it("GET /admin/auth/status returns { provider: null } when no auth surface is wired", async () => {
     const srv = await startServer(createAdminHandler());

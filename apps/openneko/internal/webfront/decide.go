@@ -65,12 +65,6 @@ func (a *API) actionRequestDecision(w http.ResponseWriter, r *http.Request) {
 			reason = &s
 		}
 	}
-	if decision != "reject" {
-		if err := a.ensureQueue(ctx, queueActionExecute); err != nil {
-			a.fail(w, r, err)
-			return
-		}
-	}
 	var status, kind string
 	var event auditEvent
 	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
@@ -117,8 +111,7 @@ func (a *API) actionRequestDecision(w http.ResponseWriter, r *http.Request) {
 			event = auditEvent{Event: "retried", Payload: map[string]any{"retriedBy": nullable(act.UserID), "kind": kind}}
 		}
 		if status == "approved" {
-			_, err := a.enqueue(ctx, tx, queueActionExecute, map[string]string{"orgId": act.OrgID, "actionRequestId": id})
-			return err
+			return a.enqueueActionExecute(ctx, tx, act.OrgID, id)
 		}
 		return nil
 	})

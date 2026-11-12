@@ -1664,7 +1664,7 @@ export function buildPackActionServer(
 
         if (decision.decision === "allow") {
           // Auto-approve path: persist as approved and enqueue the
-          // action_execute pg-boss job. We deliberately do NOT call
+          // action_execute job. We deliberately do NOT call
           // executeApprovedActionRequest inline here — the action
           // adapters are registered in the worker process, not the
           // web process that hosts /work runs. Enqueuing decouples

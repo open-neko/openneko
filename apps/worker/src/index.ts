@@ -11,7 +11,6 @@ import {
   MOVED_QUEUES,
   QUEUE,
   RETIRED_QUEUES,
-  type ActionExecutePayload,
   type ChannelDeliverPayload,
   type SkillLearnPayload,
   type ProcessingJobPayload,
@@ -229,6 +228,7 @@ function signIn(): SignInService {
   return signInService;
 }
 let actionRequestPreflightReady = false;
+let actionAdaptersReady = false;
 function ssoSetupSurface(): SsoSetupHandlerSurface {
   return {
     getStatus: (orgId) => {
@@ -280,6 +280,10 @@ const server = createServer(
       selectProvider: (provider) => signIn().selectProvider(provider as SignInProviderId | null),
       beginAuth: (params) => signIn().beginAuth(params),
       completeAuth: (params) => signIn().completeAuth(params),
+    },
+    actions: {
+      ready: () => actionAdaptersReady,
+      execute: (input) => runActionExecute(input),
     },
     actionRequests: {
       create: async (input) => {
@@ -433,6 +437,7 @@ actionRequestPreflightReady = true;
   registerDataSourceAdminAdapter();
   registerSourceConfigAdminAdapter();
 }
+actionAdaptersReady = true;
 console.log("[worker] action policies seeded and built-in adapters registered");
 
 // SEC3: pick the secret residency from local config — Infisical-backed
@@ -667,23 +672,6 @@ await b.work(
       } catch (e) {
         console.warn(
           `[workflow-run-fire] job ${job.id} failed; pg-boss may retry: ${e instanceof Error ? e.message : e}`,
-        );
-        throw e;
-      }
-    }
-  },
-);
-
-await b.work(
-  QUEUE.ACTION_EXECUTE,
-  { batchSize: 1, pollingIntervalSeconds: 0.5 },
-  async (jobs: PgBossLib.Job<ActionExecutePayload>[]) => {
-    for (const job of jobs) {
-      try {
-        await runActionExecute(job.data);
-      } catch (e) {
-        console.warn(
-          `[action-execute] job ${job.id} failed; pg-boss may retry: ${e instanceof Error ? e.message : e}`,
         );
         throw e;
       }

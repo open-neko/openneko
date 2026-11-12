@@ -5,7 +5,7 @@
 // points the web uses — approve/reject an action_request, or start a chat run.
 import { and, db, delivery_binding, eq, processing_job } from "@neko/db";
 import { audienceReceivesOutput } from "./audience.js";
-import { enqueue, QUEUE, type ChannelDeliverPayload } from "@neko/db/jobs";
+import { enqueue, enqueueActionExecute, QUEUE, type ChannelDeliverPayload } from "@neko/db/jobs";
 import { resolveAgentBackend } from "@neko/llm";
 import { SpendBudgetExceeded } from "@neko/llm/spend";
 import { outputRowToInteractionEvent, type OutputRow } from "@neko/llm/interaction";
@@ -327,7 +327,7 @@ export async function dispatchInboundIntent(
         // still block approval from an anonymous chat surface.
         approver: { userId: actor.userId, role: actor.role },
       });
-      await enqueue(QUEUE.ACTION_EXECUTE, { orgId, actionRequestId: req.id });
+      await enqueueActionExecute({ orgId, actionRequestId: req.id });
       console.log(`[channel-inbound] approved + queued action_request ${req.id}`);
     } else {
       await rejectActionRequest({
