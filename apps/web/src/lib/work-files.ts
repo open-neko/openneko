@@ -1,8 +1,7 @@
 import "server-only";
 
-import { mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
-import { recordConfigChange } from "@neko/llm/config-vcs";
 import { ensureOrgWorkspace } from "@neko/llm/work";
 import { LIBRARY_SUPPORTED_EXTENSIONS } from "@neko/llm/library/formats";
 
@@ -148,46 +147,11 @@ export async function readRunArtifact(
   };
 }
 
-export async function listWorkAssets(orgId: string): Promise<{
-  skills: Array<{ name: string; path: string }>;
-  memory: Array<{ name: string; path: string }>;
-}> {
-  const roots = await ensureOrgWorkspace(orgId);
-  const [skillEntries, memoryEntries] = await Promise.all([
-    readdir(roots.skillsRoot, { withFileTypes: true }).catch(() => []),
-    readdir(roots.memoryRoot, { withFileTypes: true }).catch(() => []),
-  ]);
-
-  const skills = skillEntries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => ({
-      name: entry.name,
-      path: `/api/v1/work/files/skills/${entry.name}/SKILL.md`,
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  const memory = memoryEntries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-    .map((entry) => ({
-      name: entry.name,
-      path: `/api/v1/work/files/memory/${entry.name}`,
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  return { skills, memory };
-}
-
 export type WorkSkillSummary = {
   name: string;
   description: string;
   fileCount: number;
   updatedAt: string;
-};
-
-export type WorkSkillDetail = WorkSkillSummary & {
-  path: string;
-  skillMarkdown: string;
-  files: Array<{ path: string; bytes: number }>;
 };
 
 function parseSkillFrontmatter(markdown: string): { description: string } {
@@ -246,133 +210,4 @@ export async function listWorkSkills(orgId: string): Promise<WorkSkillSummary[]>
   return summaries
     .filter((s): s is WorkSkillSummary => s !== null)
     .sort((a, b) => a.name.localeCompare(b.name));
-}
-
-export async function deleteWorkSkill(orgId: string, name: string): Promise<boolean> {
-  const safeName = basename(name);
-  if (safeName !== name || !/^[a-zA-Z0-9._-]+$/.test(safeName)) return false;
-  const roots = await ensureOrgWorkspace(orgId);
-  const skillDir = join(roots.skillsRoot, safeName);
-  const st = await stat(skillDir).catch(() => null);
-  if (!st || !st.isDirectory()) return false;
-  await rm(skillDir, { recursive: true, force: true });
-  return true;
-}
-
-// Cap for reading a skill file into the browser editor. Files above this are
-// shown truncated and locked from editing, so a save never drops the tail.
-export const MAX_SKILL_EDIT_SIZE = 1024 * 1024;
-
-export type SkillFileContent = {
-  path: string;
-  bytes: number;
-  binary: boolean;
-  editable: boolean;
-  truncated: boolean;
-  text: string | null;
-};
-
-export type SkillWriteResult =
-  | { ok: true; bytes: number }
-  | { ok: false; reason: "invalid" | "not-found" | "too-large" | "binary" };
-
-function resolveSkillFilePath(
-  skillsRoot: string,
-  name: string,
-  relPath: string,
-): { abs: string; skillDir: string } | null {
-  const safeName = basename(name);
-  if (safeName !== name || !/^[a-zA-Z0-9._-]+$/.test(safeName)) return null;
-  if (typeof relPath !== "string" || relPath.length === 0) return null;
-  const normalized = relPath.replace(/\\/g, "/").replace(/^\/+/, "");
-  const parts = normalized.split("/");
-  if (parts.some((part) => !part || part === "." || part === "..")) return null;
-  const skillDir = resolve(skillsRoot, safeName);
-  const abs = resolve(skillDir, normalized);
-  if (!isWithin(skillDir, abs)) return null;
-  return { abs, skillDir };
-}
-
-/** A NUL byte in the first chunk marks a file as binary, whatever its name. */
-function looksBinary(buffer: Buffer): boolean {
-  return buffer.subarray(0, Math.min(buffer.length, 8192)).includes(0);
-}
-
-/** Read one file inside a skill directory for the web viewer. */
-export async function readWorkSkillFile(
-  orgId: string,
-  name: string,
-  relPath: string,
-): Promise<SkillFileContent | null> {
-  const roots = await ensureOrgWorkspace(orgId);
-  const resolved = resolveSkillFilePath(roots.skillsRoot, name, relPath);
-  if (!resolved) return null;
-  const meta = await stat(resolved.abs).catch(() => null);
-  if (!meta || !meta.isFile()) return null;
-  const buffer = await readFile(resolved.abs);
-  if (looksBinary(buffer)) {
-    return { path: relPath, bytes: meta.size, binary: true, editable: false, truncated: false, text: null };
-  }
-  const truncated = buffer.byteLength > MAX_SKILL_EDIT_SIZE;
-  const slice = truncated ? buffer.subarray(0, MAX_SKILL_EDIT_SIZE) : buffer;
-  return {
-    path: relPath,
-    bytes: meta.size,
-    binary: false,
-    editable: !truncated,
-    truncated,
-    text: slice.toString("utf8"),
-  };
-}
-
-/** Write text back to an existing text file inside a skill directory. */
-export async function writeWorkSkillFile(
-  orgId: string,
-  name: string,
-  relPath: string,
-  content: string,
-): Promise<SkillWriteResult> {
-  if (typeof content !== "string") return { ok: false, reason: "invalid" };
-  const buffer = Buffer.from(content, "utf8");
-  if (buffer.byteLength > MAX_SKILL_EDIT_SIZE) return { ok: false, reason: "too-large" };
-  const roots = await ensureOrgWorkspace(orgId);
-  const resolved = resolveSkillFilePath(roots.skillsRoot, name, relPath);
-  if (!resolved) return { ok: false, reason: "invalid" };
-  const meta = await stat(resolved.abs).catch(() => null);
-  if (!meta || !meta.isFile()) return { ok: false, reason: "not-found" };
-  const existing = await readFile(resolved.abs);
-  if (looksBinary(existing)) return { ok: false, reason: "binary" };
-  await writeFile(resolved.abs, buffer);
-  await recordConfigChange({
-    workspaceRoot: roots.orgRoot,
-    orgId,
-    paths: [`skills/${name}`],
-    message: `Updated skill: ${name}`,
-    artifactKind: "skill",
-    artifactRef: name,
-  });
-  return { ok: true, bytes: buffer.byteLength };
-}
-
-export async function getWorkSkillDetail(orgId: string, name: string): Promise<WorkSkillDetail | null> {
-  const safeName = basename(name);
-  if (safeName !== name || !/^[a-zA-Z0-9._-]+$/.test(safeName)) return null;
-  const roots = await ensureOrgWorkspace(orgId);
-  const skillDir = join(roots.skillsRoot, safeName);
-  const files = await listSkillFiles(skillDir);
-  if (files.length === 0) return null;
-  const skillMarkdown = await readFile(join(skillDir, "SKILL.md"), "utf8").catch(() => "");
-  const { description } = parseSkillFrontmatter(skillMarkdown);
-  const latest = files.reduce((max, f) => (f.mtime > max ? f.mtime : max), 0);
-  return {
-    name: safeName,
-    description,
-    fileCount: files.length,
-    updatedAt: new Date(latest || Date.now()).toISOString(),
-    path: skillDir,
-    skillMarkdown,
-    files: files
-      .map((f) => ({ path: f.path, bytes: f.bytes }))
-      .sort((a, b) => a.path.localeCompare(b.path)),
-  };
 }

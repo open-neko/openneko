@@ -74,6 +74,12 @@ var GoRoutes = map[string][]string{
 	"/api/v1/work/memories/pull":                        {"GET", "POST"},
 	"/api/v1/work/memories/{id}":                        {"GET", "PATCH", "DELETE"},
 	"/api/v1/work/memories/{id}/promote":                {"POST"},
+	"/api/v1/work/skills":                               {"GET", "POST"},
+	"/api/v1/work/skills/{name}":                        {"GET", "DELETE"},
+	"/api/v1/work/skills/{name}/file":                   {"GET", "PUT"},
+	"/api/v1/work/config/history":                       {"GET"},
+	"/api/v1/work/config/restore":                       {"POST"},
+	"/api/v1/work/assets":                               {"GET"},
 }
 
 func (a *API) table() map[string]map[string]http.HandlerFunc {
@@ -109,6 +115,12 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/work/memories/pull":                        {"GET": a.memoryPullUpdates, "POST": a.applyMemoryPull},
 			"/api/v1/work/memories/{id}":                        {"GET": a.workMemory, "PATCH": a.personalizeMemory, "DELETE": a.forgetMemory},
 			"/api/v1/work/memories/{id}/promote":                {"POST": a.promoteMemory},
+			"/api/v1/work/skills":                               {"GET": a.workSkills, "POST": a.importSkill},
+			"/api/v1/work/skills/{name}":                        {"GET": a.workSkill, "DELETE": a.deleteSkill},
+			"/api/v1/work/skills/{name}/file":                   {"GET": a.skillFileGet, "PUT": a.skillFilePut},
+			"/api/v1/work/config/history":                       {"GET": a.configHistory},
+			"/api/v1/work/config/restore":                       {"POST": a.configRestore},
+			"/api/v1/work/assets":                               {"GET": a.workAssets},
 		}
 	})
 	return a.routes

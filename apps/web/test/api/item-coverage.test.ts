@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -49,14 +49,6 @@ const reachable = await dbReachable();
     const finance = await createUserGroup(state.orgId, { name: "Finance" });
     await addLocalGroupMember(state.orgId, finance.id, state.userId);
 
-    const { ensureOrgWorkspace } = await import("@neko/llm/work");
-    const workspace = await ensureOrgWorkspace(state.orgId);
-    for (const name of ["finance-close", "sales-playbook"]) {
-      await mkdir(join(workspace.skillsRoot, name), { recursive: true });
-      await writeFile(join(workspace.skillsRoot, name, "SKILL.md"), `---\nname: ${name}\ndescription: ${name}\n---\nBody\n`);
-    }
-    await grantItem(state.orgId, { groupId: finance.id, itemType: "skill", itemId: "finance-close" });
-
     const { saveWorkflow } = await import("@neko/llm/workflows");
     workflowHeld = (await saveWorkflow({ orgId: state.orgId, name: "Daily revenue check", steps: [] })).workflow.id;
     workflowOther = (await saveWorkflow({ orgId: state.orgId, name: "Promotions", steps: [] })).workflow.id;
@@ -68,16 +60,6 @@ const reachable = await dbReachable();
     await deleteTestOrg(state.orgId);
     await rm(home, { recursive: true, force: true });
     await pool().end();
-  });
-
-  it("skills: list and detail", async () => {
-    const list = await import("@/app/api/v1/work/skills/route");
-    const detail = await import("@/app/api/v1/work/skills/[name]/route");
-    const skills = (await callRoute(list.GET)).body as { skills: Array<{ name: string }> };
-    expect(skills.skills.map((s) => s.name)).toContain("finance-close");
-    expect(skills.skills.map((s) => s.name)).not.toContain("sales-playbook");
-    expect((await callRoute((req) => detail.GET(req, { params: Promise.resolve({ name: "finance-close" }) }))).status).toBe(200);
-    expect((await callRoute((req) => detail.GET(req, { params: Promise.resolve({ name: "sales-playbook" }) }))).status).toBe(404);
   });
 
   it("workflows: list, detail and runs", async () => {

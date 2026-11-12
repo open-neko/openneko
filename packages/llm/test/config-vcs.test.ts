@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +8,6 @@ import {
   ensureConfigRepo,
   listConfigHistory,
   readConfigHead,
-  restoreConfigPath,
 } from "../src/config-vcs";
 import { writeWorkSkill } from "../src/work/skills";
 
@@ -57,7 +56,7 @@ describe("config-vcs (CV0)", () => {
     expect(await listConfigHistory(root, "skill-overlays/s1")).toHaveLength(1);
   });
 
-  it("commit -> history -> restore round-trips an artifact", async () => {
+  it("commit -> history lists an artifact's changes", async () => {
     await mkdir(join(root, "skills", "s1"), { recursive: true });
     await writeFile(join(root, "skills", "s1", "SKILL.md"), "v1", "utf8");
     const sha1 = await commitConfigChange({
@@ -78,18 +77,6 @@ describe("config-vcs (CV0)", () => {
       "Added skill: s1",
     ]);
 
-    const restored = await restoreConfigPath({
-      workspaceRoot: root,
-      sha: sha1!,
-      path: "skills/s1",
-    });
-    expect(restored).toBeTruthy();
-    expect(await readFile(join(root, "skills", "s1", "SKILL.md"), "utf8")).toBe(
-      "v1",
-    );
-    // Restore is a forward commit, not a reset.
-    const after = await listConfigHistory(root, "skills/s1");
-    expect(after).toHaveLength(3);
   });
 
   it("no-op commits return null", async () => {
