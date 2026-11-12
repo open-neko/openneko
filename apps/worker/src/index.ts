@@ -1,7 +1,6 @@
 import { prepareSandboxCapacity, closeSandboxLauncher } from "@neko/llm/work/sandbox-launcher";
 import { withStartupTrace, startupPhase, startupEvent } from "@neko/telemetry/startup";
 import { keepProcessThroughDatabaseRestarts, soloAdminNeedsEmail } from "@neko/db";
-import { dispatchEmbeddingJobs, runEmbeddingIndexJob, type EmbeddingIndexPayload } from "@neko/llm";
 import "dotenv/config";
 
 import { createServer } from "node:http";
@@ -692,15 +691,6 @@ await b.work(
     }
   },
 );
-
-await b.work(QUEUE.EMBEDDING_INDEX, { batchSize: 1, pollingIntervalSeconds: 0.5 },
-  async (jobs: PgBossLib.Job<EmbeddingIndexPayload>[]) => {
-    for (const job of jobs) await runEmbeddingIndexJob(job.data);
-  });
-await b.work(QUEUE.EMBEDDING_SWEEP, { batchSize: 1, pollingIntervalSeconds: 1 },
-  async () => { await dispatchEmbeddingJobs(); });
-await b.schedule(QUEUE.EMBEDDING_SWEEP, '* * * * *', {}, { retryLimit: 3, retryDelay: 15 });
-await b.send(QUEUE.EMBEDDING_SWEEP, {}, { singletonKey: 'boot', singletonSeconds: 60 });
 
 await b.work(
   QUEUE.SKILL_LEARN,

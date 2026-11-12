@@ -55,4 +55,4 @@ export * from "./library";
 export * from "./workflows";
 export * from "./graphjin";
 
-export { dispatchEmbeddingJobs, runEmbeddingIndexJob, type EmbeddingIndexPayload } from "./embedding-jobs";
+export { runEmbeddingIndexJob, type EmbeddingIndexPayload } from "./embedding-jobs";

@@ -462,3 +462,43 @@ func TestHostGenerateSpend(t *testing.T) {
 		t.Errorf("default route %+v", last)
 	}
 }
+
+func TestEmbedText(t *testing.T) {
+	a := &API{}
+	t.Setenv("NEKO_EMBEDDING_URL", "")
+	t.Setenv("NEKO_EMBEDDING_MODEL", "embeddinggemma")
+	if m := a.EmbeddingModel(); m != "" {
+		t.Fatalf("with no URL the model is %q", m)
+	}
+	if _, err := a.EmbedText(context.Background(), "x"); err == nil || !strings.Contains(err.Error(), "embedding is off") {
+		t.Fatalf("with no URL: %v", err)
+	}
+	t.Setenv("NEKO_EMBEDDING_URL", "https://embed.example.test/v1/")
+	t.Setenv("NEKO_EMBEDDING_API_KEY", "embed-key-1")
+	t.Setenv("NEKO_EMBEDDING_DIMENSIONS", "3")
+	if m := a.EmbeddingModel(); m != "embeddinggemma@3" {
+		t.Fatalf("model = %q", m)
+	}
+	var req embedding.Request
+	var key string
+	vectors := [][]float64{{1, 2, 3}}
+	a.Embedder = func(_ context.Context, r embedding.Request, k string) (embedding.Result, error) {
+		req, key = r, k
+		return embedding.Result{Vectors: vectors}, nil
+	}
+	v, err := a.EmbedText(context.Background(), "  a memory  ")
+	if err != nil || len(v) != 3 {
+		t.Fatalf("vector %v, %v", v, err)
+	}
+	if req.URL != "https://embed.example.test/v1" || req.Model != "embeddinggemma" || req.Dimensions != 3 ||
+		len(req.Input) != 1 || req.Input[0] != "a memory" || key != "embed-key-1" {
+		t.Fatalf("request %+v, key %q", req, key)
+	}
+	if _, err := a.EmbedText(context.Background(), "   "); err == nil || err.Error() != "embedText: text is empty" {
+		t.Fatalf("blank text: %v", err)
+	}
+	vectors = [][]float64{{1, 2}}
+	if _, err := a.EmbedText(context.Background(), "x"); err == nil || err.Error() != "embedding service returned an incompatible vector" {
+		t.Fatalf("a short vector: %v", err)
+	}
+}

@@ -21,8 +21,6 @@ export const QUEUE = {
   BOT_NAME_SWEEP: "bot_name_sweep",
   ACTION_EXECUTE: "action_execute",
   CHANNEL_DELIVER: "channel_deliver",
-  EMBEDDING_INDEX: "embedding_index",
-  EMBEDDING_SWEEP: "embedding_sweep",
   SKILL_LEARN: "skill_learn",
   DIRECTORY_SYNC: "directory_sync",
 } as const;
@@ -35,6 +33,8 @@ export const MOVED_QUEUES = [
   "workflow_output_ttl_sweep",
   "metric_refresh_scheduled_sweep",
   "workflow_cron_sweep",
+  "embedding_index",
+  "embedding_sweep",
 ] as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];

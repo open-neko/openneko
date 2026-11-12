@@ -23,7 +23,7 @@ const (
 
 // Moved lists the queues that River runs. MOVED_QUEUES in
 // packages/db/src/jobs.ts must hold the same names.
-var Moved = []string{KindOutputSweep, KindMetricSweep, KindCronSweep}
+var Moved = []string{KindOutputSweep, KindMetricSweep, KindCronSweep, KindEmbeddingIndex, KindEmbeddingSweep}
 
 type Queue struct {
 	Pool        *pgxpool.Pool
@@ -32,6 +32,7 @@ type Queue struct {
 	Logf        func(string, ...any)
 	MetricSweep func(context.Context) error
 	CronSweep   func(context.Context) error
+	Embedding   Embedding
 }
 
 func (q *Queue) schema() string {
@@ -104,10 +105,10 @@ with moved as (
   delete from `+boss+`.job where name = $1 and state in ('created', 'retry')
   returning name, data, retry_limit, start_after
 )
-insert into `+river+`.river_job (kind, args, max_attempts, scheduled_at, state)
+insert into `+river+`.river_job (kind, args, max_attempts, scheduled_at, state, queue)
 select name, coalesce(data, '{}'::jsonb), greatest(retry_limit, 0) + 1, start_after,
-  (case when start_after > now() then 'scheduled' else 'available' end)::`+river+`.river_job_state
-from moved`, name)
+  (case when start_after > now() then 'scheduled' else 'available' end)::`+river+`.river_job_state, $2
+from moved`, name, queueOf(name))
 	if err != nil {
 		return 0, err
 	}
@@ -117,6 +118,13 @@ from moved`, name)
 		}
 	}
 	return tag.RowsAffected(), tx.Commit(ctx)
+}
+
+func queueOf(kind string) string {
+	if kind == KindEmbeddingIndex {
+		return QueueEmbedding
+	}
+	return river.QueueDefault
 }
 
 // Runner is a started River client.
@@ -131,10 +139,12 @@ func (q *Queue) Start(ctx context.Context) (*Runner, error) {
 	river.AddWorker(workers, &outputSweep{pool: q.Pool, logf: q.logf})
 	river.AddWorker(workers, &metricSweep{run: q.MetricSweep})
 	river.AddWorker(workers, &cronSweep{run: q.CronSweep})
+	river.AddWorker(workers, &embeddingSweep{q: q})
+	river.AddWorker(workers, &embeddingIndex{q: q})
 	client, err := river.NewClient(riverpgxv5.New(q.Pool), &river.Config{
 		Schema:       q.schema(),
 		Logger:       quietLogger(),
-		Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 4}},
+		Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 4}, QueueEmbedding: {MaxWorkers: 1}},
 		Workers:      workers,
 		PeriodicJobs: periodicJobs(),
 	})
@@ -165,6 +175,9 @@ func periodicJobs() []*river.PeriodicJob {
 		river.NewPeriodicJob(EveryMinute{}, func() (river.JobArgs, *river.InsertOpts) {
 			return CronSweepArgs{}, nil
 		}, &river.PeriodicJobOpts{ID: KindCronSweep}),
+		river.NewPeriodicJob(EveryMinute{}, func() (river.JobArgs, *river.InsertOpts) {
+			return EmbeddingSweepArgs{}, nil
+		}, &river.PeriodicJobOpts{ID: KindEmbeddingSweep, RunOnStart: true}),
 	}
 }
 

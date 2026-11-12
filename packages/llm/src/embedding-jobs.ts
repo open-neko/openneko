@@ -1,50 +1,7 @@
 import { pool } from '@neko/db';
-import { boss, QUEUE } from '@neko/db/jobs';
 import { embedText, embeddingModel, vectorLiteral } from './embedding';
 
 export type EmbeddingIndexPayload = { kind: 'memory' | 'skill'; orgId: string; id: string };
-
-// Rows without a vector from the configured model are the durable indexing
-// backlog. A periodic dispatcher closes the save/enqueue crash window.
-export async function dispatchEmbeddingJobs(): Promise<void> {
-  const model = embeddingModel();
-  if (!model) return;
-  const b = await boss();
-  const client = await pool().connect();
-  try {
-    await client.query('BEGIN');
-    const lock = await client.query("SELECT pg_try_advisory_xact_lock(hashtext('embedding-dispatch')) AS acquired");
-    if (!lock.rows[0].acquired) return;
-    const { rows } = await client.query(`
-      WITH pending AS (
-        SELECT singleton_key FROM pgboss.job WHERE name = $1 AND state <= 'active'
-      ), candidates AS (
-        SELECT 'memory' AS kind, id, org_id, updated_at FROM work_memory
-        WHERE (embedding IS NULL OR embedding_model IS DISTINCT FROM $2) AND archived_at IS NULL AND NOT suppressed AND btrim(text) <> ''
-          AND (expires_at IS NULL OR expires_at > now())
-        UNION ALL
-        SELECT 'skill', id, org_id, updated_at FROM skill_embedding
-        WHERE embedding IS NULL OR embedding_model IS DISTINCT FROM $2
-      ), ranked AS (
-        SELECT *, row_number() OVER (PARTITION BY org_id ORDER BY updated_at, id) AS turn
-        FROM candidates c WHERE NOT EXISTS (
-          SELECT 1 FROM pending p WHERE p.singleton_key = c.kind || ':' || c.id::text
-        )
-      ) SELECT kind, id, org_id FROM ranked ORDER BY turn, updated_at, id
-      LIMIT greatest(0, least(32, 128 - (SELECT count(*) FROM pending)))`, [QUEUE.EMBEDDING_INDEX, model]);
-    for (const row of rows) {
-      await b.send(QUEUE.EMBEDDING_INDEX, { kind: row.kind, orgId: row.org_id, id: row.id }, {
-        singletonKey: `${row.kind}:${row.id}`, retryLimit: 8, retryDelay: 30,
-        retryBackoff: true, expireInSeconds: 180,
-        db: { executeSql: (text, values) => client.query(text, values) },
-      });
-    }
-    await client.query('COMMIT');
-  } finally {
-    await client.query('ROLLBACK').catch(() => {});
-    client.release();
-  }
-}
 
 export async function runEmbeddingIndexJob(payload: EmbeddingIndexPayload): Promise<void> {
   if (!payload || !['memory', 'skill'].includes(payload.kind) ||

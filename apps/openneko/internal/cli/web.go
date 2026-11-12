@@ -88,7 +88,8 @@ with exit code 0, so its supervisor starts it again.`,
 			api := &webfront.API{Gate: gate, DB: pool, Version: webfront.AppVersion(dir, version.Version),
 				SecureCookies: os.Getenv("NODE_ENV") == "production", Restart: stop}
 			runner := startJobs(context.WithoutCancel(ctx), runJobs, &jobs.Queue{Pool: pool, MetricSweep: api.MetricSweep, CronSweep: api.CronSweep,
-				Logf: func(format string, args ...any) { fmt.Fprintf(cmd.OutOrStdout(), format+"\n", args...) }},
+				Embedding: jobs.Embedding{Model: api.EmbeddingModel, Embed: api.EmbedText},
+				Logf:      func(format string, args ...any) { fmt.Fprintf(cmd.OutOrStdout(), format+"\n", args...) }},
 				cmd.OutOrStdout(), cmd.ErrOrStderr())
 			var node *exec.Cmd
 			nodeDone := make(chan error, 1)
