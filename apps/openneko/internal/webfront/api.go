@@ -119,6 +119,7 @@ var GoRoutes = map[string][]string{
 	"/api/v1/settings/file-sources":                               {"POST"},
 	"/api/v1/settings/openapi-specs":                              {"GET", "POST"},
 	"/api/v1/policies":                                            {"GET"},
+	"/api/v1/onboarding/status":                                   {"GET"},
 	"/api/v1/policies/{policyId}":                                 {"GET", "PATCH"},
 }
 
@@ -202,6 +203,7 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/settings/file-sources":                        {"POST": a.fileSourceUpload},
 			"/api/v1/settings/openapi-specs":                       {"GET": a.openAPISpecList, "POST": a.openAPISpecImport},
 			"/api/v1/policies":                                     {"GET": a.actionPolicies},
+			"/api/v1/onboarding/status":                            {"GET": a.onboardingStatus},
 			"/api/v1/policies/{policyId}":                          {"GET": a.actionPolicyGet, "PATCH": a.actionPolicyPatch},
 		}
 	})
