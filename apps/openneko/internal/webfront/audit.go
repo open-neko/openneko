@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
@@ -108,8 +110,8 @@ func sha256Hex(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// canonicalJSON matches canonicalJson() in packages/llm/src/canonical-json.ts
-// for strings, booleans, nil, integers, slices and maps with ASCII keys.
+// canonicalJSON matches canonicalJson() in packages/llm/src/canonical-json.ts.
+// Decode stored JSON with UseNumber before you pass it here.
 func canonicalJSON(v any) (string, error) {
 	var b strings.Builder
 	if err := writeCanonical(&b, v); err != nil {
@@ -128,6 +130,12 @@ func writeCanonical(b *strings.Builder, v any) error {
 		writeJSString(b, t)
 	case int:
 		b.WriteString(strconv.Itoa(t))
+	case json.Number:
+		out, err := jsJSON([]byte(t))
+		if err != nil {
+			return err
+		}
+		b.Write(out)
 	case []any:
 		b.WriteByte('[')
 		for i, item := range t {
@@ -144,7 +152,9 @@ func writeCanonical(b *strings.Builder, v any) error {
 		for k := range t {
 			keys = append(keys, k)
 		}
-		sort.Strings(keys)
+		sort.Slice(keys, func(i, j int) bool {
+			return slices.Compare(utf16.Encode([]rune(keys[i])), utf16.Encode([]rune(keys[j]))) < 0
+		})
 		b.WriteByte('{')
 		for i, k := range keys {
 			if i > 0 {
