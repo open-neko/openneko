@@ -21,10 +21,7 @@ import {
   readPrimaryProviderConfigFromEnv,
   readResearchProviderConfigFromEnv,
 } from "@neko/llm/config";
-import {
-  maybeDecryptSecret,
-  maybeEncryptSecret,
-} from "@neko/llm/secrets";
+import { maybeDecryptSecret } from "@neko/llm/secrets";
 import { resolveProviderRuntime } from "@neko/llm/provider-runtime";
 
 export type PublicProviderConfig =
@@ -64,16 +61,6 @@ export type ProviderSettingsPayload = {
     primary: Record<PrimaryProviderId, SettingsField[]>;
     research: Record<ResearchProviderId, SettingsField[]>;
   };
-};
-
-type SaveDraftInput = {
-  scope: ProviderScope;
-  provider: string;
-  model?: string;
-  label?: string | null;
-  enabled?: boolean;
-  config?: Record<string, unknown>;
-  secrets?: Record<string, string | null>;
 };
 
 type StoredWithSecrets = EditableProviderConfig & {
@@ -302,126 +289,6 @@ export async function getProviderSettingsPayload(
       research: researchFieldCatalog(),
     },
   };
-}
-
-function mergeDraft(
-  existing: StoredWithSecrets,
-  draft: SaveDraftInput,
-): EditableProviderConfig {
-  if (draft.scope === "primary") {
-    if (!isPrimaryProvider(draft.provider)) {
-      throw new Error(`Unsupported primary provider: ${draft.provider}`);
-    }
-
-    const provider = draft.provider;
-    const providerChanged = existing.scope !== "primary" || existing.provider !== provider;
-    const mergedSecrets = providerChanged ? {} : { ...existing.secrets };
-    for (const [key, value] of Object.entries(draft.secrets ?? {})) {
-      if (value === null) delete mergedSecrets[key];
-      else if (value.trim()) mergedSecrets[key] = value.trim();
-    }
-
-    return {
-      scope: "primary",
-      provider,
-      model:
-        draft.model?.trim() ||
-        (providerChanged
-          ? getDefaultPrimaryModel(provider)
-          : existing.model || getDefaultPrimaryModel(provider)),
-      label: draft.label ?? existing.label ?? null,
-      enabled: draft.enabled ?? existing.enabled,
-      config: providerChanged ? { ...(draft.config ?? {}) } : { ...existing.config, ...(draft.config ?? {}) },
-      secrets: mergedSecrets,
-    };
-  }
-
-  if (!isResearchProvider(draft.provider)) {
-    throw new Error(`Unsupported research provider: ${draft.provider}`);
-  }
-
-  const provider = draft.provider;
-  const providerChanged = existing.scope !== "research" || existing.provider !== provider;
-  const mergedSecrets = providerChanged ? {} : { ...existing.secrets };
-  for (const [key, value] of Object.entries(draft.secrets ?? {})) {
-    if (value === null) delete mergedSecrets[key];
-    else if (value.trim()) mergedSecrets[key] = value.trim();
-  }
-
-  return {
-    scope: "research",
-    provider,
-    model:
-      draft.model?.trim() ||
-      (providerChanged
-        ? getDefaultResearchModel(provider)
-        : existing.model || getDefaultResearchModel(provider)),
-    label: draft.label ?? existing.label ?? null,
-    enabled: draft.enabled ?? existing.enabled,
-    config: providerChanged ? { ...(draft.config ?? {}) } : { ...existing.config, ...(draft.config ?? {}) },
-    secrets: mergedSecrets,
-  };
-}
-
-async function upsertProviderConfig(
-  orgId: string,
-  existingId: string | undefined,
-  config: EditableProviderConfig,
-): Promise<void> {
-  const encryptedSecrets = Object.fromEntries(
-    Object.entries(config.secrets).map(([key, value]) => [key, maybeEncryptSecret(value)]),
-  );
-
-  if (existingId) {
-    await db()
-      .update(llm_provider_config)
-      .set({
-        scope: config.scope,
-        provider: config.provider,
-        model: config.model || null,
-        label: config.label ?? null,
-        enabled: config.enabled,
-        config: config.config,
-        secrets: encryptedSecrets,
-        updated_at: new Date(),
-      })
-      .where(eq(llm_provider_config.id, existingId));
-    return;
-  }
-
-  await db().insert(llm_provider_config).values({
-    org_id: orgId,
-    scope: config.scope,
-    provider: config.provider,
-    model: config.model || null,
-    label: config.label ?? null,
-    enabled: config.enabled,
-    config: config.config,
-    secrets: encryptedSecrets,
-  });
-}
-
-export async function saveProviderDraft(
-  orgId: string,
-  draft: SaveDraftInput,
-): Promise<PublicProviderConfig> {
-  const existingRow = await loadStoredConfig(orgId, draft.scope);
-  const existing =
-    existingRow && existingRow.scope === draft.scope
-      ? toEditable(existingRow)
-      : draft.scope === "primary"
-        ? defaultPrimaryConfig()
-        : defaultResearchConfig();
-
-  const merged = mergeDraft(existing, draft);
-
-  const errors = validateConfig(merged);
-  if (errors.length > 0) {
-    throw new Error(errors.join(" "));
-  }
-
-  await upsertProviderConfig(orgId, existing.id, merged);
-  return publicFromConfig({ ...merged, source: "org" });
 }
 
 export async function resolveResearchStatus(orgId: string): Promise<"enabled" | "disabled"> {

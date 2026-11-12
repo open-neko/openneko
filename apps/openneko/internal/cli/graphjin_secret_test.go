@@ -14,6 +14,7 @@ import (
 
 	"github.com/open-neko/neko/apps/openneko/assets"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
+	"github.com/open-neko/neko/apps/openneko/internal/gjconfig"
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
@@ -22,136 +23,8 @@ auth:
   type: jwt
   jwt:
     # per-org actor-token secret
-    secret: "` + graphjinSecretPlaceholder + `"
+    secret: "` + gjconfig.Placeholder + `"
 `
-
-func TestPatchGraphjinJWTSecret(t *testing.T) {
-	seeded, changed := patchGraphjinJWTSecret(jwtConfig, "old==")
-	if !changed || !strings.Contains(seeded, `secret: "old=="`) || strings.Contains(seeded, graphjinSecretPlaceholder) {
-		t.Fatalf("placeholder not replaced:\n%s", seeded)
-	}
-	repaired, changed := patchGraphjinJWTSecret(seeded, "new==")
-	if !changed || !strings.Contains(repaired, `secret: "new=="`) || strings.Contains(repaired, "old==") {
-		t.Fatalf("stale secret not replaced:\n%s", repaired)
-	}
-	if again, changed := patchGraphjinJWTSecret(repaired, "new=="); changed || again != repaired {
-		t.Fatal("a current secret changed the file")
-	}
-	anon := "auth:\n  type: none\n"
-	if got, changed := patchGraphjinJWTSecret(anon, "s=="); changed || got != anon {
-		t.Fatal("a config without jwt auth changed")
-	}
-}
-
-func TestMigrateGraphjinSystemSource(t *testing.T) {
-	legacy := `mode: agentic
-sources:
-  - name: graphjin
-    kind: graphjin
-    capabilities:
-      config.write: true
-  - name: adventureworks
-    kind: database
-    default: true
-`
-	got, changed, err := editGraphjinYAML(legacy, migrateGraphjinSystemSource)
-	if err != nil || !changed {
-		t.Fatalf("changed=%v err=%v", changed, err)
-	}
-	for _, want := range []string{"name: adventureworks", "system:", "catalog.read: true", "raw_graphql.mutate: false", "gj_catalog: authenticated", "gj_config: admin"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("missing %q in\n%s", want, got)
-		}
-	}
-	if strings.Contains(got, "kind: graphjin") {
-		t.Fatalf("legacy source kept:\n%s", got)
-	}
-
-	explicit := `mode: agentic
-system:
-  capabilities:
-    config.write: false
-  root_access:
-    gj_catalog: admin
-sources:
-  - name: graphjin
-    kind: graphjin
-`
-	got, _, err = editGraphjinYAML(explicit, migrateGraphjinSystemSource)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"config.write: false", "gj_catalog: admin", "runtime.read: true", "gj_runtime: admin"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("missing %q in\n%s", want, got)
-		}
-	}
-
-	current := "mode: agentic\nsources:\n  - name: app\n    kind: database\n"
-	if got, changed, err := editGraphjinYAML(current, migrateGraphjinSystemSource); err != nil || changed || got != current {
-		t.Fatalf("a current config changed: %v %v", changed, err)
-	}
-}
-
-func TestReconcileGraphjinWritePolicy(t *testing.T) {
-	base := `mode: agentic
-mcp:
-  allow_mutations: false
-  allow_raw_queries: true
-roles:
-  - name: user
-    comment: Authenticated user
-system:
-  capabilities:
-    raw_graphql.query: true
-    raw_graphql.mutate: false
-sources: []
-`
-	first, changed, err := editGraphjinYAML(base, reconcileGraphjinWritePolicy)
-	if err != nil || !changed {
-		t.Fatalf("changed=%v err=%v", changed, err)
-	}
-	for _, want := range []string{"allow_mutations: true", "raw_graphql.mutate: true", "name: member", "name: service", "allow_raw_queries: true", "name: user"} {
-		if !strings.Contains(first, want) {
-			t.Fatalf("missing %q in\n%s", want, first)
-		}
-	}
-	if second, changed, err := editGraphjinYAML(first, reconcileGraphjinWritePolicy); err != nil || changed || second != first {
-		t.Fatalf("second pass changed the file: %v %v", changed, err)
-	}
-
-	sparse, changed, err := editGraphjinYAML("mode: agentic\nsources: []\n", reconcileGraphjinWritePolicy)
-	if err != nil || !changed || !strings.Contains(sparse, "allow_mutations: true") || !strings.Contains(sparse, "raw_graphql.mutate: true") || !strings.Contains(sparse, "name: service") {
-		t.Fatalf("sparse config: %v %v\n%s", changed, err, sparse)
-	}
-	legacy := "database:\n  type: postgres\n"
-	if got, changed, err := editGraphjinYAML(legacy, reconcileGraphjinWritePolicy); err != nil || changed || got != legacy {
-		t.Fatal("a config without sources changed")
-	}
-	if _, _, err := editGraphjinYAML("sources: []\nroles: x\n", reconcileGraphjinWritePolicy); err == nil {
-		t.Fatal("roles as a scalar passed")
-	}
-}
-
-func TestShippedGraphjinSeedsNeedOnlyTheSecret(t *testing.T) {
-	for _, seed := range []string{"customer.sources.example.yml", "dev.sources.example.yml", "dev.example.yml"} {
-		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "graphjin", seed))
-		if err != nil {
-			t.Fatal(err)
-		}
-		r, err := reconcileGraphjinConfig(string(raw), "c2VjcmV0")
-		if err != nil {
-			t.Fatalf("%s: %v", seed, err)
-		}
-		if r.system || r.writePolicy {
-			t.Fatalf("%s: a new install would rewrite the YAML (system=%v writePolicy=%v)", seed, r.system, r.writePolicy)
-		}
-		want := strings.ReplaceAll(string(raw), graphjinSecretPlaceholder, "c2VjcmV0")
-		if r.content != want {
-			t.Fatalf("%s: more than the secret changed", seed)
-		}
-	}
-}
 
 func TestPrepareGraphjinAuthCreatesOneOrgAndWritesItsSecret(t *testing.T) {
 	url := testpg.URL(t)
@@ -199,7 +72,7 @@ func TestPrepareGraphjinAuthCreatesOneOrgAndWritesItsSecret(t *testing.T) {
 	if err := mig.QueryRow(ctx, "select id::text from organization").Scan(&orgID); err != nil {
 		t.Fatal(err)
 	}
-	secret, err := graphjinSigningSecretB64(configDir, orgID)
+	secret, err := gjconfig.SigningSecretB64(configDir, orgID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +98,7 @@ func TestPrepareGraphjinAuthCreatesOneOrgAndWritesItsSecret(t *testing.T) {
 	if err := mig.QueryRow(ctx, "select count(*) from organization").Scan(&n); err != nil || n != 1 {
 		t.Fatalf("organizations: %d %v", n, err)
 	}
-	rotated, _ := graphjinSigningSecretB64(configDir, orgID)
+	rotated, _ := gjconfig.SigningSecretB64(configDir, orgID)
 	got, _ = os.ReadFile(gj)
 	if rotated == secret || !strings.Contains(string(got), `secret: "`+rotated+`"`) {
 		t.Fatal("a rotated secret-key did not repair the JWT secret")
@@ -249,7 +122,7 @@ func TestGraphjinSigningSecretMatchesTheWorker(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "secret-key"), []byte("test-secret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := graphjinSigningSecretB64(dir, "11111111-2222-4333-8444-555555555555")
+	got, err := gjconfig.SigningSecretB64(dir, "11111111-2222-4333-8444-555555555555")
 	if err != nil {
 		t.Fatal(err)
 	}

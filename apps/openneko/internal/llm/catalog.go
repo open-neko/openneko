@@ -146,3 +146,49 @@ func MaskSecret(value string) string {
 	middle := min(max(4, n-7), 12)
 	return string(utf16.Decode(units[:3])) + strings.Repeat("•", middle) + string(utf16.Decode(units[n-4:]))
 }
+
+var ResearchProviders = []ProviderOption{
+	{"disabled", "Disabled", "Skip industry research"},
+	{"perplexity", "Perplexity", "Perplexity chat completions"},
+}
+
+func IsResearchProvider(provider string) bool {
+	return provider == "disabled" || provider == "perplexity"
+}
+
+func ResearchFields(provider string) []Field {
+	if provider == "perplexity" {
+		return []Field{{Key: "apiKey", Label: "API key", Kind: "secret", Required: yes, Placeholder: "pplx-..."}}
+	}
+	return []Field{}
+}
+
+// FormErrors is validateConfig() in apps/web/src/lib/provider-settings.ts.
+func FormErrors(scope, provider, model string, enabled bool, config map[string]any, secrets map[string]string) []string {
+	if scope == "research" && (!enabled || provider == "disabled") {
+		return nil
+	}
+	if model == "" {
+		return []string{"Model is required."}
+	}
+	fields := ResearchFields(provider)
+	if scope == "primary" {
+		fields = Fields(provider)
+	}
+	var errs []string
+	for _, f := range fields {
+		value := configString(config, f.Key)
+		if f.Kind == "secret" {
+			value = secrets[f.Key]
+		}
+		if f.IsRequired() && value == "" {
+			errs = append(errs, f.Label+" is required.")
+		}
+	}
+	if len(errs) == 0 && scope == "primary" {
+		if _, err := ResolveRuntime(provider, model, config); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
+	return errs
+}
