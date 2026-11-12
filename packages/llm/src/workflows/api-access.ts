@@ -1,12 +1,9 @@
 import {
   and,
   db,
-  desc,
   eq,
-  isNotNull,
   sql,
   workflow_api_access,
-  workflow_api_admission,
   workflow_definition,
 } from "@neko/db";
 import {
@@ -132,30 +129,6 @@ export async function getWorkflowApiAccess(
     outputContract:
       (workflow.outputContract as Record<string, unknown> | null) ?? null,
   });
-}
-
-/** The body of the workflow's latest single-mode API call, shown as its request example. */
-export async function getLastWorkflowApiRequest(
-  orgId: string,
-  workflowId: string,
-): Promise<Record<string, unknown> | null> {
-  const [row] = await db()
-    .select({ payload: workflow_api_admission.request_payload })
-    .from(workflow_api_admission)
-    .where(
-      and(
-        eq(workflow_api_admission.org_id, orgId),
-        eq(workflow_api_admission.workflow_id, workflowId),
-        eq(workflow_api_admission.execution_mode, "single"),
-        isNotNull(workflow_api_admission.request_payload),
-      ),
-    )
-    .orderBy(desc(workflow_api_admission.created_at))
-    .limit(1);
-  const payload = row?.payload;
-  return payload && typeof payload === "object" && !Array.isArray(payload)
-    ? (payload as Record<string, unknown>)
-    : null;
 }
 
 /** Public verifier intentionally looks up by opaque workflow UUID only. */
@@ -291,56 +264,6 @@ export async function enableWorkflowApiAccess(input: {
   actor: LifecycleActor;
 }): Promise<{ access: WorkflowApiAccessView; token: string }> {
   return issueAndStoreToken({ ...input, action: "enable" });
-}
-
-export async function rotateWorkflowApiToken(input: {
-  orgId: string;
-  workflowId: string;
-  actor: LifecycleActor;
-}): Promise<{ access: WorkflowApiAccessView; token: string }> {
-  return issueAndStoreToken({ ...input, action: "rotate" });
-}
-
-export async function disableWorkflowApiAccess(input: {
-  orgId: string;
-  workflowId: string;
-  actor: LifecycleActor;
-}): Promise<WorkflowApiAccessView> {
-  const now = new Date();
-  const rows = await db()
-    .update(workflow_api_access)
-    .set({ enabled: false, updated_at: now })
-    .where(
-      and(
-        eq(workflow_api_access.org_id, input.orgId),
-        eq(workflow_api_access.workflow_id, input.workflowId),
-      ),
-    )
-    .returning({ id: workflow_api_access.workflow_id });
-  if (rows.length === 0) {
-    const workflow = await getWorkflowApiAccess(input.orgId, input.workflowId);
-    if (!workflow) {
-      throw new WorkflowApiError(
-        "workflow_not_found",
-        "Workflow not found.",
-        404,
-      );
-    }
-    return workflow;
-  }
-  await recordAuditEvent({
-    orgId: input.orgId,
-    entityKind: "workflow_api_access",
-    entityId: input.workflowId,
-    event: "disabled",
-    payload: {
-      actorUserId: input.actor.userId,
-      actorRole: input.actor.role,
-    },
-  });
-  const access = await getWorkflowApiAccess(input.orgId, input.workflowId);
-  if (!access) throw new Error("Workflow API access disappeared after disable.");
-  return access;
 }
 
 const LIMIT_COLUMNS = {

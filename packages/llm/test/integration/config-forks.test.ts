@@ -58,8 +58,6 @@ import {
   rememberWorkMemory,
 } from "../../src/work/memory";
 import {
-  adoptWorkflowForTeam,
-  getWorkflow,
   saveWorkflow,
 } from "../../src/workflows/store";
 import { getOrgAgentRoot } from "../../src/work/workspace";
@@ -243,31 +241,6 @@ describeIfDb("CV4 forks (DB-backed)", () => {
       (c) => c.artifact_ref === "Ada Weekly Digest" && c.scope === "user",
     );
     expect(row?.user_id).toBe(ada);
-  });
-
-  it("adopt copies a personal workflow into the team layer with lineage", async () => {
-    const personal = (await saveWorkflow({
-      orgId,
-      name: "Churn Watch",
-      steps: [{ id: "s1", description: "watch churn" }],
-      goal: "alert on churn",
-      ownerUserId: ada,
-    })).workflow;
-
-    const adopted = await adoptWorkflowForTeam(orgId, personal.id, null);
-    expect(adopted.ownerUserId).toBe("");
-    expect(adopted.parentId).toBe(personal.id);
-    expect(existsSync(join(root, "workflows", "churn-watch.md"))).toBe(true);
-    // The member's personal copy is untouched.
-    expect((await getWorkflow(orgId, personal.id))?.ownerUserId).toBe(ada);
-
-    const changes = await db()
-      .select()
-      .from(config_change)
-      .where(
-        and(eq(config_change.org_id, orgId), eq(config_change.status, "adopted")),
-      );
-    expect(changes.some((c) => c.artifact_ref === "Churn Watch")).toBe(true);
   });
 
   it("dropUserConfigData removes the ref and the member's pointers", async () => {

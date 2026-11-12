@@ -103,10 +103,10 @@ func TestWorkflowDetail(t *testing.T) {
 		t.Errorf("admin on another member's workflow: %d", w.Code)
 	}
 	node := f.Node.(*recorder)
-	for _, m := range []string{"PATCH", "DELETE"} {
-		call(f, m, "/api/v1/workflows/"+wfHeld, `{}`, member)
+	for _, p := range []string{"/manual-runs", "/subscriptions"} {
+		call(f, "POST", "/api/v1/workflows/"+wfHeld+p, `{}`, member)
 	}
-	if strings.Join(node.hits, ",") != "PATCH /api/v1/workflows/"+wfHeld+",DELETE /api/v1/workflows/"+wfHeld {
+	if strings.Join(node.hits, ",") != "POST /api/v1/workflows/"+wfHeld+"/manual-runs,POST /api/v1/workflows/"+wfHeld+"/subscriptions" {
 		t.Errorf("Node got %v", node.hits)
 	}
 }
