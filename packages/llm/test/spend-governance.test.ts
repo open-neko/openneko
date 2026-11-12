@@ -4,7 +4,6 @@ import {
   admitRunSpend,
   createRunSpendGuard,
   listOpenSpendAlerts,
-  loadMetricRefreshSettings,
   SpendCapExceeded,
   spendCapFromSignal,
   committedSpendMicros,
@@ -300,7 +299,6 @@ describeIfDb("spend settings", () => {
       expect((await getSpendSettings(orgId)).metricRefresh).toBe("card");
       await pool().query("update spend_limit set metric_refresh = 'weekly' where org_id = $1 and workflow_id is null", [orgId]);
       expect((await getSpendSettings(orgId)).metricRefresh).toBe("weekly");
-      expect((await loadMetricRefreshSettings(pool())).get(orgId)).toBe("weekly");
     });
   });
 });

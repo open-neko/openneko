@@ -16,7 +16,6 @@ export const QUEUE = {
   INDUSTRY_INSIGHTS_BUILD: "industry_insights_build",
   BOOTSTRAP_METRICS_BUILD: "bootstrap_metrics_build",
   METRIC_REFRESH: "metric_refresh",
-  METRIC_REFRESH_SCHEDULED_SWEEP: "metric_refresh_scheduled_sweep",
   WORK_RUN: "work_run",
   WORKFLOW_CRON_SWEEP: "workflow_cron_sweep",
   WORKFLOW_RUN_FIRE: "workflow_run_fire",
@@ -33,7 +32,10 @@ export const QUEUE = {
  * Queues that `openneko` runs on River. `jobs.Moved` in
  * apps/openneko/internal/jobs holds the same names.
  */
-export const MOVED_QUEUES = ["workflow_output_ttl_sweep"] as const;
+export const MOVED_QUEUES = [
+  "workflow_output_ttl_sweep",
+  "metric_refresh_scheduled_sweep",
+] as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
 

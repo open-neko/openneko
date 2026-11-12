@@ -23,13 +23,14 @@ const (
 
 // Moved lists the queues that River runs. MOVED_QUEUES in
 // packages/db/src/jobs.ts must hold the same names.
-var Moved = []string{KindOutputSweep}
+var Moved = []string{KindOutputSweep, KindMetricSweep}
 
 type Queue struct {
 	Pool       *pgxpool.Pool
 	Schema     string
 	BossSchema string
 	Logf       func(string, ...any)
+	MetricSweep func(context.Context) error
 }
 
 func (q *Queue) schema() string {
@@ -127,6 +128,7 @@ type Runner struct {
 func (q *Queue) Start(ctx context.Context) (*Runner, error) {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &outputSweep{pool: q.Pool, logf: q.logf})
+	river.AddWorker(workers, &metricSweep{run: q.MetricSweep})
 	client, err := river.NewClient(riverpgxv5.New(q.Pool), &river.Config{
 		Schema:       q.schema(),
 		Logger:       quietLogger(),
@@ -155,6 +157,9 @@ func periodicJobs() []*river.PeriodicJob {
 		river.NewPeriodicJob(Hourly{}, func() (river.JobArgs, *river.InsertOpts) {
 			return OutputSweepArgs{}, nil
 		}, &river.PeriodicJobOpts{ID: KindOutputSweep}),
+		river.NewPeriodicJob(Hourly{}, func() (river.JobArgs, *river.InsertOpts) {
+			return MetricSweepArgs{}, nil
+		}, &river.PeriodicJobOpts{ID: KindMetricSweep}),
 	}
 }
 

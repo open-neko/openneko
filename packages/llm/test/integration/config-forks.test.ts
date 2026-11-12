@@ -46,12 +46,10 @@ vi.mock("../../src/embedding", async () => {
 import {
   commitToUserRef,
   dropUserConfigData,
-  snapshotUserConfig,
   userConfigRef,
 } from "../../src/config-vcs/forks";
 import { git } from "../../src/config-vcs/git-shell";
 import { ensureConfigRepo, listConfigHistory } from "../../src/config-vcs";
-import { snapshotDurableMemories } from "../../src/config-vcs/snapshot";
 import {
   listWorkMemories,
   overrideWorkMemoryForUser,
@@ -180,45 +178,6 @@ describeIfDb("CV4 forks (DB-backed)", () => {
     vi.unstubAllEnvs();
   });
 
-  it("main memory snapshot excludes user-layer rows; user snapshot carries them", async () => {
-    const team = await rememberWorkMemory({
-      orgId,
-      text: "Team durable fact",
-      kind: "business_rule",
-      scope: "global",
-    });
-    const personal = await rememberWorkMemory({
-      orgId,
-      userId: ada,
-      text: "Ada durable fact",
-      kind: "business_rule",
-      scope: "global",
-    });
-
-    await snapshotDurableMemories(orgId, root);
-    const { stdout } = await git(root, ["ls-tree", "-r", "--name-only", "HEAD"]);
-    expect(stdout).toContain(`memory/business_rule/${team.id}.md`);
-    expect(stdout).not.toContain(personal.id);
-
-    const sha = await snapshotUserConfig(orgId, ada, root);
-    expect(sha).toMatch(/^[0-9a-f]{40}$/);
-    const userFiles = await refTree(root, userConfigRef(ada));
-    expect(userFiles).toContain(`memory/business_rule/${personal.id}.md`);
-    expect(userFiles).not.toContain(`memory/business_rule/${team.id}.md`);
-
-    const [ref] = await db()
-      .select()
-      .from(config_ref)
-      .where(
-        and(
-          eq(config_ref.org_id, orgId),
-          eq(config_ref.scope, "user"),
-          eq(config_ref.user_id, ada),
-        ),
-      );
-    expect(ref?.commit_sha).toBe(sha);
-  });
-
   it("personal workflow saves commit to the user ref, never main's tree", async () => {
     await saveWorkflow({
       orgId,
@@ -244,7 +203,12 @@ describeIfDb("CV4 forks (DB-backed)", () => {
   });
 
   it("dropUserConfigData removes the ref and the member's pointers", async () => {
-    await snapshotUserConfig(orgId, ada, root);
+    await commitToUserRef({
+      workspaceRoot: root,
+      userId: ada,
+      files: [{ path: "memory/preference/x.md", content: "x" }],
+      message: "Personal config checkpoint",
+    });
     await dropUserConfigData({ orgId, userId: ada, workspaceRoot: root });
     await expect(
       git(root, ["rev-parse", "--verify", "--quiet", userConfigRef(ada)]),

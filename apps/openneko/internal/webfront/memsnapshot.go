@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -127,11 +128,16 @@ func (a *API) writeMemorySnapshot(ctx context.Context, orgID string) error {
 }
 
 func git(root string, args ...string) (string, error) {
+	return gitWith(root, nil, nil, args...)
+}
+
+func gitWith(root string, env []string, stdin io.Reader, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=OpenNeko", "GIT_AUTHOR_EMAIL=auto@openneko.local",
+	cmd.Env = append(append(os.Environ(), "GIT_AUTHOR_NAME=OpenNeko", "GIT_AUTHOR_EMAIL=auto@openneko.local",
 		"GIT_COMMITTER_NAME=OpenNeko", "GIT_COMMITTER_EMAIL=auto@openneko.local",
-		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null"), env...)
+	cmd.Stdin = stdin
 	var out, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &stderr
 	if err := cmd.Run(); err != nil {
@@ -147,33 +153,8 @@ func git(root string, args ...string) (string, error) {
 // commitConfigRepo is commitConfigChange() in packages/llm/src/config-vcs:
 // the new HEAD, or "" when nothing changed.
 func commitConfigRepo(root, path, message string) (string, error) {
-	if _, err := os.Stat(filepath.Join(root, ".git")); errors.Is(err, os.ErrNotExist) {
-		if err := os.MkdirAll(root, 0o755); err != nil {
-			return "", err
-		}
-		if _, err := git(root, "init", "--initial-branch=main"); err != nil {
-			return "", err
-		}
-	}
-	ignore, ignoreErr := os.ReadFile(filepath.Join(root, ".gitignore"))
-	index, _ := os.ReadFile(filepath.Join(root, "index.md"))
-	if ignoreErr != nil || string(ignore) != configRepoIgnore || string(index) != configRepoIndex {
-		if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte(configRepoIgnore), 0o644); err != nil {
-			return "", err
-		}
-		if err := os.WriteFile(filepath.Join(root, "index.md"), []byte(configRepoIndex), 0o644); err != nil {
-			return "", err
-		}
-		message := "Update tracked config paths"
-		if ignoreErr != nil {
-			message = "Initialize config versioning"
-		}
-		if _, err := git(root, "add", ".gitignore", "index.md"); err != nil {
-			return "", err
-		}
-		if _, err := git(root, "commit", "-m", message); err != nil {
-			return "", err
-		}
+	if err := ensureConfigRepo(root); err != nil {
+		return "", err
 	}
 	if _, err := git(root, "add", "-A", "--", path); err != nil {
 		return "", err
@@ -187,4 +168,37 @@ func commitConfigRepo(root, path, message string) (string, error) {
 	}
 	head, err := git(root, "rev-parse", "HEAD")
 	return strings.TrimSpace(head), err
+}
+
+// ensureConfigRepo is ensureConfigRepo() in packages/llm/src/config-vcs.
+func ensureConfigRepo(root string) error {
+	if _, err := os.Stat(filepath.Join(root, ".git")); errors.Is(err, os.ErrNotExist) {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			return err
+		}
+		if _, err := git(root, "init", "--initial-branch=main"); err != nil {
+			return err
+		}
+	}
+	ignore, ignoreErr := os.ReadFile(filepath.Join(root, ".gitignore"))
+	index, _ := os.ReadFile(filepath.Join(root, "index.md"))
+	if ignoreErr != nil || string(ignore) != configRepoIgnore || string(index) != configRepoIndex {
+		if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte(configRepoIgnore), 0o644); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(root, "index.md"), []byte(configRepoIndex), 0o644); err != nil {
+			return err
+		}
+		message := "Update tracked config paths"
+		if ignoreErr != nil {
+			message = "Initialize config versioning"
+		}
+		if _, err := git(root, "add", ".gitignore", "index.md"); err != nil {
+			return err
+		}
+		if _, err := git(root, "commit", "-m", message); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -80,7 +80,10 @@ with exit code 0, so its supervisor starts it again.`,
 			if err != nil {
 				return err
 			}
-			runner, err := (&jobs.Queue{Pool: pool, Logf: func(format string, args ...any) {
+			gate := &webfront.Gate{WorkerURL: workerURL, DB: pool}
+			api := &webfront.API{Gate: gate, DB: pool, Version: webfront.AppVersion(dir, version.Version),
+				SecureCookies: os.Getenv("NODE_ENV") == "production", Restart: stop}
+			runner, err := (&jobs.Queue{Pool: pool, MetricSweep: api.MetricSweep, Logf: func(format string, args ...any) {
 				fmt.Fprintf(cmd.OutOrStdout(), format+"\n", args...)
 			}}).Start(context.WithoutCancel(ctx))
 			if err != nil {
@@ -98,12 +101,10 @@ with exit code 0, so its supervisor starts it again.`,
 				}
 				go func() { nodeDone <- node.Wait() }()
 			}
-			gate := &webfront.Gate{WorkerURL: workerURL, DB: pool}
 			front := &webfront.Front{
 				App:  os.DirFS(dir),
 				Gate: gate,
-				API: &webfront.API{Gate: gate, DB: pool, Version: webfront.AppVersion(dir, version.Version),
-					SecureCookies: os.Getenv("NODE_ENV") == "production", Restart: stop},
+				API:  api,
 				Node: webfront.NodeProxy(&url.URL{Scheme: "http", Host: nodeAddr}),
 			}
 			srv := &http.Server{Handler: front, ReadHeaderTimeout: 10 * time.Second}
