@@ -22,7 +22,6 @@ export const QUEUE = {
   ACTION_EXECUTE: "action_execute",
   CHANNEL_DELIVER: "channel_deliver",
   SKILL_LEARN: "skill_learn",
-  DIRECTORY_SYNC: "directory_sync",
 } as const;
 
 /**
@@ -35,6 +34,7 @@ export const MOVED_QUEUES = [
   "workflow_cron_sweep",
   "embedding_index",
   "embedding_sweep",
+  "directory_sync",
 ] as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];

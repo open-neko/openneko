@@ -36,7 +36,6 @@ import {
 } from "./graphjin/group-grants-service.js";
 import {
   createDirectoryUser,
-  DIRECTORY_SYNC_CRON,
   directoryStatus,
   runDirectorySync,
 } from "./directory/directory-service.js";
@@ -725,17 +724,6 @@ await b.work(
     }
   },
 );
-
-await b.work(QUEUE.DIRECTORY_SYNC, async () => {
-  if (!signInService?.getDirectoryProvider()) return;
-  try {
-    const stats = await runDirectorySync(signInService, await getOrgId());
-    console.log(`[directory-sync] ${JSON.stringify(stats)}`);
-  } catch (e) {
-    console.warn(`[directory-sync] failed: ${e instanceof Error ? e.message : e}`);
-  }
-});
-await b.schedule(QUEUE.DIRECTORY_SYNC, DIRECTORY_SYNC_CRON, {}, { tz: "UTC", retryLimit: 0 });
 
 await b.work(QUEUE.BOT_NAME_SWEEP, async () => {
   const { named, failed } = await nameBackfilledBots();

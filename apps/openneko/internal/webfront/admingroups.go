@@ -2,6 +2,7 @@ package webfront
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -14,7 +15,10 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-const workerAdminTimeout = 120 * time.Second
+const (
+	workerAdminTimeout   = 120 * time.Second
+	directorySyncTimeout = 15 * time.Minute
+)
 
 type groupError struct{ code, message string }
 
@@ -93,6 +97,31 @@ func (a *API) directorySync(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.accessAdmin(w, r); ok {
 		a.relayWorker(w, r, "/admin/directory/sync", []byte("{}"))
 	}
+}
+
+// DirectorySync is the six-hourly directory_sync job. With no directory
+// provider it does nothing.
+func (a *API) DirectorySync(ctx context.Context) error {
+	status, reply, err := a.workerDo(ctx, http.MethodPost, "/admin/directory/sync", directorySyncTimeout, []byte("{}"))
+	if err != nil {
+		return fmt.Errorf("directory sync: the worker did not answer: %w", err)
+	}
+	if status == http.StatusNotFound {
+		return nil
+	}
+	var body struct {
+		Stats json.RawMessage `json:"stats"`
+		Error string          `json:"error"`
+	}
+	_ = json.Unmarshal(reply, &body)
+	if status != http.StatusOK {
+		if body.Error == "" {
+			body.Error = http.StatusText(status)
+		}
+		return fmt.Errorf("directory sync failed (%d): %s", status, body.Error)
+	}
+	log.Printf("[directory-sync] %s", body.Stats)
+	return nil
 }
 
 type userGroup struct {

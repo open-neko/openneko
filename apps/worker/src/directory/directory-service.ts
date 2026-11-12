@@ -31,7 +31,6 @@ export type DirectoryStatus = {
   };
 };
 
-export const DIRECTORY_SYNC_CRON = "0 */6 * * *";
 const MAX_PAGES = 500;
 
 export class DirectorySyncError extends Error {
