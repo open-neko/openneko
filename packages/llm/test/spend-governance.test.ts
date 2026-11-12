@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pool } from "@neko/db";
 import {
-  acknowledgeSpendAlert,
   admitRunSpend,
   createRunSpendGuard,
   listOpenSpendAlerts,
@@ -14,10 +13,7 @@ import {
   releaseSpendReservation,
   reserveSpend,
   getSpendSettings,
-  saveSpendLimits,
-  saveWorkflowSpendOverride,
   SpendBudgetExceeded,
-  SpendSettingsError,
   spendWindows,
 } from "../src/spend";
 import { appendWorkRunEvent, createWorkRun, createWorkThread, finishWorkRun } from "../src/work/store";
@@ -266,15 +262,6 @@ describeIfDb("spend admission", () => {
 });
 
 describeIfDb("spend settings", () => {
-  const valid = {
-    runCapUsd: 4,
-    orgHourlyUsd: 150,
-    orgDailyUsd: 400,
-    workflowHourlyUsd: 40,
-    workflowDailyUsd: 120,
-    warnPercent: 75,
-  };
-
   it("reports limits, ceilings, window usage and workflow rows", async () => {
     await withOrg(async (orgId) => {
       const wf = await workflow(orgId);
@@ -308,60 +295,12 @@ describeIfDb("spend settings", () => {
     });
   });
 
-  it("saves valid limits and applies them to the next admission", async () => {
-    await withOrg(async (orgId) => {
-      const saved = await saveSpendLimits(orgId, null, valid);
-      expect(saved.limits).toEqual(valid);
-      const r = await run(orgId);
-      const reservation = await pool().query("select reserved_micros from spend_reservation where work_run_id = $1", [r.id]);
-      expect(reservation.rows[0].reserved_micros).toBe("4000000");
-    });
-  });
-
-  it("saves the metric refresh setting and keeps it when a save omits it", async () => {
+  it("reads the metric refresh setting of each organization", async () => {
     await withOrg(async (orgId) => {
       expect((await getSpendSettings(orgId)).metricRefresh).toBe("card");
-      expect((await saveSpendLimits(orgId, null, { ...valid, metricRefresh: "weekly" })).metricRefresh).toBe("weekly");
-      expect((await saveSpendLimits(orgId, null, valid)).metricRefresh).toBe("weekly");
+      await pool().query("update spend_limit set metric_refresh = 'weekly' where org_id = $1 and workflow_id is null", [orgId]);
+      expect((await getSpendSettings(orgId)).metricRefresh).toBe("weekly");
       expect((await loadMetricRefreshSettings(pool())).get(orgId)).toBe("weekly");
-      expect((await saveSpendLimits(orgId, null, { ...valid, metricRefresh: "card" })).metricRefresh).toBe("card");
-      await expect(
-        saveSpendLimits(orgId, null, { ...valid, metricRefresh: "hourly" as never }),
-      ).rejects.toThrow("Metric refresh must be card, daily, weekly or off.");
-    });
-  });
-
-  it("rejects invalid limits with a message that names the field", async () => {
-    await withOrg(async (orgId) => {
-      await expect(saveSpendLimits(orgId, null, { ...valid, orgDailyUsd: 2500 })).rejects.toThrow(
-        "Organization daily budget cannot exceed $2000.00.",
-      );
-      await expect(saveSpendLimits(orgId, null, { ...valid, runCapUsd: 0 })).rejects.toThrow(
-        "Per-run cap must be a positive dollar amount.",
-      );
-      await expect(saveSpendLimits(orgId, null, { ...valid, orgHourlyUsd: 450 })).rejects.toThrow(
-        "Organization hourly budget cannot exceed the daily budget.",
-      );
-      await expect(saveSpendLimits(orgId, null, { ...valid, runCapUsd: 45 })).rejects.toThrow(
-        "Per-run cap cannot exceed an hourly budget",
-      );
-      await expect(saveSpendLimits(orgId, null, { ...valid, warnPercent: 30 })).rejects.toBeInstanceOf(SpendSettingsError);
-      expect((await getSpendSettings(orgId)).limits.runCapUsd).toBe(5);
-    });
-  });
-
-  it("sets and clears a workflow override", async () => {
-    await withOrg(async (orgId) => {
-      const wf = await workflow(orgId);
-      let settings = await saveWorkflowSpendOverride(orgId, null, wf, { hourlyUsd: 6, dailyUsd: null });
-      expect(settings.workflows[0]).toMatchObject({ hourlyOverrideUsd: 6, hourlyLimitUsd: 6, dailyOverrideUsd: null, dailyLimitUsd: 200 });
-      await run(orgId, { source: "cron", workflowId: wf });
-      await expect(run(orgId, { source: "cron", workflowId: wf })).rejects.toMatchObject({ budget: "workflow_hourly" });
-      settings = await saveWorkflowSpendOverride(orgId, null, wf, { hourlyUsd: null, dailyUsd: null });
-      expect(settings.workflows[0]).toMatchObject({ hourlyOverrideUsd: null, hourlyLimitUsd: 50 });
-      await expect(
-        saveWorkflowSpendOverride(orgId, null, "00000000-0000-0000-0000-000000000000", { hourlyUsd: 1, dailyUsd: 2 }),
-      ).rejects.toThrow("Workflow not found.");
     });
   });
 });
@@ -430,7 +369,7 @@ describeIfDb("spend alerts", () => {
     });
   });
 
-  it("records a blocked run and an unknown price, and lets an admin acknowledge an alert", async () => {
+  it("records a blocked run and an unknown price, and lists them as open", async () => {
     await withOrg(async (orgId) => {
       await setOrgLimits(orgId, { org_hourly_micros: 6 });
       const r = await run(orgId);
@@ -448,10 +387,7 @@ describeIfDb("spend alerts", () => {
         ["spend.budget_warning", "org"],
         ["spend.price_unknown", "model:gemini/gemini-9-flash"],
       ]);
-      const open = await listOpenSpendAlerts(orgId);
-      expect(await acknowledgeSpendAlert(orgId, open[0]!.id, null)).toBe(true);
-      expect(await acknowledgeSpendAlert(orgId, open[0]!.id, null)).toBe(false);
-      expect(await listOpenSpendAlerts(orgId)).toHaveLength(2);
+      expect(await listOpenSpendAlerts(orgId)).toHaveLength(3);
     });
   });
 });

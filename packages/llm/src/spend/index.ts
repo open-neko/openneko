@@ -26,9 +26,6 @@ export {
 } from "./limits";
 export {
   getSpendSettings,
-  saveSpendLimits,
-  saveWorkflowSpendOverride,
-  SpendSettingsError,
   SPEND_METER_DAYS,
   type SpendByModelRow,
   type SpendLimitsUsd,
@@ -37,7 +34,6 @@ export {
   type WorkflowSpendRow,
 } from "./settings";
 export {
-  acknowledgeSpendAlert,
   budgetWarningMessage,
   checkSpendWarnings,
   listOpenSpendAlerts,

@@ -83,12 +83,9 @@ func spendLimits(ctx context.Context, q querier, orgID, workflowID string) ([5]f
 	if org == nil {
 		return out, fmt.Errorf("No spend limits are configured for organization %s.", orgID)
 	}
-	for i, c := range spendCeilings {
-		usd := c.usd
-		if raw, ok := jsNumber(os.Getenv(c.env)); ok && !math.IsInf(raw, 0) && raw > c.usd {
-			usd = raw
-		}
-		ceiling := math.Max(0, math.Ceil(usd*1_000_000))
+	ceilings := spendCeilingMicros()
+	for i := range spendCeilings {
+		ceiling := ceilings[i]
 		value := org[i]
 		if i >= 3 && override != nil && override[i] != nil {
 			value = override[i]
@@ -101,6 +98,20 @@ func spendLimits(ctx context.Context, q querier, orgID, workflowID string) ([5]f
 	}
 	return out, nil
 }
+
+func spendCeilingMicros() [5]float64 {
+	var out [5]float64
+	for i, c := range spendCeilings {
+		usd := c.usd
+		if raw, ok := jsNumber(os.Getenv(c.env)); ok && !math.IsInf(raw, 0) && raw > c.usd {
+			usd = raw
+		}
+		out[i] = usdToMicros(usd)
+	}
+	return out
+}
+
+func usdToMicros(usd float64) float64 { return math.Max(0, math.Ceil(usd*1_000_000)) }
 
 // admitRunSpend checks the four budgets and reserves the run cap inside
 // the caller's transaction.
@@ -147,8 +158,13 @@ func admitRunSpend(ctx context.Context, tx pgx.Tx, orgID, workflowID, workRunID,
 }
 
 func committedSpend(ctx context.Context, tx pgx.Tx, orgID, workflowID string, since time.Time) (float64, error) {
+	spent, held, err := spendBreakdown(ctx, tx, orgID, workflowID, since)
+	return spent + held, err
+}
+
+func spendBreakdown(ctx context.Context, q querier, orgID, workflowID string, since time.Time) (float64, float64, error) {
 	var spent, held string
-	err := tx.QueryRow(ctx, `with open_reservation as (
+	err := q.QueryRow(ctx, `with open_reservation as (
 	     select r.id, r.reserved_micros
 	       from spend_reservation r
 	       left join work_run w on w.id = r.work_run_id
@@ -172,11 +188,11 @@ func committedSpend(ctx context.Context, tx pgx.Tx, orgID, workflowID string, si
 	                 left join used u on u.reservation_id = o.id), 0)::text as held`,
 		orgID, nullable(workflowID), since).Scan(&spent, &held)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	s, _ := strconv.ParseFloat(spent, 64)
 	h, _ := strconv.ParseFloat(held, 64)
-	return s + h, nil
+	return s, h, nil
 }
 
 // recordBudgetBlocked is recordBudgetBlocked() and raiseSpendAlert(): one
