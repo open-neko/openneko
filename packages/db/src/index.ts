@@ -67,7 +67,6 @@ export {
 export {
   ITEM_TYPES,
   _resetEntitlementCacheForTesting,
-  effectiveAccess,
   filterHeld,
   grantItem,
   grantItems,
@@ -80,7 +79,6 @@ export {
   packsContaining,
   revokeItem,
   whoHolds,
-  type EffectiveItem,
   type EntitlementActor,
   type GroupItemGrant,
   type HeldItems,
@@ -115,7 +113,6 @@ export {
   listDevices,
   normalizeUserCode,
   redeemDeviceRequest,
-  revokeDevice,
   startDeviceRequest,
   verifyDeviceToken,
   type DeviceErrorCode,

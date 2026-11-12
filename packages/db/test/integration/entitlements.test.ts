@@ -6,7 +6,6 @@ import {
   app_user,
   createUserGroup,
   db,
-  effectiveAccess,
   eq,
   filterHeld,
   GroupError,
@@ -130,7 +129,7 @@ describeIfDb("entitlements", () => {
     }, "ent-narrow");
   });
 
-  it("grants one item to a group and reports holders and effective access", async () => {
+  it("grants one item to a group and reports holders", async () => {
     await withTestOrg(async (orgId) => {
       const everyone = await builtinGroupId(orgId, "everyone");
       await revokeItem(orgId, { groupId: everyone, itemType: "skill", itemId: "*" });
@@ -146,11 +145,6 @@ describeIfDb("entitlements", () => {
         "Administrators:administrators",
         "Finance:item",
       ]);
-      const access = await effectiveAccess(orgId, ann.userId);
-      expect(access.administrator).toBe(false);
-      expect(access.items.find((i) => i.itemType === "skill")).toEqual({
-        itemType: "skill", itemId: "revenue-report", groups: [{ groupId: finance.id, name: "Finance" }],
-      });
     }, "ent-items");
   });
 

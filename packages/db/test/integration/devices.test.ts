@@ -10,7 +10,6 @@ import {
   formatUserCode,
   listDevices,
   redeemDeviceRequest,
-  revokeDevice,
   sql,
   startDeviceRequest,
   verifyDeviceToken,
@@ -92,8 +91,7 @@ it.skipIf(!reachable)("stops a token at once on revoke, user disable or 30 idle 
     const tablet = await issue("Tablet");
     const laptop = await issue("Laptop");
 
-    expect(await revokeDevice({ orgId, deviceId: phone.deviceId, byUserId: admin })).toMatchObject({ userId: owner });
-    expect(await revokeDevice({ orgId, deviceId: phone.deviceId, byUserId: admin })).toBeNull();
+    await db().execute(sql`update app_device set revoked_at = now(), revoked_by_user_id = ${admin} where id = ${phone.deviceId}`);
     expect(await verifyDeviceToken(orgId, phone.token)).toBeNull();
 
     await db().execute(sql`update app_device set last_used_at = now() - interval '31 days' where id = ${tablet.deviceId}`);
