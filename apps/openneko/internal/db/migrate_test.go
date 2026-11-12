@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // fakeConn satisfies Conn for unit tests. It records executed SQL and answers
@@ -89,6 +90,7 @@ type fakeRows struct {
 func (r *fakeRows) Close()                                       {}
 func (r *fakeRows) Err() error                                   { return nil }
 func (r *fakeRows) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
+func (r *fakeRows) TypeMap() *pgtype.Map                         { return pgtype.NewMap() }
 func (r *fakeRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
 func (r *fakeRows) RawValues() [][]byte                          { return nil }
 func (r *fakeRows) Values() ([]any, error)                       { return nil, nil }

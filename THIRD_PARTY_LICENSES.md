@@ -77,6 +77,8 @@ OpenNeko's runtime dependencies are listed in the `package.json` and `go.mod` fi
 | `github.com/cenkalti/backoff/v5` | MIT | Retries in the OTLP trace exporter of `openneko serve` |
 | `github.com/grpc-ecosystem/grpc-gateway/v2` | BSD-3-Clause | Linked by the OTLP trace exporter of `openneko serve` |
 | `github.com/go-sql-driver/mysql` | MPL-2.0 | MySQL and MariaDB client of the source check in `openneko web`; GraphJin already links it. MPL-2.0 covers its own files only; OpenNeko ships them unchanged |
+| `github.com/riverqueue/river` (with `riverdriver`, `riverpgxv5`, `rivershared`, `rivertype`) | MPL-2.0 | Job queue of `openneko web`, in the `river` schema. MPL-2.0 covers River's own files only; OpenNeko ships them unchanged. Source: https://github.com/riverqueue/river |
+| `github.com/tidwall/gjson`, `sjson`, `match`, `pretty` | MIT | Linked by River |
 | `golang.org/x/text` | BSD-3-Clause | Sorts skill names in `openneko web` in the same order as the Node server; GraphJin already links it |
 | `golang.org/x/net` (`idna`) | BSD-3-Clause | Converts the host of an OpenAPI import URL to ASCII in `openneko web`; GraphJin already links it |
 | `golang.org/x/crypto` (`ssh`, `ssh/knownhosts`) | BSD-3-Clause | Makes the deploy key of an SSH context repository and reads the server's host keys in `openneko web`; GraphJin already links it |

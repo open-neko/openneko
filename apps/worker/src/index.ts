@@ -10,6 +10,7 @@ import type PgBoss from "pg-boss";
 import {
   boss,
   enqueue,
+  MOVED_QUEUES,
   QUEUE,
   RETIRED_QUEUES,
   type ActionExecutePayload,
@@ -108,7 +109,6 @@ import { runMetricRefresh } from "./jobs/metric-refresh.js";
 import { metricRefreshIsDue } from "./jobs/metric-schedule.js";
 import { runWorkRun } from "./jobs/work-run.js";
 import { runWorkflowRunFire } from "./jobs/workflow-run-fire.js";
-import { runWorkflowOutputTtlSweep } from "./jobs/workflow-output-ttl-sweep.js";
 import { runActionExecute } from "./jobs/action-execute.js";
 import { moveLibraryDocumentsToStore } from "./jobs/library-recovery.js";
 import { filesEnabled } from "@neko/llm/files";
@@ -649,9 +649,9 @@ const b = await boss();
 for (const name of Object.values(QUEUE)) {
   await ensureQueueExists((qName, opts) => b.createQueue(qName, opts), name);
 }
-// The Records queues are gone. Removing them also drops their jobs and
-// schedules, so upgraded installs stop firing them.
-for (const name of RETIRED_QUEUES) {
+// Removing a retired or moved queue also drops its jobs and schedule.
+// `openneko migrate` has already copied a moved queue's pending jobs to River.
+for (const name of [...RETIRED_QUEUES, ...MOVED_QUEUES]) {
   try {
     await removeRetiredQueue(b, name);
   } catch (e) {
@@ -871,17 +871,6 @@ await b.schedule(QUEUE.WORKFLOW_CRON_SWEEP, "* * * * *", {}, {
   retryDelay: 15,
 });
 console.log("[worker] scheduled behavior + watcher auxiliary sweep every minute");
-
-await b.work(QUEUE.WORKFLOW_OUTPUT_TTL_SWEEP, async () => {
-  await runWorkflowOutputTtlSweep();
-});
-
-await b.schedule(QUEUE.WORKFLOW_OUTPUT_TTL_SWEEP, "0 * * * *", {}, {
-  tz: "UTC",
-  retryLimit: 1,
-  retryDelay: 60,
-});
-console.log("[worker] scheduled workflow_output ttl sweep hourly");
 
 await b.work(QUEUE.BOT_NAME_SWEEP, async () => {
   const { named, failed } = await nameBackfilledBots();

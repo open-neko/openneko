@@ -18,11 +18,15 @@ import (
 
 	"github.com/open-neko/neko/apps/openneko/assets"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
+	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 	"github.com/open-neko/neko/apps/openneko/internal/version"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 )
 
-const nodeStopGrace = 10 * time.Second
+const (
+	nodeStopGrace = 10 * time.Second
+	jobsStopGrace = 5 * time.Second
+)
 
 func newWebCmd() *cobra.Command {
 	var addr, dir, nodeAddr, workerURL string
@@ -40,6 +44,9 @@ connection route itself. It marks its cookies Secure when NODE_ENV is
 production. It reads and writes users, sessions, devices, groups, the
 business profile, personal pack connections and the audit chain with the
 main database login, and reads secrets.json for pack OAuth client IDs.
+
+Web runs the background jobs that have moved from the Node worker to the
+River queue in the river schema.
 
 Web refuses to start on a database that lacks a migration of this release,
 unless OPENNEKO_SKIP_MIGRATE is set.
@@ -72,6 +79,12 @@ with exit code 0, so its supervisor starts it again.`,
 			ln, err := net.Listen("tcp", addr)
 			if err != nil {
 				return err
+			}
+			runner, err := (&jobs.Queue{Pool: pool, Logf: func(format string, args ...any) {
+				fmt.Fprintf(cmd.OutOrStdout(), format+"\n", args...)
+			}}).Start(context.WithoutCancel(ctx))
+			if err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: background jobs are off: %v\n", err)
 			}
 			var node *exec.Cmd
 			nodeDone := make(chan error, 1)
@@ -110,6 +123,11 @@ with exit code 0, so its supervisor starts it again.`,
 			shut, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			_ = srv.Shutdown(shut)
+			if runner != nil {
+				stopJobs, cancelJobs := context.WithTimeout(context.Background(), jobsStopGrace)
+				runner.Stop(stopJobs)
+				cancelJobs()
+			}
 			if node != nil {
 				_ = node.Process.Signal(syscall.SIGTERM)
 				select {

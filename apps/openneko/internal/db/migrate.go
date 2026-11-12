@@ -63,6 +63,8 @@ func (c ConnConfig) DSN() string {
 type Migrator struct {
 	FS  fs.FS
 	Dir string // directory inside FS (e.g. "migrations")
+	// After runs while the lock is still held, once the SQL files are in.
+	After func(ctx context.Context) error
 }
 
 // Conn is the minimal pgx surface we need; lets tests stub.
@@ -137,6 +139,11 @@ func (m *Migrator) Apply(ctx context.Context, conn Conn, logf func(string, ...an
 		}
 		applied[f] = true
 		ran++
+	}
+	if m.After != nil {
+		if err := m.After(ctx); err != nil {
+			return ran, err
+		}
 	}
 	logf("[migrate] done — %d new, %d already applied", ran, len(files)-ran)
 	return ran, nil
