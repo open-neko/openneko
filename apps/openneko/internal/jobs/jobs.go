@@ -23,7 +23,7 @@ const (
 
 // Moved lists the queues that River runs. MOVED_QUEUES in
 // packages/db/src/jobs.ts must hold the same names.
-var Moved = []string{KindOutputSweep, KindMetricSweep, KindCronSweep, KindEmbeddingIndex, KindEmbeddingSweep}
+var Moved = []string{KindOutputSweep, KindMetricSweep, KindCronSweep, KindEmbeddingIndex, KindEmbeddingSweep, KindDirectorySync}
 
 type Queue struct {
 	Pool        *pgxpool.Pool
@@ -32,7 +32,10 @@ type Queue struct {
 	Logf        func(string, ...any)
 	MetricSweep func(context.Context) error
 	CronSweep   func(context.Context) error
-	Embedding   Embedding
+	// DirectorySync asks the Node worker to sync the directory; the
+	// worker alone reads secrets from Infisical.
+	DirectorySync func(context.Context) error
+	Embedding     Embedding
 }
 
 func (q *Queue) schema() string {
@@ -141,6 +144,7 @@ func (q *Queue) Start(ctx context.Context) (*Runner, error) {
 	river.AddWorker(workers, &cronSweep{run: q.CronSweep})
 	river.AddWorker(workers, &embeddingSweep{q: q})
 	river.AddWorker(workers, &embeddingIndex{q: q})
+	river.AddWorker(workers, &directorySync{run: q.DirectorySync})
 	client, err := river.NewClient(riverpgxv5.New(q.Pool), &river.Config{
 		Schema:       q.schema(),
 		Logger:       quietLogger(),
@@ -178,6 +182,9 @@ func periodicJobs() []*river.PeriodicJob {
 		river.NewPeriodicJob(EveryMinute{}, func() (river.JobArgs, *river.InsertOpts) {
 			return EmbeddingSweepArgs{}, nil
 		}, &river.PeriodicJobOpts{ID: KindEmbeddingSweep, RunOnStart: true}),
+		river.NewPeriodicJob(SixHourly{}, func() (river.JobArgs, *river.InsertOpts) {
+			return DirectorySyncArgs{}, nil
+		}, &river.PeriodicJobOpts{ID: KindDirectorySync}),
 	}
 }
 

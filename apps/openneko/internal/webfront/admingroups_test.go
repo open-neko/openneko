@@ -2,6 +2,8 @@ package webfront
 
 import (
 	"encoding/json"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
@@ -306,5 +308,42 @@ func TestAdminDirectory(t *testing.T) {
 	f.API.relayWorker(w, r, "/admin/directory/status", nil)
 	if w.Code != 503 || w.Body.String() != `{"error":"worker is unavailable"}` {
 		t.Errorf("worker down: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestDirectorySyncJob(t *testing.T) {
+	var status int
+	var reply string
+	var calls []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		calls = append(calls, r.Method+" "+r.URL.Path+" "+string(body))
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(reply))
+	}))
+	defer srv.Close()
+	a := &API{Gate: &Gate{WorkerURL: srv.URL}}
+	status, reply = 200, `{"stats":{"usersSeen":2}}`
+	if err := a.DirectorySync(t.Context()); err != nil {
+		t.Errorf("ok: %v", err)
+	}
+	if !slices.Equal(calls, []string{"POST /admin/directory/sync {}"}) {
+		t.Errorf("calls: %v", calls)
+	}
+	status, reply = 404, `{"error":"no directory provider is configured","code":"no_provider"}`
+	if err := a.DirectorySync(t.Context()); err != nil {
+		t.Errorf("no provider: %v", err)
+	}
+	status, reply = 409, `{"error":"a directory sync is already running","code":"running"}`
+	if err := a.DirectorySync(t.Context()); err == nil || err.Error() != "directory sync failed (409): a directory sync is already running" {
+		t.Errorf("running: %v", err)
+	}
+	status, reply = 500, ``
+	if err := a.DirectorySync(t.Context()); err == nil || err.Error() != "directory sync failed (500): Internal Server Error" {
+		t.Errorf("no body: %v", err)
+	}
+	a.Gate.WorkerURL = "http://127.0.0.1:1"
+	if err := a.DirectorySync(t.Context()); err == nil || !strings.Contains(err.Error(), "the worker did not answer") {
+		t.Errorf("worker down: %v", err)
 	}
 }
