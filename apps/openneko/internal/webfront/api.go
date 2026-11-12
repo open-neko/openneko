@@ -104,6 +104,9 @@ var GoRoutes = map[string][]string{
 	"/api/v1/hooks/{workflowId}/result/{runId}":                   {"GET"},
 	"/api/v1/workflow-runs/{workflowRunId}":                       {"GET"},
 	"/api/v1/workflow-runs/{workflowRunId}/artifact":              {"GET"},
+	"/api/v1/workflows/{workflowId}/runs":                         {"POST"},
+	"/api/v1/workflows/{workflowId}/runs/{runId}":                 {"GET"},
+	"/api/v1/workflows/{workflowId}/runs/{runId}/artifact":        {"GET"},
 }
 
 // In a catchAll route the last {name} takes the rest of the path, as a Next
@@ -171,6 +174,9 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/workflow-runs/{workflowRunId}/artifact":       {"GET": a.workflowRunArtifact},
 			"/api/v1/hooks/{workflowId}":                           {"POST": a.hookStart},
 			"/api/v1/hooks/{workflowId}/result/{runId}":            {"GET": a.hookResult},
+			"/api/v1/workflows/{workflowId}/runs":                  {"POST": a.workflowAPIStart},
+			"/api/v1/workflows/{workflowId}/runs/{runId}":          {"GET": a.workflowAPIRun},
+			"/api/v1/workflows/{workflowId}/runs/{runId}/artifact": {"GET": a.workflowAPIArtifact},
 		}
 	})
 	return a.routes
