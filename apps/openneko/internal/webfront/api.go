@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -38,6 +39,8 @@ type API struct {
 	orgMu  sync.Mutex
 	queues sync.Map
 	orgID  string
+
+	hookWaiters atomic.Int64
 }
 
 // GoRoutes lists the /api/v1 routes that Go answers, by method.
@@ -97,6 +100,8 @@ var GoRoutes = map[string][]string{
 	"/api/v1/workflows/{workflowId}/subscriptions/dry-run":        {"POST"},
 	"/api/v1/subscriptions/{subscriptionId}":                      {"PATCH", "DELETE"},
 	"/api/v1/workflow-runs":                                       {"GET"},
+	"/api/v1/hooks/{workflowId}":                                  {"POST"},
+	"/api/v1/hooks/{workflowId}/result/{runId}":                   {"GET"},
 	"/api/v1/workflow-runs/{workflowRunId}":                       {"GET"},
 	"/api/v1/workflow-runs/{workflowRunId}/artifact":              {"GET"},
 }
@@ -164,6 +169,8 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/workflow-runs":                                {"GET": a.workflowRuns},
 			"/api/v1/workflow-runs/{workflowRunId}":                {"GET": a.workflowRunDetail},
 			"/api/v1/workflow-runs/{workflowRunId}/artifact":       {"GET": a.workflowRunArtifact},
+			"/api/v1/hooks/{workflowId}":                           {"POST": a.hookStart},
+			"/api/v1/hooks/{workflowId}/result/{runId}":            {"GET": a.hookResult},
 		}
 	})
 	return a.routes
