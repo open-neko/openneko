@@ -159,7 +159,10 @@ const jobsSource = await readFile(
 );
 assertExactInventory(
   "worker queue",
-  quotedValues(between(jobsSource, "export const QUEUE = {", "} as const")),
+  [
+    ...quotedValues(between(jobsSource, "export const QUEUE = {", "} as const")),
+    ...quotedValues(between(jobsSource, "export const MOVED_QUEUES = [", "] as const")),
+  ],
   inventory.worker_queues,
 );
 

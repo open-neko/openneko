@@ -100,10 +100,6 @@ export {
   type WorkflowCatchUpPolicy,
 } from "./durable-scheduler";
 export {
-  sweepStaleWorkflowOutputs,
-  type SweepStaleOutputsResult,
-} from "./ttl-sweep";
-export {
   prepareWorkflowRun,
   loadPreparedWorkflowRun,
   runWorkflowTurn,

@@ -245,7 +245,7 @@ All current worker jobs map to the registry:
 |---|---|
 | `work-run` | `RUNTIME-*`, `WORK-*`, `OUTPUT-*` |
 | `business-profile-build`, `industry-insights-build`, `bootstrap-metrics-build`, `metric-refresh` | `ONBOARD-*`, `METRIC-REFRESH` |
-| `workflow-run-fire`, `workflow-scheduler`, `workflow-output-ttl-sweep` | `FLOW-RUN`, `FLOW-CRON`, `FLOW-OUTPUT-TTL` |
+| `workflow-run-fire`, `workflow-scheduler`, `workflow_output_ttl_sweep` (River, in `openneko web`) | `FLOW-RUN`, `FLOW-CRON`, `FLOW-OUTPUT-TTL` |
 | `action-execute` | `ACTION-EXECUTE`, `ACTION-IDEMPOTENCY`, `ACTION-AUDIT` |
 
 ## 12. Corpus growth rule

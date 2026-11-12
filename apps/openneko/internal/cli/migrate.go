@@ -9,6 +9,7 @@ import (
 
 	"github.com/open-neko/neko/apps/openneko/assets"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
+	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 )
 
 func newMigrateCmd() *cobra.Command {
@@ -30,10 +31,18 @@ func newMigrateCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				mig := &db.Migrator{FS: assets.MigrationsFS, Dir: "migrations"}
-				ran, migrateErr := mig.Apply(ctx, conn, func(format string, args ...any) {
+				pool, err := db.Open(ctx, target, "openneko migrate", nil)
+				if err != nil {
+					_ = conn.Close(ctx)
+					return err
+				}
+				logf := func(format string, args ...any) {
 					fmt.Fprintf(out, format+"\n", args...)
-				})
+				}
+				queue := &jobs.Queue{Pool: pool, Logf: logf}
+				mig := &db.Migrator{FS: assets.MigrationsFS, Dir: "migrations", After: queue.Migrate}
+				ran, migrateErr := mig.Apply(ctx, conn, logf)
+				pool.Close()
 				_ = conn.Close(ctx)
 				if migrateErr != nil {
 					return migrateErr

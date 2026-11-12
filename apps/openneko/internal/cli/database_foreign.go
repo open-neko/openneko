@@ -14,11 +14,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/open-neko/neko/apps/openneko/assets"
+	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 )
 
 // openNekoSchemas are the schemas that OpenNeko makes outside the
-// migrations: the job queue and the storage contract.
-var openNekoSchemas = []string{"pgboss", "openneko_internal"}
+// migrations: the two job queues and the storage contract.
+var openNekoSchemas = []string{"pgboss", jobs.DefaultSchema, "openneko_internal"}
 
 type ownedObject struct {
 	category string
