@@ -43,6 +43,10 @@ type packConnection struct {
 	AuthorizationParams map[string]string `json:"authorizationParams"`
 	ClientSecret        string            `json:"clientSecret"`
 	Scopes              []string          `json:"scopes"`
+	TokenURL            string            `json:"tokenUrl"`
+	UserInfoURL         string            `json:"userInfoUrl"`
+	AccountIDField      string            `json:"accountIdField"`
+	AccountLabelField   string            `json:"accountLabelField"`
 	paramOrder          []string
 }
 
@@ -164,7 +168,7 @@ func (a *API) holdsPack(ctx context.Context, orgID, userID, packID string) (bool
 	return held, err
 }
 
-// packCallbackURI matches packOAuthCallbackUri() in apps/web/src/lib/pack-oauth.ts.
+// packCallbackURI matches packOAuthCallbackUri() of the former apps/web/src/lib/pack-oauth.ts.
 func (a *API) packCallbackURI(r *http.Request, packID, key string) string {
 	base := a.PublicURL
 	if base == "" {
@@ -204,7 +208,8 @@ func originOf(u *url.URL) string {
 	return scheme + "://" + host + ":" + port
 }
 
-// packStateCookie matches writePackOAuthState() in apps/web/src/lib/pack-oauth.ts.
+// packStateCookie matches writePackOAuthState() of the former apps/web/src/lib/pack-oauth.ts,
+// so a flow that Node began before an upgrade ends in Go.
 func (a *API) packStateCookie(value map[string]any) (string, error) {
 	secret := a.Gate.sessionSecret()
 	if len(secret) < 32 {
@@ -312,9 +317,22 @@ func (a *API) disconnectPersonal(ctx context.Context, orgID, userID, packID, key
 		pending_state_hash = null, pending_expires_at = null`, revision)
 }
 
+type connectionRow struct {
+	revision       string
+	pendingHash    *string
+	pendingExpires *time.Time
+}
+
 // lockedConnection matches locked() in packages/llm/src/graphjin/pack-user-connections.ts.
 // The row stays as a tombstone on disconnect, so an old callback never becomes valid again.
 func (a *API) lockedConnection(ctx context.Context, orgID, userID, installID, key, set string, args ...any) error {
+	return a.withConnection(ctx, orgID, userID, installID, key, func(_ connectionRow, update func(string, ...any) error) error {
+		return update(set, args...)
+	})
+}
+
+func (a *API) withConnection(ctx context.Context, orgID, userID, installID, key string,
+	work func(row connectionRow, update func(set string, args ...any) error) error) error {
 	return pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
 		var active bool
 		err := tx.QueryRow(ctx, `
@@ -333,14 +351,18 @@ func (a *API) lockedConnection(ctx context.Context, orgID, userID, installID, ke
 			values ($1, $2, $3::uuid, $4) on conflict do nothing`, ids...); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `
-			select 1 from pack_user_connection
-			where org_id = $1 and user_id = $2 and pack_install_id = $3::uuid and connection_key = $4 for update`, ids...); err != nil {
+		var row connectionRow
+		if err := tx.QueryRow(ctx, `
+			select revision::text, pending_state_hash, pending_expires_at from pack_user_connection
+			where org_id = $1 and user_id = $2 and pack_install_id = $3::uuid and connection_key = $4 for update`, ids...).
+			Scan(&row.revision, &row.pendingHash, &row.pendingExpires); err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `update pack_user_connection set `+set+`, updated_at = now()
-			where org_id = $1 and user_id = $2 and pack_install_id = $3::uuid and connection_key = $4`, append(ids, args...)...)
-		return err
+		return work(row, func(set string, args ...any) error {
+			_, err := tx.Exec(ctx, `update pack_user_connection set `+set+`, updated_at = now()
+				where org_id = $1 and user_id = $2 and pack_install_id = $3::uuid and connection_key = $4`, append(ids, args...)...)
+			return err
+		})
 	})
 }
 

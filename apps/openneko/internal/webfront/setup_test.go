@@ -358,8 +358,8 @@ func TestOriginOf(t *testing.T) {
 	}
 }
 
-// goPackState is also in apps/web/test/pack-oauth.test.ts, where Node's
-// readAndClearPackOAuthState must accept it.
+// goPackState is a cookie in the format that Node's writePackOAuthState
+// wrote before the pack OAuth routes moved to Go.
 const goPackState = "eyJjb2RlVmVyaWZpZXIiOiJjdiIsImNvbm5lY3Rpb25LZXkiOiJhY2NvdW50IiwiZXhwaXJlc0F0Ijo0MTAyNDQ0ODAwMDAwLCJvcmdJZCI6Im9yZyIsInBhY2tJZCI6ImRyaXZlIiwicGVyc29uYWwiOnRydWUsInJldHVyblBhdGgiOiIvaW50ZWdyYXRpb25zIiwic3RhdGUiOiJzdCIsInVzZXJJZCI6InUxIn0.yI0caLBmra1sp8q3_hh_YfWHoSNoq6t7V4o_xCev_d8"
 
 func TestPackStateCookieForNode(t *testing.T) {

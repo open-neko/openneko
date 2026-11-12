@@ -40,20 +40,28 @@ func readPackBody(r *http.Request, limit int64) ([]byte, error) {
 
 // relayPackWorker is requestPackWorker() with the routes' catch.
 func (a *API) relayPackWorker(ctx context.Context, w http.ResponseWriter, method, path string, header http.Header, body []byte) {
+	status, reply := a.packWorker(ctx, method, path, header, body)
+	sendJSValue(w, status, reply)
+}
+
+// packWorker returns the status and the parsed body that requestPackWorker() returns.
+func (a *API) packWorker(ctx context.Context, method, path string, header http.Header, body []byte) (int, any) {
 	status, reply, err := a.workerSend(ctx, method, path, workerAdminTimeout, header, body)
 	if err != nil {
 		log.Printf("pack worker %s %s: %v", method, path, err)
-		sendError(w, http.StatusBadGateway, "worker is unavailable")
-		return
+		return http.StatusBadGateway, errorObj("worker is unavailable")
 	}
 	parsed, err := jsParse(reply)
 	if err != nil {
-		sendError(w, status, fmt.Sprintf("Worker returned HTTP %d", status))
-		return
+		return status, errorObj(fmt.Sprintf("Worker returned HTTP %d", status))
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_, _ = w.Write([]byte(jsStringify(parsed, false)))
+	return status, parsed
+}
+
+func errorObj(message string) *jsObj {
+	o := &jsObj{}
+	o.set("error", message)
+	return o
 }
 
 func packObjectBody(w http.ResponseWriter, r *http.Request) (*jsObj, bool) {
