@@ -12,44 +12,6 @@ import { recordConfigChange } from "../config-vcs";
 import { getOrgAgentRoot } from "./workspace";
 import { learnedBodyHash, runSkillLearn, type SkillLearnResult } from "./skill-learn";
 
-export type SkillLearnOrgSettings = {
-  enabled: boolean;
-  source: "org" | "default";
-};
-
-export async function getSkillLearnOrgSettings(
-  orgId: string,
-): Promise<SkillLearnOrgSettings> {
-  const [row] = await db()
-    .select({ enabled: skill_learn_org.enabled })
-    .from(skill_learn_org)
-    .where(eq(skill_learn_org.org_id, orgId))
-    .limit(1);
-  if (!row) return { enabled: false, source: "default" };
-  return { enabled: row.enabled, source: "org" };
-}
-
-export async function setSkillLearnOrgEnabled(input: {
-  orgId: string;
-  enabled: boolean;
-}): Promise<SkillLearnOrgSettings> {
-  await db()
-    .insert(skill_learn_org)
-    .values({
-      org_id: input.orgId,
-      enabled: input.enabled,
-      updated_at: new Date(),
-    })
-    .onConflictDoUpdate({
-      target: skill_learn_org.org_id,
-      set: {
-        enabled: input.enabled,
-        updated_at: new Date(),
-      },
-    });
-  return { enabled: input.enabled, source: "org" };
-}
-
 export async function runSkillLearnForOrgSkill(input: {
   orgId: string;
   skillName: string;

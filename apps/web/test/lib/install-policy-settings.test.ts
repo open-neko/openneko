@@ -6,13 +6,12 @@ import {
   deleteTestOrg,
   uniqueOrgId,
 } from "@neko/db/test-helpers";
-import { pool } from "@neko/db";
+import { db, llm_provider_config, pool } from "@neko/db";
 import {
   DEFAULT_POLICY,
   INSTALL_POLICY_SCOPE,
   getInstallPolicy,
   getInstallPolicyPayload,
-  saveInstallPolicyDraft,
 } from "@/lib/install-policy-settings";
 
 describe("install-policy-settings: pure helpers", () => {
@@ -56,26 +55,19 @@ describeIfDb("install-policy-settings: persistence", () => {
     expect(payload.policy).toEqual(DEFAULT_POLICY);
   });
 
-  it("saveInstallPolicyDraft persists + getInstallPolicy reads it back", async () => {
-    await saveInstallPolicyDraft(orgId, { allowGitUrlInstalls: true });
+  it("reads a stored row and reports source=org", async () => {
+    await db().insert(llm_provider_config).values({
+      org_id: orgId,
+      scope: INSTALL_POLICY_SCOPE,
+      provider: "install-policy",
+      enabled: true,
+      config: { allowGitUrlInstalls: true },
+      secrets: {},
+    });
     expect(await getInstallPolicy(orgId)).toEqual({ allowGitUrlInstalls: true });
-  });
-
-  it("an empty draft leaves the stored value alone", async () => {
-    await saveInstallPolicyDraft(orgId, { allowGitUrlInstalls: true });
-    await saveInstallPolicyDraft(orgId, {});
-    expect((await getInstallPolicy(orgId)).allowGitUrlInstalls).toBe(true);
-  });
-
-  it("getInstallPolicyPayload reports source=org after save", async () => {
-    await saveInstallPolicyDraft(orgId, { allowGitUrlInstalls: true });
-    const payload = await getInstallPolicyPayload(orgId);
-    expect(payload.source).toBe("org");
-  });
-
-  it("flipping the switch back off persists", async () => {
-    await saveInstallPolicyDraft(orgId, { allowGitUrlInstalls: true });
-    await saveInstallPolicyDraft(orgId, { allowGitUrlInstalls: false });
-    expect((await getInstallPolicy(orgId)).allowGitUrlInstalls).toBe(false);
+    expect(await getInstallPolicyPayload(orgId)).toEqual({
+      policy: { allowGitUrlInstalls: true },
+      source: "org",
+    });
   });
 });
