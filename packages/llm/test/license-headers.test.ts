@@ -8,7 +8,6 @@ const FORBIDDEN_LICENSE_MARKER = "LicenseRef-" + "OpenNeko-Commercial";
 
 const FILES = [
   "src/workflows/audit-chain.ts",
-  "src/work/behavior-monitor.ts",
   "src/work/authz.ts",
   "src/work/memory.ts",
   "src/graphjin/token.ts",

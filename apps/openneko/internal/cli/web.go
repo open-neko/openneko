@@ -11,6 +11,8 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -30,6 +32,7 @@ const (
 
 func newWebCmd() *cobra.Command {
 	var addr, dir, nodeAddr, workerURL string
+	var runJobs bool
 	cmd := &cobra.Command{
 		Use:   "web [-- node command]",
 		Short: "Serve the web app with its request gate and pass the API and server pages to Node",
@@ -46,7 +49,8 @@ business profile, personal pack connections and the audit chain with the
 main database login, and reads secrets.json for pack OAuth client IDs.
 
 Web runs the background jobs that have moved from the Node worker to the
-River queue in the river schema.
+River queue in the river schema. With --jobs=false (OPENNEKO_WEB_JOBS=false)
+web runs no job; it still queues jobs for a web that runs them.
 
 Web refuses to start on a database that lacks a migration of this release,
 unless OPENNEKO_SKIP_MIGRATE is set.
@@ -83,12 +87,9 @@ with exit code 0, so its supervisor starts it again.`,
 			gate := &webfront.Gate{WorkerURL: workerURL, DB: pool}
 			api := &webfront.API{Gate: gate, DB: pool, Version: webfront.AppVersion(dir, version.Version),
 				SecureCookies: os.Getenv("NODE_ENV") == "production", Restart: stop}
-			runner, err := (&jobs.Queue{Pool: pool, MetricSweep: api.MetricSweep, Logf: func(format string, args ...any) {
-				fmt.Fprintf(cmd.OutOrStdout(), format+"\n", args...)
-			}}).Start(context.WithoutCancel(ctx))
-			if err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: background jobs are off: %v\n", err)
-			}
+			runner := startJobs(context.WithoutCancel(ctx), runJobs, &jobs.Queue{Pool: pool, MetricSweep: api.MetricSweep, CronSweep: api.CronSweep,
+				Logf: func(format string, args ...any) { fmt.Fprintf(cmd.OutOrStdout(), format+"\n", args...) }},
+				cmd.OutOrStdout(), cmd.ErrOrStderr())
 			var node *exec.Cmd
 			nodeDone := make(chan error, 1)
 			if len(args) > 0 {
@@ -147,11 +148,34 @@ with exit code 0, so its supervisor starts it again.`,
 	cmd.Flags().StringVar(&addr, "addr", envOr("OPENNEKO_WEB_ADDR", webPortAddr()), "Listen address; without OPENNEKO_WEB_ADDR, PORT sets the port on all interfaces")
 	cmd.Flags().StringVar(&dir, "dir", envOr("OPENNEKO_WEB_DIR", "apps/web/dist"), "Folder of the built web app, from pnpm --filter @neko/web build:spa")
 	cmd.Flags().StringVar(&nodeAddr, "node-addr", envOr("OPENNEKO_WEB_NODE_ADDR", "127.0.0.1:3001"), "Address of the Node server")
+	cmd.Flags().BoolVar(&runJobs, "jobs", envBool("OPENNEKO_WEB_JOBS", true), "Run the background jobs; false leaves them to another web")
 	cmd.Flags().StringVar(&workerURL, "worker-admin-url", envOr("WORKER_ADMIN_URL", "http://127.0.0.1:4100"), "Worker admin address that reports whether sign-in is on")
 	return cmd
 }
 
 const schemaCheckTimeout = 10 * time.Second
+
+func envBool(name string, fallback bool) bool {
+	if v, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(name))); err == nil {
+		return v
+	}
+	return fallback
+}
+
+// startJobs starts the River client, or no client when on is false. A client
+// that does not start leaves web serving with its jobs off.
+func startJobs(ctx context.Context, on bool, q *jobs.Queue, out, errOut io.Writer) *jobs.Runner {
+	if !on {
+		fmt.Fprintln(out, "openneko web: background jobs are off (--jobs=false)")
+		return nil
+	}
+	runner, err := q.Start(ctx)
+	if err != nil {
+		fmt.Fprintf(errOut, "openneko web: background jobs are off: %v\n", err)
+		return nil
+	}
+	return runner
+}
 
 // checkSchema refuses to serve a database that lacks a migration of this
 // release. A database that cannot be read yet does not stop web.

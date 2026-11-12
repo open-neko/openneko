@@ -232,10 +232,14 @@ type catalogRow struct {
 	ColumnName   *string `json:"column_name"`
 }
 
-// graphjinAdminToken is mintGraphjinToken({ role: "admin", userId: null })
-// in packages/llm/src/graphjin/token.ts. GraphJin keys the HMAC with the
-// base64 text of the derived secret, not with its bytes.
 func (a *API) graphjinAdminToken(orgID string, ttl time.Duration) (string, error) {
+	return a.graphjinToken(orgID, "admin", ttl)
+}
+
+// graphjinToken is mintGraphjinToken({ role, userId: null }) in
+// packages/llm/src/graphjin/token.ts. GraphJin keys the HMAC with the base64
+// text of the derived secret, not with its bytes.
+func (a *API) graphjinToken(orgID, role string, ttl time.Duration) (string, error) {
 	secret, err := config.SigningSecret(a.SecretsDir, "graphjin:"+orgID)
 	if err != nil {
 		return "", err
@@ -249,7 +253,7 @@ func (a *API) graphjinAdminToken(orgID string, ttl time.Duration) (string, error
 		OrgID     string   `json:"org_id"`
 		Iat       int64    `json:"iat"`
 		Exp       int64    `json:"exp"`
-	}{"service", "admin", []string{"admin"}, orgID, orgID, now, now + int64(ttl/time.Second)})
+	}{"service", role, []string{role}, orgID, orgID, now, now + int64(ttl/time.Second)})
 	enc := base64.RawURLEncoding
 	unsigned := enc.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`)) + "." + enc.EncodeToString(payload)
 	mac := hmac.New(sha256.New, []byte(base64.StdEncoding.EncodeToString(secret)))

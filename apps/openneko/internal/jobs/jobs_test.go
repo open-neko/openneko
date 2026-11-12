@@ -8,10 +8,13 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
@@ -253,5 +256,79 @@ func TestRunnerRunsMetricSweep(t *testing.T) {
 	}
 	if len(calls) != 2 {
 		t.Fatalf("the sweep ran %d times, want 2", len(calls))
+	}
+}
+
+func TestEveryMinute(t *testing.T) {
+	ist := time.FixedZone("IST", 5*3600+1800)
+	for _, c := range []struct{ in, want time.Time }{
+		{time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC), time.Date(2026, 11, 12, 9, 1, 0, 0, time.UTC)},
+		{time.Date(2026, 11, 12, 9, 59, 59, 0, time.UTC), time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)},
+		{time.Date(2026, 11, 12, 10, 15, 30, 0, ist), time.Date(2026, 11, 12, 4, 46, 0, 0, time.UTC)},
+	} {
+		if got := (EveryMinute{}).Next(c.in); !got.Equal(c.want) {
+			t.Errorf("Next(%v) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
+func TestRunnerRunsCronSweep(t *testing.T) {
+	ctx := context.Background()
+	pool := testpg.Pool(t)
+	q := testQueue(t, pool)
+	if err := q.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	inserter, err := river.NewClient(riverpgxv5.New(pool), &river.Config{Schema: q.Schema, Logger: quietLogger()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{}, 4)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	q.CronSweep = func(context.Context) error {
+		started <- struct{}{}
+		<-release
+		return fmt.Errorf("planted failure")
+	}
+	if _, err := inserter.Insert(ctx, CronSweepArgs{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	runner, err := q.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { runner.Stop(ctx) })
+	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
+	select {
+	case <-started:
+	case <-time.After(20 * time.Second):
+		t.Fatal("the cron sweep did not start in 20 s")
+	}
+	res, err := inserter.Insert(ctx, CronSweepArgs{}, nil)
+	if err != nil || !res.UniqueSkippedAsDuplicate {
+		t.Fatalf("a second sweep was queued while the first one runs: %+v %v", res, err)
+	}
+	releaseOnce.Do(func() { close(release) })
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		var s string
+		var at time.Time
+		_ = pool.QueryRow(ctx, `select state::text, scheduled_at from `+q.Schema+`.river_job where kind = $1 order by id limit 1`, KindCronSweep).Scan(&s, &at)
+		if s == "retryable" {
+			if wait := time.Until(at); wait < 5*time.Second || wait > 16*time.Second {
+				t.Fatalf("retry in %v, want 15 s", wait)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the cron sweep is %q after 20 s", s)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	var jobs int
+	_ = pool.QueryRow(ctx, `select count(*) from `+q.Schema+`.river_job where kind = $1`, KindCronSweep).Scan(&jobs)
+	if jobs != 1 {
+		t.Errorf("%d cron sweep jobs, want 1", jobs)
 	}
 }
