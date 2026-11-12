@@ -160,6 +160,10 @@ var GoRoutes = map[string][]string{
 	"/api/v1/admin/packs/magento/store-management":                {"GET", "POST"},
 	"/api/v1/admin/reckon-webhooks":                               {"GET", "POST"},
 	"/api/v1/admin/reckon-webhooks/{reckonWorkflowId}":            {"DELETE"},
+	"/api/v1/admin/context-remote":                                {"GET", "PUT", "DELETE"},
+	"/api/v1/admin/context-remote/host-key":                       {"POST"},
+	"/api/v1/admin/context-remote/publish":                        {"GET", "POST"},
+	"/api/v1/admin/context-remote/updates":                        {"GET", "POST"},
 }
 
 // In a catchAll route the last {name} takes the rest of the path, as a Next
@@ -278,6 +282,10 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/admin/packs/magento/store-management":         {"GET": a.adminStoreManagement, "POST": a.adminStoreManagement},
 			"/api/v1/admin/reckon-webhooks":                        {"GET": a.adminCompatWebhooks, "POST": a.adminCompatWebhookImport},
 			"/api/v1/admin/reckon-webhooks/{reckonWorkflowId}":     {"DELETE": a.adminCompatWebhookRemove},
+			"/api/v1/admin/context-remote":                         {"GET": a.contextRemoteGet, "PUT": a.contextRemotePut, "DELETE": a.contextRemoteDelete},
+			"/api/v1/admin/context-remote/host-key":                {"POST": a.contextRemoteHostKey},
+			"/api/v1/admin/context-remote/publish":                 {"GET": a.contextRemotePreview, "POST": a.contextRemotePublish},
+			"/api/v1/admin/context-remote/updates":                 {"GET": a.contextRemoteUpdates, "POST": a.contextRemoteApply},
 		}
 	})
 	return a.routes
