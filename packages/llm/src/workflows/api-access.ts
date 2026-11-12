@@ -11,9 +11,7 @@ import {
   WorkflowApiError,
   issueWorkflowApiToken,
   parseCompiledWorkflowBatchContract,
-  verifyWorkflowApiTokenDigest,
   workflowApiLimitPatch,
-  type CompiledWorkflowBatchContract,
   type WorkflowApiLimits,
 } from "./api-contract";
 import { recordAuditEvent } from "./audit-chain";
@@ -35,13 +33,6 @@ export type WorkflowApiAccessView = {
   };
   createdAt: Date | null;
   updatedAt: Date | null;
-};
-
-export type VerifiedWorkflowApiAccess = WorkflowApiAccessView & {
-  orgId: string;
-  verifier: string;
-  outputContract: Record<string, unknown> | null;
-  batchContract: CompiledWorkflowBatchContract | null;
 };
 
 type AccessRow = typeof workflow_api_access.$inferSelect;
@@ -129,41 +120,6 @@ export async function getWorkflowApiAccess(
     outputContract:
       (workflow.outputContract as Record<string, unknown> | null) ?? null,
   });
-}
-
-/** Public verifier intentionally looks up by opaque workflow UUID only. */
-export async function verifyWorkflowApiAccessToken(
-  workflowId: string,
-  token: string,
-): Promise<VerifiedWorkflowApiAccess | null> {
-  const [found] = await db()
-    .select({
-      access: workflow_api_access,
-      outputContract: workflow_definition.output_contract,
-    })
-    .from(workflow_api_access)
-    .innerJoin(
-      workflow_definition,
-      and(
-        eq(workflow_definition.id, workflow_api_access.workflow_id),
-        eq(workflow_definition.org_id, workflow_api_access.org_id),
-      ),
-    )
-    .where(eq(workflow_api_access.workflow_id, workflowId))
-    .limit(1);
-
-  const verifier = found?.access.token_verifier;
-  const matches = verifyWorkflowApiTokenDigest(token, verifier);
-  if (!found || !found.access.enabled || !verifier || !matches) return null;
-  const outputContract =
-    (found.outputContract as Record<string, unknown> | null) ?? null;
-  return {
-    ...toAccessView({ workflowId, row: found.access, outputContract }),
-    orgId: found.access.org_id,
-    verifier,
-    outputContract,
-    batchContract: parseCompiledWorkflowBatchContract(outputContract),
-  };
 }
 
 type LifecycleActor = { userId: string | null; role: string };

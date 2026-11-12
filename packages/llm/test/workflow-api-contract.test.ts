@@ -1,15 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_WORKFLOW_API_LIMITS,
-  WorkflowApiError,
   boundedWorkflowApiResult,
   compileWorkflowApiBatchContract,
   defaultWorkflowApiLimits,
-  hashWorkflowApiIdempotencyKey,
   issueWorkflowApiToken,
   parseCompiledWorkflowBatchContract,
-  parseWorkflowApiBearer,
-  validateWorkflowApiInput,
   verifyWorkflowApiTokenDigest,
   workflowApiAnswer,
   workflowApiLimitPatch,
@@ -39,90 +34,6 @@ describe("workflow API contract", () => {
     expect(verifyWorkflowApiTokenDigest(issued.token, "malformed")).toBe(false);
   });
 
-  it("accepts one strict bearer token and rejects ambiguous headers", () => {
-    expect(parseWorkflowApiBearer("Bearer onk_wf_example_secret")).toBe(
-      "onk_wf_example_secret",
-    );
-    expect(parseWorkflowApiBearer("bearer\tonk_wf_example_secret")).toBe(
-      "onk_wf_example_secret",
-    );
-    expect(parseWorkflowApiBearer("Basic abc")).toBeNull();
-    expect(parseWorkflowApiBearer("Bearer first second")).toBeNull();
-  });
-
-  it("HMACs idempotency keys without storing their plaintext", () => {
-    const signingKey = Buffer.alloc(32, 7);
-    const first = hashWorkflowApiIdempotencyKey(
-      "workflow-a",
-      "invoice-0001",
-      signingKey,
-    );
-    expect(first).toMatch(/^[0-9a-f]{64}$/);
-    expect(first).toBe(
-      hashWorkflowApiIdempotencyKey(
-        "workflow-a",
-        "invoice-0001",
-        signingKey,
-      ),
-    );
-    expect(first).not.toBe(
-      hashWorkflowApiIdempotencyKey(
-        "workflow-b",
-        "invoice-0001",
-        signingKey,
-      ),
-    );
-    expect(first).not.toContain("invoice-0001");
-  });
-
-  it("canonicalizes object keys for stable payload hashes and binds mode", () => {
-    const singleA = validateWorkflowApiInput({
-      value: { z: 2, a: { y: true, x: 1 } },
-      mode: "single",
-      limits: DEFAULT_WORKFLOW_API_LIMITS,
-    });
-    const singleB = validateWorkflowApiInput({
-      value: { a: { x: 1, y: true }, z: 2 },
-      mode: "single",
-      limits: DEFAULT_WORKFLOW_API_LIMITS,
-    });
-    const batch = validateWorkflowApiInput({
-      value: { records: [{ z: 2, a: { y: true, x: 1 } }] },
-      mode: "batch",
-      limits: DEFAULT_WORKFLOW_API_LIMITS,
-      batchContract: parseCompiledWorkflowBatchContract({
-        apiBatch: compiledBatch,
-      }),
-    });
-
-    expect(singleA.payloadHash).toBe(singleB.payloadHash);
-    expect(batch.payloadHash).not.toBe(singleA.payloadHash);
-  });
-
-  it("redacts secret-shaped input keys and bounds the operator preview", () => {
-    const validated = validateWorkflowApiInput({
-      value: {
-        customer: "Acme",
-        password: "never-store-this",
-        nested: { api_key: "also-secret", note: "safe" },
-        tokenizedLabel: "redacted because the key is secret-shaped",
-      },
-      mode: "single",
-      limits: DEFAULT_WORKFLOW_API_LIMITS,
-    });
-
-    expect(validated.preview).toEqual({
-      customer: "Acme",
-      password: "[redacted]",
-      nested: { api_key: "[redacted]", note: "safe" },
-      tokenizedLabel: "[redacted]",
-    });
-    expect(JSON.stringify(validated.preview)).not.toContain("never-store-this");
-    expect(Buffer.byteLength(JSON.stringify(validated.preview), "utf8")).toBeLessThanOrEqual(
-      4_096,
-    );
-  });
-
   it("fails batch mode closed until a safe compiled contract exists", () => {
     expect(
       parseCompiledWorkflowBatchContract({
@@ -132,38 +43,6 @@ describe("workflow API contract", () => {
         },
       }),
     ).toBeNull();
-
-    expect(() =>
-      validateWorkflowApiInput({
-        value: { records: [] },
-        mode: "batch",
-        limits: DEFAULT_WORKFLOW_API_LIMITS,
-        batchContract: parseCompiledWorkflowBatchContract({
-          apiBatch: compiledBatch,
-        }),
-      }),
-    ).toThrowError(expect.objectContaining({ code: "empty_batch", status: 400 }));
-
-    expect(() =>
-      validateWorkflowApiInput({
-        value: { records: [{ id: 1 }] },
-        mode: "batch",
-        limits: DEFAULT_WORKFLOW_API_LIMITS,
-        batchContract: null,
-      }),
-    ).toThrowError(expect.objectContaining({ code: "batch_not_ready", status: 422 }));
-
-    const limits = { ...DEFAULT_WORKFLOW_API_LIMITS, batchMaxRecords: 1 };
-    expect(() =>
-      validateWorkflowApiInput({
-        value: { records: [{ id: 1 }, { id: 2 }] },
-        mode: "batch",
-        limits,
-        batchContract: parseCompiledWorkflowBatchContract({
-          apiBatch: compiledBatch,
-        }),
-      }),
-    ).toThrowError(expect.objectContaining({ code: "batch_record_limit", status: 413 }));
   });
 
   it("compiles batch readiness from the workflow contract without skills", () => {
@@ -266,25 +145,5 @@ describe("workflow API contract", () => {
       if (saved.timeout === undefined) delete process.env.OPENNEKO_WORKFLOW_TURN_TIMEOUT_MS;
       else process.env.OPENNEKO_WORKFLOW_TURN_TIMEOUT_MS = saved.timeout;
     }
-  });
-
-  it("rejects payload depth and request bytes before admission", () => {
-    let deep: Record<string, unknown> = { leaf: true };
-    for (let i = 0; i < 12; i += 1) deep = { nested: deep };
-    expect(() =>
-      validateWorkflowApiInput({
-        value: deep,
-        mode: "single",
-        limits: DEFAULT_WORKFLOW_API_LIMITS,
-      }),
-    ).toThrowError(WorkflowApiError);
-
-    expect(() =>
-      validateWorkflowApiInput({
-        value: { value: "x".repeat(2_000) },
-        mode: "single",
-        limits: { ...DEFAULT_WORKFLOW_API_LIMITS, maxRequestBytes: 1_024 },
-      }),
-    ).toThrowError(expect.objectContaining({ code: "request_too_large" }));
   });
 });

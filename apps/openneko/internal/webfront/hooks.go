@@ -18,7 +18,6 @@ import (
 	"strings"
 	"time"
 	"unicode/utf16"
-	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -184,22 +183,7 @@ func (a *API) consumeStartRate(ctx context.Context, h *compatWebhook, now time.T
 // decodeText is Request.text(): a leading BOM goes, and each maximal
 // invalid UTF-8 subpart becomes one U+FFFD.
 func decodeText(raw []byte) string {
-	raw = []byte(strings.TrimPrefix(string(raw), "\xef\xbb\xbf"))
-	if utf8.Valid(raw) {
-		return string(raw)
-	}
-	var b strings.Builder
-	for i := 0; i < len(raw); {
-		r, size := utf8.DecodeRune(raw[i:])
-		if r != utf8.RuneError || size > 1 {
-			b.WriteRune(r)
-			i += size
-			continue
-		}
-		i += invalidSubpart(raw[i:])
-		b.WriteRune(utf8.RuneError)
-	}
-	return b.String()
+	return utf8Text([]byte(strings.TrimPrefix(string(raw), "\xef\xbb\xbf")))
 }
 
 func invalidSubpart(p []byte) int {
