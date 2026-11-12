@@ -81,9 +81,16 @@ func TestLockNamesTheHolderAndWaits(t *testing.T) {
 		t.Fatalf("log = %q, want %q", log.text(), want)
 	}
 
+	// pgx closes a connection whose query a deadline cancels, so the waiter
+	// that timed out above cannot be used again.
+	second, err := Connect(ctx, target, "openneko lock second waiter")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close(ctx)
 	got := make(chan error, 1)
 	go func() {
-		unlock, err := Lock(ctx, waiter, key, "test", nil)
+		unlock, err := Lock(ctx, second, key, "test", nil)
 		if err == nil {
 			unlock()
 		}
