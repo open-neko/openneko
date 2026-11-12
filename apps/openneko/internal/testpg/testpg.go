@@ -15,6 +15,20 @@ import (
 	"github.com/open-neko/neko/apps/openneko/assets"
 )
 
+// URL returns OPENNEKO_TEST_DATABASE_URL. When it is unset, the test skips,
+// or fails when OPENNEKO_TEST_REQUIRE_DB=1.
+func URL(t testing.TB) string {
+	t.Helper()
+	url := os.Getenv("OPENNEKO_TEST_DATABASE_URL")
+	if url == "" {
+		if os.Getenv("OPENNEKO_TEST_REQUIRE_DB") == "1" {
+			t.Fatal("OPENNEKO_TEST_REQUIRE_DB=1 and OPENNEKO_TEST_DATABASE_URL is unset")
+		}
+		t.Skip("set OPENNEKO_TEST_DATABASE_URL to a Postgres database")
+	}
+	return url
+}
+
 // Pool returns a pool on a new schema with the given embedded migrations
 // applied. It skips the test when OPENNEKO_TEST_DATABASE_URL is unset.
 func Pool(t testing.TB, migrations ...string) *pgxpool.Pool {
@@ -38,10 +52,7 @@ func Migrated(t testing.TB) *pgxpool.Pool {
 
 func pool(t testing.TB, public bool, migrations []string) *pgxpool.Pool {
 	t.Helper()
-	url := os.Getenv("OPENNEKO_TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("set OPENNEKO_TEST_DATABASE_URL to a Postgres database")
-	}
+	url := URL(t)
 	ctx := context.Background()
 	schema := fmt.Sprintf("test_%d", time.Now().UnixNano())
 	admin, err := pgxpool.New(ctx, url)

@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -11,14 +10,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
 func testDatabase(t *testing.T) (ConnConfig, string) {
 	t.Helper()
-	url := os.Getenv("OPENNEKO_TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("set OPENNEKO_TEST_DATABASE_URL to a Postgres database")
-	}
+	url := testpg.URL(t)
 	ctx := context.Background()
 	admin, err := pgx.Connect(ctx, url)
 	if err != nil {

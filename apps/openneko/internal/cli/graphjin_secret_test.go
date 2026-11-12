@@ -14,6 +14,7 @@ import (
 
 	"github.com/open-neko/neko/apps/openneko/assets"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
+	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
 const jwtConfig = `# sources mode
@@ -153,10 +154,7 @@ func TestShippedGraphjinSeedsNeedOnlyTheSecret(t *testing.T) {
 }
 
 func TestPrepareGraphjinAuthCreatesOneOrgAndWritesItsSecret(t *testing.T) {
-	url := os.Getenv("OPENNEKO_TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("set OPENNEKO_TEST_DATABASE_URL to a Postgres database")
-	}
+	url := testpg.URL(t)
 	ctx := context.Background()
 	base, err := pgx.ParseConfig(url)
 	if err != nil {

@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5"
+	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
 func finding(t *testing.T, r Result, step string) Finding {
@@ -211,10 +212,7 @@ func TestMysqlGrantProblems(t *testing.T) {
 
 func pgTarget(t *testing.T) (*pgx.Conn, *url.URL) {
 	t.Helper()
-	raw := os.Getenv("OPENNEKO_TEST_DATABASE_URL")
-	if raw == "" {
-		t.Skip("set OPENNEKO_TEST_DATABASE_URL to a Postgres database")
-	}
+	raw := testpg.URL(t)
 	u, err := url.Parse(raw)
 	if err != nil {
 		t.Fatal(err)

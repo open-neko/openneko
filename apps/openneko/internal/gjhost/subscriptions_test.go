@@ -18,6 +18,7 @@ import (
 
 	"github.com/open-neko/neko/apps/openneko/assets"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
+	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
 func TestRenderSubscriptionsConfigNeedsTheNarrowRole(t *testing.T) {
@@ -78,10 +79,7 @@ func graphql(t *testing.T, addr, query string) (int, string) {
 }
 
 func TestSubscriptionsServeWorkflowOutputsAsTheNarrowRole(t *testing.T) {
-	dsn := os.Getenv("OPENNEKO_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("set OPENNEKO_TEST_DATABASE_URL to a Postgres database")
-	}
+	dsn := testpg.URL(t)
 	ctx := context.Background()
 	admin, err := pgx.Connect(ctx, dsn)
 	if err != nil {

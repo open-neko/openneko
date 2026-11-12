@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
 func runMoveCommand(t *testing.T, args ...string) error {
@@ -85,10 +86,7 @@ func TestDatabaseMoveRefusesDemoMode(t *testing.T) {
 }
 
 func TestRequireNoOwnedTablesRefusesADatabaseInUse(t *testing.T) {
-	dsn := os.Getenv("OPENNEKO_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("set OPENNEKO_TEST_DATABASE_URL to a Postgres database")
-	}
+	dsn := testpg.URL(t)
 	ctx := context.Background()
 	admin, err := pgx.Connect(ctx, dsn)
 	if err != nil {
