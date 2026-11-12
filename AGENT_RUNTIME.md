@@ -237,7 +237,7 @@ check lists the tables the login can read, with the planner's row estimates.
 The check runs in the control zone, because it needs the stored password.
 Three callers use it: the `check_source` tool (through the broker, admin runs
 only), the "Check connection" part of the source form
-(`POST /api/v1/settings/source-check`, admins only), and `openneko source check`
+(`POST /api/v1/settings/source-check`, admins only; the Go web front answers it with a Go copy of the check in `apps/openneko/internal/sourcecheck`), and `openneko source check`
 (the worker's `POST /admin/sources/check`). The form shows the tables with all
 selected; the tables the admin clears become `blockedTables` in the proposal.
 TLS: the check reports whether the server offers TLS and whether its
