@@ -50,12 +50,11 @@ func ReconcileStorage(ctx context.Context, conn StorageConn, logf func(string, .
 	if logf == nil {
 		logf = func(string, ...any) {}
 	}
-	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, storageReconcileAdvisoryLockKey); err != nil {
-		return false, fmt.Errorf("acquire storage reconciliation lock: %w", err)
+	unlock, err := Lock(ctx, conn, storageReconcileAdvisoryLockKey, "storage repair", logf)
+	if err != nil {
+		return false, err
 	}
-	defer func() {
-		_, _ = conn.Exec(ctx, `SELECT pg_advisory_unlock($1)`, storageReconcileAdvisoryLockKey)
-	}()
+	defer unlock()
 
 	state, err := readStorageCollationState(ctx, conn)
 	if err != nil {

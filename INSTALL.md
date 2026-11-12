@@ -885,6 +885,15 @@ environment override.
 
 **Workflow subscriptions don't fire.** Run `openneko status` and check the `subscriptions` line. The worker logs `subscription manager ready (N active)` on boot. If `N=0` while the database holds subscriptions, the subscriptions GraphJin in `openneko-serve` is unreachable. `openneko stop && openneko start` writes its login again.
 
+**Web stops with "the database lacks N migration(s)".** `openneko web` starts
+only on a database that holds every migration of its release. Run
+`openneko migrate`, then start web again. If you apply the migrations by
+another route, set `OPENNEKO_SKIP_MIGRATE=1`; web then starts with a warning.
+
+**Migrate waits for "the migration lock".** Another migrator holds the lock.
+The message names its process ID and application name. It ends when that
+migrator ends.
+
 **Provider key fails.** Confirm it's active, has billing/quota, and matches the provider in `/settings`.
 
 **Stale `pnpm dev` processes hammering port 5432.** `tsx watch` processes survive `openneko stop` and reconnect with a stale password (`password authentication failed for user "neko"` in logs):

@@ -59,6 +59,10 @@ func TestReconcileStorageInitializesMissingLegacyCollationVersion(t *testing.T) 
 }
 
 func (f *fakeStorageConn) QueryRow(_ context.Context, sql string, _ ...any) pgx.Row {
+	if strings.Contains(sql, "pg_try_advisory_lock") {
+		f.exec = append(f.exec, sql)
+		return fakeStorageRow{scan: func(dest ...any) error { *dest[0].(*bool) = true; return nil }}
+	}
 	if strings.Contains(sql, "pg_database_collation_actual_version") {
 		return fakeStorageRow{scan: func(dest ...any) error {
 			*dest[0].(*string) = f.database
