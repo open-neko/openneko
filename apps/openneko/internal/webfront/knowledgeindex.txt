@@ -1,0 +1,46 @@
+# GraphJin knowledge pack
+
+This directory holds JSON files prefetched from the running GraphJin
+server's HTTP discovery endpoints (`/api/v1/discovery/{section}`),
+plus this index. The four JSONs are regenerated on every worker boot
+and on demand. Broad discovery dumps are already on disk in the JSONs
+below. Use the runtime's native GraphQL query tool for database reads;
+never use a shell command, direct GraphJin connection, or dev tool.
+
+## Files
+
+- **`tables.json`** — every table in the database with name, schema,
+  database, type, column count. Read this when you need to know which
+  tables exist before constructing a query.
+
+- **`namespaces.json`** — the namespaces / databases configured in
+  GraphJin (when there are multiple). For most analytics tasks the
+  default namespace is fine; consult this only when a query has to
+  target a non-default database.
+
+- **`insights.json`** — hub tables, hot relationships,
+  pre-computed `relationship_paths`, query templates,
+  data-quality flags. Read this **first** when planning a
+  multi-table query. Use the relationship paths already present here.
+
+- **`syntax.json`** — the GraphJin DSL reference (operators,
+  aggregations, pagination, ordering, expression aggregates,
+  directives, common mistakes). Read this when authoring a non-trivial
+  query — especially aggregations (`count_*`, `sum(expr: ...)`,
+  `avg(...)`) and `where:` predicates.
+
+## Running queries
+
+After consulting the files above, call the runtime's native GraphQL query
+tool with:
+
+```json
+{ "query": "<read-only graphql>" }
+```
+
+If a query returns errors, read the GraphQL error and any
+`errors[].extensions.graphjin_repair` hint, correct the query, and call the
+same native tool again.
+
+**Mutations and subscriptions are not allowed.** Any query containing
+the words `mutation` or `subscription` is denied at the tool gate.

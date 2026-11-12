@@ -104,13 +104,20 @@ func jsParseValue(dec *json.Decoder) (any, error) {
 // jsStringify is JSON.stringify(v), or JSON.stringify(v, null, 2) when
 // indent is true.
 func jsStringify(v any, indent bool) string {
+	if indent {
+		return jsStringifyIndent(v, "  ")
+	}
 	var b strings.Builder
 	writeJS(&b, v, false)
-	if !indent {
-		return b.String()
-	}
+	return b.String()
+}
+
+// jsStringifyIndent is JSON.stringify(v, null, indent) for an indent of spaces.
+func jsStringifyIndent(v any, indent string) string {
+	var b strings.Builder
+	writeJS(&b, v, false)
 	var out bytes.Buffer
-	if err := json.Indent(&out, []byte(b.String()), "", "  "); err != nil {
+	if err := json.Indent(&out, []byte(b.String()), "", indent); err != nil {
 		return b.String()
 	}
 	return out.String()
