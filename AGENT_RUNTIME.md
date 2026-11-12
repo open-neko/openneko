@@ -204,6 +204,13 @@ candidate after the check. Each problem names the answer at fault, and the
 source form shows it beside that field. API and local-file sources skip the
 file check, because their files exist only after approval.
 
+An admin uploads the files of a local-file source in the source form
+(`POST /api/v1/settings/file-sources`; the Go web front answers it). Go
+writes them to a folder per org and source under `files/` beside the
+GraphJin config, or under `OPENNEKO_GRAPHJIN_FILES_LOCAL_DIR`. It refuses
+new files for a source that GraphJin already serves or that an admin
+approved. The upload and the approval worker take the same lock file.
+
 OpenNeko says what a config does in plain sentences
 (`packages/llm/src/graphjin/config-describe.ts`): for each source, its kind,
 host and database, whether GraphJin blocks changes, who may read, change and
