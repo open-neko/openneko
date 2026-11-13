@@ -1,0 +1,301 @@
+{
+  "detect": [
+    {
+      "event": {
+        "type": "tool_start",
+        "id": "1",
+        "name": "read_file",
+        "input": {
+          "path": "/home/a/skills/xlsx/SKILL.md"
+        }
+      },
+      "skill": "xlsx"
+    },
+    {
+      "event": {
+        "type": "tool_start",
+        "id": "2",
+        "name": "shell",
+        "input": {
+          "command": "cat skills\\monthly-report\\SKILL.md"
+        }
+      },
+      "skill": null
+    },
+    {
+      "event": {
+        "type": "tool_start",
+        "id": "3",
+        "name": "read_file",
+        "input": {
+          "path": "skills/xlsx/SKILL.md?raw=1"
+        }
+      },
+      "skill": "xlsx"
+    },
+    {
+      "event": {
+        "type": "tool_start",
+        "id": "4",
+        "name": "read_file",
+        "input": {
+          "path": "skills/xlsx/SKILL.md.bak"
+        }
+      },
+      "skill": null
+    },
+    {
+      "event": {
+        "type": "tool_start",
+        "id": "5",
+        "name": "read_file",
+        "input": {
+          "path": "Skills/XLSX/skill.md"
+        }
+      },
+      "skill": null
+    },
+    {
+      "event": {
+        "type": "tool_start",
+        "id": "6",
+        "name": "read_file",
+        "input": {
+          "path": "skills/Mixed-Case/SKILL.md"
+        }
+      },
+      "skill": null
+    },
+    {
+      "event": {
+        "type": "tool_start",
+        "id": "7",
+        "name": "x",
+        "input": {
+          "1": "skills/numbered/SKILL.md",
+          "b": "skills/second/SKILL.md",
+          "a": "skills/first/SKILL.md"
+        }
+      },
+      "skill": "numbered"
+    },
+    {
+      "event": {
+        "type": "tool_start",
+        "id": "8",
+        "name": "x",
+        "input": {
+          "a": {
+            "b": {
+              "c": {
+                "d": {
+                  "e": {
+                    "f": "skills/deep/SKILL.md"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "skill": "deep"
+    },
+    {
+      "event": {
+        "type": "tool_start",
+        "id": "9",
+        "name": "x",
+        "input": {
+          "a": {
+            "b": {
+              "c": {
+                "d": {
+                  "e": {
+                    "f": {
+                      "g": "skills/deeper/SKILL.md"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "skill": null
+    },
+    {
+      "event": {
+        "type": "tool_start",
+        "id": "10",
+        "name": "x",
+        "input": [
+          [
+            "skills/in-list/SKILL.md"
+          ]
+        ]
+      },
+      "skill": "in-list"
+    },
+    {
+      "event": {
+        "type": "tool_start",
+        "id": "11",
+        "name": "x",
+        "input": {
+          "path": "myskills/xlsx/SKILL.md"
+        }
+      },
+      "skill": null
+    },
+    {
+      "event": {
+        "type": "tool_start",
+        "id": "12",
+        "name": "x"
+      },
+      "skill": null
+    },
+    {
+      "event": {
+        "type": "tool_end",
+        "id": "13",
+        "name": "read_file",
+        "result": "skills/xlsx/SKILL.md"
+      },
+      "skill": null
+    },
+    {
+      "event": {
+        "type": "tool_start",
+        "id": "14",
+        "name": "x",
+        "input": {
+          "path": "skills/a--b/SKILL.md",
+          "other": "skills/ok-2/SKILL.md#top"
+        }
+      },
+      "skill": "ok-2"
+    }
+  ],
+  "skillFiles": {
+    "SKILL.md": "---\nname: report\n---\nWrite the report.\n",
+    "scripts/run.js": "console.log(1)\n"
+  },
+  "baseHash": "7c97790a8adac18e7951de2ca60426b4ee6eec4a0b046baabdec524c8f2fc26e",
+  "overlays": [
+    {
+      "overlay": null,
+      "hash": "7c97790a8adac18e7951de2ca60426b4ee6eec4a0b046baabdec524c8f2fc26e"
+    },
+    {
+      "overlay": "---\nskill_name: report\nbase_hash: BASE\nstatus: applied\n---\n\n Prefer net revenue. \n",
+      "hash": "c3197e533e3c02b6c51ea3b089c1f4d822a3c7a5435f8b5699052be1a9738798"
+    },
+    {
+      "overlay": "---\nskill_name: report\nbase_hash: BASE\n---\nNo status line.\n",
+      "hash": "6822c3636facfca1898698ae4b5f4d611d803b762d6cf0a1289edcb7ea3bd5d4"
+    },
+    {
+      "overlay": "---\nbase_hash: BASE\nstatus: stale\n---\nStale guidance.\n",
+      "hash": "7c97790a8adac18e7951de2ca60426b4ee6eec4a0b046baabdec524c8f2fc26e"
+    },
+    {
+      "overlay": "---\nbase_hash: BASE\nstatus: disabled\n---\nOff.\n",
+      "hash": "7c97790a8adac18e7951de2ca60426b4ee6eec4a0b046baabdec524c8f2fc26e"
+    },
+    {
+      "overlay": "---\nbase_hash: other\nstatus: applied\n---\nOther base.\n",
+      "hash": "7c97790a8adac18e7951de2ca60426b4ee6eec4a0b046baabdec524c8f2fc26e"
+    },
+    {
+      "overlay": "---\nstatus: applied\n---\nNo base.\n",
+      "hash": "7c97790a8adac18e7951de2ca60426b4ee6eec4a0b046baabdec524c8f2fc26e"
+    },
+    {
+      "overlay": "---\r\nbase_hash: BASE\r\nstatus: applied  \r\n---\r\nWindows lines.\r\n",
+      "hash": "7e46b0e8d58fcda40b4193d5b5b3efa0ffe976bd844c44faba5420b640e13c8c"
+    },
+    {
+      "overlay": "---\nbase_hash: BASE\nstatus: maybe\n---\nUnknown status.\n",
+      "hash": "7c97790a8adac18e7951de2ca60426b4ee6eec4a0b046baabdec524c8f2fc26e"
+    },
+    {
+      "overlay": "No front matter at all.\n",
+      "hash": "7c97790a8adac18e7951de2ca60426b4ee6eec4a0b046baabdec524c8f2fc26e"
+    },
+    {
+      "overlay": "---\nbase_hash:\n  BASE\nstatus: applied\n---\nValue on the next line.\n",
+      "hash": "23b2e748a3881a815a06d42c102e075aa1c4dd9a1acafe0f5ac3c2c50dc12d47"
+    }
+  ],
+  "usage": [
+    {
+      "usage": {
+        "costStatus": "estimated",
+        "estimatedCostUsd": 0.0123456
+      },
+      "cap": 5000000,
+      "costMicros": 12346,
+      "priced": "estimated"
+    },
+    {
+      "usage": {
+        "costStatus": "billed",
+        "billedCostUsd": 0.5,
+        "estimatedCostUsd": 0.7
+      },
+      "cap": 5000000,
+      "costMicros": 500000,
+      "priced": "billed"
+    },
+    {
+      "usage": {
+        "costStatus": "included",
+        "estimatedCostUsd": 0
+      },
+      "cap": 5000000,
+      "costMicros": 0,
+      "priced": "included"
+    },
+    {
+      "usage": {
+        "costStatus": "unknown",
+        "estimatedCostUsd": 0.2
+      },
+      "cap": 5000000,
+      "costMicros": 5000000,
+      "priced": "fallback"
+    },
+    {
+      "usage": {
+        "costStatus": "estimated"
+      },
+      "cap": 2000000,
+      "costMicros": 2000000,
+      "priced": "fallback"
+    },
+    {
+      "usage": {},
+      "cap": 0,
+      "costMicros": 0,
+      "priced": "fallback"
+    },
+    {
+      "usage": {
+        "costStatus": "estimated",
+        "estimatedCostUsd": -1
+      },
+      "cap": 5000000,
+      "costMicros": 0,
+      "priced": "estimated"
+    },
+    {
+      "usage": {
+        "billedCostUsd": 1e-7
+      },
+      "cap": 5000000,
+      "costMicros": 1,
+      "priced": "billed"
+    }
+  ]
+}

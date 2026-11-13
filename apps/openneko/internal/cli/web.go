@@ -138,6 +138,9 @@ with exit code 0, so its supervisor starts it again.`,
 			shut, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			_ = srv.Shutdown(shut)
+			stopTurns, cancelTurns := context.WithTimeout(context.Background(), webfront.TurnStopGrace)
+			api.StopTurns(stopTurns)
+			cancelTurns()
 			if runner != nil {
 				stopJobs, cancelJobs := context.WithTimeout(context.Background(), jobsStopGrace)
 				runner.Stop(stopJobs)
