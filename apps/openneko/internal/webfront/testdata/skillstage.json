@@ -1,0 +1,493 @@
+{
+  "cwd": "/runs/s/workspace/org-1",
+  "roots": [
+    "/runs/s/workspace/org-1/skills"
+  ],
+  "decisions": [
+    {
+      "toolCalls": null,
+      "capture": true,
+      "reason": "evidence_missing"
+    },
+    {
+      "toolCalls": [],
+      "capture": false,
+      "reason": "no_skill_writes"
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "input": {
+            "path": "skills/a/SKILL.md"
+          }
+        }
+      ],
+      "capture": false,
+      "reason": "no_skill_writes"
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "mcp__neko__create_skill"
+        }
+      ],
+      "capture": true,
+      "reason": "skill_tool"
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "neko_skill_manage",
+          "input": {}
+        }
+      ],
+      "capture": true,
+      "reason": "skill_tool"
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "xcreate_skill"
+        }
+      ],
+      "capture": false,
+      "reason": "no_skill_writes"
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "terminal",
+          "input": {
+            "command": "ls"
+          }
+        }
+      ],
+      "capture": true,
+      "reason": "shell"
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "delegate_task"
+        }
+      ],
+      "capture": true,
+      "reason": "shell"
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "file_write",
+          "input": {
+            "title": "skill report"
+          }
+        }
+      ],
+      "capture": true,
+      "reason": "skill_tool"
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "file_write",
+          "input": {}
+        }
+      ],
+      "capture": true,
+      "reason": "write_path_unknown"
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "write_file",
+          "input": {
+            "path": "notes/a.md"
+          }
+        }
+      ],
+      "capture": false,
+      "reason": "no_skill_writes"
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "write_file",
+          "input": {
+            "path": "~/x"
+          }
+        }
+      ],
+      "capture": true,
+      "reason": "skill_write"
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "edit",
+          "input": {
+            "path": "skills/a/SKILL.md"
+          }
+        }
+      ],
+      "capture": true,
+      "reason": "skill_write"
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "edit",
+          "input": {
+            "path": "/elsewhere/skills/a.md"
+          }
+        }
+      ],
+      "capture": true,
+      "reason": "skill_write"
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "patch",
+          "input": {
+            "rawInput": {
+              "path": "/runs/s/workspace/org-1/skills"
+            }
+          }
+        }
+      ],
+      "capture": true,
+      "reason": "skill_write"
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "patch",
+          "input": {
+            "locations": [
+              {
+                "path": "a.md"
+              },
+              {
+                "path": "../org-1/skills/b/c.md"
+              }
+            ]
+          }
+        }
+      ],
+      "capture": true,
+      "reason": "skill_write"
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "move",
+          "input": {
+            "path": "/runs/s/workspace/org-1/skillset/a.md"
+          }
+        }
+      ],
+      "capture": false,
+      "reason": "no_skill_writes"
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "delete",
+          "input": {
+            "path": "/runs/s/workspace/org-1/skills/../notes.md"
+          }
+        }
+      ],
+      "capture": false,
+      "reason": "no_skill_writes"
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "delete",
+          "input": {
+            "path": ""
+          }
+        }
+      ],
+      "capture": true,
+      "reason": "write_path_unknown"
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "move",
+          "input": {
+            "path": 7
+          }
+        }
+      ],
+      "capture": true,
+      "reason": "write_path_unknown"
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "file_edit",
+          "input": {
+            "path": "notes/a.md"
+          }
+        },
+        {
+          "name": "process"
+        }
+      ],
+      "capture": true,
+      "reason": "shell"
+    }
+  ],
+  "diffs": [
+    {
+      "baseline": {
+        "a/SKILL.md": "1"
+      },
+      "box": {
+        "a/SKILL.md": "1"
+      },
+      "changed": [],
+      "removed": []
+    },
+    {
+      "baseline": {
+        "a/SKILL.md": "1"
+      },
+      "box": {
+        "a/SKILL.md": "2",
+        "a/new.py": "3"
+      },
+      "changed": [
+        "a/SKILL.md",
+        "a/new.py"
+      ],
+      "removed": []
+    },
+    {
+      "baseline": {
+        "a/SKILL.md": "1",
+        "a/old.py": "2",
+        "b/SKILL.md": "3"
+      },
+      "box": {
+        "a/SKILL.md": "1"
+      },
+      "changed": [],
+      "removed": [
+        "a/old.py"
+      ]
+    },
+    {
+      "baseline": {},
+      "box": {
+        "top.md": "1",
+        "a/__pycache__/x.pyc": "2",
+        "a/._x": "3",
+        "a/./x": "4",
+        "a//x": "5",
+        "b/SKILL.md": "6"
+      },
+      "changed": [
+        "b/SKILL.md"
+      ],
+      "removed": []
+    },
+    {
+      "baseline": {
+        "z/SKILL.md": "1",
+        "a/SKILL.md": "1"
+      },
+      "box": {
+        "z/SKILL.md": "2",
+        "a/SKILL.md": "3",
+        "m/x.md": "4"
+      },
+      "changed": [
+        "a/SKILL.md",
+        "m/x.md",
+        "z/SKILL.md"
+      ],
+      "removed": []
+    }
+  ],
+  "treeFiles": {
+    "README.md": "top level\n",
+    "report/SKILL.md": "# Report\n",
+    "report/scripts/run.py": "print(1)\n",
+    "report/__pycache__/run.cpython.pyc": "x",
+    "report/.DS_Store": "x",
+    "report/._SKILL.md": "x",
+    "report/scripts/run.pyc": "x",
+    "other/deep/a/b.txt": "b\n"
+  },
+  "tree": {
+    "other/deep/a/b.txt": "0263829989b6fd954f72baaf2fc64bc2e2f01d692d4de72986ea808f6e99813f",
+    "report/SKILL.md": "497b7725a00101d6cf82489ef502fb0918962b10aaa7279962ab5ec3edc62533",
+    "report/scripts/run.py": "cc42155088fca5730758db72b2a5bca33112a941dfaa2d43098ec422ce4ea213"
+  },
+  "stages": [
+    {
+      "steps": [
+        {
+          "builtin": "graphjin-config",
+          "origin": true
+        }
+      ],
+      "allowed": null,
+      "tree": {
+        "graphjin-config/.openneko-origin": "0b115638479df5dbfa77f76fe5426f0f6a244e0f21a67a612aab8d4eed914e54",
+        "graphjin-config/SKILL.md": "470aff51383b9c2fd87c69d11370d60be7379cd9314f5794ee8279e3789722cc",
+        "graphjin-config/references/config-reference.md": "be0f9d11170f4ff84e23754520486b0a58922c1fc455e91aa1f101595fa0d80b"
+      }
+    },
+    {
+      "steps": [
+        {
+          "builtin": "graphjin-config",
+          "origin": false
+        }
+      ],
+      "allowed": null,
+      "tree": {
+        "graphjin-config/.openneko-origin": "0b115638479df5dbfa77f76fe5426f0f6a244e0f21a67a612aab8d4eed914e54",
+        "graphjin-config/SKILL.md": "470aff51383b9c2fd87c69d11370d60be7379cd9314f5794ee8279e3789722cc",
+        "graphjin-config/references/config-reference.md": "be0f9d11170f4ff84e23754520486b0a58922c1fc455e91aa1f101595fa0d80b"
+      }
+    },
+    {
+      "steps": [
+        {
+          "builtin": "graphjin-config",
+          "origin": true
+        },
+        {
+          "write": "graphjin-config/SKILL.md",
+          "text": "Changed.\n"
+        }
+      ],
+      "allowed": null,
+      "tree": {
+        "graphjin-config/.openneko-origin": "0b115638479df5dbfa77f76fe5426f0f6a244e0f21a67a612aab8d4eed914e54",
+        "graphjin-config/SKILL.md": "9dcb6a188fd6333f904035a60c597ae21be1e374fceedfbba16afdddec7632f3",
+        "graphjin-config/references/config-reference.md": "be0f9d11170f4ff84e23754520486b0a58922c1fc455e91aa1f101595fa0d80b"
+      }
+    },
+    {
+      "steps": [
+        {
+          "builtin": "graphjin-config",
+          "origin": true
+        },
+        {
+          "overlay": "graphjin-config",
+          "text": "---\nbase_hash: BASE\nstatus: applied\n---\n\n Use the dev config. \n"
+        }
+      ],
+      "allowed": null,
+      "tree": {
+        "graphjin-config/SKILL.md": "975313d02dcf27256dca74cf0cfae33a8d10670a33f9a42f5e5e43448f741a11",
+        "graphjin-config/references/config-reference.md": "be0f9d11170f4ff84e23754520486b0a58922c1fc455e91aa1f101595fa0d80b"
+      }
+    },
+    {
+      "steps": [
+        {
+          "builtin": "graphjin-config",
+          "origin": false
+        },
+        {
+          "overlay": "graphjin-config",
+          "text": "---\nbase_hash: BASE\nstatus: stale\n---\nStale.\n"
+        }
+      ],
+      "allowed": null,
+      "tree": {
+        "graphjin-config/.openneko-origin": "0b115638479df5dbfa77f76fe5426f0f6a244e0f21a67a612aab8d4eed914e54",
+        "graphjin-config/SKILL.md": "470aff51383b9c2fd87c69d11370d60be7379cd9314f5794ee8279e3789722cc",
+        "graphjin-config/references/config-reference.md": "be0f9d11170f4ff84e23754520486b0a58922c1fc455e91aa1f101595fa0d80b"
+      }
+    },
+    {
+      "steps": [
+        {
+          "builtin": "graphjin-config",
+          "origin": true
+        },
+        {
+          "write": "report/SKILL.md",
+          "text": "---\nname: report\n---\nWrite the report.\n\n<!-- openneko-learned:start -->\n## Learned guidance\n\nOld.\n<!-- openneko-learned:end -->\n\nTail.\n"
+        },
+        {
+          "write": "report/scripts/run.py",
+          "text": "print(2)\n"
+        },
+        {
+          "overlay": "report",
+          "text": "---\nbase_hash: BASE\n---\nPrefer net revenue.\n"
+        },
+        {
+          "write": "hidden/SKILL.md",
+          "text": "# Hidden\n"
+        },
+        {
+          "write": "pdf/SKILL.md",
+          "text": "# Custom pdf\n"
+        },
+        {
+          "write": "notes.md",
+          "text": "not a skill\n"
+        }
+      ],
+      "allowed": [
+        "report",
+        "pdf"
+      ],
+      "tree": {
+        "report/SKILL.md": "86981053e7d9560445f690d2bdb57e5e9cf19b56e0b75d902ba1b7604f6fd3d0",
+        "report/scripts/run.py": "0111afd387e1ad576083c5039aa542faa2ed4a53d3e128bd03de990f9ea4255f"
+      }
+    },
+    {
+      "steps": [
+        {
+          "write": "report/SKILL.md",
+          "text": "No end marker\n<!-- openneko-learned:start -->\nold\n"
+        },
+        {
+          "overlay": "report",
+          "text": "---\nbase_hash: BASE\nstatus: applied\n---\n   \n"
+        },
+        {
+          "write": "plain/SKILL.md",
+          "text": "# Plain\n"
+        },
+        {
+          "overlay": "plain",
+          "text": "---\nbase_hash: BASE\nstatus: disabled\n---\nOff.\n"
+        }
+      ],
+      "allowed": null,
+      "tree": {
+        "graphjin-config/.openneko-origin": "0b115638479df5dbfa77f76fe5426f0f6a244e0f21a67a612aab8d4eed914e54",
+        "graphjin-config/SKILL.md": "470aff51383b9c2fd87c69d11370d60be7379cd9314f5794ee8279e3789722cc",
+        "graphjin-config/references/config-reference.md": "be0f9d11170f4ff84e23754520486b0a58922c1fc455e91aa1f101595fa0d80b",
+        "plain/SKILL.md": "9d6dc8a23dc8c4f6fa6a808668530dda7ec277b2ccc74b3c2e987aa4c90a9e1e",
+        "report/SKILL.md": "a05109873f3ef786d38b05861af054cab988ca0d335eb122401c0741652ad2b8"
+      }
+    },
+    {
+      "steps": [
+        {
+          "write": "report/SKILL.md",
+          "text": "# Report\n"
+        }
+      ],
+      "allowed": [],
+      "tree": {}
+    }
+  ]
+}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log"
+	"os"
+	"slices"
 	"strings"
 	"sync"
 
@@ -64,6 +66,7 @@ type chatTurnState struct {
 	needsInput    any
 	sawAnswer     bool
 	denials       map[string]bool
+	toolCalls     []skillToolCall
 }
 
 var afterQuestion = map[string]bool{"message": true, "surface": true, "vitals": true, "followups": true, "needs_input": true}
@@ -99,6 +102,8 @@ func (s *chatTurnState) wrapped(ctx context.Context, event any) error {
 		if snap := jsGet(event, "usageSnapshot"); jsTruthy(snap) {
 			s.lastSnapshot = snap
 		}
+		name, _ := jsGet(event, "name").(string)
+		s.toolCalls = append(s.toolCalls, skillToolCall{Name: name, Input: jsGet(event, "input")})
 	case "needs_input":
 		s.needsInput = event
 	}
@@ -186,22 +191,37 @@ func (a *API) runChatTurn(ctx context.Context, o chatTurnOptions) (chatTurnResul
 			held = append(held, d)
 		}
 	}
+	if err := st.wrapped(ctx, statusEvent("Preparing secure agent workspace…")); err != nil {
+		return t.fail(ctx, err)
+	}
+	stage, err := stageTurn(tc.Workspace, stageOptions{Allowed: tc.AllowedSkills, Terminal: tc.Terminal, Actor: tc.Actor})
+	if err != nil {
+		return t.fail(ctx, err)
+	}
 	if err := st.wrapped(ctx, statusEvent("Agent is working…")); err != nil {
+		os.RemoveAll(stage.Dir)
 		return t.fail(ctx, err)
 	}
 	runCore := o.runCore
 	if runCore == nil {
 		runCore = a.runAgentCore
 	}
-	res, err := runCore(ctx, agentCoreInput{Backend: backend, Prompt: tc.Prompt, UserMessage: o.Message,
-		OrgID: o.OrgID, ThreadID: o.ThreadID, RunID: o.RunID, Workspace: tc.Workspace, BackendState: tc.BackendState,
-		PackActions: held, SourceConfigEnabled: tc.SourceConfig, GraphjinToolPolicy: o.GraphjinToolPolicy,
+	res, err := runCore(ctx, agentCoreInput{Backend: backend, Prompt: strings.ReplaceAll(tc.Prompt, tc.Workspace.OrgRoot, stage.Workspace.OrgRoot),
+		UserMessage: o.Message, OrgID: o.OrgID, ThreadID: o.ThreadID, RunID: o.RunID, Workspace: stage.Workspace,
+		BackendState: tc.BackendState, PackActions: held, SourceConfigEnabled: tc.SourceConfig, GraphjinToolPolicy: o.GraphjinToolPolicy,
 		NativeDelegationOff: o.NativeDelegationOff, CoreCards: !tc.RichCards, CardsOff: !tc.WantsCards, Shell: tc.Terminal,
 		Keys: keys, Socket: a.serveSocket(), Emit: st.wrapped})
+	bg := context.WithoutCancel(ctx)
+	var evidence *skillEvidence
+	if err == nil && res.Status == "completed" {
+		st.mu.Lock()
+		evidence = &skillEvidence{ToolCalls: slices.Clone(st.toolCalls)}
+		st.mu.Unlock()
+	}
+	stage.finish(bg, a, o.OrgID, o.RunID, ctx.Err() != nil, evidence)
 	if err != nil {
 		return t.fail(ctx, err)
 	}
-	bg := context.WithoutCancel(ctx)
 	st.mu.Lock()
 	noAnswer := res.Status == "completed" && jsTrim(res.FinalText) == "" && jsTrim(res.RawText) == "" && !st.sawAnswer
 	partial := !st.usageReported && st.lastSnapshot != nil
