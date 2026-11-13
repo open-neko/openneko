@@ -2,6 +2,7 @@ package webfront
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -59,6 +60,10 @@ type API struct {
 	hookWaiters atomic.Int64
 	runs        runRegistry
 	slots       agentSlots
+	hostProv    hostProvision
+
+	turnResolve func(ctx context.Context, orgID string) (*llm.AxBackendConfig, map[string]string, error)
+	turnCore    func(ctx context.Context, in agentCoreInput) (axRunResult, error)
 }
 
 // GoRoutes lists the /api/v1 routes that Go answers, by method.
@@ -113,6 +118,10 @@ var GoRoutes = map[string][]string{
 	"/api/v1/work/threads/{threadId}/runs/{runId}/timing":         {"POST"},
 	"/api/v1/work/threads/{threadId}/runs/{runId}/approve-action": {"POST"},
 	"/api/v1/work/runs/{runId}/events":                            {"GET"},
+	"/api/v1/work/runs/{runId}/cancel":                            {"POST"},
+	"/api/v1/work/threads/{threadId}/runs":                        {"POST"},
+	"/api/v1/work/threads/{threadId}/runs/{runId}/events":         {"GET"},
+	"/api/v1/workflows/{workflowId}/manual-runs":                  {"POST"},
 	"/api/v1/workflows":                                           {"GET"},
 	"/api/v1/workflows/{workflowId}":                              {"GET", "PATCH", "DELETE"},
 	"/api/v1/workflows/{workflowId}/adopt":                        {"POST"},
@@ -259,6 +268,10 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/work/threads/{threadId}/runs/{runId}/timing":         {"POST": a.runTiming},
 			"/api/v1/work/threads/{threadId}/runs/{runId}/approve-action": {"POST": a.approveRunAction},
 			"/api/v1/work/runs/{runId}/events":                            {"GET": a.workRunEvents},
+			"/api/v1/work/runs/{runId}/cancel":                            {"POST": a.cancelRun},
+			"/api/v1/work/threads/{threadId}/runs":                        {"POST": a.startRun},
+			"/api/v1/work/threads/{threadId}/runs/{runId}/events":         {"GET": a.runEventStream},
+			"/api/v1/workflows/{workflowId}/manual-runs":                  {"POST": a.manualRun},
 			"/api/v1/workflows":                                           {"GET": a.workflows},
 			"/api/v1/workflows/{workflowId}":                              {"GET": a.workflowDetail, "PATCH": a.workflowPatch, "DELETE": a.workflowDelete},
 			"/api/v1/workflows/{workflowId}/adopt":                        {"POST": a.workflowAdopt},

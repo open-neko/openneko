@@ -24,6 +24,12 @@ const (
 // run of that workflow on its own thread.
 func workflowTurnFront(t *testing.T, steps string) (*API, *pgxpool.Pool, workflowRecord) {
 	t.Helper()
+	f, db, wf := workflowTurnFrontHTTP(t, steps)
+	return f.API, db, wf
+}
+
+func workflowTurnFrontHTTP(t *testing.T, steps string) (*Front, *pgxpool.Pool, workflowRecord) {
+	t.Helper()
 	f, db, _ := chatTurnFront(t)
 	seed(t, db, `insert into bot (org_id, owner_user_id, name, coat, pattern, thread_id, instructions)
 		values ('org', 'member', 'Stock watcher', 'ink', 'solid', $1, '')`, threadMine)
@@ -37,7 +43,7 @@ func workflowTurnFront(t *testing.T, steps string) (*API, *pgxpool.Pool, workflo
 	if err != nil {
 		t.Fatal(err)
 	}
-	return f.API, db, wf
+	return f, db, wf
 }
 
 func workflowTurnOpts(wf workflowRecord, log *eventLog) workflowTurnOptions {
