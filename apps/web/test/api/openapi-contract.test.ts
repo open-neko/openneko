@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -22,6 +23,7 @@ type Contract = { servers: { url: string }[]; paths: Record<string, Record<strin
 
 async function files(directory: string, match: (name: string) => boolean): Promise<string[]> {
   const found: string[] = [];
+  if (!existsSync(directory)) return found;
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) found.push(...(await files(path, match)));

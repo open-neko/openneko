@@ -3,8 +3,8 @@
 OpenNeko treats the agent loop as untrusted code: a prompt can steer it. Three
 pieces run it, and each holds only what its job needs:
 
-- the **runner**, a short-lived Node process that web or the worker starts for
-  one run;
+- the **runner**, a short-lived Node process that the worker starts for one
+  run (channel messages, scheduled, subscription and API workflows);
 - **`openneko serve`**, which runs each agent turn and every other model call:
   the Ax harness, the inference and embedding gateways and the agent's file
   tools;
@@ -31,6 +31,12 @@ per-run broker.
             └──────── broker (loopback) ◀──       (own network, per-run user,
                                                    no secrets)
 ```
+
+A chat question and a manual workflow run from the web app have no runner.
+`openneko web` runs them in its own process: it stages the run folder the
+same way, serves the agent's MCP tools from Go and sends each turn to serve's
+socket. The steps below hold for both paths, with `openneko web` in the
+runner's place.
 
 1. Web (chat) or the worker (channels, workflows, jobs) stages the run's
    workspace, skills and job file in a new folder under
@@ -64,11 +70,11 @@ trusted host. Only the agent loop runs in the runner and serve.
 
 | Piece | Runs as | Holds | Network |
 |---|---|---|---|
-| Runner | the web or worker user (`neko`, 1001) | the run's broker token and the org's model key, for this run only | that of web or the worker |
+| Runner | the worker user (`neko`, 1001) | the run's broker token and the org's model key, for this run only | that of the worker |
 | `openneko serve` | `neko`, 1001 | a turn's or a host call's model key while it runs; the files service; the `neko_files_<database>` login and the derived token key; the customer GraphJin and its config | the stack's network, for the model APIs and the customer's data sources |
 | Sandbox service | root, to give each run its own user | **no secrets**; a command gets only `PATH`, `HOME`, `TMPDIR`, `LANG`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH` | only its own network |
 
-Model keys exist only in the runner and in serve. Serve drops every
+Model keys exist only in the runner, in `openneko web` while it runs a turn, and in serve. Serve drops every
 `OPENNEKO_SANDBOX_*` value that a turn sends, and the sandbox request carries
 no model key, so the terminal cannot read one.
 
