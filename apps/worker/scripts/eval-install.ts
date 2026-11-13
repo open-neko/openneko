@@ -172,6 +172,7 @@ export type EvalInstallHostOptions = {
   binary?: string;
   build?: boolean;
   readMeminfo?: () => Promise<string>;
+  lockWaitMs?: number;
 };
 
 export class EvalEpisode {
@@ -312,16 +313,18 @@ export class EvalEpisode {
     signal?: AbortSignal,
     timeoutMs = 900_000,
   ): Promise<Record<string, unknown> | undefined> {
-    this.events ??= new pg.Pool({
-      host: this.host.login.host,
-      port: this.host.login.port,
-      user: this.host.login.user,
-      password: this.host.login.password,
-      database: this.database,
-      ssl: this.host.login.sslmode === "disable" ? false : { rejectUnauthorized: this.host.login.sslmode === "verify-full" },
-      max: 1,
-    });
-    this.events.on("error", () => {});
+    if (!this.events) {
+      this.events = new pg.Pool({
+        host: this.host.login.host,
+        port: this.host.login.port,
+        user: this.host.login.user,
+        password: this.host.login.password,
+        database: this.database,
+        ssl: this.host.login.sslmode === "disable" ? false : { rejectUnauthorized: this.host.login.sslmode === "verify-full" },
+        max: 1,
+      });
+      this.events.on("error", () => {});
+    }
     const deadline = Date.now() + timeoutMs;
     let after = "0";
     while (Date.now() < deadline) {
@@ -340,17 +343,26 @@ export class EvalEpisode {
     throw new Error(`run ${runId} sent no done event within ${timeoutMs / 1000} s`);
   }
 
-  jobsRun(kind: string, orgId: string, at?: Date): Record<string, unknown> {
+  // Async, because the driver process may serve the source that the job queries.
+  async jobsRun(kind: string, orgId: string, at?: Date): Promise<Record<string, unknown>> {
     const args = ["jobs", "run", kind, "--org", orgId, ...(at ? ["--at", at.toISOString()] : [])];
-    const result = spawnSync(this.host.binary, args, {
+    const child = spawn(this.host.binary, args, {
       env: { ...process.env, ...this.env() },
-      encoding: "utf8",
-      timeout: 120_000,
+      stdio: ["ignore", "pipe", "pipe"],
     });
-    if (result.status !== 0) {
-      throw new Error(`openneko jobs run ${kind} failed (${result.status}): ${result.stderr || result.stdout}`);
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => (stdout += chunk));
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    const timer = setTimeout(() => child.kill("SIGKILL"), 120_000);
+    const status = await new Promise<number | null>((done, reject) => {
+      child.once("error", reject);
+      child.once("close", (code) => done(code));
+    }).finally(() => clearTimeout(timer));
+    if (status !== 0) {
+      throw new Error(`openneko jobs run ${kind} failed (${status}): ${stderr || stdout}`);
     }
-    return JSON.parse(result.stdout) as Record<string, unknown>;
+    return JSON.parse(stdout) as Record<string, unknown>;
   }
 
   async readTrace(runId: string): Promise<{ events: Record<string, unknown>[]; steps: Record<string, unknown>[] }> {
@@ -508,7 +520,8 @@ export class EvalInstallHost {
   }
 
   private pool(): pg.Pool {
-    this.maintenance ??= new pg.Pool({
+    if (this.maintenance) return this.maintenance;
+    this.maintenance = new pg.Pool({
       host: this.login.host,
       port: this.login.port,
       user: this.login.user,
@@ -525,12 +538,17 @@ export class EvalInstallHost {
   // of a second eval run on the same Postgres server.
   private async takeLock(): Promise<void> {
     const client = await this.pool().connect();
-    const { rows } = await client.query<{ locked: boolean }>(
-      `select pg_try_advisory_lock(hashtext('openneko.eval.install')) as locked`,
-    );
-    if (!rows[0]?.locked) {
-      client.release();
-      throw new Error("another eval run uses this Postgres server; wait for it to end");
+    const deadline = Date.now() + (this.options.lockWaitMs ?? 0);
+    for (;;) {
+      const { rows } = await client.query<{ locked: boolean }>(
+        `select pg_try_advisory_lock(hashtext('openneko.eval.install')) as locked`,
+      );
+      if (rows[0]?.locked) break;
+      if (Date.now() >= deadline) {
+        client.release();
+        throw new Error("another eval run uses this Postgres server; wait for it to end");
+      }
+      await new Promise((wake) => setTimeout(wake, 500));
     }
     this.lock = client;
   }

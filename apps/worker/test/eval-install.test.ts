@@ -151,7 +151,7 @@ describe.skipIf(!reachable)("eval install episode", () => {
       await admin.query(`create database ${leftover}`);
       const leftoverFolder = join(tmpdir(), `${EVAL_EPISODE_FOLDER_PREFIX}dead_run`);
       await mkdir(join(leftoverFolder, "home"), { recursive: true });
-      host = await EvalInstallHost.prepare({ login });
+      host = await EvalInstallHost.prepare({ login, lockWaitMs: 600_000 });
       await expect(EvalInstallHost.prepare({ login, binary: host.binary, build: false })).rejects.toThrow(
         /another eval run uses this Postgres server/,
       );

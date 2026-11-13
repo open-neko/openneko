@@ -1414,8 +1414,8 @@ async function observeStateMachine(input: {
     if (watcher) sequence.push("watcher.saved");
     sequence.push("model.completed");
 
-    const sweep = (at: Date) => {
-      const result = input.episode.jobsRun("workflow_cron_sweep", input.fixture.orgId, at);
+    const sweep = async (at: Date) => {
+      const result = await input.episode.jobsRun("workflow_cron_sweep", input.fixture.orgId, at);
       return {
         checked: Number(result.checked ?? 0),
         fired: (Array.isArray(result.fired) ? result.fired : []).map((entry) => ({
@@ -1424,11 +1424,11 @@ async function observeStateMachine(input: {
       };
     };
     const firstNow = new Date("2030-01-01T00:00:00.000Z");
-    const first = sweep(firstNow);
+    const first = await sweep(firstNow);
     if (first.fired.some((entry) => entry.watcherId === watcher?.id)) {
       sequence.push("watcher.fired");
     }
-    const second = sweep(new Date(firstNow.getTime() + 3_600_000));
+    const second = await sweep(new Date(firstNow.getTime() + 3_600_000));
     const fireCount = first.fired.length + second.fired.length;
     const debounced =
       Boolean(watcher) &&

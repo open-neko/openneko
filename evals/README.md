@@ -76,8 +76,8 @@ pnpm openneko eval resume --config evals/configs/adventureworks-smoke.yaml --run
 pnpm openneko eval run --config evals/configs/adventureworks-smoke.yaml --restart
 pnpm openneko eval rescore --config evals/configs/adventureworks-smoke.yaml --run <run-id>
 
-# Product lifecycle coverage needs only the migrated OpenNeko test database;
-# it makes no provider/model calls.
+# Product lifecycle coverage needs the migrated OpenNeko test database and Go;
+# it starts its own eval install and makes no provider calls.
 pnpm openneko eval run --config evals/configs/openneko-lifecycle-smoke.yaml --no-promote
 
 # Seeded-memory retrieval/isolation, the memory ablation twin, and the skill
@@ -97,9 +97,14 @@ pnpm openneko eval report --result evals/results/<config-id>/<run-id>
 
 The metric adapter supports Ax across model providers, direct GraphJin, and
 dataset/config variation. The lifecycle adapter
-executes watcher and approval-governed mutation state machines against isolated
-test organizations with deterministic clocks, query responses, and action
-effects.
+runs each case on its own eval install (`openneko web` and `openneko serve` on a
+new database, as the backend driver does). The Go sweep runs by `openneko jobs
+run workflow_cron_sweep` with a fixed clock against a GraphQL source in the
+driver process. A scripted model drives the workflow builder in a chat turn and
+`neko_action` in a manual workflow run. Approvals go through
+`PATCH /api/v1/action-requests/{id}`, and River runs the execution against an
+in-memory action adapter. Watcher disable and reset have no product path; the
+adapter calls the Node store functions for those two steps.
 
 AdventureWorks metric episodes start at the same natural-language seam as an
 ad-hoc production request: a case supplies only `question` and `role`, the
