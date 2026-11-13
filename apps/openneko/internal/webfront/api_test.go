@@ -167,9 +167,10 @@ func TestAPIVersionFile(t *testing.T) {
 	}
 }
 
-func TestContextRemoteRoutesGone(t *testing.T) {
+func TestRemovedRoutesGone(t *testing.T) {
 	a := &API{}
 	for _, c := range [][2]string{
+		{"GET", "/api/v1/work/config/history"}, {"POST", "/api/v1/work/config/restore"},
 		{"GET", "/api/v1/admin/context-remote"}, {"PUT", "/api/v1/admin/context-remote"}, {"DELETE", "/api/v1/admin/context-remote"},
 		{"POST", "/api/v1/admin/context-remote/host-key"},
 		{"GET", "/api/v1/admin/context-remote/publish"}, {"POST", "/api/v1/admin/context-remote/publish"},

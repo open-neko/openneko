@@ -14,7 +14,6 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -218,7 +217,7 @@ func (a *API) workflowAdopt(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
-	a.versionTeamWorkflow(ctx, saved, verb)
+	a.recordWorkflowChange(ctx, saved, verb)
 	adopted, err := scanWorkflowRecord(a.DB.QueryRow(ctx, `update workflow_definition set parent_id = $2, updated_at = now()
 		where id = $1 returning `+workflowRecordColumns, saved.ID, source.ID))
 	if err != nil {
@@ -259,66 +258,7 @@ func (a *API) saveTeamCopy(ctx context.Context, s workflowRecord) (workflowRecor
 	return saved, "Added", err
 }
 
-// versionTeamWorkflow is the team branch of versionWorkflowDefinition(): a
-// failure is logged and the save stands.
-func (a *API) versionTeamWorkflow(ctx context.Context, wf workflowRecord, verb string) {
-	body, err := workflowMarkdown(wf)
-	if err == nil {
-		path := "workflows/" + workflowSlug(wf.Name) + ".md"
-		dir := filepath.Join(orgAgentRoot(wf.OrgID), "workflows")
-		if err = os.MkdirAll(dir, 0o755); err == nil {
-			err = os.WriteFile(filepath.Join(orgAgentRoot(wf.OrgID), filepath.FromSlash(path)), []byte(body), 0o644)
-		}
-		if err == nil {
-			msg := verb + " workflow: " + wf.Name
-			a.recordConfigChange(ctx, wf.OrgID, path, msg, "workflow", wf.Name, "")
-			return
-		}
-	}
-	log.Printf("[config-vcs] workflow versioning failed (save succeeded): %v", err)
-}
-
 var slugRun = regexp.MustCompile(`[^a-z0-9]+`)
-
-func workflowSlug(name string) string {
-	s := slugRun.ReplaceAllString(strings.ToLower(name), "-")
-	s = strings.TrimPrefix(s, "-")
-	s = strings.TrimSuffix(s, "-")
-	if len(s) > 80 {
-		s = s[:80]
-	}
-	return s
-}
-
-func workflowMarkdown(wf workflowRecord) (string, error) {
-	var steps []any
-	if err := json.Unmarshal(wf.Steps, &steps); err != nil {
-		return "", err
-	}
-	quote := func(s string) string {
-		var b strings.Builder
-		writeJSString(&b, s)
-		return b.String()
-	}
-	cron := "null"
-	if wf.Cron != nil && *wf.Cron != "" {
-		cron = quote(*wf.Cron)
-	}
-	lines := []string{"---", "type: Workflow", "name: " + quote(wf.Name), "goal: " + quote(wf.Goal), "cron: " + cron,
-		"cron_timezone: " + quote(wf.CronTimezone), "---", "", wf.Description, "", "## Steps"}
-	for i, s := range steps {
-		if m, ok := s.(map[string]any); ok {
-			if d, ok := m["description"]; ok {
-				s = d
-			}
-		}
-		lines = append(lines, strconv.Itoa(i+1)+". "+jsStringOf(s))
-	}
-	if wf.SystemPromptOverlay != "" {
-		lines = append(lines, "", "## System prompt overlay", "", wf.SystemPromptOverlay)
-	}
-	return strings.Join(append(lines, ""), "\n"), nil
-}
 
 // jsStringOf is String(v) for a JSON value.
 func jsStringOf(v any) string {

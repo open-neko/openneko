@@ -121,7 +121,7 @@ restorable.
 
 | Feature | What it does for you | Shipped in |
 |---|---|---|
-| Invisible versioning | Every change to skills, workflows, and memory is snapshotted automatically — nothing is ever lost to an edit. | #96 |
+| Change record | Each change to a skill, a workflow or a team memory adds a `config_change` row: who made it, what changed, when, and a short summary. OpenNeko keeps no old versions and has no undo. To try a change safely, copy the skill and edit the copy. | #96 |
 | Personal workflows | Your saved workflows are yours; the team's are the team's. Same name, no collisions. | #96 |
 | Personal memory layer | Correct or hide a team memory just for yourself without changing it for anyone else — and pull in team updates when you want them. | #96 |
 | Save, history, restore | Browse what changed and roll back to any earlier state of your assistant's configuration. | #96 |

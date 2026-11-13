@@ -31,7 +31,6 @@ type savedSkillEdits struct {
 	Team    []string
 	Own     []string
 	Copies  map[string]string
-	SHA     string
 	Skipped []string
 }
 
@@ -295,7 +294,7 @@ func (a *API) saveSkillEdits(ctx context.Context, orgID, runID string, act runAc
 				log.Printf("[agent-run] skill save failed for %s: %v", runID, err)
 				continue
 			}
-			if err := os.WriteFile(target, f.Content, 0o644); err != nil {
+			if err := writeFileKeepMode(target, f.Content); err != nil {
 				log.Printf("[agent-run] skill save failed for %s: %v", runID, err)
 			}
 		}
@@ -315,11 +314,7 @@ func (a *API) saveSkillEdits(ctx context.Context, orgID, runID string, act runAc
 
 	if len(team) > 0 {
 		save(teamRoot, team)
-		paths := make([]string, len(team))
-		for i, s := range team {
-			paths[i] = "skills/" + s
-		}
-		out.SHA = a.recordConfigPaths(ctx, orgID, paths, skillEditMessage(runID, team), "skill", strings.Join(team, ", "), act.UserID)
+		a.recordConfigChange(ctx, orgID, skillEditMessage(runID, team), "skill", strings.Join(team, ", "), act.UserID)
 		out.Team = team
 	}
 	if len(mine) > 0 {

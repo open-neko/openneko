@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -17,6 +18,24 @@ import (
 )
 
 const skillOriginFile = ".openneko-origin"
+
+var unsafeSegment = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
+
+// orgAgentRoot is getOrgAgentRoot() in packages/llm/src/work/workspace.ts.
+func orgAgentRoot(orgID string) string {
+	home := ""
+	if os.Getenv("OPENNEKO_HOST_WEB_DEV") == "1" && os.Getenv("NODE_ENV") == "development" &&
+		os.Getenv("OPENNEKO_STACK_MODE") != "demo" && os.Getenv("NEXT_PUBLIC_DEMO") != "true" && os.Getenv("DEMO") != "true" {
+		home = strings.TrimSpace(os.Getenv("OPENNEKO_AGENT_HOME"))
+	}
+	if home == "" {
+		home = os.Getenv("HOME")
+	}
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
+	return filepath.Join(home, ".config", "openneko", "agents", "orgs", unsafeSegment.ReplaceAllString(orgID, "_"))
+}
 
 var (
 	sandboxSkills       = map[string]bool{"docx": true, "pdf": true, "pptx": true, "skill-creator": true, "xlsx": true}
@@ -293,4 +312,15 @@ func copyTree(src, dst string) error {
 func isWithin(root, candidate string) bool {
 	rel, err := filepath.Rel(root, candidate)
 	return err == nil && (rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)))
+}
+
+// writeFileKeepMode writes path with a rename, so a reader in another process
+// sees the whole old file or the whole new one. An existing file keeps its
+// mode, so an edited script stays runnable.
+func writeFileKeepMode(path string, data []byte) error {
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
+	return atomicWrite(path, data, mode)
 }

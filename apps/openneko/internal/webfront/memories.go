@@ -494,7 +494,6 @@ func (a *API) promoteMemory(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
-	a.snapshotTeamMemories(ctx, act.OrgID)
 	if _, err := a.DB.Exec(ctx, `insert into config_change (org_id, artifact_kind, artifact_ref, scope, user_id, actor_user_id, summary, status)
 		values ($1, 'memory', $2, 'team', $3, $4, 'Promoted a personal memory to the team', 'promoted')`,
 		act.OrgID, m.ID, sourceUser, promotedBy); err != nil {
@@ -946,9 +945,8 @@ func (a *API) applyMemoryPull(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		_, err := tx.Exec(ctx, `insert into memory_fork (org_id, user_id, baseline_sha, baseline_at)
-			values ($1, $2, coalesce((select commit_sha from config_ref where org_id = $1 and scope = 'team' limit 1), ''), $3)
-			on conflict (org_id, user_id) do update set baseline_sha = excluded.baseline_sha, baseline_at = excluded.baseline_at, updated_at = $3`,
+		_, err := tx.Exec(ctx, `insert into memory_fork (org_id, user_id, baseline_at) values ($1, $2, $3)
+			on conflict (org_id, user_id) do update set baseline_at = excluded.baseline_at, updated_at = $3`,
 			act.OrgID, act.UserID, now)
 		return err
 	})

@@ -3,7 +3,7 @@ import { cp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { diffSkillTrees, hashSkillTree, skillCaptureDecision, stageOwnSkills } from "../src/config-vcs/skill-capture";
+import { diffSkillTrees, hashSkillTree, skillCaptureDecision, stageOwnSkills } from "../src/work/skill-capture";
 import {
   matchOwnSkills,
   memberFolderName,

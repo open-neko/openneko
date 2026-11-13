@@ -102,7 +102,7 @@ All current `AgentEvent` variants map here or to runtime/action semantics:
 `action_request_emit`, `action_request_result`, `needs_input`, `followups`, and
 `vitals`.
 
-## 4. Work context, memory, personas, skills, and versioning
+## 4. Work context, memory, personas, skills, and change records
 
 | ID | Semantic outcome | Primary verification |
 |---|---|---|
@@ -120,7 +120,7 @@ All current `AgentEvent` variants map here or to runtime/action semantics:
 | `WORK-PERSONA` | Operator role/profile changes prompt emphasis without weakening authorization | matched persona cases |
 | `WORK-COMPACTION` | Long-thread compaction retains decisions, figures, actions, and open tasks without cross-thread leakage | multi-turn oracle |
 | `WORK-SKILLS` | Skill discovery, dependency aggregation, install/use, and allowed-tool implications are correct | trace + artifact contract |
-| `WORK-CONFIG-VCS` | Snapshot/history/restore/promote/adopt of config artifacts preserve semantic content and attribution | repository/DB oracle |
+| `WORK-CONFIG-VCS` | Promote/adopt/copy/share of config artifacts preserve semantic content, and each change adds a config_change row with its attribution | DB oracle |
 
 ## 5. Workflow, observation, watcher, and action semantics
 

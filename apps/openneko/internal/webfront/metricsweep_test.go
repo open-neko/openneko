@@ -2,9 +2,9 @@ package webfront
 
 import (
 	"context"
-	"os/exec"
+	"os"
+	"path/filepath"
 	"regexp"
-	"strings"
 	"testing"
 	"time"
 )
@@ -33,21 +33,6 @@ func TestMetricRefreshDue(t *testing.T) {
 	} {
 		if got := metricRefreshDue(c.cadence, c.status, c.updated, c.org, now); got != c.want {
 			t.Errorf("%s/%s at %s: got %v", c.cadence, c.org, c.updated, got)
-		}
-	}
-}
-
-func TestUserConfigRef(t *testing.T) {
-	for id, want := range map[string]string{
-		"member":  "refs/heads/user/member",
-		"a@b.c":   "refs/heads/user/a-b-c-",
-		"--x--":   "refs/heads/user/x-",
-		"":        "refs/heads/user/anon",
-		"u_1-OK2": "refs/heads/user/u_1-OK2",
-	} {
-		got := userConfigRef(id)
-		if !strings.HasPrefix(got, want) || (strings.HasSuffix(want, "-") && len(got) != len(want)+8) {
-			t.Errorf("%q: %s", id, got)
 		}
 	}
 }
@@ -108,33 +93,10 @@ func TestMetricSweep(t *testing.T) {
 	}
 
 	root := orgAgentRoot("org")
-	gitOut := func(args ...string) string {
-		out, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v %s", args, err, out)
+	for _, name := range []string{".git", "memory", "workflows"} {
+		if _, err := os.Stat(filepath.Join(root, name)); err == nil {
+			t.Errorf("the sweep wrote %s", name)
 		}
-		return strings.TrimSpace(string(out))
-	}
-	if files := gitOut("ls-tree", "-r", "--name-only", "main", "memory"); files != "memory/business_rule/"+memTeam+".md\nmemory/metric_definition/"+memDatabase+".md" {
-		t.Errorf("team snapshot: %q", files)
-	}
-	if files := gitOut("ls-tree", "-r", "--name-only", "refs/heads/user/member"); files != "memory/preference/"+memMine+".md\nworkflows/my-digest.md" {
-		t.Errorf("member snapshot: %q", files)
-	}
-	if body := gitOut("show", "refs/heads/user/member:memory/preference/"+memMine+".md"); !strings.Contains(body, "pinned: true\nupdated_at: 2026-11-01T10:00:00.000Z\n---\n\nShow amounts in INR") {
-		t.Errorf("member memory file: %q", body)
-	}
-	if out, err := exec.Command("git", "-C", root, "rev-parse", "--verify", "--quiet", "refs/heads/user/other").CombinedOutput(); err == nil {
-		t.Errorf("a member with only archived memories got a ref: %s", out)
-	}
-	if staged := gitOut("ls-files", "workflows"); staged != "" {
-		t.Errorf("a personal workflow reached the team checkout: %q", staged)
-	}
-	head := gitOut("rev-parse", "refs/heads/user/member")
-	var pointer string
-	_ = db.QueryRow(ctx, `select commit_sha from config_ref where org_id = 'org' and scope = 'user' and user_id = 'member'`).Scan(&pointer)
-	if pointer != head {
-		t.Errorf("config_ref %q, ref %q", pointer, head)
 	}
 
 	seed(t, db, `update spend_limit set metric_refresh = 'off' where org_id = 'org' and workflow_id is null`)
@@ -144,9 +106,6 @@ func TestMetricSweep(t *testing.T) {
 	}
 	if got := bossJobs(t, db, f, queueMetricRefresh); len(got) != 1 {
 		t.Errorf("second sweep queued again: %+v", got)
-	}
-	if again := gitOut("rev-parse", "refs/heads/user/member"); again != head {
-		t.Errorf("an unchanged personal layer got a new commit")
 	}
 
 	seed(t, db, `update spend_limit set metric_refresh = null where org_id = 'org' and workflow_id is null`)

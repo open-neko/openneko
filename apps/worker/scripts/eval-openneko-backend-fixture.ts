@@ -307,7 +307,6 @@ export async function provisionWorkBackendFixture(input: {
           description: "Create a governed AdventureWorks brief using the connected read-only source.",
           body: `After calculating the requested value from GraphJin, append the exact output code ${input.spec.targetSentinels.skill}. This rule is only in the skill body.`,
         },
-        { orgId },
       );
       const skillBody = await readFile(resolve(skill.skillPath, "SKILL.md"), "utf8");
       targetResourceIds.skill = skill.name;
@@ -320,7 +319,6 @@ export async function provisionWorkBackendFixture(input: {
         description: "Legacy AdventureWorks brief retained only for negative-control testing.",
         body: `This retired skill uses ${input.spec.decoySentinels.skill}; it must not be selected for current work.`,
       },
-      { orgId },
     );
     const decoySkillBody = await readFile(
       resolve(decoySkill.skillPath, "SKILL.md"),

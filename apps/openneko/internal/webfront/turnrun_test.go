@@ -349,16 +349,6 @@ func TestRunEventStoreSpendAndSkillRows(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte("---\nname: monthly-report\n---\nBody\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := git(root, "init", "--initial-branch=main"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := git(root, "add", "-A"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := git(root, "commit", "-m", "skills"); err != nil {
-		t.Fatal(err)
-	}
-	head := strings.TrimSpace(must(git(root, "rev-parse", "HEAD")))
 	hash, err := fingerprintSkillTree(skill)
 	if err != nil {
 		t.Fatal(err)
@@ -399,9 +389,9 @@ func TestRunEventStoreSpendAndSkillRows(t *testing.T) {
 			t.Errorf("alerts %s\nwant %s", alerts, want)
 		}
 	}
-	usage := rowText(t, db, `select skill_name || ' ' || content_hash || ' ' || origin || ' ' || coalesce(config_commit_sha, '-') || ' ' || source || ' ' || attempt::text ||
+	usage := rowText(t, db, `select skill_name || ' ' || content_hash || ' ' || origin || ' ' || source || ' ' || attempt::text ||
 		' ' || (first_event_id = (select min(id) from work_run_event where run_id = $1 and kind = 'tool_start'))::text from skill_usage where run_id = $1`, runAdmin)
-	if usage != "monthly-report "+hash+" custom "+head+" read 1 true" {
+	if usage != "monthly-report "+hash+" custom read 1 true" {
 		t.Fatalf("skill usage %q", usage)
 	}
 	kinds := rowText(t, db, `select string_agg(kind, ',' order by id) from work_run_event where run_id = $1`, runAdmin)
@@ -409,7 +399,7 @@ func TestRunEventStoreSpendAndSkillRows(t *testing.T) {
 		t.Fatalf("kinds %s", kinds)
 	}
 	used := rowText(t, db, `select payload::text from work_run_event where run_id = $1 and kind = 'skill_used'`, runAdmin)
-	if !strings.Contains(used, `"origin": "custom"`) || !strings.Contains(used, `"configCommitSha": "`+head+`"`) || strings.Contains(used, "packId") {
+	if !strings.Contains(used, `"origin": "custom"`) || strings.Contains(used, "configCommitSha") || strings.Contains(used, "packId") {
 		t.Fatalf("skill_used %s", used)
 	}
 
@@ -425,17 +415,10 @@ func TestRunEventStoreSpendAndSkillRows(t *testing.T) {
 	if got := rowText(t, db, `select origin || ' ' || pack_id || ' ' || pack_version from skill_usage where run_id = $1`, other); got != "pack reports 1.2.0" {
 		t.Fatalf("pack skill %q", got)
 	}
-	if got := rowText(t, db, `select concat_ws(' ', payload->>'origin', payload->>'packId', payload->>'packVersion', payload->>'configCommitSha')
-		from work_run_event where run_id = $1 and kind = 'skill_used'`, other); got != "pack reports 1.2.0 "+head {
+	if got := rowText(t, db, `select concat_ws(' ', payload->>'origin', payload->>'packId', payload->>'packVersion')
+		from work_run_event where run_id = $1 and kind = 'skill_used'`, other); got != "pack reports 1.2.0" {
 		t.Fatalf("pack skill_used %s", got)
 	}
-}
-
-func must(s string, err error) string {
-	if err != nil {
-		panic(err)
-	}
-	return s
 }
 
 func TestRunSpendGuard(t *testing.T) {

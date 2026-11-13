@@ -16,8 +16,8 @@ const (
 )
 
 // MetricSweep is the hourly metric_refresh_scheduled_sweep: it queues the
-// metric refreshes that are due, ages out memories and checkpoints the team
-// and personal memory layers. Only a failure to queue refreshes fails the job.
+// metric refreshes that are due and ages out memories. Only a failure to
+// queue refreshes fails the job.
 func (a *API) MetricSweep(ctx context.Context) error {
 	if err := a.queueDueMetrics(ctx, time.Now()); err != nil {
 		return err
@@ -27,13 +27,6 @@ func (a *API) MetricSweep(ctx context.Context) error {
 	} else if archived > 0 || expired > 0 {
 		log.Printf("[metric-sweep] memory TTL sweep: archived %d, expired %d pending", archived, expired)
 	}
-	orgID, err := a.OrgID(ctx)
-	if err != nil {
-		log.Printf("[metric-sweep] memory checkpoint failed: %v", err)
-		return nil
-	}
-	a.snapshotTeamMemories(ctx, orgID)
-	a.snapshotUserConfigs(ctx, orgID)
 	return nil
 }
 

@@ -33,7 +33,7 @@ import {
   stageOwnSkills,
   type SkillFileHashes,
   type SkillToolCall,
-} from "../config-vcs/skill-capture";
+} from "./skill-capture";
 import { memberHandle, memberSkillsRoot } from "./member-skills";
 import { KNOWLEDGE_FILES, readKnowledgeSnapshot } from "../knowledge-cache";
 import { SandboxFailure } from "./sandbox-failure";

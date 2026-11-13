@@ -3,7 +3,6 @@ package webfront
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -73,8 +72,8 @@ func TestTurnBuildersDatabase(t *testing.T) {
 		contract != `{"apiBatch": {"columns": [{"name": "Order", "path": "order.id"}], "version": 1, "compiled": true, "compiler": "workflow", "recordsField": "records"}}` {
 		t.Fatalf("saved row: %s %s %s %v", origin, tz, contract, createdRun)
 	}
-	if body, err := os.ReadFile(filepath.Join(orgAgentRoot("org"), "workflows", "stock-check.md")); err != nil || !strings.Contains(string(body), `cron: "0 9 * * *"`) {
-		t.Fatalf("team version file: %s %v", body, err)
+	if got := scalar(t, db, `select scope || ' ' || summary || ' ' || coalesce(commit_sha, 'no-commit') from config_change where artifact_ref = 'Stock check'`); got != "team Added workflow: Stock check no-commit" {
+		t.Fatalf("team change row: %s", got)
 	}
 	if len(events) != 1 || !strings.Contains(events[0], `"label":"Created workflow"`) {
 		t.Fatalf("events: %v", events)
@@ -177,20 +176,11 @@ func TestTurnBuildersDatabase(t *testing.T) {
 	if got := scalar(t, db, `select owner_user_id from workflow_definition where name = 'Daily recap'`); got != "member" {
 		t.Fatalf("bot chat owner: %s", got)
 	}
-	if _, err := os.Stat(filepath.Join(orgAgentRoot("org"), "workflows", "daily-recap.md")); !os.IsNotExist(err) {
-		t.Fatalf("a personal workflow touched the team checkout: %v", err)
-	}
-	tree, err := exec.Command("git", "-C", orgAgentRoot("org"), "ls-tree", "--name-only", "-r", userConfigRef("member")).Output()
-	if err != nil || strings.TrimSpace(string(tree)) != "workflows/daily-recap.md" {
-		t.Fatalf("user ref: %s %v", tree, err)
+	if _, err := os.Stat(filepath.Join(orgAgentRoot("org"), "workflows")); !os.IsNotExist(err) {
+		t.Fatalf("a workflow save wrote a file: %v", err)
 	}
 	if got := scalar(t, db, `select scope || ' ' || user_id || ' ' || summary from config_change where artifact_ref = 'Daily recap'`); got != "user member Added workflow: Daily recap" {
 		t.Fatalf("config change: %s", got)
-	}
-	call(bot, "workflow_builder_create_workflow", map[string]any{"name": "Weekly recap", "steps": steps})
-	tree, err = exec.Command("git", "-C", orgAgentRoot("org"), "ls-tree", "--name-only", "-r", userConfigRef("member")).Output()
-	if err != nil || strings.Fields(string(tree))[0] != "workflows/daily-recap.md" || len(strings.Fields(string(tree))) != 2 {
-		t.Fatalf("a second personal workflow keeps the first on the ref: %s %v", tree, err)
 	}
 
 	events = nil

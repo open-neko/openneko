@@ -359,7 +359,7 @@ func (a *API) skillFilePut(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusUnsupportedMediaType, "This file is not a text file and cannot be edited here.")
 		return
 	}
-	if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+	if err := writeFileKeepMode(abs, []byte(content)); err != nil {
 		a.fail(w, r, err)
 		return
 	}
@@ -477,6 +477,6 @@ func (a *API) importSkill(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
-	a.recordConfigChange(r.Context(), orgID, "skills/"+name, "Imported skill: "+name, "skill", name, userID)
+	a.recordConfigChange(r.Context(), orgID, "Imported skill: "+name, "skill", name, userID)
 	sendJSON(w, http.StatusCreated, map[string]string{"name": name})
 }

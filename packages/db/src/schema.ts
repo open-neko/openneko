@@ -548,28 +548,6 @@ export const operator_profile = pgTable(
   }),
 );
 
-// CV0 — config-vcs ref pointers: the DB knows each org layer's current
-// commit; git holds the content. Team layer = (scope='team', user_id='').
-export const config_ref = pgTable(
-  "config_ref",
-  {
-    org_id: text("org_id")
-      .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
-    scope: text("scope").notNull().default("team"),
-    user_id: text("user_id").notNull().default(""),
-    commit_sha: text("commit_sha").notNull(),
-    updated_at: ts("updated_at").notNull().defaultNow(),
-  },
-  (t) => ({
-    org_scope_user_unique: uniqueIndex("config_ref_org_scope_user_unique").on(
-      t.org_id,
-      t.scope,
-      t.user_id,
-    ),
-  }),
-);
-
 // OL5 — named connection secrets for chat-first source config. The agent
 // references a secret by NAME; the worker resolves + decrypts (enc:v1) at
 // apply time. Values never enter model context.
@@ -827,7 +805,6 @@ export const memory_fork = pgTable(
     user_id: text("user_id")
       .notNull()
       .references(() => app_user.id, { onDelete: "cascade" }),
-    baseline_sha: text("baseline_sha").notNull().default(""),
     baseline_at: ts("baseline_at").notNull().defaultNow(),
     frozen: boolean("frozen").notNull().default(false),
     created_at: ts("created_at").notNull().defaultNow(),
@@ -2871,7 +2848,6 @@ export const skill_usage = pgTable(
     origin: text("origin").notNull(),
     pack_id: text("pack_id"),
     pack_version: text("pack_version"),
-    config_commit_sha: text("config_commit_sha"),
     source: text("source").notNull(),
     first_event_id: bigint("first_event_id", { mode: "number" }).notNull(),
     attempt: integer("attempt").notNull().default(1),

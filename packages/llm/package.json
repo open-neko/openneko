@@ -17,7 +17,6 @@
     "./work": "./src/work/index.ts",
     "./work/answer-expression": "./src/work/answer-expression.ts",
     "./work/answer-tool-check": "./src/work/answer-tool-check.ts",
-    "./config-vcs": "./src/config-vcs/public.ts",
     "./interaction": "./src/interaction/index.ts",
     "./workflows": "./src/workflows/index.ts",
     "./workflows/fences": "./src/workflows/fence-parsers.ts",

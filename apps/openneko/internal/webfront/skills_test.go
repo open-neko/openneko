@@ -8,7 +8,6 @@ import (
 	"mime/multipart"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -188,26 +187,17 @@ func TestWorkSkillFiles(t *testing.T) {
 	if w := call(f, "PUT", base+"SKILL.md", string(body), admin); w.Code != 200 || w.Body.String() != `{"ok":true,"bytes":`+strconv.Itoa(len(newText))+`}` {
 		t.Fatalf("PUT: %d %s", w.Code, w.Body)
 	}
-	gitOut := func(args ...string) string {
-		out, err := exec.Command("git", append([]string{"-C", roots.Org}, args...)...).Output()
-		if err != nil {
-			t.Fatal(err)
-		}
-		return strings.TrimSpace(string(out))
+	if b, _ := os.ReadFile(filepath.Join(roots.Skills, "finance-close", "SKILL.md")); string(b) != newText {
+		t.Errorf("saved file: %q", b)
 	}
-	if gitOut("log", "-1", "--format=%s") != "Updated skill: finance-close" || !strings.Contains(gitOut("show", "HEAD:skills/finance-close/SKILL.md"), "New") {
-		t.Errorf("git: %s", gitOut("log", "--format=%s"))
+	if _, err := os.Stat(filepath.Join(roots.Org, ".git")); err == nil {
+		t.Error("the edit made a git repo")
 	}
 	var kind, ref, summary, status string
 	var actorID *string
 	if err := db.QueryRow(context.Background(), `select artifact_kind, artifact_ref, summary, status, actor_user_id from config_change where org_id = 'org' order by created_at desc limit 1`).
 		Scan(&kind, &ref, &summary, &status, &actorID); err != nil || kind != "skill" || ref != "finance-close" || summary != "Updated skill: finance-close" || status != "recorded" || actorID == nil || *actorID != "admin" {
 		t.Errorf("config_change: %v %s %s %s %s %v", err, kind, ref, summary, status, actorID)
-	}
-	var teamRef string
-	_ = db.QueryRow(context.Background(), `select commit_sha from config_ref where org_id = 'org' and scope = 'team'`).Scan(&teamRef)
-	if teamRef != gitOut("rev-parse", "HEAD") {
-		t.Errorf("team ref %s", teamRef)
 	}
 
 	if w := call(f, "DELETE", "/api/v1/work/skills/..", "", admin); w.Code != 404 {
@@ -230,72 +220,24 @@ func TestWorkSkillFiles(t *testing.T) {
 	}
 }
 
-func TestConfigHistoryRestore(t *testing.T) {
-	f, db, roots := skillFront(t)
-	admin, member := sessionCookie("admin"), sessionCookie("member")
-	if w := call(f, "GET", "/api/v1/work/config/history", "", member); w.Body.String() != `{"history":[]}` {
-		t.Errorf("empty history: %s", w.Body)
+func TestSkillEditKeepsMode(t *testing.T) {
+	f, _, roots := skillFront(t)
+	script := filepath.Join(roots.Skills, "finance-close", "scripts", "close.sh")
+	writeTestFile(t, script, "echo old\n")
+	if err := os.Chmod(script, 0o755); err != nil {
+		t.Fatal(err)
 	}
-	base := "/api/v1/work/skills/finance-close/file?path=SKILL.md"
-	for _, text := range []string{"one", "two"} {
-		if w := call(f, "PUT", base, `{"content":"`+text+`"}`, admin); w.Code != 200 {
-			t.Fatal(w.Body)
-		}
+	w := call(f, "PUT", "/api/v1/work/skills/finance-close/file?path=scripts/close.sh", `{"content":"echo new\n"}`, sessionCookie("admin"))
+	if w.Code != 200 {
+		t.Fatalf("PUT: %d %s", w.Code, w.Body)
 	}
-	var h struct{ History []configCommit }
-	_ = json.Unmarshal(call(f, "GET", "/api/v1/work/config/history?path=skills/finance-close&limit=10", "", member).Body.Bytes(), &h)
-	if len(h.History) != 2 || h.History[0].Message != "Updated skill: finance-close" || len(h.History[1].SHA) != 40 || h.History[0].Date == "" {
-		t.Fatalf("history: %+v", h.History)
+	info, err := os.Stat(script)
+	if b, _ := os.ReadFile(script); err != nil || string(b) != "echo new\n" || info.Mode().Perm() != 0o755 {
+		t.Errorf("script after edit: %q %v %v", b, info.Mode(), err)
 	}
-	w := call(f, "GET", "/api/v1/work/config/history?limit=1", "", member)
-	if want := `{"history":[{"sha":"` + h.History[0].SHA + `","date":"` + h.History[0].Date + `","message":"Updated skill: finance-close"}]}`; w.Body.String() != want {
-		t.Errorf("history body: %s", w.Body)
-	}
-	_ = json.Unmarshal(w.Body.Bytes(), &h)
-	if len(h.History) != 1 {
-		t.Errorf("limit: %+v", h.History)
-	}
-	first := h.History[0].SHA
-	_ = json.Unmarshal(call(f, "GET", "/api/v1/work/config/history?path=skills/finance-close", "", member).Body.Bytes(), &h)
-	first = h.History[1].SHA
-
-	for _, c := range []struct {
-		who  map[string]string
-		body string
-		want int
-	}{
-		{member, `{"sha":"` + first + `","path":"skills/finance-close"}`, 403},
-		{admin, `{"sha":"xyz","path":"skills/finance-close"}`, 400},
-		{admin, `{"sha":"` + first + `","path":"skills/../x"}`, 400},
-		{admin, `not json`, 400},
-		{admin, `{"sha":"` + first + `","path":"memory"}`, 500},
-	} {
-		if w := call(f, "POST", "/api/v1/work/config/restore", c.body, c.who); w.Code != c.want {
-			t.Errorf("restore %s: %d %s", c.body, w.Code, w.Body)
-		}
-	}
-	w = call(f, "POST", "/api/v1/work/config/restore", `{"sha":"`+first+`","path":"skills/finance-close"}`, admin)
-	var out struct {
-		OK  bool
-		SHA string
-	}
-	_ = json.Unmarshal(w.Body.Bytes(), &out)
-	if w.Code != 200 || !out.OK || len(out.SHA) != 40 {
-		t.Fatalf("restore: %d %s", w.Code, w.Body)
-	}
-	if b, _ := os.ReadFile(filepath.Join(roots.Skills, "finance-close", "SKILL.md")); string(b) != "one" {
-		t.Errorf("restored file: %q", b)
-	}
-	var summary, status, actorID, sha string
-	if err := db.QueryRow(context.Background(), `select summary, status, actor_user_id, commit_sha from config_change where org_id = 'org' and artifact_kind = 'config'`).
-		Scan(&summary, &status, &actorID, &sha); err != nil || summary != "Restored skills/finance-close to "+first[:8] || status != "restored" || actorID != "admin" || sha != out.SHA {
-		t.Errorf("config_change: %v %s %s %s", err, summary, status, actorID)
-	}
-	if w := call(f, "POST", "/api/v1/work/config/restore", `{"sha":"`+first+`","path":"skills/finance-close"}`, admin); w.Code != 404 {
-		t.Errorf("second restore: %d %s", w.Code, w.Body)
-	}
-	if w := call(f, "POST", "/api/v1/work/config/restore", `{"sha":"deadbeef","path":"skills/finance-close"}`, admin); w.Code != 500 {
-		t.Errorf("unknown sha: %d %s", w.Code, w.Body)
+	entries, _ := os.ReadDir(filepath.Dir(script))
+	if len(entries) != 1 {
+		t.Errorf("temporary files left: %v", entries)
 	}
 }
 

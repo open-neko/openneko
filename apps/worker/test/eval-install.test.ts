@@ -279,12 +279,10 @@ describe.skipIf(!reachable)("eval install episode", () => {
         await writeWorkSkill(
           workspace.skillsRoot,
           { name: "eval-brief", description: "Write the eval brief.", body: "Append the code SKI-EVAL-77." },
-          { orgId },
         );
         await writeWorkSkill(
           workspace.skillsRoot,
           { name: "eval-brief-legacy", description: "Write the retired eval brief.", body: "Retired code SKI-OLD-11." },
-          { orgId },
         );
 
         const feed = new RunEventFeed();
