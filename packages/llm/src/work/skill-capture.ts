@@ -1,18 +1,18 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, posix, resolve } from "node:path";
-import { insertConfigChangeRow, recordConfigChange } from "./index";
+import { basename, dirname, join, posix, resolve } from "node:path";
+import { insertConfigChangeRow } from "./config-change";
 import {
   copySkillFolder,
   copySkillTo,
   memberSkillsRoot,
   privateCopyName,
   validSkillName,
-} from "../work/member-skills";
-import { skillRunnable } from "../work/sandbox-service";
-import { bundledSkillDir } from "../work/workspace";
+} from "./member-skills";
+import { skillRunnable } from "./sandbox-service";
+import { bundledSkillDir } from "./workspace";
 
 /**
  * Skill edits made inside an agent sandbox are made to the sandbox's copy of
@@ -31,7 +31,6 @@ export type SavedSkillEdits = {
   own: string[];
   /** Team skills a member changed, saved as a private copy: team name to copy name. */
   copies: Record<string, string>;
-  sha: string | null;
   /** Files another writer changed on the host during the turn; left as they are. */
   skipped: string[];
 };
@@ -107,6 +106,22 @@ function isTeamSkill(teamRoot: string, baseline: SkillFileHashes, name: string):
   return bundled !== "" && existsSync(join(bundled, "SKILL.md"));
 }
 
+/**
+ * Same as writeFileKeepMode() in apps/openneko/internal/webfront/workspace.go:
+ * a reader in another process sees the whole old file or the whole new one,
+ * and an edited script keeps its mode.
+ */
+async function writeFileKeepMode(path: string, content: Buffer): Promise<void> {
+  const mode = await stat(path).then((s) => s.mode & 0o777, () => 0o644);
+  const tmp = join(dirname(path), `.${basename(path)}.tmp-${process.pid}-${Date.now().toString(36)}`);
+  try {
+    await writeFile(tmp, content, { mode });
+    await rename(tmp, path);
+  } finally {
+    await rm(tmp, { force: true });
+  }
+}
+
 function nameTaken(teamRoot: string, ownRoot: string, name: string): boolean {
   return existsSync(join(teamRoot, name)) || existsSync(join(ownRoot, name));
 }
@@ -147,7 +162,7 @@ export async function saveSkillEdits(opts: {
     else if (validSkillName(name) && !nameTaken(teamRoot, ownRoot, name)) mine.push(name);
     else copies.push(name);
   }
-  const out: SavedSkillEdits = { team: [], own: [], copies: {}, sha: null, skipped: [] };
+  const out: SavedSkillEdits = { team: [], own: [], copies: {}, skipped: [] };
 
   const save = async (root: string, skills: string[]) => {
     const current = await hashSkillTree(root);
@@ -160,7 +175,7 @@ export async function saveSkillEdits(opts: {
       }
       const target = join(root, file.path);
       await mkdir(dirname(target), { recursive: true });
-      await writeFile(target, file.content);
+      await writeFileKeepMode(target, file.content);
     }
     for (const path of opts.removed) {
       if (!skills.includes(skillOf(path))) continue;
@@ -176,14 +191,12 @@ export async function saveSkillEdits(opts: {
 
   if (team.length > 0) {
     await save(teamRoot, team);
-    out.sha = await recordConfigChange({
-      workspaceRoot: opts.orgRoot,
+    await insertConfigChangeRow({
       orgId: opts.orgId,
-      paths: team.map((skill) => `skills/${skill}`),
-      message: message(team),
       artifactKind: "skill",
       artifactRef: team.join(", "),
       actorUserId: userId,
+      summary: message(team),
     });
     out.team = team;
   }

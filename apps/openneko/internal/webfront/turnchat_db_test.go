@@ -452,7 +452,7 @@ func TestChatTurnOutcomes(t *testing.T) {
 		if got := readText(report); got != "# Better report\n" {
 			t.Errorf("host skill %q", got)
 		}
-		if got, want := skillChange(), "team::Updated skill in run "+id[:8]+": report:"; !strings.HasPrefix(got, want) || strings.HasSuffix(got, ":-") {
+		if got, want := skillChange(), "team::Updated skill in run "+id[:8]+": report:-"; got != want {
 			t.Errorf("config change %q", got)
 		}
 		if log.count(`{"type":"artifact","artifact":{"path":"runs/`+id+`/artifacts/out.csv","label":"out.csv"}}`) != 1 {

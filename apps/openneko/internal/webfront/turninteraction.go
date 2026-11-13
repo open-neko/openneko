@@ -214,7 +214,7 @@ func writeSkillFiles(root string, args *jsObj) (string, string, error) {
 	if err := os.MkdirAll(skillPath, 0o755); err != nil {
 		return "", "", err
 	}
-	if err := os.WriteFile(filepath.Join(skillPath, "SKILL.md"), []byte(skillFileText(name, description, body, args)), 0o644); err != nil {
+	if err := writeFileKeepMode(filepath.Join(skillPath, "SKILL.md"), []byte(skillFileText(name, description, body, args))); err != nil {
 		return "", "", err
 	}
 	files, _ := args.vals["files"].([]any)
@@ -228,7 +228,7 @@ func writeSkillFiles(root string, args *jsObj) (string, string, error) {
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			return "", "", err
 		}
-		if err := os.WriteFile(full, []byte(file.vals["content"].(string)), 0o644); err != nil {
+		if err := writeFileKeepMode(full, []byte(file.vals["content"].(string))); err != nil {
 			return "", "", err
 		}
 	}

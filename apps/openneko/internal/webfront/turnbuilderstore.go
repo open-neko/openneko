@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"slices"
 	"time"
 
@@ -198,28 +197,14 @@ func nullableJSON(raw []byte) *string {
 	return &s
 }
 
-// versionWorkflow is versionWorkflowDefinition(): a personal workflow goes to
-// its owner's ref, a team workflow to the team checkout. A failure is logged.
-func (a *API) versionWorkflow(ctx context.Context, wf workflowRecord, verb string) {
-	if wf.OwnerUserID == "" {
-		a.versionTeamWorkflow(ctx, wf, verb)
-		return
+// recordWorkflowChange writes the config_change row for a saved workflow: a
+// personal workflow as its owner's change, a team workflow as a team change.
+func (a *API) recordWorkflowChange(ctx context.Context, wf workflowRecord, verb string) {
+	c := configChange{OrgID: wf.OrgID, Kind: "workflow", Ref: wf.Name, Summary: verb + " workflow: " + wf.Name}
+	if wf.OwnerUserID != "" {
+		c.Actor, c.Scope, c.UserID = wf.OwnerUserID, "user", wf.OwnerUserID
 	}
-	body, err := workflowMarkdown(wf)
-	if err == nil {
-		message := verb + " workflow: " + wf.Name
-		var sha string
-		sha, err = commitUserRef(orgAgentRoot(wf.OrgID), wf.OwnerUserID,
-			[]configFile{{path: "workflows/" + workflowSlug(wf.Name) + ".md", content: body}}, message, true)
-		if err == nil {
-			if sha != "" {
-				a.insertConfigChange(ctx, configChange{OrgID: wf.OrgID, Kind: "workflow", Ref: wf.Name, Actor: wf.OwnerUserID,
-					SHA: sha, Summary: message, Scope: "user", UserID: wf.OwnerUserID})
-			}
-			return
-		}
-	}
-	log.Printf("[config-vcs] workflow versioning failed (save succeeded): %v", err)
+	a.insertConfigChange(ctx, c)
 }
 
 var watcherOps = []string{"gt", "gte", "lt", "lte", "eq", "ne", "changed"}
@@ -309,7 +294,7 @@ func (r *runTools) saveWorkflow(ctx context.Context, in *jsObj) (any, error) {
 	if action == "created" {
 		verb = "Added"
 	}
-	a.versionWorkflow(ctx, saved, verb)
+	a.recordWorkflowChange(ctx, saved, verb)
 	out := jsObjOf("action", action, "workflow", jsFromGo(saved))
 	triggers := in.vals["triggers"]
 	if watch := jsGet(triggers, "watch"); watch != nil {

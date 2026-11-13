@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -38,10 +37,6 @@ func TestMemberSkillCopyAndShare(t *testing.T) {
 	f, db, roots := skillFront(t)
 	admin, member := sessionCookie("admin"), sessionCookie("member")
 	ctx := context.Background()
-	head := func() string {
-		out, _ := exec.Command("git", "-C", roots.Org, "rev-parse", "HEAD").Output()
-		return strings.TrimSpace(string(out))
-	}
 	copyTo := func(src, name string, who map[string]string) (int, string) {
 		w := call(f, "POST", "/api/v1/work/skills/"+src+"/copy", `{"name":"`+name+`"}`, who)
 		return w.Code, w.Body.String()
@@ -51,7 +46,6 @@ func TestMemberSkillCopyAndShare(t *testing.T) {
 	if err := os.Symlink("/etc/hostname", filepath.Join(roots.Skills, "finance-close", "link")); err != nil {
 		t.Fatal(err)
 	}
-	before := head()
 	if code, body := copyTo("finance-close", "my-close", member); code != 201 || body != `{"name":"my-close","scope":"own"}` {
 		t.Fatalf("copy: %d %s", code, body)
 	}
@@ -99,8 +93,8 @@ func TestMemberSkillCopyAndShare(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(own, "SKILL.md")); string(b) != "mine" {
 		t.Errorf("own edit: %q", b)
 	}
-	if head() != before {
-		t.Error("a member's own skill reached the config repo")
+	if _, err := os.Stat(filepath.Join(roots.Org, ".git")); err == nil {
+		t.Error("a skill change made a git repo")
 	}
 
 	for _, c := range []struct {
@@ -160,8 +154,9 @@ func TestMemberSkillCopyAndShare(t *testing.T) {
 	if s := listedSkills(t, f, admin)["admin-demo"]; s.Scope != "team" {
 		t.Errorf("shared skill: %+v", s)
 	}
-	if out, _ := exec.Command("git", "-C", roots.Org, "log", "-1", "--format=%s").Output(); strings.TrimSpace(string(out)) != "Shared skill: admin-demo" {
-		t.Errorf("share commit: %s", out)
+	if got := queryText(t, db, `select scope || ' ' || coalesce(actor_user_id, '-') || ' ' || coalesce(commit_sha, 'no-commit') from config_change
+		where org_id = 'org' and summary = 'Shared skill: admin-demo'`); got != "team admin no-commit" {
+		t.Errorf("share row: %s", got)
 	}
 
 	writeTree(t, memberSkillsRoot(roots.Org, "admin"), map[string]string{"sales-playbook/SKILL.md": "---\nname: sales-playbook\n---\n"})
@@ -308,7 +303,7 @@ func TestRunSkillCapture(t *testing.T) {
 		writeTestFile(t, filepath.Join(skills, "finance-close", "SKILL.md"), "---\nname: finance-close\n---\nAdmin\n")
 		writeTestFile(t, filepath.Join(skills, "admin-own", "SKILL.md"), "---\nname: admin-own\n---\nNew\n")
 	})
-	if !slices.Equal(saved.Team, []string{"finance-close"}) || !slices.Equal(saved.Own, []string{"admin-own"}) || len(saved.Copies) != 0 || saved.SHA == "" {
+	if !slices.Equal(saved.Team, []string{"finance-close"}) || !slices.Equal(saved.Own, []string{"admin-own"}) || len(saved.Copies) != 0 {
 		t.Fatalf("admin %+v", saved)
 	}
 	if read(filepath.Join(roots.Skills, "finance-close", "SKILL.md")) != "---\nname: finance-close\n---\nAdmin\n" ||

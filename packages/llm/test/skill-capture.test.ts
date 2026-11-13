@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -11,16 +11,13 @@ import {
   SANDBOX_SKILL_HASH_COMMAND,
   skillCaptureDecision,
   type SkillToolCall,
-} from "../src/config-vcs/skill-capture";
+} from "../src/work/skill-capture";
 import { memberSkillsRoot } from "../src/work/member-skills";
-import { commitConfigChange } from "../src/config-vcs/index";
 
 let root: string;
 let orgRoot: string;
 let box: string;
 let boxHashes = new Map<string, string>();
-
-const git = (...args: string[]) => execFileSync("git", args, { cwd: orgRoot, encoding: "utf8" });
 
 async function put(base: string, path: string, content: string) {
   await mkdir(join(base, path, ".."), { recursive: true });
@@ -53,7 +50,7 @@ beforeEach(async () => {
   await put(join(orgRoot, "skills"), "shortfall/SKILL.md", "# Shortfall\n");
   await put(join(orgRoot, "skills"), "shortfall/scripts/calculate.py", "print(1)\n");
   await put(join(orgRoot, "skills"), "other/SKILL.md", "# Other\n");
-  await commitConfigChange({ workspaceRoot: orgRoot, paths: ["skills"], message: "Seed skills" });
+  await chmod(join(orgRoot, "skills/shortfall/scripts/calculate.py"), 0o755);
   await cp(join(orgRoot, "skills"), box, { recursive: true });
   await rm(join(box, "other"), { recursive: true });
 });
@@ -80,7 +77,7 @@ describe("diffSkillTrees", () => {
 });
 
 describe("captureSandboxSkillEdits", () => {
-  it("saves an admin's sandbox edits to the company skills as one version", async () => {
+  it("saves an admin's sandbox edits to the company skills in place", async () => {
     const baseline = await hashSkillTree(join(orgRoot, "skills"));
     await put(box, "shortfall/scripts/calculate.py", "print(2)\n");
     await put(box, "shortfall/references/new.md", "notes\n");
@@ -89,14 +86,13 @@ describe("captureSandboxSkillEdits", () => {
     const saved = await capture({ userId: "u-admin", role: "admin" }, baseline);
 
     expect(saved).toMatchObject({ team: ["shortfall"], own: [], copies: {}, skipped: [] });
-    expect(saved?.sha).toMatch(/^[0-9a-f]{40}$/);
-    expect(await readFile(join(orgRoot, "skills/shortfall/scripts/calculate.py"), "utf8")).toBe("print(2)\n");
+    const script = join(orgRoot, "skills/shortfall/scripts/calculate.py");
+    expect(await readFile(script, "utf8")).toBe("print(2)\n");
+    expect((await stat(script)).mode & 0o777).toBe(0o755);
+    expect(await readdir(join(orgRoot, "skills/shortfall/scripts"))).toEqual(["calculate.py"]);
+    expect(await readFile(join(orgRoot, "skills/shortfall/references/new.md"), "utf8")).toBe("notes\n");
     expect(await readFile(join(orgRoot, "skills/other/SKILL.md"), "utf8")).toBe("# Other\n");
-    expect(git("log", "-1", "--pretty=%s").trim()).toBe("Updated skill in run run-1234: shortfall");
-    expect(git("show", "--name-only", "--pretty=", "HEAD").trim().split("\n").sort()).toEqual([
-      "skills/shortfall/references/new.md",
-      "skills/shortfall/scripts/calculate.py",
-    ]);
+    expect(existsSync(join(orgRoot, ".git"))).toBe(false);
   });
 
   it("keeps a host change made by another writer during the turn", async () => {
@@ -116,7 +112,6 @@ describe("captureSandboxSkillEdits", () => {
     await put(box, "shortfall/SKILL.md", "---\nname: shortfall\n---\nMine\n");
     await rm(join(box, "shortfall/scripts/calculate.py"));
     boxHashes = await hashSkillTree(box);
-    const head = git("rev-parse", "HEAD");
 
     const saved = await capture({ userId: "u-member", role: "member" }, baseline);
 
@@ -125,7 +120,6 @@ describe("captureSandboxSkillEdits", () => {
     const own = memberSkillsRoot(orgRoot, "u-member");
     expect(await readFile(join(own, "shortfall-ann/SKILL.md"), "utf8")).toBe("---\nname: shortfall-ann\n---\nMine\n");
     expect(existsSync(join(own, "shortfall-ann/scripts/calculate.py"))).toBe(false);
-    expect(git("rev-parse", "HEAD")).toBe(head);
 
     await put(box, "shortfall/SKILL.md", "---\nname: shortfall\n---\nAgain\n");
     boxHashes = await hashSkillTree(box);

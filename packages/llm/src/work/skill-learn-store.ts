@@ -8,7 +8,6 @@ import {
   skill_usage,
   sql,
 } from "@neko/db";
-import { recordConfigChange } from "../config-vcs";
 import { getOrgAgentRoot } from "./workspace";
 import { learnedBodyHash, runSkillLearn, type SkillLearnResult } from "./skill-learn";
 
@@ -98,11 +97,6 @@ export async function runSkillLearnForOrgSkill(input: {
             updated_at: new Date(),
           },
         });
-      await recordConfigChange({
-        workspaceRoot: orgRoot,
-        paths: [`skill-overlays/${input.skillName}`],
-        message: `Learned overlay: ${input.skillName}`,
-      });
     }
 
     return result;

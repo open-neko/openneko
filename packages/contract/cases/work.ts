@@ -99,6 +99,4 @@ export const workCases: Case[] = [
   { op: "GET /work/files/{path}", name: "refuses an artifact the run did not emit", status: 404, request: (c) => ({ params: { path: `runs/${c.ids.adminWorkRunId}/artifacts/none.csv` } }) },
   { op: "GET /work/audit/export", name: "exports the audit log", status: 200 },
   { op: "GET /work/audit/export", name: "is for admins", as: "member", status: 403 },
-  { op: "GET /work/config/history", name: "lists the config history", status: 200 },
-  { op: "POST /work/config/restore", name: "needs a commit and a path", status: 400, request: { body: {} } },
 ];

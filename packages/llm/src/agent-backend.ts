@@ -231,7 +231,6 @@ export type AgentEvent =
       origin: "builtin" | "custom" | "pack";
       packId?: string;
       packVersion?: string;
-      configCommitSha?: string | null;
       firstEventId: number;
     };
 

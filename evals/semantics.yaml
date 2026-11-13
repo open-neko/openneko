@@ -546,9 +546,9 @@ entries:
       - packages/llm/src/work
   - id: WORK-CONFIG-VCS
     category: work-context
-    description: Snapshot/history/restore/promote/adopt of config artifacts preserve
-      semantic content and attribution
-    verification: repository/DB oracle
+    description: Promote/adopt/copy/share of config artifacts preserve semantic content,
+      and each change adds a config_change row with its attribution
+    verification: DB oracle
     disposition: declared
     owners:
       - packages/llm/src/work

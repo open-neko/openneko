@@ -60,6 +60,8 @@ run("removed routes", () => {
     ["/api/v1/admin/context-remote/host-key", ["POST"]],
     ["/api/v1/admin/context-remote/publish", ["GET", "POST"]],
     ["/api/v1/admin/context-remote/updates", ["GET", "POST"]],
+    ["/api/v1/work/config/history", ["GET"]],
+    ["/api/v1/work/config/restore", ["POST"]],
   ];
   for (const [path, methods] of removed) {
     for (const method of methods) {

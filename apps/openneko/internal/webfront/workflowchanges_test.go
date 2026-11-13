@@ -110,15 +110,12 @@ func TestWorkflowAdopt(t *testing.T) {
 	if w.Code != 200 || !strings.HasPrefix(body, want) {
 		t.Fatalf("adopt: %d %s", w.Code, body)
 	}
-	file, err := os.ReadFile(filepath.Join(orgAgentRoot("org"), "workflows", "mine.md"))
-	wantFile := "---\ntype: Workflow\nname: \"Mine\"\ngoal: \"Alert \\\"fast\\\"\"\ncron: \"0 9 * * 1\"\ncron_timezone: \"UTC\"\n---\n\n" +
-		"Watch <churn>\n\n## Steps\n1. Read\n2. Plain\n3. 7\n4. [object Object]\n5. 1,,x\n\n## System prompt overlay\n\nShort\n"
-	if err != nil || string(file) != wantFile {
-		t.Errorf("file: %v\n%q", err, file)
+	if _, err := os.Stat(filepath.Join(orgAgentRoot("org"), "workflows")); err == nil {
+		t.Error("the adopt wrote a workflow file")
 	}
 	changes := queryText(t, db, `select string_agg(summary || '|' || scope || '|' || user_id || '|' || coalesce(actor_user_id, '-') || '|' ||
 		status || '|' || (commit_sha is not null)::text, ';' order by created_at, summary) from config_change where org_id = 'org' and artifact_kind = 'workflow'`)
-	if changes != "Added workflow: Mine|team||-|recorded|true;Adopted workflow for the team: Mine|team|member|admin|adopted|false" {
+	if changes != "Added workflow: Mine|team||-|recorded|false;Adopted workflow for the team: Mine|team|member|admin|adopted|false" {
 		t.Errorf("config changes: %s", changes)
 	}
 	seed(t, db, `update workflow_definition set network_hosts = '{keep.example.com}' where id = $1`, copyID)
@@ -129,17 +126,6 @@ func TestWorkflowAdopt(t *testing.T) {
 	}
 	if n := queryText(t, db, `select count(*)::text from config_change where org_id = 'org' and summary = 'Updated workflow: Mine'`); n != "1" {
 		t.Errorf("update versions: %s", n)
-	}
-}
-
-func TestWorkflowSlug(t *testing.T) {
-	for in, want := range map[string]string{
-		"Mine": "mine", "  Late Orders!! (EU) ": "late-orders-eu", "---": "", "Café Daily": "caf-daily",
-		strings.Repeat("ab ", 40): strings.Repeat("ab-", 26) + "ab",
-	} {
-		if got := workflowSlug(in); got != want {
-			t.Errorf("%q: %q, want %q", in, got, want)
-		}
 	}
 }
 

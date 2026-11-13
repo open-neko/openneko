@@ -137,7 +137,6 @@ export {
   listObservationsForOutput,
   listSubscriptionsByWorkflow,
   listWorkflows,
-  personalWorkflowFiles,
   saveWorkflow,
   startOfTodayUtc,
   writeSourceChangeLog,

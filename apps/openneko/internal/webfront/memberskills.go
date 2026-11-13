@@ -278,7 +278,7 @@ func (a *API) shareSkill(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
-	a.recordConfigChange(r.Context(), act.OrgID, "skills/"+s.Name, "Shared skill: "+s.Name, "skill", s.Name, act.UserID)
+	a.recordConfigChange(r.Context(), act.OrgID, "Shared skill: "+s.Name, "skill", s.Name, act.UserID)
 	sendJSON(w, http.StatusOK, map[string]string{"name": s.Name, "scope": skillScopeTeam})
 }
 
@@ -294,7 +294,7 @@ func (a *API) recordSkillChange(ctx context.Context, act actor, s visibleSkill, 
 		a.recordOwnSkillChange(ctx, act, s.Name, summary)
 		return
 	}
-	a.recordConfigChange(ctx, act.OrgID, "skills/"+s.Name, summary, "skill", s.Name, act.UserID)
+	a.recordConfigChange(ctx, act.OrgID, summary, "skill", s.Name, act.UserID)
 }
 
 // ownRunSkills are the skills in the member's own folder that a run can

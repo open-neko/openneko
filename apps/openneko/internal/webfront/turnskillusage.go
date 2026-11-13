@@ -96,17 +96,6 @@ func fingerprintEffectiveSkill(orgRoot, name, baseDir string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func configHead(root string) any {
-	if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
-		return nil
-	}
-	out, err := git(root, "rev-parse", "HEAD")
-	if sha := strings.TrimSpace(out); err == nil && sha != "" {
-		return sha
-	}
-	return nil
-}
-
 // recordSkillUsage is recordSkillUsageFromEvent(): the first read of a skill
 // in a run adds one skill_usage row and one skill_used event. A failure is
 // logged only.
@@ -134,7 +123,6 @@ func (a *API) persistSkillUsage(ctx context.Context, orgID, threadID, runID, nam
 	if err != nil {
 		return nil
 	}
-	head := configHead(root)
 	origin := "custom"
 	switch {
 	case packID != nil:
@@ -144,9 +132,9 @@ func (a *API) persistSkillUsage(ctx context.Context, orgID, threadID, runID, nam
 	}
 	var id string
 	err = a.DB.QueryRow(ctx, `insert into skill_usage (org_id, run_id, skill_name, content_hash, origin, pack_id, pack_version,
-		config_commit_sha, source, first_event_id, attempt) values ($1, $2::uuid, $3, $4, $5, $6, $7, $8, 'read', $9, 1)
+		source, first_event_id, attempt) values ($1, $2::uuid, $3, $4, $5, $6, $7, 'read', $8, 1)
 		on conflict (run_id, skill_name) do nothing returning id::text`,
-		orgID, runID, name, hash, origin, packID, packVersion, head, eventID).Scan(&id)
+		orgID, runID, name, hash, origin, packID, packVersion, eventID).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -159,7 +147,6 @@ func (a *API) persistSkillUsage(ctx context.Context, orgID, threadID, runID, nam
 		used.set("packId", *packID)
 		used.set("packVersion", *packVersion)
 	}
-	used.set("configCommitSha", head)
 	_, err = a.insertRunEvent(ctx, orgID, threadID, runID, used)
 	return err
 }

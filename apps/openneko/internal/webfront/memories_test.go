@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -246,28 +245,13 @@ func TestWorkMemoryPromote(t *testing.T) {
 	if w := call(f, "GET", "/api/v1/work/memories", "", member); texts(t, w.Body, "memories") != "Revenue is gross,Show amounts in INR,This thread is about Q3" {
 		t.Errorf("member list after promote: %s", w.Body)
 	}
-	root := orgAgentRoot("org")
-	file, err := os.ReadFile(filepath.Join(root, "memory", "business_rule", m.ID+".md"))
-	want := "---\ntype: business_rule\nid: " + m.ID + "\nkind: business_rule\npinned: true\nupdated_at: " + m.UpdatedAt + "\n---\n\nRevenue is gross\n"
-	if err != nil || string(file) != want {
-		t.Errorf("snapshot file: %v %q", err, file)
+	if _, err := os.Stat(filepath.Join(orgAgentRoot("org"), "memory")); err == nil {
+		t.Error("the promote wrote memory files")
 	}
-	if _, err := os.Stat(filepath.Join(root, "memory", "metric_definition", memDatabase+".md")); err != nil {
-		t.Errorf("snapshot misses the database memory: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(root, "memory", "preference")); err == nil {
-		t.Errorf("snapshot holds a personal memory")
-	}
-	out, _ := exec.Command("git", "-C", root, "log", "--format=%s %an").Output()
-	if string(out) != "Memory checkpoint OpenNeko\nInitialize config versioning OpenNeko\n" {
-		t.Errorf("git log: %q", out)
-	}
-	head, _ := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
-	var ref, change string
-	_ = db.QueryRow(context.Background(), `select commit_sha from config_ref where org_id = 'org' and scope = 'team'`).Scan(&ref)
+	var change string
 	_ = db.QueryRow(context.Background(), `select concat_ws('|', artifact_kind, artifact_ref, scope, user_id, actor_user_id, summary, status) from config_change`).Scan(&change)
-	if ref != strings.TrimSpace(string(head)) || change != "memory|"+m.ID+"|team|member|admin|Promoted a personal memory to the team|promoted" {
-		t.Errorf("config_ref %q, head %q, config_change %q", ref, head, change)
+	if change != "memory|"+m.ID+"|team|member|admin|Promoted a personal memory to the team|promoted" {
+		t.Errorf("config_change %q", change)
 	}
 	if w := call(f, "POST", "/api/v1/work/memories/"+override+"/promote", ``, admin); w.Code != 404 {
 		t.Errorf("promote twice: %d", w.Code)
@@ -396,7 +380,6 @@ func TestMemoryPull(t *testing.T) {
 	if len(got) != 2 || got[memTeam] != "Revenue is gross|Revenue is net" || got[memDatabase] != "AOV excludes tax|removed" {
 		t.Errorf("updates: %s", w.Body)
 	}
-	seed(t, db, `insert into config_ref (org_id, scope, commit_sha) values ('org', 'team', 'abc')`)
 	w = call(f, "POST", "/api/v1/work/memories/pull", `{"decisions":[{"originId":"`+memTeam+`","choice":"take_theirs"},{"originId":"`+memDatabase+`","choice":"keep_mine"},{"originId":"nope","choice":"take_theirs"},"x"]}`, member)
 	if w.Body.String() != `{"ok":true,"applied":1}` {
 		t.Errorf("apply: %s", w.Body)
@@ -404,10 +387,10 @@ func TestMemoryPull(t *testing.T) {
 	if w := call(f, "GET", "/api/v1/work/memories", "", member); texts(t, w.Body, "memories") != "Revenue is net,Show amounts in INR,This thread is about Q3" {
 		t.Errorf("list after pull: %s", w.Body)
 	}
-	var sha string
-	_ = db.QueryRow(context.Background(), `select baseline_sha from memory_fork where user_id = 'member'`).Scan(&sha)
-	if sha != "abc" {
-		t.Errorf("baseline sha %q", sha)
+	var forks int
+	_ = db.QueryRow(context.Background(), `select count(*) from memory_fork where user_id = 'member' and baseline_at is not null`).Scan(&forks)
+	if forks != 1 {
+		t.Errorf("memory_fork rows %d", forks)
 	}
 	if w := call(f, "GET", "/api/v1/work/memories/pull", "", member); titles(t, w.Body.Bytes(), "updates", "originId") != memDatabase {
 		t.Errorf("after pull: %s", w.Body)

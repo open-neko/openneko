@@ -70,7 +70,7 @@ RUN test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.36" \
 # Web holds no GraphJin CLI and no document toolchain. The worker uses the
 # narrower shared GraphJin/npm runtime defined below.
 FROM node-runtime AS runtime-base
-# Git and ssh serve trusted config VCS and git-backed installs.
+# Git and ssh serve git-URL skill installs.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git openssh-client \
     && rm -rf /var/lib/apt/lists/*
