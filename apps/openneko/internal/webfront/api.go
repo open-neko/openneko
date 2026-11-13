@@ -50,6 +50,8 @@ type API struct {
 	GoogleToken llm.TokenFunc
 	// ResearchURL overrides the Perplexity chat URL; tests set it.
 	ResearchURL string
+	// EvalTrace receives every run's semantic trace; nil records nothing.
+	EvalTrace *EvalTrace
 
 	once   sync.Once
 	routes map[string]map[string]http.HandlerFunc

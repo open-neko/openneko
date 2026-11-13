@@ -41,6 +41,62 @@ func (a *API) CronSweep(ctx context.Context) error {
 	return nil
 }
 
+// CronSweepResult is what one workflow_cron_sweep did for an org.
+type CronSweepResult struct {
+	OrgID          string           `json:"orgId"`
+	At             string           `json:"at"`
+	BehaviorAlerts []BehaviorAlert  `json:"behaviorAlerts"`
+	Checked        int              `json:"checked"`
+	Fired          []WatcherFireOut `json:"fired"`
+}
+
+type BehaviorAlert struct {
+	Kind          string `json:"kind"`
+	Subject       string `json:"subject"`
+	Observed      int    `json:"observed"`
+	Threshold     int    `json:"threshold"`
+	WindowSeconds int    `json:"windowSeconds"`
+}
+
+type WatcherFireOut struct {
+	WatcherID string          `json:"watcherId"`
+	Name      string          `json:"name"`
+	Value     json.RawMessage `json:"value"`
+}
+
+// CronSweepAt runs both halves of workflow_cron_sweep once for orgID with
+// now as the clock. Firings go to the workflow_run_fire queue, as in the job.
+func (a *API) CronSweepAt(ctx context.Context, orgID string, now time.Time) (CronSweepResult, error) {
+	res := CronSweepResult{OrgID: orgID, At: jsTime(now.UTC()), BehaviorAlerts: []BehaviorAlert{}, Fired: []WatcherFireOut{}}
+	var exists bool
+	if err := a.DB.QueryRow(ctx, `select exists (select 1 from organization where id::text = $1)`, orgID).Scan(&exists); err != nil {
+		return CronSweepResult{}, err
+	}
+	if !exists {
+		return CronSweepResult{}, fmt.Errorf("no organization has the ID %s", orgID)
+	}
+	alerts, err := a.behaviorSweep(ctx, orgID, profileBehaviorThresholds(), now)
+	if err != nil {
+		return res, fmt.Errorf("behavior sweep: %w", err)
+	}
+	for _, x := range alerts {
+		res.BehaviorAlerts = append(res.BehaviorAlerts, BehaviorAlert{x.Kind, x.Subject, x.Observed, x.Threshold, x.WindowSeconds})
+	}
+	checked, fired, err := a.sweepWatchersCounted(ctx, orgID, now)
+	res.Checked = checked
+	for _, f := range fired {
+		value := f.Value
+		if _, undef := value.(jsUndefined); undef {
+			value = nil
+		}
+		res.Fired = append(res.Fired, WatcherFireOut{f.ID, f.Name, json.RawMessage(jsStringify(value, false))})
+	}
+	if err != nil {
+		return res, fmt.Errorf("watcher sweep: %w", err)
+	}
+	return res, nil
+}
+
 type behaviorThresholds struct {
 	ControlPlaneCallsPerRun int
 	ActionRequestsPerHour   int
@@ -316,6 +372,12 @@ type watcherFire struct {
 // each due watcher runs its GraphJin query and queues its workflow on
 // workflow_run_fire when the condition holds outside the quiet period.
 func (a *API) sweepWatchers(ctx context.Context, orgID string, now time.Time) ([]watcherFire, error) {
+	_, fired, err := a.sweepWatchersCounted(ctx, orgID, now)
+	return fired, err
+}
+
+// sweepWatchersCounted also gives the number of due watchers it checked.
+func (a *API) sweepWatchersCounted(ctx context.Context, orgID string, now time.Time) (int, []watcherFire, error) {
 	now = now.UTC().Truncate(time.Millisecond)
 	type watcherRow struct {
 		id, workflowID, name, query, path, op, severity string
@@ -327,7 +389,7 @@ func (a *API) sweepWatchers(ctx context.Context, orgID string, now time.Time) ([
 		cadence_seconds, debounce_seconds, cooldown_seconds, last_checked_at, last_fired_at
 		from watcher where org_id = $1 and enabled order by name, id`, orgID)
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 	var due []watcherRow
 	for rows.Next() {
@@ -335,7 +397,7 @@ func (a *API) sweepWatchers(ctx context.Context, orgID string, now time.Time) ([
 		if err := rows.Scan(&w.id, &w.workflowID, &w.name, &w.query, &w.path, &w.op, &w.severity, &w.threshold, &w.variables, &w.last,
 			&w.cadence, &w.debounce, &w.cooldown, &w.checked, &w.fired); err != nil {
 			rows.Close()
-			return nil, err
+			return 0, nil, err
 		}
 		if w.checked == nil || !w.checked.Add(time.Duration(w.cadence)*time.Second).After(now) {
 			due = append(due, w)
@@ -343,14 +405,14 @@ func (a *API) sweepWatchers(ctx context.Context, orgID string, now time.Time) ([
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil || len(due) == 0 {
-		return nil, err
+		return 0, nil, err
 	}
 	var fallback *packSource
 	var url, mode *string
 	err = a.DB.QueryRow(ctx, `select graphql_url, auth_mode from data_source where org_id = $1 and enabled
 		order by is_default desc, created_at limit 1`, orgID).Scan(&url, &mode)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, err
+		return len(due), nil, err
 	}
 	if err == nil {
 		fallback = &packSource{GraphqlURL: deref(url), AuthMode: deref(mode)}
@@ -423,14 +485,14 @@ func (a *API) sweepWatchers(ctx context.Context, orgID string, now time.Time) ([
 			return err
 		})
 		if err != nil {
-			return fired, err
+			return len(due), fired, err
 		}
 		if fires {
 			fired = append(fired, watcherFire{w.id, w.name, value})
 			log.Printf("[watcher] FIRED org=%s %q (%s %s; value=%s)", orgID, w.name, w.op, jsStringify(threshold, false), jsStringify(stored, false))
 		}
 	}
-	return fired, nil
+	return len(due), fired, nil
 }
 
 func (a *API) watcherQuery(ctx context.Context, orgID, watcherID, query string, variables any, fallback *packSource, now time.Time) (any, error) {

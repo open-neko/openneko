@@ -297,6 +297,7 @@ openneko status                    # docker compose ps proxy
 openneko logs [service…] [-f]
 openneko stop [--volumes]          # --volumes wipes data
 openneko migrate                   # apply pending migrations to OpenNeko's database
+openneko jobs run workflow_cron_sweep --org ID [--at TIME]  # run one sweep now and print the result as JSON
 openneko serve [--agent-socket path]  # user files and file search; agent turns on a Unix socket when set (runs as the openneko-serve container)
 openneko files copy-to-bucket      # copy user files from the files folder to OPENNEKO_FILES_BUCKET
 openneko seed adventureworks       # one-shot demo data load (already done by --mode demo)
@@ -339,6 +340,14 @@ PostgreSQL, MySQL and MariaDB, and says so for any other type.
 into `openneko` and runs the checks GraphJin runs at start. It prints the first
 problem and exits 1, or prints "valid" and exits 0. The default file is
 `OPENNEKO_GRAPHJIN_CONFIG`.
+
+`jobs run` runs one job body once, in the command's own process, with the
+main database login, and prints what it did as JSON. Today it runs
+`workflow_cron_sweep`: the behavior thresholds, then the condition watchers
+of the organization that `--org` names. A watcher that fires queues its
+workflow, as the minute job does. `--at` sets the job's clock (RFC 3339), so
+you can rerun the sweep for a minute that a stopped web missed. The command
+does not stop the scheduled job.
 
 Admin settings, GraphJin config shows this file read-only, with secrets and
 comments hidden, and says whether GraphJin is running. Edit the file on the
