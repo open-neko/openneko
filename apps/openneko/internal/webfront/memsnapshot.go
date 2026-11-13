@@ -153,13 +153,17 @@ func gitWith(root string, env []string, stdin io.Reader, args ...string) (string
 // commitConfigRepo is commitConfigChange() in packages/llm/src/config-vcs:
 // the new HEAD, or "" when nothing changed.
 func commitConfigRepo(root, path, message string) (string, error) {
+	return commitConfigPaths(root, []string{path}, message)
+}
+
+func commitConfigPaths(root string, paths []string, message string) (string, error) {
 	if err := ensureConfigRepo(root); err != nil {
 		return "", err
 	}
-	if _, err := git(root, "add", "-A", "--", path); err != nil {
+	if _, err := git(root, append([]string{"add", "-A", "--"}, paths...)...); err != nil {
 		return "", err
 	}
-	status, err := git(root, "status", "--porcelain", "--", path)
+	status, err := git(root, append([]string{"status", "--porcelain", "--"}, paths...)...)
 	if err != nil || strings.TrimSpace(status) == "" {
 		return "", err
 	}

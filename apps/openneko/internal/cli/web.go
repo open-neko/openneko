@@ -106,6 +106,7 @@ with exit code 0, so its supervisor starts it again.`,
 				Embedding: jobs.Embedding{Model: api.EmbeddingModel, Embed: api.EmbedText},
 				Logf:      func(format string, args ...any) { fmt.Fprintf(cmd.OutOrStdout(), format+"\n", args...) }}
 			runner := startJobs(context.WithoutCancel(ctx), runJobs, queue, cmd.OutOrStdout(), cmd.ErrOrStderr())
+			webfront.SweepStagesEvery(ctx, 5*time.Minute)
 			var node *exec.Cmd
 			nodeDone := make(chan error, 1)
 			if len(args) > 0 {

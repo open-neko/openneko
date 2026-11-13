@@ -97,6 +97,7 @@ func chatTurnFront(t *testing.T) (*Front, *pgxpool.Pool, *fakeActionWorker) {
 	t.Helper()
 	f, db := memoryFront(t)
 	clearAxEnv(t, nil)
+	t.Setenv("OPENNEKO_AGENT_RUNS_DIR", t.TempDir())
 	seedRiver(t, db, f)
 	worker := &fakeActionWorker{db: db}
 	srv := httptest.NewServer(worker)
@@ -175,7 +176,7 @@ func TestChatTurnThroughServe(t *testing.T) {
 		t.Fatalf("result %+v\nevents %s", res, strings.Join(events, "\n"))
 	}
 	for i, want := range []string{`{"type":"status","message":"Starting Ax…"}`, `{"type":"status","message":"Retrieving relevant context…"}`,
-		`{"type":"status","message":"Agent is working…"}`} {
+		`{"type":"status","message":"Preparing secure agent workspace…"}`, `{"type":"status","message":"Agent is working…"}`} {
 		if events[i] != want {
 			t.Fatalf("event %d: %s", i, events[i])
 		}
@@ -400,6 +401,129 @@ func TestChatTurnOutcomes(t *testing.T) {
 		state := rowText(t, db, `select backend_state::text from work_thread where id = $1`, thread)
 		if !strings.Contains(state, `"keep": 1`) || !strings.Contains(state, `"summary": "Folded summary"`) {
 			t.Fatalf("backend state %s", state)
+		}
+	})
+
+	host := orgAgentRoot("org")
+	report := filepath.Join(host, "skills", "report", "SKILL.md")
+	readText := func(p string) string {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return "<none>"
+		}
+		return string(data)
+	}
+	skillChange := func() string {
+		return rowText(t, db, `select scope || ':' || user_id || ':' || summary || ':' || coalesce(commit_sha, '-') from config_change
+			where org_id = 'org' and artifact_kind = 'skill' order by created_at desc, id desc limit 1`)
+	}
+	skillEdit := func(text, tool string, seen *agentWorkspace, prompt *string) fakeCore {
+		return func(ctx context.Context, in agentCoreInput) (axRunResult, error) {
+			if seen != nil {
+				*seen = in.Workspace
+			}
+			if prompt != nil {
+				*prompt = in.Prompt
+			}
+			writeTestFile(t, filepath.Join(in.Workspace.SkillsRoot, "report", "SKILL.md"), text)
+			writeTestFile(t, filepath.Join(in.Workspace.ArtifactRoot, "out.csv"), "x")
+			_ = in.Emit(ctx, jsObjOf("type", "tool_start", "id", "t1", "name", tool, "input", jsObjOf("path", "notes/a.md")))
+			_ = in.Emit(ctx, jsObjOf("type", "message", "role", "assistant", "content", "Done."))
+			return axRunResult{Status: "completed", FinalText: "Done."}, nil
+		}
+	}
+
+	t.Run("the turn works in a stage and saves an admin's skill edit for the team", func(t *testing.T) {
+		writeTestFile(t, report, "# Team report\n")
+		writeTestFile(t, filepath.Join(host, "memory", "secret.md"), "memory")
+		id := newRun("admin")
+		var ws agentWorkspace
+		var prompt string
+		res, err, log := run(ctx, id, skillEdit("# Better report\n", "terminal", &ws, &prompt))
+		if err != nil || res.Status != "completed" {
+			t.Fatalf("%+v %v", res, err)
+		}
+		if !strings.HasPrefix(ws.OrgRoot, os.Getenv("OPENNEKO_AGENT_RUNS_DIR")) || !strings.Contains(prompt, ws.SkillsRoot) || strings.Contains(prompt, host) {
+			t.Fatalf("the turn did not run in the stage: %s", ws.OrgRoot)
+		}
+		if _, err := os.Stat(ws.OrgRoot); err == nil {
+			t.Error("the stage is still there")
+		}
+		if got := readText(report); got != "# Better report\n" {
+			t.Errorf("host skill %q", got)
+		}
+		if got, want := skillChange(), "team::Updated skill in run "+id[:8]+": report:"; !strings.HasPrefix(got, want) || strings.HasSuffix(got, ":-") {
+			t.Errorf("config change %q", got)
+		}
+		if log.count(`{"type":"artifact","artifact":{"path":"runs/`+id+`/artifacts/out.csv","label":"out.csv"}}`) != 1 {
+			t.Errorf("events %v", log.all())
+		}
+	})
+
+	t.Run("a member's skill edit goes to their own version", func(t *testing.T) {
+		writeTestFile(t, report, "# Team report\n")
+		id := newRun("member")
+		res, err, _ := run(ctx, id, skillEdit("# My report\n", "mcp__neko__create_skill", nil, nil))
+		if err != nil || res.Status != "completed" {
+			t.Fatalf("%+v %v", res, err)
+		}
+		if got := readText(report); got != "# Team report\n" {
+			t.Errorf("host skill %q", got)
+		}
+		if got, err := git(host, "show", userConfigRef("member")+":skills/report/SKILL.md"); err != nil || got != "# My report\n" {
+			t.Errorf("member ref %q %v", got, err)
+		}
+		if got, want := skillChange(), "user:member:Updated skill in run "+id[:8]+": report:"; !strings.HasPrefix(got, want) {
+			t.Errorf("config change %q", got)
+		}
+		var staged string
+		res, err, _ = run(ctx, newRun("member"), func(ctx context.Context, in agentCoreInput) (axRunResult, error) {
+			staged = readText(filepath.Join(in.Workspace.SkillsRoot, "report", "SKILL.md"))
+			return axRunResult{Status: "completed", FinalText: "Done."}, nil
+		})
+		if err != nil || staged != "# My report\n" {
+			t.Errorf("the member's next run saw %q (%v)", staged, err)
+		}
+	})
+
+	t.Run("a turn with no skill writes saves nothing", func(t *testing.T) {
+		writeTestFile(t, report, "# Team report\n")
+		before := skillChange()
+		res, err, _ := run(ctx, newRun("admin"), skillEdit("# Lost\n", "read_file", nil, nil))
+		if err != nil || res.Status != "completed" || readText(report) != "# Team report\n" || skillChange() != before {
+			t.Errorf("%+v %v %q", res, err, readText(report))
+		}
+	})
+
+	t.Run("a removed file goes and a file changed on the host meanwhile stays", func(t *testing.T) {
+		writeTestFile(t, report, "# Team report\n")
+		old := filepath.Join(host, "skills", "report", "old.py")
+		other := filepath.Join(host, "skills", "report", "other.py")
+		writeTestFile(t, old, "old\n")
+		writeTestFile(t, other, "other\n")
+		res, err, _ := run(ctx, newRun("admin"), func(ctx context.Context, in agentCoreInput) (axRunResult, error) {
+			if err := os.Remove(filepath.Join(in.Workspace.SkillsRoot, "report", "old.py")); err != nil {
+				t.Error(err)
+			}
+			writeTestFile(t, filepath.Join(in.Workspace.SkillsRoot, "report", "other.py"), "from the run\n")
+			writeTestFile(t, other, "from an admin\n")
+			_ = in.Emit(ctx, jsObjOf("type", "tool_start", "id", "t1", "name", "process"))
+			return axRunResult{Status: "completed", FinalText: "Done."}, nil
+		})
+		if err != nil || res.Status != "completed" || readText(old) != "<none>" || readText(other) != "from an admin\n" {
+			t.Errorf("%+v %v %q %q", res, err, readText(old), readText(other))
+		}
+		os.Remove(other)
+	})
+
+	t.Run("a failed turn still saves its skill edits", func(t *testing.T) {
+		writeTestFile(t, report, "# Team report\n")
+		_, err, _ := run(ctx, newRun("admin"), func(ctx context.Context, in agentCoreInput) (axRunResult, error) {
+			writeTestFile(t, filepath.Join(in.Workspace.SkillsRoot, "report", "SKILL.md"), "# Kept\n")
+			return axRunResult{}, errors.New("model down")
+		})
+		if err == nil || readText(report) != "# Kept\n" {
+			t.Errorf("%v %q", err, readText(report))
 		}
 	})
 

@@ -57,7 +57,7 @@ func orgWorkspace(orgID string) (orgRoots, error) {
 	if err := removeRetiredBuiltins(r.Skills); err != nil {
 		return r, err
 	}
-	if err := seedBuiltinSkills(r.Skills); err != nil {
+	if err := seedBuiltinSkills(r.Skills, skillRunnable); err != nil {
 		return r, err
 	}
 	for _, f := range knowledgeFiles {
@@ -231,9 +231,9 @@ func removeRetiredBuiltins(skillsRoot string) error {
 	return nil
 }
 
-func seedBuiltinSkills(skillsRoot string) error {
+func seedBuiltinSkills(skillsRoot string, keep func(string) bool) error {
 	for _, name := range bundledSkillNames() {
-		if !skillRunnable(name) {
+		if !keep(name) {
 			continue
 		}
 		dest := filepath.Join(skillsRoot, name)

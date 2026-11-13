@@ -146,19 +146,24 @@ func (a *API) insertConfigChange(ctx context.Context, c configChange) {
 // commit, move the team ref and add the config_change row. A versioning
 // failure must not fail the write that called it.
 func (a *API) recordConfigChange(ctx context.Context, orgID, path, message, kind, ref, actorID string) {
+	a.recordConfigPaths(ctx, orgID, []string{path}, message, kind, ref, actorID)
+}
+
+func (a *API) recordConfigPaths(ctx context.Context, orgID string, paths []string, message, kind, ref, actorID string) string {
 	configRepoMu.Lock()
-	sha, err := commitConfigRepo(orgAgentRoot(orgID), path, message)
+	sha, err := commitConfigPaths(orgAgentRoot(orgID), paths, message)
 	configRepoMu.Unlock()
 	if err != nil {
 		log.Printf("[config-vcs] versioning failed (write succeeded): %v", err)
-		return
+		return ""
 	}
 	if sha == "" {
-		return
+		return ""
 	}
 	if _, err := a.DB.Exec(ctx, `insert into config_ref (org_id, scope, commit_sha) values ($1, 'team', $2)
 		on conflict (org_id, scope, user_id) do update set commit_sha = excluded.commit_sha, updated_at = now()`, orgID, sha); err != nil {
 		log.Printf("[config-vcs] config_ref update failed (commit persisted): %v", err)
 	}
 	a.insertConfigChange(ctx, configChange{OrgID: orgID, Kind: kind, Ref: ref, Actor: actorID, SHA: sha, Summary: message})
+	return sha
 }
