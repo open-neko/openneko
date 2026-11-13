@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pg from "pg";
@@ -10,7 +10,8 @@ import { maybeEncryptSecret } from "@neko/llm/secrets";
 import { ensureOrgWorkspace, rememberWorkMemory, writeWorkSkill } from "@neko/llm/work";
 import {
   EVAL_EPISODE_DATABASE_PREFIX,
-  EVAL_EPISODE_FOLDER_PREFIX,
+  evalEpisodeFolderPrefix,
+  evalServerKey,
   EvalInstallHost,
   availableMemoryBytes,
   evalDatabaseLoginFromEnv,
@@ -31,6 +32,14 @@ import {
 const GB = 1024 ** 3;
 
 describe("eval install helpers", () => {
+  it("keys the episode folders to one Postgres server", () => {
+    const login = { host: "127.0.0.1", port: 15432 };
+    expect(evalEpisodeFolderPrefix(login)).toMatch(/^openneko-eval-ep-[0-9a-f]{12}-$/);
+    expect(evalEpisodeFolderPrefix(login)).toBe(evalEpisodeFolderPrefix({ ...login }));
+    expect(evalEpisodeFolderPrefix({ ...login, port: 55432 })).not.toBe(evalEpisodeFolderPrefix(login));
+    expect(evalServerKey({ ...login, host: "db" })).not.toBe(evalServerKey(login));
+  });
+
   it("keeps 2 GB free when it caps parallel episodes", () => {
     expect(availableMemoryBytes("MemTotal: 16 kB\nMemAvailable:    8388608 kB\n")).toBe(8 * GB);
     expect(availableMemoryBytes("MemTotal: 16 kB\n")).toBeUndefined();
@@ -228,9 +237,17 @@ describe.skipIf(!reachable)("eval install episode", () => {
       const leftover = `${EVAL_EPISODE_DATABASE_PREFIX}dead_run`;
       await admin.query(`drop database if exists ${leftover}`);
       await admin.query(`create database ${leftover}`);
-      const leftoverFolder = join(tmpdir(), `${EVAL_EPISODE_FOLDER_PREFIX}dead_run`);
+      const leftoverFolder = join(tmpdir(), `${evalEpisodeFolderPrefix(login)}dead_run`);
       await mkdir(join(leftoverFolder, "home"), { recursive: true });
-      host = await EvalInstallHost.prepare({ login, lockWaitMs: 600_000 });
+      const otherServerFolder = join(tmpdir(), `${evalEpisodeFolderPrefix({ ...login, port: login.port + 1 })}live_run`);
+      await mkdir(join(otherServerFolder, "runs"), { recursive: true });
+      try {
+        host = await EvalInstallHost.prepare({ login, lockWaitMs: 600_000 });
+        expect(existsSync(join(otherServerFolder, "runs"))).toBe(true);
+      } finally {
+        await rm(otherServerFolder, { recursive: true, force: true });
+      }
+      expect(host.binary).toContain(`openneko-eval-bin-${evalServerKey(login)}`);
       await expect(EvalInstallHost.prepare({ login, binary: host.binary, build: false })).rejects.toThrow(
         /another eval run uses this Postgres server/,
       );

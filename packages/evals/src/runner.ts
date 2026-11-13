@@ -97,7 +97,7 @@ export class EvalTaskError extends Error {
   }
 }
 
-function durationMs(value: string): number {
+export function durationMs(value: string): number {
   const match = /^(\d+)(ms|s|m|h)$/u.exec(value);
   if (!match) throw new Error(`invalid duration ${value}`);
   const amount = Number(match[1]);

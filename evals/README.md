@@ -107,6 +107,15 @@ in-memory action adapter. Case w02 v2 pauses the workflow with
 `PATCH /api/v1/workflows/{id}`, which also turns its watchers off; v1 also
 reset a watcher, which no product path does.
 
+An eval install keeps its episode folders and its `openneko` build under the
+temporary folder, in names keyed to the Postgres host and port. At start it
+deletes the leftovers of its own server only, so two eval runs on two servers
+(the provider eval and the worker tests, for example) leave each other alone.
+A manual workflow run acts as the service, and no route lets the operator stop
+it. So the backend driver gives each workflow case a turn time 90 s shorter
+than the case timeout, no continuations, and a tool-call limit one above the
+variant's `max_tool_calls`: the run ends on its own before the episode does.
+
 The work-memory adapter runs each phase on its own eval install. A scripted
 model saves and searches memories through `neko_memory` in a chat turn, and
 writes skills through `neko_skills`. The adapter reads the stored memories and
