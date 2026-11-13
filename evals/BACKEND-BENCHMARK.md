@@ -124,6 +124,13 @@ KEY, TOKEN, SECRET or PASSWORD and of URL passwords. The file has mode 600.
 Web refuses a path inside the agent, stage or files folders, and logs one line
 at start that the trace is on. Without the variable, web stores no trace.
 
+`apps/worker/test/eval-trace-parity.test.ts` runs `b11-composition` through
+the trace file and compares the records with the record of the old Node sink
+(`test/fixtures/eval-trace-parity`). Three differences are allowed: Go records
+tool calls as `trusted-broker`, Go lists the GraphJin tools when the turn
+starts, and Go's `memory.prefetched` lists every memory in the prompt. The test
+runs when the AdventureWorks eval stack and the test database are up.
+
 V3 state cases additionally retain a private host observation with three
 separate surfaces: the exact lifecycle sequence, a terminal-state object, and
 a collateral-state object. The model cannot supply or edit this observation.

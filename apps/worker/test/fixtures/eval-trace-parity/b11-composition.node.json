@@ -1,0 +1,1420 @@
+{
+  "recordedWith": {
+    "commit": "70fea235c",
+    "driver": "in-process Node sink",
+    "config": "evals/configs/openneko-backend-scripted-good-v4.yaml",
+    "case": "b11-composition",
+    "repetition": 1,
+    "evalRunId": "parity"
+  },
+  "semanticEvidence": {
+    "schemaVersion": "openneko.eval.semantic-evidence/v2",
+    "events": [
+      {
+        "schemaVersion": "openneko.work.semantic-trace/v1",
+        "sequence": 1,
+        "timestamp": "2026-11-13T16:27:53.548Z",
+        "runId": "3097fbcb-5f73-4e55-81bf-966c23a1178e",
+        "orgId": "eval-backend-17ea7830f2d569d789",
+        "runKind": "work",
+        "source": "trusted-host",
+        "status": "ok",
+        "durationMs": 1,
+        "requestDigest": "sha256:b3835618b2717b6b348f1ab75cfa4811ff884f76e67b1f70dcc93753f1bcba88",
+        "responseDigest": "sha256:68a4cfb5c4ce99851db005f3db2b85b87f85cd3d82a5c13a026e91ff7bb9dcda",
+        "operation": "memory.prefetched",
+        "evidence": {
+          "returnedCount": 1,
+          "memories": [
+            {
+              "id": "49f1f1a3-e3fb-4f32-8e1f-72d277891fc7",
+              "contentDigest": "sha256:7df7cd8e53489f933f6e4b7f1206e3f9e989c75705900287815e64c904d3647f",
+              "layer": "personal",
+              "scope": "global",
+              "kind": "business_rule"
+            }
+          ]
+        }
+      },
+      {
+        "schemaVersion": "openneko.work.semantic-trace/v1",
+        "sequence": 2,
+        "timestamp": "2026-11-13T16:27:53.624Z",
+        "runId": "3097fbcb-5f73-4e55-81bf-966c23a1178e",
+        "orgId": "eval-backend-17ea7830f2d569d789",
+        "runKind": "work",
+        "source": "trusted-host",
+        "status": "ok",
+        "durationMs": 54,
+        "requestDigest": "sha256:18da92da25a0cd83978cd2ac0e6be039ec8e8b80fbcccba89d0df9bcd96ba14f",
+        "responseDigest": "sha256:91b0c6a78e0194718206ca5051b7109a1483818e1426f2122e0dc9d81d00fe9c",
+        "operation": "memory.search",
+        "evidence": {
+          "requestedLimit": 20,
+          "returnedCount": 2,
+          "memories": [
+            {
+              "id": "49f1f1a3-e3fb-4f32-8e1f-72d277891fc7",
+              "contentDigest": "sha256:7df7cd8e53489f933f6e4b7f1206e3f9e989c75705900287815e64c904d3647f",
+              "layer": "personal",
+              "scope": "global",
+              "kind": "business_rule"
+            },
+            {
+              "id": "12319189-8e2b-4086-b64a-4efb539166e4",
+              "contentDigest": "sha256:f7debf9199c0ee0fa71a2ed42839ac34c83852c38f6403d4a3fad2dbd9cfa3ca",
+              "layer": "personal",
+              "scope": "global",
+              "kind": "business_rule"
+            }
+          ]
+        }
+      },
+      {
+        "schemaVersion": "openneko.work.semantic-trace/v1",
+        "sequence": 3,
+        "timestamp": "2026-11-13T16:27:53.719Z",
+        "runId": "3097fbcb-5f73-4e55-81bf-966c23a1178e",
+        "orgId": "eval-backend-17ea7830f2d569d789",
+        "runKind": "work",
+        "source": "trusted-host",
+        "status": "ok",
+        "durationMs": 0,
+        "requestDigest": "sha256:f7f2da2587676466bf64e275827562c32f6bb4a4e45edc12059e2997c0f8ee4d",
+        "responseDigest": "sha256:743dfd1daaefb1956d106b88a76c01d7edbc7072fd2e409ee375e2583d6566f1",
+        "operation": "skill.loaded",
+        "evidence": {
+          "id": "aw-executive-composition",
+          "contentDigest": "sha256:f9939268eb2ac055d0749cb9df328fc27dbdb70ee55941c484df15c163176d77"
+        }
+      },
+      {
+        "schemaVersion": "openneko.work.semantic-trace/v1",
+        "sequence": 4,
+        "timestamp": "2026-11-13T16:27:53.731Z",
+        "runId": "3097fbcb-5f73-4e55-81bf-966c23a1178e",
+        "orgId": "eval-backend-17ea7830f2d569d789",
+        "runKind": "work",
+        "source": "trusted-host",
+        "status": "ok",
+        "durationMs": 14,
+        "requestDigest": "sha256:bc5223ba0479cdf7fd1f62b09d8edecdf451bacbec53f76b276d21c1e01b69eb",
+        "responseDigest": "sha256:5c5f1676cf7309cdceb0dc0b4dbfdf066da079a31e64145de74d8f72da765fdf",
+        "operation": "files.search",
+        "evidence": {
+          "requestedLimit": 20,
+          "returnedCount": 2,
+          "files": [
+            {
+              "id": "library/57bc93ef5cd911d3abb5e8daed8a13c1ca20ee9b550eca7558d6a8d220b7890d/current-reporting-policy.md",
+              "bodyDigest": "sha256:434ec43b8ada921c26a383f6360f421c422d3d7afcafd3bbc7d3d6adebcf7472"
+            },
+            {
+              "id": "library/59d0ae2594d96d961c9d4d7bca6028713bb174211b7cd40d0ba7726071a48e1c/retired-reporting-policy.md",
+              "bodyDigest": "sha256:70984dc1440db327d00079c34dffd5136d47d8777f2ace868ec8d605e7205a2a"
+            }
+          ]
+        }
+      },
+      {
+        "schemaVersion": "openneko.work.semantic-trace/v1",
+        "sequence": 5,
+        "timestamp": "2026-11-13T16:27:53.826Z",
+        "runId": "3097fbcb-5f73-4e55-81bf-966c23a1178e",
+        "orgId": "eval-backend-17ea7830f2d569d789",
+        "runKind": "work",
+        "source": "trusted-host",
+        "status": "ok",
+        "durationMs": 42,
+        "requestDigest": "sha256:2a8276f650319ab72da96dfdddb5ea2b42884eb8b8691099d76cdb56df8ca66e",
+        "responseDigest": "sha256:16368ec6d97a38ace08e8a97f00c4e13facb1965254437e42c1959137547673e",
+        "operation": "workflow.list",
+        "evidence": {
+          "requestedLimit": 50,
+          "total": 2,
+          "returnedCount": 2,
+          "workflows": [
+            {
+              "id": "ddda4ab8-4138-4ff6-9246-623f95e94969",
+              "definitionDigest": "sha256:2cb17281c7792f6f3fde47ce0c378c862b44e3d0247960b8436cbbeeb30b19b1",
+              "enabled": false,
+              "status": "active"
+            },
+            {
+              "id": "a2941f2e-2a45-4c71-8246-68a6ca69904b",
+              "definitionDigest": "sha256:76df1a6c8cc1af0f8f94a4f9a8891fa19accbc900480d9074c6e8f199d9af3b5",
+              "enabled": true,
+              "status": "active"
+            }
+          ]
+        }
+      },
+      {
+        "schemaVersion": "openneko.work.semantic-trace/v1",
+        "sequence": 6,
+        "timestamp": "2026-11-13T16:27:53.881Z",
+        "runId": "3097fbcb-5f73-4e55-81bf-966c23a1178e",
+        "orgId": "eval-backend-17ea7830f2d569d789",
+        "runKind": "work",
+        "source": "trusted-host",
+        "status": "ok",
+        "durationMs": 47,
+        "requestDigest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "responseDigest": "sha256:dfd812f98c7d02f7499be68328604c933aa4d0a466a2990c2f2401311a21f7e1",
+        "operation": "graphjin.tools_list",
+        "evidence": {
+          "returnedCount": 7,
+          "catalogDigest": "sha256:dfd812f98c7d02f7499be68328604c933aa4d0a466a2990c2f2401311a21f7e1",
+          "tools": [
+            {
+              "name": "execute_graphql",
+              "schemaDigest": "sha256:feff1feec1fb1b52b18318ac1132b882bbdccdf038b138c8f72f3646ab84da82"
+            },
+            {
+              "name": "execute_saved_query",
+              "schemaDigest": "sha256:94259a3ca706c338d1153830ab2867655093190e8916523b143b76f4e6ffede4"
+            },
+            {
+              "name": "get_current_config",
+              "schemaDigest": "sha256:abad97c69af4a10083dfe2129e2a5a22111bf55c57113a28010b4ac244a4a307"
+            },
+            {
+              "name": "graphql_help",
+              "schemaDigest": "sha256:2a3ca6f18ce8aaf1e8aa6a95ba28f1f0b3a4622a583d0373646d34b8f99ea2e4"
+            },
+            {
+              "name": "query_catalog",
+              "schemaDigest": "sha256:11f949b4e22d4c86adfc9bb72834289939995cc4070a7c969928c42d349c10ad"
+            },
+            {
+              "name": "validate_config",
+              "schemaDigest": "sha256:e67fa09f76701edf02e487a079fa92fedc129494fd01fb20741d4dd8a5f62f2c"
+            },
+            {
+              "name": "validate_where_clause",
+              "schemaDigest": "sha256:ab02babef54ca6edbdb18e9739fd59507c1805bded1a3ae225baa96bfedd6009"
+            }
+          ]
+        }
+      },
+      {
+        "schemaVersion": "openneko.work.semantic-trace/v1",
+        "sequence": 7,
+        "timestamp": "2026-11-13T16:27:54.018Z",
+        "runId": "3097fbcb-5f73-4e55-81bf-966c23a1178e",
+        "orgId": "eval-backend-17ea7830f2d569d789",
+        "runKind": "work",
+        "source": "trusted-host",
+        "status": "ok",
+        "durationMs": 58,
+        "requestDigest": "sha256:2526faf1bea101911621f8ca3f221296675a58903201792a7483887c9dfd612e",
+        "responseDigest": "sha256:8aa2e405923940538a37f9d7be9fe307e919bb27737d9b92c00dacc9e0ddb377",
+        "operation": "graphjin.execute",
+        "evidence": {
+          "toolName": "execute_graphql",
+          "queryDigest": "sha256:102af0e353f01c4aa64f5278c336e911d45cc4f13b006981f3147ea1b00f7ec4",
+          "operationType": "query"
+        }
+      }
+    ],
+    "steps": [
+      {
+        "sequence": 2,
+        "operation": "memory.search",
+        "request": {
+          "limit": 20,
+          "query": "online revenue reporting code vendor review code executive territory code"
+        },
+        "rows": [
+          {
+            "memory": {
+              "archivedAt": null,
+              "confidence": 0.8,
+              "createdAt": "2026-11-13T16:27:52.928Z",
+              "expiresAt": null,
+              "id": "49f1f1a3-e3fb-4f32-8e1f-72d277891fc7",
+              "integrityOk": true,
+              "kind": "business_rule",
+              "lastUsedAt": "2026-11-13T16:27:53.523Z",
+              "metadata": {
+                "fixtureDigest": "sha256:5636ae3cf007cefb73683705e37502dfe105056c494bb3445d7ac14b1a1f2fb1",
+                "source": "eval-fixture"
+              },
+              "orgId": "eval-backend-17ea7830f2d569d789",
+              "originId": "49f1f1a3-e3fb-4f32-8e1f-72d277891fc7",
+              "overridesOriginId": null,
+              "pinned": false,
+              "promotedAt": null,
+              "promotedBy": null,
+              "promotedFromId": null,
+              "scope": "global",
+              "scopeId": null,
+              "sourceRunId": null,
+              "sourceThreadId": null,
+              "suppressed": false,
+              "text": "Current online revenue and vendor review reporting code: MEM-70CBAD4998. Use this exact code in the answer.",
+              "updatedAt": "2026-11-13T16:27:52.928Z",
+              "useCount": 2,
+              "userId": "member-17ea7830f2d569d789"
+            },
+            "score": 0.7,
+            "source": "saved_memory"
+          },
+          {
+            "memory": {
+              "archivedAt": null,
+              "confidence": 0.8,
+              "createdAt": "2026-11-13T16:27:52.951Z",
+              "expiresAt": null,
+              "id": "12319189-8e2b-4086-b64a-4efb539166e4",
+              "integrityOk": true,
+              "kind": "business_rule",
+              "lastUsedAt": "2026-11-13T16:27:53.523Z",
+              "metadata": {
+                "retired": true,
+                "source": "eval-fixture-decoy"
+              },
+              "orgId": "eval-backend-17ea7830f2d569d789",
+              "originId": "12319189-8e2b-4086-b64a-4efb539166e4",
+              "overridesOriginId": null,
+              "pinned": false,
+              "promotedAt": null,
+              "promotedBy": null,
+              "promotedFromId": null,
+              "scope": "global",
+              "scopeId": null,
+              "sourceRunId": null,
+              "sourceThreadId": null,
+              "suppressed": false,
+              "text": "Legacy retired reporting code: MEM-OLD-2CCFC97D95. Never use it for a current report.",
+              "updatedAt": "2026-11-13T16:27:52.951Z",
+              "useCount": 2,
+              "userId": "member-17ea7830f2d569d789"
+            },
+            "score": 0.3,
+            "source": "saved_memory"
+          }
+        ],
+        "rowCount": 2,
+        "truncated": false
+      },
+      {
+        "sequence": 4,
+        "operation": "files.search",
+        "request": {
+          "limit": 20,
+          "query": "current approved territory leader tax reporting policy"
+        },
+        "rows": [
+          {
+            "passages": [
+              {
+                "location": "section Current territory leader and tax reporting policy",
+                "snippet": "\u00abCurrent\u00bb \u00abterritory\u00bb \u00ableader\u00bb and \u00abtax\u00bb \u00abreporting\u00bb \u00abpolicy\u00bb\n\n\u00abApproved\u00bb code for \u00abcurrent\u00bb AdventureWorks \u00abreporting\u00bb.\n\nUse exact \u00abreport\u00bb code LIB-CD6057EC3C with the grounded result. Retrieved"
+              }
+            ],
+            "path": "library/57bc93ef5cd911d3abb5e8daed8a13c1ca20ee9b550eca7558d6a8d220b7890d/current-reporting-policy.md",
+            "score": 1.030000001192093
+          },
+          {
+            "passages": [
+              {
+                "location": "section Retired territory reporting policy",
+                "snippet": "Retired \u00abterritory\u00bb \u00abreporting\u00bb \u00abpolicy\u00bb\n\nLegacy and retired since 2020.\n\nRetired \u00abpolicy\u00bb code LIB-OLD-2ED09B7CBC; this \u00abpolicy\u00bb is stale and must not be used"
+              }
+            ],
+            "path": "library/59d0ae2594d96d961c9d4d7bca6028713bb174211b7cd40d0ba7726071a48e1c/retired-reporting-policy.md",
+            "score": 0.0955102041363716
+          }
+        ],
+        "rowCount": 2,
+        "truncated": false
+      },
+      {
+        "sequence": 5,
+        "operation": "workflow.list",
+        "request": {
+          "limit": 50
+        },
+        "rows": [
+          {
+            "createdAt": "2026-11-13T16:27:53.133Z",
+            "createdByRunId": null,
+            "createdByThreadId": null,
+            "cron": null,
+            "cronEnabled": true,
+            "cronTimezone": "UTC",
+            "dailyRunBudget": null,
+            "description": "Retired negative-control workflow.",
+            "enabled": false,
+            "goal": "Retired escalation code WOR-OLD-2CD867EC91.",
+            "id": "ddda4ab8-4138-4ff6-9246-623f95e94969",
+            "name": "territory-composition-review-legacy",
+            "networkHosts": [],
+            "orgId": "eval-backend-17ea7830f2d569d789",
+            "originId": null,
+            "outputContract": null,
+            "ownerUserId": "member-17ea7830f2d569d789",
+            "parentId": null,
+            "status": "active",
+            "steps": [
+              {
+                "description": "Legacy only.",
+                "id": "retired"
+              }
+            ],
+            "systemPromptOverlay": "Do not use for current reports.",
+            "updatedAt": "2026-11-13T16:27:53.133Z",
+            "when": null
+          },
+          {
+            "createdAt": "2026-11-13T16:27:53.126Z",
+            "createdByRunId": null,
+            "createdByThreadId": null,
+            "cron": null,
+            "cronEnabled": true,
+            "cronTimezone": "UTC",
+            "dailyRunBudget": null,
+            "description": "Current governed AdventureWorks review workflow.",
+            "enabled": true,
+            "goal": "Review the requested metric and include escalation code WOR-A4F4A06C5C.",
+            "id": "a2941f2e-2a45-4c71-8246-68a6ca69904b",
+            "name": "territory-composition-review",
+            "networkHosts": [],
+            "orgId": "eval-backend-17ea7830f2d569d789",
+            "originId": null,
+            "outputContract": null,
+            "ownerUserId": "member-17ea7830f2d569d789",
+            "parentId": null,
+            "status": "active",
+            "steps": [
+              {
+                "description": "Calculate and report the grounded value.",
+                "id": "report"
+              }
+            ],
+            "systemPromptOverlay": "Read-only source use only.",
+            "updatedAt": "2026-11-13T16:27:53.126Z",
+            "when": null
+          }
+        ],
+        "rowCount": 2,
+        "truncated": false
+      },
+      {
+        "sequence": 6,
+        "operation": "graphjin.tools_list",
+        "request": {},
+        "rows": [
+          {
+            "_meta": {
+              "graphjin": {
+                "available_to_now": true,
+                "capability_ids": [
+                  "capability.raw_graphql_query"
+                ],
+                "category": "execution",
+                "discovery_first": true,
+                "requires_roots": null
+              }
+            },
+            "annotations": {
+              "destructiveHint": true,
+              "idempotentHint": false,
+              "openWorldHint": true,
+              "readOnlyHint": false
+            },
+            "description": "Execute a GraphJin GraphQL query or mutation against the database. Use query_catalog and query_catalog(id: ...) to learn the DSL syntax first.",
+            "inputSchema": {
+              "properties": {
+                "namespace": {
+                  "description": "Optional namespace for multi-tenant deployments",
+                  "type": "string"
+                },
+                "query": {
+                  "description": "The GraphQL query or mutation to execute. Use GraphJin DSL syntax.",
+                  "type": "string"
+                },
+                "variables": {
+                  "description": "Variables to pass to the query",
+                  "type": "object"
+                }
+              },
+              "required": [
+                "query"
+              ],
+              "type": "object"
+            },
+            "name": "execute_graphql"
+          },
+          {
+            "_meta": {
+              "graphjin": {
+                "available_to_now": true,
+                "capability_ids": [
+                  "capability.saved_query.execute"
+                ],
+                "category": "execution",
+                "discovery_first": true,
+                "requires_roots": null
+              }
+            },
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": true,
+              "readOnlyHint": false
+            },
+            "description": "Execute a pre-defined saved query from the allow-list by name. PREFER this over execute_graphql when a matching saved query exists - saved queries are pre-validated and safer. Use query_catalog to find available saved queries.",
+            "inputSchema": {
+              "properties": {
+                "name": {
+                  "description": "Name of the saved query to execute",
+                  "type": "string"
+                },
+                "namespace": {
+                  "description": "Optional namespace for multi-tenant deployments",
+                  "type": "string"
+                },
+                "variables": {
+                  "description": "Variables to pass to the query",
+                  "type": "object"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            },
+            "name": "execute_saved_query"
+          },
+          {
+            "_meta": {
+              "graphjin": {
+                "available_to_now": true,
+                "capability_ids": [
+                  "system_capability.gj_config.query"
+                ],
+                "category": "config",
+                "discovery_first": false,
+                "requires_roots": [
+                  "gj_config"
+                ]
+              }
+            },
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": false,
+              "readOnlyHint": true
+            },
+            "description": "Get current GraphJin configuration. Returns external sources, system/workflow feature overrides, databases, relationships, tables, roles, blocklist, functions, resolvers, and MCP settings. Use this to understand the current configuration before making changes.",
+            "inputSchema": {
+              "properties": {
+                "section": {
+                  "description": "Optional section to retrieve: 'sources', 'system', 'workflows', 'databases', 'relationships', 'metadata', 'tables', 'roles', 'blocklist', 'functions', 'resolvers', 'mcp', or 'all' (default)",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "name": "get_current_config"
+          },
+          {
+            "_meta": {
+              "graphjin": {
+                "available_to_now": true,
+                "capability_ids": [
+                  "system_capability.gj_catalog.query"
+                ],
+                "category": "discovery",
+                "discovery_first": false,
+                "requires_roots": null
+              }
+            },
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": false,
+              "readOnlyHint": true
+            },
+            "description": "Read-only bootstrap helper for GraphJin MCP. For goal-driven work, first call query_catalog(search: \"<user instruction>\"); use graphql_help(for: \"discovery\") when the user intent is unclear or catalog search is not useful. Valid for values: discovery, mcp_tools, catalog, schema, tables, columns, relationships, query, filters, mutations, saved_queries, fragments, workflows, workflow_runtime, config, security, runtime, artifacts, tasks, watches, refusals, code, errors. Replaces legacy MCP discovery prompts/tools such as get_query_syntax, get_mutation_syntax, get_catalog_card, get_config_docs, get_js_runtime_api, fix_query_error, saved-query discovery, fragment discovery, table/schema discovery, and relationship exploration by querying gj_catalog help rows. Returns bootstrap steps, topic_routes, replaces_tools, catalog rows, examples, safety notes, next guidance, and the exact internal gj_catalog GraphQL query.",
+            "inputSchema": {
+              "properties": {
+                "for": {
+                  "description": "Help topic. Start with discovery when unsure.",
+                  "enum": [
+                    "discovery",
+                    "mcp_tools",
+                    "catalog",
+                    "schema",
+                    "tables",
+                    "columns",
+                    "relationships",
+                    "query",
+                    "filters",
+                    "mutations",
+                    "saved_queries",
+                    "fragments",
+                    "workflows",
+                    "workflow_runtime",
+                    "config",
+                    "security",
+                    "runtime",
+                    "artifacts",
+                    "tasks",
+                    "watches",
+                    "refusals",
+                    "code",
+                    "errors"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "for"
+              ],
+              "type": "object"
+            },
+            "name": "graphql_help",
+            "outputSchema": {
+              "properties": {
+                "bootstrap": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "capability_profile": {
+                  "properties": {
+                    "allowed_actions": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "authenticated": {
+                      "type": "boolean"
+                    },
+                    "available_roots": {
+                      "items": {
+                        "properties": {
+                          "access_mode": {
+                            "type": "string"
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "type": "string"
+                          },
+                          "root": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "root",
+                          "available"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "available_tools": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "blocked_roots": {
+                      "items": {
+                        "properties": {
+                          "access_mode": {
+                            "type": "string"
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "type": "string"
+                          },
+                          "root": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "root",
+                          "available"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "catalog_revision": {
+                      "type": "string"
+                    },
+                    "mode": {
+                      "type": "string"
+                    },
+                    "recommended_entrypoint": {
+                      "type": "string"
+                    },
+                    "role_class": {
+                      "type": "string"
+                    },
+                    "safety_notes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "sources_mode": {
+                      "type": "boolean"
+                    },
+                    "visible_capabilities": {
+                      "items": {
+                        "properties": {
+                          "capability_kind": {
+                            "type": "string"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "summary": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "sources_mode",
+                    "role_class",
+                    "authenticated"
+                  ],
+                  "type": "object"
+                },
+                "catalog_rows": {
+                  "items": {
+                    "properties": {
+                      "capability_kind": {
+                        "type": "string"
+                      },
+                      "column_name": {
+                        "type": "string"
+                      },
+                      "confidence": {
+                        "type": "string"
+                      },
+                      "created_at": {
+                        "type": "string"
+                      },
+                      "database_name": {
+                        "type": "string"
+                      },
+                      "detail_ref": {
+                        "type": "string"
+                      },
+                      "details_json": {
+                        "type": "string"
+                      },
+                      "edges_json": {
+                        "type": "string"
+                      },
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "evidence_json": {
+                        "type": "string"
+                      },
+                      "examples_json": {
+                        "type": "string"
+                      },
+                      "graphql_mutation": {
+                        "type": "string"
+                      },
+                      "graphql_query": {
+                        "type": "string"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "input_schema_json": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "output_schema_json": {
+                        "type": "string"
+                      },
+                      "query_json": {
+                        "type": "string"
+                      },
+                      "risk_level": {
+                        "type": "string"
+                      },
+                      "safety_json": {
+                        "type": "string"
+                      },
+                      "schema_name": {
+                        "type": "string"
+                      },
+                      "score": {
+                        "type": "number"
+                      },
+                      "search_rank": {
+                        "type": "number"
+                      },
+                      "sensitive": {
+                        "type": "boolean"
+                      },
+                      "sensitivity": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "suggested_next_json": {
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      },
+                      "table_name": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "updated_at": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "examples": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "for": {
+                  "type": "string"
+                },
+                "graphql_query": {
+                  "type": "string"
+                },
+                "graphql_variables": {
+                  "type": "object"
+                },
+                "next": {
+                  "properties": {
+                    "options": {
+                      "items": {
+                        "properties": {
+                          "args_template": {
+                            "type": "object"
+                          },
+                          "optional_args": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "priority": {
+                            "type": "integer"
+                          },
+                          "reason": {
+                            "type": "string"
+                          },
+                          "required_args": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "tool": {
+                            "type": "string"
+                          },
+                          "when": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "tool",
+                          "priority"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "recommended_tool": {
+                      "type": "string"
+                    },
+                    "state_code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "state_code"
+                  ],
+                  "type": "object"
+                },
+                "recommended_first_query": {
+                  "type": "string"
+                },
+                "replaces_tools": {
+                  "items": {
+                    "properties": {
+                      "for": {
+                        "type": "string"
+                      },
+                      "replacement": {
+                        "type": "string"
+                      },
+                      "tool": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "tool",
+                      "replacement"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "safety": {
+                  "type": "object"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "topic_routes": {
+                  "items": {
+                    "properties": {
+                      "detail_query": {
+                        "type": "string"
+                      },
+                      "first_call": {
+                        "type": "string"
+                      },
+                      "for": {
+                        "type": "string"
+                      },
+                      "need": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "need",
+                      "for",
+                      "first_call",
+                      "detail_query"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "for",
+                "summary",
+                "recommended_first_query",
+                "graphql_query",
+                "graphql_variables",
+                "catalog_rows"
+              ],
+              "type": "object"
+            }
+          },
+          {
+            "_meta": {
+              "graphjin": {
+                "available_to_now": true,
+                "capability_ids": [
+                  "system_capability.gj_catalog.query"
+                ],
+                "category": "discovery",
+                "discovery_first": false,
+                "requires_roots": [
+                  "gj_catalog"
+                ]
+              }
+            },
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": false,
+              "readOnlyHint": true
+            },
+            "description": "Search GraphJin's AI-first catalog for schema, relationships, workflows, saved queries, fragments, language features, directives, operators, config_recipe, config, security, and capabilities. For goal-driven work, start with query_catalog(search: \"<user instruction>\"); use graphql_help(for: \"discovery\") only when the user intent is unclear or search returns no useful rows. Use query_catalog(id: \"...\") for one full-detail row with details_json, evidence_json, examples_json, safety_json, and edges_json. Examples: query_catalog(search: \"add role from jwt\"), query_catalog(id: \"help:query\"), query_catalog(id: \"help:schema\"), query_catalog(where: { kind: { eq: \"table\" } }), query_catalog(where: { kind: { eq: \"saved_query\" } }). Use validate_where_clause for filters, execute_saved_query for approved saved queries, and execute_graphql only when raw execution is enabled.",
+            "inputSchema": {
+              "properties": {
+                "column": {
+                  "description": "Compatibility shorthand for where.column_name.eq.",
+                  "type": "string"
+                },
+                "database": {
+                  "description": "Compatibility shorthand for where.database_name.eq.",
+                  "type": "string"
+                },
+                "explain": {
+                  "description": "When true and search is present, include score, matched fields, matched terms, and short non-sensitive match reasons.",
+                  "type": "boolean"
+                },
+                "id": {
+                  "description": "Optional catalog item id. When set, returns one detailed row with details_json, evidence_json, examples_json, safety_json, and edges_json.",
+                  "type": "string"
+                },
+                "ids": {
+                  "description": "Optional list of catalog item ids for batched detail rows in one call (max 20). Prefer this over repeated single-id calls.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "kind": {
+                  "description": "Compatibility shorthand for where.kind.eq. Prefer where: {kind: {eq: 'table'}} or where.kind.in for new callers.",
+                  "type": "string"
+                },
+                "limit": {
+                  "description": "Maximum catalog items to return per call. Defaults to 100, max 500 (payloads are large). When the result's `truncated` field is true there are more matching items \u2014 page with `offset`, or narrow with `search`/`where`.",
+                  "maximum": 500,
+                  "minimum": 1,
+                  "type": "number"
+                },
+                "offset": {
+                  "description": "Number of matching items to skip, for paging past the limit. Use offset = previous offset + limit while the result stays `truncated`.",
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "order_by": {
+                  "description": "Optional sort object. Use {score: 'desc'} with search, or fields like {title: 'asc'}, {updated_at: 'desc'}, or {created_on: 'asc'}.",
+                  "type": "object"
+                },
+                "schema": {
+                  "description": "Compatibility shorthand for where.schema_name.eq.",
+                  "type": "string"
+                },
+                "search": {
+                  "description": "Optional full-text search over catalog identifiers, @directives, relationship intent, analytics intent, summaries, and evidence.",
+                  "type": "string"
+                },
+                "table": {
+                  "description": "Compatibility shorthand for where.table_name.eq.",
+                  "type": "string"
+                },
+                "where": {
+                  "description": "Optional GraphJin-style filter object. Supported operators: eq, neq, in, nin, like, ilike, regex, iregex, contains, is_null, and, or, not. Fields include kind, title, database_name, table_name, created_at, and updated_at; created_on/updated_on are accepted aliases. Example: {kind: {in: ['table', 'relationship']}}.",
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "name": "query_catalog",
+            "outputSchema": {
+              "properties": {
+                "capability_profile": {
+                  "properties": {
+                    "allowed_actions": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "authenticated": {
+                      "type": "boolean"
+                    },
+                    "available_roots": {
+                      "items": {
+                        "properties": {
+                          "access_mode": {
+                            "type": "string"
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "type": "string"
+                          },
+                          "root": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "root",
+                          "available"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "available_tools": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "blocked_roots": {
+                      "items": {
+                        "properties": {
+                          "access_mode": {
+                            "type": "string"
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "type": "string"
+                          },
+                          "root": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "root",
+                          "available"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "catalog_revision": {
+                      "type": "string"
+                    },
+                    "mode": {
+                      "type": "string"
+                    },
+                    "recommended_entrypoint": {
+                      "type": "string"
+                    },
+                    "role_class": {
+                      "type": "string"
+                    },
+                    "safety_notes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "sources_mode": {
+                      "type": "boolean"
+                    },
+                    "visible_capabilities": {
+                      "items": {
+                        "properties": {
+                          "capability_kind": {
+                            "type": "string"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "summary": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "sources_mode",
+                    "role_class",
+                    "authenticated"
+                  ],
+                  "type": "object"
+                },
+                "cards": {
+                  "items": {
+                    "properties": {
+                      "capability_kind": {
+                        "type": "string"
+                      },
+                      "column_name": {
+                        "type": "string"
+                      },
+                      "confidence": {
+                        "type": "string"
+                      },
+                      "created_at": {
+                        "type": "string"
+                      },
+                      "database_name": {
+                        "type": "string"
+                      },
+                      "detail_ref": {
+                        "type": "string"
+                      },
+                      "details_json": {
+                        "type": "string"
+                      },
+                      "edges_json": {
+                        "type": "string"
+                      },
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "evidence_json": {
+                        "type": "string"
+                      },
+                      "examples_json": {
+                        "type": "string"
+                      },
+                      "graphql_mutation": {
+                        "type": "string"
+                      },
+                      "graphql_query": {
+                        "type": "string"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "input_schema_json": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "output_schema_json": {
+                        "type": "string"
+                      },
+                      "query_json": {
+                        "type": "string"
+                      },
+                      "risk_level": {
+                        "type": "string"
+                      },
+                      "safety_json": {
+                        "type": "string"
+                      },
+                      "schema_name": {
+                        "type": "string"
+                      },
+                      "score": {
+                        "type": "number"
+                      },
+                      "search_rank": {
+                        "type": "number"
+                      },
+                      "sensitive": {
+                        "type": "boolean"
+                      },
+                      "sensitivity": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "suggested_next_json": {
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      },
+                      "table_name": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "updated_at": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "count": {
+                  "type": "integer"
+                },
+                "generated_at": {
+                  "type": "string"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "matches": {
+                  "additionalProperties": {
+                    "properties": {
+                      "matched_fields": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "matched_terms": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "score": {
+                        "type": "number"
+                      },
+                      "why": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "score"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "object"
+                },
+                "next": {
+                  "properties": {
+                    "options": {
+                      "items": {
+                        "properties": {
+                          "args_template": {
+                            "type": "object"
+                          },
+                          "optional_args": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "priority": {
+                            "type": "integer"
+                          },
+                          "reason": {
+                            "type": "string"
+                          },
+                          "required_args": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "tool": {
+                            "type": "string"
+                          },
+                          "when": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "tool",
+                          "priority"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "recommended_tool": {
+                      "type": "string"
+                    },
+                    "state_code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "state_code"
+                  ],
+                  "type": "object"
+                },
+                "offset": {
+                  "type": "integer"
+                },
+                "revision": {
+                  "type": "string"
+                },
+                "source_revisions": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "truncated": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "generated_at",
+                "count",
+                "truncated",
+                "cards"
+              ],
+              "type": "object"
+            }
+          }
+        ],
+        "rowCount": 7,
+        "truncated": true
+      },
+      {
+        "sequence": 7,
+        "operation": "graphjin.execute",
+        "request": {
+          "arguments": {
+            "query": "query OpenNekoEvalHealth { salesorderheader(limit: 1) { salesorderid } }"
+          },
+          "name": "execute_graphql"
+        },
+        "rows": [
+          {
+            "salesorderid": 43659
+          }
+        ],
+        "rowCount": 1,
+        "truncated": false
+      }
+    ],
+    "modelTurns": [
+      {
+        "afterToolCalls": 7,
+        "text": "Current value: 9994743.67\nComparison value: 9388299.67\nCurrent window: 2024-06-30 through 2025-06-29\nWinner: Southwest\nContext codes: MEM-70CBAD4998 SKI-DFE5B1B10A LIB-CD6057EC3C WOR-A4F4A06C5C"
+      }
+    ]
+  }
+}
