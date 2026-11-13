@@ -20915,6 +20915,1682 @@
    "controlPlane": [],
    "events": [],
    "files": {}
+  },
+  {
+   "name": "config change denied",
+   "servers": [
+    "neko_source_config_manager"
+   ],
+   "tool": "source_config_manager_request_source_config_change",
+   "arguments": {
+    "action": "add_role",
+    "name": " analyst ",
+    "match": "user.role == 'analyst'",
+    "intent": " Analysts read. "
+   },
+   "replies": {
+    "previewSourceConfigChange": {
+     "value": {
+      "denied": true,
+      "error": "GraphJin config tools are admin-only."
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"stage\":\"graphjin_config_preview\",\"denied\":true,\"error\":\"GraphJin config tools are admin-only.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "previewSourceConfigChange",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "payload": {
+       "action": "add_role",
+       "name": "analyst",
+       "match": "user.role == 'analyst'"
+      }
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "config change error",
+   "servers": [
+    "neko_source_config_manager"
+   ],
+   "tool": "source_config_manager_request_source_config_change",
+   "arguments": {
+    "action": "set_source_access",
+    "source": "erp",
+    "read": "admin",
+    "dataSourceId": "99999999-9999-4999-8999-999999999999",
+    "intent": "Admins only."
+   },
+   "replies": {
+    "previewSourceConfigChange": {
+     "value": {
+      "source": {
+       "id": "99999999-9999-4999-8999-999999999999",
+       "name": "erp",
+       "host": "gj.internal"
+      },
+      "error": "GraphJin did not return catalog_revision"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"stage\":\"graphjin_config_preview\",\"source\":{\"id\":\"99999999-9999-4999-8999-999999999999\",\"name\":\"erp\",\"host\":\"gj.internal\"},\"error\":\"GraphJin did not return catalog_revision\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "previewSourceConfigChange",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "dataSourceId": "99999999-9999-4999-8999-999999999999",
+      "payload": {
+       "action": "set_source_access",
+       "source": "erp",
+       "read": "admin",
+       "dataSourceId": "99999999-9999-4999-8999-999999999999"
+      }
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "config change register problems",
+   "servers": [
+    "neko_source_config_manager"
+   ],
+   "tool": "source_config_manager_request_source_config_change",
+   "arguments": {
+    "action": "register_source",
+    "name": " erp ",
+    "kind": [
+     "database"
+    ],
+    "type": "mysql",
+    "port": 3306,
+    "dbname": "erp",
+    "user": "reader",
+    "secretRef": "erp-password",
+    "blockedTables": [
+     "payroll",
+     "audit"
+    ],
+    "adminTables": [],
+    "bucket": "unused",
+    "intent": "Add the ERP."
+   },
+   "replies": {
+    "previewSourceConfigChange": {
+     "value": {
+      "source": {
+       "id": "99999999-9999-4999-8999-999999999999",
+       "name": "erp",
+       "host": "gj.internal"
+      },
+      "problems": [
+       {
+        "field": "host",
+        "message": "The host is empty."
+       },
+       {
+        "field": "host",
+        "message": "Two."
+       },
+       {
+        "field": null,
+        "message": "GraphJin did not accept this change.",
+        "detail": "x"
+       },
+       {
+        "field": "general",
+        "message": "Other."
+       }
+      ],
+      "error": "The host is empty. Two. GraphJin did not accept this change."
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"stage\":\"answer_check\",\"source\":{\"id\":\"99999999-9999-4999-8999-999999999999\",\"name\":\"erp\",\"host\":\"gj.internal\"},\"problems\":[{\"field\":\"host\",\"message\":\"The host is empty.\"},{\"field\":\"host\",\"message\":\"Two.\"},{\"field\":null,\"message\":\"GraphJin did not accept this change.\",\"detail\":\"x\"},{\"field\":\"general\",\"message\":\"Other.\"}],\"error\":\"The host is empty. Two. GraphJin did not accept this change.\",\"next\":\"The form is shown again with each problem beside its answer. Tell the admin what to fix, in one or two sentences, and wait for the new answers.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "previewSourceConfigChange",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "payload": {
+       "action": "register_source",
+       "name": "erp",
+       "blockedTables": [
+        "payroll",
+        "audit"
+       ],
+       "adminTables": [],
+       "kind": "database",
+       "type": "mysql",
+       "port": 3306,
+       "dbname": "erp",
+       "user": "reader",
+       "secretRef": "erp-password",
+       "bucket": "unused"
+      }
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "source-form-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {
+         "form": {
+          "name": "erp",
+          "kind": [
+           "database"
+          ],
+          "type": [
+           "mysql"
+          ],
+          "host": "",
+          "port": 3306,
+          "dbname": "erp",
+          "user": "reader",
+          "secretRef": "erp-password",
+          "blockedTables": "payroll, audit",
+          "adminTables": "",
+          "openApiSpec": null,
+          "backend": [
+           "local"
+          ],
+          "localFiles": null,
+          "bucket": "unused",
+          "prefix": "",
+          "region": "",
+          "endpoint": "",
+          "publicBaseUrl": "",
+          "presignTtl": "15m"
+         },
+         "problems": {
+          "host": "The host is empty. Two.",
+          "general": "GraphJin did not accept this change. Other."
+         }
+        },
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "eyebrow": "GRAPHJIN CONFIG",
+          "title": "Add a source",
+          "subtitle": "Choose a source type and provide its connection details.",
+          "children": [
+           "note",
+           "problemsNote",
+           "common",
+           "databaseFields",
+           "apiFields",
+           "fileFields",
+           "databaseSubmit",
+           "apiSubmit",
+           "fileSubmit"
+          ]
+         },
+         {
+          "id": "note",
+          "component": "Callout",
+          "mood": "watch",
+          "title": "Approval required",
+          "text": "Submitting creates a configuration proposal for admin review."
+         },
+         {
+          "id": "problemsNote",
+          "component": "Conditional",
+          "when": {
+           "path": "/problems/general"
+          },
+          "children": [
+           "problemsCallout"
+          ]
+         },
+         {
+          "id": "problemsCallout",
+          "component": "Callout",
+          "mood": "watch",
+          "title": "Fix these answers",
+          "text": {
+           "path": "/problems/general"
+          }
+         },
+         {
+          "id": "common",
+          "component": "Column",
+          "children": [
+           "name",
+           "kind"
+          ]
+         },
+         {
+          "id": "name",
+          "component": "TextField",
+          "label": "Source name",
+          "value": {
+           "path": "/form/name"
+          },
+          "placeholder": "warehouse",
+          "error": {
+           "path": "/problems/name"
+          }
+         },
+         {
+          "id": "kind",
+          "component": "ChoicePicker",
+          "label": "Source kind",
+          "options": [
+           {
+            "label": "Database",
+            "value": "database"
+           },
+           {
+            "label": "API",
+            "value": "api"
+           },
+           {
+            "label": "Files",
+            "value": "file"
+           }
+          ],
+          "value": {
+           "path": "/form/kind"
+          },
+          "variant": "mutuallyExclusive",
+          "error": {
+           "path": "/problems/kind"
+          }
+         },
+         {
+          "id": "databaseFields",
+          "component": "Conditional",
+          "when": {
+           "path": "/form/kind"
+          },
+          "equals": "database",
+          "children": [
+           "type",
+           "network",
+           "database",
+           "password",
+           "connectionCheck",
+           "tables"
+          ]
+         },
+         {
+          "id": "type",
+          "component": "ChoicePicker",
+          "label": "Database type",
+          "options": [
+           {
+            "label": "PostgreSQL",
+            "value": "postgres"
+           },
+           {
+            "label": "MySQL",
+            "value": "mysql"
+           },
+           {
+            "label": "MariaDB",
+            "value": "mariadb"
+           }
+          ],
+          "value": {
+           "path": "/form/type"
+          },
+          "variant": "mutuallyExclusive",
+          "error": {
+           "path": "/problems/type"
+          }
+         },
+         {
+          "id": "network",
+          "component": "Row",
+          "children": [
+           "host",
+           "port"
+          ]
+         },
+         {
+          "id": "host",
+          "component": "TextField",
+          "label": "Host",
+          "value": {
+           "path": "/form/host"
+          },
+          "placeholder": "db.internal",
+          "error": {
+           "path": "/problems/host"
+          }
+         },
+         {
+          "id": "port",
+          "component": "TextField",
+          "label": "Port",
+          "value": {
+           "path": "/form/port"
+          },
+          "variant": "number",
+          "error": {
+           "path": "/problems/port"
+          }
+         },
+         {
+          "id": "database",
+          "component": "Row",
+          "children": [
+           "dbname",
+           "user"
+          ]
+         },
+         {
+          "id": "dbname",
+          "component": "TextField",
+          "label": "Database",
+          "value": {
+           "path": "/form/dbname"
+          },
+          "error": {
+           "path": "/problems/dbname"
+          }
+         },
+         {
+          "id": "user",
+          "component": "TextField",
+          "label": "Read-only login",
+          "value": {
+           "path": "/form/user"
+          },
+          "error": {
+           "path": "/problems/user"
+          }
+         },
+         {
+          "id": "password",
+          "component": "SourceSecretInput",
+          "label": "Password",
+          "sourceName": {
+           "path": "/form/name"
+          },
+          "value": {
+           "path": "/form/secretRef"
+          },
+          "error": {
+           "path": "/problems/secretRef"
+          }
+         },
+         {
+          "id": "connectionCheck",
+          "component": "SourceConnectionCheck",
+          "label": "Check connection",
+          "type": {
+           "path": "/form/type"
+          },
+          "host": {
+           "path": "/form/host"
+          },
+          "port": {
+           "path": "/form/port"
+          },
+          "dbname": {
+           "path": "/form/dbname"
+          },
+          "user": {
+           "path": "/form/user"
+          },
+          "secretRef": {
+           "path": "/form/secretRef"
+          },
+          "value": {
+           "path": "/form/blockedTables"
+          }
+         },
+         {
+          "id": "tables",
+          "component": "Column",
+          "children": [
+           "blockedTables",
+           "adminTables"
+          ]
+         },
+         {
+          "id": "blockedTables",
+          "component": "TextField",
+          "label": "Tables no one may read (optional)",
+          "value": {
+           "path": "/form/blockedTables"
+          },
+          "placeholder": "admin_user, oauth_token",
+          "error": {
+           "path": "/problems/blockedTables"
+          }
+         },
+         {
+          "id": "adminTables",
+          "component": "TextField",
+          "label": "Tables only admins may read (optional)",
+          "value": {
+           "path": "/form/adminTables"
+          },
+          "placeholder": "payroll",
+          "error": {
+           "path": "/problems/adminTables"
+          }
+         },
+         {
+          "id": "apiFields",
+          "component": "Conditional",
+          "when": {
+           "path": "/form/kind"
+          },
+          "equals": "api",
+          "children": [
+           "openApiSpec"
+          ]
+         },
+         {
+          "id": "openApiSpec",
+          "component": "OpenApiSpecInput",
+          "label": "OpenAPI specification",
+          "value": {
+           "path": "/form/openApiSpec"
+          }
+         },
+         {
+          "id": "fileFields",
+          "component": "Conditional",
+          "when": {
+           "path": "/form/kind"
+          },
+          "equals": "file",
+          "children": [
+           "fileSecurity",
+           "backend",
+           "localFields",
+           "objectFields",
+           "s3Fields"
+          ]
+         },
+         {
+          "id": "fileSecurity",
+          "component": "Callout",
+          "mood": "watch",
+          "title": "Read-only source",
+          "text": "Authenticated organization members receive list/read access to approved file content."
+         },
+         {
+          "id": "backend",
+          "component": "ChoicePicker",
+          "label": "Storage backend",
+          "options": [
+           {
+            "label": "Local",
+            "value": "local"
+           },
+           {
+            "label": "S3",
+            "value": "s3"
+           },
+           {
+            "label": "GCS",
+            "value": "gcs"
+           }
+          ],
+          "value": {
+           "path": "/form/backend"
+          },
+          "variant": "mutuallyExclusive",
+          "error": {
+           "path": "/problems/backend"
+          }
+         },
+         {
+          "id": "localFields",
+          "component": "Conditional",
+          "when": {
+           "path": "/form/backend"
+          },
+          "equals": "local",
+          "children": [
+           "managedFiles"
+          ]
+         },
+         {
+          "id": "managedFiles",
+          "component": "ManagedFileSourceInput",
+          "label": "Managed local files",
+          "sourceName": {
+           "path": "/form/name"
+          },
+          "value": {
+           "path": "/form/localFiles"
+          }
+         },
+         {
+          "id": "objectFields",
+          "component": "Conditional",
+          "when": {
+           "path": "/form/backend"
+          },
+          "oneOf": [
+           "s3",
+           "gcs"
+          ],
+          "children": [
+           "cloudCredentials",
+           "bucket",
+           "prefix",
+           "publicBaseUrl",
+           "presignTtl"
+          ]
+         },
+         {
+          "id": "cloudCredentials",
+          "component": "Callout",
+          "mood": "watch",
+          "title": "Deployment credentials",
+          "text": "GraphJin uses its AWS or Google Cloud runtime identity; chat and approval carry storage metadata."
+         },
+         {
+          "id": "bucket",
+          "component": "TextField",
+          "label": "Bucket",
+          "value": {
+           "path": "/form/bucket"
+          },
+          "error": {
+           "path": "/problems/bucket"
+          }
+         },
+         {
+          "id": "prefix",
+          "component": "TextField",
+          "label": "Key prefix",
+          "value": {
+           "path": "/form/prefix"
+          },
+          "error": {
+           "path": "/problems/prefix"
+          }
+         },
+         {
+          "id": "publicBaseUrl",
+          "component": "TextField",
+          "label": "Public HTTPS base URL (optional)",
+          "value": {
+           "path": "/form/publicBaseUrl"
+          },
+          "error": {
+           "path": "/problems/publicBaseUrl"
+          }
+         },
+         {
+          "id": "presignTtl",
+          "component": "TextField",
+          "label": "Presigned URL TTL",
+          "value": {
+           "path": "/form/presignTtl"
+          },
+          "placeholder": "15m",
+          "error": {
+           "path": "/problems/presignTtl"
+          }
+         },
+         {
+          "id": "s3Fields",
+          "component": "Conditional",
+          "when": {
+           "path": "/form/backend"
+          },
+          "equals": "s3",
+          "children": [
+           "region",
+           "endpoint"
+          ]
+         },
+         {
+          "id": "region",
+          "component": "TextField",
+          "label": "Region",
+          "value": {
+           "path": "/form/region"
+          },
+          "error": {
+           "path": "/problems/region"
+          }
+         },
+         {
+          "id": "endpoint",
+          "component": "TextField",
+          "label": "S3-compatible endpoint",
+          "value": {
+           "path": "/form/endpoint"
+          },
+          "error": {
+           "path": "/problems/endpoint"
+          }
+         },
+         {
+          "id": "submitLabel",
+          "component": "Text",
+          "text": "Review proposal"
+         },
+         {
+          "id": "databaseSubmit",
+          "component": "Conditional",
+          "when": {
+           "path": "/form/kind"
+          },
+          "equals": "database",
+          "children": [
+           "submitDatabase"
+          ]
+         },
+         {
+          "id": "apiSubmit",
+          "component": "Conditional",
+          "when": {
+           "path": "/form/kind"
+          },
+          "equals": "api",
+          "children": [
+           "submitApi"
+          ]
+         },
+         {
+          "id": "fileSubmit",
+          "component": "Conditional",
+          "when": {
+           "path": "/form/kind"
+          },
+          "equals": "file",
+          "children": [
+           "localSubmit",
+           "s3Submit",
+           "gcsSubmit"
+          ]
+         },
+         {
+          "id": "localSubmit",
+          "component": "Conditional",
+          "when": {
+           "path": "/form/backend"
+          },
+          "equals": "local",
+          "children": [
+           "submitLocalFile"
+          ]
+         },
+         {
+          "id": "s3Submit",
+          "component": "Conditional",
+          "when": {
+           "path": "/form/backend"
+          },
+          "equals": "s3",
+          "children": [
+           "submitCloudFile"
+          ]
+         },
+         {
+          "id": "gcsSubmit",
+          "component": "Conditional",
+          "when": {
+           "path": "/form/backend"
+          },
+          "equals": "gcs",
+          "children": [
+           "submitCloudFile"
+          ]
+         },
+         {
+          "id": "submitDatabase",
+          "component": "Button",
+          "child": "submitLabel",
+          "variant": "primary",
+          "requires": [
+           {
+            "path": "/form/name"
+           },
+           {
+            "path": "/form/secretRef"
+           }
+          ],
+          "action": {
+           "event": {
+            "name": "submit_source_config",
+            "context": {
+             "prompt": "File the register_source database proposal from these values. Split blockedTables and adminTables at commas into lists. Use secretRef as given.",
+             "values": {
+              "path": "/form"
+             }
+            }
+           }
+          }
+         },
+         {
+          "id": "submitApi",
+          "component": "Button",
+          "child": "submitLabel",
+          "variant": "primary",
+          "requires": [
+           {
+            "path": "/form/name"
+           },
+           {
+            "path": "/form/openApiSpec/id"
+           }
+          ],
+          "action": {
+           "event": {
+            "name": "submit_source_config",
+            "context": {
+             "prompt": "Use openApiSpec.id as specAssetId and file the register_source API configuration proposal.",
+             "values": {
+              "path": "/form"
+             }
+            }
+           }
+          }
+         },
+         {
+          "id": "submitLocalFile",
+          "component": "Button",
+          "child": "submitLabel",
+          "variant": "primary",
+          "requires": [
+           {
+            "path": "/form/name"
+           },
+           {
+            "path": "/form/localFiles/sourceName"
+           }
+          ],
+          "action": {
+           "event": {
+            "name": "submit_source_config",
+            "context": {
+             "prompt": "Create the read-only local file source proposal using the managed localFiles manifest and selected source name.",
+             "values": {
+              "path": "/form"
+             }
+            }
+           }
+          }
+         },
+         {
+          "id": "submitCloudFile",
+          "component": "Button",
+          "child": "submitLabel",
+          "variant": "primary",
+          "requires": [
+           {
+            "path": "/form/name"
+           },
+           {
+            "path": "/form/bucket"
+           }
+          ],
+          "action": {
+           "event": {
+            "name": "submit_source_config",
+            "context": {
+             "prompt": "Create the read-only cloud file source proposal using the selected backend, bucket, prefix, endpoint, public base URL, and bounded presign TTL values.",
+             "values": {
+              "path": "/form"
+             }
+            }
+           }
+          }
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "config change register problems events fail",
+   "servers": [
+    "neko_source_config_manager"
+   ],
+   "tool": "source_config_manager_request_source_config_change",
+   "arguments": {
+    "action": "register_source",
+    "name": " erp ",
+    "kind": [
+     "database"
+    ],
+    "type": "mysql",
+    "port": 3306,
+    "dbname": "erp",
+    "user": "reader",
+    "secretRef": "erp-password",
+    "blockedTables": [
+     "payroll",
+     "audit"
+    ],
+    "adminTables": [],
+    "bucket": "unused",
+    "intent": "Add the ERP."
+   },
+   "eventsFail": true,
+   "replies": {
+    "previewSourceConfigChange": {
+     "value": {
+      "source": {
+       "id": "99999999-9999-4999-8999-999999999999",
+       "name": "erp",
+       "host": "gj.internal"
+      },
+      "problems": [
+       {
+        "field": "host",
+        "message": "The host is empty."
+       },
+       {
+        "field": "host",
+        "message": "Two."
+       },
+       {
+        "field": null,
+        "message": "GraphJin did not accept this change.",
+        "detail": "x"
+       },
+       {
+        "field": "general",
+        "message": "Other."
+       }
+      ],
+      "error": "x"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"stage\":\"answer_check\",\"source\":{\"id\":\"99999999-9999-4999-8999-999999999999\",\"name\":\"erp\",\"host\":\"gj.internal\"},\"problems\":[{\"field\":\"host\",\"message\":\"The host is empty.\"},{\"field\":\"host\",\"message\":\"Two.\"},{\"field\":null,\"message\":\"GraphJin did not accept this change.\",\"detail\":\"x\"},{\"field\":\"general\",\"message\":\"Other.\"}],\"error\":\"x\",\"next\":\"Tell the admin which answer to fix and why, using the problem messages, then ask for the new answer.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "previewSourceConfigChange",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "payload": {
+       "action": "register_source",
+       "name": "erp",
+       "blockedTables": [
+        "payroll",
+        "audit"
+       ],
+       "adminTables": [],
+       "kind": "database",
+       "type": "mysql",
+       "port": 3306,
+       "dbname": "erp",
+       "user": "reader",
+       "secretRef": "erp-password",
+       "bucket": "unused"
+      }
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "config change register long prefix",
+   "servers": [
+    "neko_source_config_manager"
+   ],
+   "tool": "source_config_manager_request_source_config_change",
+   "arguments": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": [
+     "s3"
+    ],
+    "bucket": "b",
+    "prefix": "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+    "intent": "Docs."
+   },
+   "replies": {
+    "previewSourceConfigChange": {
+     "value": {
+      "source": {
+       "id": "99999999-9999-4999-8999-999999999999",
+       "name": "erp",
+       "host": "gj.internal"
+      },
+      "problems": [
+       {
+        "field": "host",
+        "message": "The host is empty."
+       },
+       {
+        "field": "host",
+        "message": "Two."
+       },
+       {
+        "field": null,
+        "message": "GraphJin did not accept this change.",
+        "detail": "x"
+       },
+       {
+        "field": "general",
+        "message": "Other."
+       }
+      ],
+      "error": "x"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"stage\":\"answer_check\",\"source\":{\"id\":\"99999999-9999-4999-8999-999999999999\",\"name\":\"erp\",\"host\":\"gj.internal\"},\"problems\":[{\"field\":\"host\",\"message\":\"The host is empty.\"},{\"field\":\"host\",\"message\":\"Two.\"},{\"field\":null,\"message\":\"GraphJin did not accept this change.\",\"detail\":\"x\"},{\"field\":\"general\",\"message\":\"Other.\"}],\"error\":\"x\",\"next\":\"Tell the admin which answer to fix and why, using the problem messages, then ask for the new answer.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "previewSourceConfigChange",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "payload": {
+       "action": "register_source",
+       "name": "docs",
+       "kind": "file",
+       "backend": "s3",
+       "bucket": "b",
+       "prefix": "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+      }
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "config change tables problems",
+   "servers": [
+    "neko_source_config_manager"
+   ],
+   "tool": "source_config_manager_request_source_config_change",
+   "arguments": {
+    "action": "set_source_tables",
+    "source": "erp",
+    "blockedTables": [
+     " payroll "
+    ],
+    "openTables": [],
+    "intent": "Hide payroll."
+   },
+   "replies": {
+    "previewSourceConfigChange": {
+     "value": {
+      "source": {
+       "id": "99999999-9999-4999-8999-999999999999",
+       "name": "erp",
+       "host": "gj.internal"
+      },
+      "problems": [
+       {
+        "field": "blockedTables",
+        "message": "No table."
+       }
+      ],
+      "error": "No table."
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"stage\":\"answer_check\",\"source\":{\"id\":\"99999999-9999-4999-8999-999999999999\",\"name\":\"erp\",\"host\":\"gj.internal\"},\"problems\":[{\"field\":\"blockedTables\",\"message\":\"No table.\"}],\"error\":\"No table.\",\"next\":\"Tell the admin which answer to fix and why, using the problem messages, then ask for the new answer.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "previewSourceConfigChange",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "payload": {
+       "action": "set_source_tables",
+       "source": "erp",
+       "blockedTables": [
+        "payroll"
+       ],
+       "openTables": []
+      }
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "config change invalid preview",
+   "servers": [
+    "neko_source_config_manager"
+   ],
+   "tool": "source_config_manager_request_source_config_change",
+   "arguments": {
+    "action": "set_source_capabilities",
+    "source": "shop",
+    "apiWrite": true,
+    "intent": "Writes."
+   },
+   "replies": {
+    "previewSourceConfigChange": {
+     "value": {
+      "source": {
+       "id": "99999999-9999-4999-8999-999999999999",
+       "name": "erp",
+       "host": "gj.internal"
+      },
+      "preview": {
+       "valid": false,
+       "patchHash": "h",
+       "errors": [
+        "bad"
+       ]
+      }
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"stage\":\"graphjin_config_preview\",\"source\":{\"id\":\"99999999-9999-4999-8999-999999999999\",\"name\":\"erp\",\"host\":\"gj.internal\"},\"preview\":{\"valid\":false,\"patchHash\":\"h\",\"errors\":[\"bad\"]}}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "previewSourceConfigChange",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "payload": {
+       "action": "set_source_capabilities",
+       "source": "shop",
+       "apiWrite": true
+      }
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "config change empty reply",
+   "servers": [
+    "neko_source_config_manager"
+   ],
+   "tool": "source_config_manager_request_source_config_change",
+   "arguments": {
+    "action": "add_role",
+    "name": "a",
+    "match": "b",
+    "intent": "x"
+   },
+   "replies": {
+    "previewSourceConfigChange": {
+     "value": {}
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"stage\":\"graphjin_config_preview\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "previewSourceConfigChange",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "payload": {
+       "action": "add_role",
+       "name": "a",
+       "match": "b"
+      }
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "config change ask",
+   "servers": [
+    "neko_source_config_manager"
+   ],
+   "tool": "source_config_manager_request_source_config_change",
+   "arguments": {
+    "action": "register_source",
+    "name": "orders",
+    "kind": [
+     "api"
+    ],
+    "specAssetId": "88888888-8888-4888-8888-888888888888",
+    "intent": "Orders API."
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    },
+    "previewSourceConfigChange": {
+     "value": {
+      "source": {
+       "id": "99999999-9999-4999-8999-999999999999",
+       "name": "erp",
+       "host": "gj.internal"
+      },
+      "specAsset": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "originalName": "orders.yaml",
+       "sourceType": "url",
+       "title": "Orders",
+       "version": "1.0",
+       "baseUrl": "https://api.example.com",
+       "operationCount": 3,
+       "readOperationCount": 2,
+       "mutatingOperationCount": 1,
+       "authSchemes": [
+        "bearer"
+       ],
+       "warnings": [],
+       "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+       "status": "imported",
+       "sourceName": null,
+       "createdAt": "2026-11-12T08:00:00.000Z"
+      },
+      "preview": {
+       "valid": true,
+       "patchHash": "h",
+       "catalogRevision": "r1",
+       "expiresAt": null,
+       "scope": "managed_openapi",
+       "reloadMode": "staged_reload",
+       "changes": {
+        "action": "register_source"
+       },
+       "findings": [],
+       "errors": null
+      }
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"pending_approval\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"note\":\"Approval-gated: tell the operator what you proposed and end your turn — the approval card is rendered inline.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "previewSourceConfigChange",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "payload": {
+       "action": "register_source",
+       "name": "orders",
+       "kind": "api",
+       "specAssetId": "88888888-8888-4888-8888-888888888888"
+      }
+     }
+    },
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "source_config_admin",
+      "target": "source:orders",
+      "riskLevel": "high"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "source_config_admin",
+      "target": "source:orders",
+      "payload": {
+       "action": "register_source",
+       "name": "orders",
+       "kind": "api",
+       "specAssetId": "88888888-8888-4888-8888-888888888888",
+       "specSummary": {
+        "id": "88888888-8888-4888-8888-888888888888",
+        "originalName": "orders.yaml",
+        "sourceType": "url",
+        "title": "Orders",
+        "version": "1.0",
+        "baseUrl": "https://api.example.com",
+        "operationCount": 3,
+        "readOperationCount": 2,
+        "mutatingOperationCount": 1,
+        "authSchemes": [
+         "bearer"
+        ],
+        "warnings": [],
+        "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "status": "imported",
+        "sourceName": null,
+        "createdAt": "2026-11-12T08:00:00.000Z"
+       },
+       "preview": {
+        "source": {
+         "id": "99999999-9999-4999-8999-999999999999",
+         "name": "erp",
+         "host": "gj.internal"
+        },
+        "valid": true,
+        "patchHash": "h",
+        "catalogRevision": "r1",
+        "expiresAt": null,
+        "scope": "managed_openapi",
+        "reloadMode": "staged_reload",
+        "changes": {
+         "action": "register_source"
+        },
+        "findings": [],
+        "errors": null
+       }
+      },
+      "riskLevel": "high",
+      "status": "pending_approval",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Orders API.",
+      "intent": "Orders API.",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "source_config_admin",
+     "scope": "internal",
+     "decision": "pending_approval",
+     "summary": "Orders API.",
+     "risk_level": "high"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "config change allow",
+   "servers": [
+    "neko_source_config_manager"
+   ],
+   "tool": "source_config_manager_request_source_config_change",
+   "arguments": {
+    "action": "enable_api_writes",
+    "source": "shop",
+    "spec": "orders",
+    "operation": "createOrder",
+    "allowedRoles": [
+     "admin"
+    ],
+    "exposeAs": " create_order ",
+    "write": "admin",
+    "dataSourceId": "99999999-9999-4999-8999-999999999999",
+    "intent": "Orders."
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "allow",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "slack_auto",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "auto_approve"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "approved"
+     }
+    },
+    "previewSourceConfigChange": {
+     "value": {
+      "preview": {
+       "valid": true,
+       "patchHash": "h",
+       "fileCheck": {
+        "checked": false,
+        "reason": "OPENNEKO_GRAPHJIN_CONFIG is not set"
+       }
+      }
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"approved\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"note\":\"Queued for execution; the result lands in this run.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "previewSourceConfigChange",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "dataSourceId": "99999999-9999-4999-8999-999999999999",
+      "payload": {
+       "action": "enable_api_writes",
+       "source": "shop",
+       "write": "admin",
+       "spec": "orders",
+       "operation": "createOrder",
+       "allowedRoles": [
+        "admin"
+       ],
+       "exposeAs": "create_order",
+       "dataSourceId": "99999999-9999-4999-8999-999999999999"
+      }
+     }
+    },
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "source_config_admin",
+      "target": "operation:shop/orders#createOrder",
+      "riskLevel": "high"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "source_config_admin",
+      "target": "operation:shop/orders#createOrder",
+      "payload": {
+       "action": "enable_api_writes",
+       "source": "shop",
+       "write": "admin",
+       "spec": "orders",
+       "operation": "createOrder",
+       "allowedRoles": [
+        "admin"
+       ],
+       "exposeAs": "create_order",
+       "dataSourceId": "99999999-9999-4999-8999-999999999999",
+       "preview": {
+        "valid": true,
+        "patchHash": "h",
+        "fileCheck": {
+         "checked": false,
+         "reason": "OPENNEKO_GRAPHJIN_CONFIG is not set"
+        }
+       }
+      },
+      "riskLevel": "high",
+      "status": "approved",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Orders.",
+      "intent": "Orders.",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    },
+    {
+     "method": "enqueueActionExecute",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "actionRequestId": "99999999-9999-4999-8999-999999999999"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "source_config_admin",
+     "scope": "internal",
+     "decision": "auto_approved",
+     "summary": "Orders.",
+     "risk_level": "high"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "config change denied by rule",
+   "servers": [
+    "neko_source_config_manager"
+   ],
+   "tool": "source_config_manager_request_source_config_change",
+   "arguments": {
+    "action": "expose_api_operation",
+    "source": "shop",
+    "spec": "orders",
+    "operation": "op",
+    "exposeMutation": false,
+    "intent": "x"
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "deny",
+      "reason": "no config from chat"
+     }
+    },
+    "previewSourceConfigChange": {
+     "value": {
+      "source": {
+       "id": "99999999-9999-4999-8999-999999999999",
+       "name": "erp",
+       "host": "gj.internal"
+      },
+      "preview": {
+       "valid": true
+      }
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"decision\":\"denied\",\"reason\":\"no config from chat\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "previewSourceConfigChange",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "payload": {
+       "action": "expose_api_operation",
+       "source": "shop",
+       "spec": "orders",
+       "operation": "op",
+       "exposeMutation": false
+      }
+     }
+    },
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "source_config_admin",
+      "target": "operation:shop/orders#op",
+      "riskLevel": "high"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "config change preview fails",
+   "servers": [
+    "neko_source_config_manager"
+   ],
+   "tool": "source_config_manager_request_source_config_change",
+   "arguments": {
+    "action": "add_role",
+    "name": "a",
+    "match": "b",
+    "intent": "x"
+   },
+   "replies": {
+    "previewSourceConfigChange": {
+     "throws": "broker /v1/source-config/preview failed: 500"
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "broker /v1/source-config/preview failed: 500"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "previewSourceConfigChange",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "payload": {
+       "action": "add_role",
+       "name": "a",
+       "match": "b"
+      }
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "config change faults",
+   "servers": [
+    "neko_source_config_manager"
+   ],
+   "tool": "source_config_manager_request_source_config_change",
+   "arguments": {
+    "action": "drop",
+    "endpoint": "not a url",
+    "port": 0,
+    "secretRef": "pass word",
+    "kind": [
+     "sheet"
+    ],
+    "allowedRoles": [
+     "root"
+    ],
+    "localFiles": {
+     "sourceName": "d",
+     "ready": false,
+     "files": [],
+     "totalSize": 0
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request_source_config_change: [\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"add_role\",\n      \"set_source_access\",\n      \"set_source_tables\",\n      \"set_source_capabilities\",\n      \"expose_api_operation\",\n      \"enable_api_writes\",\n      \"register_source\"\n    ],\n    \"path\": [\n      \"action\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"add_role\\\"|\\\"set_source_access\\\"|\\\"set_source_tables\\\"|\\\"set_source_capabilities\\\"|\\\"expose_api_operation\\\"|\\\"enable_api_writes\\\"|\\\"register_source\\\"\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"admin\",\n      \"member\",\n      \"service\",\n      \"user\"\n    ],\n    \"path\": [\n      \"allowedRoles\",\n      0\n    ],\n    \"message\": \"Invalid option: expected one of \\\"admin\\\"|\\\"member\\\"|\\\"service\\\"|\\\"user\\\"\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"database\",\n      \"api\",\n      \"file\"\n    ],\n    \"path\": [\n      \"kind\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"database\\\"|\\\"api\\\"|\\\"file\\\"\"\n  },\n  {\n    \"origin\": \"number\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"port\"\n    ],\n    \"message\": \"Too small: expected number to be >=1\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"invalid_format\",\n    \"format\": \"regex\",\n    \"pattern\": \"/^[A-Za-z0-9._-]*$/\",\n    \"path\": [\n      \"secretRef\"\n    ],\n    \"message\": \"a secret name, not a value\"\n  },\n  {\n    \"code\": \"invalid_format\",\n    \"format\": \"url\",\n    \"path\": [\n      \"endpoint\"\n    ],\n    \"message\": \"Invalid URL\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      true\n    ],\n    \"path\": [\n      \"localFiles\",\n      \"ready\"\n    ],\n    \"message\": \"Invalid input: expected true\"\n  },\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"localFiles\",\n      \"files\"\n    ],\n    \"message\": \"Too small: expected array to have >=1 items\"\n  },\n  {\n    \"origin\": \"number\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"localFiles\",\n      \"totalSize\"\n    ],\n    \"message\": \"Too small: expected number to be >=1\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"intent\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   }
  ]
 }

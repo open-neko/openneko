@@ -88,6 +88,9 @@ func (f *fakeTools) importOpenAPISpec(_ context.Context, in openAPIImportIn) (an
 func (f *fakeTools) listOpenAPISpecs(_ context.Context, in openAPIListIn) (any, error) {
 	return f.record("listOpenApiSpecs", in)
 }
+func (f *fakeTools) previewSourceConfigChange(_ context.Context, in sourceConfigPreviewIn) (any, error) {
+	return f.record("previewSourceConfigChange", in)
+}
 func (f *fakeTools) evaluatePolicy(_ context.Context, in policyIn) (any, error) {
 	return f.record("evaluateActionPolicy", in)
 }
@@ -280,7 +283,7 @@ func TestTurnToolsMatchNode(t *testing.T) {
 	if err := json.Unmarshal(raw, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if len(fixture.Lists) != 12 || len(fixture.Calls) < 280 {
+	if len(fixture.Lists) != 12 || len(fixture.Calls) < 293 {
 		t.Fatalf("fixture holds %d lists and %d calls", len(fixture.Lists), len(fixture.Calls))
 	}
 	gjTools := func(own json.RawMessage) any {

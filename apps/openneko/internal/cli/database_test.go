@@ -24,7 +24,7 @@ func TestDatabaseCheckPrintsTheSQLForEachMissingRight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer admin.Close(ctx)
+	t.Cleanup(func() { admin.Close(context.Background()) })
 	if _, err := admin.Exec(ctx, "select pg_advisory_lock(7129)"); err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestDatabaseCheckPassesALoginThatDoesNotOwnTheDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer admin.Close(ctx)
+	t.Cleanup(func() { admin.Close(context.Background()) })
 	if _, err := admin.Exec(ctx, "select pg_advisory_lock(7129)"); err != nil {
 		t.Fatal(err)
 	}

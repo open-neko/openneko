@@ -137,6 +137,7 @@ type toolBackend interface {
 	checkSource(ctx context.Context, in sourceCheckIn) (any, error)
 	importOpenAPISpec(ctx context.Context, in openAPIImportIn) (any, error)
 	listOpenAPISpecs(ctx context.Context, in openAPIListIn) (any, error)
+	previewSourceConfigChange(ctx context.Context, in sourceConfigPreviewIn) (any, error)
 }
 
 var memoryKindEnum = []string{"preference", "business_rule", "metric_definition", "thread_note", "correction", "company_context", "other"}

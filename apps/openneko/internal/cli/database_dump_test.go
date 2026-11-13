@@ -91,7 +91,7 @@ func TestClearOwnedObjectsKeepsExtensionsGrantsAndOthersObjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer admin.Close(ctx)
+	t.Cleanup(func() { admin.Close(context.Background()) })
 	name := fmt.Sprintf("dbclear_%d", time.Now().UnixNano())
 	for _, statement := range []string{
 		"create role " + name + " login password 'pw'",

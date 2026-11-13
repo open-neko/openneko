@@ -3,7 +3,6 @@ package webfront
 import (
 	"context"
 	_ "embed"
-	"errors"
 	"regexp"
 	"strings"
 	"sync"
@@ -153,7 +152,7 @@ var sourceFormComponents = sync.OnceValue(func() any {
 
 // sourceFormSurface is buildSourceFormSurface() in
 // packages/llm/src/work/source-form.ts. prefill holds parsed tool arguments.
-func sourceFormSurface(prefill *jsObj, surfaceID string) []any {
+func sourceFormSurface(prefill *jsObj, surfaceID string, problems any) []any {
 	pick := func(key, fallback string) []any {
 		if v, ok := prefill.vals[key].(string); ok {
 			return []any{v}
@@ -173,7 +172,65 @@ func sourceFormSurface(prefill *jsObj, surfaceID string) []any {
 		}
 	}
 	return []any{jsObjOf("version", a2uiVersion, "createSurface", jsObjOf("surfaceId", surfaceID, "catalogId", a2uiCatalogID,
-		"dataModel", jsObjOf("form", form, "problems", &jsObj{}), "components", sourceFormComponents()))}
+		"dataModel", jsObjOf("form", form, "problems", problemsByField(problems)), "components", sourceFormComponents()))}
+}
+
+var sourceFormFields = []string{"name", "kind", "type", "host", "port", "dbname", "user", "secretRef",
+	"blockedTables", "adminTables", "backend", "bucket", "prefix", "region", "endpoint", "publicBaseUrl", "presignTtl"}
+
+func problemsByField(problems any) *jsObj {
+	out := &jsObj{}
+	var general []string
+	list, _ := problems.([]any)
+	for _, item := range list {
+		message := jsStr(jsGet(item, "message"))
+		field, ok := jsGet(item, "field").(string)
+		if !ok || !containsString(sourceFormFields, field) {
+			general = append(general, message)
+			continue
+		}
+		if prior, ok := out.vals[field].(string); ok && prior != "" {
+			message = prior + " " + message
+		}
+		out.set(field, message)
+	}
+	if len(general) > 0 {
+		out.set("general", strings.Join(general, " "))
+	}
+	return out
+}
+
+// sourceFormPrefillFromAnswers turns the answers of a register_source
+// proposal back into the form's values.
+func sourceFormPrefillFromAnswers(answers *jsObj) *jsObj {
+	prefill := &jsObj{}
+	for _, key := range []string{"name", "host", "dbname", "user", "secretRef", "bucket", "prefix", "region", "endpoint", "publicBaseUrl", "presignTtl"} {
+		if s, ok := answers.vals[key].(string); ok {
+			prefill.set(key, s)
+		}
+	}
+	for _, key := range []string{"kind", "type", "backend"} {
+		v := answers.vals[key]
+		if list, ok := v.([]any); ok && len(list) == 1 {
+			v = list[0]
+		}
+		if s, ok := v.(string); ok {
+			prefill.set(key, s)
+		}
+	}
+	if port, ok := answers.vals["port"].(float64); ok {
+		prefill.set("port", port)
+	}
+	for _, key := range []string{"blockedTables", "adminTables"} {
+		if list, ok := answers.vals[key].([]any); ok && len(list) > 0 {
+			parts := make([]string, len(list))
+			for i, item := range list {
+				parts[i] = jsStr(item)
+			}
+			prefill.set(key, strings.Join(parts, ", "))
+		}
+	}
+	return prefill
 }
 
 // packSetupSurface is buildPackSetupSurface().
@@ -218,8 +275,6 @@ func checkSourceResult(response any) any {
 		"tables", tables[:min(len(tables), 200)], "moreTables", moreCount, "next", next)
 }
 
-var errSourceConfigChangeNotPorted = errors.New("request_source_config_change is not served from Go yet")
-
 // sourceConfigTools is buildSourceConfigManagerServer().
 func sourceConfigTools(b turnBinding, be toolBackend) []toolDef {
 	const server = "neko_source_config_manager"
@@ -259,7 +314,7 @@ func sourceConfigTools(b turnBinding, be toolBackend) []toolDef {
 				"admin completes the rest and submits it for review. The submitted values",
 				"arrive in the next turn for request_source_config_change."),
 			call: func(ctx context.Context, args *jsObj) (toolResult, error) {
-				if err := be.emitEvent(ctx, jsObjOf("type", "surface", "messages", sourceFormSurface(args, "source-form-"+uuid.NewString()))); err != nil {
+				if err := be.emitEvent(ctx, jsObjOf("type", "surface", "messages", sourceFormSurface(args, "source-form-"+uuid.NewString(), nil))); err != nil {
 					return toolResult{}, err
 				}
 				return toolResult{text: "Form shown."}, nil
@@ -333,8 +388,99 @@ func sourceConfigTools(b turnBinding, be toolBackend) []toolDef {
 				"File sources are provisioned read-only for authenticated organization members.",
 				"After the tool returns, summarize the proposed change and its approval status.",
 			}, "\n"),
-			call: func(context.Context, *jsObj) (toolResult, error) {
-				return toolResult{}, errSourceConfigChangeNotPorted
+			call: func(ctx context.Context, args *jsObj) (toolResult, error) {
+				return requestSourceConfigChange(ctx, b, be, args)
 			}},
 	}
+}
+
+func sourceConfigTarget(action string, args *jsObj) string {
+	text := func(key string) string { s, _ := args.vals[key].(string); return s }
+	switch action {
+	case "add_role":
+		return "role:" + text("name")
+	case "set_source_access":
+		return "access:" + text("source")
+	case "set_source_tables":
+		return "tables:" + text("source")
+	case "set_source_capabilities":
+		return "capabilities:" + text("source")
+	case "expose_api_operation", "enable_api_writes":
+		return "operation:" + text("source") + "/" + text("spec") + "#" + text("operation")
+	}
+	return "source:" + text("name")
+}
+
+// requestSourceConfigChange previews the change and, when the preview is
+// valid, files a source_config_admin proposal. The payload holds a secret's
+// name only; the worker reads the value at apply time.
+func requestSourceConfigChange(ctx context.Context, b turnBinding, be toolBackend, args *jsObj) (toolResult, error) {
+	action, _ := args.vals["action"].(string)
+	intent, _ := args.vals["intent"].(string)
+	dataSourceID, _ := args.vals["dataSourceId"].(string)
+	rest := &jsObj{}
+	for _, k := range args.ordered() {
+		if k != "action" && k != "intent" && k != "dataSourceId" {
+			rest.set(k, args.vals[k])
+		}
+	}
+	payload := jsObjOf("action", action)
+	for _, k := range rest.ordered() {
+		payload.set(k, rest.vals[k])
+	}
+	in := sourceConfigPreviewIn{OrgID: b.OrgID, RunID: b.runID(), Payload: payload}
+	if dataSourceID != "" {
+		payload.set("dataSourceId", dataSourceID)
+		in.DataSourceID = &dataSourceID
+	}
+	be.audit(ctx, "/v1/source-config/preview")
+	preview, err := be.previewSourceConfigChange(ctx, in)
+	if err != nil {
+		return toolResult{}, err
+	}
+	denied, _ := jsField(preview, "denied")
+	failure, _ := jsField(preview, "error")
+	inner, _ := jsField(preview, "preview")
+	valid, _ := jsField(inner, "valid")
+	if jsTruthy(denied) || jsTruthy(failure) || !jsTruthy(valid) {
+		problemsValue, _ := jsField(preview, "problems")
+		problems, _ := problemsValue.([]any)
+		formShown := false
+		if len(problems) > 0 && action == "register_source" {
+			issues := []any{}
+			prefill := sourceFormPrefillShape.parse(sourceFormPrefillFromAnswers(rest), []any{}, &issues)
+			if len(issues) == 0 {
+				formShown = be.emitEvent(ctx, surfaceEvent(sourceFormSurface(prefill.(*jsObj), "source-form-"+uuid.NewString(), problems))) == nil
+			}
+		}
+		stage := "graphjin_config_preview"
+		if len(problems) > 0 {
+			stage = "answer_check"
+		}
+		out := jsObjOf("ok", false, "stage", stage)
+		spread := jsSpread(preview)
+		for _, k := range spread.ordered() {
+			out.set(k, spread.vals[k])
+		}
+		switch {
+		case formShown:
+			out.set("next", "The form is shown again with each problem beside its answer. Tell the admin what to fix, in one or two sentences, and wait for the new answers.")
+		case len(problems) > 0:
+			out.set("next", "Tell the admin which answer to fix and why, using the problem messages, then ask for the new answer.")
+		}
+		return toolText(out), nil
+	}
+	proposal := jsSpread(payload)
+	if spec, ok := jsField(preview, "specAsset"); ok && jsTruthy(spec) {
+		proposal.set("specSummary", spec)
+	}
+	summary := &jsObj{}
+	if source, ok := jsField(preview, "source"); ok {
+		summary.set("source", source)
+	}
+	for _, k := range jsSpread(inner).ordered() {
+		summary.set(k, inner.(*jsObj).vals[k])
+	}
+	proposal.set("preview", summary)
+	return b.proposeAdmin(ctx, be, "source_config_admin", sourceConfigTarget(action, args), intent, proposal)
 }

@@ -267,7 +267,7 @@ func TestTurnSourceConfigDatabase(t *testing.T) {
 		t.Fatalf("check tool: %s %v", out, rpcErr)
 	}
 	out, rpcErr = callTool(t, s, "source_config_manager_request_source_config_change", map[string]any{"action": "add_role", "name": "x", "match": "y", "intent": "z"})
-	if rpcErr != nil || !strings.Contains(out, "not served from Go yet") || !strings.Contains(out, `"isError":true`) {
+	if rpcErr != nil || !strings.Contains(out, `\"stage\":\"graphjin_config_preview\",\"error\":\"multiple enabled data sources exist`) {
 		t.Fatalf("change tool: %s %v", out, rpcErr)
 	}
 	rows, err := db.Query(ctx, `select path from control_plane_audit where run_id = $1 order by id`, sourceAdminRun)
@@ -282,7 +282,7 @@ func TestTurnSourceConfigDatabase(t *testing.T) {
 		}
 		paths = append(paths, p)
 	}
-	if got := strings.Join(paths, ","); got != "/v1/source-secrets/names,/v1/source-check" {
+	if got := strings.Join(paths, ","); got != "/v1/source-secrets/names,/v1/source-check,/v1/source-config/preview" {
 		t.Errorf("audit paths: %s", got)
 	}
 
