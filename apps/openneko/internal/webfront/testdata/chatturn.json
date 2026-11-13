@@ -1,0 +1,1109 @@
+{
+ "fences": [
+  {
+   "raw": "Plain answer with no fence.",
+   "workflow": {
+    "text": "Plain answer with no fence.",
+    "payload": null,
+    "errors": []
+   },
+   "actions": {
+    "text": "Plain answer with no fence.",
+    "payloads": [],
+    "errors": []
+   },
+   "rule": {
+    "text": "Plain answer with no fence.",
+    "payload": null,
+    "errors": []
+   },
+   "value": {
+    "text": "Plain answer with no fence.",
+    "payload": null,
+    "errors": []
+   },
+   "followups": {
+    "text": "Plain answer with no fence.",
+    "payload": null,
+    "errors": []
+   },
+   "vitals": {
+    "text": "Plain answer with no fence.",
+    "payload": null,
+    "errors": []
+   },
+   "memory": {
+    "text": "Plain answer with no fence.",
+    "ops": []
+   },
+   "display": "Plain answer with no fence."
+  },
+  {
+   "raw": "Revenue rose.\n\n```neko_value\n{\"minutes_saved\": 12, \"basis\": \" two reports \"}\n```\n\n\n\nThanks.",
+   "workflow": {
+    "text": "Revenue rose.\n\n```neko_value\n{\"minutes_saved\": 12, \"basis\": \" two reports \"}\n```\n\nThanks.",
+    "payload": null,
+    "errors": []
+   },
+   "actions": {
+    "text": "Revenue rose.\n\n```neko_value\n{\"minutes_saved\": 12, \"basis\": \" two reports \"}\n```\n\nThanks.",
+    "payloads": [],
+    "errors": []
+   },
+   "rule": {
+    "text": "Revenue rose.\n\n```neko_value\n{\"minutes_saved\": 12, \"basis\": \" two reports \"}\n```\n\nThanks.",
+    "payload": null,
+    "errors": []
+   },
+   "value": {
+    "text": "Revenue rose.\n\nThanks.",
+    "payload": {
+     "minutes_saved": 12,
+     "basis": "two reports"
+    },
+    "errors": []
+   },
+   "followups": {
+    "text": "Revenue rose.\n\n```neko_value\n{\"minutes_saved\": 12, \"basis\": \" two reports \"}\n```\n\nThanks.",
+    "payload": null,
+    "errors": []
+   },
+   "vitals": {
+    "text": "Revenue rose.\n\n```neko_value\n{\"minutes_saved\": 12, \"basis\": \" two reports \"}\n```\n\nThanks.",
+    "payload": null,
+    "errors": []
+   },
+   "memory": {
+    "text": "Revenue rose.\n\n```neko_value\n{\"minutes_saved\": 12, \"basis\": \" two reports \"}\n```\n\n\n\nThanks.",
+    "ops": []
+   },
+   "display": "Revenue rose.\n\nThanks."
+  },
+  {
+   "raw": "```neko_value\n{\"minutes_saved\": 5}\n```\n```NEKO_VALUE {\"minutes_saved\": 700}```\n```neko_value\n{\"minutes_saved\": 9}\n```",
+   "workflow": {
+    "text": "```neko_value\n{\"minutes_saved\": 5}\n```\n```NEKO_VALUE {\"minutes_saved\": 700}```\n```neko_value\n{\"minutes_saved\": 9}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "actions": {
+    "text": "```neko_value\n{\"minutes_saved\": 5}\n```\n```NEKO_VALUE {\"minutes_saved\": 700}```\n```neko_value\n{\"minutes_saved\": 9}\n```",
+    "payloads": [],
+    "errors": []
+   },
+   "rule": {
+    "text": "```neko_value\n{\"minutes_saved\": 5}\n```\n```NEKO_VALUE {\"minutes_saved\": 700}```\n```neko_value\n{\"minutes_saved\": 9}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "value": {
+    "text": "",
+    "payload": {
+     "minutes_saved": 9
+    },
+    "errors": [
+     "[\n  {\n    \"origin\": \"number\",\n    \"code\": \"too_big\",\n    \"maximum\": 600,\n    \"inclusive\": true,\n    \"path\": [\n      \"minutes_saved\"\n    ],\n    \"message\": \"Too big: expected number to be <=600\"\n  }\n]"
+    ]
+   },
+   "followups": {
+    "text": "```neko_value\n{\"minutes_saved\": 5}\n```\n```NEKO_VALUE {\"minutes_saved\": 700}```\n```neko_value\n{\"minutes_saved\": 9}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "vitals": {
+    "text": "```neko_value\n{\"minutes_saved\": 5}\n```\n```NEKO_VALUE {\"minutes_saved\": 700}```\n```neko_value\n{\"minutes_saved\": 9}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "memory": {
+    "text": "```neko_value\n{\"minutes_saved\": 5}\n```\n```NEKO_VALUE {\"minutes_saved\": 700}```\n```neko_value\n{\"minutes_saved\": 9}\n```",
+    "ops": []
+   },
+   "display": ""
+  },
+  {
+   "raw": "```neko_value\nnot json\n```",
+   "workflow": {
+    "text": "```neko_value\nnot json\n```",
+    "payload": null,
+    "errors": []
+   },
+   "actions": {
+    "text": "```neko_value\nnot json\n```",
+    "payloads": [],
+    "errors": []
+   },
+   "rule": {
+    "text": "```neko_value\nnot json\n```",
+    "payload": null,
+    "errors": []
+   },
+   "value": {
+    "text": "",
+    "payload": null,
+    "errors": [
+     "Unexpected token 'o', \"not json\" is not valid JSON"
+    ]
+   },
+   "followups": {
+    "text": "```neko_value\nnot json\n```",
+    "payload": null,
+    "errors": []
+   },
+   "vitals": {
+    "text": "```neko_value\nnot json\n```",
+    "payload": null,
+    "errors": []
+   },
+   "memory": {
+    "text": "```neko_value\nnot json\n```",
+    "ops": []
+   },
+   "display": ""
+  },
+  {
+   "raw": "```neko_followups\n{\"followups\": [\" Which region? \", \"By month?\"]}\n```",
+   "workflow": {
+    "text": "```neko_followups\n{\"followups\": [\" Which region? \", \"By month?\"]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "actions": {
+    "text": "```neko_followups\n{\"followups\": [\" Which region? \", \"By month?\"]}\n```",
+    "payloads": [],
+    "errors": []
+   },
+   "rule": {
+    "text": "```neko_followups\n{\"followups\": [\" Which region? \", \"By month?\"]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "value": {
+    "text": "```neko_followups\n{\"followups\": [\" Which region? \", \"By month?\"]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "followups": {
+    "text": "",
+    "payload": {
+     "followups": [
+      "Which region?",
+      "By month?"
+     ]
+    },
+    "errors": []
+   },
+   "vitals": {
+    "text": "```neko_followups\n{\"followups\": [\" Which region? \", \"By month?\"]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "memory": {
+    "text": "```neko_followups\n{\"followups\": [\" Which region? \", \"By month?\"]}\n```",
+    "ops": []
+   },
+   "display": ""
+  },
+  {
+   "raw": "```neko_followups\n{\"followups\": [\"a\", \"b\", \"c\", \"d\"]}\n```",
+   "workflow": {
+    "text": "```neko_followups\n{\"followups\": [\"a\", \"b\", \"c\", \"d\"]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "actions": {
+    "text": "```neko_followups\n{\"followups\": [\"a\", \"b\", \"c\", \"d\"]}\n```",
+    "payloads": [],
+    "errors": []
+   },
+   "rule": {
+    "text": "```neko_followups\n{\"followups\": [\"a\", \"b\", \"c\", \"d\"]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "value": {
+    "text": "```neko_followups\n{\"followups\": [\"a\", \"b\", \"c\", \"d\"]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "followups": {
+    "text": "",
+    "payload": null,
+    "errors": [
+     "[\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_big\",\n    \"maximum\": 3,\n    \"inclusive\": true,\n    \"path\": [\n      \"followups\"\n    ],\n    \"message\": \"Too big: expected array to have <=3 items\"\n  }\n]"
+    ]
+   },
+   "vitals": {
+    "text": "```neko_followups\n{\"followups\": [\"a\", \"b\", \"c\", \"d\"]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "memory": {
+    "text": "```neko_followups\n{\"followups\": [\"a\", \"b\", \"c\", \"d\"]}\n```",
+    "ops": []
+   },
+   "display": ""
+  },
+  {
+   "raw": "```neko_vitals\n{\"vitals\": [{\"label\": \"Revenue\", \"value\": \"₹4.2 Cr\", \"sub\": \"\", \"basis\": \"observed\", \"asOf\": \"Oct 2026\", \"source\": \"orders\", \"extra\": 1}]}\n```",
+   "workflow": {
+    "text": "```neko_vitals\n{\"vitals\": [{\"label\": \"Revenue\", \"value\": \"₹4.2 Cr\", \"sub\": \"\", \"basis\": \"observed\", \"asOf\": \"Oct 2026\", \"source\": \"orders\", \"extra\": 1}]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "actions": {
+    "text": "```neko_vitals\n{\"vitals\": [{\"label\": \"Revenue\", \"value\": \"₹4.2 Cr\", \"sub\": \"\", \"basis\": \"observed\", \"asOf\": \"Oct 2026\", \"source\": \"orders\", \"extra\": 1}]}\n```",
+    "payloads": [],
+    "errors": []
+   },
+   "rule": {
+    "text": "```neko_vitals\n{\"vitals\": [{\"label\": \"Revenue\", \"value\": \"₹4.2 Cr\", \"sub\": \"\", \"basis\": \"observed\", \"asOf\": \"Oct 2026\", \"source\": \"orders\", \"extra\": 1}]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "value": {
+    "text": "```neko_vitals\n{\"vitals\": [{\"label\": \"Revenue\", \"value\": \"₹4.2 Cr\", \"sub\": \"\", \"basis\": \"observed\", \"asOf\": \"Oct 2026\", \"source\": \"orders\", \"extra\": 1}]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "followups": {
+    "text": "```neko_vitals\n{\"vitals\": [{\"label\": \"Revenue\", \"value\": \"₹4.2 Cr\", \"sub\": \"\", \"basis\": \"observed\", \"asOf\": \"Oct 2026\", \"source\": \"orders\", \"extra\": 1}]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "vitals": {
+    "text": "",
+    "payload": {
+     "vitals": [
+      {
+       "label": "Revenue",
+       "value": "₹4.2 Cr",
+       "sub": "",
+       "basis": "observed",
+       "asOf": "Oct 2026",
+       "source": "orders"
+      }
+     ]
+    },
+    "errors": []
+   },
+   "memory": {
+    "text": "```neko_vitals\n{\"vitals\": [{\"label\": \"Revenue\", \"value\": \"₹4.2 Cr\", \"sub\": \"\", \"basis\": \"observed\", \"asOf\": \"Oct 2026\", \"source\": \"orders\", \"extra\": 1}]}\n```",
+    "ops": []
+   },
+   "display": ""
+  },
+  {
+   "raw": "```neko_vitals\n{\"vitals\": [{\"label\": \"A label that is far too long to fit\", \"value\": \"1\"}]}\n```",
+   "workflow": {
+    "text": "```neko_vitals\n{\"vitals\": [{\"label\": \"A label that is far too long to fit\", \"value\": \"1\"}]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "actions": {
+    "text": "```neko_vitals\n{\"vitals\": [{\"label\": \"A label that is far too long to fit\", \"value\": \"1\"}]}\n```",
+    "payloads": [],
+    "errors": []
+   },
+   "rule": {
+    "text": "```neko_vitals\n{\"vitals\": [{\"label\": \"A label that is far too long to fit\", \"value\": \"1\"}]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "value": {
+    "text": "```neko_vitals\n{\"vitals\": [{\"label\": \"A label that is far too long to fit\", \"value\": \"1\"}]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "followups": {
+    "text": "```neko_vitals\n{\"vitals\": [{\"label\": \"A label that is far too long to fit\", \"value\": \"1\"}]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "vitals": {
+    "text": "",
+    "payload": null,
+    "errors": [
+     "[\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 28,\n    \"inclusive\": true,\n    \"path\": [\n      \"vitals\",\n      0,\n      \"label\"\n    ],\n    \"message\": \"Too big: expected string to have <=28 characters\"\n  }\n]"
+    ]
+   },
+   "memory": {
+    "text": "```neko_vitals\n{\"vitals\": [{\"label\": \"A label that is far too long to fit\", \"value\": \"1\"}]}\n```",
+    "ops": []
+   },
+   "display": ""
+  },
+  {
+   "raw": "Done.\n```neko_workflow_save\n{\"name\": \" Low stock \", \"steps\": [{\"id\": \"s1\", \"description\": \"Check stock\"}], \"triggers\": {\"cron\": \"0 9 * * *\"}}\n```\n```neko_workflow_save\n{\"name\": \"Second\", \"steps\": [{\"id\": \"s1\", \"description\": \"x\"}]}\n```",
+   "workflow": {
+    "text": "Done.",
+    "payload": {
+     "name": "Low stock",
+     "steps": [
+      {
+       "id": "s1",
+       "description": "Check stock"
+      }
+     ],
+     "triggers": {
+      "cron": "0 9 * * *"
+     }
+    },
+    "errors": []
+   },
+   "actions": {
+    "text": "Done.\n```neko_workflow_save\n{\"name\": \" Low stock \", \"steps\": [{\"id\": \"s1\", \"description\": \"Check stock\"}], \"triggers\": {\"cron\": \"0 9 * * *\"}}\n```\n```neko_workflow_save\n{\"name\": \"Second\", \"steps\": [{\"id\": \"s1\", \"description\": \"x\"}]}\n```",
+    "payloads": [],
+    "errors": []
+   },
+   "rule": {
+    "text": "Done.\n```neko_workflow_save\n{\"name\": \" Low stock \", \"steps\": [{\"id\": \"s1\", \"description\": \"Check stock\"}], \"triggers\": {\"cron\": \"0 9 * * *\"}}\n```\n```neko_workflow_save\n{\"name\": \"Second\", \"steps\": [{\"id\": \"s1\", \"description\": \"x\"}]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "value": {
+    "text": "Done.\n```neko_workflow_save\n{\"name\": \" Low stock \", \"steps\": [{\"id\": \"s1\", \"description\": \"Check stock\"}], \"triggers\": {\"cron\": \"0 9 * * *\"}}\n```\n```neko_workflow_save\n{\"name\": \"Second\", \"steps\": [{\"id\": \"s1\", \"description\": \"x\"}]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "followups": {
+    "text": "Done.\n```neko_workflow_save\n{\"name\": \" Low stock \", \"steps\": [{\"id\": \"s1\", \"description\": \"Check stock\"}], \"triggers\": {\"cron\": \"0 9 * * *\"}}\n```\n```neko_workflow_save\n{\"name\": \"Second\", \"steps\": [{\"id\": \"s1\", \"description\": \"x\"}]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "vitals": {
+    "text": "Done.\n```neko_workflow_save\n{\"name\": \" Low stock \", \"steps\": [{\"id\": \"s1\", \"description\": \"Check stock\"}], \"triggers\": {\"cron\": \"0 9 * * *\"}}\n```\n```neko_workflow_save\n{\"name\": \"Second\", \"steps\": [{\"id\": \"s1\", \"description\": \"x\"}]}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "memory": {
+    "text": "Done.\n```neko_workflow_save\n{\"name\": \" Low stock \", \"steps\": [{\"id\": \"s1\", \"description\": \"Check stock\"}], \"triggers\": {\"cron\": \"0 9 * * *\"}}\n```\n```neko_workflow_save\n{\"name\": \"Second\", \"steps\": [{\"id\": \"s1\", \"description\": \"x\"}]}\n```",
+    "ops": []
+   },
+   "display": "Done."
+  },
+  {
+   "raw": "```neko_workflow_save\n{\"name\": \"\", \"steps\": []}\n```\n```neko_workflow_save\n{oops}\n```",
+   "workflow": {
+    "text": "",
+    "payload": null,
+    "errors": [
+     "[\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"name\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"steps\"\n    ],\n    \"message\": \"Too small: expected array to have >=1 items\"\n  }\n]",
+     "Expected property name or '}' in JSON at position 1 (line 1 column 2)"
+    ]
+   },
+   "actions": {
+    "text": "```neko_workflow_save\n{\"name\": \"\", \"steps\": []}\n```\n```neko_workflow_save\n{oops}\n```",
+    "payloads": [],
+    "errors": []
+   },
+   "rule": {
+    "text": "```neko_workflow_save\n{\"name\": \"\", \"steps\": []}\n```\n```neko_workflow_save\n{oops}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "value": {
+    "text": "```neko_workflow_save\n{\"name\": \"\", \"steps\": []}\n```\n```neko_workflow_save\n{oops}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "followups": {
+    "text": "```neko_workflow_save\n{\"name\": \"\", \"steps\": []}\n```\n```neko_workflow_save\n{oops}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "vitals": {
+    "text": "```neko_workflow_save\n{\"name\": \"\", \"steps\": []}\n```\n```neko_workflow_save\n{oops}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "memory": {
+    "text": "```neko_workflow_save\n{\"name\": \"\", \"steps\": []}\n```\n```neko_workflow_save\n{oops}\n```",
+    "ops": []
+   },
+   "display": ""
+  },
+  {
+   "raw": "```neko_workflow_save\n{\"name\": \"First\", \"steps\": [{\"id\": \"s1\", \"description\": \"x\"}]}\n```\n```neko_workflow_save\n{\"name\": \"\"}\n```\n```neko_rule_save\n{\"name\": \"R\", \"applies_to_kinds\": [], \"mode\": \"never\"}\n```\n```neko_rule_save\nnope\n```",
+   "workflow": {
+    "text": "```neko_rule_save\n{\"name\": \"R\", \"applies_to_kinds\": [], \"mode\": \"never\"}\n```\n```neko_rule_save\nnope\n```",
+    "payload": {
+     "name": "First",
+     "steps": [
+      {
+       "id": "s1",
+       "description": "x"
+      }
+     ]
+    },
+    "errors": []
+   },
+   "actions": {
+    "text": "```neko_workflow_save\n{\"name\": \"First\", \"steps\": [{\"id\": \"s1\", \"description\": \"x\"}]}\n```\n```neko_workflow_save\n{\"name\": \"\"}\n```\n```neko_rule_save\n{\"name\": \"R\", \"applies_to_kinds\": [], \"mode\": \"never\"}\n```\n```neko_rule_save\nnope\n```",
+    "payloads": [],
+    "errors": []
+   },
+   "rule": {
+    "text": "```neko_workflow_save\n{\"name\": \"First\", \"steps\": [{\"id\": \"s1\", \"description\": \"x\"}]}\n```\n```neko_workflow_save\n{\"name\": \"\"}\n```",
+    "payload": {
+     "name": "R",
+     "applies_to_kinds": [],
+     "applies_to_scopes": [
+      "external"
+     ],
+     "mode": "never",
+     "limits": {},
+     "priority": 100,
+     "enabled": true
+    },
+    "errors": []
+   },
+   "value": {
+    "text": "```neko_workflow_save\n{\"name\": \"First\", \"steps\": [{\"id\": \"s1\", \"description\": \"x\"}]}\n```\n```neko_workflow_save\n{\"name\": \"\"}\n```\n```neko_rule_save\n{\"name\": \"R\", \"applies_to_kinds\": [], \"mode\": \"never\"}\n```\n```neko_rule_save\nnope\n```",
+    "payload": null,
+    "errors": []
+   },
+   "followups": {
+    "text": "```neko_workflow_save\n{\"name\": \"First\", \"steps\": [{\"id\": \"s1\", \"description\": \"x\"}]}\n```\n```neko_workflow_save\n{\"name\": \"\"}\n```\n```neko_rule_save\n{\"name\": \"R\", \"applies_to_kinds\": [], \"mode\": \"never\"}\n```\n```neko_rule_save\nnope\n```",
+    "payload": null,
+    "errors": []
+   },
+   "vitals": {
+    "text": "```neko_workflow_save\n{\"name\": \"First\", \"steps\": [{\"id\": \"s1\", \"description\": \"x\"}]}\n```\n```neko_workflow_save\n{\"name\": \"\"}\n```\n```neko_rule_save\n{\"name\": \"R\", \"applies_to_kinds\": [], \"mode\": \"never\"}\n```\n```neko_rule_save\nnope\n```",
+    "payload": null,
+    "errors": []
+   },
+   "memory": {
+    "text": "```neko_workflow_save\n{\"name\": \"First\", \"steps\": [{\"id\": \"s1\", \"description\": \"x\"}]}\n```\n```neko_workflow_save\n{\"name\": \"\"}\n```\n```neko_rule_save\n{\"name\": \"R\", \"applies_to_kinds\": [], \"mode\": \"never\"}\n```\n```neko_rule_save\nnope\n```",
+    "ops": []
+   },
+   "display": ""
+  },
+  {
+   "raw": "```neko_rule_save\n{\"name\": \"Slack auto\", \"applies_to_kinds\": [\"slack_post\"], \"mode\": \"auto_approve\", \"approver_role\": \"admin\"}\n```",
+   "workflow": {
+    "text": "```neko_rule_save\n{\"name\": \"Slack auto\", \"applies_to_kinds\": [\"slack_post\"], \"mode\": \"auto_approve\", \"approver_role\": \"admin\"}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "actions": {
+    "text": "```neko_rule_save\n{\"name\": \"Slack auto\", \"applies_to_kinds\": [\"slack_post\"], \"mode\": \"auto_approve\", \"approver_role\": \"admin\"}\n```",
+    "payloads": [],
+    "errors": []
+   },
+   "rule": {
+    "text": "",
+    "payload": {
+     "name": "Slack auto",
+     "applies_to_kinds": [
+      "slack_post"
+     ],
+     "applies_to_scopes": [
+      "external"
+     ],
+     "mode": "auto_approve",
+     "limits": {},
+     "approver_role": "admin",
+     "priority": 100,
+     "enabled": true
+    },
+    "errors": []
+   },
+   "value": {
+    "text": "```neko_rule_save\n{\"name\": \"Slack auto\", \"applies_to_kinds\": [\"slack_post\"], \"mode\": \"auto_approve\", \"approver_role\": \"admin\"}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "followups": {
+    "text": "```neko_rule_save\n{\"name\": \"Slack auto\", \"applies_to_kinds\": [\"slack_post\"], \"mode\": \"auto_approve\", \"approver_role\": \"admin\"}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "vitals": {
+    "text": "```neko_rule_save\n{\"name\": \"Slack auto\", \"applies_to_kinds\": [\"slack_post\"], \"mode\": \"auto_approve\", \"approver_role\": \"admin\"}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "memory": {
+    "text": "```neko_rule_save\n{\"name\": \"Slack auto\", \"applies_to_kinds\": [\"slack_post\"], \"mode\": \"auto_approve\", \"approver_role\": \"admin\"}\n```",
+    "ops": []
+   },
+   "display": ""
+  },
+  {
+   "raw": "```neko_rule_save\n{\"name\": \"Bad\", \"applies_to_kinds\": [], \"mode\": \"sometimes\"}\n```",
+   "workflow": {
+    "text": "```neko_rule_save\n{\"name\": \"Bad\", \"applies_to_kinds\": [], \"mode\": \"sometimes\"}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "actions": {
+    "text": "```neko_rule_save\n{\"name\": \"Bad\", \"applies_to_kinds\": [], \"mode\": \"sometimes\"}\n```",
+    "payloads": [],
+    "errors": []
+   },
+   "rule": {
+    "text": "",
+    "payload": null,
+    "errors": [
+     "[\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"observe_only\",\n      \"draft_only\",\n      \"auto_approve\",\n      \"approval_required\",\n      \"never\"\n    ],\n    \"path\": [\n      \"mode\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"observe_only\\\"|\\\"draft_only\\\"|\\\"auto_approve\\\"|\\\"approval_required\\\"|\\\"never\\\"\"\n  }\n]"
+    ]
+   },
+   "value": {
+    "text": "```neko_rule_save\n{\"name\": \"Bad\", \"applies_to_kinds\": [], \"mode\": \"sometimes\"}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "followups": {
+    "text": "```neko_rule_save\n{\"name\": \"Bad\", \"applies_to_kinds\": [], \"mode\": \"sometimes\"}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "vitals": {
+    "text": "```neko_rule_save\n{\"name\": \"Bad\", \"applies_to_kinds\": [], \"mode\": \"sometimes\"}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "memory": {
+    "text": "```neko_rule_save\n{\"name\": \"Bad\", \"applies_to_kinds\": [], \"mode\": \"sometimes\"}\n```",
+    "ops": []
+   },
+   "display": ""
+  },
+  {
+   "raw": "```neko_action_request\n{\"scope\": \"external\", \"kind\": \"slack_post\", \"target\": \"C1\", \"payload\": {\"text\": \"hi\"}, \"summary\": \" Post the summary \", \"minutes_saved\": 8, \"status\": \"approved\"}\n```\n```neko_action_request\n{\"scope\": \"external\", \"kind\": \"email\", \"summary\": \"Mail\", \"risk_level\": \"high\"}\n```\n```neko_action_request\n{\"scope\": \"nowhere\", \"kind\": \"x\", \"summary\": \"y\"}\n```",
+   "workflow": {
+    "text": "```neko_action_request\n{\"scope\": \"external\", \"kind\": \"slack_post\", \"target\": \"C1\", \"payload\": {\"text\": \"hi\"}, \"summary\": \" Post the summary \", \"minutes_saved\": 8, \"status\": \"approved\"}\n```\n```neko_action_request\n{\"scope\": \"external\", \"kind\": \"email\", \"summary\": \"Mail\", \"risk_level\": \"high\"}\n```\n```neko_action_request\n{\"scope\": \"nowhere\", \"kind\": \"x\", \"summary\": \"y\"}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "actions": {
+    "text": "",
+    "payloads": [
+     {
+      "scope": "external",
+      "kind": "slack_post",
+      "target": "C1",
+      "payload": {
+       "text": "hi"
+      },
+      "summary": "Post the summary",
+      "minutes_saved": 8
+     },
+     {
+      "scope": "external",
+      "kind": "email",
+      "risk_level": "high",
+      "summary": "Mail"
+     }
+    ],
+    "errors": [
+     "[\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"internal\",\n      \"external\"\n    ],\n    \"path\": [\n      \"scope\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"internal\\\"|\\\"external\\\"\"\n  }\n]"
+    ]
+   },
+   "rule": {
+    "text": "```neko_action_request\n{\"scope\": \"external\", \"kind\": \"slack_post\", \"target\": \"C1\", \"payload\": {\"text\": \"hi\"}, \"summary\": \" Post the summary \", \"minutes_saved\": 8, \"status\": \"approved\"}\n```\n```neko_action_request\n{\"scope\": \"external\", \"kind\": \"email\", \"summary\": \"Mail\", \"risk_level\": \"high\"}\n```\n```neko_action_request\n{\"scope\": \"nowhere\", \"kind\": \"x\", \"summary\": \"y\"}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "value": {
+    "text": "```neko_action_request\n{\"scope\": \"external\", \"kind\": \"slack_post\", \"target\": \"C1\", \"payload\": {\"text\": \"hi\"}, \"summary\": \" Post the summary \", \"minutes_saved\": 8, \"status\": \"approved\"}\n```\n```neko_action_request\n{\"scope\": \"external\", \"kind\": \"email\", \"summary\": \"Mail\", \"risk_level\": \"high\"}\n```\n```neko_action_request\n{\"scope\": \"nowhere\", \"kind\": \"x\", \"summary\": \"y\"}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "followups": {
+    "text": "```neko_action_request\n{\"scope\": \"external\", \"kind\": \"slack_post\", \"target\": \"C1\", \"payload\": {\"text\": \"hi\"}, \"summary\": \" Post the summary \", \"minutes_saved\": 8, \"status\": \"approved\"}\n```\n```neko_action_request\n{\"scope\": \"external\", \"kind\": \"email\", \"summary\": \"Mail\", \"risk_level\": \"high\"}\n```\n```neko_action_request\n{\"scope\": \"nowhere\", \"kind\": \"x\", \"summary\": \"y\"}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "vitals": {
+    "text": "```neko_action_request\n{\"scope\": \"external\", \"kind\": \"slack_post\", \"target\": \"C1\", \"payload\": {\"text\": \"hi\"}, \"summary\": \" Post the summary \", \"minutes_saved\": 8, \"status\": \"approved\"}\n```\n```neko_action_request\n{\"scope\": \"external\", \"kind\": \"email\", \"summary\": \"Mail\", \"risk_level\": \"high\"}\n```\n```neko_action_request\n{\"scope\": \"nowhere\", \"kind\": \"x\", \"summary\": \"y\"}\n```",
+    "payload": null,
+    "errors": []
+   },
+   "memory": {
+    "text": "```neko_action_request\n{\"scope\": \"external\", \"kind\": \"slack_post\", \"target\": \"C1\", \"payload\": {\"text\": \"hi\"}, \"summary\": \" Post the summary \", \"minutes_saved\": 8, \"status\": \"approved\"}\n```\n```neko_action_request\n{\"scope\": \"external\", \"kind\": \"email\", \"summary\": \"Mail\", \"risk_level\": \"high\"}\n```\n```neko_action_request\n{\"scope\": \"nowhere\", \"kind\": \"x\", \"summary\": \"y\"}\n```",
+    "ops": []
+   },
+   "display": ""
+  },
+  {
+   "raw": "Saved.\n```neko_memory\n[{\"save\": {\"text\": \" Revenue is net of refunds \", \"scope\": \"thread\", \"pinned\": false}}, {\"save\": {\"text\": \"ab\"}}, {\"other\": 1}]\n```\nAnd ```neko_memory\n{\"save\": {\"text\": \"Fiscal year starts in April\", \"scope\": \"team\"}}\n``` then ```neko_memory\nbroken\n```",
+   "workflow": {
+    "text": "Saved.\n```neko_memory\n[{\"save\": {\"text\": \" Revenue is net of refunds \", \"scope\": \"thread\", \"pinned\": false}}, {\"save\": {\"text\": \"ab\"}}, {\"other\": 1}]\n```\nAnd ```neko_memory\n{\"save\": {\"text\": \"Fiscal year starts in April\", \"scope\": \"team\"}}\n``` then ```neko_memory\nbroken\n```",
+    "payload": null,
+    "errors": []
+   },
+   "actions": {
+    "text": "Saved.\n```neko_memory\n[{\"save\": {\"text\": \" Revenue is net of refunds \", \"scope\": \"thread\", \"pinned\": false}}, {\"save\": {\"text\": \"ab\"}}, {\"other\": 1}]\n```\nAnd ```neko_memory\n{\"save\": {\"text\": \"Fiscal year starts in April\", \"scope\": \"team\"}}\n``` then ```neko_memory\nbroken\n```",
+    "payloads": [],
+    "errors": []
+   },
+   "rule": {
+    "text": "Saved.\n```neko_memory\n[{\"save\": {\"text\": \" Revenue is net of refunds \", \"scope\": \"thread\", \"pinned\": false}}, {\"save\": {\"text\": \"ab\"}}, {\"other\": 1}]\n```\nAnd ```neko_memory\n{\"save\": {\"text\": \"Fiscal year starts in April\", \"scope\": \"team\"}}\n``` then ```neko_memory\nbroken\n```",
+    "payload": null,
+    "errors": []
+   },
+   "value": {
+    "text": "Saved.\n```neko_memory\n[{\"save\": {\"text\": \" Revenue is net of refunds \", \"scope\": \"thread\", \"pinned\": false}}, {\"save\": {\"text\": \"ab\"}}, {\"other\": 1}]\n```\nAnd ```neko_memory\n{\"save\": {\"text\": \"Fiscal year starts in April\", \"scope\": \"team\"}}\n``` then ```neko_memory\nbroken\n```",
+    "payload": null,
+    "errors": []
+   },
+   "followups": {
+    "text": "Saved.\n```neko_memory\n[{\"save\": {\"text\": \" Revenue is net of refunds \", \"scope\": \"thread\", \"pinned\": false}}, {\"save\": {\"text\": \"ab\"}}, {\"other\": 1}]\n```\nAnd ```neko_memory\n{\"save\": {\"text\": \"Fiscal year starts in April\", \"scope\": \"team\"}}\n``` then ```neko_memory\nbroken\n```",
+    "payload": null,
+    "errors": []
+   },
+   "vitals": {
+    "text": "Saved.\n```neko_memory\n[{\"save\": {\"text\": \" Revenue is net of refunds \", \"scope\": \"thread\", \"pinned\": false}}, {\"save\": {\"text\": \"ab\"}}, {\"other\": 1}]\n```\nAnd ```neko_memory\n{\"save\": {\"text\": \"Fiscal year starts in April\", \"scope\": \"team\"}}\n``` then ```neko_memory\nbroken\n```",
+    "payload": null,
+    "errors": []
+   },
+   "memory": {
+    "text": "Saved.\n\nAnd  then",
+    "ops": [
+     {
+      "text": "Revenue is net of refunds",
+      "scope": "thread",
+      "pinned": false
+     },
+     {
+      "text": "Fiscal year starts in April",
+      "scope": null,
+      "pinned": null
+     }
+    ]
+   },
+   "display": "Saved.\n\nAnd  then"
+  },
+  {
+   "raw": "Text before.\n```neko_action_request\n{\"scope\": \"external\", \"kind\": \"k\", \"summary\": \"s\"}\n```\n```neko_value\n{\"minutes_saved\": 3}\n```\n```neko_followups\n{\"followups\": [\"x\"]}\n```\n```neko_vitals\n{\"vitals\": []}\n```\n```neko_rule_save\n{}\n```\n```neko_memory\n[]\n```\nText after. call:default_api:read_file{limit:100,path:analyze.py}",
+   "workflow": {
+    "text": "Text before.\n```neko_action_request\n{\"scope\": \"external\", \"kind\": \"k\", \"summary\": \"s\"}\n```\n```neko_value\n{\"minutes_saved\": 3}\n```\n```neko_followups\n{\"followups\": [\"x\"]}\n```\n```neko_vitals\n{\"vitals\": []}\n```\n```neko_rule_save\n{}\n```\n```neko_memory\n[]\n```\nText after. call:default_api:read_file{limit:100,path:analyze.py}",
+    "payload": null,
+    "errors": []
+   },
+   "actions": {
+    "text": "Text before.\n\n```neko_value\n{\"minutes_saved\": 3}\n```\n```neko_followups\n{\"followups\": [\"x\"]}\n```\n```neko_vitals\n{\"vitals\": []}\n```\n```neko_rule_save\n{}\n```\n```neko_memory\n[]\n```\nText after. call:default_api:read_file{limit:100,path:analyze.py}",
+    "payloads": [
+     {
+      "scope": "external",
+      "kind": "k",
+      "summary": "s"
+     }
+    ],
+    "errors": []
+   },
+   "rule": {
+    "text": "Text before.\n```neko_action_request\n{\"scope\": \"external\", \"kind\": \"k\", \"summary\": \"s\"}\n```\n```neko_value\n{\"minutes_saved\": 3}\n```\n```neko_followups\n{\"followups\": [\"x\"]}\n```\n```neko_vitals\n{\"vitals\": []}\n```\n\n```neko_memory\n[]\n```\nText after. call:default_api:read_file{limit:100,path:analyze.py}",
+    "payload": null,
+    "errors": [
+     "[\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"name\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"array\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"applies_to_kinds\"\n    ],\n    \"message\": \"Invalid input: expected array, received undefined\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"observe_only\",\n      \"draft_only\",\n      \"auto_approve\",\n      \"approval_required\",\n      \"never\"\n    ],\n    \"path\": [\n      \"mode\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"observe_only\\\"|\\\"draft_only\\\"|\\\"auto_approve\\\"|\\\"approval_required\\\"|\\\"never\\\"\"\n  }\n]"
+    ]
+   },
+   "value": {
+    "text": "Text before.\n```neko_action_request\n{\"scope\": \"external\", \"kind\": \"k\", \"summary\": \"s\"}\n```\n\n```neko_followups\n{\"followups\": [\"x\"]}\n```\n```neko_vitals\n{\"vitals\": []}\n```\n```neko_rule_save\n{}\n```\n```neko_memory\n[]\n```\nText after. call:default_api:read_file{limit:100,path:analyze.py}",
+    "payload": {
+     "minutes_saved": 3
+    },
+    "errors": []
+   },
+   "followups": {
+    "text": "Text before.\n```neko_action_request\n{\"scope\": \"external\", \"kind\": \"k\", \"summary\": \"s\"}\n```\n```neko_value\n{\"minutes_saved\": 3}\n```\n\n```neko_vitals\n{\"vitals\": []}\n```\n```neko_rule_save\n{}\n```\n```neko_memory\n[]\n```\nText after. call:default_api:read_file{limit:100,path:analyze.py}",
+    "payload": {
+     "followups": [
+      "x"
+     ]
+    },
+    "errors": []
+   },
+   "vitals": {
+    "text": "Text before.\n```neko_action_request\n{\"scope\": \"external\", \"kind\": \"k\", \"summary\": \"s\"}\n```\n```neko_value\n{\"minutes_saved\": 3}\n```\n```neko_followups\n{\"followups\": [\"x\"]}\n```\n\n```neko_rule_save\n{}\n```\n```neko_memory\n[]\n```\nText after. call:default_api:read_file{limit:100,path:analyze.py}",
+    "payload": {
+     "vitals": []
+    },
+    "errors": []
+   },
+   "memory": {
+    "text": "Text before.\n```neko_action_request\n{\"scope\": \"external\", \"kind\": \"k\", \"summary\": \"s\"}\n```\n```neko_value\n{\"minutes_saved\": 3}\n```\n```neko_followups\n{\"followups\": [\"x\"]}\n```\n```neko_vitals\n{\"vitals\": []}\n```\n```neko_rule_save\n{}\n```\n\nText after. call:default_api:read_file{limit:100,path:analyze.py}",
+    "ops": []
+   },
+   "display": "Text before.\n\n\nText after."
+  }
+ ],
+ "dangling": [
+  {
+   "text": "Here is the answer.",
+   "out": "Here is the answer."
+  },
+  {
+   "text": "Partial work.\ncall:default_api:read_file{limit:100,path:analyze.py}",
+   "out": "Partial work."
+  },
+  {
+   "text": "call:x:y {a:1}   \nNext line  \t\nend call:ns:tool{unclosed",
+   "out": "Next line\nend"
+  },
+  {
+   "text": "",
+   "out": ""
+  }
+ ],
+ "questions": [
+  {
+   "event": {
+    "type": "needs_input",
+    "question": "Which store?",
+    "options": [
+     "North",
+     "South"
+    ]
+   },
+   "out": "Which store?\n- North\n- South"
+  },
+  {
+   "event": {
+    "type": "needs_input",
+    "question": "Which store?",
+    "reason": "Two stores match."
+   },
+   "out": "Two stores match.\n\nWhich store?"
+  },
+  {
+   "event": {
+    "type": "needs_input",
+    "question": "ignored",
+    "questions": [
+     {
+      "id": "a",
+      "question": "Which period?",
+      "options": [
+       {
+        "label": "Q3"
+       },
+       {
+        "label": "Q4"
+       }
+      ]
+     },
+     {
+      "id": "b",
+      "question": "Which currency?"
+     }
+    ]
+   },
+   "out": "1. Which period?\n- Q3\n- Q4\n\n2. Which currency?"
+  },
+  {
+   "event": {
+    "type": "needs_input",
+    "questions": [
+     {
+      "id": "a",
+      "question": "One question"
+     }
+    ]
+   },
+   "out": "One question"
+  }
+ ],
+ "denials": [
+  {
+   "event": {
+    "type": "tool_end",
+    "id": "1",
+    "name": "web_fetch",
+    "result": {
+     "text": "host api.Example.com:8443 is not on the web allowlist"
+    }
+   },
+   "out": {
+    "type": "capability_denied",
+    "capability": "network_egress",
+    "reason": "policy_denied",
+    "host": "api.example.com",
+    "port": 8443,
+    "method": "GET"
+   }
+  },
+  {
+   "event": {
+    "type": "tool_end",
+    "id": "2",
+    "name": "web_fetch",
+    "error": "host docs.example.org is not on the web allowlist"
+   },
+   "out": {
+    "type": "capability_denied",
+    "capability": "network_egress",
+    "reason": "policy_denied",
+    "host": "docs.example.org",
+    "method": "GET"
+   }
+  },
+  {
+   "event": {
+    "type": "tool_end",
+    "id": "3",
+    "name": "terminal",
+    "result": [
+     {
+      "out": [
+       "POST hooks.example.com/v1/x?y=1 not permitted by policy"
+      ]
+     }
+    ]
+   },
+   "out": {
+    "type": "capability_denied",
+    "capability": "network_egress",
+    "reason": "policy_denied",
+    "host": "hooks.example.com",
+    "method": "POST",
+    "path": "/v1/x?y=1"
+   }
+  },
+  {
+   "event": {
+    "type": "tool_end",
+    "id": "4",
+    "name": "terminal",
+    "result": "policy_denied for a reason with no request line"
+   },
+   "out": null
+  },
+  {
+   "event": {
+    "type": "tool_end",
+    "id": "5",
+    "name": "terminal",
+    "result": {
+     "a": {
+      "b": {
+       "c": {
+        "d": {
+         "e": {
+          "f": "GET deep.example not permitted by policy"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "out": null
+  },
+  {
+   "event": {
+    "type": "tool_start",
+    "id": "6",
+    "name": "web_fetch",
+    "input": {
+     "text": "host a.example is not on the web allowlist"
+    }
+   },
+   "out": null
+  },
+  {
+   "event": {
+    "type": "tool_end",
+    "id": "7",
+    "name": "terminal",
+    "result": "delete Api.Example.COM:80 not permitted by policy"
+   },
+   "out": {
+    "type": "capability_denied",
+    "capability": "network_egress",
+    "reason": "policy_denied",
+    "host": "api.example.com",
+    "port": 80,
+    "method": "DELETE"
+   }
+  }
+ ],
+ "summaries": [
+  {
+   "vitals": null,
+   "surfaces": [],
+   "notes": [],
+   "out": ""
+  },
+  {
+   "vitals": {
+    "vitals": [
+     {
+      "label": "Revenue",
+      "value": "4.2",
+      "sub": "Cr",
+      "basis": "observed",
+      "asOf": "Oct",
+      "source": "orders"
+     },
+     {
+      "label": "Orders",
+      "value": "120"
+     }
+    ]
+   },
+   "surfaces": [],
+   "notes": [
+    " note ",
+    "note",
+    ""
+   ],
+   "out": "Structured result from my previous turn:\n- note\nHeadline figures:\n- Revenue: 4.2 (Cr; observed; as of Oct; source: orders)\n- Orders: 120"
+  },
+  {
+   "vitals": null,
+   "surfaces": [
+    {
+     "createSurface": {
+      "surfaceId": "s1",
+      "dataModel": {
+       "rows": [
+        {
+         "region": "North",
+         "total": 12,
+         "note": null
+        },
+        {
+         "region": "South",
+         "total": 7.5
+        }
+       ],
+       "series": [
+        {
+         "d": "Jan",
+         "v": 3
+        },
+        {
+         "d": "Feb",
+         "v": "x"
+        }
+       ]
+      },
+      "components": [
+       {
+        "id": "t",
+        "component": "Text",
+        "text": "  Revenue by region  "
+       },
+       {
+        "id": "k",
+        "component": "KeyFigures",
+        "title": "Revenue by region",
+        "items": [
+         {
+          "label": "Total",
+          "value": 19.5,
+          "sub": "INR lakh",
+          "basis": " "
+         },
+         {
+          "label": "Bad"
+         },
+         "x"
+        ]
+       },
+       {
+        "id": "tb",
+        "component": "Table",
+        "columns": [
+         {
+          "key": "region"
+         },
+         {
+          "key": "total"
+         },
+         {
+          "label": "no key"
+         }
+        ],
+        "rows": {
+         "path": "/rows"
+        }
+       },
+       {
+        "id": "c",
+        "component": "Chart",
+        "valueLabel": " orders ",
+        "data": {
+         "path": "/series"
+        }
+       },
+       {
+        "id": "c2",
+        "component": "Chart",
+        "data": [
+         {
+          "d": "Mar",
+          "v": 4
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "updateComponents": {
+      "components": [
+       {
+        "id": "x",
+        "component": "Table",
+        "rows": [
+         {
+          "0": "zero",
+          "a": "1",
+          "b": true
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "Streamed text"
+   ],
+   "out": "Structured result from my previous turn:\n- Streamed text\n- Revenue by region\n- Total: 19.5 (INR lakh)\n- region: North, total: 12\n- region: South, total: 7.5\n- Jan: 3 orders\n- Mar: 4 value\n- 0: zero, a: 1"
+  },
+  {
+   "vitals": null,
+   "surfaces": [],
+   "notes": [
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   ],
+   "out": "Structured result from my previous turn:\n- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n[Structured result truncated]"
+  }
+ ],
+ "minutes": [
+  {
+   "value": 12,
+   "out": 12
+  },
+  {
+   "value": 12.5,
+   "out": 13
+  },
+  {
+   "value": -4,
+   "out": 0
+  },
+  {
+   "value": 200,
+   "out": 180
+  },
+  {
+   "value": null,
+   "out": null
+  },
+  {
+   "value": "NaN",
+   "out": null
+  },
+  {
+   "value": 179.4,
+   "out": 179
+  }
+ ]
+}
