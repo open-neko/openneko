@@ -51,10 +51,18 @@ type turnContext struct {
 	AllowedSkills []string
 	HeldActions   heldSet
 	Compaction    *threadCompaction
+	BackendState  any
+	Messages      []transcriptMessage
+	Bot           *threadBot
+	SourceConfig  bool
+	Terminal      bool
+	WantsCards    bool
+	RichCards     bool
 }
 
 type transcriptMessage struct {
 	ID, Role, Content string
+	RunID             *string
 }
 
 func (a *API) loadTurnContext(ctx context.Context, o turnOptions) (*turnContext, error) {
@@ -165,6 +173,7 @@ func (a *API) loadTurnContext(ctx context.Context, o turnOptions) (*turnContext,
 		prompt[i] = promptMessage{Role: m.Role, Content: m.Content}
 	}
 	wantsCards := channel == "web" || channel == "telegram"
+	backendState, _ := jsParse(state)
 	return &turnContext{
 		Prompt: buildWorkPrompt(workPromptInput{
 			Backend:                   "ax",
@@ -197,6 +206,13 @@ func (a *API) loadTurnContext(ctx context.Context, o turnOptions) (*turnContext,
 		AllowedSkills: allowed,
 		HeldActions:   actions,
 		Compaction:    compaction,
+		BackendState:  backendState,
+		Messages:      messages,
+		Bot:           bot,
+		SourceConfig:  sourceConfig,
+		Terminal:      terminal,
+		WantsCards:    wantsCards,
+		RichCards:     wantsCards && channel == "web",
 	}, nil
 }
 
@@ -219,14 +235,14 @@ func (a *API) turnTranscript(ctx context.Context, orgID, threadID string) ([]tra
 	if err != nil {
 		return nil, nil, false, err
 	}
-	rows, err := a.DB.Query(ctx, `select id::text, role, content from work_message
+	rows, err := a.DB.Query(ctx, `select id::text, role, content, run_id::text from work_message
 		where org_id = $1 and thread_id = $2 order by created_at`, orgID, threadID)
 	if err != nil {
 		return nil, nil, false, err
 	}
 	messages, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (transcriptMessage, error) {
 		var m transcriptMessage
-		return m, row.Scan(&m.ID, &m.Role, &m.Content)
+		return m, row.Scan(&m.ID, &m.Role, &m.Content, &m.RunID)
 	})
 	return messages, state, true, err
 }

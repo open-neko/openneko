@@ -143,7 +143,7 @@ export type RunChatTurnResult = {
   degraded?: boolean;
 };
 
-function needsInputText(
+export function needsInputText(
   event: Extract<AgentEvent, { type: "needs_input" }>,
 ): string {
   const questions = event.questions?.length
@@ -179,7 +179,7 @@ function backendLabel(id: string): string {
  * never reach a user on any channel. Matches `call:<ns>:<tool>{…}` (closed or
  * truncated at end-of-text). Returns the remaining prose, trimmed.
  */
-function stripDanglingToolCalls(text: string): string {
+export function stripDanglingToolCalls(text: string): string {
   return text
     .replace(/\bcall:[A-Za-z0-9_.:-]+\s*\{[^{}]*(?:\}|$)/g, "")
     .replace(/[ \t]+\n/g, "\n")
