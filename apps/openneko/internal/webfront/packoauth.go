@@ -377,19 +377,29 @@ func providerJSON(req *http.Request, operation string) (map[string]any, error) {
 }
 
 func exchangePackCode(ctx context.Context, conn *packConnection, clientID, clientSecret, code, verifier, redirectURI string) (*packTokens, error) {
+	return packTokenRequest(ctx, conn, "OAuth code exchange", "", conn.Scopes, [][2]string{{"grant_type", "authorization_code"},
+		{"client_id", clientID}, {"client_secret", clientSecret}, {"code", code}, {"code_verifier", verifier}, {"redirect_uri", redirectURI}})
+}
+
+func refreshPackToken(ctx context.Context, conn *packConnection, clientID, clientSecret, refreshToken string, scopes []string) (*packTokens, error) {
+	return packTokenRequest(ctx, conn, "OAuth token refresh", refreshToken, scopes, [][2]string{{"grant_type", "refresh_token"},
+		{"client_id", clientID}, {"client_secret", clientSecret}, {"refresh_token", refreshToken}})
+}
+
+// packTokenRequest matches parseTokens() in packages/packs/src/oauth-client.ts.
+func packTokenRequest(ctx context.Context, conn *packConnection, operation, fallbackRefresh string, fallbackScopes []string, fields [][2]string) (*packTokens, error) {
 	var form searchParams
-	for _, kv := range [][2]string{{"grant_type", "authorization_code"}, {"client_id", clientID}, {"client_secret", clientSecret},
-		{"code", code}, {"code_verifier", verifier}, {"redirect_uri", redirectURI}} {
+	for _, kv := range fields {
 		if kv[1] != "" {
 			form = append(form, kv)
 		}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, conn.TokenURL, strings.NewReader(form.encode()))
 	if err != nil {
-		return nil, packError("OAuth code exchange failed: the token URL is invalid")
+		return nil, packError(operation + " failed: the token URL is invalid")
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	v, err := providerJSON(req, "OAuth code exchange")
+	v, err := providerJSON(req, operation)
 	if err != nil {
 		return nil, err
 	}
@@ -401,7 +411,7 @@ func exchangePackCode(ctx context.Context, conn *packConnection, clientID, clien
 	if math.IsNaN(expiresIn) || math.IsInf(expiresIn, 0) || expiresIn <= 0 {
 		return nil, packError("OAuth token response did not contain a valid expiry")
 	}
-	scopes := conn.Scopes
+	scopes := fallbackScopes
 	if s, ok := v["scope"].(string); ok {
 		scopes = strings.Fields(s)
 	}
@@ -409,6 +419,9 @@ func exchangePackCode(ctx context.Context, conn *packConnection, clientID, clien
 		scopes = []string{}
 	}
 	refresh, _ := v["refresh_token"].(string)
+	if refresh == "" {
+		refresh = fallbackRefresh
+	}
 	expires := time.Now().Add(time.Duration(expiresIn * float64(time.Second))).UTC()
 	return &packTokens{AccessToken: access, RefreshToken: refresh, ExpiresAt: expires.Format("2006-01-02T15:04:05.000Z"), Scopes: scopes}, nil
 }
