@@ -342,3 +342,28 @@ runs the integrity, privacy, coverage, and suite-gate verifier against it. Use
 without a shareable result.
 The runner never reads credentials from `.env` files: an Ax config's
 declared `env:NAME` credential must already be exported.
+
+### Episode install
+
+`apps/worker/scripts/eval-install.ts` runs each episode on the code that
+ships. At start it builds `openneko`, drops the episode databases of a dead
+run and migrates the template database `openneko_eval_template`. For each
+episode it then:
+
+- copies the template into a new database, `openneko_eval_ep_*`;
+- makes a private folder (mode 700) for the home, agents, stage and files
+  folders, the serve socket and the trace file (mode 600);
+- starts `openneko serve` and `openneko web` on free ports, with the trace on;
+- serves the worker admin routes in the driver process: action preflight,
+  action execution and output delivery run the worker's own code;
+- signs the member in with a session cookie for the episode's own secret.
+
+At the end of an episode, also after a failure, it stops both processes and
+drops the database and the folder. An interrupt stops both processes; the next
+start drops the database. Episodes run in parallel only while 4 GB of memory
+stays free, at an estimate of 1 GB for each episode.
+
+`apps/worker/scripts/eval-scripted-model.ts` is the provider-free model for
+the scripted variants. It answers the Ax distiller, executor and responder
+calls on 127.0.0.2, and reads each tool result from the run's event stream.
+The backend driver does not use the episode install yet.
