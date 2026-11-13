@@ -3104,5 +3104,299 @@
     }
    }
   ]
+ },
+ {
+  "name": "workflow list with content",
+  "operation": "workflow.list",
+  "request": {
+   "limit": 2
+  },
+  "reply": {
+   "value": {
+    "total": 3,
+    "workflows": [
+     {
+      "id": "wf-1",
+      "name": "Stock check",
+      "enabled": true,
+      "status": "active",
+      "steps": [
+       {
+        "id": "a",
+        "description": "Use key sk-live-0123456789abcdef"
+       }
+      ],
+      "when": null
+     },
+     {
+      "id": "wf-2",
+      "name": "Paused",
+      "enabled": "no",
+      "status": "",
+      "goal": "Café 漢字"
+     },
+     {
+      "name": "no id"
+     },
+     "text"
+    ]
+   }
+  },
+  "secrets": [
+   "sk-live-0123456789abcdef"
+  ],
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-workflow list with content",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:649c187d840a97ceebfecf4a5e8a1121655263c52487be7d5cd1970fe17e1bd3",
+     "responseDigest": "sha256:9c91d335e4840cc5ae8d93a9a1b2b20979474007d914a39b97189236f8012d0a",
+     "operation": "workflow.list",
+     "evidence": {
+      "requestedLimit": 2,
+      "total": 3,
+      "returnedCount": 4,
+      "workflows": [
+       {
+        "id": "wf-1",
+        "definitionDigest": "sha256:c864419d3fcaa3ea8481f00ffa3a165a535fb8e4473466811ffc751eb1761bf2",
+        "enabled": true,
+        "status": "active"
+       },
+       {
+        "id": "wf-2",
+        "definitionDigest": "sha256:d6e54ae7a3bed17e5643171d0310aff5b5f98ec702558f4ebb76d159701fcfa6"
+       }
+      ]
+     }
+    },
+    "content": {
+     "sequence": 1,
+     "operation": "workflow.list",
+     "request": {
+      "limit": 2
+     },
+     "rows": [
+      {
+       "enabled": true,
+       "id": "wf-1",
+       "name": "Stock check",
+       "status": "active",
+       "steps": [
+        {
+         "description": "Use key [REDACTED]",
+         "id": "a"
+        }
+       ],
+       "when": null
+      },
+      {
+       "enabled": "no",
+       "goal": "Café 漢字",
+       "id": "wf-2",
+       "name": "Paused",
+       "status": ""
+      },
+      {
+       "name": "no id"
+      },
+      "text"
+     ],
+     "rowCount": 4,
+     "truncated": false
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-workflow list with content",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:649c187d840a97ceebfecf4a5e8a1121655263c52487be7d5cd1970fe17e1bd3",
+     "responseDigest": "sha256:9c91d335e4840cc5ae8d93a9a1b2b20979474007d914a39b97189236f8012d0a",
+     "operation": "workflow.list",
+     "evidence": {
+      "requestedLimit": 2,
+      "total": 3,
+      "returnedCount": 4,
+      "workflows": [
+       {
+        "id": "wf-1",
+        "definitionDigest": "sha256:c864419d3fcaa3ea8481f00ffa3a165a535fb8e4473466811ffc751eb1761bf2",
+        "enabled": true,
+        "status": "active"
+       },
+       {
+        "id": "wf-2",
+        "definitionDigest": "sha256:d6e54ae7a3bed17e5643171d0310aff5b5f98ec702558f4ebb76d159701fcfa6"
+       }
+      ]
+     }
+    },
+    "content": {
+     "sequence": 2,
+     "operation": "workflow.list",
+     "request": {
+      "limit": 2
+     },
+     "rows": [
+      {
+       "enabled": true,
+       "id": "wf-1",
+       "name": "Stock check",
+       "status": "active",
+       "steps": [
+        {
+         "description": "Use key [REDACTED]",
+         "id": "a"
+        }
+       ],
+       "when": null
+      },
+      {
+       "enabled": "no",
+       "goal": "Café 漢字",
+       "id": "wf-2",
+       "name": "Paused",
+       "status": ""
+      },
+      {
+       "name": "no id"
+      },
+      "text"
+     ],
+     "rowCount": 4,
+     "truncated": false
+    }
+   }
+  ]
+ },
+ {
+  "name": "workflow list sparse",
+  "operation": "workflow.list",
+  "request": {},
+  "reply": {
+   "value": {
+    "workflows": "none"
+   }
+  },
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-workflow list sparse",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+     "responseDigest": "sha256:92e069eedfd493455fa471df97b45f7fe1a717ade3213204f82a2a1cd23f7fef",
+     "operation": "workflow.list",
+     "evidence": {
+      "returnedCount": 0,
+      "workflows": []
+     }
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-workflow list sparse",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+     "responseDigest": "sha256:92e069eedfd493455fa471df97b45f7fe1a717ade3213204f82a2a1cd23f7fef",
+     "operation": "workflow.list",
+     "evidence": {
+      "returnedCount": 0,
+      "workflows": []
+     }
+    }
+   }
+  ]
+ },
+ {
+  "name": "workflow list fails",
+  "operation": "workflow.list",
+  "request": {
+   "limit": 50
+  },
+  "reply": {
+   "throws": "database is down: sk-live-0123456789abcdef"
+  },
+  "secrets": [
+   "sk-live-0123456789abcdef"
+  ],
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-workflow list fails",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "error",
+     "requestDigest": "sha256:2a8276f650319ab72da96dfdddb5ea2b42884eb8b8691099d76cdb56df8ca66e",
+     "errorType": "Error",
+     "errorDigest": "sha256:fcd10b4466192b18f0b8b30697ce06398dd3b78a2ab1b73994f420ccb8734444",
+     "operation": "workflow.list",
+     "evidence": {
+      "requestedLimit": 50,
+      "returnedCount": 0,
+      "workflows": []
+     }
+    },
+    "content": {
+     "sequence": 1,
+     "operation": "workflow.list",
+     "request": {
+      "limit": 50
+     },
+     "error": "database is down: [REDACTED]"
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-workflow list fails",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "error",
+     "requestDigest": "sha256:2a8276f650319ab72da96dfdddb5ea2b42884eb8b8691099d76cdb56df8ca66e",
+     "errorType": "Error",
+     "errorDigest": "sha256:fcd10b4466192b18f0b8b30697ce06398dd3b78a2ab1b73994f420ccb8734444",
+     "operation": "workflow.list",
+     "evidence": {
+      "requestedLimit": 50,
+      "returnedCount": 0,
+      "workflows": []
+     }
+    },
+    "content": {
+     "sequence": 2,
+     "operation": "workflow.list",
+     "request": {
+      "limit": 50
+     },
+     "error": "database is down: [REDACTED]"
+    }
+   }
+  ]
  }
 ]

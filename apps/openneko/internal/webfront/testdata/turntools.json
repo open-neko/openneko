@@ -1856,6 +1856,463 @@
      }
     }
    ]
+  },
+  {
+   "name": "workflow and rule builders",
+   "servers": [
+    "neko_workflow_builder",
+    "neko_rule_builder"
+   ],
+   "tools": [
+    {
+     "name": "workflow_builder_create_workflow",
+     "description": "Create or update a workflow. Upserts by name within the org — if a workflow with the same name already exists, it is updated in place. Use this when the operator asks to set up, modify, or rename a task or pipeline. Pass `triggers.cron` to run it on a schedule, or pass `triggers.watch` for a periodic scalar or aggregate condition. For a watch, first execute the GraphJin query successfully, then copy that exact query and derive `value_path` from its response data using dot-separated segments (including numeric array indexes such as `.0.`). Do not use bracket notation. `triggers.when` is instead for matching changed source rows and requires table/primary-key semantics. pass `batch` to define the workflow's own record field and CSV output columns for batch API execution. Batch support belongs to the workflow and does not require a skill (a workflow may use zero, one, or many). Pass `triggers.when` to fire it when a row in the operator's data source matches a filter (e.g. 'when stock dips below reorder point') — for the latter, introspect the schema first with the GraphJin MCP (`list_tables`, `describe_table`) to confirm the table, columns, and primary key. After saving, narrate the change in a sentence; the tool also emits a confirmation card the operator can click.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+       },
+       "description": {
+        "type": "string",
+        "maxLength": 2000
+       },
+       "goal": {
+        "type": "string",
+        "maxLength": 2000
+       },
+       "systemPromptOverlay": {
+        "type": "string",
+        "maxLength": 16000
+       },
+       "steps": {
+        "minItems": 1,
+        "maxItems": 40,
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "minLength": 1,
+           "maxLength": 60
+          },
+          "description": {
+           "type": "string",
+           "minLength": 1,
+           "maxLength": 2000
+          },
+          "script": {
+           "type": "object",
+           "properties": {
+            "skill": {
+             "type": "string",
+             "maxLength": 64,
+             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "command": {
+             "minItems": 1,
+             "maxItems": 64,
+             "type": "array",
+             "items": {
+              "type": "string",
+              "maxLength": 2000
+             }
+            },
+            "timeoutSeconds": {
+             "type": "integer",
+             "minimum": 1,
+             "maximum": 3600
+            }
+           },
+           "required": [
+            "skill",
+            "command"
+           ],
+           "description": "Makes this a deterministic script step. It runs before the agent turn, from the run directory, without a shell. Arguments may use ${SKILL_DIR}, ${RUN_DIR}, ${ARTIFACT_DIR}, and ${input.<field>} or ${input.<field>:-default} from the trigger payload. The script queries data with neko_data or neko-query."
+          }
+         },
+         "required": [
+          "id",
+          "description"
+         ]
+        }
+       },
+       "batch": {
+        "anyOf": [
+         {
+          "type": "object",
+          "properties": {
+           "recordsField": {
+            "type": "string",
+            "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
+           },
+           "columns": {
+            "minItems": 1,
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+             "type": "object",
+             "properties": {
+              "name": {
+               "type": "string",
+               "minLength": 1,
+               "maxLength": 80
+              },
+              "path": {
+               "type": "string",
+               "minLength": 1,
+               "maxLength": 256
+              },
+              "default": {
+               "anyOf": [
+                {
+                 "type": "string"
+                },
+                {
+                 "type": "number"
+                },
+                {
+                 "type": "boolean"
+                },
+                {
+                 "type": "null"
+                }
+               ]
+              }
+             },
+             "required": [
+              "name",
+              "path"
+             ]
+            }
+           }
+          },
+          "required": [
+           "columns"
+          ]
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "triggers": {
+        "type": "object",
+        "properties": {
+         "cron": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+         },
+         "timezone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+         },
+         "enabled": {
+          "type": "boolean"
+         },
+         "when": {
+          "type": "object",
+          "properties": {
+           "table": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+           },
+           "where": {
+            "type": "object",
+            "propertyNames": {
+             "type": "string"
+            },
+            "additionalProperties": {}
+           },
+           "select": {
+            "type": "array",
+            "items": {
+             "type": "string",
+             "minLength": 1,
+             "maxLength": 120
+            }
+           },
+           "primary_key": {
+            "minItems": 1,
+            "maxItems": 8,
+            "type": "array",
+            "items": {
+             "type": "string",
+             "minLength": 1,
+             "maxLength": 120
+            }
+           },
+           "version_column": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+           },
+           "enabled": {
+            "type": "boolean"
+           },
+           "idempotency_key_template": {
+            "type": "string",
+            "maxLength": 200
+           },
+           "acknowledge_mutation_loop": {
+            "type": "boolean"
+           }
+          },
+          "required": [
+           "table",
+           "primary_key"
+          ]
+         },
+         "watch": {
+          "type": "object",
+          "properties": {
+           "query": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 8000,
+            "description": "The exact GraphQL query already executed successfully through GraphJin. Copy it without rewriting it."
+           },
+           "value_path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400,
+            "description": "Dot-separated path under the successful GraphJin response data. Include numeric array segments, for example orders.0.count; bracket notation is not supported."
+           },
+           "op": {
+            "type": "string",
+            "enum": [
+             "gt",
+             "gte",
+             "lt",
+             "lte",
+             "eq",
+             "ne",
+             "changed"
+            ]
+           },
+           "threshold": {
+            "anyOf": [
+             {
+              "type": "number"
+             },
+             {
+              "type": "string"
+             }
+            ]
+           },
+           "cadence_seconds": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 86400
+           },
+           "debounce_seconds": {
+            "description": "Quiet period in seconds after the watch fires; further matches inside it stay silent. Default 3600. Use 0 when the operator wants to hear about every change.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 604800
+           },
+           "severity": {
+            "type": "string",
+            "enum": [
+             "low",
+             "medium",
+             "high",
+             "critical"
+            ]
+           }
+          },
+          "required": [
+           "query",
+           "value_path",
+           "op"
+          ]
+         }
+        }
+       }
+      },
+      "required": [
+       "name",
+       "steps"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "workflow_builder_list_workflows",
+     "description": "List the workflows defined in this org so you can answer questions like 'what was the workflow we set up last week to summarize sales' or look up the exact name/steps of a workflow before updating it via `create_workflow`. Returns full bodies (steps, cron, data trigger, description, system prompt overlay), ordered by most recently updated.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 200
+       }
+      },
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "workflow_builder_delete_workflow",
+     "description": "Permanently delete a workflow by its id. This also drops its triggers, run history, outputs, and proposed/executed actions (hard cascade — no undo). Because it is destructive, you MUST confirm with the operator in the thread BEFORE calling this — name the workflow you're about to remove and wait for an explicit yes. Resolve the id first with `list_workflows` (match on the name the operator referenced or the id carried by an @mention); never guess. On success the tool emits a confirmation card.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "workflowId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The id of the workflow to delete (from list_workflows)."
+       }
+      },
+      "required": [
+       "workflowId"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "rule_builder_save_rule",
+     "description": "Create or update an approval rule. Upserts by name within the org — if a rule with the same name already exists, it is updated in place. Use this when the operator asks to gate, allow, or deny specific action kinds (e.g. 'auto-approve low-risk slack posts', 'always ask before sending email externally'). To send without approval only to approved recipients, use allowed_targets with on_miss 'next' so any other recipient falls to the rule that asks. After saving, the tool emits a confirmation card the operator can click to open the rule.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+       },
+       "description": {
+        "type": "string",
+        "maxLength": 2000
+       },
+       "applies_to_kinds": {
+        "minItems": 0,
+        "maxItems": 40,
+        "type": "array",
+        "items": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 120
+        }
+       },
+       "applies_to_scopes": {
+        "default": [
+         "external"
+        ],
+        "minItems": 0,
+        "maxItems": 8,
+        "type": "array",
+        "items": {
+         "type": "string",
+         "enum": [
+          "internal",
+          "external"
+         ]
+        }
+       },
+       "mode": {
+        "type": "string",
+        "enum": [
+         "observe_only",
+         "draft_only",
+         "auto_approve",
+         "approval_required",
+         "never"
+        ]
+       },
+       "risk_threshold_auto_approve": {
+        "type": "string",
+        "enum": [
+         "low",
+         "medium",
+         "high",
+         "critical"
+        ]
+       },
+       "allowed_targets": {
+        "description": "{\"patterns\": [...], \"on_miss\"?: \"next\"}. Every target must match a pattern. A pattern is exact (\"acme.com\"), a prefix (\"https://hooks.acme.com/*\"), or subdomains only (\"*.acme.com\"). Email actions match lowercase recipient domains. Without on_miss, a miss is denied; with \"next\", a miss falls to the next rule, usually one that asks.",
+        "type": "object",
+        "propertyNames": {
+         "type": "string"
+        },
+        "additionalProperties": {}
+       },
+       "denied_targets": {
+        "description": "{\"patterns\": [...]}. Denies the action when any target matches.",
+        "type": "object",
+        "propertyNames": {
+         "type": "string"
+        },
+        "additionalProperties": {}
+       },
+       "limits": {
+        "default": {},
+        "type": "object",
+        "propertyNames": {
+         "type": "string"
+        },
+        "additionalProperties": {}
+       },
+       "approver_role": {
+        "type": "string",
+        "maxLength": 120
+       },
+       "priority": {
+        "default": 100,
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10000
+       },
+       "enabled": {
+        "default": true,
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "name",
+       "applies_to_kinds",
+       "mode"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "rule_builder_list_rules",
+     "description": "List the approval rules defined in this org so you can answer questions like 'what was that rule we set last week to auto-approve slack posts' or look up the exact name/config of a rule before updating it via `save_rule`. Returns full bodies (mode, scopes, kinds, limits), ordered by priority then name. Includes disabled rules.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 200
+       }
+      },
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    }
+   ]
   }
  ],
  "calls": [
@@ -10815,6 +11272,2697 @@
      }
     }
    ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "workflow create",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_create_workflow",
+   "arguments": {
+    "name": "Stock check",
+    "steps": [
+     {
+      "id": "check",
+      "description": "Check stock levels"
+     },
+     {
+      "id": "post",
+      "description": "Post the list"
+     }
+    ]
+   },
+   "replies": {
+    "saveWorkflowWithTrigger": {
+     "value": {
+      "action": "created",
+      "workflow": {
+       "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+       "orgId": "11111111-1111-4111-8111-111111111111",
+       "name": "Stock check",
+       "description": "",
+       "enabled": true,
+       "status": "active",
+       "goal": "Keep stock up",
+       "systemPromptOverlay": "",
+       "steps": [
+        {
+         "id": "check",
+         "description": "Check stock levels"
+        },
+        {
+         "id": "post",
+         "description": "Post the list"
+        }
+       ],
+       "cron": null,
+       "cronTimezone": "Europe/Paris",
+       "cronEnabled": true,
+       "networkHosts": [],
+       "dailyRunBudget": null,
+       "outputContract": null,
+       "ownerUserId": "",
+       "createdAt": "2026-11-01T00:00:00.000Z",
+       "updatedAt": "2026-11-12T00:00:00.000Z"
+      }
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"action\":\"created\",\"workflowId\":\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\",\"name\":\"Stock check\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "saveWorkflowWithTrigger",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "name": "Stock check",
+      "steps": [
+       {
+        "id": "check",
+        "description": "Check stock levels"
+       },
+       {
+        "id": "post",
+        "description": "Post the list"
+       }
+      ],
+      "createdByThreadId": "22222222-2222-4222-8222-222222222222",
+      "createdByRunId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "workflow-save-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "catalogId": "urn:app:catalog:briefing:v1"
+       }
+      },
+      {
+       "version": "v1.0",
+       "updateComponents": {
+        "surfaceId": "workflow-save-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "components": [
+         {
+          "id": "root",
+          "component": "Confirmation",
+          "label": "Created workflow",
+          "title": "Stock check",
+          "children": [
+           "body"
+          ]
+         },
+         {
+          "id": "body",
+          "component": "Markdown",
+          "text": "**Stock check** — 2 step(s).\n\n_No description._\n\n[Open detail](/workflows?id=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb)"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "workflow full update with trigger",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_create_workflow",
+   "arguments": {
+    "name": "  Stock check  ",
+    "description": "Daily stock check",
+    "goal": "Keep stock up",
+    "systemPromptOverlay": "Be brief.",
+    "steps": [
+     {
+      "id": " check ",
+      "description": " Check stock levels ",
+      "extra": 1
+     },
+     {
+      "id": "run",
+      "description": "Run the export",
+      "script": {
+       "skill": "stock-export",
+       "command": [
+        "python3",
+        "${SKILL_DIR}/run.py",
+        "${input.sku:-all}"
+       ],
+       "timeoutSeconds": 60
+      }
+     }
+    ],
+    "batch": {
+     "recordsField": " orders ",
+     "columns": [
+      {
+       "name": "Order",
+       "path": "order.id"
+      },
+      {
+       "name": "Total",
+       "path": "total",
+       "default": 0
+      },
+      {
+       "name": "Note",
+       "path": "note",
+       "default": null
+      }
+     ]
+    },
+    "triggers": {
+     "cron": " 0 9 * * * ",
+     "timezone": "Europe/Paris",
+     "enabled": true,
+     "when": {
+      "table": " products ",
+      "where": {
+       "qty": {
+        "lt": 5
+       }
+      },
+      "select": [
+       "id",
+       "qty"
+      ],
+      "primary_key": [
+       "id"
+      ],
+      "version_column": "updated_at",
+      "enabled": false,
+      "idempotency_key_template": "{id}",
+      "acknowledge_mutation_loop": true
+     },
+     "watch": {
+      "query": " { products { count } } ",
+      "value_path": "products.0.count",
+      "op": "lt",
+      "threshold": 5,
+      "cadence_seconds": 600,
+      "debounce_seconds": 0,
+      "severity": "high"
+     }
+    }
+   },
+   "replies": {
+    "saveWorkflowWithTrigger": {
+     "value": {
+      "action": "updated",
+      "workflow": {
+       "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+       "orgId": "11111111-1111-4111-8111-111111111111",
+       "name": "Stock check",
+       "description": "Daily stock check",
+       "enabled": true,
+       "status": "active",
+       "goal": "Keep stock up",
+       "systemPromptOverlay": "",
+       "steps": [
+        {
+         "id": "check",
+         "description": "Check stock levels"
+        },
+        {
+         "id": "post",
+         "description": "Post the list"
+        }
+       ],
+       "cron": "0 9 * * *",
+       "cronTimezone": "Europe/Paris",
+       "cronEnabled": true,
+       "networkHosts": [],
+       "dailyRunBudget": null,
+       "outputContract": null,
+       "ownerUserId": "",
+       "createdAt": "2026-11-01T00:00:00.000Z",
+       "updatedAt": "2026-11-12T00:00:00.000Z"
+      },
+      "subscription": {
+       "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+       "workflowId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+       "sourceKind": "source_change",
+       "filter": {
+        "table": "products",
+        "where": {
+         "qty": {
+          "lt": 5
+         },
+         "active": {
+          "eq": true
+         }
+        },
+        "primary_key": [
+         "id",
+         "sku"
+        ]
+       },
+       "enabled": true,
+       "idempotencyKeyTemplate": "{id}-{sku}"
+      }
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"action\":\"updated\",\"workflowId\":\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\",\"name\":\"Stock check\",\"triggerId\":\"cccccccc-cccc-4ccc-8ccc-cccccccccccc\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "saveWorkflowWithTrigger",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "name": "Stock check",
+      "description": "Daily stock check",
+      "goal": "Keep stock up",
+      "systemPromptOverlay": "Be brief.",
+      "steps": [
+       {
+        "id": "check",
+        "description": "Check stock levels"
+       },
+       {
+        "id": "run",
+        "description": "Run the export",
+        "script": {
+         "skill": "stock-export",
+         "command": [
+          "python3",
+          "${SKILL_DIR}/run.py",
+          "${input.sku:-all}"
+         ],
+         "timeoutSeconds": 60
+        }
+       }
+      ],
+      "batch": {
+       "recordsField": "orders",
+       "columns": [
+        {
+         "name": "Order",
+         "path": "order.id"
+        },
+        {
+         "name": "Total",
+         "path": "total",
+         "default": 0
+        },
+        {
+         "name": "Note",
+         "path": "note",
+         "default": null
+        }
+       ]
+      },
+      "triggers": {
+       "cron": "0 9 * * *",
+       "timezone": "Europe/Paris",
+       "enabled": true,
+       "when": {
+        "table": "products",
+        "where": {
+         "qty": {
+          "lt": 5
+         }
+        },
+        "select": [
+         "id",
+         "qty"
+        ],
+        "primary_key": [
+         "id"
+        ],
+        "version_column": "updated_at",
+        "enabled": false,
+        "idempotency_key_template": "{id}",
+        "acknowledge_mutation_loop": true
+       },
+       "watch": {
+        "query": "{ products { count } }",
+        "value_path": "products.0.count",
+        "op": "lt",
+        "threshold": 5,
+        "cadence_seconds": 600,
+        "debounce_seconds": 0,
+        "severity": "high"
+       }
+      },
+      "createdByThreadId": "22222222-2222-4222-8222-222222222222",
+      "createdByRunId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "workflow-save-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "catalogId": "urn:app:catalog:briefing:v1"
+       }
+      },
+      {
+       "version": "v1.0",
+       "updateComponents": {
+        "surfaceId": "workflow-save-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "components": [
+         {
+          "id": "root",
+          "component": "Confirmation",
+          "label": "Updated workflow",
+          "title": "Stock check",
+          "children": [
+           "body"
+          ]
+         },
+         {
+          "id": "body",
+          "component": "Markdown",
+          "text": "**Stock check** — 2 step(s) (cron `0 9 * * *` Europe/Paris).\n\nDaily stock check\n\n[Open detail](/workflows?id=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb)"
+         }
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "subscription-save-cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        "catalogId": "urn:app:catalog:briefing:v1"
+       }
+      },
+      {
+       "version": "v1.0",
+       "updateComponents": {
+        "surfaceId": "subscription-save-cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        "components": [
+         {
+          "id": "root",
+          "component": "Confirmation",
+          "label": "Trigger added",
+          "title": "Stock check",
+          "children": [
+           "body"
+          ]
+         },
+         {
+          "id": "body",
+          "component": "Markdown",
+          "text": "**Stock check** will fire on changes to `products` (pk: `id, sku`).\n\n**Filter columns:** `qty`, `active`\n**Idempotency key:** `{id}-{sku}`\n\n[Open detail](/workflows?id=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb)"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "workflow trigger with no filter",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_create_workflow",
+   "arguments": {
+    "name": "Stock check",
+    "steps": [
+     {
+      "id": "check",
+      "description": "Check stock levels"
+     },
+     {
+      "id": "post",
+      "description": "Post the list"
+     }
+    ],
+    "batch": null,
+    "triggers": {
+     "when": {
+      "table": "products",
+      "primary_key": [
+       "id"
+      ]
+     }
+    }
+   },
+   "replies": {
+    "saveWorkflowWithTrigger": {
+     "value": {
+      "action": "created",
+      "workflow": {
+       "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+       "orgId": "11111111-1111-4111-8111-111111111111",
+       "name": "Stock check",
+       "description": "Daily stock check",
+       "enabled": true,
+       "status": "active",
+       "goal": "Keep stock up",
+       "systemPromptOverlay": "",
+       "steps": [
+        {
+         "id": "check",
+         "description": "Check stock levels"
+        },
+        {
+         "id": "post",
+         "description": "Post the list"
+        }
+       ],
+       "cron": "0 9 * * *",
+       "cronTimezone": "Europe/Paris",
+       "cronEnabled": true,
+       "networkHosts": [],
+       "dailyRunBudget": null,
+       "outputContract": null,
+       "ownerUserId": "",
+       "createdAt": "2026-11-01T00:00:00.000Z",
+       "updatedAt": "2026-11-12T00:00:00.000Z"
+      },
+      "subscription": {
+       "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+       "workflowId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+       "sourceKind": "source_change",
+       "filter": {
+        "table": "products",
+        "primary_key": [
+         "id"
+        ],
+        "where": {}
+       },
+       "enabled": true,
+       "idempotencyKeyTemplate": null
+      }
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"action\":\"created\",\"workflowId\":\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\",\"name\":\"Stock check\",\"triggerId\":\"cccccccc-cccc-4ccc-8ccc-cccccccccccc\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "saveWorkflowWithTrigger",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "name": "Stock check",
+      "steps": [
+       {
+        "id": "check",
+        "description": "Check stock levels"
+       },
+       {
+        "id": "post",
+        "description": "Post the list"
+       }
+      ],
+      "batch": null,
+      "triggers": {
+       "when": {
+        "table": "products",
+        "primary_key": [
+         "id"
+        ]
+       }
+      },
+      "createdByThreadId": "22222222-2222-4222-8222-222222222222",
+      "createdByRunId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "workflow-save-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "catalogId": "urn:app:catalog:briefing:v1"
+       }
+      },
+      {
+       "version": "v1.0",
+       "updateComponents": {
+        "surfaceId": "workflow-save-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "components": [
+         {
+          "id": "root",
+          "component": "Confirmation",
+          "label": "Created workflow",
+          "title": "Stock check",
+          "children": [
+           "body"
+          ]
+         },
+         {
+          "id": "body",
+          "component": "Markdown",
+          "text": "**Stock check** — 2 step(s) (cron `0 9 * * *` Europe/Paris).\n\nDaily stock check\n\n[Open detail](/workflows?id=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb)"
+         }
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "subscription-save-cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        "catalogId": "urn:app:catalog:briefing:v1"
+       }
+      },
+      {
+       "version": "v1.0",
+       "updateComponents": {
+        "surfaceId": "subscription-save-cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        "components": [
+         {
+          "id": "root",
+          "component": "Confirmation",
+          "label": "Trigger added",
+          "title": "Stock check",
+          "children": [
+           "body"
+          ]
+         },
+         {
+          "id": "body",
+          "component": "Markdown",
+          "text": "**Stock check** will fire on changes to `products` (pk: `id`).\n\n**Filter columns:** _(no filter)_\n\n[Open detail](/workflows?id=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb)"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "workflow trigger odd filter",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_create_workflow",
+   "arguments": {
+    "name": "Stock check",
+    "steps": [
+     {
+      "id": "check",
+      "description": "Check stock levels"
+     },
+     {
+      "id": "post",
+      "description": "Post the list"
+     }
+    ]
+   },
+   "replies": {
+    "saveWorkflowWithTrigger": {
+     "value": {
+      "action": "created",
+      "workflow": {
+       "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+       "orgId": "11111111-1111-4111-8111-111111111111",
+       "name": "Stock check",
+       "description": "Daily stock check",
+       "enabled": true,
+       "status": "active",
+       "goal": "Keep stock up",
+       "systemPromptOverlay": "",
+       "steps": [
+        {
+         "id": "check",
+         "description": "Check stock levels"
+        },
+        {
+         "id": "post",
+         "description": "Post the list"
+        }
+       ],
+       "cron": "0 9 * * *",
+       "cronTimezone": "UTC",
+       "cronEnabled": true,
+       "networkHosts": [],
+       "dailyRunBudget": null,
+       "outputContract": null,
+       "ownerUserId": "",
+       "createdAt": "2026-11-01T00:00:00.000Z",
+       "updatedAt": "2026-11-12T00:00:00.000Z"
+      },
+      "subscription": {
+       "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+       "workflowId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+       "sourceKind": "source_change",
+       "filter": {
+        "table": 7,
+        "primary_key": "id"
+       },
+       "enabled": true,
+       "idempotencyKeyTemplate": "{id}-{sku}"
+      }
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"action\":\"created\",\"workflowId\":\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\",\"name\":\"Stock check\",\"triggerId\":\"cccccccc-cccc-4ccc-8ccc-cccccccccccc\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "saveWorkflowWithTrigger",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "name": "Stock check",
+      "steps": [
+       {
+        "id": "check",
+        "description": "Check stock levels"
+       },
+       {
+        "id": "post",
+        "description": "Post the list"
+       }
+      ],
+      "createdByThreadId": "22222222-2222-4222-8222-222222222222",
+      "createdByRunId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "workflow-save-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "catalogId": "urn:app:catalog:briefing:v1"
+       }
+      },
+      {
+       "version": "v1.0",
+       "updateComponents": {
+        "surfaceId": "workflow-save-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "components": [
+         {
+          "id": "root",
+          "component": "Confirmation",
+          "label": "Created workflow",
+          "title": "Stock check",
+          "children": [
+           "body"
+          ]
+         },
+         {
+          "id": "body",
+          "component": "Markdown",
+          "text": "**Stock check** — 2 step(s) (cron `0 9 * * *` UTC).\n\nDaily stock check\n\n[Open detail](/workflows?id=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb)"
+         }
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "subscription-save-cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        "catalogId": "urn:app:catalog:briefing:v1"
+       }
+      },
+      {
+       "version": "v1.0",
+       "updateComponents": {
+        "surfaceId": "subscription-save-cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        "components": [
+         {
+          "id": "root",
+          "component": "Confirmation",
+          "label": "Trigger added",
+          "title": "Stock check",
+          "children": [
+           "body"
+          ]
+         },
+         {
+          "id": "body",
+          "component": "Markdown",
+          "text": "**Stock check** will fire on changes to `?` (pk: `?`).\n\n**Filter columns:** _(no filter)_\n**Idempotency key:** `{id}-{sku}`\n\n[Open detail](/workflows?id=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb)"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "workflow trigger error",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_create_workflow",
+   "arguments": {
+    "name": "Stock check",
+    "steps": [
+     {
+      "id": "check",
+      "description": "Check stock levels"
+     },
+     {
+      "id": "post",
+      "description": "Post the list"
+     }
+    ],
+    "triggers": {
+     "when": {
+      "table": "products",
+      "primary_key": [
+       "id"
+      ]
+     }
+    }
+   },
+   "replies": {
+    "saveWorkflowWithTrigger": {
+     "value": {
+      "action": "updated",
+      "workflow": {
+       "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+       "orgId": "11111111-1111-4111-8111-111111111111",
+       "name": "Stock check",
+       "description": "Daily stock check",
+       "enabled": true,
+       "status": "active",
+       "goal": "Keep stock up",
+       "systemPromptOverlay": "",
+       "steps": [
+        {
+         "id": "check",
+         "description": "Check stock levels"
+        },
+        {
+         "id": "post",
+         "description": "Post the list"
+        }
+       ],
+       "cron": "0 9 * * *",
+       "cronTimezone": "Europe/Paris",
+       "cronEnabled": true,
+       "networkHosts": [],
+       "dailyRunBudget": null,
+       "outputContract": null,
+       "ownerUserId": "",
+       "createdAt": "2026-11-01T00:00:00.000Z",
+       "updatedAt": "2026-11-12T00:00:00.000Z"
+      },
+      "triggerError": {
+       "code": "mutation_loop",
+       "message": "loops"
+      }
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"action\":\"updated\",\"workflowId\":\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\",\"name\":\"Stock check\",\"triggerError\":{\"code\":\"mutation_loop\",\"message\":\"loops\"},\"hint\":\"The workflow was saved but the data trigger was not wired. Fix the trigger and call create_workflow again with the same name.\"}"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "saveWorkflowWithTrigger",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "name": "Stock check",
+      "steps": [
+       {
+        "id": "check",
+        "description": "Check stock levels"
+       },
+       {
+        "id": "post",
+        "description": "Post the list"
+       }
+      ],
+      "triggers": {
+       "when": {
+        "table": "products",
+        "primary_key": [
+         "id"
+        ]
+       }
+      },
+      "createdByThreadId": "22222222-2222-4222-8222-222222222222",
+      "createdByRunId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "workflow-save-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "catalogId": "urn:app:catalog:briefing:v1"
+       }
+      },
+      {
+       "version": "v1.0",
+       "updateComponents": {
+        "surfaceId": "workflow-save-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "components": [
+         {
+          "id": "root",
+          "component": "Confirmation",
+          "label": "Updated workflow",
+          "title": "Stock check",
+          "children": [
+           "body"
+          ]
+         },
+         {
+          "id": "body",
+          "component": "Markdown",
+          "text": "**Stock check** — 2 step(s) (cron `0 9 * * *` Europe/Paris).\n\nDaily stock check\n\n[Open detail](/workflows?id=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb)"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "workflow save fails",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_create_workflow",
+   "arguments": {
+    "name": "Stock check",
+    "steps": [
+     {
+      "id": "check",
+      "description": "Check stock levels"
+     },
+     {
+      "id": "post",
+      "description": "Post the list"
+     }
+    ]
+   },
+   "replies": {
+    "saveWorkflowWithTrigger": {
+     "throws": "A workflow named \"Stock check\" exists and this run cannot change it. Choose another name."
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "A workflow named \"Stock check\" exists and this run cannot change it. Choose another name."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "saveWorkflowWithTrigger",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "name": "Stock check",
+      "steps": [
+       {
+        "id": "check",
+        "description": "Check stock levels"
+       },
+       {
+        "id": "post",
+        "description": "Post the list"
+       }
+      ],
+      "createdByThreadId": "22222222-2222-4222-8222-222222222222",
+      "createdByRunId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "workflow events fail",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "eventsFail": true,
+   "tool": "workflow_builder_create_workflow",
+   "arguments": {
+    "name": "Stock check",
+    "steps": [
+     {
+      "id": "check",
+      "description": "Check stock levels"
+     },
+     {
+      "id": "post",
+      "description": "Post the list"
+     }
+    ]
+   },
+   "replies": {
+    "saveWorkflowWithTrigger": {
+     "value": {
+      "action": "created",
+      "workflow": {
+       "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+       "orgId": "11111111-1111-4111-8111-111111111111",
+       "name": "Stock check",
+       "description": "Daily stock check",
+       "enabled": true,
+       "status": "active",
+       "goal": "Keep stock up",
+       "systemPromptOverlay": "",
+       "steps": [
+        {
+         "id": "check",
+         "description": "Check stock levels"
+        },
+        {
+         "id": "post",
+         "description": "Post the list"
+        }
+       ],
+       "cron": "0 9 * * *",
+       "cronTimezone": "Europe/Paris",
+       "cronEnabled": true,
+       "networkHosts": [],
+       "dailyRunBudget": null,
+       "outputContract": null,
+       "ownerUserId": "",
+       "createdAt": "2026-11-01T00:00:00.000Z",
+       "updatedAt": "2026-11-12T00:00:00.000Z"
+      }
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "broker /v1/events -> 500"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "saveWorkflowWithTrigger",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "name": "Stock check",
+      "steps": [
+       {
+        "id": "check",
+        "description": "Check stock levels"
+       },
+       {
+        "id": "post",
+        "description": "Post the list"
+       }
+      ],
+      "createdByThreadId": "22222222-2222-4222-8222-222222222222",
+      "createdByRunId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "workflow argument faults",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_create_workflow",
+   "arguments": {
+    "name": "  ",
+    "description": 5,
+    "steps": [
+     {
+      "id": "",
+      "description": "ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "script": {
+       "skill": "Bad Skill",
+       "command": [],
+       "timeoutSeconds": 0.5
+      }
+     },
+     "x"
+    ],
+    "batch": {
+     "recordsField": "1st",
+     "columns": [
+      {
+       "name": "a\nb",
+       "path": ""
+      },
+      {
+       "name": "c",
+       "path": "p",
+       "default": [
+        1
+       ]
+      }
+     ]
+    },
+    "triggers": {
+     "cron": "",
+     "when": {
+      "table": "t",
+      "primary_key": []
+     },
+     "watch": {
+      "query": "q",
+      "value_path": "",
+      "op": "between",
+      "threshold": true,
+      "cadence_seconds": 30,
+      "debounce_seconds": 604801,
+      "severity": "urgent"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool create_workflow: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"name\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"description\"\n    ],\n    \"message\": \"Invalid input: expected string, received number\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"steps\",\n      0,\n      \"id\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 2000,\n    \"inclusive\": true,\n    \"path\": [\n      \"steps\",\n      0,\n      \"description\"\n    ],\n    \"message\": \"Too big: expected string to have <=2000 characters\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"invalid_format\",\n    \"format\": \"regex\",\n    \"pattern\": \"/^[a-z0-9]+(?:-[a-z0-9]+)*$/\",\n    \"path\": [\n      \"steps\",\n      0,\n      \"script\",\n      \"skill\"\n    ],\n    \"message\": \"Invalid string: must match pattern /^[a-z0-9]+(?:-[a-z0-9]+)*$/\"\n  },\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"steps\",\n      0,\n      \"script\",\n      \"command\"\n    ],\n    \"message\": \"Too small: expected array to have >=1 items\"\n  },\n  {\n    \"expected\": \"int\",\n    \"format\": \"safeint\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"steps\",\n      0,\n      \"script\",\n      \"timeoutSeconds\"\n    ],\n    \"message\": \"Invalid input: expected int, received number\"\n  },\n  {\n    \"expected\": \"object\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"steps\",\n      1\n    ],\n    \"message\": \"Invalid input: expected object, received string\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"invalid_format\",\n    \"format\": \"regex\",\n    \"pattern\": \"/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/\",\n    \"path\": [\n      \"batch\",\n      \"recordsField\"\n    ],\n    \"message\": \"Invalid string: must match pattern /^[a-zA-Z][a-zA-Z0-9_]{0,63}$/\"\n  },\n  {\n    \"code\": \"custom\",\n    \"path\": [\n      \"batch\",\n      \"columns\",\n      0,\n      \"name\"\n    ],\n    \"message\": \"Invalid input\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"batch\",\n      \"columns\",\n      0,\n      \"path\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"code\": \"invalid_union\",\n    \"errors\": [\n      [\n        {\n          \"expected\": \"string\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected string, received array\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"number\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected number, received array\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"boolean\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected boolean, received array\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"null\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected null, received array\"\n        }\n      ]\n    ],\n    \"path\": [\n      \"batch\",\n      \"columns\",\n      1,\n      \"default\"\n    ],\n    \"message\": \"Invalid input\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"triggers\",\n      \"cron\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"triggers\",\n      \"when\",\n      \"primary_key\"\n    ],\n    \"message\": \"Too small: expected array to have >=1 items\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 3,\n    \"inclusive\": true,\n    \"path\": [\n      \"triggers\",\n      \"watch\",\n      \"query\"\n    ],\n    \"message\": \"Too small: expected string to have >=3 characters\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"triggers\",\n      \"watch\",\n      \"value_path\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"gt\",\n      \"gte\",\n      \"lt\",\n      \"lte\",\n      \"eq\",\n      \"ne\",\n      \"changed\"\n    ],\n    \"path\": [\n      \"triggers\",\n      \"watch\",\n      \"op\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"gt\\\"|\\\"gte\\\"|\\\"lt\\\"|\\\"lte\\\"|\\\"eq\\\"|\\\"ne\\\"|\\\"changed\\\"\"\n  },\n  {\n    \"code\": \"invalid_union\",\n    \"errors\": [\n      [\n        {\n          \"expected\": \"number\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected number, received boolean\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"string\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected string, received boolean\"\n        }\n      ]\n    ],\n    \"path\": [\n      \"triggers\",\n      \"watch\",\n      \"threshold\"\n    ],\n    \"message\": \"Invalid input\"\n  },\n  {\n    \"origin\": \"number\",\n    \"code\": \"too_small\",\n    \"minimum\": 60,\n    \"inclusive\": true,\n    \"path\": [\n      \"triggers\",\n      \"watch\",\n      \"cadence_seconds\"\n    ],\n    \"message\": \"Too small: expected number to be >=60\"\n  },\n  {\n    \"origin\": \"number\",\n    \"code\": \"too_big\",\n    \"maximum\": 604800,\n    \"inclusive\": true,\n    \"path\": [\n      \"triggers\",\n      \"watch\",\n      \"debounce_seconds\"\n    ],\n    \"message\": \"Too big: expected number to be <=604800\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"low\",\n      \"medium\",\n      \"high\",\n      \"critical\"\n    ],\n    \"path\": [\n      \"triggers\",\n      \"watch\",\n      \"severity\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"low\\\"|\\\"medium\\\"|\\\"high\\\"|\\\"critical\\\"\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "workflow missing fields",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_create_workflow",
+   "arguments": {},
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool create_workflow: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"name\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"array\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"steps\"\n    ],\n    \"message\": \"Invalid input: expected array, received undefined\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "workflow wrong types",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_create_workflow",
+   "arguments": {
+    "name": 1,
+    "steps": "one",
+    "batch": "b",
+    "triggers": []
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool create_workflow: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"name\"\n    ],\n    \"message\": \"Invalid input: expected string, received number\"\n  },\n  {\n    \"expected\": \"array\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"steps\"\n    ],\n    \"message\": \"Invalid input: expected array, received string\"\n  },\n  {\n    \"expected\": \"object\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"batch\"\n    ],\n    \"message\": \"Invalid input: expected object, received string\"\n  },\n  {\n    \"expected\": \"object\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"triggers\"\n    ],\n    \"message\": \"Invalid input: expected object, received array\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "workflow nested wrong types",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_create_workflow",
+   "arguments": {
+    "name": "n",
+    "steps": [
+     {
+      "id": "a",
+      "description": "b",
+      "script": "s"
+     }
+    ],
+    "batch": {
+     "columns": []
+    },
+    "triggers": {
+     "enabled": "yes",
+     "when": "w",
+     "watch": {
+      "query": 5,
+      "value_path": "a",
+      "op": "gt",
+      "threshold": null
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool create_workflow: [\n  {\n    \"expected\": \"object\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"steps\",\n      0,\n      \"script\"\n    ],\n    \"message\": \"Invalid input: expected object, received string\"\n  },\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"batch\",\n      \"columns\"\n    ],\n    \"message\": \"Too small: expected array to have >=1 items\"\n  },\n  {\n    \"expected\": \"boolean\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"triggers\",\n      \"enabled\"\n    ],\n    \"message\": \"Invalid input: expected boolean, received string\"\n  },\n  {\n    \"expected\": \"object\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"triggers\",\n      \"when\"\n    ],\n    \"message\": \"Invalid input: expected object, received string\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"triggers\",\n      \"watch\",\n      \"query\"\n    ],\n    \"message\": \"Invalid input: expected string, received number\"\n  },\n  {\n    \"code\": \"invalid_union\",\n    \"errors\": [\n      [\n        {\n          \"expected\": \"number\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected number, received null\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"string\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected string, received null\"\n        }\n      ]\n    ],\n    \"path\": [\n      \"triggers\",\n      \"watch\",\n      \"threshold\"\n    ],\n    \"message\": \"Invalid input\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "workflow long name and too many steps",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_create_workflow",
+   "arguments": {
+    "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+    "steps": [
+     {
+      "id": "s0",
+      "description": "d"
+     },
+     {
+      "id": "s1",
+      "description": "d"
+     },
+     {
+      "id": "s2",
+      "description": "d"
+     },
+     {
+      "id": "s3",
+      "description": "d"
+     },
+     {
+      "id": "s4",
+      "description": "d"
+     },
+     {
+      "id": "s5",
+      "description": "d"
+     },
+     {
+      "id": "s6",
+      "description": "d"
+     },
+     {
+      "id": "s7",
+      "description": "d"
+     },
+     {
+      "id": "s8",
+      "description": "d"
+     },
+     {
+      "id": "s9",
+      "description": "d"
+     },
+     {
+      "id": "s10",
+      "description": "d"
+     },
+     {
+      "id": "s11",
+      "description": "d"
+     },
+     {
+      "id": "s12",
+      "description": "d"
+     },
+     {
+      "id": "s13",
+      "description": "d"
+     },
+     {
+      "id": "s14",
+      "description": "d"
+     },
+     {
+      "id": "s15",
+      "description": "d"
+     },
+     {
+      "id": "s16",
+      "description": "d"
+     },
+     {
+      "id": "s17",
+      "description": "d"
+     },
+     {
+      "id": "s18",
+      "description": "d"
+     },
+     {
+      "id": "s19",
+      "description": "d"
+     },
+     {
+      "id": "s20",
+      "description": "d"
+     },
+     {
+      "id": "s21",
+      "description": "d"
+     },
+     {
+      "id": "s22",
+      "description": "d"
+     },
+     {
+      "id": "s23",
+      "description": "d"
+     },
+     {
+      "id": "s24",
+      "description": "d"
+     },
+     {
+      "id": "s25",
+      "description": "d"
+     },
+     {
+      "id": "s26",
+      "description": "d"
+     },
+     {
+      "id": "s27",
+      "description": "d"
+     },
+     {
+      "id": "s28",
+      "description": "d"
+     },
+     {
+      "id": "s29",
+      "description": "d"
+     },
+     {
+      "id": "s30",
+      "description": "d"
+     },
+     {
+      "id": "s31",
+      "description": "d"
+     },
+     {
+      "id": "s32",
+      "description": "d"
+     },
+     {
+      "id": "s33",
+      "description": "d"
+     },
+     {
+      "id": "s34",
+      "description": "d"
+     },
+     {
+      "id": "s35",
+      "description": "d"
+     },
+     {
+      "id": "s36",
+      "description": "d"
+     },
+     {
+      "id": "s37",
+      "description": "d"
+     },
+     {
+      "id": "s38",
+      "description": "d"
+     },
+     {
+      "id": "s39",
+      "description": "d"
+     },
+     {
+      "id": "s40",
+      "description": "d"
+     }
+    ],
+    "triggers": {
+     "when": {
+      "table": "t",
+      "primary_key": [
+       "a",
+       "b",
+       "c",
+       "d",
+       "e",
+       "f",
+       "g",
+       "h",
+       "i"
+      ],
+      "where": [],
+      "select": [
+       ""
+      ]
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool create_workflow: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 120,\n    \"inclusive\": true,\n    \"path\": [\n      \"name\"\n    ],\n    \"message\": \"Too big: expected string to have <=120 characters\"\n  },\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_big\",\n    \"maximum\": 40,\n    \"inclusive\": true,\n    \"path\": [\n      \"steps\"\n    ],\n    \"message\": \"Too big: expected array to have <=40 items\"\n  },\n  {\n    \"expected\": \"record\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"triggers\",\n      \"when\",\n      \"where\"\n    ],\n    \"message\": \"Invalid input: expected record, received array\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"triggers\",\n      \"when\",\n      \"select\",\n      0\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_big\",\n    \"maximum\": 8,\n    \"inclusive\": true,\n    \"path\": [\n      \"triggers\",\n      \"when\",\n      \"primary_key\"\n    ],\n    \"message\": \"Too big: expected array to have <=8 items\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "workflow list",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_list_workflows",
+   "arguments": {
+    "limit": 2
+   },
+   "replies": {
+    "listWorkflowsWithTriggers": {
+     "value": {
+      "total": 3,
+      "workflows": [
+       {
+        "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "orgId": "11111111-1111-4111-8111-111111111111",
+        "name": "Stock check",
+        "description": "Daily stock check",
+        "enabled": true,
+        "status": "active",
+        "goal": "Keep stock up",
+        "systemPromptOverlay": "",
+        "steps": [
+         {
+          "id": "check",
+          "description": "Check stock levels"
+         },
+         {
+          "id": "post",
+          "description": "Post the list"
+         }
+        ],
+        "cron": "0 9 * * *",
+        "cronTimezone": "Europe/Paris",
+        "cronEnabled": true,
+        "networkHosts": [],
+        "dailyRunBudget": null,
+        "outputContract": {
+         "apiBatch": {
+          "version": 1,
+          "compiled": true,
+          "compiler": "workflow",
+          "recordsField": "orders",
+          "columns": [
+           {
+            "name": "Order",
+            "path": "order.id"
+           },
+           {
+            "name": "Total",
+            "path": "total",
+            "default": 0
+           }
+          ]
+         }
+        },
+        "ownerUserId": "",
+        "createdAt": "2026-11-01T00:00:00.000Z",
+        "updatedAt": "2026-11-12T00:00:00.000Z",
+        "when": {
+         "table": "products",
+         "where": {
+          "qty": {
+           "lt": 5
+          },
+          "active": {
+           "eq": true
+          }
+         },
+         "primary_key": [
+          "id",
+          "sku"
+         ]
+        }
+       },
+       {
+        "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        "orgId": "11111111-1111-4111-8111-111111111111",
+        "name": "Other",
+        "description": "Daily stock check",
+        "enabled": true,
+        "status": "active",
+        "goal": "Keep stock up",
+        "systemPromptOverlay": "",
+        "steps": [
+         {
+          "id": "check",
+          "description": "Check stock levels"
+         },
+         {
+          "id": "post",
+          "description": "Post the list"
+         }
+        ],
+        "cron": "0 9 * * *",
+        "cronTimezone": "Europe/Paris",
+        "cronEnabled": true,
+        "networkHosts": [],
+        "dailyRunBudget": null,
+        "outputContract": {
+         "apiBatch": {
+          "version": 2
+         }
+        },
+        "ownerUserId": "",
+        "createdAt": "2026-11-01T00:00:00.000Z",
+        "updatedAt": "2026-11-12T00:00:00.000Z",
+        "when": null
+       }
+      ]
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"total\":3,\"returned\":2,\"workflows\":[{\"id\":\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\",\"name\":\"Stock check\",\"description\":\"Daily stock check\",\"enabled\":true,\"status\":\"active\",\"goal\":\"Keep stock up\",\"systemPromptOverlay\":\"\",\"steps\":[{\"id\":\"check\",\"description\":\"Check stock levels\"},{\"id\":\"post\",\"description\":\"Post the list\"}],\"batch\":{\"recordsField\":\"orders\",\"columns\":[{\"name\":\"Order\",\"path\":\"order.id\"},{\"name\":\"Total\",\"path\":\"total\",\"default\":0}]},\"cron\":\"0 9 * * *\",\"cronTimezone\":\"Europe/Paris\",\"cronEnabled\":true,\"when\":{\"table\":\"products\",\"where\":{\"qty\":{\"lt\":5},\"active\":{\"eq\":true}},\"primary_key\":[\"id\",\"sku\"]},\"updatedAt\":\"2026-11-12T00:00:00.000Z\",\"createdAt\":\"2026-11-01T00:00:00.000Z\"},{\"id\":\"cccccccc-cccc-4ccc-8ccc-cccccccccccc\",\"name\":\"Other\",\"description\":\"Daily stock check\",\"enabled\":true,\"status\":\"active\",\"goal\":\"Keep stock up\",\"systemPromptOverlay\":\"\",\"steps\":[{\"id\":\"check\",\"description\":\"Check stock levels\"},{\"id\":\"post\",\"description\":\"Post the list\"}],\"batch\":null,\"cron\":\"0 9 * * *\",\"cronTimezone\":\"Europe/Paris\",\"cronEnabled\":true,\"when\":null,\"updatedAt\":\"2026-11-12T00:00:00.000Z\",\"createdAt\":\"2026-11-01T00:00:00.000Z\"}]}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listWorkflowsWithTriggers",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "limit": 2,
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "workflow list default limit",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_list_workflows",
+   "arguments": {},
+   "replies": {
+    "listWorkflowsWithTriggers": {
+     "value": {
+      "total": 0,
+      "workflows": []
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"total\":0,\"returned\":0,\"workflows\":[]}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listWorkflowsWithTriggers",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "limit": 50,
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "workflow list sparse rows",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_list_workflows",
+   "arguments": {},
+   "replies": {
+    "listWorkflowsWithTriggers": {
+     "value": {
+      "total": 1,
+      "workflows": [
+       {
+        "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "name": "Bare",
+        "goal": null,
+        "outputContract": {
+         "apiBatch": {
+          "version": 1,
+          "compiled": true,
+          "compiler": "workflow",
+          "recordsField": "9x",
+          "columns": [
+           {
+            "name": "A",
+            "path": "a.b",
+            "default": "z",
+            "extra": 1
+           }
+          ]
+         }
+        }
+       }
+      ]
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"total\":1,\"returned\":1,\"workflows\":[{\"id\":\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\",\"name\":\"Bare\",\"goal\":null,\"batch\":{\"recordsField\":\"records\",\"columns\":[{\"name\":\"A\",\"path\":\"a.b\",\"default\":\"z\"}]}}]}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listWorkflowsWithTriggers",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "limit": 50,
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "workflow list fails",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_list_workflows",
+   "arguments": {
+    "limit": 5
+   },
+   "replies": {
+    "listWorkflowsWithTriggers": {
+     "throws": "database is down"
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "database is down"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "listWorkflowsWithTriggers",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "limit": 5,
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "workflow list bad limit",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_list_workflows",
+   "arguments": {
+    "limit": 201
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool list_workflows: [\n  {\n    \"origin\": \"number\",\n    \"code\": \"too_big\",\n    \"maximum\": 200,\n    \"inclusive\": true,\n    \"path\": [\n      \"limit\"\n    ],\n    \"message\": \"Too big: expected number to be <=200\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "workflow delete",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_delete_workflow",
+   "arguments": {
+    "workflowId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+   },
+   "replies": {
+    "deleteWorkflow": {
+     "value": {
+      "found": true,
+      "name": "Stock check"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"deleted\":{\"id\":\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\",\"name\":\"Stock check\"}}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "deleteWorkflow",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "workflowId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "workflow-delete-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "catalogId": "urn:app:catalog:briefing:v1"
+       }
+      },
+      {
+       "version": "v1.0",
+       "updateComponents": {
+        "surfaceId": "workflow-delete-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "components": [
+         {
+          "id": "root",
+          "component": "Confirmation",
+          "label": "Deleted workflow",
+          "title": "Stock check",
+          "children": [
+           "body"
+          ]
+         },
+         {
+          "id": "body",
+          "component": "Markdown",
+          "text": "**Stock check** is gone, along with its triggers, run history, and proposed actions.\n\n[Open workflows](/workflows)"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "workflow delete not found",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_delete_workflow",
+   "arguments": {
+    "workflowId": "nope"
+   },
+   "replies": {
+    "deleteWorkflow": {
+     "value": {
+      "found": false,
+      "name": null
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"error\":\"not_found\",\"hint\":\"No workflow with that id in this org. Call list_workflows to get the current ids.\"}"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "deleteWorkflow",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "workflowId": "nope",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "workflow delete raced",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_delete_workflow",
+   "arguments": {
+    "workflowId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+   },
+   "replies": {
+    "deleteWorkflow": {
+     "value": {
+      "found": true,
+      "name": null
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"deleted\":{\"id\":\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\",\"name\":null}}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "deleteWorkflow",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "workflowId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "workflow delete events fail",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "eventsFail": true,
+   "tool": "workflow_builder_delete_workflow",
+   "arguments": {
+    "workflowId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+   },
+   "replies": {
+    "deleteWorkflow": {
+     "value": {
+      "found": true,
+      "name": "Stock check"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "broker /v1/events -> 500"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "deleteWorkflow",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "workflowId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "workflow delete empty id",
+   "servers": [
+    "neko_workflow_builder"
+   ],
+   "tool": "workflow_builder_delete_workflow",
+   "arguments": {
+    "workflowId": ""
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool delete_workflow: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"workflowId\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "rule save minimal",
+   "servers": [
+    "neko_rule_builder"
+   ],
+   "tool": "rule_builder_save_rule",
+   "arguments": {
+    "name": " slack_auto ",
+    "applies_to_kinds": [
+     " slack_post "
+    ],
+    "mode": "auto_approve"
+   },
+   "replies": {
+    "upsertActionPolicyByName": {
+     "value": {
+      "action": "created",
+      "policy": {
+       "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+       "orgId": "11111111-1111-4111-8111-111111111111",
+       "name": "slack_auto",
+       "description": "",
+       "appliesToKinds": [
+        "slack_post"
+       ],
+       "appliesToScopes": [
+        "external"
+       ],
+       "mode": "auto_approve",
+       "riskThresholdAutoApprove": "low",
+       "allowedTargets": {
+        "patterns": [
+         "C*"
+        ],
+        "on_miss": "next"
+       },
+       "deniedTargets": null,
+       "limits": {
+        "perDay": 20
+       },
+       "approverGroupId": null,
+       "priority": 100,
+       "enabled": true,
+       "createdByThreadId": null,
+       "createdByRunId": null,
+       "createdAt": "2026-11-01T00:00:00.000Z",
+       "updatedAt": "2026-11-02T00:00:00.000Z"
+      }
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"action\":\"created\",\"ruleId\":\"dddddddd-dddd-4ddd-8ddd-dddddddddddd\",\"name\":\"slack_auto\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "upsertActionPolicyByName",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "name": "slack_auto",
+      "description": "",
+      "appliesToKinds": [
+       "slack_post"
+      ],
+      "appliesToScopes": [
+       "external"
+      ],
+      "mode": "auto_approve",
+      "riskThresholdAutoApprove": null,
+      "allowedTargets": null,
+      "deniedTargets": null,
+      "limits": {},
+      "approverRole": null,
+      "priority": 100,
+      "enabled": true,
+      "createdByThreadId": "22222222-2222-4222-8222-222222222222",
+      "createdByRunId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "policy-save-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "catalogId": "urn:app:catalog:briefing:v1"
+       }
+      },
+      {
+       "version": "v1.0",
+       "updateComponents": {
+        "surfaceId": "policy-save-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "components": [
+         {
+          "id": "root",
+          "component": "Confirmation",
+          "label": "Created rule",
+          "title": "slack_auto",
+          "children": [
+           "body"
+          ]
+         },
+         {
+          "id": "body",
+          "component": "Markdown",
+          "text": "**Mode:** `auto_approve` • **Scopes:** external • **Priority:** 100\n\n**Kinds:** `slack_post`\n\n_No description._\n\n[Open detail](/admin/rules/dddddddd-dddd-4ddd-8ddd-dddddddddddd)"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "rule save full",
+   "servers": [
+    "neko_rule_builder"
+   ],
+   "tool": "rule_builder_save_rule",
+   "arguments": {
+    "name": "slack_auto",
+    "description": "Auto-post to Slack",
+    "applies_to_kinds": [],
+    "applies_to_scopes": [
+     "internal",
+     "external"
+    ],
+    "mode": "approval_required",
+    "risk_threshold_auto_approve": "low",
+    "allowed_targets": {
+     "patterns": [
+      "C*"
+     ],
+     "on_miss": "next"
+    },
+    "denied_targets": {
+     "patterns": [
+      "C9"
+     ]
+    },
+    "limits": {
+     "perDay": 20
+    },
+    "approver_role": "admin",
+    "priority": 0,
+    "enabled": false
+   },
+   "replies": {
+    "upsertActionPolicyByName": {
+     "value": {
+      "action": "updated",
+      "policy": {
+       "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+       "orgId": "11111111-1111-4111-8111-111111111111",
+       "name": "slack_auto",
+       "description": "Auto-post to Slack",
+       "appliesToKinds": [],
+       "appliesToScopes": [],
+       "mode": "auto_approve",
+       "riskThresholdAutoApprove": "low",
+       "allowedTargets": {
+        "patterns": [
+         "C*"
+        ],
+        "on_miss": "next"
+       },
+       "deniedTargets": null,
+       "limits": {
+        "perDay": 20
+       },
+       "approverGroupId": null,
+       "priority": 50,
+       "enabled": true,
+       "createdByThreadId": null,
+       "createdByRunId": null,
+       "createdAt": "2026-11-01T00:00:00.000Z",
+       "updatedAt": "2026-11-02T00:00:00.000Z"
+      }
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"action\":\"updated\",\"ruleId\":\"dddddddd-dddd-4ddd-8ddd-dddddddddddd\",\"name\":\"slack_auto\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "upsertActionPolicyByName",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "name": "slack_auto",
+      "description": "Auto-post to Slack",
+      "appliesToKinds": [],
+      "appliesToScopes": [
+       "internal",
+       "external"
+      ],
+      "mode": "approval_required",
+      "riskThresholdAutoApprove": "low",
+      "allowedTargets": {
+       "patterns": [
+        "C*"
+       ],
+       "on_miss": "next"
+      },
+      "deniedTargets": {
+       "patterns": [
+        "C9"
+       ]
+      },
+      "limits": {
+       "perDay": 20
+      },
+      "approverRole": "admin",
+      "priority": 0,
+      "enabled": false,
+      "createdByThreadId": "22222222-2222-4222-8222-222222222222",
+      "createdByRunId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "policy-save-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "catalogId": "urn:app:catalog:briefing:v1"
+       }
+      },
+      {
+       "version": "v1.0",
+       "updateComponents": {
+        "surfaceId": "policy-save-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "components": [
+         {
+          "id": "root",
+          "component": "Confirmation",
+          "label": "Updated rule",
+          "title": "slack_auto",
+          "children": [
+           "body"
+          ]
+         },
+         {
+          "id": "body",
+          "component": "Markdown",
+          "text": "**Mode:** `auto_approve` • **Scopes:** — • **Priority:** 50\n\n**Kinds:** _(all kinds)_\n\nAuto-post to Slack\n\n[Open detail](/admin/rules/dddddddd-dddd-4ddd-8ddd-dddddddddddd)"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "rule save other role",
+   "servers": [
+    "neko_rule_builder"
+   ],
+   "tool": "rule_builder_save_rule",
+   "arguments": {
+    "name": "r",
+    "applies_to_kinds": [
+     "a"
+    ],
+    "mode": "never",
+    "approver_role": " finance "
+   },
+   "replies": {
+    "upsertActionPolicyByName": {
+     "value": {
+      "action": "created",
+      "policy": {
+       "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+       "orgId": "11111111-1111-4111-8111-111111111111",
+       "name": "slack_auto",
+       "description": "Auto-post to Slack",
+       "appliesToKinds": [
+        "slack_post",
+        "slack_dm"
+       ],
+       "appliesToScopes": [
+        "internal",
+        "external"
+       ],
+       "mode": "auto_approve",
+       "riskThresholdAutoApprove": "low",
+       "allowedTargets": {
+        "patterns": [
+         "C*"
+        ],
+        "on_miss": "next"
+       },
+       "deniedTargets": null,
+       "limits": {
+        "perDay": 20
+       },
+       "approverGroupId": null,
+       "priority": 50,
+       "enabled": true,
+       "createdByThreadId": null,
+       "createdByRunId": null,
+       "createdAt": "2026-11-01T00:00:00.000Z",
+       "updatedAt": "2026-11-02T00:00:00.000Z"
+      }
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"action\":\"created\",\"ruleId\":\"dddddddd-dddd-4ddd-8ddd-dddddddddddd\",\"name\":\"slack_auto\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "upsertActionPolicyByName",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "name": "r",
+      "description": "",
+      "appliesToKinds": [
+       "a"
+      ],
+      "appliesToScopes": [
+       "external"
+      ],
+      "mode": "never",
+      "riskThresholdAutoApprove": null,
+      "allowedTargets": null,
+      "deniedTargets": null,
+      "limits": {},
+      "approverRole": null,
+      "priority": 100,
+      "enabled": true,
+      "createdByThreadId": "22222222-2222-4222-8222-222222222222",
+      "createdByRunId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "policy-save-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "catalogId": "urn:app:catalog:briefing:v1"
+       }
+      },
+      {
+       "version": "v1.0",
+       "updateComponents": {
+        "surfaceId": "policy-save-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "components": [
+         {
+          "id": "root",
+          "component": "Confirmation",
+          "label": "Created rule",
+          "title": "slack_auto",
+          "children": [
+           "body"
+          ]
+         },
+         {
+          "id": "body",
+          "component": "Markdown",
+          "text": "**Mode:** `auto_approve` • **Scopes:** internal, external • **Priority:** 50\n\n**Kinds:** `slack_post`, `slack_dm`\n\nAuto-post to Slack\n\n[Open detail](/admin/rules/dddddddd-dddd-4ddd-8ddd-dddddddddddd)"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "rule save fails",
+   "servers": [
+    "neko_rule_builder"
+   ],
+   "tool": "rule_builder_save_rule",
+   "arguments": {
+    "name": "r",
+    "applies_to_kinds": [],
+    "mode": "never"
+   },
+   "replies": {
+    "upsertActionPolicyByName": {
+     "throws": "built-in group administrators is missing"
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "built-in group administrators is missing"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "upsertActionPolicyByName",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "name": "r",
+      "description": "",
+      "appliesToKinds": [],
+      "appliesToScopes": [
+       "external"
+      ],
+      "mode": "never",
+      "riskThresholdAutoApprove": null,
+      "allowedTargets": null,
+      "deniedTargets": null,
+      "limits": {},
+      "approverRole": null,
+      "priority": 100,
+      "enabled": true,
+      "createdByThreadId": "22222222-2222-4222-8222-222222222222",
+      "createdByRunId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "rule save events fail",
+   "servers": [
+    "neko_rule_builder"
+   ],
+   "eventsFail": true,
+   "tool": "rule_builder_save_rule",
+   "arguments": {
+    "name": "r",
+    "applies_to_kinds": [],
+    "mode": "never"
+   },
+   "replies": {
+    "upsertActionPolicyByName": {
+     "value": {
+      "action": "created",
+      "policy": {
+       "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+       "orgId": "11111111-1111-4111-8111-111111111111",
+       "name": "slack_auto",
+       "description": "Auto-post to Slack",
+       "appliesToKinds": [
+        "slack_post",
+        "slack_dm"
+       ],
+       "appliesToScopes": [
+        "internal",
+        "external"
+       ],
+       "mode": "auto_approve",
+       "riskThresholdAutoApprove": "low",
+       "allowedTargets": {
+        "patterns": [
+         "C*"
+        ],
+        "on_miss": "next"
+       },
+       "deniedTargets": null,
+       "limits": {
+        "perDay": 20
+       },
+       "approverGroupId": null,
+       "priority": 50,
+       "enabled": true,
+       "createdByThreadId": null,
+       "createdByRunId": null,
+       "createdAt": "2026-11-01T00:00:00.000Z",
+       "updatedAt": "2026-11-02T00:00:00.000Z"
+      }
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "broker /v1/events -> 500"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "upsertActionPolicyByName",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "name": "r",
+      "description": "",
+      "appliesToKinds": [],
+      "appliesToScopes": [
+       "external"
+      ],
+      "mode": "never",
+      "riskThresholdAutoApprove": null,
+      "allowedTargets": null,
+      "deniedTargets": null,
+      "limits": {},
+      "approverRole": null,
+      "priority": 100,
+      "enabled": true,
+      "createdByThreadId": "22222222-2222-4222-8222-222222222222",
+      "createdByRunId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "rule save argument faults",
+   "servers": [
+    "neko_rule_builder"
+   ],
+   "tool": "rule_builder_save_rule",
+   "arguments": {
+    "name": "",
+    "applies_to_kinds": "slack",
+    "applies_to_scopes": [
+     "outside"
+    ],
+    "mode": "maybe",
+    "risk_threshold_auto_approve": "none",
+    "allowed_targets": [],
+    "limits": null,
+    "priority": 10001,
+    "enabled": "yes",
+    "approver_role": 1
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool save_rule: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"name\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"expected\": \"array\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"applies_to_kinds\"\n    ],\n    \"message\": \"Invalid input: expected array, received string\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"internal\",\n      \"external\"\n    ],\n    \"path\": [\n      \"applies_to_scopes\",\n      0\n    ],\n    \"message\": \"Invalid option: expected one of \\\"internal\\\"|\\\"external\\\"\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"observe_only\",\n      \"draft_only\",\n      \"auto_approve\",\n      \"approval_required\",\n      \"never\"\n    ],\n    \"path\": [\n      \"mode\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"observe_only\\\"|\\\"draft_only\\\"|\\\"auto_approve\\\"|\\\"approval_required\\\"|\\\"never\\\"\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"low\",\n      \"medium\",\n      \"high\",\n      \"critical\"\n    ],\n    \"path\": [\n      \"risk_threshold_auto_approve\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"low\\\"|\\\"medium\\\"|\\\"high\\\"|\\\"critical\\\"\"\n  },\n  {\n    \"expected\": \"record\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"allowed_targets\"\n    ],\n    \"message\": \"Invalid input: expected record, received array\"\n  },\n  {\n    \"expected\": \"record\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"limits\"\n    ],\n    \"message\": \"Invalid input: expected record, received null\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"approver_role\"\n    ],\n    \"message\": \"Invalid input: expected string, received number\"\n  },\n  {\n    \"origin\": \"number\",\n    \"code\": \"too_big\",\n    \"maximum\": 10000,\n    \"inclusive\": true,\n    \"path\": [\n      \"priority\"\n    ],\n    \"message\": \"Too big: expected number to be <=10000\"\n  },\n  {\n    \"expected\": \"boolean\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"enabled\"\n    ],\n    \"message\": \"Invalid input: expected boolean, received string\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "rule save missing fields",
+   "servers": [
+    "neko_rule_builder"
+   ],
+   "tool": "rule_builder_save_rule",
+   "arguments": {},
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool save_rule: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"name\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"array\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"applies_to_kinds\"\n    ],\n    \"message\": \"Invalid input: expected array, received undefined\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"observe_only\",\n      \"draft_only\",\n      \"auto_approve\",\n      \"approval_required\",\n      \"never\"\n    ],\n    \"path\": [\n      \"mode\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"observe_only\\\"|\\\"draft_only\\\"|\\\"auto_approve\\\"|\\\"approval_required\\\"|\\\"never\\\"\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "rule list",
+   "servers": [
+    "neko_rule_builder"
+   ],
+   "tool": "rule_builder_list_rules",
+   "arguments": {
+    "limit": 10
+   },
+   "replies": {
+    "listActionPolicies": {
+     "value": {
+      "total": 2,
+      "policies": [
+       {
+        "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "orgId": "11111111-1111-4111-8111-111111111111",
+        "name": "slack_auto",
+        "description": "Auto-post to Slack",
+        "appliesToKinds": [
+         "slack_post",
+         "slack_dm"
+        ],
+        "appliesToScopes": [
+         "internal",
+         "external"
+        ],
+        "mode": "auto_approve",
+        "riskThresholdAutoApprove": "low",
+        "allowedTargets": {
+         "patterns": [
+          "C*"
+         ],
+         "on_miss": "next"
+        },
+        "deniedTargets": null,
+        "limits": {
+         "perDay": 20
+        },
+        "approverGroupId": null,
+        "priority": 50,
+        "enabled": true,
+        "createdByThreadId": null,
+        "createdByRunId": null,
+        "createdAt": "2026-11-01T00:00:00.000Z",
+        "updatedAt": "2026-11-02T00:00:00.000Z"
+       },
+       {
+        "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        "name": "bare"
+       }
+      ]
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"total\":2,\"returned\":2,\"rules\":[{\"id\":\"dddddddd-dddd-4ddd-8ddd-dddddddddddd\",\"name\":\"slack_auto\",\"description\":\"Auto-post to Slack\",\"mode\":\"auto_approve\",\"appliesToKinds\":[\"slack_post\",\"slack_dm\"],\"appliesToScopes\":[\"internal\",\"external\"],\"riskThresholdAutoApprove\":\"low\",\"allowedTargets\":{\"patterns\":[\"C*\"],\"on_miss\":\"next\"},\"deniedTargets\":null,\"limits\":{\"perDay\":20},\"approverGroupId\":null,\"priority\":50,\"enabled\":true,\"updatedAt\":\"2026-11-02T00:00:00.000Z\",\"createdAt\":\"2026-11-01T00:00:00.000Z\"},{\"id\":\"cccccccc-cccc-4ccc-8ccc-cccccccccccc\",\"name\":\"bare\"}]}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listActionPolicies",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "limit": 10
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "rule list default limit",
+   "servers": [
+    "neko_rule_builder"
+   ],
+   "tool": "rule_builder_list_rules",
+   "arguments": {},
+   "replies": {
+    "listActionPolicies": {
+     "value": {
+      "total": 0,
+      "policies": []
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"total\":0,\"returned\":0,\"rules\":[]}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listActionPolicies",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "limit": 50
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "rule list fails",
+   "servers": [
+    "neko_rule_builder"
+   ],
+   "tool": "rule_builder_list_rules",
+   "arguments": {},
+   "replies": {
+    "listActionPolicies": {
+     "throws": "database is down"
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "database is down"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "listActionPolicies",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "limit": 50
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "rule list bad limit",
+   "servers": [
+    "neko_rule_builder"
+   ],
+   "tool": "rule_builder_list_rules",
+   "arguments": {
+    "limit": 0.5
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool list_rules: [\n  {\n    \"expected\": \"int\",\n    \"format\": \"safeint\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"limit\"\n    ],\n    \"message\": \"Invalid input: expected int, received number\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
    "events": [],
    "files": {}
   }

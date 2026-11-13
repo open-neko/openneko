@@ -71,6 +71,21 @@ func (f *fakeTools) waitForAction(_ context.Context, in actionWaitIn) (any, erro
 func (f *fakeTools) emitOutput(_ context.Context, in outputIn) (any, error) {
 	return f.record("emitWorkflowOutput", in)
 }
+func (f *fakeTools) saveWorkflow(_ context.Context, in *jsObj) (any, error) {
+	return f.record("saveWorkflowWithTrigger", in)
+}
+func (f *fakeTools) listWorkflows(_ context.Context, in workflowListIn) (any, error) {
+	return f.record("listWorkflowsWithTriggers", in)
+}
+func (f *fakeTools) deleteWorkflow(_ context.Context, in workflowDeleteIn) (any, error) {
+	return f.record("deleteWorkflow", in)
+}
+func (f *fakeTools) upsertPolicy(_ context.Context, in *jsObj) (any, error) {
+	return f.record("upsertActionPolicyByName", in)
+}
+func (f *fakeTools) listPolicies(_ context.Context, in policyListIn) (any, error) {
+	return f.record("listActionPolicies", in)
+}
 
 func (f *fakeTools) recordID(method string, in any) (string, error) {
 	v, err := f.record(method, in)
@@ -232,7 +247,7 @@ func TestTurnToolsMatchNode(t *testing.T) {
 	if err := json.Unmarshal(raw, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if len(fixture.Lists) != 9 || len(fixture.Calls) < 155 {
+	if len(fixture.Lists) != 10 || len(fixture.Calls) < 188 {
 		t.Fatalf("fixture holds %d lists and %d calls", len(fixture.Lists), len(fixture.Calls))
 	}
 	gjTools := func(own json.RawMessage) any {
@@ -392,7 +407,7 @@ func TestTurnTraceMatchesNode(t *testing.T) {
 	if err := json.Unmarshal(raw, &cases); err != nil {
 		t.Fatal(err)
 	}
-	if len(cases) != 18 {
+	if len(cases) != 21 {
 		t.Fatalf("fixture holds %d cases", len(cases))
 	}
 	for _, c := range cases {
@@ -436,6 +451,8 @@ func TestTurnTraceMatchesNode(t *testing.T) {
 				_, _ = traceGraphjinToolCall(binding, c.Request.Name, args, execute)
 			case "action.policy":
 				_, _ = traceActionPolicy(binding, c.Request.Scope, c.Request.Kind, c.Request.Target, c.Request.RiskLevel, execute)
+			case "workflow.list":
+				_, _ = traceWorkflowList(binding, c.Request.Limit, execute)
 			default:
 				t.Fatalf("operation %s", c.Operation)
 			}

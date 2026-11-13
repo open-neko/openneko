@@ -23,6 +23,8 @@ type zStr struct {
 	desc     string
 	descLast string
 	datetime bool
+	pattern  *regexp.Regexp
+	refine   func(string) bool
 }
 
 // zInt is z.number().int() with min, max and positive().
@@ -53,6 +55,7 @@ type zField struct {
 type zObj struct {
 	fields []zField
 	strict bool
+	desc   string
 }
 
 func (f zField) jsonSchema() *jsObj {
@@ -117,7 +120,15 @@ func (s *zStr) parse(v any, path []any, issues *[]any) any {
 	if s.trim {
 		text = strings.TrimFunc(text, isJSSpace)
 	}
+	if s.pattern != nil && !s.pattern.MatchString(text) {
+		shown := "/" + s.pattern.String() + "/"
+		*issues = append(*issues, zodIssue("origin", "string", "code", "invalid_format", "format", "regex", "pattern", shown,
+			"path", path, "message", "Invalid string: must match pattern "+shown))
+	}
 	zLengthIssues(text, s.min, s.max, path, issues)
+	if s.refine != nil && !s.refine(text) {
+		*issues = append(*issues, zodIssue("code", "custom", "path", path, "message", "Invalid input"))
+	}
 	if s.datetime && !zodDatetime.MatchString(text) {
 		*issues = append(*issues, zodIssue("origin", "string", "code", "invalid_format", "format", "datetime",
 			"pattern", "/"+zodDatetimeText+"/", "path", path, "message", "Invalid ISO datetime"))
@@ -187,6 +198,9 @@ func (s *zStr) jsonSchema() *jsObj {
 	}
 	if s.max != nil {
 		out.set("maxLength", *s.max)
+	}
+	if s.pattern != nil {
+		out.set("pattern", s.pattern.String())
 	}
 	if s.descLast != "" {
 		out.set("description", s.descLast)
@@ -333,6 +347,9 @@ func (o *zObj) jsonSchema() *jsObj {
 	if o.strict {
 		out.set("additionalProperties", false)
 	}
+	if o.desc != "" {
+		out.set("description", o.desc)
+	}
 	return out
 }
 
@@ -360,4 +377,70 @@ func (r *zRecord) parse(v any, path []any, issues *[]any) any {
 
 func (r *zRecord) jsonSchema() *jsObj {
 	return jsObjOf("type", "object", "propertyNames", r.key.jsonSchema(), "additionalProperties", r.val.jsonSchema())
+}
+
+// zPrim is z.boolean(), z.number() or z.null().
+type zPrim string
+
+func (p zPrim) expected() string { return string(p) }
+
+func (p zPrim) parse(v any, path []any, issues *[]any) any {
+	ok := false
+	switch p {
+	case "boolean":
+		_, ok = v.(bool)
+	case "number":
+		_, ok = v.(float64)
+	case "null":
+		ok = v == nil
+	}
+	if !ok {
+		*issues = append(*issues, zTypeIssue(string(p), v, path))
+	}
+	return v
+}
+
+func (p zPrim) jsonSchema() *jsObj { return jsObjOf("type", string(p)) }
+
+// zUnion is z.union() of options that fail with a type issue only.
+type zUnion []zType
+
+func (u zUnion) expected() string { return "union" }
+
+func (u zUnion) parse(v any, path []any, issues *[]any) any {
+	errs := make([]any, 0, len(u))
+	for _, option := range u {
+		var own []any
+		out := option.parse(v, []any{}, &own)
+		if len(own) == 0 {
+			return out
+		}
+		errs = append(errs, own)
+	}
+	*issues = append(*issues, zodIssue("code", "invalid_union", "errors", errs, "path", path, "message", "Invalid input"))
+	return v
+}
+
+func (u zUnion) jsonSchema() *jsObj {
+	options := make([]any, len(u))
+	for i, option := range u {
+		options[i] = option.jsonSchema()
+	}
+	return jsObjOf("anyOf", options)
+}
+
+// zNullable is .nullable(): null passes, anything else goes to the inner type.
+type zNullable struct{ inner zType }
+
+func (n zNullable) expected() string { return n.inner.expected() }
+
+func (n zNullable) parse(v any, path []any, issues *[]any) any {
+	if v == nil {
+		return nil
+	}
+	return n.inner.parse(v, path, issues)
+}
+
+func (n zNullable) jsonSchema() *jsObj {
+	return jsObjOf("anyOf", []any{n.inner.jsonSchema(), zPrim("null").jsonSchema()})
 }

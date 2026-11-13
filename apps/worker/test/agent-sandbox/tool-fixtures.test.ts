@@ -268,6 +268,62 @@ CALLS.push(
   pack("pack events fail", "pack_actions_magento_reindex", { intent: "Reindex the catalog" }, { evaluateActionPolicy: { value: NEEDS_APPROVAL }, createActionRequest: { value: PENDING } }, { eventsFail: true }),
 );
 
+const WF_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const SUB_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const RULE_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+const BUILDERS = ["neko_workflow_builder"];
+const RULES = ["neko_rule_builder"];
+const STEPS = [{ id: "check", description: "Check stock levels" }, { id: "post", description: "Post the list" }];
+const WORKFLOW = { id: WF_ID, orgId: "11111111-1111-4111-8111-111111111111", name: "Stock check", description: "Daily stock check", enabled: true, status: "active", goal: "Keep stock up", systemPromptOverlay: "", steps: STEPS, cron: "0 9 * * *", cronTimezone: "Europe/Paris", cronEnabled: true, networkHosts: [], dailyRunBudget: null, outputContract: null, ownerUserId: "", createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-12T00:00:00.000Z" };
+const SUBSCRIPTION = { id: SUB_ID, workflowId: WF_ID, sourceKind: "source_change", filter: { table: "products", where: { qty: { lt: 5 }, active: { eq: true } }, primary_key: ["id", "sku"] }, enabled: true, idempotencyKeyTemplate: "{id}-{sku}" };
+const BATCH_CONTRACT = { apiBatch: { version: 1, compiled: true, compiler: "workflow", recordsField: "orders", columns: [{ name: "Order", path: "order.id" }, { name: "Total", path: "total", default: 0 }] } };
+const RULE = { id: RULE_ID, orgId: "11111111-1111-4111-8111-111111111111", name: "slack_auto", description: "Auto-post to Slack", appliesToKinds: ["slack_post", "slack_dm"], appliesToScopes: ["internal", "external"], mode: "auto_approve", riskThresholdAutoApprove: "low", allowedTargets: { patterns: ["C*"], on_miss: "next" }, deniedTargets: null, limits: { perDay: 20 }, approverGroupId: null, priority: 50, enabled: true, createdByThreadId: null, createdByRunId: null, createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-02T00:00:00.000Z" };
+const FULL_WORKFLOW = {
+  name: "  Stock check  ",
+  description: "Daily stock check",
+  goal: "Keep stock up",
+  systemPromptOverlay: "Be brief.",
+  steps: [{ id: " check ", description: " Check stock levels ", extra: 1 }, { id: "run", description: "Run the export", script: { skill: "stock-export", command: ["python3", "${SKILL_DIR}/run.py", "${input.sku:-all}"], timeoutSeconds: 60 } }],
+  batch: { recordsField: " orders ", columns: [{ name: "Order", path: "order.id" }, { name: "Total", path: "total", default: 0 }, { name: "Note", path: "note", default: null }] },
+  triggers: { cron: " 0 9 * * * ", timezone: "Europe/Paris", enabled: true, when: { table: " products ", where: { qty: { lt: 5 } }, select: ["id", "qty"], primary_key: ["id"], version_column: "updated_at", enabled: false, idempotency_key_template: "{id}", acknowledge_mutation_loop: true }, watch: { query: " { products { count } } ", value_path: "products.0.count", op: "lt", threshold: 5, cadence_seconds: 600, debounce_seconds: 0, severity: "high" } },
+};
+
+CALLS.push(
+  { name: "workflow create", servers: BUILDERS, tool: "workflow_builder_create_workflow", arguments: { name: "Stock check", steps: STEPS }, replies: { saveWorkflowWithTrigger: { value: { action: "created", workflow: { ...WORKFLOW, cron: null, description: "" } } } } },
+  { name: "workflow full update with trigger", servers: BUILDERS, tool: "workflow_builder_create_workflow", arguments: FULL_WORKFLOW, replies: { saveWorkflowWithTrigger: { value: { action: "updated", workflow: WORKFLOW, subscription: SUBSCRIPTION } } } },
+  { name: "workflow trigger with no filter", servers: BUILDERS, tool: "workflow_builder_create_workflow", arguments: { name: "Stock check", steps: STEPS, batch: null, triggers: { when: { table: "products", primary_key: ["id"] } } }, replies: { saveWorkflowWithTrigger: { value: { action: "created", workflow: WORKFLOW, subscription: { ...SUBSCRIPTION, filter: { table: "products", primary_key: ["id"], where: {} }, idempotencyKeyTemplate: null } } } } },
+  { name: "workflow trigger odd filter", servers: BUILDERS, tool: "workflow_builder_create_workflow", arguments: { name: "Stock check", steps: STEPS }, replies: { saveWorkflowWithTrigger: { value: { action: "created", workflow: { ...WORKFLOW, cronTimezone: "UTC" }, subscription: { ...SUBSCRIPTION, filter: { table: 7, primary_key: "id" } } } } } },
+  { name: "workflow trigger error", servers: BUILDERS, tool: "workflow_builder_create_workflow", arguments: { name: "Stock check", steps: STEPS, triggers: { when: { table: "products", primary_key: ["id"] } } }, replies: { saveWorkflowWithTrigger: { value: { action: "updated", workflow: WORKFLOW, triggerError: { code: "mutation_loop", message: "loops" } } } } },
+  { name: "workflow save fails", servers: BUILDERS, tool: "workflow_builder_create_workflow", arguments: { name: "Stock check", steps: STEPS }, replies: { saveWorkflowWithTrigger: { throws: "A workflow named \"Stock check\" exists and this run cannot change it. Choose another name." } } },
+  { name: "workflow events fail", servers: BUILDERS, eventsFail: true, tool: "workflow_builder_create_workflow", arguments: { name: "Stock check", steps: STEPS }, replies: { saveWorkflowWithTrigger: { value: { action: "created", workflow: WORKFLOW } } } },
+  { name: "workflow argument faults", servers: BUILDERS, tool: "workflow_builder_create_workflow", arguments: { name: "  ", description: 5, steps: [{ id: "", description: "d".repeat(2001), script: { skill: "Bad Skill", command: [], timeoutSeconds: 0.5 } }, "x"], batch: { recordsField: "1st", columns: [{ name: "a\nb", path: "" }, { name: "c", path: "p", default: [1] }] }, triggers: { cron: "", when: { table: "t", primary_key: [] }, watch: { query: "q", value_path: "", op: "between", threshold: true, cadence_seconds: 30, debounce_seconds: 604801, severity: "urgent" } } } },
+  { name: "workflow missing fields", servers: BUILDERS, tool: "workflow_builder_create_workflow", arguments: {} },
+  { name: "workflow wrong types", servers: BUILDERS, tool: "workflow_builder_create_workflow", arguments: { name: 1, steps: "one", batch: "b", triggers: [] } },
+  { name: "workflow nested wrong types", servers: BUILDERS, tool: "workflow_builder_create_workflow", arguments: { name: "n", steps: [{ id: "a", description: "b", script: "s" }], batch: { columns: [] }, triggers: { enabled: "yes", when: "w", watch: { query: 5, value_path: "a", op: "gt", threshold: null } } } },
+  { name: "workflow long name and too many steps", servers: BUILDERS, tool: "workflow_builder_create_workflow", arguments: { name: "n".repeat(121), steps: Array.from({ length: 41 }, (_, i) => ({ id: `s${i}`, description: "d" })), triggers: { when: { table: "t", primary_key: ["a", "b", "c", "d", "e", "f", "g", "h", "i"], where: [], select: [""] } } } },
+  { name: "workflow list", servers: BUILDERS, tool: "workflow_builder_list_workflows", arguments: { limit: 2 }, replies: { listWorkflowsWithTriggers: { value: { total: 3, workflows: [{ ...WORKFLOW, outputContract: BATCH_CONTRACT, when: SUBSCRIPTION.filter }, { ...WORKFLOW, id: SUB_ID, name: "Other", outputContract: { apiBatch: { version: 2 } }, when: null }] } } } },
+  { name: "workflow list default limit", servers: BUILDERS, tool: "workflow_builder_list_workflows", arguments: {}, replies: { listWorkflowsWithTriggers: { value: { total: 0, workflows: [] } } } },
+  { name: "workflow list sparse rows", servers: BUILDERS, tool: "workflow_builder_list_workflows", arguments: {}, replies: { listWorkflowsWithTriggers: { value: { total: 1, workflows: [{ id: WF_ID, name: "Bare", goal: null, outputContract: { apiBatch: { version: 1, compiled: true, compiler: "workflow", recordsField: "9x", columns: [{ name: "A", path: "a.b", default: "z", extra: 1 }] } } }] } } } },
+  { name: "workflow list fails", servers: BUILDERS, tool: "workflow_builder_list_workflows", arguments: { limit: 5 }, replies: { listWorkflowsWithTriggers: { throws: "database is down" } } },
+  { name: "workflow list bad limit", servers: BUILDERS, tool: "workflow_builder_list_workflows", arguments: { limit: 201 } },
+  { name: "workflow delete", servers: BUILDERS, tool: "workflow_builder_delete_workflow", arguments: { workflowId: WF_ID }, replies: { deleteWorkflow: { value: { found: true, name: "Stock check" } } } },
+  { name: "workflow delete not found", servers: BUILDERS, tool: "workflow_builder_delete_workflow", arguments: { workflowId: "nope" }, replies: { deleteWorkflow: { value: { found: false, name: null } } } },
+  { name: "workflow delete raced", servers: BUILDERS, tool: "workflow_builder_delete_workflow", arguments: { workflowId: WF_ID }, replies: { deleteWorkflow: { value: { found: true, name: null } } } },
+  { name: "workflow delete events fail", servers: BUILDERS, eventsFail: true, tool: "workflow_builder_delete_workflow", arguments: { workflowId: WF_ID }, replies: { deleteWorkflow: { value: { found: true, name: "Stock check" } } } },
+  { name: "workflow delete empty id", servers: BUILDERS, tool: "workflow_builder_delete_workflow", arguments: { workflowId: "" } },
+  { name: "rule save minimal", servers: RULES, tool: "rule_builder_save_rule", arguments: { name: " slack_auto ", applies_to_kinds: [" slack_post "], mode: "auto_approve" }, replies: { upsertActionPolicyByName: { value: { action: "created", policy: { ...RULE, description: "", appliesToKinds: ["slack_post"], appliesToScopes: ["external"], priority: 100 } } } } },
+  { name: "rule save full", servers: RULES, tool: "rule_builder_save_rule", arguments: { name: "slack_auto", description: "Auto-post to Slack", applies_to_kinds: [], applies_to_scopes: ["internal", "external"], mode: "approval_required", risk_threshold_auto_approve: "low", allowed_targets: { patterns: ["C*"], on_miss: "next" }, denied_targets: { patterns: ["C9"] }, limits: { perDay: 20 }, approver_role: "admin", priority: 0, enabled: false }, replies: { upsertActionPolicyByName: { value: { action: "updated", policy: { ...RULE, appliesToKinds: [], appliesToScopes: [] } } } } },
+  { name: "rule save other role", servers: RULES, tool: "rule_builder_save_rule", arguments: { name: "r", applies_to_kinds: ["a"], mode: "never", approver_role: " finance " }, replies: { upsertActionPolicyByName: { value: { action: "created", policy: RULE } } } },
+  { name: "rule save fails", servers: RULES, tool: "rule_builder_save_rule", arguments: { name: "r", applies_to_kinds: [], mode: "never" }, replies: { upsertActionPolicyByName: { throws: "built-in group administrators is missing" } } },
+  { name: "rule save events fail", servers: RULES, eventsFail: true, tool: "rule_builder_save_rule", arguments: { name: "r", applies_to_kinds: [], mode: "never" }, replies: { upsertActionPolicyByName: { value: { action: "created", policy: RULE } } } },
+  { name: "rule save argument faults", servers: RULES, tool: "rule_builder_save_rule", arguments: { name: "", applies_to_kinds: "slack", applies_to_scopes: ["outside"], mode: "maybe", risk_threshold_auto_approve: "none", allowed_targets: [], limits: null, priority: 10001, enabled: "yes", approver_role: 1 } },
+  { name: "rule save missing fields", servers: RULES, tool: "rule_builder_save_rule", arguments: {} },
+  { name: "rule list", servers: RULES, tool: "rule_builder_list_rules", arguments: { limit: 10 }, replies: { listActionPolicies: { value: { total: 2, policies: [RULE, { id: SUB_ID, name: "bare" }] } } } },
+  { name: "rule list default limit", servers: RULES, tool: "rule_builder_list_rules", arguments: {}, replies: { listActionPolicies: { value: { total: 0, policies: [] } } } },
+  { name: "rule list fails", servers: RULES, tool: "rule_builder_list_rules", arguments: {}, replies: { listActionPolicies: { throws: "database is down" } } },
+  { name: "rule list bad limit", servers: RULES, tool: "rule_builder_list_rules", arguments: { limit: 0.5 } },
+);
+
 type ListCase = { name: string; servers: string[]; memoryReadOnly?: boolean; policy?: string; graphjinTools?: unknown[]; listThrows?: string; cardSchema?: string; workflowRunId?: string; packActions?: PackActionDescriptor[] };
 
 const LISTS: ListCase[] = [
@@ -280,6 +336,7 @@ const LISTS: ListCase[] = [
   { name: "interaction, cards and skills", servers: ["neko_interaction", "neko_ui", "neko_skills"] },
   { name: "rich cards", servers: ["neko_ui", "neko_memory"], cardSchema: "rich" },
   { name: "workflow action, output and pack actions", servers: ["neko_action", "neko_workflow_output", "neko_pack_actions"], workflowRunId: WF_RUN, packActions: PACK_ACTIONS },
+  { name: "workflow and rule builders", servers: ["neko_workflow_builder", "neko_rule_builder"] },
 ];
 
 const METHODS = [
@@ -295,6 +352,11 @@ const METHODS = [
   "enqueueActionExecute",
   "waitForActionExecution",
   "emitWorkflowOutput",
+  "saveWorkflowWithTrigger",
+  "listWorkflowsWithTriggers",
+  "deleteWorkflow",
+  "upsertActionPolicyByName",
+  "listActionPolicies",
 ];
 
 function fakeControlPlane(
