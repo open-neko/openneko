@@ -55,6 +55,21 @@ func (f *fakeTools) record(method string, in any) (any, error) {
 	return f.reply, nil
 }
 
+func (f *fakeTools) listUsers(_ context.Context, in orgIn) (any, error) {
+	return f.record("listUsers", in)
+}
+func (f *fakeTools) listGroups(_ context.Context, in orgIn) (any, error) {
+	return f.record("listGroups", in)
+}
+func (f *fakeTools) listChannels(_ context.Context, in orgIn) (any, error) {
+	return f.record("listChannels", in)
+}
+func (f *fakeTools) listDataSources(_ context.Context, in orgIn) (any, error) {
+	return f.record("listDataSources", in)
+}
+func (f *fakeTools) listAuditTrail(_ context.Context, in auditTrailIn) (any, error) {
+	return f.record("listAuditTrail", in)
+}
 func (f *fakeTools) evaluatePolicy(_ context.Context, in policyIn) (any, error) {
 	return f.record("evaluateActionPolicy", in)
 }
@@ -247,7 +262,7 @@ func TestTurnToolsMatchNode(t *testing.T) {
 	if err := json.Unmarshal(raw, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if len(fixture.Lists) != 10 || len(fixture.Calls) < 188 {
+	if len(fixture.Lists) != 11 || len(fixture.Calls) < 254 {
 		t.Fatalf("fixture holds %d lists and %d calls", len(fixture.Lists), len(fixture.Calls))
 	}
 	gjTools := func(own json.RawMessage) any {

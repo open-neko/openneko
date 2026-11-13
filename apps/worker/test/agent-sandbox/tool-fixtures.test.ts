@@ -324,6 +324,75 @@ CALLS.push(
   { name: "rule list bad limit", servers: RULES, tool: "rule_builder_list_rules", arguments: { limit: 0.5 } },
 );
 
+const USERS = ["neko_user_manager"];
+const CHANNELS = ["neko_channel_manager"];
+const SOURCES = ["neko_data_source_manager"];
+const AUDIT = ["neko_audit"];
+const USER_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+const GROUP_ID = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+const USER_LIST = { users: [{ id: USER_ID, email: "ana@example.com", name: "Ana", role: "admin", disabledAt: null, lastLoginAt: "2026-11-12T08:00:00.000Z", groupIds: [] }], groups: [] };
+const GROUP_LIST = { groups: [{ id: GROUP_ID, slug: "finance", name: "Finance", kind: "custom", memberCount: 1, members: [{ userId: USER_ID, email: "ana@example.com", sources: ["local"] }], grants: [{ itemType: "skill", itemId: "*" }], dataAccess: [] }], idpRules: [], groupDataAccessEnabled: false };
+const ADMIN_ALLOW = { replies: { evaluateActionPolicy: { value: ALLOW }, createActionRequest: { value: APPROVED } } };
+const ADMIN_ASK = { replies: { evaluateActionPolicy: { value: NEEDS_APPROVAL }, createActionRequest: { value: PENDING } } };
+const FILTER = { or: [{ column: "region", op: "in", value: ["EU", "US"] }, { and: [{ column: "owner_id", op: "eq", value: { var: "user_id" } }, { column: "closed", op: "is_null", value: true }] }] };
+const admin = (name: string, servers: string[], tool: string, args: unknown, extra: Partial<CallCase> = {}): CallCase => ({ name, servers, tool, arguments: args, ...extra });
+
+CALLS.push(
+  admin("users list", USERS, "user_manager_list_users", {}, { replies: { listUsers: { value: USER_LIST } } }),
+  admin("users list no arguments", USERS, "user_manager_list_users", undefined, { replies: { listUsers: { value: { users: [] } } } }),
+  admin("users list fails", USERS, "user_manager_list_users", {}, { replies: { listUsers: { throws: "database is down" } } }),
+  admin("user invite auto", USERS, "user_manager_request_user_change", { action: "invite", email: " ben@example.com ", role: "member", intent: " Ben joins finance. " }, ADMIN_ALLOW),
+  admin("user set role needs approval", USERS, "user_manager_request_user_change", { action: "set_role", userId: USER_ID, role: "admin", intent: "Ana runs the rules now." }, ADMIN_ASK),
+  admin("user deactivate denied", USERS, "user_manager_request_user_change", { action: "deactivate", userId: USER_ID, intent: "Ana left." }, { replies: { evaluateActionPolicy: { value: DENY } } }),
+  admin("user reactivate no policy", USERS, "user_manager_request_user_change", { action: "reactivate", userId: USER_ID, intent: "Ana is back." }, { replies: { evaluateActionPolicy: { value: NONE } } }),
+  admin("user change denied without reason", USERS, "user_manager_request_user_change", { action: "deactivate", userId: USER_ID, intent: "Ana left." }, { replies: { evaluateActionPolicy: { value: { decision: "deny", policy: POLICY, mode: "never" } } } }),
+  admin("user invite needs role", USERS, "user_manager_request_user_change", { action: "invite", email: "ben@example.com", intent: "Ben joins." }),
+  admin("user set role needs user", USERS, "user_manager_request_user_change", { action: "set_role", role: "admin", intent: "Promote." }),
+  admin("user change argument faults", USERS, "user_manager_request_user_change", { action: "delete", email: "not an email", userId: " ", role: "owner", intent: "x".repeat(501) }),
+  admin("user change missing fields", USERS, "user_manager_request_user_change", {}),
+  admin("user change email forms", USERS, "user_manager_request_user_change", { action: "invite", email: "a..b@example.com", role: "member", intent: "i" }),
+  admin("user change email plus", USERS, "user_manager_request_user_change", { action: "invite", email: "first.last+tag@sub.example.co", role: "member", intent: "i", extra: 1 }, ADMIN_ASK),
+  admin("user change request fails", USERS, "user_manager_request_user_change", { action: "deactivate", userId: USER_ID, intent: "Ana left." }, { replies: { evaluateActionPolicy: { value: ALLOW }, createActionRequest: { throws: "worker action preflight failed with status 500" } } }),
+  admin("user change events fail", USERS, "user_manager_request_user_change", { action: "deactivate", userId: USER_ID, intent: "Ana left." }, { ...ADMIN_ALLOW, eventsFail: true }),
+  admin("groups list", USERS, "user_manager_list_groups", {}, { replies: { listGroups: { value: GROUP_LIST } } }),
+  admin("group create", USERS, "user_manager_request_group_change", { action: "create_group", name: " Finance ", description: "", intent: "A group for finance." }, ADMIN_ASK),
+  admin("group add member", USERS, "user_manager_request_group_change", { intent: "Ana joins.", userId: USER_ID, groupId: GROUP_ID, action: "add_member", ruleId: "r1" }, ADMIN_ALLOW),
+  admin("group idp rule", USERS, "user_manager_request_group_change", { action: "add_idp_rule", ssoGroupId: "s1", groupId: GROUP_ID, intent: "Map the SSO group." }, ADMIN_ASK),
+  admin("group remove idp rule", USERS, "user_manager_request_group_change", { action: "remove_idp_rule", ruleId: "r1", intent: "Unmap." }, ADMIN_ASK),
+  admin("group delete target", USERS, "user_manager_request_group_change", { action: "delete_group", groupId: GROUP_ID, name: "Finance", intent: "Gone." }, ADMIN_ASK),
+  admin("group member needs two", USERS, "user_manager_request_group_change", { action: "remove_member", intent: "Out." }),
+  admin("group create needs name", USERS, "user_manager_request_group_change", { action: "create_group", name: "", intent: "x" }),
+  admin("group change argument faults", USERS, "user_manager_request_group_change", { action: "rename", name: "n".repeat(121), description: 5, intent: "" }),
+  admin("item grant", USERS, "user_manager_request_item_grant", { action: "grant_item", groupId: GROUP_ID, itemType: "skill", itemId: "*", intent: "Finance uses every skill." }, ADMIN_ASK),
+  admin("item grant faults", USERS, "user_manager_request_item_grant", { action: "grant", groupId: "", itemType: "report", itemId: "i".repeat(501) }),
+  admin("data access set", USERS, "user_manager_request_data_access_change", { action: "set_table_access", groupId: GROUP_ID, source: "erp", table: "sales.orders", columns: ["id", " total "], rowFilter: FILTER, intent: "Finance reads its orders." }, ADMIN_ASK),
+  admin("data access remove", USERS, "user_manager_request_data_access_change", { action: "remove_table_access", ruleId: "r9", intent: "Drop it." }, ADMIN_ASK),
+  admin("data access needs columns", USERS, "user_manager_request_data_access_change", { action: "set_table_access", groupId: GROUP_ID, source: "erp", table: "orders", intent: "x" }),
+  admin("data access remove needs rule", USERS, "user_manager_request_data_access_change", { action: "remove_table_access", intent: "x" }),
+  admin("data access empty and", USERS, "user_manager_request_data_access_change", { action: "set_table_access", groupId: GROUP_ID, source: "erp", table: "orders", columns: ["id"], rowFilter: { and: [] }, intent: "x" }),
+  admin("data access empty column", USERS, "user_manager_request_data_access_change", { action: "set_table_access", groupId: GROUP_ID, source: "erp", table: "orders", columns: ["id"], rowFilter: { column: "", op: "eq", value: 1 }, intent: "x" }),
+  admin("data access bad op", USERS, "user_manager_request_data_access_change", { action: "set_table_access", groupId: GROUP_ID, source: "erp", table: "orders", columns: ["id"], rowFilter: { column: "a", op: "like", value: 1 }, intent: "x" }),
+  admin("data access bad var", USERS, "user_manager_request_data_access_change", { action: "set_table_access", groupId: GROUP_ID, source: "erp", table: "orders", columns: ["id"], rowFilter: { column: "a", op: "eq", value: { var: "email" } }, intent: "x" }),
+  admin("data access nested fault", USERS, "user_manager_request_data_access_change", { action: "set_table_access", groupId: GROUP_ID, source: "erp", table: "orders", columns: ["id"], rowFilter: { or: [{ column: "a", op: "eq", value: null }] }, intent: "x" }),
+  admin("data access filter not object", USERS, "user_manager_request_data_access_change", { action: "set_table_access", groupId: GROUP_ID, source: "erp", table: "orders", columns: [], rowFilter: "region = 'EU'", intent: "x" }),
+  admin("data access extra filter keys", USERS, "user_manager_request_data_access_change", { action: "set_table_access", groupId: GROUP_ID, source: "erp", table: "orders", columns: ["id"], rowFilter: { and: [{ column: "a", op: "eq", value: 1, note: "n" }], or: [] }, intent: "x" }, ADMIN_ASK),
+  admin("channels list", CHANNELS, "channel_manager_list_channels", {}, { replies: { listChannels: { value: { workspaces: [{ channelPlugin: "slack", workspaceId: "T1", createdAt: null }], identities: [] } } } }),
+  admin("channel link", CHANNELS, "channel_manager_request_channel_change", { action: "link", identityId: " ci-1 ", appUserId: USER_ID, intent: "Ana uses Slack." }, ADMIN_ASK),
+  admin("channel block auto", CHANNELS, "channel_manager_request_channel_change", { action: "block", identityId: "ci-1", appUserId: "", intent: "Spam." }, ADMIN_ALLOW),
+  admin("channel link needs user", CHANNELS, "channel_manager_request_channel_change", { action: "link", identityId: "ci-1", intent: "x" }),
+  admin("channel change faults", CHANNELS, "channel_manager_request_channel_change", { action: "mute", intent: "x" }),
+  admin("sources list", SOURCES, "data_source_manager_list_data_sources", {}, { replies: { listDataSources: { value: { sources: [{ id: GROUP_ID, name: "erp", label: null, kind: "graphjin", authMode: "service", isDefault: true, enabled: true, host: "db.internal", hasMcp: false }] } } } }),
+  admin("source register", SOURCES, "data_source_manager_request_data_source_change", { action: "register", name: " erp-2 ", label: " ERP two ", sourceKind: "database", intent: "A second ERP." }, ADMIN_ASK),
+  admin("source enable empty label", SOURCES, "data_source_manager_request_data_source_change", { action: "enable", name: "erp", label: "", intent: "On." }, ADMIN_ALLOW),
+  admin("source bad name", SOURCES, "data_source_manager_request_data_source_change", { action: "remove", name: "ERP_1", sourceKind: "sheet", intent: "x" }),
+  admin("source long name", SOURCES, "data_source_manager_request_data_source_change", { action: "remove", name: "-" + "a".repeat(64), intent: "x" }),
+  admin("audit trail", AUDIT, "audit_audit_trail", { limit: 20 }, { replies: { listAuditTrail: { value: { requests: [], alerts: [], gatewaySummary: [{ runId: null, backend: "openneko", actorRole: "admin", calls: 3 }] } } } }),
+  admin("audit trail default", AUDIT, "audit_audit_trail", {}, { replies: { listAuditTrail: { value: { requests: [] } } } }),
+  admin("audit trail denied", AUDIT, "audit_audit_trail", {}, { replies: { listAuditTrail: { value: { denied: true } } } }),
+  admin("audit trail bad limit", AUDIT, "audit_audit_trail", { limit: 201 }),
+  admin("audit trail fails", AUDIT, "audit_audit_trail", { limit: 1 }, { replies: { listAuditTrail: { throws: "database is down" } } }),
+);
+
 type ListCase = { name: string; servers: string[]; memoryReadOnly?: boolean; policy?: string; graphjinTools?: unknown[]; listThrows?: string; cardSchema?: string; workflowRunId?: string; packActions?: PackActionDescriptor[] };
 
 const LISTS: ListCase[] = [
@@ -337,6 +406,7 @@ const LISTS: ListCase[] = [
   { name: "rich cards", servers: ["neko_ui", "neko_memory"], cardSchema: "rich" },
   { name: "workflow action, output and pack actions", servers: ["neko_action", "neko_workflow_output", "neko_pack_actions"], workflowRunId: WF_RUN, packActions: PACK_ACTIONS },
   { name: "workflow and rule builders", servers: ["neko_workflow_builder", "neko_rule_builder"] },
+  { name: "admin tools", servers: ["neko_user_manager", "neko_channel_manager", "neko_data_source_manager", "neko_audit"] },
 ];
 
 const METHODS = [
@@ -357,6 +427,11 @@ const METHODS = [
   "deleteWorkflow",
   "upsertActionPolicyByName",
   "listActionPolicies",
+  "listUsers",
+  "listGroups",
+  "listChannels",
+  "listDataSources",
+  "listAuditTrail",
 ];
 
 function fakeControlPlane(

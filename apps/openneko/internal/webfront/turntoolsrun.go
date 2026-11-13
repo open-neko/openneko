@@ -126,6 +126,11 @@ type toolBackend interface {
 	deleteWorkflow(ctx context.Context, in workflowDeleteIn) (any, error)
 	upsertPolicy(ctx context.Context, in *jsObj) (any, error)
 	listPolicies(ctx context.Context, in policyListIn) (any, error)
+	listUsers(ctx context.Context, in orgIn) (any, error)
+	listGroups(ctx context.Context, in orgIn) (any, error)
+	listChannels(ctx context.Context, in orgIn) (any, error)
+	listDataSources(ctx context.Context, in orgIn) (any, error)
+	listAuditTrail(ctx context.Context, in auditTrailIn) (any, error)
 }
 
 var memoryKindEnum = []string{"preference", "business_rule", "metric_definition", "thread_note", "correction", "company_context", "other"}
@@ -168,6 +173,14 @@ func turnTools(b turnBinding, be toolBackend, servers []string) (*toolServer, er
 			groups = append(groups, toolGroup{static: workflowBuilderTools(b, be)})
 		case "neko_rule_builder":
 			groups = append(groups, toolGroup{static: ruleBuilderTools(b, be)})
+		case "neko_user_manager":
+			groups = append(groups, toolGroup{static: userManagerTools(b, be)})
+		case "neko_channel_manager":
+			groups = append(groups, toolGroup{static: channelManagerTools(b, be)})
+		case "neko_data_source_manager":
+			groups = append(groups, toolGroup{static: dataSourceManagerTools(b, be)})
+		case "neko_audit":
+			groups = append(groups, toolGroup{static: auditTools(b, be)})
 		case "neko_pack_actions":
 			tools := packActionTools(b, be)
 			if len(tools) == 0 {
