@@ -271,7 +271,7 @@ func (a *API) personalizeMemory(w http.ResponseWriter, r *http.Request) {
 	}
 	var m *memoryOut
 	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
-		m, err = a.overrideMemory(ctx, tx, act.OrgID, act.UserID, id, text, suppress)
+		m, err = a.overrideMemory(ctx, tx, act.OrgID, act.UserID, id, text, suppress, nil, nil)
 		return err
 	})
 	if err != nil {
@@ -287,7 +287,7 @@ func (a *API) personalizeMemory(w http.ResponseWriter, r *http.Request) {
 
 // overrideMemory is overrideWorkMemoryForUser(). A nil memory means the
 // target is gone, archived or in another member's layer.
-func (a *API) overrideMemory(ctx context.Context, tx pgx.Tx, orgID, userID, id, text string, suppress bool) (*memoryOut, error) {
+func (a *API) overrideMemory(ctx context.Context, tx pgx.Tx, orgID, userID, id, text string, suppress bool, runID, threadID *string) (*memoryOut, error) {
 	target, err := a.getMemory(ctx, tx, orgID, id)
 	if err != nil || target == nil || target.ArchivedAt != nil || (target.UserID != nil && *target.UserID != userID) {
 		return nil, err
@@ -310,7 +310,7 @@ func (a *API) overrideMemory(ctx context.Context, tx pgx.Tx, orgID, userID, id, 
 		if err != nil {
 			return nil, err
 		}
-		return &m, memoryEvent(ctx, tx, orgID, &m.ID, nil, nil, action, map[string]any{"userId": userID, "originId": m.OriginID})
+		return &m, memoryEvent(ctx, tx, orgID, &m.ID, runID, threadID, action, map[string]any{"userId": userID, "originId": m.OriginID})
 	}
 	if _, err := tx.Exec(ctx, `insert into memory_fork (org_id, user_id, baseline_at) values ($1, $2, $3)
 		on conflict do nothing`, orgID, userID, now); err != nil {
@@ -342,7 +342,7 @@ func (a *API) overrideMemory(ctx context.Context, tx pgx.Tx, orgID, userID, id, 
 	if err != nil {
 		return nil, err
 	}
-	return &m, memoryEvent(ctx, tx, orgID, &m.ID, nil, nil, action, map[string]any{"userId": userID, "overridesOriginId": m.OverridesOriginID})
+	return &m, memoryEvent(ctx, tx, orgID, &m.ID, runID, threadID, action, map[string]any{"userId": userID, "overridesOriginId": m.OverridesOriginID})
 }
 
 func (a *API) forgetMemory(w http.ResponseWriter, r *http.Request) {
@@ -381,7 +381,7 @@ func (a *API) forgetMemory(w http.ResponseWriter, r *http.Request) {
 		if target.UserID == nil {
 			var m *memoryOut
 			err := pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
-				m, err = a.overrideMemory(ctx, tx, act.OrgID, act.UserID, id, "", true)
+				m, err = a.overrideMemory(ctx, tx, act.OrgID, act.UserID, id, "", true, nil, nil)
 				return err
 			})
 			if err != nil {
@@ -802,25 +802,40 @@ func (a *API) rememberMemory(ctx context.Context, tx pgx.Tx, orgID string, p *pe
 			return nil, err
 		}
 	}
+	meta, _ := json.Marshal(map[string]string{"origin": "auto_memory_accepted", "pendingId": p.ID})
+	return a.insertMemory(ctx, tx, orgID, memoryDraft{Kind: p.DraftKind, Text: text, Scope: scope, ScopeID: resolvedScope,
+		Pinned: pin, Confidence: confidence, Metadata: meta, RunID: p.RunID, ThreadID: p.ThreadID, Layer: layer}, now)
+}
+
+type memoryDraft struct {
+	Kind, Text, Scope      string
+	ScopeID                *string
+	Pinned                 bool
+	Confidence             float32
+	Metadata               []byte
+	RunID, ThreadID, Layer *string
+}
+
+// insertMemory is the insert and the "remember" event of rememberWorkMemory().
+func (a *API) insertMemory(ctx context.Context, q querier, orgID string, d memoryDraft, now time.Time) (*memoryOut, error) {
 	var expires *time.Time
-	if p.DraftKind == "thread_note" {
+	if d.Kind == "thread_note" {
 		e := now.Add(30 * 24 * time.Hour)
 		expires = &e
 	}
-	text = strings.TrimSpace(text)
-	meta, _ := json.Marshal(map[string]string{"origin": "auto_memory_accepted", "pendingId": p.ID})
-	hash := a.memoryHMAC(orgID, deref(layer), p.DraftKind, scope, deref(resolvedScope), text)
-	m, err := a.scanMemory(tx.QueryRow(ctx, `insert into work_memory (id, org_id, kind, scope, scope_id, text, pinned, confidence,
+	text := strings.TrimSpace(d.Text)
+	hash := a.memoryHMAC(orgID, deref(d.Layer), d.Kind, d.Scope, deref(d.ScopeID), text)
+	m, err := a.scanMemory(q.QueryRow(ctx, `insert into work_memory (id, org_id, kind, scope, scope_id, text, pinned, confidence,
 		  metadata, source_run_id, source_thread_id, user_id, origin_id, integrity_hmac, expires_at, created_at, updated_at)
 		select g.id, $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::uuid, $10::uuid, $11, g.id, $12, $13, $14, $14
 		from (select gen_random_uuid() as id) g
 		returning `+memoryColumns,
-		orgID, p.DraftKind, scope, resolvedScope, text, pin, confidence, meta, p.RunID, p.ThreadID, layer, hash, expires, now))
+		orgID, d.Kind, d.Scope, d.ScopeID, text, d.Pinned, d.Confidence, d.Metadata, d.RunID, d.ThreadID, d.Layer, hash, expires, now))
 	if err != nil {
 		return nil, err
 	}
-	return &m, memoryEvent(ctx, tx, orgID, &m.ID, p.RunID, p.ThreadID, "remember", map[string]any{
-		"kind": p.DraftKind, "scope": scope, "scopeId": resolvedScope, "pinned": pin, "userId": layer, "text": text,
+	return &m, memoryEvent(ctx, q, orgID, &m.ID, d.RunID, d.ThreadID, "remember", map[string]any{
+		"kind": d.Kind, "scope": d.Scope, "scopeId": d.ScopeID, "pinned": d.Pinned, "userId": d.Layer, "text": text,
 	})
 }
 

@@ -1,0 +1,1897 @@
+[
+ {
+  "name": "memory search with content",
+  "operation": "memory.search",
+  "request": {
+   "query": "revenue",
+   "limit": 3
+  },
+  "reply": {
+   "value": [
+    {
+     "source": "saved_memory",
+     "memory": {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "orgId": "org-1",
+      "kind": "business_rule",
+      "scope": "global",
+      "scopeId": null,
+      "text": "Revenue is net. Key sk-live-0123456789abcdef.",
+      "userId": null,
+      "Zeta": 1,
+      "alpha": [
+       3,
+       1e-7,
+       123456789012
+      ]
+     },
+     "score": 0.1
+    },
+    {
+     "source": "saved_memory",
+     "memory": {
+      "id": "55555555-5555-4555-8555-555555555555",
+      "orgId": "org-1",
+      "kind": "",
+      "scope": "thread",
+      "scopeId": null,
+      "text": "Café 漢字 rule",
+      "userId": "user-1"
+     },
+     "score": 0.1
+    },
+    {
+     "source": "saved_memory",
+     "memory": {
+      "text": "no id"
+     },
+     "score": 0
+    },
+    {
+     "other": true
+    }
+   ]
+  },
+  "secrets": [
+   "sk-live-0123456789abcdef",
+   "short"
+  ],
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-memory search with content",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:19e23d14497fddfbd0467bd22ed8c578867f8af8bd8a09183ee4bba56119587b",
+     "responseDigest": "sha256:ea14d8b1c874faaa6c6c72c143844119c8aae8bc49a2744fefd2511c2f98a20e",
+     "operation": "memory.search",
+     "evidence": {
+      "requestedLimit": 3,
+      "returnedCount": 4,
+      "memories": [
+       {
+        "id": "44444444-4444-4444-8444-444444444444",
+        "contentDigest": "sha256:e98e4fb3aef00dd04c42a0eeed11bcfa355302fa98775b3054a332c5fa155ff9",
+        "layer": "team",
+        "scope": "global",
+        "kind": "business_rule"
+       },
+       {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "contentDigest": "sha256:affc5fe20b3b4b0a6ab29f02e4a0f2d5938f264cc5bf262790207c29487b5b3c",
+        "layer": "personal",
+        "scope": "thread"
+       }
+      ]
+     }
+    },
+    "content": {
+     "sequence": 1,
+     "operation": "memory.search",
+     "request": {
+      "limit": 3,
+      "query": "revenue"
+     },
+     "rows": [
+      {
+       "memory": {
+        "Zeta": 1,
+        "alpha": [
+         3,
+         1e-7,
+         123456789012
+        ],
+        "id": "44444444-4444-4444-8444-444444444444",
+        "kind": "business_rule",
+        "orgId": "org-1",
+        "scope": "global",
+        "scopeId": null,
+        "text": "Revenue is net. Key [REDACTED].",
+        "userId": null
+       },
+       "score": 0.1,
+       "source": "saved_memory"
+      },
+      {
+       "memory": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "kind": "",
+        "orgId": "org-1",
+        "scope": "thread",
+        "scopeId": null,
+        "text": "Café 漢字 rule",
+        "userId": "user-1"
+       },
+       "score": 0.1,
+       "source": "saved_memory"
+      },
+      {
+       "memory": {
+        "text": "no id"
+       },
+       "score": 0,
+       "source": "saved_memory"
+      },
+      {
+       "other": true
+      }
+     ],
+     "rowCount": 4,
+     "truncated": false
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-memory search with content",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:19e23d14497fddfbd0467bd22ed8c578867f8af8bd8a09183ee4bba56119587b",
+     "responseDigest": "sha256:ea14d8b1c874faaa6c6c72c143844119c8aae8bc49a2744fefd2511c2f98a20e",
+     "operation": "memory.search",
+     "evidence": {
+      "requestedLimit": 3,
+      "returnedCount": 4,
+      "memories": [
+       {
+        "id": "44444444-4444-4444-8444-444444444444",
+        "contentDigest": "sha256:e98e4fb3aef00dd04c42a0eeed11bcfa355302fa98775b3054a332c5fa155ff9",
+        "layer": "team",
+        "scope": "global",
+        "kind": "business_rule"
+       },
+       {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "contentDigest": "sha256:affc5fe20b3b4b0a6ab29f02e4a0f2d5938f264cc5bf262790207c29487b5b3c",
+        "layer": "personal",
+        "scope": "thread"
+       }
+      ]
+     }
+    },
+    "content": {
+     "sequence": 2,
+     "operation": "memory.search",
+     "request": {
+      "limit": 3,
+      "query": "revenue"
+     },
+     "rows": [
+      {
+       "memory": {
+        "Zeta": 1,
+        "alpha": [
+         3,
+         1e-7,
+         123456789012
+        ],
+        "id": "44444444-4444-4444-8444-444444444444",
+        "kind": "business_rule",
+        "orgId": "org-1",
+        "scope": "global",
+        "scopeId": null,
+        "text": "Revenue is net. Key [REDACTED].",
+        "userId": null
+       },
+       "score": 0.1,
+       "source": "saved_memory"
+      },
+      {
+       "memory": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "kind": "",
+        "orgId": "org-1",
+        "scope": "thread",
+        "scopeId": null,
+        "text": "Café 漢字 rule",
+        "userId": "user-1"
+       },
+       "score": 0.1,
+       "source": "saved_memory"
+      },
+      {
+       "memory": {
+        "text": "no id"
+       },
+       "score": 0,
+       "source": "saved_memory"
+      },
+      {
+       "other": true
+      }
+     ],
+     "rowCount": 4,
+     "truncated": false
+    }
+   }
+  ]
+ },
+ {
+  "name": "memory search fails",
+  "operation": "memory.search",
+  "request": {
+   "query": "revenue",
+   "limit": 5
+  },
+  "reply": {
+   "throws": "embedding service is off: sk-live-0123456789abcdef"
+  },
+  "secrets": [
+   "sk-live-0123456789abcdef"
+  ],
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-memory search fails",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "error",
+     "requestDigest": "sha256:8069bb02228a229d5d77a1f9afb0f434207925d2eb70ed1f032afe18d8dc4906",
+     "errorType": "Error",
+     "errorDigest": "sha256:3395909c03baf2e3f7ed9a5e80fc98eff3c54ac0ad72b1ed3cda6cb47e053d10",
+     "operation": "memory.search",
+     "evidence": {
+      "requestedLimit": 5,
+      "returnedCount": 0,
+      "memories": []
+     }
+    },
+    "content": {
+     "sequence": 1,
+     "operation": "memory.search",
+     "request": {
+      "limit": 5,
+      "query": "revenue"
+     },
+     "error": "embedding service is off: [REDACTED]"
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-memory search fails",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "error",
+     "requestDigest": "sha256:8069bb02228a229d5d77a1f9afb0f434207925d2eb70ed1f032afe18d8dc4906",
+     "errorType": "Error",
+     "errorDigest": "sha256:3395909c03baf2e3f7ed9a5e80fc98eff3c54ac0ad72b1ed3cda6cb47e053d10",
+     "operation": "memory.search",
+     "evidence": {
+      "requestedLimit": 5,
+      "returnedCount": 0,
+      "memories": []
+     }
+    },
+    "content": {
+     "sequence": 2,
+     "operation": "memory.search",
+     "request": {
+      "limit": 5,
+      "query": "revenue"
+     },
+     "error": "embedding service is off: [REDACTED]"
+    }
+   }
+  ]
+ },
+ {
+  "name": "memory search without content",
+  "operation": "memory.search",
+  "request": {
+   "query": "revenue",
+   "limit": 5
+  },
+  "reply": {
+   "value": []
+  },
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-memory search without content",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:8069bb02228a229d5d77a1f9afb0f434207925d2eb70ed1f032afe18d8dc4906",
+     "responseDigest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "operation": "memory.search",
+     "evidence": {
+      "requestedLimit": 5,
+      "returnedCount": 0,
+      "memories": []
+     }
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-memory search without content",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:8069bb02228a229d5d77a1f9afb0f434207925d2eb70ed1f032afe18d8dc4906",
+     "responseDigest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "operation": "memory.search",
+     "evidence": {
+      "requestedLimit": 5,
+      "returnedCount": 0,
+      "memories": []
+     }
+    }
+   }
+  ]
+ },
+ {
+  "name": "files search with content",
+  "operation": "files.search",
+  "request": {
+   "query": "net revenue"
+  },
+  "reply": {
+   "value": {
+    "matches": [
+     {
+      "path": "uploads/q3.xlsx",
+      "score": 2.5,
+      "passages": [
+       {
+        "location": "sheet Sales",
+        "snippet": "net revenue"
+       }
+      ]
+     },
+     {
+      "score": 1
+     },
+     {
+      "path": "uploads/notes.md",
+      "score": 1.25
+     }
+    ]
+   }
+  },
+  "secrets": [
+   "sk-live-0123456789abcdef"
+  ],
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-files search with content",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:a2dcbd84e428fcf1b151940e739a44c9d824461476b157644b9de84ec1b88069",
+     "responseDigest": "sha256:05e04d6f65722d0e7b2b40c99ba32ad3fc600e1c8f946da35ae83ff080defe8f",
+     "operation": "files.search",
+     "evidence": {
+      "returnedCount": 3,
+      "files": [
+       {
+        "id": "uploads/q3.xlsx",
+        "bodyDigest": "sha256:032450af4d6eb23a1f61989aa21759e91f59b617c8644f4a7f8a06653f2d6654"
+       },
+       {
+        "id": "uploads/notes.md",
+        "bodyDigest": "sha256:74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+       }
+      ]
+     }
+    },
+    "content": {
+     "sequence": 1,
+     "operation": "files.search",
+     "request": {
+      "query": "net revenue"
+     },
+     "rows": [
+      {
+       "passages": [
+        {
+         "location": "sheet Sales",
+         "snippet": "net revenue"
+        }
+       ],
+       "path": "uploads/q3.xlsx",
+       "score": 2.5
+      },
+      {
+       "score": 1
+      },
+      {
+       "path": "uploads/notes.md",
+       "score": 1.25
+      }
+     ],
+     "rowCount": 3,
+     "truncated": false
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-files search with content",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:a2dcbd84e428fcf1b151940e739a44c9d824461476b157644b9de84ec1b88069",
+     "responseDigest": "sha256:05e04d6f65722d0e7b2b40c99ba32ad3fc600e1c8f946da35ae83ff080defe8f",
+     "operation": "files.search",
+     "evidence": {
+      "returnedCount": 3,
+      "files": [
+       {
+        "id": "uploads/q3.xlsx",
+        "bodyDigest": "sha256:032450af4d6eb23a1f61989aa21759e91f59b617c8644f4a7f8a06653f2d6654"
+       },
+       {
+        "id": "uploads/notes.md",
+        "bodyDigest": "sha256:74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+       }
+      ]
+     }
+    },
+    "content": {
+     "sequence": 2,
+     "operation": "files.search",
+     "request": {
+      "query": "net revenue"
+     },
+     "rows": [
+      {
+       "passages": [
+        {
+         "location": "sheet Sales",
+         "snippet": "net revenue"
+        }
+       ],
+       "path": "uploads/q3.xlsx",
+       "score": 2.5
+      },
+      {
+       "score": 1
+      },
+      {
+       "path": "uploads/notes.md",
+       "score": 1.25
+      }
+     ],
+     "rowCount": 3,
+     "truncated": false
+    }
+   }
+  ]
+ },
+ {
+  "name": "files search truncated",
+  "operation": "files.search",
+  "request": {
+   "query": "net revenue",
+   "limit": 20
+  },
+  "reply": {
+   "value": {
+    "matches": [
+     {
+      "path": "uploads/report-0.pdf",
+      "score": 0.3333333333333333,
+      "passages": [
+       {
+        "location": "page 1",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 0"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-1.pdf",
+      "score": 0.25,
+      "passages": [
+       {
+        "location": "page 2",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 1"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-2.pdf",
+      "score": 0.2,
+      "passages": [
+       {
+        "location": "page 3",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 2"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-3.pdf",
+      "score": 0.16666666666666666,
+      "passages": [
+       {
+        "location": "page 4",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 3"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-4.pdf",
+      "score": 0.14285714285714285,
+      "passages": [
+       {
+        "location": "page 5",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 4"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-5.pdf",
+      "score": 0.125,
+      "passages": [
+       {
+        "location": "page 6",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 5"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-6.pdf",
+      "score": 0.1111111111111111,
+      "passages": [
+       {
+        "location": "page 7",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 6"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-7.pdf",
+      "score": 0.1,
+      "passages": [
+       {
+        "location": "page 8",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 7"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-8.pdf",
+      "score": 0.09090909090909091,
+      "passages": [
+       {
+        "location": "page 9",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 8"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-9.pdf",
+      "score": 0.08333333333333333,
+      "passages": [
+       {
+        "location": "page 10",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 9"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-10.pdf",
+      "score": 0.07692307692307693,
+      "passages": [
+       {
+        "location": "page 11",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 10"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-11.pdf",
+      "score": 0.07142857142857142,
+      "passages": [
+       {
+        "location": "page 12",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 11"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-12.pdf",
+      "score": 0.06666666666666667,
+      "passages": [
+       {
+        "location": "page 13",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 12"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-13.pdf",
+      "score": 0.0625,
+      "passages": [
+       {
+        "location": "page 14",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 13"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-14.pdf",
+      "score": 0.058823529411764705,
+      "passages": [
+       {
+        "location": "page 15",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 14"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-15.pdf",
+      "score": 0.05555555555555555,
+      "passages": [
+       {
+        "location": "page 16",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 15"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-16.pdf",
+      "score": 0.05263157894736842,
+      "passages": [
+       {
+        "location": "page 17",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 16"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-17.pdf",
+      "score": 0.05,
+      "passages": [
+       {
+        "location": "page 18",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 17"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-18.pdf",
+      "score": 0.047619047619047616,
+      "passages": [
+       {
+        "location": "page 19",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 18"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-19.pdf",
+      "score": 0.045454545454545456,
+      "passages": [
+       {
+        "location": "page 20",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 19"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-20.pdf",
+      "score": 0.043478260869565216,
+      "passages": [
+       {
+        "location": "page 21",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 20"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-21.pdf",
+      "score": 0.041666666666666664,
+      "passages": [
+       {
+        "location": "page 22",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 21"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-22.pdf",
+      "score": 0.04,
+      "passages": [
+       {
+        "location": "page 23",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 22"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-23.pdf",
+      "score": 0.038461538461538464,
+      "passages": [
+       {
+        "location": "page 24",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 23"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-24.pdf",
+      "score": 0.037037037037037035,
+      "passages": [
+       {
+        "location": "page 25",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 24"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-25.pdf",
+      "score": 0.03571428571428571,
+      "passages": [
+       {
+        "location": "page 26",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 25"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-26.pdf",
+      "score": 0.034482758620689655,
+      "passages": [
+       {
+        "location": "page 27",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 26"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-27.pdf",
+      "score": 0.03333333333333333,
+      "passages": [
+       {
+        "location": "page 28",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 27"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-28.pdf",
+      "score": 0.03225806451612903,
+      "passages": [
+       {
+        "location": "page 29",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 28"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-29.pdf",
+      "score": 0.03125,
+      "passages": [
+       {
+        "location": "page 30",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 29"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-30.pdf",
+      "score": 0.030303030303030304,
+      "passages": [
+       {
+        "location": "page 31",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 30"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-31.pdf",
+      "score": 0.029411764705882353,
+      "passages": [
+       {
+        "location": "page 32",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 31"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-32.pdf",
+      "score": 0.02857142857142857,
+      "passages": [
+       {
+        "location": "page 33",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 32"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-33.pdf",
+      "score": 0.027777777777777776,
+      "passages": [
+       {
+        "location": "page 34",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 33"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-34.pdf",
+      "score": 0.02702702702702703,
+      "passages": [
+       {
+        "location": "page 35",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 34"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-35.pdf",
+      "score": 0.02631578947368421,
+      "passages": [
+       {
+        "location": "page 36",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 35"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-36.pdf",
+      "score": 0.02564102564102564,
+      "passages": [
+       {
+        "location": "page 37",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 36"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-37.pdf",
+      "score": 0.025,
+      "passages": [
+       {
+        "location": "page 38",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 37"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-38.pdf",
+      "score": 0.024390243902439025,
+      "passages": [
+       {
+        "location": "page 39",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 38"
+       }
+      ]
+     },
+     {
+      "path": "uploads/report-39.pdf",
+      "score": 0.023809523809523808,
+      "passages": [
+       {
+        "location": "page 40",
+        "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 39"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "secrets": [],
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-files search truncated",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:bfd7d70d2a198dba79ac5a38e4fdc99b77e424ea0492ca74db8eff44b55d80bf",
+     "responseDigest": "sha256:9324cb8997491898b09b14436ddc04249460d1ba92f91f2927a220560ca15916",
+     "operation": "files.search",
+     "evidence": {
+      "requestedLimit": 20,
+      "returnedCount": 40,
+      "files": [
+       {
+        "id": "uploads/report-0.pdf",
+        "bodyDigest": "sha256:7d40082c044613d0cbf488f74d899a4c6b60be8d63a83ffb6212c1ff3a4f8a13"
+       },
+       {
+        "id": "uploads/report-1.pdf",
+        "bodyDigest": "sha256:10eff08affe422b29cb8ae2a69924b9df13a31ca1a5b7aa0c23c472f1bb4ca97"
+       },
+       {
+        "id": "uploads/report-2.pdf",
+        "bodyDigest": "sha256:743da397b022ccef1495e72eface2025e3b9c0e70a2ebcb4944eeda0871c4737"
+       },
+       {
+        "id": "uploads/report-3.pdf",
+        "bodyDigest": "sha256:cf0c76003166a2b29bff40862d01534cf7d1825360bec4181f6c0f38ef3d39be"
+       },
+       {
+        "id": "uploads/report-4.pdf",
+        "bodyDigest": "sha256:2b9369b2cc2939d290eb1b0d412e4a5625a7e55f83b5b868331615eb8545878e"
+       },
+       {
+        "id": "uploads/report-5.pdf",
+        "bodyDigest": "sha256:0a4487e3b217b5e49e8dce2f4bf81f6af67a0266d723cdd58e2c9c74aae79128"
+       },
+       {
+        "id": "uploads/report-6.pdf",
+        "bodyDigest": "sha256:15a1d23cd6958c86e8365131bbe350177c19522796e045ea686ef5f7a5227791"
+       },
+       {
+        "id": "uploads/report-7.pdf",
+        "bodyDigest": "sha256:66f707d7764bbc65d12d7744d2dd003ccd928ebca2dd4b6beb2d3442ab74024a"
+       },
+       {
+        "id": "uploads/report-8.pdf",
+        "bodyDigest": "sha256:10252a18e94a1ff98426dfcc5b0f962504527b860c35a17442914cbd65a2a0d6"
+       },
+       {
+        "id": "uploads/report-9.pdf",
+        "bodyDigest": "sha256:f39d1f7874c489a381fe5662a6b423dd6dde1ce864adfdedf047037376cca2bb"
+       },
+       {
+        "id": "uploads/report-10.pdf",
+        "bodyDigest": "sha256:d02522787ccc910d7297393b11dfbf3dafe6e087696dc8885fddaece6a4eef22"
+       },
+       {
+        "id": "uploads/report-11.pdf",
+        "bodyDigest": "sha256:23069f9e5613b03970a5d19581338e2bef639087e5b028bcf77508179fef3724"
+       },
+       {
+        "id": "uploads/report-12.pdf",
+        "bodyDigest": "sha256:99c4e5c70501dec1f588a9da4323df9c12344c0a589e0ba2df6a44db331ecf08"
+       },
+       {
+        "id": "uploads/report-13.pdf",
+        "bodyDigest": "sha256:082dff86d5acc659cc7305efcd18fc1b3a2f599ea68691cbd4ec2eef9e53bab3"
+       },
+       {
+        "id": "uploads/report-14.pdf",
+        "bodyDigest": "sha256:1629a219ff7742499cff2d108567151d0b0736309c4faa04d97f1e7908842f26"
+       },
+       {
+        "id": "uploads/report-15.pdf",
+        "bodyDigest": "sha256:7929adbdb85e1aaacc279256a7963f6dc816120111940a0e54d92ab8d1e77054"
+       },
+       {
+        "id": "uploads/report-16.pdf",
+        "bodyDigest": "sha256:ade2f091a3377538e42160319565b74be0f65f73117c4595a50e69c4a880c3da"
+       },
+       {
+        "id": "uploads/report-17.pdf",
+        "bodyDigest": "sha256:2a323b58f539da16465873a390bd5cbf1d3ceed7fccd517ebfbdf4ba02857474"
+       },
+       {
+        "id": "uploads/report-18.pdf",
+        "bodyDigest": "sha256:f9ffd76dbe464e8d929a7f272a35eac7ace1f1adcbf7fa8392c10fe0797e7907"
+       },
+       {
+        "id": "uploads/report-19.pdf",
+        "bodyDigest": "sha256:f5e6b58415c25c16fea3ac5ab7b28b86e633d1bcd629794821bea1948029cc7f"
+       },
+       {
+        "id": "uploads/report-20.pdf",
+        "bodyDigest": "sha256:bfc034144861ce6b7810c19eef9d81179d5898c36e71c334106fff0bfec02324"
+       },
+       {
+        "id": "uploads/report-21.pdf",
+        "bodyDigest": "sha256:3d26541e1e2a0a41366479e3f8846d11a7856676208ba0b9d5822370e7afc419"
+       },
+       {
+        "id": "uploads/report-22.pdf",
+        "bodyDigest": "sha256:9e2174ad67c2e26b362d94ceabf446e32651c749681791b2c17fa1332dcafa1a"
+       },
+       {
+        "id": "uploads/report-23.pdf",
+        "bodyDigest": "sha256:703feda669e18f6a0f3ac4cff64fa2ab006a4ec938db1c344c1ffc536a713a67"
+       },
+       {
+        "id": "uploads/report-24.pdf",
+        "bodyDigest": "sha256:8e4d73d10aab7c01bc02814c9c98c9e11300df14eadb4e7f36770a69d3784e46"
+       },
+       {
+        "id": "uploads/report-25.pdf",
+        "bodyDigest": "sha256:d6efbf0f7f6540834da6d22451af448ff25bbba9e01a3e8b2987d975e7953fdc"
+       },
+       {
+        "id": "uploads/report-26.pdf",
+        "bodyDigest": "sha256:706cb605f423bf2f4e99ce039404c94499daab6daa62f2372ca533d211816186"
+       },
+       {
+        "id": "uploads/report-27.pdf",
+        "bodyDigest": "sha256:21330180ccec5a82296165bd64551e3401102bfcc147a9ffe0afd67be5fb820d"
+       },
+       {
+        "id": "uploads/report-28.pdf",
+        "bodyDigest": "sha256:548565a35a2ad9df5ed4334e552315786226f185815aed88c939502686ae9be6"
+       },
+       {
+        "id": "uploads/report-29.pdf",
+        "bodyDigest": "sha256:cb505bd1c05f43cac431fed2e2a7f22edbce3c71d28cbe1d58ddc07ae0e057e1"
+       },
+       {
+        "id": "uploads/report-30.pdf",
+        "bodyDigest": "sha256:eaef33479861827cf22b684d5e830125b8c97804848befad2b8e2bd6f1f5fb52"
+       },
+       {
+        "id": "uploads/report-31.pdf",
+        "bodyDigest": "sha256:c853fc9317a721e0e343797e95c570b7da6dd65a8f4df7ecbbb62f487b15ef52"
+       },
+       {
+        "id": "uploads/report-32.pdf",
+        "bodyDigest": "sha256:749d7f5cd1123b365c55615736b29c0fc42db69d07b362a67de532e0b558eef1"
+       },
+       {
+        "id": "uploads/report-33.pdf",
+        "bodyDigest": "sha256:1bb7bc3aeb3a4236b923443e9c7c3a6b83e43826da11fd206012f4724fa6c287"
+       },
+       {
+        "id": "uploads/report-34.pdf",
+        "bodyDigest": "sha256:afd885f3dd03e2f3194f6cfc8006d449fa1e81330b56282bbda52f090ccd7e4d"
+       },
+       {
+        "id": "uploads/report-35.pdf",
+        "bodyDigest": "sha256:e29010cf3b9e1733bd3befad6c66a904fc680017f602d4d1493244d9c4613082"
+       },
+       {
+        "id": "uploads/report-36.pdf",
+        "bodyDigest": "sha256:d7bc064e2db58fdfc1ad0a6807c6ca2226dca5a37aee1b70842044b3cf8c37a6"
+       },
+       {
+        "id": "uploads/report-37.pdf",
+        "bodyDigest": "sha256:6e166b7d450c5ab67f058e4a6576aef6496b2b4ce52eacca821dce7cb1c4407f"
+       },
+       {
+        "id": "uploads/report-38.pdf",
+        "bodyDigest": "sha256:d65f875e76189cfcc2e65e5de7871322a6afad8ef7c0221d9b36e1408ab92cea"
+       },
+       {
+        "id": "uploads/report-39.pdf",
+        "bodyDigest": "sha256:4ec5b0c2057439a8fa94943953f5c23b220c7a3eee4f32af03d2cfe5b1d3d612"
+       }
+      ]
+     }
+    },
+    "content": {
+     "sequence": 1,
+     "operation": "files.search",
+     "request": {
+      "limit": 20,
+      "query": "net revenue"
+     },
+     "rows": [
+      {
+       "passages": [
+        {
+         "location": "page 1",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 0"
+        }
+       ],
+       "path": "uploads/report-0.pdf",
+       "score": 0.3333333333333333
+      },
+      {
+       "passages": [
+        {
+         "location": "page 2",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 1"
+        }
+       ],
+       "path": "uploads/report-1.pdf",
+       "score": 0.25
+      },
+      {
+       "passages": [
+        {
+         "location": "page 3",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 2"
+        }
+       ],
+       "path": "uploads/report-2.pdf",
+       "score": 0.2
+      },
+      {
+       "passages": [
+        {
+         "location": "page 4",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 3"
+        }
+       ],
+       "path": "uploads/report-3.pdf",
+       "score": 0.16666666666666666
+      },
+      {
+       "passages": [
+        {
+         "location": "page 5",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 4"
+        }
+       ],
+       "path": "uploads/report-4.pdf",
+       "score": 0.14285714285714285
+      },
+      {
+       "passages": [
+        {
+         "location": "page 6",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 5"
+        }
+       ],
+       "path": "uploads/report-5.pdf",
+       "score": 0.125
+      },
+      {
+       "passages": [
+        {
+         "location": "page 7",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 6"
+        }
+       ],
+       "path": "uploads/report-6.pdf",
+       "score": 0.1111111111111111
+      },
+      {
+       "passages": [
+        {
+         "location": "page 8",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 7"
+        }
+       ],
+       "path": "uploads/report-7.pdf",
+       "score": 0.1
+      },
+      {
+       "passages": [
+        {
+         "location": "page 9",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 8"
+        }
+       ],
+       "path": "uploads/report-8.pdf",
+       "score": 0.09090909090909091
+      },
+      {
+       "passages": [
+        {
+         "location": "page 10",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 9"
+        }
+       ],
+       "path": "uploads/report-9.pdf",
+       "score": 0.08333333333333333
+      },
+      {
+       "passages": [
+        {
+         "location": "page 11",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 10"
+        }
+       ],
+       "path": "uploads/report-10.pdf",
+       "score": 0.07692307692307693
+      },
+      {
+       "passages": [
+        {
+         "location": "page 12",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 11"
+        }
+       ],
+       "path": "uploads/report-11.pdf",
+       "score": 0.07142857142857142
+      },
+      {
+       "passages": [
+        {
+         "location": "page 13",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 12"
+        }
+       ],
+       "path": "uploads/report-12.pdf",
+       "score": 0.06666666666666667
+      },
+      {
+       "passages": [
+        {
+         "location": "page 14",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 13"
+        }
+       ],
+       "path": "uploads/report-13.pdf",
+       "score": 0.0625
+      },
+      {
+       "passages": [
+        {
+         "location": "page 15",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 14"
+        }
+       ],
+       "path": "uploads/report-14.pdf",
+       "score": 0.058823529411764705
+      },
+      {
+       "passages": [
+        {
+         "location": "page 16",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 15"
+        }
+       ],
+       "path": "uploads/report-15.pdf",
+       "score": 0.05555555555555555
+      },
+      {
+       "passages": [
+        {
+         "location": "page 17",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 16"
+        }
+       ],
+       "path": "uploads/report-16.pdf",
+       "score": 0.05263157894736842
+      },
+      {
+       "passages": [
+        {
+         "location": "page 18",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 17"
+        }
+       ],
+       "path": "uploads/report-17.pdf",
+       "score": 0.05
+      },
+      {
+       "passages": [
+        {
+         "location": "page 19",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 18"
+        }
+       ],
+       "path": "uploads/report-18.pdf",
+       "score": 0.047619047619047616
+      },
+      {
+       "passages": [
+        {
+         "location": "page 20",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 19"
+        }
+       ],
+       "path": "uploads/report-19.pdf",
+       "score": 0.045454545454545456
+      },
+      {
+       "passages": [
+        {
+         "location": "page 21",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 20"
+        }
+       ],
+       "path": "uploads/report-20.pdf",
+       "score": 0.043478260869565216
+      },
+      {
+       "passages": [
+        {
+         "location": "page 22",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 21"
+        }
+       ],
+       "path": "uploads/report-21.pdf",
+       "score": 0.041666666666666664
+      },
+      {
+       "passages": [
+        {
+         "location": "page 23",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 22"
+        }
+       ],
+       "path": "uploads/report-22.pdf",
+       "score": 0.04
+      },
+      {
+       "passages": [
+        {
+         "location": "page 24",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 23"
+        }
+       ],
+       "path": "uploads/report-23.pdf",
+       "score": 0.038461538461538464
+      },
+      {
+       "passages": [
+        {
+         "location": "page 25",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 24"
+        }
+       ],
+       "path": "uploads/report-24.pdf",
+       "score": 0.037037037037037035
+      },
+      {
+       "passages": [
+        {
+         "location": "page 26",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 25"
+        }
+       ],
+       "path": "uploads/report-25.pdf",
+       "score": 0.03571428571428571
+      },
+      {
+       "passages": [
+        {
+         "location": "page 27",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 26"
+        }
+       ],
+       "path": "uploads/report-26.pdf",
+       "score": 0.034482758620689655
+      }
+     ],
+     "rowCount": 40,
+     "truncated": true
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-files search truncated",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:bfd7d70d2a198dba79ac5a38e4fdc99b77e424ea0492ca74db8eff44b55d80bf",
+     "responseDigest": "sha256:9324cb8997491898b09b14436ddc04249460d1ba92f91f2927a220560ca15916",
+     "operation": "files.search",
+     "evidence": {
+      "requestedLimit": 20,
+      "returnedCount": 40,
+      "files": [
+       {
+        "id": "uploads/report-0.pdf",
+        "bodyDigest": "sha256:7d40082c044613d0cbf488f74d899a4c6b60be8d63a83ffb6212c1ff3a4f8a13"
+       },
+       {
+        "id": "uploads/report-1.pdf",
+        "bodyDigest": "sha256:10eff08affe422b29cb8ae2a69924b9df13a31ca1a5b7aa0c23c472f1bb4ca97"
+       },
+       {
+        "id": "uploads/report-2.pdf",
+        "bodyDigest": "sha256:743da397b022ccef1495e72eface2025e3b9c0e70a2ebcb4944eeda0871c4737"
+       },
+       {
+        "id": "uploads/report-3.pdf",
+        "bodyDigest": "sha256:cf0c76003166a2b29bff40862d01534cf7d1825360bec4181f6c0f38ef3d39be"
+       },
+       {
+        "id": "uploads/report-4.pdf",
+        "bodyDigest": "sha256:2b9369b2cc2939d290eb1b0d412e4a5625a7e55f83b5b868331615eb8545878e"
+       },
+       {
+        "id": "uploads/report-5.pdf",
+        "bodyDigest": "sha256:0a4487e3b217b5e49e8dce2f4bf81f6af67a0266d723cdd58e2c9c74aae79128"
+       },
+       {
+        "id": "uploads/report-6.pdf",
+        "bodyDigest": "sha256:15a1d23cd6958c86e8365131bbe350177c19522796e045ea686ef5f7a5227791"
+       },
+       {
+        "id": "uploads/report-7.pdf",
+        "bodyDigest": "sha256:66f707d7764bbc65d12d7744d2dd003ccd928ebca2dd4b6beb2d3442ab74024a"
+       },
+       {
+        "id": "uploads/report-8.pdf",
+        "bodyDigest": "sha256:10252a18e94a1ff98426dfcc5b0f962504527b860c35a17442914cbd65a2a0d6"
+       },
+       {
+        "id": "uploads/report-9.pdf",
+        "bodyDigest": "sha256:f39d1f7874c489a381fe5662a6b423dd6dde1ce864adfdedf047037376cca2bb"
+       },
+       {
+        "id": "uploads/report-10.pdf",
+        "bodyDigest": "sha256:d02522787ccc910d7297393b11dfbf3dafe6e087696dc8885fddaece6a4eef22"
+       },
+       {
+        "id": "uploads/report-11.pdf",
+        "bodyDigest": "sha256:23069f9e5613b03970a5d19581338e2bef639087e5b028bcf77508179fef3724"
+       },
+       {
+        "id": "uploads/report-12.pdf",
+        "bodyDigest": "sha256:99c4e5c70501dec1f588a9da4323df9c12344c0a589e0ba2df6a44db331ecf08"
+       },
+       {
+        "id": "uploads/report-13.pdf",
+        "bodyDigest": "sha256:082dff86d5acc659cc7305efcd18fc1b3a2f599ea68691cbd4ec2eef9e53bab3"
+       },
+       {
+        "id": "uploads/report-14.pdf",
+        "bodyDigest": "sha256:1629a219ff7742499cff2d108567151d0b0736309c4faa04d97f1e7908842f26"
+       },
+       {
+        "id": "uploads/report-15.pdf",
+        "bodyDigest": "sha256:7929adbdb85e1aaacc279256a7963f6dc816120111940a0e54d92ab8d1e77054"
+       },
+       {
+        "id": "uploads/report-16.pdf",
+        "bodyDigest": "sha256:ade2f091a3377538e42160319565b74be0f65f73117c4595a50e69c4a880c3da"
+       },
+       {
+        "id": "uploads/report-17.pdf",
+        "bodyDigest": "sha256:2a323b58f539da16465873a390bd5cbf1d3ceed7fccd517ebfbdf4ba02857474"
+       },
+       {
+        "id": "uploads/report-18.pdf",
+        "bodyDigest": "sha256:f9ffd76dbe464e8d929a7f272a35eac7ace1f1adcbf7fa8392c10fe0797e7907"
+       },
+       {
+        "id": "uploads/report-19.pdf",
+        "bodyDigest": "sha256:f5e6b58415c25c16fea3ac5ab7b28b86e633d1bcd629794821bea1948029cc7f"
+       },
+       {
+        "id": "uploads/report-20.pdf",
+        "bodyDigest": "sha256:bfc034144861ce6b7810c19eef9d81179d5898c36e71c334106fff0bfec02324"
+       },
+       {
+        "id": "uploads/report-21.pdf",
+        "bodyDigest": "sha256:3d26541e1e2a0a41366479e3f8846d11a7856676208ba0b9d5822370e7afc419"
+       },
+       {
+        "id": "uploads/report-22.pdf",
+        "bodyDigest": "sha256:9e2174ad67c2e26b362d94ceabf446e32651c749681791b2c17fa1332dcafa1a"
+       },
+       {
+        "id": "uploads/report-23.pdf",
+        "bodyDigest": "sha256:703feda669e18f6a0f3ac4cff64fa2ab006a4ec938db1c344c1ffc536a713a67"
+       },
+       {
+        "id": "uploads/report-24.pdf",
+        "bodyDigest": "sha256:8e4d73d10aab7c01bc02814c9c98c9e11300df14eadb4e7f36770a69d3784e46"
+       },
+       {
+        "id": "uploads/report-25.pdf",
+        "bodyDigest": "sha256:d6efbf0f7f6540834da6d22451af448ff25bbba9e01a3e8b2987d975e7953fdc"
+       },
+       {
+        "id": "uploads/report-26.pdf",
+        "bodyDigest": "sha256:706cb605f423bf2f4e99ce039404c94499daab6daa62f2372ca533d211816186"
+       },
+       {
+        "id": "uploads/report-27.pdf",
+        "bodyDigest": "sha256:21330180ccec5a82296165bd64551e3401102bfcc147a9ffe0afd67be5fb820d"
+       },
+       {
+        "id": "uploads/report-28.pdf",
+        "bodyDigest": "sha256:548565a35a2ad9df5ed4334e552315786226f185815aed88c939502686ae9be6"
+       },
+       {
+        "id": "uploads/report-29.pdf",
+        "bodyDigest": "sha256:cb505bd1c05f43cac431fed2e2a7f22edbce3c71d28cbe1d58ddc07ae0e057e1"
+       },
+       {
+        "id": "uploads/report-30.pdf",
+        "bodyDigest": "sha256:eaef33479861827cf22b684d5e830125b8c97804848befad2b8e2bd6f1f5fb52"
+       },
+       {
+        "id": "uploads/report-31.pdf",
+        "bodyDigest": "sha256:c853fc9317a721e0e343797e95c570b7da6dd65a8f4df7ecbbb62f487b15ef52"
+       },
+       {
+        "id": "uploads/report-32.pdf",
+        "bodyDigest": "sha256:749d7f5cd1123b365c55615736b29c0fc42db69d07b362a67de532e0b558eef1"
+       },
+       {
+        "id": "uploads/report-33.pdf",
+        "bodyDigest": "sha256:1bb7bc3aeb3a4236b923443e9c7c3a6b83e43826da11fd206012f4724fa6c287"
+       },
+       {
+        "id": "uploads/report-34.pdf",
+        "bodyDigest": "sha256:afd885f3dd03e2f3194f6cfc8006d449fa1e81330b56282bbda52f090ccd7e4d"
+       },
+       {
+        "id": "uploads/report-35.pdf",
+        "bodyDigest": "sha256:e29010cf3b9e1733bd3befad6c66a904fc680017f602d4d1493244d9c4613082"
+       },
+       {
+        "id": "uploads/report-36.pdf",
+        "bodyDigest": "sha256:d7bc064e2db58fdfc1ad0a6807c6ca2226dca5a37aee1b70842044b3cf8c37a6"
+       },
+       {
+        "id": "uploads/report-37.pdf",
+        "bodyDigest": "sha256:6e166b7d450c5ab67f058e4a6576aef6496b2b4ce52eacca821dce7cb1c4407f"
+       },
+       {
+        "id": "uploads/report-38.pdf",
+        "bodyDigest": "sha256:d65f875e76189cfcc2e65e5de7871322a6afad8ef7c0221d9b36e1408ab92cea"
+       },
+       {
+        "id": "uploads/report-39.pdf",
+        "bodyDigest": "sha256:4ec5b0c2057439a8fa94943953f5c23b220c7a3eee4f32af03d2cfe5b1d3d612"
+       }
+      ]
+     }
+    },
+    "content": {
+     "sequence": 2,
+     "operation": "files.search",
+     "request": {
+      "limit": 20,
+      "query": "net revenue"
+     },
+     "rows": [
+      {
+       "passages": [
+        {
+         "location": "page 1",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 0"
+        }
+       ],
+       "path": "uploads/report-0.pdf",
+       "score": 0.3333333333333333
+      },
+      {
+       "passages": [
+        {
+         "location": "page 2",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 1"
+        }
+       ],
+       "path": "uploads/report-1.pdf",
+       "score": 0.25
+      },
+      {
+       "passages": [
+        {
+         "location": "page 3",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 2"
+        }
+       ],
+       "path": "uploads/report-2.pdf",
+       "score": 0.2
+      },
+      {
+       "passages": [
+        {
+         "location": "page 4",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 3"
+        }
+       ],
+       "path": "uploads/report-3.pdf",
+       "score": 0.16666666666666666
+      },
+      {
+       "passages": [
+        {
+         "location": "page 5",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 4"
+        }
+       ],
+       "path": "uploads/report-4.pdf",
+       "score": 0.14285714285714285
+      },
+      {
+       "passages": [
+        {
+         "location": "page 6",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 5"
+        }
+       ],
+       "path": "uploads/report-5.pdf",
+       "score": 0.125
+      },
+      {
+       "passages": [
+        {
+         "location": "page 7",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 6"
+        }
+       ],
+       "path": "uploads/report-6.pdf",
+       "score": 0.1111111111111111
+      },
+      {
+       "passages": [
+        {
+         "location": "page 8",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 7"
+        }
+       ],
+       "path": "uploads/report-7.pdf",
+       "score": 0.1
+      },
+      {
+       "passages": [
+        {
+         "location": "page 9",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 8"
+        }
+       ],
+       "path": "uploads/report-8.pdf",
+       "score": 0.09090909090909091
+      },
+      {
+       "passages": [
+        {
+         "location": "page 10",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 9"
+        }
+       ],
+       "path": "uploads/report-9.pdf",
+       "score": 0.08333333333333333
+      },
+      {
+       "passages": [
+        {
+         "location": "page 11",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 10"
+        }
+       ],
+       "path": "uploads/report-10.pdf",
+       "score": 0.07692307692307693
+      },
+      {
+       "passages": [
+        {
+         "location": "page 12",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 11"
+        }
+       ],
+       "path": "uploads/report-11.pdf",
+       "score": 0.07142857142857142
+      },
+      {
+       "passages": [
+        {
+         "location": "page 13",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 12"
+        }
+       ],
+       "path": "uploads/report-12.pdf",
+       "score": 0.06666666666666667
+      },
+      {
+       "passages": [
+        {
+         "location": "page 14",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 13"
+        }
+       ],
+       "path": "uploads/report-13.pdf",
+       "score": 0.0625
+      },
+      {
+       "passages": [
+        {
+         "location": "page 15",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 14"
+        }
+       ],
+       "path": "uploads/report-14.pdf",
+       "score": 0.058823529411764705
+      },
+      {
+       "passages": [
+        {
+         "location": "page 16",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 15"
+        }
+       ],
+       "path": "uploads/report-15.pdf",
+       "score": 0.05555555555555555
+      },
+      {
+       "passages": [
+        {
+         "location": "page 17",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 16"
+        }
+       ],
+       "path": "uploads/report-16.pdf",
+       "score": 0.05263157894736842
+      },
+      {
+       "passages": [
+        {
+         "location": "page 18",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 17"
+        }
+       ],
+       "path": "uploads/report-17.pdf",
+       "score": 0.05
+      },
+      {
+       "passages": [
+        {
+         "location": "page 19",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 18"
+        }
+       ],
+       "path": "uploads/report-18.pdf",
+       "score": 0.047619047619047616
+      },
+      {
+       "passages": [
+        {
+         "location": "page 20",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 19"
+        }
+       ],
+       "path": "uploads/report-19.pdf",
+       "score": 0.045454545454545456
+      },
+      {
+       "passages": [
+        {
+         "location": "page 21",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 20"
+        }
+       ],
+       "path": "uploads/report-20.pdf",
+       "score": 0.043478260869565216
+      },
+      {
+       "passages": [
+        {
+         "location": "page 22",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 21"
+        }
+       ],
+       "path": "uploads/report-21.pdf",
+       "score": 0.041666666666666664
+      },
+      {
+       "passages": [
+        {
+         "location": "page 23",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 22"
+        }
+       ],
+       "path": "uploads/report-22.pdf",
+       "score": 0.04
+      },
+      {
+       "passages": [
+        {
+         "location": "page 24",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 23"
+        }
+       ],
+       "path": "uploads/report-23.pdf",
+       "score": 0.038461538461538464
+      },
+      {
+       "passages": [
+        {
+         "location": "page 25",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 24"
+        }
+       ],
+       "path": "uploads/report-24.pdf",
+       "score": 0.037037037037037035
+      },
+      {
+       "passages": [
+        {
+         "location": "page 26",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 25"
+        }
+       ],
+       "path": "uploads/report-25.pdf",
+       "score": 0.03571428571428571
+      },
+      {
+       "passages": [
+        {
+         "location": "page 27",
+         "snippet": "net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue net revenue 26"
+        }
+       ],
+       "path": "uploads/report-26.pdf",
+       "score": 0.034482758620689655
+      }
+     ],
+     "rowCount": 40,
+     "truncated": true
+    }
+   }
+  ]
+ },
+ {
+  "name": "files search fails",
+  "operation": "files.search",
+  "request": {
+   "query": "net revenue"
+  },
+  "reply": {
+   "throws": "File search is off: OPENNEKO_SERVE_URL is not set."
+  },
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-files search fails",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "error",
+     "requestDigest": "sha256:a2dcbd84e428fcf1b151940e739a44c9d824461476b157644b9de84ec1b88069",
+     "errorType": "Error",
+     "errorDigest": "sha256:885619fd3a40ef0625cfdc8c511798ddf6ca3fe2abaa7e696872318a73d2f223",
+     "operation": "files.search",
+     "evidence": {
+      "returnedCount": 0,
+      "files": []
+     }
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-files search fails",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "error",
+     "requestDigest": "sha256:a2dcbd84e428fcf1b151940e739a44c9d824461476b157644b9de84ec1b88069",
+     "errorType": "Error",
+     "errorDigest": "sha256:885619fd3a40ef0625cfdc8c511798ddf6ca3fe2abaa7e696872318a73d2f223",
+     "operation": "files.search",
+     "evidence": {
+      "returnedCount": 0,
+      "files": []
+     }
+    }
+   }
+  ]
+ }
+]

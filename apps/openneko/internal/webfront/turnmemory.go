@@ -4,7 +4,10 @@ import (
 	"context"
 	"log"
 	"slices"
+	"strconv"
 	"strings"
+
+	"github.com/jackc/pgx/v5"
 )
 
 var (
@@ -100,8 +103,51 @@ func (a *API) memoryPromptContext(ctx context.Context, s memoryScope, query stri
 
 const memoryKeywordQuery = `nullif(replace(plainto_tsquery('english', $4)::text, ' & ', ' | '), '')::tsquery`
 
-// memoriesByContext is searchWorkMemoryByContext().
+// memoriesByContext is searchWorkMemoryByContext() without the scores.
 func (a *API) memoriesByContext(ctx context.Context, s memoryScope, query string, limit int) ([]memoryOut, error) {
+	found, err := a.memorySearch(ctx, s, query, limit)
+	out := make([]memoryOut, len(found))
+	for i, m := range found {
+		out[i] = m.memoryOut
+	}
+	return out, err
+}
+
+type scoredMemory struct {
+	memoryOut
+	score float64
+}
+
+// scoredRows scans memoryColumns and then the score, which the query gives
+// as text so that a real (float4) rank reads as node-postgres reads it.
+type scoredRows struct {
+	pgx.Rows
+	score *string
+}
+
+func (r scoredRows) Scan(dest ...any) error { return r.Rows.Scan(append(dest, r.score)...) }
+
+func (a *API) collectScored(ctx context.Context, sql string, args ...any) ([]scoredMemory, error) {
+	rows, err := a.DB.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []scoredMemory{}
+	for rows.Next() {
+		var score string
+		m, err := a.scanMemory(scoredRows{rows, &score})
+		if err != nil {
+			return nil, err
+		}
+		f, _ := strconv.ParseFloat(score, 64)
+		out = append(out, scoredMemory{m, f})
+	}
+	return out, rows.Err()
+}
+
+// memorySearch is searchWorkMemoryByContext().
+func (a *API) memorySearch(ctx context.Context, s memoryScope, query string, limit int) ([]scoredMemory, error) {
 	model := a.EmbeddingModel()
 	var vector string
 	if model != "" {
@@ -112,21 +158,22 @@ func (a *API) memoriesByContext(ctx context.Context, s memoryScope, query string
 			vector = vectorText(v)
 		}
 	}
-	keyword := func(unindexed string) ([]memoryOut, error) {
+	keyword := func(unindexed string) ([]scoredMemory, error) {
 		args := append(s.args(), query, limit)
 		filter := ""
 		if unindexed != "" {
 			args = append(args, unindexed)
 			filter = ` and (embedding is null or embedding_model is distinct from $6)`
 		}
-		return a.collectMemories(ctx, a.DB, `select `+memoryColumns+` from work_memory
+		return a.collectScored(ctx, `select `+memoryColumns+`, ts_rank_cd(to_tsvector('english', text), `+memoryKeywordQuery+`)::text
+			from work_memory
 			where `+memoryVisible+filter+` and to_tsvector('english', text) @@ `+memoryKeywordQuery+`
 			order by ts_rank_cd(to_tsvector('english', text), `+memoryKeywordQuery+`) desc, updated_at desc limit $5`, args...)
 	}
-	var rows []memoryOut
+	var rows []scoredMemory
 	var err error
 	if vector != "" {
-		semantic, err := a.collectMemories(ctx, a.DB, `select `+memoryColumns+` from work_memory
+		semantic, err := a.collectScored(ctx, `select `+memoryColumns+`, (1 - (embedding <=> $5::vector))::text from work_memory
 			where `+memoryVisible+` and embedding is not null and embedding_model = $4
 			order by embedding <=> $5::vector limit $6`, append(s.args(), model, vector, limit)...)
 		if err != nil {
@@ -146,16 +193,21 @@ func (a *API) memoriesByContext(ctx context.Context, s memoryScope, query string
 	if err := a.touchMemories(ctx, s, rows); err != nil {
 		return nil, err
 	}
-	return keptIntact(rows), nil
+	return slices.DeleteFunc(rows, func(m scoredMemory) bool {
+		if !m.IntegrityOK {
+			log.Printf("[work-memory] integrity check FAILED for memory %s (org %s) — excluded from agent context", m.ID, m.OrgID)
+		}
+		return !m.IntegrityOK
+	}), nil
 }
 
-func interleaveMemories(semantic, unindexed []memoryOut, limit int) []memoryOut {
+func interleaveMemories(semantic, unindexed []scoredMemory, limit int) []scoredMemory {
 	if len(unindexed) == 0 {
 		return semantic[:min(len(semantic), limit)]
 	}
-	var out []memoryOut
+	var out []scoredMemory
 	seen := map[string]bool{}
-	push := func(list []memoryOut, i int) {
+	push := func(list []scoredMemory, i int) {
 		if i >= len(list) || len(out) >= limit || seen[list[i].ID] {
 			return
 		}
@@ -169,7 +221,7 @@ func interleaveMemories(semantic, unindexed []memoryOut, limit int) []memoryOut 
 	return out
 }
 
-func (a *API) touchMemories(ctx context.Context, s memoryScope, rows []memoryOut) error {
+func (a *API) touchMemories(ctx context.Context, s memoryScope, rows []scoredMemory) error {
 	var runID *string
 	if s.RunID != "" {
 		runID = &s.RunID
