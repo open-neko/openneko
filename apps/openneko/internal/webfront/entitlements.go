@@ -14,6 +14,9 @@ type actor struct {
 	OrgID  string
 	UserID string
 	Admin  bool
+	// PackID marks the service actor of a run that a pack's workflow
+	// started. It holds only that pack's items.
+	PackID string
 }
 
 func (a *API) currentActor(ctx context.Context, r *http.Request) (actor, error) {
@@ -50,6 +53,23 @@ func (a *API) heldItems(ctx context.Context, act actor, itemType string) (heldSe
 		return heldSet{All: true}, nil
 	}
 	held := heldSet{IDs: map[string]bool{}}
+	if act.PackID != "" {
+		spec, ok := packItemJoins[itemType]
+		if !ok {
+			return held, nil
+		}
+		ids, err := collectStrings(ctx, a, `
+			select distinct `+spec.idExpr+`
+			from pack_artifact a
+			join pack_install i on i.id = a.pack_install_id and i.status <> 'removed'
+			`+spec.join+`
+			where a.org_id = $1 and a.artifact_kind = $2 and a.ownership <> 'detached' and i.pack_id = $3`,
+			act.OrgID, spec.kind, act.PackID)
+		for _, id := range ids {
+			held.IDs[id] = true
+		}
+		return held, err
+	}
 	if act.UserID == "" {
 		return held, nil
 	}
