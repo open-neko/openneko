@@ -104,6 +104,7 @@ type workPromptInput struct {
 	InlineTranscript          bool             `json:"inlineTranscript"`
 	Bot                       *threadBot       `json:"bot"`
 	FilesEnabled              bool             `json:"filesEnabled"`
+	ScriptData                bool             `json:"scriptData"`
 }
 
 const graphjinExecuteTool = "mcp_neko_graphjin_execute_graphql"
@@ -150,7 +151,7 @@ func buildWorkPrompt(in workPromptInput) string {
 		pick(in.SupportsPolicyTool, section("rules_tool"), section("rules_fence")),
 		sourceConfig,
 		delegation,
-		dataAccessSection(in.Knowledge, false),
+		dataAccessSection(in.Knowledge, false, in.ScriptData),
 		section("conduct", "date_rule", section("date_rule")),
 		closing,
 		in.OperatorProfile,
@@ -242,7 +243,7 @@ func memorySection(searchTool, files bool, memoryContext string) string {
 		"usage", "\n\n"+strings.Join(usage, "\n\n"))
 }
 
-func dataAccessSection(k knowledgePack, readOnly bool) string {
+func dataAccessSection(k knowledgePack, readOnly, scripts bool) string {
 	tool := func(name string) string { return strings.TrimSuffix(graphjinExecuteTool, "execute_graphql") + name }
 	agentic := k.Mode == "agentic"
 	var block string
@@ -261,7 +262,7 @@ func dataAccessSection(k knowledgePack, readOnly bool) string {
 		"validateTool", tool("validate_where_clause"),
 		"savedQueryTool", tool("execute_saved_query"),
 		"queryTool", graphjinExecuteTool,
-		"scripts", section("scripts_on", "queryTool", graphjinExecuteTool),
+		"scripts", pick(scripts, section("scripts_on", "queryTool", graphjinExecuteTool), section("scripts_off")),
 		"writes", pick(readOnly, section("read_only"), section("writes")),
 		"discovery", pick(agentic, section("agentic_discovery"), section("inline_discovery")),
 		"date_rule", section("date_rule"),

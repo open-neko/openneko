@@ -22,6 +22,7 @@ type workflowPromptInput struct {
 	Workspace           agentWorkspace `json:"workspace"`
 	Knowledge           knowledgePack  `json:"knowledge"`
 	FilesEnabled        bool           `json:"filesEnabled"`
+	ScriptData          bool           `json:"scriptData"`
 }
 
 func jsProp(v any, key string) any {
@@ -63,7 +64,7 @@ func buildWorkflowPrompt(in workflowPromptInput) string {
 		"goal", goal,
 		"author", author,
 		"steps", steps,
-		"data_access", dataAccessSection(in.Knowledge, true),
+		"data_access", dataAccessSection(in.Knowledge, true, in.ScriptData),
 		"date_rule", section("date_rule"),
 		"outputs", section("workflow_outputs"),
 		"actions", section("workflow_actions"),

@@ -110,6 +110,7 @@ const all = {
   supportsNativeDelegation: true,
   inlineTranscript: true,
   bot: null as Case["input"]["bot"],
+  scriptData: true,
 };
 
 const cases: Case[] = [
@@ -183,6 +184,11 @@ const cases: Case[] = [
     name: "skill list catalog empty",
     filesEnabled: false,
     input: { ...all, backend: "other" as "ax", knowledge: legacy },
+  },
+  {
+    name: "no sandbox, so no script data",
+    filesEnabled: true,
+    input: { ...all, scriptData: false },
   },
 ];
 

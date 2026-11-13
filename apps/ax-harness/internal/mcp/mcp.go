@@ -48,21 +48,27 @@ func Connect(ctx context.Context, cmd *exec.Cmd, prefix string, effects map[stri
 	return capabilities, session.Close, nil
 }
 
+// Caller calls a tool of the session by its MCP name, listed or not.
+type Caller func(ctx context.Context, name string, input json.RawMessage) (json.RawMessage, error)
+
 // ConnectStream is Connect for an MCP server reached over stream, which it
-// closes with the session.
-func ConnectStream(ctx context.Context, stream io.ReadWriteCloser, prefix string, effects map[string]string) ([]agent.Capability, func() error, error) {
+// closes with the session. The Caller is for host code, never for the model.
+func ConnectStream(ctx context.Context, stream io.ReadWriteCloser, prefix string, effects map[string]string) ([]agent.Capability, Caller, func() error, error) {
 	client := protocol.NewClient(&protocol.Implementation{Name: "ax-harness", Version: "1"}, nil)
 	session, err := client.Connect(ctx, &protocol.IOTransport{Reader: stream, Writer: stream}, nil)
 	if err != nil {
 		_ = stream.Close()
-		return nil, nil, fmt.Errorf("MCP connection failed: %w", err)
+		return nil, nil, nil, fmt.Errorf("MCP connection failed: %w", err)
 	}
 	capabilities, err := Capabilities(ctx, session, prefix, effects)
 	if err != nil {
 		_ = session.Close()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return capabilities, session.Close, nil
+	caller := func(ctx context.Context, name string, input json.RawMessage) (json.RawMessage, error) {
+		return call(ctx, session, name, input)
+	}
+	return capabilities, caller, session.Close, nil
 }
 
 // Capabilities lists the tools of an open session. A tool whose prefixed name

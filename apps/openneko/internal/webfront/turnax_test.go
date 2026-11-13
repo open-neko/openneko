@@ -628,7 +628,7 @@ func TestAgentCoreThroughServe(t *testing.T) {
 		NativeDelegationOff: true,
 		FilesEnabled:        func() bool { return false },
 		toolBackend:         func(turnBinding) toolBackend { return ft },
-		withoutDataSocket:   true,
+		withoutScriptData:   true,
 		Emit: func(_ context.Context, e any) error {
 			evMu.Lock()
 			events = append(events, jsStringify(e, false))

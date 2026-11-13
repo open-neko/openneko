@@ -114,10 +114,37 @@ put TLS in front of it, and set `OPENNEKO_SANDBOX_URL` to
 `https://host:port` and `OPENNEKO_SANDBOX_KEY` to the key in OpenNeko's
 `.env`.
 
+## Script data
+
+A skill script reads data with `from neko_data import query` or
+`$RUN_DIR/bin/neko-query`. The sandbox holds no key, no token and no
+socket, and it needs no network for this. The host runs each query:
+
+1. The script asks for rows that the run does not hold yet. `neko_data`
+   writes the request to `$RUN_DIR/.neko-data/requests/` and stops the
+   script with exit code 75.
+2. OpenNeko runs the query with the run's GraphJin tools, under the run's
+   identity, tool policy, audit and trace. It keeps the query and its rows
+   in the run's record, `.openneko/script-data.jsonl`, which never goes to
+   the sandbox.
+3. OpenNeko writes the rows to `$RUN_DIR/.neko-data/answers/` and runs the
+   same command again. The script now reads the rows from the file. A query
+   that fails gives the script the error, and `query()` raises
+   `NekoDataError`.
+
+The model sees only the output of the last run. Each run has these limits:
+10,000 rows and 4 MiB for one query, 50 queries, and 15 minutes of query
+time. A query over a limit gives the script an error. When the run reaches
+the query or time limit, OpenNeko stops and adds a line to the command's
+output. A script that runs again in the same run gets the same rows from
+the record.
+
+Outside OpenNeko, set `NEKO_DATA_GRAPHJIN_URL` to a GraphJin GraphQL URL
+(for example `http://localhost:8080/api/v1/graphql`), and `neko_data` sends
+each query there.
+
 ## Limits
 
-- Skill scripts cannot query GraphJin through `neko-query` from the sandbox.
-  The data socket stays in the runner.
 - A run's folder lives in the sandbox until the run ends. Plan disk space
   for the largest run folder times the runs at once.
 

@@ -9,6 +9,7 @@ import {
   buildBridgeServer,
   buildMultiplexedBridgeServer,
   multiplexedToolName,
+  SCRIPT_DATA_TOOL,
 } from "../../src/agent-sandbox/mcp-bridge.js";
 import { BrokerControlPlane } from "../../src/agent-sandbox/broker-client.js";
 
@@ -284,6 +285,50 @@ describe("mcp-bridge buildBridgeServer", () => {
     } finally {
       await client.close();
       await multiplexed.instance.close();
+    }
+  });
+
+  it("answers the hidden script data tool only for a run with script data", async () => {
+    const listGraphjinTools = vi.fn(async () => [
+      { name: "execute_graphql", description: "Run", inputSchema: { type: "object" as const, properties: {} } },
+    ]);
+    const callGraphjinTool = vi.fn(async () => ({
+      content: [{ type: "text" as const, text: '{"data":{"orders":[{"id":1}]}}' }],
+    }));
+    const controlPlane = { listGraphjinTools, callGraphjinTool } as unknown as BrokerControlPlane;
+    for (const scriptData of [true, false]) {
+      const multiplexed = await buildMultiplexedBridgeServer(["neko_memory"], {
+        ...ctx(),
+        controlPlane,
+        graphjinToolPolicy: GRAPHJIN_DIRECT_GOVERNED_POLICY,
+        scriptData,
+      });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      await multiplexed.instance.connect(serverTransport);
+      const client = new Client({ name: "script-data-test", version: "1.0.0" });
+      await client.connect(clientTransport);
+      try {
+        const listed = await client.listTools();
+        expect(listed.tools.map((tool) => tool.name)).not.toContain(SCRIPT_DATA_TOOL);
+        const call = client.callTool({
+          name: SCRIPT_DATA_TOOL,
+          arguments: { query: "query { orders { id } }", variables: { x: 1 } },
+        });
+        if (!scriptData) {
+          await expect(call).rejects.toThrow(/unknown tool script_data_query/);
+          continue;
+        }
+        expect(await call).toEqual({ content: [{ type: "text", text: '{"data":{"orders":[{"id":1}]}}' }] });
+        expect(callGraphjinTool).toHaveBeenCalledWith({
+          orgId: "org-1",
+          runId: "22222222-2222-4222-8222-222222222222",
+          name: "execute_graphql",
+          arguments: { query: "query { orders { id } }", variables: { x: 1 } },
+        });
+      } finally {
+        await client.close();
+        await multiplexed.instance.close();
+      }
     }
   });
 

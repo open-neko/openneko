@@ -130,7 +130,7 @@ export type DataAccessOptions = {
   queryIdentity?: "actor" | "service";
   /** Restrict this agent's use of otherwise caller-visible execution tools. */
   readOnly?: boolean;
-  /** Skill scripts can run the query tool through the run's data socket. */
+  /** Skill scripts can run the query tool: the run has a sandbox and a data broker. */
   scriptAccess?: boolean;
   workspace: AgentWorkspace;
   knowledge: KnowledgePackContents;
@@ -250,7 +250,7 @@ same refusal, so fix the query instead of changing the transport.
 Scripts query GraphJin themselves through the same \`execute_graphql\` tool,
 identity, and policy. In Python, \`from neko_data import query\` and call
 \`query(graphql, variables)\`: it returns the data object and raises
-\`NekoDataError\` on any GraphQL error. In the shell, \`neko-query '<graphql>'\`
+\`NekoDataError\` on any GraphQL error. In the shell, \`$RUN_DIR/bin/neko-query '<graphql>'\`
 prints the data object as JSON. When a skill bundles a script, run the script
 and let it fetch its own data. When a task needs many queries, chunked
 \`in\` filters, or rows that belong in files, write a script that uses

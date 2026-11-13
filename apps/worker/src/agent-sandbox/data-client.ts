@@ -4,118 +4,99 @@ import { join } from "node:path";
 // Stdlib-only, so it runs under any python3 in the sandbox.
 export const NEKO_DATA_PY = String.raw`"""Query OpenNeko data from a skill script.
 
-The run serves the agent's neko_graphjin MCP tools on a local Unix socket.
-Calls run under the same identity, policy and audit as the agent's own calls.
-
     from neko_data import query
     rows = query("query { orders(limit: 10) { id } }")["orders"]
+
+In an OpenNeko run, the script holds no key and no socket. When it asks for
+rows that the run has not fetched yet, it stops with its request. OpenNeko
+runs the query under the run's identity and policy, and runs the script
+again with the rows. Outside OpenNeko, set NEKO_DATA_GRAPHJIN_URL to a
+GraphJin GraphQL URL and the script calls it directly.
 """
-import http.client
-import itertools
+import hashlib
 import json
 import os
-import socket
+import sys
+import urllib.error
+import urllib.request
 
-__all__ = ["NekoDataError", "call_tool", "query"]
+__all__ = ["NekoDataError", "query"]
 
-_ids = itertools.count(1)
-
-# Written by the run at install time. Tools that scrub the environment, such
-# as sandboxed code runners, still reach the run's socket through this default.
-_DEFAULT_SOCKET = __NEKO_DATA_SOCKET__
+WAIT_EXIT_CODE = 75
+_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), ".neko-data")
 
 
 class NekoDataError(RuntimeError):
     pass
 
 
-class _UnixConnection(http.client.HTTPConnection):
-    def __init__(self, path, timeout):
-        super().__init__("localhost", timeout=timeout)
-        self._path = path
-
-    def connect(self):
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(self.timeout)
-        sock.connect(self._path)
-        self.sock = sock
+def _request(graphql, variables, namespace):
+    return {"query": graphql, "variables": variables or None, "namespace": namespace or None}
 
 
-def _socket_path():
-    path = os.environ.get("OPENNEKO_DATA_SOCKET") or _DEFAULT_SOCKET
-    if not path:
-        raise NekoDataError("this run has no data socket, so it has no data access")
-    return path
+def _key(request):
+    return hashlib.sha256(
+        json.dumps(request, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    ).hexdigest()
 
 
-def _text(result):
-    for item in result.get("content") or []:
-        if item.get("type") == "text":
-            return item.get("text") or ""
-    return ""
-
-
-def call_tool(name, arguments=None, timeout=300):
-    """Call one neko_graphjin MCP tool and return the raw MCP result."""
-    body = json.dumps({
-        "jsonrpc": "2.0",
-        "id": next(_ids),
-        "method": "tools/call",
-        "params": {"name": name, "arguments": arguments or {}},
-    })
-    conn = _UnixConnection(_socket_path(), timeout)
+def _from_run(request):
+    key = _key(request)
+    answer = os.path.join(_DATA_DIR, "answers", key + ".json")
     try:
-        conn.request("POST", "/mcp", body=body, headers={
-            "content-type": "application/json",
-            "accept": "application/json, text/event-stream",
-        })
-        resp = conn.getresponse()
-        raw = resp.read()
-    finally:
-        conn.close()
-    try:
-        message = json.loads(raw)
+        with open(answer, encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        pass
     except ValueError:
-        raise NekoDataError("data socket returned HTTP %s: %r" % (resp.status, raw[:300]))
-    if message.get("error"):
-        error = message["error"]
-        raise NekoDataError(error.get("message") or json.dumps(error))
-    result = message.get("result") or {}
-    if result.get("isError"):
-        raise NekoDataError(_text(result) or "%s failed" % name)
-    return result
+        raise NekoDataError("the recorded answer for this query is damaged")
+    requests = os.path.join(_DATA_DIR, "requests")
+    os.makedirs(requests, exist_ok=True)
+    body = {k: v for k, v in request.items() if v is not None}
+    partial = os.path.join(requests, key + ".part")
+    with open(partial, "w", encoding="utf-8") as f:
+        json.dump(body, f)
+    os.replace(partial, os.path.join(requests, key + ".json"))
+    sys.stdout.flush()
+    sys.stderr.write("neko_data: OpenNeko runs this query and starts the script again\n")
+    sys.stderr.flush()
+    os._exit(WAIT_EXIT_CODE)
 
 
-def _payload(value):
-    if isinstance(value, str):
-        try:
-            value = json.loads(value)
-        except ValueError:
-            raise NekoDataError("execute_graphql returned text that is not JSON")
-    if isinstance(value, dict) and "data" not in value and "errors" not in value:
-        if "structuredContent" in value or "content" in value:
-            structured = value.get("structuredContent")
-            return _payload(structured if isinstance(structured, dict) else _text(value))
-        if "result" in value:
-            return _payload(value["result"])
-    if not isinstance(value, dict):
-        raise NekoDataError("execute_graphql returned no JSON object")
-    return value
-
-
-def query(graphql, variables=None, namespace=None):
-    """Run a read query and return its data object. Raises on any GraphQL error."""
-    arguments = {"query": graphql}
-    if variables:
-        arguments["variables"] = variables
-    if namespace:
-        arguments["namespace"] = namespace
-    payload = _payload(call_tool("execute_graphql", arguments))
+def _from_graphjin(url, request, timeout):
+    body = {"query": request["query"]}
+    if request["variables"]:
+        body["variables"] = request["variables"]
+    req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), method="POST",
+                                 headers={"content-type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as err:
+        raw = err.read()
+    except (urllib.error.URLError, OSError) as err:
+        raise NekoDataError("GraphJin did not answer: %s" % err)
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        raise NekoDataError("GraphJin returned text that is not JSON: %r" % raw[:300])
+    if not isinstance(payload, dict):
+        raise NekoDataError("GraphJin returned no JSON object")
     if payload.get("errors"):
-        raise NekoDataError(json.dumps(payload["errors"])[:4000])
-    data = payload.get("data")
+        return {"error": json.dumps(payload["errors"])[:4000]}
+    return {"data": payload.get("data")}
+
+
+def query(graphql, variables=None, namespace=None, timeout=300):
+    """Run a read query and return its data object. Raises on any GraphQL error."""
+    request = _request(graphql, variables, namespace)
+    url = os.environ.get("NEKO_DATA_GRAPHJIN_URL")
+    answer = _from_graphjin(url, request, timeout) if url else _from_run(request)
+    if answer.get("error"):
+        raise NekoDataError(answer["error"])
+    data = answer.get("data")
     if not isinstance(data, dict):
-        raise NekoDataError("execute_graphql returned no data object")
+        raise NekoDataError("the query returned no data object")
     return data
 `;
 
@@ -154,17 +135,10 @@ if __name__ == "__main__":
     sys.exit(main())
 `;
 
-/** Writes neko_data.py, bound to the run's socket, and neko-query into bin. */
-export async function installDataClient(
-  binRoot: string,
-  socketPath: string,
-): Promise<void> {
+/** Writes neko_data.py and neko-query into bin. */
+export async function installDataClient(binRoot: string): Promise<void> {
   await mkdir(binRoot, { recursive: true });
-  const client = NEKO_DATA_PY.replace(
-    "__NEKO_DATA_SOCKET__",
-    JSON.stringify(socketPath),
-  );
-  await writeFile(join(binRoot, "neko_data.py"), client, "utf8");
+  await writeFile(join(binRoot, "neko_data.py"), NEKO_DATA_PY, "utf8");
   const cli = join(binRoot, "neko-query");
   await writeFile(cli, NEKO_QUERY_CLI, "utf8");
   await chmod(cli, 0o755);
