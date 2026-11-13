@@ -1893,5 +1893,724 @@
     }
    }
   ]
+ },
+ {
+  "name": "graphjin tools list",
+  "operation": "graphjin.tools_list",
+  "request": {},
+  "reply": {
+   "value": [
+    {
+     "name": "execute_graphql",
+     "description": "Run.",
+     "inputSchema": {
+      "type": "object",
+      "required": [
+       "query"
+      ],
+      "properties": {
+       "query": {
+        "type": "string"
+       }
+      }
+     }
+    },
+    {
+     "name": "graphql_help"
+    },
+    {
+     "name": "",
+     "inputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "description": "no name"
+    },
+    "not a tool"
+   ]
+  },
+  "secrets": [
+   "sk-live-0123456789abcdef"
+  ],
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-graphjin tools list",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+     "responseDigest": "sha256:1e7d29bc740cf1bc0a4ba0c2b56bf9fc4f424d69b5bf04720d3c1e8f956808cb",
+     "operation": "graphjin.tools_list",
+     "evidence": {
+      "returnedCount": 2,
+      "catalogDigest": "sha256:1e7d29bc740cf1bc0a4ba0c2b56bf9fc4f424d69b5bf04720d3c1e8f956808cb",
+      "tools": [
+       {
+        "name": "execute_graphql",
+        "schemaDigest": "sha256:1dc63095e8672403bbe40fa26719d175e695c0167f6daad6b9655f6506491f01"
+       },
+       {
+        "name": "graphql_help",
+        "schemaDigest": "sha256:74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+       }
+      ]
+     }
+    },
+    "content": {
+     "sequence": 1,
+     "operation": "graphjin.tools_list",
+     "request": {},
+     "rows": [
+      {
+       "description": "Run.",
+       "inputSchema": {
+        "properties": {
+         "query": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "query"
+        ],
+        "type": "object"
+       },
+       "name": "execute_graphql"
+      },
+      {
+       "name": "graphql_help"
+      },
+      {
+       "inputSchema": {
+        "type": "object"
+       },
+       "name": ""
+      },
+      {
+       "description": "no name"
+      },
+      "not a tool"
+     ],
+     "rowCount": 5,
+     "truncated": false
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-graphjin tools list",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+     "responseDigest": "sha256:1e7d29bc740cf1bc0a4ba0c2b56bf9fc4f424d69b5bf04720d3c1e8f956808cb",
+     "operation": "graphjin.tools_list",
+     "evidence": {
+      "returnedCount": 2,
+      "catalogDigest": "sha256:1e7d29bc740cf1bc0a4ba0c2b56bf9fc4f424d69b5bf04720d3c1e8f956808cb",
+      "tools": [
+       {
+        "name": "execute_graphql",
+        "schemaDigest": "sha256:1dc63095e8672403bbe40fa26719d175e695c0167f6daad6b9655f6506491f01"
+       },
+       {
+        "name": "graphql_help",
+        "schemaDigest": "sha256:74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+       }
+      ]
+     }
+    },
+    "content": {
+     "sequence": 2,
+     "operation": "graphjin.tools_list",
+     "request": {},
+     "rows": [
+      {
+       "description": "Run.",
+       "inputSchema": {
+        "properties": {
+         "query": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "query"
+        ],
+        "type": "object"
+       },
+       "name": "execute_graphql"
+      },
+      {
+       "name": "graphql_help"
+      },
+      {
+       "inputSchema": {
+        "type": "object"
+       },
+       "name": ""
+      },
+      {
+       "description": "no name"
+      },
+      "not a tool"
+     ],
+     "rowCount": 5,
+     "truncated": false
+    }
+   }
+  ]
+ },
+ {
+  "name": "graphjin tools list fails",
+  "operation": "graphjin.tools_list",
+  "request": {},
+  "reply": {
+   "throws": "GraphJin MCP tools/list failed: 401 bad token sk-live-0123456789abcdef"
+  },
+  "secrets": [
+   "sk-live-0123456789abcdef"
+  ],
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-graphjin tools list fails",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "error",
+     "requestDigest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+     "errorType": "Error",
+     "errorDigest": "sha256:371fd62c354caa2eb8059f45e9234a706b7800a2b1c084a1a84edda3fc668d4a",
+     "operation": "graphjin.tools_list",
+     "evidence": {
+      "returnedCount": 0,
+      "tools": []
+     }
+    },
+    "content": {
+     "sequence": 1,
+     "operation": "graphjin.tools_list",
+     "request": {},
+     "error": "GraphJin MCP tools/list failed: 401 bad token [REDACTED]"
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-graphjin tools list fails",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "error",
+     "requestDigest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+     "errorType": "Error",
+     "errorDigest": "sha256:371fd62c354caa2eb8059f45e9234a706b7800a2b1c084a1a84edda3fc668d4a",
+     "operation": "graphjin.tools_list",
+     "evidence": {
+      "returnedCount": 0,
+      "tools": []
+     }
+    },
+    "content": {
+     "sequence": 2,
+     "operation": "graphjin.tools_list",
+     "request": {},
+     "error": "GraphJin MCP tools/list failed: 401 bad token [REDACTED]"
+    }
+   }
+  ]
+ },
+ {
+  "name": "graphjin execute with rows",
+  "operation": "graphjin.call",
+  "request": {
+   "name": "execute_graphql",
+   "arguments": {
+    "query": "  # top orders\nquery Top { orders(limit: 2) { id note } }",
+    "variables": {
+     "limit": 2,
+     "key": "sk-live-0123456789abcdef"
+    }
+   }
+  },
+  "reply": {
+   "value": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"data\":{\"orders\":[{\"id\":1,\"note\":\"uses sk-live-0123456789abcdef\"},{\"id\":2,\"note\":null}],\"total\":{\"count\":2},\"empty\":null}}"
+     }
+    ]
+   }
+  },
+  "secrets": [
+   "sk-live-0123456789abcdef"
+  ],
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-graphjin execute with rows",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:03358a455a5c382208cfa00d41a9898cbb5b8f88c88b369b2e55f5b3be60e480",
+     "responseDigest": "sha256:a555ed921bc2e6155c263b25024cadb8beb38fd091a0edf2e5e528f5aba35eed",
+     "operation": "graphjin.execute",
+     "evidence": {
+      "toolName": "execute_graphql",
+      "queryDigest": "sha256:a5d5815675ec41a4781479559646525015e473ad8ff5d764d7af4aab07ee48fb",
+      "variablesDigest": "sha256:ee06342742af130bd8603096a27651f2be0d6780331ae96c5c03e64d9a4917a7",
+      "operationType": "query"
+     }
+    },
+    "content": {
+     "sequence": 1,
+     "operation": "graphjin.execute",
+     "request": {
+      "arguments": {
+       "query": "  # top orders\nquery Top { orders(limit: 2) { id note } }",
+       "variables": {
+        "key": "[REDACTED]",
+        "limit": 2
+       }
+      },
+      "name": "execute_graphql"
+     },
+     "rows": [
+      {
+       "id": 1,
+       "note": "uses [REDACTED]"
+      },
+      {
+       "id": 2,
+       "note": null
+      },
+      {
+       "count": 2
+      }
+     ],
+     "rowCount": 3,
+     "truncated": false
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-graphjin execute with rows",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:03358a455a5c382208cfa00d41a9898cbb5b8f88c88b369b2e55f5b3be60e480",
+     "responseDigest": "sha256:a555ed921bc2e6155c263b25024cadb8beb38fd091a0edf2e5e528f5aba35eed",
+     "operation": "graphjin.execute",
+     "evidence": {
+      "toolName": "execute_graphql",
+      "queryDigest": "sha256:a5d5815675ec41a4781479559646525015e473ad8ff5d764d7af4aab07ee48fb",
+      "variablesDigest": "sha256:ee06342742af130bd8603096a27651f2be0d6780331ae96c5c03e64d9a4917a7",
+      "operationType": "query"
+     }
+    },
+    "content": {
+     "sequence": 2,
+     "operation": "graphjin.execute",
+     "request": {
+      "arguments": {
+       "query": "  # top orders\nquery Top { orders(limit: 2) { id note } }",
+       "variables": {
+        "key": "[REDACTED]",
+        "limit": 2
+       }
+      },
+      "name": "execute_graphql"
+     },
+     "rows": [
+      {
+       "id": 1,
+       "note": "uses [REDACTED]"
+      },
+      {
+       "id": 2,
+       "note": null
+      },
+      {
+       "count": 2
+      }
+     ],
+     "rowCount": 3,
+     "truncated": false
+    }
+   }
+  ]
+ },
+ {
+  "name": "graphjin execute with errors",
+  "operation": "graphjin.call",
+  "request": {
+   "name": "execute_graphql",
+   "arguments": {
+    "query": "mutation { delete_orders { id } }"
+   }
+  },
+  "reply": {
+   "value": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"data\":null,\"errors\":[{\"message\":\"source is read_only\"}]}"
+     }
+    ]
+   }
+  },
+  "secrets": [],
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-graphjin execute with errors",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "error",
+     "requestDigest": "sha256:70557d61077c9fcbbb09a1c7c24077710be89a495d281a0e6721806bfe4f0a44",
+     "responseDigest": "sha256:9ea94ea72f1e1c1a77f9fea3e12b158f03417a40ead54980c5d439138fccf561",
+     "errorType": "tool_result_error",
+     "errorDigest": "sha256:9ea94ea72f1e1c1a77f9fea3e12b158f03417a40ead54980c5d439138fccf561",
+     "operation": "graphjin.execute",
+     "evidence": {
+      "toolName": "execute_graphql",
+      "queryDigest": "sha256:68df8f0a91ac0b0fe805439a12e87674b02d99ac2aa6517786f797caa0615fcb",
+      "operationType": "mutation"
+     }
+    },
+    "content": {
+     "sequence": 1,
+     "operation": "graphjin.execute",
+     "request": {
+      "arguments": {
+       "query": "mutation { delete_orders { id } }"
+      },
+      "name": "execute_graphql"
+     },
+     "rows": [],
+     "rowCount": 0,
+     "truncated": false
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-graphjin execute with errors",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "error",
+     "requestDigest": "sha256:70557d61077c9fcbbb09a1c7c24077710be89a495d281a0e6721806bfe4f0a44",
+     "responseDigest": "sha256:9ea94ea72f1e1c1a77f9fea3e12b158f03417a40ead54980c5d439138fccf561",
+     "errorType": "tool_result_error",
+     "errorDigest": "sha256:9ea94ea72f1e1c1a77f9fea3e12b158f03417a40ead54980c5d439138fccf561",
+     "operation": "graphjin.execute",
+     "evidence": {
+      "toolName": "execute_graphql",
+      "queryDigest": "sha256:68df8f0a91ac0b0fe805439a12e87674b02d99ac2aa6517786f797caa0615fcb",
+      "operationType": "mutation"
+     }
+    },
+    "content": {
+     "sequence": 2,
+     "operation": "graphjin.execute",
+     "request": {
+      "arguments": {
+       "query": "mutation { delete_orders { id } }"
+      },
+      "name": "execute_graphql"
+     },
+     "rows": [],
+     "rowCount": 0,
+     "truncated": false
+    }
+   }
+  ]
+ },
+ {
+  "name": "graphjin execute no query",
+  "operation": "graphjin.call",
+  "request": {
+   "name": "execute_graphql",
+   "arguments": {}
+  },
+  "reply": {
+   "value": {
+    "isError": true,
+    "content": [
+     {
+      "type": "text",
+      "text": "query is required"
+     }
+    ]
+   }
+  },
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-graphjin execute no query",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "error",
+     "requestDigest": "sha256:f4f7dc84bbdc0dae670b6d02c6a7b2996f05b74095bb2945ff073744f416fbed",
+     "responseDigest": "sha256:b8f46a4698d3fe0bda5c60bd3daf2c09a21487280cf10da7b5c99a5d3326b597",
+     "errorType": "tool_result_error",
+     "errorDigest": "sha256:b8f46a4698d3fe0bda5c60bd3daf2c09a21487280cf10da7b5c99a5d3326b597",
+     "operation": "graphjin.execute",
+     "evidence": {
+      "toolName": "execute_graphql",
+      "queryDigest": "sha256:12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+      "operationType": "unknown"
+     }
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-graphjin execute no query",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "error",
+     "requestDigest": "sha256:f4f7dc84bbdc0dae670b6d02c6a7b2996f05b74095bb2945ff073744f416fbed",
+     "responseDigest": "sha256:b8f46a4698d3fe0bda5c60bd3daf2c09a21487280cf10da7b5c99a5d3326b597",
+     "errorType": "tool_result_error",
+     "errorDigest": "sha256:b8f46a4698d3fe0bda5c60bd3daf2c09a21487280cf10da7b5c99a5d3326b597",
+     "operation": "graphjin.execute",
+     "evidence": {
+      "toolName": "execute_graphql",
+      "queryDigest": "sha256:12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+      "operationType": "unknown"
+     }
+    }
+   }
+  ]
+ },
+ {
+  "name": "graphjin catalog",
+  "operation": "graphjin.call",
+  "request": {
+   "name": "query_catalog",
+   "arguments": {
+    "ids": [
+     "t1",
+     "t2"
+    ],
+    "kind": "table"
+   }
+  },
+  "reply": {
+   "value": {
+    "content": [
+     {
+      "type": "text",
+      "text": "[{\"id\":\"t1\"},{\"id\":\"t2\"}]"
+     },
+     {
+      "type": "text",
+      "text": "plain words"
+     },
+     {
+      "type": "image",
+      "data": "AAAA",
+      "mimeType": "image/png"
+     }
+    ]
+   }
+  },
+  "secrets": [
+   "sk-live-0123456789abcdef"
+  ],
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-graphjin catalog",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:ae27d95cc677de3f6de12b493e2962874445267ea03d8267d08f2e71df57f678",
+     "responseDigest": "sha256:8ad70bfce3c93fecb03564bcb135c26cebb8a315b8e734c70a02f927e6b01fd3",
+     "operation": "graphjin.catalog",
+     "evidence": {
+      "toolName": "query_catalog",
+      "argumentsDigest": "sha256:0b2cb634a2f38a876a05894b7be63964dcd33c686a0d7c91470d8c58b6a8eb9c"
+     }
+    },
+    "content": {
+     "sequence": 1,
+     "operation": "graphjin.catalog",
+     "request": {
+      "arguments": {
+       "ids": [
+        "t1",
+        "t2"
+       ],
+       "kind": "table"
+      },
+      "name": "query_catalog"
+     },
+     "rows": [
+      {
+       "id": "t1"
+      },
+      {
+       "id": "t2"
+      },
+      "plain words",
+      {
+       "data": "AAAA",
+       "mimeType": "image/png",
+       "type": "image"
+      }
+     ],
+     "rowCount": 4,
+     "truncated": false
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-graphjin catalog",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:ae27d95cc677de3f6de12b493e2962874445267ea03d8267d08f2e71df57f678",
+     "responseDigest": "sha256:8ad70bfce3c93fecb03564bcb135c26cebb8a315b8e734c70a02f927e6b01fd3",
+     "operation": "graphjin.catalog",
+     "evidence": {
+      "toolName": "query_catalog",
+      "argumentsDigest": "sha256:0b2cb634a2f38a876a05894b7be63964dcd33c686a0d7c91470d8c58b6a8eb9c"
+     }
+    },
+    "content": {
+     "sequence": 2,
+     "operation": "graphjin.catalog",
+     "request": {
+      "arguments": {
+       "ids": [
+        "t1",
+        "t2"
+       ],
+       "kind": "table"
+      },
+      "name": "query_catalog"
+     },
+     "rows": [
+      {
+       "id": "t1"
+      },
+      {
+       "id": "t2"
+      },
+      "plain words",
+      {
+       "data": "AAAA",
+       "mimeType": "image/png",
+       "type": "image"
+      }
+     ],
+     "rowCount": 4,
+     "truncated": false
+    }
+   }
+  ]
+ },
+ {
+  "name": "graphjin other tool fails",
+  "operation": "graphjin.call",
+  "request": {
+   "name": "validate_where_clause"
+  },
+  "reply": {
+   "throws": "No data source is available to this run."
+  },
+  "secrets": [],
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-graphjin other tool fails",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "error",
+     "requestDigest": "sha256:65218d3b4d48f9569e4591e3cd484871decb38679561736118b0d305fe8d8c58",
+     "errorType": "Error",
+     "errorDigest": "sha256:30993925a2f516c930f27ff84d7ee3af442fd339de5bdb7f986aee586aacd0d5",
+     "operation": "graphjin.call",
+     "evidence": {
+      "toolName": "validate_where_clause",
+      "argumentsDigest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+     }
+    },
+    "content": {
+     "sequence": 1,
+     "operation": "graphjin.call",
+     "request": {
+      "arguments": {},
+      "name": "validate_where_clause"
+     },
+     "error": "No data source is available to this run."
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-graphjin other tool fails",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "error",
+     "requestDigest": "sha256:65218d3b4d48f9569e4591e3cd484871decb38679561736118b0d305fe8d8c58",
+     "errorType": "Error",
+     "errorDigest": "sha256:30993925a2f516c930f27ff84d7ee3af442fd339de5bdb7f986aee586aacd0d5",
+     "operation": "graphjin.call",
+     "evidence": {
+      "toolName": "validate_where_clause",
+      "argumentsDigest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+     }
+    },
+    "content": {
+     "sequence": 2,
+     "operation": "graphjin.call",
+     "request": {
+      "arguments": {},
+      "name": "validate_where_clause"
+     },
+     "error": "No data source is available to this run."
+    }
+   }
+  ]
  }
 ]

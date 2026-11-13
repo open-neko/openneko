@@ -40,21 +40,14 @@ type heldSet struct {
 
 func (h heldSet) has(id string) bool { return h.All || h.IDs[id] }
 
-var packItemJoins = map[string]struct{ kind, idExpr, join string }{
-	"action":   {"action", "a.target_ref", ""},
-	"skill":    {"skill", "a.target_ref", ""},
-	"workflow": {"workflow", "w.id::text", "join workflow_definition w on w.org_id = a.org_id and w.name = a.target_ref"},
-}
-
-// heldItems matches heldItemIds() in apps/web/src/lib/entitlements.ts for the
-// item types in packItemJoins.
+// heldItems matches heldItemIds() in apps/web/src/lib/entitlements.ts.
 func (a *API) heldItems(ctx context.Context, act actor, itemType string) (heldSet, error) {
 	if act.Admin {
 		return heldSet{All: true}, nil
 	}
 	held := heldSet{IDs: map[string]bool{}}
 	if act.PackID != "" {
-		spec, ok := packItemJoins[itemType]
+		spec, ok := packItemKinds[itemType]
 		if !ok {
 			return held, nil
 		}
@@ -107,7 +100,7 @@ func (a *API) heldItems(ctx context.Context, act actor, itemType string) (heldSe
 	if err := rows.Err(); err != nil {
 		return held, err
 	}
-	spec, ok := packItemJoins[itemType]
+	spec, ok := packItemKinds[itemType]
 	if len(packs) == 0 || !ok {
 		return held, nil
 	}

@@ -5,6 +5,8 @@ import { createScrubber } from "../src/work/secret-scrubber";
 import {
   registerWorkSemanticTraceSink,
   traceFileSearch,
+  traceGraphjinToolCall,
+  traceGraphjinToolsList,
   traceMemorySearch,
   type WorkSemanticStepContent,
   type WorkSemanticTraceEvent,
@@ -17,8 +19,8 @@ const FIXTURE = join(__dirname, "../../../apps/openneko/internal/webfront/testda
 
 type TraceCase = {
   name: string;
-  operation: "memory.search" | "files.search";
-  request: { query: string; limit?: number };
+  operation: "memory.search" | "files.search" | "graphjin.tools_list" | "graphjin.call";
+  request: { query?: string; limit?: number; name?: string; arguments?: Record<string, unknown> };
   reply: { value?: unknown; throws?: string };
   secrets?: string[];
 };
@@ -93,6 +95,66 @@ const CASES: TraceCase[] = [
     request: { query: "net revenue" },
     reply: { throws: "File search is off: OPENNEKO_SERVE_URL is not set." },
   },
+  {
+    name: "graphjin tools list",
+    operation: "graphjin.tools_list",
+    request: {},
+    reply: {
+      value: [
+        { name: "execute_graphql", description: "Run.", inputSchema: { type: "object", required: ["query"], properties: { query: { type: "string" } } } },
+        { name: "graphql_help" },
+        { name: "", inputSchema: { type: "object" } },
+        { description: "no name" },
+        "not a tool",
+      ],
+    },
+    secrets: [SECRET],
+  },
+  {
+    name: "graphjin tools list fails",
+    operation: "graphjin.tools_list",
+    request: {},
+    reply: { throws: `GraphJin MCP tools/list failed: 401 bad token ${SECRET}` },
+    secrets: [SECRET],
+  },
+  {
+    name: "graphjin execute with rows",
+    operation: "graphjin.call",
+    request: { name: "execute_graphql", arguments: { query: "  # top orders\nquery Top { orders(limit: 2) { id note } }", variables: { limit: 2, key: SECRET } } },
+    reply: {
+      value: {
+        content: [{ type: "text", text: JSON.stringify({ data: { orders: [{ id: 1, note: `uses ${SECRET}` }, { id: 2, note: null }], total: { count: 2 }, empty: null } }) }],
+      },
+    },
+    secrets: [SECRET],
+  },
+  {
+    name: "graphjin execute with errors",
+    operation: "graphjin.call",
+    request: { name: "execute_graphql", arguments: { query: "mutation { delete_orders { id } }" } },
+    reply: { value: { content: [{ type: "text", text: JSON.stringify({ data: null, errors: [{ message: "source is read_only" }] }) }] } },
+    secrets: [],
+  },
+  {
+    name: "graphjin execute no query",
+    operation: "graphjin.call",
+    request: { name: "execute_graphql", arguments: {} },
+    reply: { value: { isError: true, content: [{ type: "text", text: "query is required" }] } },
+  },
+  {
+    name: "graphjin catalog",
+    operation: "graphjin.call",
+    request: { name: "query_catalog", arguments: { ids: ["t1", "t2"], kind: "table" } },
+    reply: { value: { content: [{ type: "text", text: "[{\"id\":\"t1\"},{\"id\":\"t2\"}]" }, { type: "text", text: "plain words" }, { type: "image", data: "AAAA", mimeType: "image/png" }] } },
+    secrets: [SECRET],
+  },
+  {
+    name: "graphjin other tool fails",
+    operation: "graphjin.call",
+    request: { name: "validate_where_clause" },
+    reply: { throws: "No data source is available to this run." },
+    secrets: [],
+  },
 ];
 
 function stable(event: WorkSemanticTraceEvent) {
@@ -118,9 +180,25 @@ describe("semantic trace fixtures for the Go trace", () => {
         if (c.reply.throws) throw new Error(c.reply.throws);
         return c.reply.value;
       };
-      const trace = c.operation === "memory.search" ? traceMemorySearch : traceFileSearch;
-      await trace({ binding, request: c.request, execute }).catch(() => undefined);
-      await trace({ binding, request: c.request, execute }).catch(() => undefined);
+      const once = () => {
+        switch (c.operation) {
+          case "memory.search":
+            return traceMemorySearch({ binding, request: c.request as { query: string }, execute });
+          case "files.search":
+            return traceFileSearch({ binding, request: c.request as { query: string }, execute });
+          case "graphjin.tools_list":
+            return traceGraphjinToolsList({ binding, execute });
+          case "graphjin.call":
+            return traceGraphjinToolCall({
+              binding,
+              toolName: c.request.name ?? "",
+              ...(c.request.arguments !== undefined ? { arguments: c.request.arguments } : {}),
+              execute,
+            });
+        }
+      };
+      await once().catch(() => undefined);
+      await once().catch(() => undefined);
       unregister();
       out.push({ ...c, traced: got });
     }

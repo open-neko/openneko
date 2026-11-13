@@ -1,4 +1,128 @@
 {
+ "graphjinTools": [
+  {
+   "name": "execute_graphql",
+   "description": "Run one GraphQL operation.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "query": {
+      "type": "string"
+     },
+     "variables": {
+      "type": "object",
+      "additionalProperties": true
+     }
+    },
+    "required": [
+     "query"
+    ]
+   },
+   "annotations": {
+    "destructiveHint": true,
+    "readOnlyHint": false
+   }
+  },
+  {
+   "name": "query_catalog",
+   "description": "Search the catalog.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "ids": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "table",
+       "column"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "graphql_help",
+   "inputSchema": {
+    "type": "object"
+   }
+  },
+  {
+   "name": "validate_where_clause",
+   "description": "Check a where clause.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "table": {
+      "type": "string"
+     },
+     "where": {
+      "type": "object"
+     }
+    },
+    "required": [
+     "table",
+     "where"
+    ]
+   }
+  },
+  {
+   "name": "execute_saved_query",
+   "description": "Run a saved query.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "variables": {
+      "type": "object"
+     }
+    },
+    "required": [
+     "name"
+    ]
+   }
+  },
+  {
+   "name": "ask_graphjin_agent",
+   "description": "Ask GraphJin's agent.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "question": {
+      "type": "string"
+     }
+    }
+   }
+  },
+  {
+   "title": "Sources",
+   "name": "list_sources",
+   "description": "",
+   "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+   },
+   "outputSchema": {
+    "type": "object",
+    "properties": {
+     "sources": {
+      "type": "array"
+     }
+    }
+   },
+   "_meta": {
+    "x-openneko": 1
+   },
+   "extraField": "kept"
+  }
+ ],
  "lists": [
   {
    "name": "memory, guides and files",
@@ -244,6 +368,492 @@
      }
     }
    ]
+  },
+  {
+   "name": "graphjin between memory and files",
+   "servers": [
+    "neko_memory",
+    "neko_graphjin",
+    "neko_files"
+   ],
+   "tools": [
+    {
+     "name": "memory_search",
+     "description": "Semantic search over OpenNeko's saved memories. Returns top-N memories ranked by cosine similarity to the query. Use when the loaded memories above don't seem to cover what the operator is asking about.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 800
+       },
+       "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20
+       }
+      },
+      "required": [
+       "query"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "memory_save",
+     "description": "Save a durable memory the operator stated explicitly. Use only when the operator says to remember/save something, corrects a recurring assumption, defines a metric/business rule, or states a stable preference. Never speculatively. Default scope=global, kind=business_rule, pinned=true.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "text": {
+        "type": "string",
+        "minLength": 5,
+        "maxLength": 2000
+       },
+       "kind": {
+        "type": "string",
+        "enum": [
+         "preference",
+         "business_rule",
+         "metric_definition",
+         "thread_note",
+         "correction",
+         "company_context",
+         "other"
+        ]
+       },
+       "scope": {
+        "type": "string",
+        "enum": [
+         "global",
+         "thread"
+        ]
+       },
+       "pinned": {
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "text"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "memory_update",
+     "description": "Replace the text of a saved memory. Use when the operator corrects, extends or merges a memory that is already saved, instead of saving a second memory. Pass the memory id from the loaded list or a search result, and the whole new text.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "memoryId": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+       },
+       "text": {
+        "type": "string",
+        "minLength": 5,
+        "maxLength": 2000
+       }
+      },
+      "required": [
+       "memoryId",
+       "text"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "graphjin_execute_graphql",
+     "description": "Run one GraphQL operation.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string"
+       },
+       "variables": {
+        "type": "object",
+        "additionalProperties": true
+       }
+      },
+      "required": [
+       "query"
+      ]
+     },
+     "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+     }
+    },
+    {
+     "name": "graphjin_query_catalog",
+     "description": "Search the catalog.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "ids": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "kind": {
+        "type": "string",
+        "enum": [
+         "table",
+         "column"
+        ]
+       }
+      }
+     }
+    },
+    {
+     "name": "graphjin_graphql_help",
+     "inputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "name": "graphjin_validate_where_clause",
+     "description": "Check a where clause.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "table": {
+        "type": "string"
+       },
+       "where": {
+        "type": "object"
+       }
+      },
+      "required": [
+       "table",
+       "where"
+      ]
+     }
+    },
+    {
+     "name": "graphjin_execute_saved_query",
+     "description": "Run a saved query.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "name": {
+        "type": "string"
+       },
+       "variables": {
+        "type": "object"
+       }
+      },
+      "required": [
+       "name"
+      ]
+     }
+    },
+    {
+     "name": "graphjin_list_sources",
+     "title": "Sources",
+     "description": "",
+     "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+     },
+     "outputSchema": {
+      "type": "object",
+      "properties": {
+       "sources": {
+        "type": "array"
+       }
+      }
+     },
+     "_meta": {
+      "x-openneko": 1
+     }
+    },
+    {
+     "name": "files_search",
+     "description": "Keyword search over the files the user uploaded: PDF, Word, PowerPoint, Excel, CSV, Markdown and text. Returns the best files with matching passages and where they are (page, slide, sheet or section). For a spreadsheet or CSV file it also lists its SQL tables and columns.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 800
+       },
+       "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20
+       }
+      },
+      "required": [
+       "query"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "files_read_text",
+     "description": "Read the text of one of the user's files, with page, slide and sheet markers. Use the path from search. A long file comes back in parts: when truncated is true, call again with offset set to offset plus the length of the text already read.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024
+       },
+       "offset": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+       },
+       "maxChars": {
+        "type": "integer",
+        "minimum": 1000,
+        "maximum": 100000
+       }
+      },
+      "required": [
+       "path"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "files_query_tables",
+     "description": "Run one read-only DuckDB SELECT or WITH query over the sheet tables of the user's spreadsheet and CSV files. Use the table names that search or read_text list. Each sheet has a raw table (name ends in __raw) with every cell as text by column letter. A sheet with a header row also has a typed table with named columns. Use it for sums, counts, filters and joins across sheets.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "sql": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 20000
+       }
+      },
+      "required": [
+       "sql"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    }
+   ]
+  },
+  {
+   "name": "graphjin direct-governed",
+   "servers": [
+    "neko_graphjin"
+   ],
+   "policy": "direct-governed",
+   "tools": [
+    {
+     "name": "graphjin_execute_graphql",
+     "description": "Run one GraphQL operation. OpenNeko exposes direct execution only; GraphJin enforces source and operation authorization.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string"
+       },
+       "variables": {
+        "type": "object",
+        "additionalProperties": true
+       }
+      },
+      "required": [
+       "query"
+      ]
+     },
+     "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+     }
+    },
+    {
+     "name": "graphjin_query_catalog",
+     "description": "Search the catalog.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "ids": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "kind": {
+        "type": "string",
+        "enum": [
+         "table",
+         "column"
+        ]
+       }
+      }
+     }
+    },
+    {
+     "name": "graphjin_graphql_help",
+     "inputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "name": "graphjin_validate_where_clause",
+     "description": "Check a where clause.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "table": {
+        "type": "string"
+       },
+       "where": {
+        "type": "object"
+       }
+      },
+      "required": [
+       "table",
+       "where"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "graphjin list fails",
+   "servers": [
+    "neko_memory",
+    "neko_graphjin"
+   ],
+   "listThrows": "GraphJin MCP tools/list failed: 503",
+   "tools": [
+    {
+     "name": "memory_search",
+     "description": "Semantic search over OpenNeko's saved memories. Returns top-N memories ranked by cosine similarity to the query. Use when the loaded memories above don't seem to cover what the operator is asking about.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 800
+       },
+       "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20
+       }
+      },
+      "required": [
+       "query"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "memory_save",
+     "description": "Save a durable memory the operator stated explicitly. Use only when the operator says to remember/save something, corrects a recurring assumption, defines a metric/business rule, or states a stable preference. Never speculatively. Default scope=global, kind=business_rule, pinned=true.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "text": {
+        "type": "string",
+        "minLength": 5,
+        "maxLength": 2000
+       },
+       "kind": {
+        "type": "string",
+        "enum": [
+         "preference",
+         "business_rule",
+         "metric_definition",
+         "thread_note",
+         "correction",
+         "company_context",
+         "other"
+        ]
+       },
+       "scope": {
+        "type": "string",
+        "enum": [
+         "global",
+         "thread"
+        ]
+       },
+       "pinned": {
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "text"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "memory_update",
+     "description": "Replace the text of a saved memory. Use when the operator corrects, extends or merges a memory that is already saved, instead of saving a second memory. Pass the memory id from the loaded list or a search result, and the whole new text.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "memoryId": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+       },
+       "text": {
+        "type": "string",
+        "minLength": 5,
+        "maxLength": 2000
+       }
+      },
+      "required": [
+       "memoryId",
+       "text"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    }
+   ]
+  },
+  {
+   "name": "graphjin lists nothing",
+   "servers": [
+    "neko_graphjin"
+   ],
+   "graphjinTools": [],
+   "tools": []
   }
  ],
  "calls": [
@@ -1288,6 +1898,811 @@
    },
    "error": "MCP error -32603: mcp-bridge: unknown tool files_delete",
    "controlPlane": []
+  },
+  {
+   "name": "graphjin execute",
+   "servers": [
+    "neko_memory",
+    "neko_graphjin"
+   ],
+   "tool": "graphjin_execute_graphql",
+   "arguments": {
+    "query": "{ orders { id total } }",
+    "variables": {
+     "n": 2
+    }
+   },
+   "reply": {
+    "value": {
+     "content": [
+      {
+       "type": "text",
+       "text": "{\"data\":{\"orders\":[{\"id\":1,\"total\":12.5},{\"id\":2,\"total\":7}]}}"
+      }
+     ]
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"data\":{\"orders\":[{\"id\":1,\"total\":12.5},{\"id\":2,\"total\":7}]}}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listGraphjinTools",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    },
+    {
+     "method": "callGraphjinTool",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "name": "execute_graphql",
+      "arguments": {
+       "query": "{ orders { id total } }",
+       "variables": {
+        "n": 2
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "graphjin execute after list",
+   "servers": [
+    "neko_graphjin"
+   ],
+   "listFirst": true,
+   "tool": "graphjin_execute_graphql",
+   "arguments": {
+    "query": "{ orders { id } }"
+   },
+   "reply": {
+    "value": {
+     "content": [
+      {
+       "type": "text",
+       "text": "{\"data\":{\"orders\":[{\"id\":1,\"total\":12.5},{\"id\":2,\"total\":7}]}}"
+      }
+     ]
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"data\":{\"orders\":[{\"id\":1,\"total\":12.5},{\"id\":2,\"total\":7}]}}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listGraphjinTools",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    },
+    {
+     "method": "callGraphjinTool",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "name": "execute_graphql",
+      "arguments": {
+       "query": "{ orders { id } }"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "graphjin no arguments",
+   "servers": [
+    "neko_graphjin"
+   ],
+   "tool": "graphjin_graphql_help",
+   "reply": {
+    "value": {
+     "content": [
+      {
+       "type": "text",
+       "text": "help text"
+      }
+     ]
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "help text"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listGraphjinTools",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    },
+    {
+     "method": "callGraphjinTool",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "name": "graphql_help"
+     }
+    }
+   ]
+  },
+  {
+   "name": "graphjin empty arguments",
+   "servers": [
+    "neko_graphjin"
+   ],
+   "tool": "graphjin_graphql_help",
+   "arguments": {},
+   "reply": {
+    "value": {
+     "content": [
+      {
+       "type": "text",
+       "text": "help text"
+      }
+     ]
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "help text"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listGraphjinTools",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    },
+    {
+     "method": "callGraphjinTool",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "name": "graphql_help",
+      "arguments": {}
+     }
+    }
+   ]
+  },
+  {
+   "name": "graphjin error result",
+   "servers": [
+    "neko_graphjin"
+   ],
+   "tool": "graphjin_execute_graphql",
+   "arguments": {
+    "query": "{ nope }"
+   },
+   "reply": {
+    "value": {
+     "isError": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "unknown table nope"
+      }
+     ]
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "unknown table nope"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "listGraphjinTools",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    },
+    {
+     "method": "callGraphjinTool",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "name": "execute_graphql",
+      "arguments": {
+       "query": "{ nope }"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "graphjin result extra fields",
+   "servers": [
+    "neko_graphjin"
+   ],
+   "tool": "graphjin_query_catalog",
+   "arguments": {
+    "ids": [
+     "t1"
+    ]
+   },
+   "reply": {
+    "value": {
+     "structuredContent": {
+      "rows": [
+       1
+      ]
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "{\"rows\":[1]}"
+      }
+     ],
+     "_meta": {
+      "took": 3
+     },
+     "extra": "kept"
+    }
+   },
+   "result": {
+    "_meta": {
+     "took": 3
+    },
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"rows\":[1]}"
+     }
+    ],
+    "structuredContent": {
+     "rows": [
+      1
+     ]
+    },
+    "extra": "kept"
+   },
+   "controlPlane": [
+    {
+     "method": "listGraphjinTools",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    },
+    {
+     "method": "callGraphjinTool",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "name": "query_catalog",
+      "arguments": {
+       "ids": [
+        "t1"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "graphjin result no content",
+   "servers": [
+    "neko_graphjin"
+   ],
+   "tool": "graphjin_query_catalog",
+   "arguments": {
+    "ids": []
+   },
+   "reply": {
+    "value": {
+     "structuredContent": {
+      "rows": []
+     }
+    }
+   },
+   "result": {
+    "content": [],
+    "structuredContent": {
+     "rows": []
+    }
+   },
+   "controlPlane": [
+    {
+     "method": "listGraphjinTools",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    },
+    {
+     "method": "callGraphjinTool",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "name": "query_catalog",
+      "arguments": {
+       "ids": []
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "graphjin call fails",
+   "servers": [
+    "neko_graphjin"
+   ],
+   "tool": "graphjin_execute_graphql",
+   "arguments": {
+    "query": "{ orders { id } }"
+   },
+   "reply": {
+    "throws": "No data source is available to this run."
+   },
+   "error": "MCP error -32603: MCP error -32603: No data source is available to this run.",
+   "controlPlane": [
+    {
+     "method": "listGraphjinTools",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    },
+    {
+     "method": "callGraphjinTool",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "name": "execute_graphql",
+      "arguments": {
+       "query": "{ orders { id } }"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "graphjin agent tool hidden",
+   "servers": [
+    "neko_graphjin"
+   ],
+   "tool": "graphjin_ask_graphjin_agent",
+   "arguments": {
+    "question": "why"
+   },
+   "reply": {
+    "value": {
+     "content": [
+      {
+       "type": "text",
+       "text": "{\"data\":{\"orders\":[{\"id\":1,\"total\":12.5},{\"id\":2,\"total\":7}]}}"
+      }
+     ]
+    }
+   },
+   "error": "MCP error -32603: mcp-bridge: unknown tool graphjin_ask_graphjin_agent",
+   "controlPlane": [
+    {
+     "method": "listGraphjinTools",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ]
+  },
+  {
+   "name": "graphjin agent tool listed by server",
+   "servers": [
+    "neko_graphjin"
+   ],
+   "graphjinTools": [
+    {
+     "name": "ask_graphjin_agent",
+     "inputSchema": {
+      "type": "object"
+     }
+    }
+   ],
+   "tool": "graphjin_ask_graphjin_agent",
+   "arguments": {
+    "question": "why"
+   },
+   "reply": {
+    "value": {
+     "content": [
+      {
+       "type": "text",
+       "text": "{\"data\":{\"orders\":[{\"id\":1,\"total\":12.5},{\"id\":2,\"total\":7}]}}"
+      }
+     ]
+    }
+   },
+   "error": "MCP error -32603: mcp-bridge: unknown tool graphjin_ask_graphjin_agent",
+   "controlPlane": [
+    {
+     "method": "listGraphjinTools",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ]
+  },
+  {
+   "name": "graphjin unknown tool",
+   "servers": [
+    "neko_graphjin"
+   ],
+   "tool": "graphjin_drop_table",
+   "arguments": {},
+   "reply": {
+    "value": {
+     "content": [
+      {
+       "type": "text",
+       "text": "{\"data\":{\"orders\":[{\"id\":1,\"total\":12.5},{\"id\":2,\"total\":7}]}}"
+      }
+     ]
+    }
+   },
+   "error": "MCP error -32603: mcp-bridge: unknown tool graphjin_drop_table",
+   "controlPlane": [
+    {
+     "method": "listGraphjinTools",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ]
+  },
+  {
+   "name": "graphjin list fails",
+   "servers": [
+    "neko_memory",
+    "neko_graphjin"
+   ],
+   "listThrows": "GraphJin MCP tools/list failed: 503",
+   "tool": "graphjin_execute_graphql",
+   "arguments": {
+    "query": "{ orders { id } }"
+   },
+   "reply": {
+    "value": {
+     "content": [
+      {
+       "type": "text",
+       "text": "{\"data\":{\"orders\":[{\"id\":1,\"total\":12.5},{\"id\":2,\"total\":7}]}}"
+      }
+     ]
+    }
+   },
+   "error": "MCP error -32603: mcp-bridge: unknown tool graphjin_execute_graphql",
+   "controlPlane": [
+    {
+     "method": "listGraphjinTools",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ]
+  },
+  {
+   "name": "graphjin memory tool while list fails",
+   "servers": [
+    "neko_memory",
+    "neko_graphjin"
+   ],
+   "listThrows": "GraphJin MCP tools/list failed: 503",
+   "tool": "memory_search",
+   "arguments": {
+    "query": "revenue"
+   },
+   "reply": {
+    "value": []
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"results\":[]}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listGraphjinTools",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    },
+    {
+     "method": "searchWorkMemoryByContext",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "query": "revenue",
+      "limit": 5,
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ]
+  },
+  {
+   "name": "policy execute",
+   "servers": [
+    "neko_graphjin"
+   ],
+   "policy": "direct-governed",
+   "tool": "graphjin_execute_graphql",
+   "arguments": {
+    "query": "query { orders { id } }"
+   },
+   "reply": {
+    "value": {
+     "content": [
+      {
+       "type": "text",
+       "text": "{\"data\":{\"orders\":[{\"id\":1,\"total\":12.5},{\"id\":2,\"total\":7}]}}"
+      }
+     ]
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"data\":{\"orders\":[{\"id\":1,\"total\":12.5},{\"id\":2,\"total\":7}]}}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listGraphjinTools",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    },
+    {
+     "method": "callGraphjinTool",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "name": "execute_graphql",
+      "arguments": {
+       "query": "query { orders { id } }"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "policy blank query",
+   "servers": [
+    "neko_graphjin"
+   ],
+   "policy": "direct-governed",
+   "tool": "graphjin_execute_graphql",
+   "arguments": {
+    "query": "   "
+   },
+   "reply": {
+    "value": {
+     "content": [
+      {
+       "type": "text",
+       "text": "{\"data\":{\"orders\":[{\"id\":1,\"total\":12.5},{\"id\":2,\"total\":7}]}}"
+      }
+     ]
+    }
+   },
+   "error": "MCP error -32603: MCP error -32603: GraphJin MCP direct-governed policy requires execute_graphql.query to be a non-empty string",
+   "controlPlane": [
+    {
+     "method": "listGraphjinTools",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ]
+  },
+  {
+   "name": "policy query not text",
+   "servers": [
+    "neko_graphjin"
+   ],
+   "policy": "direct-governed",
+   "tool": "graphjin_execute_graphql",
+   "arguments": {
+    "query": 5
+   },
+   "reply": {
+    "value": {
+     "content": [
+      {
+       "type": "text",
+       "text": "{\"data\":{\"orders\":[{\"id\":1,\"total\":12.5},{\"id\":2,\"total\":7}]}}"
+      }
+     ]
+    }
+   },
+   "error": "MCP error -32603: MCP error -32603: GraphJin MCP direct-governed policy requires execute_graphql.query to be a non-empty string",
+   "controlPlane": [
+    {
+     "method": "listGraphjinTools",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ]
+  },
+  {
+   "name": "policy saved query",
+   "servers": [
+    "neko_graphjin"
+   ],
+   "policy": "direct-governed",
+   "tool": "graphjin_execute_saved_query",
+   "arguments": {
+    "name": "top"
+   },
+   "reply": {
+    "value": {
+     "content": [
+      {
+       "type": "text",
+       "text": "{\"data\":{\"orders\":[{\"id\":1,\"total\":12.5},{\"id\":2,\"total\":7}]}}"
+      }
+     ]
+    }
+   },
+   "error": "MCP error -32603: mcp-bridge: unknown tool graphjin_execute_saved_query",
+   "controlPlane": [
+    {
+     "method": "listGraphjinTools",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ]
+  },
+  {
+   "name": "policy saved query after list",
+   "servers": [
+    "neko_graphjin"
+   ],
+   "policy": "direct-governed",
+   "graphjinTools": [
+    {
+     "name": "execute_saved_query",
+     "inputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "name": "graphql_help",
+     "inputSchema": {
+      "type": "object"
+     }
+    }
+   ],
+   "tool": "graphjin_graphql_help",
+   "arguments": {},
+   "reply": {
+    "value": {
+     "content": [
+      {
+       "type": "text",
+       "text": "{\"data\":{\"orders\":[{\"id\":1,\"total\":12.5},{\"id\":2,\"total\":7}]}}"
+      }
+     ]
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"data\":{\"orders\":[{\"id\":1,\"total\":12.5},{\"id\":2,\"total\":7}]}}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listGraphjinTools",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    },
+    {
+     "method": "callGraphjinTool",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "name": "graphql_help",
+      "arguments": {}
+     }
+    }
+   ]
+  },
+  {
+   "name": "no saved query listed",
+   "servers": [
+    "neko_graphjin"
+   ],
+   "tool": "graphjin_execute_saved_query",
+   "arguments": {
+    "name": "top"
+   },
+   "reply": {
+    "value": {
+     "content": [
+      {
+       "type": "text",
+       "text": "{\"data\":{\"orders\":[{\"id\":1,\"total\":12.5},{\"id\":2,\"total\":7}]}}"
+      }
+     ]
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"data\":{\"orders\":[{\"id\":1,\"total\":12.5},{\"id\":2,\"total\":7}]}}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listGraphjinTools",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    },
+    {
+     "method": "callGraphjinTool",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "name": "execute_saved_query",
+      "arguments": {
+       "name": "top"
+      }
+     }
+    }
+   ]
   }
  ]
 }
