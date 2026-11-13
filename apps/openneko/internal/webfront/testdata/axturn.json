@@ -1,0 +1,3620 @@
+{
+ "turns": [
+  {
+   "name": "answer with every event kind",
+   "config": {
+    "route": {
+     "provider": "anthropic",
+     "model": "claude-haiku-5-5",
+     "keyEnv": "ANTHROPIC_API_KEY"
+    },
+    "reasoningEffort": "medium"
+   },
+   "opts": {
+    "prompt": "You are OpenNeko.\n\nRules.\n\n<workspace>\nroot\n</workspace>\n\nTurn part.",
+    "userMessage": "How are sales?",
+    "orgId": "org-1",
+    "workspace": {
+     "orgRoot": "/srv/neko/org",
+     "skillsRoot": "/srv/neko/org/skills",
+     "memoryRoot": "/srv/neko/org/memory",
+     "knowledgeRoot": "/srv/neko/org/knowledge",
+     "uploadsRoot": "/srv/neko/org/uploads",
+     "runsRoot": "/srv/neko/org/runs",
+     "threadUploadsRoot": "/srv/neko/org/uploads/thread-1",
+     "runRoot": "/srv/neko/org/runs/run-1",
+     "artifactRoot": "/srv/neko/org/runs/run-1/artifacts",
+     "binRoot": "/srv/neko/org/runs/run-1/bin"
+    },
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "tag": "work run-1",
+    "wantsCards": true,
+    "mcpBridgeEnv": {
+     "OPENNEKO_MCP_MODE": "work",
+     "OPENNEKO_MCP_ORG_ID": "org-1",
+     "OPENNEKO_MCP_THREAD_ID": "thread-1",
+     "OPENNEKO_MCP_RUN_ID": "run-1",
+     "OPENNEKO_MCP_SKILLS_ROOT": "/srv/neko/org/skills",
+     "OPENNEKO_MCP_WANTS_CARDS": "1",
+     "OPENNEKO_MCP_CARD_SCHEMA": "rich"
+    }
+   },
+   "env": {
+    "ANTHROPIC_API_KEY": "sk-ant"
+   },
+   "scripts": [
+    [
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 0,
+       "type": "run.started"
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 1,
+       "type": "thought.delta",
+       "data": {
+        "text": "Thinking about "
+       }
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 2,
+       "type": "thought.delta",
+       "data": {
+        "text": "sales."
+       }
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 3,
+       "type": "actor.step",
+       "data": {
+        "text": "  Look up sales  "
+       }
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 4,
+       "type": "tool.started",
+       "name": "graphjin_query",
+       "operation_id": 1,
+       "effect": "read",
+       "data": {
+        "query": "{ sales }"
+       }
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 5,
+       "type": "tool.finished",
+       "name": "graphjin_query",
+       "operation_id": 1,
+       "data": {
+        "rows": 3
+       }
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 6,
+       "type": "tool.started",
+       "name": "memory_save",
+       "operation_id": 2,
+       "effect": "durable"
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 7,
+       "type": "tool.finished",
+       "name": "memory_save",
+       "operation_id": 2,
+       "error": "denied"
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 8,
+       "type": "tool.started",
+       "name": "mcp_neko_ui_render_cards",
+       "operation_id": 3,
+       "data": {
+        "title": "x"
+       }
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 9,
+       "type": "tool.finished",
+       "name": "mcp_neko_ui_render_cards",
+       "operation_id": 3
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 10,
+       "type": "tool.started",
+       "name": "mcp_neko_ui_render_cards",
+       "operation_id": 4
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 11,
+       "type": "tool.finished",
+       "name": "mcp_neko_ui_render_cards",
+       "operation_id": 4,
+       "error": "bad cards"
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 12,
+       "type": "skill.shortlist",
+       "data": [
+        "sales-report",
+        3,
+        "pdf"
+       ]
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 13,
+       "type": "skill.shortlist",
+       "error": "index down"
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 14,
+       "type": "skill.loaded",
+       "name": "sales-report"
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 15,
+       "type": "skill.used",
+       "name": "sales-report"
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 16,
+       "type": "actor.code",
+       "data": {
+        "code": "x()"
+       }
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 17,
+       "type": "model.route.fallback"
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 18,
+       "type": "executor.step.failed"
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 19,
+       "type": "model.request.finished",
+       "observed_model": "claude-haiku-5-5-20261001",
+       "provider": "anthropic"
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 20,
+       "type": "answer.delta",
+       "data": {
+        "version": 1,
+        "text": "Sales are "
+       }
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 21,
+       "type": "answer.delta",
+       "data": {
+        "version": 1,
+        "text": "up.\n```neko_wo"
+       }
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 22,
+       "type": "answer.delta",
+       "data": {
+        "version": 1,
+        "text": "rkflow_save\n{}\n```\nMore"
+       }
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 23,
+       "type": "answer.delta",
+       "data": {
+        "text": 7
+       }
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 24,
+       "type": "unknown.kind"
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 25,
+       "type": "run.finished",
+       "result": {
+        "status": "completed",
+        "kind": "answer",
+        "answer": "Sales are up.\n```neko_workflow_save\n{}\n```\nMore text.\n\n```neko_cards\n{\"title\":\"Sales\",\"table\":\"| Region | Total |\\n| --- | --- |\\n| East | 12 |\"}\n```\n\n```neko_cards\n{\"title\":\"\"}\n```",
+        "usage": {
+         "requests": 3,
+         "reported": 2,
+         "input_tokens": 150000,
+         "output_tokens": 2000,
+         "total_tokens": 152500,
+         "cache_read_tokens": 100,
+         "coverage": "partial"
+        }
+       }
+      }
+     },
+     {
+      "type": "exit",
+      "code": 0
+     }
+    ]
+   ],
+   "starts": [
+    {
+     "type": "start",
+     "environ": [
+      "ARTIFACT_DIR=/srv/neko/org/runs/run-1/artifacts",
+      "HARNESS_MODEL=claude-haiku-5-5",
+      "HARNESS_MODEL_OPTIONS=",
+      "HARNESS_MODEL_PROVIDER=anthropic",
+      "HARNESS_MODEL_URL=",
+      "OPENNEKO_HARNESS_CHILD_TOOLS=*",
+      "OPENNEKO_HARNESS_SKILLS_READ=1",
+      "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
+      "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS=180",
+      "OPENNEKO_HARNESS_UPLOADS_DIR=/srv/neko/org/uploads/thread-1",
+      "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
+      "OPENNEKO_MCP_ORG_ID=org-1",
+      "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "OPENNEKO_MCP_THREAD_ID=thread-1",
+      "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
+      "RUN_DIR=/srv/neko/org/runs/run-1"
+     ],
+     "spec": {
+      "version": 1,
+      "run_id": "workrun-1",
+      "input_id": "workrun-1",
+      "instructions": "You are OpenNeko.\n\nRules.",
+      "prompt": "<workspace>\nroot\n</workspace>\n\nTurn part.\n\nCurrent user message:\nHow are sales?",
+      "skill_query": "How are sales?",
+      "stream_responses": true,
+      "timeout_ms": 540000,
+      "max_actor_steps": 25,
+      "max_child_steps": 50,
+      "reasoning_effort": "medium"
+     },
+     "bridge": false,
+     "model_key_env": "ANTHROPIC_API_KEY",
+     "model_keys": {
+      "ANTHROPIC_API_KEY": "sk-ant"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "progress",
+     "id": "ax-summary-1",
+     "content": "Thinking about sales.",
+     "source": "provider_summary",
+     "provider": "anthropic"
+    },
+    {
+     "type": "status",
+     "message": "Look up sales"
+    },
+    {
+     "type": "tool_start",
+     "id": "ax-op-1",
+     "name": "graphjin_query",
+     "input": {
+      "query": "{ sales }"
+     }
+    },
+    {
+     "type": "tool_end",
+     "id": "ax-op-1",
+     "result": {
+      "rows": 3
+     }
+    },
+    {
+     "type": "tool_start",
+     "id": "ax-op-2",
+     "name": "memory_save"
+    },
+    {
+     "type": "tool_end",
+     "id": "ax-op-2",
+     "error": "denied"
+    },
+    {
+     "type": "tool_start",
+     "id": "ax-op-4",
+     "name": "mcp_neko_ui_render_cards"
+    },
+    {
+     "type": "tool_end",
+     "id": "ax-op-4",
+     "error": "bad cards"
+    },
+    {
+     "type": "status",
+     "message": "Skill guides that may fit: sales-report, pdf"
+    },
+    {
+     "type": "status",
+     "message": "Skill search failed: index down"
+    },
+    {
+     "type": "tool_start",
+     "id": "ax-skill-load-sales-report",
+     "name": "skill_view",
+     "input": {
+      "path": "/srv/neko/org/skills/sales-report/SKILL.md"
+     }
+    },
+    {
+     "type": "tool_end",
+     "id": "ax-skill-load-sales-report"
+    },
+    {
+     "type": "tool_start",
+     "id": "ax-skill-sales-report",
+     "name": "skill_used",
+     "input": {
+      "path": "/srv/neko/org/skills/sales-report/SKILL.md"
+     }
+    },
+    {
+     "type": "tool_end",
+     "id": "ax-skill-sales-report"
+    },
+    {
+     "type": "retry",
+     "reason": "model_route_fallback"
+    },
+    {
+     "type": "retry",
+     "reason": "executor_step_failed"
+    },
+    {
+     "type": "message",
+     "role": "assistant",
+     "content": "Sales are "
+    },
+    {
+     "type": "message",
+     "role": "assistant",
+     "content": "up.\n"
+    },
+    {
+     "type": "message",
+     "role": "assistant",
+     "content": "\nMore"
+    },
+    {
+     "type": "usage",
+     "source": "outer",
+     "provider": "anthropic",
+     "model": "claude-haiku-5-5-20261001",
+     "modelIdentity": {
+      "configured": {
+       "provider": "anthropic",
+       "model": "claude-haiku-5-5"
+      },
+      "observed": {
+       "provider": "anthropic",
+       "model": "claude-haiku-5-5-20261001"
+      }
+     },
+     "usage": {
+      "inputTokens": 150000,
+      "outputTokens": 2000,
+      "totalTokens": 152500,
+      "cacheReadTokens": 100,
+      "coverage": "partial",
+      "costStatus": "estimated",
+      "estimatedCostUsd": 0.0243015,
+      "currency": "USD",
+      "costSource": "ax_model_catalog",
+      "pricingCatalogVersion": "ax-go@v0.0.0-20261029090635-42fceae3d6cd+overrides-2026-10",
+      "missingReasons": [
+       "The provider reported usage for 2 of 3 model calls"
+      ]
+     }
+    },
+    {
+     "type": "message",
+     "role": "assistant",
+     "content": " text.\n\n\n\n"
+    },
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-ID",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "Sales",
+          "children": [
+           "table"
+          ]
+         },
+         {
+          "id": "table",
+          "component": "Table",
+          "columns": [
+           {
+            "key": "c0",
+            "label": "Region"
+           },
+           {
+            "key": "c1",
+            "label": "Total",
+            "align": "right"
+           }
+          ],
+          "rows": [
+           {
+            "c0": "East",
+            "c1": "12"
+           }
+          ]
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "result": {
+    "finalText": "Sales are up.\n```neko_workflow_save\n{}\n```\nMore text.",
+    "rawText": "Sales are up.\n```neko_workflow_save\n{}\n```\nMore text.\n\n```neko_cards\n{\"title\":\"Sales\",\"table\":\"| Region | Total |\\n| --- | --- |\\n| East | 12 |\"}\n```\n\n```neko_cards\n{\"title\":\"\"}\n```",
+    "status": "completed",
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    }
+   }
+  },
+  {
+   "name": "a2ui answer with debug, fallback and limits",
+   "config": {
+    "route": {
+     "provider": "azure-openai",
+     "model": "gpt-4.1",
+     "keyEnv": "AZURE_OPENAI_API_KEY",
+     "options": {
+      "resource_name": "r",
+      "deployment_name": "gpt-4.1",
+      "api_version": "2024-10-21"
+     },
+     "price": {
+      "inputUsdPer1M": 2,
+      "outputUsdPer1M": 8
+     }
+    },
+    "fallback": {
+     "provider": "openai-compatible",
+     "model": "llama",
+     "url": "http://models.local/v1"
+    },
+    "contextWindowTokens": 128000,
+    "maxOutputTokens": 4096,
+    "reasoningEffort": "high"
+   },
+   "opts": {
+    "prompt": "You are OpenNeko.\n\nRules.\n\n<workspace>\nroot\n</workspace>\n\nTurn part.",
+    "userMessage": "How are sales?",
+    "orgId": "org-1",
+    "workspace": {
+     "orgRoot": "/srv/neko/org",
+     "skillsRoot": "/srv/neko/org/skills",
+     "memoryRoot": "/srv/neko/org/memory",
+     "knowledgeRoot": "/srv/neko/org/knowledge",
+     "uploadsRoot": "/srv/neko/org/uploads",
+     "runsRoot": "/srv/neko/org/runs",
+     "threadUploadsRoot": "/srv/neko/org/uploads/thread-1",
+     "runRoot": "/srv/neko/org/runs/run-1",
+     "artifactRoot": "/srv/neko/org/runs/run-1/artifacts",
+     "binRoot": "/srv/neko/org/runs/run-1/bin"
+    },
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "tag": "work run-1",
+    "wantsCards": true,
+    "mcpBridgeEnv": {
+     "OPENNEKO_MCP_MODE": "work",
+     "OPENNEKO_MCP_ORG_ID": "org-1",
+     "OPENNEKO_MCP_THREAD_ID": "thread-1",
+     "OPENNEKO_MCP_RUN_ID": "run-1",
+     "OPENNEKO_MCP_SKILLS_ROOT": "/srv/neko/org/skills",
+     "OPENNEKO_MCP_WANTS_CARDS": "1",
+     "OPENNEKO_MCP_CARD_SCHEMA": "rich"
+    },
+    "debug": true,
+    "nativeDelegation": "disabled",
+    "networkHosts": [
+     "api.example.com",
+     "docs.example.com"
+    ],
+    "timeoutMs": 2000000,
+    "maxToolIterations": 40,
+    "reasoningEffort": "low"
+   },
+   "env": {
+    "AZURE_OPENAI_API_KEY": "sk-az",
+    "FALLBACK_MODEL_API_KEY": "sk-fb",
+    "OPENNEKO_SANDBOX_URL": "http://sandbox.local",
+    "OPENNEKO_AX_SKILL_RERANK": "off",
+    "OPENNEKO_AGENT_TERMINAL_TIMEOUT_SECONDS": "90",
+    "OPENNEKO_AGENT_MAX_TURNS": "900"
+   },
+   "scripts": [
+    [
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 1,
+       "type": "actor.code",
+       "data": {
+        "code": "final()",
+        "error": "SyntaxError"
+       }
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 2,
+       "type": "thought.delta",
+       "data": {
+        "text": "hidden for azure"
+       }
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 3,
+       "type": "answer.delta",
+       "data": {
+        "version": 1,
+        "text": "Old text"
+       }
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 4,
+       "type": "answer.delta",
+       "data": {
+        "version": 2,
+        "text": "New"
+       }
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 5,
+       "type": "run.finished",
+       "result": {
+        "status": "completed",
+        "kind": "summary",
+        "code": "max_steps",
+        "answer": "Intro.\n```neko_a2ui\n[{\"version\":\"v1.0\",\"createSurface\":{\"surfaceId\":\"s1\",\"catalogId\":\"urn:openneko:catalog:work:v2\",\"components\":[{\"id\":\"root\",\"component\":\"Markdown\",\"text\":\"From the card\"}]}}]\n```",
+        "usage": {
+         "requests": 2,
+         "reported": 2,
+         "input_tokens": 1000,
+         "output_tokens": 500,
+         "total_tokens": 1600,
+         "coverage": "complete",
+         "cost_micros": 999,
+         "priced_by": "catalog",
+         "catalog_version": "v9"
+        }
+       }
+      }
+     },
+     {
+      "type": "exit",
+      "code": 0
+     }
+    ]
+   ],
+   "starts": [
+    {
+     "type": "start",
+     "environ": [
+      "ARTIFACT_DIR=/srv/neko/org/runs/run-1/artifacts",
+      "HARNESS_MODEL=gpt-4.1",
+      "HARNESS_MODEL_OPTIONS={\"resource_name\":\"r\",\"deployment_name\":\"gpt-4.1\",\"api_version\":\"2024-10-21\"}",
+      "HARNESS_MODEL_PROVIDER=azure-openai",
+      "HARNESS_MODEL_ROUTES={\"context\":\"primary\",\"executor\":\"primary\",\"responder\":\"primary\",\"fallbacks\":[{\"from\":\"primary\",\"to\":\"fallback\"}],\"routes\":[{\"key\":\"primary\",\"provider\":\"azure-openai\",\"model\":\"gpt-4.1\",\"api_key_env\":\"PRIMARY_MODEL_API_KEY\",\"options\":{\"resource_name\":\"r\",\"deployment_name\":\"gpt-4.1\",\"api_version\":\"2024-10-21\"}},{\"key\":\"fallback\",\"provider\":\"openai-compatible\",\"model\":\"llama\",\"url\":\"http://models.local/v1\",\"api_key_env\":\"FALLBACK_MODEL_API_KEY\"}]}",
+      "HARNESS_MODEL_URL=",
+      "OPENNEKO_HARNESS_DEBUG=1",
+      "OPENNEKO_HARNESS_SHELL=1",
+      "OPENNEKO_HARNESS_SKILLS_READ=1",
+      "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
+      "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS=90",
+      "OPENNEKO_HARNESS_UPLOADS_DIR=/srv/neko/org/uploads/thread-1",
+      "OPENNEKO_HARNESS_WEB_HOSTS=api.example.com,docs.example.com",
+      "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
+      "OPENNEKO_MCP_ORG_ID=org-1",
+      "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "OPENNEKO_MCP_THREAD_ID=thread-1",
+      "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
+      "RUN_DIR=/srv/neko/org/runs/run-1"
+     ],
+     "spec": {
+      "version": 1,
+      "run_id": "workrun-1",
+      "input_id": "workrun-1",
+      "instructions": "You are OpenNeko.\n\nRules.",
+      "prompt": "<workspace>\nroot\n</workspace>\n\nTurn part.\n\nCurrent user message:\nHow are sales?",
+      "skill_query": "How are sales?",
+      "skill_rerank": "off",
+      "stream_responses": true,
+      "timeout_ms": 1800000,
+      "max_actor_steps": 40,
+      "max_child_steps": 50,
+      "max_operations": 40,
+      "reasoning_effort": "low",
+      "context_window_tokens": 128000,
+      "max_output_tokens": 4096,
+      "debug": true
+     },
+     "bridge": false,
+     "model_key_env": "AZURE_OPENAI_API_KEY",
+     "model_keys": {
+      "AZURE_OPENAI_API_KEY": "sk-az",
+      "PRIMARY_MODEL_API_KEY": "sk-az",
+      "FALLBACK_MODEL_API_KEY": "sk-fb"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "status",
+     "message": "actor code failed (SyntaxError):\nfinal()"
+    },
+    {
+     "type": "message",
+     "role": "assistant",
+     "content": "Old text"
+    },
+    {
+     "type": "usage",
+     "source": "outer",
+     "modelIdentity": {
+      "configured": {
+       "provider": "azure-openai",
+       "model": "gpt-4.1"
+      }
+     },
+     "usage": {
+      "inputTokens": 1000,
+      "outputTokens": 500,
+      "totalTokens": 1600,
+      "coverage": "complete",
+      "costStatus": "estimated",
+      "estimatedCostUsd": 0.0068,
+      "currency": "USD",
+      "costSource": "model_record",
+      "pricingCatalogVersion": "model_record"
+     }
+    }
+   ],
+   "result": {
+    "finalText": "From the card",
+    "rawText": "Intro.\n```neko_a2ui\n[{\"version\":\"v1.0\",\"createSurface\":{\"surfaceId\":\"s1\",\"catalogId\":\"urn:openneko:catalog:work:v2\",\"components\":[{\"id\":\"root\",\"component\":\"Markdown\",\"text\":\"From the card\"}]}}]\n```",
+    "status": "completed",
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "errorCode": "max_steps",
+    "degraded": true
+   }
+  },
+  {
+   "name": "cards off and no stream text",
+   "config": {
+    "route": {
+     "provider": "openai",
+     "model": "gpt-4.1",
+     "keyEnv": "OPENAI_API_KEY"
+    }
+   },
+   "opts": {
+    "prompt": "You are OpenNeko.\n\nRules.\n\n<workspace>\nroot\n</workspace>\n\nTurn part.",
+    "orgId": "org-1",
+    "workspace": {
+     "orgRoot": "/srv/neko/org",
+     "skillsRoot": "/srv/neko/org/skills",
+     "memoryRoot": "/srv/neko/org/memory",
+     "knowledgeRoot": "/srv/neko/org/knowledge",
+     "uploadsRoot": "/srv/neko/org/uploads",
+     "runsRoot": "/srv/neko/org/runs",
+     "threadUploadsRoot": "",
+     "runRoot": "/srv/neko/org/runs/run-1",
+     "artifactRoot": "/srv/neko/org/runs/run-1/artifacts",
+     "binRoot": "/srv/neko/org/runs/run-1/bin"
+    },
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "tag": "work run-1",
+    "wantsCards": false,
+    "mcpBridgeEnv": {
+     "OPENNEKO_MCP_MODE": "work",
+     "OPENNEKO_MCP_ORG_ID": "org-1",
+     "OPENNEKO_MCP_THREAD_ID": "thread-1",
+     "OPENNEKO_MCP_RUN_ID": "run-1",
+     "OPENNEKO_MCP_SKILLS_ROOT": "/srv/neko/org/skills",
+     "OPENNEKO_MCP_WANTS_CARDS": "1",
+     "OPENNEKO_MCP_CARD_SCHEMA": "rich"
+    }
+   },
+   "env": {
+    "OPENAI_API_KEY": "sk-openai",
+    "MODEL_API_KEY": "sk-model"
+   },
+   "scripts": [
+    [
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 1,
+       "type": "run.finished",
+       "result": {
+        "status": "completed",
+        "answer": "Plain.\n```neko_cards\n{\"title\":\"Sales\",\"table\":\"| Region | Total |\\n| --- | --- |\\n| East | 12 |\"}\n```\n",
+        "usage": {
+         "requests": 1,
+         "reported": 1,
+         "input_tokens": 10,
+         "output_tokens": 5,
+         "total_tokens": 15,
+         "coverage": "complete",
+         "cost_micros": 12,
+         "priced_by": "catalog",
+         "catalog_version": "v9"
+        }
+       }
+      }
+     },
+     {
+      "type": "exit",
+      "code": 0
+     }
+    ]
+   ],
+   "starts": [
+    {
+     "type": "start",
+     "environ": [
+      "ARTIFACT_DIR=/srv/neko/org/runs/run-1/artifacts",
+      "HARNESS_MODEL=gpt-4.1",
+      "HARNESS_MODEL_OPTIONS=",
+      "HARNESS_MODEL_PROVIDER=openai",
+      "HARNESS_MODEL_URL=",
+      "OPENNEKO_HARNESS_CHILD_TOOLS=*",
+      "OPENNEKO_HARNESS_SKILLS_READ=1",
+      "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
+      "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS=180",
+      "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
+      "OPENNEKO_MCP_ORG_ID=org-1",
+      "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "OPENNEKO_MCP_THREAD_ID=thread-1",
+      "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
+      "RUN_DIR=/srv/neko/org/runs/run-1"
+     ],
+     "spec": {
+      "version": 1,
+      "run_id": "workrun-1",
+      "input_id": "workrun-1",
+      "instructions": "You are OpenNeko.\n\nRules.",
+      "prompt": "<workspace>\nroot\n</workspace>\n\nTurn part.",
+      "stream_responses": true,
+      "timeout_ms": 540000,
+      "max_actor_steps": 25,
+      "max_child_steps": 50
+     },
+     "bridge": false,
+     "model_key_env": "OPENAI_API_KEY",
+     "model_keys": {
+      "OPENAI_API_KEY": "sk-openai"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "usage",
+     "source": "outer",
+     "modelIdentity": {
+      "configured": {
+       "provider": "openai",
+       "model": "gpt-4.1"
+      }
+     },
+     "usage": {
+      "inputTokens": 10,
+      "outputTokens": 5,
+      "totalTokens": 15,
+      "coverage": "complete",
+      "costStatus": "estimated",
+      "estimatedCostUsd": 0.000012,
+      "currency": "USD",
+      "costSource": "ax_harness_catalog",
+      "pricingCatalogVersion": "ax-go@v9"
+     }
+    },
+    {
+     "type": "message",
+     "role": "assistant",
+     "content": "Plain.\n\n\n"
+    }
+   ],
+   "result": {
+    "finalText": "Plain.",
+    "rawText": "Plain.\n```neko_cards\n{\"title\":\"Sales\",\"table\":\"| Region | Total |\\n| --- | --- |\\n| East | 12 |\"}\n```\n",
+    "status": "completed",
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    }
+   }
+  },
+  {
+   "name": "deadline exceeded",
+   "config": {
+    "route": {
+     "provider": "openai",
+     "model": "gpt-4.1",
+     "keyEnv": "OPENAI_API_KEY"
+    }
+   },
+   "opts": {
+    "prompt": "You are OpenNeko.\n\nRules.\n\n<workspace>\nroot\n</workspace>\n\nTurn part.",
+    "userMessage": "How are sales?",
+    "orgId": "org-1",
+    "workspace": {
+     "orgRoot": "/srv/neko/org",
+     "skillsRoot": "/srv/neko/org/skills",
+     "memoryRoot": "/srv/neko/org/memory",
+     "knowledgeRoot": "/srv/neko/org/knowledge",
+     "uploadsRoot": "/srv/neko/org/uploads",
+     "runsRoot": "/srv/neko/org/runs",
+     "threadUploadsRoot": "/srv/neko/org/uploads/thread-1",
+     "runRoot": "/srv/neko/org/runs/run-1",
+     "artifactRoot": "/srv/neko/org/runs/run-1/artifacts",
+     "binRoot": "/srv/neko/org/runs/run-1/bin"
+    },
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "tag": "work run-1",
+    "wantsCards": true,
+    "mcpBridgeEnv": {
+     "OPENNEKO_MCP_MODE": "work",
+     "OPENNEKO_MCP_ORG_ID": "org-1",
+     "OPENNEKO_MCP_THREAD_ID": "thread-1",
+     "OPENNEKO_MCP_RUN_ID": "run-1",
+     "OPENNEKO_MCP_SKILLS_ROOT": "/srv/neko/org/skills",
+     "OPENNEKO_MCP_WANTS_CARDS": "1",
+     "OPENNEKO_MCP_CARD_SCHEMA": "rich"
+    },
+    "timeoutMs": 61000
+   },
+   "env": {
+    "MODEL_API_KEY": "sk-model"
+   },
+   "scripts": [
+    [
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 1,
+       "type": "run.finished",
+       "result": {
+        "status": "failed",
+        "kind": "failure",
+        "code": "deadline_exceeded",
+        "usage": {
+         "coverage": "unavailable"
+        }
+       }
+      }
+     },
+     {
+      "type": "exit",
+      "code": 1,
+      "error": "turn timed out"
+     }
+    ]
+   ],
+   "starts": [
+    {
+     "type": "start",
+     "environ": [
+      "ARTIFACT_DIR=/srv/neko/org/runs/run-1/artifacts",
+      "HARNESS_MODEL=gpt-4.1",
+      "HARNESS_MODEL_OPTIONS=",
+      "HARNESS_MODEL_PROVIDER=openai",
+      "HARNESS_MODEL_URL=",
+      "OPENNEKO_HARNESS_CHILD_TOOLS=*",
+      "OPENNEKO_HARNESS_SKILLS_READ=1",
+      "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
+      "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS=180",
+      "OPENNEKO_HARNESS_UPLOADS_DIR=/srv/neko/org/uploads/thread-1",
+      "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
+      "OPENNEKO_MCP_ORG_ID=org-1",
+      "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "OPENNEKO_MCP_THREAD_ID=thread-1",
+      "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
+      "RUN_DIR=/srv/neko/org/runs/run-1"
+     ],
+     "spec": {
+      "version": 1,
+      "run_id": "workrun-1",
+      "input_id": "workrun-1",
+      "instructions": "You are OpenNeko.\n\nRules.",
+      "prompt": "<workspace>\nroot\n</workspace>\n\nTurn part.\n\nCurrent user message:\nHow are sales?",
+      "skill_query": "How are sales?",
+      "stream_responses": true,
+      "timeout_ms": 61000,
+      "max_actor_steps": 25,
+      "max_child_steps": 50
+     },
+     "bridge": false,
+     "model_key_env": "OPENAI_API_KEY",
+     "model_keys": {
+      "OPENAI_API_KEY": "sk-model"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "usage",
+     "source": "outer",
+     "modelIdentity": {
+      "configured": {
+       "provider": "openai",
+       "model": "gpt-4.1"
+      }
+     },
+     "usage": {
+      "coverage": "unavailable",
+      "costStatus": "unknown"
+     }
+    },
+    {
+     "type": "error",
+     "message": "ax turn exceeded its 61s budget and was terminated (OPENNEKO_AGENT_TURN_TIMEOUT_MS overrides)"
+    }
+   ],
+   "result": {
+    "finalText": "",
+    "status": "failed",
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "error": "ax turn exceeded its 61s budget and was terminated (OPENNEKO_AGENT_TURN_TIMEOUT_MS overrides)",
+    "errorCode": "deadline_exceeded",
+    "timedOut": true
+   }
+  },
+  {
+   "name": "failure with diagnostics",
+   "config": {
+    "route": {
+     "provider": "openai-compatible",
+     "model": "unpriced-model",
+     "url": "http://m.local/v1"
+    }
+   },
+   "opts": {
+    "prompt": "You are OpenNeko.\n\nRules.\n\n<workspace>\nroot\n</workspace>\n\nTurn part.",
+    "userMessage": "How are sales?",
+    "orgId": "org-1",
+    "workspace": {
+     "orgRoot": "/srv/neko/org",
+     "skillsRoot": "/srv/neko/org/skills",
+     "memoryRoot": "/srv/neko/org/memory",
+     "knowledgeRoot": "/srv/neko/org/knowledge",
+     "uploadsRoot": "/srv/neko/org/uploads",
+     "runsRoot": "/srv/neko/org/runs",
+     "threadUploadsRoot": "/srv/neko/org/uploads/thread-1",
+     "runRoot": "/srv/neko/org/runs/run-1",
+     "artifactRoot": "/srv/neko/org/runs/run-1/artifacts",
+     "binRoot": "/srv/neko/org/runs/run-1/bin"
+    },
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "tag": "work run-1",
+    "wantsCards": true,
+    "mcpBridgeEnv": {
+     "OPENNEKO_MCP_MODE": "work",
+     "OPENNEKO_MCP_ORG_ID": "org-1",
+     "OPENNEKO_MCP_THREAD_ID": "thread-1",
+     "OPENNEKO_MCP_RUN_ID": "run-1",
+     "OPENNEKO_MCP_SKILLS_ROOT": "/srv/neko/org/skills",
+     "OPENNEKO_MCP_WANTS_CARDS": "1",
+     "OPENNEKO_MCP_CARD_SCHEMA": "rich"
+    }
+   },
+   "env": {},
+   "scripts": [
+    [
+     {
+      "raw": "not json"
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 1,
+       "type": "answer.delta",
+       "data": {
+        "version": 1,
+        "text": "Partial"
+       }
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 2,
+       "type": "run.finished",
+       "result": {
+        "status": "failed",
+        "code": "provider_error",
+        "answer": ""
+       }
+      }
+     },
+     {
+      "type": "exit",
+      "code": 1,
+      "error": "provider said no"
+     }
+    ]
+   ],
+   "starts": [
+    {
+     "type": "start",
+     "environ": [
+      "ARTIFACT_DIR=/srv/neko/org/runs/run-1/artifacts",
+      "HARNESS_MODEL=unpriced-model",
+      "HARNESS_MODEL_OPTIONS=",
+      "HARNESS_MODEL_PROVIDER=openai-compatible",
+      "HARNESS_MODEL_URL=http://m.local/v1",
+      "OPENNEKO_HARNESS_CHILD_TOOLS=*",
+      "OPENNEKO_HARNESS_SKILLS_READ=1",
+      "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
+      "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS=180",
+      "OPENNEKO_HARNESS_UPLOADS_DIR=/srv/neko/org/uploads/thread-1",
+      "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
+      "OPENNEKO_MCP_ORG_ID=org-1",
+      "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "OPENNEKO_MCP_THREAD_ID=thread-1",
+      "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
+      "RUN_DIR=/srv/neko/org/runs/run-1"
+     ],
+     "spec": {
+      "version": 1,
+      "run_id": "workrun-1",
+      "input_id": "workrun-1",
+      "instructions": "You are OpenNeko.\n\nRules.",
+      "prompt": "<workspace>\nroot\n</workspace>\n\nTurn part.\n\nCurrent user message:\nHow are sales?",
+      "skill_query": "How are sales?",
+      "stream_responses": true,
+      "timeout_ms": 540000,
+      "max_actor_steps": 25,
+      "max_child_steps": 50
+     },
+     "bridge": false,
+     "model_key_env": "MODEL_API_KEY",
+     "model_keys": {
+      "MODEL_API_KEY": "none"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "message",
+     "role": "assistant",
+     "content": "Partial"
+    },
+    {
+     "type": "usage",
+     "source": "outer",
+     "modelIdentity": {
+      "configured": {
+       "provider": "openai-compatible",
+       "model": "unpriced-model"
+      }
+     },
+     "usage": {
+      "coverage": "unavailable",
+      "missingReasons": [
+       "Ax Harness reported no usage"
+      ]
+     }
+    },
+    {
+     "type": "error",
+     "message": "ax run failed: provider_error: serve wrote a line that is not JSON\nprovider said no"
+    }
+   ],
+   "result": {
+    "finalText": "",
+    "status": "failed",
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "error": "ax run failed: provider_error: serve wrote a line that is not JSON\nprovider said no",
+    "errorCode": "provider_error"
+   }
+  },
+  {
+   "name": "exit without a result",
+   "config": {
+    "route": {
+     "provider": "openai",
+     "model": "gpt-4.1",
+     "keyEnv": "OPENAI_API_KEY"
+    }
+   },
+   "opts": {
+    "prompt": "You are OpenNeko.\n\nRules.\n\n<workspace>\nroot\n</workspace>\n\nTurn part.",
+    "userMessage": "How are sales?",
+    "orgId": "org-1",
+    "workspace": {
+     "orgRoot": "/srv/neko/org",
+     "skillsRoot": "/srv/neko/org/skills",
+     "memoryRoot": "/srv/neko/org/memory",
+     "knowledgeRoot": "/srv/neko/org/knowledge",
+     "uploadsRoot": "/srv/neko/org/uploads",
+     "runsRoot": "/srv/neko/org/runs",
+     "threadUploadsRoot": "/srv/neko/org/uploads/thread-1",
+     "runRoot": "/srv/neko/org/runs/run-1",
+     "artifactRoot": "/srv/neko/org/runs/run-1/artifacts",
+     "binRoot": "/srv/neko/org/runs/run-1/bin"
+    },
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "tag": "work run-1",
+    "wantsCards": true,
+    "mcpBridgeEnv": {
+     "OPENNEKO_MCP_MODE": "work",
+     "OPENNEKO_MCP_ORG_ID": "org-1",
+     "OPENNEKO_MCP_THREAD_ID": "thread-1",
+     "OPENNEKO_MCP_RUN_ID": "run-1",
+     "OPENNEKO_MCP_SKILLS_ROOT": "/srv/neko/org/skills",
+     "OPENNEKO_MCP_WANTS_CARDS": "1",
+     "OPENNEKO_MCP_CARD_SCHEMA": "rich"
+    }
+   },
+   "env": {
+    "OPENAI_API_KEY": "sk-openai",
+    "MODEL_API_KEY": "sk-model"
+   },
+   "scripts": [
+    [
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 1,
+       "type": "run.started"
+      }
+     },
+     {
+      "type": "exit",
+      "code": 2,
+      "error": "bad spec"
+     }
+    ]
+   ],
+   "starts": [
+    {
+     "type": "start",
+     "environ": [
+      "ARTIFACT_DIR=/srv/neko/org/runs/run-1/artifacts",
+      "HARNESS_MODEL=gpt-4.1",
+      "HARNESS_MODEL_OPTIONS=",
+      "HARNESS_MODEL_PROVIDER=openai",
+      "HARNESS_MODEL_URL=",
+      "OPENNEKO_HARNESS_CHILD_TOOLS=*",
+      "OPENNEKO_HARNESS_SKILLS_READ=1",
+      "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
+      "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS=180",
+      "OPENNEKO_HARNESS_UPLOADS_DIR=/srv/neko/org/uploads/thread-1",
+      "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
+      "OPENNEKO_MCP_ORG_ID=org-1",
+      "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "OPENNEKO_MCP_THREAD_ID=thread-1",
+      "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
+      "RUN_DIR=/srv/neko/org/runs/run-1"
+     ],
+     "spec": {
+      "version": 1,
+      "run_id": "workrun-1",
+      "input_id": "workrun-1",
+      "instructions": "You are OpenNeko.\n\nRules.",
+      "prompt": "<workspace>\nroot\n</workspace>\n\nTurn part.\n\nCurrent user message:\nHow are sales?",
+      "skill_query": "How are sales?",
+      "stream_responses": true,
+      "timeout_ms": 540000,
+      "max_actor_steps": 25,
+      "max_child_steps": 50
+     },
+     "bridge": false,
+     "model_key_env": "OPENAI_API_KEY",
+     "model_keys": {
+      "OPENAI_API_KEY": "sk-openai"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "error",
+     "message": "ax-harness exited (code=2) without a result: bad spec"
+    }
+   ],
+   "result": {
+    "finalText": "",
+    "status": "failed",
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "error": "ax-harness exited (code=2) without a result: bad spec",
+    "errorCode": "exit"
+   }
+  },
+  {
+   "name": "events out of order",
+   "config": {
+    "route": {
+     "provider": "openai",
+     "model": "gpt-4.1",
+     "keyEnv": "OPENAI_API_KEY"
+    }
+   },
+   "opts": {
+    "prompt": "You are OpenNeko.\n\nRules.\n\n<workspace>\nroot\n</workspace>\n\nTurn part.",
+    "userMessage": "How are sales?",
+    "orgId": "org-1",
+    "workspace": {
+     "orgRoot": "/srv/neko/org",
+     "skillsRoot": "/srv/neko/org/skills",
+     "memoryRoot": "/srv/neko/org/memory",
+     "knowledgeRoot": "/srv/neko/org/knowledge",
+     "uploadsRoot": "/srv/neko/org/uploads",
+     "runsRoot": "/srv/neko/org/runs",
+     "threadUploadsRoot": "/srv/neko/org/uploads/thread-1",
+     "runRoot": "/srv/neko/org/runs/run-1",
+     "artifactRoot": "/srv/neko/org/runs/run-1/artifacts",
+     "binRoot": "/srv/neko/org/runs/run-1/bin"
+    },
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "tag": "work run-1",
+    "wantsCards": true,
+    "mcpBridgeEnv": {
+     "OPENNEKO_MCP_MODE": "work",
+     "OPENNEKO_MCP_ORG_ID": "org-1",
+     "OPENNEKO_MCP_THREAD_ID": "thread-1",
+     "OPENNEKO_MCP_RUN_ID": "run-1",
+     "OPENNEKO_MCP_SKILLS_ROOT": "/srv/neko/org/skills",
+     "OPENNEKO_MCP_WANTS_CARDS": "1",
+     "OPENNEKO_MCP_CARD_SCHEMA": "rich"
+    }
+   },
+   "env": {
+    "OPENAI_API_KEY": "sk-openai",
+    "MODEL_API_KEY": "sk-model"
+   },
+   "scripts": [
+    [
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 2,
+       "type": "actor.step",
+       "data": {
+        "text": "a"
+       }
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 2,
+       "type": "actor.step",
+       "data": {
+        "text": "b"
+       }
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 2,
+       "run_id": "workrun-1",
+       "sequence": 3,
+       "type": "actor.step"
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "other",
+       "sequence": 4,
+       "type": "actor.step"
+      }
+     },
+     {
+      "type": "exit",
+      "code": 0
+     }
+    ]
+   ],
+   "starts": [
+    {
+     "type": "start",
+     "environ": [
+      "ARTIFACT_DIR=/srv/neko/org/runs/run-1/artifacts",
+      "HARNESS_MODEL=gpt-4.1",
+      "HARNESS_MODEL_OPTIONS=",
+      "HARNESS_MODEL_PROVIDER=openai",
+      "HARNESS_MODEL_URL=",
+      "OPENNEKO_HARNESS_CHILD_TOOLS=*",
+      "OPENNEKO_HARNESS_SKILLS_READ=1",
+      "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
+      "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS=180",
+      "OPENNEKO_HARNESS_UPLOADS_DIR=/srv/neko/org/uploads/thread-1",
+      "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
+      "OPENNEKO_MCP_ORG_ID=org-1",
+      "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "OPENNEKO_MCP_THREAD_ID=thread-1",
+      "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
+      "RUN_DIR=/srv/neko/org/runs/run-1"
+     ],
+     "spec": {
+      "version": 1,
+      "run_id": "workrun-1",
+      "input_id": "workrun-1",
+      "instructions": "You are OpenNeko.\n\nRules.",
+      "prompt": "<workspace>\nroot\n</workspace>\n\nTurn part.\n\nCurrent user message:\nHow are sales?",
+      "skill_query": "How are sales?",
+      "stream_responses": true,
+      "timeout_ms": 540000,
+      "max_actor_steps": 25,
+      "max_child_steps": 50
+     },
+     "bridge": false,
+     "model_key_env": "OPENAI_API_KEY",
+     "model_keys": {
+      "OPENAI_API_KEY": "sk-openai"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "status",
+     "message": "a"
+    },
+    {
+     "type": "error",
+     "message": "ax-harness event out of order: actor.step"
+    }
+   ],
+   "result": {
+    "finalText": "",
+    "status": "failed",
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "error": "ax-harness event out of order: actor.step",
+    "errorCode": "protocol"
+   }
+  },
+  {
+   "name": "malformed call retried",
+   "config": {
+    "route": {
+     "provider": "openai",
+     "model": "gpt-4.1",
+     "keyEnv": "OPENAI_API_KEY"
+    }
+   },
+   "opts": {
+    "prompt": "You are OpenNeko.\n\nRules.\n\n<workspace>\nroot\n</workspace>\n\nTurn part.",
+    "userMessage": "How are sales?",
+    "orgId": "org-1",
+    "workspace": {
+     "orgRoot": "/srv/neko/org",
+     "skillsRoot": "/srv/neko/org/skills",
+     "memoryRoot": "/srv/neko/org/memory",
+     "knowledgeRoot": "/srv/neko/org/knowledge",
+     "uploadsRoot": "/srv/neko/org/uploads",
+     "runsRoot": "/srv/neko/org/runs",
+     "threadUploadsRoot": "/srv/neko/org/uploads/thread-1",
+     "runRoot": "/srv/neko/org/runs/run-1",
+     "artifactRoot": "/srv/neko/org/runs/run-1/artifacts",
+     "binRoot": "/srv/neko/org/runs/run-1/bin"
+    },
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "tag": "work run-1",
+    "wantsCards": true,
+    "mcpBridgeEnv": {
+     "OPENNEKO_MCP_MODE": "work",
+     "OPENNEKO_MCP_ORG_ID": "org-1",
+     "OPENNEKO_MCP_THREAD_ID": "thread-1",
+     "OPENNEKO_MCP_RUN_ID": "run-1",
+     "OPENNEKO_MCP_SKILLS_ROOT": "/srv/neko/org/skills",
+     "OPENNEKO_MCP_WANTS_CARDS": "1",
+     "OPENNEKO_MCP_CARD_SCHEMA": "rich"
+    }
+   },
+   "env": {
+    "OPENAI_API_KEY": "sk-openai",
+    "MODEL_API_KEY": "sk-model"
+   },
+   "scripts": [
+    [
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 1,
+       "type": "tool.started",
+       "name": "graphjin_query",
+       "operation_id": 1,
+       "effect": "read"
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 2,
+       "type": "run.finished",
+       "result": {
+        "status": "failed",
+        "code": "MALFORMED_FUNCTION_CALL"
+       }
+      }
+     },
+     {
+      "type": "exit",
+      "code": 1
+     }
+    ],
+    [
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 1,
+       "type": "answer.delta",
+       "data": {
+        "version": 1,
+        "text": "Second try."
+       }
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 2,
+       "type": "run.finished",
+       "result": {
+        "status": "completed",
+        "answer": "Second try."
+       }
+      }
+     },
+     {
+      "type": "exit",
+      "code": 0
+     }
+    ]
+   ],
+   "starts": [
+    {
+     "type": "start",
+     "environ": [
+      "ARTIFACT_DIR=/srv/neko/org/runs/run-1/artifacts",
+      "HARNESS_MODEL=gpt-4.1",
+      "HARNESS_MODEL_OPTIONS=",
+      "HARNESS_MODEL_PROVIDER=openai",
+      "HARNESS_MODEL_URL=",
+      "OPENNEKO_HARNESS_CHILD_TOOLS=*",
+      "OPENNEKO_HARNESS_SKILLS_READ=1",
+      "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
+      "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS=180",
+      "OPENNEKO_HARNESS_UPLOADS_DIR=/srv/neko/org/uploads/thread-1",
+      "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
+      "OPENNEKO_MCP_ORG_ID=org-1",
+      "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "OPENNEKO_MCP_THREAD_ID=thread-1",
+      "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
+      "RUN_DIR=/srv/neko/org/runs/run-1"
+     ],
+     "spec": {
+      "version": 1,
+      "run_id": "workrun-1",
+      "input_id": "workrun-1",
+      "instructions": "You are OpenNeko.\n\nRules.",
+      "prompt": "<workspace>\nroot\n</workspace>\n\nTurn part.\n\nCurrent user message:\nHow are sales?",
+      "skill_query": "How are sales?",
+      "stream_responses": true,
+      "timeout_ms": 540000,
+      "max_actor_steps": 25,
+      "max_child_steps": 50
+     },
+     "bridge": false,
+     "model_key_env": "OPENAI_API_KEY",
+     "model_keys": {
+      "OPENAI_API_KEY": "sk-openai"
+     }
+    },
+    {
+     "type": "start",
+     "environ": [
+      "ARTIFACT_DIR=/srv/neko/org/runs/run-1/artifacts",
+      "HARNESS_MODEL=gpt-4.1",
+      "HARNESS_MODEL_OPTIONS=",
+      "HARNESS_MODEL_PROVIDER=openai",
+      "HARNESS_MODEL_URL=",
+      "OPENNEKO_HARNESS_CHILD_TOOLS=*",
+      "OPENNEKO_HARNESS_SKILLS_READ=1",
+      "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
+      "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS=180",
+      "OPENNEKO_HARNESS_UPLOADS_DIR=/srv/neko/org/uploads/thread-1",
+      "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
+      "OPENNEKO_MCP_ORG_ID=org-1",
+      "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "OPENNEKO_MCP_THREAD_ID=thread-1",
+      "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
+      "RUN_DIR=/srv/neko/org/runs/run-1"
+     ],
+     "spec": {
+      "version": 1,
+      "run_id": "workrun-1",
+      "input_id": "workrun-1",
+      "instructions": "You are OpenNeko.\n\nRules.",
+      "prompt": "<workspace>\nroot\n</workspace>\n\nTurn part.\n\nCurrent user message:\nHow are sales?",
+      "skill_query": "How are sales?",
+      "stream_responses": true,
+      "timeout_ms": 540000,
+      "max_actor_steps": 25,
+      "max_child_steps": 50
+     },
+     "bridge": false,
+     "model_key_env": "OPENAI_API_KEY",
+     "model_keys": {
+      "OPENAI_API_KEY": "sk-openai"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "tool_start",
+     "id": "ax-op-1",
+     "name": "graphjin_query"
+    },
+    {
+     "type": "usage",
+     "source": "outer",
+     "modelIdentity": {
+      "configured": {
+       "provider": "openai",
+       "model": "gpt-4.1"
+      }
+     },
+     "usage": {
+      "coverage": "unavailable",
+      "missingReasons": [
+       "Ax Harness reported no usage"
+      ]
+     }
+    },
+    {
+     "type": "retry",
+     "reason": "malformed_function_call"
+    },
+    {
+     "type": "message",
+     "role": "assistant",
+     "content": "Second try."
+    },
+    {
+     "type": "usage",
+     "source": "outer",
+     "modelIdentity": {
+      "configured": {
+       "provider": "openai",
+       "model": "gpt-4.1"
+      }
+     },
+     "usage": {
+      "coverage": "unavailable",
+      "missingReasons": [
+       "Ax Harness reported no usage"
+      ]
+     }
+    }
+   ],
+   "result": {
+    "finalText": "Second try.",
+    "rawText": "Second try.",
+    "status": "completed",
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    }
+   }
+  },
+  {
+   "name": "malformed call after a write is not retried",
+   "config": {
+    "route": {
+     "provider": "openai",
+     "model": "gpt-4.1",
+     "keyEnv": "OPENAI_API_KEY"
+    }
+   },
+   "opts": {
+    "prompt": "You are OpenNeko.\n\nRules.\n\n<workspace>\nroot\n</workspace>\n\nTurn part.",
+    "userMessage": "How are sales?",
+    "orgId": "org-1",
+    "workspace": {
+     "orgRoot": "/srv/neko/org",
+     "skillsRoot": "/srv/neko/org/skills",
+     "memoryRoot": "/srv/neko/org/memory",
+     "knowledgeRoot": "/srv/neko/org/knowledge",
+     "uploadsRoot": "/srv/neko/org/uploads",
+     "runsRoot": "/srv/neko/org/runs",
+     "threadUploadsRoot": "/srv/neko/org/uploads/thread-1",
+     "runRoot": "/srv/neko/org/runs/run-1",
+     "artifactRoot": "/srv/neko/org/runs/run-1/artifacts",
+     "binRoot": "/srv/neko/org/runs/run-1/bin"
+    },
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "tag": "work run-1",
+    "wantsCards": true,
+    "mcpBridgeEnv": {
+     "OPENNEKO_MCP_MODE": "work",
+     "OPENNEKO_MCP_ORG_ID": "org-1",
+     "OPENNEKO_MCP_THREAD_ID": "thread-1",
+     "OPENNEKO_MCP_RUN_ID": "run-1",
+     "OPENNEKO_MCP_SKILLS_ROOT": "/srv/neko/org/skills",
+     "OPENNEKO_MCP_WANTS_CARDS": "1",
+     "OPENNEKO_MCP_CARD_SCHEMA": "rich"
+    }
+   },
+   "env": {
+    "OPENAI_API_KEY": "sk-openai",
+    "MODEL_API_KEY": "sk-model"
+   },
+   "scripts": [
+    [
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 1,
+       "type": "tool.started",
+       "name": "memory_save",
+       "operation_id": 1,
+       "effect": "durable"
+      }
+     },
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 2,
+       "type": "run.finished",
+       "result": {
+        "status": "failed",
+        "code": "MALFORMED_FUNCTION_CALL"
+       }
+      }
+     },
+     {
+      "type": "exit",
+      "code": 1
+     }
+    ]
+   ],
+   "starts": [
+    {
+     "type": "start",
+     "environ": [
+      "ARTIFACT_DIR=/srv/neko/org/runs/run-1/artifacts",
+      "HARNESS_MODEL=gpt-4.1",
+      "HARNESS_MODEL_OPTIONS=",
+      "HARNESS_MODEL_PROVIDER=openai",
+      "HARNESS_MODEL_URL=",
+      "OPENNEKO_HARNESS_CHILD_TOOLS=*",
+      "OPENNEKO_HARNESS_SKILLS_READ=1",
+      "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
+      "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS=180",
+      "OPENNEKO_HARNESS_UPLOADS_DIR=/srv/neko/org/uploads/thread-1",
+      "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
+      "OPENNEKO_MCP_ORG_ID=org-1",
+      "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "OPENNEKO_MCP_THREAD_ID=thread-1",
+      "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
+      "RUN_DIR=/srv/neko/org/runs/run-1"
+     ],
+     "spec": {
+      "version": 1,
+      "run_id": "workrun-1",
+      "input_id": "workrun-1",
+      "instructions": "You are OpenNeko.\n\nRules.",
+      "prompt": "<workspace>\nroot\n</workspace>\n\nTurn part.\n\nCurrent user message:\nHow are sales?",
+      "skill_query": "How are sales?",
+      "stream_responses": true,
+      "timeout_ms": 540000,
+      "max_actor_steps": 25,
+      "max_child_steps": 50
+     },
+     "bridge": false,
+     "model_key_env": "OPENAI_API_KEY",
+     "model_keys": {
+      "OPENAI_API_KEY": "sk-openai"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "tool_start",
+     "id": "ax-op-1",
+     "name": "memory_save"
+    },
+    {
+     "type": "usage",
+     "source": "outer",
+     "modelIdentity": {
+      "configured": {
+       "provider": "openai",
+       "model": "gpt-4.1"
+      }
+     },
+     "usage": {
+      "coverage": "unavailable",
+      "missingReasons": [
+       "Ax Harness reported no usage"
+      ]
+     }
+    },
+    {
+     "type": "error",
+     "message": "ax run failed: MALFORMED_FUNCTION_CALL"
+    }
+   ],
+   "result": {
+    "finalText": "",
+    "status": "failed",
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "error": "ax run failed: MALFORMED_FUNCTION_CALL",
+    "errorCode": "MALFORMED_FUNCTION_CALL"
+   }
+  },
+  {
+   "name": "cancelled by the harness",
+   "config": {
+    "route": {
+     "provider": "openai",
+     "model": "gpt-4.1",
+     "keyEnv": "OPENAI_API_KEY"
+    }
+   },
+   "opts": {
+    "prompt": "You are OpenNeko.\n\nRules.\n\n<workspace>\nroot\n</workspace>\n\nTurn part.",
+    "userMessage": "How are sales?",
+    "orgId": "org-1",
+    "workspace": {
+     "orgRoot": "/srv/neko/org",
+     "skillsRoot": "/srv/neko/org/skills",
+     "memoryRoot": "/srv/neko/org/memory",
+     "knowledgeRoot": "/srv/neko/org/knowledge",
+     "uploadsRoot": "/srv/neko/org/uploads",
+     "runsRoot": "/srv/neko/org/runs",
+     "threadUploadsRoot": "/srv/neko/org/uploads/thread-1",
+     "runRoot": "/srv/neko/org/runs/run-1",
+     "artifactRoot": "/srv/neko/org/runs/run-1/artifacts",
+     "binRoot": "/srv/neko/org/runs/run-1/bin"
+    },
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "tag": "work run-1",
+    "wantsCards": true,
+    "mcpBridgeEnv": {
+     "OPENNEKO_MCP_MODE": "work",
+     "OPENNEKO_MCP_ORG_ID": "org-1",
+     "OPENNEKO_MCP_THREAD_ID": "thread-1",
+     "OPENNEKO_MCP_RUN_ID": "run-1",
+     "OPENNEKO_MCP_SKILLS_ROOT": "/srv/neko/org/skills",
+     "OPENNEKO_MCP_WANTS_CARDS": "1",
+     "OPENNEKO_MCP_CARD_SCHEMA": "rich"
+    }
+   },
+   "env": {
+    "OPENAI_API_KEY": "sk-openai",
+    "MODEL_API_KEY": "sk-model"
+   },
+   "scripts": [
+    [
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 1,
+       "type": "run.finished",
+       "result": {
+        "status": "cancelled"
+       }
+      }
+     },
+     {
+      "type": "exit",
+      "code": 0
+     }
+    ]
+   ],
+   "starts": [
+    {
+     "type": "start",
+     "environ": [
+      "ARTIFACT_DIR=/srv/neko/org/runs/run-1/artifacts",
+      "HARNESS_MODEL=gpt-4.1",
+      "HARNESS_MODEL_OPTIONS=",
+      "HARNESS_MODEL_PROVIDER=openai",
+      "HARNESS_MODEL_URL=",
+      "OPENNEKO_HARNESS_CHILD_TOOLS=*",
+      "OPENNEKO_HARNESS_SKILLS_READ=1",
+      "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
+      "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS=180",
+      "OPENNEKO_HARNESS_UPLOADS_DIR=/srv/neko/org/uploads/thread-1",
+      "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
+      "OPENNEKO_MCP_ORG_ID=org-1",
+      "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "OPENNEKO_MCP_THREAD_ID=thread-1",
+      "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
+      "RUN_DIR=/srv/neko/org/runs/run-1"
+     ],
+     "spec": {
+      "version": 1,
+      "run_id": "workrun-1",
+      "input_id": "workrun-1",
+      "instructions": "You are OpenNeko.\n\nRules.",
+      "prompt": "<workspace>\nroot\n</workspace>\n\nTurn part.\n\nCurrent user message:\nHow are sales?",
+      "skill_query": "How are sales?",
+      "stream_responses": true,
+      "timeout_ms": 540000,
+      "max_actor_steps": 25,
+      "max_child_steps": 50
+     },
+     "bridge": false,
+     "model_key_env": "OPENAI_API_KEY",
+     "model_keys": {
+      "OPENAI_API_KEY": "sk-openai"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "usage",
+     "source": "outer",
+     "modelIdentity": {
+      "configured": {
+       "provider": "openai",
+       "model": "gpt-4.1"
+      }
+     },
+     "usage": {
+      "coverage": "unavailable",
+      "missingReasons": [
+       "Ax Harness reported no usage"
+      ]
+     }
+    }
+   ],
+   "result": {
+    "finalText": "",
+    "status": "cancelled",
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    }
+   }
+  },
+  {
+   "name": "connection closed without exit",
+   "config": {
+    "route": {
+     "provider": "openai",
+     "model": "gpt-4.1",
+     "keyEnv": "OPENAI_API_KEY"
+    }
+   },
+   "opts": {
+    "prompt": "You are OpenNeko.\n\nRules.\n\n<workspace>\nroot\n</workspace>\n\nTurn part.",
+    "userMessage": "How are sales?",
+    "orgId": "org-1",
+    "workspace": {
+     "orgRoot": "/srv/neko/org",
+     "skillsRoot": "/srv/neko/org/skills",
+     "memoryRoot": "/srv/neko/org/memory",
+     "knowledgeRoot": "/srv/neko/org/knowledge",
+     "uploadsRoot": "/srv/neko/org/uploads",
+     "runsRoot": "/srv/neko/org/runs",
+     "threadUploadsRoot": "/srv/neko/org/uploads/thread-1",
+     "runRoot": "/srv/neko/org/runs/run-1",
+     "artifactRoot": "/srv/neko/org/runs/run-1/artifacts",
+     "binRoot": "/srv/neko/org/runs/run-1/bin"
+    },
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "tag": "work run-1",
+    "wantsCards": true,
+    "mcpBridgeEnv": {
+     "OPENNEKO_MCP_MODE": "work",
+     "OPENNEKO_MCP_ORG_ID": "org-1",
+     "OPENNEKO_MCP_THREAD_ID": "thread-1",
+     "OPENNEKO_MCP_RUN_ID": "run-1",
+     "OPENNEKO_MCP_SKILLS_ROOT": "/srv/neko/org/skills",
+     "OPENNEKO_MCP_WANTS_CARDS": "1",
+     "OPENNEKO_MCP_CARD_SCHEMA": "rich"
+    }
+   },
+   "env": {
+    "OPENAI_API_KEY": "sk-openai",
+    "MODEL_API_KEY": "sk-model"
+   },
+   "scripts": [
+    [
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "workrun-1",
+       "sequence": 1,
+       "type": "run.started"
+      }
+     },
+     "hangup"
+    ]
+   ],
+   "starts": [
+    {
+     "type": "start",
+     "environ": [
+      "ARTIFACT_DIR=/srv/neko/org/runs/run-1/artifacts",
+      "HARNESS_MODEL=gpt-4.1",
+      "HARNESS_MODEL_OPTIONS=",
+      "HARNESS_MODEL_PROVIDER=openai",
+      "HARNESS_MODEL_URL=",
+      "OPENNEKO_HARNESS_CHILD_TOOLS=*",
+      "OPENNEKO_HARNESS_SKILLS_READ=1",
+      "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
+      "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS=180",
+      "OPENNEKO_HARNESS_UPLOADS_DIR=/srv/neko/org/uploads/thread-1",
+      "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
+      "OPENNEKO_MCP_ORG_ID=org-1",
+      "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "OPENNEKO_MCP_THREAD_ID=thread-1",
+      "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
+      "RUN_DIR=/srv/neko/org/runs/run-1"
+     ],
+     "spec": {
+      "version": 1,
+      "run_id": "workrun-1",
+      "input_id": "workrun-1",
+      "instructions": "You are OpenNeko.\n\nRules.",
+      "prompt": "<workspace>\nroot\n</workspace>\n\nTurn part.\n\nCurrent user message:\nHow are sales?",
+      "skill_query": "How are sales?",
+      "stream_responses": true,
+      "timeout_ms": 540000,
+      "max_actor_steps": 25,
+      "max_child_steps": 50
+     },
+     "bridge": false,
+     "model_key_env": "OPENAI_API_KEY",
+     "model_keys": {
+      "OPENAI_API_KEY": "sk-openai"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "error",
+     "message": "ax-harness exited (code=null) without a result"
+    }
+   ],
+   "result": {
+    "finalText": "",
+    "status": "failed",
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "error": "ax-harness exited (code=null) without a result",
+    "errorCode": "exit"
+   }
+  },
+  {
+   "name": "empty answer",
+   "config": {
+    "route": {
+     "provider": "openai",
+     "model": "gpt-4.1",
+     "keyEnv": "OPENAI_API_KEY"
+    }
+   },
+   "opts": {
+    "prompt": "You are OpenNeko.\n\nRules.\n\n<workspace>\nroot\n</workspace>\n\nTurn part.",
+    "userMessage": "How are sales?",
+    "orgId": "org-1",
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "tag": "x y!",
+    "wantsCards": true,
+    "mcpBridgeEnv": {
+     "OPENNEKO_MCP_MODE": "work",
+     "OPENNEKO_MCP_ORG_ID": "org-1",
+     "OPENNEKO_MCP_THREAD_ID": "thread-1",
+     "OPENNEKO_MCP_RUN_ID": "run-1",
+     "OPENNEKO_MCP_SKILLS_ROOT": "/srv/neko/org/skills",
+     "OPENNEKO_MCP_WANTS_CARDS": "1",
+     "OPENNEKO_MCP_CARD_SCHEMA": "rich"
+    }
+   },
+   "env": {
+    "OPENAI_API_KEY": "sk-openai",
+    "MODEL_API_KEY": "sk-model"
+   },
+   "scripts": [
+    [
+     {
+      "type": "event",
+      "event": {
+       "version": 1,
+       "run_id": "xy",
+       "sequence": 1,
+       "type": "run.finished",
+       "result": {
+        "status": "completed",
+        "answer": "   "
+       }
+      }
+     },
+     {
+      "type": "exit",
+      "code": 0
+     }
+    ]
+   ],
+   "starts": [
+    {
+     "type": "start",
+     "environ": [
+      "HARNESS_MODEL=gpt-4.1",
+      "HARNESS_MODEL_OPTIONS=",
+      "HARNESS_MODEL_PROVIDER=openai",
+      "HARNESS_MODEL_URL=",
+      "OPENNEKO_HARNESS_CHILD_TOOLS=*",
+      "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
+      "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS=180",
+      "OPENNEKO_HARNESS_WORKSPACE_DIR=SCRATCH",
+      "OPENNEKO_MCP_ORG_ID=org-1",
+      "OPENNEKO_MCP_THREAD_ID=thread-1"
+     ],
+     "spec": {
+      "version": 1,
+      "run_id": "xy",
+      "input_id": "xy",
+      "instructions": "You are OpenNeko.\n\nRules.",
+      "prompt": "<workspace>\nroot\n</workspace>\n\nTurn part.\n\nCurrent user message:\nHow are sales?",
+      "skill_query": "How are sales?",
+      "stream_responses": true,
+      "timeout_ms": 540000,
+      "max_actor_steps": 25,
+      "max_child_steps": 50
+     },
+     "bridge": false,
+     "model_key_env": "OPENAI_API_KEY",
+     "model_keys": {
+      "OPENAI_API_KEY": "sk-openai"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "usage",
+     "source": "outer",
+     "modelIdentity": {
+      "configured": {
+       "provider": "openai",
+       "model": "gpt-4.1"
+      }
+     },
+     "usage": {
+      "coverage": "unavailable",
+      "missingReasons": [
+       "Ax Harness reported no usage"
+      ]
+     }
+    },
+    {
+     "type": "error",
+     "message": "ax run failed: no answer"
+    }
+   ],
+   "result": {
+    "finalText": "",
+    "status": "failed",
+    "backendState": {
+     "compaction": {
+      "summary": "s"
+     }
+    },
+    "error": "ax run failed: no answer",
+    "errorCode": "empty_output"
+   }
+  }
+ ],
+ "cores": [
+  {
+   "name": "web admin",
+   "wantsCards": true,
+   "cardSchema": "rich",
+   "sourceConfigEnabled": true,
+   "packActions": [
+    {
+     "kind": "send_slack",
+     "label": "Send Slack",
+     "description": "Post",
+     "default_mode": "approval_required",
+     "scope": "external",
+     "input_schema": {
+      "type": "object",
+      "properties": {}
+     }
+    }
+   ],
+   "filesUrl": "http://serve.local/",
+   "servers": [
+    "neko_interaction",
+    "neko_graphjin",
+    "neko_ui",
+    "neko_skills",
+    "neko_memory",
+    "neko_guides",
+    "neko_files",
+    "neko_workflow_builder",
+    "neko_rule_builder",
+    "neko_user_manager",
+    "neko_channel_manager",
+    "neko_data_source_manager",
+    "neko_source_config_manager",
+    "neko_audit",
+    "neko_pack_actions"
+   ],
+   "bridgeEnv": {
+    "OPENNEKO_MCP_MODE": "work",
+    "OPENNEKO_MCP_ORG_ID": "org-1",
+    "OPENNEKO_MCP_THREAD_ID": "thread-1",
+    "OPENNEKO_MCP_RUN_ID": "run-1",
+    "OPENNEKO_MCP_SKILLS_ROOT": "/srv/neko/org/skills",
+    "OPENNEKO_MCP_WANTS_CARDS": "1",
+    "OPENNEKO_MCP_CARD_SCHEMA": "rich",
+    "OPENNEKO_MCP_PACK_ACTIONS": "[{\"kind\":\"send_slack\",\"label\":\"Send Slack\",\"description\":\"Post\",\"default_mode\":\"approval_required\",\"scope\":\"external\",\"input_schema\":{\"type\":\"object\",\"properties\":{}}}]"
+   },
+   "tag": "work run-1",
+   "nativeDelegation": null
+  },
+  {
+   "name": "telegram member",
+   "wantsCards": false,
+   "cardSchema": "core",
+   "sourceConfigEnabled": false,
+   "packActions": [
+    {
+     "kind": "drop_table",
+     "label": "Drop",
+     "description": "Drop",
+     "default_mode": "never"
+    }
+   ],
+   "nativeDelegation": "disabled",
+   "graphjinToolPolicy": {
+    "allowedTools": [
+     "query"
+    ]
+   },
+   "servers": [
+    "neko_interaction",
+    "neko_graphjin",
+    "neko_skills",
+    "neko_memory",
+    "neko_guides",
+    "neko_workflow_builder",
+    "neko_rule_builder",
+    "neko_user_manager",
+    "neko_channel_manager",
+    "neko_data_source_manager",
+    "neko_audit",
+    "neko_pack_actions"
+   ],
+   "bridgeEnv": {
+    "OPENNEKO_MCP_MODE": "work",
+    "OPENNEKO_MCP_ORG_ID": "org-1",
+    "OPENNEKO_MCP_THREAD_ID": "thread-1",
+    "OPENNEKO_MCP_RUN_ID": "run-1",
+    "OPENNEKO_MCP_SKILLS_ROOT": "/srv/neko/org/skills",
+    "OPENNEKO_MCP_WANTS_CARDS": "0",
+    "OPENNEKO_MCP_CARD_SCHEMA": "core",
+    "OPENNEKO_MCP_PACK_ACTIONS": "[{\"kind\":\"drop_table\",\"label\":\"Drop\",\"description\":\"Drop\",\"default_mode\":\"never\"}]"
+   },
+   "tag": "work run-1"
+  },
+  {
+   "name": "defaults",
+   "packActions": [],
+   "servers": [
+    "neko_interaction",
+    "neko_graphjin",
+    "neko_ui",
+    "neko_skills",
+    "neko_memory",
+    "neko_guides",
+    "neko_workflow_builder",
+    "neko_rule_builder",
+    "neko_user_manager",
+    "neko_channel_manager",
+    "neko_data_source_manager",
+    "neko_audit"
+   ],
+   "bridgeEnv": {
+    "OPENNEKO_MCP_MODE": "work",
+    "OPENNEKO_MCP_ORG_ID": "org-1",
+    "OPENNEKO_MCP_THREAD_ID": "thread-1",
+    "OPENNEKO_MCP_RUN_ID": "run-1",
+    "OPENNEKO_MCP_SKILLS_ROOT": "/srv/neko/org/skills",
+    "OPENNEKO_MCP_WANTS_CARDS": "1",
+    "OPENNEKO_MCP_CARD_SCHEMA": "core",
+    "OPENNEKO_MCP_PACK_ACTIONS": "[]"
+   },
+   "wantsCards": true,
+   "tag": "work run-1",
+   "nativeDelegation": null
+  }
+ ],
+ "limits": [
+  {
+   "kind": "chat",
+   "env": {},
+   "limits": {
+    "maxTurns": 25,
+    "delegation": {
+     "maxIterations": 50
+    },
+    "toolOutput": {
+     "maxBytes": 50000
+    },
+    "terminal": {
+     "timeoutSeconds": 180
+    },
+    "timeoutMs": 540000,
+    "maxContinuations": 0
+   },
+   "spec": {
+    "timeout_ms": 540000,
+    "max_actor_steps": 25,
+    "max_child_steps": 50
+   },
+   "env2": {
+    "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS": "180",
+    "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT": "50000"
+   }
+  },
+  {
+   "kind": "workflow",
+   "env": {},
+   "limits": {
+    "maxTurns": 25,
+    "delegation": {
+     "maxIterations": 50
+    },
+    "toolOutput": {
+     "maxBytes": 50000
+    },
+    "terminal": {
+     "timeoutSeconds": 180
+    },
+    "timeoutMs": 900000,
+    "maxToolCalls": 150,
+    "maxContinuations": 2,
+    "reasoningEffort": "medium"
+   },
+   "spec": {
+    "timeout_ms": 900000,
+    "max_actor_steps": 150,
+    "max_child_steps": 50,
+    "max_operations": 150,
+    "reasoning_effort": "medium"
+   },
+   "env2": {
+    "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS": "180",
+    "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT": "50000"
+   }
+  },
+  {
+   "kind": "agent-job",
+   "env": {},
+   "limits": {
+    "maxTurns": 25,
+    "delegation": {
+     "maxIterations": 50
+    },
+    "toolOutput": {
+     "maxBytes": 50000
+    },
+    "terminal": {
+     "timeoutSeconds": 180
+    },
+    "timeoutMs": 540000,
+    "maxContinuations": 0
+   },
+   "spec": {
+    "timeout_ms": 540000,
+    "max_actor_steps": 25,
+    "max_child_steps": 50
+   },
+   "env2": {
+    "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS": "180",
+    "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT": "50000"
+   }
+  },
+  {
+   "kind": "workflow",
+   "env": {
+    "OPENNEKO_WORKFLOW_REASONING_EFFORT": "high",
+    "OPENNEKO_WORKFLOW_MAX_TOOL_CALLS": "900",
+    "OPENNEKO_WORKFLOW_TURN_TIMEOUT_MS": "12.7",
+    "OPENNEKO_AGENT_DELEGATION_MAX_ITERATIONS": "700"
+   },
+   "limits": {
+    "maxTurns": 25,
+    "delegation": {
+     "maxIterations": 700
+    },
+    "toolOutput": {
+     "maxBytes": 50000
+    },
+    "terminal": {
+     "timeoutSeconds": 180
+    },
+    "timeoutMs": 1000,
+    "maxToolCalls": 900,
+    "maxContinuations": 2,
+    "reasoningEffort": "high"
+   },
+   "spec": {
+    "timeout_ms": 1000,
+    "max_actor_steps": 500,
+    "max_child_steps": 500,
+    "max_operations": 900,
+    "reasoning_effort": "high"
+   },
+   "env2": {
+    "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS": "180",
+    "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT": "50000"
+   }
+  },
+  {
+   "kind": "chat",
+   "env": {
+    "OPENNEKO_AGENT_TURN_TIMEOUT_MS": "abc",
+    "OPENNEKO_AGENT_MAX_TURNS": "0",
+    "OPENNEKO_AGENT_TOOL_OUTPUT_MAX_BYTES": " 2048 ",
+    "OPENNEKO_AGENT_TERMINAL_TIMEOUT_SECONDS": "601"
+   },
+   "limits": {
+    "maxTurns": 1,
+    "delegation": {
+     "maxIterations": 50
+    },
+    "toolOutput": {
+     "maxBytes": 2048
+    },
+    "terminal": {
+     "timeoutSeconds": 600
+    },
+    "timeoutMs": 540000,
+    "maxContinuations": 0
+   },
+   "spec": {
+    "timeout_ms": 540000,
+    "max_actor_steps": 1,
+    "max_child_steps": 50
+   },
+   "env2": {
+    "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS": "600",
+    "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT": "2048"
+   }
+  },
+  {
+   "kind": "workflow",
+   "env": {
+    "OPENNEKO_WORKFLOW_REASONING_EFFORT": "max"
+   },
+   "limits": {
+    "maxTurns": 25,
+    "delegation": {
+     "maxIterations": 50
+    },
+    "toolOutput": {
+     "maxBytes": 50000
+    },
+    "terminal": {
+     "timeoutSeconds": 180
+    },
+    "timeoutMs": 900000,
+    "maxToolCalls": 150,
+    "maxContinuations": 2,
+    "reasoningEffort": "medium"
+   },
+   "spec": {
+    "timeout_ms": 900000,
+    "max_actor_steps": 150,
+    "max_child_steps": 50,
+    "max_operations": 150,
+    "reasoning_effort": "medium"
+   },
+   "env2": {
+    "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS": "180",
+    "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT": "50000"
+   }
+  }
+ ],
+ "usages": [
+  {
+   "name": "none",
+   "route": {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5"
+   },
+   "out": {
+    "coverage": "unavailable",
+    "missingReasons": [
+     "Ax Harness reported no usage"
+    ]
+   }
+  },
+  {
+   "name": "complete catalog",
+   "usage": {
+    "requests": 1,
+    "reported": 1,
+    "input_tokens": 1000,
+    "output_tokens": 200,
+    "total_tokens": 1300,
+    "cache_read_tokens": 50,
+    "cache_write_tokens": 25,
+    "reasoning_tokens": 25,
+    "coverage": "complete"
+   },
+   "route": {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5"
+   },
+   "out": {
+    "inputTokens": 1000,
+    "outputTokens": 200,
+    "totalTokens": 1300,
+    "cacheReadTokens": 50,
+    "cacheWriteTokens": 25,
+    "reasoningTokens": 25,
+    "coverage": "complete",
+    "costStatus": "estimated",
+    "estimatedCostUsd": 0.000216125,
+    "currency": "USD",
+    "costSource": "ax_model_catalog",
+    "pricingCatalogVersion": "ax-go@v0.0.0-20261029090635-42fceae3d6cd+overrides-2026-10"
+   }
+  },
+  {
+   "name": "long context per call",
+   "usage": {
+    "requests": 1,
+    "reported": 1,
+    "input_tokens": 150000,
+    "output_tokens": 10,
+    "total_tokens": 150010,
+    "coverage": "complete"
+   },
+   "route": {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5"
+   },
+   "out": {
+    "inputTokens": 150000,
+    "outputTokens": 10,
+    "totalTokens": 150010,
+    "coverage": "complete",
+    "costStatus": "estimated",
+    "estimatedCostUsd": 0.075025,
+    "currency": "USD",
+    "costSource": "ax_model_catalog",
+    "pricingCatalogVersion": "ax-go@v0.0.0-20261029090635-42fceae3d6cd+overrides-2026-10"
+   }
+  },
+  {
+   "name": "long context spread over calls",
+   "usage": {
+    "requests": 2,
+    "reported": 2,
+    "input_tokens": 150000,
+    "output_tokens": 10,
+    "total_tokens": 150010,
+    "coverage": "complete"
+   },
+   "route": {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5"
+   },
+   "out": {
+    "inputTokens": 150000,
+    "outputTokens": 10,
+    "totalTokens": 150010,
+    "coverage": "complete",
+    "costStatus": "estimated",
+    "estimatedCostUsd": 0.015005,
+    "currency": "USD",
+    "costSource": "ax_model_catalog",
+    "pricingCatalogVersion": "ax-go@v0.0.0-20261029090635-42fceae3d6cd+overrides-2026-10"
+   }
+  },
+  {
+   "name": "partial scaled",
+   "usage": {
+    "requests": 4,
+    "reported": 1,
+    "input_tokens": 100,
+    "output_tokens": 10,
+    "total_tokens": 110,
+    "coverage": "partial"
+   },
+   "route": {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5"
+   },
+   "out": {
+    "inputTokens": 100,
+    "outputTokens": 10,
+    "totalTokens": 110,
+    "coverage": "partial",
+    "costStatus": "estimated",
+    "estimatedCostUsd": 0.00006,
+    "currency": "USD",
+    "costSource": "ax_model_catalog",
+    "pricingCatalogVersion": "ax-go@v0.0.0-20261029090635-42fceae3d6cd+overrides-2026-10",
+    "missingReasons": [
+     "The provider reported usage for 1 of 4 model calls"
+    ]
+   }
+  },
+  {
+   "name": "partial with no report",
+   "usage": {
+    "requests": 4,
+    "reported": 0,
+    "input_tokens": 100,
+    "coverage": "partial"
+   },
+   "route": {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5"
+   },
+   "out": {
+    "inputTokens": 100,
+    "coverage": "partial",
+    "costStatus": "unknown",
+    "missingReasons": [
+     "The provider reported usage for 0 of 4 model calls"
+    ]
+   }
+  },
+  {
+   "name": "harness priced",
+   "usage": {
+    "requests": 1,
+    "reported": 1,
+    "input_tokens": 100,
+    "output_tokens": 10,
+    "total_tokens": 110,
+    "coverage": "complete",
+    "cost_micros": 1234,
+    "priced_by": "catalog",
+    "catalog_version": "v1.2"
+   },
+   "route": {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5"
+   },
+   "out": {
+    "inputTokens": 100,
+    "outputTokens": 10,
+    "totalTokens": 110,
+    "coverage": "complete",
+    "costStatus": "estimated",
+    "estimatedCostUsd": 0.001234,
+    "currency": "USD",
+    "costSource": "ax_harness_catalog",
+    "pricingCatalogVersion": "ax-go@v1.2"
+   }
+  },
+  {
+   "name": "harness priced zero",
+   "usage": {
+    "requests": 1,
+    "reported": 1,
+    "coverage": "complete",
+    "cost_micros": 0,
+    "priced_by": "catalog",
+    "catalog_version": "v1.2"
+   },
+   "route": {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5"
+   },
+   "out": {
+    "coverage": "complete",
+    "costStatus": "included",
+    "estimatedCostUsd": 0,
+    "currency": "USD",
+    "costSource": "ax_harness_catalog",
+    "pricingCatalogVersion": "ax-go@v1.2"
+   }
+  },
+  {
+   "name": "harness priced without version",
+   "usage": {
+    "requests": 1,
+    "reported": 1,
+    "input_tokens": 100,
+    "coverage": "complete",
+    "cost_micros": 5,
+    "priced_by": "catalog"
+   },
+   "route": {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5"
+   },
+   "out": {
+    "inputTokens": 100,
+    "coverage": "complete",
+    "costStatus": "estimated",
+    "estimatedCostUsd": 0.00001,
+    "currency": "USD",
+    "costSource": "ax_model_catalog",
+    "pricingCatalogVersion": "ax-go@v0.0.0-20261029090635-42fceae3d6cd+overrides-2026-10"
+   }
+  },
+  {
+   "name": "record price wins",
+   "usage": {
+    "requests": 1,
+    "reported": 1,
+    "input_tokens": 1000,
+    "output_tokens": 100,
+    "total_tokens": 1200,
+    "cache_read_tokens": 100,
+    "coverage": "complete",
+    "cost_micros": 5,
+    "priced_by": "catalog",
+    "catalog_version": "v1"
+   },
+   "route": {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "price": {
+     "inputUsdPer1M": 1,
+     "outputUsdPer1M": 4
+    }
+   },
+   "out": {
+    "inputTokens": 1000,
+    "outputTokens": 100,
+    "totalTokens": 1200,
+    "cacheReadTokens": 100,
+    "coverage": "complete",
+    "costStatus": "estimated",
+    "estimatedCostUsd": 0.0015,
+    "currency": "USD",
+    "costSource": "model_record",
+    "pricingCatalogVersion": "model_record"
+   }
+  },
+  {
+   "name": "unpriced model",
+   "usage": {
+    "requests": 1,
+    "reported": 1,
+    "input_tokens": 100,
+    "coverage": "complete"
+   },
+   "route": {
+    "provider": "openai-compatible",
+    "model": "local"
+   },
+   "out": {
+    "inputTokens": 100,
+    "coverage": "complete",
+    "costStatus": "unknown"
+   }
+  },
+  {
+   "name": "unavailable",
+   "usage": {
+    "coverage": "unavailable"
+   },
+   "route": {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5"
+   },
+   "out": {
+    "coverage": "unavailable",
+    "costStatus": "unknown"
+   }
+  },
+  {
+   "name": "no coverage",
+   "usage": {
+    "input_tokens": 3
+   },
+   "route": {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5"
+   },
+   "out": {
+    "inputTokens": 3,
+    "coverage": "unavailable",
+    "costStatus": "unknown"
+   }
+  }
+ ],
+ "prompts": [
+  {
+   "prompt": "You are OpenNeko.\n\nRules.\n\n<workspace>\nroot\n</workspace>\n\nTurn part.",
+   "userMessage": "Hi",
+   "out": {
+    "instructions": "You are OpenNeko.\n\nRules.",
+    "prompt": "<workspace>\nroot\n</workspace>\n\nTurn part.\n\nCurrent user message:\nHi"
+   }
+  },
+  {
+   "prompt": "You are OpenNeko.\n\nRules.\n\n<workspace>\nroot\n</workspace>\n\nTurn part.",
+   "out": {
+    "instructions": "You are OpenNeko.\n\nRules.",
+    "prompt": "<workspace>\nroot\n</workspace>\n\nTurn part."
+   }
+  },
+  {
+   "prompt": "No turn sections here.",
+   "userMessage": "Q",
+   "out": {
+    "prompt": "No turn sections here.\n\nCurrent user message:\nQ"
+   }
+  },
+  {
+   "prompt": "<workspace>\nat the start\n</workspace>",
+   "userMessage": "Q",
+   "out": {
+    "prompt": "<workspace>\nat the start\n</workspace>\n\nCurrent user message:\nQ"
+   }
+  },
+  {
+   "prompt": "Org.\n\n<operator-profile>\np\n</operator-profile>\n\n<bot>\nb\n</bot>",
+   "userMessage": "Q",
+   "out": {
+    "instructions": "Org.",
+    "prompt": "<operator-profile>\np\n</operator-profile>\n\n<bot>\nb\n</bot>\n\nCurrent user message:\nQ"
+   }
+  },
+  {
+   "prompt": "Org.\n\n<files>\nf\n</files>\n\n<long_term_memory>\nm\n</long_term_memory>",
+   "userMessage": "Q",
+   "out": {
+    "instructions": "Org.",
+    "prompt": "<files>\nf\n</files>\n\n<long_term_memory>\nm\n</long_term_memory>\n\nCurrent user message:\nQ"
+   }
+  }
+ ],
+ "outside": [
+  {
+   "raw": "plain text",
+   "out": "plain text"
+  },
+  {
+   "raw": "before ```neko_a2ui\n[]\n``` after",
+   "out": "before  after"
+  },
+  {
+   "raw": "open ```neko_cards\n{} and never closed",
+   "out": "open "
+  },
+  {
+   "raw": "tail ```neko_wo",
+   "out": "tail "
+  },
+  {
+   "raw": "tail ```",
+   "out": "tail "
+  },
+  {
+   "raw": "tail `",
+   "out": "tail "
+  },
+  {
+   "raw": "two ```neko_rule_save\n{}\n```mid```neko_action_request\nx\n```end",
+   "out": "two midend"
+  },
+  {
+   "raw": "```neko_workflow_output\nx\n```",
+   "out": ""
+  },
+  {
+   "raw": "code ```js\nx\n``` stays",
+   "out": "code ```js\nx\n``` stays"
+  }
+ ],
+ "cards": [
+  {
+   "raw": "No cards here.",
+   "rich": false,
+   "out": {
+    "text": "No cards here.",
+    "messages": [],
+    "issues": []
+   }
+  },
+  {
+   "raw": "No cards here.",
+   "rich": true,
+   "out": {
+    "text": "No cards here.",
+    "messages": [],
+    "issues": []
+   }
+  },
+  {
+   "raw": "Intro.\n\n```neko_cards\n{\"title\":\"Sales\",\"table\":\"| Region | Total |\\n| --- | --- |\\n| East | 12 |\"}\n```\n\n\n\nOutro.",
+   "rich": false,
+   "out": {
+    "text": "Intro.\n\nOutro.",
+    "messages": [
+     {
+      "version": "v1.0",
+      "createSurface": {
+       "surfaceId": "answer-ID",
+       "catalogId": "urn:openneko:catalog:work:v2",
+       "dataModel": {},
+       "components": [
+        {
+         "id": "root",
+         "component": "Answer",
+         "title": "Sales",
+         "children": [
+          "table"
+         ]
+        },
+        {
+         "id": "table",
+         "component": "Table",
+         "columns": [
+          {
+           "key": "c0",
+           "label": "Region"
+          },
+          {
+           "key": "c1",
+           "label": "Total",
+           "align": "right"
+          }
+         ],
+         "rows": [
+          {
+           "c0": "East",
+           "c1": "12"
+          }
+         ]
+        }
+       ]
+      }
+     }
+    ],
+    "issues": []
+   }
+  },
+  {
+   "raw": "Intro.\n\n```neko_cards\n{\"title\":\"Sales\",\"table\":\"| Region | Total |\\n| --- | --- |\\n| East | 12 |\"}\n```\n\n\n\nOutro.",
+   "rich": true,
+   "out": {
+    "text": "Intro.\n\nOutro.",
+    "messages": [
+     {
+      "version": "v1.0",
+      "createSurface": {
+       "surfaceId": "answer-ID",
+       "catalogId": "urn:openneko:catalog:work:v2",
+       "dataModel": {},
+       "components": [
+        {
+         "id": "root",
+         "component": "Answer",
+         "title": "Sales",
+         "children": [
+          "table"
+         ]
+        },
+        {
+         "id": "table",
+         "component": "Table",
+         "columns": [
+          {
+           "key": "c0",
+           "label": "Region"
+          },
+          {
+           "key": "c1",
+           "label": "Total",
+           "align": "right"
+          }
+         ],
+         "rows": [
+          {
+           "c0": "East",
+           "c1": "12"
+          }
+         ]
+        }
+       ]
+      }
+     }
+    ],
+    "issues": []
+   }
+  },
+  {
+   "raw": "```neko_cards\n{\"title\":\"\"}\n```",
+   "rich": false,
+   "out": {
+    "text": "",
+    "messages": [],
+    "issues": [
+     "title: Invalid input: expected string, received undefined"
+    ]
+   }
+  },
+  {
+   "raw": "```neko_cards\n{\"title\":\"\"}\n```",
+   "rich": true,
+   "out": {
+    "text": "",
+    "messages": [],
+    "issues": [
+     "title: Invalid input: expected string, received undefined"
+    ]
+   }
+  },
+  {
+   "raw": "```neko_cards\nnot json\n```",
+   "rich": false,
+   "out": {
+    "text": "",
+    "messages": [],
+    "issues": [
+     "neko_cards fence is not JSON"
+    ]
+   }
+  },
+  {
+   "raw": "```neko_cards\nnot json\n```",
+   "rich": true,
+   "out": {
+    "text": "",
+    "messages": [],
+    "issues": [
+     "neko_cards fence is not JSON"
+    ]
+   }
+  },
+  {
+   "raw": "```neko_cards\n{\"title\":\"Sales\",\"table\":\"| Region | Total |\\n| --- | --- |\\n| East | 12 |\"}\n```\n```neko_cards\n{\"title\":\"Sales\",\"table\":\"| Region | Total |\\n| --- | --- |\\n| East | 12 |\"}\n```",
+   "rich": false,
+   "out": {
+    "text": "",
+    "messages": [
+     {
+      "version": "v1.0",
+      "createSurface": {
+       "surfaceId": "answer-ID",
+       "catalogId": "urn:openneko:catalog:work:v2",
+       "dataModel": {},
+       "components": [
+        {
+         "id": "root",
+         "component": "Answer",
+         "title": "Sales",
+         "children": [
+          "table"
+         ]
+        },
+        {
+         "id": "table",
+         "component": "Table",
+         "columns": [
+          {
+           "key": "c0",
+           "label": "Region"
+          },
+          {
+           "key": "c1",
+           "label": "Total",
+           "align": "right"
+          }
+         ],
+         "rows": [
+          {
+           "c0": "East",
+           "c1": "12"
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "version": "v1.0",
+      "createSurface": {
+       "surfaceId": "answer-ID",
+       "catalogId": "urn:openneko:catalog:work:v2",
+       "dataModel": {},
+       "components": [
+        {
+         "id": "root",
+         "component": "Answer",
+         "title": "Sales",
+         "children": [
+          "table"
+         ]
+        },
+        {
+         "id": "table",
+         "component": "Table",
+         "columns": [
+          {
+           "key": "c0",
+           "label": "Region"
+          },
+          {
+           "key": "c1",
+           "label": "Total",
+           "align": "right"
+          }
+         ],
+         "rows": [
+          {
+           "c0": "East",
+           "c1": "12"
+          }
+         ]
+        }
+       ]
+      }
+     }
+    ],
+    "issues": []
+   }
+  },
+  {
+   "raw": "```neko_cards\n{\"title\":\"Sales\",\"table\":\"| Region | Total |\\n| --- | --- |\\n| East | 12 |\"}\n```\n```neko_cards\n{\"title\":\"Sales\",\"table\":\"| Region | Total |\\n| --- | --- |\\n| East | 12 |\"}\n```",
+   "rich": true,
+   "out": {
+    "text": "",
+    "messages": [
+     {
+      "version": "v1.0",
+      "createSurface": {
+       "surfaceId": "answer-ID",
+       "catalogId": "urn:openneko:catalog:work:v2",
+       "dataModel": {},
+       "components": [
+        {
+         "id": "root",
+         "component": "Answer",
+         "title": "Sales",
+         "children": [
+          "table"
+         ]
+        },
+        {
+         "id": "table",
+         "component": "Table",
+         "columns": [
+          {
+           "key": "c0",
+           "label": "Region"
+          },
+          {
+           "key": "c1",
+           "label": "Total",
+           "align": "right"
+          }
+         ],
+         "rows": [
+          {
+           "c0": "East",
+           "c1": "12"
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "version": "v1.0",
+      "createSurface": {
+       "surfaceId": "answer-ID",
+       "catalogId": "urn:openneko:catalog:work:v2",
+       "dataModel": {},
+       "components": [
+        {
+         "id": "root",
+         "component": "Answer",
+         "title": "Sales",
+         "children": [
+          "table"
+         ]
+        },
+        {
+         "id": "table",
+         "component": "Table",
+         "columns": [
+          {
+           "key": "c0",
+           "label": "Region"
+          },
+          {
+           "key": "c1",
+           "label": "Total",
+           "align": "right"
+          }
+         ],
+         "rows": [
+          {
+           "c0": "East",
+           "c1": "12"
+          }
+         ]
+        }
+       ]
+      }
+     }
+    ],
+    "issues": []
+   }
+  }
+ ],
+ "surfaces": [
+  {
+   "raw": "no fence",
+   "out": {
+    "text": "no fence",
+    "messages": []
+   }
+  },
+  {
+   "raw": "Before\n```neko_a2ui\n[{\"version\":\"v1.0\",\"createSurface\":{\"surfaceId\":\"s1\",\"catalogId\":\"urn:openneko:catalog:work:v2\",\"components\":[{\"id\":\"root\",\"component\":\"Markdown\",\"text\":\"From the card\"}]}}]\n```\nAfter",
+   "out": {
+    "text": "Before\n\nAfter",
+    "messages": [
+     {
+      "version": "v1.0",
+      "createSurface": {
+       "surfaceId": "s1",
+       "catalogId": "urn:openneko:catalog:work:v2",
+       "components": [
+        {
+         "id": "root",
+         "component": "Markdown",
+         "text": "From the card"
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "raw": "```neko_a2ui\n{\"a\":1}\n```",
+   "out": {
+    "text": "",
+    "messages": [
+     {
+      "version": "v1.0",
+      "createSurface": {
+       "surfaceId": "fallback",
+       "catalogId": "urn:openneko:catalog:work:v2",
+       "components": [
+        {
+         "id": "root",
+         "component": "Markdown",
+         "text": "{\"a\":1}"
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "raw": "```neko_a2ui\n<Card>Some <b>prose</b></Card>\n```",
+   "out": {
+    "text": "",
+    "messages": [
+     {
+      "version": "v1.0",
+      "createSurface": {
+       "surfaceId": "fallback",
+       "catalogId": "urn:openneko:catalog:work:v2",
+       "components": [
+        {
+         "id": "root",
+         "component": "Markdown",
+         "text": "Some <b>prose</b>"
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "raw": "```neko_a2ui\n<Card></Card>\n```",
+   "out": {
+    "text": "",
+    "messages": []
+   }
+  },
+  {
+   "raw": "```neko_a2ui\n[{\"version\":\"v1.0\",\"deleteSurface\":{\"surfaceId\":\"s\"},\"extra\":1},{\"version\":\"v1.0\",\"deleteSurface\":{\"surfaceId\":\"s\",\"extra\":1}},{\"version\":\"v2\",\"deleteSurface\":{\"surfaceId\":\"s\"}},{\"version\":\"v1.0\",\"deleteSurface\":{\"surfaceId\":\"kept\"}}]\n```",
+   "out": {
+    "text": "",
+    "messages": [
+     {
+      "version": "v1.0",
+      "deleteSurface": {
+       "surfaceId": "kept"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "raw": "```neko_a2ui\n[{\"version\":\"v0.9\",\"createSurface\":{\"surfaceId\":\"s\",\"catalogId\":\"c\"}},{\"version\":\"v1.0\",\"bad\":1},{\"version\":\"v1.0\",\"updateComponents\":{\"surfaceId\":\"s\",\"components\":[{\"id\":\"a\",\"component\":\"Markdown\",\"text\":\"t\",\"extra\":1}]}},{\"version\":\"v1.0\",\"updateDataModel\":{\"surfaceId\":\"s\",\"path\":\"/x\",\"value\":[1]}},{\"version\":\"v1.0\",\"deleteSurface\":{\"surfaceId\":\"s\"}},{\"version\":\"v1.0\",\"deleteSurface\":{\"surfaceId\":\"\"}},{\"version\":\"v1.0\",\"createSurface\":{\"surfaceId\":\"s\",\"catalogId\":\"c\",\"components\":[]}}]\n```",
+   "out": {
+    "text": "",
+    "messages": [
+     {
+      "version": "v0.9",
+      "createSurface": {
+       "surfaceId": "s",
+       "catalogId": "c"
+      }
+     },
+     {
+      "version": "v1.0",
+      "updateComponents": {
+       "surfaceId": "s",
+       "components": [
+        {
+         "id": "a",
+         "component": "Markdown",
+         "text": "t",
+         "extra": 1
+        }
+       ]
+      }
+     },
+     {
+      "version": "v1.0",
+      "updateDataModel": {
+       "surfaceId": "s",
+       "path": "/x",
+       "value": [
+        1
+       ]
+      }
+     },
+     {
+      "version": "v1.0",
+      "deleteSurface": {
+       "surfaceId": "s"
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "markdown": [
+  {
+   "messages": [],
+   "out": ""
+  },
+  {
+   "messages": [
+    {
+     "version": "v1.0",
+     "createSurface": {
+      "surfaceId": "s",
+      "catalogId": "c",
+      "components": [
+       {
+        "id": "a",
+        "component": "Markdown",
+        "text": " One "
+       },
+       {
+        "id": "b",
+        "component": "Text",
+        "text": "skip"
+       },
+       {
+        "id": "c",
+        "component": "Column",
+        "children": [
+         {
+          "component": "Markdown",
+          "text": "Two"
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "out": "One \n\nTwo"
+  },
+  {
+   "messages": [
+    {
+     "component": "Markdown",
+     "text": 5
+    }
+   ],
+   "out": ""
+  }
+ ]
+}

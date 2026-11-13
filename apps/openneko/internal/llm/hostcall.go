@@ -443,6 +443,7 @@ type Program struct {
 type Usage struct {
 	Coverage                                    string
 	Input, Output, Total, CacheRead, CacheWrite int64
+	Calls                                       int64
 	CostStatus                                  string
 	CostUSD                                     *float64
 	CostSource, PricingVersion                  string
