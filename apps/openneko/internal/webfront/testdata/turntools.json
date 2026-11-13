@@ -1383,6 +1383,479 @@
      }
     }
    ]
+  },
+  {
+   "name": "workflow action, output and pack actions",
+   "servers": [
+    "neko_action",
+    "neko_workflow_output",
+    "neko_pack_actions"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "packActions": [
+    {
+     "kind": "magento_reindex",
+     "description": "Reindex a Magento index. Payload schema: {\"type\":\"object\"}.",
+     "default_mode": "ask",
+     "example": {
+      "index": "catalog"
+     }
+    },
+    {
+     "kind": "slack_post",
+     "description": "Post a Slack message.",
+     "scope": "internal",
+     "default_mode": "auto"
+    },
+    {
+     "kind": "crm_update",
+     "description": "Update a CRM record.",
+     "default_mode": {
+      "external": "auto",
+      "internal": "ask"
+     }
+    },
+    {
+     "kind": "crm_note",
+     "description": "Add a CRM note.",
+     "default_mode": {
+      "external": "auto"
+     }
+    },
+    {
+     "kind": "ledger_sync",
+     "description": "Sync the ledger."
+    },
+    {
+     "kind": "drop_all",
+     "description": "Never offered.",
+     "default_mode": "deny"
+    },
+    {
+     "kind": "drop_some",
+     "description": "Never offered either.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "deny"
+     }
+    },
+    {
+     "kind": "half_deny",
+     "description": "Denied outside.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "auto"
+     }
+    }
+   ],
+   "tools": [
+    {
+     "name": "action_request",
+     "description": "Propose a state-changing operation. Workflows decide; actions mutate. Route every real-world or internal state change through this tool so policy can gate it and preserve an auditable approval path. Use scope 'external' for outbound mutations and 'internal' for policy-governed OpenNeko writes. Include the complete operation payload, a concise human-readable summary, and an honest risk estimate. A denial is final for this run; surface its reason instead of retrying.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "scope": {
+        "type": "string",
+        "enum": [
+         "internal",
+         "external"
+        ]
+       },
+       "kind": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+       },
+       "target": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024
+       },
+       "payload": {
+        "type": "object",
+        "propertyNames": {
+         "type": "string"
+        },
+        "additionalProperties": {}
+       },
+       "risk_level": {
+        "type": "string",
+        "enum": [
+         "low",
+         "medium",
+         "high",
+         "critical"
+        ]
+       },
+       "summary": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000
+       },
+       "minutes_saved": {
+        "description": "Conservative estimate of the minutes a competent human would spend doing this one action by hand (e.g. send email ~8, file refund ~15). Omit if unsure.",
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 600
+       },
+       "basis": {
+        "description": "One short line naming why minutes_saved is what it is.",
+        "type": "string",
+        "maxLength": 160
+       }
+      },
+      "required": [
+       "scope",
+       "kind",
+       "summary"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "workflow_output_emit",
+     "description": "Persist a workflow output — the thing this run produced. Use a descriptive kind and tag it with a scope, optional topic, and an honest mood ('good', 'watch', or 'act') so people and downstream workflows can discover it.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "kind": {
+        "type": "string",
+        "enum": [
+         "report",
+         "summary",
+         "briefing_card_proposal",
+         "chart",
+         "table",
+         "file",
+         "message_draft",
+         "finding",
+         "observation",
+         "recommendation"
+        ]
+       },
+       "title": {
+        "type": "string",
+        "maxLength": 240
+       },
+       "body": {
+        "type": "string",
+        "maxLength": 64000
+       },
+       "payload": {
+        "type": "object",
+        "propertyNames": {
+         "type": "string"
+        },
+        "additionalProperties": {}
+       },
+       "artifactPath": {
+        "type": "string",
+        "maxLength": 1024
+       },
+       "scope": {
+        "type": "string",
+        "maxLength": 120
+       },
+       "topic": {
+        "type": "string",
+        "maxLength": 120
+       },
+       "mood": {
+        "type": "string",
+        "enum": [
+         "good",
+         "watch",
+         "act"
+        ]
+       },
+       "timeWindowStart": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       },
+       "timeWindowEnd": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       },
+       "freshnessTtlSeconds": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 31536000
+       }
+      },
+      "required": [
+       "kind"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "pack_actions_magento_reindex",
+     "description": "Reindex a Magento index. Payload schema: {\"type\":\"object\"}.\n\nAsks the user for approval before running. You MUST set `intent` to a clear one-sentence explanation.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "intent": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 500,
+        "description": "Single-sentence natural-language description of what you're about to do and why, written for the user reviewing the approval request. e.g. 'Send Sarah the Q2 revenue summary so she has it before tomorrow's board prep.'"
+       },
+       "target": {
+        "description": "Canonical resource identifier this action targets (e.g. a channel id, a record id). Optional; some kinds don't need one.",
+        "type": "string"
+       },
+       "risk_level": {
+        "description": "Best-effort blast-radius estimate for this specific invocation. Influences risk-threshold-based policy rules.",
+        "type": "string",
+        "enum": [
+         "low",
+         "medium",
+         "high",
+         "critical"
+        ]
+       },
+       "payload": {
+        "default": {},
+        "description": "Action-specific payload. See the tool description for the expected shape. When a trusted discovery tool returns a payload for this action, preserve that complete object exactly unless the operator requested specific changes.",
+        "type": "object",
+        "propertyNames": {
+         "type": "string"
+        },
+        "additionalProperties": {}
+       }
+      },
+      "required": [
+       "intent"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "pack_actions_slack_post",
+     "description": "Post a Slack message.\n\nAuto-approved by default — runs without user confirmation. The tool waits for execution; use its returned outcome to answer the user. Operators can override via /admin/rules.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "intent": {
+        "description": "Optional one-sentence intent. Only surfaced if a runtime policy escalates this call to ask-mode.",
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 500
+       },
+       "target": {
+        "description": "Canonical resource identifier this action targets (e.g. a channel id, a record id). Optional; some kinds don't need one.",
+        "type": "string"
+       },
+       "risk_level": {
+        "description": "Best-effort blast-radius estimate for this specific invocation. Influences risk-threshold-based policy rules.",
+        "type": "string",
+        "enum": [
+         "low",
+         "medium",
+         "high",
+         "critical"
+        ]
+       },
+       "payload": {
+        "default": {},
+        "description": "Action-specific payload. See the tool description for the expected shape. When a trusted discovery tool returns a payload for this action, preserve that complete object exactly unless the operator requested specific changes.",
+        "type": "object",
+        "propertyNames": {
+         "type": "string"
+        },
+        "additionalProperties": {}
+       }
+      },
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "pack_actions_crm_update",
+     "description": "Update a CRM record.\n\nexternal: auto, internal: ask — set `intent` whenever the call might land in ask-mode.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "intent": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 500,
+        "description": "Single-sentence natural-language description of what you're about to do and why, written for the user reviewing the approval request. e.g. 'Send Sarah the Q2 revenue summary so she has it before tomorrow's board prep.'"
+       },
+       "target": {
+        "description": "Canonical resource identifier this action targets (e.g. a channel id, a record id). Optional; some kinds don't need one.",
+        "type": "string"
+       },
+       "risk_level": {
+        "description": "Best-effort blast-radius estimate for this specific invocation. Influences risk-threshold-based policy rules.",
+        "type": "string",
+        "enum": [
+         "low",
+         "medium",
+         "high",
+         "critical"
+        ]
+       },
+       "payload": {
+        "default": {},
+        "description": "Action-specific payload. See the tool description for the expected shape. When a trusted discovery tool returns a payload for this action, preserve that complete object exactly unless the operator requested specific changes.",
+        "type": "object",
+        "propertyNames": {
+         "type": "string"
+        },
+        "additionalProperties": {}
+       }
+      },
+      "required": [
+       "intent"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "pack_actions_crm_note",
+     "description": "Add a CRM note.\n\nexternal: auto",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "intent": {
+        "description": "Optional one-sentence intent. Only surfaced if a runtime policy escalates this call to ask-mode.",
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 500
+       },
+       "target": {
+        "description": "Canonical resource identifier this action targets (e.g. a channel id, a record id). Optional; some kinds don't need one.",
+        "type": "string"
+       },
+       "risk_level": {
+        "description": "Best-effort blast-radius estimate for this specific invocation. Influences risk-threshold-based policy rules.",
+        "type": "string",
+        "enum": [
+         "low",
+         "medium",
+         "high",
+         "critical"
+        ]
+       },
+       "payload": {
+        "default": {},
+        "description": "Action-specific payload. See the tool description for the expected shape. When a trusted discovery tool returns a payload for this action, preserve that complete object exactly unless the operator requested specific changes.",
+        "type": "object",
+        "propertyNames": {
+         "type": "string"
+        },
+        "additionalProperties": {}
+       }
+      },
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "pack_actions_ledger_sync",
+     "description": "Sync the ledger.\n\nApproval policy decided per-call.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "intent": {
+        "description": "Optional one-sentence intent. Only surfaced if a runtime policy escalates this call to ask-mode.",
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 500
+       },
+       "target": {
+        "description": "Canonical resource identifier this action targets (e.g. a channel id, a record id). Optional; some kinds don't need one.",
+        "type": "string"
+       },
+       "risk_level": {
+        "description": "Best-effort blast-radius estimate for this specific invocation. Influences risk-threshold-based policy rules.",
+        "type": "string",
+        "enum": [
+         "low",
+         "medium",
+         "high",
+         "critical"
+        ]
+       },
+       "payload": {
+        "default": {},
+        "description": "Action-specific payload. See the tool description for the expected shape. When a trusted discovery tool returns a payload for this action, preserve that complete object exactly unless the operator requested specific changes.",
+        "type": "object",
+        "propertyNames": {
+         "type": "string"
+        },
+        "additionalProperties": {}
+       }
+      },
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "pack_actions_half_deny",
+     "description": "Denied outside.\n\nexternal: deny, internal: auto",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "intent": {
+        "description": "Optional one-sentence intent. Only surfaced if a runtime policy escalates this call to ask-mode.",
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 500
+       },
+       "target": {
+        "description": "Canonical resource identifier this action targets (e.g. a channel id, a record id). Optional; some kinds don't need one.",
+        "type": "string"
+       },
+       "risk_level": {
+        "description": "Best-effort blast-radius estimate for this specific invocation. Influences risk-threshold-based policy rules.",
+        "type": "string",
+        "enum": [
+         "low",
+         "medium",
+         "high",
+         "critical"
+        ]
+       },
+       "payload": {
+        "default": {},
+        "description": "Action-specific payload. See the tool description for the expected shape. When a trusted discovery tool returns a payload for this action, preserve that complete object exactly unless the operator requested specific changes.",
+        "type": "object",
+        "propertyNames": {
+         "type": "string"
+        },
+        "additionalProperties": {}
+       }
+      },
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    }
+   ]
   }
  ],
  "calls": [
@@ -7099,6 +7572,3250 @@
      ]
     }
    ],
+   "files": {}
+  },
+  {
+   "name": "action auto approved",
+   "servers": [
+    "neko_action"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "observationId": "77777777-7777-4777-8777-777777777777",
+   "tool": "action_request",
+   "arguments": {
+    "scope": "external",
+    "kind": "slack_post",
+    "target": "C123",
+    "payload": {
+     "text": "Stock is low",
+     "nested": {
+      "a": [
+       1,
+       null
+      ]
+     }
+    },
+    "risk_level": "low",
+    "summary": "Post the low stock list to #ops",
+    "minutes_saved": 8,
+    "basis": "Typing the list by hand"
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "allow",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "slack_auto",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "auto_approve"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "approved"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"auto_approved\",\"status\":\"queued_for_execution\",\"actionRequestId\":\"99999999-9999-4999-8999-999999999999\",\"policy\":\"slack_auto\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "slack_post",
+      "target": "C123",
+      "payload": {
+       "text": "Stock is low",
+       "nested": {
+        "a": [
+         1,
+         null
+        ]
+       }
+      },
+      "riskLevel": "low"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "workflowRunId": "66666666-6666-4666-8666-666666666666",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": "66666666-6666-4666-8666-666666666666",
+      "triggeredByObservationId": "77777777-7777-4777-8777-777777777777",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "scope": "external",
+      "kind": "slack_post",
+      "target": "C123",
+      "payload": {
+       "text": "Stock is low",
+       "nested": {
+        "a": [
+         1,
+         null
+        ]
+       }
+      },
+      "riskLevel": "low",
+      "summary": "Post the low stock list to #ops",
+      "minutesSaved": 8,
+      "minutesSavedBasis": "Typing the list by hand",
+      "status": "approved"
+     }
+    },
+    {
+     "method": "enqueueActionExecute",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "actionRequestId": "99999999-9999-4999-8999-999999999999"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "slack_post",
+     "scope": "external",
+     "risk_level": "low",
+     "decision": "auto_approved",
+     "summary": "Post the low stock list to #ops"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "action needs approval",
+   "servers": [
+    "neko_action"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "tool": "action_request",
+   "arguments": {
+    "scope": "external",
+    "kind": "slack_post",
+    "target": "C123",
+    "payload": {
+     "text": "Stock is low",
+     "nested": {
+      "a": [
+       1,
+       null
+      ]
+     }
+    },
+    "risk_level": "low",
+    "summary": "Post the low stock list to #ops",
+    "minutes_saved": 600,
+    "basis": "Typing the list by hand"
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"needs_approval\",\"status\":\"pending_approval\",\"actionRequestId\":\"99999999-9999-4999-8999-999999999999\",\"policy\":\"external_default\",\"reason\":\"policy \\\"external_default\\\" mode=approval_required\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "slack_post",
+      "target": "C123",
+      "payload": {
+       "text": "Stock is low",
+       "nested": {
+        "a": [
+         1,
+         null
+        ]
+       }
+      },
+      "riskLevel": "low"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "workflowRunId": "66666666-6666-4666-8666-666666666666",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": "66666666-6666-4666-8666-666666666666",
+      "triggeredByObservationId": null,
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "scope": "external",
+      "kind": "slack_post",
+      "target": "C123",
+      "payload": {
+       "text": "Stock is low",
+       "nested": {
+        "a": [
+         1,
+         null
+        ]
+       }
+      },
+      "riskLevel": "low",
+      "summary": "Post the low stock list to #ops",
+      "minutesSaved": 120,
+      "minutesSavedBasis": "Typing the list by hand",
+      "status": "pending_approval"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "slack_post",
+     "scope": "external",
+     "risk_level": "low",
+     "decision": "pending_approval",
+     "summary": "Post the low stock list to #ops"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "action allowed but held by preflight",
+   "servers": [
+    "neko_action"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "tool": "action_request",
+   "arguments": {
+    "scope": "internal",
+    "kind": " slack_post ",
+    "summary": "  Post it  "
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "allow",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "slack_auto",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "auto_approve"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"needs_approval\",\"status\":\"pending_approval\",\"actionRequestId\":\"99999999-9999-4999-8999-999999999999\",\"policy\":\"slack_auto\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "slack_post",
+      "target": null,
+      "payload": null,
+      "riskLevel": null
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "workflowRunId": "66666666-6666-4666-8666-666666666666",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": "66666666-6666-4666-8666-666666666666",
+      "triggeredByObservationId": null,
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "scope": "internal",
+      "kind": "slack_post",
+      "target": null,
+      "payload": {},
+      "riskLevel": null,
+      "summary": "Post it",
+      "minutesSaved": null,
+      "minutesSavedBasis": null,
+      "status": "approved"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "slack_post",
+     "scope": "internal",
+     "decision": "pending_approval",
+     "summary": "Post it"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "action denied",
+   "servers": [
+    "neko_action"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "tool": "action_request",
+   "arguments": {
+    "scope": "external",
+    "kind": "slack_post",
+    "target": "C123",
+    "payload": {
+     "text": "Stock is low",
+     "nested": {
+      "a": [
+       1,
+       null
+      ]
+     }
+    },
+    "risk_level": "low",
+    "summary": "Post the low stock list to #ops",
+    "minutes_saved": 8,
+    "basis": "Typing the list by hand"
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "deny",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "no_email",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "never",
+      "reason": "policy \"no_email\" mode=never"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"decision\":\"denied\",\"reason\":\"policy \\\"no_email\\\" mode=never\",\"policy\":\"no_email\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "slack_post",
+      "target": "C123",
+      "payload": {
+       "text": "Stock is low",
+       "nested": {
+        "a": [
+         1,
+         null
+        ]
+       }
+      },
+      "riskLevel": "low"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "action no policy",
+   "servers": [
+    "neko_action"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "tool": "action_request",
+   "arguments": {
+    "scope": "external",
+    "kind": "slack_post",
+    "target": "C123",
+    "payload": {
+     "text": "Stock is low",
+     "nested": {
+      "a": [
+       1,
+       null
+      ]
+     }
+    },
+    "risk_level": "low",
+    "summary": "Post the low stock list to #ops",
+    "minutes_saved": 8,
+    "basis": "Typing the list by hand"
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "no_policy",
+      "reason": "no_matching_policy"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"decision\":\"denied\",\"reason\":\"no policy matches this scope/kind — refuse for safety. Ask the operator to define a policy first.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "slack_post",
+      "target": "C123",
+      "payload": {
+       "text": "Stock is low",
+       "nested": {
+        "a": [
+         1,
+         null
+        ]
+       }
+      },
+      "riskLevel": "low"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "action policy fails",
+   "servers": [
+    "neko_action"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "tool": "action_request",
+   "arguments": {
+    "scope": "external",
+    "kind": "slack_post",
+    "target": "C123",
+    "payload": {
+     "text": "Stock is low",
+     "nested": {
+      "a": [
+       1,
+       null
+      ]
+     }
+    },
+    "risk_level": "low",
+    "summary": "Post the low stock list to #ops",
+    "minutes_saved": 8,
+    "basis": "Typing the list by hand"
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "throws": "policy store is down"
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "policy store is down"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "slack_post",
+      "target": "C123",
+      "payload": {
+       "text": "Stock is low",
+       "nested": {
+        "a": [
+         1,
+         null
+        ]
+       }
+      },
+      "riskLevel": "low"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "action create fails",
+   "servers": [
+    "neko_action"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "tool": "action_request",
+   "arguments": {
+    "scope": "external",
+    "kind": "slack_post",
+    "target": "C123",
+    "payload": {
+     "text": "Stock is low",
+     "nested": {
+      "a": [
+       1,
+       null
+      ]
+     }
+    },
+    "risk_level": "low",
+    "summary": "Post the low stock list to #ops",
+    "minutes_saved": 8,
+    "basis": "Typing the list by hand"
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "allow",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "slack_auto",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "auto_approve"
+     }
+    },
+    "createActionRequest": {
+     "throws": "action slack_post is not available to this run"
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "action slack_post is not available to this run"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "slack_post",
+      "target": "C123",
+      "payload": {
+       "text": "Stock is low",
+       "nested": {
+        "a": [
+         1,
+         null
+        ]
+       }
+      },
+      "riskLevel": "low"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "workflowRunId": "66666666-6666-4666-8666-666666666666",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": "66666666-6666-4666-8666-666666666666",
+      "triggeredByObservationId": null,
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "scope": "external",
+      "kind": "slack_post",
+      "target": "C123",
+      "payload": {
+       "text": "Stock is low",
+       "nested": {
+        "a": [
+         1,
+         null
+        ]
+       }
+      },
+      "riskLevel": "low",
+      "summary": "Post the low stock list to #ops",
+      "minutesSaved": 8,
+      "minutesSavedBasis": "Typing the list by hand",
+      "status": "approved"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "action enqueue fails",
+   "servers": [
+    "neko_action"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "tool": "action_request",
+   "arguments": {
+    "scope": "external",
+    "kind": "slack_post",
+    "target": "C123",
+    "payload": {
+     "text": "Stock is low",
+     "nested": {
+      "a": [
+       1,
+       null
+      ]
+     }
+    },
+    "risk_level": "low",
+    "summary": "Post the low stock list to #ops",
+    "minutes_saved": 8,
+    "basis": "Typing the list by hand"
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "allow",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "slack_auto",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "auto_approve"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "approved"
+     }
+    },
+    "enqueueActionExecute": {
+     "throws": "the job queue is not ready"
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "the job queue is not ready"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "slack_post",
+      "target": "C123",
+      "payload": {
+       "text": "Stock is low",
+       "nested": {
+        "a": [
+         1,
+         null
+        ]
+       }
+      },
+      "riskLevel": "low"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "workflowRunId": "66666666-6666-4666-8666-666666666666",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": "66666666-6666-4666-8666-666666666666",
+      "triggeredByObservationId": null,
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "scope": "external",
+      "kind": "slack_post",
+      "target": "C123",
+      "payload": {
+       "text": "Stock is low",
+       "nested": {
+        "a": [
+         1,
+         null
+        ]
+       }
+      },
+      "riskLevel": "low",
+      "summary": "Post the low stock list to #ops",
+      "minutesSaved": 8,
+      "minutesSavedBasis": "Typing the list by hand",
+      "status": "approved"
+     }
+    },
+    {
+     "method": "enqueueActionExecute",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "actionRequestId": "99999999-9999-4999-8999-999999999999"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "slack_post",
+     "scope": "external",
+     "risk_level": "low",
+     "decision": "auto_approved",
+     "summary": "Post the low stock list to #ops"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "action events fail",
+   "servers": [
+    "neko_action"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "eventsFail": true,
+   "tool": "action_request",
+   "arguments": {
+    "scope": "external",
+    "kind": "slack_post",
+    "target": "C123",
+    "payload": {
+     "text": "Stock is low",
+     "nested": {
+      "a": [
+       1,
+       null
+      ]
+     }
+    },
+    "risk_level": "low",
+    "summary": "Post the low stock list to #ops",
+    "minutes_saved": 8,
+    "basis": "Typing the list by hand"
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "broker /v1/events -> 500"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "slack_post",
+      "target": "C123",
+      "payload": {
+       "text": "Stock is low",
+       "nested": {
+        "a": [
+         1,
+         null
+        ]
+       }
+      },
+      "riskLevel": "low"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "workflowRunId": "66666666-6666-4666-8666-666666666666",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": "66666666-6666-4666-8666-666666666666",
+      "triggeredByObservationId": null,
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "scope": "external",
+      "kind": "slack_post",
+      "target": "C123",
+      "payload": {
+       "text": "Stock is low",
+       "nested": {
+        "a": [
+         1,
+         null
+        ]
+       }
+      },
+      "riskLevel": "low",
+      "summary": "Post the low stock list to #ops",
+      "minutesSaved": 8,
+      "minutesSavedBasis": "Typing the list by hand",
+      "status": "pending_approval"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "action argument faults",
+   "servers": [
+    "neko_action"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "tool": "action_request",
+   "arguments": {
+    "scope": "outside",
+    "kind": "  ",
+    "target": "",
+    "payload": [
+     1
+    ],
+    "risk_level": "huge",
+    "minutes_saved": 1.5,
+    "basis": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "extra": true
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request: [\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"internal\",\n      \"external\"\n    ],\n    \"path\": [\n      \"scope\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"internal\\\"|\\\"external\\\"\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"kind\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"target\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"expected\": \"record\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"payload\"\n    ],\n    \"message\": \"Invalid input: expected record, received array\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"low\",\n      \"medium\",\n      \"high\",\n      \"critical\"\n    ],\n    \"path\": [\n      \"risk_level\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"low\\\"|\\\"medium\\\"|\\\"high\\\"|\\\"critical\\\"\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"summary\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"int\",\n    \"format\": \"safeint\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"minutes_saved\"\n    ],\n    \"message\": \"Invalid input: expected int, received number\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 160,\n    \"inclusive\": true,\n    \"path\": [\n      \"basis\"\n    ],\n    \"message\": \"Too big: expected string to have <=160 characters\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "action missing fields",
+   "servers": [
+    "neko_action"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "tool": "action_request",
+   "arguments": {},
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request: [\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"internal\",\n      \"external\"\n    ],\n    \"path\": [\n      \"scope\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"internal\\\"|\\\"external\\\"\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"kind\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"summary\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "action minutes out of range",
+   "servers": [
+    "neko_action"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "tool": "action_request",
+   "arguments": {
+    "scope": "external",
+    "kind": 7,
+    "target": "C123",
+    "payload": {
+     "text": "Stock is low",
+     "nested": {
+      "a": [
+       1,
+       null
+      ]
+     }
+    },
+    "risk_level": "low",
+    "summary": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+    "minutes_saved": -1,
+    "basis": "Typing the list by hand"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"kind\"\n    ],\n    \"message\": \"Invalid input: expected string, received number\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 2000,\n    \"inclusive\": true,\n    \"path\": [\n      \"summary\"\n    ],\n    \"message\": \"Too big: expected string to have <=2000 characters\"\n  },\n  {\n    \"origin\": \"number\",\n    \"code\": \"too_small\",\n    \"minimum\": 0,\n    \"inclusive\": true,\n    \"path\": [\n      \"minutes_saved\"\n    ],\n    \"message\": \"Too small: expected number to be >=0\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "output full",
+   "servers": [
+    "neko_workflow_output"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "tool": "workflow_output_emit",
+   "arguments": {
+    "kind": "finding",
+    "title": "Low stock",
+    "body": "Three items",
+    "payload": {
+     "skus": [
+      "A",
+      "B"
+     ]
+    },
+    "artifactPath": "out/low.csv",
+    "scope": "inventory",
+    "topic": "stock",
+    "mood": "act",
+    "timeWindowStart": "2026-11-01T00:00Z",
+    "timeWindowEnd": "2026-11-13T09:30:15.1239Z",
+    "freshnessTtlSeconds": 3600
+   },
+   "replies": {
+    "emitWorkflowOutput": {
+     "value": {
+      "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "kind": "finding",
+      "title": "Low stock",
+      "seenCount": 1,
+      "createdAt": "2026-11-13T00:00:00.000Z"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"outputId\":\"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\",\"kind\":\"finding\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "emitWorkflowOutput",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "workflowRunId": "66666666-6666-4666-8666-666666666666",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "kind": "finding",
+      "title": "Low stock",
+      "body": "Three items",
+      "payload": {
+       "skus": [
+        "A",
+        "B"
+       ]
+      },
+      "artifactPath": "out/low.csv",
+      "scope": "inventory",
+      "topic": "stock",
+      "mood": "act",
+      "timeWindowStart": "2026-11-01T00:00:00.000Z",
+      "timeWindowEnd": "2026-11-13T09:30:15.123Z",
+      "freshnessTtlSeconds": 3600
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "output_emit",
+     "output_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+     "kind": "finding"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "output kind only",
+   "servers": [
+    "neko_workflow_output"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "tool": "workflow_output_emit",
+   "arguments": {
+    "kind": "summary"
+   },
+   "replies": {
+    "emitWorkflowOutput": {
+     "value": {
+      "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "kind": "summary",
+      "title": "Low stock",
+      "seenCount": 1,
+      "createdAt": "2026-11-13T00:00:00.000Z"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"outputId\":\"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\",\"kind\":\"summary\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "emitWorkflowOutput",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "workflowRunId": "66666666-6666-4666-8666-666666666666",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "kind": "summary",
+      "artifactPath": null,
+      "scope": null,
+      "topic": null,
+      "mood": null,
+      "timeWindowStart": null,
+      "timeWindowEnd": null,
+      "freshnessTtlSeconds": null
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "output_emit",
+     "output_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+     "kind": "summary"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "output whole seconds",
+   "servers": [
+    "neko_workflow_output"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "tool": "workflow_output_emit",
+   "arguments": {
+    "kind": "report",
+    "timeWindowStart": "2024-02-29T23:59:59Z",
+    "timeWindowEnd": "2026-11-13T09:30:15.5Z"
+   },
+   "replies": {
+    "emitWorkflowOutput": {
+     "value": {
+      "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "kind": "finding",
+      "title": "Low stock",
+      "seenCount": 1,
+      "createdAt": "2026-11-13T00:00:00.000Z"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"outputId\":\"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\",\"kind\":\"finding\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "emitWorkflowOutput",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "workflowRunId": "66666666-6666-4666-8666-666666666666",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "kind": "report",
+      "artifactPath": null,
+      "scope": null,
+      "topic": null,
+      "mood": null,
+      "timeWindowStart": "2024-02-29T23:59:59.000Z",
+      "timeWindowEnd": "2026-11-13T09:30:15.500Z",
+      "freshnessTtlSeconds": null
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "output_emit",
+     "output_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+     "kind": "finding"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "output fails",
+   "servers": [
+    "neko_workflow_output"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "tool": "workflow_output_emit",
+   "arguments": {
+    "kind": "finding"
+   },
+   "replies": {
+    "emitWorkflowOutput": {
+     "throws": "workflow run not found"
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "workflow run not found"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "emitWorkflowOutput",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "workflowRunId": "66666666-6666-4666-8666-666666666666",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "kind": "finding",
+      "artifactPath": null,
+      "scope": null,
+      "topic": null,
+      "mood": null,
+      "timeWindowStart": null,
+      "timeWindowEnd": null,
+      "freshnessTtlSeconds": null
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "output events fail",
+   "servers": [
+    "neko_workflow_output"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "eventsFail": true,
+   "tool": "workflow_output_emit",
+   "arguments": {
+    "kind": "finding"
+   },
+   "replies": {
+    "emitWorkflowOutput": {
+     "value": {
+      "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "kind": "finding",
+      "title": "Low stock",
+      "seenCount": 1,
+      "createdAt": "2026-11-13T00:00:00.000Z"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "broker /v1/events -> 500"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "emitWorkflowOutput",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "workflowRunId": "66666666-6666-4666-8666-666666666666",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "kind": "finding",
+      "artifactPath": null,
+      "scope": null,
+      "topic": null,
+      "mood": null,
+      "timeWindowStart": null,
+      "timeWindowEnd": null,
+      "freshnessTtlSeconds": null
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "output argument faults",
+   "servers": [
+    "neko_workflow_output"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "tool": "workflow_output_emit",
+   "arguments": {
+    "kind": "memo",
+    "title": "ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt",
+    "payload": "x",
+    "mood": "bad",
+    "timeWindowStart": "2026-11-01",
+    "timeWindowEnd": "2026-11-01T00:00:00+02:00",
+    "freshnessTtlSeconds": 0
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool emit: [\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"report\",\n      \"summary\",\n      \"briefing_card_proposal\",\n      \"chart\",\n      \"table\",\n      \"file\",\n      \"message_draft\",\n      \"finding\",\n      \"observation\",\n      \"recommendation\"\n    ],\n    \"path\": [\n      \"kind\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"report\\\"|\\\"summary\\\"|\\\"briefing_card_proposal\\\"|\\\"chart\\\"|\\\"table\\\"|\\\"file\\\"|\\\"message_draft\\\"|\\\"finding\\\"|\\\"observation\\\"|\\\"recommendation\\\"\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 240,\n    \"inclusive\": true,\n    \"path\": [\n      \"title\"\n    ],\n    \"message\": \"Too big: expected string to have <=240 characters\"\n  },\n  {\n    \"expected\": \"record\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"payload\"\n    ],\n    \"message\": \"Invalid input: expected record, received string\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"good\",\n      \"watch\",\n      \"act\"\n    ],\n    \"path\": [\n      \"mood\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"good\\\"|\\\"watch\\\"|\\\"act\\\"\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"invalid_format\",\n    \"format\": \"datetime\",\n    \"pattern\": \"/^(?:(?:\\\\d\\\\d[2468][048]|\\\\d\\\\d[13579][26]|\\\\d\\\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\\\d|30)|(?:02)-(?:0[1-9]|1\\\\d|2[0-8])))T(?:(?:[01]\\\\d|2[0-3]):[0-5]\\\\d(?::[0-5]\\\\d(?:\\\\.\\\\d+)?)?(?:Z))$/\",\n    \"path\": [\n      \"timeWindowStart\"\n    ],\n    \"message\": \"Invalid ISO datetime\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"invalid_format\",\n    \"format\": \"datetime\",\n    \"pattern\": \"/^(?:(?:\\\\d\\\\d[2468][048]|\\\\d\\\\d[13579][26]|\\\\d\\\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\\\d|30)|(?:02)-(?:0[1-9]|1\\\\d|2[0-8])))T(?:(?:[01]\\\\d|2[0-3]):[0-5]\\\\d(?::[0-5]\\\\d(?:\\\\.\\\\d+)?)?(?:Z))$/\",\n    \"path\": [\n      \"timeWindowEnd\"\n    ],\n    \"message\": \"Invalid ISO datetime\"\n  },\n  {\n    \"origin\": \"number\",\n    \"code\": \"too_small\",\n    \"minimum\": 0,\n    \"inclusive\": false,\n    \"path\": [\n      \"freshnessTtlSeconds\"\n    ],\n    \"message\": \"Too small: expected number to be >0\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "output date faults",
+   "servers": [
+    "neko_workflow_output"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "tool": "workflow_output_emit",
+   "arguments": {
+    "kind": "finding",
+    "timeWindowStart": "2027-02-29T00:00:00Z",
+    "timeWindowEnd": 5,
+    "freshnessTtlSeconds": 1.5,
+    "scope": 3
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool emit: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"scope\"\n    ],\n    \"message\": \"Invalid input: expected string, received number\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"invalid_format\",\n    \"format\": \"datetime\",\n    \"pattern\": \"/^(?:(?:\\\\d\\\\d[2468][048]|\\\\d\\\\d[13579][26]|\\\\d\\\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\\\d|30)|(?:02)-(?:0[1-9]|1\\\\d|2[0-8])))T(?:(?:[01]\\\\d|2[0-3]):[0-5]\\\\d(?::[0-5]\\\\d(?:\\\\.\\\\d+)?)?(?:Z))$/\",\n    \"path\": [\n      \"timeWindowStart\"\n    ],\n    \"message\": \"Invalid ISO datetime\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"timeWindowEnd\"\n    ],\n    \"message\": \"Invalid input: expected string, received number\"\n  },\n  {\n    \"expected\": \"int\",\n    \"format\": \"safeint\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"freshnessTtlSeconds\"\n    ],\n    \"message\": \"Invalid input: expected int, received number\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "output ttl too big",
+   "servers": [
+    "neko_workflow_output"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "tool": "workflow_output_emit",
+   "arguments": {
+    "kind": "finding",
+    "freshnessTtlSeconds": 31536001,
+    "topic": "ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool emit: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 120,\n    \"inclusive\": true,\n    \"path\": [\n      \"topic\"\n    ],\n    \"message\": \"Too big: expected string to have <=120 characters\"\n  },\n  {\n    \"origin\": \"number\",\n    \"code\": \"too_big\",\n    \"maximum\": 31536000,\n    \"inclusive\": true,\n    \"path\": [\n      \"freshnessTtlSeconds\"\n    ],\n    \"message\": \"Too big: expected number to be <=31536000\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "pack auto runs",
+   "servers": [
+    "neko_pack_actions"
+   ],
+   "packActions": [
+    {
+     "kind": "magento_reindex",
+     "description": "Reindex a Magento index. Payload schema: {\"type\":\"object\"}.",
+     "default_mode": "ask",
+     "example": {
+      "index": "catalog"
+     }
+    },
+    {
+     "kind": "slack_post",
+     "description": "Post a Slack message.",
+     "scope": "internal",
+     "default_mode": "auto"
+    },
+    {
+     "kind": "crm_update",
+     "description": "Update a CRM record.",
+     "default_mode": {
+      "external": "auto",
+      "internal": "ask"
+     }
+    },
+    {
+     "kind": "crm_note",
+     "description": "Add a CRM note.",
+     "default_mode": {
+      "external": "auto"
+     }
+    },
+    {
+     "kind": "ledger_sync",
+     "description": "Sync the ledger."
+    },
+    {
+     "kind": "drop_all",
+     "description": "Never offered.",
+     "default_mode": "deny"
+    },
+    {
+     "kind": "drop_some",
+     "description": "Never offered either.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "deny"
+     }
+    },
+    {
+     "kind": "half_deny",
+     "description": "Denied outside.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "auto"
+     }
+    }
+   ],
+   "tool": "pack_actions_slack_post",
+   "arguments": {
+    "target": "C123",
+    "risk_level": "low",
+    "payload": {
+     "text": "hi"
+    }
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "allow",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "slack_auto",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "auto_approve"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "approved"
+     }
+    },
+    "waitForActionExecution": {
+     "value": {
+      "status": "succeeded",
+      "outcome": {
+       "result": {
+        "ts": "1700000000.1"
+       },
+       "externalRef": "C123/1700000000.1",
+       "commandOrOperation": "chat.postMessage"
+      }
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"auto_approved\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"policy\":\"slack_auto\",\"status\":\"executed\",\"outcome\":{\"result\":{\"ts\":\"1700000000.1\"},\"externalRef\":\"C123/1700000000.1\",\"commandOrOperation\":\"chat.postMessage\"},\"note\":\"Use the returned outcome to answer the user's request now.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "slack_post",
+      "target": "C123",
+      "payload": {
+       "text": "hi"
+      },
+      "riskLevel": "low"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "slack_post",
+      "target": "C123",
+      "payload": {
+       "text": "hi"
+      },
+      "riskLevel": "low",
+      "status": "approved",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Auto-fired slack_post (no explicit intent supplied).",
+      "intent": "Auto-fired slack_post (no explicit intent supplied).",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    },
+    {
+     "method": "enqueueActionExecute",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "actionRequestId": "99999999-9999-4999-8999-999999999999"
+     }
+    },
+    {
+     "method": "waitForActionExecution",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "actionRequestId": "99999999-9999-4999-8999-999999999999",
+      "timeoutMs": 45000
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "slack_post",
+     "scope": "internal",
+     "decision": "auto_approved",
+     "summary": "Auto-fired slack_post (no explicit intent supplied).",
+     "risk_level": "low"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "pack auto fails",
+   "servers": [
+    "neko_pack_actions"
+   ],
+   "packActions": [
+    {
+     "kind": "magento_reindex",
+     "description": "Reindex a Magento index. Payload schema: {\"type\":\"object\"}.",
+     "default_mode": "ask",
+     "example": {
+      "index": "catalog"
+     }
+    },
+    {
+     "kind": "slack_post",
+     "description": "Post a Slack message.",
+     "scope": "internal",
+     "default_mode": "auto"
+    },
+    {
+     "kind": "crm_update",
+     "description": "Update a CRM record.",
+     "default_mode": {
+      "external": "auto",
+      "internal": "ask"
+     }
+    },
+    {
+     "kind": "crm_note",
+     "description": "Add a CRM note.",
+     "default_mode": {
+      "external": "auto"
+     }
+    },
+    {
+     "kind": "ledger_sync",
+     "description": "Sync the ledger."
+    },
+    {
+     "kind": "drop_all",
+     "description": "Never offered.",
+     "default_mode": "deny"
+    },
+    {
+     "kind": "drop_some",
+     "description": "Never offered either.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "deny"
+     }
+    },
+    {
+     "kind": "half_deny",
+     "description": "Denied outside.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "auto"
+     }
+    }
+   ],
+   "tool": "pack_actions_slack_post",
+   "arguments": {
+    "payload": {
+     "text": "hi"
+    }
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "allow",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "slack_auto",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "auto_approve"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "approved"
+     }
+    },
+    "waitForActionExecution": {
+     "value": {
+      "status": "failed",
+      "error": "channel_not_found"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"decision\":\"auto_approved\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"policy\":\"slack_auto\",\"status\":\"failed\",\"error\":\"channel_not_found\",\"note\":\"Tell the user the action failed. Do not claim that results are still queued.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "slack_post",
+      "target": null,
+      "payload": {
+       "text": "hi"
+      },
+      "riskLevel": null
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "slack_post",
+      "target": null,
+      "payload": {
+       "text": "hi"
+      },
+      "riskLevel": null,
+      "status": "approved",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Auto-fired slack_post (no explicit intent supplied).",
+      "intent": "Auto-fired slack_post (no explicit intent supplied).",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    },
+    {
+     "method": "enqueueActionExecute",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "actionRequestId": "99999999-9999-4999-8999-999999999999"
+     }
+    },
+    {
+     "method": "waitForActionExecution",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "actionRequestId": "99999999-9999-4999-8999-999999999999",
+      "timeoutMs": 45000
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "slack_post",
+     "scope": "internal",
+     "decision": "auto_approved",
+     "summary": "Auto-fired slack_post (no explicit intent supplied)."
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "pack auto still running",
+   "servers": [
+    "neko_pack_actions"
+   ],
+   "packActions": [
+    {
+     "kind": "magento_reindex",
+     "description": "Reindex a Magento index. Payload schema: {\"type\":\"object\"}.",
+     "default_mode": "ask",
+     "example": {
+      "index": "catalog"
+     }
+    },
+    {
+     "kind": "slack_post",
+     "description": "Post a Slack message.",
+     "scope": "internal",
+     "default_mode": "auto"
+    },
+    {
+     "kind": "crm_update",
+     "description": "Update a CRM record.",
+     "default_mode": {
+      "external": "auto",
+      "internal": "ask"
+     }
+    },
+    {
+     "kind": "crm_note",
+     "description": "Add a CRM note.",
+     "default_mode": {
+      "external": "auto"
+     }
+    },
+    {
+     "kind": "ledger_sync",
+     "description": "Sync the ledger."
+    },
+    {
+     "kind": "drop_all",
+     "description": "Never offered.",
+     "default_mode": "deny"
+    },
+    {
+     "kind": "drop_some",
+     "description": "Never offered either.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "deny"
+     }
+    },
+    {
+     "kind": "half_deny",
+     "description": "Denied outside.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "auto"
+     }
+    }
+   ],
+   "tool": "pack_actions_slack_post",
+   "arguments": {
+    "intent": "Tell ops",
+    "target": ""
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "allow",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "slack_auto",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "auto_approve"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "approved"
+     }
+    },
+    "waitForActionExecution": {
+     "value": {
+      "status": "timeout"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"auto_approved\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"policy\":\"slack_auto\",\"status\":\"running\",\"note\":\"Execution is still running. Do not claim completion or invent a result; tell the user it is taking longer than expected and the outcome will appear inline.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "slack_post",
+      "target": null,
+      "payload": {},
+      "riskLevel": null
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "slack_post",
+      "target": null,
+      "payload": {},
+      "riskLevel": null,
+      "status": "approved",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Tell ops",
+      "intent": "Tell ops",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    },
+    {
+     "method": "enqueueActionExecute",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "actionRequestId": "99999999-9999-4999-8999-999999999999"
+     }
+    },
+    {
+     "method": "waitForActionExecution",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "actionRequestId": "99999999-9999-4999-8999-999999999999",
+      "timeoutMs": 45000
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "slack_post",
+     "scope": "internal",
+     "decision": "auto_approved",
+     "summary": "Tell ops"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "pack ask",
+   "servers": [
+    "neko_pack_actions"
+   ],
+   "packActions": [
+    {
+     "kind": "magento_reindex",
+     "description": "Reindex a Magento index. Payload schema: {\"type\":\"object\"}.",
+     "default_mode": "ask",
+     "example": {
+      "index": "catalog"
+     }
+    },
+    {
+     "kind": "slack_post",
+     "description": "Post a Slack message.",
+     "scope": "internal",
+     "default_mode": "auto"
+    },
+    {
+     "kind": "crm_update",
+     "description": "Update a CRM record.",
+     "default_mode": {
+      "external": "auto",
+      "internal": "ask"
+     }
+    },
+    {
+     "kind": "crm_note",
+     "description": "Add a CRM note.",
+     "default_mode": {
+      "external": "auto"
+     }
+    },
+    {
+     "kind": "ledger_sync",
+     "description": "Sync the ledger."
+    },
+    {
+     "kind": "drop_all",
+     "description": "Never offered.",
+     "default_mode": "deny"
+    },
+    {
+     "kind": "drop_some",
+     "description": "Never offered either.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "deny"
+     }
+    },
+    {
+     "kind": "half_deny",
+     "description": "Denied outside.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "auto"
+     }
+    }
+   ],
+   "tool": "pack_actions_magento_reindex",
+   "arguments": {
+    "intent": "Reindex the catalog so prices show",
+    "payload": {
+     "index": "catalog"
+    },
+    "risk_level": "medium"
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"pending_approval\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"policy\":\"external_default\",\"intent\":\"Reindex the catalog so prices show\",\"note\":\"User-approval gate. Tell the user briefly what you've requested and end your turn — the approval card is rendered inline; their decision will land in a follow-up turn.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "magento_reindex",
+      "target": null,
+      "payload": {
+       "index": "catalog"
+      },
+      "riskLevel": "medium"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "magento_reindex",
+      "target": null,
+      "payload": {
+       "index": "catalog"
+      },
+      "riskLevel": "medium",
+      "status": "pending_approval",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Reindex the catalog so prices show",
+      "intent": "Reindex the catalog so prices show",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "magento_reindex",
+     "scope": "external",
+     "decision": "pending_approval",
+     "intent": "Reindex the catalog so prices show",
+     "summary": "Reindex the catalog so prices show",
+     "risk_level": "medium"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "pack ask no risk",
+   "servers": [
+    "neko_pack_actions"
+   ],
+   "packActions": [
+    {
+     "kind": "magento_reindex",
+     "description": "Reindex a Magento index. Payload schema: {\"type\":\"object\"}.",
+     "default_mode": "ask",
+     "example": {
+      "index": "catalog"
+     }
+    },
+    {
+     "kind": "slack_post",
+     "description": "Post a Slack message.",
+     "scope": "internal",
+     "default_mode": "auto"
+    },
+    {
+     "kind": "crm_update",
+     "description": "Update a CRM record.",
+     "default_mode": {
+      "external": "auto",
+      "internal": "ask"
+     }
+    },
+    {
+     "kind": "crm_note",
+     "description": "Add a CRM note.",
+     "default_mode": {
+      "external": "auto"
+     }
+    },
+    {
+     "kind": "ledger_sync",
+     "description": "Sync the ledger."
+    },
+    {
+     "kind": "drop_all",
+     "description": "Never offered.",
+     "default_mode": "deny"
+    },
+    {
+     "kind": "drop_some",
+     "description": "Never offered either.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "deny"
+     }
+    },
+    {
+     "kind": "half_deny",
+     "description": "Denied outside.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "auto"
+     }
+    }
+   ],
+   "tool": "pack_actions_magento_reindex",
+   "arguments": {
+    "intent": "Reindex the catalog"
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"pending_approval\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"policy\":\"external_default\",\"intent\":\"Reindex the catalog\",\"note\":\"User-approval gate. Tell the user briefly what you've requested and end your turn — the approval card is rendered inline; their decision will land in a follow-up turn.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "magento_reindex",
+      "target": null,
+      "payload": {},
+      "riskLevel": null
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "magento_reindex",
+      "target": null,
+      "payload": {},
+      "riskLevel": null,
+      "status": "pending_approval",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Reindex the catalog",
+      "intent": "Reindex the catalog",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "magento_reindex",
+     "scope": "external",
+     "decision": "pending_approval",
+     "intent": "Reindex the catalog",
+     "summary": "Reindex the catalog"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "pack ask without intent",
+   "servers": [
+    "neko_pack_actions"
+   ],
+   "packActions": [
+    {
+     "kind": "magento_reindex",
+     "description": "Reindex a Magento index. Payload schema: {\"type\":\"object\"}.",
+     "default_mode": "ask",
+     "example": {
+      "index": "catalog"
+     }
+    },
+    {
+     "kind": "slack_post",
+     "description": "Post a Slack message.",
+     "scope": "internal",
+     "default_mode": "auto"
+    },
+    {
+     "kind": "crm_update",
+     "description": "Update a CRM record.",
+     "default_mode": {
+      "external": "auto",
+      "internal": "ask"
+     }
+    },
+    {
+     "kind": "crm_note",
+     "description": "Add a CRM note.",
+     "default_mode": {
+      "external": "auto"
+     }
+    },
+    {
+     "kind": "ledger_sync",
+     "description": "Sync the ledger."
+    },
+    {
+     "kind": "drop_all",
+     "description": "Never offered.",
+     "default_mode": "deny"
+    },
+    {
+     "kind": "drop_some",
+     "description": "Never offered either.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "deny"
+     }
+    },
+    {
+     "kind": "half_deny",
+     "description": "Denied outside.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "auto"
+     }
+    }
+   ],
+   "tool": "pack_actions_magento_reindex",
+   "arguments": {
+    "payload": {}
+   },
+   "replies": {},
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool magento_reindex: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"intent\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "pack auto escalated",
+   "servers": [
+    "neko_pack_actions"
+   ],
+   "packActions": [
+    {
+     "kind": "magento_reindex",
+     "description": "Reindex a Magento index. Payload schema: {\"type\":\"object\"}.",
+     "default_mode": "ask",
+     "example": {
+      "index": "catalog"
+     }
+    },
+    {
+     "kind": "slack_post",
+     "description": "Post a Slack message.",
+     "scope": "internal",
+     "default_mode": "auto"
+    },
+    {
+     "kind": "crm_update",
+     "description": "Update a CRM record.",
+     "default_mode": {
+      "external": "auto",
+      "internal": "ask"
+     }
+    },
+    {
+     "kind": "crm_note",
+     "description": "Add a CRM note.",
+     "default_mode": {
+      "external": "auto"
+     }
+    },
+    {
+     "kind": "ledger_sync",
+     "description": "Sync the ledger."
+    },
+    {
+     "kind": "drop_all",
+     "description": "Never offered.",
+     "default_mode": "deny"
+    },
+    {
+     "kind": "drop_some",
+     "description": "Never offered either.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "deny"
+     }
+    },
+    {
+     "kind": "half_deny",
+     "description": "Denied outside.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "auto"
+     }
+    }
+   ],
+   "tool": "pack_actions_slack_post",
+   "arguments": {
+    "target": "lead/7"
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"pending_approval\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"policy\":\"external_default\",\"intent\":\"Auto-fired slack_post (no explicit intent supplied).\",\"note\":\"User-approval gate. Tell the user briefly what you've requested and end your turn — the approval card is rendered inline; their decision will land in a follow-up turn.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "slack_post",
+      "target": "lead/7",
+      "payload": {},
+      "riskLevel": null
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "slack_post",
+      "target": "lead/7",
+      "payload": {},
+      "riskLevel": null,
+      "status": "pending_approval",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Auto-fired slack_post (no explicit intent supplied).",
+      "intent": "Auto-fired slack_post (no explicit intent supplied).",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "slack_post",
+     "scope": "internal",
+     "decision": "pending_approval",
+     "intent": "Auto-fired slack_post (no explicit intent supplied).",
+     "summary": "Auto-fired slack_post (no explicit intent supplied)."
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "pack denied",
+   "servers": [
+    "neko_pack_actions"
+   ],
+   "packActions": [
+    {
+     "kind": "magento_reindex",
+     "description": "Reindex a Magento index. Payload schema: {\"type\":\"object\"}.",
+     "default_mode": "ask",
+     "example": {
+      "index": "catalog"
+     }
+    },
+    {
+     "kind": "slack_post",
+     "description": "Post a Slack message.",
+     "scope": "internal",
+     "default_mode": "auto"
+    },
+    {
+     "kind": "crm_update",
+     "description": "Update a CRM record.",
+     "default_mode": {
+      "external": "auto",
+      "internal": "ask"
+     }
+    },
+    {
+     "kind": "crm_note",
+     "description": "Add a CRM note.",
+     "default_mode": {
+      "external": "auto"
+     }
+    },
+    {
+     "kind": "ledger_sync",
+     "description": "Sync the ledger."
+    },
+    {
+     "kind": "drop_all",
+     "description": "Never offered.",
+     "default_mode": "deny"
+    },
+    {
+     "kind": "drop_some",
+     "description": "Never offered either.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "deny"
+     }
+    },
+    {
+     "kind": "half_deny",
+     "description": "Denied outside.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "auto"
+     }
+    }
+   ],
+   "tool": "pack_actions_crm_note",
+   "arguments": {
+    "intent": "Note it"
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "deny",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "no_email",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "never",
+      "reason": "policy \"no_email\" mode=never"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"decision\":\"denied\",\"reason\":\"policy \\\"no_email\\\" mode=never\",\"policy\":\"no_email\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "crm_note",
+      "target": null,
+      "payload": {},
+      "riskLevel": null
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "pack no policy",
+   "servers": [
+    "neko_pack_actions"
+   ],
+   "packActions": [
+    {
+     "kind": "magento_reindex",
+     "description": "Reindex a Magento index. Payload schema: {\"type\":\"object\"}.",
+     "default_mode": "ask",
+     "example": {
+      "index": "catalog"
+     }
+    },
+    {
+     "kind": "slack_post",
+     "description": "Post a Slack message.",
+     "scope": "internal",
+     "default_mode": "auto"
+    },
+    {
+     "kind": "crm_update",
+     "description": "Update a CRM record.",
+     "default_mode": {
+      "external": "auto",
+      "internal": "ask"
+     }
+    },
+    {
+     "kind": "crm_note",
+     "description": "Add a CRM note.",
+     "default_mode": {
+      "external": "auto"
+     }
+    },
+    {
+     "kind": "ledger_sync",
+     "description": "Sync the ledger."
+    },
+    {
+     "kind": "drop_all",
+     "description": "Never offered.",
+     "default_mode": "deny"
+    },
+    {
+     "kind": "drop_some",
+     "description": "Never offered either.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "deny"
+     }
+    },
+    {
+     "kind": "half_deny",
+     "description": "Denied outside.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "auto"
+     }
+    }
+   ],
+   "tool": "pack_actions_ledger_sync",
+   "arguments": {},
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "no_policy",
+      "reason": "no_matching_policy"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"decision\":\"denied\",\"reason\":\"no policy matches this scope/kind — refuse for safety. Operator must define a policy in /admin/rules first.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "ledger_sync",
+      "target": null,
+      "payload": {},
+      "riskLevel": null
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "pack half denied",
+   "servers": [
+    "neko_pack_actions"
+   ],
+   "packActions": [
+    {
+     "kind": "magento_reindex",
+     "description": "Reindex a Magento index. Payload schema: {\"type\":\"object\"}.",
+     "default_mode": "ask",
+     "example": {
+      "index": "catalog"
+     }
+    },
+    {
+     "kind": "slack_post",
+     "description": "Post a Slack message.",
+     "scope": "internal",
+     "default_mode": "auto"
+    },
+    {
+     "kind": "crm_update",
+     "description": "Update a CRM record.",
+     "default_mode": {
+      "external": "auto",
+      "internal": "ask"
+     }
+    },
+    {
+     "kind": "crm_note",
+     "description": "Add a CRM note.",
+     "default_mode": {
+      "external": "auto"
+     }
+    },
+    {
+     "kind": "ledger_sync",
+     "description": "Sync the ledger."
+    },
+    {
+     "kind": "drop_all",
+     "description": "Never offered.",
+     "default_mode": "deny"
+    },
+    {
+     "kind": "drop_some",
+     "description": "Never offered either.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "deny"
+     }
+    },
+    {
+     "kind": "half_deny",
+     "description": "Denied outside.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "auto"
+     }
+    }
+   ],
+   "tool": "pack_actions_half_deny",
+   "arguments": {},
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "allow",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "slack_auto",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "auto_approve"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "approved"
+     }
+    },
+    "waitForActionExecution": {
+     "value": {
+      "status": "succeeded",
+      "outcome": {
+       "result": {
+        "ts": "1700000000.1"
+       },
+       "externalRef": "C123/1700000000.1",
+       "commandOrOperation": "chat.postMessage"
+      }
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"auto_approved\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"policy\":\"slack_auto\",\"status\":\"executed\",\"outcome\":{\"result\":{\"ts\":\"1700000000.1\"},\"externalRef\":\"C123/1700000000.1\",\"commandOrOperation\":\"chat.postMessage\"},\"note\":\"Use the returned outcome to answer the user's request now.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "half_deny",
+      "target": null,
+      "payload": {},
+      "riskLevel": null
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "half_deny",
+      "target": null,
+      "payload": {},
+      "riskLevel": null,
+      "status": "approved",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Auto-fired half_deny (no explicit intent supplied).",
+      "intent": "Auto-fired half_deny (no explicit intent supplied).",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    },
+    {
+     "method": "enqueueActionExecute",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "actionRequestId": "99999999-9999-4999-8999-999999999999"
+     }
+    },
+    {
+     "method": "waitForActionExecution",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "actionRequestId": "99999999-9999-4999-8999-999999999999",
+      "timeoutMs": 45000
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "half_deny",
+     "scope": "external",
+     "decision": "auto_approved",
+     "summary": "Auto-fired half_deny (no explicit intent supplied)."
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "pack denied kind hidden",
+   "servers": [
+    "neko_pack_actions"
+   ],
+   "packActions": [
+    {
+     "kind": "magento_reindex",
+     "description": "Reindex a Magento index. Payload schema: {\"type\":\"object\"}.",
+     "default_mode": "ask",
+     "example": {
+      "index": "catalog"
+     }
+    },
+    {
+     "kind": "slack_post",
+     "description": "Post a Slack message.",
+     "scope": "internal",
+     "default_mode": "auto"
+    },
+    {
+     "kind": "crm_update",
+     "description": "Update a CRM record.",
+     "default_mode": {
+      "external": "auto",
+      "internal": "ask"
+     }
+    },
+    {
+     "kind": "crm_note",
+     "description": "Add a CRM note.",
+     "default_mode": {
+      "external": "auto"
+     }
+    },
+    {
+     "kind": "ledger_sync",
+     "description": "Sync the ledger."
+    },
+    {
+     "kind": "drop_all",
+     "description": "Never offered.",
+     "default_mode": "deny"
+    },
+    {
+     "kind": "drop_some",
+     "description": "Never offered either.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "deny"
+     }
+    },
+    {
+     "kind": "half_deny",
+     "description": "Denied outside.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "auto"
+     }
+    }
+   ],
+   "tool": "pack_actions_drop_all",
+   "arguments": {},
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "allow",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "slack_auto",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "auto_approve"
+     }
+    }
+   },
+   "error": "MCP error -32603: mcp-bridge: unknown tool pack_actions_drop_all",
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "pack argument faults",
+   "servers": [
+    "neko_pack_actions"
+   ],
+   "packActions": [
+    {
+     "kind": "magento_reindex",
+     "description": "Reindex a Magento index. Payload schema: {\"type\":\"object\"}.",
+     "default_mode": "ask",
+     "example": {
+      "index": "catalog"
+     }
+    },
+    {
+     "kind": "slack_post",
+     "description": "Post a Slack message.",
+     "scope": "internal",
+     "default_mode": "auto"
+    },
+    {
+     "kind": "crm_update",
+     "description": "Update a CRM record.",
+     "default_mode": {
+      "external": "auto",
+      "internal": "ask"
+     }
+    },
+    {
+     "kind": "crm_note",
+     "description": "Add a CRM note.",
+     "default_mode": {
+      "external": "auto"
+     }
+    },
+    {
+     "kind": "ledger_sync",
+     "description": "Sync the ledger."
+    },
+    {
+     "kind": "drop_all",
+     "description": "Never offered.",
+     "default_mode": "deny"
+    },
+    {
+     "kind": "drop_some",
+     "description": "Never offered either.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "deny"
+     }
+    },
+    {
+     "kind": "half_deny",
+     "description": "Denied outside.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "auto"
+     }
+    }
+   ],
+   "tool": "pack_actions_crm_update",
+   "arguments": {
+    "intent": "no",
+    "target": 5,
+    "risk_level": "none",
+    "payload": []
+   },
+   "replies": {},
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool crm_update: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 3,\n    \"inclusive\": true,\n    \"path\": [\n      \"intent\"\n    ],\n    \"message\": \"Too small: expected string to have >=3 characters\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"target\"\n    ],\n    \"message\": \"Invalid input: expected string, received number\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"low\",\n      \"medium\",\n      \"high\",\n      \"critical\"\n    ],\n    \"path\": [\n      \"risk_level\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"low\\\"|\\\"medium\\\"|\\\"high\\\"|\\\"critical\\\"\"\n  },\n  {\n    \"expected\": \"record\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"payload\"\n    ],\n    \"message\": \"Invalid input: expected record, received array\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "pack wait fails",
+   "servers": [
+    "neko_pack_actions"
+   ],
+   "packActions": [
+    {
+     "kind": "magento_reindex",
+     "description": "Reindex a Magento index. Payload schema: {\"type\":\"object\"}.",
+     "default_mode": "ask",
+     "example": {
+      "index": "catalog"
+     }
+    },
+    {
+     "kind": "slack_post",
+     "description": "Post a Slack message.",
+     "scope": "internal",
+     "default_mode": "auto"
+    },
+    {
+     "kind": "crm_update",
+     "description": "Update a CRM record.",
+     "default_mode": {
+      "external": "auto",
+      "internal": "ask"
+     }
+    },
+    {
+     "kind": "crm_note",
+     "description": "Add a CRM note.",
+     "default_mode": {
+      "external": "auto"
+     }
+    },
+    {
+     "kind": "ledger_sync",
+     "description": "Sync the ledger."
+    },
+    {
+     "kind": "drop_all",
+     "description": "Never offered.",
+     "default_mode": "deny"
+    },
+    {
+     "kind": "drop_some",
+     "description": "Never offered either.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "deny"
+     }
+    },
+    {
+     "kind": "half_deny",
+     "description": "Denied outside.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "auto"
+     }
+    }
+   ],
+   "tool": "pack_actions_slack_post",
+   "arguments": {},
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "allow",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "slack_auto",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "auto_approve"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "approved"
+     }
+    },
+    "waitForActionExecution": {
+     "throws": "broker /v1/action/wait unreachable"
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "broker /v1/action/wait unreachable"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "slack_post",
+      "target": null,
+      "payload": {},
+      "riskLevel": null
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "slack_post",
+      "target": null,
+      "payload": {},
+      "riskLevel": null,
+      "status": "approved",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Auto-fired slack_post (no explicit intent supplied).",
+      "intent": "Auto-fired slack_post (no explicit intent supplied).",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    },
+    {
+     "method": "enqueueActionExecute",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "actionRequestId": "99999999-9999-4999-8999-999999999999"
+     }
+    },
+    {
+     "method": "waitForActionExecution",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "actionRequestId": "99999999-9999-4999-8999-999999999999",
+      "timeoutMs": 45000
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "slack_post",
+     "scope": "internal",
+     "decision": "auto_approved",
+     "summary": "Auto-fired slack_post (no explicit intent supplied)."
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "pack create fails",
+   "servers": [
+    "neko_pack_actions"
+   ],
+   "packActions": [
+    {
+     "kind": "magento_reindex",
+     "description": "Reindex a Magento index. Payload schema: {\"type\":\"object\"}.",
+     "default_mode": "ask",
+     "example": {
+      "index": "catalog"
+     }
+    },
+    {
+     "kind": "slack_post",
+     "description": "Post a Slack message.",
+     "scope": "internal",
+     "default_mode": "auto"
+    },
+    {
+     "kind": "crm_update",
+     "description": "Update a CRM record.",
+     "default_mode": {
+      "external": "auto",
+      "internal": "ask"
+     }
+    },
+    {
+     "kind": "crm_note",
+     "description": "Add a CRM note.",
+     "default_mode": {
+      "external": "auto"
+     }
+    },
+    {
+     "kind": "ledger_sync",
+     "description": "Sync the ledger."
+    },
+    {
+     "kind": "drop_all",
+     "description": "Never offered.",
+     "default_mode": "deny"
+    },
+    {
+     "kind": "drop_some",
+     "description": "Never offered either.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "deny"
+     }
+    },
+    {
+     "kind": "half_deny",
+     "description": "Denied outside.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "auto"
+     }
+    }
+   ],
+   "tool": "pack_actions_magento_reindex",
+   "arguments": {
+    "intent": "Reindex the catalog"
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "throws": "action preflight failed: store offline"
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "action preflight failed: store offline"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "magento_reindex",
+      "target": null,
+      "payload": {},
+      "riskLevel": null
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "magento_reindex",
+      "target": null,
+      "payload": {},
+      "riskLevel": null,
+      "status": "pending_approval",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Reindex the catalog",
+      "intent": "Reindex the catalog",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "pack events fail",
+   "servers": [
+    "neko_pack_actions"
+   ],
+   "packActions": [
+    {
+     "kind": "magento_reindex",
+     "description": "Reindex a Magento index. Payload schema: {\"type\":\"object\"}.",
+     "default_mode": "ask",
+     "example": {
+      "index": "catalog"
+     }
+    },
+    {
+     "kind": "slack_post",
+     "description": "Post a Slack message.",
+     "scope": "internal",
+     "default_mode": "auto"
+    },
+    {
+     "kind": "crm_update",
+     "description": "Update a CRM record.",
+     "default_mode": {
+      "external": "auto",
+      "internal": "ask"
+     }
+    },
+    {
+     "kind": "crm_note",
+     "description": "Add a CRM note.",
+     "default_mode": {
+      "external": "auto"
+     }
+    },
+    {
+     "kind": "ledger_sync",
+     "description": "Sync the ledger."
+    },
+    {
+     "kind": "drop_all",
+     "description": "Never offered.",
+     "default_mode": "deny"
+    },
+    {
+     "kind": "drop_some",
+     "description": "Never offered either.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "deny"
+     }
+    },
+    {
+     "kind": "half_deny",
+     "description": "Denied outside.",
+     "default_mode": {
+      "external": "deny",
+      "internal": "auto"
+     }
+    }
+   ],
+   "tool": "pack_actions_magento_reindex",
+   "arguments": {
+    "intent": "Reindex the catalog"
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    }
+   },
+   "eventsFail": true,
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "broker /v1/events -> 500"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "magento_reindex",
+      "target": null,
+      "payload": {},
+      "riskLevel": null
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "external",
+      "kind": "magento_reindex",
+      "target": null,
+      "payload": {},
+      "riskLevel": null,
+      "status": "pending_approval",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Reindex the catalog",
+      "intent": "Reindex the catalog",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    }
+   ],
+   "events": [],
    "files": {}
   }
  ]

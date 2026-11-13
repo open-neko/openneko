@@ -27,6 +27,8 @@ type turnBinding struct {
 	GraphjinToolPolicy           string
 	WantsCards                   bool
 	CardSchema, SkillsRoot       string
+	WorkflowRunID, ObservationID string
+	PackActions                  []packActionDescriptor
 }
 
 func (b turnBinding) trace() traceBinding {
@@ -114,6 +116,11 @@ type toolBackend interface {
 	listGraphjinTools(ctx context.Context, in graphjinCaller) (any, error)
 	callGraphjinTool(ctx context.Context, in graphjinToolCall) (any, error)
 	emitEvent(ctx context.Context, event any) error
+	evaluatePolicy(ctx context.Context, in policyIn) (any, error)
+	createActionRequest(ctx context.Context, in *jsObj) (any, error)
+	enqueueAction(ctx context.Context, in actionRefIn) error
+	waitForAction(ctx context.Context, in actionWaitIn) (any, error)
+	emitOutput(ctx context.Context, in outputIn) (any, error)
 }
 
 var memoryKindEnum = []string{"preference", "business_rule", "metric_definition", "thread_note", "correction", "company_context", "other"}
@@ -143,6 +150,21 @@ func turnTools(b turnBinding, be toolBackend, servers []string) (*toolServer, er
 			groups = append(groups, toolGroup{dynamic: cardTools(b, be)})
 		case "neko_skills":
 			groups = append(groups, toolGroup{static: skillTools(b)})
+		case "neko_action", "neko_workflow_output":
+			if b.WorkflowRunID == "" {
+				return nil, fmt.Errorf("mcp-bridge: %s requires workflowRunId", name)
+			}
+			if name == "neko_action" {
+				groups = append(groups, toolGroup{static: actionTools(b, be)})
+			} else {
+				groups = append(groups, toolGroup{static: outputTools(b, be)})
+			}
+		case "neko_pack_actions":
+			tools := packActionTools(b, be)
+			if len(tools) == 0 {
+				return nil, errors.New("mcp-bridge: no pack actions in this run")
+			}
+			groups = append(groups, toolGroup{static: tools})
 		default:
 			return nil, fmt.Errorf("mcp-bridge: unknown server %s", name)
 		}

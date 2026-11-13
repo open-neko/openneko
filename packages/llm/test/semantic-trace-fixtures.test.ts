@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createScrubber } from "../src/work/secret-scrubber";
 import {
   registerWorkSemanticTraceSink,
+  traceActionPolicy,
   traceFileSearch,
   traceGraphjinToolCall,
   traceGraphjinToolsList,
@@ -19,8 +20,17 @@ const FIXTURE = join(__dirname, "../../../apps/openneko/internal/webfront/testda
 
 type TraceCase = {
   name: string;
-  operation: "memory.search" | "files.search" | "graphjin.tools_list" | "graphjin.call";
-  request: { query?: string; limit?: number; name?: string; arguments?: Record<string, unknown> };
+  operation: "memory.search" | "files.search" | "graphjin.tools_list" | "graphjin.call" | "action.policy";
+  request: {
+    query?: string;
+    limit?: number;
+    name?: string;
+    arguments?: Record<string, unknown>;
+    scope?: "internal" | "external";
+    kind?: string;
+    target?: string | null;
+    riskLevel?: string | null;
+  };
   reply: { value?: unknown; throws?: string };
   secrets?: string[];
 };
@@ -155,6 +165,46 @@ const CASES: TraceCase[] = [
     reply: { throws: "No data source is available to this run." },
     secrets: [],
   },
+  {
+    name: "policy allows",
+    operation: "action.policy",
+    request: { scope: "external", kind: "slack_post", target: "C123", riskLevel: "low" },
+    reply: {
+      value: {
+        decision: "allow",
+        policy: { id: "88888888-8888-4888-8888-888888888888", orgId: "org-1", name: "slack_auto", allowedTargets: { patterns: [SECRET] }, priority: 100, createdAt: "2026-11-13T00:00:00.000Z" },
+        mode: "auto_approve",
+      },
+    },
+    secrets: [SECRET],
+  },
+  {
+    name: "policy needs approval without target",
+    operation: "action.policy",
+    request: { scope: "internal", kind: "user_admin", target: null, riskLevel: null },
+    reply: { value: { decision: "needs_approval", policy: { id: "p-2", name: "user_management_default" }, mode: "approval_required", reason: "policy \"user_management_default\" mode=approval_required" } },
+    secrets: [],
+  },
+  {
+    name: "policy denies by name only",
+    operation: "action.policy",
+    request: { scope: "external", kind: "send_email", target: "", riskLevel: "high" },
+    reply: { value: { decision: "deny", policy: { name: "no_email" }, mode: "never", reason: "policy \"no_email\" mode=never" } },
+  },
+  {
+    name: "policy finds none",
+    operation: "action.policy",
+    request: { scope: "external", kind: "crm_update", target: "lead/7", riskLevel: null },
+    reply: { value: { decision: "no_policy", reason: "no_matching_policy" } },
+    secrets: [SECRET],
+  },
+  {
+    name: "policy check fails",
+    operation: "action.policy",
+    request: { scope: "external", kind: "slack_post", target: "C123", riskLevel: null },
+    reply: { throws: `policy store is down: ${SECRET}` },
+    secrets: [SECRET],
+  },
 ];
 
 function stable(event: WorkSemanticTraceEvent) {
@@ -188,6 +238,17 @@ describe("semantic trace fixtures for the Go trace", () => {
             return traceFileSearch({ binding, request: c.request as { query: string }, execute });
           case "graphjin.tools_list":
             return traceGraphjinToolsList({ binding, execute });
+          case "action.policy":
+            return traceActionPolicy({
+              binding,
+              request: {
+                scope: c.request.scope ?? "external",
+                kind: c.request.kind ?? "",
+                target: c.request.target ?? null,
+                riskLevel: c.request.riskLevel ?? null,
+              },
+              execute: execute as () => Promise<{ decision: "allow" | "needs_approval" | "deny" | "no_policy" }>,
+            });
           case "graphjin.call":
             return traceGraphjinToolCall({
               binding,

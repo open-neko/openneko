@@ -68,6 +68,7 @@ export {
   setWorkflowOutputDeliveryHook,
   type WorkflowOutputDeliveryHook,
 } from "./output-server";
+export { notifyWorkflowOutputDeliveryHook } from "./output-delivery";
 export { buildWorkflowRunnerPrompt } from "./runner-prompt";
 export {
   runWorkflowAgentBackend,

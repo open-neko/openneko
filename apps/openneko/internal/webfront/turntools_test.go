@@ -21,10 +21,16 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+type fakeReply struct {
+	value  any
+	throws string
+}
+
 type fakeTools struct {
 	mu         sync.Mutex
 	reply      any
 	throws     string
+	replies    map[string]fakeReply
 	calls      []any
 	audits     []string
 	gjTools    any
@@ -37,10 +43,33 @@ func (f *fakeTools) record(method string, in any) (any, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, map[string]any{"method": method, "input": decodeAny(mustJSON(in))})
+	if own, ok := f.replies[method]; ok {
+		if own.throws != "" {
+			return nil, errors.New(own.throws)
+		}
+		return own.value, nil
+	}
 	if f.throws != "" {
 		return nil, errors.New(f.throws)
 	}
 	return f.reply, nil
+}
+
+func (f *fakeTools) evaluatePolicy(_ context.Context, in policyIn) (any, error) {
+	return f.record("evaluateActionPolicy", in)
+}
+func (f *fakeTools) createActionRequest(_ context.Context, in *jsObj) (any, error) {
+	return f.record("createActionRequest", in)
+}
+func (f *fakeTools) enqueueAction(_ context.Context, in actionRefIn) error {
+	_, err := f.record("enqueueActionExecute", in)
+	return err
+}
+func (f *fakeTools) waitForAction(_ context.Context, in actionWaitIn) (any, error) {
+	return f.record("waitForActionExecution", in)
+}
+func (f *fakeTools) emitOutput(_ context.Context, in outputIn) (any, error) {
+	return f.record("emitWorkflowOutput", in)
 }
 
 func (f *fakeTools) recordID(method string, in any) (string, error) {
@@ -126,6 +155,23 @@ func compactJSON(t *testing.T, raw []byte) string {
 var fixtureBinding = turnBinding{OrgID: "11111111-1111-4111-8111-111111111111", ThreadID: "22222222-2222-4222-8222-222222222222",
 	RunID: "33333333-3333-4333-8333-333333333333", Kind: "work"}
 
+type fixtureReply struct {
+	Value  json.RawMessage
+	Throws string
+}
+
+func (r fixtureReply) fake(t *testing.T) fakeReply {
+	out := fakeReply{throws: r.Throws}
+	if len(r.Value) > 0 {
+		v, err := jsParse(r.Value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out.value = v
+	}
+	return out
+}
+
 func callTool(t *testing.T, s *toolServer, name string, args any) (string, *rpcError) {
 	t.Helper()
 	params := map[string]any{"name": name}
@@ -154,6 +200,8 @@ func TestTurnToolsMatchNode(t *testing.T) {
 			CardSchema     string
 			GraphjinTools  json.RawMessage
 			ListThrows     string
+			WorkflowRunID  string
+			PackActions    []packActionDescriptor
 			Tools          json.RawMessage
 		}
 		Calls []struct {
@@ -167,23 +215,24 @@ func TestTurnToolsMatchNode(t *testing.T) {
 			EventsFail     bool
 			GraphjinTools  json.RawMessage
 			ListThrows     string
+			WorkflowRunID  string
+			ObservationID  string
+			PackActions    []packActionDescriptor
 			Tool           string
 			Arguments      json.RawMessage
-			Reply          *struct {
-				Value  json.RawMessage
-				Throws string
-			}
-			Result       json.RawMessage
-			Error        string
-			ControlPlane json.RawMessage
-			Events       json.RawMessage
-			Files        map[string]string
+			Reply          *fixtureReply
+			Replies        map[string]fixtureReply
+			Result         json.RawMessage
+			Error          string
+			ControlPlane   json.RawMessage
+			Events         json.RawMessage
+			Files          map[string]string
 		}
 	}
 	if err := json.Unmarshal(raw, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if len(fixture.Lists) != 8 || len(fixture.Calls) < 119 {
+	if len(fixture.Lists) != 9 || len(fixture.Calls) < 155 {
 		t.Fatalf("fixture holds %d lists and %d calls", len(fixture.Lists), len(fixture.Calls))
 	}
 	gjTools := func(own json.RawMessage) any {
@@ -201,6 +250,8 @@ func TestTurnToolsMatchNode(t *testing.T) {
 		b.MemoryReadOnly = list.MemoryReadOnly
 		b.GraphjinToolPolicy = list.Policy
 		b.CardSchema = list.CardSchema
+		b.WorkflowRunID = list.WorkflowRunID
+		b.PackActions = list.PackActions
 		s, err := turnTools(b, &fakeTools{gjTools: gjTools(list.GraphjinTools), listThrows: list.ListThrows}, list.Servers)
 		if err != nil {
 			t.Fatal(err)
@@ -220,14 +271,14 @@ func TestTurnToolsMatchNode(t *testing.T) {
 		b.WantsCards = c.WantsCards
 		b.CardSchema = c.CardSchema
 		b.SkillsRoot = t.TempDir()
-		fake := &fakeTools{gjTools: gjTools(c.GraphjinTools), listThrows: c.ListThrows, eventsFail: c.EventsFail}
+		b.WorkflowRunID, b.ObservationID, b.PackActions = c.WorkflowRunID, c.ObservationID, c.PackActions
+		fake := &fakeTools{gjTools: gjTools(c.GraphjinTools), listThrows: c.ListThrows, eventsFail: c.EventsFail, replies: map[string]fakeReply{}}
 		if c.Reply != nil {
-			fake.throws = c.Reply.Throws
-			if len(c.Reply.Value) > 0 {
-				if fake.reply, err = jsParse(c.Reply.Value); err != nil {
-					t.Fatal(err)
-				}
-			}
+			own := c.Reply.fake(t)
+			fake.reply, fake.throws = own.value, own.throws
+		}
+		for method, reply := range c.Replies {
+			fake.replies[method] = reply.fake(t)
 		}
 		s, err := turnTools(b, fake, c.Servers)
 		if err != nil {
@@ -323,6 +374,10 @@ func TestTurnTraceMatchesNode(t *testing.T) {
 			Limit     *int
 			Name      string
 			Arguments json.RawMessage
+			Scope     string
+			Kind      string
+			Target    *string
+			RiskLevel *string
 		}
 		Reply struct {
 			Value  json.RawMessage
@@ -337,7 +392,7 @@ func TestTurnTraceMatchesNode(t *testing.T) {
 	if err := json.Unmarshal(raw, &cases); err != nil {
 		t.Fatal(err)
 	}
-	if len(cases) != 13 {
+	if len(cases) != 18 {
 		t.Fatalf("fixture holds %d cases", len(cases))
 	}
 	for _, c := range cases {
@@ -379,6 +434,8 @@ func TestTurnTraceMatchesNode(t *testing.T) {
 				_, _ = traceGraphjinToolsList(binding, execute)
 			case "graphjin.call":
 				_, _ = traceGraphjinToolCall(binding, c.Request.Name, args, execute)
+			case "action.policy":
+				_, _ = traceActionPolicy(binding, c.Request.Scope, c.Request.Kind, c.Request.Target, c.Request.RiskLevel, execute)
 			default:
 				t.Fatalf("operation %s", c.Operation)
 			}

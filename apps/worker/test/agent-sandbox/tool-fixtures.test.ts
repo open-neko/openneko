@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildMultiplexedBridgeServer } from "../../src/agent-sandbox/mcp-bridge.js";
 import type { BrokerControlPlane } from "../../src/agent-sandbox/broker-client.js";
-import { parseGraphjinMcpToolPolicy } from "@neko/llm/sandbox-runtime";
+import { parseGraphjinMcpToolPolicy, type PackActionDescriptor } from "@neko/llm/sandbox-runtime";
 
 // The Go tool server (apps/openneko/internal/webfront/turntools.go) must list
 // the same tools and give the same results. Run with UPDATE_PROMPT_FIXTURES=1
@@ -27,9 +27,13 @@ type CallCase = {
   wantsCards?: boolean;
   cardSchema?: string;
   eventsFail?: boolean;
+  workflowRunId?: string;
+  observationId?: string;
+  packActions?: PackActionDescriptor[];
   tool: string;
   arguments?: unknown;
   reply?: Reply;
+  replies?: Record<string, Reply>;
 };
 
 const MEMORY = { id: "44444444-4444-4444-8444-444444444444", text: "Revenue is net of refunds.", kind: "business_rule", scope: "global", userId: null };
@@ -197,7 +201,74 @@ CALLS.push(
   { name: "cards and ask together", servers: ["neko_interaction", "neko_ui", "neko_skills"], wantsCards: true, tool: "ui_render_cards", arguments: { title: "Both", callout: "x" } },
 );
 
-type ListCase = { name: string; servers: string[]; memoryReadOnly?: boolean; policy?: string; graphjinTools?: unknown[]; listThrows?: string; cardSchema?: string };
+const WF_RUN = "66666666-6666-4666-8666-666666666666";
+const OBSERVATION = "77777777-7777-4777-8777-777777777777";
+const POLICY = { id: "88888888-8888-4888-8888-888888888888", name: "slack_auto", mode: "auto_approve", priority: 100 };
+const ALLOW = { decision: "allow", policy: POLICY, mode: "auto_approve" };
+const NEEDS_APPROVAL = { decision: "needs_approval", policy: { ...POLICY, name: "external_default" }, mode: "approval_required", reason: "policy \"external_default\" mode=approval_required" };
+const DENY = { decision: "deny", policy: { ...POLICY, name: "no_email" }, mode: "never", reason: "policy \"no_email\" mode=never" };
+const NONE = { decision: "no_policy", reason: "no_matching_policy" };
+const REQ = "99999999-9999-4999-8999-999999999999";
+const APPROVED = { id: REQ, status: "approved" };
+const PENDING = { id: REQ, status: "pending_approval" };
+const ACTION = ["neko_action"];
+const OUTPUT = ["neko_workflow_output"];
+const PACK = ["neko_pack_actions"];
+const SLACK_ARGS = { scope: "external", kind: "slack_post", target: "C123", payload: { text: "Stock is low", nested: { a: [1, null] } }, risk_level: "low", summary: "Post the low stock list to #ops", minutes_saved: 8, basis: "Typing the list by hand" };
+const PACK_ACTIONS: PackActionDescriptor[] = [
+  { kind: "magento_reindex", description: "Reindex a Magento index. Payload schema: {\"type\":\"object\"}.", default_mode: "ask", example: { index: "catalog" } },
+  { kind: "slack_post", description: "Post a Slack message.", scope: "internal", default_mode: "auto" },
+  { kind: "crm_update", description: "Update a CRM record.", default_mode: { external: "auto", internal: "ask" } },
+  { kind: "crm_note", description: "Add a CRM note.", default_mode: { external: "auto" } },
+  { kind: "ledger_sync", description: "Sync the ledger." },
+  { kind: "drop_all", description: "Never offered.", default_mode: "deny" },
+  { kind: "drop_some", description: "Never offered either.", default_mode: { external: "deny", internal: "deny" } },
+  { kind: "half_deny", description: "Denied outside.", default_mode: { external: "deny", internal: "auto" } },
+];
+const RAN = { status: "succeeded", outcome: { result: { ts: "1700000000.1" }, externalRef: "C123/1700000000.1", commandOrOperation: "chat.postMessage" } };
+const OUT = { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", orgId: "11111111-1111-4111-8111-111111111111", kind: "finding", title: "Low stock", seenCount: 1, createdAt: "2026-11-13T00:00:00.000Z" };
+const pack = (name: string, tool: string, args: unknown, replies: Record<string, Reply>, extra: Partial<CallCase> = {}): CallCase =>
+  ({ name, servers: PACK, packActions: PACK_ACTIONS, tool, arguments: args, replies, ...extra });
+
+CALLS.push(
+  { name: "action auto approved", servers: ACTION, workflowRunId: WF_RUN, observationId: OBSERVATION, tool: "action_request", arguments: SLACK_ARGS, replies: { evaluateActionPolicy: { value: ALLOW }, createActionRequest: { value: APPROVED } } },
+  { name: "action needs approval", servers: ACTION, workflowRunId: WF_RUN, tool: "action_request", arguments: { ...SLACK_ARGS, minutes_saved: 600 }, replies: { evaluateActionPolicy: { value: NEEDS_APPROVAL }, createActionRequest: { value: PENDING } } },
+  { name: "action allowed but held by preflight", servers: ACTION, workflowRunId: WF_RUN, tool: "action_request", arguments: { scope: "internal", kind: " slack_post ", summary: "  Post it  " }, replies: { evaluateActionPolicy: { value: ALLOW }, createActionRequest: { value: PENDING } } },
+  { name: "action denied", servers: ACTION, workflowRunId: WF_RUN, tool: "action_request", arguments: SLACK_ARGS, replies: { evaluateActionPolicy: { value: DENY } } },
+  { name: "action no policy", servers: ACTION, workflowRunId: WF_RUN, tool: "action_request", arguments: SLACK_ARGS, replies: { evaluateActionPolicy: { value: NONE } } },
+  { name: "action policy fails", servers: ACTION, workflowRunId: WF_RUN, tool: "action_request", arguments: SLACK_ARGS, replies: { evaluateActionPolicy: { throws: "policy store is down" } } },
+  { name: "action create fails", servers: ACTION, workflowRunId: WF_RUN, tool: "action_request", arguments: SLACK_ARGS, replies: { evaluateActionPolicy: { value: ALLOW }, createActionRequest: { throws: "action slack_post is not available to this run" } } },
+  { name: "action enqueue fails", servers: ACTION, workflowRunId: WF_RUN, tool: "action_request", arguments: SLACK_ARGS, replies: { evaluateActionPolicy: { value: ALLOW }, createActionRequest: { value: APPROVED }, enqueueActionExecute: { throws: "the job queue is not ready" } } },
+  { name: "action events fail", servers: ACTION, workflowRunId: WF_RUN, eventsFail: true, tool: "action_request", arguments: SLACK_ARGS, replies: { evaluateActionPolicy: { value: NEEDS_APPROVAL }, createActionRequest: { value: PENDING } } },
+  { name: "action argument faults", servers: ACTION, workflowRunId: WF_RUN, tool: "action_request", arguments: { scope: "outside", kind: "  ", target: "", payload: [1], risk_level: "huge", minutes_saved: 1.5, basis: "b".repeat(161), extra: true } },
+  { name: "action missing fields", servers: ACTION, workflowRunId: WF_RUN, tool: "action_request", arguments: {} },
+  { name: "action minutes out of range", servers: ACTION, workflowRunId: WF_RUN, tool: "action_request", arguments: { ...SLACK_ARGS, minutes_saved: -1, summary: "s".repeat(2001), kind: 7 } },
+  { name: "output full", servers: OUTPUT, workflowRunId: WF_RUN, tool: "workflow_output_emit", arguments: { kind: "finding", title: "Low stock", body: "Three items", payload: { skus: ["A", "B"] }, artifactPath: "out/low.csv", scope: "inventory", topic: "stock", mood: "act", timeWindowStart: "2026-11-01T00:00Z", timeWindowEnd: "2026-11-13T09:30:15.1239Z", freshnessTtlSeconds: 3600 }, replies: { emitWorkflowOutput: { value: OUT } } },
+  { name: "output kind only", servers: OUTPUT, workflowRunId: WF_RUN, tool: "workflow_output_emit", arguments: { kind: "summary" }, replies: { emitWorkflowOutput: { value: { ...OUT, kind: "summary" } } } },
+  { name: "output whole seconds", servers: OUTPUT, workflowRunId: WF_RUN, tool: "workflow_output_emit", arguments: { kind: "report", timeWindowStart: "2024-02-29T23:59:59Z", timeWindowEnd: "2026-11-13T09:30:15.5Z" }, replies: { emitWorkflowOutput: { value: OUT } } },
+  { name: "output fails", servers: OUTPUT, workflowRunId: WF_RUN, tool: "workflow_output_emit", arguments: { kind: "finding" }, replies: { emitWorkflowOutput: { throws: "workflow run not found" } } },
+  { name: "output events fail", servers: OUTPUT, workflowRunId: WF_RUN, eventsFail: true, tool: "workflow_output_emit", arguments: { kind: "finding" }, replies: { emitWorkflowOutput: { value: OUT } } },
+  { name: "output argument faults", servers: OUTPUT, workflowRunId: WF_RUN, tool: "workflow_output_emit", arguments: { kind: "memo", title: "t".repeat(241), payload: "x", mood: "bad", timeWindowStart: "2026-11-01", timeWindowEnd: "2026-11-01T00:00:00+02:00", freshnessTtlSeconds: 0 } },
+  { name: "output date faults", servers: OUTPUT, workflowRunId: WF_RUN, tool: "workflow_output_emit", arguments: { kind: "finding", timeWindowStart: "2027-02-29T00:00:00Z", timeWindowEnd: 5, freshnessTtlSeconds: 1.5, scope: 3 } },
+  { name: "output ttl too big", servers: OUTPUT, workflowRunId: WF_RUN, tool: "workflow_output_emit", arguments: { kind: "finding", freshnessTtlSeconds: 31_536_001, topic: "t".repeat(121) } },
+  pack("pack auto runs", "pack_actions_slack_post", { target: "C123", risk_level: "low", payload: { text: "hi" } }, { evaluateActionPolicy: { value: ALLOW }, createActionRequest: { value: APPROVED }, waitForActionExecution: { value: RAN } }),
+  pack("pack auto fails", "pack_actions_slack_post", { payload: { text: "hi" } }, { evaluateActionPolicy: { value: ALLOW }, createActionRequest: { value: APPROVED }, waitForActionExecution: { value: { status: "failed", error: "channel_not_found" } } }),
+  pack("pack auto still running", "pack_actions_slack_post", { intent: "Tell ops", target: "" }, { evaluateActionPolicy: { value: ALLOW }, createActionRequest: { value: APPROVED }, waitForActionExecution: { value: { status: "timeout" } } }),
+  pack("pack ask", "pack_actions_magento_reindex", { intent: "Reindex the catalog so prices show", payload: { index: "catalog" }, risk_level: "medium" }, { evaluateActionPolicy: { value: NEEDS_APPROVAL }, createActionRequest: { value: PENDING } }),
+  pack("pack ask no risk", "pack_actions_magento_reindex", { intent: "Reindex the catalog" }, { evaluateActionPolicy: { value: NEEDS_APPROVAL }, createActionRequest: { value: PENDING } }),
+  pack("pack ask without intent", "pack_actions_magento_reindex", { payload: {} }, {}),
+  pack("pack auto escalated", "pack_actions_slack_post", { target: "lead/7" }, { evaluateActionPolicy: { value: NEEDS_APPROVAL }, createActionRequest: { value: PENDING } }),
+  pack("pack denied", "pack_actions_crm_note", { intent: "Note it" }, { evaluateActionPolicy: { value: DENY } }),
+  pack("pack no policy", "pack_actions_ledger_sync", {}, { evaluateActionPolicy: { value: NONE } }),
+  pack("pack half denied", "pack_actions_half_deny", {}, { evaluateActionPolicy: { value: ALLOW }, createActionRequest: { value: APPROVED }, waitForActionExecution: { value: RAN } }),
+  pack("pack denied kind hidden", "pack_actions_drop_all", {}, { evaluateActionPolicy: { value: ALLOW } }),
+  pack("pack argument faults", "pack_actions_crm_update", { intent: "no", target: 5, risk_level: "none", payload: [] }, {}),
+  pack("pack wait fails", "pack_actions_slack_post", {}, { evaluateActionPolicy: { value: ALLOW }, createActionRequest: { value: APPROVED }, waitForActionExecution: { throws: "broker /v1/action/wait unreachable" } }),
+  pack("pack create fails", "pack_actions_magento_reindex", { intent: "Reindex the catalog" }, { evaluateActionPolicy: { value: NEEDS_APPROVAL }, createActionRequest: { throws: "action preflight failed: store offline" } }),
+  pack("pack events fail", "pack_actions_magento_reindex", { intent: "Reindex the catalog" }, { evaluateActionPolicy: { value: NEEDS_APPROVAL }, createActionRequest: { value: PENDING } }, { eventsFail: true }),
+);
+
+type ListCase = { name: string; servers: string[]; memoryReadOnly?: boolean; policy?: string; graphjinTools?: unknown[]; listThrows?: string; cardSchema?: string; workflowRunId?: string; packActions?: PackActionDescriptor[] };
 
 const LISTS: ListCase[] = [
   { name: "memory, guides and files", servers: ["neko_memory", "neko_guides", "neko_files"] },
@@ -208,6 +279,7 @@ const LISTS: ListCase[] = [
   { name: "graphjin lists nothing", servers: ["neko_graphjin"], graphjinTools: [] },
   { name: "interaction, cards and skills", servers: ["neko_interaction", "neko_ui", "neko_skills"] },
   { name: "rich cards", servers: ["neko_ui", "neko_memory"], cardSchema: "rich" },
+  { name: "workflow action, output and pack actions", servers: ["neko_action", "neko_workflow_output", "neko_pack_actions"], workflowRunId: WF_RUN, packActions: PACK_ACTIONS },
 ];
 
 const METHODS = [
@@ -218,19 +290,25 @@ const METHODS = [
   "searchFilesForRun",
   "readFileForRun",
   "queryFileTablesForRun",
+  "evaluateActionPolicy",
+  "createActionRequest",
+  "enqueueActionExecute",
+  "waitForActionExecution",
+  "emitWorkflowOutput",
 ];
 
 function fakeControlPlane(
   reply: Reply | undefined,
   calls: unknown[],
-  graphjin: { graphjinTools?: unknown[]; listThrows?: string } = {},
+  graphjin: { graphjinTools?: unknown[]; listThrows?: string; replies?: Record<string, Reply> } = {},
 ): BrokerControlPlane {
   const plane: Record<string, (input: unknown) => Promise<unknown>> = {};
   for (const method of [...METHODS, "callGraphjinTool"]) {
     plane[method] = async (input) => {
-      calls.push({ method, input });
-      if (reply?.throws) throw new Error(reply.throws);
-      return reply?.value;
+      calls.push({ method, input: JSON.parse(JSON.stringify(input)) });
+      const own = graphjin.replies?.[method] ?? reply;
+      if (own?.throws) throw new Error(own.throws);
+      return own?.value;
     };
   }
   plane.listGraphjinTools = async (input) => {
@@ -277,7 +355,7 @@ async function connect(
   memoryReadOnly: boolean,
   controlPlane: BrokerControlPlane,
   policy?: string,
-  extra: { skillsRoot?: string; brokerUrl?: string; wantsCards?: boolean; cardSchema?: string } = {},
+  extra: { skillsRoot?: string; brokerUrl?: string; wantsCards?: boolean; cardSchema?: string; workflowRunId?: string; observationId?: string; packActions?: PackActionDescriptor[] } = {},
 ) {
   const server = await buildMultiplexedBridgeServer(servers, {
     runKind: "work",
@@ -285,7 +363,9 @@ async function connect(
     threadId: "22222222-2222-4222-8222-222222222222",
     runId: "33333333-3333-4333-8333-333333333333",
     skillsRoot: extra.skillsRoot ?? "/tmp/skills",
-    packActions: [],
+    packActions: extra.packActions ?? [],
+    ...(extra.workflowRunId ? { workflowRunId: extra.workflowRunId } : {}),
+    ...(extra.observationId ? { triggeredByObservationId: extra.observationId } : {}),
     controlPlane,
     memoryReadOnly,
     ...(extra.brokerUrl ? { brokerUrl: extra.brokerUrl, brokerToken: "broker-token" } : {}),
@@ -304,7 +384,7 @@ describe("tool server fixtures for the Go broker", () => {
   it("matches the fixture the Go test reads", async () => {
     const lists = [];
     for (const list of LISTS) {
-      const client = await connect(list.servers, list.memoryReadOnly ?? false, fakeControlPlane(undefined, [], list), list.policy, { cardSchema: list.cardSchema });
+      const client = await connect(list.servers, list.memoryReadOnly ?? false, fakeControlPlane(undefined, [], list), list.policy, { cardSchema: list.cardSchema, workflowRunId: list.workflowRunId, packActions: list.packActions });
       lists.push({ ...list, tools: (await client.listTools()).tools });
       await client.close();
     }
@@ -320,6 +400,9 @@ describe("tool server fixtures for the Go broker", () => {
         brokerUrl: broker.url,
         wantsCards: call.wantsCards,
         cardSchema: call.cardSchema,
+        workflowRunId: call.workflowRunId,
+        observationId: call.observationId,
+        packActions: call.packActions,
       });
       let outcome: Record<string, unknown>;
       try {

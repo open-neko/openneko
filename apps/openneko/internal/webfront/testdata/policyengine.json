@@ -1,0 +1,2158 @@
+{
+ "decisions": [
+  {
+   "name": "no rules",
+   "subject": {
+    "scope": "external",
+    "kind": "slack_post"
+   },
+   "policies": [],
+   "decision": {
+    "decision": "no_policy",
+    "reason": "no_matching_policy"
+   }
+  },
+  {
+   "name": "external default asks",
+   "subject": {
+    "scope": "external",
+    "kind": "slack_post",
+    "target": "C1"
+   },
+   "policies": [
+    {
+     "id": "id-external_default",
+     "orgId": "org-1",
+     "name": "external_default",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 950,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-user_management_default",
+     "orgId": "org-1",
+     "name": "user_management_default",
+     "description": "",
+     "appliesToKinds": [
+      "user_admin"
+     ],
+     "appliesToScopes": [
+      "internal",
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 90,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "needs_approval",
+    "policy": {
+     "id": "id-external_default",
+     "orgId": "org-1",
+     "name": "external_default",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 950,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "approval_required",
+    "reason": "policy \"external_default\" mode=approval_required"
+   }
+  },
+  {
+   "name": "internal has no rule",
+   "subject": {
+    "scope": "internal",
+    "kind": "slack_post"
+   },
+   "policies": [
+    {
+     "id": "id-external_default",
+     "orgId": "org-1",
+     "name": "external_default",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 950,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-user_management_default",
+     "orgId": "org-1",
+     "name": "user_management_default",
+     "description": "",
+     "appliesToKinds": [
+      "user_admin"
+     ],
+     "appliesToScopes": [
+      "internal",
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 90,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "no_policy",
+    "reason": "no_matching_policy"
+   }
+  },
+  {
+   "name": "kind rule wins by priority",
+   "subject": {
+    "scope": "external",
+    "kind": "slack_post",
+    "riskLevel": "low"
+   },
+   "policies": [
+    {
+     "id": "id-external_default",
+     "orgId": "org-1",
+     "name": "external_default",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 950,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-user_management_default",
+     "orgId": "org-1",
+     "name": "user_management_default",
+     "description": "",
+     "appliesToKinds": [
+      "user_admin"
+     ],
+     "appliesToScopes": [
+      "internal",
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 90,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-slack_auto",
+     "orgId": "org-1",
+     "name": "slack_auto",
+     "description": "",
+     "appliesToKinds": [
+      "slack_post"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": "medium",
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "allow",
+    "policy": {
+     "id": "id-slack_auto",
+     "orgId": "org-1",
+     "name": "slack_auto",
+     "description": "",
+     "appliesToKinds": [
+      "slack_post"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": "medium",
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "auto_approve"
+   }
+  },
+  {
+   "name": "risk over threshold",
+   "subject": {
+    "scope": "external",
+    "kind": "slack_post",
+    "riskLevel": "high"
+   },
+   "policies": [
+    {
+     "id": "id-external_default",
+     "orgId": "org-1",
+     "name": "external_default",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 950,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-user_management_default",
+     "orgId": "org-1",
+     "name": "user_management_default",
+     "description": "",
+     "appliesToKinds": [
+      "user_admin"
+     ],
+     "appliesToScopes": [
+      "internal",
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 90,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-slack_auto",
+     "orgId": "org-1",
+     "name": "slack_auto",
+     "description": "",
+     "appliesToKinds": [
+      "slack_post"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": "medium",
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "needs_approval",
+    "policy": {
+     "id": "id-slack_auto",
+     "orgId": "org-1",
+     "name": "slack_auto",
+     "description": "",
+     "appliesToKinds": [
+      "slack_post"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": "medium",
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "approval_required",
+    "reason": "risk=high exceeds policy \"slack_auto\" auto-approve threshold (medium)"
+   }
+  },
+  {
+   "name": "risk at threshold",
+   "subject": {
+    "scope": "external",
+    "kind": "slack_post",
+    "riskLevel": "medium"
+   },
+   "policies": [
+    {
+     "id": "id-slack_auto",
+     "orgId": "org-1",
+     "name": "slack_auto",
+     "description": "",
+     "appliesToKinds": [
+      "slack_post"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": "medium",
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "allow",
+    "policy": {
+     "id": "id-slack_auto",
+     "orgId": "org-1",
+     "name": "slack_auto",
+     "description": "",
+     "appliesToKinds": [
+      "slack_post"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": "medium",
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "auto_approve"
+   }
+  },
+  {
+   "name": "unknown risk",
+   "subject": {
+    "scope": "external",
+    "kind": "slack_post",
+    "riskLevel": "extreme"
+   },
+   "policies": [
+    {
+     "id": "id-slack_auto",
+     "orgId": "org-1",
+     "name": "slack_auto",
+     "description": "",
+     "appliesToKinds": [
+      "slack_post"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": "medium",
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "allow",
+    "policy": {
+     "id": "id-slack_auto",
+     "orgId": "org-1",
+     "name": "slack_auto",
+     "description": "",
+     "appliesToKinds": [
+      "slack_post"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": "medium",
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "auto_approve"
+   }
+  },
+  {
+   "name": "user admin rule",
+   "subject": {
+    "scope": "internal",
+    "kind": "user_admin"
+   },
+   "policies": [
+    {
+     "id": "id-external_default",
+     "orgId": "org-1",
+     "name": "external_default",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 950,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-user_management_default",
+     "orgId": "org-1",
+     "name": "user_management_default",
+     "description": "",
+     "appliesToKinds": [
+      "user_admin"
+     ],
+     "appliesToScopes": [
+      "internal",
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 90,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "needs_approval",
+    "policy": {
+     "id": "id-user_management_default",
+     "orgId": "org-1",
+     "name": "user_management_default",
+     "description": "",
+     "appliesToKinds": [
+      "user_admin"
+     ],
+     "appliesToScopes": [
+      "internal",
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 90,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "approval_required",
+    "reason": "policy \"user_management_default\" mode=approval_required"
+   }
+  },
+  {
+   "name": "denied target",
+   "subject": {
+    "scope": "external",
+    "kind": "send_email",
+    "target": "a@rival.com",
+    "targets": [
+     "rival.com"
+    ]
+   },
+   "policies": [
+    {
+     "id": "id-external_default",
+     "orgId": "org-1",
+     "name": "external_default",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 950,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-user_management_default",
+     "orgId": "org-1",
+     "name": "user_management_default",
+     "description": "",
+     "appliesToKinds": [
+      "user_admin"
+     ],
+     "appliesToScopes": [
+      "internal",
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 90,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-block_rivals",
+     "orgId": "org-1",
+     "name": "block_rivals",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [],
+     "mode": "never",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": {
+      "patterns": [
+       "rival.com",
+       "*.rival.com"
+      ]
+     },
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 10,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-mail_list",
+     "orgId": "org-1",
+     "name": "mail_list",
+     "description": "",
+     "appliesToKinds": [
+      "send_email"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": {
+      "patterns": [
+       "acme.com",
+       "*.partner.io",
+       "https://hooks.acme.com/*"
+      ],
+      "on_miss": "next"
+     },
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 50,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "deny",
+    "policy": {
+     "id": "id-block_rivals",
+     "orgId": "org-1",
+     "name": "block_rivals",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [],
+     "mode": "never",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": {
+      "patterns": [
+       "rival.com",
+       "*.rival.com"
+      ]
+     },
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 10,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "never",
+    "reason": "target \"rival.com\" is in policy \"block_rivals\" denied_targets"
+   }
+  },
+  {
+   "name": "denied subdomain",
+   "subject": {
+    "scope": "external",
+    "kind": "send_email",
+    "targets": [
+     "eu.rival.com",
+     "acme.com"
+    ]
+   },
+   "policies": [
+    {
+     "id": "id-block_rivals",
+     "orgId": "org-1",
+     "name": "block_rivals",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [],
+     "mode": "never",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": {
+      "patterns": [
+       "rival.com",
+       "*.rival.com"
+      ]
+     },
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 10,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-mail_list",
+     "orgId": "org-1",
+     "name": "mail_list",
+     "description": "",
+     "appliesToKinds": [
+      "send_email"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": {
+      "patterns": [
+       "acme.com",
+       "*.partner.io",
+       "https://hooks.acme.com/*"
+      ],
+      "on_miss": "next"
+     },
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 50,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "deny",
+    "policy": {
+     "id": "id-block_rivals",
+     "orgId": "org-1",
+     "name": "block_rivals",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [],
+     "mode": "never",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": {
+      "patterns": [
+       "rival.com",
+       "*.rival.com"
+      ]
+     },
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 10,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "never",
+    "reason": "target \"eu.rival.com, acme.com\" is in policy \"block_rivals\" denied_targets"
+   }
+  },
+  {
+   "name": "denied by observe rule",
+   "subject": {
+    "scope": "internal",
+    "kind": "wipe",
+    "target": "anything"
+   },
+   "policies": [
+    {
+     "id": "id-block_observe",
+     "orgId": "org-1",
+     "name": "block_observe",
+     "description": "",
+     "appliesToKinds": [
+      "wipe"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": {
+      "patterns": [
+       "*"
+      ]
+     },
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 5,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "deny",
+    "policy": {
+     "id": "id-block_observe",
+     "orgId": "org-1",
+     "name": "block_observe",
+     "description": "",
+     "appliesToKinds": [
+      "wipe"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": {
+      "patterns": [
+       "*"
+      ]
+     },
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 5,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "observe_only",
+    "reason": "target \"anything\" is in policy \"block_observe\" denied_targets"
+   }
+  },
+  {
+   "name": "deny pattern needs a target",
+   "subject": {
+    "scope": "internal",
+    "kind": "wipe"
+   },
+   "policies": [
+    {
+     "id": "id-block_observe",
+     "orgId": "org-1",
+     "name": "block_observe",
+     "description": "",
+     "appliesToKinds": [
+      "wipe"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": {
+      "patterns": [
+       "*"
+      ]
+     },
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 5,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-external_default",
+     "orgId": "org-1",
+     "name": "external_default",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 950,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-user_management_default",
+     "orgId": "org-1",
+     "name": "user_management_default",
+     "description": "",
+     "appliesToKinds": [
+      "user_admin"
+     ],
+     "appliesToScopes": [
+      "internal",
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 90,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "allow",
+    "policy": {
+     "id": "id-block_observe",
+     "orgId": "org-1",
+     "name": "block_observe",
+     "description": "",
+     "appliesToKinds": [
+      "wipe"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": {
+      "patterns": [
+       "*"
+      ]
+     },
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 5,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "auto_approve"
+   }
+  },
+  {
+   "name": "allowed targets all match",
+   "subject": {
+    "scope": "external",
+    "kind": "send_email",
+    "targets": [
+     "acme.com",
+     "eu.partner.io"
+    ]
+   },
+   "policies": [
+    {
+     "id": "id-external_default",
+     "orgId": "org-1",
+     "name": "external_default",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 950,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-user_management_default",
+     "orgId": "org-1",
+     "name": "user_management_default",
+     "description": "",
+     "appliesToKinds": [
+      "user_admin"
+     ],
+     "appliesToScopes": [
+      "internal",
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 90,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-mail_list",
+     "orgId": "org-1",
+     "name": "mail_list",
+     "description": "",
+     "appliesToKinds": [
+      "send_email"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": {
+      "patterns": [
+       "acme.com",
+       "*.partner.io",
+       "https://hooks.acme.com/*"
+      ],
+      "on_miss": "next"
+     },
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 50,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "allow",
+    "policy": {
+     "id": "id-mail_list",
+     "orgId": "org-1",
+     "name": "mail_list",
+     "description": "",
+     "appliesToKinds": [
+      "send_email"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": {
+      "patterns": [
+       "acme.com",
+       "*.partner.io",
+       "https://hooks.acme.com/*"
+      ],
+      "on_miss": "next"
+     },
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 50,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "auto_approve"
+   }
+  },
+  {
+   "name": "allowed miss falls to next",
+   "subject": {
+    "scope": "external",
+    "kind": "send_email",
+    "targets": [
+     "acme.com",
+     "other.org"
+    ]
+   },
+   "policies": [
+    {
+     "id": "id-external_default",
+     "orgId": "org-1",
+     "name": "external_default",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 950,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-user_management_default",
+     "orgId": "org-1",
+     "name": "user_management_default",
+     "description": "",
+     "appliesToKinds": [
+      "user_admin"
+     ],
+     "appliesToScopes": [
+      "internal",
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 90,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-mail_list",
+     "orgId": "org-1",
+     "name": "mail_list",
+     "description": "",
+     "appliesToKinds": [
+      "send_email"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": {
+      "patterns": [
+       "acme.com",
+       "*.partner.io",
+       "https://hooks.acme.com/*"
+      ],
+      "on_miss": "next"
+     },
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 50,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "needs_approval",
+    "policy": {
+     "id": "id-external_default",
+     "orgId": "org-1",
+     "name": "external_default",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 950,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "approval_required",
+    "reason": "policy \"external_default\" mode=approval_required"
+   }
+  },
+  {
+   "name": "allowed miss denies",
+   "subject": {
+    "scope": "external",
+    "kind": "send_email",
+    "targets": [
+     "other.org"
+    ]
+   },
+   "policies": [
+    {
+     "id": "id-external_default",
+     "orgId": "org-1",
+     "name": "external_default",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 950,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-user_management_default",
+     "orgId": "org-1",
+     "name": "user_management_default",
+     "description": "",
+     "appliesToKinds": [
+      "user_admin"
+     ],
+     "appliesToScopes": [
+      "internal",
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 90,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-mail_strict",
+     "orgId": "org-1",
+     "name": "mail_strict",
+     "description": "",
+     "appliesToKinds": [
+      "send_email"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": {
+      "patterns": [
+       "acme.com"
+      ]
+     },
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 60,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "deny",
+    "policy": {
+     "id": "id-mail_strict",
+     "orgId": "org-1",
+     "name": "mail_strict",
+     "description": "",
+     "appliesToKinds": [
+      "send_email"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": {
+      "patterns": [
+       "acme.com"
+      ]
+     },
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 60,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "observe_only",
+    "reason": "target \"other.org\" is not in policy \"mail_strict\" allowed_targets"
+   }
+  },
+  {
+   "name": "allowed with no targets",
+   "subject": {
+    "scope": "external",
+    "kind": "send_email",
+    "targets": []
+   },
+   "policies": [
+    {
+     "id": "id-mail_strict",
+     "orgId": "org-1",
+     "name": "mail_strict",
+     "description": "",
+     "appliesToKinds": [
+      "send_email"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": {
+      "patterns": [
+       "acme.com"
+      ]
+     },
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 60,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-external_default",
+     "orgId": "org-1",
+     "name": "external_default",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 950,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-user_management_default",
+     "orgId": "org-1",
+     "name": "user_management_default",
+     "description": "",
+     "appliesToKinds": [
+      "user_admin"
+     ],
+     "appliesToScopes": [
+      "internal",
+      "external"
+     ],
+     "mode": "approval_required",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 90,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "deny",
+    "policy": {
+     "id": "id-mail_strict",
+     "orgId": "org-1",
+     "name": "mail_strict",
+     "description": "",
+     "appliesToKinds": [
+      "send_email"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": {
+      "patterns": [
+       "acme.com"
+      ]
+     },
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 60,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "observe_only",
+    "reason": "target \"\" is not in policy \"mail_strict\" allowed_targets"
+   }
+  },
+  {
+   "name": "allowed prefix pattern",
+   "subject": {
+    "scope": "external",
+    "kind": "send_email",
+    "target": "https://hooks.acme.com/x"
+   },
+   "policies": [
+    {
+     "id": "id-mail_list",
+     "orgId": "org-1",
+     "name": "mail_list",
+     "description": "",
+     "appliesToKinds": [
+      "send_email"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": {
+      "patterns": [
+       "acme.com",
+       "*.partner.io",
+       "https://hooks.acme.com/*"
+      ],
+      "on_miss": "next"
+     },
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 50,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "allow",
+    "policy": {
+     "id": "id-mail_list",
+     "orgId": "org-1",
+     "name": "mail_list",
+     "description": "",
+     "appliesToKinds": [
+      "send_email"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": {
+      "patterns": [
+       "acme.com",
+       "*.partner.io",
+       "https://hooks.acme.com/*"
+      ],
+      "on_miss": "next"
+     },
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 50,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "auto_approve"
+   }
+  },
+  {
+   "name": "bare subdomain pattern",
+   "subject": {
+    "scope": "external",
+    "kind": "send_email",
+    "target": "partner.io"
+   },
+   "policies": [
+    {
+     "id": "id-mail_list",
+     "orgId": "org-1",
+     "name": "mail_list",
+     "description": "",
+     "appliesToKinds": [
+      "send_email"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": {
+      "patterns": [
+       "acme.com",
+       "*.partner.io",
+       "https://hooks.acme.com/*"
+      ],
+      "on_miss": "next"
+     },
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 50,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-mail_strict",
+     "orgId": "org-1",
+     "name": "mail_strict",
+     "description": "",
+     "appliesToKinds": [
+      "send_email"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": {
+      "patterns": [
+       "acme.com"
+      ]
+     },
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 60,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "deny",
+    "policy": {
+     "id": "id-mail_strict",
+     "orgId": "org-1",
+     "name": "mail_strict",
+     "description": "",
+     "appliesToKinds": [
+      "send_email"
+     ],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": {
+      "patterns": [
+       "acme.com"
+      ]
+     },
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 60,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "observe_only",
+    "reason": "target \"partner.io\" is not in policy \"mail_strict\" allowed_targets"
+   }
+  },
+  {
+   "name": "patterns not a list",
+   "subject": {
+    "scope": "external",
+    "kind": "x",
+    "target": "t"
+   },
+   "policies": [
+    {
+     "id": "id-odd",
+     "orgId": "org-1",
+     "name": "odd",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": {
+      "patterns": "t"
+     },
+     "deniedTargets": {
+      "patterns": [
+       1,
+       "t"
+      ]
+     },
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "deny",
+    "policy": {
+     "id": "id-odd",
+     "orgId": "org-1",
+     "name": "odd",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": {
+      "patterns": "t"
+     },
+     "deniedTargets": {
+      "patterns": [
+       1,
+       "t"
+      ]
+     },
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "observe_only",
+    "reason": "target \"t\" is in policy \"odd\" denied_targets"
+   }
+  },
+  {
+   "name": "draft only",
+   "subject": {
+    "scope": "external",
+    "kind": "x"
+   },
+   "policies": [
+    {
+     "id": "id-drafts",
+     "orgId": "org-1",
+     "name": "drafts",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [],
+     "mode": "draft_only",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "needs_approval",
+    "policy": {
+     "id": "id-drafts",
+     "orgId": "org-1",
+     "name": "drafts",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [],
+     "mode": "draft_only",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "draft_only",
+    "reason": "policy \"drafts\" mode=draft_only — operator approves before execute"
+   }
+  },
+  {
+   "name": "observe only",
+   "subject": {
+    "scope": "external",
+    "kind": "x"
+   },
+   "policies": [
+    {
+     "id": "id-watch",
+     "orgId": "org-1",
+     "name": "watch",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [],
+     "mode": "observe_only",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "deny",
+    "policy": {
+     "id": "id-watch",
+     "orgId": "org-1",
+     "name": "watch",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [],
+     "mode": "observe_only",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "observe_only",
+    "reason": "policy \"watch\" mode=observe_only"
+   }
+  },
+  {
+   "name": "unknown mode",
+   "subject": {
+    "scope": "external",
+    "kind": "x"
+   },
+   "policies": [
+    {
+     "id": "id-odd",
+     "orgId": "org-1",
+     "name": "odd",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [],
+     "mode": "sometimes",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "deny",
+    "policy": {
+     "id": "id-odd",
+     "orgId": "org-1",
+     "name": "odd",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [],
+     "mode": "sometimes",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "never",
+    "reason": "policy \"odd\" has unknown mode \"sometimes\""
+   }
+  },
+  {
+   "name": "same priority keeps order",
+   "subject": {
+    "scope": "external",
+    "kind": "x"
+   },
+   "policies": [
+    {
+     "id": "id-first",
+     "orgId": "org-1",
+     "name": "first",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [],
+     "mode": "never",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-second",
+     "orgId": "org-1",
+     "name": "second",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "deny",
+    "policy": {
+     "id": "id-first",
+     "orgId": "org-1",
+     "name": "first",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [],
+     "mode": "never",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "never",
+    "reason": "policy \"first\" mode=never"
+   }
+  },
+  {
+   "name": "scope filter",
+   "subject": {
+    "scope": "internal",
+    "kind": "x"
+   },
+   "policies": [
+    {
+     "id": "id-ext",
+     "orgId": "org-1",
+     "name": "ext",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [
+      "external"
+     ],
+     "mode": "never",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 100,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    {
+     "id": "id-any",
+     "orgId": "org-1",
+     "name": "any",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 200,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    }
+   ],
+   "decision": {
+    "decision": "allow",
+    "policy": {
+     "id": "id-any",
+     "orgId": "org-1",
+     "name": "any",
+     "description": "",
+     "appliesToKinds": [],
+     "appliesToScopes": [],
+     "mode": "auto_approve",
+     "riskThresholdAutoApprove": null,
+     "allowedTargets": null,
+     "deniedTargets": null,
+     "limits": {},
+     "approverGroupId": null,
+     "priority": 200,
+     "enabled": true,
+     "createdByThreadId": null,
+     "createdByRunId": null,
+     "createdAt": "2026-11-13T00:00:00.000Z",
+     "updatedAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "auto_approve"
+   }
+  }
+ ],
+ "targets": [
+  {
+   "name": "webhook url",
+   "spec": {
+    "fields": [
+     "url"
+    ],
+    "as": "value"
+   },
+   "payload": {
+    "url": "  https://hooks.acme.com/x  "
+   },
+   "targets": [
+    "https://hooks.acme.com/x"
+   ]
+  },
+  {
+   "name": "no payload",
+   "spec": {
+    "fields": [
+     "url"
+    ],
+    "as": "value"
+   },
+   "payload": null,
+   "targets": []
+  },
+  {
+   "name": "email list",
+   "spec": {
+    "fields": [
+     "to",
+     "cc",
+     "body.bcc"
+    ],
+    "as": "email_domain"
+   },
+   "payload": {
+    "to": "Ann <ann@Acme.COM>, bob@partner.io.",
+    "cc": [
+     "c@x.org",
+     "d@x.org",
+     ""
+    ],
+    "body": {
+     "bcc": "nobody",
+     "extra": 1
+    }
+   },
+   "targets": [
+    "acme.com",
+    "invalid:nobody",
+    "partner.io",
+    "x.org"
+   ]
+  },
+  {
+   "name": "bad addresses",
+   "spec": {
+    "fields": [
+     "to"
+    ],
+    "as": "email_domain"
+   },
+   "payload": {
+    "to": [
+     "@acme.com",
+     "ann@",
+     "<>",
+     "a@b@c.com"
+    ]
+   },
+   "targets": [
+    "c.com",
+    "invalid:",
+    "invalid:@acme.com",
+    "invalid:ann@"
+   ]
+  },
+  {
+   "name": "non text values",
+   "spec": {
+    "fields": [
+     "ids",
+     "flag",
+     "none"
+    ],
+    "as": "value"
+   },
+   "payload": {
+    "ids": [
+     3,
+     {
+      "a": 1
+     },
+     "  "
+    ],
+    "flag": true,
+    "none": null
+   },
+   "targets": [
+    "3",
+    "true",
+    "{\"a\":1}"
+   ]
+  },
+  {
+   "name": "path through array",
+   "spec": {
+    "fields": [
+     "rows.0.to"
+    ],
+    "as": "value"
+   },
+   "payload": {
+    "rows": [
+     {
+      "to": "x"
+     }
+    ]
+   },
+   "targets": []
+  },
+  {
+   "name": "sorted and unique",
+   "spec": {
+    "fields": [
+     "a",
+     "b"
+    ],
+    "as": "value"
+   },
+   "payload": {
+    "a": [
+     "zeta",
+     "Alpha",
+     "beta",
+     "Ä"
+    ],
+    "b": "zeta"
+   },
+   "targets": [
+    "Alpha",
+    "beta",
+    "zeta",
+    "Ä"
+   ]
+  }
+ ]
+}

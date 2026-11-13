@@ -257,6 +257,31 @@ describe("worker admin HTTP handler", () => {
     }
   });
 
+  it("POST /admin/workflow-outputs/deliver hands the output to the delivery hook", async () => {
+    const deliver = vi.fn();
+    const srv = await startServer(createAdminHandler({ outputs: { deliver } }));
+    const post = (port: number, body: string) =>
+      fetch(`http://127.0.0.1:${port}/admin/workflow-outputs/deliver`, { method: "POST", body });
+    try {
+      const output = { id: "out-1", title: "Low stock", body: "Three items", mood: "act", workflowRunId: "run-1" };
+      const res = await post(srv.port, JSON.stringify({ orgId: "org-test", output }));
+      expect(res.status).toBe(202);
+      expect(deliver).toHaveBeenCalledWith("org-test", output);
+      for (const bad of ["{}", "nope", JSON.stringify({ orgId: "org-test", output: [] }), JSON.stringify({ orgId: "", output })]) {
+        expect((await post(srv.port, bad)).status).toBe(400);
+      }
+      expect(deliver).toHaveBeenCalledTimes(1);
+      const closed = await startServer(createAdminHandler());
+      try {
+        expect((await post(closed.port, JSON.stringify({ orgId: "org-test", output }))).status).toBe(503);
+      } finally {
+        await closed.close();
+      }
+    } finally {
+      await srv.close();
+    }
+  });
+
   it("unknown path returns 404", async () => {
     const srv = await startServer(createAdminHandler({ exit }));
     try {
