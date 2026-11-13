@@ -370,8 +370,11 @@ episode it then:
 
 At the end of an episode, also after a failure, it stops both processes and
 drops the database and the folder. An interrupt stops both processes; the next
-start drops the database. Episodes run in parallel only while 4 GB of memory
-stays free, at an estimate of 1 GB for each episode.
+start drops the database. Episodes run in parallel only while 2 GB of memory
+stays free, at an estimate of 1 GB for each episode. Set
+`OPENNEKO_EVAL_MEMORY_RESERVE_GB` to keep a different amount free. When one
+episode cannot start, the install checks the free memory each 15 s for up to
+15 min, logs one line when the wait starts, and fails after that limit.
 
 `apps/worker/scripts/eval-scripted-model.ts` is the provider-free model for
 the scripted variants. It answers the Ax distiller, executor and responder

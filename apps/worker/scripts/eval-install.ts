@@ -18,8 +18,10 @@ import { runActionExecute } from "../src/jobs/action-execute";
 export const EVAL_TEMPLATE_DATABASE = "openneko_eval_template";
 export const EVAL_EPISODE_DATABASE_PREFIX = "openneko_eval_ep_";
 export const EVAL_EPISODE_FOLDER_PREFIX = "openneko-eval-ep-";
-export const EVAL_FREE_MEMORY_FLOOR = 4 * 1024 ** 3;
+export const EVAL_MEMORY_RESERVE = 2 * 1024 ** 3;
 export const EVAL_EPISODE_MEMORY = 1024 ** 3;
+export const EVAL_MEMORY_WAIT_MS = 15 * 60_000;
+export const EVAL_MEMORY_POLL_MS = 15_000;
 
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const START_TIMEOUT_MS = 60_000;
@@ -76,9 +78,51 @@ export function availableMemoryBytes(meminfo: string): number | undefined {
   return match ? Number(match[1]) * 1024 : undefined;
 }
 
-export function parallelEpisodeCap(available: number | undefined): number {
+export function evalMemoryReserveFromEnv(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.OPENNEKO_EVAL_MEMORY_RESERVE_GB?.trim();
+  if (!raw) return EVAL_MEMORY_RESERVE;
+  const gb = Number(raw);
+  if (!Number.isFinite(gb) || gb < 0) throw new Error(`OPENNEKO_EVAL_MEMORY_RESERVE_GB is not a number of GB: ${raw}`);
+  return gb * 1024 ** 3;
+}
+
+export function parallelEpisodeCap(available: number | undefined, reserve = EVAL_MEMORY_RESERVE): number {
   if (available === undefined) return 1;
-  return Math.max(0, Math.floor((available - EVAL_FREE_MEMORY_FLOOR) / EVAL_EPISODE_MEMORY));
+  return Math.max(0, Math.floor((available - reserve) / EVAL_EPISODE_MEMORY));
+}
+
+export type EpisodeMemoryWait = {
+  readMeminfo: () => Promise<string>;
+  reserve: number;
+  waitMs?: number;
+  pollMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+  log?: (line: string) => void;
+};
+
+export async function waitForEpisodeMemory(wait: EpisodeMemoryWait): Promise<number> {
+  const limit = wait.waitMs ?? EVAL_MEMORY_WAIT_MS;
+  const poll = wait.pollMs ?? EVAL_MEMORY_POLL_MS;
+  const sleep = wait.sleep ?? ((ms: number) => new Promise<void>((wake) => setTimeout(wake, ms)));
+  const need = (wait.reserve + EVAL_EPISODE_MEMORY) / 1024 ** 3;
+  let waited = 0;
+  for (;;) {
+    const cap = parallelEpisodeCap(availableMemoryBytes(await wait.readMeminfo()), wait.reserve);
+    if (cap >= 1) return cap;
+    if (waited >= limit) {
+      throw new Error(
+        `the eval install needs ${need} GB of free memory to start an episode; it waited ${Math.round(waited / 1000)} s`,
+      );
+    }
+    if (waited === 0) {
+      (wait.log ?? ((line: string) => console.error(line)))(
+        `eval install: less than ${need} GB of free memory; checking each ${poll / 1000} s for up to ${limit / 60_000} min`,
+      );
+    }
+    const step = Math.min(poll, limit - waited);
+    await sleep(step);
+    waited += step;
+  }
 }
 
 async function freePort(host = "127.0.0.1"): Promise<number> {
@@ -172,6 +216,9 @@ export type EvalInstallHostOptions = {
   binary?: string;
   build?: boolean;
   readMeminfo?: () => Promise<string>;
+  memoryReserve?: number;
+  memoryWaitMs?: number;
+  memoryPollMs?: number;
   lockWaitMs?: number;
 };
 
@@ -618,12 +665,18 @@ export class EvalInstallHost {
   }
 
   private async slot(): Promise<void> {
+    const readMeminfo = this.options.readMeminfo ?? (() => readFile("/proc/meminfo", "utf8").catch(() => ""));
+    const reserve = this.options.memoryReserve ?? evalMemoryReserveFromEnv();
     for (;;) {
-      const meminfo = await (this.options.readMeminfo ?? (() => readFile("/proc/meminfo", "utf8").catch(() => "")))();
-      const cap = parallelEpisodeCap(availableMemoryBytes(meminfo));
-      if (this.live.size === 0 && cap < 1) {
-        throw new Error("the eval install needs 5 GB of free memory to start an episode and keep 4 GB free");
-      }
+      const cap =
+        this.live.size === 0
+          ? await waitForEpisodeMemory({
+              readMeminfo,
+              reserve,
+              waitMs: this.options.memoryWaitMs,
+              pollMs: this.options.memoryPollMs,
+            })
+          : parallelEpisodeCap(availableMemoryBytes(await readMeminfo()), reserve);
       if (this.live.size < cap) return;
       await new Promise<void>((wake) => this.waiters.push(wake));
     }
