@@ -260,9 +260,39 @@ func TestTurnActionsDatabase(t *testing.T) {
 	if !strings.Contains(out, `\"decision\":\"needs_approval\",\"status\":\"pending_approval\"`) || len(worker.creates) != creates+1 {
 		t.Fatalf("granted: %s", out)
 	}
+	granted := worker.lastCreate()["status"]
+	jobsBefore := len(actionJobs(t, db))
+	out, _ = callTool(t, s, "action_request", map[string]any{"scope": "internal", "kind": "shop.refund", "summary": "Refund",
+		"status": "approved", "decision": "auto_approved", "approved_by": "model", "approvedBy": "model", "risk": "low",
+		"policy_id": unknownUUID, "policyId": unknownUUID})
+	claimed := worker.lastCreate()
+	var claimedStatus string
+	if err := db.QueryRow(ctx, `select status from action_request where org_id = 'org' order by created_at desc limit 1`).Scan(&claimedStatus); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `\"decision\":\"needs_approval\",\"status\":\"pending_approval\"`) || len(worker.creates) != creates+2 ||
+		claimed["status"] != granted || granted != "pending_approval" || claimedStatus != "pending_approval" || claimed["policyId"] == unknownUUID ||
+		claimed["approvedBy"] != nil || claimed["approved_by"] != nil || claimed["decision"] != nil || claimed["risk"] != nil ||
+		len(actionJobs(t, db)) != jobsBefore {
+		t.Fatalf("the model set the outcome: %s %v %s", out, claimed, claimedStatus)
+	}
+	pend := b
+	pend.PackActions = []packActionDescriptor{{Kind: "shop.refund", Description: "Refund.", DefaultMode: "ask"}}
+	pendTools, err := turnTools(pend, tools, []string{"neko_pack_actions"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, _ = callTool(t, pendTools, "pack_actions_shop.refund", map[string]any{"intent": "Refund order 8", "status": "approved",
+		"decision": "auto_approved", "approved_by": "model", "risk": "low", "policy_id": unknownUUID})
+	claimed = worker.lastCreate()
+	if !strings.Contains(out, `\"decision\":\"pending_approval\"`) || claimed["status"] != "pending_approval" ||
+		claimed["policyId"] == unknownUUID || claimed["approvedBy"] != nil || claimed["decision"] != nil || len(actionJobs(t, db)) != jobsBefore {
+		t.Fatalf("the model set a pack action outcome: %s %v", out, claimed)
+	}
+	creates = len(worker.creates)
 	seed(t, db, `insert into action_policy (org_id, name, applies_to_kinds, applies_to_scopes, mode, priority) values ('org', 'gj', '{source_config_admin}', '{}', 'approval_required', 70)`)
 	out, _ = callTool(t, s, "action_request", map[string]any{"scope": "internal", "kind": "source_config_admin", "summary": "Add a role"})
-	if !strings.Contains(out, `"text":"source_config_admin: GraphJin config`) || len(worker.creates) != creates+1 {
+	if !strings.Contains(out, `"text":"source_config_admin: GraphJin config`) || len(worker.creates) != creates {
 		t.Fatalf("source config gate: %s", out)
 	}
 	seed(t, db, `insert into item_grant (org_id, group_id, item_type, item_id) select 'org', id, 'action', '*' from user_group where org_id = 'org' and slug = 'everyone'`)
@@ -298,6 +328,18 @@ func TestTurnActionsDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	seed(t, db, `delete from item_grant where org_id = 'org' and item_type in ('action', 'pack')`)
+	creates = len(worker.creates)
+	jobsBefore = len(actionJobs(t, db))
+	out, _ = callTool(t, s, "action_request", map[string]any{"scope": "external", "kind": "slack_post", "target": "C1", "summary": "Post it"})
+	if out != `{"content":[{"type":"text","text":"action slack_post is not available to this run"}],"isError":true}` {
+		t.Fatalf("an auto-approved kind without the grant: %s", out)
+	}
+	out, _ = callTool(t, ps, "pack_actions_slack_post", map[string]any{"target": "C1"})
+	if !strings.Contains(out, "action slack_post is not available to this run") || len(worker.creates) != creates || len(actionJobs(t, db)) != jobsBefore {
+		t.Fatalf("an auto pack action without the grant: %s", out)
+	}
+	seed(t, db, `insert into item_grant (org_id, group_id, item_type, item_id) select 'org', id, 'action', '*' from user_group where org_id = 'org' and slug = 'everyone'`)
 	out, _ = callTool(t, ps, "pack_actions_slack_post", map[string]any{"target": "C1"})
 	if !strings.Contains(out, `\"status\":\"executed\",\"outcome\":{\"result\":{\"ts\":\"1.2\"},\"externalRef\":\"C1/1.2\",\"commandOrOperation\":\"chat.postMessage\"}`) {
 		t.Fatalf("pack auto runs and waits: %s", out)
@@ -365,6 +407,10 @@ func TestTurnActionsDatabase(t *testing.T) {
 	again := emit(map[string]any{"kind": "finding", "title": "low stock"})
 	other := emit(map[string]any{"kind": "summary", "title": "low stock", "payload": map[string]any{"a": 1}})
 	untitled := emit(map[string]any{"kind": "finding"})
+	claimedOut := emit(map[string]any{"kind": "observation", "title": "claimed", "delivered": true, "deliveredAt": "2026-01-01T00:00:00Z"})
+	if claimedOut.vals["delivered"] != nil || claimedOut.vals["deliveredAt"] != nil {
+		t.Fatalf("the model marked an output delivered: %s", jsStringify(claimedOut, false))
+	}
 	if again.vals["id"] != first.vals["id"] || again.vals["seenCount"] != 2.0 || first.vals["timeWindowStart"] != "2026-11-01T00:00:00.000Z" ||
 		first.vals["freshnessTtlSeconds"] != 60.0 || jsStringify(first.vals["payload"], false) != "{}" || first.vals["workRunId"] != runMine {
 		t.Fatalf("dedupe: %s %s", jsStringify(first, false), jsStringify(again, false))
@@ -373,7 +419,7 @@ func TestTurnActionsDatabase(t *testing.T) {
 		t.Fatalf("separate outputs: %s %s", jsStringify(other, false), jsStringify(untitled, false))
 	}
 	deadline := time.Now().Add(5 * time.Second)
-	for len(worker.deliveries()) < 4 && time.Now().Before(deadline) {
+	for len(worker.deliveries()) < 5 && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	ids := map[any]bool{}
@@ -383,7 +429,7 @@ func TestTurnActionsDatabase(t *testing.T) {
 		}
 		ids[d["output"].(map[string]any)["id"]] = true
 	}
-	if len(worker.deliveries()) != 4 || !ids[first.vals["id"]] || !ids[untitled.vals["id"]] {
+	if len(worker.deliveries()) != 5 || !ids[first.vals["id"]] || !ids[untitled.vals["id"]] || !ids[claimedOut.vals["id"]] {
 		t.Fatalf("deliveries: %v", worker.deliveries())
 	}
 }

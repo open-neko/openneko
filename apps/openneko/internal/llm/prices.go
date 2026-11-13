@@ -80,7 +80,7 @@ func TokenCostUSD(provider, model string, u Usage, at time.Time) (float64, strin
 		source = "ax_model_catalog"
 	}
 	prompt, completion, read, write := rates.Prompt, rates.Completion, rates.CacheRead, rates.CacheWrite
-	if rates.LongContextThreshold > 0 && u.Input+u.CacheRead+u.CacheWrite > rates.LongContextThreshold {
+	if rates.LongContextThreshold > 0 && float64(u.Input+u.CacheRead+u.CacheWrite)/float64(max(1, u.Calls)) > float64(rates.LongContextThreshold) {
 		prompt, completion, read, write = rates.LongPrompt, rates.LongCompletion, rates.LongCacheRead, rates.LongCacheWrite
 	}
 	extra := max(0, u.Total-u.Input-u.Output-u.CacheRead-u.CacheWrite)
@@ -120,4 +120,10 @@ func PriceUsage(raw inference.Usage, price *Price, route inference.Route, at tim
 		u.CostStatus = "included"
 	}
 	return u
+}
+
+// HasPriceOverride is hasPriceOverride().
+func HasPriceOverride(provider, model string, at time.Time) bool {
+	_, ok := overrideFor(provider, model, at)
+	return ok
 }
