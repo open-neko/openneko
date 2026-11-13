@@ -457,9 +457,22 @@ func TestManualRunRoute(t *testing.T) {
 	a.turnCore = func(ctx context.Context, in agentCoreInput) (axRunResult, error) {
 		got = in
 		_ = in.Emit(ctx, jsObjOf("type", "message", "role", "assistant", "content", "Stock is fine."))
+		_ = in.Emit(ctx, jsObjOf("type", "usage", "source", "outer", "usage",
+			jsObjOf("totalTokens", 40.0, "billedCostUsd", 0.02, "costStatus", "actual", "coverage", "complete")))
 		return axRunResult{Status: "completed", FinalText: "Stock is fine."}, nil
 	}
 	path := "/api/v1/workflows/" + wf.ID + "/manual-runs"
+	summary := func(wfRunID string) string {
+		t.Helper()
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			got := rowText(t, db, `select coalesce(telemetry_summary::text, '') from workflow_run where id = $1`, wfRunID)
+			if got != "" || time.Now().After(deadline) {
+				return got
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
 
 	w := call(front, "POST", path, `{"userMessage":"  Check north \n"}`, admin)
 	body := decode(t, w)
@@ -483,6 +496,13 @@ func TestManualRunRoute(t *testing.T) {
 		if g := rowText(t, db, sql, wfRunID); g != want {
 			t.Errorf("%s\n got %q want %q", sql, g, want)
 		}
+	}
+	want := `{"runId": "` + runID + `", "usage": {"coverage": "complete", "costStatus": "actual", "totalTokens": 40, "billedCostUsd": 0.02, "missingReasons": []}, "schemaVersion": "openneko.harness-run-summary/v1"}`
+	if g := summary(wfRunID); g != want {
+		t.Errorf("telemetry summary\n got %s\nwant %s", g, want)
+	}
+	if g := rowText(t, db, `select (payload->'summary')::text from work_run_event where run_id = $1 and kind = 'telemetry'`, runID); g != want {
+		t.Errorf("telemetry event %s", g)
 	}
 
 	w = call(front, "POST", path, `{}`, admin)
@@ -516,7 +536,10 @@ func TestManualRunRoute(t *testing.T) {
 	if g := rowText(t, db, `select w.error || ':' || r.status || ':' || r.error from work_run w join workflow_run r on r.work_run_id = w.id where w.id = $1`, runID); g != "no model key:failed:no model key" {
 		t.Errorf("thrown rows %q", g)
 	}
-	if g := rowText(t, db, `select string_agg(kind, ',' order by id) from work_run_event where run_id = $1`, runID); g != "error,done" {
+	if !strings.Contains(summary(wfRunID), `"coverage": "unavailable"`) {
+		t.Errorf("thrown run summary %s", summary(wfRunID))
+	}
+	if g := rowText(t, db, `select string_agg(kind, ',' order by id) from work_run_event where run_id = $1`, runID); g != "telemetry,error,done" {
 		t.Errorf("thrown events %s", g)
 	}
 	a.turnResolve = fixedBackend("http://unused")

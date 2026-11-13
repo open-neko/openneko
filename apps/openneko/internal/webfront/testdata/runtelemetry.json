@@ -1,0 +1,339 @@
+{
+  "cases": [
+    {
+      "name": "complete usage",
+      "runId": "run-1",
+      "events": [
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": "Stock is fine."
+        },
+        {
+          "type": "tool_start",
+          "id": "t1",
+          "name": "neko_graphjin",
+          "input": {
+            "q": 1
+          }
+        },
+        {
+          "type": "tool_end",
+          "id": "t1",
+          "result": "rows"
+        },
+        {
+          "type": "usage",
+          "source": "outer",
+          "provider": "google-gemini",
+          "model": "m",
+          "usage": {
+            "inputTokens": 1200,
+            "outputTokens": 300,
+            "cacheReadTokens": 100,
+            "totalTokens": 1500,
+            "estimatedCostUsd": 0.0021,
+            "currency": "USD",
+            "pricingCatalogVersion": "standard-2026-07-09",
+            "costStatus": "estimated",
+            "costSource": "catalog",
+            "coverage": "complete"
+          }
+        }
+      ],
+      "summary": {
+        "schemaVersion": "openneko.harness-run-summary/v1",
+        "runId": "run-1",
+        "usage": {
+          "inputTokens": 1200,
+          "outputTokens": 300,
+          "cacheReadTokens": 100,
+          "totalTokens": 1500,
+          "estimatedCostUsd": 0.0021,
+          "costStatus": "estimated",
+          "coverage": "complete",
+          "missingReasons": []
+        }
+      }
+    },
+    {
+      "name": "the last outer usage wins",
+      "runId": "run-2",
+      "events": [
+        {
+          "type": "usage",
+          "source": "outer",
+          "provider": "google-gemini",
+          "model": "m",
+          "usage": {
+            "inputTokens": 10,
+            "totalTokens": 10,
+            "estimatedCostUsd": 0.5,
+            "costStatus": "estimated",
+            "coverage": "complete"
+          }
+        },
+        {
+          "type": "usage",
+          "source": "inner",
+          "usage": {
+            "totalTokens": 999,
+            "coverage": "complete"
+          }
+        },
+        {
+          "type": "usage",
+          "source": "outer",
+          "provider": "google-gemini",
+          "model": "m",
+          "usage": {
+            "inputTokens": 20,
+            "outputTokens": 5,
+            "totalTokens": 25,
+            "billedCostUsd": 0.25,
+            "costStatus": "actual",
+            "coverage": "complete"
+          }
+        }
+      ],
+      "summary": {
+        "schemaVersion": "openneko.harness-run-summary/v1",
+        "runId": "run-2",
+        "usage": {
+          "inputTokens": 20,
+          "outputTokens": 5,
+          "totalTokens": 25,
+          "billedCostUsd": 0.25,
+          "costStatus": "actual",
+          "coverage": "complete",
+          "missingReasons": []
+        }
+      }
+    },
+    {
+      "name": "partial usage keeps its reasons",
+      "runId": "run-3",
+      "events": [
+        {
+          "type": "usage",
+          "source": "outer",
+          "provider": "google-gemini",
+          "model": "m",
+          "usage": {
+            "inputTokens": 40,
+            "totalTokens": 40,
+            "coverage": "partial",
+            "missingReasons": [
+              "The turn ended early; usage covers the model calls made before its last tool call."
+            ]
+          }
+        }
+      ],
+      "summary": {
+        "schemaVersion": "openneko.harness-run-summary/v1",
+        "runId": "run-3",
+        "usage": {
+          "inputTokens": 40,
+          "totalTokens": 40,
+          "coverage": "partial",
+          "missingReasons": [
+            "The turn ended early; usage covers the model calls made before its last tool call."
+          ]
+        }
+      }
+    },
+    {
+      "name": "values with coverage unavailable",
+      "runId": "run-4",
+      "events": [
+        {
+          "type": "usage",
+          "source": "outer",
+          "provider": "google-gemini",
+          "model": "m",
+          "usage": {
+            "totalTokens": 7,
+            "coverage": "unavailable"
+          }
+        }
+      ],
+      "summary": {
+        "schemaVersion": "openneko.harness-run-summary/v1",
+        "runId": "run-4",
+        "usage": {
+          "totalTokens": 7,
+          "coverage": "partial",
+          "missingReasons": []
+        }
+      }
+    },
+    {
+      "name": "unknown cost",
+      "runId": "run-5",
+      "events": [
+        {
+          "type": "usage",
+          "source": "outer",
+          "provider": "google-gemini",
+          "model": "m",
+          "usage": {
+            "totalTokens": 7,
+            "estimatedCostUsd": 0.1,
+            "costStatus": "unknown",
+            "coverage": "complete"
+          }
+        }
+      ],
+      "summary": {
+        "schemaVersion": "openneko.harness-run-summary/v1",
+        "runId": "run-5",
+        "usage": {
+          "totalTokens": 7,
+          "estimatedCostUsd": 0.1,
+          "costStatus": "unknown",
+          "coverage": "complete",
+          "missingReasons": []
+        }
+      }
+    },
+    {
+      "name": "no values",
+      "runId": "run-6",
+      "events": [
+        {
+          "type": "usage",
+          "source": "outer",
+          "provider": "google-gemini",
+          "model": "m",
+          "usage": {
+            "coverage": "unavailable",
+            "missingReasons": [
+              "provider sent no usage"
+            ]
+          }
+        }
+      ],
+      "summary": {
+        "schemaVersion": "openneko.harness-run-summary/v1",
+        "runId": "run-6",
+        "usage": {
+          "coverage": "unavailable",
+          "missingReasons": []
+        }
+      }
+    },
+    {
+      "name": "no usage event",
+      "runId": "run-7",
+      "events": [
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": "Done."
+        }
+      ],
+      "summary": {
+        "schemaVersion": "openneko.harness-run-summary/v1",
+        "runId": "run-7",
+        "usage": {
+          "coverage": "unavailable",
+          "missingReasons": []
+        }
+      }
+    },
+    {
+      "name": "a failed turn keeps the usage it saw",
+      "runId": "run-8",
+      "events": [
+        {
+          "type": "usage",
+          "source": "outer",
+          "provider": "google-gemini",
+          "model": "m",
+          "usage": {
+            "inputTokens": 3,
+            "totalTokens": 3,
+            "estimatedCostUsd": 0.01,
+            "costStatus": "estimated",
+            "coverage": "complete"
+          }
+        }
+      ],
+      "summary": {
+        "schemaVersion": "openneko.harness-run-summary/v1",
+        "runId": "run-8",
+        "usage": {
+          "inputTokens": 3,
+          "totalTokens": 3,
+          "estimatedCostUsd": 0.01,
+          "costStatus": "estimated",
+          "coverage": "complete",
+          "missingReasons": []
+        }
+      }
+    },
+    {
+      "name": "a failed turn with no usage",
+      "runId": "run-9",
+      "events": [
+        {
+          "type": "tool_start",
+          "id": "t1",
+          "name": "neko_graphjin"
+        }
+      ],
+      "summary": {
+        "schemaVersion": "openneko.harness-run-summary/v1",
+        "runId": "run-9",
+        "usage": {
+          "coverage": "unavailable",
+          "missingReasons": []
+        }
+      }
+    },
+    {
+      "name": "a question asked",
+      "runId": "run-10",
+      "events": [
+        {
+          "type": "usage",
+          "source": "outer",
+          "provider": "google-gemini",
+          "model": "m",
+          "usage": {
+            "outputTokens": 9,
+            "totalTokens": 9,
+            "coverage": "complete"
+          }
+        },
+        {
+          "type": "needs_input",
+          "question": "Which store?"
+        }
+      ],
+      "summary": {
+        "schemaVersion": "openneko.harness-run-summary/v1",
+        "runId": "run-10",
+        "usage": {
+          "outputTokens": 9,
+          "totalTokens": 9,
+          "coverage": "complete",
+          "missingReasons": []
+        }
+      }
+    },
+    {
+      "name": "a failure before the agent starts",
+      "runId": "run-11",
+      "events": [],
+      "summary": {
+        "schemaVersion": "openneko.harness-run-summary/v1",
+        "runId": "run-11",
+        "usage": {
+          "coverage": "unavailable",
+          "missingReasons": []
+        }
+      }
+    }
+  ]
+}

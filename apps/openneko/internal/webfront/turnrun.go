@@ -455,7 +455,8 @@ func (g *runSpendGuard) emit(ctx context.Context, event any) error {
 func (a *API) startChatRun(ctx context.Context, o chatTurnOptions) (<-chan struct{}, error) {
 	base, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	store := a.newRunEventStore(o.OrgID, o.ThreadID, o.RunID)
-	runCtx, guarded, err := a.newRunSpendGuard(base, o.RunID, store.emit)
+	tel := &runTelemetry{}
+	runCtx, guarded, err := a.newRunSpendGuard(base, o.RunID, tel.wrap(store.emit))
 	if err != nil {
 		cancel(nil)
 		return nil, err
@@ -484,7 +485,9 @@ func (a *API) startChatRun(ctx context.Context, o chatTurnOptions) (<-chan struc
 		defer untrace()
 		defer cancel(nil)
 		bg := context.WithoutCancel(runCtx)
-		if _, err := a.runChatTurn(runCtx, o); err != nil {
+		_, err := a.runChatTurn(runCtx, o)
+		a.storeRunTelemetry(bg, store, tel, "")
+		if err != nil {
 			log.Printf("[work-run/inproc] run %s threw: %v", o.RunID, err)
 			a.failThrownRun(bg, o, store, err)
 		}

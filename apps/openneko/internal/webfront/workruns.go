@@ -350,7 +350,8 @@ func (a *API) startWorkflowRun(ctx context.Context, orgID string, o workflowTurn
 	base, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	store := a.newRunEventStore(orgID, o.ThreadID, o.RunID)
 	store.kind = "workflow"
-	runCtx, guarded, err := a.newRunSpendGuard(base, o.RunID, store.emit)
+	tel := &runTelemetry{}
+	runCtx, guarded, err := a.newRunSpendGuard(base, o.RunID, tel.wrap(store.emit))
 	if err != nil {
 		cancel(nil)
 		return nil, err
@@ -365,7 +366,9 @@ func (a *API) startWorkflowRun(ctx context.Context, orgID string, o workflowTurn
 		defer untrace()
 		defer cancel(nil)
 		bg := context.WithoutCancel(runCtx)
-		if _, err := a.runWorkflowTurn(runCtx, o); err != nil {
+		_, err := a.runWorkflowTurn(runCtx, o)
+		a.storeRunTelemetry(bg, store, tel, o.WorkflowRunID)
+		if err != nil {
 			log.Printf("[workflow-run] run %s threw: %v", o.WorkflowRunID, err)
 			a.failThrownWorkflowRun(bg, orgID, o, store, err)
 		}
