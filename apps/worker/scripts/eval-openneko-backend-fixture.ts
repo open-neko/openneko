@@ -11,12 +11,9 @@ import {
   createTestOrg,
   deleteTestOrg,
 } from "@neko/db/test-helpers";
+import { runEmbeddingIndexJob } from "@neko/llm";
 import {
-  runEmbeddingIndexJob,
-  type AgentWorkspace,
-} from "@neko/llm";
-import {
-  ensureIsolatedJobWorkspace,
+  ensureOrgWorkspace,
   rememberWorkMemory,
   searchWorkMemory,
   upsertOperatorProfile,
@@ -81,7 +78,6 @@ export type ProvisionedWorkBackendFixture = {
   orgId: string;
   crossTenantOrgId: string;
   userId: string;
-  workspace: AgentWorkspace;
   targetResourceIds: Partial<Record<ContextKind, string>>;
   decoyResourceIds: Partial<Record<ContextKind, string>>;
   targetResourceDigests: Partial<Record<ContextKind, string>>;
@@ -234,7 +230,6 @@ export async function provisionWorkBackendFixture(input: {
   if (!filesEnabled()) {
     throw new Error("The backend eval plants Library files: set OPENNEKO_SERVE_URL to a running openneko serve.");
   }
-  const isolated = await ensureIsolatedJobWorkspace(`eval-${identity}`);
   const libraryPaths: string[] = [];
   let cleaned = false;
   const cleanup = async () => {
@@ -244,13 +239,13 @@ export async function provisionWorkBackendFixture(input: {
       ...libraryPaths.map((path) => deleteFile({ orgId, userId }, path)),
       deleteTestOrg(orgId),
       deleteTestOrg(crossTenantOrgId),
-      isolated.cleanup(),
     ]);
   };
 
   try {
     await createTestOrg(orgId, `OpenNeko backend eval ${identity}`);
     await createTestOrg(crossTenantOrgId, `OpenNeko backend eval isolation ${identity}`);
+    const workspace = await ensureOrgWorkspace(orgId);
     await db().insert(app_user).values({
       id: userId,
       email: `${userId}@eval.invalid`,
@@ -306,7 +301,7 @@ export async function provisionWorkBackendFixture(input: {
 
     if (input.spec.targetSentinels.skill) {
       const skill = await writeWorkSkill(
-        isolated.workspace.skillsRoot,
+        workspace.skillsRoot,
         {
           name: input.spec.skillName,
           description: "Create a governed AdventureWorks brief using the connected read-only source.",
@@ -319,7 +314,7 @@ export async function provisionWorkBackendFixture(input: {
       targetResourceDigests.skill = sha256(skillBody);
     }
     const decoySkill = await writeWorkSkill(
-      isolated.workspace.skillsRoot,
+      workspace.skillsRoot,
       {
         name: input.spec.decoySkillName,
         description: "Legacy AdventureWorks brief retained only for negative-control testing.",
@@ -453,7 +448,6 @@ export async function provisionWorkBackendFixture(input: {
       orgId,
       crossTenantOrgId,
       userId,
-      workspace: isolated.workspace,
       targetResourceIds,
       decoyResourceIds,
       targetResourceDigests,

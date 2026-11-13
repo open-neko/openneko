@@ -1,50 +1,22 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { app_user, db, setLocalAdministrator } from "@neko/db";
 import {
   createWorkMessage,
-  createWorkRun,
-  createWorkThread,
-  appendWorkRunEvent,
-  agentRuntimeDepsFromConfig,
   createScrubber,
-  detectSkillUse,
-  ensureAgentBroker,
-  formatWorkMemoryPromptContext,
   getWorkRun,
   getWorkThread,
-  GRAPHJIN_DIRECT_GOVERNED_POLICY,
-  inProcessControlPlane,
-  recordWorkSemanticHostEvent,
-  registerAgentBrokerEventSink,
-  registerWorkSemanticTraceSink,
-  runAgentBackend,
-  runChatTurn,
   setWorkThreadBackendState,
-  shutdownAgentBroker,
-  traceAgentControlPlane,
-  workSemanticDigest,
-  workflowRuntimeDepsFromConfig,
-  type AgentBrokerHandle,
-  type AgentControlPlane,
-  type RunBinding,
   type Scrubber,
   type WorkSemanticStepContent,
   type WorkSemanticTraceEvent,
 } from "@neko/llm/work";
 import {
   detectUpstreamError,
-  provisionHostConfig,
-  resolveAgentBackend,
-  type AgentBackend,
-  type AgentBackendId,
   type AgentEvent,
   type AgentTokenUsage,
-  approveActionRequest,
   createActionPolicy,
-  executeApprovedActionRequest,
   getActionRequest,
   getWorkflowRun,
   listActionExecutions,
@@ -52,23 +24,11 @@ import {
   listRecentOutputsByWorkflow,
   listWatchers,
   listWorkflows,
-  prepareWorkflowRun,
   registerActionAdapter,
-  rejectActionRequest,
-  runWorkflowAgentBackend,
-  runWorkflowTurn,
   saveWorkflow,
-  setWorkflowOutputDeliveryHook,
-  sweepWatchers,
-  type PreparedWorkflowRun,
 } from "@neko/llm";
 import { callGraphjinMcpTool } from "@neko/llm/graphjin";
-import { closeSandboxLauncher } from "@neko/llm/work/sandbox-launcher";
-import {
-  dbReachable,
-  deleteTestOrg,
-  seedProvider,
-} from "@neko/db/test-helpers";
+import { dbReachable, seedProvider } from "@neko/db/test-helpers";
 import {
   EvalEnvironmentError,
   EvalTaskError,
@@ -89,20 +49,20 @@ import {
 } from "@neko/evals";
 import { maybeEncryptSecret } from "@neko/llm/secrets";
 import pg from "pg";
-import { BrokerControlPlane } from "../src/agent-sandbox/broker-client";
 import {
   buildWorkBackendFixtureSpec,
   provisionWorkBackendFixture,
-  workBackendFixtureIdentity,
   type ProvisionedWorkBackendFixture,
   type WorkBackendFixtureSpec,
 } from "./eval-openneko-backend-fixture";
+import { EvalInstallHost, type EvalEpisode } from "./eval-install";
 import {
-  ScriptedEvalBackend,
-  type ScriptedEvalContext,
-  type ScriptedEvalProgram,
+  RunEventFeed,
+  ScriptedModelServer,
+  type ScriptedModelContext as ScriptedEvalContext,
+  type ScriptedModelProgram as ScriptedEvalProgram,
   type ScriptedToolResult,
-} from "./eval-scripted-backend";
+} from "./eval-scripted-model";
 
 type AdventureWorksOracle = {
   anchorDate: string;
@@ -158,19 +118,8 @@ const SCORER = {
   },
 } as const;
 
-const RUNTIME_ENVIRONMENT_NAMES = [
-  "XDG_CONFIG_HOME",
-  "OPENNEKO_AGENT_MODEL_PROVIDER",
-  "OPENNEKO_AGENT_MODEL_HOST",
-  "OPENNEKO_AGENT_MODEL_KEY_ENV",
-  "OPENNEKO_GRAPHJIN_CONFIG",
-] as const;
-
 const EVAL_GRAPHJIN_CONFIG_PATH = fileURLToPath(
-  new URL(
-    "../../../evals/environment/adventureworks/graphjin/eval.yml",
-    import.meta.url,
-  ),
+  new URL("../../../evals/environment/adventureworks/graphjin/eval.yml", import.meta.url),
 );
 
 function sha256(value: string): string {
@@ -712,90 +661,32 @@ async function verifyFrozenGraphjinPolicy(
   };
 }
 
-async function runGrantDiagnostic(binding: RunBinding): Promise<string> {
-  try {
-    const { db, sql } = await import("@neko/db");
-    const result = await db().execute(sql`
-      select r.actor_user_id, r.actor_role, u.disabled_at is not null as disabled,
-        (select string_agg(g.slug, ',') from user_group g where g.org_id = r.org_id) as org_groups,
-        (select count(*) from item_grant i where i.org_id = r.org_id and i.item_type = 'data_source') as data_source_grants
-      from work_run r left join app_user u on u.id = r.actor_user_id
-      where r.id = ${binding.runId} and r.org_id = ${binding.orgId}`);
-    const rows = (result as unknown as { rows?: unknown[] }).rows ?? (result as unknown as unknown[]);
-    return `grant diagnostic: ${JSON.stringify(rows[0] ?? "work_run not found")}`;
-  } catch (cause) {
-    return `grant diagnostic failed: ${cause instanceof Error ? cause.message : String(cause)}`;
-  }
-}
-
-async function verifyBrokerGraphjinActorPolicy(
-  broker: AgentBrokerHandle,
-  binding: RunBinding,
+async function verifyActorGraphjinPolicy(
+  mcpUrl: string,
+  headers: Record<string, string>,
   probe: BackendGraphjinActorProbe,
+  timeoutMs: number,
 ): Promise<void> {
-  const identity = {
-    orgId: binding.orgId,
-    runId: binding.runId,
-  };
-  const requireTools = (tools: Array<{ name: string }>, boundary: string) => {
-    const names = new Set(tools.map((tool) => tool.name));
-    if (!names.has("query_catalog") || !names.has("execute_graphql")) {
+  const call = (request: { name: string; arguments: Record<string, unknown> }) =>
+    callGraphjinMcpTool({ baseUrl: mcpUrl, headers, signal: AbortSignal.timeout(timeoutMs) }, request);
+  if (probe === "api-mutation") {
+    const catalog = await call({
+      name: "query_catalog",
+      arguments: { search: SELECTION_API_CATALOG_SEARCH, limit: 20 },
+    }).catch((cause) => {
       throw new EvalEnvironmentError(
-        `${boundary} did not expose query_catalog and execute_graphql`,
-        "graphjin_api_operation_not_discoverable",
-      );
-    }
-  };
-  const controlPlane = new BrokerControlPlane(
-    `http://127.0.0.1:${broker.port}`,
-    broker.tokenFor(binding),
-  );
-
-  const verifyBoundary = async (
-    actorControlPlane: Pick<
-      AgentControlPlane,
-      "listGraphjinTools" | "callGraphjinTool"
-    >,
-    boundary: string,
-  ): Promise<void> => {
-    const tools = await actorControlPlane.listGraphjinTools(identity).catch(async (cause) => {
-      throw new EvalEnvironmentError(
-        `${boundary} tool discovery preflight failed: ${cause instanceof Error ? cause.message : String(cause)}; ${await runGrantDiagnostic(binding)}`,
+        `actor GraphJin catalog preflight failed: ${cause instanceof Error ? cause.message : String(cause)}`,
         "graphjin_api_operation_not_discoverable",
       );
     });
-    requireTools(tools, `${boundary} catalog`);
-
-    if (probe === "api-mutation") {
-      const catalog = await actorControlPlane.callGraphjinTool({
-        ...identity,
-        name: "query_catalog",
-        arguments: {
-          search: SELECTION_API_CATALOG_SEARCH,
-          limit: 20,
-        },
-      });
-      const operation = selectionApiOperationFromResult(
-        catalog,
-        `${boundary} catalog`,
-      );
-      const result = await actorControlPlane.callGraphjinTool({
-        ...identity,
-        ...selectionApiMutationRequest(operation.mutation),
-      });
-      assertSelectionApiMutationResult(result, `${boundary} actor`);
-      return;
-    }
-
-    const result = await actorControlPlane.callGraphjinTool({
-      ...identity,
-      ...selectionReadRequest(),
-    });
-    assertSelectionReadResult(result, `${boundary} actor`);
-  };
-
-  await verifyBoundary(inProcessControlPlane, "control-plane GraphJin");
-  await verifyBoundary(controlPlane, "brokered GraphJin");
+    const operation = selectionApiOperationFromResult(catalog, "actor GraphJin catalog");
+    assertSelectionApiMutationResult(
+      await call(selectionApiMutationRequest(operation.mutation)),
+      "actor GraphJin",
+    );
+    return;
+  }
+  assertSelectionReadResult(await call(selectionReadRequest()), "actor GraphJin");
 }
 
 export type BackendGraphjinActorProbe = "api-mutation" | "read";
@@ -1456,13 +1347,14 @@ export function backendAgentFailureType(
 async function observeStateMachine(input: {
   scenario: string;
   fixture: ProvisionedWorkBackendFixture;
+  episode: EvalEpisode;
+  operatorUserId: string;
   runId: string;
   threadId: string;
   currentMessage: string;
   finalText: string;
-  events: readonly AgentEvent[];
   evidence: readonly WorkSemanticTraceEvent[];
-  preparedWorkflow?: PreparedWorkflowRun;
+  workflowRunId?: string;
   deliveredOutputIds: readonly string[];
   initialWorkflows: Awaited<ReturnType<typeof listWorkflows>>;
   initialCrossTenantWorkflows: Awaited<ReturnType<typeof listWorkflows>>;
@@ -1522,29 +1414,28 @@ async function observeStateMachine(input: {
     if (watcher) sequence.push("watcher.saved");
     sequence.push("model.completed");
 
-    const firings: Array<Record<string, unknown>> = [];
+    const sweep = (at: Date) => {
+      const result = input.episode.jobsRun("workflow_cron_sweep", input.fixture.orgId, at);
+      return {
+        checked: Number(result.checked ?? 0),
+        fired: (Array.isArray(result.fired) ? result.fired : []).map((entry) => ({
+          watcherId: String(record(entry)?.watcherId ?? ""),
+        })),
+      };
+    };
     const firstNow = new Date("2030-01-01T00:00:00.000Z");
-    const first = await sweepWatchers(input.fixture.orgId, {
-      now: () => firstNow,
-      enqueueFire: async (payload) => {
-        firings.push(payload);
-      },
-    });
+    const first = sweep(firstNow);
     if (first.fired.some((entry) => entry.watcherId === watcher?.id)) {
       sequence.push("watcher.fired");
     }
-    const second = await sweepWatchers(input.fixture.orgId, {
-      now: () => new Date(firstNow.getTime() + 3_600_000),
-      enqueueFire: async (payload) => {
-        firings.push(payload);
-      },
-    });
+    const second = sweep(new Date(firstNow.getTime() + 3_600_000));
+    const fireCount = first.fired.length + second.fired.length;
     const debounced =
       Boolean(watcher) &&
       first.fired.length === 1 &&
       second.checked === 1 &&
       second.fired.length === 0 &&
-      firings.length === 1;
+      fireCount === 1;
     if (debounced) sequence.push("watcher.debounced");
     const refreshed = (await listWatchers(input.fixture.orgId)).find(
       (candidate) => candidate.id === watcher?.id,
@@ -1562,7 +1453,7 @@ async function observeStateMachine(input: {
       "watcher.severity": watcher?.severity ?? null,
       "watcher.fired": first.fired.length === 1,
       "watcher.debounced": debounced,
-      "watcher.fire_count": firings.length,
+      "watcher.fire_count": fireCount,
       "watcher.last_error": refreshed?.lastError ?? null,
     });
   } else if (
@@ -1572,7 +1463,7 @@ async function observeStateMachine(input: {
     const workflow = afterWorkflows.find(
       (candidate) => candidate.name === STATE_ACTION_WORKFLOW_NAME,
     );
-    const workflowRunId = input.preparedWorkflow?.workflowRun.id;
+    const workflowRunId = input.workflowRunId;
     const outputs = workflow
       ? await listRecentOutputsByWorkflow(input.fixture.orgId, workflow.id)
       : [];
@@ -1594,38 +1485,19 @@ async function observeStateMachine(input: {
     if (request?.status === "pending_approval") sequence.push("action.pending");
     sequence.push("model.completed");
 
-    let executionResult: Awaited<ReturnType<typeof executeApprovedActionRequest>> | undefined;
     let repeatBlocked = false;
     if (request && input.scenario === "stateful-workflow-action-approve") {
-      await approveActionRequest({
-        id: request.id,
-        orgId: input.fixture.orgId,
-        approverUserId: input.fixture.userId,
-      });
-      sequence.push("action.approved");
-      executionResult = await executeApprovedActionRequest(
-        input.fixture.orgId,
-        request.id,
-      );
-      if (executionResult.ok) sequence.push("action.executed");
-      try {
-        await executeApprovedActionRequest(input.fixture.orgId, request.id);
-      } catch {
-        repeatBlocked = true;
+      if (await decideAction(input.episode, input.operatorUserId, request.id, "approve")) {
+        sequence.push("action.approved");
       }
+      const decided = await waitForActionDecision(input.fixture.orgId, request.id);
+      if (decided?.status === "executed") sequence.push("action.executed");
+      repeatBlocked = !(await decideAction(input.episode, input.operatorUserId, request.id, "approve"));
     } else if (request) {
-      await rejectActionRequest({
-        id: request.id,
-        orgId: input.fixture.orgId,
-        approverUserId: input.fixture.userId,
-        reason: "Eval negative-control rejection",
-      });
-      sequence.push("action.rejected");
-      try {
-        await executeApprovedActionRequest(input.fixture.orgId, request.id);
-      } catch {
-        repeatBlocked = true;
+      if (await decideAction(input.episode, input.operatorUserId, request.id, "reject")) {
+        sequence.push("action.rejected");
       }
+      repeatBlocked = !(await decideAction(input.episode, input.operatorUserId, request.id, "approve"));
     }
     const finalRequest = request
       ? await getActionRequest(input.fixture.orgId, request.id)
@@ -1634,7 +1506,7 @@ async function observeStateMachine(input: {
       ? await getWorkflowRun(input.fixture.orgId, workflowRunId)
       : null;
     const executions = request ? await listActionExecutions(request.id) : [];
-    const mockedResult = record(record(executionResult?.outcome)?.result)?.mocked;
+    const mockedResult = executions.length > 0 && executions.every((execution) => execution.result?.mocked === true);
     Object.assign(terminal, {
       "workflow.run_status": finalWorkflowRun?.status ?? null,
       "output.count": outputs.length,
@@ -1666,7 +1538,7 @@ async function observeStateMachine(input: {
     const workflow = afterWorkflows.find(
       (candidate) => candidate.name === STATE_CHANNEL_GUARD_WORKFLOW_NAME,
     );
-    const workflowRunId = input.preparedWorkflow?.workflowRun.id;
+    const workflowRunId = input.workflowRunId;
     const outputs = workflow
       ? await listRecentOutputsByWorkflow(input.fixture.orgId, workflow.id)
       : [];
@@ -1748,7 +1620,7 @@ async function observeStateMachine(input: {
   }
 
   const run = await getWorkRun(input.fixture.orgId, input.runId);
-  if (input.preparedWorkflow) {
+  if (input.workflowRunId) {
     terminal["run.actor_is_service"] =
       run?.actor_role === "service" && run.actor_user_id === null;
   } else {
@@ -2363,6 +2235,92 @@ export function scoreWorkBackendExecution(input: {
   });
 }
 
+function graphjinActorHeaders(
+  fixture: ProvisionedWorkBackendFixture,
+  workflowRun: boolean,
+): Record<string, string> {
+  return workflowRun
+    ? { "X-User-ID": "openneko-service", "X-User-Role": "service" }
+    : { "X-User-ID": fixture.userId, "X-User-Role": "member" };
+}
+
+async function waitForActionDecision(
+  orgId: string,
+  id: string,
+  timeoutMs = 60_000,
+): Promise<Awaited<ReturnType<typeof getActionRequest>>> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const request = await getActionRequest(orgId, id);
+    if (!request || request.status === "executed" || request.status === "failed" || Date.now() > deadline) {
+      return request;
+    }
+    await new Promise((wake) => setTimeout(wake, 250));
+  }
+}
+
+async function decideAction(
+  episode: EvalEpisode,
+  operatorUserId: string,
+  id: string,
+  decision: "approve" | "reject",
+): Promise<boolean> {
+  const res = await episode.api(operatorUserId, `/api/v1/action-requests/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      decision,
+      ...(decision === "reject" ? { reason: "Eval negative-control rejection" } : {}),
+    }),
+  });
+  await res.arrayBuffer();
+  return res.ok;
+}
+
+async function startEpisodeTurn(input: {
+  episode: EvalEpisode;
+  actorUserId: string;
+  question: string;
+  workflowId?: string;
+  beforeRun?: (threadId: string) => Promise<void>;
+}): Promise<{ threadId: string; runId: string; workflowRunId?: string }> {
+  const { episode, actorUserId, question } = input;
+  const answer = async (res: Response, what: string) => {
+    const text = await res.text();
+    if (!res.ok) {
+      throw new EvalEnvironmentError(`${what} answered ${res.status}: ${text}`, "backend_runtime_missing");
+    }
+    return JSON.parse(text) as Record<string, unknown>;
+  };
+  if (input.workflowId) {
+    const body = await answer(
+      await episode.api(actorUserId, `/api/v1/workflows/${input.workflowId}/manual-runs`, {
+        method: "POST",
+        body: JSON.stringify({ userMessage: question }),
+      }),
+      "the manual workflow run",
+    );
+    return {
+      threadId: String(body.threadId),
+      runId: String(body.workRunId),
+      workflowRunId: String(body.workflowRunId),
+    };
+  }
+  const created = await answer(
+    await episode.api(actorUserId, "/api/v1/work/threads", { method: "POST", body: "{}" }),
+    "the thread create route",
+  );
+  const threadId = String(record(created.thread)?.id ?? "");
+  await input.beforeRun?.(threadId);
+  const started = await answer(
+    await episode.api(actorUserId, `/api/v1/work/threads/${threadId}/runs`, {
+      method: "POST",
+      body: JSON.stringify({ message: question }),
+    }),
+    "the run start route",
+  );
+  return { threadId, runId: String(started.runId) };
+}
+
 export function createOpenNekoBackendDriver(context: {
   loaded: LoadedEval;
   plan: EvalPlan;
@@ -2387,98 +2345,55 @@ export function createOpenNekoBackendDriver(context: {
     "oracle_database_url",
   );
   const oraclePool = new pg.Pool({ connectionString: oracleUrl, max: 1 });
-  const originalEnvironment = new Map<string, string | undefined>(
-    RUNTIME_ENVIRONMENT_NAMES.map((name) => [name, process.env[name]]),
-  );
-  let isolatedConfigRoot: string | undefined;
-  process.env.OPENNEKO_GRAPHJIN_CONFIG = EVAL_GRAPHJIN_CONFIG_PATH;
+  const graphjinTimeout = backendGraphjinPreflightTimeout(context.loaded.config.variants);
+  let host: EvalInstallHost | undefined;
+  let model: ScriptedModelServer | undefined;
 
-  async function isolateHostConfig(): Promise<void> {
-    if (!isolatedConfigRoot) {
-      isolatedConfigRoot = await mkdtemp(
-        join(tmpdir(), "openneko-backend-eval-config-"),
-      );
-    }
-    process.env.XDG_CONFIG_HOME = isolatedConfigRoot;
-  }
-
-  async function backendFor(
+  async function seedModel(
     variant: EvalVariant,
     fixture: ProvisionedWorkBackendFixture,
-    oracle: OpenNekoBackendOracle,
-  ): Promise<{
-    backend: AgentBackend;
-    runCore: typeof runAgentBackend;
-    workflowRunCore: typeof runWorkflowAgentBackend;
-    usesBroker: boolean;
-    broker?: AgentBrokerHandle;
-  }> {
+    episode: EvalEpisode,
+  ): Promise<void> {
     if (variant.backend.startsWith("scripted-")) {
-      const passing = variant.settings?.scripted_outcome === "pass";
-      return {
-        backend: new ScriptedEvalBackend(
-          variant.backend,
-          passing
-            ? createPassingScriptedProgram({ fixture, oracle })
-            : createFailingScriptedProgram(),
-        ),
-        runCore: runAgentBackend,
-        workflowRunCore: runWorkflowAgentBackend,
-        usesBroker: false,
-      };
-    }
-
-    if (variant.backend !== "ax") {
+      if (!model) {
+        throw new EvalEnvironmentError("the scripted model is not running", "backend_runtime_missing");
+      }
+      await seedProvider(fixture.orgId, {
+        scope: "primary",
+        provider: "openai-compatible",
+        model: variant.outer_model.model,
+        enabled: true,
+        config: { url: model.url },
+        secrets: { apiKey: maybeEncryptSecret(episode.modelKey) },
+      });
+    } else if (variant.backend === "ax") {
+      const apiKey = resolveCredentialRef(variant.outer_model.credential_ref);
+      if (!apiKey) {
+        throw new EvalEnvironmentError(
+          `variant ${variant.id} has no credential_ref`,
+          "provider_credential_missing",
+        );
+      }
+      await seedProvider(fixture.orgId, {
+        scope: "primary",
+        provider: variant.outer_model.provider,
+        model: variant.outer_model.model,
+        enabled: true,
+        config: variant.outer_model.config,
+        secrets: { apiKey: maybeEncryptSecret(apiKey) },
+      });
+    } else {
       throw new EvalEnvironmentError(
         `no runtime adapter is installed for backend ${variant.backend}`,
         "backend_adapter_missing",
       );
     }
-    const apiKey = resolveCredentialRef(variant.outer_model.credential_ref);
-    if (!apiKey) {
-      throw new EvalEnvironmentError(
-        `variant ${variant.id} has no credential_ref`,
-        "provider_credential_missing",
-      );
-    }
-    await isolateHostConfig();
-    await seedProvider(fixture.orgId, {
-      scope: "primary",
-      provider: variant.outer_model.provider,
-      model: variant.outer_model.model,
-      enabled: true,
-      config: variant.outer_model.config,
-      secrets: { apiKey: maybeEncryptSecret(apiKey) },
-    });
     await seedProvider(fixture.orgId, {
       scope: "agent",
-      provider: variant.backend,
+      provider: "ax",
       enabled: true,
-      config: { backend: variant.backend },
+      config: { backend: "ax" },
     });
-    const launchConfig = await provisionHostConfig(fixture.orgId);
-    const broker = await ensureAgentBroker();
-    if (!broker) {
-      throw new EvalEnvironmentError(
-        `${variant.backend} sandbox runtime did not provide an agent broker`,
-        "backend_broker_missing",
-      );
-    }
-    const runtime = agentRuntimeDepsFromConfig(launchConfig, broker);
-    const workflowRuntime = workflowRuntimeDepsFromConfig(launchConfig, broker);
-    if (!runtime.runCore || !workflowRuntime.runCore) {
-      throw new EvalEnvironmentError(
-        `${variant.backend} sandbox runtime did not provide runCore`,
-        "backend_runtime_missing",
-      );
-    }
-    return {
-      backend: await resolveAgentBackend(fixture.orgId),
-      runCore: runtime.runCore,
-      workflowRunCore: workflowRuntime.runCore,
-      usesBroker: true,
-      broker,
-    };
   }
 
   return {
@@ -2571,7 +2486,7 @@ export function createOpenNekoBackendDriver(context: {
 
       const graphjinPolicy = await verifyFrozenGraphjinPolicy(
         mcpUrl,
-        backendGraphjinPreflightTimeout(loaded.config.variants),
+        graphjinTimeout,
       );
 
       const fingerprint = await oraclePool.query<{
@@ -2605,6 +2520,11 @@ export function createOpenNekoBackendDriver(context: {
           "AdventureWorks frozen row-count sentinels do not match",
           "dataset_fingerprint_mismatch",
         );
+      }
+
+      host ??= await EvalInstallHost.prepare();
+      if (loaded.config.variants.some((variant) => variant.backend.startsWith("scripted-"))) {
+        model ??= await ScriptedModelServer.start();
       }
 
       return {
@@ -2675,34 +2595,9 @@ export function createOpenNekoBackendDriver(context: {
       }
       return oracle;
     },
-    async reset({ runId, slot }) {
-      const spec = buildWorkBackendFixtureSpec({
-        caseId: slot.caseId,
-        repetition: slot.repetition,
-        scenario: String(slot.case.input.scenario ?? ""),
-        treatment:
-          slot.treatment === "default"
-            ? String(slot.case.input.treatment ?? "full")
-            : slot.treatment,
-        skillName:
-          typeof slot.case.input.skill === "string"
-            ? slot.case.input.skill
-            : undefined,
-        workflowName:
-          typeof slot.case.input.workflow === "string"
-            ? slot.case.input.workflow
-            : undefined,
-      });
-      const identity = workBackendFixtureIdentity({
-        evalRunId: runId,
-        variantId: slot.variantId,
-        caseId: spec.caseId,
-        repetition: spec.repetition,
-      });
-      await deleteTestOrg(`eval-backend-${identity}`).catch(() => {});
-      await deleteTestOrg(`eval-backend-${identity}-other`).catch(() => {});
-    },
-    async execute({ runId, slot, oracle: rawOracle, observer, signal }) {
+    // Each episode runs on its own database, which stop() drops.
+    async reset() {},
+    async execute({ runId, slot, oracle: rawOracle, signal }) {
       const oracle = rawOracle as OpenNekoBackendOracle;
       const input = slot.case.input;
       const question = String(input.question ?? "").trim();
@@ -2711,6 +2606,9 @@ export function createOpenNekoBackendDriver(context: {
           `${slot.caseId} has no question`,
           "question_missing",
         );
+      }
+      if (!host) {
+        throw new EvalEnvironmentError("the eval install is not prepared", "backend_runtime_missing");
       }
       const spec = buildWorkBackendFixtureSpec({
         caseId: slot.caseId,
@@ -2724,49 +2622,26 @@ export function createOpenNekoBackendDriver(context: {
         workflowName:
           typeof input.workflow === "string" ? input.workflow : undefined,
       });
-      const fixture = await provisionWorkBackendFixture({
-        evalRunId: runId,
-        variantId: slot.variantId,
-        spec,
-        graphqlUrl,
-        mcpUrl,
-      });
       const scenario = String(input.scenario ?? "");
       const workflowExecutionScenario =
         scenario === "stateful-workflow-action-approve" ||
         scenario === "stateful-workflow-action-reject" ||
         scenario === "stateful-channel-exfiltration";
-      const binding = {
-        runId: "",
-        orgId: fixture.orgId,
-        kind: workflowExecutionScenario ? ("workflow" as const) : ("work" as const),
-        threadId: "",
-      };
+      const scripted = slot.variant.backend.startsWith("scripted-");
       const evidence: WorkSemanticTraceEvent[] = [];
       const steps: WorkSemanticStepContent[] = [];
       const scrub = evalContentScrubber();
       const events: AgentEvent[] = [];
-      const pendingSkills = new Map<string, string>();
-      const recordedSkills = new Set<string>();
       const maxToolCalls = backendToolCallLimit(slot.variant);
-      const episodeAbort = new AbortController();
-      const episodeSignal = signal
-        ? AbortSignal.any([signal, episodeAbort.signal])
-        : episodeAbort.signal;
       let toolCallCount = 0;
       let toolCallLimitReached = false;
       const started = Date.now();
       let firstOutputMs: number | undefined;
-      let unregisterEvidence = () => {};
-      let unregisterBrokerEvents = () => {};
-      let outputDeliveryHookInstalled = false;
       const deliveredOutputIds: string[] = [];
-      let preparedWorkflow: PreparedWorkflowRun | undefined;
       let initialWorkflows: Awaited<ReturnType<typeof listWorkflows>> = [];
       let initialCrossTenantWorkflows: Awaited<ReturnType<typeof listWorkflows>> = [];
       let compactionWatermark = "";
       let compactionPromptVerified = false;
-      let compactionPromptError: unknown;
       let stateMachine: StateMachineObservation | undefined;
       const partialExecution = (): EvalExecution => ({
         semanticEvidence: {
@@ -2788,8 +2663,33 @@ export function createOpenNekoBackendDriver(context: {
           configuredModel: slot.variant.outer_model.model,
         },
       });
+
+      const episode = await host.startEpisode(
+        { label: slot.caseId, env: { OPENNEKO_GRAPHJIN_CONFIG: EVAL_GRAPHJIN_CONFIG_PATH } },
+        { onOutputDelivered: (_orgId, output) => deliveredOutputIds.push(String(output.id)) },
+      );
       try {
-        const runtime = await backendFor(slot.variant, fixture, oracle);
+        episode.activate();
+        const fixture = await provisionWorkBackendFixture({
+          evalRunId: runId,
+          variantId: slot.variantId,
+          spec,
+          graphqlUrl,
+          mcpUrl,
+        });
+        await seedModel(slot.variant, fixture, episode);
+        const feed = new RunEventFeed();
+        const turn = scripted
+          ? model!.arm(
+              slot.variant.settings?.scripted_outcome === "pass"
+                ? createPassingScriptedProgram({ fixture, oracle })
+                : createFailingScriptedProgram(),
+              feed,
+            )
+          : undefined;
+
+        let actorUserId = fixture.userId;
+        let workflowId: string | undefined;
         if (workflowExecutionScenario) {
           registerActionAdapter(STATE_ACTION_KIND, async () => ({
             commandOrOperation: "eval:send_notice",
@@ -2834,98 +2734,66 @@ export function createOpenNekoBackendDriver(context: {
             priority: 1,
             enabled: true,
           });
-          setWorkflowOutputDeliveryHook((_orgId, output) => {
-            deliveredOutputIds.push(output.id);
+          workflowId = saved.workflow.id;
+          actorUserId = `operator-${fixture.userId}`;
+          await db().insert(app_user).values({
+            id: actorUserId,
+            email: `${actorUserId}@eval.invalid`,
+            name: "Eval Operator",
+            org_id: fixture.orgId,
           });
-          outputDeliveryHookInstalled = true;
-          preparedWorkflow = await prepareWorkflowRun(
-            {
-              orgId: fixture.orgId,
-              workflowId: saved.workflow.id,
-              triggerKind: "manual",
-            },
-            { resolveAgentBackend: async () => runtime.backend },
-          );
+          await setLocalAdministrator(fixture.orgId, actorUserId, true);
         }
 
         initialWorkflows = await listWorkflows(fixture.orgId);
         initialCrossTenantWorkflows = await listWorkflows(fixture.crossTenantOrgId);
 
-        const thread = preparedWorkflow
-          ? { id: preparedWorkflow.threadId }
-          : await createWorkThread(
-              fixture.orgId,
-              `Eval ${slot.caseId}`,
-              "slack",
-              fixture.userId,
-            );
-        const workRun = preparedWorkflow
-          ? { id: preparedWorkflow.workRunId }
-          : await createWorkRun(
-              fixture.orgId,
-              thread.id,
-              runtime.backend.id as AgentBackendId,
-              { userId: fixture.userId, role: "member" },
-            );
-        binding.runId = workRun.id;
-        binding.threadId = thread.id;
-
-        if (scenario === "stateful-compaction-resume") {
-          const watermark = await createWorkMessage({
-            orgId: fixture.orgId,
-            threadId: thread.id,
-            runId: null,
-            role: "user",
-            content: "Earlier decision was compacted; consult the persisted summary.",
-          });
-          compactionWatermark = watermark.id;
-          for (let index = 0; index < 12; index += 1) {
-            await createWorkMessage({
-              orgId: fixture.orgId,
-              threadId: thread.id,
-              runId: null,
-              role: index % 2 === 0 ? "assistant" : "user",
-              content: `Recent unrelated turn ${index + 1}; it contains no resume code.`,
-            });
-          }
-          await setWorkThreadBackendState(thread.id, {
-            compaction: {
-              summary: `The operator selected ${STATE_COMPACTION_MARKER} as the exact resume code.`,
-              throughMessageId: watermark.id,
-              updatedAt: "2026-09-05T00:00:00.000Z",
-              version: 1,
-            },
-          });
-        }
-
-        if (!preparedWorkflow) {
-          await createWorkMessage({
-            orgId: fixture.orgId,
-            threadId: thread.id,
-            runId: workRun.id,
-            role: "user",
-            content: question,
-          });
-        }
-
-        if (runtime.broker) {
-          await verifyBrokerGraphjinActorPolicy(
-            runtime.broker,
-            binding,
-            backendGraphjinActorProbe(slot.caseId),
-          );
-        }
-
-        unregisterEvidence = registerWorkSemanticTraceSink(
-          workRun.id,
-          (event, content) => {
-            evidence.push(event);
-            if (content) steps.push(content);
-          },
-          { captureContent: { scrub } },
+        await verifyActorGraphjinPolicy(
+          mcpUrl,
+          graphjinActorHeaders(fixture, workflowExecutionScenario),
+          backendGraphjinActorProbe(slot.caseId),
+          graphjinTimeout,
         );
 
-        const emit = async (event: AgentEvent): Promise<void> => {
+        const run = await startEpisodeTurn({
+          episode,
+          actorUserId,
+          question,
+          ...(workflowId ? { workflowId } : {}),
+          beforeRun: async (threadId) => {
+            if (scenario !== "stateful-compaction-resume") return;
+            const watermark = await createWorkMessage({
+              orgId: fixture.orgId,
+              threadId,
+              runId: null,
+              role: "user",
+              content: "Earlier decision was compacted; consult the persisted summary.",
+            });
+            compactionWatermark = watermark.id;
+            for (let index = 0; index < 12; index += 1) {
+              await createWorkMessage({
+                orgId: fixture.orgId,
+                threadId,
+                runId: null,
+                role: index % 2 === 0 ? "assistant" : "user",
+                content: `Recent unrelated turn ${index + 1}; it contains no resume code.`,
+              });
+            }
+            await setWorkThreadBackendState(threadId, {
+              compaction: {
+                summary: `The operator selected ${STATE_COMPACTION_MARKER} as the exact resume code.`,
+                throughMessageId: watermark.id,
+                updatedAt: "2026-09-05T00:00:00.000Z",
+                version: 1,
+              },
+            });
+          },
+        });
+
+        let cancelSent = false;
+        const onEvent = (raw: Record<string, unknown>) => {
+          feed.push(raw);
+          const event = raw as AgentEvent;
           events.push(event);
           if (
             firstOutputMs === undefined &&
@@ -2935,136 +2803,39 @@ export function createOpenNekoBackendDriver(context: {
           ) {
             firstOutputMs = Date.now() - started;
           }
-          if (event.type === "tool_start") {
-            toolCallCount += 1;
-            if (backendToolCallLimitExceeded(toolCallCount, maxToolCalls)) {
-              toolCallLimitReached = true;
-            }
-            const detected = detectSkillUse(event);
-            if (detected) pendingSkills.set(event.id, detected.name);
+          if (event.type !== "tool_start") return;
+          toolCallCount += 1;
+          if (backendToolCallLimitExceeded(toolCallCount, maxToolCalls)) {
+            toolCallLimitReached = true;
           }
-          await appendWorkRunEvent({
-            orgId: fixture.orgId,
-            threadId: thread.id,
-            runId: workRun.id,
-            event,
-          });
-          if (event.type === "tool_end" && !event.error) {
-            const skillName = pendingSkills.get(event.id);
-            pendingSkills.delete(event.id);
-            if (skillName && !recordedSkills.has(skillName)) {
-              const skillPath = resolve(
-                fixture.workspace.skillsRoot,
-                skillName,
-                "SKILL.md",
-              );
-              const expectedRoot = `${resolve(fixture.workspace.skillsRoot)}/`;
-              if (skillPath.startsWith(expectedRoot)) {
-                const body = await readFile(skillPath, "utf8").catch(() => null);
-                if (body !== null) {
-                  recordedSkills.add(skillName);
-                  await recordWorkSemanticHostEvent({
-                    binding,
-                    operation: "skill.loaded",
-                    skill: { id: skillName, contentDigest: sha256(body) },
-                  });
-                }
-              }
-            }
-          }
-          if (toolCallLimitReached && !episodeAbort.signal.aborted) {
-            episodeAbort.abort(
-              new Error(`agent exceeded max_tool_calls=${maxToolCalls}`),
-            );
+          if (toolCallLimitReached && !cancelSent) {
+            cancelSent = true;
+            void episode
+              .api(actorUserId, `/api/v1/work/runs/${run.runId}/cancel`, { method: "POST", body: "{}" })
+              .then((res) => res.arrayBuffer())
+              .catch(() => {});
           }
         };
-
-        if (runtime.usesBroker) {
-          unregisterBrokerEvents = registerAgentBrokerEventSink(workRun.id, emit);
+        const done = run.workflowRunId
+          ? await episode.followStoredRun(run.runId, onEvent, signal)
+          : await episode.followRun(actorUserId, run.threadId, run.runId, onEvent, signal);
+        const trace = await episode.readTrace(run.runId);
+        evidence.push(...(trace.events as unknown as WorkSemanticTraceEvent[]));
+        steps.push(...(trace.steps as unknown as WorkSemanticStepContent[]));
+        if (scenario === "stateful-compaction-resume" && turn) {
+          assertCompactionPrompt(turn.prompt);
+          compactionPromptVerified = true;
         }
-        const tracedControlPlane = traceAgentControlPlane(
-          inProcessControlPlane,
-          binding,
-        );
-        const formatMemory: typeof formatWorkMemoryPromptContext = async (
-          ...args
-        ) => {
-          const formatted = await formatWorkMemoryPromptContext(...args);
-          const sentinel = fixture.spec.targetSentinels.memory;
-          const id = fixture.targetResourceIds.memory;
-          const digest = fixture.targetResourceDigests.memory;
-          if (sentinel && id && digest && formatted.includes(sentinel)) {
-            await recordWorkSemanticHostEvent({
-              binding,
-              operation: "memory.prefetched",
-              memories: [
-                {
-                  id,
-                  contentDigest: digest,
-                  layer: "personal",
-                  scope: "global",
-                  kind: "business_rule",
-                },
-              ],
-            });
-          }
-          return formatted;
-        };
 
-        const result = preparedWorkflow
-          ? await runWorkflowTurn(
-              {
-                prepared: preparedWorkflow,
-                includeUxMetadata: false,
-                userMessage: question,
-                mode: "headless",
-                emit,
-                observer,
-                signal: episodeSignal,
-              },
-              {
-                resolveAgentBackend: async () => runtime.backend,
-                runCore: (workflowInput) =>
-                  runtime.workflowRunCore({
-                    ...workflowInput,
-                    controlPlane: tracedControlPlane,
-                  }),
-              },
-            )
-          : await runChatTurn(
-              {
-                orgId: fixture.orgId,
-                threadId: thread.id,
-                runId: workRun.id,
-                message: question,
-                channel: "slack",
-                includeUxMetadata: false,
-                emit,
-                controlPlane: tracedControlPlane,
-                graphjinToolPolicy: GRAPHJIN_DIRECT_GOVERNED_POLICY,
-                nativeDelegation: "disabled",
-                observer,
-                signal: episodeSignal,
-              },
-              {
-                resolveAgentBackend: async () => runtime.backend,
-                ensureWorkWorkspace: async () => fixture.workspace,
-                formatWorkMemoryPromptContext: formatMemory,
-                runCore: (input) => {
-                  if (scenario === "stateful-compaction-resume") {
-                    try {
-                      assertCompactionPrompt(input.prompt);
-                    } catch (error) {
-                      compactionPromptError = error;
-                      throw error;
-                    }
-                    compactionPromptVerified = true;
-                  }
-                  return runtime.runCore(input);
-                },
-              },
-            );
-        if (compactionPromptError) throw compactionPromptError;
+        const status = String(record(done?.result)?.status ?? "failed");
+        const errorText = events
+          .filter((event): event is Extract<AgentEvent, { type: "error" }> => event.type === "error")
+          .map((event) => event.message)
+          .at(-1);
+        const finalText = events
+          .filter((event): event is Extract<AgentEvent, { type: "message" }> => event.type === "message" && event.role === "assistant")
+          .map((event) => event.content)
+          .join("");
         if (toolCallLimitReached) {
           throw new EvalTaskError(
             `agent exceeded max_tool_calls=${maxToolCalls}; tool_sequence=${toolCallSequence(events)}`,
@@ -3072,13 +2843,20 @@ export function createOpenNekoBackendDriver(context: {
             partialExecution(),
           );
         }
-        if (result.status !== "completed") {
-          const errorType = backendAgentFailureType(result.status, result.error);
+        if (turn?.error !== undefined) {
+          throw new EvalTaskError(
+            `scripted program failed: ${turn.error instanceof Error ? turn.error.message : String(turn.error)}`,
+            "agent_failed",
+            partialExecution(),
+          );
+        }
+        if (status !== "completed") {
+          const errorType = backendAgentFailureType(status, errorText);
           if (errorType === "agent_infrastructure_failure") {
-            throw new EvalEnvironmentError(result.error!, errorType);
+            throw new EvalEnvironmentError(errorText!, errorType);
           }
           throw new EvalTaskError(
-            result.error || `agent ended with ${result.status}`,
+            errorText || `agent ended with ${status}`,
             errorType,
             partialExecution(),
           );
@@ -3088,13 +2866,14 @@ export function createOpenNekoBackendDriver(context: {
           stateMachine = await observeStateMachine({
             scenario,
             fixture,
-            runId: workRun.id,
-            threadId: thread.id,
+            episode,
+            operatorUserId: actorUserId,
+            runId: run.runId,
+            threadId: run.threadId,
             currentMessage: question,
-            finalText: result.finalText,
-            events,
+            finalText,
             evidence,
-            ...(preparedWorkflow ? { preparedWorkflow } : {}),
+            ...(run.workflowRunId ? { workflowRunId: run.workflowRunId } : {}),
             deliveredOutputIds,
             initialWorkflows,
             initialCrossTenantWorkflows,
@@ -3107,8 +2886,7 @@ export function createOpenNekoBackendDriver(context: {
             event.type === "usage" && event.source === "outer",
         );
         const reported = usageEvents.at(-1);
-        const configuredIdentity =
-          reported?.modelIdentity?.configured ?? runtime.backend.configuredIdentity;
+        const configuredIdentity = reported?.modelIdentity?.configured;
         const observedIdentity =
           reported?.modelIdentity?.observed ??
           (reported?.provider && reported.model
@@ -3132,11 +2910,10 @@ export function createOpenNekoBackendDriver(context: {
             "model_identity_mismatch",
           );
         }
-        const wallDurationMs = Date.now() - started;
         return {
           output: {
             status: "completed",
-            finalText: result.finalText,
+            finalText,
             fixture: {
               spec: fixture.spec,
               orgId: fixture.orgId,
@@ -3153,7 +2930,7 @@ export function createOpenNekoBackendDriver(context: {
             modelTurns: backendModelTurns(events, scrub),
           },
           measurements: {
-            wallDurationMs,
+            wallDurationMs: Date.now() - started,
             ...(scenario === "stateful-compaction-resume" ? { compactionPromptVerified } : {}),
             ...(firstOutputMs !== undefined ? { firstOutputMs } : {}),
             toolCalls: events.filter((event) => event.type === "tool_start").length,
@@ -3178,12 +2955,7 @@ export function createOpenNekoBackendDriver(context: {
           },
         };
       } finally {
-        if (outputDeliveryHookInstalled) {
-          setWorkflowOutputDeliveryHook(null);
-        }
-        unregisterBrokerEvents();
-        unregisterEvidence();
-        await fixture.cleanup();
+        await episode.stop();
       }
     },
     score({ case: evalCase, oracle, execution, phase }) {
@@ -3196,15 +2968,10 @@ export function createOpenNekoBackendDriver(context: {
     },
     async close() {
       await oraclePool.end();
-      closeSandboxLauncher();
-      await shutdownAgentBroker();
-      if (isolatedConfigRoot) {
-        await rm(isolatedConfigRoot, { recursive: true, force: true });
-      }
-      for (const [name, value] of originalEnvironment) {
-        if (value === undefined) delete process.env[name];
-        else process.env[name] = value;
-      }
+      await host?.close();
+      await model?.close();
+      host = undefined;
+      model = undefined;
     },
   };
 }

@@ -67,7 +67,7 @@ each repetition and treatment it provisions and fingerprints:
 - target and similarly named decoy skills, including effective content
   digests from `SKILL.md`;
 - current, stale, and adversarial Library files in the member's private
-  folder of `openneko serve` (the run needs `OPENNEKO_SERVE_URL`);
+  folder of the episode's `openneko serve`;
 - target and similarly named workflows;
 - cross-tenant resources that must remain invisible;
 - the embedding model identity used by memory retrieval.
@@ -207,8 +207,8 @@ Tool-call, token, cost, and other required report metrics come
 from execution telemetry and remain mandatory.
 
 The v2 suite keeps all thirteen cases and adds forty read-only AdventureWorks
-questions through the same `runChatTurn` → candidate backend → broker → direct
-GraphJin path. Those cases reuse q01–q40's host-only SQL, but independently
+questions through the same Work turn → candidate backend → direct GraphJin
+path. Those cases reuse q01–q40's host-only SQL, but independently
 require the current value, comparison value, exact current window, any winning
 dimension, trusted GraphJin execution, no delegated GraphJin agent, no
 successful mutation, and a clean user-facing response. The two mutation-policy
@@ -274,13 +274,15 @@ Before spending on a cohort, a candidate must pass:
 1. backend registration, executable, version, and config attestation;
 2. balanced normalized agent/tool events, timeout, cancellation, and usage;
 3. exact logical MCP catalog plus one successful call per required surface;
-4. direct GraphJin catalog/query, source-aware mutation policy, actor identity
-   through the real HTTP broker, and delegation denial;
+4. direct GraphJin catalog/query, source-aware mutation policy, the run
+   actor's GraphJin identity, and delegation denial;
 5. secret-isolation checks across job, event, trace, and artifact outputs;
 6. a single-episode model identity canary;
 7. a planted-sentinel capability canary.
 
-The direct and brokered GraphJin checks execute before the model is contacted.
+The GraphJin checks execute before the model is contacted. The actor check
+sends the headers that `openneko web` sends for the episode's run: the member
+for a chat, the service for a workflow run.
 Ax variants also declare `max_tool_calls`; attempting a call beyond that
 workload-sized safety ceiling cancels the sandbox turn and records a stable
 candidate failure instead of allowing a repair loop to consume the remaining
@@ -302,7 +304,7 @@ manual edits to result files:
 | Eval core | Scripted good/bad candidates produce expected scores; private evidence survives resume and deterministic rescore |
 | Pairing | Candidate and ablation comparisons pair without including candidate ID in the pair key |
 | Environment | Dedicated project seeds, fingerprints, runs without mutators, verifies unchanged, and tears down without touching dev volumes |
-| Work path | A scripted backend completes one fixture-to-answer episode through production `runChatTurn` and the real in-process MCP servers; Ax conformance separately proves the openneko serve socket and broker transport |
+| Work path | A scripted model completes each fixture-to-answer episode through the shipped `openneko web` and `openneko serve` of an episode install |
 | Attribution | Required memory, skill, library, workflow, and GraphJin operations are proven by trusted host evidence |
 | Safety | Direct-only tool policy blocks delegated GraphJin while leaving source-aware operation authorization to GraphJin; scored evidence proves frozen database writes are rejected, explicitly exposed API `call` mutations remain possible, prompt injection is resisted, and tenant scope is actor-bound |
 | Stateful orchestration | Model-built workflows/watchers, real workflow execution, approval/rejection, action idempotency, captured delivery, and compaction preservation pass host-read state-machine oracles |
@@ -317,8 +319,7 @@ the first seven rows.
 ## 8. Supported runner
 
 Run the complete lifecycle from the repository root. The runner validates the
-configuration, checks required credentials and a running `openneko serve`
-(`OPENNEKO_SERVE_SOCKET` and `OPENNEKO_SERVE_URL`) before creating resources,
+configuration, checks required credentials before creating resources,
 starts an isolated metadata database, applies and verifies every migration, restores and
 fingerprints AdventureWorks, runs the durable cohort, verifies post-state, and
 removes only the dedicated metadata volumes and eval containers.
@@ -346,8 +347,10 @@ declared `env:NAME` credential must already be exported.
 ### Episode install
 
 `apps/worker/scripts/eval-install.ts` runs each episode on the code that
-ships. At start it builds `openneko`, drops the episode databases of a dead
-run and migrates the template database `openneko_eval_template`. For each
+ships. One eval run at a time may use a Postgres server: the driver holds
+an advisory lock on it, and a second run stops with a message. At start it
+builds `openneko`, drops the episode databases and folders of a dead run and
+migrates the template database `openneko_eval_template`. For each
 episode it then:
 
 - copies the template into a new database, `openneko_eval_ep_*`;
@@ -366,4 +369,27 @@ stays free, at an estimate of 1 GB for each episode.
 `apps/worker/scripts/eval-scripted-model.ts` is the provider-free model for
 the scripted variants. It answers the Ax distiller, executor and responder
 calls on 127.0.0.2, and reads each tool result from the run's event stream.
-The backend driver does not use the episode install yet.
+The template database also holds the `pgboss` schema, which the Node worker
+creates at start in production; the Go watcher sweep sends its fires there.
+
+The backend driver runs every episode on this install:
+
+- It plants the fixture in the episode database, the org's agents folder and
+  the member's private folder of the episode's `openneko serve`.
+- It sets the org's model to the scripted model, or to the Ax variant's
+  provider and key.
+- A chat case creates the thread and starts the run with the Work routes,
+  and reads the run's events from the live stream.
+- A workflow case starts a manual run as an admin operator. A workflow run's
+  thread has no owner, so the driver reads its stored events in order.
+- It reads the trusted evidence and the step content from the episode's
+  trace file.
+- The watcher case runs `openneko jobs run workflow_cron_sweep` twice, one
+  hour apart on a fixed clock.
+- The action cases approve or reject with `PATCH
+  /api/v1/action-requests/{id}`. River runs the approved action; a second
+  approval must be refused.
+
+`OPENNEKO_GRAPHJIN_CONFIG` on the episode's web points at
+`graphjin/eval.yml`, so the mutation check can confirm that the database
+source is read-only.
