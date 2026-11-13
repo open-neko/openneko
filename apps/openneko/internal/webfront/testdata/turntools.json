@@ -2313,6 +2313,509 @@
      }
     }
    ]
+  },
+  {
+   "name": "admin tools",
+   "servers": [
+    "neko_user_manager",
+    "neko_channel_manager",
+    "neko_data_source_manager",
+    "neko_audit"
+   ],
+   "tools": [
+    {
+     "name": "user_manager_list_users",
+     "description": "List the org's users and synchronized SSO groups with stable IDs, membership, role, disabled state, and last login. Use before proposing any user, group, or access change.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "user_manager_request_user_change",
+     "description": "Propose a user-management change: invite (email + role), set_role (userId + role admin|member), deactivate or reactivate (userId). NEVER applies directly — files an action request that an ADMIN must approve on the approvals surface. Tell the operator what you proposed and end your turn.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "action": {
+        "type": "string",
+        "enum": [
+         "invite",
+         "set_role",
+         "deactivate",
+         "reactivate"
+        ]
+       },
+       "email": {
+        "type": "string",
+        "format": "email",
+        "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+       },
+       "userId": {
+        "type": "string",
+        "minLength": 1
+       },
+       "role": {
+        "type": "string",
+        "enum": [
+         "admin",
+         "member"
+        ]
+       },
+       "intent": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+       }
+      },
+      "required": [
+       "action",
+       "intent"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "user_manager_list_groups",
+     "description": "List OpenNeko groups with their members (and whether each membership is local or from an IdP rule), the items each group holds, IdP rules, and each group's table data access. Use before proposing any group, item grant or data access change.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "user_manager_request_group_change",
+     "description": "Propose a group change: create_group (name, description?), delete_group (groupId), add_member or remove_member (groupId + userId), add_idp_rule (ssoGroupId + groupId) or remove_idp_rule (ruleId). NEVER applies directly — files an action request an ADMIN must approve. Tell the operator what you proposed and end your turn.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "action": {
+        "type": "string",
+        "enum": [
+         "create_group",
+         "delete_group",
+         "add_member",
+         "remove_member",
+         "add_idp_rule",
+         "remove_idp_rule"
+        ]
+       },
+       "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+       },
+       "description": {
+        "type": "string",
+        "maxLength": 500
+       },
+       "groupId": {
+        "type": "string",
+        "minLength": 1
+       },
+       "userId": {
+        "type": "string",
+        "minLength": 1
+       },
+       "ssoGroupId": {
+        "type": "string",
+        "minLength": 1
+       },
+       "ruleId": {
+        "type": "string",
+        "minLength": 1
+       },
+       "intent": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+       }
+      },
+      "required": [
+       "action",
+       "intent"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "user_manager_request_item_grant",
+     "description": "Propose granting or revoking one item for a group. itemType is one of skill, workflow, metric, dashboard, watcher, team_memory, data_source, saved_query, api_operation, action, integration, channel, pack. itemId '*' means every current and future item of the type. NEVER applies directly — an ADMIN must approve.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "action": {
+        "type": "string",
+        "enum": [
+         "grant_item",
+         "revoke_item"
+        ]
+       },
+       "groupId": {
+        "type": "string",
+        "minLength": 1
+       },
+       "itemType": {
+        "type": "string",
+        "enum": [
+         "skill",
+         "workflow",
+         "metric",
+         "dashboard",
+         "watcher",
+         "team_memory",
+         "data_source",
+         "saved_query",
+         "api_operation",
+         "action",
+         "integration",
+         "channel",
+         "pack"
+        ]
+       },
+       "itemId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+       },
+       "intent": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+       }
+      },
+      "required": [
+       "action",
+       "groupId",
+       "itemType",
+       "itemId",
+       "intent"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "user_manager_request_data_access_change",
+     "description": "Propose which table rows and columns a group reads through GraphJin: set_table_access (groupId, source, table as name or schema.name, columns, rowFilter?) or remove_table_access (ruleId). rowFilter is a tree of {column, op, value} conditions joined with {and: []} or {or: []}; value may be {var: 'user_id'} or {var: 'user_groups'}. NEVER applies directly — an ADMIN must approve.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "action": {
+        "type": "string",
+        "enum": [
+         "set_table_access",
+         "remove_table_access"
+        ]
+       },
+       "groupId": {
+        "type": "string",
+        "minLength": 1
+       },
+       "source": {
+        "type": "string",
+        "minLength": 1
+       },
+       "table": {
+        "type": "string",
+        "minLength": 1
+       },
+       "columns": {
+        "minItems": 1,
+        "type": "array",
+        "items": {
+         "type": "string",
+         "minLength": 1
+        }
+       },
+       "rowFilter": {
+        "allOf": [
+         {
+          "$ref": "#/definitions/__schema0"
+         }
+        ]
+       },
+       "ruleId": {
+        "type": "string",
+        "minLength": 1
+       },
+       "intent": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+       }
+      },
+      "required": [
+       "action",
+       "intent"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+       "__schema0": {
+        "anyOf": [
+         {
+          "type": "object",
+          "properties": {
+           "and": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+             "$ref": "#/definitions/__schema0"
+            }
+           }
+          },
+          "required": [
+           "and"
+          ]
+         },
+         {
+          "type": "object",
+          "properties": {
+           "or": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+             "$ref": "#/definitions/__schema0"
+            }
+           }
+          },
+          "required": [
+           "or"
+          ]
+         },
+         {
+          "type": "object",
+          "properties": {
+           "column": {
+            "type": "string",
+            "minLength": 1
+           },
+           "op": {
+            "type": "string",
+            "enum": [
+             "eq",
+             "neq",
+             "gt",
+             "gte",
+             "lt",
+             "lte",
+             "in",
+             "nin",
+             "is_null"
+            ]
+           },
+           "value": {
+            "anyOf": [
+             {
+              "type": "string"
+             },
+             {
+              "type": "number"
+             },
+             {
+              "type": "boolean"
+             },
+             {
+              "type": "array",
+              "items": {
+               "anyOf": [
+                {
+                 "type": "string"
+                },
+                {
+                 "type": "number"
+                },
+                {
+                 "type": "boolean"
+                }
+               ]
+              }
+             },
+             {
+              "type": "object",
+              "properties": {
+               "var": {
+                "type": "string",
+                "enum": [
+                 "user_id",
+                 "user_groups",
+                 "account_id"
+                ]
+               }
+              },
+              "required": [
+               "var"
+              ]
+             }
+            ]
+           }
+          },
+          "required": [
+           "column",
+           "op",
+           "value"
+          ]
+         }
+        ]
+       }
+      }
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "channel_manager_list_channels",
+     "description": "List the org's channel workspaces (Slack team / Telegram bot bindings) and every channel identity seen, with link status (linked|unverified|blocked) and the app_user it acts as. Use before proposing any change, and to answer 'who can reach the agent from chat?'.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "channel_manager_request_channel_change",
+     "description": "Propose a channel-identity change: link (identityId + appUserId), unlink, block or unblock (identityId). NEVER applies directly — files an action request that an ADMIN must approve on the approvals surface. Tell the operator what you proposed and end your turn.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "action": {
+        "type": "string",
+        "enum": [
+         "link",
+         "unlink",
+         "block",
+         "unblock"
+        ]
+       },
+       "identityId": {
+        "type": "string",
+        "minLength": 1
+       },
+       "appUserId": {
+        "type": "string",
+        "minLength": 1
+       },
+       "intent": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+       }
+      },
+      "required": [
+       "action",
+       "identityId",
+       "intent"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "data_source_manager_list_data_sources",
+     "description": "List the org's registered data sources: name, label, auth mode, default flag, enabled state and server hostname. No connection strings or credentials are ever returned. Use before proposing any change.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "data_source_manager_request_data_source_change",
+     "description": "Propose a data-source registry change: register (name + optional label — creates a DISABLED placeholder; the admin completes the connection in Settings, credentials never pass through chat), enable, disable, set_default, or remove (name). NEVER applies directly — files an action request that an ADMIN must approve. Tell the operator what you proposed and end your turn.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "action": {
+        "type": "string",
+        "enum": [
+         "register",
+         "enable",
+         "disable",
+         "set_default",
+         "remove"
+        ]
+       },
+       "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+       },
+       "label": {
+        "type": "string",
+        "maxLength": 120
+       },
+       "sourceKind": {
+        "type": "string",
+        "enum": [
+         "graphjin",
+         "database",
+         "api",
+         "files",
+         "code"
+        ]
+       },
+       "intent": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+       }
+      },
+      "required": [
+       "action",
+       "name",
+       "intent"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "audit_audit_trail",
+     "description": "ADMIN ONLY. The org's audit trail: recent action requests (who proposed what via which agent backend, and what happened), behavioral alerts (SEC7 thresholds), and a 24h summary of control-plane gateway calls per run. Use to answer 'what has the agent been doing?' and 'who approved that?'.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 200
+       }
+      },
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    }
+   ]
   }
  ],
  "calls": [
@@ -13963,6 +14466,2739 @@
     "isError": true
    },
    "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "users list",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_list_users",
+   "arguments": {},
+   "replies": {
+    "listUsers": {
+     "value": {
+      "users": [
+       {
+        "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        "email": "ana@example.com",
+        "name": "Ana",
+        "role": "admin",
+        "disabledAt": null,
+        "lastLoginAt": "2026-11-12T08:00:00.000Z",
+        "groupIds": []
+       }
+      ],
+      "groups": []
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"users\":[{\"id\":\"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee\",\"email\":\"ana@example.com\",\"name\":\"Ana\",\"role\":\"admin\",\"disabledAt\":null,\"lastLoginAt\":\"2026-11-12T08:00:00.000Z\",\"groupIds\":[]}],\"groups\":[]}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listUsers",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "users list no arguments",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_list_users",
+   "replies": {
+    "listUsers": {
+     "value": {
+      "users": []
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool list_users: [\n  {\n    \"expected\": \"object\",\n    \"code\": \"invalid_type\",\n    \"path\": [],\n    \"message\": \"Invalid input: expected object, received undefined\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "users list fails",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_list_users",
+   "arguments": {},
+   "replies": {
+    "listUsers": {
+     "throws": "database is down"
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "database is down"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "listUsers",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "user invite auto",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_user_change",
+   "arguments": {
+    "action": "invite",
+    "email": " ben@example.com ",
+    "role": "member",
+    "intent": " Ben joins finance. "
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "allow",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "slack_auto",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "auto_approve"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "approved"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"approved\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"note\":\"Queued for execution; the result lands in this run.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "user_admin",
+      "target": "ben@example.com",
+      "riskLevel": "high"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "user_admin",
+      "target": "ben@example.com",
+      "payload": {
+       "action": "invite",
+       "email": "ben@example.com",
+       "role": "member"
+      },
+      "riskLevel": "high",
+      "status": "approved",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Ben joins finance.",
+      "intent": "Ben joins finance.",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    },
+    {
+     "method": "enqueueActionExecute",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "actionRequestId": "99999999-9999-4999-8999-999999999999"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "user_admin",
+     "scope": "internal",
+     "decision": "auto_approved",
+     "summary": "Ben joins finance.",
+     "risk_level": "high"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "user set role needs approval",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_user_change",
+   "arguments": {
+    "action": "set_role",
+    "userId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    "role": "admin",
+    "intent": "Ana runs the rules now."
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"pending_approval\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"note\":\"Approval-gated: tell the operator what you proposed and end your turn — the approval card is rendered inline.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "user_admin",
+      "target": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      "riskLevel": "high"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "user_admin",
+      "target": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      "payload": {
+       "action": "set_role",
+       "userId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+       "role": "admin"
+      },
+      "riskLevel": "high",
+      "status": "pending_approval",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Ana runs the rules now.",
+      "intent": "Ana runs the rules now.",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "user_admin",
+     "scope": "internal",
+     "decision": "pending_approval",
+     "summary": "Ana runs the rules now.",
+     "risk_level": "high"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "user deactivate denied",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_user_change",
+   "arguments": {
+    "action": "deactivate",
+    "userId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    "intent": "Ana left."
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "deny",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "no_email",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "never",
+      "reason": "policy \"no_email\" mode=never"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"decision\":\"denied\",\"reason\":\"policy \\\"no_email\\\" mode=never\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "user_admin",
+      "target": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      "riskLevel": "high"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "user reactivate no policy",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_user_change",
+   "arguments": {
+    "action": "reactivate",
+    "userId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    "intent": "Ana is back."
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "no_policy",
+      "reason": "no_matching_policy"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"decision\":\"denied\",\"reason\":\"no_matching_policy\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "user_admin",
+      "target": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      "riskLevel": "high"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "user change denied without reason",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_user_change",
+   "arguments": {
+    "action": "deactivate",
+    "userId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    "intent": "Ana left."
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "deny",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "slack_auto",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "never"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"decision\":\"denied\",\"reason\":\"policy denies this change from chat\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "user_admin",
+      "target": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      "riskLevel": "high"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "user invite needs role",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_user_change",
+   "arguments": {
+    "action": "invite",
+    "email": "ben@example.com",
+    "intent": "Ben joins."
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"error\":\"invite needs email + role\"}"
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "user set role needs user",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_user_change",
+   "arguments": {
+    "action": "set_role",
+    "role": "admin",
+    "intent": "Promote."
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"error\":\"set_role needs userId\"}"
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "user change argument faults",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_user_change",
+   "arguments": {
+    "action": "delete",
+    "email": "not an email",
+    "userId": " ",
+    "role": "owner",
+    "intent": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request_user_change: [\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"invite\",\n      \"set_role\",\n      \"deactivate\",\n      \"reactivate\"\n    ],\n    \"path\": [\n      \"action\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"invite\\\"|\\\"set_role\\\"|\\\"deactivate\\\"|\\\"reactivate\\\"\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"invalid_format\",\n    \"format\": \"email\",\n    \"pattern\": \"/^(?!\\\\.)(?!.*\\\\.\\\\.)([A-Za-z0-9_'+\\\\-\\\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\\\-]*\\\\.)+[A-Za-z]{2,}$/\",\n    \"path\": [\n      \"email\"\n    ],\n    \"message\": \"Invalid email address\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"userId\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"admin\",\n      \"member\"\n    ],\n    \"path\": [\n      \"role\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"admin\\\"|\\\"member\\\"\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 500,\n    \"inclusive\": true,\n    \"path\": [\n      \"intent\"\n    ],\n    \"message\": \"Too big: expected string to have <=500 characters\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "user change missing fields",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_user_change",
+   "arguments": {},
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request_user_change: [\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"invite\",\n      \"set_role\",\n      \"deactivate\",\n      \"reactivate\"\n    ],\n    \"path\": [\n      \"action\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"invite\\\"|\\\"set_role\\\"|\\\"deactivate\\\"|\\\"reactivate\\\"\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"intent\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "user change email forms",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_user_change",
+   "arguments": {
+    "action": "invite",
+    "email": "a..b@example.com",
+    "role": "member",
+    "intent": "i"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request_user_change: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"invalid_format\",\n    \"format\": \"email\",\n    \"pattern\": \"/^(?!\\\\.)(?!.*\\\\.\\\\.)([A-Za-z0-9_'+\\\\-\\\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\\\-]*\\\\.)+[A-Za-z]{2,}$/\",\n    \"path\": [\n      \"email\"\n    ],\n    \"message\": \"Invalid email address\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "user change email plus",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_user_change",
+   "arguments": {
+    "action": "invite",
+    "email": "first.last+tag@sub.example.co",
+    "role": "member",
+    "intent": "i",
+    "extra": 1
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"pending_approval\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"note\":\"Approval-gated: tell the operator what you proposed and end your turn — the approval card is rendered inline.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "user_admin",
+      "target": "first.last+tag@sub.example.co",
+      "riskLevel": "high"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "user_admin",
+      "target": "first.last+tag@sub.example.co",
+      "payload": {
+       "action": "invite",
+       "email": "first.last+tag@sub.example.co",
+       "role": "member"
+      },
+      "riskLevel": "high",
+      "status": "pending_approval",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "i",
+      "intent": "i",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "user_admin",
+     "scope": "internal",
+     "decision": "pending_approval",
+     "summary": "i",
+     "risk_level": "high"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "user change request fails",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_user_change",
+   "arguments": {
+    "action": "deactivate",
+    "userId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    "intent": "Ana left."
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "allow",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "slack_auto",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "auto_approve"
+     }
+    },
+    "createActionRequest": {
+     "throws": "worker action preflight failed with status 500"
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "worker action preflight failed with status 500"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "user_admin",
+      "target": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      "riskLevel": "high"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "user_admin",
+      "target": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      "payload": {
+       "action": "deactivate",
+       "userId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+      },
+      "riskLevel": "high",
+      "status": "approved",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Ana left.",
+      "intent": "Ana left.",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "user change events fail",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_user_change",
+   "arguments": {
+    "action": "deactivate",
+    "userId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    "intent": "Ana left."
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "allow",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "slack_auto",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "auto_approve"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "approved"
+     }
+    }
+   },
+   "eventsFail": true,
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "broker /v1/events -> 500"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "user_admin",
+      "target": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      "riskLevel": "high"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "user_admin",
+      "target": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      "payload": {
+       "action": "deactivate",
+       "userId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+      },
+      "riskLevel": "high",
+      "status": "approved",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Ana left.",
+      "intent": "Ana left.",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    },
+    {
+     "method": "enqueueActionExecute",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "actionRequestId": "99999999-9999-4999-8999-999999999999"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "groups list",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_list_groups",
+   "arguments": {},
+   "replies": {
+    "listGroups": {
+     "value": {
+      "groups": [
+       {
+        "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        "slug": "finance",
+        "name": "Finance",
+        "kind": "custom",
+        "memberCount": 1,
+        "members": [
+         {
+          "userId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+          "email": "ana@example.com",
+          "sources": [
+           "local"
+          ]
+         }
+        ],
+        "grants": [
+         {
+          "itemType": "skill",
+          "itemId": "*"
+         }
+        ],
+        "dataAccess": []
+       }
+      ],
+      "idpRules": [],
+      "groupDataAccessEnabled": false
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"groups\":[{\"id\":\"ffffffff-ffff-4fff-8fff-ffffffffffff\",\"slug\":\"finance\",\"name\":\"Finance\",\"kind\":\"custom\",\"memberCount\":1,\"members\":[{\"userId\":\"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee\",\"email\":\"ana@example.com\",\"sources\":[\"local\"]}],\"grants\":[{\"itemType\":\"skill\",\"itemId\":\"*\"}],\"dataAccess\":[]}],\"idpRules\":[],\"groupDataAccessEnabled\":false}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listGroups",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "group create",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_group_change",
+   "arguments": {
+    "action": "create_group",
+    "name": " Finance ",
+    "description": "",
+    "intent": "A group for finance."
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"pending_approval\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"note\":\"Approval-gated: tell the operator what you proposed and end your turn — the approval card is rendered inline.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "group_admin",
+      "target": "Finance",
+      "riskLevel": "high"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "group_admin",
+      "target": "Finance",
+      "payload": {
+       "action": "create_group",
+       "name": "Finance",
+       "description": ""
+      },
+      "riskLevel": "high",
+      "status": "pending_approval",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "A group for finance.",
+      "intent": "A group for finance.",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "group_admin",
+     "scope": "internal",
+     "decision": "pending_approval",
+     "summary": "A group for finance.",
+     "risk_level": "high"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "group add member",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_group_change",
+   "arguments": {
+    "intent": "Ana joins.",
+    "userId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    "groupId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    "action": "add_member",
+    "ruleId": "r1"
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "allow",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "slack_auto",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "auto_approve"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "approved"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"approved\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"note\":\"Queued for execution; the result lands in this run.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "group_admin",
+      "target": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "riskLevel": "high"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "group_admin",
+      "target": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "payload": {
+       "action": "add_member",
+       "groupId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+       "userId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+       "ruleId": "r1"
+      },
+      "riskLevel": "high",
+      "status": "approved",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Ana joins.",
+      "intent": "Ana joins.",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    },
+    {
+     "method": "enqueueActionExecute",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "actionRequestId": "99999999-9999-4999-8999-999999999999"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "group_admin",
+     "scope": "internal",
+     "decision": "auto_approved",
+     "summary": "Ana joins.",
+     "risk_level": "high"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "group idp rule",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_group_change",
+   "arguments": {
+    "action": "add_idp_rule",
+    "ssoGroupId": "s1",
+    "groupId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    "intent": "Map the SSO group."
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"pending_approval\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"note\":\"Approval-gated: tell the operator what you proposed and end your turn — the approval card is rendered inline.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "group_admin",
+      "target": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "riskLevel": "high"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "group_admin",
+      "target": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "payload": {
+       "action": "add_idp_rule",
+       "groupId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+       "ssoGroupId": "s1"
+      },
+      "riskLevel": "high",
+      "status": "pending_approval",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Map the SSO group.",
+      "intent": "Map the SSO group.",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "group_admin",
+     "scope": "internal",
+     "decision": "pending_approval",
+     "summary": "Map the SSO group.",
+     "risk_level": "high"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "group remove idp rule",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_group_change",
+   "arguments": {
+    "action": "remove_idp_rule",
+    "ruleId": "r1",
+    "intent": "Unmap."
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"pending_approval\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"note\":\"Approval-gated: tell the operator what you proposed and end your turn — the approval card is rendered inline.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "group_admin",
+      "target": "r1",
+      "riskLevel": "high"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "group_admin",
+      "target": "r1",
+      "payload": {
+       "action": "remove_idp_rule",
+       "ruleId": "r1"
+      },
+      "riskLevel": "high",
+      "status": "pending_approval",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Unmap.",
+      "intent": "Unmap.",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "group_admin",
+     "scope": "internal",
+     "decision": "pending_approval",
+     "summary": "Unmap.",
+     "risk_level": "high"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "group delete target",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_group_change",
+   "arguments": {
+    "action": "delete_group",
+    "groupId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    "name": "Finance",
+    "intent": "Gone."
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"pending_approval\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"note\":\"Approval-gated: tell the operator what you proposed and end your turn — the approval card is rendered inline.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "group_admin",
+      "target": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "riskLevel": "high"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "group_admin",
+      "target": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "payload": {
+       "action": "delete_group",
+       "name": "Finance",
+       "groupId": "ffffffff-ffff-4fff-8fff-ffffffffffff"
+      },
+      "riskLevel": "high",
+      "status": "pending_approval",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Gone.",
+      "intent": "Gone.",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "group_admin",
+     "scope": "internal",
+     "decision": "pending_approval",
+     "summary": "Gone.",
+     "risk_level": "high"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "group member needs two",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_group_change",
+   "arguments": {
+    "action": "remove_member",
+    "intent": "Out."
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"error\":\"remove_member needs groupId + userId\"}"
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "group create needs name",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_group_change",
+   "arguments": {
+    "action": "create_group",
+    "name": "",
+    "intent": "x"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request_group_change: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"name\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "group change argument faults",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_group_change",
+   "arguments": {
+    "action": "rename",
+    "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+    "description": 5,
+    "intent": ""
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request_group_change: [\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"create_group\",\n      \"delete_group\",\n      \"add_member\",\n      \"remove_member\",\n      \"add_idp_rule\",\n      \"remove_idp_rule\"\n    ],\n    \"path\": [\n      \"action\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"create_group\\\"|\\\"delete_group\\\"|\\\"add_member\\\"|\\\"remove_member\\\"|\\\"add_idp_rule\\\"|\\\"remove_idp_rule\\\"\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 120,\n    \"inclusive\": true,\n    \"path\": [\n      \"name\"\n    ],\n    \"message\": \"Too big: expected string to have <=120 characters\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"description\"\n    ],\n    \"message\": \"Invalid input: expected string, received number\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"intent\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "item grant",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_item_grant",
+   "arguments": {
+    "action": "grant_item",
+    "groupId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    "itemType": "skill",
+    "itemId": "*",
+    "intent": "Finance uses every skill."
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"pending_approval\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"note\":\"Approval-gated: tell the operator what you proposed and end your turn — the approval card is rendered inline.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "group_admin",
+      "target": "skill:*",
+      "riskLevel": "high"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "group_admin",
+      "target": "skill:*",
+      "payload": {
+       "action": "grant_item",
+       "groupId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+       "itemType": "skill",
+       "itemId": "*"
+      },
+      "riskLevel": "high",
+      "status": "pending_approval",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Finance uses every skill.",
+      "intent": "Finance uses every skill.",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "group_admin",
+     "scope": "internal",
+     "decision": "pending_approval",
+     "summary": "Finance uses every skill.",
+     "risk_level": "high"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "item grant faults",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_item_grant",
+   "arguments": {
+    "action": "grant",
+    "groupId": "",
+    "itemType": "report",
+    "itemId": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request_item_grant: [\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"grant_item\",\n      \"revoke_item\"\n    ],\n    \"path\": [\n      \"action\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"grant_item\\\"|\\\"revoke_item\\\"\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"groupId\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"skill\",\n      \"workflow\",\n      \"metric\",\n      \"dashboard\",\n      \"watcher\",\n      \"team_memory\",\n      \"data_source\",\n      \"saved_query\",\n      \"api_operation\",\n      \"action\",\n      \"integration\",\n      \"channel\",\n      \"pack\"\n    ],\n    \"path\": [\n      \"itemType\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"skill\\\"|\\\"workflow\\\"|\\\"metric\\\"|\\\"dashboard\\\"|\\\"watcher\\\"|\\\"team_memory\\\"|\\\"data_source\\\"|\\\"saved_query\\\"|\\\"api_operation\\\"|\\\"action\\\"|\\\"integration\\\"|\\\"channel\\\"|\\\"pack\\\"\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 500,\n    \"inclusive\": true,\n    \"path\": [\n      \"itemId\"\n    ],\n    \"message\": \"Too big: expected string to have <=500 characters\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"intent\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "data access set",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_data_access_change",
+   "arguments": {
+    "action": "set_table_access",
+    "groupId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    "source": "erp",
+    "table": "sales.orders",
+    "columns": [
+     "id",
+     " total "
+    ],
+    "rowFilter": {
+     "or": [
+      {
+       "column": "region",
+       "op": "in",
+       "value": [
+        "EU",
+        "US"
+       ]
+      },
+      {
+       "and": [
+        {
+         "column": "owner_id",
+         "op": "eq",
+         "value": {
+          "var": "user_id"
+         }
+        },
+        {
+         "column": "closed",
+         "op": "is_null",
+         "value": true
+        }
+       ]
+      }
+     ]
+    },
+    "intent": "Finance reads its orders."
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"pending_approval\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"note\":\"Approval-gated: tell the operator what you proposed and end your turn — the approval card is rendered inline.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "group_admin",
+      "target": "erp:sales.orders",
+      "riskLevel": "high"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "group_admin",
+      "target": "erp:sales.orders",
+      "payload": {
+       "action": "set_table_access",
+       "groupId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+       "source": "erp",
+       "table": "sales.orders",
+       "columns": [
+        "id",
+        "total"
+       ],
+       "rowFilter": {
+        "or": [
+         {
+          "column": "region",
+          "op": "in",
+          "value": [
+           "EU",
+           "US"
+          ]
+         },
+         {
+          "and": [
+           {
+            "column": "owner_id",
+            "op": "eq",
+            "value": {
+             "var": "user_id"
+            }
+           },
+           {
+            "column": "closed",
+            "op": "is_null",
+            "value": true
+           }
+          ]
+         }
+        ]
+       }
+      },
+      "riskLevel": "high",
+      "status": "pending_approval",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Finance reads its orders.",
+      "intent": "Finance reads its orders.",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "group_admin",
+     "scope": "internal",
+     "decision": "pending_approval",
+     "summary": "Finance reads its orders.",
+     "risk_level": "high"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "data access remove",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_data_access_change",
+   "arguments": {
+    "action": "remove_table_access",
+    "ruleId": "r9",
+    "intent": "Drop it."
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"pending_approval\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"note\":\"Approval-gated: tell the operator what you proposed and end your turn — the approval card is rendered inline.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "group_admin",
+      "target": "r9",
+      "riskLevel": "high"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "group_admin",
+      "target": "r9",
+      "payload": {
+       "action": "remove_table_access",
+       "ruleId": "r9"
+      },
+      "riskLevel": "high",
+      "status": "pending_approval",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Drop it.",
+      "intent": "Drop it.",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "group_admin",
+     "scope": "internal",
+     "decision": "pending_approval",
+     "summary": "Drop it.",
+     "risk_level": "high"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "data access needs columns",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_data_access_change",
+   "arguments": {
+    "action": "set_table_access",
+    "groupId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    "source": "erp",
+    "table": "orders",
+    "intent": "x"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"error\":\"set_table_access needs groupId + source + table + columns\"}"
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "data access remove needs rule",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_data_access_change",
+   "arguments": {
+    "action": "remove_table_access",
+    "intent": "x"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"error\":\"remove_table_access needs ruleId\"}"
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "data access empty and",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_data_access_change",
+   "arguments": {
+    "action": "set_table_access",
+    "groupId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    "source": "erp",
+    "table": "orders",
+    "columns": [
+     "id"
+    ],
+    "rowFilter": {
+     "and": []
+    },
+    "intent": "x"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request_data_access_change: [\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"rowFilter\",\n      \"and\"\n    ],\n    \"message\": \"Too small: expected array to have >=1 items\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "data access empty column",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_data_access_change",
+   "arguments": {
+    "action": "set_table_access",
+    "groupId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    "source": "erp",
+    "table": "orders",
+    "columns": [
+     "id"
+    ],
+    "rowFilter": {
+     "column": "",
+     "op": "eq",
+     "value": 1
+    },
+    "intent": "x"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request_data_access_change: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"rowFilter\",\n      \"column\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "data access bad op",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_data_access_change",
+   "arguments": {
+    "action": "set_table_access",
+    "groupId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    "source": "erp",
+    "table": "orders",
+    "columns": [
+     "id"
+    ],
+    "rowFilter": {
+     "column": "a",
+     "op": "like",
+     "value": 1
+    },
+    "intent": "x"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request_data_access_change: [\n  {\n    \"code\": \"invalid_union\",\n    \"errors\": [\n      [\n        {\n          \"expected\": \"array\",\n          \"code\": \"invalid_type\",\n          \"path\": [\n            \"and\"\n          ],\n          \"message\": \"Invalid input: expected array, received undefined\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"array\",\n          \"code\": \"invalid_type\",\n          \"path\": [\n            \"or\"\n          ],\n          \"message\": \"Invalid input: expected array, received undefined\"\n        }\n      ],\n      [\n        {\n          \"code\": \"invalid_value\",\n          \"values\": [\n            \"eq\",\n            \"neq\",\n            \"gt\",\n            \"gte\",\n            \"lt\",\n            \"lte\",\n            \"in\",\n            \"nin\",\n            \"is_null\"\n          ],\n          \"path\": [\n            \"op\"\n          ],\n          \"message\": \"Invalid option: expected one of \\\"eq\\\"|\\\"neq\\\"|\\\"gt\\\"|\\\"gte\\\"|\\\"lt\\\"|\\\"lte\\\"|\\\"in\\\"|\\\"nin\\\"|\\\"is_null\\\"\"\n        }\n      ]\n    ],\n    \"path\": [\n      \"rowFilter\"\n    ],\n    \"message\": \"Invalid input\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "data access bad var",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_data_access_change",
+   "arguments": {
+    "action": "set_table_access",
+    "groupId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    "source": "erp",
+    "table": "orders",
+    "columns": [
+     "id"
+    ],
+    "rowFilter": {
+     "column": "a",
+     "op": "eq",
+     "value": {
+      "var": "email"
+     }
+    },
+    "intent": "x"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request_data_access_change: [\n  {\n    \"code\": \"invalid_union\",\n    \"errors\": [\n      [\n        {\n          \"expected\": \"array\",\n          \"code\": \"invalid_type\",\n          \"path\": [\n            \"and\"\n          ],\n          \"message\": \"Invalid input: expected array, received undefined\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"array\",\n          \"code\": \"invalid_type\",\n          \"path\": [\n            \"or\"\n          ],\n          \"message\": \"Invalid input: expected array, received undefined\"\n        }\n      ],\n      [\n        {\n          \"code\": \"invalid_union\",\n          \"errors\": [\n            [\n              {\n                \"expected\": \"string\",\n                \"code\": \"invalid_type\",\n                \"path\": [],\n                \"message\": \"Invalid input: expected string, received object\"\n              }\n            ],\n            [\n              {\n                \"expected\": \"number\",\n                \"code\": \"invalid_type\",\n                \"path\": [],\n                \"message\": \"Invalid input: expected number, received object\"\n              }\n            ],\n            [\n              {\n                \"expected\": \"boolean\",\n                \"code\": \"invalid_type\",\n                \"path\": [],\n                \"message\": \"Invalid input: expected boolean, received object\"\n              }\n            ],\n            [\n              {\n                \"expected\": \"array\",\n                \"code\": \"invalid_type\",\n                \"path\": [],\n                \"message\": \"Invalid input: expected array, received object\"\n              }\n            ],\n            [\n              {\n                \"code\": \"invalid_value\",\n                \"values\": [\n                  \"user_id\",\n                  \"user_groups\",\n                  \"account_id\"\n                ],\n                \"path\": [\n                  \"var\"\n                ],\n                \"message\": \"Invalid option: expected one of \\\"user_id\\\"|\\\"user_groups\\\"|\\\"account_id\\\"\"\n              }\n            ]\n          ],\n          \"path\": [\n            \"value\"\n          ],\n          \"message\": \"Invalid input\"\n        }\n      ]\n    ],\n    \"path\": [\n      \"rowFilter\"\n    ],\n    \"message\": \"Invalid input\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "data access nested fault",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_data_access_change",
+   "arguments": {
+    "action": "set_table_access",
+    "groupId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    "source": "erp",
+    "table": "orders",
+    "columns": [
+     "id"
+    ],
+    "rowFilter": {
+     "or": [
+      {
+       "column": "a",
+       "op": "eq",
+       "value": null
+      }
+     ]
+    },
+    "intent": "x"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request_data_access_change: [\n  {\n    \"code\": \"invalid_union\",\n    \"errors\": [\n      [\n        {\n          \"expected\": \"array\",\n          \"code\": \"invalid_type\",\n          \"path\": [\n            \"and\"\n          ],\n          \"message\": \"Invalid input: expected array, received undefined\"\n        }\n      ],\n      [\n        {\n          \"code\": \"invalid_union\",\n          \"errors\": [\n            [\n              {\n                \"expected\": \"array\",\n                \"code\": \"invalid_type\",\n                \"path\": [\n                  \"and\"\n                ],\n                \"message\": \"Invalid input: expected array, received undefined\"\n              }\n            ],\n            [\n              {\n                \"expected\": \"array\",\n                \"code\": \"invalid_type\",\n                \"path\": [\n                  \"or\"\n                ],\n                \"message\": \"Invalid input: expected array, received undefined\"\n              }\n            ],\n            [\n              {\n                \"code\": \"invalid_union\",\n                \"errors\": [\n                  [\n                    {\n                      \"expected\": \"string\",\n                      \"code\": \"invalid_type\",\n                      \"path\": [],\n                      \"message\": \"Invalid input: expected string, received null\"\n                    }\n                  ],\n                  [\n                    {\n                      \"expected\": \"number\",\n                      \"code\": \"invalid_type\",\n                      \"path\": [],\n                      \"message\": \"Invalid input: expected number, received null\"\n                    }\n                  ],\n                  [\n                    {\n                      \"expected\": \"boolean\",\n                      \"code\": \"invalid_type\",\n                      \"path\": [],\n                      \"message\": \"Invalid input: expected boolean, received null\"\n                    }\n                  ],\n                  [\n                    {\n                      \"expected\": \"array\",\n                      \"code\": \"invalid_type\",\n                      \"path\": [],\n                      \"message\": \"Invalid input: expected array, received null\"\n                    }\n                  ],\n                  [\n                    {\n                      \"expected\": \"object\",\n                      \"code\": \"invalid_type\",\n                      \"path\": [],\n                      \"message\": \"Invalid input: expected object, received null\"\n                    }\n                  ]\n                ],\n                \"path\": [\n                  \"value\"\n                ],\n                \"message\": \"Invalid input\"\n              }\n            ]\n          ],\n          \"path\": [\n            \"or\",\n            0\n          ],\n          \"message\": \"Invalid input\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"string\",\n          \"code\": \"invalid_type\",\n          \"path\": [\n            \"column\"\n          ],\n          \"message\": \"Invalid input: expected string, received undefined\"\n        },\n        {\n          \"code\": \"invalid_value\",\n          \"values\": [\n            \"eq\",\n            \"neq\",\n            \"gt\",\n            \"gte\",\n            \"lt\",\n            \"lte\",\n            \"in\",\n            \"nin\",\n            \"is_null\"\n          ],\n          \"path\": [\n            \"op\"\n          ],\n          \"message\": \"Invalid option: expected one of \\\"eq\\\"|\\\"neq\\\"|\\\"gt\\\"|\\\"gte\\\"|\\\"lt\\\"|\\\"lte\\\"|\\\"in\\\"|\\\"nin\\\"|\\\"is_null\\\"\"\n        },\n        {\n          \"code\": \"invalid_union\",\n          \"errors\": [\n            [\n              {\n                \"expected\": \"string\",\n                \"code\": \"invalid_type\",\n                \"path\": [],\n                \"message\": \"Invalid input: expected string, received undefined\"\n              }\n            ],\n            [\n              {\n                \"expected\": \"number\",\n                \"code\": \"invalid_type\",\n                \"path\": [],\n                \"message\": \"Invalid input: expected number, received undefined\"\n              }\n            ],\n            [\n              {\n                \"expected\": \"boolean\",\n                \"code\": \"invalid_type\",\n                \"path\": [],\n                \"message\": \"Invalid input: expected boolean, received undefined\"\n              }\n            ],\n            [\n              {\n                \"expected\": \"array\",\n                \"code\": \"invalid_type\",\n                \"path\": [],\n                \"message\": \"Invalid input: expected array, received undefined\"\n              }\n            ],\n            [\n              {\n                \"expected\": \"object\",\n                \"code\": \"invalid_type\",\n                \"path\": [],\n                \"message\": \"Invalid input: expected object, received undefined\"\n              }\n            ]\n          ],\n          \"path\": [\n            \"value\"\n          ],\n          \"message\": \"Invalid input\"\n        }\n      ]\n    ],\n    \"path\": [\n      \"rowFilter\"\n    ],\n    \"message\": \"Invalid input\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "data access filter not object",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_data_access_change",
+   "arguments": {
+    "action": "set_table_access",
+    "groupId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    "source": "erp",
+    "table": "orders",
+    "columns": [],
+    "rowFilter": "region = 'EU'",
+    "intent": "x"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request_data_access_change: [\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"columns\"\n    ],\n    \"message\": \"Too small: expected array to have >=1 items\"\n  },\n  {\n    \"code\": \"invalid_union\",\n    \"errors\": [\n      [\n        {\n          \"expected\": \"object\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected object, received string\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"object\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected object, received string\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"object\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected object, received string\"\n        }\n      ]\n    ],\n    \"path\": [\n      \"rowFilter\"\n    ],\n    \"message\": \"Invalid input\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "data access extra filter keys",
+   "servers": [
+    "neko_user_manager"
+   ],
+   "tool": "user_manager_request_data_access_change",
+   "arguments": {
+    "action": "set_table_access",
+    "groupId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    "source": "erp",
+    "table": "orders",
+    "columns": [
+     "id"
+    ],
+    "rowFilter": {
+     "and": [
+      {
+       "column": "a",
+       "op": "eq",
+       "value": 1,
+       "note": "n"
+      }
+     ],
+     "or": []
+    },
+    "intent": "x"
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"pending_approval\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"note\":\"Approval-gated: tell the operator what you proposed and end your turn — the approval card is rendered inline.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "group_admin",
+      "target": "erp:orders",
+      "riskLevel": "high"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "group_admin",
+      "target": "erp:orders",
+      "payload": {
+       "action": "set_table_access",
+       "groupId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+       "source": "erp",
+       "table": "orders",
+       "columns": [
+        "id"
+       ],
+       "rowFilter": {
+        "and": [
+         {
+          "column": "a",
+          "op": "eq",
+          "value": 1
+         }
+        ]
+       }
+      },
+      "riskLevel": "high",
+      "status": "pending_approval",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "x",
+      "intent": "x",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "group_admin",
+     "scope": "internal",
+     "decision": "pending_approval",
+     "summary": "x",
+     "risk_level": "high"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "channels list",
+   "servers": [
+    "neko_channel_manager"
+   ],
+   "tool": "channel_manager_list_channels",
+   "arguments": {},
+   "replies": {
+    "listChannels": {
+     "value": {
+      "workspaces": [
+       {
+        "channelPlugin": "slack",
+        "workspaceId": "T1",
+        "createdAt": null
+       }
+      ],
+      "identities": []
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"workspaces\":[{\"channelPlugin\":\"slack\",\"workspaceId\":\"T1\",\"createdAt\":null}],\"identities\":[]}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listChannels",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "channel link",
+   "servers": [
+    "neko_channel_manager"
+   ],
+   "tool": "channel_manager_request_channel_change",
+   "arguments": {
+    "action": "link",
+    "identityId": " ci-1 ",
+    "appUserId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    "intent": "Ana uses Slack."
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"pending_approval\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"note\":\"Approval-gated: tell the operator what you proposed and end your turn — the approval card is rendered inline.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "channel_admin",
+      "target": "ci-1",
+      "riskLevel": "high"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "channel_admin",
+      "target": "ci-1",
+      "payload": {
+       "action": "link",
+       "identityId": "ci-1",
+       "appUserId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+      },
+      "riskLevel": "high",
+      "status": "pending_approval",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "Ana uses Slack.",
+      "intent": "Ana uses Slack.",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "channel_admin",
+     "scope": "internal",
+     "decision": "pending_approval",
+     "summary": "Ana uses Slack.",
+     "risk_level": "high"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "channel block auto",
+   "servers": [
+    "neko_channel_manager"
+   ],
+   "tool": "channel_manager_request_channel_change",
+   "arguments": {
+    "action": "block",
+    "identityId": "ci-1",
+    "appUserId": "",
+    "intent": "Spam."
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "allow",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "slack_auto",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "auto_approve"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "approved"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request_channel_change: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"appUserId\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "channel link needs user",
+   "servers": [
+    "neko_channel_manager"
+   ],
+   "tool": "channel_manager_request_channel_change",
+   "arguments": {
+    "action": "link",
+    "identityId": "ci-1",
+    "intent": "x"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"error\":\"link needs appUserId\"}"
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "channel change faults",
+   "servers": [
+    "neko_channel_manager"
+   ],
+   "tool": "channel_manager_request_channel_change",
+   "arguments": {
+    "action": "mute",
+    "intent": "x"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request_channel_change: [\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"link\",\n      \"unlink\",\n      \"block\",\n      \"unblock\"\n    ],\n    \"path\": [\n      \"action\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"link\\\"|\\\"unlink\\\"|\\\"block\\\"|\\\"unblock\\\"\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"identityId\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "sources list",
+   "servers": [
+    "neko_data_source_manager"
+   ],
+   "tool": "data_source_manager_list_data_sources",
+   "arguments": {},
+   "replies": {
+    "listDataSources": {
+     "value": {
+      "sources": [
+       {
+        "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        "name": "erp",
+        "label": null,
+        "kind": "graphjin",
+        "authMode": "service",
+        "isDefault": true,
+        "enabled": true,
+        "host": "db.internal",
+        "hasMcp": false
+       }
+      ]
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"sources\":[{\"id\":\"ffffffff-ffff-4fff-8fff-ffffffffffff\",\"name\":\"erp\",\"label\":null,\"kind\":\"graphjin\",\"authMode\":\"service\",\"isDefault\":true,\"enabled\":true,\"host\":\"db.internal\",\"hasMcp\":false}]}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listDataSources",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "source register",
+   "servers": [
+    "neko_data_source_manager"
+   ],
+   "tool": "data_source_manager_request_data_source_change",
+   "arguments": {
+    "action": "register",
+    "name": " erp-2 ",
+    "label": " ERP two ",
+    "sourceKind": "database",
+    "intent": "A second ERP."
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "needs_approval",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "external_default",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "approval_required",
+      "reason": "policy \"external_default\" mode=approval_required"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "pending_approval"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"pending_approval\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"note\":\"Approval-gated: tell the operator what you proposed and end your turn — the approval card is rendered inline.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "data_source_admin",
+      "target": "erp-2",
+      "riskLevel": "high"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "data_source_admin",
+      "target": "erp-2",
+      "payload": {
+       "action": "register",
+       "name": "erp-2",
+       "label": "ERP two",
+       "sourceKind": "database"
+      },
+      "riskLevel": "high",
+      "status": "pending_approval",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "A second ERP.",
+      "intent": "A second ERP.",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "data_source_admin",
+     "scope": "internal",
+     "decision": "pending_approval",
+     "summary": "A second ERP.",
+     "risk_level": "high"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "source enable empty label",
+   "servers": [
+    "neko_data_source_manager"
+   ],
+   "tool": "data_source_manager_request_data_source_change",
+   "arguments": {
+    "action": "enable",
+    "name": "erp",
+    "label": "",
+    "intent": "On."
+   },
+   "replies": {
+    "evaluateActionPolicy": {
+     "value": {
+      "decision": "allow",
+      "policy": {
+       "id": "88888888-8888-4888-8888-888888888888",
+       "name": "slack_auto",
+       "mode": "auto_approve",
+       "priority": 100
+      },
+      "mode": "auto_approve"
+     }
+    },
+    "createActionRequest": {
+     "value": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "status": "approved"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"decision\":\"approved\",\"action_request_id\":\"99999999-9999-4999-8999-999999999999\",\"note\":\"Queued for execution; the result lands in this run.\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "evaluateActionPolicy",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "data_source_admin",
+      "target": "erp",
+      "riskLevel": "high"
+     }
+    },
+    {
+     "method": "createActionRequest",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "scope": "internal",
+      "kind": "data_source_admin",
+      "target": "erp",
+      "payload": {
+       "action": "enable",
+       "name": "erp"
+      },
+      "riskLevel": "high",
+      "status": "approved",
+      "policyId": "88888888-8888-4888-8888-888888888888",
+      "summary": "On.",
+      "intent": "On.",
+      "workRunId": "33333333-3333-4333-8333-333333333333",
+      "requestedByRunId": null
+     }
+    },
+    {
+     "method": "enqueueActionExecute",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "actionRequestId": "99999999-9999-4999-8999-999999999999"
+     }
+    }
+   ],
+   "events": [
+    {
+     "type": "action_request_emit",
+     "action_request_id": "99999999-9999-4999-8999-999999999999",
+     "kind": "data_source_admin",
+     "scope": "internal",
+     "decision": "auto_approved",
+     "summary": "On.",
+     "risk_level": "high"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "source bad name",
+   "servers": [
+    "neko_data_source_manager"
+   ],
+   "tool": "data_source_manager_request_data_source_change",
+   "arguments": {
+    "action": "remove",
+    "name": "ERP_1",
+    "sourceKind": "sheet",
+    "intent": "x"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request_data_source_change: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"invalid_format\",\n    \"format\": \"regex\",\n    \"pattern\": \"/^[a-z0-9][a-z0-9-]*$/\",\n    \"path\": [\n      \"name\"\n    ],\n    \"message\": \"lowercase letters, digits, dashes\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"graphjin\",\n      \"database\",\n      \"api\",\n      \"files\",\n      \"code\"\n    ],\n    \"path\": [\n      \"sourceKind\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"graphjin\\\"|\\\"database\\\"|\\\"api\\\"|\\\"files\\\"|\\\"code\\\"\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "source long name",
+   "servers": [
+    "neko_data_source_manager"
+   ],
+   "tool": "data_source_manager_request_data_source_change",
+   "arguments": {
+    "action": "remove",
+    "name": "-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "intent": "x"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool request_data_source_change: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 64,\n    \"inclusive\": true,\n    \"path\": [\n      \"name\"\n    ],\n    \"message\": \"Too big: expected string to have <=64 characters\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"invalid_format\",\n    \"format\": \"regex\",\n    \"pattern\": \"/^[a-z0-9][a-z0-9-]*$/\",\n    \"path\": [\n      \"name\"\n    ],\n    \"message\": \"lowercase letters, digits, dashes\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "audit trail",
+   "servers": [
+    "neko_audit"
+   ],
+   "tool": "audit_audit_trail",
+   "arguments": {
+    "limit": 20
+   },
+   "replies": {
+    "listAuditTrail": {
+     "value": {
+      "requests": [],
+      "alerts": [],
+      "gatewaySummary": [
+       {
+        "runId": null,
+        "backend": "openneko",
+        "actorRole": "admin",
+        "calls": 3
+       }
+      ]
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"requests\":[],\"alerts\":[],\"gatewaySummary\":[{\"runId\":null,\"backend\":\"openneko\",\"actorRole\":\"admin\",\"calls\":3}]}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listAuditTrail",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "limit": 20
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "audit trail default",
+   "servers": [
+    "neko_audit"
+   ],
+   "tool": "audit_audit_trail",
+   "arguments": {},
+   "replies": {
+    "listAuditTrail": {
+     "value": {
+      "requests": []
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"requests\":[]}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listAuditTrail",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "audit trail denied",
+   "servers": [
+    "neko_audit"
+   ],
+   "tool": "audit_audit_trail",
+   "arguments": {},
+   "replies": {
+    "listAuditTrail": {
+     "value": {
+      "denied": true
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":false,\"error\":\"audit trail is admin-only\"}"
+     }
+    ]
+   },
+   "controlPlane": [
+    {
+     "method": "listAuditTrail",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333"
+     }
+    }
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "audit trail bad limit",
+   "servers": [
+    "neko_audit"
+   ],
+   "tool": "audit_audit_trail",
+   "arguments": {
+    "limit": 201
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool audit_trail: [\n  {\n    \"origin\": \"number\",\n    \"code\": \"too_big\",\n    \"maximum\": 200,\n    \"inclusive\": true,\n    \"path\": [\n      \"limit\"\n    ],\n    \"message\": \"Too big: expected number to be <=200\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "audit trail fails",
+   "servers": [
+    "neko_audit"
+   ],
+   "tool": "audit_audit_trail",
+   "arguments": {
+    "limit": 1
+   },
+   "replies": {
+    "listAuditTrail": {
+     "throws": "database is down"
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "database is down"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [
+    {
+     "method": "listAuditTrail",
+     "input": {
+      "orgId": "11111111-1111-4111-8111-111111111111",
+      "runId": "33333333-3333-4333-8333-333333333333",
+      "limit": 1
+     }
+    }
+   ],
    "events": [],
    "files": {}
   }

@@ -60,6 +60,13 @@ func (d toolDef) schema() *jsObj {
 	if d.shape != nil {
 		out := d.shape.jsonSchema()
 		out.set("$schema", "http://json-schema.org/draft-07/schema#")
+		if len(d.shape.defs) > 0 {
+			defs := &jsObj{}
+			for _, l := range d.shape.defs {
+				defs.set(l.def, l.inner.jsonSchema())
+			}
+			out.set("definitions", defs)
+		}
 		return out
 	}
 	props := &jsObj{}
@@ -453,6 +460,9 @@ func (s *toolServer) call(ctx context.Context, tool toolDef, raw json.RawMessage
 		}
 	}
 	clean, issues := tool.validate(args)
+	if len(raw) == 0 {
+		issues = []any{zTypeIssue("object", jsUndefined{}, []any{})}
+	}
 	if len(issues) > 0 {
 		return toolResultObj(toolResult{isError: true, text: "MCP error -32602: Input validation error: Invalid arguments for tool " +
 			tool.name + ": " + jsStringifyIndent(issues, "  ")})

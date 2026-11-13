@@ -13,6 +13,7 @@ type policyIn struct {
 	Target    *string `json:"target"`
 	Payload   any     `json:"payload"`
 	RiskLevel *string `json:"riskLevel"`
+	noPayload bool
 }
 
 type actionRefIn struct {

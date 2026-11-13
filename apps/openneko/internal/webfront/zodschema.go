@@ -23,8 +23,13 @@ type zStr struct {
 	desc     string
 	descLast string
 	datetime bool
+	email    bool
 	pattern  *regexp.Regexp
-	refine   func(string) bool
+	// patternMsg replaces zod's message; lengthFirst runs min and max
+	// before the pattern, as a chain that calls .regex() last does.
+	patternMsg  string
+	lengthFirst bool
+	refine      func(string) bool
 }
 
 // zInt is z.number().int() with min, max and positive().
@@ -56,9 +61,13 @@ type zObj struct {
 	fields []zField
 	strict bool
 	desc   string
+	defs   []*zLazy
 }
 
 func (f zField) jsonSchema() *jsObj {
+	if lazy, ok := f.typ.(*zLazy); ok && f.optional {
+		return jsObjOf("allOf", []any{lazy.jsonSchema()})
+	}
 	if f.def == nil && f.desc == "" {
 		return f.typ.jsonSchema()
 	}
@@ -120,12 +129,25 @@ func (s *zStr) parse(v any, path []any, issues *[]any) any {
 	if s.trim {
 		text = strings.TrimFunc(text, isJSSpace)
 	}
+	if s.email && !zodEmail(text) {
+		*issues = append(*issues, zodIssue("origin", "string", "code", "invalid_format", "format", "email",
+			"pattern", "/"+zodEmailText+"/", "path", path, "message", "Invalid email address"))
+	}
+	if s.lengthFirst {
+		zLengthIssues(text, s.min, s.max, path, issues)
+	}
 	if s.pattern != nil && !s.pattern.MatchString(text) {
 		shown := "/" + s.pattern.String() + "/"
+		message := "Invalid string: must match pattern " + shown
+		if s.patternMsg != "" {
+			message = s.patternMsg
+		}
 		*issues = append(*issues, zodIssue("origin", "string", "code", "invalid_format", "format", "regex", "pattern", shown,
-			"path", path, "message", "Invalid string: must match pattern "+shown))
+			"path", path, "message", message))
 	}
-	zLengthIssues(text, s.min, s.max, path, issues)
+	if !s.lengthFirst {
+		zLengthIssues(text, s.min, s.max, path, issues)
+	}
 	if s.refine != nil && !s.refine(text) {
 		*issues = append(*issues, zodIssue("code", "custom", "path", path, "message", "Invalid input"))
 	}
@@ -139,6 +161,16 @@ func (s *zStr) parse(v any, path []any, issues *[]any) any {
 const zodDatetimeText = `^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$`
 
 var zodDatetime = regexp.MustCompile(zodDatetimeText)
+
+const zodEmailText = `^(?!\.)(?!.*\.\.)([A-Za-z0-9_'+\-\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$`
+
+var zodEmailRest = regexp.MustCompile(`^([A-Za-z0-9_'+\-\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$`)
+
+// zodEmail is zod's email pattern; Go's regexp has no lookahead, so the two
+// lookaheads are plain checks.
+func zodEmail(text string) bool {
+	return !strings.HasPrefix(text, ".") && !strings.Contains(text, "..") && zodEmailRest.MatchString(text)
+}
 
 // zLengthIssues is zod's minLength and maxLength checks. They run on any
 // value with a length, also after a type issue, and name the value's own kind.
@@ -184,6 +216,10 @@ func (s *zStr) jsonSchema() *jsObj {
 	if s.datetime {
 		out.set("format", "date-time")
 		out.set("pattern", zodDatetimeText)
+	}
+	if s.email {
+		out.set("format", "email")
+		out.set("pattern", zodEmailText)
 	}
 	if s.enum != nil {
 		values := make([]any, len(s.enum))
@@ -409,6 +445,7 @@ func (u zUnion) expected() string { return "union" }
 
 func (u zUnion) parse(v any, path []any, issues *[]any) any {
 	errs := make([]any, 0, len(u))
+	var live []zType
 	for _, option := range u {
 		var own []any
 		out := option.parse(v, []any{}, &own)
@@ -416,10 +453,45 @@ func (u zUnion) parse(v any, path []any, issues *[]any) any {
 			return out
 		}
 		errs = append(errs, own)
+		if !zAborted(own) {
+			live = append(live, option)
+		}
+	}
+	if len(live) == 1 {
+		return live[0].parse(v, path, issues)
 	}
 	*issues = append(*issues, zodIssue("code", "invalid_union", "errors", errs, "path", path, "message", "Invalid input"))
 	return v
 }
+
+// zAborted is util.aborted(): a failed check lets parsing go on, a type or
+// value fault stops it.
+func zAborted(issues []any) bool {
+	for _, issue := range issues {
+		o := issue.(*jsObj)
+		switch o.vals["code"] {
+		case "too_small", "too_big", "invalid_format", "custom":
+			continue
+		case "invalid_type":
+			if _, check := o.vals["format"]; check {
+				continue
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// zLazy is z.lazy(): a schema that refers to itself. The JSON Schema names
+// it in definitions and refers to it there.
+type zLazy struct {
+	def   string
+	inner zType
+}
+
+func (l *zLazy) expected() string                           { return l.inner.expected() }
+func (l *zLazy) parse(v any, path []any, issues *[]any) any { return l.inner.parse(v, path, issues) }
+func (l *zLazy) jsonSchema() *jsObj                         { return jsObjOf("$ref", "#/definitions/"+l.def) }
 
 func (u zUnion) jsonSchema() *jsObj {
 	options := make([]any, len(u))
