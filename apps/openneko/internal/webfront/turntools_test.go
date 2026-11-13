@@ -283,7 +283,7 @@ func TestTurnToolsMatchNode(t *testing.T) {
 	if err := json.Unmarshal(raw, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if len(fixture.Lists) != 12 || len(fixture.Calls) < 293 {
+	if len(fixture.Lists) != 13 || len(fixture.Calls) < 293 {
 		t.Fatalf("fixture holds %d lists and %d calls", len(fixture.Lists), len(fixture.Calls))
 	}
 	gjTools := func(own json.RawMessage) any {

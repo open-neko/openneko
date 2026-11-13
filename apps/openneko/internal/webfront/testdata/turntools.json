@@ -3368,6 +3368,450 @@
      }
     }
    ]
+  },
+  {
+   "name": "workflow run",
+   "servers": [
+    "neko_graphjin",
+    "neko_workflow_output",
+    "neko_action",
+    "neko_memory",
+    "neko_files"
+   ],
+   "workflowRunId": "66666666-6666-4666-8666-666666666666",
+   "tools": [
+    {
+     "name": "graphjin_execute_graphql",
+     "description": "Run one GraphQL operation.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string"
+       },
+       "variables": {
+        "type": "object",
+        "additionalProperties": true
+       }
+      },
+      "required": [
+       "query"
+      ]
+     },
+     "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+     }
+    },
+    {
+     "name": "graphjin_query_catalog",
+     "description": "Search the catalog.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "ids": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "kind": {
+        "type": "string",
+        "enum": [
+         "table",
+         "column"
+        ]
+       }
+      }
+     }
+    },
+    {
+     "name": "graphjin_graphql_help",
+     "inputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "name": "graphjin_validate_where_clause",
+     "description": "Check a where clause.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "table": {
+        "type": "string"
+       },
+       "where": {
+        "type": "object"
+       }
+      },
+      "required": [
+       "table",
+       "where"
+      ]
+     }
+    },
+    {
+     "name": "graphjin_execute_saved_query",
+     "description": "Run a saved query.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "name": {
+        "type": "string"
+       },
+       "variables": {
+        "type": "object"
+       }
+      },
+      "required": [
+       "name"
+      ]
+     }
+    },
+    {
+     "name": "graphjin_list_sources",
+     "title": "Sources",
+     "description": "",
+     "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+     },
+     "outputSchema": {
+      "type": "object",
+      "properties": {
+       "sources": {
+        "type": "array"
+       }
+      }
+     },
+     "_meta": {
+      "x-openneko": 1
+     }
+    },
+    {
+     "name": "workflow_output_emit",
+     "description": "Persist a workflow output — the thing this run produced. Use a descriptive kind and tag it with a scope, optional topic, and an honest mood ('good', 'watch', or 'act') so people and downstream workflows can discover it.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "kind": {
+        "type": "string",
+        "enum": [
+         "report",
+         "summary",
+         "briefing_card_proposal",
+         "chart",
+         "table",
+         "file",
+         "message_draft",
+         "finding",
+         "observation",
+         "recommendation"
+        ]
+       },
+       "title": {
+        "type": "string",
+        "maxLength": 240
+       },
+       "body": {
+        "type": "string",
+        "maxLength": 64000
+       },
+       "payload": {
+        "type": "object",
+        "propertyNames": {
+         "type": "string"
+        },
+        "additionalProperties": {}
+       },
+       "artifactPath": {
+        "type": "string",
+        "maxLength": 1024
+       },
+       "scope": {
+        "type": "string",
+        "maxLength": 120
+       },
+       "topic": {
+        "type": "string",
+        "maxLength": 120
+       },
+       "mood": {
+        "type": "string",
+        "enum": [
+         "good",
+         "watch",
+         "act"
+        ]
+       },
+       "timeWindowStart": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       },
+       "timeWindowEnd": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       },
+       "freshnessTtlSeconds": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 31536000
+       }
+      },
+      "required": [
+       "kind"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "action_request",
+     "description": "Propose a state-changing operation. Workflows decide; actions mutate. Route every real-world or internal state change through this tool so policy can gate it and preserve an auditable approval path. Use scope 'external' for outbound mutations and 'internal' for policy-governed OpenNeko writes. Include the complete operation payload, a concise human-readable summary, and an honest risk estimate. A denial is final for this run; surface its reason instead of retrying.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "scope": {
+        "type": "string",
+        "enum": [
+         "internal",
+         "external"
+        ]
+       },
+       "kind": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+       },
+       "target": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024
+       },
+       "payload": {
+        "type": "object",
+        "propertyNames": {
+         "type": "string"
+        },
+        "additionalProperties": {}
+       },
+       "risk_level": {
+        "type": "string",
+        "enum": [
+         "low",
+         "medium",
+         "high",
+         "critical"
+        ]
+       },
+       "summary": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000
+       },
+       "minutes_saved": {
+        "description": "Conservative estimate of the minutes a competent human would spend doing this one action by hand (e.g. send email ~8, file refund ~15). Omit if unsure.",
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 600
+       },
+       "basis": {
+        "description": "One short line naming why minutes_saved is what it is.",
+        "type": "string",
+        "maxLength": 160
+       }
+      },
+      "required": [
+       "scope",
+       "kind",
+       "summary"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "memory_search",
+     "description": "Semantic search over OpenNeko's saved memories. Returns top-N memories ranked by cosine similarity to the query. Use when the loaded memories above don't seem to cover what the operator is asking about.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 800
+       },
+       "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20
+       }
+      },
+      "required": [
+       "query"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "memory_save",
+     "description": "Save a durable memory the operator stated explicitly. Use only when the operator says to remember/save something, corrects a recurring assumption, defines a metric/business rule, or states a stable preference. Never speculatively. Default scope=global, kind=business_rule, pinned=true.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "text": {
+        "type": "string",
+        "minLength": 5,
+        "maxLength": 2000
+       },
+       "kind": {
+        "type": "string",
+        "enum": [
+         "preference",
+         "business_rule",
+         "metric_definition",
+         "thread_note",
+         "correction",
+         "company_context",
+         "other"
+        ]
+       },
+       "scope": {
+        "type": "string",
+        "enum": [
+         "global",
+         "thread"
+        ]
+       },
+       "pinned": {
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "text"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "memory_update",
+     "description": "Replace the text of a saved memory. Use when the operator corrects, extends or merges a memory that is already saved, instead of saving a second memory. Pass the memory id from the loaded list or a search result, and the whole new text.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "memoryId": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+       },
+       "text": {
+        "type": "string",
+        "minLength": 5,
+        "maxLength": 2000
+       }
+      },
+      "required": [
+       "memoryId",
+       "text"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "files_search",
+     "description": "Keyword search over the files the user uploaded: PDF, Word, PowerPoint, Excel, CSV, Markdown and text. Returns the best files with matching passages and where they are (page, slide, sheet or section). For a spreadsheet or CSV file it also lists its SQL tables and columns.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 800
+       },
+       "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20
+       }
+      },
+      "required": [
+       "query"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "files_read_text",
+     "description": "Read the text of one of the user's files, with page, slide and sheet markers. Use the path from search. A long file comes back in parts: when truncated is true, call again with offset set to offset plus the length of the text already read.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024
+       },
+       "offset": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+       },
+       "maxChars": {
+        "type": "integer",
+        "minimum": 1000,
+        "maximum": 100000
+       }
+      },
+      "required": [
+       "path"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "files_query_tables",
+     "description": "Run one read-only DuckDB SELECT or WITH query over the sheet tables of the user's spreadsheet and CSV files. Use the table names that search or read_text list. Each sheet has a raw table (name ends in __raw) with every cell as text by column letter. A sheet with a header row also has a typed table with named columns. Use it for sums, counts, filters and joins across sheets.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "sql": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 20000
+       }
+      },
+      "required": [
+       "sql"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    }
+   ]
   }
  ],
  "calls": [

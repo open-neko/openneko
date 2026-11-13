@@ -459,6 +459,7 @@ const LISTS: ListCase[] = [
   { name: "workflow and rule builders", servers: ["neko_workflow_builder", "neko_rule_builder"] },
   { name: "admin tools", servers: ["neko_user_manager", "neko_channel_manager", "neko_data_source_manager", "neko_audit"] },
   { name: "source config tools", servers: ["neko_source_config_manager"] },
+  { name: "workflow run", servers: ["neko_graphjin", "neko_workflow_output", "neko_action", "neko_memory", "neko_files"], workflowRunId: WF_RUN },
 ];
 
 const METHODS = [

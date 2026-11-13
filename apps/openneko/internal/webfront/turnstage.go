@@ -106,6 +106,8 @@ type turnStage struct {
 	host      agentWorkspace
 	baseline  skillFileHashes
 	actor     runActorRow
+
+	captureReason string
 }
 
 type stageOptions struct {
@@ -407,6 +409,9 @@ func (s *turnStage) finish(ctx context.Context, a *API, orgID, runID string, abo
 		evidence.SkillsRoots = []string{s.Workspace.SkillsRoot}
 	}
 	capture, reason := skillCaptureDecision(evidence)
+	if s.captureReason != "" {
+		capture, reason = true, s.captureReason
+	}
 	if !capture {
 		log.Printf("[agent-run] run %s skill capture skipped: %s", runID, reason)
 		return
