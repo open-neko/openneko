@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+
+	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
 // The turn's tools are the multiplexed MCP server of
@@ -266,9 +268,10 @@ type toolRoute struct {
 // toolServer is one run's multiplexed tool server. As in Node, a call is
 // routed by the last tools/list; a name it does not hold lists again first.
 type toolServer struct {
-	groups []toolGroup
-	mu     sync.Mutex
-	routes map[string]toolRoute
+	groups     []toolGroup
+	scriptData func(ctx context.Context, raw json.RawMessage) (*jsObj, error)
+	mu         sync.Mutex
+	routes     map[string]toolRoute
 }
 
 func newToolServer(groups ...toolGroup) *toolServer {
@@ -418,6 +421,13 @@ func (s *toolServer) handle(ctx context.Context, method string, params json.RawM
 		}
 		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, &rpcError{-32602, "Invalid params"}
+		}
+		if p.Name == sandbox.DataTool && s.scriptData != nil {
+			result, err := s.scriptData(ctx, p.Arguments)
+			if err != nil {
+				return nil, &rpcError{-32603, "MCP error -32603: " + err.Error()}
+			}
+			return json.RawMessage(jsStringify(result, false)), nil
 		}
 		route, ok, err := s.route(ctx, p.Name)
 		if err != nil {

@@ -274,6 +274,7 @@ async function runWorkflowTurnTraced(
       knowledgePackPaths(workspace.knowledgeRoot),
     ));
 
+    const terminal = (await sandboxForOrg(orgId)) !== undefined;
     const prompt = buildWorkflowRunnerPrompt({
       workflow,
       includeUxMetadata: opts.includeUxMetadata,
@@ -283,6 +284,7 @@ async function runWorkflowTurnTraced(
       backend: backend.id,
       workspace,
       knowledge,
+      scriptData: terminal,
     });
 
     const seedMessage = buildWorkflowSeedMessage({
@@ -306,7 +308,7 @@ async function runWorkflowTurnTraced(
       ),
       runActor.kind === "user" ? await ownRunSkills(workspace.orgRoot, runActor.userId) : [],
       false,
-      (await sandboxForOrg(orgId)) !== undefined,
+      terminal,
     );
     const allowedSkills = withOwn.allowed;
     const budget = workflowTurnBudget();

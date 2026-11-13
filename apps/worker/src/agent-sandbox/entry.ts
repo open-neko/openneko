@@ -28,7 +28,6 @@ import { ARTIFACTS_MARKER, EVENT_MARKER, RESULT_MARKER } from "./protocol";
 import { configureAgentRuntime } from "./runtime-contract";
 import { hasArtifacts } from "./artifacts";
 import { installDataClient } from "./data-client";
-import { startDataSocket, type DataSocket } from "./data-socket";
 
 /**
  * The agent runner: one child process of web or the worker per run. The
@@ -139,61 +138,44 @@ export async function main(job = loadJob()): Promise<void> {
 
   // In openneko serve the harness reaches the run's tools over serve's
   // socket, served from this process instead of a bridge child.
+  const kind = job.kind ?? "work";
+  const scriptData = await installScriptData(job, controlPlane);
   if (serveSocket() && controlPlane) {
     registerServeToolBridge(async (servers, env) => {
-      const server = await buildMultiplexedBridgeServer(
-        servers,
-        bridgeContextFromEnv(env, controlPlane, { brokerUrl, brokerToken }),
-      );
+      const server = await buildMultiplexedBridgeServer(servers, {
+        ...bridgeContextFromEnv(env, controlPlane, { brokerUrl, brokerToken }),
+        scriptData,
+      });
       return server.instance;
     });
   }
 
-  const kind = job.kind ?? "work";
   if (kind !== "agent-job" && !controlPlane) {
     throw new Error("agent-sandbox: work run missing broker control plane");
   }
-  const dataSocket = await startRunDataSocket(job, controlPlane);
-  try {
-    await runJob(job, kind, backend, controlPlane, emit);
-  } finally {
-    await dataSocket?.close();
-  }
+  await runJob(job, kind, backend, controlPlane, emit);
 }
 
 /**
- * Gives skill scripts the run's neko_graphjin tools, so a script fetches its
- * own data instead of passing every query through the model.
+ * Gives skill scripts the run's neko_graphjin tools: the harness runs a
+ * script's query through the bridge and passes the rows back as files.
  */
-async function startRunDataSocket(
+async function installScriptData(
   job: SandboxJob,
   controlPlane: BrokerControlPlane | undefined,
-): Promise<DataSocket | undefined> {
-  if (!controlPlane) return undefined;
+): Promise<boolean> {
+  if (!controlPlane) return false;
   const kind = job.kind ?? "work";
   const enabled =
     kind === "workflow" ||
     kind === "work" ||
     (kind === "agent-job" && job.agentAccess?.graphjinRead === true);
-  if (!enabled) return undefined;
-  const socket = await startDataSocket({
-    runId: job.runId,
-    buildServer: () =>
-      buildGraphjinMcpServer({
-        orgId: job.orgId,
-        ...(kind === "agent-job" ? {} : { runId: job.runId }),
-        controlPlane,
-        ...(kind === "work" && job.graphjinToolPolicy
-          ? { toolPolicy: job.graphjinToolPolicy }
-          : {}),
-      }),
-  });
-  await installDataClient(job.workspace.binRoot, socket.path);
-  process.env.OPENNEKO_DATA_SOCKET = socket.path;
+  if (!enabled) return false;
+  await installDataClient(job.workspace.binRoot);
   process.env.PYTHONPATH = [job.workspace.binRoot, process.env.PYTHONPATH]
     .filter(Boolean)
     .join(":");
-  return socket;
+  return true;
 }
 
 async function runJob(

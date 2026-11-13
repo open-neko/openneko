@@ -405,6 +405,12 @@ land in it. When a command ends, the sandbox kills every process of the
 run's user. Ending a run removes its folder and its home. The protocol is in
 `recipes/sandbox/README.md`.
 
+A skill script gets its data as files. When it asks for rows, it stops with
+its request; serve, or the runner for a script step, runs the query through
+the run's GraphJin tools and runs the script again with the rows. The
+sandbox holds no key, token or socket for this. The steps and the limits
+are in `recipes/sandbox/README.md`, "Script data".
+
 In the Compose overlay the sandbox container:
 
 - sits **only** on its own network. Commands can reach the internet, but not

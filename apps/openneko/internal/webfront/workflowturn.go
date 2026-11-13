@@ -156,9 +156,13 @@ func (a *API) workflowTurnBody(ctx context.Context, o workflowTurnOptions, st *w
 	}
 	steps, _ := jsParse(wf.Steps)
 	files := filesEnabled()
+	terminal, err := a.orgTerminal(ctx, wf.OrgID)
+	if err != nil {
+		return workflowTurnResult{}, err
+	}
 	prompt := buildWorkflowPrompt(workflowPromptInput{Backend: "ax", Name: wf.Name, Description: wf.Description, Goal: wf.Goal,
 		SystemPromptOverlay: wf.SystemPromptOverlay, Steps: jsArray(steps), Mode: o.Mode, IncludeUxMetadata: o.IncludeUxMetadata,
-		MemoryContext: memory, Workspace: ws, Knowledge: readKnowledgePack(ws.KnowledgeRoot), FilesEnabled: files})
+		MemoryContext: memory, Workspace: ws, Knowledge: readKnowledgePack(ws.KnowledgeRoot), FilesEnabled: files, ScriptData: terminal})
 	now := time.Now
 	if o.now != nil {
 		now = o.now
@@ -173,10 +177,6 @@ func (a *API) workflowTurnBody(ctx context.Context, o workflowTurnOptions, st *w
 		installed = append(installed, s.Name)
 	}
 	allowed := runSkillScope(heldList(heldSkills), installed, false)
-	terminal, err := a.orgTerminal(ctx, wf.OrgID)
-	if err != nil {
-		return workflowTurnResult{}, err
-	}
 	_, allowed, own := runSkillsWithOwn(nil, allowed, ownRunSkills(ws.OrgRoot, act.UserID), false, terminal)
 	limits := agentLimitsFor("workflow")
 	timeout, maxCalls, continuations := limits.TimeoutMs, limits.MaxToolCalls, limits.MaxContinuations
@@ -250,8 +250,24 @@ func (a *API) workflowStagedCore(ctx context.Context, o workflowTurnOptions, st 
 			cfg := sandbox.ConfigFromEnv(os.Getenv)
 			box = &cfg
 		}
+		var data sandbox.DataBroker
+		if box != nil && !in.withoutScriptData {
+			b := in.binding()
+			var be toolBackend
+			if in.toolBackend != nil {
+				be = in.toolBackend(b)
+			} else {
+				rt := a.runTools(b)
+				rt.events = st.wrapped
+				be = rt
+			}
+			var err error
+			if data, err = scriptDataBroker(b, be); err != nil {
+				return axRunResult{}, err
+			}
+		}
 		results, err := runScriptSteps(ctx, scriptStepsInput{Steps: jsArray(steps), Workspace: stage.Workspace,
-			Input: o.TriggerPayload, Allowed: allowed, Sandbox: box, Emit: st.wrapped})
+			Input: o.TriggerPayload, Allowed: allowed, Sandbox: box, Data: data, Emit: st.wrapped})
 		if err != nil {
 			return axRunResult{}, err
 		}

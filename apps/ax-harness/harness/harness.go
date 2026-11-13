@@ -4,6 +4,8 @@ package harness
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -105,13 +107,15 @@ func RunTurn(ctx context.Context, turn Turn) (int, error) {
 		_ = closeAll()
 		return 2, err
 	}
+	var hostCall mcp.Caller
 	if turn.Bridge != nil {
-		caps, closeBridge, err := mcp.ConnectStream(ctx, turn.Bridge, "mcp_neko_", bridgeEffects)
+		caps, caller, closeBridge, err := mcp.ConnectStream(ctx, turn.Bridge, "mcp_neko_", bridgeEffects)
 		if err != nil {
 			return failed(fmt.Errorf("OpenNeko bridge unavailable: %w", err))
 		}
 		tools.Capabilities = append(tools.Capabilities, caps...)
 		closers = append(closers, closeBridge)
+		hostCall = caller
 	} else if bridge := getenv("OPENNEKO_MCP_BRIDGE"); bridge != "" {
 		caps, closeBridge, err := mcp.Connect(ctx, bridgeCommand(bridge, getenv("OPENNEKO_MCP_SERVERS"), environ), "mcp_neko_", bridgeEffects)
 		if err != nil {
@@ -136,6 +140,12 @@ func RunTurn(ctx context.Context, turn Turn) (int, error) {
 		client, err := sandbox.NewClient(turn.Sandbox, workspace)
 		if err != nil {
 			return failed(fmt.Errorf("terminal unavailable: %w", err))
+		}
+		if runDir := getenv("RUN_DIR"); hostCall != nil && runDir != "" {
+			if err := client.SetData(runDir, bridgeDataBroker(hostCall), sandbox.DefaultDataLimits); err != nil {
+				_ = client.Close()
+				return failed(fmt.Errorf("terminal unavailable: %w", err))
+			}
 		}
 		shell, err := localtool.NewShell(workspace, client)
 		if err != nil {
@@ -302,4 +312,39 @@ func exportCatalog() {
 func fail(err error) {
 	fmt.Fprintln(os.Stderr, err)
 	os.Exit(2)
+}
+
+func bridgeDataBroker(call mcp.Caller) sandbox.DataBroker {
+	return func(ctx context.Context, q sandbox.DataQuery) (json.RawMessage, error) {
+		input, err := json.Marshal(q)
+		if err != nil {
+			return nil, err
+		}
+		raw, err := call(ctx, sandbox.DataTool, input)
+		if err != nil {
+			return nil, err
+		}
+		var result struct {
+			Content    []string        `json:"content"`
+			Structured json.RawMessage `json:"structured_content"`
+			IsError    bool            `json:"is_error"`
+		}
+		if err := json.Unmarshal(raw, &result); err != nil {
+			return nil, errors.New("the data query gave no answer")
+		}
+		if result.IsError {
+			if len(result.Content) > 0 && result.Content[0] != "" {
+				return nil, errors.New(result.Content[0])
+			}
+			return nil, errors.New("execute_graphql failed")
+		}
+		if len(result.Structured) > 0 && result.Structured[0] == '{' {
+			return sandbox.GraphQLData(result.Structured)
+		}
+		if len(result.Content) == 0 {
+			return nil, errors.New("execute_graphql returned no data object")
+		}
+		text, _ := json.Marshal(result.Content[0])
+		return sandbox.GraphQLData(text)
+	}
 }

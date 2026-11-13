@@ -54,10 +54,11 @@
           "insights": "{\"hub_tables\":[{\"name\":\"orders\",\"summary\":\"Orders\",\"join_paths\":[\"orders -> customer\"],\"examples\":[\"query { orders { id } }\"]}],\"api_operations\":[{\"name\":\"listOrders\",\"summary\":\"List orders\"}],\"help_cards\":[{\"id\":\"help:filters\",\"summary\":\"Filters\"}]}",
           "syntax": "{\"operators\":[\"eq\"]}"
         },
-        "filesEnabled": false
+        "filesEnabled": false,
+        "scriptData": true
       },
-      "bytes": 12350,
-      "sha256": "9d0c2abb51582e42626c861b400b9ca4201d7bc7fd14bb504adf07265af37504"
+      "bytes": 12363,
+      "sha256": "4cdfcb0ef745dd77220fe668856c1fb5c919a4b22d8587953fe534d38140a158"
     },
     {
       "name": "live with goal, overlay, memory and files",
@@ -113,10 +114,11 @@
           "insights": "{\"hub_tables\":[{\"name\":\"orders\",\"summary\":\"Orders\",\"join_paths\":[\"orders -> customer\"],\"examples\":[\"query { orders { id } }\"]}],\"api_operations\":[{\"name\":\"listOrders\",\"summary\":\"List orders\"}],\"help_cards\":[{\"id\":\"help:filters\",\"summary\":\"Filters\"}]}",
           "syntax": "{\"operators\":[\"eq\"]}"
         },
-        "filesEnabled": true
+        "filesEnabled": true,
+        "scriptData": true
       },
-      "bytes": 12917,
-      "sha256": "a88ac73d4c781b1274b0dbf100ec02144f90072e680a6978073bed55ae5ec914"
+      "bytes": 12930,
+      "sha256": "6ebc42e9e2870ac907cfe8651cfa2ff6d597adbf8fd976f33f9f400a20260722"
     },
     {
       "name": "eval without value block",
@@ -149,10 +151,11 @@
           "insights": "{}",
           "syntax": "{}"
         },
-        "filesEnabled": false
+        "filesEnabled": false,
+        "scriptData": true
       },
-      "bytes": 10760,
-      "sha256": "32ff7d629dca61d8840b6f0dd927d6e89282a87b74a792733bc75e74a8f8c743"
+      "bytes": 10773,
+      "sha256": "75e3172390ee09d21821af07fdb61b73e28aab162a9d24bbbff43a3c47277df2"
     },
     {
       "name": "other backend",
@@ -208,10 +211,71 @@
           "insights": "{\"hub_tables\":[{\"name\":\"orders\",\"summary\":\"Orders\",\"join_paths\":[\"orders -> customer\"],\"examples\":[\"query { orders { id } }\"]}],\"api_operations\":[{\"name\":\"listOrders\",\"summary\":\"List orders\"}],\"help_cards\":[{\"id\":\"help:filters\",\"summary\":\"Filters\"}]}",
           "syntax": "{\"operators\":[\"eq\"]}"
         },
-        "filesEnabled": false
+        "filesEnabled": false,
+        "scriptData": true
       },
-      "bytes": 11773,
-      "sha256": "eba8111fd6a1cb3d87a11334093e5779a2d403e6dfa4b4b33ed4c11e98d75fbd"
+      "bytes": 11786,
+      "sha256": "6a03d32c8743002934af1a520b9890c011eabf969c2881f3cd23ae7c077be383"
+    },
+    {
+      "name": "no sandbox, so no script data",
+      "input": {
+        "backend": "ax",
+        "name": "Low stock watch",
+        "description": "Flags SKUs below their reorder point.",
+        "goal": "",
+        "systemPromptOverlay": "",
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Read low stock"
+          },
+          {
+            "id": "s2",
+            "description": "Build the sheet",
+            "script": {
+              "skill": "xlsx",
+              "command": [
+                "python3",
+                "${SKILL_DIR}/run.py"
+              ]
+            }
+          },
+          {
+            "id": "s3",
+            "description": "Mail the buyer ₹ \"now\""
+          },
+          {
+            "id": "s4"
+          }
+        ],
+        "mode": "headless",
+        "includeUxMetadata": true,
+        "memoryContext": "",
+        "workspace": {
+          "orgRoot": "/home/neko/.config/openneko/agents/orgs/org_1",
+          "skillsRoot": "/home/neko/.config/openneko/agents/orgs/org_1/skills",
+          "memoryRoot": "/home/neko/.config/openneko/agents/orgs/org_1/memory",
+          "knowledgeRoot": "/home/neko/.config/openneko/agents/orgs/org_1/knowledge",
+          "uploadsRoot": "/home/neko/.config/openneko/agents/orgs/org_1/uploads",
+          "runsRoot": "/home/neko/.config/openneko/agents/orgs/org_1/runs",
+          "threadUploadsRoot": "/home/neko/.config/openneko/agents/orgs/org_1/uploads/t-1",
+          "runRoot": "/home/neko/.config/openneko/agents/orgs/org_1/runs/r-1",
+          "artifactRoot": "/home/neko/.config/openneko/agents/orgs/org_1/runs/r-1/artifacts",
+          "binRoot": "/home/neko/.config/openneko/agents/orgs/org_1/runs/r-1/bin"
+        },
+        "knowledge": {
+          "mode": "agentic",
+          "tables": "{\"tables\":[{\"schema\":\"sales\",\"name\":\"orders\",\"column_count\":9,\"summary\":\"Orders 🚚\"}]}",
+          "namespaces": "{}",
+          "insights": "{\"hub_tables\":[{\"name\":\"orders\",\"summary\":\"Orders\",\"join_paths\":[\"orders -> customer\"],\"examples\":[\"query { orders { id } }\"]}],\"api_operations\":[{\"name\":\"listOrders\",\"summary\":\"List orders\"}],\"help_cards\":[{\"id\":\"help:filters\",\"summary\":\"Filters\"}]}",
+          "syntax": "{\"operators\":[\"eq\"]}"
+        },
+        "filesEnabled": false,
+        "scriptData": false
+      },
+      "bytes": 11717,
+      "sha256": "1aa940b2e8f037b759037bd23240c515ed5e294c7fa622f007268883fbddfe9b"
     }
   ],
   "seeds": [

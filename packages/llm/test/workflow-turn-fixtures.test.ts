@@ -66,6 +66,7 @@ type PromptInput = {
   workspace: AgentWorkspace;
   knowledge: KnowledgePackContents;
   filesEnabled: boolean;
+  scriptData: boolean;
 };
 
 const base: PromptInput = {
@@ -81,6 +82,7 @@ const base: PromptInput = {
   workspace,
   knowledge: agentic,
   filesEnabled: false,
+  scriptData: true,
 };
 
 const PROMPTS: Array<{ name: string; input: PromptInput }> = [
@@ -98,6 +100,7 @@ const PROMPTS: Array<{ name: string; input: PromptInput }> = [
   },
   { name: "eval without value block", input: { ...base, includeUxMetadata: false, description: "", knowledge: legacy, steps: [] } },
   { name: "other backend", input: { ...base, backend: "other", goal: " \n ", systemPromptOverlay: "  ", memoryContext: "  \n" } },
+  { name: "no sandbox, so no script data", input: { ...base, scriptData: false } },
 ];
 
 function workflowOf(input: PromptInput): WorkflowRecord {
@@ -442,6 +445,7 @@ describe("workflow turn fixtures for the Go turn", () => {
         backend: c.input.backend as "ax",
         workspace: c.input.workspace,
         knowledge: c.input.knowledge,
+        scriptData: c.input.scriptData,
       }));
       return { ...c, bytes: Buffer.byteLength(text, "utf8"), sha256: sha256(text) };
     });

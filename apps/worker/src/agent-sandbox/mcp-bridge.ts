@@ -36,6 +36,9 @@ import { BrokerControlPlane, postAgentEvents } from "./broker-client";
 // The broker waits up to 180s for GraphJin tools such as the GraphJin agent.
 const TOOL_CALL_TIMEOUT_MS = 180_000;
 
+/** sandbox.DataTool in apps/ax-harness: the host's call for a skill script query. It is not listed. */
+export const SCRIPT_DATA_TOOL = "script_data_query";
+
 /**
  * Stdio MCP server for out-of-process backends. The agent process can't hand
  * its in-process SDK server instances across a process boundary, so the
@@ -72,6 +75,8 @@ export type BridgeServerContext = {
   cardSchema?: string;
   graphjinToolPolicy?: GraphjinMcpToolPolicy;
   memoryReadOnly?: boolean;
+  /** The harness may run skill script queries through SCRIPT_DATA_TOOL. */
+  scriptData?: boolean;
 };
 
 export function buildBridgeServer(
@@ -266,7 +271,41 @@ export async function buildMultiplexedBridgeServer(
   instance.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: await listPublicTools(),
   }));
+  let scriptData: Promise<Client> | undefined;
+  const scriptDataClient = (): Promise<Client> => {
+    scriptData ??= (async () => {
+      const server = buildGraphjinMcpServer({
+        orgId: ctx.orgId,
+        ...(ctx.runKind === "agent-job" ? {} : { runId: ctx.runId }),
+        controlPlane: ctx.controlPlane,
+        ...(ctx.runKind === "work" && ctx.graphjinToolPolicy ? { toolPolicy: ctx.graphjinToolPolicy } : {}),
+      });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      await server.instance.connect(serverTransport);
+      const client = new Client({ name: "openneko-script-data", version: "1.0.0" });
+      await client.connect(clientTransport);
+      return client;
+    })();
+    return scriptData;
+  };
+
   instance.setRequestHandler(CallToolRequestSchema, async (request) => {
+    if (request.params.name === SCRIPT_DATA_TOOL && ctx.scriptData) {
+      const { query, variables, namespace } = (request.params.arguments ?? {}) as Record<string, unknown>;
+      if (typeof query !== "string" || !query) throw new Error("the script data request is not valid");
+      return (await scriptDataClient()).callTool(
+        {
+          name: "execute_graphql",
+          arguments: {
+            query,
+            ...(variables !== undefined && variables !== null ? { variables } : {}),
+            ...(typeof namespace === "string" && namespace ? { namespace } : {}),
+          },
+        },
+        undefined,
+        { timeout: TOOL_CALL_TIMEOUT_MS },
+      );
+    }
     let route = routes.get(request.params.name);
     if (!route) {
       await listPublicTools();

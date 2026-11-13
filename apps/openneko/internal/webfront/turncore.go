@@ -2,7 +2,6 @@ package webfront
 
 import (
 	"context"
-	"log"
 	"os"
 	"strings"
 
@@ -31,10 +30,8 @@ type agentCoreInput struct {
 	Workflow               *workflowCoreInput
 	FilesEnabled           func() bool
 	toolBackend            func(turnBinding) toolBackend
-	startData              func(turnBinding, toolBackend) (*dataSocket, error)
-	installData            func(binRoot, socket string) error
 	afterTools             func(*toolServer)
-	withoutDataSocket      bool
+	withoutScriptData      bool
 }
 
 // workflowCoreInput is what a workflow turn adds to the core: its run, its
@@ -93,8 +90,8 @@ func agentCoreServers(in agentCoreInput, packTools int) []string {
 }
 
 // runAgentCore is runAgentBackend() with the runner's part of entry.ts: the
-// run's tool server answers serve's bridge stream in this process, and skill
-// scripts reach the run's neko_graphjin tools on the data socket.
+// run's tool server answers serve's bridge stream in this process, and the
+// harness runs skill script queries through it.
 func (a *API) runAgentCore(ctx context.Context, in agentCoreInput) (axRunResult, error) {
 	b := in.binding()
 	var be toolBackend
@@ -119,25 +116,13 @@ func (a *API) runAgentCore(ctx context.Context, in agentCoreInput) (axRunResult,
 		in.afterTools(tools)
 	}
 	pythonPath := ""
-	if !in.withoutDataSocket {
-		start := in.startData
-		if start == nil {
-			start = func(b turnBinding, be toolBackend) (*dataSocket, error) { return startDataSocket("", b, be) }
-		}
-		install := in.installData
-		if install == nil {
-			install = installDataClient
-		}
-		socket, err := start(b, be)
+	if !in.withoutScriptData {
+		call, err := scriptDataCall(b, be)
 		if err != nil {
 			return axRunResult{}, err
 		}
-		defer func() {
-			if err := socket.close(); err != nil {
-				log.Printf("[work-run] data socket close failed: %v", err)
-			}
-		}()
-		if err := install(in.Workspace.BinRoot, socket.path); err != nil {
+		tools.scriptData = scriptDataTool(call)
+		if err := installDataClient(in.Workspace.BinRoot); err != nil {
 			return axRunResult{}, err
 		}
 		pythonPath = in.Workspace.BinRoot

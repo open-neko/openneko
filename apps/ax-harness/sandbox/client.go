@@ -58,6 +58,7 @@ type Client struct {
 	started bool
 	synced  map[string]fileState
 	dirs    map[string]bool
+	data    *scriptData
 }
 
 // NewClient accepts unix:///path, http:// and https:// URLs.
@@ -154,6 +155,13 @@ func (c *Client) ExecIn(ctx context.Context, dir, command, skillDir string, env 
 		}
 		body.Env[name] = strings.Join(parts, ":")
 	}
+	if c.data != nil {
+		return c.execWithData(ctx, body)
+	}
+	return c.execOnce(ctx, body)
+}
+
+func (c *Client) execOnce(ctx context.Context, body execBody) (localtool.ExecResult, error) {
 	answer, err := c.send(ctx, body)
 	if errors.Is(err, errLostRun) && c.started {
 		c.started, c.synced, c.dirs = false, map[string]fileState{}, map[string]bool{}

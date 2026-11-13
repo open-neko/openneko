@@ -678,6 +678,8 @@ export function buildWorkPrompt(args: {
   inlineTranscript: boolean;
   /** This chat belongs to one of the operator's bots. */
   bot?: { name: string; instructions: string };
+  /** The run has a sandbox, so skill scripts can query data. */
+  scriptData?: boolean;
 }): string {
   const {
     backend,
@@ -702,6 +704,7 @@ export function buildWorkPrompt(args: {
     supportsNativeDelegation,
     inlineTranscript,
     bot,
+    scriptData = false,
   } = args;
   const shellTool = shellToolName(backend);
 
@@ -733,7 +736,7 @@ that flags churn risk every Monday."
       shellTool,
       queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
       queryIdentity: "actor",
-      scriptAccess: true,
+      scriptAccess: scriptData,
       workspace,
       knowledge,
       inlineKnowledge: "syntax",

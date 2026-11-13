@@ -515,6 +515,7 @@ async function runChatTurnTraced(
         opts.nativeDelegation !== "disabled",
       inlineTranscript,
       ...(threadBot ? { bot: threadBot } : {}),
+      scriptData: terminal,
     });
 
     await eventTelemetry.startAgent({

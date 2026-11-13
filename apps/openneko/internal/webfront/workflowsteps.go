@@ -40,6 +40,7 @@ type scriptStepsInput struct {
 	Input     any
 	Allowed   []string
 	Sandbox   *sandbox.Config
+	Data      sandbox.DataBroker
 	Emit      func(ctx context.Context, event any) error
 	now       func() time.Time
 }
@@ -53,6 +54,12 @@ func runScriptSteps(ctx context.Context, in scriptStepsInput) ([]scriptStepResul
 	if in.Sandbox != nil {
 		if client, clientErr = sandbox.NewClient(*in.Sandbox, in.Workspace.OrgRoot); clientErr == nil {
 			defer client.Close()
+			if in.Data != nil {
+				if err := installDataClient(in.Workspace.BinRoot); err != nil {
+					return nil, err
+				}
+				clientErr = client.SetData(in.Workspace.RunRoot, in.Data, sandbox.DefaultDataLimits)
+			}
 		}
 	}
 	blocked := ""
@@ -149,7 +156,7 @@ func runScriptStep(ctx context.Context, in scriptStepsInput, client *sandbox.Cli
 	var timedOut bool
 	var output, execErr string
 	res, err := client.ExecIn(ctx, in.Workspace.RunRoot, command, skillDir,
-		map[string]string{"RUN_DIR": in.Workspace.RunRoot, "ARTIFACT_DIR": in.Workspace.ArtifactRoot}, timeout, stepMaxOutput)
+		stepEnv(in), timeout, stepMaxOutput)
 	if err != nil {
 		execErr = err.Error()
 	} else {
@@ -181,6 +188,14 @@ func runScriptStep(ctx context.Context, in scriptStepsInput, client *sandbox.Cli
 		r.Error = "timed out after " + strconv.Itoa(timeout) + "s"
 	}
 	return r, nil
+}
+
+func stepEnv(in scriptStepsInput) map[string]string {
+	env := map[string]string{"RUN_DIR": in.Workspace.RunRoot, "ARTIFACT_DIR": in.Workspace.ArtifactRoot}
+	if in.Data != nil {
+		env["PYTHONPATH"] = in.Workspace.BinRoot
+	}
+	return env
 }
 
 func pathExists(p string) bool {

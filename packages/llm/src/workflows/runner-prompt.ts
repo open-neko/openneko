@@ -25,6 +25,8 @@ export type BuildWorkflowRunnerPromptInput = {
   backend: AgentBackendId;
   workspace: AgentWorkspace;
   knowledge: KnowledgePackContents;
+  /** The run has a sandbox, so skill scripts can query data. */
+  scriptData?: boolean;
 };
 
 const HEADLESS_TAIL = `<mode>headless</mode>
@@ -92,7 +94,7 @@ export function buildWorkflowRunnerPrompt(
     queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
     queryIdentity: "actor",
     readOnly: true,
-    scriptAccess: true,
+    scriptAccess: input.scriptData ?? false,
     workspace,
     knowledge,
     inlineKnowledge: "syntax",
