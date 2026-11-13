@@ -1,6 +1,9 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { readFileSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildMultiplexedBridgeServer } from "../../src/agent-sandbox/mcp-bridge.js";
@@ -21,8 +24,11 @@ type CallCase = {
   listFirst?: boolean;
   graphjinTools?: unknown[];
   listThrows?: string;
+  wantsCards?: boolean;
+  cardSchema?: string;
+  eventsFail?: boolean;
   tool: string;
-  arguments?: Record<string, unknown>;
+  arguments?: unknown;
   reply?: Reply;
 };
 
@@ -99,7 +105,99 @@ const CALLS: CallCase[] = [
   { name: "no saved query listed", servers: ["neko_graphjin"], tool: "graphjin_execute_saved_query", arguments: { name: "top" }, reply: { value: GQL_ROWS } },
 ];
 
-type ListCase = { name: string; servers: string[]; memoryReadOnly?: boolean; policy?: string; graphjinTools?: unknown[]; listThrows?: string };
+const ASK = ["neko_interaction"];
+const SKILLS = ["neko_skills"];
+const UI = ["neko_ui"];
+const SALES = "| Region | Revenue | Orders |\n|---|---:|---:|\n| North | 12699845.92 | 1,250 |\n| South | 9876543.2 | 980 |\n| East | -3.5 | 0 |";
+const SMALL = "| Item | Price |\n| A | 1.005 |\n| B | 2.5 |\n| C | 0.125 |";
+const WHAT_IF = {
+  title: "Price what-if",
+  controls: ["price_change: Price change (%) = 5 (-20 to 20, step 1)", "Plan: Plan = Basic (10) | Pro (25)", "volume: Volume = 0.5 (0 to 1)"],
+  values: ["Road_Revenue = 1,496,791.67"],
+  computed: ["New revenue (USD): road_revenue * (1 + price_change / 100)", "Per plan: round(road_revenue / plan, 2) + max(volume, abs(-1)) ^ 2"],
+};
+
+CALLS.push(
+  { name: "ask one question", servers: ASK, tool: "interaction_ask_user_question", arguments: { questions: [{ question: "  Which region?  " }] } },
+  { name: "ask with options and cards", servers: ASK, wantsCards: true, tool: "interaction_ask_user_question", arguments: { reason: " Totals differ by region. ", questions: [{ header: "Region", question: "Which region?", options: [{ label: "North", description: "EU stores" }, { label: "South" }] }] } },
+  { name: "ask three questions with cards", servers: ASK, wantsCards: true, tool: "interaction_ask_user_question", arguments: { questions: [{ question: "Which period?" }, { header: "Basis", question: "Gross or net?", options: [{ label: "Gross" }, { label: "Net" }, { label: "Both", description: "Show both" }] }, { header: "Currency", question: "Which currency?" }] } },
+  { name: "ask two questions no cards", servers: ASK, tool: "interaction_ask_user_question", arguments: { questions: [{ question: "Which period?", options: [{ label: "Q1" }, { label: "Q2" }] }, { question: "Which store?" }] } },
+  { name: "ask four questions", servers: ASK, tool: "interaction_ask_user_question", arguments: { questions: [{ question: "a" }, { question: "b" }, { question: "c" }, { question: "d" }] } },
+  { name: "ask no questions", servers: ASK, tool: "interaction_ask_user_question", arguments: { questions: [] } },
+  { name: "ask missing questions", servers: ASK, tool: "interaction_ask_user_question", arguments: { reason: "why" } },
+  { name: "ask questions not a list", servers: ASK, tool: "interaction_ask_user_question", arguments: { questions: "Which region?" } },
+  { name: "ask question faults", servers: ASK, tool: "interaction_ask_user_question", arguments: { reason: "  ", questions: [{ zz: 1, question: " ", aa: 2, header: "h".repeat(41), options: [{ label: "", extra: true }] }, 7, null] } },
+  { name: "ask six options", servers: ASK, tool: "interaction_ask_user_question", arguments: { questions: [{ question: "Pick", options: ["a", "b", "c", "d", "e", "f"].map((label) => ({ label })) }] } },
+  { name: "ask option faults", servers: ASK, tool: "interaction_ask_user_question", arguments: { questions: [{ question: "Pick", options: [{ label: "x".repeat(81), description: "" }, "y"] }] } },
+  { name: "ask long question", servers: ASK, tool: "interaction_ask_user_question", arguments: { reason: "r".repeat(501), questions: [{ question: "€".repeat(501) }] } },
+  { name: "ask events fail", servers: ASK, wantsCards: true, eventsFail: true, tool: "interaction_ask_user_question", arguments: { questions: [{ question: "Which region?" }] } },
+  { name: "skill minimal", servers: SKILLS, tool: "skills_create_skill", arguments: { name: "Refund Report!!", description: "  Weekly refunds.  ", body: "\n# Refunds\n\nRun it.\n\n" } },
+  { name: "skill all fields", servers: SKILLS, tool: "skills_create_skill", arguments: { name: "sales-pack", description: "Sales \"pack\"\nline two", body: "Body", license: " Apache-2.0 ", compatibility: "Needs python3", metadata: { "owner.team": "ops €", version: "1" }, allowedTools: "Bash Read", files: [{ path: "scripts/run.py", content: "print('hi')\n" }, { path: "\\docs\\a.md", content: "" }, { path: "//ref/b.txt", content: "€ text" }] } },
+  { name: "skill long name", servers: SKILLS, tool: "skills_create_skill", arguments: { name: `${"a".repeat(63)} b`, description: "d", body: "b" } },
+  { name: "skill name normalizes to nothing", servers: SKILLS, tool: "skills_create_skill", arguments: { name: "!!!", description: "d", body: "b" } },
+  { name: "skill blank body", servers: SKILLS, tool: "skills_create_skill", arguments: { name: "blank", description: "d", body: "   " } },
+  { name: "skill path escapes", servers: SKILLS, tool: "skills_create_skill", arguments: { name: "escape", description: "d", body: "b", files: [{ path: "ok.txt", content: "1" }, { path: "a/../../x", content: "2" }] } },
+  { name: "skill empty path part", servers: SKILLS, tool: "skills_create_skill", arguments: { name: "parts", description: "d", body: "b", files: [{ path: "a//b", content: "2" }] } },
+  { name: "skill faults", servers: SKILLS, tool: "skills_create_skill", arguments: { name: "x".repeat(65), description: "   ", body: "", license: "", metadata: { " ": "v", ok: "x".repeat(2049), ["k".repeat(129)]: "v" }, files: [{ path: "", content: 5 }, { content: "c" }, "f"] } },
+  { name: "skill too many files", servers: SKILLS, tool: "skills_create_skill", arguments: { name: "many", description: "d", body: "b", files: Array.from({ length: 31 }, (_, i) => ({ path: `f${i}.txt`, content: "x" })) } },
+  { name: "skill extra fields", servers: SKILLS, tool: "skills_create_skill", arguments: { name: "extra", description: "d", body: "b", owner: "someone", files: [{ path: "a.txt", content: "a", mode: "755" }] } },
+  { name: "skill metadata not text", servers: SKILLS, tool: "skills_create_skill", arguments: { name: "meta", description: "d", body: "b", metadata: { n: 1 }, allowedTools: ["Bash"] } },
+  { name: "skill missing fields", servers: SKILLS, tool: "skills_create_skill", arguments: {} },
+  { name: "cards full report", servers: UI, tool: "ui_render_cards", arguments: { title: " Revenue by region ", stage: "final", table: SALES, chart: "bar", chartColumn: "revenue", keyFigures: ["Total: $22.6M (up 4%)", "Regions: 3"], callout: "North leads.", mood: "good", followUps: ["Why is East negative?", "Show orders"] } },
+  { name: "cards draft auto chart", servers: UI, tool: "ui_render_cards", arguments: { title: "Prices", stage: "draft", table: SMALL, chart: "line" } },
+  { name: "cards escaped lines", servers: UI, tool: "ui_render_cards", arguments: { title: "Lines", table: "| A | B |\\n| x | 1 |\\n| y | 2 |", keyFigures: "One: 1\nTwo: 2 (note)\n\n", followUps: "Next?" } },
+  { name: "cards nested arguments", servers: UI, tool: "ui_render_cards", arguments: { arguments: { title: "Nested", callout: "Check stock." } } },
+  { name: "cards json text", servers: UI, tool: "ui_render_cards", arguments: { input: JSON.stringify({ title: "Json", callout: "From text", mood: "act" }) } },
+  { name: "cards empty fields dropped", servers: UI, tool: "ui_render_cards", arguments: { title: "Sparse", table: null, chart: false, chartColumn: "", keyFigures: [], callout: "Only this.", extra: "x" } },
+  { name: "cards rich fields when core", servers: UI, tool: "ui_render_cards", arguments: { title: "Core", callout: "x", layout: "compare", diagram: ["A -> B"] } },
+  { name: "cards compare rich", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "Plans", layout: "compare", table: "| Plan | Price |\n| Basic | 10 |\n| Pro | 25 |", rowDetails: ["Basic >> | Feature | Limit |\n| Users | 3 |", "Pro >> | Feature | Limit |\n| Users | 30000.5 |"], drillDown: "Tell me about {label}" } },
+  { name: "cards what-if", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: WHAT_IF },
+  { name: "cards what-if faults", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "Bad", controls: ["a: A = 5 (10 to 1)", "b: B = 50 (0 to 10)", "c: C = 1 (0 to 2, step 0)", "nope", "d: D = X | Y (2)", "a: Again = 1 (0 to 2)"], values: ["e = 1", "bad"], computed: ["Out: a + zz", "Div: 1 / 0", "Parse: a +", "NoColon", "Fn: foo(1)", "Arity: abs(1, 2)", "Paren: (a", "Char: a $ 2"] } },
+  { name: "cards what-if half", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "Half", controls: ["a: A = 1 (0 to 2)"] } },
+  { name: "cards what-if non-finite", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "Inf", controls: ["a: A = 0 (0 to 2)"], values: ["one = 1"], computed: ["Pow: one ^ (1 / a)", "Ok: min(a, one, 3) + floor(1.5) + ceil(0.2) + round(2.5) + 1e400 - 1e400"] } },
+  { name: "cards map and diagram", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "Stores", map: ["Paris @ 48.85, 2.35: 1,200", "Lyon @45.76,4.84:300"], mapValue: "Sales (EUR)", diagram: ["Order -> Pick: 2h", "Pick -> Ship", "order -> Cancel", "Standalone"], drillDown: "Explain {label}" } },
+  { name: "cards map and diagram faults", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "Bad map", map: ["Nowhere @ 91, 0: 5", "Neg @ 1, 1: -5", "Text"], diagram: ["-> B", ...Array.from({ length: 31 }, (_, i) => `N${i}`)], drillDown: "no placeholder" } },
+  { name: "cards tool", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "Calc", tool: "<label>Qty <input id=q></label><output id=o></output><script>q.oninput=()=>o.value=q.value*2</script><a href=\"#top\">top</a><img src=\"data:image/png;base64,AA\">" } },
+  { name: "cards tool reaches out", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "Calc", tool: "<img src=' https://x.example/a.png'>" } },
+  { name: "cards tool fetch", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "Calc", tool: "<button onclick=\"fetch('/x')\">Go</button>" } },
+  { name: "cards tool css url", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "Calc", tool: "<div style=\"background: url( 'DATA:x')\">a</div><div style=\"background:url(http://x)\">b</div>" } },
+  { name: "cards tool protocol relative", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "Calc", tool: "<script>let a = 1;</script><link rel=x><p>hi</p>" } },
+  { name: "cards table faults", servers: UI, tool: "ui_render_cards", arguments: { title: "Bad", table: "| A | B |\n| 1 |", chart: "bar" } },
+  { name: "cards table one row", servers: UI, tool: "ui_render_cards", arguments: { title: "Bad", table: "| A | B |\n|---|---|" } },
+  { name: "cards chart column faults", servers: UI, tool: "ui_render_cards", arguments: { title: "Bad", table: SALES, chart: "bar", chartColumn: "Region" } },
+  { name: "cards chart no numbers", servers: UI, tool: "ui_render_cards", arguments: { title: "Bad", table: "| A | B |\n| x | y |\n| z | 1 |", chart: "area" } },
+  { name: "cards chart bad value", servers: UI, tool: "ui_render_cards", arguments: { title: "Bad", table: "| A | B |\n| x | 1 |\n| z | n/a |", chart: "area", chartColumn: "b" } },
+  { name: "cards chart one point", servers: UI, tool: "ui_render_cards", arguments: { title: "Bad", table: "| A | B |\n| x | 1 |", chart: "line" } },
+  { name: "cards donut", servers: UI, tool: "ui_render_cards", arguments: { title: "Mix", table: SALES, chart: "donut", chartColumn: "Orders" } },
+  { name: "cards donut negative", servers: UI, tool: "ui_render_cards", arguments: { title: "Mix", table: SALES, chart: "donut", chartColumn: "Revenue" } },
+  { name: "cards compare faults", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "Cmp", layout: "compare", table: "| A | B |\n| x | 1 |", rowDetails: ["y >> | C |\n| 1 |", "x >> | C |"], chart: "pie" } },
+  { name: "cards layout without table", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "Cmp", layout: "compare", chart: "bar", rowDetails: ["x >> | C |\n| 1 |"], callout: "c" } },
+  { name: "cards empty answer", servers: UI, tool: "ui_render_cards", arguments: { title: "Nothing", stage: "draft" } },
+  { name: "cards schema faults", servers: UI, tool: "ui_render_cards", arguments: { title: "  ", stage: "done", keyFigures: ["Bad", "x".repeat(161), 3, "A: 1", "B: 2", "C: 3", "D: 4"], callout: 5, mood: "calm", followUps: true } },
+  { name: "cards key figure faults", servers: UI, tool: "ui_render_cards", arguments: { title: "KF", keyFigures: ["Label:", ": 5", "Total: (only note)", "Margin: 12% (vs 10%) (est)"] } },
+  { name: "cards missing title", servers: UI, tool: "ui_render_cards", arguments: { callout: "x" } },
+  { name: "cards not an object", servers: UI, tool: "ui_render_cards", arguments: { only: [1, 2] } },
+  { name: "cards no arguments", servers: UI, tool: "ui_render_cards" },
+  { name: "cards number formats", servers: UI, tool: "ui_render_cards", arguments: { title: "Fmt", table: "| N | Big | Mixed | Neg | Zero |\n| a | 12345.678 | 1.5 | -0.004 | -0 |\n| b | 1e21 | 9999.995 | -1,234.5 | 0 |\n| c | 0x10 | 2 | 1. | .5 |" } },
+  { name: "cards events fail", servers: UI, eventsFail: true, tool: "ui_render_cards", arguments: { title: "Fail", callout: "x" } },
+  { name: "cards tool javascript link", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "T", tool: "<a href=\"javascript:alert(1)\">x</a>" } },
+  { name: "cards tool hash and data", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "T", tool: "<a href = '#x'>x</a><img srcset=\" data:image/png;base64,AA\"><p data-x=\"1\">y</p>" } },
+  { name: "cards tool protocol-relative src", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "T", tool: "<img src = '//cdn.example/a.png'>" } },
+  { name: "cards tool window open", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "T", tool: "<script type=module>\nwindow . open('x')\n</script >" } },
+  { name: "cards tool handler import", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "T", tool: "<body onload=import('x')>" } },
+  { name: "cards tool location outside script", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "T", tool: "<p>location.href and fetch are words here</p>" } },
+  { name: "cards tool upper iframe", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "T", tool: "< IFRAME></iframe>" } },
+  { name: "cards choice faults", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "F", controls: ["c: C = One (1) | Two (2) | Three (x)", `d: D = ${Array.from({ length: 13 }, (_, i) => `O${i} (${i})`).join(" | ")}`], computed: ["Out: 1"] } },
+  { name: "cards tool upper data attr", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "T", tool: "<object DATA=\"https://x\"></object>" } },
+  { name: "cards tool safe script", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "T", tool: "<script>const total = [1,2].reduce((a, b) => a + b); document.getElementById('o').textContent = total; const reopen = 1;</script><output id=o></output>" } },
+  { name: "cards formula faults", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "F", controls: ["a: A = 2 (0 to 4)"], values: ["b = 3"], computed: ["Two numbers: 1.50 2.50", "Empty:   ", "No args: max()", "Many: min(1,2,3,4,5,6,7,8,9)", "Close: abs(1", "Op: a * * b"] } },
+  { name: "cards formula forms", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "F", controls: ["a: A = 2 (0 to 12.5)", "b: B (kg) = 0.05 (0 to 0.07)", "c: C = 1 (-3 to 997)"], computed: ["Right: a ^ b ^ 2", "Neg: -a ^ 2 + +b", "Round: round(a * 1234.5, -1) + round(c)", "Exp: 1.5e3 * .5 + 5. - A", "Unit (a very long unit text here): a"] } },
+  { name: "cards control odd numbers", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "F", controls: ["a: A = 1.2.3 (0 to 2)", "b: B = 1 (0 to 2, step 1.2.3)"], computed: ["Out: b"] } },
+  { name: "cards control unused default", servers: UI, cardSchema: "rich", tool: "ui_render_cards", arguments: { title: "F", controls: ["a: A = 1.2.3 (0 to 2)", "b: B = 1 (0 to 2)"], computed: ["Out: b"] } },
+  { name: "cards and ask together", servers: ["neko_interaction", "neko_ui", "neko_skills"], wantsCards: true, tool: "ui_render_cards", arguments: { title: "Both", callout: "x" } },
+);
+
+type ListCase = { name: string; servers: string[]; memoryReadOnly?: boolean; policy?: string; graphjinTools?: unknown[]; listThrows?: string; cardSchema?: string };
 
 const LISTS: ListCase[] = [
   { name: "memory, guides and files", servers: ["neko_memory", "neko_guides", "neko_files"] },
@@ -108,6 +206,8 @@ const LISTS: ListCase[] = [
   { name: "graphjin direct-governed", servers: ["neko_graphjin"], policy: "direct-governed" },
   { name: "graphjin list fails", servers: ["neko_memory", "neko_graphjin"], listThrows: "GraphJin MCP tools/list failed: 503" },
   { name: "graphjin lists nothing", servers: ["neko_graphjin"], graphjinTools: [] },
+  { name: "interaction, cards and skills", servers: ["neko_interaction", "neko_ui", "neko_skills"] },
+  { name: "rich cards", servers: ["neko_ui", "neko_memory"], cardSchema: "rich" },
 ];
 
 const METHODS = [
@@ -141,16 +241,56 @@ function fakeControlPlane(
   return plane as unknown as BrokerControlPlane;
 }
 
-async function connect(servers: string[], memoryReadOnly: boolean, controlPlane: BrokerControlPlane, policy?: string) {
+type Broker = { url: string; events: unknown[]; fail: boolean; server: Server };
+
+async function startBroker(): Promise<Broker> {
+  const broker = { url: "", events: [] as unknown[], fail: false } as Broker;
+  broker.server = createServer((req, res) => {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => {
+      if (broker.fail) {
+        res.writeHead(500).end();
+        return;
+      }
+      broker.events.push(...(JSON.parse(body) as { events: unknown[] }).events);
+      res.writeHead(204).end();
+    });
+  });
+  await new Promise<void>((resolve) => broker.server.listen(0, "127.0.0.1", resolve));
+  broker.url = `http://127.0.0.1:${(broker.server.address() as AddressInfo).port}`;
+  return broker;
+}
+
+function readTree(root: string, prefix = ""): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const entry of readdirSync(join(root, prefix)).sort()) {
+    const rel = prefix ? `${prefix}/${entry}` : entry;
+    if (statSync(join(root, rel)).isDirectory()) Object.assign(out, readTree(root, rel));
+    else out[rel] = readFileSync(join(root, rel), "utf8");
+  }
+  return out;
+}
+
+async function connect(
+  servers: string[],
+  memoryReadOnly: boolean,
+  controlPlane: BrokerControlPlane,
+  policy?: string,
+  extra: { skillsRoot?: string; brokerUrl?: string; wantsCards?: boolean; cardSchema?: string } = {},
+) {
   const server = await buildMultiplexedBridgeServer(servers, {
     runKind: "work",
     orgId: "11111111-1111-4111-8111-111111111111",
     threadId: "22222222-2222-4222-8222-222222222222",
     runId: "33333333-3333-4333-8333-333333333333",
-    skillsRoot: "/tmp/skills",
+    skillsRoot: extra.skillsRoot ?? "/tmp/skills",
     packActions: [],
     controlPlane,
     memoryReadOnly,
+    ...(extra.brokerUrl ? { brokerUrl: extra.brokerUrl, brokerToken: "broker-token" } : {}),
+    ...(extra.wantsCards ? { wantsCards: true } : {}),
+    ...(extra.cardSchema ? { cardSchema: extra.cardSchema } : {}),
     ...(policy ? { graphjinToolPolicy: parseGraphjinMcpToolPolicy(policy) } : {}),
   });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -164,14 +304,23 @@ describe("tool server fixtures for the Go broker", () => {
   it("matches the fixture the Go test reads", async () => {
     const lists = [];
     for (const list of LISTS) {
-      const client = await connect(list.servers, list.memoryReadOnly ?? false, fakeControlPlane(undefined, [], list), list.policy);
+      const client = await connect(list.servers, list.memoryReadOnly ?? false, fakeControlPlane(undefined, [], list), list.policy, { cardSchema: list.cardSchema });
       lists.push({ ...list, tools: (await client.listTools()).tools });
       await client.close();
     }
     const calls = [];
+    const broker = await startBroker();
     for (const call of CALLS) {
       const recorded: unknown[] = [];
-      const client = await connect(call.servers, call.memoryReadOnly ?? false, fakeControlPlane(call.reply, recorded, call), call.policy);
+      const skillsRoot = mkdtempSync(join(tmpdir(), "neko-skills-"));
+      broker.events = [];
+      broker.fail = call.eventsFail ?? false;
+      const client = await connect(call.servers, call.memoryReadOnly ?? false, fakeControlPlane(call.reply, recorded, call), call.policy, {
+        skillsRoot,
+        brokerUrl: broker.url,
+        wantsCards: call.wantsCards,
+        cardSchema: call.cardSchema,
+      });
       let outcome: Record<string, unknown>;
       try {
         if (call.listFirst) await client.listTools();
@@ -179,9 +328,14 @@ describe("tool server fixtures for the Go broker", () => {
       } catch (err) {
         outcome = { error: err instanceof Error ? err.message : String(err) };
       }
-      calls.push({ ...call, ...outcome, controlPlane: recorded });
+      const files = readTree(skillsRoot);
+      rmSync(skillsRoot, { recursive: true, force: true });
+      calls.push(JSON.parse(JSON.stringify({ ...call, ...outcome, controlPlane: recorded, events: broker.events, files })
+        .replaceAll(skillsRoot, "<skills>")
+        .replace(/answer-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, "answer-<id>")));
       await client.close();
     }
+    broker.server.close();
     const fixture = `${JSON.stringify({ graphjinTools: GJ_TOOLS, lists, calls }, null, 1)}\n`;
     if (process.env.UPDATE_PROMPT_FIXTURES === "1") writeFileSync(FIXTURE, fixture);
     expect(fixture).toBe(readFileSync(FIXTURE, "utf8"));

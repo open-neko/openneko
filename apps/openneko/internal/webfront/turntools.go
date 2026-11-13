@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"math"
@@ -36,6 +35,7 @@ type toolResult struct {
 type toolDef struct {
 	server, name, description string
 	props                     []toolProp
+	shape                     *zObj
 	call                      func(ctx context.Context, args *jsObj) (toolResult, error)
 }
 
@@ -57,6 +57,11 @@ var zodUUID = regexp.MustCompile(uuidPatternText)
 
 // schema is the JSON Schema that the MCP SDK gives for the zod shape.
 func (d toolDef) schema() *jsObj {
+	if d.shape != nil {
+		out := d.shape.jsonSchema()
+		out.set("$schema", "http://json-schema.org/draft-07/schema#")
+		return out
+	}
 	props := &jsObj{}
 	required := []any{}
 	for _, p := range d.props {
@@ -138,8 +143,12 @@ func zodIssue(fields ...any) *jsObj {
 // validate checks args as the zod shape does and returns the issues in
 // zod's order and words. Keys the shape does not name are dropped.
 func (d toolDef) validate(args *jsObj) (*jsObj, []any) {
-	clean := &jsObj{}
 	issues := []any{}
+	if d.shape != nil {
+		clean := d.shape.parse(args, []any{}, &issues)
+		return clean.(*jsObj), issues
+	}
+	clean := &jsObj{}
 	for _, p := range d.props {
 		v, present := args.vals[p.name]
 		path := []any{p.name}
@@ -170,16 +179,10 @@ func (d toolDef) validate(args *jsObj) (*jsObj, []any) {
 			if !ok {
 				issues = append(issues, zodIssue("expected", "string", "code", "invalid_type", "path", path,
 					"message", "Invalid input: expected string, received "+jsTypeName(v)))
+			}
+			zLengthIssues(v, p.min, p.max, path, &issues)
+			if !ok {
 				break
-			}
-			n := float64(utf16Len(s))
-			if p.min != nil && n < *p.min {
-				issues = append(issues, zodIssue("origin", "string", "code", "too_small", "minimum", *p.min, "inclusive", true, "path", path,
-					"message", fmt.Sprintf("Too small: expected string to have >=%s characters", jsNumberText(*p.min))))
-			}
-			if p.max != nil && n > *p.max {
-				issues = append(issues, zodIssue("origin", "string", "code", "too_big", "maximum", *p.max, "inclusive", true, "path", path,
-					"message", fmt.Sprintf("Too big: expected string to have <=%s characters", jsNumberText(*p.max))))
 			}
 			if p.uuid && !zodUUID.MatchString(s) {
 				issues = append(issues, zodIssue("origin", "string", "code", "invalid_format", "format", "uuid",
