@@ -12,6 +12,7 @@ import {
   hasCustomPassword,
   localConfigPath,
   readLocalConfig,
+  secretsBackendError,
   writeLocalConfig,
 } from "../src/local-config";
 
@@ -82,5 +83,19 @@ describe("local-config (~/.config/openneko/config.json)", () => {
     expect(hasCustomPassword()).toBe(false);
     writeLocalConfig({ pg: { password: "p" } });
     expect(hasCustomPassword()).toBe(true);
+  });
+
+  it("refuses any secrets backend other than the local file", async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    await mkdir(join(tempHome, ".config", "openneko"), { recursive: true });
+    await writeFile(
+      localConfigPath(),
+      JSON.stringify({ secrets: { backend: "infisical", infisical: { siteUrl: "https://vault.test", projectId: "p" } } }),
+    );
+    const problem = secretsBackendError(readLocalConfig());
+    expect(problem).toContain('secrets.backend to "infisical"');
+    expect(problem).toContain("openneko secrets set");
+    expect(secretsBackendError({})).toBeNull();
+    expect(secretsBackendError({ secrets: { backend: "file" } })).toBeNull();
   });
 });

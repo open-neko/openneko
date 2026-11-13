@@ -125,6 +125,7 @@ export {
   writeLocalConfig,
   hasCustomPassword,
   localConfigPath,
+  secretsBackendError,
   type LocalConfig,
   type LocalPgConfig,
 } from "./local-config";

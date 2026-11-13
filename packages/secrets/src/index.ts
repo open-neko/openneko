@@ -28,10 +28,3 @@ export {
   FileSecretsResolver,
   type SecretsResolver,
 } from "./secrets-resolver";
-
-export {
-  InfisicalSecretsResolver,
-  folderToSection,
-  sectionToFolder,
-  type InfisicalConfig,
-} from "./infisical-resolver";

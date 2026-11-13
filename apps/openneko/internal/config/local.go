@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -24,8 +25,22 @@ type LocalPg struct {
 
 type Local struct {
 	// DatabaseURL is a postgres:// URL for OpenNeko's database. It replaces Pg.
-	DatabaseURL string   `json:"database_url,omitempty"`
-	Pg          *LocalPg `json:"pg,omitempty"`
+	DatabaseURL string        `json:"database_url,omitempty"`
+	Pg          *LocalPg      `json:"pg,omitempty"`
+	Secrets     *LocalSecrets `json:"secrets,omitempty"`
+}
+
+type LocalSecrets struct {
+	Backend string `json:"backend,omitempty"`
+}
+
+// SecretsBackendError holds the same text as secretsBackendError in
+// packages/db/src/local-config.ts.
+func (lc Local) SecretsBackendError() error {
+	if lc.Secrets == nil || lc.Secrets.Backend == "" || lc.Secrets.Backend == "file" {
+		return nil
+	}
+	return fmt.Errorf("config.json sets secrets.backend to %q. OpenNeko keeps secrets only in the local secrets file. Copy each secret into it with `openneko secrets set <section> <key>`, remove the \"secrets\" block from config.json, then start again.", lc.Secrets.Backend)
 }
 
 // ReadLocal returns the local config, plus the path it was read from (empty

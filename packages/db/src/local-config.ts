@@ -46,13 +46,7 @@ export type LocalPgConfig = {
 };
 
 export type LocalSecretsConfig = {
-  /** SEC2/SEC3 residency: "file" (default) or "infisical". */
-  backend?: "file" | "infisical";
-  infisical?: {
-    siteUrl: string;
-    projectId: string;
-    environment?: string;
-  };
+  backend?: string;
 };
 
 export type LocalConfig = {
@@ -109,6 +103,12 @@ export function readLocalConfig(): LocalConfig {
     }
   }
   return {};
+}
+
+export function secretsBackendError(cfg: LocalConfig): string | null {
+  const backend = cfg.secrets?.backend;
+  if (backend === undefined || backend === "file") return null;
+  return `config.json sets secrets.backend to "${backend}". OpenNeko keeps secrets only in the local secrets file. Copy each secret into it with \`openneko secrets set <section> <key>\`, remove the "secrets" block from config.json, then start again.`;
 }
 
 /**
