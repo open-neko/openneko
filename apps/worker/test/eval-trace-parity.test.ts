@@ -215,7 +215,7 @@ describe.skipIf(!stackUp)("eval trace parity on the eval install", () => {
       const loaded = await loadEval(CONFIG);
       const plan = createEvalPlan(loaded);
       const slot = plan.slots.find((candidate) => candidate.caseId === CASE_ID && candidate.repetition === 1)!;
-      const driver = createOpenNekoBackendDriver({ loaded, plan });
+      const driver = createOpenNekoBackendDriver({ loaded, plan }, { host: { lockWaitMs: 600_000 } });
       const observer = { async observe() {} };
       try {
         await driver.preflight({ loaded, plan });
@@ -231,6 +231,7 @@ describe.skipIf(!stackUp)("eval trace parity on the eval install", () => {
         expect(traceParityDifferences(nodeRecord(), go)).toEqual([]);
         const sources = new Set(go.events.filter((event) => !HOST_OPERATIONS.has(event.operation)).map((event) => event.source));
         expect([...sources]).toEqual(["trusted-broker"]);
+        expect(execution.measurements?.totalTokens).toBeGreaterThan(0);
       } finally {
         await driver.close?.();
       }
