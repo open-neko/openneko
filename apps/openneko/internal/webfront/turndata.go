@@ -271,13 +271,24 @@ var graphjinMCPClient = &http.Client{CheckRedirect: func(*http.Request, []*http.
 	return errors.New("redirect refused")
 }}
 
-func graphjinMCPRequest(ctx context.Context, endpoint string, headers map[string]string, method string, params *jsObj) (any, error) {
+// graphjinEndpoint gives the headers for each request, since the pack
+// account tokens can expire between the pages of one list.
+type graphjinEndpoint struct {
+	url     string
+	headers func(ctx context.Context) (map[string]string, error)
+}
+
+func graphjinMCPRequest(ctx context.Context, ep graphjinEndpoint, method string, params *jsObj) (any, error) {
+	headers, err := ep.headers(ctx)
+	if err != nil {
+		return nil, err
+	}
 	params.set("_meta", jsObjOf(
 		"io.modelcontextprotocol/protocolVersion", graphjinMCPProtocol,
 		"io.modelcontextprotocol/clientCapabilities", &jsObj{},
 		"io.modelcontextprotocol/clientInfo", jsObjOf("name", "openneko", "version", "1.0.0")))
 	body := jsObjOf("jsonrpc", "2.0", "id", float64(graphjinMCPSequence.Add(1)), "method", method, "params", params)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(jsStringify(body, false)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ep.url, strings.NewReader(jsStringify(body, false)))
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +389,7 @@ func parseMCPEventStream(text string) any {
 	return nil
 }
 
-func listGraphjinMCPTools(ctx context.Context, endpoint string, headers map[string]string) ([]any, error) {
+func listGraphjinMCPTools(ctx context.Context, ep graphjinEndpoint) ([]any, error) {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	tools := []any{}
@@ -388,7 +399,7 @@ func listGraphjinMCPTools(ctx context.Context, endpoint string, headers map[stri
 		if cursor != "" {
 			params.set("cursor", cursor)
 		}
-		result, err := graphjinMCPRequest(ctx, endpoint, headers, "tools/list", params)
+		result, err := graphjinMCPRequest(ctx, ep, "tools/list", params)
 		if err != nil {
 			return nil, err
 		}
@@ -421,13 +432,13 @@ func listGraphjinMCPTools(ctx context.Context, endpoint string, headers map[stri
 	return nil, errors.New("GraphJin MCP tools/list exceeded 100 pages")
 }
 
-func callGraphjinMCPTool(ctx context.Context, endpoint string, headers map[string]string, name string, args *jsObj) (any, error) {
+func callGraphjinMCPTool(ctx context.Context, ep graphjinEndpoint, name string, args *jsObj) (any, error) {
 	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
 	defer cancel()
 	if args == nil {
 		args = &jsObj{}
 	}
-	result, err := graphjinMCPRequest(ctx, endpoint, headers, "tools/call", jsObjOf("name", name, "arguments", args))
+	result, err := graphjinMCPRequest(ctx, ep, "tools/call", jsObjOf("name", name, "arguments", args))
 	if err != nil {
 		return nil, err
 	}
@@ -644,55 +655,58 @@ func (a *API) graphjinCallerToken(ctx context.Context, orgID string, runID *stri
 	return a.mintGraphjinToken(claims, 5*time.Minute)
 }
 
-func (a *API) graphjinMCPAccess(ctx context.Context, orgID string, runID *string) (string, map[string]string, error) {
+func (a *API) graphjinMCPAccess(ctx context.Context, orgID string, runID *string) (graphjinEndpoint, error) {
 	var mcpURL *string
 	var graphqlURL, kind, authMode string
 	err := a.DB.QueryRow(ctx, `select mcp_url, graphql_url, kind, auth_mode from data_source
 		where org_id = $1 and enabled = true order by is_default desc, created_at limit 1`, orgID).
 		Scan(&mcpURL, &graphqlURL, &kind, &authMode)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return "", nil, err
+		return graphjinEndpoint{}, err
 	}
 	if deref(mcpURL) == "" {
-		return "", nil, errors.New("no enabled GraphJin MCP endpoint configured")
+		return graphjinEndpoint{}, errors.New("no enabled GraphJin MCP endpoint configured")
 	}
 	if kind != "graphjin" {
-		return "", nil, errors.New("the default enabled data source is not a GraphJin server")
+		return graphjinEndpoint{}, errors.New("the default enabled data source is not a GraphJin server")
 	}
 	if isInternalGraphjinURL(graphqlURL) || isInternalGraphjinURL(*mcpURL) {
-		return "", nil, errors.New("refusing to expose the OpenNeko internal GraphJin MCP")
+		return graphjinEndpoint{}, errors.New("refusing to expose the OpenNeko internal GraphJin MCP")
 	}
 	headers := map[string]string{}
 	switch authMode {
 	case "jwt":
 		token, err := a.graphjinCallerToken(ctx, orgID, runID)
 		if err != nil {
-			return "", nil, err
+			return graphjinEndpoint{}, err
 		}
 		headers["authorization"] = "Bearer " + token
 	case "development":
 		if os.Getenv("NODE_ENV") == "production" {
-			return "", nil, errors.New("GraphJin development header auth is forbidden in production")
+			return graphjinEndpoint{}, errors.New("GraphJin development header auth is forbidden in production")
 		}
 		p, err := a.graphjinCallerPrincipal(ctx, orgID, runID)
 		if err != nil {
-			return "", nil, err
+			return graphjinEndpoint{}, err
 		}
 		headers["X-User-ID"] = orDefault(p.userID, "openneko-service")
 		headers["X-User-Role"] = p.role
 	}
-	return *mcpURL, headers, nil
+	endpoint := *mcpURL
+	return graphjinEndpoint{url: endpoint, headers: func(ctx context.Context) (map[string]string, error) {
+		return a.packUserConnectionHeaders(ctx, endpoint, headers, nil)
+	}}, nil
 }
 
 func (r *runTools) listGraphjinTools(ctx context.Context, in graphjinCaller) (any, error) {
 	if err := r.api.runHoldsDataSource(ctx, in.OrgID, in.RunID); err != nil {
 		return nil, err
 	}
-	endpoint, headers, err := r.api.graphjinMCPAccess(ctx, in.OrgID, in.RunID)
+	ep, err := r.api.graphjinMCPAccess(ctx, in.OrgID, in.RunID)
 	if err != nil {
 		return nil, err
 	}
-	return listGraphjinMCPTools(ctx, endpoint, headers)
+	return listGraphjinMCPTools(ctx, ep)
 }
 
 func (r *runTools) callGraphjinTool(ctx context.Context, in graphjinToolCall) (any, error) {
@@ -708,11 +722,11 @@ func (r *runTools) callGraphjinTool(ctx context.Context, in graphjinToolCall) (a
 			return nil, err
 		}
 	}
-	endpoint, headers, err := r.api.graphjinMCPAccess(ctx, in.OrgID, in.RunID)
+	ep, err := r.api.graphjinMCPAccess(ctx, in.OrgID, in.RunID)
 	if err != nil {
 		return nil, err
 	}
-	return callGraphjinMCPTool(ctx, endpoint, headers, in.Name, in.Arguments)
+	return callGraphjinMCPTool(ctx, ep, in.Name, in.Arguments)
 }
 
 // jsStringOrEmpty is String(v ?? "").

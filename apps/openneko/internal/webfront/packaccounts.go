@@ -242,6 +242,16 @@ func (a *API) installedPack(ctx context.Context, orgID, userID, packID, key stri
 	if err != nil {
 		return nil, nil, err
 	}
+	install := parsePackInstall(id, config)
+	for i := range install.connections {
+		if install.connections[i].Key == key {
+			return install, &install.connections[i], nil
+		}
+	}
+	return nil, nil, packError("This personal connection is unavailable; ask an admin to upgrade the pack")
+}
+
+func parsePackInstall(id string, config json.RawMessage) *packInstall {
 	install := &packInstall{id: id}
 	var parsed struct {
 		DefinitionOnly any             `json:"_definitionOnly"`
@@ -260,12 +270,7 @@ func (a *API) installedPack(ctx context.Context, orgID, userID, packID, key stri
 			install.connections = append(install.connections, c)
 		}
 	}
-	for i := range install.connections {
-		if install.connections[i].Key == key {
-			return install, &install.connections[i], nil
-		}
-	}
-	return nil, nil, packError("This personal connection is unavailable; ask an admin to upgrade the pack")
+	return install
 }
 
 func (a *API) beginPersonal(ctx context.Context, orgID, userID, packID, key, state, challenge, redirectURI string, callback *url.URL) (string, error) {
@@ -319,6 +324,7 @@ func (a *API) disconnectPersonal(ctx context.Context, orgID, userID, packID, key
 
 type connectionRow struct {
 	revision       string
+	credentials    *string
 	pendingHash    *string
 	pendingExpires *time.Time
 }
@@ -353,9 +359,9 @@ func (a *API) withConnection(ctx context.Context, orgID, userID, installID, key 
 		}
 		var row connectionRow
 		if err := tx.QueryRow(ctx, `
-			select revision::text, pending_state_hash, pending_expires_at from pack_user_connection
+			select revision::text, credentials, pending_state_hash, pending_expires_at from pack_user_connection
 			where org_id = $1 and user_id = $2 and pack_install_id = $3::uuid and connection_key = $4 for update`, ids...).
-			Scan(&row.revision, &row.pendingHash, &row.pendingExpires); err != nil {
+			Scan(&row.revision, &row.credentials, &row.pendingHash, &row.pendingExpires); err != nil {
 			return err
 		}
 		return work(row, func(set string, args ...any) error {
