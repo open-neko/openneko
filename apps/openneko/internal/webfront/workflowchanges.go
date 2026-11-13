@@ -84,13 +84,27 @@ func (a *API) workflowPatch(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusNotFound, "workflow not found")
 		return
 	}
-	tag, err := a.DB.Exec(r.Context(), `update workflow_definition set `+strings.Join(sets, ", ")+`, updated_at = now()
-		where org_id = $1 and id = $2`, args...)
+	found := false
+	err := pgx.BeginFunc(r.Context(), a.DB, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(r.Context(), `update workflow_definition set `+strings.Join(sets, ", ")+`, updated_at = now()
+			where org_id = $1 and id = $2`, args...)
+		if err != nil || tag.RowsAffected() == 0 {
+			return err
+		}
+		found = true
+		enabled, ok := values["enabled"]
+		if !ok {
+			return nil
+		}
+		_, err = tx.Exec(r.Context(), `update watcher set enabled = $3, updated_at = now()
+			where org_id = $1 and workflow_id = $2 and enabled <> $3`, act.OrgID, id, enabled)
+		return err
+	})
 	if err != nil {
 		a.fail(w, r, err)
 		return
 	}
-	if tag.RowsAffected() == 0 {
+	if !found {
 		sendError(w, http.StatusNotFound, "workflow not found")
 		return
 	}

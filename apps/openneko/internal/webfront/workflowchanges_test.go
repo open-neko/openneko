@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -321,5 +323,57 @@ func TestWorkflowAPIAccessDetails(t *testing.T) {
 		if w.Code != 200 || !strings.Contains(w.Body.String(), part) {
 			t.Errorf("GET lacks %s\n%s", part, w.Body)
 		}
+	}
+}
+
+func TestWorkflowPatchWatchers(t *testing.T) {
+	f, db := workflowsFront(t)
+	ctx := context.Background()
+	member := sessionCookie("member")
+	gj := &fakeGraphjin{}
+	srv := httptest.NewServer(gj)
+	t.Cleanup(srv.Close)
+	gj.set(`{"data":{"m":{"v":0}}}`, 0)
+	if err := os.WriteFile(filepath.Join(f.API.SecretsDir, "secret-key"), []byte("watcher-test-key\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, db, `insert into data_source (org_id, name, kind, graphql_url, auth_mode, is_default, enabled)
+		values ('org', 'default', 'graphjin', $1, 'jwt', true, true)`, srv.URL)
+	for i, wf := range []string{wfHeld, wfHeld, wfOther} {
+		seed(t, db, `insert into watcher (org_id, workflow_id, name, query, value_path, op, threshold, cadence_seconds)
+			values ('org', $1, $2, '{ m { v } }', 'm.v', 'gt', '10', 60)`, wf, fmt.Sprintf("w%d", i))
+	}
+	watchers := func() string {
+		return queryText(t, db, `select string_agg(name || '=' || enabled, ',' order by name) from watcher`)
+	}
+	now := time.Now().UTC()
+	sweep := func() int {
+		before := len(gj.bodies)
+		now = now.Add(time.Hour)
+		if _, err := f.API.sweepWatchers(ctx, "org", now); err != nil {
+			t.Fatal(err)
+		}
+		return len(gj.bodies) - before
+	}
+	for _, c := range []struct {
+		body, watchers string
+		queries        int
+	}{
+		{`{"enabled":false}`, "w0=false,w1=false,w2=true", 1},
+		{`{"cronEnabled":true}`, "w0=false,w1=false,w2=true", 1},
+		{`{"enabled":true}`, "w0=true,w1=true,w2=true", 3},
+		{`{"pauseForToday":true}`, "w0=false,w1=false,w2=true", 1},
+		{`{"enabled":true}`, "w0=true,w1=true,w2=true", 3},
+	} {
+		if w := call(f, "PATCH", "/api/v1/workflows/"+wfHeld, c.body, member); w.Code != 200 {
+			t.Fatalf("%s: %d %s", c.body, w.Code, w.Body)
+		}
+		if got, n := watchers(), sweep(); got != c.watchers || n != c.queries {
+			t.Errorf("%s: watchers %s, %d source queries, want %s and %d", c.body, got, n, c.watchers, c.queries)
+		}
+	}
+	seed(t, db, `update workflow_definition set enabled = false where id = $1`, wfHeld)
+	if n := sweep(); n != 1 {
+		t.Errorf("a paused workflow with its watchers on: %d source queries, want 1", n)
 	}
 }

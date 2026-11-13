@@ -197,12 +197,19 @@ export async function materializeDueWorkflowFirings(
     // Pause-for-today recovery belongs to the durable scheduler now; it must
     // happen before active definitions are snapshotted.
     await client.query(
-      `update workflow_definition
-       set enabled = true, paused_until = null, updated_at = $1
-       where enabled = false
-         and paused_until is not null
-         and paused_until <= $1
-         and ($2::text is null or org_id = $2)`,
+      `with resumed as (
+         update workflow_definition
+         set enabled = true, paused_until = null, updated_at = $1
+         where enabled = false
+           and paused_until is not null
+           and paused_until <= $1
+           and ($2::text is null or org_id = $2)
+         returning id, org_id
+       )
+       update watcher w
+       set enabled = true, updated_at = $1
+       from resumed r
+       where w.org_id = r.org_id and w.workflow_id = r.id and not w.enabled`,
       [now, options.orgId ?? null],
     );
 
