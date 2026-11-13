@@ -49,6 +49,7 @@ type turnContext struct {
 	Workspace     agentWorkspace
 	Actor         runActorRow
 	AllowedSkills []string
+	OwnSkills     []string
 	HeldActions   heldSet
 	Compaction    *threadCompaction
 	BackendState  any
@@ -161,12 +162,13 @@ func (a *API) loadTurnContext(ctx context.Context, o turnOptions) (*turnContext,
 		names[i] = s.Name
 	}
 	allowed := runSkillScope(heldList(heldSkills), names, sourceConfig)
-	var skills []installedSkill
+	var teamSkills []installedSkill
 	for _, s := range available {
 		if (allowed == nil || slices.Contains(allowed, s.Name)) && (!sandboxSkills[s.Name] || terminal) {
-			skills = append(skills, s)
+			teamSkills = append(teamSkills, s)
 		}
 	}
+	skills, allowed, own := runSkillsWithOwn(teamSkills, allowed, ownRunSkills(ws.OrgRoot, act.UserID), sourceConfig, terminal)
 
 	prompt := make([]promptMessage, len(kept))
 	for i, m := range kept {
@@ -204,6 +206,7 @@ func (a *API) loadTurnContext(ctx context.Context, o turnOptions) (*turnContext,
 		Workspace:     ws,
 		Actor:         act,
 		AllowedSkills: allowed,
+		OwnSkills:     own,
 		HeldActions:   actions,
 		Compaction:    compaction,
 		BackendState:  backendState,

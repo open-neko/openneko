@@ -28,13 +28,13 @@ import { copySkillOverrides } from "./workspace";
 import {
   captureSandboxSkillEdits,
   hashSkillTree,
-  readPersonalSkillFiles,
   SANDBOX_SKILL_HASH_COMMAND,
   skillCaptureDecision,
-  skillFileHash,
+  stageOwnSkills,
   type SkillFileHashes,
   type SkillToolCall,
 } from "../config-vcs/skill-capture";
+import { memberHandle, memberSkillsRoot } from "./member-skills";
 import { KNOWLEDGE_FILES, readKnowledgeSnapshot } from "../knowledge-cache";
 import { SandboxFailure } from "./sandbox-failure";
 
@@ -148,6 +148,18 @@ export type RunJobAgentBackendInput = {
   allowedSkills?: readonly string[];
   emit: (event: AgentEvent) => Promise<void>;
 };
+
+async function memberHandleFor(orgId: string, userId: string | null): Promise<string> {
+  if (!userId) return "member";
+  const { and, app_user, db, eq } = await import("@neko/db");
+  const [row] = await db()
+    .select({ email: app_user.email })
+    .from(app_user)
+    .where(and(eq(app_user.org_id, orgId), eq(app_user.id, userId)))
+    .limit(1)
+    .catch(() => []);
+  return memberHandle(row?.email, userId);
+}
 
 type RunJobCore = (input: RunJobAgentBackendInput) => Promise<AgentRunResult>;
 type SandboxRunKind = "work" | "workflow" | "agent-job";
@@ -483,6 +495,7 @@ function makeSandboxCore(
     let staged: StagedSandboxWorkspace | undefined;
     let skillActor: { userId: string | null; role: string | null } | null = null;
     let skillBaseline: SkillFileHashes | undefined;
+    let ownStaged = new Set<string>();
     const skillToolCalls: SkillToolCall[] = [];
     let skillEvidenceComplete = false;
     let skillEvidenceUnreadable = false;
@@ -498,20 +511,22 @@ function makeSandboxCore(
       }));
       const stagedWorkspace = staged.workspace;
       if (!isJob) {
-        // Skill edits made in the run are saved when the turn ends; a member
-        // runs with their own saved skill versions laid over the company's.
+        // Skill edits made in the run are saved when the turn ends; the run
+        // person's own skills in the scope go over the team skills.
         const { getWorkRunActor } = await import("./personas");
         skillActor = await getWorkRunActor(input.runId, input.orgId).catch(() => null);
-        const personal = skillActor?.userId && skillActor.role !== "admin"
-          ? await readPersonalSkillFiles(hostOrgRoot, skillActor.userId).catch(() => [])
-          : [];
-        for (const file of personal) {
-          const target = path.join(stagedWorkspace.skillsRoot, file.path);
-          await mkdir(path.dirname(target), { recursive: true });
-          await writeFile(target, file.content);
-        }
         skillBaseline = await hashSkillTree(input.workspace.skillsRoot);
-        for (const file of personal) skillBaseline.set(file.path, skillFileHash(file.content));
+        const own = (input as RunAgentBackendInput | RunWorkflowAgentBackendInput).ownSkills ?? [];
+        if (skillActor?.userId && own.length > 0) {
+          ownStaged = await stageOwnSkills({
+            ownRoot: memberSkillsRoot(hostOrgRoot, skillActor.userId),
+            skillsRoot: stagedWorkspace.skillsRoot,
+            own,
+            ...(input.allowedSkills ? { allowed: input.allowedSkills } : {}),
+            terminal,
+            baseline: skillBaseline,
+          });
+        }
       }
 
       const job = {
@@ -656,7 +671,7 @@ function makeSandboxCore(
         }));
       } else if (staged && skillActor && skillBaseline) {
         const stagedSkills = staged.workspace.skillsRoot;
-        await timed("skill_capture", () => captureSandboxSkillEdits({
+        await timed("skill_capture", async () => captureSandboxSkillEdits({
           listSandboxHashes: async () => JSON.stringify(Object.fromEntries(await hashSkillTree(stagedSkills))),
           downloadSkill: (skill, destination) =>
             cp(path.join(stagedSkills, skill), destination, { recursive: true, force: true }),
@@ -665,6 +680,8 @@ function makeSandboxCore(
           runId: input.runId,
           actor: skillActor!,
           baseline: skillBaseline!,
+          ownSkills: ownStaged,
+          memberHandle: await memberHandleFor(input.orgId, skillActor!.userId),
         }), { reason: skillDecision.reason })
           .then((saved) => {
             if (saved) log(JSON.stringify({ type: "skill_capture", runId: input.runId, ...saved }));

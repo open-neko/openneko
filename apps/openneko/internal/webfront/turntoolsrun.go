@@ -578,9 +578,6 @@ func (r *runTools) searchSkills(ctx context.Context, in skillSearchIn) (any, err
 		return nil, err
 	}
 	heldIDs := heldList(held)
-	if heldIDs != nil && len(heldIDs) == 0 {
-		return results, nil
-	}
 	limit := 3
 	if in.Limit != nil {
 		limit = *in.Limit
@@ -589,6 +586,15 @@ func (r *runTools) searchSkills(ctx context.Context, in skillSearchIn) (any, err
 	terminal, err := a.orgTerminal(ctx, in.OrgID)
 	if err != nil {
 		return nil, err
+	}
+	own, _, ownNames := runSkillsWithOwn(nil, nil, ownRunSkills(orgAgentRoot(in.OrgID), act.UserID), adminRun, terminal)
+	for _, s := range matchOwnSkills(own, query) {
+		if len(results) < limit {
+			results = append(results, jsObjOf("name", s.Name, "score", 1.0))
+		}
+	}
+	if heldIDs != nil && len(heldIDs) == 0 || len(results) == limit {
+		return results, nil
 	}
 	var hidden []string
 	if !terminal {
@@ -599,6 +605,8 @@ func (r *runTools) searchSkills(ctx context.Context, in skillSearchIn) (any, err
 	if !adminRun {
 		hidden = append(hidden, "graphjin-config")
 	}
+	hidden = append(hidden, ownNames...)
+	limit -= len(results)
 	type hit struct {
 		name  string
 		score float64

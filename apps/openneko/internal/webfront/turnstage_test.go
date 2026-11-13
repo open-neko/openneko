@@ -42,9 +42,40 @@ func TestSkillStageMatchesNode(t *testing.T) {
 				Overlay string `json:"overlay"`
 				Text    string `json:"text"`
 			} `json:"steps"`
-			Allowed []string        `json:"allowed"`
-			Tree    skillFileHashes `json:"tree"`
+			Allowed  []string          `json:"allowed"`
+			Own      map[string]string `json:"own"`
+			OwnNames []string          `json:"ownNames"`
+			Tree     skillFileHashes   `json:"tree"`
+			Baseline skillFileHashes   `json:"baseline"`
 		} `json:"stages"`
+		Names struct {
+			Folders []struct{ UserID, Folder string } `json:"folders"`
+			Handles []struct {
+				Email  *string
+				UserID string
+				Handle string
+			} `json:"handles"`
+			Copies []struct {
+				Skill, Handle, Name string
+				Taken               []string
+			} `json:"copies"`
+			Matches []struct {
+				Query string
+				Names []string
+			} `json:"matches"`
+			Scopes []struct {
+				Allowed  []string
+				Admin    bool
+				Terminal bool
+				Out      struct {
+					Skills   []installedSkill
+					Allowed  []string
+					OwnNames []string
+				}
+			} `json:"scopes"`
+		} `json:"names"`
+		OwnFiles map[string]string `json:"ownFiles"`
+		OwnList  []installedSkill  `json:"ownList"`
 	}
 	if err := json.Unmarshal(raw, &fx); err != nil {
 		t.Fatal(err)
@@ -109,14 +140,69 @@ func TestSkillStageMatchesNode(t *testing.T) {
 				writeTestFile(t, filepath.Join(host.OrgRoot, "skill-overlays", step.Overlay, "LEARNED.md"), strings.Replace(step.Text, "BASE", hash, 1))
 			}
 		}
-		st, err := stageTurn(host, stageOptions{Allowed: c.Allowed})
+		for p, text := range c.Own {
+			writeTestFile(t, filepath.Join(memberSkillsRoot(host.OrgRoot, "member-1"), p), text)
+		}
+		st, err := stageTurn(host, stageOptions{Allowed: c.Allowed, Own: c.OwnNames, Actor: runActorRow{UserID: "member-1", Role: "member"}})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if got := hashSkillTree(st.Workspace.SkillsRoot); !mapsEqual(got, c.Tree) {
 			t.Errorf("stage %d: %v\nNode %v", i, got, c.Tree)
 		}
+		if !mapsEqual(st.baseline, c.Baseline) {
+			t.Errorf("stage %d baseline: %v\nNode %v", i, st.baseline, c.Baseline)
+		}
 		os.RemoveAll(st.Dir)
+	}
+
+	ownOrg := t.TempDir()
+	for p, text := range fx.OwnFiles {
+		writeTestFile(t, filepath.Join(memberSkillsRoot(ownOrg, "member-1"), p), text)
+	}
+	if err := os.MkdirAll(filepath.Join(memberSkillsRoot(ownOrg, "member-1"), "empty", "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := ownRunSkills(ownOrg, "member-1"); !slices.Equal(got, fx.OwnList) {
+		t.Errorf("own skills %v, Node %v", got, fx.OwnList)
+	}
+
+	n := fx.Names
+	for _, c := range n.Folders {
+		if got := memberFolderName(c.UserID); got != c.Folder {
+			t.Errorf("folder %q: %q, Node %q", c.UserID, got, c.Folder)
+		}
+	}
+	for _, c := range n.Handles {
+		email := ""
+		if c.Email != nil {
+			email = *c.Email
+		}
+		if got := memberHandle(email, c.UserID); got != c.Handle {
+			t.Errorf("handle %q %q: %q, Node %q", email, c.UserID, got, c.Handle)
+		}
+	}
+	for _, c := range n.Copies {
+		if got := privateCopyName(c.Skill, c.Handle, func(name string) bool { return slices.Contains(c.Taken, name) }); got != c.Name ||
+			!validNewSkillName(got) {
+			t.Errorf("copy %q: %q, Node %q", c.Skill, got, c.Name)
+		}
+	}
+	skills := []installedSkill{{"report", "Monthly revenue report"}, {"graphjin-config", "Edit sources"}, {"pdf", "Make a PDF file"}}
+	for _, c := range n.Matches {
+		var got []string
+		for _, s := range matchOwnSkills(skills, c.Query) {
+			got = append(got, s.Name)
+		}
+		if !slices.Equal(got, c.Names) {
+			t.Errorf("match %q: %v, Node %v", c.Query, got, c.Names)
+		}
+	}
+	for i, c := range n.Scopes {
+		got, allowed, own := runSkillsWithOwn([]installedSkill{{"report", "Team"}, {"other", "Other"}}, c.Allowed, skills, c.Admin, c.Terminal)
+		if !slices.Equal(got, c.Out.Skills) || !slices.Equal(allowed, c.Out.Allowed) || !slices.Equal(own, c.Out.OwnNames) {
+			t.Errorf("scope %d: %v %v %v, Node %+v", i, got, allowed, own, c.Out)
+		}
 	}
 }
 
@@ -160,12 +246,15 @@ func TestStageTurn(t *testing.T) {
 	writeTestFile(t, filepath.Join(host.SkillsRoot, "report", "SKILL.md"), "# Team report\n")
 	writeTestFile(t, filepath.Join(host.SkillsRoot, "report", "scripts", "run.py"), "print(1)\n")
 	writeTestFile(t, filepath.Join(host.SkillsRoot, "hidden", "SKILL.md"), "# Hidden\n")
-	if _, err := commitUserRef(host.OrgRoot, "member-1", []configFile{{path: "skills/report/SKILL.md", content: "# My report\n"},
-		{path: "skills/hidden/SKILL.md", content: "# Mine too\n"}}, "mine", true); err != nil {
+	own := memberSkillsRoot(host.OrgRoot, "member-1")
+	writeTestFile(t, filepath.Join(own, "report", "SKILL.md"), "# My report\n")
+	writeTestFile(t, filepath.Join(own, "hidden", "SKILL.md"), "# Mine too\n")
+	if err := os.Symlink("/etc/hostname", filepath.Join(own, "report", "link")); err != nil {
 		t.Fatal(err)
 	}
 
-	st, err := stageTurn(host, stageOptions{Allowed: []string{"report", "graphjin-config"}, Actor: runActorRow{UserID: "member-1", Role: "member"}})
+	st, err := stageTurn(host, stageOptions{Allowed: []string{"report", "graphjin-config"}, Own: []string{"report", "hidden"},
+		Actor: runActorRow{UserID: "member-1", Role: "member"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,8 +280,9 @@ func TestStageTurn(t *testing.T) {
 		filepath.Join(ws.RunRoot, "notes.txt"):                      "run file",
 		filepath.Join(ws.KnowledgeRoot, "extra.md"):                 "loose knowledge",
 		filepath.Join(ws.SkillsRoot, "report", "SKILL.md"):          "# My report\n",
-		filepath.Join(ws.SkillsRoot, "report", "scripts", "run.py"): "print(1)\n",
-		filepath.Join(ws.SkillsRoot, "hidden", "SKILL.md"):          "# Mine too\n",
+		filepath.Join(ws.SkillsRoot, "report", "scripts", "run.py"): "<none>",
+		filepath.Join(ws.SkillsRoot, "report", "link"):              "<none>",
+		filepath.Join(ws.SkillsRoot, "hidden", "SKILL.md"):          "<none>",
 	} {
 		if got := read(p); got != want {
 			t.Errorf("%s: %q, want %q", p, got, want)
@@ -201,9 +291,21 @@ func TestStageTurn(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(ws.SkillsRoot, "graphjin-config", "SKILL.md")); err != nil {
 		t.Errorf("the built-in skill is not staged: %v", err)
 	}
-	if st.baseline["report/SKILL.md"] != skillFileHash([]byte("# My report\n")) || st.baseline["report/scripts/run.py"] != skillFileHash([]byte("print(1)\n")) {
+	if _, ok := st.baseline["report/scripts/run.py"]; st.baseline["report/SKILL.md"] != skillFileHash([]byte("# My report\n")) || ok ||
+		st.baseline["hidden/SKILL.md"] != skillFileHash([]byte("# Hidden\n")) {
 		t.Errorf("baseline %v", st.baseline)
 	}
+	if !st.own["report"] || st.own["hidden"] || len(st.own) != 1 {
+		t.Errorf("own %v", st.own)
+	}
+	unattended, err := stageTurn(host, stageOptions{Allowed: []string{"report"}, Own: []string{"report"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read(filepath.Join(unattended.Workspace.SkillsRoot, "report", "SKILL.md")) != "# Team report\n" || len(unattended.own) != 0 {
+		t.Error("a run with no person staged an own skill")
+	}
+	os.RemoveAll(unattended.Dir)
 	for _, p := range []string{st.Dir, filepath.Join(ws.SkillsRoot, "report", "SKILL.md")} {
 		info, err := os.Stat(p)
 		if err != nil {
@@ -272,28 +374,6 @@ func TestStageTurn(t *testing.T) {
 			t.Error("the stage is still there")
 		}
 	})
-}
-
-func TestReadPersonalSkillFiles(t *testing.T) {
-	root := t.TempDir()
-	if got := readPersonalSkillFiles(root, "member-1"); got != nil {
-		t.Fatalf("no repo: %v", got)
-	}
-	if err := ensureConfigRepo(root); err != nil {
-		t.Fatal(err)
-	}
-	if got := readPersonalSkillFiles(root, "member-1"); got != nil {
-		t.Fatalf("no ref: %v", got)
-	}
-	if _, err := commitUserRef(root, "member-1", []configFile{{path: "skills/a/SKILL.md", content: "A"},
-		{path: "skills/top.md", content: "top"}, {path: "skills/a/__pycache__/x.pyc", content: "x"},
-		{path: "memory/rule.md", content: "rule"}}, "mine", false); err != nil {
-		t.Fatal(err)
-	}
-	got := readPersonalSkillFiles(root, "member-1")
-	if len(got) != 1 || got[0].Path != "a/SKILL.md" || string(got[0].Content) != "A" {
-		t.Fatalf("%+v", got)
-	}
 }
 
 func TestSweepStages(t *testing.T) {

@@ -1,17 +1,22 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, posix, resolve } from "node:path";
-import { git } from "./git-shell";
 import { insertConfigChangeRow, recordConfigChange } from "./index";
-import { commitToUserRef, userConfigRef } from "./forks";
+import {
+  copySkillFolder,
+  copySkillTo,
+  memberSkillsRoot,
+  privateCopyName,
+  validSkillName,
+} from "../work/member-skills";
+import { skillRunnable } from "../work/sandbox-service";
+import { bundledSkillDir } from "../work/workspace";
 
 /**
  * Skill edits made inside an agent sandbox are made to the sandbox's copy of
- * the skills tree. These helpers find what changed during a turn and save it
- * as a version: on main for admins and unattended runs, on the actor's
- * personal ref for everyone else.
+ * the skills tree. These helpers find what changed during a turn and save it.
  */
 
 /** Relative path inside the skills root ("<skill>/<file>") to its sha256. */
@@ -20,9 +25,13 @@ export type SkillFileHashes = Map<string, string>;
 export type SkillEditActor = { userId: string | null; role: string | null };
 
 export type SavedSkillEdits = {
-  scope: "team" | "user";
+  /** Team skills saved in place. */
+  team: string[];
+  /** The actor's own skills saved in place. */
+  own: string[];
+  /** Team skills a member changed, saved as a private copy: team name to copy name. */
+  copies: Record<string, string>;
   sha: string | null;
-  skills: string[];
   /** Files another writer changed on the host during the turn; left as they are. */
   skipped: string[];
 };
@@ -86,75 +95,164 @@ export function diffSkillTrees(baseline: SkillFileHashes, box: SkillFileHashes):
   return { changed: changed.sort(), removed: removed.sort() };
 }
 
-function teamScope(actor: SkillEditActor): boolean {
-  return !actor.userId || actor.role === "admin";
+function skillOf(path: string): string {
+  return path.split("/")[0];
 }
 
+/** The run received the skill from the team or the image, or the team folder now holds it. */
+function isTeamSkill(teamRoot: string, baseline: SkillFileHashes, name: string): boolean {
+  if ([...baseline.keys()].some((path) => skillOf(path) === name)) return true;
+  if (existsSync(join(teamRoot, name))) return true;
+  const bundled = bundledSkillDir(name);
+  return bundled !== "" && existsSync(join(bundled, "SKILL.md"));
+}
+
+function nameTaken(teamRoot: string, ownRoot: string, name: string): boolean {
+  return existsSync(join(teamRoot, name)) || existsSync(join(ownRoot, name));
+}
+
+/**
+ * Same as saveSkillEdits() in apps/openneko/internal/webfront/turnskills.go.
+ * An own skill the run staged is saved in place. A team skill is saved in
+ * place for an admin or an unattended run; a member's edit becomes a
+ * private copy and the team skill stays as it is. A new skill from a member
+ * is their own skill.
+ */
 export async function saveSkillEdits(opts: {
   orgRoot: string;
   orgId: string;
   runId: string;
   actor: SkillEditActor;
   baseline: SkillFileHashes;
+  ownSkills?: ReadonlySet<string>;
+  memberHandle?: string;
+  /** Local folder that holds each changed skill's full folder after the run. */
+  skillFolders?: string;
   changed: Array<{ path: string; content: Buffer }>;
   removed: string[];
 }): Promise<SavedSkillEdits> {
-  const skillsRoot = join(resolve(opts.orgRoot), "skills");
-  const skills = [...new Set([...opts.changed.map((file) => file.path), ...opts.removed].map((path) => path.split("/")[0]))].sort();
-  const message = `Updated ${skills.length === 1 ? "skill" : "skills"} in run ${opts.runId.slice(0, 8)}: ${skills.join(", ")}`;
+  const teamRoot = join(resolve(opts.orgRoot), "skills");
+  const userId = opts.actor.userId;
+  const ownRoot = userId ? memberSkillsRoot(resolve(opts.orgRoot), userId) : "";
+  const member = !!userId && opts.actor.role !== "admin";
+  const own = opts.ownSkills ?? new Set<string>();
+  const names = [...new Set([...opts.changed.map((file) => file.path), ...opts.removed].map(skillOf))].sort();
+  const team: string[] = [];
+  const mine: string[] = [];
+  const copies: string[] = [];
+  for (const name of names) {
+    if (own.has(name) && userId) mine.push(name);
+    else if (!member) team.push(name);
+    else if (isTeamSkill(teamRoot, opts.baseline, name)) copies.push(name);
+    else if (validSkillName(name) && !nameTaken(teamRoot, ownRoot, name)) mine.push(name);
+    else copies.push(name);
+  }
+  const out: SavedSkillEdits = { team: [], own: [], copies: {}, sha: null, skipped: [] };
 
-  if (!teamScope(opts.actor)) {
-    const sha = await commitToUserRef({
+  const save = async (root: string, skills: string[]) => {
+    const current = await hashSkillTree(root);
+    const unchanged = (path: string) => current.get(path) === opts.baseline.get(path);
+    for (const file of opts.changed) {
+      if (!skills.includes(skillOf(file.path))) continue;
+      if (!unchanged(file.path)) {
+        out.skipped.push(file.path);
+        continue;
+      }
+      const target = join(root, file.path);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, file.content);
+    }
+    for (const path of opts.removed) {
+      if (!skills.includes(skillOf(path))) continue;
+      if (!unchanged(path)) {
+        out.skipped.push(path);
+        continue;
+      }
+      await rm(join(root, path), { force: true });
+    }
+  };
+  const message = (skills: string[]) =>
+    `Updated ${skills.length === 1 ? "skill" : "skills"} in run ${opts.runId.slice(0, 8)}: ${skills.join(", ")}`;
+
+  if (team.length > 0) {
+    await save(teamRoot, team);
+    out.sha = await recordConfigChange({
       workspaceRoot: opts.orgRoot,
-      userId: opts.actor.userId!,
-      files: opts.changed.map((file) => ({ path: `skills/${file.path}`, content: file.content.toString("utf8") })),
-      message,
-      mode: "overlay",
+      orgId: opts.orgId,
+      paths: team.map((skill) => `skills/${skill}`),
+      message: message(team),
+      artifactKind: "skill",
+      artifactRef: team.join(", "),
+      actorUserId: userId,
     });
-    if (sha) {
+    out.team = team;
+  }
+  if (mine.length > 0 && userId) {
+    await save(ownRoot, mine);
+    await insertConfigChangeRow({
+      orgId: opts.orgId,
+      artifactKind: "skill",
+      artifactRef: mine.join(", "),
+      actorUserId: userId,
+      summary: message(mine),
+      scope: "user",
+      userId,
+    });
+    out.own = mine;
+  }
+  if (copies.length > 0 && userId && opts.skillFolders) {
+    for (const skill of copies) {
+      const name = privateCopyName(skill, opts.memberHandle ?? "member", (candidate) => nameTaken(teamRoot, ownRoot, candidate));
+      try {
+        await copySkillTo(join(opts.skillFolders, skill), ownRoot, name);
+      } catch (e) {
+        console.warn(`[skill-capture] private skill copy failed for ${opts.runId}: ${(e as Error).message}`);
+        continue;
+      }
+      out.copies[skill] = name;
       await insertConfigChangeRow({
         orgId: opts.orgId,
         artifactKind: "skill",
-        artifactRef: skills.join(", "),
-        actorUserId: opts.actor.userId,
-        commitSha: sha,
-        summary: message,
+        artifactRef: name,
+        actorUserId: userId,
+        summary: `Saved the changes to skill ${skill} in run ${opts.runId.slice(0, 8)} as ${name}`,
         scope: "user",
-        userId: opts.actor.userId!,
+        userId,
       });
     }
-    return { scope: "user", sha, skills, skipped: [] };
   }
+  out.skipped.sort();
+  return out;
+}
 
-  const current = await hashSkillTree(skillsRoot);
-  const skipped: string[] = [];
-  const unchangedOnHost = (path: string) => current.get(path) === opts.baseline.get(path);
-  for (const file of opts.changed) {
-    if (!unchangedOnHost(file.path)) {
-      skipped.push(file.path);
-      continue;
-    }
-    const target = join(skillsRoot, file.path);
-    await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, file.content);
+/**
+ * Same as stageOwnSkills() in apps/openneko/internal/webfront/turnstage.go:
+ * each own skill in the run's scope goes over the staged skill of the same
+ * name, and its files take the place of the team skill's in the baseline.
+ */
+export async function stageOwnSkills(opts: {
+  ownRoot: string;
+  skillsRoot: string;
+  own: readonly string[];
+  allowed?: readonly string[];
+  terminal: boolean;
+  baseline: SkillFileHashes;
+}): Promise<Set<string>> {
+  const staged = new Set<string>();
+  const ownFiles = new Set([...(await hashSkillTree(opts.ownRoot)).keys()].map(skillOf));
+  for (const name of opts.own) {
+    const src = join(opts.ownRoot, name);
+    if (!validSkillName(name) || (opts.allowed && !opts.allowed.includes(name)) || !skillRunnable(name, opts.terminal)) continue;
+    if (!ownFiles.has(name) || !(await lstat(src).then((info) => info.isDirectory()).catch(() => false))) continue;
+    const dest = join(opts.skillsRoot, name);
+    await rm(dest, { recursive: true, force: true });
+    await copySkillFolder(src, dest);
+    staged.add(name);
   }
-  for (const path of opts.removed) {
-    if (!unchangedOnHost(path)) {
-      skipped.push(path);
-      continue;
-    }
-    await rm(join(skillsRoot, path), { force: true });
-  }
-  const sha = await recordConfigChange({
-    workspaceRoot: opts.orgRoot,
-    orgId: opts.orgId,
-    paths: skills.map((skill) => `skills/${skill}`),
-    message,
-    artifactKind: "skill",
-    artifactRef: skills.join(", "),
-    actorUserId: opts.actor.userId,
-  });
-  return { scope: "team", sha, skills, skipped: skipped.sort() };
+  if (staged.size === 0) return staged;
+  for (const path of [...opts.baseline.keys()]) if (staged.has(skillOf(path))) opts.baseline.delete(path);
+  for (const [path, hash] of await hashSkillTree(opts.skillsRoot)) if (staged.has(skillOf(path))) opts.baseline.set(path, hash);
+  return staged;
 }
 
 export type SkillToolCall = { name: string; input?: unknown };
@@ -226,6 +324,8 @@ export async function captureSandboxSkillEdits(opts: {
   runId: string;
   actor: SkillEditActor;
   baseline: SkillFileHashes;
+  ownSkills?: ReadonlySet<string>;
+  memberHandle?: string;
 }): Promise<SavedSkillEdits | null> {
   const listed = JSON.parse((await opts.listSandboxHashes()).trim().split("\n").pop() || "{}") as Record<string, string>;
   const { changed, removed } = diffSkillTrees(opts.baseline, new Map(Object.entries(listed)));
@@ -234,36 +334,17 @@ export async function captureSandboxSkillEdits(opts: {
   const scratch = await mkdtemp(join(tmpdir(), "neko-skill-capture-"));
   try {
     const files: Array<{ path: string; content: Buffer }> = [];
-    for (const skill of [...new Set(changed.map((path) => path.split("/")[0]))]) {
+    for (const skill of [...new Set([...changed, ...removed].map(skillOf))]) {
       const destination = join(scratch, skill);
       await mkdir(destination, { recursive: true });
       await opts.downloadSkill(skill, destination);
-      for (const path of changed.filter((candidate) => candidate.split("/")[0] === skill)) {
+      for (const path of changed.filter((candidate) => skillOf(candidate) === skill)) {
         const local = join(scratch, path);
         if (existsSync(local)) files.push({ path, content: await readFile(local) });
       }
     }
-    return await saveSkillEdits({ ...opts, changed: files, removed });
+    return await saveSkillEdits({ ...opts, skillFolders: scratch, changed: files, removed });
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
-}
-
-/** The actor's personal skill files, laid over the company skills for their runs. */
-export async function readPersonalSkillFiles(
-  orgRoot: string,
-  userId: string,
-): Promise<Array<{ path: string; content: Buffer }>> {
-  const root = resolve(orgRoot);
-  if (!existsSync(join(root, ".git"))) return [];
-  const ref = userConfigRef(userId);
-  const listed = await git(root, ["ls-tree", "-r", "--name-only", ref, "--", "skills"]).catch(() => ({ stdout: "" }));
-  const files: Array<{ path: string; content: Buffer }> = [];
-  for (const path of listed.stdout.split("\n").filter(Boolean)) {
-    const relative = path.slice("skills/".length);
-    if (!safeSkillPath(relative)) continue;
-    const { stdout } = await git(root, ["show", `${ref}:${path}`]);
-    files.push({ path: relative, content: Buffer.from(stdout, "utf8") });
-  }
-  return files;
 }

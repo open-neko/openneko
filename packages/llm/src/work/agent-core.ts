@@ -43,6 +43,8 @@ export interface RunAgentBackendInput {
   backendState?: Record<string, unknown>;
   /** Skill names the run's actor holds. Undefined means every skill. */
   allowedSkills?: readonly string[];
+  /** The run person's own skills in the scope; staged over team skills of the same name. */
+  ownSkills?: readonly string[];
   /** Installed pack actions. */
   packActions?: readonly PackActionDescriptor[];
   /** Mount the GraphJin source-config MCP server for this admin run. */

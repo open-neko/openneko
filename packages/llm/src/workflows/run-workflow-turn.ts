@@ -23,6 +23,8 @@ import {
 } from "../work/store";
 import { ensureWorkWorkspace, listInstalledSkills } from "../work/workspace";
 import { runSkillScope } from "../work/admin-skills";
+import { ownRunSkills, runSkillsWithOwn } from "../work/member-skills";
+import { sandboxForOrg } from "../work/sandbox-org";
 import { WORKFLOW_API_INPUT_FILE } from "./api-contract";
 import { discoverRunArtifacts } from "../work/artifacts";
 import { botThreadForWorkflow } from "../work/bot";
@@ -295,14 +297,22 @@ async function runWorkflowTurnTraced(
       ...(backend.model ? { model: backend.model } : {}),
       inputBytes: Buffer.byteLength(`${prompt}\n\n${seedMessage}`, "utf8"),
     });
-    const allowedSkills = runSkillScope(
-      await startupPhase("identity.entitlements", () => runHeldItemIds(runActor, "skill")),
-      (await listInstalledSkills(workspace.skillsRoot)).map((skill) => skill.name),
+    const withOwn = runSkillsWithOwn(
+      [],
+      runSkillScope(
+        await startupPhase("identity.entitlements", () => runHeldItemIds(runActor, "skill")),
+        (await listInstalledSkills(workspace.skillsRoot)).map((skill) => skill.name),
+        false,
+      ),
+      runActor.kind === "user" ? await ownRunSkills(workspace.orgRoot, runActor.userId) : [],
       false,
+      (await sandboxForOrg(orgId)) !== undefined,
     );
+    const allowedSkills = withOwn.allowed;
     const budget = workflowTurnBudget();
     const coreResult = await runCore({
       ...(allowedSkills ? { allowedSkills } : {}),
+      ...(withOwn.ownNames.length > 0 ? { ownSkills: withOwn.ownNames } : {}),
       backend,
       prompt,
       userMessage: seedMessage,

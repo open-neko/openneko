@@ -177,6 +177,7 @@ func (a *API) workflowTurnBody(ctx context.Context, o workflowTurnOptions, st *w
 	if err != nil {
 		return workflowTurnResult{}, err
 	}
+	_, allowed, own := runSkillsWithOwn(nil, allowed, ownRunSkills(ws.OrgRoot, act.UserID), false, terminal)
 	limits := agentLimitsFor("workflow")
 	timeout, maxCalls, continuations := limits.TimeoutMs, limits.MaxToolCalls, limits.MaxContinuations
 	if o.TimeoutMs > 0 {
@@ -202,7 +203,7 @@ func (a *API) workflowTurnBody(ctx context.Context, o workflowTurnOptions, st *w
 		if err := st.wrapped(ctx, statusEvent("Preparing secure agent workspace…")); err != nil {
 			return axRunResult{}, err
 		}
-		stage, err := stageTurn(ws, stageOptions{Allowed: allowed, Terminal: terminal, Actor: act})
+		stage, err := stageTurn(ws, stageOptions{Allowed: allowed, Own: own, Terminal: terminal, Actor: act})
 		if err != nil {
 			return axRunResult{}, err
 		}

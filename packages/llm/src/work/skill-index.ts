@@ -4,6 +4,8 @@ import { entitlementActorForRun, runHeldItemIds } from "./entitlement-scope";
 import { interleaveResults, keywordTsQuery } from "./keyword-search";
 import { sandboxForOrg } from "./sandbox-org";
 import { SANDBOX_SKILLS } from "./sandbox-service";
+import { matchOwnSkills, ownRunSkills, runSkillsWithOwn } from "./member-skills";
+import { getOrgAgentRoot } from "./workspace";
 
 export type SkillSearchResult = { name: string; score: number };
 
@@ -100,12 +102,32 @@ export async function searchSkillsForRun(input: {
   const actor = await entitlementActorForRun(input.orgId, input.runId);
   if (!actor) return [];
   const held = await runHeldItemIds(actor, "skill");
-  if (held && held.length === 0) return [];
-  const limit = Math.min(Math.max(input.limit ?? 3, 1), 10);
-  const runnable = runnableOnly((await sandboxForOrg(input.orgId)) !== undefined, exclude);
+  const terminal = (await sandboxForOrg(input.orgId)) !== undefined;
+  const { skills: own, ownNames } = runSkillsWithOwn(
+    [],
+    undefined,
+    actor.kind === "user" ? await ownRunSkills(getOrgAgentRoot(input.orgId), actor.userId) : [],
+    !exclude.includes("graphjin-config"),
+    terminal,
+  );
+  const ownHits = matchOwnSkills(own.filter((skill) => !exclude.includes(skill.name)), query)
+    .slice(0, Math.min(Math.max(input.limit ?? 3, 1), 10))
+    .map((skill) => ({ name: skill.name, score: 1 }));
+  const limit = Math.min(Math.max(input.limit ?? 3, 1), 10) - ownHits.length;
+  if ((held && held.length === 0) || limit === 0) return ownHits;
+  const runnable = runnableOnly(terminal, [...exclude, ...ownNames]);
+  return [...ownHits, ...(await indexedSkillSearch(input.orgId, held, query, limit, runnable))];
+}
 
+async function indexedSkillSearch(
+  orgId: string,
+  held: string[] | undefined,
+  query: string,
+  limit: number,
+  runnable: ReturnType<typeof runnableOnly>,
+): Promise<SkillSearchResult[]> {
   const model = embeddingModel();
-  if (!model) return keywordSkillSearch(input.orgId, held, query, limit, runnable);
+  if (!model) return keywordSkillSearch(orgId, held, query, limit, runnable);
   let vector: string;
   try {
     vector = vectorLiteral(await embedText(query));
@@ -114,7 +136,7 @@ export async function searchSkillsForRun(input: {
       "[skill-index] embedding unavailable; searching by keyword:",
       error instanceof Error ? error.message : error,
     );
-    return keywordSkillSearch(input.orgId, held, query, limit, runnable);
+    return keywordSkillSearch(orgId, held, query, limit, runnable);
   }
   const distance = sql<number>`${skill_embedding.embedding} <=> ${vector}::vector`;
   const [rows, unindexed] = await Promise.all([
@@ -123,7 +145,7 @@ export async function searchSkillsForRun(input: {
       .from(skill_embedding)
       .where(
         and(
-          eq(skill_embedding.org_id, input.orgId),
+          eq(skill_embedding.org_id, orgId),
           eq(skill_embedding.embedding_model, model),
           sql`${skill_embedding.embedding} IS NOT NULL`,
           ...(held ? [inArray(skill_embedding.skill_name, held)] : []),
@@ -132,7 +154,7 @@ export async function searchSkillsForRun(input: {
       )
       .orderBy(distance)
       .limit(limit),
-    keywordSkillSearch(input.orgId, held, query, limit, runnable, model),
+    keywordSkillSearch(orgId, held, query, limit, runnable, model),
   ]);
   const semantic = rows.map((row) => ({ name: row.name, score: 1 - Number(row.distance) }));
   return interleaveResults(semantic, unindexed, (result) => result.name, limit);

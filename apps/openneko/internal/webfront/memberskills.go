@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -143,8 +144,8 @@ func skillNameTaken(roots orgRoots, userID, name string) bool {
 }
 
 // copySkillFolder copies the regular files of a skill. Links, the
-// built-in origin mark and cache files stay behind, and SKILL.md takes
-// the new name.
+// built-in origin mark and cache files stay behind. With a name, SKILL.md
+// takes it.
 func copySkillFolder(src, dst, name string) error {
 	root, err := os.OpenRoot(src)
 	if err != nil {
@@ -176,7 +177,7 @@ func copySkillFolder(src, dst, name string) error {
 		if err != nil {
 			return err
 		}
-		if p == "SKILL.md" {
+		if p == "SKILL.md" && name != "" {
 			data = renameSkillMarkdown(data, name)
 		}
 		return os.WriteFile(target, data, info.Mode().Perm()&0o755|0o644)
@@ -294,4 +295,144 @@ func (a *API) recordSkillChange(ctx context.Context, act actor, s visibleSkill, 
 		return
 	}
 	a.recordConfigChange(ctx, act.OrgID, "skills/"+s.Name, summary, "skill", s.Name, act.UserID)
+}
+
+// ownRunSkills are the skills in the member's own folder that a run can
+// load, with the description from SKILL.md when it has one.
+func ownRunSkills(orgRoot, userID string) []installedSkill {
+	root := memberSkillsRoot(orgRoot, userID)
+	described := map[string]string{}
+	for _, s := range listInstalledSkills(root) {
+		described[s.Name] = s.Description
+	}
+	var out []installedSkill
+	for _, name := range ownSkillNames(orgRoot, userID) {
+		out = append(out, installedSkill{Name: name, Description: described[name]})
+	}
+	return out
+}
+
+// runSkillsWithOwn adds the member's own skills to a run's skills and
+// scope. An own skill takes the place of a team skill of the same name.
+// A nil scope stays nil: the run may load every skill.
+func runSkillsWithOwn(team []installedSkill, allowed []string, own []installedSkill, admin, terminal bool) ([]installedSkill, []string, []string) {
+	var ownNames []string
+	for _, s := range own {
+		if !admin && s.Name == "graphjin-config" || sandboxSkills[s.Name] && !terminal {
+			continue
+		}
+		ownNames = append(ownNames, s.Name)
+	}
+	var skills []installedSkill
+	for _, s := range team {
+		if !slices.Contains(ownNames, s.Name) {
+			skills = append(skills, s)
+		}
+	}
+	for _, s := range own {
+		if slices.Contains(ownNames, s.Name) {
+			skills = append(skills, s)
+		}
+	}
+	slices.SortFunc(skills, func(a, b installedSkill) int { return strings.Compare(a.Name, b.Name) })
+	if allowed == nil {
+		return skills, nil, ownNames
+	}
+	scope := slices.Clone(allowed)
+	for _, name := range ownNames {
+		if !slices.Contains(scope, name) {
+			scope = append(scope, name)
+		}
+	}
+	return skills, scope, ownNames
+}
+
+var (
+	handleUnsafe = regexp.MustCompile(`[^a-z0-9]+`)
+	handleEdges  = regexp.MustCompile(`^-+|-+$`)
+)
+
+// memberHandle is the part of a private copy's name that names the
+// member: the local part of the email, else the start of the user id.
+func memberHandle(email, userID string) string {
+	local, _, _ := strings.Cut(strings.ToLower(email), "@")
+	handle := handleEdges.ReplaceAllString(handleUnsafe.ReplaceAllString(local, "-"), "")
+	if handle == "" {
+		handle = handleEdges.ReplaceAllString(handleUnsafe.ReplaceAllString(strings.ToLower(userID), "-"), "")
+	}
+	if len(handle) > 16 {
+		handle = strings.TrimRight(handle[:16], "-")
+	}
+	if handle == "" {
+		handle = "member"
+	}
+	return handle
+}
+
+// privateCopyName is the name of a member's copy of a team skill that a
+// run changed: <skill>-<handle>, then -2, -3 and on while the name is in
+// use.
+func privateCopyName(skill, handle string, taken func(string) bool) string {
+	base := handleEdges.ReplaceAllString(handleUnsafe.ReplaceAllString(strings.ToLower(skill), "-"), "")
+	for n := 1; ; n++ {
+		tail := "-" + handle
+		if n > 1 {
+			tail += "-" + strconv.Itoa(n)
+		}
+		head := base
+		if len(head)+len(tail) > maxSkillName {
+			head = strings.TrimRight(head[:maxSkillName-len(tail)], "-")
+		}
+		name := strings.TrimLeft(head+tail, "-")
+		if !taken(name) {
+			return name
+		}
+	}
+}
+
+func (a *API) memberHandleFor(ctx context.Context, orgID, userID string) string {
+	var email *string
+	if a.DB != nil {
+		_ = a.DB.QueryRow(ctx, `select email from app_user where org_id = $1 and id = $2`, orgID, userID).Scan(&email)
+	}
+	return memberHandle(deref(email), userID)
+}
+
+var ownSkillStopWords = map[string]bool{"the": true, "and": true, "for": true, "you": true, "with": true, "from": true, "that": true, "this": true}
+
+// matchOwnSkills finds the member's own skills for a skill search: the
+// share of the query's words that the name or description holds. The
+// org skill index does not hold own skills.
+func matchOwnSkills(own []installedSkill, query string) []installedSkill {
+	var words []string
+	for _, w := range strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+	}) {
+		if len(w) >= 3 && !ownSkillStopWords[w] && !slices.Contains(words, w) {
+			words = append(words, w)
+		}
+	}
+	type scored struct {
+		skill installedSkill
+		hits  int
+	}
+	var found []scored
+	for _, s := range own {
+		text := strings.ToLower(s.Name + " " + s.Description)
+		hits := 0
+		for _, w := range words {
+			if strings.Contains(text, w) {
+				hits++
+			}
+		}
+		if hits > 0 {
+			found = append(found, scored{s, hits})
+		}
+	}
+	slices.SortStableFunc(found, func(a, b scored) int { return b.hits - a.hits })
+	out := make([]installedSkill, len(found))
+	for i, f := range found {
+		out[i] = f.skill
+	}
+	return out
 }
