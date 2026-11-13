@@ -34,9 +34,10 @@ func userConfigRef(userID string) string {
 	return "refs/heads/user/" + safe
 }
 
-// commitUserRef is commitToUserRef() in mode "replace": the files become the
-// whole tree of the user's ref. The working tree stays the team checkout.
-func commitUserRef(root, userID string, files []configFile, message string) (string, error) {
+// commitUserRef is commitToUserRef(): the files become the whole tree of the
+// user's ref, or with overlay they replace only their own paths in it. The
+// working tree stays the team checkout.
+func commitUserRef(root, userID string, files []configFile, message string, overlay bool) (string, error) {
 	if err := ensureConfigRepo(root); err != nil {
 		return "", err
 	}
@@ -51,7 +52,11 @@ func commitUserRef(root, userID string, files []configFile, message string) (str
 	}
 	defer os.RemoveAll(tmp)
 	env := []string{"GIT_INDEX_FILE=" + filepath.Join(tmp, "index")}
-	if _, err := gitWith(root, env, nil, "read-tree", "--empty"); err != nil {
+	base := []string{"read-tree", "--empty"}
+	if overlay && parent != "" {
+		base = []string{"read-tree", parent}
+	}
+	if _, err := gitWith(root, env, nil, base...); err != nil {
 		return "", err
 	}
 	for _, f := range files {
@@ -172,7 +177,7 @@ func (a *API) snapshotUserConfig(ctx context.Context, orgID, userID string) erro
 		return err
 	}
 	configRepoMu.Lock()
-	sha, err := commitUserRef(orgAgentRoot(orgID), userID, files, "Personal config checkpoint")
+	sha, err := commitUserRef(orgAgentRoot(orgID), userID, files, "Personal config checkpoint", false)
 	configRepoMu.Unlock()
 	if err != nil || sha == "" {
 		return err

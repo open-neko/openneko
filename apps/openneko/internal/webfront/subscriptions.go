@@ -266,7 +266,8 @@ func outputMatches(filter any, kind string, scope, topic, mood *string) bool {
 
 var mutationKeywords = []string{"update", "insert", "write", "mutate", "modify", "set", "delete", "upsert", "patch", "create"}
 
-// mutationLoop is detectMutationLoop(); an empty keyword means no loop.
+// mutationLoop is detectMutationLoop() on the stored workflow; an empty
+// keyword means no loop.
 func (a *API) mutationLoop(r *http.Request, orgID, workflowID, table string) (string, string, error) {
 	var goal, description string
 	var steps []byte
@@ -278,6 +279,12 @@ func (a *API) mutationLoop(r *http.Request, orgID, workflowID, table string) (st
 	if err != nil {
 		return "", "", err
 	}
+	keyword, reason := mutationLoopText(table, goal, description, steps)
+	return keyword, reason, nil
+}
+
+// mutationLoopText is detectMutationLoop() in packages/llm/src/workflows/cycle-detection.ts.
+func mutationLoopText(table, goal, description string, steps []byte) (string, string) {
 	parts := []string{goal, description}
 	var list []any
 	_ = json.Unmarshal(steps, &list)
@@ -291,15 +298,15 @@ func (a *API) mutationLoop(r *http.Request, orgID, workflowID, table string) (st
 	}
 	corpus := strings.ToLower(strings.Join(parts, "\n"))
 	if !strings.Contains(corpus, strings.ToLower(table)) {
-		return "", "", nil
+		return "", ""
 	}
 	for _, k := range mutationKeywords {
 		if strings.Contains(corpus, k) {
 			return k, fmt.Sprintf(`consumer workflow text mentions "%s" and the mutation verb "%s" — it may write back to the watched table and re-trigger itself. `+
-				"Set idempotency_key_template (e.g. include {primary_key}) or pass acknowledgeMutationLoop: true to confirm.", table, k), nil
+				"Set idempotency_key_template (e.g. include {primary_key}) or pass acknowledgeMutationLoop: true to confirm.", table, k)
 		}
 	}
-	return "", "", nil
+	return "", ""
 }
 
 var identifier = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)

@@ -321,6 +321,45 @@ func traceFileSearch(binding traceBinding, query string, limit *int, execute fun
 	}, execute)
 }
 
+func traceWorkflowList(binding traceBinding, limit *int, execute func() (any, error)) (any, error) {
+	request := &jsObj{}
+	if limit != nil {
+		request.set("limit", float64(*limit))
+	}
+	return traced(traceSpec{
+		binding: binding, operation: "workflow.list", source: traceBroker, request: request,
+		evidence: func(result any) *jsObj {
+			rows := jsArray(jsGet(result, "workflows"))
+			ev := &jsObj{}
+			if limit != nil {
+				ev.set("requestedLimit", float64(*limit))
+			}
+			if total, ok := jsGet(result, "total").(float64); ok {
+				ev.set("total", total)
+			}
+			ev.set("returnedCount", float64(len(rows)))
+			workflows := []any{}
+			for _, row := range rows {
+				value, ok := row.(*jsObj)
+				id, idOK := jsNonEmptyString(jsGet(value, "id"))
+				if !ok || !idOK {
+					continue
+				}
+				w := jsObjOf("id", id, "definitionDigest", traceDigest(value))
+				if enabled, ok := value.vals["enabled"].(bool); ok {
+					w.set("enabled", enabled)
+				}
+				if status, ok := jsNonEmptyString(value.vals["status"]); ok {
+					w.set("status", status)
+				}
+				workflows = append(workflows, w)
+			}
+			ev.set("workflows", workflows)
+			return ev
+		},
+	}, execute)
+}
+
 // secretScrubber is createScrubber() in packages/llm/src/work/secret-scrubber.ts:
 // each value of 8 or more characters becomes [REDACTED], the longest first.
 func secretScrubber(values []string) func(string) string {

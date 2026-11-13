@@ -9,6 +9,7 @@ import {
   traceGraphjinToolCall,
   traceGraphjinToolsList,
   traceMemorySearch,
+  traceWorkflowList,
   type WorkSemanticStepContent,
   type WorkSemanticTraceEvent,
 } from "../src/work/semantic-trace";
@@ -20,7 +21,7 @@ const FIXTURE = join(__dirname, "../../../apps/openneko/internal/webfront/testda
 
 type TraceCase = {
   name: string;
-  operation: "memory.search" | "files.search" | "graphjin.tools_list" | "graphjin.call" | "action.policy";
+  operation: "memory.search" | "files.search" | "graphjin.tools_list" | "graphjin.call" | "action.policy" | "workflow.list";
   request: {
     query?: string;
     limit?: number;
@@ -205,6 +206,36 @@ const CASES: TraceCase[] = [
     reply: { throws: `policy store is down: ${SECRET}` },
     secrets: [SECRET],
   },
+  {
+    name: "workflow list with content",
+    operation: "workflow.list",
+    request: { limit: 2 },
+    reply: {
+      value: {
+        total: 3,
+        workflows: [
+          { id: "wf-1", name: "Stock check", enabled: true, status: "active", steps: [{ id: "a", description: `Use key ${SECRET}` }], when: null },
+          { id: "wf-2", name: "Paused", enabled: "no", status: "", goal: "Café 漢字" },
+          { name: "no id" },
+          "text",
+        ],
+      },
+    },
+    secrets: [SECRET],
+  },
+  {
+    name: "workflow list sparse",
+    operation: "workflow.list",
+    request: {},
+    reply: { value: { workflows: "none" } },
+  },
+  {
+    name: "workflow list fails",
+    operation: "workflow.list",
+    request: { limit: 50 },
+    reply: { throws: `database is down: ${SECRET}` },
+    secrets: [SECRET],
+  },
 ];
 
 function stable(event: WorkSemanticTraceEvent) {
@@ -249,6 +280,8 @@ describe("semantic trace fixtures for the Go trace", () => {
               },
               execute: execute as () => Promise<{ decision: "allow" | "needs_approval" | "deny" | "no_policy" }>,
             });
+          case "workflow.list":
+            return traceWorkflowList({ binding, request: c.request as { limit?: number }, execute });
           case "graphjin.call":
             return traceGraphjinToolCall({
               binding,

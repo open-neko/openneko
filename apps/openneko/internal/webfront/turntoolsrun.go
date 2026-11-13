@@ -121,6 +121,11 @@ type toolBackend interface {
 	enqueueAction(ctx context.Context, in actionRefIn) error
 	waitForAction(ctx context.Context, in actionWaitIn) (any, error)
 	emitOutput(ctx context.Context, in outputIn) (any, error)
+	saveWorkflow(ctx context.Context, in *jsObj) (any, error)
+	listWorkflows(ctx context.Context, in workflowListIn) (any, error)
+	deleteWorkflow(ctx context.Context, in workflowDeleteIn) (any, error)
+	upsertPolicy(ctx context.Context, in *jsObj) (any, error)
+	listPolicies(ctx context.Context, in policyListIn) (any, error)
 }
 
 var memoryKindEnum = []string{"preference", "business_rule", "metric_definition", "thread_note", "correction", "company_context", "other"}
@@ -159,6 +164,10 @@ func turnTools(b turnBinding, be toolBackend, servers []string) (*toolServer, er
 			} else {
 				groups = append(groups, toolGroup{static: outputTools(b, be)})
 			}
+		case "neko_workflow_builder":
+			groups = append(groups, toolGroup{static: workflowBuilderTools(b, be)})
+		case "neko_rule_builder":
+			groups = append(groups, toolGroup{static: ruleBuilderTools(b, be)})
 		case "neko_pack_actions":
 			tools := packActionTools(b, be)
 			if len(tools) == 0 {

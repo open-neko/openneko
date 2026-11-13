@@ -432,38 +432,50 @@ var (
 	pathPartPattern     = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,80}$`)
 )
 
+type batchColumn struct {
+	Name, Path string
+	Default    any
+	HasDefault bool
+}
+
 // batchColumns is parseCompiledWorkflowBatchContract() in
 // packages/llm/src/workflows/api-contract.ts; ok is false when it gives null.
 func batchColumns(outputContract []byte) (recordsField string, columns []string, ok bool) {
-	var contract struct {
-		APIBatch json.RawMessage `json:"apiBatch"`
+	recordsField, list, ok := compiledBatch(outputContract)
+	for _, c := range list {
+		columns = append(columns, c.Name)
 	}
-	if json.Unmarshal(outputContract, &contract) != nil {
+	return recordsField, columns, ok
+}
+
+func compiledBatch(outputContract []byte) (recordsField string, columns []batchColumn, ok bool) {
+	parsed, err := jsParse(outputContract)
+	if err != nil {
 		return "", nil, false
 	}
-	var raw map[string]any
-	if json.Unmarshal(contract.APIBatch, &raw) != nil || raw == nil {
+	raw, isObject := jsGet(parsed, "apiBatch").(*jsObj)
+	if !isObject {
 		return "", nil, false
 	}
-	if v, _ := raw["version"].(float64); v != 1 || raw["compiled"] != true || raw["compiler"] != "workflow" {
+	if v, _ := raw.vals["version"].(float64); v != 1 || raw.vals["compiled"] != true || raw.vals["compiler"] != "workflow" {
 		return "", nil, false
 	}
 	recordsField = "records"
-	if s, isString := raw["recordsField"].(string); isString && recordsFieldPattern.MatchString(s) {
+	if s, isString := raw.vals["recordsField"].(string); isString && recordsFieldPattern.MatchString(s) {
 		recordsField = s
 	}
-	list, _ := raw["columns"].([]any)
+	list, _ := raw.vals["columns"].([]any)
 	if len(list) == 0 || len(list) > 64 {
 		return "", nil, false
 	}
 	seen := map[string]bool{}
 	for _, candidate := range list {
-		c, isObject := candidate.(map[string]any)
+		c, isObject := candidate.(*jsObj)
 		if !isObject {
 			return "", nil, false
 		}
-		name, nameOK := c["name"].(string)
-		path, pathOK := c["path"].(string)
+		name, nameOK := c.vals["name"].(string)
+		path, pathOK := c.vals["path"].(string)
 		if !nameOK || name == "" || jsLength(name) > 80 || strings.ContainsAny(name, "\r\n") || seen[name] ||
 			!pathOK || path == "" || jsLength(path) > 256 {
 			return "", nil, false
@@ -473,15 +485,17 @@ func batchColumns(outputContract []byte) (recordsField string, columns []string,
 				return "", nil, false
 			}
 		}
-		if fallback, present := c["default"]; present {
+		col := batchColumn{Name: name, Path: path}
+		if fallback, present := c.vals["default"]; present {
 			switch fallback.(type) {
 			case nil, string, float64, bool:
 			default:
 				return "", nil, false
 			}
+			col.Default, col.HasDefault = fallback, true
 		}
 		seen[name] = true
-		columns = append(columns, name)
+		columns = append(columns, col)
 	}
 	return recordsField, columns, true
 }
