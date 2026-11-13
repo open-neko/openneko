@@ -35,6 +35,7 @@ import {
   assertionsForPhase,
   createScore,
   contentDigest,
+  durationMs,
   estimateUsageCost,
   resolveCredentialRef,
   textDigest,
@@ -803,6 +804,22 @@ export function backendExplicitModelLimits(variant: EvalVariant): {
   return {
     maxOutputTokens: Number(maxOutputTokens),
     contextWindowTokens: Number(contextWindowTokens),
+  };
+}
+
+// No route lets the operator stop a workflow run, which acts as the service,
+// so the episode's own limits must end it before the episode times out.
+export function workflowEpisodeLimits(input: {
+  maxToolCalls: number | undefined;
+  episodeTimeoutMs: number;
+}): Record<string, string> {
+  const turnMs = Math.max(input.episodeTimeoutMs - 90_000, Math.floor(input.episodeTimeoutMs / 2), 1_000);
+  return {
+    OPENNEKO_WORKFLOW_TURN_TIMEOUT_MS: String(turnMs),
+    OPENNEKO_WORKFLOW_MAX_CONTINUATIONS: "0",
+    ...(input.maxToolCalls !== undefined
+      ? { OPENNEKO_WORKFLOW_MAX_TOOL_CALLS: String(input.maxToolCalls + 1) }
+      : {}),
   };
 }
 
@@ -2665,7 +2682,18 @@ export function createOpenNekoBackendDriver(
       });
 
       const episode = await host.startEpisode(
-        { label: slot.caseId, env: { OPENNEKO_GRAPHJIN_CONFIG: EVAL_GRAPHJIN_CONFIG_PATH } },
+        {
+          label: slot.caseId,
+          env: {
+            OPENNEKO_GRAPHJIN_CONFIG: EVAL_GRAPHJIN_CONFIG_PATH,
+            ...(workflowExecutionScenario
+              ? workflowEpisodeLimits({
+                  maxToolCalls,
+                  episodeTimeoutMs: durationMs(slot.case.timeout ?? context.loaded.config.defaults.timeout),
+                })
+              : {}),
+          },
+        },
         { onOutputDelivered: (_orgId, output) => deliveredOutputIds.push(String(output.id)) },
       );
       try {

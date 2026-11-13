@@ -22,6 +22,7 @@ import {
   backendToolEfficiencyScore,
   backendToolCallLimit,
   backendToolCallLimitExceeded,
+  workflowEpisodeLimits,
   parseLabelledAnswer,
   repeatedBackendToolCallCount,
   scoreWorkBackendExecution,
@@ -1496,6 +1497,18 @@ describe("OpenNeko backend tool-call budget", () => {
     expect(backendToolCallLimitExceeded(8, 8)).toBe(false);
     expect(backendToolCallLimitExceeded(9, 8)).toBe(true);
     expect(backendToolCallLimitExceeded(100, undefined)).toBe(false);
+  });
+
+  it("ends a workflow run by its own limits before the episode times out", () => {
+    expect(workflowEpisodeLimits({ maxToolCalls: 30, episodeTimeoutMs: 12 * 60_000 })).toEqual({
+      OPENNEKO_WORKFLOW_TURN_TIMEOUT_MS: "630000",
+      OPENNEKO_WORKFLOW_MAX_CONTINUATIONS: "0",
+      OPENNEKO_WORKFLOW_MAX_TOOL_CALLS: "31",
+    });
+    expect(workflowEpisodeLimits({ maxToolCalls: undefined, episodeTimeoutMs: 2 * 60_000 })).toEqual({
+      OPENNEKO_WORKFLOW_TURN_TIMEOUT_MS: "60000",
+      OPENNEKO_WORKFLOW_MAX_CONTINUATIONS: "0",
+    });
   });
 
   it("scores completion margin without turning efficiency into a pass gate", () => {

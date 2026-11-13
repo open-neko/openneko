@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { createHmac, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { createWriteStream, existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
@@ -34,6 +34,16 @@ export type EvalDatabaseLogin = {
   password: string;
   sslmode: string;
 };
+
+// Each Postgres server has its own folders: the leftover drop of one eval
+// run must not delete the live episodes of a run on another server.
+export function evalServerKey(login: Pick<EvalDatabaseLogin, "host" | "port">): string {
+  return createHash("sha256").update(`${login.host}:${login.port}`).digest("hex").slice(0, 12);
+}
+
+export function evalEpisodeFolderPrefix(login: Pick<EvalDatabaseLogin, "host" | "port">): string {
+  return `${EVAL_EPISODE_FOLDER_PREFIX}${evalServerKey(login)}-`;
+}
 
 export function evalDatabaseLoginFromEnv(env: NodeJS.ProcessEnv = process.env): EvalDatabaseLogin {
   return {
@@ -549,7 +559,7 @@ export class EvalInstallHost {
 
   private constructor(private readonly options: EvalInstallHostOptions) {
     this.login = options.login ?? evalDatabaseLoginFromEnv();
-    this.binary = options.binary ?? join(tmpdir(), "openneko-eval-bin", "openneko");
+    this.binary = options.binary ?? join(tmpdir(), `openneko-eval-bin-${evalServerKey(this.login)}`, "openneko");
   }
 
   static async prepare(options: EvalInstallHostOptions = {}): Promise<EvalInstallHost> {
@@ -618,7 +628,7 @@ export class EvalInstallHost {
     );
     for (const row of rows) await this.dropDatabase(row.datname);
     for (const name of await readdir(tmpdir()).catch(() => [] as string[])) {
-      if (name.startsWith(EVAL_EPISODE_FOLDER_PREFIX)) {
+      if (name.startsWith(evalEpisodeFolderPrefix(this.login))) {
         await rm(join(tmpdir(), name), { recursive: true, force: true });
       }
     }
@@ -689,7 +699,7 @@ export class EvalInstallHost {
   async startEpisode(options: EvalEpisodeOptions, hooks: EvalWorkerHooks = {}): Promise<EvalEpisode> {
     await this.slot();
     const database = episodeDatabaseName(options.label);
-    const root = await mkdtemp(join(tmpdir(), EVAL_EPISODE_FOLDER_PREFIX));
+    const root = await mkdtemp(join(tmpdir(), evalEpisodeFolderPrefix(this.login)));
     await chmod(root, 0o700);
     const episode = new EvalEpisode(this, database, root);
     this.live.add(episode);
