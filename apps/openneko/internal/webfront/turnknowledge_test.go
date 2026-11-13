@@ -116,8 +116,8 @@ func TestKnowledgePackMatchesNode(t *testing.T) {
 	if err := json.Unmarshal(raw, &cases); err != nil {
 		t.Fatal(err)
 	}
-	if len(cases) != 8 {
-		t.Fatalf("fixture holds %d cases, want 8", len(cases))
+	if len(cases) != 9 {
+		t.Fatalf("fixture holds %d cases, want 9", len(cases))
 	}
 	defer func(d time.Duration) { discoveryRetryDelay = d }(discoveryRetryDelay)
 	discoveryRetryDelay = time.Millisecond
@@ -150,6 +150,12 @@ func TestKnowledgePackMatchesNode(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, *c.Result) {
 				t.Fatalf("result %+v, want %+v", got, *c.Result)
+			}
+			if c.Name == "patternBudgetEdge" {
+				syntax, _ := os.ReadFile(filepath.Join(dir, "syntax.json"))
+				if !strings.Contains(string(syntax), "budget b") || strings.Contains(string(syntax), "budget c") {
+					t.Fatalf("the patterns must fill the budget to 4,000 bytes and stop:\n%.300s", syntax)
+				}
 			}
 			for _, name := range knowledgeSnapshotFiles {
 				var have *fileDigest
