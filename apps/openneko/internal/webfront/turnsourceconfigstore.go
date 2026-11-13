@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -133,6 +134,8 @@ func gjPostVars(ctx context.Context, endpoint, token, query string, variables *j
 	return data, messages, nil
 }
 
+const openAPIStoreFailed = "The OpenAPI document could not be saved. The server log holds the cause."
+
 func sourceConfigError(err error) any { return jsObjOf("error", cutUTF16(err.Error(), 1000)) }
 
 // describeSourceGraph is InProcessControlPlane.describeSourceGraph().
@@ -229,7 +232,8 @@ func (r *runTools) importOpenAPISpec(ctx context.Context, in openAPIImportIn) (a
 	asset, err := r.api.storeOpenAPIAsset(ctx, actor{OrgID: in.OrgID, UserID: deref(gate.userID)}, "url",
 		imported.OriginalName, &imported.SourceURL, imported.openAPISpecSummary)
 	if err != nil {
-		return sourceConfigError(err), nil
+		log.Printf("[tools] store the imported OpenAPI document: %v", err)
+		return jsObjOf("error", openAPIStoreFailed), nil
 	}
 	return jsFromGo(map[string]any{"asset": asset}), nil
 }

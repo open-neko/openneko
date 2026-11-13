@@ -153,6 +153,57 @@
     }
   },
   {
+    "mode": "agentic",
+    "name": "patternBudgetEdge",
+    "result": {
+      "ok": true,
+      "files": [
+        {
+          "file": "tables.json",
+          "bytes": 1752
+        },
+        {
+          "file": "namespaces.json",
+          "bytes": 134
+        },
+        {
+          "file": "insights.json",
+          "bytes": 4349
+        },
+        {
+          "file": "syntax.json",
+          "bytes": 4482
+        }
+      ]
+    },
+    "files": {
+      "tables.json": {
+        "bytes": 1758,
+        "sha256": "86df57d7c964b907bc9f82ba62f7013ebfe01fcffb57905a735e6fc947e6643d"
+      },
+      "namespaces.json": {
+        "bytes": 135,
+        "sha256": "7e5dac564ebe1f271e1dcdbe517084012b3db5ba3829912df16080811fa773ac"
+      },
+      "insights.json": {
+        "bytes": 4357,
+        "sha256": "f39dfea78fb74fe74e745a1f0c84cfb22181d143b5e87c6383c566d51646f981"
+      },
+      "syntax.json": {
+        "bytes": 4482,
+        "sha256": "b6c60577b36dbee285b307ed4fe57ba911ad4d8ac2e6d2088ce91eb23767d49e"
+      },
+      "INDEX.md": {
+        "bytes": 2192,
+        "sha256": "179c1c82d07d2ab2ea8d7750f758172b9760250b82430552e2db33b4b49f56c5"
+      },
+      "mode.json": {
+        "bytes": 18,
+        "sha256": "dbc3bf29c1ceaf1382cb3371c608b30d511cd76d8e5a5e3c4e1f42f18da28b49"
+      }
+    }
+  },
+  {
     "mode": "legacy",
     "name": "full",
     "result": {

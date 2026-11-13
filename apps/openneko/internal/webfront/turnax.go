@@ -447,18 +447,25 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions) (
 	reaper := time.AfterFunc(time.Duration(timeoutMs)*time.Millisecond+axKillGrace, turn.stop)
 	defer reaper.Stop()
 
-	var emitErr error
 	shownText := false
+	var queue *emitQueue
+	if o.Emit != nil {
+		queue = newEmitQueue(ctx, o.Emit)
+		defer queue.close()
+	}
 	emit := func(event *jsObj) {
 		if t := event.vals["type"]; (t == "message" || t == "interim") && event.vals["content"] != "" {
 			shownText = true
 		}
-		if o.Emit == nil {
-			return
+		if queue != nil {
+			queue.push(event)
 		}
-		if err := o.Emit(ctx, event); err != nil && emitErr == nil {
-			emitErr = err
+	}
+	drained := func() error {
+		if queue == nil {
+			return nil
 		}
+		return queue.drain()
 	}
 	skillsRoot := ""
 	if o.Workspace != nil {
@@ -499,8 +506,8 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions) (
 		mapper.handle(ev)
 	}
 	code := turn.exitCode()
-	if emitErr != nil {
-		return axTurnOutcome{}, emitError{emitErr}
+	if err := drained(); err != nil {
+		return axTurnOutcome{}, emitError{err}
 	}
 	if turn.cancelled() || ctx.Err() != nil {
 		return axTurnOutcome{cancelled: true}, nil
@@ -522,8 +529,8 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions) (
 		return axTurnOutcome{err: msg, errorCode: "exit"}, nil
 	}
 	mapper.usage(result.vals["usage"])
-	if emitErr != nil {
-		return axTurnOutcome{}, emitError{emitErr}
+	if err := drained(); err != nil {
+		return axTurnOutcome{}, emitError{err}
 	}
 	status, _ := result.vals["status"].(string)
 	if status == "cancelled" {
@@ -564,8 +571,8 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions) (
 	} else {
 		finalText, _, _ = extractCardFences(answer, false)
 	}
-	if emitErr != nil {
-		return axTurnOutcome{}, emitError{emitErr}
+	if err := drained(); err != nil {
+		return axTurnOutcome{}, emitError{err}
 	}
 	if o.Emit != nil {
 		text, messages := extractSurfaceMessages(finalText)
