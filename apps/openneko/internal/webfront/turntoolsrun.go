@@ -131,6 +131,12 @@ type toolBackend interface {
 	listChannels(ctx context.Context, in orgIn) (any, error)
 	listDataSources(ctx context.Context, in orgIn) (any, error)
 	listAuditTrail(ctx context.Context, in auditTrailIn) (any, error)
+	describeSourceGraph(ctx context.Context, in sourceConfigIn) (any, error)
+	listSourceSecretNames(ctx context.Context, in sourceConfigIn) (any, error)
+	describeSourceConfig(ctx context.Context, in sourceConfigDescribeIn) (any, error)
+	checkSource(ctx context.Context, in sourceCheckIn) (any, error)
+	importOpenAPISpec(ctx context.Context, in openAPIImportIn) (any, error)
+	listOpenAPISpecs(ctx context.Context, in openAPIListIn) (any, error)
 }
 
 var memoryKindEnum = []string{"preference", "business_rule", "metric_definition", "thread_note", "correction", "company_context", "other"}
@@ -181,6 +187,8 @@ func turnTools(b turnBinding, be toolBackend, servers []string) (*toolServer, er
 			groups = append(groups, toolGroup{static: dataSourceManagerTools(b, be)})
 		case "neko_audit":
 			groups = append(groups, toolGroup{static: auditTools(b, be)})
+		case "neko_source_config_manager":
+			groups = append(groups, toolGroup{static: sourceConfigTools(b, be)})
 		case "neko_pack_actions":
 			tools := packActionTools(b, be)
 			if len(tools) == 0 {

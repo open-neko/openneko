@@ -70,6 +70,24 @@ func (f *fakeTools) listDataSources(_ context.Context, in orgIn) (any, error) {
 func (f *fakeTools) listAuditTrail(_ context.Context, in auditTrailIn) (any, error) {
 	return f.record("listAuditTrail", in)
 }
+func (f *fakeTools) describeSourceGraph(_ context.Context, in sourceConfigIn) (any, error) {
+	return f.record("describeSourceGraph", in)
+}
+func (f *fakeTools) listSourceSecretNames(_ context.Context, in sourceConfigIn) (any, error) {
+	return f.record("listSourceSecretNames", in)
+}
+func (f *fakeTools) describeSourceConfig(_ context.Context, in sourceConfigDescribeIn) (any, error) {
+	return f.record("describeSourceConfig", in)
+}
+func (f *fakeTools) checkSource(_ context.Context, in sourceCheckIn) (any, error) {
+	return f.record("checkSource", in)
+}
+func (f *fakeTools) importOpenAPISpec(_ context.Context, in openAPIImportIn) (any, error) {
+	return f.record("importOpenApiSpec", in)
+}
+func (f *fakeTools) listOpenAPISpecs(_ context.Context, in openAPIListIn) (any, error) {
+	return f.record("listOpenApiSpecs", in)
+}
 func (f *fakeTools) evaluatePolicy(_ context.Context, in policyIn) (any, error) {
 	return f.record("evaluateActionPolicy", in)
 }
@@ -262,7 +280,7 @@ func TestTurnToolsMatchNode(t *testing.T) {
 	if err := json.Unmarshal(raw, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if len(fixture.Lists) != 11 || len(fixture.Calls) < 254 {
+	if len(fixture.Lists) != 12 || len(fixture.Calls) < 280 {
 		t.Fatalf("fixture holds %d lists and %d calls", len(fixture.Lists), len(fixture.Calls))
 	}
 	gjTools := func(own json.RawMessage) any {
@@ -355,12 +373,12 @@ func TestTurnToolsMatchNode(t *testing.T) {
 	}
 }
 
-var surfaceIDPattern = regexp.MustCompile(`answer-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
+var surfaceIDPattern = regexp.MustCompile(`(answer|source-form|pack-setup)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 
 func fixtureNeutral(text, skillsRoot string) string {
 	root, _ := json.Marshal(skillsRoot)
 	text = strings.ReplaceAll(text, strings.Trim(string(root), `"`), "<skills>")
-	return surfaceIDPattern.ReplaceAllString(text, "answer-<id>")
+	return surfaceIDPattern.ReplaceAllString(text, "$1-<id>")
 }
 
 func treeFiles(t *testing.T, root string) map[string]string {
