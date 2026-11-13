@@ -838,7 +838,10 @@ cost coverage marked unavailable.
 `work_run` records backend, status, timestamps, and error, while non-chat agent
 work is represented by `processing_job`. The implemented v1 stores the compact
 summary as a `telemetry` work-run event and under `processing_job.result.telemetry`.
-This makes it available through existing client APIs without a migration. A
+A chat run and a manual workflow run in `openneko web` (Go) write a smaller
+summary: the schema version, the run id and the usage of the run's last outer
+usage event. The chat run writes it as the `telemetry` event; the manual run
+writes it as that event and to `workflow_run.telemetry_summary`. This makes it available through existing client APIs without a migration. A
 future common `harness_run` table can unify retention and fleet queries across
 `work_run`, `processing_job`, and `workflow_run`.
 

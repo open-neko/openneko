@@ -526,6 +526,8 @@ func TestStartChatRun(t *testing.T) {
 		close(holding)
 		<-release
 		_ = in.Emit(ctx, jsObjOf("type", "message", "role", "assistant", "content", "is fine."))
+		_ = in.Emit(ctx, jsObjOf("type", "usage", "source", "outer", "usage",
+			jsObjOf("totalTokens", 25.0, "estimatedCostUsd", 0.01, "costStatus", "estimated", "coverage", "complete")))
 		return axRunResult{Status: "completed", FinalText: "Stock is fine."}, nil
 	}))
 	if err != nil {
@@ -582,10 +584,13 @@ func TestStartChatRun(t *testing.T) {
 		t.Fatalf("coalesced text %q", got)
 	}
 	mu.Lock()
-	if strings.Join(seen, ",") != "message,done" {
+	if strings.Join(seen, ",") != "message,usage,done,telemetry" {
 		t.Errorf("live %v", seen)
 	}
 	mu.Unlock()
+	if got := rowText(t, db, `select payload->'summary'->>'runId' || ':' || (payload->'summary'->'usage')::text from work_run_event where run_id = $1 and kind = 'telemetry'`, first); got != first+`:{"coverage": "complete", "costStatus": "estimated", "totalTokens": 25, "missingReasons": [], "estimatedCostUsd": 0.01}` {
+		t.Errorf("telemetry %s", got)
+	}
 
 	third := newRun()
 	started := make(chan struct{})
@@ -608,7 +613,7 @@ func TestStartChatRun(t *testing.T) {
 	default:
 		t.Fatal("StopTurns returned before the turn ended")
 	}
-	if status(third) != "failed:"+errTurnShutdown.Error() || !strings.HasSuffix(kinds(third), "error,done") {
+	if status(third) != "failed:"+errTurnShutdown.Error() || !strings.HasSuffix(kinds(third), "error,done,telemetry") {
 		t.Fatalf("shutdown %s %s", status(third), kinds(third))
 	}
 
@@ -620,7 +625,8 @@ func TestStartChatRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-fourthDone
-	if status(fourth) != "failed:core broke" || rowText(t, db, `select count(*)::text from work_run_event where run_id = $1 and kind = 'done'`, fourth) != "1" {
+	if status(fourth) != "failed:core broke" || !strings.HasSuffix(kinds(fourth), "error,done,telemetry") ||
+		rowText(t, db, `select payload->'summary'->'usage'->>'coverage' from work_run_event where run_id = $1 and kind = 'telemetry'`, fourth) != "unavailable" {
 		t.Fatalf("thrown %s %s", status(fourth), kinds(fourth))
 	}
 
@@ -630,7 +636,7 @@ func TestStartChatRun(t *testing.T) {
 	if err := s.finalize(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if status(fourth) != "failed:late" || !strings.HasSuffix(kinds(fourth), "error,done,error,done") {
+	if status(fourth) != "failed:late" || !strings.HasSuffix(kinds(fourth), "error,done,telemetry,error,done") {
 		t.Fatalf("cleanup %s %s", status(fourth), kinds(fourth))
 	}
 }
