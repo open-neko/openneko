@@ -425,26 +425,6 @@ pack changes here; reserved first-party IDs cannot be replaced by custom uploads
 Merged first-party changes must be included in a shipped OpenNeko build before
 users can upgrade to them.
 
-### Release through a context repository
-
-An administrator can connect a git repository in **Admin → Settings → Context
-repository**. OpenNeko then reads packs from that repository's branch:
-
-1. Put each pack at `packs/<pack-id>/`, with `pack.yaml` at the top of that folder.
-   The folder name must equal `metadata.id`.
-2. Omit each artifact path that has no files. Git does not keep empty folders, so
-   a declared empty folder, such as `actions: actions` with no actions, fails
-   validation.
-3. Increment `metadata.version` for every changed release. If a pack's content
-   changes under a version that OpenNeko already holds, OpenNeko reports it and
-   does not add it.
-4. In OpenNeko, select **Check for updates** and then **Add** for the new pack or
-   version. OpenNeko validates the folder with the same rules as a ZIP upload and
-   stores it as a custom pack version. Install or upgrade it on the Packs page
-   with the usual review.
-
-Reserved first-party IDs, such as `magento`, cannot be added this way.
-
 Work chat can save individual workflow and skill changes, but does not write
 those changes back into a versioned pack bundle. Installed customizations are
 preserved as local changes; pack upgrades refuse conflicting edits. To share a

@@ -22,17 +22,6 @@ export const adminCases: Case[] = [
     op: "POST /admin/channels/settings", name: "needs the worker", status: 502,
     request: { body: { channel: "slack", values: {} } },
   },
-  { op: "GET /admin/context-remote", name: "reports no remote", status: 200 },
-  {
-    op: "PUT /admin/context-remote", name: "refuses an address that is not a repository", status: 400,
-    request: { body: { url: "not a url", mode: "push", branch: "main", kinds: ["skills"] } },
-  },
-  { op: "DELETE /admin/context-remote", name: "removes no remote", status: 200 },
-  { op: "POST /admin/context-remote/host-key", name: "has no host key to confirm", status: 400, request: { body: {} } },
-  { op: "GET /admin/context-remote/publish", name: "needs a remote", status: 400 },
-  { op: "POST /admin/context-remote/publish", name: "needs a remote", status: 400, request: { body: {} } },
-  { op: "GET /admin/context-remote/updates", name: "needs a remote", status: 400 },
-  { op: "POST /admin/context-remote/updates", name: "needs a remote", status: 400, request: { body: {} } },
   { op: "GET /admin/data-access", name: "lists the rules", status: 200 },
   { op: "GET /admin/data-access/settings", name: "reports the setting", status: 200 },
   {

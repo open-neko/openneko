@@ -2955,29 +2955,6 @@ export const skill_learn_event = pgTable(
   }),
 );
 
-export const context_remote = pgTable("context_remote", {
-  org_id: text("org_id")
-    .primaryKey()
-    .references(() => organization.id, { onDelete: "cascade" }),
-  url: text("url").notNull(),
-  mode: text("mode").notNull().default("push"),
-  branch: text("branch").notNull().default("main"),
-  kinds: jsonb("kinds").$type<string[]>().notNull().default(sql`'["skills", "skill-overlays", "workflows"]'::jsonb`),
-  username: text("username"),
-  token: text("token"),
-  ssh_private_key: text("ssh_private_key"),
-  ssh_public_key: text("ssh_public_key"),
-  ssh_known_hosts: text("ssh_known_hosts"),
-  ssh_host_confirmed: boolean("ssh_host_confirmed").notNull().default(false),
-  skill_bases: jsonb("skill_bases").$type<Record<string, string | { remote: string; local?: string }>>().notNull().default(sql`'{}'::jsonb`),
-  last_published_at: timestamp("last_published_at", { withTimezone: true }),
-  last_publish_status: text("last_publish_status"),
-  last_publish_detail: text("last_publish_detail"),
-  last_publish_link: text("last_publish_link"),
-  updated_by_user_id: text("updated_by_user_id").references(() => app_user.id, { onDelete: "set null" }),
-  updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
 export const spend_limit = pgTable(
   "spend_limit",
   {

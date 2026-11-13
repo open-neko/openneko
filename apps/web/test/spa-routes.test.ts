@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { matchRoutes } from "react-router";
 import { describe, expect, it } from "vitest";
@@ -37,6 +37,15 @@ describe("static web app routes", () => {
       return matches.length === 0 || matches.at(-1)?.route.path === "*";
     });
     expect(missing).toEqual([]);
+  });
+
+  it("links the admin settings cards only to real pages, and has no context repository page", () => {
+    const source = readFileSync(path.join(appDir, "admin/settings/page.tsx"), "utf8");
+    const hrefs = [...source.matchAll(/href: "(\/admin\/settings\/[^"]+)"/g)].map((m) => m[1]!);
+    expect(hrefs.length).toBeGreaterThan(5);
+    expect(hrefs.filter((href) => !pages.includes(href))).toEqual([]);
+    expect(pages).not.toContain("/admin/settings/repository");
+    expect(serverPages).not.toContain("/admin/settings/repository");
   });
 
   it("lists only real Next pages as server pages", () => {

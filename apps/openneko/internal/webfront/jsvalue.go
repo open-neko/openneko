@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -236,4 +237,11 @@ func jsToFixed2(n float64) string {
 		s = "-" + s
 	}
 	return s
+}
+
+// sendJSValue writes a body that holds values from jsParse.
+func sendJSValue(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(jsStringify(body, false)))
 }

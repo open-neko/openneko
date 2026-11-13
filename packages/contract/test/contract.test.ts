@@ -53,14 +53,21 @@ run("access", () => {
 });
 
 run("removed routes", () => {
-  const removed = ["/api/v1/briefing", "/api/v1/briefing/findings", "/api/v1/briefing/pins", "/api/briefing", "/api/briefing/stats"];
-  for (const path of removed) {
-    for (const method of ["GET", "POST"]) {
+  const briefing = ["/api/v1/briefing", "/api/v1/briefing/findings", "/api/v1/briefing/pins", "/api/briefing", "/api/briefing/stats"];
+  const removed: Array<[string, string[]]> = [
+    ...briefing.map((path): [string, string[]] => [path, ["GET", "POST"]]),
+    ["/api/v1/admin/context-remote", ["GET", "PUT", "DELETE"]],
+    ["/api/v1/admin/context-remote/host-key", ["POST"]],
+    ["/api/v1/admin/context-remote/publish", ["GET", "POST"]],
+    ["/api/v1/admin/context-remote/updates", ["GET", "POST"]],
+  ];
+  for (const [path, methods] of removed) {
+    for (const method of methods) {
       it(`${method} ${path}: is gone`, async () => {
         const response = await fetch(`${target!.baseUrl}${path}`, {
           method,
           headers: { authorization: `Bearer ${target!.tokens.admin}`, "content-type": "application/json" },
-          body: method === "POST" ? "{}" : undefined,
+          body: method === "GET" || method === "DELETE" ? undefined : "{}",
           redirect: "manual",
         });
         await response.body?.cancel();

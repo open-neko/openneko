@@ -122,7 +122,7 @@ to the customer GraphJin config at runtime.
 
 - [ROADMAP.md](ROADMAP.md) — implementation follow-ups, including per-request access checks
 - [PACKS.md](PACKS.md) — authoring solution packs, directory layout, connectors, validation, and contributions
-- [CONTEXT_REPOSITORY.md](CONTEXT_REPOSITORY.md) — version history of skills and workflows, and an optional GitHub, GitLab or other git remote
+- [CONTEXT_REPOSITORY.md](CONTEXT_REPOSITORY.md) — version history of skills and workflows
 - [INSTALL.md](INSTALL.md) — install, [upgrade](INSTALL.md#upgrade), requirements, troubleshooting, connecting your data, full demo trial
 - [AGENT_RUNTIME.md](AGENT_RUNTIME.md) — how the agent runs: the runner, `openneko serve` and the optional sandbox service, and what each holds
 - [SECRETS.md](SECRETS.md) — secrets at rest in the local secrets file
