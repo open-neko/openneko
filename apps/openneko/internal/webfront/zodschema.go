@@ -2,6 +2,7 @@ package webfront
 
 import (
 	"math"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -24,6 +25,8 @@ type zStr struct {
 	descLast string
 	datetime bool
 	email    bool
+	uuid     bool
+	url      bool
 	pattern  *regexp.Regexp
 	// patternMsg replaces zod's message; lengthFirst runs min and max
 	// before the pattern, as a chain that calls .regex() last does.
@@ -129,6 +132,13 @@ func (s *zStr) parse(v any, path []any, issues *[]any) any {
 	if s.trim {
 		text = strings.TrimFunc(text, isJSSpace)
 	}
+	if s.uuid && !zodUUID.MatchString(text) {
+		*issues = append(*issues, zodIssue("origin", "string", "code", "invalid_format", "format", "uuid",
+			"pattern", "/"+uuidPatternText+"/", "path", path, "message", "Invalid UUID"))
+	}
+	if s.url && !zodURL(text) {
+		*issues = append(*issues, zodIssue("code", "invalid_format", "format", "url", "path", path, "message", "Invalid URL"))
+	}
 	if s.email && !zodEmail(text) {
 		*issues = append(*issues, zodIssue("origin", "string", "code", "invalid_format", "format", "email",
 			"pattern", "/"+zodEmailText+"/", "path", path, "message", "Invalid email address"))
@@ -170,6 +180,12 @@ var zodEmailRest = regexp.MustCompile(`^([A-Za-z0-9_'+\-\.]*)[A-Za-z0-9_+-]@([A-
 // lookaheads are plain checks.
 func zodEmail(text string) bool {
 	return !strings.HasPrefix(text, ".") && !strings.Contains(text, "..") && zodEmailRest.MatchString(text)
+}
+
+// zodURL is zod's url check: new URL() accepts the trimmed text.
+func zodURL(text string) bool {
+	u, err := url.Parse(strings.TrimFunc(text, isJSSpace))
+	return err == nil && u.Scheme != "" && (u.Opaque != "" || u.Host != "" || u.Path != "")
 }
 
 // zLengthIssues is zod's minLength and maxLength checks. They run on any
@@ -217,6 +233,10 @@ func (s *zStr) jsonSchema() *jsObj {
 		out.set("format", "date-time")
 		out.set("pattern", zodDatetimeText)
 	}
+	if s.uuid {
+		out.set("format", "uuid")
+		out.set("pattern", uuidPatternText)
+	}
 	if s.email {
 		out.set("format", "email")
 		out.set("pattern", zodEmailText)
@@ -237,6 +257,9 @@ func (s *zStr) jsonSchema() *jsObj {
 	}
 	if s.pattern != nil {
 		out.set("pattern", s.pattern.String())
+	}
+	if s.url {
+		out.set("format", "uri")
 	}
 	if s.descLast != "" {
 		out.set("description", s.descLast)
@@ -516,3 +539,32 @@ func (n zNullable) parse(v any, path []any, issues *[]any) any {
 func (n zNullable) jsonSchema() *jsObj {
 	return jsObjOf("anyOf", []any{n.inner.jsonSchema(), zPrim("null").jsonSchema()})
 }
+
+// zLiteral is z.literal() of a boolean.
+type zLiteral bool
+
+func (l zLiteral) expected() string { return "boolean" }
+
+func (l zLiteral) parse(v any, path []any, issues *[]any) any {
+	if b, ok := v.(bool); !ok || b != bool(l) {
+		*issues = append(*issues, zodIssue("code", "invalid_value", "values", []any{bool(l)}, "path", path,
+			"message", "Invalid input: expected "+jsStringify(bool(l), false)))
+	}
+	return v
+}
+
+func (l zLiteral) jsonSchema() *jsObj { return jsObjOf("type", "boolean", "const", bool(l)) }
+
+// zOneOrList is z.preprocess() that takes a list of one value as the value.
+type zOneOrList struct{ inner zType }
+
+func (p zOneOrList) expected() string { return p.inner.expected() }
+
+func (p zOneOrList) parse(v any, path []any, issues *[]any) any {
+	if list, ok := v.([]any); ok && len(list) == 1 {
+		v = list[0]
+	}
+	return p.inner.parse(v, path, issues)
+}
+
+func (p zOneOrList) jsonSchema() *jsObj { return p.inner.jsonSchema() }

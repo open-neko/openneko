@@ -393,6 +393,41 @@ CALLS.push(
   admin("audit trail fails", AUDIT, "audit_audit_trail", { limit: 1 }, { replies: { listAuditTrail: { throws: "database is down" } } }),
 );
 
+const SOURCE_CONFIG = ["neko_source_config_manager"];
+const DATA_SOURCE_ID = "99999999-9999-4999-8999-999999999999";
+const SPEC_ASSET = { id: "88888888-8888-4888-8888-888888888888", originalName: "orders.yaml", sourceType: "url", title: "Orders", version: "1.0", baseUrl: "https://api.example.com", operationCount: 3, readOperationCount: 2, mutatingOperationCount: 1, authSchemes: ["bearer"], warnings: [], checksumSha256: "a".repeat(64), status: "imported", sourceName: null, createdAt: "2026-11-12T08:00:00.000Z" };
+const TABLES = Array.from({ length: 203 }, (_, i) => `t${i}`);
+const CHECK_ARGS = { type: "postgres", host: " db.internal ", port: 5432, dbname: "erp", user: "reader", secretRef: "erp-password" };
+
+CALLS.push(
+  admin("source graph", SOURCE_CONFIG, "source_config_manager_describe_source_graph", {}, { replies: { describeSourceGraph: { value: { reachable: true, sourceName: "erp", host: "gj.internal", databases: [{ id: "d1", name: "erp", summary: "postgres" }], capabilities: [], namespaces: [] } } } }),
+  admin("source graph no arguments", SOURCE_CONFIG, "source_config_manager_describe_source_graph", undefined, { replies: { describeSourceGraph: { value: { reachable: false, error: "no data source configured" } } } }),
+  admin("source graph fails", SOURCE_CONFIG, "source_config_manager_describe_source_graph", {}, { replies: { describeSourceGraph: { throws: "broker /v1/source-graph/describe failed: 500" } } }),
+  admin("source config", SOURCE_CONFIG, "source_config_manager_describe_source_config", { dataSourceId: DATA_SOURCE_ID }, { replies: { describeSourceConfig: { value: { source: { id: DATA_SOURCE_ID, name: "erp", host: "gj.internal" }, catalogRevision: "r1", config: { sources: [] }, summary: { sources: [], roles: [] } } } } }),
+  admin("source config default", SOURCE_CONFIG, "source_config_manager_describe_source_config", {}, { replies: { describeSourceConfig: { value: { denied: true, error: "GraphJin config tools are admin-only." } } } }),
+  admin("source config bad id", SOURCE_CONFIG, "source_config_manager_describe_source_config", { dataSourceId: "erp" }),
+  admin("secret names", SOURCE_CONFIG, "source_config_manager_list_source_secret_names", { extra: 1 }, { replies: { listSourceSecretNames: { value: { names: [{ name: "erp-password", description: null, updatedAt: "2026-11-12T08:00:00.000Z" }] } } } }),
+  admin("source form empty", SOURCE_CONFIG, "source_config_manager_present_source_form", {}),
+  admin("source form prefill", SOURCE_CONFIG, "source_config_manager_present_source_form", { name: " warehouse ", kind: "database", type: "mysql", host: "db.internal", port: 3306, dbname: "erp", user: "reader", secretRef: "erp-password", blockedTables: "admin_user, oauth_token", adminTables: "payroll", extra: "dropped" }),
+  admin("source form files", SOURCE_CONFIG, "source_config_manager_present_source_form", { name: "docs", kind: "file", backend: "s3", bucket: "b", prefix: "p/", region: "eu-west-1", endpoint: "", publicBaseUrl: "https://cdn.example.com", presignTtl: "1h" }),
+  admin("source form faults", SOURCE_CONFIG, "source_config_manager_present_source_form", { name: "n".repeat(65), kind: "sheet", type: "oracle", port: 0, host: 5, presignTtl: "x".repeat(17) }),
+  admin("source form events fail", SOURCE_CONFIG, "source_config_manager_present_source_form", { name: "erp" }, { eventsFail: true }),
+  admin("source check passes", SOURCE_CONFIG, "source_config_manager_check_source", CHECK_ARGS, { replies: { checkSource: { value: { check: { ok: true, serverVersion: "16.4", findings: [{ step: "login", status: "pass", message: "ok" }], tables: TABLES, moreTables: 4 } } } } }),
+  admin("source check fails", SOURCE_CONFIG, "source_config_manager_check_source", { type: "mariadb", host: "db", dbname: "erp", user: "reader", secretRef: "erp-password" }, { replies: { checkSource: { value: { check: { ok: false, serverVersion: null, findings: [{ step: "port", status: "fail", message: "The port does not answer.", sql: "GRANT SELECT" }], tables: [], moreTables: 0 } } } } }),
+  admin("source check denied", SOURCE_CONFIG, "source_config_manager_check_source", CHECK_ARGS, { replies: { checkSource: { value: { denied: true, error: "GraphJin config tools are admin-only." } } } }),
+  admin("source check faults", SOURCE_CONFIG, "source_config_manager_check_source", { type: "oracle", host: " ", port: 70000, dbname: "erp", user: "u".repeat(129), secretRef: "pass word" }),
+  admin("source check missing fields", SOURCE_CONFIG, "source_config_manager_check_source", {}),
+  admin("pack setup", SOURCE_CONFIG, "source_config_manager_present_pack_setup", { packId: " magento " }),
+  admin("pack setup bad id", SOURCE_CONFIG, "source_config_manager_present_pack_setup", { packId: "Magento!" }),
+  admin("pack setup events fail", SOURCE_CONFIG, "source_config_manager_present_pack_setup", { packId: "shopify" }, { eventsFail: true }),
+  admin("openapi import", SOURCE_CONFIG, "source_config_manager_import_openapi_spec", { url: "https://api.example.com/openapi.yaml", baseUrl: "https://api.example.com/v2" }, { replies: { importOpenApiSpec: { value: { asset: SPEC_ASSET } } } }),
+  admin("openapi import fails", SOURCE_CONFIG, "source_config_manager_import_openapi_spec", { url: "https://api.example.com/openapi.yaml" }, { replies: { importOpenApiSpec: { value: { error: "OpenAPI URL must use HTTPS" } } } }),
+  admin("openapi import bad url", SOURCE_CONFIG, "source_config_manager_import_openapi_spec", { url: "not a url", baseUrl: 7 }),
+  admin("openapi list", SOURCE_CONFIG, "source_config_manager_list_openapi_specs", { limit: 5 }, { replies: { listOpenApiSpecs: { value: { assets: [SPEC_ASSET] } } } }),
+  admin("openapi list default", SOURCE_CONFIG, "source_config_manager_list_openapi_specs", {}, { replies: { listOpenApiSpecs: { value: { assets: [] } } } }),
+  admin("openapi list bad limit", SOURCE_CONFIG, "source_config_manager_list_openapi_specs", { limit: 0 }),
+);
+
 type ListCase = { name: string; servers: string[]; memoryReadOnly?: boolean; policy?: string; graphjinTools?: unknown[]; listThrows?: string; cardSchema?: string; workflowRunId?: string; packActions?: PackActionDescriptor[] };
 
 const LISTS: ListCase[] = [
@@ -407,6 +442,7 @@ const LISTS: ListCase[] = [
   { name: "workflow action, output and pack actions", servers: ["neko_action", "neko_workflow_output", "neko_pack_actions"], workflowRunId: WF_RUN, packActions: PACK_ACTIONS },
   { name: "workflow and rule builders", servers: ["neko_workflow_builder", "neko_rule_builder"] },
   { name: "admin tools", servers: ["neko_user_manager", "neko_channel_manager", "neko_data_source_manager", "neko_audit"] },
+  { name: "source config tools", servers: ["neko_source_config_manager"] },
 ];
 
 const METHODS = [
@@ -432,6 +468,13 @@ const METHODS = [
   "listChannels",
   "listDataSources",
   "listAuditTrail",
+  "describeSourceGraph",
+  "listSourceSecretNames",
+  "importOpenApiSpec",
+  "listOpenApiSpecs",
+  "describeSourceConfig",
+  "checkSource",
+  "previewSourceConfigChange",
 ];
 
 function fakeControlPlane(
@@ -552,7 +595,7 @@ describe("tool server fixtures for the Go broker", () => {
       rmSync(skillsRoot, { recursive: true, force: true });
       calls.push(JSON.parse(JSON.stringify({ ...call, ...outcome, controlPlane: recorded, events: broker.events, files })
         .replaceAll(skillsRoot, "<skills>")
-        .replace(/answer-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, "answer-<id>")));
+        .replace(/(answer|source-form|pack-setup)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, "$1-<id>")));
       await client.close();
     }
     broker.server.close();

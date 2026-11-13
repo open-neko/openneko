@@ -1,6 +1,7 @@
 package webfront
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -44,6 +45,18 @@ func (a *API) sourceCheck(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	check, err := a.checkSourceForOrg(r.Context(), act.OrgID, body)
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	sendJSON(w, http.StatusOK, map[string]any{"check": check})
+}
+
+// checkSourceForOrg is checkSourceForOrg() in
+// packages/llm/src/graphjin/source-check.ts: the password comes from the
+// stored secret that secretRef names.
+func (a *API) checkSourceForOrg(ctx context.Context, orgID string, body any) (sourcecheck.Result, error) {
 	in := sourcecheck.Input{
 		Type:     answer(body, "type"),
 		Host:     answer(body, "host"),
@@ -57,26 +70,23 @@ func (a *API) sourceCheck(w http.ResponseWriter, r *http.Request) {
 	ref := answer(body, "secretRef")
 	if ref != "" {
 		var enc string
-		err := a.DB.QueryRow(r.Context(), `select value_enc from data_source_secret where org_id = $1 and name = $2 limit 1`,
-			act.OrgID, ref).Scan(&enc)
+		err := a.DB.QueryRow(ctx, `select value_enc from data_source_secret where org_id = $1 and name = $2 limit 1`,
+			orgID, ref).Scan(&enc)
 		if errors.Is(err, pgx.ErrNoRows) {
-			check := sourcecheck.Check(r.Context(), in)
+			check := sourcecheck.Check(ctx, in)
 			for i, f := range check.Findings {
 				if f.Step == "login" && f.Status == "fail" {
 					check.Findings[i].Message = `No stored password is named "` + ref + `". Save the password in the card first.`
 				}
 			}
-			sendJSON(w, http.StatusOK, map[string]any{"check": check})
-			return
+			return check, nil
 		}
 		if err != nil {
-			a.fail(w, r, err)
-			return
+			return sourcecheck.Result{}, err
 		}
 		if in.Password, err = config.MaybeDecryptValue(a.SecretsDir, enc); err != nil {
-			a.fail(w, r, err)
-			return
+			return sourcecheck.Result{}, err
 		}
 	}
-	sendJSON(w, http.StatusOK, map[string]any{"check": sourcecheck.Check(r.Context(), in)})
+	return sourcecheck.Check(ctx, in), nil
 }
