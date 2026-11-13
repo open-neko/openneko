@@ -21,10 +21,6 @@ Built-in packs install in one click from Admin, Settings, Packs. Installation re
 
 An optional `management: { label, path }` declaration links to an existing local operational screen once configuration is applied. Ordinary configuration and OAuth setup always use the shared renderer.
 
-## Release from a context repository
-
-If an administrator connects a [context repository](../CONTEXT_REPOSITORY.md), OpenNeko can take packs from it. Put each pack at `packs/<pack-id>/` in the repository, with `pack.yaml` at the top of that folder. Omit artifact paths that have no files, because git does not keep empty folders. Raise `metadata.version` for every changed release. In OpenNeko, **Check for updates** lists new packs and versions, and **Add** stores them as uploaded packs for the usual review and installation. See [PACKS.md](../PACKS.md#release-through-a-context-repository).
-
 ## Pack-owned connection screens
 
 Declare OAuth connections in `pack.yaml`. The generic Admin and Integrations

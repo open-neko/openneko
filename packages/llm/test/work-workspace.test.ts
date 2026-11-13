@@ -21,7 +21,6 @@ import {
   readSkillOrigin,
   resolveBuiltinSkillsRoot,
   resolveSandboxSkillsRoot,
-  unmodifiedBuiltinSkills,
 } from "../src/work/workspace";
 
 const cleanupPaths: string[] = [];
@@ -83,7 +82,6 @@ describe("work workspace", () => {
     expect(await readdir(seeded)).not.toContain("node_modules");
     expect(await readdir(workspace.skillsRoot)).not.toContain("node_modules");
     expect(await readdir(workspace.skillsRoot)).not.toContain("test");
-    expect(await unmodifiedBuiltinSkills(workspace.skillsRoot)).toContain(name);
   }, 30_000);
 
   it("supports an isolated agent home in explicit host-web development mode", async () => {
@@ -166,23 +164,6 @@ describe("work workspace", () => {
     expect(await readdir(stagedSkills)).toContain("pdf");
     expect(await readFile(join(stagedSkills, "skill-creator", "SKILL.md"), "utf8"))
       .toContain("Org override.");
-  }, 30_000);
-
-  it("lists seeded built-in skills until someone edits one", async () => {
-    const skills = await mkdtemp(join(tmpdir(), "neko-builtin-skills-"));
-    cleanupPaths.push(skills);
-    await materializeBuiltinSkills(skills);
-    const seeded = await unmodifiedBuiltinSkills(skills);
-    expect(seeded).toContain("pdf");
-    expect(seeded).toContain("skill-creator");
-
-    await writeFile(join(skills, "pdf", "SKILL.md"), "Edited by an admin.");
-    await mkdir(join(skills, "quarterly-review"), { recursive: true });
-    await writeFile(join(skills, "quarterly-review", "SKILL.md"), "Org skill.");
-    const after = await unmodifiedBuiltinSkills(skills);
-    expect(after).not.toContain("pdf");
-    expect(after).not.toContain("quarterly-review");
-    expect(after).toContain("skill-creator");
   }, 30_000);
 
   it("leaves out the script skills when the install has no sandbox", async () => {

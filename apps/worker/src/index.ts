@@ -76,7 +76,6 @@ import {
 } from "@neko/llm/workflows";
 import { resolveDeclarativePackActionAdapter, registerPackConnectionPreflight } from "./packs/declarative-action-runtime.js";
 import { ensureOrgWorkspace, getOrgAgentRoot, nameBackfilledBots, reportDeploymentProfile, setAgentSlotLimit } from "@neko/llm/work";
-import { checkOrgUpdates } from "@neko/llm/config-vcs/updates";
 import { ensureQueueExists, removeRetiredQueue } from "./pg-boss-helpers.js";
 import { setCoreSecretsInstance } from "./secrets/instance.js";
 import {
@@ -355,10 +354,6 @@ const server = createServer(
       createUser: async (input) => createDirectoryUser(signIn(), input),
     },
     packs: {
-      checkContextUpdates: async () => {
-        const orgId = await getOrgId();
-        return checkOrgUpdates(orgId, getOrgAgentRoot(orgId));
-      },
       upload: (bytes, input) => packService.upload(bytes, input),
       review: (packId, input, operation) => packService.review(packId, input, operation),
       list: () => packService.list(),

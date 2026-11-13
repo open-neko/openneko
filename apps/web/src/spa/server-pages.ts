@@ -15,7 +15,6 @@ export const serverPages: string[] = [
   "/admin/settings/models",
   "/admin/settings/packs",
   "/admin/settings/packs/magento/operations",
-  "/admin/settings/repository",
   "/admin/settings/research",
   "/admin/settings/security",
   "/admin/settings/signin",

@@ -243,8 +243,6 @@ export interface InstallPolicyHandlerSurface {
 }
 
 export interface PacksHandlerSurface {
-  /** Skills and packs that changed in the org's context repository. */
-  checkContextUpdates(): Promise<unknown>;
   upload(bytes: Buffer, input: { actorUserId?: string | null; signal?: AbortSignal }): Promise<unknown>;
   review(packId: string, input: Record<string, unknown>, operation: "install" | "configure" | "upgrade"): Promise<unknown>;
   list(): Promise<unknown>;
@@ -589,10 +587,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       void handlePacksList(res, packs);
       return;
     }
-    if (req.method === "GET" && req.url === "/admin/context-remote/updates") {
-      void handleContextUpdates(res, packs);
-      return;
-    }
     if (req.method === "POST" && req.url === "/admin/packs/upload") {
       void handlePackUpload(req, res, packs);
       return;
@@ -711,15 +705,6 @@ async function handlePackOAuth(
     json(res, 200, result);
   } catch (error) {
     json(res, 400, packFailure(error, "oauth"));
-  }
-}
-
-async function handleContextUpdates(res: ServerResponse, packs: PacksHandlerSurface | null): Promise<void> {
-  if (!packs) { json(res, 503, { error: "solution-pack service unavailable" }); return; }
-  try {
-    json(res, 200, { updates: await packs.checkContextUpdates() });
-  } catch (error) {
-    json(res, 400, { error: error instanceof Error ? error.message : String(error) });
   }
 }
 

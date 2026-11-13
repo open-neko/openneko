@@ -24,7 +24,6 @@ import {
 import { getGraphjinConfigSettingsPayload } from "@/lib/graphjin-config-settings";
 import { getAuthGateStatus } from "@/lib/auth";
 import { getInstallPolicy } from "@/lib/install-policy-settings";
-import { getContextRemote } from "@neko/llm/config-vcs";
 import { getSpendSettings } from "@neko/llm/spend";
 import SetupWizard from "./SetupWizard";
 
@@ -76,7 +75,6 @@ export default async function SettingsPage() {
     authGate,
     installPolicy,
     workflowOrgLimits,
-    contextRemote,
   ] = await Promise.all([
     hasDataSourceSetup(orgId),
     hasPrimaryProviderSetup(orgId),
@@ -97,7 +95,6 @@ export default async function SettingsPage() {
       "select org_id from workflow_api_org_limits where org_id = $1",
       [orgId],
     ),
-    getContextRemote(orgId),
   ]);
   const liveProvider = authGate.provider?.pluginName ?? null;
   const pendingProvider = authGate.pending?.pluginName ?? null;
@@ -178,17 +175,6 @@ export default async function SettingsPage() {
           href: "/admin/settings/models",
           title: "Models and task routes",
           copy: "More models, a model for each task, and a fallback model when a provider fails.",
-        },
-        {
-          href: "/admin/settings/repository",
-          title: "Context repository",
-          copy: "Version history of skills and workflows, published to GitHub, GitLab or another git host.",
-          status: contextRemote
-            ? contextRemote.lastPublish?.status === "failed"
-              ? "Last publish failed"
-              : new URL(contextRemote.url).hostname
-            : "Not connected",
-          statusTone: contextRemote ? (contextRemote.lastPublish?.status === "failed" ? "watch" : "success") : "neutral",
         },
         {
           href: "/admin/settings/research",

@@ -126,7 +126,6 @@ restorable.
 | Personal memory layer | Correct or hide a team memory just for yourself without changing it for anyone else — and pull in team updates when you want them. | #96 |
 | Save, history, restore | Browse what changed and roll back to any earlier state of your assistant's configuration. | #96 |
 | Skill edits that stick | When the assistant changes a skill during a conversation, the change is saved as a new version when the turn ends. It applies to everyone if an admin asked, or only to you otherwise. | #413 |
-| Optional git repository | Connect the company's skills and workflows to GitHub, GitLab or any git host over HTTPS or SSH. Publish by push or pull request, and bring in skills and packs that changed there. See [CONTEXT_REPOSITORY.md](CONTEXT_REPOSITORY.md). | #413 |
 | Promote and adopt | When a personal workflow or memory proves valuable, an admin can promote it to the whole team with full lineage of where it came from. | #96 |
 | Document library | Documents and spreadsheets you upload, or attach in a conversation and add to the library, go into your private folder. The assistant finds them with file search. Nobody else can see them. | #220 |
 | Search inside your files | The assistant searches the text of your PDF, Word, PowerPoint, Excel and CSV files, reads a whole file, and runs SQL over spreadsheet sheets to sum, count and compare. Your files stay in your private folder: nobody else's assistant can read them. The folder is on the server by default; an admin can keep the files in an S3-compatible bucket instead. | Phase 1 |

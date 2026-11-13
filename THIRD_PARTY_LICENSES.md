@@ -81,7 +81,6 @@ OpenNeko's runtime dependencies are listed in the `package.json` and `go.mod` fi
 | `github.com/tidwall/gjson`, `sjson`, `match`, `pretty` | MIT | Linked by River |
 | `golang.org/x/text` | BSD-3-Clause | Sorts skill names in `openneko web` in the same order as the Node server; GraphJin already links it |
 | `golang.org/x/net` (`idna`) | BSD-3-Clause | Converts the host of an OpenAPI import URL to ASCII in `openneko web`; GraphJin already links it |
-| `golang.org/x/crypto` (`ssh`, `ssh/knownhosts`) | BSD-3-Clause | Makes the deploy key of an SSH context repository and reads the server's host keys in `openneko web`; GraphJin already links it |
 
 Run `pnpm licenses ls -P` from the repo root to see the full transitive list at a given snapshot.
 

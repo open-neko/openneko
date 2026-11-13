@@ -167,6 +167,23 @@ func TestAPIVersionFile(t *testing.T) {
 	}
 }
 
+func TestContextRemoteRoutesGone(t *testing.T) {
+	a := &API{}
+	for _, c := range [][2]string{
+		{"GET", "/api/v1/admin/context-remote"}, {"PUT", "/api/v1/admin/context-remote"}, {"DELETE", "/api/v1/admin/context-remote"},
+		{"POST", "/api/v1/admin/context-remote/host-key"},
+		{"GET", "/api/v1/admin/context-remote/publish"}, {"POST", "/api/v1/admin/context-remote/publish"},
+		{"GET", "/api/v1/admin/context-remote/updates"}, {"POST", "/api/v1/admin/context-remote/updates"},
+	} {
+		if _, ok := GoRoutes[c[1]]; ok {
+			t.Errorf("%s is still in GoRoutes", c[1])
+		}
+		if a.Handler(httptest.NewRequest(c[0], c[1], nil)) != nil {
+			t.Errorf("%s %s still has a handler", c[0], c[1])
+		}
+	}
+}
+
 func TestAuthStatusRoute(t *testing.T) {
 	f, _ := newAPIFront(t, `{"provider":{"pluginName":"magic-link","providerLabel":"Email link","provisioning":"manual"},"pending":null}`, nil)
 	w := call(f, "GET", "/api/v1/auth/status", "", nil)
