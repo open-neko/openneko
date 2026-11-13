@@ -103,8 +103,9 @@ run workflow_cron_sweep` with a fixed clock against a GraphQL source in the
 driver process. A scripted model drives the workflow builder in a chat turn and
 `neko_action` in a manual workflow run. Approvals go through
 `PATCH /api/v1/action-requests/{id}`, and River runs the execution against an
-in-memory action adapter. Watcher disable and reset have no product path; the
-adapter calls the Node store functions for those two steps.
+in-memory action adapter. Case w02 v2 pauses the workflow with
+`PATCH /api/v1/workflows/{id}`, which also turns its watchers off; v1 also
+reset a watcher, which no product path does.
 
 The work-memory adapter runs each phase on its own eval install. A scripted
 model saves and searches memories through `neko_memory` in a chat turn, and

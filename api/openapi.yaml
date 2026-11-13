@@ -11079,11 +11079,12 @@ paths:
               properties:
                 enabled:
                   type: boolean
+                  description: Also turns the workflow's watchers on or off
                 cronEnabled:
                   type: boolean
                 pauseForToday:
                   type: boolean
-                  description: Disable until the next UTC midnight
+                  description: Disable the workflow and its watchers until the next UTC midnight
       responses:
         '200':
           description: The workflow is updated

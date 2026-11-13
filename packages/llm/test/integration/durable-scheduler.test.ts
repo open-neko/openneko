@@ -407,4 +407,39 @@ describeIfDb("durable workflow scheduler persistence", () => {
       available_at: new Date("2030-08-26T08:21:00.000Z"),
     });
   });
+  it("turns the watchers of a workflow back on when its pause for today ends", async () => {
+    const pausedWorkflowId = randomUUID();
+    const otherWorkflowId = randomUUID();
+    for (const [id, pausedUntil] of [
+      [pausedWorkflowId, new Date("2030-08-27T00:00:00.000Z")],
+      [otherWorkflowId, null],
+    ] as const) {
+      await pool().query(
+        `insert into workflow_definition (id, org_id, name, steps, enabled, paused_until)
+         values ($1, $2, $4, '[]'::jsonb, false, $3)`,
+        [id, orgId, pausedUntil, `Paused ${id}`],
+      );
+      await pool().query(
+        `insert into watcher (org_id, workflow_id, name, query, value_path, op, enabled)
+         values ($1, $2, $3, '{ m { v } }', 'm.v', 'gt', false)`,
+        [orgId, id, `watcher-${id}`],
+      );
+    }
+    const watchers = async () =>
+      (
+        await pool().query<{ workflow_id: string; enabled: boolean }>(
+          "select workflow_id, enabled from watcher where workflow_id = any($1::uuid[])",
+          [[pausedWorkflowId, otherWorkflowId]],
+        )
+      ).rows.reduce<Record<string, boolean>>(
+        (all, row) => ({ ...all, [row.workflow_id]: row.enabled }),
+        {},
+      );
+
+    await materializeDueWorkflowFirings(new Date("2030-08-26T23:59:00.000Z"), { orgId });
+    expect(await watchers()).toEqual({ [pausedWorkflowId]: false, [otherWorkflowId]: false });
+
+    await materializeDueWorkflowFirings(new Date("2030-08-27T00:00:00.000Z"), { orgId });
+    expect(await watchers()).toEqual({ [pausedWorkflowId]: true, [otherWorkflowId]: false });
+  });
 });

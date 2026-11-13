@@ -387,7 +387,9 @@ func (a *API) sweepWatchersCounted(ctx context.Context, orgID string, now time.T
 	}
 	rows, err := a.DB.Query(ctx, `select id::text, workflow_id::text, name, query, value_path, op, severity, threshold, variables_json, last_value,
 		cadence_seconds, debounce_seconds, cooldown_seconds, last_checked_at, last_fired_at
-		from watcher where org_id = $1 and enabled order by name, id`, orgID)
+		from watcher where org_id = $1 and enabled
+		and exists (select 1 from workflow_definition d where d.id = watcher.workflow_id and d.enabled)
+		order by name, id`, orgID)
 	if err != nil {
 		return 0, nil, err
 	}

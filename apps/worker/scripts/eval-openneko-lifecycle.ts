@@ -15,9 +15,7 @@ import {
   listActionExecutions,
   listWatchers,
   registerActionAdapter,
-  resetWatcher,
   saveWorkflow,
-  setWatcherEnabled,
   upsertWatcher,
   verifyAuditChain,
   type WatcherRecord,
@@ -452,10 +450,14 @@ async function watcherLifecycle(context: ScenarioContext): Promise<Record<string
   }));
   const updated = await watcherNamed(THRESHOLD_WORKFLOW);
 
-  const disabled = await setWatcherEnabled(orgId, created.id, false);
+  const paused = await episode.api(org.memberId, `/api/v1/workflows/${created.workflowId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled: false }),
+  });
+  await paused.arrayBuffer();
+  const disabled = await watcherNamed(THRESHOLD_WORKFLOW);
   source.set("eval_metric", { value: 99 });
   const disabledSweep = await sweep(8_000_000);
-  const reset = await resetWatcher(orgId, created.id);
   const removed = await episode.api(org.memberId, `/api/v1/workflows/${created.workflowId}`, { method: "DELETE" });
   await removed.arrayBuffer();
   const afterDelete = (await listWatchers(orgId)).find((watcher) => watcher.id === created.id) ?? null;
@@ -485,12 +487,7 @@ async function watcherLifecycle(context: ScenarioContext): Promise<Record<string
       updated.op === "gte" &&
       updated.threshold === 11 &&
       updated.severity === "critical",
-    disabled: disabled?.enabled === false && disabledSweep.checked === 0,
-    reset:
-      reset?.lastCheckedAt === null &&
-      reset.lastFiredAt === null &&
-      reset.lastValue === null &&
-      reset.lastError === null,
+    disabled: paused.ok && disabled?.enabled === false && disabledSweep.checked === 0,
     deleted: removed.ok && afterDelete === null,
     errorRecorded:
       errorSweep.checked === 1 &&
