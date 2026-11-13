@@ -854,6 +854,535 @@
    ],
    "graphjinTools": [],
    "tools": []
+  },
+  {
+   "name": "interaction, cards and skills",
+   "servers": [
+    "neko_interaction",
+    "neko_ui",
+    "neko_skills"
+   ],
+   "tools": [
+    {
+     "name": "interaction_ask_user_question",
+     "description": "Pause this Work-chat turn and ask the operator for missing information. Use only when uncertainty is material to correctness, scope, cost, timing, authorization, or an irreversible decision and available tools cannot resolve it. Ask one to three focused questions. After this call, stop: do not render an answer, provide totals or recommendations, emit vitals/follow-ups, or call another tool.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "reason": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+       },
+       "questions": {
+        "minItems": 1,
+        "maxItems": 3,
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "header": {
+           "type": "string",
+           "minLength": 1,
+           "maxLength": 40
+          },
+          "question": {
+           "type": "string",
+           "minLength": 1,
+           "maxLength": 500
+          },
+          "options": {
+           "minItems": 2,
+           "maxItems": 5,
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+             },
+             "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240
+             }
+            },
+            "required": [
+             "label"
+            ],
+            "additionalProperties": false
+           }
+          }
+         },
+         "required": [
+          "question"
+         ],
+         "additionalProperties": false
+        }
+       }
+      },
+      "required": [
+       "questions"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "ui_render_cards",
+     "description": "Show the evidence for an answer as cards. Every field is text: a title, a pipe table, an optional chart of one table column, keyFigures, a callout and followUps.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+       },
+       "stage": {
+        "description": "\"draft\" for an early card while you are still checking figures; \"final\" for the finished answer.",
+        "type": "string",
+        "enum": [
+         "draft",
+         "final"
+        ]
+       },
+       "table": {
+        "description": "A pipe table: a header row, then one row per line, cells separated by |.",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 20000
+       },
+       "chart": {
+        "description": "Chart the table: the first column gives the labels, chartColumn the values.",
+        "type": "string",
+        "enum": [
+         "line",
+         "bar",
+         "area",
+         "donut"
+        ]
+       },
+       "chartColumn": {
+        "description": "The table column to chart. Write its cells as plain numbers, such as 12699845.92.",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 60
+       },
+       "keyFigures": {
+        "description": "Headline numbers, each written as \"Label: value\" with an optional \"(note)\".",
+        "minItems": 1,
+        "maxItems": 6,
+        "type": "array",
+        "items": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 160
+        }
+       },
+       "callout": {
+        "description": "A status, risk, or recommended action.",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 600
+       },
+       "mood": {
+        "description": "The callout's tone.",
+        "type": "string",
+        "enum": [
+         "good",
+         "watch",
+         "act"
+        ]
+       },
+       "followUps": {
+        "description": "Follow-up questions the operator can ask next.",
+        "minItems": 1,
+        "maxItems": 4,
+        "type": "array",
+        "items": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 200
+        }
+       }
+      },
+      "required": [
+       "title"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+     }
+    },
+    {
+     "name": "skills_create_skill",
+     "description": "Create or update an agentskills.io-style skill in Neko's shared skills directory.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+       },
+       "description": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024
+       },
+       "body": {
+        "type": "string",
+        "minLength": 1
+       },
+       "license": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "compatibility": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+       },
+       "metadata": {
+        "type": "object",
+        "propertyNames": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 128
+        },
+        "additionalProperties": {
+         "type": "string",
+         "maxLength": 2048
+        }
+       },
+       "allowedTools": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000
+       },
+       "files": {
+        "maxItems": 30,
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "path": {
+           "type": "string",
+           "minLength": 1,
+           "maxLength": 240
+          },
+          "content": {
+           "type": "string",
+           "maxLength": 131072
+          }
+         },
+         "required": [
+          "path",
+          "content"
+         ]
+        }
+       }
+      },
+      "required": [
+       "name",
+       "description",
+       "body"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    }
+   ]
+  },
+  {
+   "name": "rich cards",
+   "servers": [
+    "neko_ui",
+    "neko_memory"
+   ],
+   "cardSchema": "rich",
+   "tools": [
+    {
+     "name": "ui_render_cards",
+     "description": "Show the evidence for an answer as cards. Every field is text: a title, a pipe table, an optional chart of one table column, keyFigures, a callout and followUps.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+       },
+       "stage": {
+        "description": "\"draft\" for an early card while you are still checking figures; \"final\" for the finished answer.",
+        "type": "string",
+        "enum": [
+         "draft",
+         "final"
+        ]
+       },
+       "layout": {
+        "description": "\"compare\" shows each table row as a side-by-side panel; use it for 2 to 6 items compared on the same measures.",
+        "type": "string",
+        "enum": [
+         "report",
+         "compare"
+        ]
+       },
+       "table": {
+        "description": "A pipe table: a header row, then one row per line, cells separated by |.",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 20000
+       },
+       "chart": {
+        "description": "Chart the table: the first column gives the labels, chartColumn the values.",
+        "type": "string",
+        "enum": [
+         "line",
+         "bar",
+         "area",
+         "donut"
+        ]
+       },
+       "chartColumn": {
+        "description": "The table column to chart. Write its cells as plain numbers, such as 12699845.92.",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 60
+       },
+       "keyFigures": {
+        "description": "Headline numbers, each written as \"Label: value\" with an optional \"(note)\".",
+        "minItems": 1,
+        "maxItems": 6,
+        "type": "array",
+        "items": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 160
+        }
+       },
+       "rowDetails": {
+        "description": "Sub-tables that table rows open in place, each \"Row name >> pipe table\": the row's first-column name, then the sub-table's header row and rows, one per line.",
+        "minItems": 1,
+        "maxItems": 20,
+        "type": "array",
+        "items": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 8000
+        }
+       },
+       "drillDown": {
+        "description": "A follow-up question for one table row, chart point, map place, or diagram step. Write {label} where its name goes.",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "controls": {
+        "description": "Inputs the reader can move, each \"name: Label (unit) = default (min to max, step n)\", such as \"price_change: Price change (%) = 5 (-20 to 20, step 1)\", or a choice \"name: Label = Option (number) | Option (number)\", where the first option is the default and formulas use the chosen number.",
+        "minItems": 1,
+        "maxItems": 4,
+        "type": "array",
+        "items": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 200
+        }
+       },
+       "values": {
+        "description": "Fixed figures the formulas use, each \"name = number\", such as \"road_revenue = 1496791.67\".",
+        "maxItems": 24,
+        "type": "array",
+        "items": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 120
+        }
+       },
+       "computed": {
+        "description": "Results that recompute as the controls move, each \"Label (unit): formula\" using control and value names, + - * / ^, min, max, round, abs.",
+        "minItems": 1,
+        "maxItems": 6,
+        "type": "array",
+        "items": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 300
+        }
+       },
+       "map": {
+        "description": "Places to plot, each \"Place @ latitude, longitude: value\".",
+        "minItems": 1,
+        "maxItems": 80,
+        "type": "array",
+        "items": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 160
+        }
+       },
+       "mapValue": {
+        "description": "What the map values measure, with the unit, such as Sales (USD).",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 60
+       },
+       "diagram": {
+        "description": "Steps of a process or the links between parts, each \"From -> To\" with an optional \": label\".",
+        "minItems": 1,
+        "maxItems": 40,
+        "type": "array",
+        "items": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 200
+        }
+       },
+       "tool": {
+        "description": "A small interactive tool as an HTML fragment with inline <script>. Put every figure it needs in the fragment. It runs in a frame as narrow as 320px that already styles labels, inputs, selects, buttons, output and tables, so add little CSS.",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 40000
+       },
+       "callout": {
+        "description": "A status, risk, or recommended action.",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 600
+       },
+       "mood": {
+        "description": "The callout's tone.",
+        "type": "string",
+        "enum": [
+         "good",
+         "watch",
+         "act"
+        ]
+       },
+       "followUps": {
+        "description": "Follow-up questions the operator can ask next.",
+        "minItems": 1,
+        "maxItems": 4,
+        "type": "array",
+        "items": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 200
+        }
+       }
+      },
+      "required": [
+       "title"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+     }
+    },
+    {
+     "name": "memory_search",
+     "description": "Semantic search over OpenNeko's saved memories. Returns top-N memories ranked by cosine similarity to the query. Use when the loaded memories above don't seem to cover what the operator is asking about.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 800
+       },
+       "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20
+       }
+      },
+      "required": [
+       "query"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "memory_save",
+     "description": "Save a durable memory the operator stated explicitly. Use only when the operator says to remember/save something, corrects a recurring assumption, defines a metric/business rule, or states a stable preference. Never speculatively. Default scope=global, kind=business_rule, pinned=true.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "text": {
+        "type": "string",
+        "minLength": 5,
+        "maxLength": 2000
+       },
+       "kind": {
+        "type": "string",
+        "enum": [
+         "preference",
+         "business_rule",
+         "metric_definition",
+         "thread_note",
+         "correction",
+         "company_context",
+         "other"
+        ]
+       },
+       "scope": {
+        "type": "string",
+        "enum": [
+         "global",
+         "thread"
+        ]
+       },
+       "pinned": {
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "text"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    },
+    {
+     "name": "memory_update",
+     "description": "Replace the text of a saved memory. Use when the operator corrects, extends or merges a memory that is already saved, instead of saving a second memory. Pass the memory id from the loaded list or a search result, and the whole new text.",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "memoryId": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+       },
+       "text": {
+        "type": "string",
+        "minLength": 5,
+        "maxLength": 2000
+       }
+      },
+      "required": [
+       "memoryId",
+       "text"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+     },
+     "execution": {
+      "taskSupport": "forbidden"
+     }
+    }
+   ]
   }
  ],
  "calls": [
@@ -899,7 +1428,9 @@
       "runId": "33333333-3333-4333-8333-333333333333"
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory search default limit",
@@ -931,7 +1462,9 @@
       "runId": "33333333-3333-4333-8333-333333333333"
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory search short query",
@@ -951,7 +1484,9 @@
     ],
     "isError": true
    },
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory search limit too high",
@@ -972,7 +1507,9 @@
     ],
     "isError": true
    },
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory search fraction limit",
@@ -993,7 +1530,9 @@
     ],
     "isError": true
    },
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory search fails",
@@ -1026,7 +1565,9 @@
       "runId": "33333333-3333-4333-8333-333333333333"
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory search two faults",
@@ -1047,7 +1588,9 @@
     ],
     "isError": true
    },
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory search string limit",
@@ -1068,7 +1611,9 @@
     ],
     "isError": true
    },
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory search null limit",
@@ -1089,7 +1634,9 @@
     ],
     "isError": true
    },
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory search long query",
@@ -1109,7 +1656,9 @@
     ],
     "isError": true
    },
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory search object query",
@@ -1134,7 +1683,9 @@
     ],
     "isError": true
    },
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory save pinned text",
@@ -1156,7 +1707,9 @@
     ],
     "isError": true
    },
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory update upper id",
@@ -1192,7 +1745,9 @@
       "text": "Revenue is net."
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory update unicode text",
@@ -1213,7 +1768,9 @@
     ],
     "isError": true
    },
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory save defaults",
@@ -1250,7 +1807,9 @@
       "pinned": true
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory save all fields",
@@ -1290,7 +1849,9 @@
       "pinned": false
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory save bad kind",
@@ -1311,7 +1872,9 @@
     ],
     "isError": true
    },
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory save missing text",
@@ -1329,7 +1892,9 @@
     ],
     "isError": true
    },
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory save extra field",
@@ -1367,7 +1932,9 @@
       "pinned": true
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory update",
@@ -1403,7 +1970,9 @@
       "text": "Revenue is net of refunds and tax."
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory update not visible",
@@ -1438,7 +2007,9 @@
       "text": "Revenue is net of refunds and tax."
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory update bad id",
@@ -1459,7 +2030,9 @@
     ],
     "isError": true
    },
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "memory save read-only",
@@ -1472,7 +2045,9 @@
     "text": "Revenue is net of refunds."
    },
    "error": "MCP error -32603: mcp-bridge: unknown tool memory_save",
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "guides find",
@@ -1510,7 +2085,9 @@
       "limit": 3
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "guides find no limit",
@@ -1541,7 +2118,9 @@
       "query": "refund report"
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "guides find zero limit",
@@ -1562,7 +2141,9 @@
     ],
     "isError": true
    },
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "files search",
@@ -1621,7 +2202,9 @@
       "limit": 4
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "files search no limit",
@@ -1654,7 +2237,9 @@
       "query": "net revenue"
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "files search fails",
@@ -1686,7 +2271,9 @@
       "query": "net revenue"
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "files search empty query",
@@ -1706,7 +2293,9 @@
     ],
     "isError": true
    },
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "files read",
@@ -1748,7 +2337,9 @@
       "maxChars": 2000
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "files read small max",
@@ -1769,7 +2360,9 @@
     ],
     "isError": true
    },
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "files read negative offset",
@@ -1790,7 +2383,9 @@
     ],
     "isError": true
    },
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "files query",
@@ -1833,7 +2428,9 @@
       "sql": "select region from q3__sales"
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "files query fails",
@@ -1865,7 +2462,9 @@
       "sql": "drop table q3__sales"
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "files query wrong type",
@@ -1885,7 +2484,9 @@
     ],
     "isError": true
    },
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "unknown tool",
@@ -1897,7 +2498,9 @@
     "path": "x"
    },
    "error": "MCP error -32603: mcp-bridge: unknown tool files_delete",
-   "controlPlane": []
+   "controlPlane": [],
+   "events": [],
+   "files": {}
   },
   {
    "name": "graphjin execute",
@@ -1952,7 +2555,9 @@
       }
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "graphjin execute after list",
@@ -2001,7 +2606,9 @@
       }
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "graphjin no arguments",
@@ -2043,7 +2650,9 @@
       "name": "graphql_help"
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "graphjin empty arguments",
@@ -2087,7 +2696,9 @@
       "arguments": {}
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "graphjin error result",
@@ -2137,7 +2748,9 @@
       }
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "graphjin result extra fields",
@@ -2207,7 +2820,9 @@
       }
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "graphjin result no content",
@@ -2250,7 +2865,9 @@
       }
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "graphjin call fails",
@@ -2284,7 +2901,9 @@
       }
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "graphjin agent tool hidden",
@@ -2314,7 +2933,9 @@
       "runId": "33333333-3333-4333-8333-333333333333"
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "graphjin agent tool listed by server",
@@ -2352,7 +2973,9 @@
       "runId": "33333333-3333-4333-8333-333333333333"
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "graphjin unknown tool",
@@ -2380,7 +3003,9 @@
       "runId": "33333333-3333-4333-8333-333333333333"
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "graphjin list fails",
@@ -2412,7 +3037,9 @@
       "runId": "33333333-3333-4333-8333-333333333333"
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "graphjin memory tool while list fails",
@@ -2453,7 +3080,9 @@
       "runId": "33333333-3333-4333-8333-333333333333"
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "policy execute",
@@ -2502,7 +3131,9 @@
       }
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "policy blank query",
@@ -2533,7 +3164,9 @@
       "runId": "33333333-3333-4333-8333-333333333333"
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "policy query not text",
@@ -2564,7 +3197,9 @@
       "runId": "33333333-3333-4333-8333-333333333333"
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "policy saved query",
@@ -2595,7 +3230,9 @@
       "runId": "33333333-3333-4333-8333-333333333333"
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "policy saved query after list",
@@ -2654,7 +3291,9 @@
       "arguments": {}
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
   },
   {
    "name": "no saved query listed",
@@ -2702,7 +3341,3765 @@
       }
      }
     }
-   ]
+   ],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "ask one question",
+   "servers": [
+    "neko_interaction"
+   ],
+   "tool": "interaction_ask_user_question",
+   "arguments": {
+    "questions": [
+     {
+      "question": "  Which region?  "
+     }
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"status\":\"needs_input\",\"instruction\":\"The clarification was presented to the operator. End this turn now without any further tools, answer content, vitals, or follow-ups.\"}"
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "needs_input",
+     "question": "Which region?",
+     "questions": [
+      {
+       "id": "q1",
+       "question": "Which region?"
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "ask with options and cards",
+   "servers": [
+    "neko_interaction"
+   ],
+   "wantsCards": true,
+   "tool": "interaction_ask_user_question",
+   "arguments": {
+    "reason": " Totals differ by region. ",
+    "questions": [
+     {
+      "header": "Region",
+      "question": "Which region?",
+      "options": [
+       {
+        "label": "North",
+        "description": "EU stores"
+       },
+       {
+        "label": "South"
+       }
+      ]
+     }
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"status\":\"needs_input\",\"instruction\":\"The clarification was presented to the operator. End this turn now without any further tools, answer content, vitals, or follow-ups.\"}"
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "clarification-33333333-3333-4333-8333-333333333333",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "eyebrow": "Clarification",
+          "title": "One detail before I continue",
+          "subtitle": "Totals differ by region.",
+          "children": [
+           "q1-input",
+           "submit"
+          ]
+         },
+         {
+          "id": "q1-input",
+          "component": "ChoicePicker",
+          "label": "Region: Which region?",
+          "options": [
+           {
+            "label": "North — EU stores",
+            "value": "North"
+           },
+           {
+            "label": "South",
+            "value": "South"
+           }
+          ],
+          "value": {
+           "path": "/answers/q1"
+          },
+          "variant": "mutuallyExclusive"
+         },
+         {
+          "id": "submit-label",
+          "component": "Text",
+          "text": "Continue",
+          "variant": "body"
+         },
+         {
+          "id": "submit",
+          "component": "Button",
+          "child": "submit-label",
+          "variant": "primary",
+          "requires": [
+           {
+            "path": "/answers/q1/0"
+           }
+          ],
+          "action": {
+           "event": {
+            "name": "submit_clarification",
+            "context": {
+             "prompt": "Continue the previous request using these operator-supplied answers. Re-check any remaining external facts and do not infer omitted values.",
+             "questions": [
+              {
+               "id": "q1",
+               "header": "Region",
+               "question": "Which region?"
+              }
+             ],
+             "answers": {
+              "path": "/answers"
+             }
+            }
+           }
+          }
+         }
+        ],
+        "dataModel": {
+         "answers": {
+          "q1": []
+         }
+        }
+       }
+      }
+     ]
+    },
+    {
+     "type": "needs_input",
+     "question": "Which region?",
+     "options": [
+      "North",
+      "South"
+     ],
+     "questions": [
+      {
+       "id": "q1",
+       "header": "Region",
+       "question": "Which region?",
+       "options": [
+        {
+         "label": "North",
+         "description": "EU stores"
+        },
+        {
+         "label": "South"
+        }
+       ]
+      }
+     ],
+     "reason": "Totals differ by region.",
+     "surfaceId": "clarification-33333333-3333-4333-8333-333333333333"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "ask three questions with cards",
+   "servers": [
+    "neko_interaction"
+   ],
+   "wantsCards": true,
+   "tool": "interaction_ask_user_question",
+   "arguments": {
+    "questions": [
+     {
+      "question": "Which period?"
+     },
+     {
+      "header": "Basis",
+      "question": "Gross or net?",
+      "options": [
+       {
+        "label": "Gross"
+       },
+       {
+        "label": "Net"
+       },
+       {
+        "label": "Both",
+        "description": "Show both"
+       }
+      ]
+     },
+     {
+      "header": "Currency",
+      "question": "Which currency?"
+     }
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"status\":\"needs_input\",\"instruction\":\"The clarification was presented to the operator. End this turn now without any further tools, answer content, vitals, or follow-ups.\"}"
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "clarification-33333333-3333-4333-8333-333333333333",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "eyebrow": "Clarification",
+          "title": "A few details before I continue",
+          "children": [
+           "q1-input",
+           "q2-input",
+           "q3-input",
+           "submit"
+          ]
+         },
+         {
+          "id": "q1-input",
+          "component": "TextField",
+          "label": "Which period?",
+          "value": {
+           "path": "/answers/q1"
+          },
+          "variant": "longText"
+         },
+         {
+          "id": "q2-input",
+          "component": "ChoicePicker",
+          "label": "Basis: Gross or net?",
+          "options": [
+           {
+            "label": "Gross",
+            "value": "Gross"
+           },
+           {
+            "label": "Net",
+            "value": "Net"
+           },
+           {
+            "label": "Both — Show both",
+            "value": "Both"
+           }
+          ],
+          "value": {
+           "path": "/answers/q2"
+          },
+          "variant": "mutuallyExclusive"
+         },
+         {
+          "id": "q3-input",
+          "component": "TextField",
+          "label": "Currency: Which currency?",
+          "value": {
+           "path": "/answers/q3"
+          },
+          "variant": "longText"
+         },
+         {
+          "id": "submit-label",
+          "component": "Text",
+          "text": "Continue",
+          "variant": "body"
+         },
+         {
+          "id": "submit",
+          "component": "Button",
+          "child": "submit-label",
+          "variant": "primary",
+          "requires": [
+           {
+            "path": "/answers/q1"
+           },
+           {
+            "path": "/answers/q2/0"
+           },
+           {
+            "path": "/answers/q3"
+           }
+          ],
+          "action": {
+           "event": {
+            "name": "submit_clarification",
+            "context": {
+             "prompt": "Continue the previous request using these operator-supplied answers. Re-check any remaining external facts and do not infer omitted values.",
+             "questions": [
+              {
+               "id": "q1",
+               "question": "Which period?"
+              },
+              {
+               "id": "q2",
+               "header": "Basis",
+               "question": "Gross or net?"
+              },
+              {
+               "id": "q3",
+               "header": "Currency",
+               "question": "Which currency?"
+              }
+             ],
+             "answers": {
+              "path": "/answers"
+             }
+            }
+           }
+          }
+         }
+        ],
+        "dataModel": {
+         "answers": {
+          "q1": "",
+          "q2": [],
+          "q3": ""
+         }
+        }
+       }
+      }
+     ]
+    },
+    {
+     "type": "needs_input",
+     "question": "I need 3 details before I can continue.",
+     "questions": [
+      {
+       "id": "q1",
+       "question": "Which period?"
+      },
+      {
+       "id": "q2",
+       "header": "Basis",
+       "question": "Gross or net?",
+       "options": [
+        {
+         "label": "Gross"
+        },
+        {
+         "label": "Net"
+        },
+        {
+         "label": "Both",
+         "description": "Show both"
+        }
+       ]
+      },
+      {
+       "id": "q3",
+       "header": "Currency",
+       "question": "Which currency?"
+      }
+     ],
+     "surfaceId": "clarification-33333333-3333-4333-8333-333333333333"
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "ask two questions no cards",
+   "servers": [
+    "neko_interaction"
+   ],
+   "tool": "interaction_ask_user_question",
+   "arguments": {
+    "questions": [
+     {
+      "question": "Which period?",
+      "options": [
+       {
+        "label": "Q1"
+       },
+       {
+        "label": "Q2"
+       }
+      ]
+     },
+     {
+      "question": "Which store?"
+     }
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"status\":\"needs_input\",\"instruction\":\"The clarification was presented to the operator. End this turn now without any further tools, answer content, vitals, or follow-ups.\"}"
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "needs_input",
+     "question": "I need 2 details before I can continue.",
+     "questions": [
+      {
+       "id": "q1",
+       "question": "Which period?",
+       "options": [
+        {
+         "label": "Q1"
+        },
+        {
+         "label": "Q2"
+        }
+       ]
+      },
+      {
+       "id": "q2",
+       "question": "Which store?"
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "ask four questions",
+   "servers": [
+    "neko_interaction"
+   ],
+   "tool": "interaction_ask_user_question",
+   "arguments": {
+    "questions": [
+     {
+      "question": "a"
+     },
+     {
+      "question": "b"
+     },
+     {
+      "question": "c"
+     },
+     {
+      "question": "d"
+     }
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool ask_user_question: [\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_big\",\n    \"maximum\": 3,\n    \"inclusive\": true,\n    \"path\": [\n      \"questions\"\n    ],\n    \"message\": \"Too big: expected array to have <=3 items\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "ask no questions",
+   "servers": [
+    "neko_interaction"
+   ],
+   "tool": "interaction_ask_user_question",
+   "arguments": {
+    "questions": []
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool ask_user_question: [\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"questions\"\n    ],\n    \"message\": \"Too small: expected array to have >=1 items\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "ask missing questions",
+   "servers": [
+    "neko_interaction"
+   ],
+   "tool": "interaction_ask_user_question",
+   "arguments": {
+    "reason": "why"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool ask_user_question: [\n  {\n    \"expected\": \"array\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"questions\"\n    ],\n    \"message\": \"Invalid input: expected array, received undefined\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "ask questions not a list",
+   "servers": [
+    "neko_interaction"
+   ],
+   "tool": "interaction_ask_user_question",
+   "arguments": {
+    "questions": "Which region?"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool ask_user_question: [\n  {\n    \"expected\": \"array\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"questions\"\n    ],\n    \"message\": \"Invalid input: expected array, received string\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 3,\n    \"inclusive\": true,\n    \"path\": [\n      \"questions\"\n    ],\n    \"message\": \"Too big: expected string to have <=3 characters\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "ask question faults",
+   "servers": [
+    "neko_interaction"
+   ],
+   "tool": "interaction_ask_user_question",
+   "arguments": {
+    "reason": "  ",
+    "questions": [
+     {
+      "zz": 1,
+      "question": " ",
+      "aa": 2,
+      "header": "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh",
+      "options": [
+       {
+        "label": "",
+        "extra": true
+       }
+      ]
+     },
+     7,
+     null
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool ask_user_question: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"reason\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 40,\n    \"inclusive\": true,\n    \"path\": [\n      \"questions\",\n      0,\n      \"header\"\n    ],\n    \"message\": \"Too big: expected string to have <=40 characters\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"questions\",\n      0,\n      \"question\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"questions\",\n      0,\n      \"options\",\n      0,\n      \"label\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"extra\"\n    ],\n    \"path\": [\n      \"questions\",\n      0,\n      \"options\",\n      0\n    ],\n    \"message\": \"Unrecognized key: \\\"extra\\\"\"\n  },\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_small\",\n    \"minimum\": 2,\n    \"inclusive\": true,\n    \"path\": [\n      \"questions\",\n      0,\n      \"options\"\n    ],\n    \"message\": \"Too small: expected array to have >=2 items\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"zz\",\n      \"aa\"\n    ],\n    \"path\": [\n      \"questions\",\n      0\n    ],\n    \"message\": \"Unrecognized keys: \\\"zz\\\", \\\"aa\\\"\"\n  },\n  {\n    \"expected\": \"object\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"questions\",\n      1\n    ],\n    \"message\": \"Invalid input: expected object, received number\"\n  },\n  {\n    \"expected\": \"object\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"questions\",\n      2\n    ],\n    \"message\": \"Invalid input: expected object, received null\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "ask six options",
+   "servers": [
+    "neko_interaction"
+   ],
+   "tool": "interaction_ask_user_question",
+   "arguments": {
+    "questions": [
+     {
+      "question": "Pick",
+      "options": [
+       {
+        "label": "a"
+       },
+       {
+        "label": "b"
+       },
+       {
+        "label": "c"
+       },
+       {
+        "label": "d"
+       },
+       {
+        "label": "e"
+       },
+       {
+        "label": "f"
+       }
+      ]
+     }
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool ask_user_question: [\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_big\",\n    \"maximum\": 5,\n    \"inclusive\": true,\n    \"path\": [\n      \"questions\",\n      0,\n      \"options\"\n    ],\n    \"message\": \"Too big: expected array to have <=5 items\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "ask option faults",
+   "servers": [
+    "neko_interaction"
+   ],
+   "tool": "interaction_ask_user_question",
+   "arguments": {
+    "questions": [
+     {
+      "question": "Pick",
+      "options": [
+       {
+        "label": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "description": ""
+       },
+       "y"
+      ]
+     }
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool ask_user_question: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 80,\n    \"inclusive\": true,\n    \"path\": [\n      \"questions\",\n      0,\n      \"options\",\n      0,\n      \"label\"\n    ],\n    \"message\": \"Too big: expected string to have <=80 characters\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"questions\",\n      0,\n      \"options\",\n      0,\n      \"description\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"expected\": \"object\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"questions\",\n      0,\n      \"options\",\n      1\n    ],\n    \"message\": \"Invalid input: expected object, received string\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "ask long question",
+   "servers": [
+    "neko_interaction"
+   ],
+   "tool": "interaction_ask_user_question",
+   "arguments": {
+    "reason": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+    "questions": [
+     {
+      "question": "€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€"
+     }
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool ask_user_question: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 500,\n    \"inclusive\": true,\n    \"path\": [\n      \"reason\"\n    ],\n    \"message\": \"Too big: expected string to have <=500 characters\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 500,\n    \"inclusive\": true,\n    \"path\": [\n      \"questions\",\n      0,\n      \"question\"\n    ],\n    \"message\": \"Too big: expected string to have <=500 characters\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "ask events fail",
+   "servers": [
+    "neko_interaction"
+   ],
+   "wantsCards": true,
+   "eventsFail": true,
+   "tool": "interaction_ask_user_question",
+   "arguments": {
+    "questions": [
+     {
+      "question": "Which region?"
+     }
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "broker /v1/events -> 500"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "skill minimal",
+   "servers": [
+    "neko_skills"
+   ],
+   "tool": "skills_create_skill",
+   "arguments": {
+    "name": "Refund Report!!",
+    "description": "  Weekly refunds.  ",
+    "body": "\n# Refunds\n\nRun it.\n\n"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"name\":\"refund-report\",\"skillFile\":\"<skills>/refund-report/SKILL.md\"}"
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {
+    "refund-report/SKILL.md": "---\nname: refund-report\ndescription: \"Weekly refunds.\"\n---\n\n# Refunds\n\nRun it.\n"
+   }
+  },
+  {
+   "name": "skill all fields",
+   "servers": [
+    "neko_skills"
+   ],
+   "tool": "skills_create_skill",
+   "arguments": {
+    "name": "sales-pack",
+    "description": "Sales \"pack\"\nline two",
+    "body": "Body",
+    "license": " Apache-2.0 ",
+    "compatibility": "Needs python3",
+    "metadata": {
+     "owner.team": "ops €",
+     "version": "1"
+    },
+    "allowedTools": "Bash Read",
+    "files": [
+     {
+      "path": "scripts/run.py",
+      "content": "print('hi')\n"
+     },
+     {
+      "path": "\\docs\\a.md",
+      "content": ""
+     },
+     {
+      "path": "//ref/b.txt",
+      "content": "€ text"
+     }
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"name\":\"sales-pack\",\"skillFile\":\"<skills>/sales-pack/SKILL.md\"}"
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {
+    "sales-pack/SKILL.md": "---\nname: sales-pack\ndescription: \"Sales \\\"pack\\\"\\nline two\"\nlicense: \"Apache-2.0\"\ncompatibility: \"Needs python3\"\nmetadata:\n  owner_team: \"ops €\"\n  version: \"1\"\nallowed-tools: \"Bash Read\"\n---\n\nBody\n",
+    "sales-pack/docs/a.md": "",
+    "sales-pack/ref/b.txt": "€ text",
+    "sales-pack/scripts/run.py": "print('hi')\n"
+   }
+  },
+  {
+   "name": "skill long name",
+   "servers": [
+    "neko_skills"
+   ],
+   "tool": "skills_create_skill",
+   "arguments": {
+    "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa b",
+    "description": "d",
+    "body": "b"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool create_skill: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 64,\n    \"inclusive\": true,\n    \"path\": [\n      \"name\"\n    ],\n    \"message\": \"Too big: expected string to have <=64 characters\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "skill name normalizes to nothing",
+   "servers": [
+    "neko_skills"
+   ],
+   "tool": "skills_create_skill",
+   "arguments": {
+    "name": "!!!",
+    "description": "d",
+    "body": "b"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Skill name must use lowercase letters, numbers, and hyphens only."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "skill blank body",
+   "servers": [
+    "neko_skills"
+   ],
+   "tool": "skills_create_skill",
+   "arguments": {
+    "name": "blank",
+    "description": "d",
+    "body": "   "
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Skill body is required."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "skill path escapes",
+   "servers": [
+    "neko_skills"
+   ],
+   "tool": "skills_create_skill",
+   "arguments": {
+    "name": "escape",
+    "description": "d",
+    "body": "b",
+    "files": [
+     {
+      "path": "ok.txt",
+      "content": "1"
+     },
+     {
+      "path": "a/../../x",
+      "content": "2"
+     }
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Invalid skill file path: a/../../x"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {
+    "escape/SKILL.md": "---\nname: escape\ndescription: \"d\"\n---\n\nb\n",
+    "escape/ok.txt": "1"
+   }
+  },
+  {
+   "name": "skill empty path part",
+   "servers": [
+    "neko_skills"
+   ],
+   "tool": "skills_create_skill",
+   "arguments": {
+    "name": "parts",
+    "description": "d",
+    "body": "b",
+    "files": [
+     {
+      "path": "a//b",
+      "content": "2"
+     }
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Invalid skill file path: a//b"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {
+    "parts/SKILL.md": "---\nname: parts\ndescription: \"d\"\n---\n\nb\n"
+   }
+  },
+  {
+   "name": "skill faults",
+   "servers": [
+    "neko_skills"
+   ],
+   "tool": "skills_create_skill",
+   "arguments": {
+    "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "description": "   ",
+    "body": "",
+    "license": "",
+    "metadata": {
+     " ": "v",
+     "ok": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+     "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk": "v"
+    },
+    "files": [
+     {
+      "path": "",
+      "content": 5
+     },
+     {
+      "content": "c"
+     },
+     "f"
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool create_skill: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 64,\n    \"inclusive\": true,\n    \"path\": [\n      \"name\"\n    ],\n    \"message\": \"Too big: expected string to have <=64 characters\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"description\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"body\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"license\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"code\": \"invalid_key\",\n    \"origin\": \"record\",\n    \"issues\": [\n      {\n        \"origin\": \"string\",\n        \"code\": \"too_small\",\n        \"minimum\": 1,\n        \"inclusive\": true,\n        \"path\": [],\n        \"message\": \"Too small: expected string to have >=1 characters\"\n      }\n    ],\n    \"path\": [\n      \"metadata\",\n      \" \"\n    ],\n    \"message\": \"Invalid key in record\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 2048,\n    \"inclusive\": true,\n    \"path\": [\n      \"metadata\",\n      \"ok\"\n    ],\n    \"message\": \"Too big: expected string to have <=2048 characters\"\n  },\n  {\n    \"code\": \"invalid_key\",\n    \"origin\": \"record\",\n    \"issues\": [\n      {\n        \"origin\": \"string\",\n        \"code\": \"too_big\",\n        \"maximum\": 128,\n        \"inclusive\": true,\n        \"path\": [],\n        \"message\": \"Too big: expected string to have <=128 characters\"\n      }\n    ],\n    \"path\": [\n      \"metadata\",\n      \"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\"\n    ],\n    \"message\": \"Invalid key in record\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"files\",\n      0,\n      \"path\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"files\",\n      0,\n      \"content\"\n    ],\n    \"message\": \"Invalid input: expected string, received number\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"files\",\n      1,\n      \"path\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"object\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"files\",\n      2\n    ],\n    \"message\": \"Invalid input: expected object, received string\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "skill too many files",
+   "servers": [
+    "neko_skills"
+   ],
+   "tool": "skills_create_skill",
+   "arguments": {
+    "name": "many",
+    "description": "d",
+    "body": "b",
+    "files": [
+     {
+      "path": "f0.txt",
+      "content": "x"
+     },
+     {
+      "path": "f1.txt",
+      "content": "x"
+     },
+     {
+      "path": "f2.txt",
+      "content": "x"
+     },
+     {
+      "path": "f3.txt",
+      "content": "x"
+     },
+     {
+      "path": "f4.txt",
+      "content": "x"
+     },
+     {
+      "path": "f5.txt",
+      "content": "x"
+     },
+     {
+      "path": "f6.txt",
+      "content": "x"
+     },
+     {
+      "path": "f7.txt",
+      "content": "x"
+     },
+     {
+      "path": "f8.txt",
+      "content": "x"
+     },
+     {
+      "path": "f9.txt",
+      "content": "x"
+     },
+     {
+      "path": "f10.txt",
+      "content": "x"
+     },
+     {
+      "path": "f11.txt",
+      "content": "x"
+     },
+     {
+      "path": "f12.txt",
+      "content": "x"
+     },
+     {
+      "path": "f13.txt",
+      "content": "x"
+     },
+     {
+      "path": "f14.txt",
+      "content": "x"
+     },
+     {
+      "path": "f15.txt",
+      "content": "x"
+     },
+     {
+      "path": "f16.txt",
+      "content": "x"
+     },
+     {
+      "path": "f17.txt",
+      "content": "x"
+     },
+     {
+      "path": "f18.txt",
+      "content": "x"
+     },
+     {
+      "path": "f19.txt",
+      "content": "x"
+     },
+     {
+      "path": "f20.txt",
+      "content": "x"
+     },
+     {
+      "path": "f21.txt",
+      "content": "x"
+     },
+     {
+      "path": "f22.txt",
+      "content": "x"
+     },
+     {
+      "path": "f23.txt",
+      "content": "x"
+     },
+     {
+      "path": "f24.txt",
+      "content": "x"
+     },
+     {
+      "path": "f25.txt",
+      "content": "x"
+     },
+     {
+      "path": "f26.txt",
+      "content": "x"
+     },
+     {
+      "path": "f27.txt",
+      "content": "x"
+     },
+     {
+      "path": "f28.txt",
+      "content": "x"
+     },
+     {
+      "path": "f29.txt",
+      "content": "x"
+     },
+     {
+      "path": "f30.txt",
+      "content": "x"
+     }
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool create_skill: [\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_big\",\n    \"maximum\": 30,\n    \"inclusive\": true,\n    \"path\": [\n      \"files\"\n    ],\n    \"message\": \"Too big: expected array to have <=30 items\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "skill extra fields",
+   "servers": [
+    "neko_skills"
+   ],
+   "tool": "skills_create_skill",
+   "arguments": {
+    "name": "extra",
+    "description": "d",
+    "body": "b",
+    "owner": "someone",
+    "files": [
+     {
+      "path": "a.txt",
+      "content": "a",
+      "mode": "755"
+     }
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"ok\":true,\"name\":\"extra\",\"skillFile\":\"<skills>/extra/SKILL.md\"}"
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {
+    "extra/SKILL.md": "---\nname: extra\ndescription: \"d\"\n---\n\nb\n",
+    "extra/a.txt": "a"
+   }
+  },
+  {
+   "name": "skill metadata not text",
+   "servers": [
+    "neko_skills"
+   ],
+   "tool": "skills_create_skill",
+   "arguments": {
+    "name": "meta",
+    "description": "d",
+    "body": "b",
+    "metadata": {
+     "n": 1
+    },
+    "allowedTools": [
+     "Bash"
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool create_skill: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"metadata\",\n      \"n\"\n    ],\n    \"message\": \"Invalid input: expected string, received number\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"allowedTools\"\n    ],\n    \"message\": \"Invalid input: expected string, received array\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "skill missing fields",
+   "servers": [
+    "neko_skills"
+   ],
+   "tool": "skills_create_skill",
+   "arguments": {},
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool create_skill: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"name\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"description\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"body\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards full report",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": " Revenue by region ",
+    "stage": "final",
+    "table": "| Region | Revenue | Orders |\n|---|---:|---:|\n| North | 12699845.92 | 1,250 |\n| South | 9876543.2 | 980 |\n| East | -3.5 | 0 |",
+    "chart": "bar",
+    "chartColumn": "revenue",
+    "keyFigures": [
+     "Total: $22.6M (up 4%)",
+     "Regions: 3"
+    ],
+    "callout": "North leads.",
+    "mood": "good",
+    "followUps": [
+     "Why is East negative?",
+     "Show orders"
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "Revenue by region",
+          "children": [
+           "keyFigures",
+           "chart",
+           "table",
+           "callout",
+           "followUps"
+          ]
+         },
+         {
+          "id": "keyFigures",
+          "component": "KeyFigures",
+          "items": [
+           {
+            "label": "Total",
+            "value": "$22.6M",
+            "sub": "up 4%"
+           },
+           {
+            "label": "Regions",
+            "value": "3"
+           }
+          ]
+         },
+         {
+          "id": "chart",
+          "component": "Chart",
+          "type": "bar",
+          "title": "Revenue by region",
+          "valueLabel": "Revenue",
+          "data": [
+           {
+            "d": "North",
+            "v": 12699845.92
+           },
+           {
+            "d": "South",
+            "v": 9876543.2
+           },
+           {
+            "d": "East",
+            "v": -3.5
+           }
+          ]
+         },
+         {
+          "id": "table",
+          "component": "Table",
+          "columns": [
+           {
+            "key": "c0",
+            "label": "Region"
+           },
+           {
+            "key": "c1",
+            "label": "Revenue",
+            "align": "right"
+           },
+           {
+            "key": "c2",
+            "label": "Orders",
+            "align": "right"
+           }
+          ],
+          "rows": [
+           {
+            "c0": "North",
+            "c1": "12,699,846",
+            "c2": "1,250"
+           },
+           {
+            "c0": "South",
+            "c1": "9,876,543",
+            "c2": "980"
+           },
+           {
+            "c0": "East",
+            "c1": "-4",
+            "c2": "0"
+           }
+          ]
+         },
+         {
+          "id": "callout",
+          "component": "Callout",
+          "mood": "good",
+          "text": "North leads."
+         },
+         {
+          "id": "followUps",
+          "component": "Choice",
+          "options": [
+           {
+            "label": "Why is East negative?",
+            "prompt": "Why is East negative?"
+           },
+           {
+            "label": "Show orders",
+            "prompt": "Show orders"
+           }
+          ]
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "cards draft auto chart",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Prices",
+    "stage": "draft",
+    "table": "| Item | Price |\n| A | 1.005 |\n| B | 2.5 |\n| C | 0.125 |",
+    "chart": "line"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "Prices",
+          "stage": "draft",
+          "children": [
+           "chart",
+           "table"
+          ]
+         },
+         {
+          "id": "chart",
+          "component": "Chart",
+          "type": "line",
+          "title": "Prices",
+          "valueLabel": "Price",
+          "data": [
+           {
+            "d": "A",
+            "v": 1.005
+           },
+           {
+            "d": "B",
+            "v": 2.5
+           },
+           {
+            "d": "C",
+            "v": 0.125
+           }
+          ]
+         },
+         {
+          "id": "table",
+          "component": "Table",
+          "columns": [
+           {
+            "key": "c0",
+            "label": "Item"
+           },
+           {
+            "key": "c1",
+            "label": "Price",
+            "align": "right"
+           }
+          ],
+          "rows": [
+           {
+            "c0": "A",
+            "c1": "1.01"
+           },
+           {
+            "c0": "B",
+            "c1": "2.50"
+           },
+           {
+            "c0": "C",
+            "c1": "0.13"
+           }
+          ]
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "cards escaped lines",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Lines",
+    "table": "| A | B |\\n| x | 1 |\\n| y | 2 |",
+    "keyFigures": "One: 1\nTwo: 2 (note)\n\n",
+    "followUps": "Next?"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "Lines",
+          "children": [
+           "keyFigures",
+           "table",
+           "followUps"
+          ]
+         },
+         {
+          "id": "keyFigures",
+          "component": "KeyFigures",
+          "items": [
+           {
+            "label": "One",
+            "value": "1"
+           },
+           {
+            "label": "Two",
+            "value": "2",
+            "sub": "note"
+           }
+          ]
+         },
+         {
+          "id": "table",
+          "component": "Table",
+          "columns": [
+           {
+            "key": "c0",
+            "label": "A"
+           },
+           {
+            "key": "c1",
+            "label": "B",
+            "align": "right"
+           }
+          ],
+          "rows": [
+           {
+            "c0": "x",
+            "c1": "1"
+           },
+           {
+            "c0": "y",
+            "c1": "2"
+           }
+          ]
+         },
+         {
+          "id": "followUps",
+          "component": "Choice",
+          "options": [
+           {
+            "label": "Next?",
+            "prompt": "Next?"
+           }
+          ]
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "cards nested arguments",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "arguments": {
+     "title": "Nested",
+     "callout": "Check stock."
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "Nested",
+          "children": [
+           "callout"
+          ]
+         },
+         {
+          "id": "callout",
+          "component": "Callout",
+          "mood": "watch",
+          "text": "Check stock."
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "cards json text",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "input": "{\"title\":\"Json\",\"callout\":\"From text\",\"mood\":\"act\"}"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "Json",
+          "children": [
+           "callout"
+          ]
+         },
+         {
+          "id": "callout",
+          "component": "Callout",
+          "mood": "act",
+          "text": "From text"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "cards empty fields dropped",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Sparse",
+    "table": null,
+    "chart": false,
+    "chartColumn": "",
+    "keyFigures": [],
+    "callout": "Only this.",
+    "extra": "x"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "Sparse",
+          "children": [
+           "callout"
+          ]
+         },
+         {
+          "id": "callout",
+          "component": "Callout",
+          "mood": "watch",
+          "text": "Only this."
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "cards rich fields when core",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Core",
+    "callout": "x",
+    "layout": "compare",
+    "diagram": [
+     "A -> B"
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "Core",
+          "children": [
+           "callout"
+          ]
+         },
+         {
+          "id": "callout",
+          "component": "Callout",
+          "mood": "watch",
+          "text": "x"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "cards compare rich",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Plans",
+    "layout": "compare",
+    "table": "| Plan | Price |\n| Basic | 10 |\n| Pro | 25 |",
+    "rowDetails": [
+     "Basic >> | Feature | Limit |\n| Users | 3 |",
+     "Pro >> | Feature | Limit |\n| Users | 30000.5 |"
+    ],
+    "drillDown": "Tell me about {label}"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "Plans",
+          "children": [
+           "table"
+          ]
+         },
+         {
+          "id": "table",
+          "component": "Compare",
+          "columns": [
+           {
+            "key": "c0",
+            "label": "Plan"
+           },
+           {
+            "key": "c1",
+            "label": "Price",
+            "align": "right"
+           }
+          ],
+          "rows": [
+           {
+            "c0": "Basic",
+            "c1": "10"
+           },
+           {
+            "c0": "Pro",
+            "c1": "25"
+           }
+          ],
+          "details": {
+           "Basic": {
+            "columns": [
+             {
+              "key": "c0",
+              "label": "Feature"
+             },
+             {
+              "key": "c1",
+              "label": "Limit",
+              "align": "right"
+             }
+            ],
+            "rows": [
+             {
+              "c0": "Users",
+              "c1": "3"
+             }
+            ]
+           },
+           "Pro": {
+            "columns": [
+             {
+              "key": "c0",
+              "label": "Feature"
+             },
+             {
+              "key": "c1",
+              "label": "Limit",
+              "align": "right"
+             }
+            ],
+            "rows": [
+             {
+              "c0": "Users",
+              "c1": "30,001"
+             }
+            ]
+           }
+          },
+          "drill": "Tell me about {label}"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "cards what-if",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Price what-if",
+    "controls": [
+     "price_change: Price change (%) = 5 (-20 to 20, step 1)",
+     "Plan: Plan = Basic (10) | Pro (25)",
+     "volume: Volume = 0.5 (0 to 1)"
+    ],
+    "values": [
+     "Road_Revenue = 1,496,791.67"
+    ],
+    "computed": [
+     "New revenue (USD): road_revenue * (1 + price_change / 100)",
+     "Per plan: round(road_revenue / plan, 2) + max(volume, abs(-1)) ^ 2"
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "Price what-if",
+          "children": [
+           "whatIf"
+          ]
+         },
+         {
+          "id": "whatIf",
+          "component": "WhatIf",
+          "controls": [
+           {
+            "name": "price_change",
+            "label": "Price change",
+            "unit": "%",
+            "value": 5,
+            "min": -20,
+            "max": 20,
+            "step": 1
+           },
+           {
+            "name": "plan",
+            "label": "Plan",
+            "value": 10,
+            "min": 10,
+            "max": 25,
+            "step": 1,
+            "options": [
+             {
+              "label": "Basic",
+              "value": 10
+             },
+             {
+              "label": "Pro",
+              "value": 25
+             }
+            ]
+           },
+           {
+            "name": "volume",
+            "label": "Volume",
+            "value": 0.5,
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+           }
+          ],
+          "values": {
+           "road_revenue": 1496791.67
+          },
+          "outputs": [
+           {
+            "label": "New revenue",
+            "unit": "USD",
+            "expression": "road_revenue * (1 + price_change / 100)"
+           },
+           {
+            "label": "Per plan",
+            "expression": "round(road_revenue / plan, 2) + max(volume, abs(-1)) ^ 2"
+           }
+          ]
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "cards what-if faults",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Bad",
+    "controls": [
+     "a: A = 5 (10 to 1)",
+     "b: B = 50 (0 to 10)",
+     "c: C = 1 (0 to 2, step 0)",
+     "nope",
+     "d: D = X | Y (2)",
+     "a: Again = 1 (0 to 2)"
+    ],
+    "values": [
+     "e = 1",
+     "bad"
+    ],
+    "computed": [
+     "Out: a + zz",
+     "Div: 1 / 0",
+     "Parse: a +",
+     "NoColon",
+     "Fn: foo(1)",
+     "Arity: abs(1, 2)",
+     "Paren: (a",
+     "Char: a $ 2"
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- controls: Too big: expected array to have <=4 items\n- computed: Too big: expected array to have <=6 items"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards what-if half",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Half",
+    "controls": [
+     "a: A = 1 (0 to 2)"
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- Fill at least one of table, keyFigures, callout, followUps, computed, map, diagram, tool.\n- controls and computed go together: the controls move, the computed results follow."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards what-if non-finite",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Inf",
+    "controls": [
+     "a: A = 0 (0 to 2)"
+    ],
+    "values": [
+     "one = 1"
+    ],
+    "computed": [
+     "Pow: one ^ (1 / a)",
+     "Ok: min(a, one, 3) + floor(1.5) + ceil(0.2) + round(2.5) + 1e400 - 1e400"
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- computed.0 gives no finite number at the default control values.\n- computed.1 gives no finite number at the default control values."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards map and diagram",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Stores",
+    "map": [
+     "Paris @ 48.85, 2.35: 1,200",
+     "Lyon @45.76,4.84:300"
+    ],
+    "mapValue": "Sales (EUR)",
+    "diagram": [
+     "Order -> Pick: 2h",
+     "Pick -> Ship",
+     "order -> Cancel",
+     "Standalone"
+    ],
+    "drillDown": "Explain {label}"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "Stores",
+          "children": [
+           "map",
+           "diagram"
+          ]
+         },
+         {
+          "id": "map",
+          "component": "AnswerMap",
+          "title": "Stores",
+          "valueLabel": "Sales (EUR)",
+          "points": [
+           {
+            "label": "Paris",
+            "lat": 48.85,
+            "lon": 2.35,
+            "v": 1200
+           },
+           {
+            "label": "Lyon",
+            "lat": 45.76,
+            "lon": 4.84,
+            "v": 300
+           }
+          ],
+          "drill": "Explain {label}"
+         },
+         {
+          "id": "diagram",
+          "component": "Diagram",
+          "title": "Stores",
+          "nodes": [
+           {
+            "id": "Order",
+            "label": "Order"
+           },
+           {
+            "id": "Pick",
+            "label": "Pick"
+           },
+           {
+            "id": "Ship",
+            "label": "Ship"
+           },
+           {
+            "id": "Cancel",
+            "label": "Cancel"
+           },
+           {
+            "id": "Standalone",
+            "label": "Standalone"
+           }
+          ],
+          "edges": [
+           {
+            "from": "Order",
+            "to": "Pick",
+            "label": "2h"
+           },
+           {
+            "from": "Pick",
+            "to": "Ship"
+           },
+           {
+            "from": "Order",
+            "to": "Cancel"
+           }
+          ],
+          "drill": "Explain {label}"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "cards map and diagram faults",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Bad map",
+    "map": [
+     "Nowhere @ 91, 0: 5",
+     "Neg @ 1, 1: -5",
+     "Text"
+    ],
+    "diagram": [
+     "-> B",
+     "N0",
+     "N1",
+     "N2",
+     "N3",
+     "N4",
+     "N5",
+     "N6",
+     "N7",
+     "N8",
+     "N9",
+     "N10",
+     "N11",
+     "N12",
+     "N13",
+     "N14",
+     "N15",
+     "N16",
+     "N17",
+     "N18",
+     "N19",
+     "N20",
+     "N21",
+     "N22",
+     "N23",
+     "N24",
+     "N25",
+     "N26",
+     "N27",
+     "N28",
+     "N29",
+     "N30"
+    ],
+    "drillDown": "no placeholder"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- drillDown needs {label} where the item's name goes.\n- map.0 needs the form \"Place @ latitude, longitude: value\" with latitude -90 to 90 and longitude -180 to 180.\n- map.2 needs the form \"Place @ latitude, longitude: value\" with latitude -90 to 90 and longitude -180 to 180.\n- map values need to be 0 or more.\n- diagram.0 needs the form \"From -> To\" with an optional \": label\".\n- a diagram holds up to 30 steps."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards tool",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Calc",
+    "tool": "<label>Qty <input id=q></label><output id=o></output><script>q.oninput=()=>o.value=q.value*2</script><a href=\"#top\">top</a><img src=\"data:image/png;base64,AA\">"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "Calc",
+          "children": [
+           "tool"
+          ]
+         },
+         {
+          "id": "tool",
+          "component": "AnswerTool",
+          "title": "Calc",
+          "html": "<label>Qty <input id=q></label><output id=o></output><script>q.oninput=()=>o.value=q.value*2</script><a href=\"#top\">top</a><img src=\"data:image/png;base64,AA\">"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "cards tool reaches out",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Calc",
+    "tool": "<img src=' https://x.example/a.png'>"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards tool fetch",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Calc",
+    "tool": "<button onclick=\"fetch('/x')\">Go</button>"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards tool css url",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Calc",
+    "tool": "<div style=\"background: url( 'DATA:x')\">a</div><div style=\"background:url(http://x)\">b</div>"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards tool protocol relative",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Calc",
+    "tool": "<script>let a = 1;</script><link rel=x><p>hi</p>"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards table faults",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Bad",
+    "table": "| A | B |\n| 1 |",
+    "chart": "bar"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- table row 1 needs 2 cells, one per column."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards table one row",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Bad",
+    "table": "| A | B |\n|---|---|"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- table needs a header row and at least one data row."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards chart column faults",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Bad",
+    "table": "| Region | Revenue | Orders |\n|---|---:|---:|\n| North | 12699845.92 | 1,250 |\n| South | 9876543.2 | 980 |\n| East | -3.5 | 0 |",
+    "chart": "bar",
+    "chartColumn": "Region"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- chartColumn must be one of the table's value columns: Revenue, Orders."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards chart no numbers",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Bad",
+    "table": "| A | B |\n| x | y |\n| z | 1 |",
+    "chart": "area"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- chart needs a table column of plain numbers, such as 12699845.92; name it in chartColumn."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards chart bad value",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Bad",
+    "table": "| A | B |\n| x | 1 |\n| z | n/a |",
+    "chart": "area",
+    "chartColumn": "b"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- table row 2 needs a plain number in the B column, such as 12699845.92."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards chart one point",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Bad",
+    "table": "| A | B |\n| x | 1 |",
+    "chart": "line"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- chart needs 2 to 60 table rows."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards donut",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Mix",
+    "table": "| Region | Revenue | Orders |\n|---|---:|---:|\n| North | 12699845.92 | 1,250 |\n| South | 9876543.2 | 980 |\n| East | -3.5 | 0 |",
+    "chart": "donut",
+    "chartColumn": "Orders"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "Mix",
+          "children": [
+           "chart",
+           "table"
+          ]
+         },
+         {
+          "id": "chart",
+          "component": "Chart",
+          "type": "donut",
+          "title": "Mix",
+          "valueLabel": "Orders",
+          "data": [
+           {
+            "d": "North",
+            "v": 1250
+           },
+           {
+            "d": "South",
+            "v": 980
+           },
+           {
+            "d": "East",
+            "v": 0
+           }
+          ]
+         },
+         {
+          "id": "table",
+          "component": "Table",
+          "columns": [
+           {
+            "key": "c0",
+            "label": "Region"
+           },
+           {
+            "key": "c1",
+            "label": "Revenue",
+            "align": "right"
+           },
+           {
+            "key": "c2",
+            "label": "Orders",
+            "align": "right"
+           }
+          ],
+          "rows": [
+           {
+            "c0": "North",
+            "c1": "12,699,846",
+            "c2": "1,250"
+           },
+           {
+            "c0": "South",
+            "c1": "9,876,543",
+            "c2": "980"
+           },
+           {
+            "c0": "East",
+            "c1": "-4",
+            "c2": "0"
+           }
+          ]
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "cards donut negative",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Mix",
+    "table": "| Region | Revenue | Orders |\n|---|---:|---:|\n| North | 12699845.92 | 1,250 |\n| South | 9876543.2 | 980 |\n| East | -3.5 | 0 |",
+    "chart": "donut",
+    "chartColumn": "Revenue"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- a donut needs 2 to 8 rows with nonnegative values."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards compare faults",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Cmp",
+    "layout": "compare",
+    "table": "| A | B |\n| x | 1 |",
+    "rowDetails": [
+     "y >> | C |\n| 1 |",
+     "x >> | C |"
+    ],
+    "chart": "pie"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- chart: Invalid option: expected one of \"line\"|\"bar\"|\"area\"|\"donut\""
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards layout without table",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Cmp",
+    "layout": "compare",
+    "chart": "bar",
+    "rowDetails": [
+     "x >> | C |\n| 1 |"
+    ],
+    "callout": "c"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- chart draws from table; add a table.\n- compare shows table rows side by side; add a table.\n- rowDetails open under table rows; add a table."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards empty answer",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Nothing",
+    "stage": "draft"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- Fill at least one of table, keyFigures, callout, followUps, computed, map, diagram, tool."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards schema faults",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "  ",
+    "stage": "done",
+    "keyFigures": [
+     "Bad",
+     "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+     3,
+     "A: 1",
+     "B: 2",
+     "C: 3",
+     "D: 4"
+    ],
+    "callout": 5,
+    "mood": "calm",
+    "followUps": true
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- title: Too small: expected string to have >=1 characters\n- stage: Invalid option: expected one of \"draft\"|\"final\"\n- keyFigures.1: Too big: expected string to have <=160 characters\n- keyFigures.2: Invalid input: expected string, received number\n- keyFigures: Too big: expected array to have <=6 items\n- callout: Invalid input: expected string, received number\n- mood: Invalid option: expected one of \"good\"|\"watch\"|\"act\"\n- followUps: Invalid input: expected array, received boolean"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards key figure faults",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "KF",
+    "keyFigures": [
+     "Label:",
+     ": 5",
+     "Total: (only note)",
+     "Margin: 12% (vs 10%) (est)"
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- keyFigures.0 needs the form \"Label: value\".\n- keyFigures.1 needs the form \"Label: value\"."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards missing title",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "callout": "x"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- title: Invalid input: expected string, received undefined"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards not an object",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "only": [
+     1,
+     2
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- title: Invalid input: expected string, received undefined"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards no arguments",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- input: Invalid input: expected object, received undefined"
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards number formats",
+   "servers": [
+    "neko_ui"
+   ],
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Fmt",
+    "table": "| N | Big | Mixed | Neg | Zero |\n| a | 12345.678 | 1.5 | -0.004 | -0 |\n| b | 1e21 | 9999.995 | -1,234.5 | 0 |\n| c | 0x10 | 2 | 1. | .5 |"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "Fmt",
+          "children": [
+           "table"
+          ]
+         },
+         {
+          "id": "table",
+          "component": "Table",
+          "columns": [
+           {
+            "key": "c0",
+            "label": "N"
+           },
+           {
+            "key": "c1",
+            "label": "Big",
+            "align": "right"
+           },
+           {
+            "key": "c2",
+            "label": "Mixed",
+            "align": "right"
+           },
+           {
+            "key": "c3",
+            "label": "Neg",
+            "align": "right"
+           },
+           {
+            "key": "c4",
+            "label": "Zero",
+            "align": "right"
+           }
+          ],
+          "rows": [
+           {
+            "c0": "a",
+            "c1": "12,346",
+            "c2": "1.50",
+            "c3": "-0.00",
+            "c4": "-0.00"
+           },
+           {
+            "c0": "b",
+            "c1": "1,000,000,000,000,000,000,000",
+            "c2": "10,000.00",
+            "c3": "-1,234.50",
+            "c4": "0.00"
+           },
+           {
+            "c0": "c",
+            "c1": "16",
+            "c2": "2.00",
+            "c3": "1.00",
+            "c4": "0.50"
+           }
+          ]
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "cards events fail",
+   "servers": [
+    "neko_ui"
+   ],
+   "eventsFail": true,
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Fail",
+    "callout": "x"
+   },
+   "error": "MCP error -32603: MCP error -32603: broker /v1/events -> 500",
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards tool javascript link",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "T",
+    "tool": "<a href=\"javascript:alert(1)\">x</a>"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards tool hash and data",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "T",
+    "tool": "<a href = '#x'>x</a><img srcset=\" data:image/png;base64,AA\"><p data-x=\"1\">y</p>"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "T",
+          "children": [
+           "tool"
+          ]
+         },
+         {
+          "id": "tool",
+          "component": "AnswerTool",
+          "title": "T",
+          "html": "<a href = '#x'>x</a><img srcset=\" data:image/png;base64,AA\"><p data-x=\"1\">y</p>"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "cards tool protocol-relative src",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "T",
+    "tool": "<img src = '//cdn.example/a.png'>"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards tool window open",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "T",
+    "tool": "<script type=module>\nwindow . open('x')\n</script >"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards tool handler import",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "T",
+    "tool": "<body onload=import('x')>"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards tool location outside script",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "T",
+    "tool": "<p>location.href and fetch are words here</p>"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "T",
+          "children": [
+           "tool"
+          ]
+         },
+         {
+          "id": "tool",
+          "component": "AnswerTool",
+          "title": "T",
+          "html": "<p>location.href and fetch are words here</p>"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "cards tool upper iframe",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "T",
+    "tool": "< IFRAME></iframe>"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards choice faults",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "F",
+    "controls": [
+     "c: C = One (1) | Two (2) | Three (x)",
+     "d: D = O0 (0) | O1 (1) | O2 (2) | O3 (3) | O4 (4) | O5 (5) | O6 (6) | O7 (7) | O8 (8) | O9 (9) | O10 (10) | O11 (11) | O12 (12)"
+    ],
+    "computed": [
+     "Out: 1"
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- controls.0 needs each choice in the form \"Option (number)\", separated by |.\n- controls.1 has more than 12 choices."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards tool upper data attr",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "T",
+    "tool": "<object DATA=\"https://x\"></object>"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards tool safe script",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "T",
+    "tool": "<script>const total = [1,2].reduce((a, b) => a + b); document.getElementById('o').textContent = total; const reopen = 1;</script><output id=o></output>"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "T",
+          "children": [
+           "tool"
+          ]
+         },
+         {
+          "id": "tool",
+          "component": "AnswerTool",
+          "title": "T",
+          "html": "<script>const total = [1,2].reduce((a, b) => a + b); document.getElementById('o').textContent = total; const reopen = 1;</script><output id=o></output>"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "cards formula faults",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "F",
+    "controls": [
+     "a: A = 2 (0 to 4)"
+    ],
+    "values": [
+     "b = 3"
+    ],
+    "computed": [
+     "Two numbers: 1.50 2.50",
+     "Empty:   ",
+     "No args: max()",
+     "Many: min(1,2,3,4,5,6,7,8,9)",
+     "Close: abs(1",
+     "Op: a * * b"
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards not shown. Fix and call again:\n- computed.0: unexpected \"2.5\".\n- computed.1: the formula is empty.\n- computed.2: max takes 1 to 8 values.\n- computed.3: min takes 1 to 8 values.\n- computed.4: close abs( with ).\n- computed.5: unexpected \"*\"."
+     }
+    ],
+    "isError": true
+   },
+   "controlPlane": [],
+   "events": [],
+   "files": {}
+  },
+  {
+   "name": "cards formula forms",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "F",
+    "controls": [
+     "a: A = 2 (0 to 12.5)",
+     "b: B (kg) = 0.05 (0 to 0.07)",
+     "c: C = 1 (-3 to 997)"
+    ],
+    "computed": [
+     "Right: a ^ b ^ 2",
+     "Neg: -a ^ 2 + +b",
+     "Round: round(a * 1234.5, -1) + round(c)",
+     "Exp: 1.5e3 * .5 + 5. - A",
+     "Unit (a very long unit text here): a"
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "F",
+          "children": [
+           "whatIf"
+          ]
+         },
+         {
+          "id": "whatIf",
+          "component": "WhatIf",
+          "controls": [
+           {
+            "name": "a",
+            "label": "A",
+            "value": 2,
+            "min": 0,
+            "max": 12.5,
+            "step": 0.13
+           },
+           {
+            "name": "b",
+            "label": "B",
+            "unit": "kg",
+            "value": 0.05,
+            "min": 0,
+            "max": 0.07,
+            "step": 0.0007
+           },
+           {
+            "name": "c",
+            "label": "C",
+            "value": 1,
+            "min": -3,
+            "max": 997,
+            "step": 10
+           }
+          ],
+          "values": {},
+          "outputs": [
+           {
+            "label": "Right",
+            "expression": "a ^ b ^ 2"
+           },
+           {
+            "label": "Neg",
+            "expression": "-a ^ 2 + +b"
+           },
+           {
+            "label": "Round",
+            "expression": "round(a * 1234.5, -1) + round(c)"
+           },
+           {
+            "label": "Exp",
+            "expression": "1.5e3 * .5 + 5. - A"
+           },
+           {
+            "label": "Unit (a very long unit text here)",
+            "expression": "a"
+           }
+          ]
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "cards control odd numbers",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "F",
+    "controls": [
+     "a: A = 1.2.3 (0 to 2)",
+     "b: B = 1 (0 to 2, step 1.2.3)"
+    ],
+    "computed": [
+     "Out: b"
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "F",
+          "children": [
+           "whatIf"
+          ]
+         },
+         {
+          "id": "whatIf",
+          "component": "WhatIf",
+          "controls": [
+           {
+            "name": "a",
+            "label": "A",
+            "min": 0,
+            "max": 2,
+            "step": 0.02
+           },
+           {
+            "name": "b",
+            "label": "B",
+            "value": 1,
+            "min": 0,
+            "max": 2,
+            "step": 0.02
+           }
+          ],
+          "values": {},
+          "outputs": [
+           {
+            "label": "Out",
+            "expression": "b"
+           }
+          ]
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "cards control unused default",
+   "servers": [
+    "neko_ui"
+   ],
+   "cardSchema": "rich",
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "F",
+    "controls": [
+     "a: A = 1.2.3 (0 to 2)",
+     "b: B = 1 (0 to 2)"
+    ],
+    "computed": [
+     "Out: b"
+    ]
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "F",
+          "children": [
+           "whatIf"
+          ]
+         },
+         {
+          "id": "whatIf",
+          "component": "WhatIf",
+          "controls": [
+           {
+            "name": "a",
+            "label": "A",
+            "min": 0,
+            "max": 2,
+            "step": 0.02
+           },
+           {
+            "name": "b",
+            "label": "B",
+            "value": 1,
+            "min": 0,
+            "max": 2,
+            "step": 0.02
+           }
+          ],
+          "values": {},
+          "outputs": [
+           {
+            "label": "Out",
+            "expression": "b"
+           }
+          ]
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
+  },
+  {
+   "name": "cards and ask together",
+   "servers": [
+    "neko_interaction",
+    "neko_ui",
+    "neko_skills"
+   ],
+   "wantsCards": true,
+   "tool": "ui_render_cards",
+   "arguments": {
+    "title": "Both",
+    "callout": "x"
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Cards shown."
+     }
+    ]
+   },
+   "controlPlane": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "answer-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "title": "Both",
+          "children": [
+           "callout"
+          ]
+         },
+         {
+          "id": "callout",
+          "component": "Callout",
+          "mood": "watch",
+          "text": "x"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "files": {}
   }
  ]
 }

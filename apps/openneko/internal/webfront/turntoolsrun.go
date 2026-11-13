@@ -25,6 +25,8 @@ type turnBinding struct {
 	OrgID, ThreadID, RunID, Kind string
 	MemoryReadOnly               bool
 	GraphjinToolPolicy           string
+	WantsCards                   bool
+	CardSchema, SkillsRoot       string
 }
 
 func (b turnBinding) trace() traceBinding {
@@ -111,6 +113,7 @@ type toolBackend interface {
 	queryFiles(ctx context.Context, in fileSQLIn) (any, error)
 	listGraphjinTools(ctx context.Context, in graphjinCaller) (any, error)
 	callGraphjinTool(ctx context.Context, in graphjinToolCall) (any, error)
+	emitEvent(ctx context.Context, event any) error
 }
 
 var memoryKindEnum = []string{"preference", "business_rule", "metric_definition", "thread_note", "correction", "company_context", "other"}
@@ -134,6 +137,12 @@ func turnTools(b turnBinding, be toolBackend, servers []string) (*toolServer, er
 			groups = append(groups, toolGroup{static: fileTools(b, be)})
 		case "neko_graphjin":
 			groups = append(groups, graphjinTools(b, be))
+		case "neko_interaction":
+			groups = append(groups, toolGroup{static: interactionTools(b, be)})
+		case "neko_ui":
+			groups = append(groups, toolGroup{dynamic: cardTools(b, be)})
+		case "neko_skills":
+			groups = append(groups, toolGroup{static: skillTools(b)})
 		default:
 			return nil, fmt.Errorf("mcp-bridge: unknown server %s", name)
 		}
@@ -274,12 +283,24 @@ func fileTools(b turnBinding, be toolBackend) []toolDef {
 type runTools struct {
 	api     *API
 	binding turnBinding
+	events  func(ctx context.Context, event any) error
 
 	once     sync.Once
 	identity [3]*string
 }
 
 func (a *API) runTools(b turnBinding) *runTools { return &runTools{api: a, binding: b} }
+
+// emitEvent is the broker's /v1/events: an audit row, then the run's event
+// sink. The turn sets the sink; with none, the event is dropped and logged.
+func (r *runTools) emitEvent(ctx context.Context, event any) error {
+	r.audit(ctx, "/v1/events")
+	if r.events == nil {
+		log.Printf("[agent-broker] dropped 1 event(s) for %s: no event sink", r.binding.RunID)
+		return nil
+	}
+	return r.events(ctx, event)
+}
 
 // audit is auditControlPlaneCall(): one control_plane_audit row per call,
 // best effort.

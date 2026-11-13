@@ -7,10 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -26,6 +29,8 @@ type fakeTools struct {
 	audits     []string
 	gjTools    any
 	listThrows string
+	events     []any
+	eventsFail bool
 }
 
 func (f *fakeTools) record(method string, in any) (any, error) {
@@ -83,6 +88,15 @@ func (f *fakeTools) listGraphjinTools(_ context.Context, in graphjinCaller) (any
 func (f *fakeTools) callGraphjinTool(_ context.Context, in graphjinToolCall) (any, error) {
 	return f.record("callGraphjinTool", in)
 }
+func (f *fakeTools) emitEvent(_ context.Context, event any) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.eventsFail {
+		return errors.New("broker /v1/events -> 500")
+	}
+	f.events = append(f.events, decodeAny([]byte(jsStringify(event, false))))
+	return nil
+}
 
 func mustJSON(v any) []byte {
 	raw, err := json.Marshal(v)
@@ -137,6 +151,7 @@ func TestTurnToolsMatchNode(t *testing.T) {
 			Servers        []string
 			MemoryReadOnly bool
 			Policy         string
+			CardSchema     string
 			GraphjinTools  json.RawMessage
 			ListThrows     string
 			Tools          json.RawMessage
@@ -147,6 +162,9 @@ func TestTurnToolsMatchNode(t *testing.T) {
 			MemoryReadOnly bool
 			Policy         string
 			ListFirst      bool
+			WantsCards     bool
+			CardSchema     string
+			EventsFail     bool
 			GraphjinTools  json.RawMessage
 			ListThrows     string
 			Tool           string
@@ -158,12 +176,14 @@ func TestTurnToolsMatchNode(t *testing.T) {
 			Result       json.RawMessage
 			Error        string
 			ControlPlane json.RawMessage
+			Events       json.RawMessage
+			Files        map[string]string
 		}
 	}
 	if err := json.Unmarshal(raw, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if len(fixture.Lists) != 6 || len(fixture.Calls) < 55 {
+	if len(fixture.Lists) != 8 || len(fixture.Calls) < 119 {
 		t.Fatalf("fixture holds %d lists and %d calls", len(fixture.Lists), len(fixture.Calls))
 	}
 	gjTools := func(own json.RawMessage) any {
@@ -180,6 +200,7 @@ func TestTurnToolsMatchNode(t *testing.T) {
 		b := fixtureBinding
 		b.MemoryReadOnly = list.MemoryReadOnly
 		b.GraphjinToolPolicy = list.Policy
+		b.CardSchema = list.CardSchema
 		s, err := turnTools(b, &fakeTools{gjTools: gjTools(list.GraphjinTools), listThrows: list.ListThrows}, list.Servers)
 		if err != nil {
 			t.Fatal(err)
@@ -196,7 +217,10 @@ func TestTurnToolsMatchNode(t *testing.T) {
 		b := fixtureBinding
 		b.MemoryReadOnly = c.MemoryReadOnly
 		b.GraphjinToolPolicy = c.Policy
-		fake := &fakeTools{gjTools: gjTools(c.GraphjinTools), listThrows: c.ListThrows}
+		b.WantsCards = c.WantsCards
+		b.CardSchema = c.CardSchema
+		b.SkillsRoot = t.TempDir()
+		fake := &fakeTools{gjTools: gjTools(c.GraphjinTools), listThrows: c.ListThrows, eventsFail: c.EventsFail}
 		if c.Reply != nil {
 			fake.throws = c.Reply.Throws
 			if len(c.Reply.Value) > 0 {
@@ -215,8 +239,11 @@ func TestTurnToolsMatchNode(t *testing.T) {
 			}
 		}
 		var args any
-		_ = json.Unmarshal(c.Arguments, &args)
+		if len(c.Arguments) > 0 {
+			args = c.Arguments
+		}
 		got, rpcErr := callTool(t, s, c.Tool, args)
+		got = fixtureNeutral(got, b.SkillsRoot)
 		if c.Error != "" {
 			if rpcErr == nil || fmt.Sprintf("MCP error %d: %s", rpcErr.Code, rpcErr.Message) != c.Error {
 				t.Errorf("%s: error %v, want %q", c.Name, rpcErr, c.Error)
@@ -231,10 +258,46 @@ func TestTurnToolsMatchNode(t *testing.T) {
 		if !reflect.DeepEqual(decodeAny(mustJSON(calls)), decodeAny(c.ControlPlane)) {
 			t.Errorf("%s: control plane calls\n got %s\nwant %s", c.Name, mustJSON(calls), compactJSON(t, c.ControlPlane))
 		}
+		events := fake.events
+		if events == nil {
+			events = []any{}
+		}
+		if gotEvents := fixtureNeutral(string(mustJSON(events)), b.SkillsRoot); !reflect.DeepEqual(decodeAny([]byte(gotEvents)), decodeAny(c.Events)) {
+			t.Errorf("%s: events\n got %s\nwant %s", c.Name, gotEvents, compactJSON(t, c.Events))
+		}
+		if files := treeFiles(t, b.SkillsRoot); !reflect.DeepEqual(files, c.Files) && len(files)+len(c.Files) > 0 {
+			t.Errorf("%s: files\n got %v\nwant %v", c.Name, files, c.Files)
+		}
 		if len(fake.audits) != len(fake.calls) {
 			t.Errorf("%s: %d audit rows for %d control plane calls", c.Name, len(fake.audits), len(fake.calls))
 		}
 	}
+}
+
+var surfaceIDPattern = regexp.MustCompile(`answer-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
+
+func fixtureNeutral(text, skillsRoot string) string {
+	root, _ := json.Marshal(skillsRoot)
+	text = strings.ReplaceAll(text, strings.Trim(string(root), `"`), "<skills>")
+	return surfaceIDPattern.ReplaceAllString(text, "answer-<id>")
+}
+
+func treeFiles(t *testing.T, root string) map[string]string {
+	t.Helper()
+	files := map[string]string{}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		raw, err := os.ReadFile(path)
+		rel, _ := filepath.Rel(root, path)
+		files[filepath.ToSlash(rel)] = string(raw)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
 }
 
 func dropKeys(o *jsObj, keys ...string) *jsObj {
@@ -372,7 +435,9 @@ func TestTurnToolsWithMCPClient(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	fake := &fakeTools{reply: []any{}}
-	s, err := turnTools(fixtureBinding, fake, []string{"neko_memory", "neko_files"})
+	b := fixtureBinding
+	b.WantsCards, b.SkillsRoot = true, t.TempDir()
+	s, err := turnTools(b, fake, []string{"neko_memory", "neko_files", "neko_interaction", "neko_ui", "neko_skills"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +461,7 @@ func TestTurnToolsWithMCPClient(t *testing.T) {
 	for _, tool := range listed.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "memory_search,memory_save,memory_update,files_search,files_read_text,files_query_tables" {
+	if strings.Join(names, ",") != "memory_search,memory_save,memory_update,files_search,files_read_text,files_query_tables,interaction_ask_user_question,ui_render_cards,skills_create_skill" {
 		t.Fatalf("tools: %v", names)
 	}
 	var wg sync.WaitGroup
@@ -427,6 +492,24 @@ func TestTurnToolsWithMCPClient(t *testing.T) {
 		!strings.Contains(err.Error(), "mcp-bridge: unknown tool graphjin_execute_graphql") {
 		t.Fatalf("unknown tool: %v", err)
 	}
+	res, err = session.CallTool(ctx, &mcp.CallToolParams{Name: "ui_render_cards", Arguments: map[string]any{"title": "Sales", "table": "| Region | Total |\n| EU | 1200.5 |", "callout": "EU leads."}})
+	if err != nil || res.IsError || res.Content[0].(*mcp.TextContent).Text != "Cards shown." {
+		t.Fatalf("cards: %v %+v", err, res)
+	}
+	res, err = session.CallTool(ctx, &mcp.CallToolParams{Name: "interaction_ask_user_question", Arguments: map[string]any{"questions": []any{map[string]any{"question": "Which year?"}}}})
+	if err != nil || res.IsError {
+		t.Fatalf("ask: %v %+v", err, res)
+	}
+	res, err = session.CallTool(ctx, &mcp.CallToolParams{Name: "skills_create_skill", Arguments: map[string]any{"name": "Year End", "description": "Close the year.", "body": "Steps."}})
+	if err != nil || res.IsError {
+		t.Fatalf("skill: %v %+v", err, res)
+	}
+	if raw, err := os.ReadFile(filepath.Join(b.SkillsRoot, "year-end", "SKILL.md")); err != nil || !strings.HasPrefix(string(raw), "---\nname: year-end\n") {
+		t.Fatalf("skill file: %v %q", err, raw)
+	}
+	if len(fake.events) != 3 || fake.events[0].(map[string]any)["type"] != "surface" || fake.events[2].(map[string]any)["type"] != "needs_input" {
+		t.Fatalf("events: %s", mustJSON(fake.events))
+	}
 	if err := session.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -436,7 +519,7 @@ func TestTurnToolsWithMCPClient(t *testing.T) {
 	if len(fake.calls) != 8 || len(fake.audits) != 8 {
 		t.Fatalf("%d calls, %d audits", len(fake.calls), len(fake.audits))
 	}
-	if _, err := turnTools(fixtureBinding, fake, []string{"neko_ui"}); err == nil {
+	if _, err := turnTools(fixtureBinding, fake, []string{"neko_action"}); err == nil {
 		t.Fatal("a server that is not ported must be an error")
 	}
 }
@@ -594,6 +677,60 @@ func TestTurnToolsDatabase(t *testing.T) {
 		"/v1/files/read member member test,/v1/files/sql member member test"
 	if strings.Join(audits, ",") != want {
 		t.Fatalf("audit rows:\n%s", strings.Join(audits, ","))
+	}
+}
+
+func TestTurnEventsDatabase(t *testing.T) {
+	f, db := memoryFront(t)
+	ctx := context.Background()
+	b := turnBinding{OrgID: "org", ThreadID: threadMine, RunID: runMine, Kind: "work", WantsCards: true, CardSchema: "rich", SkillsRoot: t.TempDir()}
+	backend := f.API.runTools(b)
+	var sunk []string
+	backend.events = func(_ context.Context, event any) error {
+		sunk = append(sunk, jsStringify(event, false))
+		return nil
+	}
+	s, err := turnTools(b, backend, []string{"neko_interaction", "neko_ui", "neko_skills"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := callTool(t, s, "ui_render_cards", map[string]any{"title": "Map", "map": []any{"Paris @ 48.85, 2.35: 10"}})
+	if got != `{"content":[{"type":"text","text":"Cards shown."}]}` || len(sunk) != 1 || !strings.Contains(sunk[0], `"component":"AnswerMap"`) {
+		t.Fatalf("cards: %s %v", got, sunk)
+	}
+	got, _ = callTool(t, s, "interaction_ask_user_question", map[string]any{"questions": []any{map[string]any{"question": "Which store?"}}})
+	if !strings.Contains(got, `needs_input`) || len(sunk) != 3 || !strings.HasPrefix(sunk[2], `{"type":"needs_input","question":"Which store?"`) {
+		t.Fatalf("ask: %s %v", got, sunk)
+	}
+	backend.events = func(context.Context, any) error { return errors.New("the run has ended") }
+	if got, _ = callTool(t, s, "interaction_ask_user_question", map[string]any{"questions": []any{map[string]any{"question": "Which store?"}}}); got != `{"content":[{"type":"text","text":"the run has ended"}],"isError":true}` {
+		t.Fatalf("sink fault: %s", got)
+	}
+	backend.events = nil
+	if got, _ = callTool(t, s, "ui_render_cards", map[string]any{"title": "No sink", "callout": "x"}); got != `{"content":[{"type":"text","text":"Cards shown."}]}` {
+		t.Fatalf("no sink: %s", got)
+	}
+	if _, rpcErr := callTool(t, s, "skills_create_skill", map[string]any{"name": "close", "description": "d", "body": "b"}); rpcErr != nil {
+		t.Fatal(rpcErr)
+	}
+	var paths []string
+	rows, err := db.Query(ctx, `select path || ' ' || coalesce(actor_user_id, '') from control_plane_audit where run_id = $1 order by id`, runMine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var p string
+		_ = rows.Scan(&p)
+		paths = append(paths, p)
+	}
+	if strings.Join(paths, ",") != "/v1/events member,/v1/events member,/v1/events member,/v1/events member,/v1/events member" {
+		t.Fatalf("audit rows: %v", paths)
+	}
+
+	b.SkillsRoot = ""
+	s, _ = turnTools(b, backend, []string{"neko_skills"})
+	if got, _ = callTool(t, s, "skills_create_skill", map[string]any{"name": "close", "description": "d", "body": "b"}); !strings.Contains(got, "The skills folder is not set for this run.") {
+		t.Fatalf("no skills folder: %s", got)
 	}
 }
 

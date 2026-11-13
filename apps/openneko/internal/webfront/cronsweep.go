@@ -163,7 +163,8 @@ func (a *API) behaviorSweep(ctx context.Context, orgID string, limits behaviorTh
 	return persisted, nil
 }
 
-// jsUndefined is a watcher value whose path is missing from the result.
+// jsUndefined is JavaScript undefined: a missing value, as a watcher path
+// that the result does not hold.
 type jsUndefined struct{}
 
 // jsonText is JSON.stringify(v); ok is false where JavaScript gives undefined.
