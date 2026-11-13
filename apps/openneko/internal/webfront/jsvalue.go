@@ -30,6 +30,8 @@ func (o *jsObj) set(k string, v any) {
 	o.vals[k] = v
 }
 
+func (o *jsObj) MarshalJSON() ([]byte, error) { return []byte(jsStringify(o, false)), nil }
+
 func (o *jsObj) ordered() []string {
 	keys := slices.Clone(o.keys)
 	slices.SortStableFunc(keys, func(x, y string) int {

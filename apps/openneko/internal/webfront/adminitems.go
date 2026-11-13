@@ -236,24 +236,46 @@ func (a *API) graphjinAdminToken(orgID string, ttl time.Duration) (string, error
 	return a.graphjinToken(orgID, "admin", ttl)
 }
 
-// graphjinToken is mintGraphjinToken({ role, userId: null }) in
+// graphjinToken is mintGraphjinToken({ role, userId: null }).
+func (a *API) graphjinToken(orgID, role string, ttl time.Duration) (string, error) {
+	return a.mintGraphjinToken(graphjinClaims{orgID: orgID, role: role}, ttl)
+}
+
+type graphjinClaims struct {
+	orgID, userID, role string
+	groupRoles, groups  []string
+	withGroups          bool
+}
+
+// mintGraphjinToken is mintGraphjinToken() in
 // packages/llm/src/graphjin/token.ts. GraphJin keys the HMAC with the base64
 // text of the derived secret, not with its bytes.
-func (a *API) graphjinToken(orgID, role string, ttl time.Duration) (string, error) {
-	secret, err := config.SigningSecret(a.SecretsDir, "graphjin:"+orgID)
+func (a *API) mintGraphjinToken(c graphjinClaims, ttl time.Duration) (string, error) {
+	secret, err := config.SigningSecret(a.SecretsDir, "graphjin:"+c.orgID)
 	if err != nil {
 		return "", err
 	}
 	now := time.Now().Unix()
+	roles := []string{c.role}
+	for _, r := range c.groupRoles {
+		if !slices.Contains(roles, r) {
+			roles = append(roles, r)
+		}
+	}
+	var groups *[]string
+	if c.withGroups {
+		groups = &c.groups
+	}
 	payload, _ := json.Marshal(struct {
-		Sub       string   `json:"sub"`
-		Role      string   `json:"role"`
-		Roles     []string `json:"roles"`
-		AccountID string   `json:"account_id"`
-		OrgID     string   `json:"org_id"`
-		Iat       int64    `json:"iat"`
-		Exp       int64    `json:"exp"`
-	}{"service", role, []string{role}, orgID, orgID, now, now + int64(ttl/time.Second)})
+		Sub       string    `json:"sub"`
+		Role      string    `json:"role"`
+		Roles     []string  `json:"roles"`
+		Groups    *[]string `json:"groups,omitempty"`
+		AccountID string    `json:"account_id"`
+		OrgID     string    `json:"org_id"`
+		Iat       int64     `json:"iat"`
+		Exp       int64     `json:"exp"`
+	}{orDefault(c.userID, "service"), c.role, roles, groups, c.orgID, c.orgID, now, now + int64(ttl/time.Second)})
 	enc := base64.RawURLEncoding
 	unsigned := enc.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`)) + "." + enc.EncodeToString(payload)
 	mac := hmac.New(sha256.New, []byte(base64.StdEncoding.EncodeToString(secret)))

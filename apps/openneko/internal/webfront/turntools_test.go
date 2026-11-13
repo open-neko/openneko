@@ -19,11 +19,13 @@ import (
 )
 
 type fakeTools struct {
-	mu     sync.Mutex
-	reply  any
-	throws string
-	calls  []any
-	audits []string
+	mu         sync.Mutex
+	reply      any
+	throws     string
+	calls      []any
+	audits     []string
+	gjTools    any
+	listThrows string
 }
 
 func (f *fakeTools) record(method string, in any) (any, error) {
@@ -68,6 +70,19 @@ func (f *fakeTools) readFile(_ context.Context, in fileReadIn) (any, error) {
 func (f *fakeTools) queryFiles(_ context.Context, in fileSQLIn) (any, error) {
 	return f.record("queryFileTablesForRun", in)
 }
+func (f *fakeTools) listGraphjinTools(_ context.Context, in graphjinCaller) (any, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, map[string]any{"method": "listGraphjinTools", "input": decodeAny(mustJSON(in))})
+	if f.listThrows != "" {
+		return nil, errors.New(f.listThrows)
+	}
+	raw, err := jsParse([]byte(jsStringify(f.gjTools, false)))
+	return raw, err
+}
+func (f *fakeTools) callGraphjinTool(_ context.Context, in graphjinToolCall) (any, error) {
+	return f.record("callGraphjinTool", in)
+}
 
 func mustJSON(v any) []byte {
 	raw, err := json.Marshal(v)
@@ -99,7 +114,11 @@ var fixtureBinding = turnBinding{OrgID: "11111111-1111-4111-8111-111111111111", 
 
 func callTool(t *testing.T, s *toolServer, name string, args any) (string, *rpcError) {
 	t.Helper()
-	result, rpcErr := s.handle(context.Background(), "tools/call", mustJSON(map[string]any{"name": name, "arguments": args}))
+	params := map[string]any{"name": name}
+	if args != nil {
+		params["arguments"] = args
+	}
+	result, rpcErr := s.handle(context.Background(), "tools/call", mustJSON(params))
 	if rpcErr != nil {
 		return "", rpcErr
 	}
@@ -112,16 +131,24 @@ func TestTurnToolsMatchNode(t *testing.T) {
 		t.Fatal(err)
 	}
 	var fixture struct {
-		Lists []struct {
+		GraphjinTools json.RawMessage
+		Lists         []struct {
 			Name           string
 			Servers        []string
 			MemoryReadOnly bool
+			Policy         string
+			GraphjinTools  json.RawMessage
+			ListThrows     string
 			Tools          json.RawMessage
 		}
 		Calls []struct {
 			Name           string
 			Servers        []string
 			MemoryReadOnly bool
+			Policy         string
+			ListFirst      bool
+			GraphjinTools  json.RawMessage
+			ListThrows     string
 			Tool           string
 			Arguments      json.RawMessage
 			Reply          *struct {
@@ -136,13 +163,24 @@ func TestTurnToolsMatchNode(t *testing.T) {
 	if err := json.Unmarshal(raw, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if len(fixture.Lists) != 2 || len(fixture.Calls) < 30 {
+	if len(fixture.Lists) != 6 || len(fixture.Calls) < 55 {
 		t.Fatalf("fixture holds %d lists and %d calls", len(fixture.Lists), len(fixture.Calls))
+	}
+	gjTools := func(own json.RawMessage) any {
+		if len(own) == 0 {
+			own = fixture.GraphjinTools
+		}
+		v, err := jsParse(own)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
 	}
 	for _, list := range fixture.Lists {
 		b := fixtureBinding
 		b.MemoryReadOnly = list.MemoryReadOnly
-		s, err := turnTools(b, &fakeTools{}, list.Servers)
+		b.GraphjinToolPolicy = list.Policy
+		s, err := turnTools(b, &fakeTools{gjTools: gjTools(list.GraphjinTools), listThrows: list.ListThrows}, list.Servers)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -157,7 +195,8 @@ func TestTurnToolsMatchNode(t *testing.T) {
 	for _, c := range fixture.Calls {
 		b := fixtureBinding
 		b.MemoryReadOnly = c.MemoryReadOnly
-		fake := &fakeTools{}
+		b.GraphjinToolPolicy = c.Policy
+		fake := &fakeTools{gjTools: gjTools(c.GraphjinTools), listThrows: c.ListThrows}
 		if c.Reply != nil {
 			fake.throws = c.Reply.Throws
 			if len(c.Reply.Value) > 0 {
@@ -169,6 +208,11 @@ func TestTurnToolsMatchNode(t *testing.T) {
 		s, err := turnTools(b, fake, c.Servers)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if c.ListFirst {
+			if _, rpcErr := s.handle(context.Background(), "tools/list", nil); rpcErr != nil {
+				t.Fatal(rpcErr)
+			}
 		}
 		var args any
 		_ = json.Unmarshal(c.Arguments, &args)
@@ -212,8 +256,10 @@ func TestTurnTraceMatchesNode(t *testing.T) {
 		Name      string
 		Operation string
 		Request   struct {
-			Query string
-			Limit *int
+			Query     string
+			Limit     *int
+			Name      string
+			Arguments json.RawMessage
 		}
 		Reply struct {
 			Value  json.RawMessage
@@ -228,7 +274,7 @@ func TestTurnTraceMatchesNode(t *testing.T) {
 	if err := json.Unmarshal(raw, &cases); err != nil {
 		t.Fatal(err)
 	}
-	if len(cases) != 6 {
+	if len(cases) != 13 {
 		t.Fatalf("fixture holds %d cases", len(cases))
 	}
 	for _, c := range cases {
@@ -252,11 +298,26 @@ func TestTurnTraceMatchesNode(t *testing.T) {
 			return reply, nil
 		}
 		binding := traceBinding{RunID: runID, OrgID: "org-1", Kind: "work"}
+		var args *jsObj
+		if len(c.Request.Arguments) > 0 {
+			parsed, err := jsParse(c.Request.Arguments)
+			if err != nil {
+				t.Fatal(err)
+			}
+			args = parsed.(*jsObj)
+		}
 		for range 2 {
-			if c.Operation == "memory.search" {
+			switch c.Operation {
+			case "memory.search":
 				_, _ = traceMemorySearch(binding, c.Request.Query, c.Request.Limit, execute)
-			} else {
+			case "files.search":
 				_, _ = traceFileSearch(binding, c.Request.Query, c.Request.Limit, execute)
+			case "graphjin.tools_list":
+				_, _ = traceGraphjinToolsList(binding, execute)
+			case "graphjin.call":
+				_, _ = traceGraphjinToolCall(binding, c.Request.Name, args, execute)
+			default:
+				t.Fatalf("operation %s", c.Operation)
 			}
 		}
 		unregister()
@@ -375,7 +436,7 @@ func TestTurnToolsWithMCPClient(t *testing.T) {
 	if len(fake.calls) != 8 || len(fake.audits) != 8 {
 		t.Fatalf("%d calls, %d audits", len(fake.calls), len(fake.audits))
 	}
-	if _, err := turnTools(fixtureBinding, fake, []string{"neko_graphjin"}); err == nil {
+	if _, err := turnTools(fixtureBinding, fake, []string{"neko_ui"}); err == nil {
 		t.Fatal("a server that is not ported must be an error")
 	}
 }

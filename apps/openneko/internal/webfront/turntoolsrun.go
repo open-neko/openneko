@@ -24,6 +24,7 @@ import (
 type turnBinding struct {
 	OrgID, ThreadID, RunID, Kind string
 	MemoryReadOnly               bool
+	GraphjinToolPolicy           string
 }
 
 func (b turnBinding) trace() traceBinding {
@@ -108,6 +109,8 @@ type toolBackend interface {
 	searchFiles(ctx context.Context, in fileSearchIn) (any, error)
 	readFile(ctx context.Context, in fileReadIn) (any, error)
 	queryFiles(ctx context.Context, in fileSQLIn) (any, error)
+	listGraphjinTools(ctx context.Context, in graphjinCaller) (any, error)
+	callGraphjinTool(ctx context.Context, in graphjinToolCall) (any, error)
 }
 
 var memoryKindEnum = []string{"preference", "business_rule", "metric_definition", "thread_note", "correction", "company_context", "other"}
@@ -117,20 +120,25 @@ func joinWords(parts ...string) string { return strings.Join(parts, " ") }
 // turnTools builds the tool server for servers, in that order. A server that
 // is not ported yet is an error, so a run never loses a tool without notice.
 func turnTools(b turnBinding, be toolBackend, servers []string) (*toolServer, error) {
-	var tools []toolDef
+	if _, err := parseGraphjinToolPolicy(b.GraphjinToolPolicy); err != nil {
+		return nil, err
+	}
+	var groups []toolGroup
 	for _, name := range servers {
 		switch name {
 		case "neko_memory":
-			tools = append(tools, memoryTools(b, be)...)
+			groups = append(groups, toolGroup{static: memoryTools(b, be)})
 		case "neko_guides":
-			tools = append(tools, guideTools(b, be)...)
+			groups = append(groups, toolGroup{static: guideTools(b, be)})
 		case "neko_files":
-			tools = append(tools, fileTools(b, be)...)
+			groups = append(groups, toolGroup{static: fileTools(b, be)})
+		case "neko_graphjin":
+			groups = append(groups, graphjinTools(b, be))
 		default:
 			return nil, fmt.Errorf("mcp-bridge: unknown server %s", name)
 		}
 	}
-	return newToolServer(tools), nil
+	return newToolServer(groups...), nil
 }
 
 func memoryTools(b turnBinding, be toolBackend) []toolDef {

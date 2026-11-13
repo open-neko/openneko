@@ -376,3 +376,99 @@ func jsFromGo(v any) any {
 	}
 	return out
 }
+
+func traceGraphjinToolsList(binding traceBinding, execute func() (any, error)) (any, error) {
+	return traced(traceSpec{
+		binding: binding, operation: "graphjin.tools_list", source: traceBroker, request: &jsObj{},
+		evidence: func(result any) *jsObj {
+			tools := []any{}
+			for _, entry := range jsArray(result) {
+				tool, ok := entry.(*jsObj)
+				name, nameOK := jsNonEmptyString(jsGet(tool, "name"))
+				if !ok || !nameOK {
+					continue
+				}
+				tools = append(tools, jsObjOf("name", name, "schemaDigest", traceDigest(tool.vals["inputSchema"])))
+			}
+			ev := jsObjOf("returnedCount", float64(len(tools)))
+			if result != nil {
+				ev.set("catalogDigest", traceDigest(result))
+			}
+			ev.set("tools", tools)
+			return ev
+		},
+	}, execute)
+}
+
+func graphjinTraceOperation(tool string) string {
+	switch tool {
+	case "execute_graphql":
+		return "graphjin.execute"
+	case "query_catalog":
+		return "graphjin.catalog"
+	}
+	return "graphjin.call"
+}
+
+var graphqlLineComment = regexp.MustCompile(`#[^\n\r]*`)
+var graphqlOperationWord = regexp.MustCompile(`(?i)^(query|mutation|subscription)\b`)
+
+func graphqlOperationType(query string) string {
+	text := jsTrimStart(graphqlLineComment.ReplaceAllString(query, ""))
+	if strings.HasPrefix(text, "{") {
+		return "query"
+	}
+	if m := graphqlOperationWord.FindStringSubmatch(text); m != nil {
+		return strings.ToLower(m[1])
+	}
+	return "unknown"
+}
+
+func isToolResultError(result any) bool {
+	obj, _ := result.(*jsObj)
+	if obj == nil {
+		return false
+	}
+	if obj.vals["isError"] == true {
+		return true
+	}
+	for _, entry := range jsArray(obj.vals["content"]) {
+		text, ok := jsNonEmptyString(jsGet(entry, "text"))
+		if !ok {
+			continue
+		}
+		payload, err := jsParse([]byte(text))
+		if err == nil && len(jsArray(jsGet(payload, "errors"))) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// traceGraphjinToolCall takes args nil when the call had no arguments.
+func traceGraphjinToolCall(binding traceBinding, tool string, args *jsObj, execute func() (any, error)) (any, error) {
+	if args == nil {
+		args = &jsObj{}
+	}
+	operation := graphjinTraceOperation(tool)
+	return traced(traceSpec{
+		binding: binding, operation: operation, source: traceBroker,
+		request: jsObjOf("name", tool, "arguments", args), logicalError: isToolResultError,
+		evidence: func(any) *jsObj {
+			ev := jsObjOf("toolName", tool)
+			if operation != "graphjin.execute" {
+				ev.set("argumentsDigest", traceDigest(args))
+				return ev
+			}
+			query, _ := jsNonEmptyString(args.vals["query"])
+			ev.set("queryDigest", traceDigest(query))
+			if v, ok := args.vals["variables"]; ok {
+				ev.set("variablesDigest", traceDigest(v))
+			}
+			ev.set("operationType", graphqlOperationType(query))
+			return ev
+		},
+	}, execute)
+}
+
+func jsTrimStart(s string) string { return strings.TrimLeftFunc(s, jsSpace) }

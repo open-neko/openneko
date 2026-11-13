@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"regexp"
 	"strings"
@@ -233,18 +234,89 @@ func containsString(list []string, s string) bool {
 	return false
 }
 
-// toolServer is one run's multiplexed tool server.
-type toolServer struct {
-	tools  []toolDef
-	byName map[string]toolDef
+// dynamicTools is a logical server whose tools come from another service,
+// as createDynamicMcpServer() builds for neko_graphjin.
+type dynamicTools struct {
+	server string
+	list   func(ctx context.Context) ([]any, error)
+	call   func(ctx context.Context, name string, args *jsObj) (any, error)
 }
 
-func newToolServer(tools []toolDef) *toolServer {
-	s := &toolServer{tools: tools, byName: map[string]toolDef{}}
-	for _, t := range tools {
-		s.byName[t.public()] = t
+type toolGroup struct {
+	static  []toolDef
+	dynamic *dynamicTools
+}
+
+type toolRoute struct {
+	static   *toolDef
+	dynamic  *dynamicTools
+	original string
+}
+
+// toolServer is one run's multiplexed tool server. As in Node, a call is
+// routed by the last tools/list; a name it does not hold lists again first.
+type toolServer struct {
+	groups []toolGroup
+	mu     sync.Mutex
+	routes map[string]toolRoute
+}
+
+func newToolServer(groups ...toolGroup) *toolServer {
+	return &toolServer{groups: groups, routes: map[string]toolRoute{}}
+}
+
+func (s *toolServer) list(ctx context.Context) ([]any, error) {
+	out := []any{}
+	routes := map[string]toolRoute{}
+	for _, g := range s.groups {
+		if g.dynamic == nil {
+			for i := range g.static {
+				t := &g.static[i]
+				routes[t.public()] = toolRoute{static: t}
+				out = append(out, t.listing())
+			}
+			continue
+		}
+		tools, err := g.dynamic.list(ctx)
+		if err == nil {
+			tools, err = normalizeListedTools(tools)
+		}
+		if err != nil {
+			log.Printf("[mcp-bridge] %s tools/list failed; its tools are unavailable until the next tools/list: %v", g.dynamic.server, err)
+			continue
+		}
+		for _, tool := range tools {
+			obj := tool.(*jsObj)
+			original := obj.vals["name"].(string)
+			public := strings.TrimPrefix(g.dynamic.server, "neko_") + "_" + original
+			if _, dup := routes[public]; dup {
+				return nil, errors.New("mcp-bridge: duplicate multiplexed tool " + public)
+			}
+			routes[public] = toolRoute{dynamic: g.dynamic, original: original}
+			obj.set("name", public)
+			out = append(out, obj)
+		}
 	}
-	return s
+	s.mu.Lock()
+	s.routes = routes
+	s.mu.Unlock()
+	return out, nil
+}
+
+func (s *toolServer) route(ctx context.Context, name string) (toolRoute, bool, error) {
+	s.mu.Lock()
+	r, ok := s.routes[name]
+	s.mu.Unlock()
+	if ok {
+		return r, true, nil
+	}
+	if _, err := s.list(ctx); err != nil {
+		return r, false, err
+	}
+	s.mu.Lock()
+	r, ok = s.routes[name]
+	s.mu.Unlock()
+	return r, ok, nil
 }
 
 type rpcError struct {
@@ -324,9 +396,9 @@ func (s *toolServer) handle(ctx context.Context, method string, params json.RawM
 	case "ping":
 		return map[string]any{}, nil
 	case "tools/list":
-		list := make([]any, len(s.tools))
-		for i, t := range s.tools {
-			list[i] = t.listing()
+		list, err := s.list(ctx)
+		if err != nil {
+			return nil, &rpcError{-32603, err.Error()}
 		}
 		return json.RawMessage(`{"tools":` + jsStringify(list, false) + `}`), nil
 	case "tools/call":
@@ -337,11 +409,33 @@ func (s *toolServer) handle(ctx context.Context, method string, params json.RawM
 		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, &rpcError{-32602, "Invalid params"}
 		}
-		tool, ok := s.byName[p.Name]
+		route, ok, err := s.route(ctx, p.Name)
+		if err != nil {
+			return nil, &rpcError{-32603, err.Error()}
+		}
 		if !ok {
 			return nil, &rpcError{-32603, "mcp-bridge: unknown tool " + p.Name}
 		}
-		return json.RawMessage(jsStringify(s.call(ctx, tool, p.Arguments), false)), nil
+		if route.static != nil {
+			return json.RawMessage(jsStringify(s.call(ctx, *route.static, p.Arguments), false)), nil
+		}
+		var args *jsObj
+		if len(p.Arguments) > 0 && string(p.Arguments) != "null" {
+			parsed, err := jsParse(p.Arguments)
+			obj, isObj := parsed.(*jsObj)
+			if err != nil || !isObj {
+				return nil, &rpcError{-32602, "Invalid params"}
+			}
+			args = obj
+		}
+		result, err := route.dynamic.call(ctx, route.original, args)
+		if err == nil {
+			result, err = normalizeCallResult(result)
+		}
+		if err != nil {
+			return nil, &rpcError{-32603, "MCP error -32603: " + err.Error()}
+		}
+		return json.RawMessage(jsStringify(result, false)), nil
 	}
 	return nil, &rpcError{-32601, "Method not found"}
 }
