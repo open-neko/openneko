@@ -55,7 +55,7 @@ import {
   type ProvisionedWorkBackendFixture,
   type WorkBackendFixtureSpec,
 } from "./eval-openneko-backend-fixture";
-import { EvalInstallHost, type EvalEpisode } from "./eval-install";
+import { EvalInstallHost, type EvalEpisode, type EvalInstallHostOptions } from "./eval-install";
 import {
   RunEventFeed,
   ScriptedModelServer,
@@ -2321,10 +2321,10 @@ async function startEpisodeTurn(input: {
   return { threadId, runId: String(started.runId) };
 }
 
-export function createOpenNekoBackendDriver(context: {
-  loaded: LoadedEval;
-  plan: EvalPlan;
-}): EvalDriver {
+export function createOpenNekoBackendDriver(
+  context: { loaded: LoadedEval; plan: EvalPlan },
+  options: { host?: EvalInstallHostOptions } = {},
+): EvalDriver {
   const datasetId = context.loaded.cases[0]?.dataset ?? "openneko-backend";
   const graphqlUrl = datasetSetting(
     context.loaded,
@@ -2522,7 +2522,7 @@ export function createOpenNekoBackendDriver(context: {
         );
       }
 
-      host ??= await EvalInstallHost.prepare();
+      host ??= await EvalInstallHost.prepare(options.host);
       if (loaded.config.variants.some((variant) => variant.backend.startsWith("scripted-"))) {
         model ??= await ScriptedModelServer.start();
       }

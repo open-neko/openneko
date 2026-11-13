@@ -245,7 +245,8 @@ export class ScriptedTurn {
 }
 
 function respond(res: ServerResponse, request: ModelRequest, status: number, content: string): void {
-  const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  // The harness drops zero counts, and a promoted result needs totalTokens.
+  const usage = { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 };
   if (status !== 200) {
     res.writeHead(status, { "content-type": "application/json" });
     res.end(JSON.stringify({ error: { message: content } }));
