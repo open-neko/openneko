@@ -84,7 +84,11 @@ func cutUTF16(s string, n int) string {
 // configuration query: data and the error messages, or an error when
 // GraphJin does not answer 2xx.
 func gjPost(ctx context.Context, endpoint, token, query string) (any, []string, error) {
-	payload := jsStringify(jsObjOf("query", query, "variables", &jsObj{}), false)
+	return gjPostVars(ctx, endpoint, token, query, &jsObj{})
+}
+
+func gjPostVars(ctx context.Context, endpoint, token, query string, variables *jsObj) (any, []string, error) {
+	payload := jsStringify(jsObjOf("query", query, "variables", variables), false)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(payload))
 	if err != nil {
 		return nil, nil, err

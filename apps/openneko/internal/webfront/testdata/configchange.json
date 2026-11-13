@@ -1,0 +1,3314 @@
+{
+ "updates": [
+  {
+   "name": "role",
+   "payload": {
+    "action": "add_role",
+    "name": " analyst ",
+    "match": " user.role == 'analyst' ",
+    "comment": " note "
+   },
+   "update": {
+    "roles": [
+     {
+      "name": "analyst",
+      "match": "user.role == 'analyst'",
+      "comment": "note"
+     }
+    ]
+   },
+   "secretName": null
+  },
+  {
+   "name": "role no match",
+   "payload": {
+    "action": "add_role",
+    "name": "analyst"
+   },
+   "error": "add_role needs name + match",
+   "errorName": "Error"
+  },
+  {
+   "name": "access",
+   "payload": {
+    "action": "set_source_access",
+    "source": " erp ",
+    "read": "admin",
+    "write": "blocked"
+   },
+   "update": {
+    "source_patches": [
+     {
+      "name": "erp",
+      "access": {
+       "read": "admin",
+       "write": "blocked"
+      }
+     }
+    ]
+   },
+   "secretName": null
+  },
+  {
+   "name": "access empty",
+   "payload": {
+    "action": "set_source_access",
+    "source": "erp"
+   },
+   "error": "set_source_access needs at least one access field",
+   "errorName": "Error"
+  },
+  {
+   "name": "access no source",
+   "payload": {
+    "action": "set_source_access",
+    "read": "admin"
+   },
+   "error": "set_source_access needs source",
+   "errorName": "Error"
+  },
+  {
+   "name": "tables",
+   "payload": {
+    "action": "set_source_tables",
+    "source": "erp",
+    "blockedTables": [
+     "payroll",
+     " Payroll ",
+     "hr.salary"
+    ],
+    "adminTables": [
+     "audit"
+    ],
+    "openTables": [
+     "orders"
+    ]
+   },
+   "update": {
+    "source_patches": [
+     {
+      "name": "erp",
+      "access": {
+       "blocked_tables_add": [
+        "payroll",
+        "hr.salary"
+       ],
+       "admin_tables_add": [
+        "audit"
+       ],
+       "blocked_tables_remove": [
+        "orders"
+       ],
+       "admin_tables_remove": [
+        "orders"
+       ]
+      }
+     }
+    ]
+   },
+   "secretName": null
+  },
+  {
+   "name": "tables overlap",
+   "payload": {
+    "action": "set_source_tables",
+    "source": "erp",
+    "blockedTables": [
+     "payroll"
+    ],
+    "openTables": [
+     "PAYROLL"
+    ]
+   },
+   "error": "table \"PAYROLL\" is in both blockedTables and openTables",
+   "errorName": "Error"
+  },
+  {
+   "name": "tables bad name",
+   "payload": {
+    "action": "set_source_tables",
+    "source": "erp",
+    "blockedTables": [
+     "drop table"
+    ]
+   },
+   "error": "blockedTables has an invalid table name \"drop table\"",
+   "errorName": "Error"
+  },
+  {
+   "name": "tables not a list",
+   "payload": {
+    "action": "set_source_tables",
+    "source": "erp",
+    "adminTables": "payroll"
+   },
+   "error": "adminTables must be a list of table names",
+   "errorName": "Error"
+  },
+  {
+   "name": "tables none",
+   "payload": {
+    "action": "set_source_tables",
+    "source": "erp",
+    "blockedTables": []
+   },
+   "error": "set_source_tables needs blockedTables, adminTables or openTables",
+   "errorName": "Error"
+  },
+  {
+   "name": "capabilities",
+   "payload": {
+    "action": "set_source_capabilities",
+    "source": "shop",
+    "apiWrite": true,
+    "apiDelete": false
+   },
+   "update": {
+    "update_sources": [
+     {
+      "name": "shop",
+      "capabilities": {
+       "api.write": true,
+       "api.delete": false
+      }
+     }
+    ]
+   },
+   "secretName": null
+  },
+  {
+   "name": "capabilities none",
+   "payload": {
+    "action": "set_source_capabilities",
+    "source": "shop"
+   },
+   "error": "set_source_capabilities needs apiWrite or apiDelete",
+   "errorName": "Error"
+  },
+  {
+   "name": "expose",
+   "payload": {
+    "action": "expose_api_operation",
+    "source": "shop",
+    "spec": "orders",
+    "operation": "createOrder",
+    "exposeMutation": true,
+    "allowedRoles": [
+     " Admin ",
+     "member",
+     ""
+    ],
+    "exposeAs": " create_order "
+   },
+   "update": {
+    "update_sources": [
+     {
+      "name": "shop",
+      "specs": {
+       "orders": {
+        "operations": {
+         "createOrder": {
+          "expose_mutation": true,
+          "allowed_roles": [
+           "admin",
+           "member"
+          ],
+          "expose_as": "create_order"
+         }
+        }
+       }
+      }
+     }
+    ]
+   },
+   "secretName": null
+  },
+  {
+   "name": "expose no roles",
+   "payload": {
+    "action": "expose_api_operation",
+    "source": "shop",
+    "spec": "orders",
+    "operation": "createOrder",
+    "exposeMutation": true
+   },
+   "error": "expose_api_operation needs allowedRoles when exposeMutation is true",
+   "errorName": "Error"
+  },
+  {
+   "name": "expose off",
+   "payload": {
+    "action": "expose_api_operation",
+    "source": "shop",
+    "spec": "orders",
+    "operation": "createOrder"
+   },
+   "update": {
+    "update_sources": [
+     {
+      "name": "shop",
+      "specs": {
+       "orders": {
+        "operations": {
+         "createOrder": {
+          "expose_mutation": false,
+          "allowed_roles": []
+         }
+        }
+       }
+      }
+     }
+    ]
+   },
+   "secretName": null
+  },
+  {
+   "name": "expose missing",
+   "payload": {
+    "action": "expose_api_operation",
+    "source": "shop"
+   },
+   "error": "expose_api_operation needs source, spec, and operation",
+   "errorName": "Error"
+  },
+  {
+   "name": "api writes",
+   "payload": {
+    "action": "enable_api_writes",
+    "source": "shop",
+    "spec": "orders",
+    "operation": "createOrder",
+    "allowedRoles": [
+     "admin"
+    ],
+    "write": "admin",
+    "apiDelete": true,
+    "exposeAs": "x"
+   },
+   "update": {
+    "update_sources": [
+     {
+      "name": "shop",
+      "read_only": false,
+      "capabilities": {
+       "api.write": true,
+       "api.delete": true
+      },
+      "specs": {
+       "orders": {
+        "operations": {
+         "createOrder": {
+          "expose_mutation": true,
+          "allowed_roles": [
+           "admin"
+          ],
+          "expose_as": "x"
+         }
+        }
+       }
+      }
+     }
+    ],
+    "source_patches": [
+     {
+      "name": "shop",
+      "access": {
+       "write": "admin"
+      }
+     }
+    ]
+   },
+   "secretName": null
+  },
+  {
+   "name": "api writes default",
+   "payload": {
+    "action": "enable_api_writes",
+    "source": "shop",
+    "spec": "orders",
+    "operation": "createOrder",
+    "allowedRoles": [
+     "member"
+    ]
+   },
+   "update": {
+    "update_sources": [
+     {
+      "name": "shop",
+      "read_only": false,
+      "capabilities": {
+       "api.write": true
+      },
+      "specs": {
+       "orders": {
+        "operations": {
+         "createOrder": {
+          "expose_mutation": true,
+          "allowed_roles": [
+           "member"
+          ]
+         }
+        }
+       }
+      }
+     }
+    ],
+    "source_patches": [
+     {
+      "name": "shop",
+      "access": {
+       "write": "authenticated"
+      }
+     }
+    ]
+   },
+   "secretName": null
+  },
+  {
+   "name": "api writes bad mode",
+   "payload": {
+    "action": "enable_api_writes",
+    "source": "shop",
+    "spec": "orders",
+    "operation": "createOrder",
+    "allowedRoles": [
+     "member"
+    ],
+    "write": "owner"
+   },
+   "error": "enable_api_writes write must be authenticated or admin",
+   "errorName": "Error"
+  },
+  {
+   "name": "api writes no roles",
+   "payload": {
+    "action": "enable_api_writes",
+    "source": "shop",
+    "spec": "orders",
+    "operation": "createOrder",
+    "allowedRoles": []
+   },
+   "error": "enable_api_writes needs allowedRoles",
+   "errorName": "Error"
+  },
+  {
+   "name": "database",
+   "payload": {
+    "action": "register_source",
+    "name": " erp ",
+    "kind": [
+     "database"
+    ],
+    "type": [
+     "MySQL"
+    ],
+    "host": " db.internal ",
+    "port": 3306,
+    "dbname": "erp",
+    "user": "reader",
+    "secretRef": " erp-password ",
+    "blockedTables": [
+     "payroll"
+    ],
+    "adminTables": [
+     "audit"
+    ]
+   },
+   "update": {
+    "update_sources": [
+     {
+      "name": "erp",
+      "kind": "database",
+      "read_only": true,
+      "type": "mysql",
+      "host": "db.internal",
+      "port": 3306,
+      "dbname": "erp",
+      "user": "reader",
+      "password": "pw-planted",
+      "access": {
+       "read": "authenticated",
+       "write": "blocked",
+       "delete": "blocked",
+       "blocked_tables": [
+        "payroll"
+       ],
+       "admin_tables": [
+        "audit"
+       ]
+      }
+     }
+    ]
+   },
+   "secretName": "erp-password"
+  },
+  {
+   "name": "database defaults",
+   "payload": {
+    "action": "register_source",
+    "name": "erp",
+    "host": "db",
+    "dbname": "erp",
+    "user": "u",
+    "secretRef": "erp-password",
+    "read": "admin"
+   },
+   "update": {
+    "update_sources": [
+     {
+      "name": "erp",
+      "kind": "database",
+      "read_only": true,
+      "type": "postgres",
+      "host": "db",
+      "dbname": "erp",
+      "user": "u",
+      "password": "pw-planted",
+      "access": {
+       "read": "admin",
+       "write": "blocked",
+       "delete": "blocked"
+      }
+     }
+    ]
+   },
+   "secretName": "erp-password"
+  },
+  {
+   "name": "database no secret",
+   "payload": {
+    "action": "register_source",
+    "name": "erp",
+    "kind": "database",
+    "host": "db"
+   },
+   "error": "OpenNeko needs a login with a password. Save the password for this login first.",
+   "errorName": "PasswordRequiredError"
+  },
+  {
+   "name": "database empty secret",
+   "payload": {
+    "action": "register_source",
+    "name": "erp",
+    "kind": "database",
+    "secretRef": "empty-secret"
+   },
+   "error": "OpenNeko needs a login with a password. Save the password for this login first.",
+   "errorName": "PasswordRequiredError"
+  },
+  {
+   "name": "database unknown secret",
+   "payload": {
+    "action": "register_source",
+    "name": "erp",
+    "kind": "database",
+    "secretRef": "missing"
+   },
+   "error": "no stored source secret named \"missing\"; add it in GraphJin Config first",
+   "errorName": "Error"
+  },
+  {
+   "name": "database bad type",
+   "payload": {
+    "action": "register_source",
+    "name": "erp",
+    "type": "oracle",
+    "secretRef": "erp-password"
+   },
+   "error": "register_source database type must be postgres, mysql, mariadb (received \"oracle\")",
+   "errorName": "Error"
+  },
+  {
+   "name": "database overlap",
+   "payload": {
+    "action": "register_source",
+    "name": "erp",
+    "blockedTables": [
+     "a"
+    ],
+    "adminTables": [
+     "A"
+    ],
+    "secretRef": "erp-password"
+   },
+   "error": "table \"A\" is in both blockedTables and adminTables",
+   "errorName": "Error"
+  },
+  {
+   "name": "no name",
+   "payload": {
+    "action": "register_source",
+    "kind": "database"
+   },
+   "error": "register_source needs name",
+   "errorName": "Error"
+  },
+  {
+   "name": "bad kind",
+   "payload": {
+    "action": "register_source",
+    "name": "x",
+    "kind": "sheet"
+   },
+   "error": "register_source kind must be database, api, or file (received \"sheet\")",
+   "errorName": "Error"
+  },
+  {
+   "name": "api",
+   "payload": {
+    "action": "register_source",
+    "name": "shop",
+    "kind": "api",
+    "specAssetId": " 88888888-8888-4888-8888-888888888888 "
+   },
+   "options": {
+    "managedOpenApiSpecsDir": "/config/specs",
+    "managedLocalFilesRoot": "/config/files/org_x_docs"
+   },
+   "update": {
+    "update_sources": [
+     {
+      "name": "shop",
+      "kind": "api",
+      "specs_dir": "/config/specs",
+      "access": {
+       "read": "authenticated",
+       "write": "blocked",
+       "delete": "blocked"
+      }
+     }
+    ]
+   },
+   "secretName": null
+  },
+  {
+   "name": "api default dir",
+   "payload": {
+    "action": "register_source",
+    "name": "shop",
+    "kind": "api",
+    "specAssetId": "88888888-8888-4888-8888-888888888888"
+   },
+   "update": {
+    "update_sources": [
+     {
+      "name": "shop",
+      "kind": "api",
+      "specs_dir": "/config/specs",
+      "access": {
+       "read": "authenticated",
+       "write": "blocked",
+       "delete": "blocked"
+      }
+     }
+    ]
+   },
+   "secretName": null
+  },
+  {
+   "name": "api no asset",
+   "payload": {
+    "action": "register_source",
+    "name": "shop",
+    "kind": "api"
+   },
+   "error": "register_source api needs a managed specAssetId",
+   "errorName": "Error"
+  },
+  {
+   "name": "file local",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": [
+     "local"
+    ],
+    "localFiles": {
+     "sourceName": "docs",
+     "ready": true,
+     "files": [
+      {
+       "name": "a.pdf",
+       "size": 10,
+       "contentType": "application/pdf",
+       "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+     ],
+     "totalSize": 10
+    }
+   },
+   "options": {
+    "managedOpenApiSpecsDir": "/config/specs",
+    "managedLocalFilesRoot": "/config/files/org_x_docs"
+   },
+   "update": {
+    "update_sources": [
+     {
+      "name": "docs",
+      "kind": "file",
+      "backend": "local",
+      "root": "/config/files/org_x_docs",
+      "read_only": true,
+      "max_list_page_size": 500,
+      "capabilities": {
+       "files.list": true,
+       "files.read": true,
+       "files.write": false,
+       "files.delete": false,
+       "files.watch": false
+      },
+      "access": {
+       "read": "authenticated",
+       "write": "blocked",
+       "delete": "blocked"
+      }
+     }
+    ]
+   },
+   "secretName": null
+  },
+  {
+   "name": "file local no root",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "local",
+    "localFiles": {
+     "sourceName": "docs",
+     "ready": true,
+     "files": [
+      {
+       "name": "a.pdf",
+       "size": 10,
+       "contentType": "application/pdf",
+       "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+     ],
+     "totalSize": 10
+    }
+   },
+   "error": "register_source local file needs OpenNeko managed storage",
+   "errorName": "Error"
+  },
+  {
+   "name": "file local wrong manifest",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "local",
+    "localFiles": {
+     "sourceName": "other",
+     "ready": true,
+     "files": [
+      {
+       "name": "a.pdf",
+       "size": 10,
+       "contentType": "application/pdf",
+       "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+     ],
+     "totalSize": 10
+    }
+   },
+   "options": {
+    "managedOpenApiSpecsDir": "/config/specs",
+    "managedLocalFilesRoot": "/config/files/org_x_docs"
+   },
+   "error": "register_source local file manifest must match the selected source name",
+   "errorName": "Error"
+  },
+  {
+   "name": "file root given",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "local",
+    "root": "/etc"
+   },
+   "options": {
+    "managedOpenApiSpecsDir": "/config/specs",
+    "managedLocalFilesRoot": "/config/files/org_x_docs"
+   },
+   "error": "register_source local file roots are managed by OpenNeko and cannot be supplied in a proposal",
+   "errorName": "Error"
+  },
+  {
+   "name": "file bad name",
+   "payload": {
+    "action": "register_source",
+    "name": "my-docs",
+    "kind": "file",
+    "backend": "s3"
+   },
+   "error": "register_source file name must start with a letter and contain only letters, digits, and underscores (64 characters maximum)",
+   "errorName": "Error"
+  },
+  {
+   "name": "file no backend",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file"
+   },
+   "error": "register_source file needs backend local, s3, or gcs",
+   "errorName": "Error"
+  },
+  {
+   "name": "file s3",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "my.bucket-1",
+    "prefix": "a/b/",
+    "region": "eu-west-1",
+    "endpoint": "https://s3.example.com/",
+    "publicBaseUrl": "https://cdn.example.com/files/",
+    "presignTtl": "30m"
+   },
+   "update": {
+    "update_sources": [
+     {
+      "name": "docs",
+      "kind": "file",
+      "backend": "s3",
+      "bucket": "my.bucket-1",
+      "prefix": "a/b/",
+      "region": "eu-west-1",
+      "endpoint": "https://s3.example.com",
+      "public_base_url": "https://cdn.example.com/files",
+      "presign_ttl": "30m",
+      "read_only": true,
+      "max_list_page_size": 500,
+      "capabilities": {
+       "files.list": true,
+       "files.read": true,
+       "files.write": false,
+       "files.delete": false,
+       "files.watch": false
+      },
+      "access": {
+       "read": "authenticated",
+       "write": "blocked",
+       "delete": "blocked"
+      }
+     }
+    ]
+   },
+   "secretName": null
+  },
+  {
+   "name": "file gcs",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "gcs",
+    "bucket": "my_bucket",
+    "region": "ignored",
+    "presignTtl": "1h"
+   },
+   "update": {
+    "update_sources": [
+     {
+      "name": "docs",
+      "kind": "file",
+      "backend": "gcs",
+      "bucket": "my_bucket",
+      "presign_ttl": "1h",
+      "read_only": true,
+      "max_list_page_size": 500,
+      "capabilities": {
+       "files.list": true,
+       "files.read": true,
+       "files.write": false,
+       "files.delete": false,
+       "files.watch": false
+      },
+      "access": {
+       "read": "authenticated",
+       "write": "blocked",
+       "delete": "blocked"
+      }
+     }
+    ]
+   },
+   "secretName": null
+  },
+  {
+   "name": "file gcs endpoint",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "gcs",
+    "bucket": "my_bucket",
+    "endpoint": "https://x"
+   },
+   "error": "register_source file endpoint is supported only for S3",
+   "errorName": "Error"
+  },
+  {
+   "name": "file s3 no bucket",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3"
+   },
+   "error": "register_source s3 file needs bucket",
+   "errorName": "Error"
+  },
+  {
+   "name": "file s3 bad bucket",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "1.2.3.4"
+   },
+   "error": "register_source s3 file has an invalid bucket name",
+   "errorName": "Error"
+  },
+  {
+   "name": "file gcs goog bucket",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "gcs",
+    "bucket": "google-x"
+   },
+   "error": "register_source gcs file has an invalid bucket name",
+   "errorName": "Error"
+  },
+  {
+   "name": "file absolute prefix",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "abc",
+    "prefix": "/a"
+   },
+   "error": "register_source file prefix must be a relative object-key prefix",
+   "errorName": "Error"
+  },
+  {
+   "name": "file endpoint ftp",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "abc",
+    "endpoint": "ftp://x"
+   },
+   "error": "register_source file endpoint must use HTTP or HTTPS",
+   "errorName": "Error"
+  },
+  {
+   "name": "file endpoint query",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "abc",
+    "endpoint": "https://x/?a=1"
+   },
+   "error": "register_source file endpoint must not contain credentials, a query string, or a fragment",
+   "errorName": "Error"
+  },
+  {
+   "name": "file endpoint user",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "abc",
+    "endpoint": "https://u:p@x"
+   },
+   "error": "register_source file endpoint must not contain credentials, a query string, or a fragment",
+   "errorName": "Error"
+  },
+  {
+   "name": "file endpoint invalid",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "abc",
+    "endpoint": "not a url"
+   },
+   "error": "register_source file endpoint must be a valid HTTP(S) URL",
+   "errorName": "Error"
+  },
+  {
+   "name": "file public http",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "abc",
+    "publicBaseUrl": "http://cdn"
+   },
+   "error": "register_source file public base URL must use HTTPS without credentials, a query string, or a fragment",
+   "errorName": "Error"
+  },
+  {
+   "name": "file ttl short",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "abc",
+    "presignTtl": "30s"
+   },
+   "error": "register_source file presign TTL must be between 1m and 1h",
+   "errorName": "Error"
+  },
+  {
+   "name": "file ttl long",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "abc",
+    "presignTtl": "2h"
+   },
+   "error": "register_source file presign TTL must be between 1m and 1h",
+   "errorName": "Error"
+  },
+  {
+   "name": "file ttl bad",
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "abc",
+    "presignTtl": "15 minutes"
+   },
+   "error": "register_source file presign TTL must be a duration such as 15m",
+   "errorName": "Error"
+  },
+  {
+   "name": "unknown action",
+   "payload": {
+    "action": "drop_source"
+   },
+   "error": "unknown source config action \"drop_source\"",
+   "errorName": "Error"
+  }
+ ],
+ "readOnly": [
+  {
+   "name": "api writes on api",
+   "update": {
+    "update_sources": [
+     {
+      "name": "shop",
+      "read_only": false,
+      "capabilities": {
+       "api.write": true
+      }
+     }
+    ]
+   },
+   "current": [
+    {
+     "name": "erp",
+     "kind": "database",
+     "type": "postgres",
+     "host": "db",
+     "password": "[REDACTED]",
+     "read_only": true,
+     "access": {
+      "read": "account",
+      "blocked_tables": [
+       "payroll"
+      ]
+     }
+    },
+    {
+     "name": "shop",
+     "kind": "api",
+     "read_only": true,
+     "specs": {
+      "orders": {}
+     }
+    }
+   ]
+  },
+  {
+   "name": "writes on database",
+   "update": {
+    "update_sources": [
+     {
+      "name": "ERP",
+      "read_only": false,
+      "capabilities": {
+       "api.write": true,
+       "api.delete": true
+      },
+      "specs": {}
+     }
+    ],
+    "source_patches": [
+     {
+      "name": "erp",
+      "access": {
+       "write": "authenticated",
+       "delete": "blocked"
+      }
+     }
+    ]
+   },
+   "current": [
+    {
+     "name": "erp",
+     "kind": "database",
+     "type": "postgres",
+     "host": "db",
+     "password": "[REDACTED]",
+     "read_only": true,
+     "access": {
+      "read": "account",
+      "blocked_tables": [
+       "payroll"
+      ]
+     }
+    },
+    {
+     "name": "shop",
+     "kind": "api",
+     "read_only": true,
+     "specs": {
+      "orders": {}
+     }
+    }
+   ],
+   "error": "database source \"ERP\" stays read-only; rejected read_only: false, capabilities.api.write: true, capabilities.api.delete: true, specs (API operations)"
+  },
+  {
+   "name": "unknown source counts as database",
+   "update": {
+    "source_patches": [
+     {
+      "name": "new",
+      "access": {
+       "delete": "admin"
+      }
+     }
+    ]
+   },
+   "current": [
+    {
+     "name": "erp",
+     "kind": "database",
+     "type": "postgres",
+     "host": "db",
+     "password": "[REDACTED]",
+     "read_only": true,
+     "access": {
+      "read": "account",
+      "blocked_tables": [
+       "payroll"
+      ]
+     }
+    },
+    {
+     "name": "shop",
+     "kind": "api",
+     "read_only": true,
+     "specs": {
+      "orders": {}
+     }
+    }
+   ],
+   "error": "database source \"new\" stays read-only; rejected access.delete: admin"
+  },
+  {
+   "name": "file kind is writable",
+   "update": {
+    "update_sources": [
+     {
+      "name": "docs",
+      "kind": "file",
+      "read_only": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "blocked writes pass",
+   "update": {
+    "source_patches": [
+     {
+      "name": "erp",
+      "access": {
+       "write": "blocked",
+       "read": "admin"
+      }
+     }
+    ]
+   },
+   "current": [
+    {
+     "name": "erp",
+     "kind": "database",
+     "type": "postgres",
+     "host": "db",
+     "password": "[REDACTED]",
+     "read_only": true,
+     "access": {
+      "read": "account",
+      "blocked_tables": [
+       "payroll"
+      ]
+     }
+    },
+    {
+     "name": "shop",
+     "kind": "api",
+     "read_only": true,
+     "specs": {
+      "orders": {}
+     }
+    }
+   ]
+  },
+  {
+   "name": "no current",
+   "update": {
+    "update_sources": [
+     {
+      "name": "x",
+      "read_only": false
+     }
+    ]
+   },
+   "current": "not a list",
+   "error": "database source \"x\" stays read-only; rejected read_only: false"
+  }
+ ],
+ "inputs": [
+  {
+   "value": {
+    "mode": "preview",
+    "expected_catalog_revision": "r1",
+    "roles": [
+     {
+      "name": "a",
+      "match": "x"
+     }
+    ]
+   },
+   "literal": "{ mode: \"preview\", expected_catalog_revision: \"r1\", roles: [{ name: \"a\", match: \"x\" }] }",
+   "variableDefinitions": "",
+   "variables": {}
+  },
+  {
+   "value": {
+    "update_sources": [
+     {
+      "name": "shop",
+      "capabilities": {
+       "api.write": true
+      },
+      "specs": {
+       "orders": {
+        "operations": {
+         "createOrder": {
+          "expose_mutation": true,
+          "allowed_roles": [
+           "admin"
+          ]
+         }
+        }
+       }
+      }
+     }
+    ],
+    "source_patches": [
+     {
+      "name": "shop",
+      "access": {
+       "write": "admin"
+      }
+     }
+    ]
+   },
+   "literal": "{ update_sources: [{ name: \"shop\", capabilities: $json1, specs: { orders: { operations: { createOrder: { expose_mutation: true, allowed_roles: [\"admin\"] } } } } }], source_patches: [{ name: \"shop\", access: { write: \"admin\" } }] }",
+   "variableDefinitions": "($json1: JSON!)",
+   "variables": {
+    "json1": {
+     "api.write": true
+    }
+   }
+  },
+  {
+   "value": {
+    "a": null,
+    "b": [
+     1,
+     2.5,
+     true,
+     "q\"uote"
+    ],
+    "c": {
+     "my-key": {
+      "x": 1
+     },
+     "ok": {
+      "1x": 2
+     }
+    }
+   },
+   "literal": "{ a: null, b: [1, 2.5, true, \"q\\\"uote\"], c: $json1 }",
+   "variableDefinitions": "($json1: JSON!)",
+   "variables": {
+    "json1": {
+     "my-key": {
+      "x": 1
+     },
+     "ok": {
+      "1x": 2
+     }
+    }
+   }
+  }
+ ],
+ "hashes": [
+  {
+   "payload": {
+    "action": "add_role",
+    "name": " analyst ",
+    "match": " user.role == 'analyst' ",
+    "comment": " note "
+   },
+   "hash": "d59762246ca9dec419134fcbb19f3663895fa99896dacbb007b8374ac9194341"
+  },
+  {
+   "payload": {
+    "action": "add_role",
+    "name": "analyst"
+   },
+   "hash": "8cfadd924a4b0c95f159ba6d13af4a94d58e6e958bd90085995d7a3529e817e0"
+  },
+  {
+   "payload": {
+    "action": "set_source_access",
+    "source": " erp ",
+    "read": "admin",
+    "write": "blocked"
+   },
+   "hash": "4b7dc783a2e0e0510df6fb903690c8fe905a4023c8fb2e8a207977f8abbf4f5d"
+  },
+  {
+   "payload": {
+    "action": "set_source_access",
+    "source": "erp"
+   },
+   "hash": "c726506078bfc5ba030c98069dfbdfa9cb9f1ad72f9407e95b66b2a767d3d385"
+  },
+  {
+   "payload": {
+    "action": "set_source_access",
+    "read": "admin"
+   },
+   "hash": "459bc90dd1bd6d9ab6e48910ab865b01cc0806b2301594e753a9b174b431cbce"
+  },
+  {
+   "payload": {
+    "action": "set_source_tables",
+    "source": "erp",
+    "blockedTables": [
+     "payroll",
+     " Payroll ",
+     "hr.salary"
+    ],
+    "adminTables": [
+     "audit"
+    ],
+    "openTables": [
+     "orders"
+    ]
+   },
+   "hash": "8191f76ee239d6fe6357d16eaf17d5e34f23801027ba773db7463782827444f8"
+  },
+  {
+   "payload": {
+    "action": "set_source_tables",
+    "source": "erp",
+    "blockedTables": [
+     "payroll"
+    ],
+    "openTables": [
+     "PAYROLL"
+    ]
+   },
+   "hash": "b18b771e2f02b15d3cba7b910d31a4e86e7ced715ff2ca93a7516a22c25cea38"
+  },
+  {
+   "payload": {
+    "action": "set_source_tables",
+    "source": "erp",
+    "blockedTables": [
+     "drop table"
+    ]
+   },
+   "hash": "51245cb25f387c82d5e80bd15d42926002c0bc79a1133b4a9115d091d52c6dd7"
+  },
+  {
+   "payload": {
+    "action": "set_source_tables",
+    "source": "erp",
+    "adminTables": "payroll"
+   },
+   "hash": "a079bc940ff76dd90a23fadd77fdb1f350ec1aff9cd8c3f61a3cb9ae6ba0e24c"
+  },
+  {
+   "payload": {
+    "action": "set_source_tables",
+    "source": "erp",
+    "blockedTables": []
+   },
+   "hash": "bb05b0e4da9f75c31ef383bcb38c2afea495ada3975ce4e84eb518208b9e5084"
+  },
+  {
+   "payload": {
+    "action": "set_source_capabilities",
+    "source": "shop",
+    "apiWrite": true,
+    "apiDelete": false
+   },
+   "hash": "b13b241d686f91e4c42e1739e88cee8596d84a79aabf8c9903674077e3466d53"
+  },
+  {
+   "payload": {
+    "action": "set_source_capabilities",
+    "source": "shop"
+   },
+   "hash": "999e9bd9073ecdef109a6a783e21193bb3bd43d0900863aabb710096bd8c7f6d"
+  },
+  {
+   "payload": {
+    "action": "expose_api_operation",
+    "source": "shop",
+    "spec": "orders",
+    "operation": "createOrder",
+    "exposeMutation": true,
+    "allowedRoles": [
+     " Admin ",
+     "member",
+     ""
+    ],
+    "exposeAs": " create_order "
+   },
+   "hash": "a001b6772f67a2836a20288dc07475926c6f76805e19dc58c7db9329fbccfbe3"
+  },
+  {
+   "payload": {
+    "action": "expose_api_operation",
+    "source": "shop",
+    "spec": "orders",
+    "operation": "createOrder",
+    "exposeMutation": true
+   },
+   "hash": "c537bcfe04acf22f7bb8c0ea1e69110f5a6e28878e2bece3880b09d881020fe4"
+  },
+  {
+   "payload": {
+    "action": "expose_api_operation",
+    "source": "shop",
+    "spec": "orders",
+    "operation": "createOrder"
+   },
+   "hash": "91c5f30574a8391c581d9acd8badacd12dc84b55afb38d54d20d80c6a646d2be"
+  },
+  {
+   "payload": {
+    "action": "expose_api_operation",
+    "source": "shop"
+   },
+   "hash": "5f20deb32348de56ef5e36f69064c6186373dba9eee96b383d158ce32d1110ee"
+  },
+  {
+   "payload": {
+    "action": "enable_api_writes",
+    "source": "shop",
+    "spec": "orders",
+    "operation": "createOrder",
+    "allowedRoles": [
+     "admin"
+    ],
+    "write": "admin",
+    "apiDelete": true,
+    "exposeAs": "x"
+   },
+   "hash": "d7fbb594023ab18308c6d2cff0846408c89b227f62b56b599cb2e6ab99913c7b"
+  },
+  {
+   "payload": {
+    "action": "enable_api_writes",
+    "source": "shop",
+    "spec": "orders",
+    "operation": "createOrder",
+    "allowedRoles": [
+     "member"
+    ]
+   },
+   "hash": "078d45bec149a0490e571a062ba43ac6f0d6afd3cb049c7cbcc7f08605580a11"
+  },
+  {
+   "payload": {
+    "action": "enable_api_writes",
+    "source": "shop",
+    "spec": "orders",
+    "operation": "createOrder",
+    "allowedRoles": [
+     "member"
+    ],
+    "write": "owner"
+   },
+   "hash": "9c0ca176a2c4755bec650e0c6db2586252f20cb982911ffef604316675b244e8"
+  },
+  {
+   "payload": {
+    "action": "enable_api_writes",
+    "source": "shop",
+    "spec": "orders",
+    "operation": "createOrder",
+    "allowedRoles": []
+   },
+   "hash": "273b21554faf8e4f1f135d3d334a484b5b0c62a4a9b688e412e93a31bbc3177c"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": " erp ",
+    "kind": [
+     "database"
+    ],
+    "type": [
+     "MySQL"
+    ],
+    "host": " db.internal ",
+    "port": 3306,
+    "dbname": "erp",
+    "user": "reader",
+    "secretRef": " erp-password ",
+    "blockedTables": [
+     "payroll"
+    ],
+    "adminTables": [
+     "audit"
+    ]
+   },
+   "hash": "6c2ffa5d703194241ecbd262416d4ad5c913afeb6e1c16bffc1f4e80ef60abfd"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "erp",
+    "host": "db",
+    "dbname": "erp",
+    "user": "u",
+    "secretRef": "erp-password",
+    "read": "admin"
+   },
+   "hash": "56c618ef87680e8a763485e9d76e302bba1ddf051c4f94f912c157c7a20398e7"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "erp",
+    "kind": "database",
+    "host": "db"
+   },
+   "hash": "c16a0c495d955f6ace8a8987437ed2aedd272988ff2c172c35e6dac0f9a70ea0"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "erp",
+    "kind": "database",
+    "secretRef": "empty-secret"
+   },
+   "hash": "d5f2fae33665594b72f8526e56d7918f97696bfdefcb5d4c50c8244fe451f717"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "erp",
+    "kind": "database",
+    "secretRef": "missing"
+   },
+   "hash": "2fddceb890de88ba810471b5a86a2759a65581962cc44ad0602a85f7616f96f0"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "erp",
+    "type": "oracle",
+    "secretRef": "erp-password"
+   },
+   "hash": "a81a6e424660e0ce37d88feaac4a2daf7a47b820003b48557bea8aecf5884891"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "erp",
+    "blockedTables": [
+     "a"
+    ],
+    "adminTables": [
+     "A"
+    ],
+    "secretRef": "erp-password"
+   },
+   "hash": "f47c5a9f38f49e4ae74c99e3e92951578b3f492d882320f95ca1ae846ef80477"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "kind": "database"
+   },
+   "hash": "33c1b913b45bd62ab2e732765569797c81a913be5acc9cd195398c70612c22b8"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "x",
+    "kind": "sheet"
+   },
+   "hash": "893c6be0edebe801f54263750d5552d1f92ee5dc2cf6aa1df4580d03b8a654cc"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "shop",
+    "kind": "api",
+    "specAssetId": " 88888888-8888-4888-8888-888888888888 "
+   },
+   "hash": "d2ae1a95bf6a54e97adf332ca5fce718a336109d4c2101e5c8da21060a9b8d4f"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "shop",
+    "kind": "api",
+    "specAssetId": "88888888-8888-4888-8888-888888888888"
+   },
+   "hash": "b08b6210b8cf733014b9ec98bcbd52c730afc70e29a212a4d58b48359a2fe661"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "shop",
+    "kind": "api"
+   },
+   "hash": "97f9c6093f954f71278693a569c63f2527ef5d3649e41cd00c7aa541c0c349ff"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": [
+     "local"
+    ],
+    "localFiles": {
+     "sourceName": "docs",
+     "ready": true,
+     "files": [
+      {
+       "name": "a.pdf",
+       "size": 10,
+       "contentType": "application/pdf",
+       "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+     ],
+     "totalSize": 10
+    }
+   },
+   "hash": "394ad5b0ce33bba8906c26af8e04fececd268fb8d256d8e3c4f6caa3b8f33c5b"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "local",
+    "localFiles": {
+     "sourceName": "docs",
+     "ready": true,
+     "files": [
+      {
+       "name": "a.pdf",
+       "size": 10,
+       "contentType": "application/pdf",
+       "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+     ],
+     "totalSize": 10
+    }
+   },
+   "hash": "c251682a584ee812a2bf842190ab406d550c7f6c8c05e3c5ebe71ad49e632e01"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "local",
+    "localFiles": {
+     "sourceName": "other",
+     "ready": true,
+     "files": [
+      {
+       "name": "a.pdf",
+       "size": 10,
+       "contentType": "application/pdf",
+       "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+     ],
+     "totalSize": 10
+    }
+   },
+   "hash": "40db393d9acb621261740aec8dc3eeae8c22d46d2a64908b8c247b1735f279cd"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "local",
+    "root": "/etc"
+   },
+   "hash": "338b6785d72fb79a507b939cbf22d1256ac3eaba1a7c7d27efdcc4a3fa9fec95"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "my-docs",
+    "kind": "file",
+    "backend": "s3"
+   },
+   "hash": "a98ec524cbae02dc0978bfeab02669f5eb4f338023805e780a33fc6af7968598"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file"
+   },
+   "hash": "1255dd26b87500002eb5daf3ebf905f251df55db53e70f4dc0e8e0f1bf6581fc"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "my.bucket-1",
+    "prefix": "a/b/",
+    "region": "eu-west-1",
+    "endpoint": "https://s3.example.com/",
+    "publicBaseUrl": "https://cdn.example.com/files/",
+    "presignTtl": "30m"
+   },
+   "hash": "a724ad8d47d1cffb72727e6ee659fcc360c9ca364025394a4cf5d7477743124d"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "gcs",
+    "bucket": "my_bucket",
+    "region": "ignored",
+    "presignTtl": "1h"
+   },
+   "hash": "cd99f6002ccdf7ce74ff708d17ad92e2ba9ec5bdeb9be773deb42e2e801e2762"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "gcs",
+    "bucket": "my_bucket",
+    "endpoint": "https://x"
+   },
+   "hash": "954f52d942ec67e2df96a2a92306cc7a95b695a1a942ee98c604452180fd3cc1"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3"
+   },
+   "hash": "a91423f4994f4930e9c2a4c881d784e0cd19ad7145ae8e79daff631c73aa655b"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "1.2.3.4"
+   },
+   "hash": "43bc18e91c748e3257a1ec901e7f5792752e397769fe0378d52c0d90e59e29cf"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "gcs",
+    "bucket": "google-x"
+   },
+   "hash": "fdaa67f9aa44ba5e394aefd4d93acd6089c07094cfc86a237b0f5ce5297c9e36"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "abc",
+    "prefix": "/a"
+   },
+   "hash": "4b00c7ece506f0d26e8fc74569a9a67a84d7225944e441eb0373caa6f461bf5b"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "abc",
+    "endpoint": "ftp://x"
+   },
+   "hash": "7cd57a004ea6d1c2688fc85dcf1276145725fe55f3c86d120cc8632e6f612b3d"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "abc",
+    "endpoint": "https://x/?a=1"
+   },
+   "hash": "565482f9042c1fba7fe819ed5f71dadbceecaa620652afd18a33ece271abcf71"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "abc",
+    "endpoint": "https://u:p@x"
+   },
+   "hash": "6d96a8c60623605e199bc0c8b88b244e7d1174e15257f3cd9d66303ce7491728"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "abc",
+    "endpoint": "not a url"
+   },
+   "hash": "127b8c77cd96fc5d0fd68b81a99c0d31745958367d1620beac76d7c68ef09cef"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "abc",
+    "publicBaseUrl": "http://cdn"
+   },
+   "hash": "12ef737fa1a5d3b40cd9a4004c4480e17b51a8d262f52968a68d79c4c13a2de2"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "abc",
+    "presignTtl": "30s"
+   },
+   "hash": "b98b3bd999d21630aa18fdedcc25412566d5d2c2005914b47b780b54dd577410"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "abc",
+    "presignTtl": "2h"
+   },
+   "hash": "21df1a74f8bbd7f154224bd9de224b125bb4a960a62419350821131655a241c6"
+  },
+  {
+   "payload": {
+    "action": "register_source",
+    "name": "docs",
+    "kind": "file",
+    "backend": "s3",
+    "bucket": "abc",
+    "presignTtl": "15 minutes"
+   },
+   "hash": "135bcb3d3baf7e37ca2e0e6a1de533ef9c4f0a4992b186c83e464f66a03cfe85"
+  },
+  {
+   "payload": {
+    "action": "drop_source"
+   },
+   "hash": "867156d73f76425d49729157dbb37c90cff07ae110ad55876df87556170ede70"
+  }
+ ],
+ "answers": [
+  {
+   "name": "role empty",
+   "payload": {
+    "action": "add_role",
+    "name": " ",
+    "match": ""
+   },
+   "problems": [
+    {
+     "field": "name",
+     "message": "The role name is empty."
+    },
+    {
+     "field": "match",
+     "message": "Say which people get this role. The match rule is empty."
+    }
+   ],
+   "text": "The role name is empty. Say which people get this role. The match rule is empty."
+  },
+  {
+   "name": "role ok",
+   "payload": {
+    "action": "add_role",
+    "name": "a",
+    "match": "b"
+   },
+   "problems": [],
+   "text": ""
+  },
+  {
+   "name": "register empty",
+   "payload": {
+    "action": "register_source"
+   },
+   "context": {
+    "secretNames": [
+     "erp-password"
+    ]
+   },
+   "problems": [
+    {
+     "field": "name",
+     "message": "Give the source a name."
+    },
+    {
+     "field": "host",
+     "message": "The host is empty. Enter the name or address of the database server."
+    },
+    {
+     "field": "dbname",
+     "message": "The database name is empty."
+    },
+    {
+     "field": "user",
+     "message": "The login name is empty."
+    },
+    {
+     "field": "secretRef",
+     "message": "OpenNeko needs a login with a password. Save the password for this login first."
+    }
+   ],
+   "text": "Give the source a name. The host is empty. Enter the name or address of the database server. The database name is empty. The login name is empty. OpenNeko needs a login with a password. Save the password for this login first."
+  },
+  {
+   "name": "register taken",
+   "payload": {
+    "action": "register_source",
+    "name": "ERP",
+    "host": "db",
+    "port": "70000",
+    "dbname": "erp",
+    "user": "u",
+    "secretRef": "nope"
+   },
+   "context": {
+    "secretNames": [
+     "erp-password"
+    ],
+    "currentSources": "[{\"name\":\"erp\",\"kind\":\"database\",\"type\":\"postgres\",\"host\":\"db\",\"password\":\"[REDACTED]\",\"read_only\":true,\"access\":{\"read\":\"account\",\"blocked_tables\":[\"payroll\"]}},{\"name\":\"shop\",\"kind\":\"api\",\"read_only\":true,\"specs\":{\"orders\":{}}}]"
+   },
+   "problems": [
+    {
+     "field": "name",
+     "message": "A source named \"ERP\" already exists. Choose another name."
+    },
+    {
+     "field": "port",
+     "message": "The port must be a whole number from 1 to 65535."
+    },
+    {
+     "field": "secretRef",
+     "message": "No saved password is named \"nope\". Save the password again."
+    }
+   ],
+   "text": "A source named \"ERP\" already exists. Choose another name. The port must be a whole number from 1 to 65535. No saved password is named \"nope\". Save the password again."
+  },
+  {
+   "name": "register port text",
+   "payload": {
+    "action": "register_source",
+    "name": "x",
+    "host": "db",
+    "port": "abc",
+    "dbname": "d",
+    "user": "u",
+    "secretRef": "erp-password"
+   },
+   "problems": [
+    {
+     "field": "port",
+     "message": "The port must be a whole number from 1 to 65535."
+    }
+   ],
+   "text": "The port must be a whole number from 1 to 65535."
+  },
+  {
+   "name": "register port ok",
+   "payload": {
+    "action": "register_source",
+    "name": "x",
+    "host": "db",
+    "port": 5432,
+    "dbname": "d",
+    "user": "u",
+    "secretRef": "s"
+   },
+   "problems": [],
+   "text": ""
+  },
+  {
+   "name": "register port empty",
+   "payload": {
+    "action": "register_source",
+    "name": [
+     "x"
+    ],
+    "host": "db",
+    "port": "",
+    "dbname": "d",
+    "user": "u",
+    "secretRef": "s"
+   },
+   "context": {
+    "secretNames": []
+   },
+   "problems": [
+    {
+     "field": "secretRef",
+     "message": "No saved password is named \"s\". Save the password again."
+    }
+   ],
+   "text": "No saved password is named \"s\". Save the password again."
+  },
+  {
+   "name": "register api",
+   "payload": {
+    "action": "register_source",
+    "name": "x",
+    "kind": [
+     "api"
+    ]
+   },
+   "problems": [],
+   "text": ""
+  },
+  {
+   "name": "source missing",
+   "payload": {
+    "action": "set_source_access"
+   },
+   "problems": [
+    {
+     "field": "source",
+     "message": "Say which source to change. The source name is empty."
+    }
+   ],
+   "text": "Say which source to change. The source name is empty."
+  },
+  {
+   "name": "source unknown",
+   "payload": {
+    "action": "set_source_access",
+    "source": "crm"
+   },
+   "context": {
+    "currentSources": [
+     {
+      "name": "erp",
+      "kind": "database",
+      "type": "postgres",
+      "host": "db",
+      "password": "[REDACTED]",
+      "read_only": true,
+      "access": {
+       "read": "account",
+       "blocked_tables": [
+        "payroll"
+       ]
+      }
+     },
+     {
+      "name": "shop",
+      "kind": "api",
+      "read_only": true,
+      "specs": {
+       "orders": {}
+      }
+     }
+    ]
+   },
+   "problems": [
+    {
+     "field": "source",
+     "message": "No source is named \"crm\". The sources are: erp, shop."
+    }
+   ],
+   "text": "No source is named \"crm\". The sources are: erp, shop."
+  },
+  {
+   "name": "source unknown no list",
+   "payload": {
+    "action": "set_source_access",
+    "source": "crm"
+   },
+   "problems": [],
+   "text": ""
+  },
+  {
+   "name": "tables unknown",
+   "payload": {
+    "action": "set_source_tables",
+    "source": "ERP",
+    "blockedTables": [
+     "orders",
+     "nope",
+     "PAYROLL"
+    ],
+    "adminTables": [
+     "x",
+     "y"
+    ],
+    "openTables": [
+     " "
+    ]
+   },
+   "context": {
+    "currentSources": [
+     {
+      "name": "erp",
+      "kind": "database",
+      "type": "postgres",
+      "host": "db",
+      "password": "[REDACTED]",
+      "read_only": true,
+      "access": {
+       "read": "account",
+       "blocked_tables": [
+        "payroll"
+       ]
+      }
+     },
+     {
+      "name": "shop",
+      "kind": "api",
+      "read_only": true,
+      "specs": {
+       "orders": {}
+      }
+     }
+    ],
+    "sourceTables": [
+     [
+      "erp",
+      [
+       "orders",
+       "Customers"
+      ]
+     ]
+    ]
+   },
+   "problems": [
+    {
+     "field": "blockedTables",
+     "message": "The source \"ERP\" has no table named \"nope\"."
+    },
+    {
+     "field": "adminTables",
+     "message": "The source \"ERP\" has no tables named \"x\", \"y\"."
+    }
+   ],
+   "text": "The source \"ERP\" has no table named \"nope\". The source \"ERP\" has no tables named \"x\", \"y\"."
+  },
+  {
+   "name": "tables no catalog",
+   "payload": {
+    "action": "set_source_tables",
+    "source": "erp",
+    "blockedTables": [
+     "nope"
+    ]
+   },
+   "context": {
+    "currentSources": [
+     {
+      "name": "erp",
+      "kind": "database",
+      "type": "postgres",
+      "host": "db",
+      "password": "[REDACTED]",
+      "read_only": true,
+      "access": {
+       "read": "account",
+       "blocked_tables": [
+        "payroll"
+       ]
+      }
+     },
+     {
+      "name": "shop",
+      "kind": "api",
+      "read_only": true,
+      "specs": {
+       "orders": {}
+      }
+     }
+    ]
+   },
+   "problems": [],
+   "text": ""
+  }
+ ],
+ "gjErrors": [
+  {
+   "name": "host",
+   "errors": [
+    "database 'erp' (reader@db.internal:5432/erp): connection failed: dial tcp: lookup db.internal: no such host"
+   ],
+   "payload": {
+    "action": "register_source"
+   },
+   "problems": [
+    {
+     "field": "host",
+     "message": "OpenNeko cannot find the host \"db.internal\". Check the host name.",
+     "detail": "database 'erp' (reader@db.internal:5432/erp): connection failed: dial tcp: lookup db.internal: no such host"
+    }
+   ],
+   "text": "OpenNeko cannot find the host \"db.internal\". Check the host name."
+  },
+  {
+   "name": "port",
+   "errors": [
+    {
+     "message": "database 'erp' (reader@db:5433/erp): connection failed: connect: connection refused"
+    }
+   ],
+   "payload": {
+    "action": "register_source"
+   },
+   "problems": [
+    {
+     "field": "port",
+     "message": "Nothing answers on db port 5433. Check the port, and that the database server accepts connections from OpenNeko.",
+     "detail": "database 'erp' (reader@db:5433/erp): connection failed: connect: connection refused"
+    }
+   ],
+   "text": "Nothing answers on db port 5433. Check the port, and that the database server accepts connections from OpenNeko."
+  },
+  {
+   "name": "password",
+   "errors": "database 'erp' (reader@db:5432/erp): connection failed: FATAL: password authentication failed for user \"reader\"",
+   "payload": {
+    "action": "register_source"
+   },
+   "problems": [
+    {
+     "field": "secretRef",
+     "message": "The database refused the login \"reader\" with this password. Check the login name and save the password again.",
+     "detail": "database 'erp' (reader@db:5432/erp): connection failed: FATAL: password authentication failed for user \"reader\""
+    }
+   ],
+   "text": "The database refused the login \"reader\" with this password. Check the login name and save the password again."
+  },
+  {
+   "name": "role",
+   "errors": [
+    "database 'erp' (bob@db:5432/erp): connection failed: FATAL: role \"bob\" does not exist",
+    "database 'erp' (u@db:5432/x): connection failed: FATAL: database \"x\" does not exist"
+   ],
+   "payload": {},
+   "problems": [
+    {
+     "field": "user",
+     "message": "The database has no login named \"bob\".",
+     "detail": "database 'erp' (bob@db:5432/erp): connection failed: FATAL: role \"bob\" does not exist"
+    },
+    {
+     "field": "dbname",
+     "message": "The server has no database named \"x\".",
+     "detail": "database 'erp' (u@db:5432/x): connection failed: FATAL: database \"x\" does not exist"
+    }
+   ],
+   "text": "The database has no login named \"bob\". The server has no database named \"x\"."
+  },
+  {
+   "name": "connect right",
+   "errors": [
+    "database 'erp' (u@db:5432/x): connection failed: permission denied for database x",
+    "database 'erp' (u@db:5432/x): connection failed: x509: certificate signed by unknown authority",
+    "database 'erp' (u@db:5432/x): connection failed: something\nelse"
+   ],
+   "payload": {},
+   "problems": [
+    {
+     "field": "user",
+     "message": "The login \"u\" may not connect to the database \"x\".",
+     "detail": "database 'erp' (u@db:5432/x): connection failed: permission denied for database x"
+    },
+    {
+     "field": "host",
+     "message": "The secure connection to \"db\" failed. Check the server's TLS settings.",
+     "detail": "database 'erp' (u@db:5432/x): connection failed: x509: certificate signed by unknown authority"
+    },
+    {
+     "field": "host",
+     "message": "OpenNeko could not connect to the database \"x\" on db port 5432.",
+     "detail": "database 'erp' (u@db:5432/x): connection failed: something\nelse"
+    }
+   ],
+   "text": "The login \"u\" may not connect to the database \"x\". The secure connection to \"db\" failed. Check the server's TLS settings. OpenNeko could not connect to the database \"x\" on db port 5432."
+  },
+  {
+   "name": "access",
+   "errors": [
+    "sources[\"erp\"].access.read: unknown mode \"x\""
+   ],
+   "payload": {
+    "action": "set_source_access"
+   },
+   "problems": [
+    {
+     "field": "read",
+     "message": "GraphJin does not accept this read access: unknown mode \"x\".",
+     "detail": "sources[\"erp\"].access.read: unknown mode \"x\""
+    }
+   ],
+   "text": "GraphJin does not accept this read access: unknown mode \"x\"."
+  },
+  {
+   "name": "names",
+   "errors": [
+    "sources[0]: name is required",
+    "duplicate source names: erp",
+    "unsupported database type \"oracle\"",
+    "cannot use System Database",
+    "other",
+    "",
+    5,
+    {
+     "nope": 1
+    }
+   ],
+   "payload": {
+    "action": "register_source"
+   },
+   "problems": [
+    {
+     "field": "name",
+     "message": "Give the source a name.",
+     "detail": "sources[0]: name is required"
+    },
+    {
+     "field": "name",
+     "message": "A source with this name already exists. Choose another name.",
+     "detail": "duplicate source names: erp"
+    },
+    {
+     "field": "type",
+     "message": "GraphJin does not support this database type.",
+     "detail": "unsupported database type \"oracle\""
+    },
+    {
+     "field": "dbname",
+     "message": "This is a system database. Choose the database that holds the business data.",
+     "detail": "cannot use System Database"
+    },
+    {
+     "field": null,
+     "message": "GraphJin did not accept this change.",
+     "detail": "other"
+    }
+   ],
+   "text": "Give the source a name. A source with this name already exists. Choose another name. GraphJin does not support this database type. This is a system database. Choose the database that holds the business data. GraphJin did not accept this change."
+  },
+  {
+   "name": "names other action",
+   "errors": [
+    "sources[1]: name is required",
+    "source erp already exists"
+   ],
+   "payload": {
+    "action": "set_source_tables"
+   },
+   "problems": [
+    {
+     "field": "source",
+     "message": "Give the source a name.",
+     "detail": "sources[1]: name is required"
+    },
+    {
+     "field": "source",
+     "message": "A source with this name already exists. Choose another name.",
+     "detail": "source erp already exists"
+    }
+   ],
+   "text": "Give the source a name. A source with this name already exists. Choose another name."
+  },
+  {
+   "name": "not a list",
+   "errors": {
+    "message": "x"
+   },
+   "payload": {},
+   "problems": [],
+   "text": ""
+  }
+ ],
+ "merges": [
+  {
+   "name": "new database source",
+   "raw": "# GraphJin config\napp_name: test\nsources:\n  - name: erp\n    kind: database\n    type: postgres\n    host: db\n    password: ${ERP_PASSWORD}\n    read_only: true\n    access:\n      read: account\n      blocked_tables: [payroll, audit]\n      admin_tables:\n        - salaries\nroles:\n  - name: user\n    match: id IS NOT NULL\n",
+   "update": {
+    "update_sources": [
+     {
+      "name": "crm",
+      "kind": "database",
+      "read_only": true,
+      "type": "mysql",
+      "host": "h",
+      "port": 3306,
+      "user": "u",
+      "password": "pw-planted",
+      "access": {
+       "read": "authenticated",
+       "write": "blocked",
+       "delete": "blocked",
+       "blocked_tables": [
+        "x"
+       ]
+      }
+     }
+    ]
+   },
+   "value": "# GraphJin config\napp_name: test\nsources:\n  - name: erp\n    kind: database\n    type: postgres\n    host: db\n    password: ${ERP_PASSWORD}\n    read_only: true\n    access:\n      read: account\n      blocked_tables: [ payroll, audit ]\n      admin_tables:\n        - salaries\n  - name: crm\n    kind: database\n    read_only: true\n    type: mysql\n    host: h\n    port: 3306\n    user: u\n    password: gjsecret://sources/crm/password\n    access:\n      read: authenticated\n      write: blocked\n      delete: blocked\n      blocked_tables:\n        - x\nroles:\n  - name: user\n    match: id IS NOT NULL\n"
+  },
+  {
+   "name": "existing source merge",
+   "raw": "# GraphJin config\napp_name: test\nsources:\n  - name: erp\n    kind: database\n    type: postgres\n    host: db\n    password: ${ERP_PASSWORD}\n    read_only: true\n    access:\n      read: account\n      blocked_tables: [payroll, audit]\n      admin_tables:\n        - salaries\nroles:\n  - name: user\n    match: id IS NOT NULL\n",
+   "update": {
+    "update_sources": [
+     {
+      "name": "erp",
+      "capabilities": {
+       "api.write": true
+      },
+      "access": {
+       "read": "admin"
+      },
+      "headers": {
+       "Authorization": "Bearer x",
+       "X-Plain": "y"
+      }
+     }
+    ]
+   },
+   "value": "# GraphJin config\napp_name: test\nsources:\n  - name: erp\n    kind: database\n    type: postgres\n    host: db\n    password: ${ERP_PASSWORD}\n    read_only: true\n    access:\n      read: admin\n      blocked_tables: [ payroll, audit ]\n      admin_tables:\n        - salaries\n    capabilities:\n      api.write: true\n    headers:\n      Authorization: gjsecret://sources/erp/headers/Authorization\n      X-Plain: y\nroles:\n  - name: user\n    match: id IS NOT NULL\n"
+  },
+  {
+   "name": "table patch",
+   "raw": "# GraphJin config\napp_name: test\nsources:\n  - name: erp\n    kind: database\n    type: postgres\n    host: db\n    password: ${ERP_PASSWORD}\n    read_only: true\n    access:\n      read: account\n      blocked_tables: [payroll, audit]\n      admin_tables:\n        - salaries\nroles:\n  - name: user\n    match: id IS NOT NULL\n",
+   "update": {
+    "source_patches": [
+     {
+      "name": "erp",
+      "access": {
+       "blocked_tables_add": [
+        "Salaries",
+        "orders"
+       ],
+       "admin_tables_add": [
+        "payroll"
+       ],
+       "blocked_tables_remove": [
+        "AUDIT"
+       ],
+       "admin_tables_remove": [
+        "orders"
+       ]
+      }
+     }
+    ]
+   },
+   "value": "# GraphJin config\napp_name: test\nsources:\n  - name: erp\n    kind: database\n    type: postgres\n    host: db\n    password: ${ERP_PASSWORD}\n    read_only: true\n    access:\n      read: account\n      blocked_tables:\n        - Salaries\n        - orders\n      admin_tables:\n        - payroll\nroles:\n  - name: user\n    match: id IS NOT NULL\n"
+  },
+  {
+   "name": "open tables",
+   "raw": "# GraphJin config\napp_name: test\nsources:\n  - name: erp\n    kind: database\n    type: postgres\n    host: db\n    password: ${ERP_PASSWORD}\n    read_only: true\n    access:\n      read: account\n      blocked_tables: [payroll, audit]\n      admin_tables:\n        - salaries\nroles:\n  - name: user\n    match: id IS NOT NULL\n",
+   "update": {
+    "source_patches": [
+     {
+      "name": "erp",
+      "access": {
+       "blocked_tables_remove": [
+        "payroll"
+       ],
+       "admin_tables_remove": [
+        "payroll"
+       ],
+       "write": "blocked"
+      }
+     }
+    ]
+   },
+   "value": "# GraphJin config\napp_name: test\nsources:\n  - name: erp\n    kind: database\n    type: postgres\n    host: db\n    password: ${ERP_PASSWORD}\n    read_only: true\n    access:\n      read: account\n      blocked_tables:\n        - audit\n      admin_tables:\n        - salaries\n      write: blocked\nroles:\n  - name: user\n    match: id IS NOT NULL\n"
+  },
+  {
+   "name": "add and remove one table",
+   "raw": "# GraphJin config\napp_name: test\nsources:\n  - name: erp\n    kind: database\n    type: postgres\n    host: db\n    password: ${ERP_PASSWORD}\n    read_only: true\n    access:\n      read: account\n      blocked_tables: [payroll, audit]\n      admin_tables:\n        - salaries\nroles:\n  - name: user\n    match: id IS NOT NULL\n",
+   "update": {
+    "source_patches": [
+     {
+      "name": "erp",
+      "access": {
+       "blocked_tables_add": [
+        "orders"
+       ],
+       "blocked_tables_remove": [
+        "orders",
+        "payroll"
+       ]
+      }
+     }
+    ]
+   },
+   "value": "# GraphJin config\napp_name: test\nsources:\n  - name: erp\n    kind: database\n    type: postgres\n    host: db\n    password: ${ERP_PASSWORD}\n    read_only: true\n    access:\n      read: account\n      blocked_tables:\n        - audit\n        - orders\n      admin_tables:\n        - salaries\nroles:\n  - name: user\n    match: id IS NOT NULL\n"
+  },
+  {
+   "name": "patch absent source",
+   "raw": "# GraphJin config\napp_name: test\nsources:\n  - name: erp\n    kind: database\n    type: postgres\n    host: db\n    password: ${ERP_PASSWORD}\n    read_only: true\n    access:\n      read: account\n      blocked_tables: [payroll, audit]\n      admin_tables:\n        - salaries\nroles:\n  - name: user\n    match: id IS NOT NULL\n",
+   "update": {
+    "source_patches": [
+     {
+      "name": "crm",
+      "access": {
+       "read": "admin"
+      }
+     }
+    ]
+   },
+   "error": "GraphJin source crm is absent from the durable config"
+  },
+  {
+   "name": "roles",
+   "raw": "# GraphJin config\napp_name: test\nsources:\n  - name: erp\n    kind: database\n    type: postgres\n    host: db\n    password: ${ERP_PASSWORD}\n    read_only: true\n    access:\n      read: account\n      blocked_tables: [payroll, audit]\n      admin_tables:\n        - salaries\nroles:\n  - name: user\n    match: id IS NOT NULL\n",
+   "update": {
+    "roles": [
+     {
+      "name": "USER",
+      "match": "x"
+     },
+     {
+      "name": "analyst",
+      "match": "y",
+      "comment": "z"
+     }
+    ]
+   },
+   "value": "# GraphJin config\napp_name: test\nsources:\n  - name: erp\n    kind: database\n    type: postgres\n    host: db\n    password: ${ERP_PASSWORD}\n    read_only: true\n    access:\n      read: account\n      blocked_tables: [ payroll, audit ]\n      admin_tables:\n        - salaries\nroles:\n  - name: USER\n    match: x\n  - name: analyst\n    match: y\n    comment: z\n"
+  },
+  {
+   "name": "remove",
+   "raw": "# GraphJin config\napp_name: test\nsources:\n  - name: erp\n    kind: database\n    type: postgres\n    host: db\n    password: ${ERP_PASSWORD}\n    read_only: true\n    access:\n      read: account\n      blocked_tables: [payroll, audit]\n      admin_tables:\n        - salaries\nroles:\n  - name: user\n    match: id IS NOT NULL\n",
+   "update": {
+    "remove_sources": [
+     "ERP"
+    ]
+   },
+   "value": "# GraphJin config\napp_name: test\nsources: []\nroles:\n  - name: user\n    match: id IS NOT NULL\n"
+  },
+  {
+   "name": "no sources yet",
+   "raw": "app_name: x\n",
+   "update": {
+    "update_sources": [
+     {
+      "name": "a",
+      "kind": "api",
+      "specs_dir": "/config/specs",
+      "secret_token": "gjsecret://keep",
+      "api_key": "${KEEP}"
+     }
+    ]
+   },
+   "value": "app_name: x\nsources:\n  - name: a\n    kind: api\n    specs_dir: /config/specs\n    secret_token: gjsecret://keep\n    api_key: ${KEEP}\n"
+  },
+  {
+   "name": "no sources and no change",
+   "raw": "app_name: x\n",
+   "update": {
+    "roles": [
+     {
+      "name": "a",
+      "match": "b"
+     }
+    ]
+   },
+   "value": "app_name: x\nroles:\n  - name: a\n    match: b\n"
+  },
+  {
+   "name": "flow sources",
+   "raw": "sources: []\n",
+   "update": {
+    "update_sources": [
+     {
+      "name": "a/b",
+      "kind": "file",
+      "list": [
+       {
+        "name": "n",
+        "token": "t"
+       },
+       {
+        "password": "p"
+       }
+      ]
+     }
+    ]
+   },
+   "value": "sources:\n  - name: a/b\n    kind: file\n    list:\n      - name: n\n        token: gjsecret://sources/a_b/list/n/token\n      - password: gjsecret://sources/a_b/list/1/password\n"
+  },
+  {
+   "name": "bad yaml",
+   "raw": "a: [\n",
+   "update": {},
+   "error": "GraphJin config is not valid YAML: Flow sequence in block collection must be sufficiently indented and end with a ] at line 2, column 1:\n\na: [\n\n^\n"
+  },
+  {
+   "name": "root list",
+   "raw": "- a\n",
+   "update": {},
+   "error": "GraphJin config root must be a YAML object"
+  },
+  {
+   "name": "sources map",
+   "raw": "sources: {}\n",
+   "update": {},
+   "error": "GraphJin config sources must be a YAML list"
+  },
+  {
+   "name": "no name",
+   "raw": "# GraphJin config\napp_name: test\nsources:\n  - name: erp\n    kind: database\n    type: postgres\n    host: db\n    password: ${ERP_PASSWORD}\n    read_only: true\n    access:\n      read: account\n      blocked_tables: [payroll, audit]\n      admin_tables:\n        - salaries\nroles:\n  - name: user\n    match: id IS NOT NULL\n",
+   "update": {
+    "update_sources": [
+     {
+      "kind": "api"
+     }
+    ]
+   },
+   "error": "GraphJin source persistence needs a source name"
+  },
+  {
+   "name": "invalid source",
+   "raw": "# GraphJin config\napp_name: test\nsources:\n  - name: erp\n    kind: database\n    type: postgres\n    host: db\n    password: ${ERP_PASSWORD}\n    read_only: true\n    access:\n      read: account\n      blocked_tables: [payroll, audit]\n      admin_tables:\n        - salaries\nroles:\n  - name: user\n    match: id IS NOT NULL\n",
+   "update": {
+    "update_sources": [
+     "x"
+    ]
+   },
+   "error": "GraphJin update_sources contains an invalid source"
+  }
+ ],
+ "describes": [
+  {
+   "name": "new database",
+   "current": {
+    "sources": "[{\"name\":\"erp\",\"kind\":\"database\",\"type\":\"postgres\",\"host\":\"db\",\"password\":\"[REDACTED]\",\"read_only\":true,\"access\":{\"read\":\"account\",\"blocked_tables\":[\"payroll\"]}},{\"name\":\"shop\",\"kind\":\"api\",\"read_only\":true,\"specs\":{\"orders\":{}}}]",
+    "roles": "[{\"Name\":\"user\",\"Match\":\"id IS NOT NULL\"}]"
+   },
+   "update": {
+    "update_sources": [
+     {
+      "name": "crm",
+      "kind": "database",
+      "read_only": true,
+      "type": "mysql",
+      "host": "h",
+      "port": 3306,
+      "dbname": "c",
+      "user": "u",
+      "password": "pw-planted",
+      "access": {
+       "read": "authenticated",
+       "write": "blocked",
+       "delete": "blocked",
+       "blocked_tables": [
+        "x"
+       ]
+      }
+     }
+    ]
+   },
+   "value": {
+    "before": {
+     "sources": [],
+     "roles": []
+    },
+    "after": {
+     "sources": [
+      {
+       "name": "crm",
+       "kind": "database",
+       "sentences": [
+        "A MySQL source: database c, on h, port 3306, with the login u.",
+        "OpenNeko only reads it. GraphJin blocks every change to this database.",
+        "Who may read: everyone who is signed in.",
+        "Who may change or delete: nobody.",
+        "Hidden from everyone (1): x.",
+        "Every other table follows the read rule."
+       ]
+      }
+     ],
+     "roles": []
+    },
+    "yaml": {
+     "before": "",
+     "after": "sources:\n  - name: crm\n    kind: database\n    read_only: true\n    type: mysql\n    host: h\n    port: 3306\n    dbname: c\n    user: u\n    password: \"[REDACTED]\"\n    access:\n      read: authenticated\n      write: blocked\n      delete: blocked\n      blocked_tables:\n        - x\n"
+    }
+   }
+  },
+  {
+   "name": "table patch",
+   "current": {
+    "sources": [
+     {
+      "name": "erp",
+      "kind": "database",
+      "type": "postgres",
+      "host": "db",
+      "password": "[REDACTED]",
+      "read_only": true,
+      "access": {
+       "read": "account",
+       "blocked_tables": [
+        "payroll"
+       ]
+      }
+     },
+     {
+      "name": "shop",
+      "kind": "api",
+      "read_only": true,
+      "specs": {
+       "orders": {}
+      }
+     }
+    ],
+    "roles": []
+   },
+   "update": {
+    "source_patches": [
+     {
+      "name": "erp",
+      "access": {
+       "blocked_tables_add": [
+        "orders"
+       ],
+       "admin_tables_add": [
+        "payroll"
+       ]
+      }
+     }
+    ]
+   },
+   "value": {
+    "before": {
+     "sources": [
+      {
+       "name": "erp",
+       "kind": "database",
+       "sentences": [
+        "A PostgreSQL source: on db.",
+        "OpenNeko only reads it. GraphJin blocks every change to this database.",
+        "Who may read: everyone who is signed in, only rows where account_id is their organization.",
+        "Who may change or delete: nobody.",
+        "Hidden from everyone (1): payroll.",
+        "Every other table follows the read rule."
+       ]
+      }
+     ],
+     "roles": []
+    },
+    "after": {
+     "sources": [
+      {
+       "name": "erp",
+       "kind": "database",
+       "sentences": [
+        "A PostgreSQL source: on db.",
+        "OpenNeko only reads it. GraphJin blocks every change to this database.",
+        "Who may read: everyone who is signed in, only rows where account_id is their organization.",
+        "Who may change or delete: nobody.",
+        "Hidden from everyone (1): orders.",
+        "Admins only (1): payroll.",
+        "Every other table follows the read rule."
+       ]
+      }
+     ],
+     "roles": []
+    },
+    "yaml": {
+     "before": "sources:\n  - name: erp\n    kind: database\n    type: postgres\n    host: db\n    password: \"[REDACTED]\"\n    read_only: true\n    access:\n      read: account\n      blocked_tables:\n        - payroll\n",
+     "after": "sources:\n  - name: erp\n    kind: database\n    type: postgres\n    host: db\n    password: \"[REDACTED]\"\n    read_only: true\n    access:\n      read: account\n      blocked_tables:\n        - orders\n      admin_tables:\n        - payroll\n"
+    }
+   }
+  },
+  {
+   "name": "api writes",
+   "current": {
+    "sources": [
+     {
+      "name": "erp",
+      "kind": "database",
+      "type": "postgres",
+      "host": "db",
+      "password": "[REDACTED]",
+      "read_only": true,
+      "access": {
+       "read": "account",
+       "blocked_tables": [
+        "payroll"
+       ]
+      }
+     },
+     {
+      "name": "shop",
+      "kind": "api",
+      "read_only": true,
+      "specs": {
+       "orders": {}
+      }
+     }
+    ]
+   },
+   "update": {
+    "update_sources": [
+     {
+      "name": "shop",
+      "read_only": false,
+      "capabilities": {
+       "api.write": true
+      },
+      "specs": {
+       "orders": {
+        "operations": {
+         "createOrder": {
+          "expose_mutation": true,
+          "allowed_roles": [
+           "admin"
+          ]
+         }
+        }
+       }
+      }
+     }
+    ],
+    "source_patches": [
+     {
+      "name": "shop",
+      "access": {
+       "write": "admin"
+      }
+     }
+    ]
+   },
+   "value": {
+    "before": {
+     "sources": [
+      {
+       "name": "shop",
+       "kind": "api",
+       "sentences": [
+        "An API source, described by the OpenAPI documents orders.",
+        "OpenNeko only reads it. GraphJin blocks every write call.",
+        "Who may read: everyone who is signed in.",
+        "Who may change or delete: nobody."
+       ]
+      }
+     ],
+     "roles": []
+    },
+    "after": {
+     "sources": [
+      {
+       "name": "shop",
+       "kind": "api",
+       "sentences": [
+        "An API source, described by the OpenAPI documents orders.",
+        "Write calls are on, for the calls named below. Delete calls are off.",
+        "The write call orders/createOrder is open to the roles admin.",
+        "Who may read: everyone who is signed in.",
+        "Who may change: admins only.",
+        "Who may delete: nobody."
+       ]
+      }
+     ],
+     "roles": []
+    },
+    "yaml": {
+     "before": "sources:\n  - name: shop\n    kind: api\n    read_only: true\n    specs:\n      orders: {}\n",
+     "after": "sources:\n  - name: shop\n    kind: api\n    read_only: false\n    specs:\n      orders:\n        operations:\n          createOrder:\n            expose_mutation: true\n            allowed_roles:\n              - admin\n    capabilities:\n      api.write: true\n    access:\n      write: admin\n"
+    }
+   }
+  },
+  {
+   "name": "role",
+   "current": {
+    "roles": [
+     {
+      "name": "user",
+      "match": "a"
+     }
+    ]
+   },
+   "update": {
+    "roles": [
+     {
+      "name": "analyst",
+      "match": "b",
+      "comment": "c"
+     }
+    ]
+   },
+   "value": {
+    "before": {
+     "sources": [],
+     "roles": []
+    },
+    "after": {
+     "sources": [],
+     "roles": [
+      {
+       "name": "analyst",
+       "sentence": "A person gets this role when b. Note: c"
+      }
+     ]
+    },
+    "yaml": {
+     "before": "",
+     "after": "roles:\n  - name: analyst\n    match: b\n    comment: c\n"
+    }
+   }
+  },
+  {
+   "name": "role replaced",
+   "current": {
+    "roles": [
+     {
+      "Name": "user",
+      "Match": "a"
+     }
+    ]
+   },
+   "update": {
+    "roles": [
+     {
+      "name": "USER",
+      "match": "b"
+     }
+    ]
+   },
+   "value": {
+    "before": {
+     "sources": [],
+     "roles": [
+      {
+       "name": "user",
+       "sentence": "A person gets this role when a."
+      }
+     ]
+    },
+    "after": {
+     "sources": [],
+     "roles": [
+      {
+       "name": "USER",
+       "sentence": "A person gets this role when b."
+      }
+     ]
+    },
+    "yaml": {
+     "before": "roles:\n  - name: user\n    match: a\n",
+     "after": "roles:\n  - name: USER\n    match: b\n"
+    }
+   }
+  },
+  {
+   "name": "empty",
+   "current": {},
+   "update": {},
+   "value": {
+    "before": {
+     "sources": [],
+     "roles": []
+    },
+    "after": {
+     "sources": [],
+     "roles": []
+    },
+    "yaml": {
+     "before": "",
+     "after": ""
+    }
+   }
+  }
+ ],
+ "manifests": [
+  {
+   "name": "ok",
+   "value": {
+    "sourceName": "docs",
+    "ready": true,
+    "files": [
+     {
+      "name": "a.pdf",
+      "size": 10,
+      "contentType": "application/pdf",
+      "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     },
+     {
+      "name": "b c (1).txt",
+      "size": 5,
+      "contentType": "text/plain",
+      "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     }
+    ],
+    "totalSize": 15
+   },
+   "sourceName": "docs"
+  },
+  {
+   "name": "bad source name",
+   "value": {
+    "sourceName": "docs",
+    "ready": true,
+    "files": [
+     {
+      "name": "a.pdf",
+      "size": 10,
+      "contentType": "application/pdf",
+      "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     }
+    ],
+    "totalSize": 10
+   },
+   "sourceName": "1docs",
+   "error": "register_source file name must start with a letter and contain only letters, digits, and underscores (64 characters maximum)"
+  },
+  {
+   "name": "not an object",
+   "value": [
+    {
+     "sourceName": "docs",
+     "ready": true,
+     "files": [
+      {
+       "name": "a.pdf",
+       "size": 10,
+       "contentType": "application/pdf",
+       "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+     ],
+     "totalSize": 10
+    }
+   ],
+   "sourceName": "docs",
+   "error": "register_source local file needs a managed file manifest"
+  },
+  {
+   "name": "not ready",
+   "value": {
+    "sourceName": "docs",
+    "ready": "yes",
+    "files": [
+     {
+      "name": "a.pdf",
+      "size": 10,
+      "contentType": "application/pdf",
+      "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     }
+    ],
+    "totalSize": 10
+   },
+   "sourceName": "docs",
+   "error": "register_source local file manifest must match the selected source name"
+  },
+  {
+   "name": "no files",
+   "value": {
+    "sourceName": "docs",
+    "ready": true,
+    "files": [],
+    "totalSize": 10
+   },
+   "sourceName": "docs",
+   "error": "managed file source manifest has an invalid file count"
+  },
+  {
+   "name": "bad entry",
+   "value": {
+    "sourceName": "docs",
+    "ready": true,
+    "files": [
+     null
+    ],
+    "totalSize": 10
+   },
+   "sourceName": "docs",
+   "error": "managed file source manifest has an invalid file entry"
+  },
+  {
+   "name": "path name",
+   "value": {
+    "sourceName": "docs",
+    "ready": true,
+    "files": [
+     {
+      "name": "../a",
+      "size": 10,
+      "contentType": "application/pdf",
+      "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     }
+    ],
+    "totalSize": 10
+   },
+   "sourceName": "docs",
+   "error": "managed file names must be 1-128 safe filename characters and may not contain a path"
+  },
+  {
+   "name": "trailing dot",
+   "value": {
+    "sourceName": "docs",
+    "ready": true,
+    "files": [
+     {
+      "name": "a.",
+      "size": 10,
+      "contentType": "application/pdf",
+      "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     }
+    ],
+    "totalSize": 10
+   },
+   "sourceName": "docs",
+   "error": "managed file names must be 1-128 safe filename characters and may not contain a path"
+  },
+  {
+   "name": "duplicate",
+   "value": {
+    "sourceName": "docs",
+    "ready": true,
+    "files": [
+     {
+      "name": "a.pdf",
+      "size": 10,
+      "contentType": "application/pdf",
+      "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     },
+     {
+      "name": "a.pdf",
+      "size": 10,
+      "contentType": "application/pdf",
+      "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     }
+    ],
+    "totalSize": 20
+   },
+   "sourceName": "docs",
+   "error": "managed file source manifest has duplicate names"
+  },
+  {
+   "name": "size",
+   "value": {
+    "sourceName": "docs",
+    "ready": true,
+    "files": [
+     {
+      "name": "a.pdf",
+      "size": 1.5,
+      "contentType": "application/pdf",
+      "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     }
+    ],
+    "totalSize": 10
+   },
+   "sourceName": "docs",
+   "error": "managed file \"a.pdf\" has an invalid size"
+  },
+  {
+   "name": "too big",
+   "value": {
+    "sourceName": "docs",
+    "ready": true,
+    "files": [
+     {
+      "name": "a.pdf",
+      "size": 31457280,
+      "contentType": "application/pdf",
+      "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     }
+    ],
+    "totalSize": 10
+   },
+   "sourceName": "docs",
+   "error": "managed file \"a.pdf\" has an invalid size"
+  },
+  {
+   "name": "checksum",
+   "value": {
+    "sourceName": "docs",
+    "ready": true,
+    "files": [
+     {
+      "name": "a.pdf",
+      "size": 10,
+      "contentType": "application/pdf",
+      "checksumSha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+     }
+    ],
+    "totalSize": 10
+   },
+   "sourceName": "docs",
+   "error": "managed file \"a.pdf\" has an invalid checksum"
+  },
+  {
+   "name": "content type",
+   "value": {
+    "sourceName": "docs",
+    "ready": true,
+    "files": [
+     {
+      "name": "a.pdf",
+      "size": 10,
+      "contentType": " text/plain",
+      "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     }
+    ],
+    "totalSize": 10
+   },
+   "sourceName": "docs",
+   "error": "managed file \"a.pdf\" has an invalid content type"
+  },
+  {
+   "name": "empty content type",
+   "value": {
+    "sourceName": "docs",
+    "ready": true,
+    "files": [
+     {
+      "name": "a.pdf",
+      "size": 10,
+      "contentType": "",
+      "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     }
+    ],
+    "totalSize": 10
+   },
+   "sourceName": "docs",
+   "error": "managed file \"a.pdf\" has an invalid content type"
+  },
+  {
+   "name": "total",
+   "value": {
+    "sourceName": "docs",
+    "ready": true,
+    "files": [
+     {
+      "name": "a.pdf",
+      "size": 10,
+      "contentType": "application/pdf",
+      "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     }
+    ],
+    "totalSize": 11
+   },
+   "sourceName": "docs",
+   "error": "managed file source manifest total does not match its files"
+  }
+ ],
+ "roots": [
+  {
+   "orgId": "11111111-1111-4111-8111-111111111111",
+   "sourceName": "docs",
+   "runtimeBase": "/config/files//",
+   "value": "/config/files/org_bd7662a5eeb4_docs"
+  },
+  {
+   "orgId": "o",
+   "sourceName": "docs",
+   "runtimeBase": "relative",
+   "error": "managed GraphJin file runtime directory must be absolute"
+  },
+  {
+   "orgId": "o",
+   "sourceName": "bad-name",
+   "runtimeBase": "/x",
+   "error": "register_source file name must start with a letter and contain only letters, digits, and underscores (64 characters maximum)"
+  }
+ ]
+}
