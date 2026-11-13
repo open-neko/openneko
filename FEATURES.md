@@ -125,6 +125,7 @@ restorable.
 | Personal workflows | Your saved workflows are yours; the team's are the team's. Same name, no collisions. | #96 |
 | Personal memory layer | Correct or hide a team memory just for yourself without changing it for anyone else — and pull in team updates when you want them. | #96 |
 | Save, history, restore | Browse what changed and roll back to any earlier state of your assistant's configuration. | #96 |
+| Your own skills | Copy any skill you can see to a new name. The copy is yours: only you see it, and you edit or delete it as you like. The team skill stays as it is. An admin can share their own skill with the team. Only an admin edits or deletes a team skill. | Phase 1 |
 | Skill edits that stick | When the assistant changes a skill during a conversation, the change is saved as a new version when the turn ends. It applies to everyone if an admin asked, or only to you otherwise. | #413 |
 | Promote and adopt | When a personal workflow or memory proves valuable, an admin can promote it to the whole team with full lineage of where it came from. | #96 |
 | Document library | Documents and spreadsheets you upload, or attach in a conversation and add to the library, go into your private folder. The assistant finds them with file search. Nobody else can see them. | #220 |

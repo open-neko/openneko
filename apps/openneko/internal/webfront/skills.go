@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -36,6 +35,9 @@ type skillSummary struct {
 	Description string `json:"description"`
 	FileCount   int    `json:"fileCount"`
 	UpdatedAt   string `json:"updatedAt"`
+	Scope       string `json:"scope"`
+	CanEdit     bool   `json:"canEdit"`
+	CanShare    bool   `json:"canShare"`
 }
 
 type skillDetail struct {
@@ -101,14 +103,14 @@ func summarizeSkill(name, dir string, files []skillFile) (skillSummary, string) 
 		UpdatedAt: jsTime(time.UnixMilli(latest))}, string(markdown)
 }
 
-func listWorkSkills(roots orgRoots) []skillSummary {
-	entries, _ := os.ReadDir(roots.Skills)
+func listSkillFolders(root string) []skillSummary {
+	entries, _ := os.ReadDir(root)
 	out := []skillSummary{}
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
-		dir := filepath.Join(roots.Skills, e.Name())
+		dir := filepath.Join(root, e.Name())
 		files := listSkillFiles(dir)
 		if len(files) == 0 {
 			continue
@@ -116,8 +118,41 @@ func listWorkSkills(roots orgRoots) []skillSummary {
 		s, _ := summarizeSkill(e.Name(), dir, files)
 		out = append(out, s)
 	}
+	return out
+}
+
+func listWorkSkills(roots orgRoots) []skillSummary {
+	out := listSkillFolders(roots.Skills)
 	slices.SortFunc(out, func(a, b skillSummary) int { return localeCompare(a.Name, b.Name) })
 	return out
+}
+
+// visibleSkills is the actor's own skills and the team skills the actor
+// holds. An own skill hides a team skill of the same name.
+func visibleSkills(roots orgRoots, act actor, held heldSet) []skillSummary {
+	out := []skillSummary{}
+	own := map[string]bool{}
+	if act.UserID != "" {
+		for _, s := range listSkillFolders(memberSkillsRoot(roots.Org, act.UserID)) {
+			if validSkillName(s.Name) {
+				own[s.Name] = true
+				out = append(out, s.withFlags(act, skillScopeOwn))
+			}
+		}
+	}
+	for _, s := range listSkillFolders(roots.Skills) {
+		if held.has(s.Name) && !own[s.Name] {
+			out = append(out, s.withFlags(act, skillScopeTeam))
+		}
+	}
+	slices.SortFunc(out, func(a, b skillSummary) int { return localeCompare(a.Name, b.Name) })
+	return out
+}
+
+func (s skillSummary) withFlags(act actor, scope string) skillSummary {
+	f := skillFlags(act, visibleSkill{Name: s.Name, Scope: scope})
+	s.Scope, s.CanEdit, s.CanShare = f.Scope, f.CanEdit, f.CanShare
+	return s
 }
 
 func (a *API) workSkills(w http.ResponseWriter, r *http.Request) {
@@ -136,41 +171,11 @@ func (a *API) workSkills(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
-	skills := []skillSummary{}
-	for _, s := range listWorkSkills(roots) {
-		if held.has(s.Name) {
-			skills = append(skills, s)
-		}
-	}
 	sendJSON(w, http.StatusOK, struct {
 		Skills    []skillSummary `json:"skills"`
 		CanImport bool           `json:"canImport"`
-	}{skills, act.Admin})
-}
-
-// heldSkill decodes the {name} segment a second time, as the Node route
-// did, and answers 404 when the actor does not hold the skill.
-func (a *API) heldSkill(w http.ResponseWriter, r *http.Request, notFound string) (actor, string, bool) {
-	act, err := a.currentActor(r.Context(), r)
-	if err != nil {
-		a.fail(w, r, err)
-		return act, "", false
-	}
-	name, err := url.PathUnescape(r.PathValue("name"))
-	if err != nil {
-		sendError(w, http.StatusNotFound, notFound)
-		return act, "", false
-	}
-	held, err := a.heldItems(r.Context(), act, "skill")
-	if err != nil {
-		a.fail(w, r, err)
-		return act, "", false
-	}
-	if !held.has(name) {
-		sendError(w, http.StatusNotFound, notFound)
-		return act, "", false
-	}
-	return act, name, true
+		CanCopy   bool           `json:"canCopy"`
+	}{visibleSkills(roots, act, held), act.Admin, act.UserID != ""})
 }
 
 func validSkillName(name string) bool {
@@ -178,55 +183,38 @@ func validSkillName(name string) bool {
 }
 
 func (a *API) workSkill(w http.ResponseWriter, r *http.Request) {
-	act, name, ok := a.heldSkill(w, r, "Skill not found")
+	act, _, s, ok := a.skillTarget(w, r, "Skill not found")
 	if !ok {
 		return
 	}
-	roots, err := orgWorkspace(act.OrgID)
-	if err != nil {
-		a.fail(w, r, err)
-		return
-	}
-	dir := filepath.Join(roots.Skills, name)
-	var files []skillFile
-	if validSkillName(name) {
-		files = listSkillFiles(dir)
-	}
-	if len(files) == 0 {
-		sendError(w, http.StatusNotFound, "Skill not found")
-		return
-	}
-	summary, markdown := summarizeSkill(name, dir, files)
+	files := listSkillFiles(s.Dir)
+	summary, markdown := summarizeSkill(s.Name, s.Dir, files)
+	summary = summary.withFlags(act, s.Scope)
 	slices.SortFunc(files, func(a, b skillFile) int { return localeCompare(a.Path, b.Path) })
-	sendJSON(w, http.StatusOK, map[string]any{"skill": skillDetail{skillSummary: summary, Path: dir, SkillMarkdown: markdown, Files: files}})
+	sendJSON(w, http.StatusOK, map[string]any{"skill": skillDetail{skillSummary: summary, Path: s.Dir, SkillMarkdown: markdown, Files: files}})
 }
 
 func (a *API) deleteSkill(w http.ResponseWriter, r *http.Request) {
-	act, name, ok := a.heldSkill(w, r, "Skill not found")
+	act, _, s, ok := a.skillTarget(w, r, "Skill not found")
 	if !ok {
 		return
 	}
-	roots, err := orgWorkspace(act.OrgID)
-	if err != nil {
+	if !canChangeSkill(act, s) {
+		sendError(w, http.StatusForbidden, teamSkillChange)
+		return
+	}
+	if err := os.RemoveAll(s.Dir); err != nil {
 		a.fail(w, r, err)
 		return
 	}
-	dir := filepath.Join(roots.Skills, name)
-	if st, err := os.Stat(dir); !validSkillName(name) || err != nil || !st.IsDir() {
-		sendError(w, http.StatusNotFound, "Skill not found")
-		return
-	}
-	if err := os.RemoveAll(dir); err != nil {
-		a.fail(w, r, err)
-		return
-	}
+	a.recordSkillChange(r.Context(), act, s, "Deleted skill: "+s.Name)
 	sendJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // skillFilePath resolves a path inside one skill folder. Unlike the Node
 // route, it refuses a symlink that leads out of the skill folder.
-func skillFilePath(skillsRoot, name, rel string) (string, bool) {
-	if !validSkillName(name) || rel == "" {
+func skillFilePath(dir, rel string) (string, bool) {
+	if rel == "" {
 		return "", false
 	}
 	normalized := strings.TrimLeft(strings.ReplaceAll(rel, "\\", "/"), "/")
@@ -235,7 +223,6 @@ func skillFilePath(skillsRoot, name, rel string) (string, bool) {
 			return "", false
 		}
 	}
-	dir := filepath.Join(skillsRoot, name)
 	abs := filepath.Join(dir, filepath.FromSlash(normalized))
 	realDir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -270,7 +257,7 @@ func decodeUTF8(data []byte) string {
 }
 
 func (a *API) skillFileGet(w http.ResponseWriter, r *http.Request) {
-	act, name, ok := a.heldSkill(w, r, "File not found")
+	_, _, s, ok := a.skillTarget(w, r, "File not found")
 	if !ok {
 		return
 	}
@@ -279,12 +266,7 @@ func (a *API) skillFileGet(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, "Missing file path")
 		return
 	}
-	roots, err := orgWorkspace(act.OrgID)
-	if err != nil {
-		a.fail(w, r, err)
-		return
-	}
-	abs, ok := skillFilePath(roots.Skills, name, rel)
+	abs, ok := skillFilePath(s.Dir, rel)
 	st, statErr := os.Stat(abs)
 	if !ok || statErr != nil || !st.Mode().IsRegular() {
 		sendError(w, http.StatusNotFound, "File not found")
@@ -327,8 +309,12 @@ func orderedFile(f map[string]any) json.RawMessage {
 }
 
 func (a *API) skillFilePut(w http.ResponseWriter, r *http.Request) {
-	act, name, ok := a.heldSkill(w, r, "File not found")
+	act, _, s, ok := a.skillTarget(w, r, "File not found")
 	if !ok {
+		return
+	}
+	if !canChangeSkill(act, s) {
+		sendError(w, http.StatusForbidden, teamSkillChange)
 		return
 	}
 	rel := r.URL.Query().Get("path")
@@ -355,12 +341,7 @@ func (a *API) skillFilePut(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusRequestEntityTooLarge, "File is too large to save from here.")
 		return
 	}
-	roots, err := orgWorkspace(act.OrgID)
-	if err != nil {
-		a.fail(w, r, err)
-		return
-	}
-	abs, ok := skillFilePath(roots.Skills, name, rel)
+	abs, ok := skillFilePath(s.Dir, rel)
 	if !ok {
 		sendError(w, http.StatusBadRequest, "Invalid file path")
 		return
@@ -382,7 +363,7 @@ func (a *API) skillFilePut(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
-	a.recordConfigChange(r.Context(), act.OrgID, "skills/"+name, "Updated skill: "+name, "skill", name, "")
+	a.recordSkillChange(r.Context(), act, s, "Updated skill: "+s.Name)
 	sendJSON(w, http.StatusOK, struct {
 		OK    bool `json:"ok"`
 		Bytes int  `json:"bytes"`

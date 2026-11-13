@@ -83,14 +83,14 @@ func TestWorkSkillReads(t *testing.T) {
 	}
 
 	w := call(f, "GET", "/api/v1/work/skills", "", admin)
-	if got := titles(t, w.Body.Bytes(), "skills", "name"); w.Code != 200 || got != "demo,finance-close,sales-playbook" || !strings.HasSuffix(w.Body.String(), `"canImport":true}`) {
+	if got := titles(t, w.Body.Bytes(), "skills", "name"); w.Code != 200 || got != "demo,finance-close,sales-playbook" || !strings.HasSuffix(w.Body.String(), `"canImport":true,"canCopy":true}`) {
 		t.Errorf("admin list: %d %s", w.Code, w.Body)
 	}
 	if !strings.Contains(w.Body.String(), `{"name":"finance-close","description":"Close the books.","fileCount":2,"updatedAt":"`) {
 		t.Errorf("summary: %s", w.Body)
 	}
 	w = call(f, "GET", "/api/work/skills", "", member)
-	if got := titles(t, w.Body.Bytes(), "skills", "name"); got != "finance-close" || !strings.HasSuffix(w.Body.String(), `"canImport":false}`) {
+	if got := titles(t, w.Body.Bytes(), "skills", "name"); got != "finance-close" || !strings.HasSuffix(w.Body.String(), `"canImport":false,"canCopy":true}`) {
 		t.Errorf("member list: %s", w.Body)
 	}
 	for _, c := range []struct {
@@ -165,16 +165,27 @@ func TestWorkSkillFiles(t *testing.T) {
 		{base + "a/../b", `{"content":"x"}`, 400, "Invalid file path"},
 		{base + "new.md", `{"content":"x"}`, 404, "File not found"},
 		{base + "data/a.bin", `{"content":"x"}`, 415, "This file is not a text file and cannot be edited here."},
-		{"/api/v1/work/skills/sales-playbook/file?path=SKILL.md", `{"content":"x"}`, 404, "File not found"},
 	} {
-		w := call(f, "PUT", c.target, c.body, member)
+		w := call(f, "PUT", c.target, c.body, admin)
 		if w.Code != c.want || w.Body.String() != `{"error":"`+c.msg+`"}` {
 			t.Errorf("PUT %s: %d %s", c.target, w.Code, w.Body)
 		}
 	}
+	for _, c := range []struct {
+		target string
+		want   int
+		msg    string
+	}{
+		{"/api/v1/work/skills/sales-playbook/file?path=SKILL.md", 404, "File not found"},
+		{base + "SKILL.md", 403, teamSkillChange},
+	} {
+		if w := call(f, "PUT", c.target, `{"content":"x"}`, member); w.Code != c.want || w.Body.String() != `{"error":"`+c.msg+`"}` {
+			t.Errorf("member PUT %s: %d %s", c.target, w.Code, w.Body)
+		}
+	}
 	newText := "---\nname: finance-close\ndescription: Close.\n---\nNew\n"
 	body, _ := json.Marshal(map[string]string{"content": newText})
-	if w := call(f, "PUT", base+"SKILL.md", string(body), member); w.Code != 200 || w.Body.String() != `{"ok":true,"bytes":`+strconv.Itoa(len(newText))+`}` {
+	if w := call(f, "PUT", base+"SKILL.md", string(body), admin); w.Code != 200 || w.Body.String() != `{"ok":true,"bytes":`+strconv.Itoa(len(newText))+`}` {
 		t.Fatalf("PUT: %d %s", w.Code, w.Body)
 	}
 	gitOut := func(args ...string) string {
@@ -190,7 +201,7 @@ func TestWorkSkillFiles(t *testing.T) {
 	var kind, ref, summary, status string
 	var actorID *string
 	if err := db.QueryRow(context.Background(), `select artifact_kind, artifact_ref, summary, status, actor_user_id from config_change where org_id = 'org' order by created_at desc limit 1`).
-		Scan(&kind, &ref, &summary, &status, &actorID); err != nil || kind != "skill" || ref != "finance-close" || summary != "Updated skill: finance-close" || status != "recorded" || actorID != nil {
+		Scan(&kind, &ref, &summary, &status, &actorID); err != nil || kind != "skill" || ref != "finance-close" || summary != "Updated skill: finance-close" || status != "recorded" || actorID == nil || *actorID != "admin" {
 		t.Errorf("config_change: %v %s %s %s %s %v", err, kind, ref, summary, status, actorID)
 	}
 	var teamRef string
@@ -207,6 +218,9 @@ func TestWorkSkillFiles(t *testing.T) {
 	}
 	if w := call(f, "DELETE", "/api/v1/work/skills/sales-playbook", "", member); w.Code != 404 {
 		t.Errorf("member delete: %d", w.Code)
+	}
+	if w := call(f, "DELETE", "/api/v1/work/skills/finance-close", "", member); w.Code != 403 || w.Body.String() != `{"error":"`+teamSkillChange+`"}` {
+		t.Errorf("member delete of a team skill: %d %s", w.Code, w.Body)
 	}
 	if w := call(f, "DELETE", "/api/v1/work/skills/sales-playbook", "", admin); w.Code != 200 || w.Body.String() != `{"ok":true}` {
 		t.Errorf("delete: %d %s", w.Code, w.Body)

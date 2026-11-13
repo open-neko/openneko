@@ -9490,11 +9490,14 @@ paths:
                 required:
                 - skills
                 - canImport
+                - canCopy
                 additionalProperties: false
                 properties:
                   skills:
                     type: array
                   canImport:
+                    type: boolean
+                  canCopy:
                     type: boolean
         '401':
           description: The session or device token is not valid
@@ -9597,6 +9600,12 @@ paths:
                     type: boolean
         '401':
           description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: A member cannot change a team skill
           content:
             application/json:
               schema:
@@ -9760,6 +9769,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '403':
+          description: A member cannot change a team skill
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: File not found
           content:
@@ -9774,6 +9789,148 @@ paths:
                 $ref: '#/components/schemas/Error'
         '415':
           description: File is not text
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /work/skills/{name}/copy:
+    post:
+      operationId: postWorkSkillsByNameCopy
+      tags:
+      - work
+      summary: Copy a skill to a new skill of your own
+      x-access: signed-in
+      security:
+      - session: []
+      - deviceToken: []
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: The new skill name, lowercase letters, digits and hyphens, up to 64 characters
+              required:
+              - name
+      responses:
+        '201':
+          description: The copy, private to the caller
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - name
+                - scope
+                additionalProperties: false
+                properties:
+                  name:
+                    type: string
+                  scope:
+                    type: string
+                    enum:
+                    - team
+                    - own
+        '400':
+          description: The new name is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not a person
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Skill not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: A skill with the new name exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /work/skills/{name}/share:
+    post:
+      operationId: postWorkSkillsByNameShare
+      tags:
+      - work
+      summary: Move your own skill to the team skills
+      x-access: signed-in
+      security:
+      - session: []
+      - deviceToken: []
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The skill is now a team skill
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - name
+                - scope
+                additionalProperties: false
+                properties:
+                  name:
+                    type: string
+                  scope:
+                    type: string
+                    enum:
+                    - team
+                    - own
+        '400':
+          description: The skill is already a team skill
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Skill not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The team has a skill with this name
           content:
             application/json:
               schema:
