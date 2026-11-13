@@ -185,7 +185,7 @@ export function conditionMatrixFrom(input: {
   };
 }
 
-function toolJson(result: ScriptedToolResult): Record<string, unknown> {
+export function toolJson(result: ScriptedToolResult): Record<string, unknown> {
   const text = Array.isArray(result.content)
     ? (result.content as Array<{ text?: unknown }>).map((entry) => String(entry.text ?? "")).join("\n")
     : "";
@@ -248,7 +248,7 @@ async function provisionOrg(input: {
   return { orgId, memberId, adminId };
 }
 
-async function runScriptedTurn(
+export async function runScriptedTurn(
   episode: EvalEpisode,
   model: ScriptedModelServer,
   userId: string,

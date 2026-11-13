@@ -82,7 +82,7 @@ pnpm openneko eval run --config evals/configs/openneko-lifecycle-smoke.yaml --no
 
 # Seeded-memory retrieval/isolation, the memory ablation twin, and the skill
 # install round-trip — the first phase-keyed oracle-bundle suite; also
-# provider-free.
+# provider-free, and it starts its own eval install.
 pnpm openneko eval run --config evals/configs/openneko-work-memory-smoke.yaml --no-promote
 ```
 
@@ -106,13 +106,24 @@ driver process. A scripted model drives the workflow builder in a chat turn and
 in-memory action adapter. Watcher disable and reset have no product path; the
 adapter calls the Node store functions for those two steps.
 
+The work-memory adapter runs each phase on its own eval install. A scripted
+model saves and searches memories through `neko_memory` in a chat turn, and
+writes skills through `neko_skills`. The adapter reads the stored memories and
+skills from the work routes, archives a memory with
+`DELETE /api/v1/work/memories/{id}`, and runs the cross-org search as an
+admin of a second org. Two checks have no product path: the duplicate check
+calls the Node `findConflictingWorkMemories`, and the skill dependency checks
+read the Node manifest in `skill-deps.ts`.
+
 AdventureWorks metric episodes start at the same natural-language seam as an
 ad-hoc production request: a case supplies only `question` and `role`, the
-production classifier derives `slug`/`title`/`why`/`chartHint`, and the metric
+classifier derives `slug`/`title`/`why`/`chartHint`, and the metric
 agent receives both the exact user question and that derived metadata. Tables,
 columns, formulas, anchor details, and expected current/baseline values remain
 in the host-only SQL oracle. Episode token, cost, and latency measurements
-include classification as well as metric-agent execution.
+include classification as well as metric-agent execution. The metric agent is
+the one the worker's `metric_refresh` job runs. The classifier has had no
+product caller since the briefing routes went; the adapter still calls it.
 
 ### Production OpenTelemetry
 
