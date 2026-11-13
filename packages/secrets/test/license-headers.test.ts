@@ -7,7 +7,6 @@ const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FORBIDDEN_LICENSE_MARKER = "LicenseRef-" + "OpenNeko-Commercial";
 
 const FILES = [
-  "src/infisical-resolver.ts",
   "src/secrets-resolver.ts",
   "src/secrets-store.ts",
 ];

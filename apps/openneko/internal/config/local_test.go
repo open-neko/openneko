@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/open-neko/neko/apps/openneko/internal/instance"
@@ -81,7 +82,7 @@ func TestWriteLocalPgPasswordPreservesFields(t *testing.T) {
 
 func TestWriteLocalPgPasswordKeepsOtherKeys(t *testing.T) {
 	dir := t.TempDir()
-	seed := `{"database_url":"postgres://neko@db/neko","secrets":{"backend":"infisical"},"pg":{"sslmode":"verify-full"}}`
+	seed := `{"database_url":"postgres://neko@db/neko","secrets":{"backend":"file"},"pg":{"sslmode":"verify-full"}}`
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(seed), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -102,5 +103,23 @@ func TestWriteLocalPgPasswordKeepsOtherKeys(t *testing.T) {
 	lc, _ := ReadLocal(dir)
 	if lc.Pg == nil || lc.Pg.SSLMode != "verify-full" || lc.Pg.Password != "rotated-pass" {
 		t.Fatalf("pg block not merged: %+v", lc.Pg)
+	}
+}
+
+func TestSecretsBackendOtherThanFileStopsTheStart(t *testing.T) {
+	dir := t.TempDir()
+	seed := `{"secrets":{"backend":"infisical","infisical":{"siteUrl":"https://vault.test","projectId":"p"}}}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(seed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lc, _ := ReadLocal(dir)
+	err := lc.SecretsBackendError()
+	if err == nil || !strings.Contains(err.Error(), `secrets.backend to "infisical"`) || !strings.Contains(err.Error(), "openneko secrets set") {
+		t.Fatalf("err = %v", err)
+	}
+	for _, ok := range []Local{{}, {Secrets: &LocalSecrets{}}, {Secrets: &LocalSecrets{Backend: "file"}}} {
+		if err := ok.SecretsBackendError(); err != nil {
+			t.Fatalf("%+v: %v", ok.Secrets, err)
+		}
 	}
 }

@@ -125,7 +125,7 @@ to the customer GraphJin config at runtime.
 - [CONTEXT_REPOSITORY.md](CONTEXT_REPOSITORY.md) — version history of skills and workflows, and an optional GitHub, GitLab or other git remote
 - [INSTALL.md](INSTALL.md) — install, [upgrade](INSTALL.md#upgrade), requirements, troubleshooting, connecting your data, full demo trial
 - [AGENT_RUNTIME.md](AGENT_RUNTIME.md) — how the agent runs: the runner, `openneko serve` and the optional sandbox service, and what each holds
-- [SECRETS.md](SECRETS.md) — secrets at rest and the optional Infisical vault (enterprise)
+- [SECRETS.md](SECRETS.md) — secrets at rest in the local secrets file
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, repo layout, pre-PR checks
 - [evals/README.md](evals/README.md) — community-configurable harness evals,
   AdventureWorks baselines, resumable runs, checked-in results, and production

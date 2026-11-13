@@ -26,14 +26,12 @@ const (
 var Moved = []string{KindOutputSweep, KindMetricSweep, KindCronSweep, KindEmbeddingIndex, KindEmbeddingSweep, KindDirectorySync, KindActionExecute}
 
 type Queue struct {
-	Pool        *pgxpool.Pool
-	Schema      string
-	BossSchema  string
-	Logf        func(string, ...any)
-	MetricSweep func(context.Context) error
-	CronSweep   func(context.Context) error
-	// DirectorySync asks the Node worker to sync the directory; the
-	// worker alone reads secrets from Infisical.
+	Pool          *pgxpool.Pool
+	Schema        string
+	BossSchema    string
+	Logf          func(string, ...any)
+	MetricSweep   func(context.Context) error
+	CronSweep     func(context.Context) error
 	DirectorySync func(context.Context) error
 	// ActionExecute asks the Node worker to run an approved action; the
 	// action adapters live in the worker until the packs runtime moves.

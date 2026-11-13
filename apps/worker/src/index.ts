@@ -1,6 +1,6 @@
 import { prepareSandboxCapacity, closeSandboxLauncher } from "@neko/llm/work/sandbox-launcher";
 import { withStartupTrace, startupPhase, startupEvent } from "@neko/telemetry/startup";
-import { keepProcessThroughDatabaseRestarts, soloAdminNeedsEmail } from "@neko/db";
+import { keepProcessThroughDatabaseRestarts, readLocalConfig, secretsBackendError, soloAdminNeedsEmail } from "@neko/db";
 import "dotenv/config";
 
 import { createServer } from "node:http";
@@ -123,6 +123,13 @@ import { PackService } from "./packs/service.js";
 import { registerPackActionPreflight } from "./packs/action-preflight.js";
 import { registerMagentoV2Runtime } from "./packs/magento-v2-runtime.js";
 
+{
+  const problem = secretsBackendError(readLocalConfig());
+  if (problem) {
+    console.error(`[worker] ${problem}`);
+    process.exit(1);
+  }
+}
 process.env.OPENNEKO_SANDBOX_OWNER ||= "worker";
 keepProcessThroughDatabaseRestarts("worker");
 
@@ -445,24 +452,7 @@ actionRequestPreflightReady = true;
 actionAdaptersReady = true;
 console.log("[worker] action policies seeded and built-in adapters registered");
 
-// SEC3: pick the secret residency from local config — Infisical-backed
-// env bags when configured, the enc:v1 local file otherwise.
-const secretsResolver = await (async () => {
-  const { readLocalConfig } = await import("@neko/db");
-  const cfg = readLocalConfig().secrets;
-  if (cfg?.backend === "infisical" && cfg.infisical) {
-    const { InfisicalSecretsResolver } = await import(
-      "@neko/secrets"
-    );
-    console.log(
-      `[worker] secrets backend: infisical (${cfg.infisical.siteUrl}, project ${cfg.infisical.projectId})`,
-    );
-    return new InfisicalSecretsResolver(cfg.infisical);
-  }
-  return undefined; // CoreSecrets defaults to the file resolver
-})();
-
-coreSecrets = new CoreSecrets(secretsResolver ? { resolver: secretsResolver } : {});
+coreSecrets = new CoreSecrets();
 await coreSecrets.start();
 setCoreSecretsInstance(coreSecrets);
 signInService = new SignInService(coreSecrets);

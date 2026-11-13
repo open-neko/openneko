@@ -26,7 +26,7 @@ packages/
   db/                  Drizzle ORM client, schema, migrations, job queue
   llm/                 Providers, agents, classifier, GraphJin work support; Library
                        file storage (src/library), bundled skills (assets/)
-  secrets/             Deployment secrets store, at-rest cipher, Infisical resolver (TS, used by the worker)
+  secrets/             Deployment secrets store and at-rest cipher (TS, used by the worker)
   contract/            Contract tests for every route in api/openapi.yaml; they run against any server
 db/
   migrations/          Metadata database migrations (mirrored into apps/openneko/assets/migrations/ for embedding)
