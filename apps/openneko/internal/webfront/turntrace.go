@@ -472,3 +472,46 @@ func traceGraphjinToolCall(binding traceBinding, tool string, args *jsObj, execu
 }
 
 func jsTrimStart(s string) string { return strings.TrimLeftFunc(s, jsSpace) }
+
+// traceActionPolicy is traceActionPolicy() as the broker calls it for
+// /v1/policy/evaluate.
+func traceActionPolicy(binding traceBinding, scope, kind string, target, riskLevel *string, execute func() (any, error)) (any, error) {
+	if scope != "internal" {
+		scope = "external"
+	}
+	request := jsObjOf("scope", scope, "kind", kind)
+	request.set("target", nullableText(target))
+	request.set("riskLevel", nullableText(riskLevel))
+	return traced(traceSpec{
+		binding: binding, operation: "action.policy", source: traceBroker, request: request,
+		evidence: func(result any) *jsObj {
+			ev := jsObjOf("kind", kind, "scope", scope)
+			decision, ok := jsField(result, "decision")
+			if !ok || decision == nil {
+				decision = "no_policy"
+			}
+			ev.set("decision", decision)
+			if mode, _ := jsField(result, "mode"); jsTruthy(mode) {
+				ev.set("mode", mode)
+			}
+			if target != nil && *target != "" {
+				ev.set("targetDigest", traceDigest(*target))
+			}
+			if policy, _ := jsField(result, "policy"); jsTruthy(policy) {
+				ref, ok := jsField(policy, "id")
+				if !ok || ref == nil {
+					ref, _ = jsField(policy, "name")
+				}
+				ev.set("policyDigest", traceDigest(ref))
+			}
+			return ev
+		},
+	}, execute)
+}
+
+func nullableText(s *string) any {
+	if s == nil {
+		return nil
+	}
+	return *s
+}

@@ -36,6 +36,8 @@
  *                               before returning an approval-card-safe id.
  *   POST /admin/actions/execute → run an approved action ({ orgId, actionRequestId });
  *                               the action_execute job on River calls it.
+ *   POST /admin/workflow-outputs/deliver → 202; sends a stored output
+ *                               ({ orgId, output }) to the bound channels.
  *
  * Extracted from index.ts so the handler can be unit-tested without
  * booting pg-boss / the agent stack.
@@ -333,7 +335,12 @@ export type AdminHandlerOptions = {
   /** Writes group grants into the GraphJin config, now or batched. */
   groupGrants?: GroupGrantsHandlerSurface | null;
   sources?: SourceCheckHandlerSurface | null;
+  outputs?: OutputDeliveryHandlerSurface | null;
 };
+
+export interface OutputDeliveryHandlerSurface {
+  deliver(orgId: string, output: Record<string, unknown>): void;
+}
 
 export interface SourceCheckHandlerSurface {
   check(input: { answers: Record<string, unknown>; password?: string }): Promise<unknown>;
@@ -388,6 +395,7 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const directory = opts.directory ?? null;
   const groupGrants = opts.groupGrants ?? null;
   const sources = opts.sources ?? null;
+  const outputs = opts.outputs ?? null;
 
   return function handle(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "GET" && req.url === "/health") {
@@ -559,6 +567,10 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       req.url === "/admin/action-requests/create"
     ) {
       void handleActionRequestCreate(req, res, actionRequests);
+      return;
+    }
+    if (req.method === "POST" && req.url === "/admin/workflow-outputs/deliver") {
+      void handleOutputDeliver(req, res, outputs);
       return;
     }
     if (req.method === "POST" && req.url === "/admin/actions/execute") {
@@ -855,6 +867,32 @@ async function handleActionRequestCreate(
   } catch (err) {
     json(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }
+}
+
+async function handleOutputDeliver(
+  req: IncomingMessage,
+  res: ServerResponse,
+  outputs: OutputDeliveryHandlerSurface | null,
+): Promise<void> {
+  if (!outputs) {
+    json(res, 503, { error: "output delivery is not ready" });
+    return;
+  }
+  const body = (await readJson(req).catch(() => null)) as { orgId?: unknown; output?: unknown } | null;
+  const output = body?.output;
+  if (
+    typeof body?.orgId !== "string" ||
+    !body.orgId ||
+    !output ||
+    typeof output !== "object" ||
+    Array.isArray(output) ||
+    typeof (output as { id?: unknown }).id !== "string"
+  ) {
+    json(res, 400, { error: "orgId and output are required" });
+    return;
+  }
+  outputs.deliver(body.orgId, output as Record<string, unknown>);
+  json(res, 202, {});
 }
 
 async function handleActionExecute(

@@ -2612,5 +2612,497 @@
     }
    }
   ]
+ },
+ {
+  "name": "policy allows",
+  "operation": "action.policy",
+  "request": {
+   "scope": "external",
+   "kind": "slack_post",
+   "target": "C123",
+   "riskLevel": "low"
+  },
+  "reply": {
+   "value": {
+    "decision": "allow",
+    "policy": {
+     "id": "88888888-8888-4888-8888-888888888888",
+     "orgId": "org-1",
+     "name": "slack_auto",
+     "allowedTargets": {
+      "patterns": [
+       "sk-live-0123456789abcdef"
+      ]
+     },
+     "priority": 100,
+     "createdAt": "2026-11-13T00:00:00.000Z"
+    },
+    "mode": "auto_approve"
+   }
+  },
+  "secrets": [
+   "sk-live-0123456789abcdef"
+  ],
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-policy allows",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:ab6980fbd00904d8c5ed29d99277b06781d9ba03377ee24418a831aae80aec8e",
+     "responseDigest": "sha256:d87ab824386937c3426f8a30377bd272a0670b2807ac5910d292be38477a472c",
+     "operation": "action.policy",
+     "evidence": {
+      "kind": "slack_post",
+      "scope": "external",
+      "decision": "allow",
+      "mode": "auto_approve",
+      "targetDigest": "sha256:673c21d11165b7dbac29d332f6a175fad76a0d9c74b0bc46cab650fbed0e128f",
+      "policyDigest": "sha256:8aacba99a1381041b0f7aafa85440a315daff8f108cedfcc9fd09f4a7cd354a2"
+     }
+    },
+    "content": {
+     "sequence": 1,
+     "operation": "action.policy",
+     "request": {
+      "kind": "slack_post",
+      "riskLevel": "low",
+      "scope": "external",
+      "target": "C123"
+     },
+     "rows": [
+      {
+       "decision": "allow",
+       "mode": "auto_approve",
+       "policy": {
+        "allowedTargets": {
+         "patterns": [
+          "[REDACTED]"
+         ]
+        },
+        "createdAt": "2026-11-13T00:00:00.000Z",
+        "id": "88888888-8888-4888-8888-888888888888",
+        "name": "slack_auto",
+        "orgId": "org-1",
+        "priority": 100
+       }
+      }
+     ],
+     "rowCount": 1,
+     "truncated": false
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-policy allows",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:ab6980fbd00904d8c5ed29d99277b06781d9ba03377ee24418a831aae80aec8e",
+     "responseDigest": "sha256:d87ab824386937c3426f8a30377bd272a0670b2807ac5910d292be38477a472c",
+     "operation": "action.policy",
+     "evidence": {
+      "kind": "slack_post",
+      "scope": "external",
+      "decision": "allow",
+      "mode": "auto_approve",
+      "targetDigest": "sha256:673c21d11165b7dbac29d332f6a175fad76a0d9c74b0bc46cab650fbed0e128f",
+      "policyDigest": "sha256:8aacba99a1381041b0f7aafa85440a315daff8f108cedfcc9fd09f4a7cd354a2"
+     }
+    },
+    "content": {
+     "sequence": 2,
+     "operation": "action.policy",
+     "request": {
+      "kind": "slack_post",
+      "riskLevel": "low",
+      "scope": "external",
+      "target": "C123"
+     },
+     "rows": [
+      {
+       "decision": "allow",
+       "mode": "auto_approve",
+       "policy": {
+        "allowedTargets": {
+         "patterns": [
+          "[REDACTED]"
+         ]
+        },
+        "createdAt": "2026-11-13T00:00:00.000Z",
+        "id": "88888888-8888-4888-8888-888888888888",
+        "name": "slack_auto",
+        "orgId": "org-1",
+        "priority": 100
+       }
+      }
+     ],
+     "rowCount": 1,
+     "truncated": false
+    }
+   }
+  ]
+ },
+ {
+  "name": "policy needs approval without target",
+  "operation": "action.policy",
+  "request": {
+   "scope": "internal",
+   "kind": "user_admin",
+   "target": null,
+   "riskLevel": null
+  },
+  "reply": {
+   "value": {
+    "decision": "needs_approval",
+    "policy": {
+     "id": "p-2",
+     "name": "user_management_default"
+    },
+    "mode": "approval_required",
+    "reason": "policy \"user_management_default\" mode=approval_required"
+   }
+  },
+  "secrets": [],
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-policy needs approval without target",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:7e300f69a2892e540e47fc3b4290e2b6955c15d987c47c5c3b6f5c7559364e2b",
+     "responseDigest": "sha256:05504bf29042b6f06971ed692ecb944e1a09e053b0d005c48c15291c4dd5fd21",
+     "operation": "action.policy",
+     "evidence": {
+      "kind": "user_admin",
+      "scope": "internal",
+      "decision": "needs_approval",
+      "mode": "approval_required",
+      "policyDigest": "sha256:a67a5e8cfb2e8706337b1cecb0c47c1c494f32ad13c801650f0f7c24009465f1"
+     }
+    },
+    "content": {
+     "sequence": 1,
+     "operation": "action.policy",
+     "request": {
+      "kind": "user_admin",
+      "riskLevel": null,
+      "scope": "internal",
+      "target": null
+     },
+     "rows": [
+      {
+       "decision": "needs_approval",
+       "mode": "approval_required",
+       "policy": {
+        "id": "p-2",
+        "name": "user_management_default"
+       },
+       "reason": "policy \"user_management_default\" mode=approval_required"
+      }
+     ],
+     "rowCount": 1,
+     "truncated": false
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-policy needs approval without target",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:7e300f69a2892e540e47fc3b4290e2b6955c15d987c47c5c3b6f5c7559364e2b",
+     "responseDigest": "sha256:05504bf29042b6f06971ed692ecb944e1a09e053b0d005c48c15291c4dd5fd21",
+     "operation": "action.policy",
+     "evidence": {
+      "kind": "user_admin",
+      "scope": "internal",
+      "decision": "needs_approval",
+      "mode": "approval_required",
+      "policyDigest": "sha256:a67a5e8cfb2e8706337b1cecb0c47c1c494f32ad13c801650f0f7c24009465f1"
+     }
+    },
+    "content": {
+     "sequence": 2,
+     "operation": "action.policy",
+     "request": {
+      "kind": "user_admin",
+      "riskLevel": null,
+      "scope": "internal",
+      "target": null
+     },
+     "rows": [
+      {
+       "decision": "needs_approval",
+       "mode": "approval_required",
+       "policy": {
+        "id": "p-2",
+        "name": "user_management_default"
+       },
+       "reason": "policy \"user_management_default\" mode=approval_required"
+      }
+     ],
+     "rowCount": 1,
+     "truncated": false
+    }
+   }
+  ]
+ },
+ {
+  "name": "policy denies by name only",
+  "operation": "action.policy",
+  "request": {
+   "scope": "external",
+   "kind": "send_email",
+   "target": "",
+   "riskLevel": "high"
+  },
+  "reply": {
+   "value": {
+    "decision": "deny",
+    "policy": {
+     "name": "no_email"
+    },
+    "mode": "never",
+    "reason": "policy \"no_email\" mode=never"
+   }
+  },
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-policy denies by name only",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:b62673bbd831de034832b575a2165e5a1fb3be033fc21607b2f34ce016ea98f5",
+     "responseDigest": "sha256:6e7585318efaa48b947a3c9a784238455222a386a43ce9b6005a560ec0905312",
+     "operation": "action.policy",
+     "evidence": {
+      "kind": "send_email",
+      "scope": "external",
+      "decision": "deny",
+      "mode": "never",
+      "policyDigest": "sha256:1c3924d83dea162e1ddde0d5a641fffd47780ea16976f4f334644ec8d90ea81f"
+     }
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-policy denies by name only",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:b62673bbd831de034832b575a2165e5a1fb3be033fc21607b2f34ce016ea98f5",
+     "responseDigest": "sha256:6e7585318efaa48b947a3c9a784238455222a386a43ce9b6005a560ec0905312",
+     "operation": "action.policy",
+     "evidence": {
+      "kind": "send_email",
+      "scope": "external",
+      "decision": "deny",
+      "mode": "never",
+      "policyDigest": "sha256:1c3924d83dea162e1ddde0d5a641fffd47780ea16976f4f334644ec8d90ea81f"
+     }
+    }
+   }
+  ]
+ },
+ {
+  "name": "policy finds none",
+  "operation": "action.policy",
+  "request": {
+   "scope": "external",
+   "kind": "crm_update",
+   "target": "lead/7",
+   "riskLevel": null
+  },
+  "reply": {
+   "value": {
+    "decision": "no_policy",
+    "reason": "no_matching_policy"
+   }
+  },
+  "secrets": [
+   "sk-live-0123456789abcdef"
+  ],
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-policy finds none",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:7dba1ca32c2a1dcf023c79d7dadfdfffbbde16d6ee68518af89d2971d91a2214",
+     "responseDigest": "sha256:fd72e8d0d506570757eaff50b9aa32f369c259140e9a4190b44ec35539108004",
+     "operation": "action.policy",
+     "evidence": {
+      "kind": "crm_update",
+      "scope": "external",
+      "decision": "no_policy",
+      "targetDigest": "sha256:8e839faeed9b077635db5c149f49f96f525a3fc353fd24ba76ba0c6629592493"
+     }
+    },
+    "content": {
+     "sequence": 1,
+     "operation": "action.policy",
+     "request": {
+      "kind": "crm_update",
+      "riskLevel": null,
+      "scope": "external",
+      "target": "lead/7"
+     },
+     "rows": [
+      {
+       "decision": "no_policy",
+       "reason": "no_matching_policy"
+      }
+     ],
+     "rowCount": 1,
+     "truncated": false
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-policy finds none",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "ok",
+     "requestDigest": "sha256:7dba1ca32c2a1dcf023c79d7dadfdfffbbde16d6ee68518af89d2971d91a2214",
+     "responseDigest": "sha256:fd72e8d0d506570757eaff50b9aa32f369c259140e9a4190b44ec35539108004",
+     "operation": "action.policy",
+     "evidence": {
+      "kind": "crm_update",
+      "scope": "external",
+      "decision": "no_policy",
+      "targetDigest": "sha256:8e839faeed9b077635db5c149f49f96f525a3fc353fd24ba76ba0c6629592493"
+     }
+    },
+    "content": {
+     "sequence": 2,
+     "operation": "action.policy",
+     "request": {
+      "kind": "crm_update",
+      "riskLevel": null,
+      "scope": "external",
+      "target": "lead/7"
+     },
+     "rows": [
+      {
+       "decision": "no_policy",
+       "reason": "no_matching_policy"
+      }
+     ],
+     "rowCount": 1,
+     "truncated": false
+    }
+   }
+  ]
+ },
+ {
+  "name": "policy check fails",
+  "operation": "action.policy",
+  "request": {
+   "scope": "external",
+   "kind": "slack_post",
+   "target": "C123",
+   "riskLevel": null
+  },
+  "reply": {
+   "throws": "policy store is down: sk-live-0123456789abcdef"
+  },
+  "secrets": [
+   "sk-live-0123456789abcdef"
+  ],
+  "traced": [
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 1,
+     "runId": "run-policy check fails",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "error",
+     "requestDigest": "sha256:f2b4b27d6a5cd08b105e8b5a39dd691af4bcdd2c18cb57f9263f7383747471a1",
+     "errorType": "Error",
+     "errorDigest": "sha256:4489acbeb7dfd338afa40c6e5b1e0b7fd13f6f0b34f588bfb90f1e9003b4e3c8",
+     "operation": "action.policy",
+     "evidence": {
+      "kind": "slack_post",
+      "scope": "external",
+      "decision": "no_policy",
+      "targetDigest": "sha256:673c21d11165b7dbac29d332f6a175fad76a0d9c74b0bc46cab650fbed0e128f"
+     }
+    },
+    "content": {
+     "sequence": 1,
+     "operation": "action.policy",
+     "request": {
+      "kind": "slack_post",
+      "riskLevel": null,
+      "scope": "external",
+      "target": "C123"
+     },
+     "error": "policy store is down: [REDACTED]"
+    }
+   },
+   {
+    "event": {
+     "schemaVersion": "openneko.work.semantic-trace/v1",
+     "sequence": 2,
+     "runId": "run-policy check fails",
+     "orgId": "org-1",
+     "runKind": "work",
+     "source": "trusted-broker",
+     "status": "error",
+     "requestDigest": "sha256:f2b4b27d6a5cd08b105e8b5a39dd691af4bcdd2c18cb57f9263f7383747471a1",
+     "errorType": "Error",
+     "errorDigest": "sha256:4489acbeb7dfd338afa40c6e5b1e0b7fd13f6f0b34f588bfb90f1e9003b4e3c8",
+     "operation": "action.policy",
+     "evidence": {
+      "kind": "slack_post",
+      "scope": "external",
+      "decision": "no_policy",
+      "targetDigest": "sha256:673c21d11165b7dbac29d332f6a175fad76a0d9c74b0bc46cab650fbed0e128f"
+     }
+    },
+    "content": {
+     "sequence": 2,
+     "operation": "action.policy",
+     "request": {
+      "kind": "slack_post",
+      "riskLevel": null,
+      "scope": "external",
+      "target": "C123"
+     },
+     "error": "policy store is down: [REDACTED]"
+    }
+   }
+  ]
  }
 ]

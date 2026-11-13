@@ -66,6 +66,7 @@ import {
   dispatchExternalEvent,
   handleSourceChangeMatch,
   handleSubscriptionMatch,
+  notifyWorkflowOutputDeliveryHook,
   registerActionRequestCreatedHook,
   registerBuiltinAdapters,
   registerFallbackActionAdapterResolver,
@@ -284,6 +285,10 @@ const server = createServer(
     actions: {
       ready: () => actionAdaptersReady,
       execute: (input) => runActionExecute(input),
+    },
+    outputs: {
+      deliver: (orgId, output) =>
+        notifyWorkflowOutputDeliveryHook(orgId, output as unknown as Parameters<typeof notifyWorkflowOutputDeliveryHook>[1]),
     },
     actionRequests: {
       create: async (input) => {

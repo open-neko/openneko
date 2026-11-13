@@ -1,6 +1,8 @@
 package webfront
 
 import (
+	"math"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -19,7 +21,18 @@ type zStr struct {
 	min, max *float64
 	enum     []string
 	desc     string
+	descLast string
+	datetime bool
 }
+
+// zInt is z.number().int() with min, max and positive().
+type zInt struct {
+	min, max *float64
+	positive bool
+}
+
+// zAny is z.unknown().
+type zAny struct{}
 
 type zArr struct {
 	elem     zType
@@ -27,15 +40,37 @@ type zArr struct {
 	desc     string
 }
 
+// zField is one key of an object. desc and def belong to the optional or
+// default wrapper, so the JSON Schema puts them before the type's keys.
 type zField struct {
 	name     string
 	typ      zType
 	optional bool
+	desc     string
+	def      func() any
 }
 
 type zObj struct {
 	fields []zField
 	strict bool
+}
+
+func (f zField) jsonSchema() *jsObj {
+	if f.def == nil && f.desc == "" {
+		return f.typ.jsonSchema()
+	}
+	out := &jsObj{}
+	if f.def != nil {
+		out.set("default", f.def())
+	}
+	if f.desc != "" {
+		out.set("description", f.desc)
+	}
+	inner := f.typ.jsonSchema()
+	for _, k := range inner.ordered() {
+		out.set(k, inner.vals[k])
+	}
+	return out
 }
 
 type zRecord struct {
@@ -83,8 +118,16 @@ func (s *zStr) parse(v any, path []any, issues *[]any) any {
 		text = strings.TrimFunc(text, isJSSpace)
 	}
 	zLengthIssues(text, s.min, s.max, path, issues)
+	if s.datetime && !zodDatetime.MatchString(text) {
+		*issues = append(*issues, zodIssue("origin", "string", "code", "invalid_format", "format", "datetime",
+			"pattern", "/"+zodDatetimeText+"/", "path", path, "message", "Invalid ISO datetime"))
+	}
 	return text
 }
+
+const zodDatetimeText = `^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$`
+
+var zodDatetime = regexp.MustCompile(zodDatetimeText)
 
 // zLengthIssues is zod's minLength and maxLength checks. They run on any
 // value with a length, also after a type issue, and name the value's own kind.
@@ -127,6 +170,10 @@ func (s *zStr) jsonSchema() *jsObj {
 		out.set("description", s.desc)
 	}
 	out.set("type", "string")
+	if s.datetime {
+		out.set("format", "date-time")
+		out.set("pattern", zodDatetimeText)
+	}
 	if s.enum != nil {
 		values := make([]any, len(s.enum))
 		for i, e := range s.enum {
@@ -141,8 +188,57 @@ func (s *zStr) jsonSchema() *jsObj {
 	if s.max != nil {
 		out.set("maxLength", *s.max)
 	}
+	if s.descLast != "" {
+		out.set("description", s.descLast)
+	}
 	return out
 }
+
+func (n *zInt) expected() string { return "number" }
+
+func (n *zInt) parse(v any, path []any, issues *[]any) any {
+	f, ok := v.(float64)
+	if !ok {
+		*issues = append(*issues, zTypeIssue("number", v, path))
+		return v
+	}
+	if f != math.Trunc(f) || math.Abs(f) > maxSafeInt {
+		*issues = append(*issues, zodIssue("expected", "int", "format", "safeint", "code", "invalid_type", "path", path,
+			"message", "Invalid input: expected int, received number"))
+		return v
+	}
+	if n.positive && f <= 0 {
+		*issues = append(*issues, zodIssue("origin", "number", "code", "too_small", "minimum", 0.0, "inclusive", false, "path", path,
+			"message", "Too small: expected number to be >0"))
+	}
+	if n.min != nil && f < *n.min {
+		*issues = append(*issues, zodIssue("origin", "number", "code", "too_small", "minimum", *n.min, "inclusive", true, "path", path,
+			"message", "Too small: expected number to be >="+jsNumberText(*n.min)))
+	}
+	if n.max != nil && f > *n.max {
+		*issues = append(*issues, zodIssue("origin", "number", "code", "too_big", "maximum", *n.max, "inclusive", true, "path", path,
+			"message", "Too big: expected number to be <="+jsNumberText(*n.max)))
+	}
+	return f
+}
+
+func (n *zInt) jsonSchema() *jsObj {
+	out := jsObjOf("type", "integer")
+	if n.positive {
+		out.set("exclusiveMinimum", 0.0)
+	}
+	if n.min != nil {
+		out.set("minimum", *n.min)
+	}
+	if n.max != nil {
+		out.set("maximum", *n.max)
+	}
+	return out
+}
+
+func (zAny) expected() string                   { return "unknown" }
+func (zAny) parse(v any, _ []any, _ *[]any) any { return v }
+func (zAny) jsonSchema() *jsObj                 { return &jsObj{} }
 
 func (a *zArr) expected() string { return "array" }
 
@@ -188,9 +284,13 @@ func (o *zObj) parse(v any, path []any, issues *[]any) any {
 	out := &jsObj{}
 	for _, f := range o.fields {
 		value, present := in.vals[f.name]
+		if !present && f.def != nil {
+			out.set(f.name, f.def())
+			continue
+		}
 		if !present {
 			if !f.optional {
-				*issues = append(*issues, zTypeIssue(f.typ.expected(), jsUndefined{}, zPath(path, f.name)))
+				f.typ.parse(jsUndefined{}, zPath(path, f.name), issues)
 			}
 			continue
 		}
@@ -221,12 +321,15 @@ func (o *zObj) jsonSchema() *jsObj {
 	props := &jsObj{}
 	required := []any{}
 	for _, f := range o.fields {
-		props.set(f.name, f.typ.jsonSchema())
-		if !f.optional {
+		props.set(f.name, f.jsonSchema())
+		if !f.optional && f.def == nil {
 			required = append(required, f.name)
 		}
 	}
-	out := jsObjOf("type", "object", "properties", props, "required", required)
+	out := jsObjOf("type", "object", "properties", props)
+	if len(required) > 0 {
+		out.set("required", required)
+	}
 	if o.strict {
 		out.set("additionalProperties", false)
 	}
