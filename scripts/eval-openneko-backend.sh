@@ -44,10 +44,9 @@ Environment overrides:
   OPENNEKO_EVAL_ADVENTUREWORKS_DATABASE_URL   full oracle URL override
 
 Ax configs declare their credential as env:NAME. That variable must be
-non-empty before this script starts. An Ax config also needs a running
-`openneko serve` with agent turns on: set OPENNEKO_SERVE_SOCKET to its socket
-and OPENNEKO_SERVE_URL to its address. Credentials are never written to eval
-artifacts.
+non-empty before this script starts. Each episode builds and starts its own
+`openneko web` and `openneko serve` on a copy of the migrated template
+database. Credentials are never written to eval artifacts.
 EOF
 }
 
@@ -155,9 +154,7 @@ esac
   exit 2
 }
 
-requires_agent=0
 if grep -Eq '^[[:space:]]*backend:[[:space:]]*ax([[:space:]#]|$)' "$config_path"; then
-  requires_agent=1
   credential_env=$(sed -n \
     's/^[[:space:]]*credential_ref:[[:space:]]*env:\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*$/\1/p' \
     "$config_path" | head -n 1)
@@ -169,14 +166,6 @@ if grep -Eq '^[[:space:]]*backend:[[:space:]]*ax([[:space:]#]|$)' "$config_path"
     echo "required agent credential is not set: $credential_env" >&2
     exit 2
   fi
-  [ -S "${OPENNEKO_SERVE_SOCKET:-}" ] || {
-    echo "an agent eval needs OPENNEKO_SERVE_SOCKET set to the socket of a running openneko serve" >&2
-    exit 2
-  }
-  [ -n "${OPENNEKO_SERVE_URL:-}" ] || {
-    echo "an agent eval needs OPENNEKO_SERVE_URL set to the same openneko serve" >&2
-    exit 2
-  }
 fi
 
 for command_name in docker pnpm go openssl; do
@@ -327,7 +316,6 @@ graphjin_port=${OPENNEKO_EVAL_GRAPHJIN_PORT:-18080}
 export OPENNEKO_EVAL_ADVENTUREWORKS_GRAPHQL_URL="${OPENNEKO_EVAL_ADVENTUREWORKS_GRAPHQL_URL:-http://127.0.0.1:$graphjin_port/api/v1/graphql}"
 export OPENNEKO_EVAL_ADVENTUREWORKS_MCP_URL="${OPENNEKO_EVAL_ADVENTUREWORKS_MCP_URL:-http://127.0.0.1:$graphjin_port/api/v1/mcp}"
 export OPENNEKO_EVAL_ADVENTUREWORKS_DATABASE_URL="${OPENNEKO_EVAL_ADVENTUREWORKS_DATABASE_URL:-postgresql://openneko_eval_reader:eval-reader-only@127.0.0.1:$aw_db_port/adventureworks}"
-export OPENNEKO_AGENT_ENTRY="${OPENNEKO_AGENT_ENTRY:-$repo_root/apps/worker/src/agent-sandbox/entry.ts}"
 export OPENNEKO_PG_ENV_OVERRIDE=1
 export NEKO_PG_HOST=127.0.0.1
 export NEKO_PG_PORT="$metadata_port"

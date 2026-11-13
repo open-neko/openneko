@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { stat } from "node:fs/promises";
+import { mkdir, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pg from "pg";
 import { afterAll, describe, expect, it } from "vitest";
@@ -9,6 +10,7 @@ import { maybeEncryptSecret } from "@neko/llm/secrets";
 import { ensureOrgWorkspace, rememberWorkMemory, writeWorkSkill } from "@neko/llm/work";
 import {
   EVAL_EPISODE_DATABASE_PREFIX,
+  EVAL_EPISODE_FOLDER_PREFIX,
   EvalInstallHost,
   availableMemoryBytes,
   evalDatabaseLoginFromEnv,
@@ -147,8 +149,14 @@ describe.skipIf(!reachable)("eval install episode", () => {
       const leftover = `${EVAL_EPISODE_DATABASE_PREFIX}dead_run`;
       await admin.query(`drop database if exists ${leftover}`);
       await admin.query(`create database ${leftover}`);
+      const leftoverFolder = join(tmpdir(), `${EVAL_EPISODE_FOLDER_PREFIX}dead_run`);
+      await mkdir(join(leftoverFolder, "home"), { recursive: true });
       host = await EvalInstallHost.prepare({ login });
+      await expect(EvalInstallHost.prepare({ login, binary: host.binary, build: false })).rejects.toThrow(
+        /another eval run uses this Postgres server/,
+      );
       expect(await databases()).not.toContain(leftover);
+      expect(existsSync(leftoverFolder)).toBe(false);
 
       model = await ScriptedModelServer.start();
       const delivered: string[] = [];
@@ -159,6 +167,12 @@ describe.skipIf(!reachable)("eval install episode", () => {
       const { root, database } = episode;
       try {
         expect(await databases()).toContain(database);
+        const episodeDb = new pg.Pool({ ...login, database, ssl: false, max: 1 });
+        try {
+          expect((await episodeDb.query(`select 1 from pg_namespace where nspname = 'pgboss'`)).rowCount).toBe(1);
+        } finally {
+          await episodeDb.end();
+        }
         episode.activate();
         const orgId = "eval-install";
         const userId = "eval-member";
@@ -223,6 +237,11 @@ describe.skipIf(!reachable)("eval install episode", () => {
         expect(done).toEqual({ type: "done", result: { status: "completed", minutesSaved: 0 } });
         expect(turn.finalText).toBe("Memory: REV-EVAL-4242\nSkill: SKI-EVAL-77\nPrompt: true");
         expect(turn.requests).toEqual(["distiller", "executor", "executor", "executor", "responder"]);
+
+        const storedEvents: Array<Record<string, unknown>> = [];
+        const storedDone = await episode.followStoredRun(run.runId, (event) => storedEvents.push(event));
+        expect(storedDone).toEqual(done);
+        expect(storedEvents).toEqual([...feed.all()]);
 
         const stored = await episode.api(userId, `/api/v1/work/threads/${thread.thread.id}`);
         const bundle = (await stored.json()) as { messages: Array<{ role: string; content: string }> };

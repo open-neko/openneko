@@ -1,13 +1,14 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHmac, randomBytes } from "node:crypto";
 import { createWriteStream, existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { createConnection, createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import PgBoss from "pg-boss";
 import { reconnectPool } from "@neko/db";
 import { _resetSecretKeyCacheForTesting } from "@neko/llm/secrets";
 import { createActionRequest, notifyWorkflowOutputDeliveryHook } from "@neko/llm/workflows";
@@ -16,6 +17,7 @@ import { runActionExecute } from "../src/jobs/action-execute";
 
 export const EVAL_TEMPLATE_DATABASE = "openneko_eval_template";
 export const EVAL_EPISODE_DATABASE_PREFIX = "openneko_eval_ep_";
+export const EVAL_EPISODE_FOLDER_PREFIX = "openneko-eval-ep-";
 export const EVAL_FREE_MEMORY_FLOOR = 4 * 1024 ** 3;
 export const EVAL_EPISODE_MEMORY = 1024 ** 3;
 
@@ -181,6 +183,7 @@ export class EvalEpisode {
   private web?: ChildProcess;
   private serve?: ChildProcess;
   private worker?: Server;
+  private events?: pg.Pool;
   private savedEnv?: Map<string, string | undefined>;
   private stopped = false;
 
@@ -299,6 +302,42 @@ export class EvalEpisode {
       }
     }
     return undefined;
+  }
+
+  // A workflow run's thread has no owner, so no user may open its live
+  // stream; its stored events are the same rows in the same order.
+  async followStoredRun(
+    runId: string,
+    onEvent: (event: Record<string, unknown>) => void,
+    signal?: AbortSignal,
+    timeoutMs = 900_000,
+  ): Promise<Record<string, unknown> | undefined> {
+    this.events ??= new pg.Pool({
+      host: this.host.login.host,
+      port: this.host.login.port,
+      user: this.host.login.user,
+      password: this.host.login.password,
+      database: this.database,
+      ssl: this.host.login.sslmode === "disable" ? false : { rejectUnauthorized: this.host.login.sslmode === "verify-full" },
+      max: 1,
+    });
+    this.events.on("error", () => {});
+    const deadline = Date.now() + timeoutMs;
+    let after = "0";
+    while (Date.now() < deadline) {
+      signal?.throwIfAborted();
+      const { rows } = await this.events.query<{ id: string; payload: Record<string, unknown> }>(
+        `select e.id::text as id, e.payload from work_run_event e where e.run_id::text = $1 and e.id > $2::bigint order by e.id`,
+        [runId, after],
+      );
+      for (const row of rows) {
+        after = row.id;
+        onEvent(row.payload);
+        if (row.payload.type === "done") return row.payload;
+      }
+      await new Promise((wake) => setTimeout(wake, 100));
+    }
+    throw new Error(`run ${runId} sent no done event within ${timeoutMs / 1000} s`);
   }
 
   jobsRun(kind: string, orgId: string, at?: Date): Record<string, unknown> {
@@ -433,6 +472,7 @@ export class EvalEpisode {
     this.stopped = true;
     await Promise.allSettled([stopChild(this.web), stopChild(this.serve)]);
     if (this.worker) await new Promise<void>((done) => this.worker!.close(() => done()));
+    await this.events?.end();
     await this.deactivate();
     await this.host.dropDatabase(this.database);
     await rm(this.root, { recursive: true, force: true });
@@ -446,6 +486,7 @@ export class EvalInstallHost {
   private readonly live = new Set<EvalEpisode>();
   private readonly waiters: Array<() => void> = [];
   private maintenance?: pg.Pool;
+  private lock?: pg.PoolClient;
 
   private constructor(private readonly options: EvalInstallHostOptions) {
     this.login = options.login ?? evalDatabaseLoginFromEnv();
@@ -454,9 +495,15 @@ export class EvalInstallHost {
 
   static async prepare(options: EvalInstallHostOptions = {}): Promise<EvalInstallHost> {
     const host = new EvalInstallHost(options);
-    if (options.build ?? !options.binary) host.buildBinary();
-    await host.dropLeftovers();
-    await host.migrateTemplate();
+    try {
+      await host.takeLock();
+      if (options.build ?? !options.binary) host.buildBinary();
+      await host.dropLeftovers();
+      await host.migrateTemplate();
+    } catch (cause) {
+      await host.close();
+      throw cause;
+    }
     return host;
   }
 
@@ -468,9 +515,24 @@ export class EvalInstallHost {
       password: this.login.password,
       database: "postgres",
       ssl: this.login.sslmode === "disable" ? false : { rejectUnauthorized: this.login.sslmode === "verify-full" },
-      max: 2,
+      max: 3,
     });
+    this.maintenance.on("error", () => {});
     return this.maintenance;
+  }
+
+  // The leftover drop and the template migration would break the episodes
+  // of a second eval run on the same Postgres server.
+  private async takeLock(): Promise<void> {
+    const client = await this.pool().connect();
+    const { rows } = await client.query<{ locked: boolean }>(
+      `select pg_try_advisory_lock(hashtext('openneko.eval.install')) as locked`,
+    );
+    if (!rows[0]?.locked) {
+      client.release();
+      throw new Error("another eval run uses this Postgres server; wait for it to end");
+    }
+    this.lock = client;
   }
 
   private buildBinary(): void {
@@ -490,6 +552,11 @@ export class EvalInstallHost {
       [`${EVAL_EPISODE_DATABASE_PREFIX}%`],
     );
     for (const row of rows) await this.dropDatabase(row.datname);
+    for (const name of await readdir(tmpdir()).catch(() => [] as string[])) {
+      if (name.startsWith(EVAL_EPISODE_FOLDER_PREFIX)) {
+        await rm(join(tmpdir(), name), { recursive: true, force: true });
+      }
+    }
     return rows.map((row) => row.datname);
   }
 
@@ -507,6 +574,25 @@ export class EvalInstallHost {
     } finally {
       await rm(configHome, { recursive: true, force: true });
     }
+    await this.installBossSchema();
+  }
+
+  // The Node worker creates the pgboss schema at start; an episode runs no
+  // worker, and the Go job code sends watcher fires to that schema.
+  private async installBossSchema(): Promise<void> {
+    const boss = new PgBoss({
+      host: this.login.host,
+      port: this.login.port,
+      user: this.login.user,
+      password: this.login.password,
+      database: EVAL_TEMPLATE_DATABASE,
+      ssl: this.login.sslmode === "disable" ? false : { rejectUnauthorized: this.login.sslmode === "verify-full" },
+      supervise: false,
+      schedule: false,
+    });
+    boss.on("error", () => {});
+    await boss.start();
+    await boss.stop({ graceful: false, wait: true });
   }
 
   async dropDatabase(name: string): Promise<void> {
@@ -532,7 +618,7 @@ export class EvalInstallHost {
   async startEpisode(options: EvalEpisodeOptions, hooks: EvalWorkerHooks = {}): Promise<EvalEpisode> {
     await this.slot();
     const database = episodeDatabaseName(options.label);
-    const root = await mkdtemp(join(tmpdir(), "openneko-eval-ep-"));
+    const root = await mkdtemp(join(tmpdir(), EVAL_EPISODE_FOLDER_PREFIX));
     await chmod(root, 0o700);
     const episode = new EvalEpisode(this, database, root);
     this.live.add(episode);
@@ -550,6 +636,8 @@ export class EvalInstallHost {
 
   async close(): Promise<void> {
     await Promise.allSettled([...this.live].map((episode) => episode.stop()));
+    this.lock?.release(true);
+    this.lock = undefined;
     await this.maintenance?.end();
     this.maintenance = undefined;
   }
