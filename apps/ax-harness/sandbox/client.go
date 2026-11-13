@@ -117,9 +117,22 @@ func (c *Client) request(ctx context.Context, method, path string, body []byte) 
 // Exec runs one command in the sandbox. skillDir and the env values are
 // paths in the workspace.
 func (c *Client) Exec(ctx context.Context, command, skillDir string, env map[string]string, timeoutSeconds, maxOutput int) (localtool.ExecResult, error) {
+	return c.ExecIn(ctx, "", command, skillDir, env, timeoutSeconds, maxOutput)
+}
+
+// ExecIn runs one command from dir, a folder in the workspace. An empty dir
+// is the workspace root.
+func (c *Client) ExecIn(ctx context.Context, dir, command, skillDir string, env map[string]string, timeoutSeconds, maxOutput int) (localtool.ExecResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	body := execBody{Root: c.workspace, Command: command, TimeoutSeconds: timeoutSeconds, MaxOutput: maxOutput}
+	if dir != "" {
+		rel, err := c.relative(dir)
+		if err != nil {
+			return localtool.ExecResult{}, fmt.Errorf("terminal refused the command: the working folder is outside the workspace")
+		}
+		body.Dir = rel
+	}
 	if skillDir != "" {
 		rel, err := c.relative(skillDir)
 		if err != nil {

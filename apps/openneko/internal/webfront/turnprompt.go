@@ -150,7 +150,7 @@ func buildWorkPrompt(in workPromptInput) string {
 		pick(in.SupportsPolicyTool, section("rules_tool"), section("rules_fence")),
 		sourceConfig,
 		delegation,
-		dataAccessSection(in.Knowledge),
+		dataAccessSection(in.Knowledge, false),
 		section("conduct", "date_rule", section("date_rule")),
 		closing,
 		in.OperatorProfile,
@@ -242,7 +242,7 @@ func memorySection(searchTool, files bool, memoryContext string) string {
 		"usage", "\n\n"+strings.Join(usage, "\n\n"))
 }
 
-func dataAccessSection(k knowledgePack) string {
+func dataAccessSection(k knowledgePack, readOnly bool) string {
 	tool := func(name string) string { return strings.TrimSuffix(graphjinExecuteTool, "execute_graphql") + name }
 	agentic := k.Mode == "agentic"
 	var block string
@@ -262,7 +262,7 @@ func dataAccessSection(k knowledgePack) string {
 		"savedQueryTool", tool("execute_saved_query"),
 		"queryTool", graphjinExecuteTool,
 		"scripts", section("scripts_on", "queryTool", graphjinExecuteTool),
-		"writes", section("writes"),
+		"writes", pick(readOnly, section("read_only"), section("writes")),
 		"discovery", pick(agentic, section("agentic_discovery"), section("inline_discovery")),
 		"date_rule", section("date_rule"),
 		"fanout_rule", section("fanout_rule"),

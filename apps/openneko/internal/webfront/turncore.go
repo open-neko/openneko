@@ -28,6 +28,7 @@ type agentCoreInput struct {
 	Keys                   map[string]string
 	Socket                 string
 	Emit                   func(ctx context.Context, event any) error
+	Workflow               *workflowCoreInput
 	FilesEnabled           func() bool
 	toolBackend            func(turnBinding) toolBackend
 	startData              func(turnBinding, toolBackend) (*dataSocket, error)
@@ -36,7 +37,22 @@ type agentCoreInput struct {
 	withoutDataSocket      bool
 }
 
+// workflowCoreInput is what a workflow turn adds to the core: its run, its
+// servers and its limits.
+type workflowCoreInput struct {
+	WorkflowRunID, ObservationID string
+	Servers                      []string
+	NetworkHosts                 []string
+	TimeoutMs, MaxToolIterations int
+	ReasoningEffort              string
+}
+
 func (in agentCoreInput) binding() turnBinding {
+	if w := in.Workflow; w != nil {
+		return turnBinding{OrgID: in.OrgID, ThreadID: in.ThreadID, RunID: in.RunID, Kind: "workflow",
+			CardSchema: pick(!in.CardsOff, "rich", ""), SkillsRoot: in.Workspace.SkillsRoot,
+			WorkflowRunID: w.WorkflowRunID, ObservationID: w.ObservationID}
+	}
 	schema := "rich"
 	if in.CoreCards {
 		schema = "core"
@@ -89,7 +105,12 @@ func (a *API) runAgentCore(ctx context.Context, in agentCoreInput) (axRunResult,
 		rt.events = in.Emit
 		be = rt
 	}
-	servers := agentCoreServers(in, len(packActionTools(b, be)))
+	var servers []string
+	if in.Workflow != nil {
+		servers = in.Workflow.Servers
+	} else {
+		servers = agentCoreServers(in, len(packActionTools(b, be)))
+	}
 	tools, err := turnTools(b, be, servers)
 	if err != nil {
 		return axRunResult{}, err
@@ -125,10 +146,15 @@ func (a *API) runAgentCore(ctx context.Context, in agentCoreInput) (axRunResult,
 		}
 	}
 	ws := in.Workspace
-	return runAx(ctx, in.Backend, axTurnOptions{
+	o := axTurnOptions{
 		Prompt: in.Prompt, UserMessage: in.UserMessage, OrgID: in.OrgID, ThreadID: in.ThreadID, Tag: "work " + in.RunID,
 		Workspace: &ws, BackendState: in.BackendState, WantsCards: !in.CardsOff, RichCards: !in.CoreCards,
 		Servers: servers, Tools: tools, NativeDelegationOff: in.NativeDelegationOff, Shell: in.Shell,
 		PythonPath: pythonPath, Keys: in.Keys, Socket: in.Socket, Emit: in.Emit,
-	})
+	}
+	if w := in.Workflow; w != nil {
+		o.Tag, o.NetworkHosts = "workflow "+in.RunID, w.NetworkHosts
+		o.TimeoutMs, o.MaxToolIterations, o.ReasoningEffort = w.TimeoutMs, w.MaxToolIterations, w.ReasoningEffort
+	}
+	return runAx(ctx, in.Backend, o)
 }

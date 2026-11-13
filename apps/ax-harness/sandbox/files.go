@@ -25,6 +25,7 @@ type execBody struct {
 	Fresh          bool              `json:"fresh"`
 	Root           string            `json:"root"`
 	Command        string            `json:"command"`
+	Dir            string            `json:"dir,omitempty"`
 	SkillDir       string            `json:"skill_dir,omitempty"`
 	Env            map[string]string `json:"env,omitempty"`
 	TimeoutSeconds int               `json:"timeout_seconds"`

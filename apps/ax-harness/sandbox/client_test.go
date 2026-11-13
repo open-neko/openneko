@@ -109,6 +109,29 @@ func TestClientSendsTheKeyAndTheRunOverHTTP(t *testing.T) {
 	}
 }
 
+func TestClientSendsTheWorkingFolder(t *testing.T) {
+	fake := &fakeSandbox{}
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	workspace := t.TempDir()
+	client, err := NewClient(Config{URL: server.URL}, workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ExecIn(context.Background(), filepath.Join(workspace, "runs", "r1"), "pwd", "", nil, 5, 1000); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Exec(context.Background(), "pwd", "", nil, 5, 1000); err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.got; len(got) != 2 || got[0].body.Dir != "runs/r1" || got[1].body.Dir != "" || strings.Contains(string(got[1].raw), `"dir"`) {
+		t.Fatalf("requests = %+v", got)
+	}
+	if _, err := client.ExecIn(context.Background(), "/etc", "pwd", "", nil, 5, 1000); err == nil || !strings.Contains(err.Error(), "working folder") {
+		t.Fatalf("a working folder outside the workspace was sent: %v", err)
+	}
+}
+
 func TestClientCarriesNoSecretsToTheSandbox(t *testing.T) {
 	fake := &fakeSandbox{}
 	server := httptest.NewServer(fake)
