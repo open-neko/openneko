@@ -260,7 +260,8 @@ func (t *chatTurn) fail(ctx context.Context, cause error) (chatTurnResult, error
 		return t.finishNeedsInput(bg)
 	}
 	stop := spendStop(ctx)
-	aborted := stop == nil && (ctx.Err() != nil || errors.Is(cause, context.Canceled) || strings.Contains(cause.Error(), "aborted"))
+	shutdown := ctx.Err() != nil && errors.Is(context.Cause(ctx), errTurnShutdown)
+	aborted := stop == nil && !shutdown && (ctx.Err() != nil || errors.Is(cause, context.Canceled) || strings.Contains(cause.Error(), "aborted"))
 	status, msg := "failed", cause.Error()
 	switch {
 	case stop != nil:
@@ -281,13 +282,13 @@ func (t *chatTurn) fail(ctx context.Context, cause error) (chatTurnResult, error
 	if err := t.st.wrapped(bg, doneEvent(status)); err != nil {
 		log.Printf("[work-run] done event for %s not stored: %v", t.o.RunID, err)
 	}
-	if !aborted && stop == nil {
+	if !aborted && stop == nil && !shutdown {
 		return chatTurnResult{}, cause
 	}
 	t.st.mu.Lock()
 	out := chatTurnResult{Status: status, FinalText: t.st.assistantText.String()}
 	t.st.mu.Unlock()
-	if stop != nil {
+	if stop != nil || shutdown {
 		out.Error = msg
 	}
 	return out, nil

@@ -62,14 +62,14 @@ func (a *API) recordHostSpend(ctx context.Context, orgID, task string, served ll
 		log.Printf("[spend] host call not recorded: %v", err)
 		return
 	}
-	if err := a.checkOrgSpendWarnings(ctx, orgID, now); err != nil {
+	if err := a.checkSpendWarnings(ctx, orgID, "", now); err != nil {
 		log.Printf("[spend] alert check failed: %v", err)
 	}
 }
 
-// checkOrgSpendWarnings is checkSpendWarnings() with no workflow.
-func (a *API) checkOrgSpendWarnings(ctx context.Context, orgID string, now time.Time) error {
-	limits, err := spendLimits(ctx, a.DB, orgID, "")
+// checkSpendWarnings is checkSpendWarnings() in packages/llm/src/spend/alerts.ts.
+func (a *API) checkSpendWarnings(ctx context.Context, orgID, workflowID string, now time.Time) error {
+	limits, err := spendLimits(ctx, a.DB, orgID, workflowID)
 	if err != nil {
 		if strings.HasPrefix(err.Error(), "No spend limits") {
 			return nil
@@ -80,19 +80,31 @@ func (a *API) checkOrgSpendWarnings(ctx context.Context, orgID string, now time.
 	if err := noRows(a.DB.QueryRow(ctx, `select coalesce(warn_percent, 80)::float8 from spend_limit where org_id = $1 and workflow_id is null limit 1`, orgID).Scan(&warnPercent)); err != nil {
 		return err
 	}
+	var workflowName *string
+	if workflowID != "" {
+		if err := noRows(a.DB.QueryRow(ctx, `select name from workflow_definition where org_id = $1 and id = $2::uuid`, orgID, workflowID).Scan(&workflowName)); err != nil {
+			return err
+		}
+	}
 	hourStart := now.UTC().Truncate(time.Hour)
 	dayStart := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
-	budgets := []struct {
-		budget, label   string
-		limit           float64
-		since, resetsAt time.Time
-		seconds         int
-	}{
-		{"org_hourly", "hourly budget for this organization", limits[1], hourStart, hourStart.Add(time.Hour), 3_600},
-		{"org_daily", "daily budget for this organization", limits[2], dayStart, dayStart.Add(24 * time.Hour), 86_400},
+	type budget struct {
+		budget, label, workflowID string
+		limit                     float64
+		since, resetsAt           time.Time
+		seconds                   int
+	}
+	budgets := []budget{
+		{"org_hourly", "hourly budget for this organization", "", limits[1], hourStart, hourStart.Add(time.Hour), 3_600},
+		{"org_daily", "daily budget for this organization", "", limits[2], dayStart, dayStart.Add(24 * time.Hour), 86_400},
+	}
+	if workflowID != "" {
+		budgets = append(budgets,
+			budget{"workflow_hourly", "hourly budget for the workflow", workflowID, limits[3], hourStart, hourStart.Add(time.Hour), 3_600},
+			budget{"workflow_daily", "daily budget for the workflow", workflowID, limits[4], dayStart, dayStart.Add(24 * time.Hour), 86_400})
 	}
 	for _, b := range budgets {
-		spent, held, err := spendBreakdown(ctx, a.DB, orgID, "", b.since)
+		spent, held, err := spendBreakdown(ctx, a.DB, orgID, b.workflowID, b.since)
 		if err != nil {
 			return err
 		}
@@ -101,9 +113,13 @@ func (a *API) checkOrgSpendWarnings(ctx context.Context, orgID string, now time.
 		if committed < threshold {
 			continue
 		}
+		label := b.label
+		if workflowName != nil && *workflowName != "" {
+			label = strings.Replace(label, "the workflow", *workflowName, 1)
+		}
 		limitUSD := jsToFixed2(microsToUSD(b.limit))
 		message := fmt.Sprintf("Spend is at %d%% of the $%s %s ($%s so far). New runs stop at $%s. The budget resets at %s UTC.",
-			int64(math.Floor(committed/b.limit*100)), limitUSD, b.label, jsToFixed2(microsToUSD(committed)), limitUSD, b.resetsAt.UTC().Format("15:04"))
+			int64(math.Floor(committed/b.limit*100)), limitUSD, label, jsToFixed2(microsToUSD(committed)), limitUSD, b.resetsAt.UTC().Format("15:04"))
 		details := struct {
 			Budget         string  `json:"budget"`
 			LimitMicros    float64 `json:"limitMicros"`
@@ -117,7 +133,11 @@ func (a *API) checkOrgSpendWarnings(ctx context.Context, orgID string, now time.
 		if err != nil {
 			return err
 		}
-		a.raiseSpendAlert(ctx, orgID, "spend.budget_warning", "org", committed, threshold, b.seconds, details.WindowStart, raw)
+		subject := "org"
+		if b.workflowID != "" {
+			subject = "workflow:" + b.workflowID
+		}
+		a.raiseSpendAlert(ctx, orgID, "spend.budget_warning", subject, committed, threshold, b.seconds, details.WindowStart, raw)
 	}
 	return nil
 }

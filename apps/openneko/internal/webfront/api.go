@@ -57,6 +57,8 @@ type API struct {
 	orgID  string
 
 	hookWaiters atomic.Int64
+	runs        runRegistry
+	slots       agentSlots
 }
 
 // GoRoutes lists the /api/v1 routes that Go answers, by method.
