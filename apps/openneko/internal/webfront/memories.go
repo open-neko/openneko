@@ -497,7 +497,7 @@ func (a *API) promoteMemory(w http.ResponseWriter, r *http.Request) {
 	if _, err := a.DB.Exec(ctx, `insert into config_change (org_id, artifact_kind, artifact_ref, scope, user_id, actor_user_id, summary, status)
 		values ($1, 'memory', $2, 'team', $3, $4, 'Promoted a personal memory to the team', 'promoted')`,
 		act.OrgID, m.ID, sourceUser, promotedBy); err != nil {
-		log.Printf("[config-vcs] config_change insert failed: %v", err)
+		log.Printf("[config-change] config_change insert failed: %v", err)
 	}
 	sendJSON(w, http.StatusOK, map[string]any{"memory": m})
 }

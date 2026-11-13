@@ -297,6 +297,7 @@ openneko status                    # docker compose ps proxy
 openneko logs [service…] [-f]
 openneko stop [--volumes]          # --volumes wipes data
 openneko migrate                   # apply pending migrations to OpenNeko's database
+openneko migrate config-repo --dry-run   # list what moving an old config repository to plain folders writes
 openneko jobs run workflow_cron_sweep --org ID [--at TIME]  # run one sweep now and print the result as JSON
 openneko serve [--agent-socket path]  # user files and file search; agent turns on a Unix socket when set (runs as the openneko-serve container)
 openneko files copy-to-bucket      # copy user files from the files folder to OPENNEKO_FILES_BUCKET
@@ -737,6 +738,15 @@ This release has fewer parts. The upgrade migrates your data in place:
   creates `neko_files_<database>` and `neko_subscriptions_<database>` with the
   rights of the old roles. On a database that you run, the `neko` login needs
   `CREATEROLE` or `ADMIN` on the new roles ([the serve roles](#the-serve-roles)).
+- **The config repository** is gone. Skills are plain folders, and each
+  member has a folder of their own skills. At its first start, `openneko web`
+  moves each org folder off its git repository. It writes the team skills
+  that the folder lacks. A member's changed copy of a team skill becomes a
+  private skill named `<skill>-<handle>`. A member's other files go to that
+  member's folder. The old repository stays as `.git.pre-plain` in the org
+  folder, and the log prints its path. Delete it when you no longer need it.
+  `openneko migrate config-repo` runs the same step by hand. With
+  `--dry-run`, it lists what it would write and changes nothing.
 - **A prod install** keeps its bundled `neko-db`. Move it to a database that
   you run with [`openneko database move`](#the-bundled-database-of-an-older-release).
 

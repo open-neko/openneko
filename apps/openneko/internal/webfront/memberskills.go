@@ -40,8 +40,6 @@ func memberFolderName(userID string) string {
 	return slug
 }
 
-// memberSkillsRoot is the folder of one member's own skills. The config
-// repo ignores the members folder, so a member's skills never reach it.
 func memberSkillsRoot(orgRoot, userID string) string {
 	return filepath.Join(orgRoot, "members", memberFolderName(userID), "skills")
 }
@@ -287,8 +285,8 @@ func (a *API) recordOwnSkillChange(ctx context.Context, act actor, name, summary
 		Summary: summary, Scope: "user", UserID: act.UserID})
 }
 
-// recordSkillChange adds the audit row for a change to a skill: a team
-// skill is also committed to the config repo, a member's own is not.
+// recordSkillChange adds the audit row for a change to a skill, with the
+// user scope for a member's own skill.
 func (a *API) recordSkillChange(ctx context.Context, act actor, s visibleSkill, summary string) {
 	if s.Scope == skillScopeOwn {
 		a.recordOwnSkillChange(ctx, act, s.Name, summary)

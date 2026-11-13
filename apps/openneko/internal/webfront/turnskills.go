@@ -16,7 +16,7 @@ import (
 )
 
 // skillFileHashes maps "<skill>/<file>" inside a skills folder to the file's
-// sha256, as SkillFileHashes in packages/llm/src/config-vcs/skill-capture.ts.
+// sha256, as SkillFileHashes in packages/llm/src/work/skill-capture.ts.
 type skillFileHashes map[string]string
 
 type stagedSkillFile struct {
