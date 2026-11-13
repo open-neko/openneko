@@ -3,9 +3,15 @@
 import { ItemAccessPanel } from "@/components/admin/ItemAccessPanel";
 import { use as usePromise, useCallback, useEffect, useState, type ComponentPropsWithoutRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, FileText, Pencil } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { ArrowLeft, Copy, FileText, Pencil, Share2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { confirmDialog } from "@/components/ConfirmModal";
 import PageHeading from "@/components/PageHeading";
+import { SkillCopyDialog } from "@/components/SkillCopyDialog";
+import { Badge } from "@/components/ui/badge";
+import { shareSkill, type SkillScope } from "@/lib/skill-actions";
 import { Button, buttonClassName } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -27,6 +33,9 @@ type SkillDetail = {
   description: string;
   fileCount: number;
   updatedAt: string;
+  scope: SkillScope;
+  canEdit: boolean;
+  canShare: boolean;
   skillMarkdown: string;
   files: Array<{ path: string; bytes: number }>;
 };
@@ -51,6 +60,9 @@ async function fetchSkill(
 
 export default function SkillDetailPage({ params }: PageProps) {
   const { name } = usePromise(params);
+  const router = useRouter();
+  const [copying, setCopying] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [skill, setSkill] = useState<SkillDetail | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "missing" | "error">(
     "loading",
@@ -86,6 +98,25 @@ export default function SkillDetailPage({ params }: PageProps) {
       });
     return () => controller.abort();
   }, [name]);
+
+  const share = async () => {
+    const ok = await confirmDialog({
+      title: `Share "${name}" with the team?`,
+      description: "The skill moves to the team skills. Members see it when their groups hold it.",
+      confirmLabel: "Share",
+    });
+    if (!ok) return;
+    setSharing(true);
+    try {
+      await shareSkill(name);
+      toast.success(`${name} is now a team skill.`);
+      await load();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "The skill could not be shared.");
+    } finally {
+      setSharing(false);
+    }
+  };
 
   if (state !== "ready" || !skill) {
     return (
@@ -147,22 +178,55 @@ export default function SkillDetailPage({ params }: PageProps) {
           </Link>
         }
         title={skill.name}
+        description={
+          skill.scope === "own"
+            ? "Your own skill. Only you see it."
+            : skill.canEdit
+              ? "A team skill."
+              : "A team skill. Copy it to make a version of your own that you can edit."
+        }
         actions={
-          <div className="library-head-stats" aria-label="Skill details">
-            <div>
-              <strong>{skill.fileCount}</strong>
-              <span>{skill.fileCount === 1 ? "file" : "files"}</span>
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="library-head-stats" aria-label="Skill details">
+              <div>
+                <strong>{skill.fileCount}</strong>
+                <span>{skill.fileCount === 1 ? "file" : "files"}</span>
+              </div>
+              <div>
+                <strong>{formatShortDate(skill.updatedAt)}</strong>
+                <span>updated</span>
+              </div>
             </div>
-            <div>
-              <strong>{formatShortDate(skill.updatedAt)}</strong>
-              <span>updated</span>
-            </div>
+            {skill.scope === "own" ? <Badge variant="success">Yours</Badge> : null}
+            <Button size="sm" onClick={() => setCopying(true)}>
+              <Copy aria-hidden="true" strokeWidth={2} size={14} />
+              Copy
+            </Button>
+            {skill.canShare ? (
+              <Button size="sm" disabled={sharing} onClick={() => void share()}>
+                <Share2 aria-hidden="true" strokeWidth={2} size={14} />
+                {sharing ? "Sharing…" : "Share with the team"}
+              </Button>
+            ) : null}
           </div>
         }
       />
 
-      <SkillWorkspace skill={skill} skillName={name} onReload={load} />
-      <ItemAccessPanel itemType="skill" itemId={skill.name} label={skill.name} />
+      <SkillWorkspace key={skill.scope} skill={skill} skillName={name} onReload={load} />
+      {skill.scope === "team" ? (
+        <ItemAccessPanel itemType="skill" itemId={skill.name} label={skill.name} />
+      ) : null}
+      {copying ? (
+        <SkillCopyDialog
+          source={skill.name}
+          onClose={() => setCopying(false)}
+          onCopied={(copy) => {
+            setCopying(false);
+            toast.success(`Copied to ${copy}.`);
+            router.push(`/skills/${encodeURIComponent(copy)}`);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -344,7 +408,7 @@ function SkillWorkspace({
                   {saving ? "Saving…" : "Save"}
                 </Button>
               </>
-            ) : file && file.editable ? (
+            ) : file && file.editable && skill.canEdit ? (
               <Button size="sm" onClick={beginEdit}>
                 <Pencil aria-hidden="true" strokeWidth={2} size={14} />
                 Edit

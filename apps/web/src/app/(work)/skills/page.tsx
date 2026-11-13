@@ -4,8 +4,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowUpRight, FileText, Trash2, Upload } from "lucide-react";
+import { ArrowUpRight, Copy, FileText, Share2, Trash2, Upload } from "lucide-react";
 import { confirmDialog } from "@/components/ConfirmModal";
+import { SkillCopyDialog } from "@/components/SkillCopyDialog";
+import { Badge } from "@/components/ui/badge";
+import { shareSkill, type SkillScope } from "@/lib/skill-actions";
 import PageHeading from "@/components/PageHeading";
 import { Button } from "@/components/ui/button";
 import { MenuItem, OverflowMenu } from "@/components/ui/overflow-menu";
@@ -19,16 +22,19 @@ type SkillSummary = {
   description: string;
   fileCount: number;
   updatedAt: string;
+  scope: SkillScope;
+  canEdit: boolean;
+  canShare: boolean;
 };
 
-async function fetchSkills(signal?: AbortSignal): Promise<{ skills: SkillSummary[]; canImport: boolean }> {
+async function fetchSkills(signal?: AbortSignal): Promise<{ skills: SkillSummary[]; canImport: boolean; canCopy: boolean }> {
   const response = await fetch("/api/v1/work/skills", {
     cache: "no-store",
     signal,
   });
   if (!response.ok) throw new Error("Skills could not be loaded.");
-  const data = (await response.json()) as { skills?: SkillSummary[]; canImport?: boolean };
-  return { skills: data.skills ?? [], canImport: data.canImport === true };
+  const data = (await response.json()) as { skills?: SkillSummary[]; canImport?: boolean; canCopy?: boolean };
+  return { skills: data.skills ?? [], canImport: data.canImport === true, canCopy: data.canCopy === true };
 }
 
 export default function SkillsPage() {
@@ -36,6 +42,8 @@ export default function SkillsPage() {
   const archiveInput = useRef<HTMLInputElement>(null);
   const [skills, setSkills] = useState<SkillSummary[]>([]);
   const [canImport, setCanImport] = useState(false);
+  const [canCopy, setCanCopy] = useState(false);
+  const [copySource, setCopySource] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +56,7 @@ export default function SkillsPage() {
       const data = await fetchSkills();
       setSkills(data.skills);
       setCanImport(data.canImport);
+      setCanCopy(data.canCopy);
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Skills could not be loaded.");
@@ -62,6 +71,7 @@ export default function SkillsPage() {
       .then((data) => {
         setSkills(data.skills);
         setCanImport(data.canImport);
+        setCanCopy(data.canCopy);
         setError(null);
       })
       .catch((cause: unknown) => {
@@ -98,11 +108,36 @@ export default function SkillsPage() {
     }
   }, [router]);
 
-  const remove = useCallback(
+  const share = useCallback(
     async (skillName: string) => {
       const ok = await confirmDialog({
+        title: `Share "${skillName}" with the team?`,
+        description: "The skill moves to the team skills. Members see it when their groups hold it.",
+        confirmLabel: "Share",
+      });
+      if (!ok) return;
+      setBusyName(skillName);
+      try {
+        await shareSkill(skillName);
+        toast.success(`${skillName} is now a team skill.`);
+        await refresh();
+      } catch (cause) {
+        toast.error(cause instanceof Error ? cause.message : "The skill could not be shared.");
+      } finally {
+        setBusyName(null);
+      }
+    },
+    [refresh],
+  );
+
+  const remove = useCallback(
+    async (skill: SkillSummary) => {
+      const skillName = skill.name;
+      const ok = await confirmDialog({
         title: `Delete skill "${skillName}"?`,
-        description: "This removes the skill folder from the organization workspace.",
+        description: skill.scope === "own"
+          ? "This removes your own skill. Team skills stay as they are."
+          : "This removes the team skill for everyone in the organization.",
         confirmLabel: "Delete",
         destructive: true,
       });
@@ -242,7 +277,12 @@ export default function SkillsPage() {
                       <span className="library-index">
                         {index + 1}
                       </span>
-                      <strong>{skill.name}</strong>
+                      <strong>
+                        {skill.name}
+                        {skill.scope === "own" ? (
+                          <Badge variant="success" className="ml-2 align-middle">Yours</Badge>
+                        ) : null}
+                      </strong>
                       <p>{skill.description || "No trigger description provided."}</p>
                       <span className="skill-file-count">
                         <FileText aria-hidden="true" strokeWidth={1.9} />
@@ -255,21 +295,48 @@ export default function SkillsPage() {
                         strokeWidth={1.9}
                       />
                     </Link>
-                    <OverflowMenu
-                      label={`Actions for ${skill.name}`}
-                      className="skill-delete-control"
-                    >
-                      <MenuItem danger disabled={busyName === skill.name} onSelect={() => void remove(skill.name)}>
-                        <Trash2 aria-hidden="true" strokeWidth={1.9} />
-                        Delete skill
-                      </MenuItem>
-                    </OverflowMenu>
+                    {canCopy || skill.canEdit ? (
+                      <OverflowMenu
+                        label={`Actions for ${skill.name}`}
+                        className="skill-delete-control"
+                      >
+                        {canCopy ? (
+                          <MenuItem disabled={busyName === skill.name} onSelect={() => setCopySource(skill.name)}>
+                            <Copy aria-hidden="true" strokeWidth={1.9} />
+                            Copy skill
+                          </MenuItem>
+                        ) : null}
+                        {skill.canShare ? (
+                          <MenuItem disabled={busyName === skill.name} onSelect={() => void share(skill.name)}>
+                            <Share2 aria-hidden="true" strokeWidth={1.9} />
+                            Share with the team
+                          </MenuItem>
+                        ) : null}
+                        {skill.canEdit ? (
+                          <MenuItem danger disabled={busyName === skill.name} onSelect={() => void remove(skill)}>
+                            <Trash2 aria-hidden="true" strokeWidth={1.9} />
+                            Delete skill
+                          </MenuItem>
+                        ) : null}
+                      </OverflowMenu>
+                    ) : null}
                   </li>
                 ))}
               </ol>
             </>
           )}
         </section>
+        {copySource ? (
+          <SkillCopyDialog
+            source={copySource}
+            onClose={() => setCopySource(null)}
+            onCopied={(name) => {
+              setCopySource(null);
+              toast.success(`Copied to ${name}.`);
+              router.push(`/skills/${encodeURIComponent(name)}`);
+            }}
+          />
+        ) : null}
         {canImport ? (
           <p className="text-ui-caption text-text3">
             Import a .skill or ZIP archive that holds one skill directory with SKILL.md and its supporting files.
