@@ -113,6 +113,17 @@ episodes retain the evidence required for deterministic rescoring. Promoted
 results retain only aggregate scores, stable failure codes, and non-sensitive
 provenance.
 
+The Go turn records `memory.prefetched` (the memories in the turn's prompt)
+and `skill.loaded` (the first read of a skill's `SKILL.md` that ends without
+an error) itself. An eval install reads the evidence from a file: set
+`OPENNEKO_EVAL_TRACE_FILE` on `openneko web`, and web appends one JSON line
+per event, `{"event":…,"content":…}`, for every chat and manual workflow run.
+`content` is the step content of item E1 (query text and rows, at most 16 KB
+of rows per step), scrubbed of the values of the variables whose names end in
+KEY, TOKEN, SECRET or PASSWORD and of URL passwords. The file has mode 600.
+Web refuses a path inside the agent, stage or files folders, and logs one line
+at start that the trace is on. Without the variable, web stores no trace.
+
 V3 state cases additionally retain a private host observation with three
 separate surfaces: the exact lifecycle sequence, a terminal-state object, and
 a collateral-state object. The model cannot supply or edit this observation.

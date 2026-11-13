@@ -87,6 +87,7 @@ func (a *API) memoryPromptContext(ctx context.Context, s memoryScope, query stri
 			}
 		}
 	}
+	traceMemoryPrefetched(traceBinding{RunID: s.RunID, OrgID: s.OrgID, Kind: "work"}, merged)
 	if len(merged) == 0 {
 		return "No memories are currently saved for this workspace or thread.", nil
 	}

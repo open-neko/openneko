@@ -349,17 +349,20 @@ func (a *API) manualRun(w http.ResponseWriter, r *http.Request) {
 func (a *API) startWorkflowRun(ctx context.Context, orgID string, o workflowTurnOptions) (<-chan struct{}, error) {
 	base, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	store := a.newRunEventStore(orgID, o.ThreadID, o.RunID)
+	store.kind = "workflow"
 	runCtx, guarded, err := a.newRunSpendGuard(base, o.RunID, store.emit)
 	if err != nil {
 		cancel(nil)
 		return nil, err
 	}
 	run := a.runs.register(o.RunID, orgID, o.ThreadID, cancel)
+	untrace := a.EvalTrace.register(o.RunID)
 	o.Emit = guarded
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		defer a.runs.unregister(o.RunID, run)
+		defer untrace()
 		defer cancel(nil)
 		bg := context.WithoutCancel(runCtx)
 		if _, err := a.runWorkflowTurn(runCtx, o); err != nil {

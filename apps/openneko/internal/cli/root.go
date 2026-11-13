@@ -173,6 +173,7 @@ Developer ops: eval.`,
 		newGraphjinCmd(),
 		newResetCmd(),
 		newEvalCmd(),
+		newJobsCmd(),
 	)
 	return cmd
 }

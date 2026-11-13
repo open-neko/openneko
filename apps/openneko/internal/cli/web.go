@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -58,6 +59,11 @@ inserts the due cron jobs. On a web with its jobs off, the call then runs the
 queues until no job is ready or max_seconds (default 50, at most 300) passes.
 Without OPENNEKO_JOBS_WAKE_TOKEN, every call gets 401.
 
+With OPENNEKO_EVAL_TRACE_FILE set, web appends each run's semantic trace
+with its step content (query text and rows, scrubbed) to that file, mode
+600. Only an eval install sets it. Web refuses a path inside the agent,
+stage or files folders.
+
 Web refuses to start on a database that lacks a migration of this release,
 unless OPENNEKO_SKIP_MIGRATE is set.
 
@@ -89,6 +95,15 @@ with exit code 0, so its supervisor starts it again.`,
 			if err := checkSchema(ctx, cmd.ErrOrStderr(), pool); err != nil {
 				return err
 			}
+			tracePath := os.Getenv(webfront.EvalTraceEnv)
+			trace, err := webfront.OpenEvalTrace(tracePath, webfront.EvalTraceRefused(envOr("OPENNEKO_FILES_DIR", filepath.Join(dataHome(), "openneko", "files"))), os.Environ())
+			if err != nil {
+				return err
+			}
+			defer trace.Close()
+			if trace != nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "openneko web: the eval trace is on; every run's queries and rows go to %s\n", tracePath)
+			}
 			ln, err := net.Listen("tcp", addr)
 			if err != nil {
 				return err
@@ -100,7 +115,7 @@ with exit code 0, so its supervisor starts it again.`,
 			}
 			gate := &webfront.Gate{WorkerURL: workerURL, DB: pool}
 			api := &webfront.API{Gate: gate, DB: pool, Version: webfront.AppVersion(dir, version.Version),
-				SecureCookies: os.Getenv("NODE_ENV") == "production", Restart: stop, Jobs: inserter}
+				SecureCookies: os.Getenv("NODE_ENV") == "production", Restart: stop, Jobs: inserter, EvalTrace: trace}
 			queue := &jobs.Queue{Pool: pool, MetricSweep: api.MetricSweep, CronSweep: api.CronSweep,
 				DirectorySync: api.DirectorySync, ActionExecute: api.ActionExecute,
 				Embedding: jobs.Embedding{Model: api.EmbeddingModel, Embed: api.EmbedText},

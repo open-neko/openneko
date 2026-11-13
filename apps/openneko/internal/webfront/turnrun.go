@@ -246,9 +246,10 @@ func (a *API) StopTurns(ctx context.Context) int {
 // idle window, every other event flushes the text first, and each stored
 // event goes to the live subscribers in order.
 type runEventStore struct {
-	api                    *API
-	orgID, threadID, runID string
-	idle                   time.Duration
+	api                          *API
+	orgID, threadID, runID, kind string
+	idle                         time.Duration
+	skills                       skillTrace
 
 	mu      sync.Mutex
 	role    string
@@ -260,7 +261,7 @@ type runEventStore struct {
 }
 
 func (a *API) newRunEventStore(orgID, threadID, runID string) *runEventStore {
-	return &runEventStore{api: a, orgID: orgID, threadID: threadID, runID: runID, idle: runEventFlushIdle}
+	return &runEventStore{api: a, orgID: orgID, threadID: threadID, runID: runID, kind: "work", idle: runEventFlushIdle}
 }
 
 func (s *runEventStore) emit(ctx context.Context, event any) error {
@@ -271,6 +272,7 @@ func (s *runEventStore) emit(ctx context.Context, event any) error {
 		if err := s.flushLocked(ctx); err != nil {
 			return err
 		}
+		s.skills.observe(traceBinding{RunID: s.runID, OrgID: s.orgID, Kind: s.kind}, event)
 		return s.persistLocked(ctx, event)
 	}
 	role, _ := jsGet(event, "role").(string)
@@ -459,6 +461,7 @@ func (a *API) startChatRun(ctx context.Context, o chatTurnOptions) (<-chan struc
 		return nil, err
 	}
 	run := a.runs.register(o.RunID, o.OrgID, o.ThreadID, cancel)
+	untrace := a.EvalTrace.register(o.RunID)
 	o.Emit = guarded
 	core := o.runCore
 	if core == nil {
@@ -478,6 +481,7 @@ func (a *API) startChatRun(ctx context.Context, o chatTurnOptions) (<-chan struc
 	go func() {
 		defer close(done)
 		defer a.runs.unregister(o.RunID, run)
+		defer untrace()
 		defer cancel(nil)
 		bg := context.WithoutCancel(runCtx)
 		if _, err := a.runChatTurn(runCtx, o); err != nil {

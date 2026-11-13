@@ -392,3 +392,44 @@ func TestPackWatcherSource(t *testing.T) {
 		t.Errorf("inactive pack: %q", e)
 	}
 }
+
+func TestCronSweepAt(t *testing.T) {
+	f, db := memoryFront(t)
+	seedPgBoss(t, db, f)
+	ctx := context.Background()
+	gj := &fakeGraphjin{}
+	srv := httptest.NewServer(gj)
+	t.Cleanup(srv.Close)
+	const source, workflow = "d0000000-0000-4000-8000-000000000001", "d0000000-0000-4000-8000-000000000002"
+	seed(t, db, `insert into data_source (id, org_id, name, kind, graphql_url, auth_mode, is_default, enabled)
+		values ($1, 'org', 'default', 'graphjin', $2, 'jwt', true, true)`, source, srv.URL)
+	seed(t, db, `insert into workflow_definition (id, org_id, name, description) values ($1, 'org', 'Order alert', 'x')`, workflow)
+	seed(t, db, `insert into watcher (org_id, workflow_id, name, query, value_path, op, threshold, cadence_seconds, debounce_seconds, severity)
+		values ('org', $1, 'order-count', '{ orders_aggregate { count } }', 'orders_aggregate.count', 'gt', '0', 60, 3600, 'high')`, workflow)
+	var id string
+	_ = db.QueryRow(ctx, `select id::text from watcher where name = 'order-count'`).Scan(&id)
+	gj.set(`{"data":{"orders_aggregate":{"count":31465}}}`, 0)
+
+	at := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	res, err := f.API.CronSweepAt(ctx, "org", at)
+	encoded, _ := json.Marshal(res)
+	if err != nil || string(encoded) != `{"orgId":"org","at":"2030-01-01T00:00:00.000Z","behaviorAlerts":[],"checked":1,"fired":[{"watcherId":"`+id+`","name":"order-count","value":31465}]}` {
+		t.Fatalf("first: %s %v", encoded, err)
+	}
+	var queued int
+	_ = db.QueryRow(ctx, `select count(*)::int from `+f.API.BossSchema+`.job where name = 'workflow_run_fire'`).Scan(&queued)
+	if queued != 1 {
+		t.Errorf("queued %d", queued)
+	}
+	res, err = f.API.CronSweepAt(ctx, "org", at.Add(time.Hour))
+	if encoded, _ := json.Marshal(res); err != nil || string(encoded) != `{"orgId":"org","at":"2030-01-01T01:00:00.000Z","behaviorAlerts":[],"checked":1,"fired":[]}` {
+		t.Errorf("an hour later: %s %v", encoded, err)
+	}
+	res, err = f.API.CronSweepAt(ctx, "org", at.Add(time.Hour+time.Second))
+	if err != nil || res.Checked != 0 {
+		t.Errorf("inside the cadence: %+v %v", res, err)
+	}
+	if res, err := f.API.CronSweepAt(ctx, "no-such-org", at); err == nil || res.At != "" || !strings.Contains(err.Error(), "no-such-org") {
+		t.Errorf("unknown org: %+v %v", res, err)
+	}
+}
