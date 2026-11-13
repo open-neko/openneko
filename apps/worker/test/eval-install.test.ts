@@ -14,8 +14,10 @@ import {
   EvalInstallHost,
   availableMemoryBytes,
   evalDatabaseLoginFromEnv,
+  evalMemoryReserveFromEnv,
   evalSessionCookie,
   parallelEpisodeCap,
+  waitForEpisodeMemory,
 } from "../scripts/eval-install";
 import {
   RunEventFeed,
@@ -29,12 +31,89 @@ import {
 const GB = 1024 ** 3;
 
 describe("eval install helpers", () => {
-  it("keeps 4 GB free when it caps parallel episodes", () => {
+  it("keeps 2 GB free when it caps parallel episodes", () => {
     expect(availableMemoryBytes("MemTotal: 16 kB\nMemAvailable:    8388608 kB\n")).toBe(8 * GB);
     expect(availableMemoryBytes("MemTotal: 16 kB\n")).toBeUndefined();
-    expect(parallelEpisodeCap(8 * GB)).toBe(4);
-    expect(parallelEpisodeCap(4.5 * GB)).toBe(0);
+    expect(parallelEpisodeCap(8 * GB)).toBe(6);
+    expect(parallelEpisodeCap(3 * GB)).toBe(1);
+    expect(parallelEpisodeCap(2.5 * GB)).toBe(0);
+    expect(parallelEpisodeCap(8 * GB, 4 * GB)).toBe(4);
     expect(parallelEpisodeCap(undefined)).toBe(1);
+  });
+
+  it("reads the memory reserve from the environment", () => {
+    expect(evalMemoryReserveFromEnv({})).toBe(2 * GB);
+    expect(evalMemoryReserveFromEnv({ OPENNEKO_EVAL_MEMORY_RESERVE_GB: "" })).toBe(2 * GB);
+    expect(evalMemoryReserveFromEnv({ OPENNEKO_EVAL_MEMORY_RESERVE_GB: "0.5" })).toBe(0.5 * GB);
+    expect(() => evalMemoryReserveFromEnv({ OPENNEKO_EVAL_MEMORY_RESERVE_GB: "lots" })).toThrow(/not a number/);
+    expect(() => evalMemoryReserveFromEnv({ OPENNEKO_EVAL_MEMORY_RESERVE_GB: "-1" })).toThrow(/not a number/);
+  });
+
+  describe("the wait for free memory", () => {
+    const meminfo = (gb: number) => `MemAvailable: ${gb * 1024 * 1024} kB\n`;
+    const reader = (values: number[]) => {
+      let reads = 0;
+      const read = async () => meminfo(values[Math.min(reads++, values.length - 1)]!);
+      return { read, reads: () => reads };
+    };
+
+    it("starts at once when memory is free, with no log line", async () => {
+      const memory = reader([3]);
+      const slept: number[] = [];
+      const lines: string[] = [];
+      const cap = await waitForEpisodeMemory({
+        readMeminfo: memory.read,
+        reserve: 2 * GB,
+        sleep: async (ms) => void slept.push(ms),
+        log: (line) => lines.push(line),
+      });
+      expect(cap).toBe(1);
+      expect(slept).toEqual([]);
+      expect(lines).toEqual([]);
+    });
+
+    it("checks each 15 s and logs one line until memory is free", async () => {
+      const memory = reader([1, 2, 2.5, 4]);
+      const slept: number[] = [];
+      const lines: string[] = [];
+      const cap = await waitForEpisodeMemory({
+        readMeminfo: memory.read,
+        reserve: 2 * GB,
+        sleep: async (ms) => void slept.push(ms),
+        log: (line) => lines.push(line),
+      });
+      expect(cap).toBe(2);
+      expect(memory.reads()).toBe(4);
+      expect(slept).toEqual([15_000, 15_000, 15_000]);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain("3 GB");
+      expect(lines[0]).toContain("15 min");
+    });
+
+    it("fails only after 15 minutes", async () => {
+      const memory = reader([1]);
+      const slept: number[] = [];
+      const lines: string[] = [];
+      await expect(
+        waitForEpisodeMemory({
+          readMeminfo: memory.read,
+          reserve: 2 * GB,
+          sleep: async (ms) => void slept.push(ms),
+          log: (line) => lines.push(line),
+        }),
+      ).rejects.toThrow("needs 3 GB of free memory to start an episode; it waited 900 s");
+      expect(slept).toHaveLength(60);
+      expect(slept.reduce((sum, ms) => sum + ms, 0)).toBe(15 * 60_000);
+      expect(memory.reads()).toBe(61);
+      expect(lines).toHaveLength(1);
+    });
+
+    it("uses the reserve it is given", async () => {
+      const memory = reader([3]);
+      await expect(
+        waitForEpisodeMemory({ readMeminfo: memory.read, reserve: 4 * GB, waitMs: 0, log: () => {} }),
+      ).rejects.toThrow("needs 5 GB");
+    });
   });
 
   it("signs a session cookie the way web checks it", () => {
