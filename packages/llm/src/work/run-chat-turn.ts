@@ -78,6 +78,7 @@ import { spendCapFromSignal } from "../spend/run-guard";
 import { sandboxForOrg } from "./sandbox-org";
 import { skillRunnable } from "./sandbox-service";
 import { runSkillScope } from "./admin-skills";
+import { ownRunSkills, runSkillsWithOwn } from "./member-skills";
 
 /**
  * Delivery channel for a run. "web" renders a2ui cards (the channel injects the
@@ -477,9 +478,16 @@ async function runChatTurnTraced(
       supportsSourceConfigTool,
     );
     const terminal = (await sandboxForOrg(orgId)) !== undefined;
-    const installedSkills = availableSkills.filter(
-      (skill) => (!runSkills || runSkills.includes(skill.name)) && skillRunnable(skill.name, terminal),
+    const withOwn = runSkillsWithOwn(
+      availableSkills.filter(
+        (skill) => (!runSkills || runSkills.includes(skill.name)) && skillRunnable(skill.name, terminal),
+      ),
+      runSkills,
+      runActor.kind === "user" ? await ownRunSkills(workspace.orgRoot, runActor.userId) : [],
+      supportsSourceConfigTool,
+      terminal,
     );
+    const installedSkills = withOwn.skills;
     const operatorProfile = buildOperatorProfileSection(profile);
 
     const prompt = buildWorkPrompt({
@@ -515,7 +523,8 @@ async function runChatTurnTraced(
       inputBytes: Buffer.byteLength(`${prompt}\n\n${message}`, "utf8"),
     });
     const coreResult = await runCore({
-      ...(runSkills ? { allowedSkills: runSkills } : {}),
+      ...(withOwn.allowed ? { allowedSkills: withOwn.allowed } : {}),
+      ...(withOwn.ownNames.length > 0 ? { ownSkills: withOwn.ownNames } : {}),
       backend,
       prompt,
       userMessage: message,

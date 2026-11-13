@@ -460,7 +460,7 @@ func TestChatTurnOutcomes(t *testing.T) {
 		}
 	})
 
-	t.Run("a member's skill edit goes to their own version", func(t *testing.T) {
+	t.Run("a member's edit to a team skill goes to a private copy", func(t *testing.T) {
 		writeTestFile(t, report, "# Team report\n")
 		id := newRun("member")
 		res, err, _ := run(ctx, id, skillEdit("# My report\n", "mcp__neko__create_skill", nil, nil))
@@ -470,19 +470,20 @@ func TestChatTurnOutcomes(t *testing.T) {
 		if got := readText(report); got != "# Team report\n" {
 			t.Errorf("host skill %q", got)
 		}
-		if got, err := git(host, "show", userConfigRef("member")+":skills/report/SKILL.md"); err != nil || got != "# My report\n" {
-			t.Errorf("member ref %q %v", got, err)
+		if got := readText(filepath.Join(memberSkillsRoot(host, "member"), "report-m", "SKILL.md")); got != "# My report\n" {
+			t.Errorf("private copy %q", got)
 		}
-		if got, want := skillChange(), "user:member:Updated skill in run "+id[:8]+": report:"; !strings.HasPrefix(got, want) {
+		if got, want := skillChange(), "user:member:Saved the changes to skill report in run "+id[:8]+" as report-m:-"; got != want {
 			t.Errorf("config change %q", got)
 		}
-		var staged string
+		var staged, team string
 		res, err, _ = run(ctx, newRun("member"), func(ctx context.Context, in agentCoreInput) (axRunResult, error) {
-			staged = readText(filepath.Join(in.Workspace.SkillsRoot, "report", "SKILL.md"))
+			staged = readText(filepath.Join(in.Workspace.SkillsRoot, "report-m", "SKILL.md"))
+			team = readText(filepath.Join(in.Workspace.SkillsRoot, "report", "SKILL.md"))
 			return axRunResult{Status: "completed", FinalText: "Done."}, nil
 		})
-		if err != nil || staged != "# My report\n" {
-			t.Errorf("the member's next run saw %q (%v)", staged, err)
+		if err != nil || staged != "# My report\n" || team != "<none>" {
+			t.Errorf("the member's next run saw %q and %q (%v)", staged, team, err)
 		}
 	})
 

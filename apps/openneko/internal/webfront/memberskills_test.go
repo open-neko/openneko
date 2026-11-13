@@ -6,8 +6,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
 )
 
 type listedSkill struct {
@@ -204,5 +207,147 @@ func TestMemberFolderName(t *testing.T) {
 	}
 	if memberFolderName("../x") == memberFolderName("x") || memberFolderName("") == "" {
 		t.Error("folder names clash or are empty")
+	}
+}
+
+func TestRunSkillCapture(t *testing.T) {
+	f, db, roots := skillFront(t)
+	t.Setenv("OPENNEKO_AGENT_RUNS_DIR", t.TempDir())
+	ctx := context.Background()
+	a := f.API
+	member := runActorRow{UserID: "member", Role: "member"}
+	adminAct := runActorRow{UserID: "admin", Role: "admin"}
+	mine := memberSkillsRoot(roots.Org, "member")
+	writeTree(t, mine, map[string]string{"my-notes/SKILL.md": "---\nname: my-notes\ndescription: Notes.\n---\nOld\n"})
+	writeTree(t, memberSkillsRoot(roots.Org, "admin"), map[string]string{"admin-own/SKILL.md": "---\nname: admin-own\n---\nOld\n"})
+
+	run := func(act runActorRow, allowed []string, edit func(skills string)) savedSkillEdits {
+		t.Helper()
+		host, err := turnWorkspace("org", "thread", "run")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, scope, own := runSkillsWithOwn(nil, allowed, ownRunSkills(roots.Org, act.UserID), false, false)
+		st, err := stageTurn(host, stageOptions{Allowed: scope, Own: own, Actor: act})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(st.Dir)
+		edit(st.Workspace.SkillsRoot)
+		saved, err := a.captureSkillEdits(ctx, "org", "run-12345678-aaaa", act, st.baseline, st.own, st.Workspace.SkillsRoot)
+		if err != nil || saved == nil {
+			t.Fatalf("capture: %v %v", saved, err)
+		}
+		return *saved
+	}
+	read := func(p string) string {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return "<none>"
+		}
+		return string(b)
+	}
+	rows := func(ref string) []string {
+		r, err := db.Query(ctx, `select scope || ' ' || coalesce(user_id, '') || ' ' || coalesce(actor_user_id, '') || ' ' ||
+			coalesce(commit_sha, 'no-commit') || ' ' || summary from config_change where org_id = 'org' and artifact_ref = $1 order by id`, ref)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := pgx.CollectRows(r, pgx.RowTo[string])
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	teamClose := read(filepath.Join(roots.Skills, "finance-close", "SKILL.md"))
+
+	saved := run(member, []string{"finance-close"}, func(skills string) {
+		writeTestFile(t, filepath.Join(skills, "finance-close", "SKILL.md"), "---\nname: finance-close\n---\nMine\n")
+		os.Remove(filepath.Join(skills, "finance-close", "data", "a.bin"))
+		writeTestFile(t, filepath.Join(skills, "my-notes", "SKILL.md"), "---\nname: my-notes\n---\nNew\n")
+		writeTestFile(t, filepath.Join(skills, "fresh", "SKILL.md"), "---\nname: fresh\n---\n")
+		writeTestFile(t, filepath.Join(skills, "sales-playbook", "SKILL.md"), "---\nname: sales-playbook\n---\nMine\n")
+	})
+	if !slices.Equal(saved.Own, []string{"fresh", "my-notes"}) || len(saved.Team) != 0 ||
+		saved.Copies["finance-close"] != "finance-close-m" || saved.Copies["sales-playbook"] != "sales-playbook-m" || len(saved.Copies) != 2 {
+		t.Fatalf("saved %+v", saved)
+	}
+	if read(filepath.Join(roots.Skills, "finance-close", "SKILL.md")) != teamClose ||
+		read(filepath.Join(roots.Skills, "finance-close", "data", "a.bin")) != "a\x00b" ||
+		read(filepath.Join(roots.Skills, "sales-playbook", "SKILL.md")) != "---\nname: sales-playbook\ndescription: Sell.\n---\n" {
+		t.Error("a member's run changed a team skill")
+	}
+	if got := read(filepath.Join(mine, "finance-close-m", "SKILL.md")); got != "---\nname: finance-close-m\n---\nMine\n" {
+		t.Errorf("copy SKILL.md %q", got)
+	}
+	if read(filepath.Join(mine, "finance-close-m", "data", "a.bin")) != "<none>" {
+		t.Error("the copy holds a file the run removed")
+	}
+	if read(filepath.Join(mine, "my-notes", "SKILL.md")) != "---\nname: my-notes\n---\nNew\n" || read(filepath.Join(mine, "fresh", "SKILL.md")) != "---\nname: fresh\n---\n" {
+		t.Error("own skills not saved in place")
+	}
+	if got := rows("finance-close-m"); !slices.Equal(got, []string{"user member member no-commit Saved the changes to skill finance-close in run run-1234 as finance-close-m"}) {
+		t.Errorf("copy rows %q", got)
+	}
+	if got := rows("fresh, my-notes"); !slices.Equal(got, []string{"user member member no-commit Updated skills in run run-1234: fresh, my-notes"}) {
+		t.Errorf("own rows %q", got)
+	}
+
+	saved = run(member, []string{"finance-close"}, func(skills string) {
+		writeTestFile(t, filepath.Join(skills, "finance-close", "SKILL.md"), "---\nname: finance-close\n---\nAgain\n")
+		writeTestFile(t, filepath.Join(skills, "finance-close-m", "SKILL.md"), "---\nname: finance-close-m\n---\nEdited copy\n")
+	})
+	if saved.Copies["finance-close"] != "finance-close-m-2" || !slices.Equal(saved.Own, []string{"finance-close-m"}) {
+		t.Fatalf("second run %+v", saved)
+	}
+	if read(filepath.Join(mine, "finance-close-m", "SKILL.md")) != "---\nname: finance-close-m\n---\nEdited copy\n" {
+		t.Error("the own copy was not edited in place")
+	}
+
+	saved = run(adminAct, nil, func(skills string) {
+		writeTestFile(t, filepath.Join(skills, "finance-close", "SKILL.md"), "---\nname: finance-close\n---\nAdmin\n")
+		writeTestFile(t, filepath.Join(skills, "admin-own", "SKILL.md"), "---\nname: admin-own\n---\nNew\n")
+	})
+	if !slices.Equal(saved.Team, []string{"finance-close"}) || !slices.Equal(saved.Own, []string{"admin-own"}) || len(saved.Copies) != 0 || saved.SHA == "" {
+		t.Fatalf("admin %+v", saved)
+	}
+	if read(filepath.Join(roots.Skills, "finance-close", "SKILL.md")) != "---\nname: finance-close\n---\nAdmin\n" ||
+		read(filepath.Join(memberSkillsRoot(roots.Org, "admin"), "admin-own", "SKILL.md")) != "---\nname: admin-own\n---\nNew\n" {
+		t.Error("admin edits not saved in place")
+	}
+	if _, err := os.Stat(filepath.Join(roots.Skills, "admin-own")); err == nil {
+		t.Error("an admin's own skill reached the team folder")
+	}
+
+	saved = run(runActorRow{}, nil, func(skills string) {
+		writeTestFile(t, filepath.Join(skills, "sales-playbook", "SKILL.md"), "---\nname: sales-playbook\n---\nJob\n")
+	})
+	if !slices.Equal(saved.Team, []string{"sales-playbook"}) || len(saved.Own)+len(saved.Copies) != 0 ||
+		read(filepath.Join(roots.Skills, "sales-playbook", "SKILL.md")) != "---\nname: sales-playbook\n---\nJob\n" {
+		t.Fatalf("unattended %+v", saved)
+	}
+
+	seed(t, db, `insert into work_thread (id, org_id) values ('61000000-0000-4000-8000-000000000001', 'org')`)
+	seed(t, db, `insert into work_run (id, org_id, thread_id, backend, actor_user_id, actor_role) values
+		('71000000-0000-4000-8000-000000000001', 'org', '61000000-0000-4000-8000-000000000001', 'test', 'member', 'member'),
+		('71000000-0000-4000-8000-000000000002', 'org', '61000000-0000-4000-8000-000000000001', 'test', null, 'service')`)
+	search := func(runID, query string) []string {
+		t.Helper()
+		res, err := a.runTools(turnBinding{}).searchSkills(ctx, skillSearchIn{OrgID: "org", RunID: runID, Query: query})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, r := range res.([]any) {
+			names = append(names, jsStringOrEmpty(jsGet(r, "name")))
+		}
+		return names
+	}
+	if got := search("71000000-0000-4000-8000-000000000001", "edited copy finance close notes"); len(got) == 0 ||
+		!slices.Contains(got, "finance-close-m") || slices.Contains(got, "admin-own") {
+		t.Errorf("member search %v", got)
+	}
+	if got := search("71000000-0000-4000-8000-000000000002", "finance close notes"); slices.Contains(got, "finance-close-m") || slices.Contains(got, "my-notes") {
+		t.Errorf("a run with no person found own skills: %v", got)
 	}
 }

@@ -3,7 +3,16 @@ import { cp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { diffSkillTrees, hashSkillTree, skillCaptureDecision } from "../src/config-vcs/skill-capture";
+import { diffSkillTrees, hashSkillTree, skillCaptureDecision, stageOwnSkills } from "../src/config-vcs/skill-capture";
+import {
+  matchOwnSkills,
+  memberFolderName,
+  memberHandle,
+  memberSkillsRoot,
+  ownRunSkills,
+  privateCopyName,
+  runSkillsWithOwn,
+} from "../src/work/member-skills";
 import {
   bundledSkillDir,
   copySkillOverrides,
@@ -72,7 +81,9 @@ type Step =
 const BUILTIN = "graphjin-config";
 const REPORT_SKILL = "---\nname: report\n---\nWrite the report.\n\n<!-- openneko-learned:start -->\n## Learned guidance\n\nOld.\n<!-- openneko-learned:end -->\n\nTail.\n";
 
-const STAGES: Array<{ steps: Step[]; allowed: string[] | null }> = [
+type Stage = { steps: Step[]; allowed: string[] | null; own?: Record<string, string>; ownNames?: string[] };
+
+const STAGES: Stage[] = [
   { steps: [{ builtin: BUILTIN, origin: true }], allowed: null },
   { steps: [{ builtin: BUILTIN, origin: false }], allowed: null },
   { steps: [{ builtin: BUILTIN, origin: true }, { write: `${BUILTIN}/SKILL.md`, text: "Changed.\n" }], allowed: null },
@@ -100,10 +111,84 @@ const STAGES: Array<{ steps: Step[]; allowed: string[] | null }> = [
     allowed: null,
   },
   { steps: [{ write: "report/SKILL.md", text: "# Report\n" }], allowed: [] },
+  {
+    steps: [
+      { write: "report/SKILL.md", text: "# Team report\n" },
+      { write: "report/scripts/run.py", text: "print(1)\n" },
+      { write: "other/SKILL.md", text: "# Other\n" },
+    ],
+    own: {
+      "report/SKILL.md": "# My report\n",
+      "report/__pycache__/x.pyc": "x",
+      "mine/SKILL.md": "# Mine\n",
+      "outside/SKILL.md": "# Outside\n",
+      "pdf/SKILL.md": "# My pdf\n",
+      "empty/.keep/x.pyc": "x",
+    },
+    ownNames: ["report", "mine", "outside", "pdf", "empty", "../other"],
+    allowed: ["report", "mine", "other", "pdf", "empty", "../other"],
+  },
+  {
+    steps: [{ write: "report/SKILL.md", text: "# Team report\n" }],
+    own: { "mine/SKILL.md": "# Mine\n" },
+    ownNames: ["mine"],
+    allowed: null,
+  },
 ];
 
-async function stage(steps: Step[], allowed: string[] | null): Promise<Record<string, string>> {
+const OWN_FILES: Record<string, string> = {
+  "a/SKILL.md": "---\nname: a\ndescription: A guide.\n---\n",
+  "b/notes.md": "no front matter\n",
+  "Bad Name/x.md": "x",
+  "c/deep/x.md": "x",
+};
+
+const SKILLS = [
+  { name: "report", description: "Monthly revenue report" },
+  { name: "graphjin-config", description: "Edit sources" },
+  { name: "pdf", description: "Make a PDF file" },
+];
+
+const NAMES = {
+  folders: ["member-1", "u@x.com", "--", "", "Ab_c-9"].map((userId) => ({ userId, folder: memberFolderName(userId) })),
+  handles: [
+    ["Ann.Lee@example.com", "u1"],
+    ["", "User_42"],
+    [null, "!!!"],
+    ["a-very-long-local-part-name@example.com", "u2"],
+    ["--@x", "u3"],
+  ].map(([email, userId]) => ({ email, userId, handle: memberHandle(email, userId as string) })),
+  copies: [
+    { skill: "report", handle: "ann", taken: [] as string[] },
+    { skill: "report", handle: "ann", taken: ["report-ann", "report-ann-2"] },
+    { skill: "Big_Skill", handle: "ann", taken: [] },
+    { skill: "x".repeat(70), handle: "ann", taken: [] },
+    { skill: "x".repeat(70), handle: "ann", taken: [`${"x".repeat(60)}-ann`] },
+  ].map((c) => ({ ...c, name: privateCopyName(c.skill, c.handle, (name) => c.taken.includes(name)) })),
+  matches: ["revenue report", "the PDF", "make a file for the month", "xx", ""].map((query) => ({
+    query,
+    names: matchOwnSkills(SKILLS, query).map((skill) => skill.name),
+  })),
+  scopes: [
+    { allowed: null, admin: false, terminal: false },
+    { allowed: ["report", "other"], admin: false, terminal: true },
+    { allowed: [], admin: true, terminal: true },
+  ].map((c) => ({
+    ...c,
+    out: runSkillsWithOwn(
+      [{ name: "report", description: "Team" }, { name: "other", description: "Other" }],
+      c.allowed ?? undefined,
+      SKILLS,
+      c.admin,
+      c.terminal,
+    ),
+  })),
+};
+
+async function stage({ steps, allowed, own, ownNames }: Stage): Promise<{ tree: Record<string, string>; baseline: Record<string, string> }> {
   const root = mkdtempSync(join(tmpdir(), "skill-stage-fixture-"));
+  const sorted = (map: Map<string, string>) =>
+    Object.fromEntries([...map].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
   try {
     const org = join(root, "org");
     const skills = join(org, "skills");
@@ -124,10 +209,24 @@ async function stage(steps: Step[], allowed: string[] | null): Promise<Record<st
         writeFileSync(join(org, "skill-overlays", step.overlay, "LEARNED.md"), step.text.replace("BASE", base));
       }
     }
+    const ownRoot = memberSkillsRoot(org, "member-1");
+    for (const [path, text] of Object.entries(own ?? {})) {
+      mkdirSync(dirname(join(ownRoot, path)), { recursive: true });
+      writeFileSync(join(ownRoot, path), text);
+    }
     const dest = join(root, "stage", "skills");
     await copySkillOverrides(skills, dest, [], allowed ?? undefined, false);
     await materializeBuiltinSkills(dest, allowed ?? undefined);
-    return Object.fromEntries([...(await hashSkillTree(dest))].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+    const baseline = await hashSkillTree(skills);
+    await stageOwnSkills({
+      ownRoot,
+      skillsRoot: dest,
+      own: ownNames ?? [],
+      ...(allowed ? { allowed } : {}),
+      terminal: false,
+      baseline,
+    });
+    return { tree: sorted(await hashSkillTree(dest)), baseline: sorted(baseline) };
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -142,8 +241,15 @@ describe("Go turn stage fixtures", () => {
         writeFileSync(join(root, path), text);
       }
       const tree = Object.fromEntries([...(await hashSkillTree(root))].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+      const ownOrg = join(root, "own-org");
+      for (const [path, text] of Object.entries(OWN_FILES)) {
+        mkdirSync(dirname(join(memberSkillsRoot(ownOrg, "member-1"), path)), { recursive: true });
+        writeFileSync(join(memberSkillsRoot(ownOrg, "member-1"), path), text);
+      }
+      mkdirSync(join(memberSkillsRoot(ownOrg, "member-1"), "empty", "sub"), { recursive: true });
+      const ownList = await ownRunSkills(ownOrg, "member-1");
       const stages = [];
-      for (const { steps, allowed } of STAGES) stages.push({ steps, allowed, tree: await stage(steps, allowed) });
+      for (const c of STAGES) stages.push({ ...c, ...(await stage(c)) });
       const fixture = `${JSON.stringify(
         {
           cwd: CWD,
@@ -160,6 +266,9 @@ describe("Go turn stage fixtures", () => {
           treeFiles: TREE,
           tree,
           stages,
+          names: NAMES,
+          ownFiles: OWN_FILES,
+          ownList,
         },
         null,
         2,

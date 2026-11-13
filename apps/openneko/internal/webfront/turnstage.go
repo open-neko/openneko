@@ -106,12 +106,14 @@ type turnStage struct {
 	host      agentWorkspace
 	baseline  skillFileHashes
 	actor     runActorRow
+	own       map[string]bool
 
 	captureReason string
 }
 
 type stageOptions struct {
 	Allowed  []string
+	Own      []string
 	Terminal bool
 	Actor    runActorRow
 }
@@ -137,7 +139,7 @@ func copyIfPresent(src, dst string) error {
 // stageTurn is the stage of makeSandboxCore() in
 // packages/llm/src/work/sandbox-launcher.ts, with the runner's built-in
 // skills: the company's changed skills, the built-in skills the run may
-// use, then the member's own versions over them.
+// use, then the member's own skills in the run's scope.
 func stageTurn(host agentWorkspace, o stageOptions) (st *turnStage, err error) {
 	root := agentRunsRoot()
 	if err := os.MkdirAll(root, 0o755); err != nil {
@@ -205,27 +207,53 @@ func stageTurn(host agentWorkspace, o stageOptions) (st *turnStage, err error) {
 	}); err != nil {
 		return nil, err
 	}
-	var personal []stagedSkillFile
-	if o.Actor.UserID != "" && o.Actor.Role != "admin" {
-		personal = readPersonalSkillFiles(host.OrgRoot, o.Actor.UserID)
-	}
-	for _, f := range personal {
-		target := filepath.Join(ws.SkillsRoot, filepath.FromSlash(f.Path))
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return nil, err
-		}
-		if err := os.WriteFile(target, f.Content, 0o644); err != nil {
-			return nil, err
-		}
-	}
 	baseline := hashSkillTree(host.SkillsRoot)
-	for _, f := range personal {
-		baseline[f.Path] = skillFileHash(f.Content)
+	own, err := stageOwnSkills(memberSkillsRoot(host.OrgRoot, o.Actor.UserID), ws.SkillsRoot, o, baseline)
+	if err != nil {
+		return nil, err
 	}
 	if err := shareStageWithGroup(dir); err != nil {
 		return nil, err
 	}
-	return &turnStage{Dir: dir, Workspace: ws, host: host, baseline: baseline, actor: o.Actor}, nil
+	return &turnStage{Dir: dir, Workspace: ws, host: host, baseline: baseline, actor: o.Actor, own: own}, nil
+}
+
+// stageOwnSkills copies each own skill in the run's scope over the staged
+// skill of the same name, and puts its files in the baseline in place of
+// the team skill's files.
+func stageOwnSkills(ownRoot, dst string, o stageOptions, baseline skillFileHashes) (map[string]bool, error) {
+	staged := map[string]bool{}
+	if o.Actor.UserID == "" {
+		return staged, nil
+	}
+	for _, name := range o.Own {
+		src := filepath.Join(ownRoot, name)
+		if !validSkillName(name) || o.Allowed != nil && !slices.Contains(o.Allowed, name) || sandboxSkills[name] && !o.Terminal || !hasSkillFiles(src) {
+			continue
+		}
+		dest := filepath.Join(dst, name)
+		if err := os.RemoveAll(dest); err != nil {
+			return nil, err
+		}
+		if err := copySkillFolder(src, dest, ""); err != nil {
+			return nil, err
+		}
+		staged[name] = true
+	}
+	if len(staged) == 0 {
+		return staged, nil
+	}
+	for p := range baseline {
+		if staged[skillOf(p)] {
+			delete(baseline, p)
+		}
+	}
+	for p, hash := range hashSkillTree(dst) {
+		if staged[skillOf(p)] {
+			baseline[p] = hash
+		}
+	}
+	return staged, nil
 }
 
 // copySkillOverrides is copySkillOverrides() in packages/llm/src/work/workspace.ts:
@@ -416,14 +444,14 @@ func (s *turnStage) finish(ctx context.Context, a *API, orgID, runID string, abo
 		log.Printf("[agent-run] run %s skill capture skipped: %s", runID, reason)
 		return
 	}
-	saved, err := a.captureSkillEdits(ctx, orgID, runID, s.actor, s.baseline, s.Workspace.SkillsRoot)
+	saved, err := a.captureSkillEdits(ctx, orgID, runID, s.actor, s.baseline, s.own, s.Workspace.SkillsRoot)
 	if err != nil {
 		log.Printf("[agent-run] skill capture failed: %v", err)
 		return
 	}
 	if saved != nil {
-		log.Printf("[agent-run] run %s saved skill edits (%s, %s): %s; skipped: %s", runID, saved.Scope, reason,
-			strings.Join(saved.Skills, ", "), strings.Join(saved.Skipped, ", "))
+		log.Printf("[agent-run] run %s saved skill edits (%s): team %s; own %s; copies %s; skipped: %s", runID, reason,
+			strings.Join(saved.Team, ", "), strings.Join(saved.Own, ", "), strings.Join(saved.copyList(), ", "), strings.Join(saved.Skipped, ", "))
 	}
 }
 

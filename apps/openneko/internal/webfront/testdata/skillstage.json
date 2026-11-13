@@ -342,6 +342,11 @@
         "graphjin-config/.openneko-origin": "0b115638479df5dbfa77f76fe5426f0f6a244e0f21a67a612aab8d4eed914e54",
         "graphjin-config/SKILL.md": "470aff51383b9c2fd87c69d11370d60be7379cd9314f5794ee8279e3789722cc",
         "graphjin-config/references/config-reference.md": "be0f9d11170f4ff84e23754520486b0a58922c1fc455e91aa1f101595fa0d80b"
+      },
+      "baseline": {
+        "graphjin-config/.openneko-origin": "0b115638479df5dbfa77f76fe5426f0f6a244e0f21a67a612aab8d4eed914e54",
+        "graphjin-config/SKILL.md": "470aff51383b9c2fd87c69d11370d60be7379cd9314f5794ee8279e3789722cc",
+        "graphjin-config/references/config-reference.md": "be0f9d11170f4ff84e23754520486b0a58922c1fc455e91aa1f101595fa0d80b"
       }
     },
     {
@@ -354,6 +359,10 @@
       "allowed": null,
       "tree": {
         "graphjin-config/.openneko-origin": "0b115638479df5dbfa77f76fe5426f0f6a244e0f21a67a612aab8d4eed914e54",
+        "graphjin-config/SKILL.md": "470aff51383b9c2fd87c69d11370d60be7379cd9314f5794ee8279e3789722cc",
+        "graphjin-config/references/config-reference.md": "be0f9d11170f4ff84e23754520486b0a58922c1fc455e91aa1f101595fa0d80b"
+      },
+      "baseline": {
         "graphjin-config/SKILL.md": "470aff51383b9c2fd87c69d11370d60be7379cd9314f5794ee8279e3789722cc",
         "graphjin-config/references/config-reference.md": "be0f9d11170f4ff84e23754520486b0a58922c1fc455e91aa1f101595fa0d80b"
       }
@@ -374,6 +383,11 @@
         "graphjin-config/.openneko-origin": "0b115638479df5dbfa77f76fe5426f0f6a244e0f21a67a612aab8d4eed914e54",
         "graphjin-config/SKILL.md": "9dcb6a188fd6333f904035a60c597ae21be1e374fceedfbba16afdddec7632f3",
         "graphjin-config/references/config-reference.md": "be0f9d11170f4ff84e23754520486b0a58922c1fc455e91aa1f101595fa0d80b"
+      },
+      "baseline": {
+        "graphjin-config/.openneko-origin": "0b115638479df5dbfa77f76fe5426f0f6a244e0f21a67a612aab8d4eed914e54",
+        "graphjin-config/SKILL.md": "9dcb6a188fd6333f904035a60c597ae21be1e374fceedfbba16afdddec7632f3",
+        "graphjin-config/references/config-reference.md": "be0f9d11170f4ff84e23754520486b0a58922c1fc455e91aa1f101595fa0d80b"
       }
     },
     {
@@ -391,6 +405,11 @@
       "tree": {
         "graphjin-config/SKILL.md": "975313d02dcf27256dca74cf0cfae33a8d10670a33f9a42f5e5e43448f741a11",
         "graphjin-config/references/config-reference.md": "be0f9d11170f4ff84e23754520486b0a58922c1fc455e91aa1f101595fa0d80b"
+      },
+      "baseline": {
+        "graphjin-config/.openneko-origin": "0b115638479df5dbfa77f76fe5426f0f6a244e0f21a67a612aab8d4eed914e54",
+        "graphjin-config/SKILL.md": "470aff51383b9c2fd87c69d11370d60be7379cd9314f5794ee8279e3789722cc",
+        "graphjin-config/references/config-reference.md": "be0f9d11170f4ff84e23754520486b0a58922c1fc455e91aa1f101595fa0d80b"
       }
     },
     {
@@ -407,6 +426,10 @@
       "allowed": null,
       "tree": {
         "graphjin-config/.openneko-origin": "0b115638479df5dbfa77f76fe5426f0f6a244e0f21a67a612aab8d4eed914e54",
+        "graphjin-config/SKILL.md": "470aff51383b9c2fd87c69d11370d60be7379cd9314f5794ee8279e3789722cc",
+        "graphjin-config/references/config-reference.md": "be0f9d11170f4ff84e23754520486b0a58922c1fc455e91aa1f101595fa0d80b"
+      },
+      "baseline": {
         "graphjin-config/SKILL.md": "470aff51383b9c2fd87c69d11370d60be7379cd9314f5794ee8279e3789722cc",
         "graphjin-config/references/config-reference.md": "be0f9d11170f4ff84e23754520486b0a58922c1fc455e91aa1f101595fa0d80b"
       }
@@ -449,6 +472,15 @@
       "tree": {
         "report/SKILL.md": "86981053e7d9560445f690d2bdb57e5e9cf19b56e0b75d902ba1b7604f6fd3d0",
         "report/scripts/run.py": "0111afd387e1ad576083c5039aa542faa2ed4a53d3e128bd03de990f9ea4255f"
+      },
+      "baseline": {
+        "graphjin-config/.openneko-origin": "0b115638479df5dbfa77f76fe5426f0f6a244e0f21a67a612aab8d4eed914e54",
+        "graphjin-config/SKILL.md": "470aff51383b9c2fd87c69d11370d60be7379cd9314f5794ee8279e3789722cc",
+        "graphjin-config/references/config-reference.md": "be0f9d11170f4ff84e23754520486b0a58922c1fc455e91aa1f101595fa0d80b",
+        "hidden/SKILL.md": "8c1577691b2544fb49c37b7c83ff2d74aee3667af4b45be83b07e221232567fc",
+        "pdf/SKILL.md": "9a630218650a440cf49a20821204af2dd41bc57543138cea510a15660d5e4195",
+        "report/SKILL.md": "1fb583eea02f1d2db5188e738d562fa4a4e88ae5e80c08feb60f25f461855da9",
+        "report/scripts/run.py": "0111afd387e1ad576083c5039aa542faa2ed4a53d3e128bd03de990f9ea4255f"
       }
     },
     {
@@ -477,6 +509,10 @@
         "graphjin-config/references/config-reference.md": "be0f9d11170f4ff84e23754520486b0a58922c1fc455e91aa1f101595fa0d80b",
         "plain/SKILL.md": "9d6dc8a23dc8c4f6fa6a808668530dda7ec277b2ccc74b3c2e987aa4c90a9e1e",
         "report/SKILL.md": "a05109873f3ef786d38b05861af054cab988ca0d335eb122401c0741652ad2b8"
+      },
+      "baseline": {
+        "plain/SKILL.md": "9d6dc8a23dc8c4f6fa6a808668530dda7ec277b2ccc74b3c2e987aa4c90a9e1e",
+        "report/SKILL.md": "18fbd0acdbed0c471df2455efa4412921349a14c8a0086ed2be3acf1884596ae"
       }
     },
     {
@@ -487,7 +523,313 @@
         }
       ],
       "allowed": [],
-      "tree": {}
+      "tree": {},
+      "baseline": {
+        "report/SKILL.md": "497b7725a00101d6cf82489ef502fb0918962b10aaa7279962ab5ec3edc62533"
+      }
+    },
+    {
+      "steps": [
+        {
+          "write": "report/SKILL.md",
+          "text": "# Team report\n"
+        },
+        {
+          "write": "report/scripts/run.py",
+          "text": "print(1)\n"
+        },
+        {
+          "write": "other/SKILL.md",
+          "text": "# Other\n"
+        }
+      ],
+      "own": {
+        "report/SKILL.md": "# My report\n",
+        "report/__pycache__/x.pyc": "x",
+        "mine/SKILL.md": "# Mine\n",
+        "outside/SKILL.md": "# Outside\n",
+        "pdf/SKILL.md": "# My pdf\n",
+        "empty/.keep/x.pyc": "x"
+      },
+      "ownNames": [
+        "report",
+        "mine",
+        "outside",
+        "pdf",
+        "empty",
+        "../other"
+      ],
+      "allowed": [
+        "report",
+        "mine",
+        "other",
+        "pdf",
+        "empty",
+        "../other"
+      ],
+      "tree": {
+        "mine/SKILL.md": "deb772266c5d7ef5a5070c03872408fdbf4ff9b149db655c51945f1e7c5d30b3",
+        "other/SKILL.md": "b5b79e2b70a4030a0d207081f0982cccc59a5d906d506d1975b1dfc91cb4bc0c",
+        "report/SKILL.md": "0c18c2b2e161d56ac317fea39cc35e8f26b71144d3cf99d1468a09d5b0572545"
+      },
+      "baseline": {
+        "mine/SKILL.md": "deb772266c5d7ef5a5070c03872408fdbf4ff9b149db655c51945f1e7c5d30b3",
+        "other/SKILL.md": "b5b79e2b70a4030a0d207081f0982cccc59a5d906d506d1975b1dfc91cb4bc0c",
+        "report/SKILL.md": "0c18c2b2e161d56ac317fea39cc35e8f26b71144d3cf99d1468a09d5b0572545"
+      }
+    },
+    {
+      "steps": [
+        {
+          "write": "report/SKILL.md",
+          "text": "# Team report\n"
+        }
+      ],
+      "own": {
+        "mine/SKILL.md": "# Mine\n"
+      },
+      "ownNames": [
+        "mine"
+      ],
+      "allowed": null,
+      "tree": {
+        "graphjin-config/.openneko-origin": "0b115638479df5dbfa77f76fe5426f0f6a244e0f21a67a612aab8d4eed914e54",
+        "graphjin-config/SKILL.md": "470aff51383b9c2fd87c69d11370d60be7379cd9314f5794ee8279e3789722cc",
+        "graphjin-config/references/config-reference.md": "be0f9d11170f4ff84e23754520486b0a58922c1fc455e91aa1f101595fa0d80b",
+        "mine/SKILL.md": "deb772266c5d7ef5a5070c03872408fdbf4ff9b149db655c51945f1e7c5d30b3",
+        "report/SKILL.md": "9555a1c5e411418d64aa3ca1ced3850df751b4cb7f09df83a4991ae2864cf415"
+      },
+      "baseline": {
+        "mine/SKILL.md": "deb772266c5d7ef5a5070c03872408fdbf4ff9b149db655c51945f1e7c5d30b3",
+        "report/SKILL.md": "9555a1c5e411418d64aa3ca1ced3850df751b4cb7f09df83a4991ae2864cf415"
+      }
+    }
+  ],
+  "names": {
+    "folders": [
+      {
+        "userId": "member-1",
+        "folder": "member-1"
+      },
+      {
+        "userId": "u@x.com",
+        "folder": "u-x-com-826b0cff"
+      },
+      {
+        "userId": "--",
+        "folder": "-d8156bae"
+      },
+      {
+        "userId": "",
+        "folder": "anon"
+      },
+      {
+        "userId": "Ab_c-9",
+        "folder": "Ab_c-9"
+      }
+    ],
+    "handles": [
+      {
+        "email": "Ann.Lee@example.com",
+        "userId": "u1",
+        "handle": "ann-lee"
+      },
+      {
+        "email": "",
+        "userId": "User_42",
+        "handle": "user-42"
+      },
+      {
+        "email": null,
+        "userId": "!!!",
+        "handle": "member"
+      },
+      {
+        "email": "a-very-long-local-part-name@example.com",
+        "userId": "u2",
+        "handle": "a-very-long-loca"
+      },
+      {
+        "email": "--@x",
+        "userId": "u3",
+        "handle": "u3"
+      }
+    ],
+    "copies": [
+      {
+        "skill": "report",
+        "handle": "ann",
+        "taken": [],
+        "name": "report-ann"
+      },
+      {
+        "skill": "report",
+        "handle": "ann",
+        "taken": [
+          "report-ann",
+          "report-ann-2"
+        ],
+        "name": "report-ann-3"
+      },
+      {
+        "skill": "Big_Skill",
+        "handle": "ann",
+        "taken": [],
+        "name": "big-skill-ann"
+      },
+      {
+        "skill": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "handle": "ann",
+        "taken": [],
+        "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-ann"
+      },
+      {
+        "skill": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "handle": "ann",
+        "taken": [
+          "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-ann"
+        ],
+        "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-ann-2"
+      }
+    ],
+    "matches": [
+      {
+        "query": "revenue report",
+        "names": [
+          "report"
+        ]
+      },
+      {
+        "query": "the PDF",
+        "names": [
+          "pdf"
+        ]
+      },
+      {
+        "query": "make a file for the month",
+        "names": [
+          "pdf",
+          "report"
+        ]
+      },
+      {
+        "query": "xx",
+        "names": []
+      },
+      {
+        "query": "",
+        "names": []
+      }
+    ],
+    "scopes": [
+      {
+        "allowed": null,
+        "admin": false,
+        "terminal": false,
+        "out": {
+          "skills": [
+            {
+              "name": "other",
+              "description": "Other"
+            },
+            {
+              "name": "report",
+              "description": "Monthly revenue report"
+            }
+          ],
+          "ownNames": [
+            "report"
+          ]
+        }
+      },
+      {
+        "allowed": [
+          "report",
+          "other"
+        ],
+        "admin": false,
+        "terminal": true,
+        "out": {
+          "skills": [
+            {
+              "name": "other",
+              "description": "Other"
+            },
+            {
+              "name": "pdf",
+              "description": "Make a PDF file"
+            },
+            {
+              "name": "report",
+              "description": "Monthly revenue report"
+            }
+          ],
+          "allowed": [
+            "report",
+            "other",
+            "pdf"
+          ],
+          "ownNames": [
+            "report",
+            "pdf"
+          ]
+        }
+      },
+      {
+        "allowed": [],
+        "admin": true,
+        "terminal": true,
+        "out": {
+          "skills": [
+            {
+              "name": "graphjin-config",
+              "description": "Edit sources"
+            },
+            {
+              "name": "other",
+              "description": "Other"
+            },
+            {
+              "name": "pdf",
+              "description": "Make a PDF file"
+            },
+            {
+              "name": "report",
+              "description": "Monthly revenue report"
+            }
+          ],
+          "allowed": [
+            "report",
+            "graphjin-config",
+            "pdf"
+          ],
+          "ownNames": [
+            "report",
+            "graphjin-config",
+            "pdf"
+          ]
+        }
+      }
+    ]
+  },
+  "ownFiles": {
+    "a/SKILL.md": "---\nname: a\ndescription: A guide.\n---\n",
+    "b/notes.md": "no front matter\n",
+    "Bad Name/x.md": "x",
+    "c/deep/x.md": "x"
+  },
+  "ownList": [
+    {
+      "name": "a",
+      "description": "A guide."
+    },
+    {
+      "name": "b",
+      "description": ""
+    },
+    {
+      "name": "c",
+      "description": ""
     }
   ]
 }
