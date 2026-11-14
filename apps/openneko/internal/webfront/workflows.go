@@ -710,6 +710,11 @@ func (a *API) workflowRunDetail(w http.ResponseWriter, r *http.Request) {
 		lineage.Upstream = up
 	}
 
+	target, err := a.runStopTarget(ctx, act, run.WorkRunID)
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
 	sendJSON(w, http.StatusOK, struct {
 		Workflow *runDetailWorkflow `json:"workflow"`
 		Run      runDetail          `json:"run"`
@@ -717,7 +722,8 @@ func (a *API) workflowRunDetail(w http.ResponseWriter, r *http.Request) {
 		Actions  []runAction        `json:"actions"`
 		Events   []runEvent         `json:"events"`
 		Lineage  runLineage         `json:"lineage"`
-	}{workflow, run, outputs, actions, events, lineage})
+		CanStop  bool               `json:"canStop"`
+	}{workflow, run, outputs, actions, events, lineage, target != nil && target.stoppable()})
 }
 
 func (a *API) upstreamOutput(ctx context.Context, orgID, outputID string) (*upstreamRef, error) {

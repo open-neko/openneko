@@ -21,6 +21,10 @@ var (
 
 var errTurnShutdown = errors.New("The server stopped before the turn finished.")
 
+var errRunStopped = errors.New("Cancelled by user.")
+
+var runStopPoll = 5 * time.Second
+
 // agentSlots is acquireAgentSlot() in packages/llm/src/work/agent-slots.ts:
 // a process-wide limit on running turns, first come first served.
 type agentSlots struct {
@@ -127,10 +131,12 @@ type runSubscriber func(event any, id int64)
 type liveRun struct {
 	orgID, threadID string
 	cancel          context.CancelCauseFunc
+	done            chan struct{}
 
-	mu   sync.Mutex
-	subs map[uint64]runSubscriber
-	next uint64
+	mu        sync.Mutex
+	subs      map[uint64]runSubscriber
+	next      uint64
+	stoppedBy string
 }
 
 // runRegistry is lib/neko-run-registry.ts and agent-shutdown.ts: the turns
@@ -142,7 +148,7 @@ type runRegistry struct {
 }
 
 func (r *runRegistry) register(runID, orgID, threadID string, cancel context.CancelCauseFunc) *liveRun {
-	run := &liveRun{orgID: orgID, threadID: threadID, cancel: cancel, subs: map[uint64]runSubscriber{}}
+	run := &liveRun{orgID: orgID, threadID: threadID, cancel: cancel, done: make(chan struct{}), subs: map[uint64]runSubscriber{}}
 	r.mu.Lock()
 	if r.runs == nil {
 		r.runs = map[string]*liveRun{}
@@ -159,6 +165,7 @@ func (r *runRegistry) unregister(runID string, run *liveRun) {
 		delete(r.runs, runID)
 	}
 	r.mu.Unlock()
+	close(run.done)
 	r.wg.Done()
 }
 
@@ -175,6 +182,59 @@ func (a *API) abortRun(runID string) bool {
 	}
 	run.cancel(nil)
 	return true
+}
+
+// stopRun is a person's Stop: the turn ends as cancelled, its audit row
+// names userID, and a workflow run that a job holds is not tried again.
+func (a *API) stopRun(runID, userID string) bool {
+	run := a.runs.get(runID)
+	if run == nil {
+		return false
+	}
+	run.mu.Lock()
+	if run.stoppedBy == "" {
+		run.stoppedBy = userID
+	}
+	run.mu.Unlock()
+	run.cancel(errRunStopped)
+	return true
+}
+
+func (a *API) runStoppedBy(runID string) string {
+	run := a.runs.get(runID)
+	if run == nil {
+		return ""
+	}
+	run.mu.Lock()
+	defer run.mu.Unlock()
+	return run.stoppedBy
+}
+
+// registerRun registers a turn and stops it when another process marks its
+// run cancelled.
+func (a *API) registerRun(runID, orgID, threadID string, cancel context.CancelCauseFunc) *liveRun {
+	run := a.runs.register(runID, orgID, threadID, cancel)
+	if a.DB == nil {
+		return run
+	}
+	go func() {
+		tick := time.NewTicker(runStopPoll)
+		defer tick.Stop()
+		for {
+			select {
+			case <-run.done:
+				return
+			case <-tick.C:
+				var cancelled bool
+				err := a.DB.QueryRow(context.Background(), `select status = 'cancelled' from work_run where id::text = $1`, runID).Scan(&cancelled)
+				if err == nil && cancelled {
+					run.cancel(errRunStopped)
+					return
+				}
+			}
+		}
+	}()
+	return run
 }
 
 // subscribeRun adds a live subscriber; ok is false when the run is not in
@@ -461,7 +521,7 @@ func (a *API) startChatRun(ctx context.Context, o chatTurnOptions) (<-chan struc
 		cancel(nil)
 		return nil, err
 	}
-	run := a.runs.register(o.RunID, o.OrgID, o.ThreadID, cancel)
+	run := a.registerRun(o.RunID, o.OrgID, o.ThreadID, cancel)
 	untrace := a.EvalTrace.register(o.RunID)
 	o.Emit = guarded
 	core := o.runCore
