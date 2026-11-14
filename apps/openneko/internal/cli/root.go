@@ -39,6 +39,9 @@ func MaybeProxyToWorker(cmd *cobra.Command, run ...func(container string) int) (
 		fmt.Fprintf(cmd.ErrOrStderr(), "openneko: cannot read selected installation: %v\n", err)
 		return 1, true
 	}
+	if ok && settings.Native() {
+		return 0, false
+	}
 	if ok {
 		project = compose.ProjectNameForModeAndInstance(compose.Mode(settings.Mode), settings.Instance)
 		if settings.Instance == "" {
@@ -167,6 +170,7 @@ Developer ops: eval.`,
 		newDatabaseCmd(),
 		newSourceCmd(),
 		newServeCmd(),
+		newNativeRunCmd(),
 		newWebCmd(),
 		newFilesCmd(),
 		newSeedCmd(),

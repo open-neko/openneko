@@ -49,6 +49,20 @@ func TestSettingsValidation(t *testing.T) {
 	if err := settings.Validate(); err == nil {
 		t.Fatal("expected IPv4 bind address error")
 	}
+	settings = sampleSettings()
+	settings.Runtime = "kubernetes"
+	if err := settings.Validate(); err == nil {
+		t.Fatal("expected unknown runtime error")
+	}
+	settings = sampleSettings()
+	settings.Runtime, settings.Mode = RuntimeNative, "demo"
+	if err := settings.Validate(); err == nil {
+		t.Fatal("native runs prod mode only")
+	}
+	settings.Mode = "prod"
+	if err := settings.Validate(); err != nil || !settings.Native() {
+		t.Fatalf("native prod: %v", err)
+	}
 }
 
 // Settings written before the agent runtime moved into core.yml carry the

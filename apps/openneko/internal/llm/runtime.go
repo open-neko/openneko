@@ -112,8 +112,8 @@ func VertexBaseURL(config map[string]any) (string, error) {
 	return "https://" + host + "/v1beta1/projects/" + url.PathEscape(project) + "/locations/" + url.PathEscape(region) + "/endpoints/openapi", nil
 }
 
-// localBaseURL sends a loopback address to host.docker.internal: openneko
-// serve calls the model from its own container.
+// localBaseURL sends a loopback address to host.docker.internal when this
+// process runs in a container, where loopback is the container itself.
 func localBaseURL(config map[string]any, label, defaultPath string) (string, error) {
 	configured, err := requiredConfig(config, "url", label+" Base URL")
 	if err != nil {
@@ -134,6 +134,9 @@ func localBaseURL(config map[string]any, label, defaultPath string) (string, err
 	}
 	switch u.Hostname() {
 	case "localhost", "127.0.0.1", "::1":
+		if !InContainer() {
+			break
+		}
 		if p := u.Port(); p != "" {
 			u.Host = "host.docker.internal:" + p
 		} else {

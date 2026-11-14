@@ -29,7 +29,13 @@ type Settings struct {
 	Mode           string `json:"mode"`
 	WebPort        int    `json:"web_port"`
 	WebBindAddress string `json:"web_bind_address"`
+	Runtime        string `json:"runtime,omitempty"`
+	WebDir         string `json:"web_dir,omitempty"`
 }
+
+const RuntimeNative = "native"
+
+func (s Settings) Native() bool { return s.Runtime == RuntimeNative }
 
 func Path(configDir string) string {
 	return filepath.Join(configDir, Filename)
@@ -103,6 +109,15 @@ func (s Settings) Validate() error {
 	case "prod", "dev", "demo":
 	default:
 		return fmt.Errorf("mode must be prod, dev, or demo")
+	}
+	switch s.Runtime {
+	case "", "docker":
+	case RuntimeNative:
+		if s.Mode != "prod" {
+			return fmt.Errorf("the native runtime runs prod mode only")
+		}
+	default:
+		return fmt.Errorf("runtime must be docker or native")
 	}
 	if err := validatePort("web port", s.WebPort); err != nil {
 		return err

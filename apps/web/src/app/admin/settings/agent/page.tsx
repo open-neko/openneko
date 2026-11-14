@@ -1,20 +1,16 @@
-import { connection } from "next/server";
-import { AdminDenied } from "@/app/admin/AdminShell";
-import { getCurrentActor } from "@/lib/actor";
-import { getOrgId } from "@/lib/db";
-import { getAgentSettingsPayload } from "@/lib/agent-backend-settings";
-import { getProviderSettingsPayload } from "@/lib/provider-settings";
+"use client";
+
+import AdminLoad from "@/app/admin/AdminLoad";
 import AgentForm from "./AgentForm";
 
-export default async function SettingsAgentPage() {
-  await connection();
-  const actor = await getCurrentActor();
-  if (actor.role !== "admin") return <AdminDenied />;
+type Initial = Parameters<typeof AgentForm>[0]["initial"];
 
-  const orgId = await getOrgId();
-  const [agent, providers] = await Promise.all([
-    getAgentSettingsPayload(orgId),
-    getProviderSettingsPayload(orgId),
-  ]);
-  return <AgentForm initial={{ agent, providers }} />;
+export default function SettingsAgentPage() {
+  return (
+    <AdminLoad title="Agent" paths={["/api/v1/settings/agent", "/api/v1/settings/provider"]}>
+      {([agent, providers]) => (
+        <AgentForm initial={{ agent, providers } as Initial} />
+      )}
+    </AdminLoad>
+  );
 }

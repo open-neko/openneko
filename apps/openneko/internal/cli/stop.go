@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -18,6 +19,12 @@ func newStopCmd() *cobra.Command {
 		Short: "Bring down the OpenNeko stack",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if _, ok := nativeInstall(); ok {
+				if volumes {
+					return errors.New("--volumes is for a Docker install; a native install keeps its data in its folders")
+				}
+				return stopNative(cmd.OutOrStdout())
+			}
 			sup := compose.New(assets.ComposeFS)
 			// Materialize against the broadest mode (demo) so we tear down any
 			// overlay services the operator may have started.

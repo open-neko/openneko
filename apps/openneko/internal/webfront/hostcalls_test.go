@@ -90,6 +90,7 @@ func TestHostRoutesAdminOnly(t *testing.T) {
 }
 
 func TestProviderTestPrimary(t *testing.T) {
+	t.Setenv("OPENNEKO_IN_CONTAINER", "1")
 	f, db, g := hostFront(t)
 	admin := sessionCookie("admin")
 	seedPrimary(t, db, "openai", "gpt-5", `{}`, `{"apiKey":"`+plantedProviderKey+`"}`)

@@ -1,43 +1,65 @@
-import { connection } from "next/server";
-import { AdminDenied } from "@/app/admin/AdminShell";
-import { getCurrentActor } from "@/lib/actor";
-import { getOrgId } from "@/lib/db";
-import { getDeploymentConnectStatus } from "@/lib/integrations";
-import { getSsoSetupStatus } from "@/lib/sso-setup";
+"use client";
+
+import { useEffect, useState } from "react";
+import AdminOnly from "@/app/admin/AdminOnly";
+import { adminApi } from "@/components/admin/admin-api";
+import { SkeletonList } from "@/components/ui/skeleton";
+import type { SsoSetupStatusResult } from "@/lib/sso-setup";
 import SsoSetupForm from "./SsoSetupForm";
 
-export default async function SettingsSsoPage() {
-  await connection();
-  const actor = await getCurrentActor();
-  if (actor.role !== "admin") return <AdminDenied />;
+type Loaded = { status: SsoSetupStatusResult; workspaceConnected: boolean };
+type Integrations = { workspace?: { pluginName: string; connected: boolean }[] };
 
-  const orgId = await getOrgId();
-  const [status, deployment] = await Promise.all([
-    getSsoSetupStatus(orgId).catch(
-      (err) =>
-        ({
-          status: "not_started",
-          portalLink: null,
-          portalLinkExpiresAt: null,
-          provider: null,
-          connection: null,
-          lastError: err instanceof Error ? err.message : String(err),
-          setupCompletedAt: null,
-          environmentId: null,
-          organizationId: null,
-          environmentTier: null,
-          signInConfigured: false,
-        }) as Awaited<ReturnType<typeof getSsoSetupStatus>>,
-    ),
-    getDeploymentConnectStatus(),
-  ]);
+function notStarted(lastError: string): SsoSetupStatusResult {
+  return {
+    status: "not_started",
+    portalLink: null,
+    portalLinkExpiresAt: null,
+    provider: null,
+    connection: null,
+    lastError,
+    setupCompletedAt: null,
+    environmentId: null,
+    organizationId: null,
+    environmentTier: null,
+    signInConfigured: false,
+  };
+}
+
+function SsoLoader() {
+  const [loaded, setLoaded] = useState<Loaded | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([
+      adminApi<SsoSetupStatusResult>("/api/v1/sso/setup/status"),
+      adminApi<Integrations>("/api/v1/integrations/list"),
+    ]).then(([status, integrations]) => {
+      if (cancelled) return;
+      setLoaded({
+        status: status.ok ? status.body : notStarted(status.error),
+        workspaceConnected:
+          integrations.ok &&
+          (integrations.body.workspace ?? []).some((p) => p.pluginName === "scalekit" && p.connected),
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  if (loaded === null) {
+    return (
+      <div className="root">
+        <SkeletonList />
+      </div>
+    );
+  }
+  return <SsoSetupForm initial={loaded.status} loadError={null} workspaceConnected={loaded.workspaceConnected} />;
+}
+
+export default function SettingsSsoPage() {
   return (
-    <SsoSetupForm
-      initial={status}
-      loadError={null}
-      workspaceConnected={deployment.some(
-        (d) => d.pluginName === "scalekit",
-      )}
-    />
+    <AdminOnly>
+      <SsoLoader />
+    </AdminOnly>
   );
 }

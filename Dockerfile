@@ -252,6 +252,7 @@ WORKDIR /app
 # read-only container filesystems. PORT=8080 matches the common PaaS
 # convention (Cloud Run, Heroku, Fly, Railway).
 ENV NODE_ENV=production \
+    OPENNEKO_IN_CONTAINER=1 \
     PORT=8080 \
     OPENNEKO_WEB_DIR=/app/apps/web/dist \
     OPENNEKO_WEB_NODE_ADDR=127.0.0.1:3001 \
@@ -313,6 +314,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       git openssh-client postgresql-client-16 unzip \
     && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
+    OPENNEKO_IN_CONTAINER=1 \
     PORT=4100 \
     HOSTNAME=0.0.0.0 \
     HOME=/tmp/openneko-home \
@@ -382,7 +384,7 @@ COPY --from=serve-data --chown=1001:1001 /credentials /credentials
 COPY --from=serve-data --chown=1001:1001 /config /config
 COPY db/graphjin/customer.sources.example.yml /seed/customer.sources.yml
 COPY db/graphjin/dev.sources.example.yml /seed/dev.sources.yml
-ENV OPENNEKO_GRAPHJIN_SEED=/seed/customer.sources.yml
+ENV OPENNEKO_GRAPHJIN_SEED=/seed/customer.sources.yml OPENNEKO_IN_CONTAINER=1
 USER 1001:1001
 ENTRYPOINT ["/openneko"]
 CMD ["serve"]
