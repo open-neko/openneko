@@ -646,7 +646,7 @@ export default function SsoSetupForm({
                     {status.connection.enabled ? " · enabled" : ""}
                   </p>
                 ) : null}
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button type="button" onClick={generate} disabled={generating}>
                     {generating ? "Generating…" : "Generate portal link"}
                   </Button>
