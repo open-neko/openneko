@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
@@ -77,7 +78,8 @@ sweep for a past minute.`,
 			if err != nil {
 				return err
 			}
-			api := &webfront.API{Gate: &webfront.Gate{WorkerURL: workerURL, Client: workerClient, DB: pool}, DB: pool, Jobs: inserter}
+			secretsDir := config.Dir("")
+			api := &webfront.API{Gate: &webfront.Gate{WorkerURL: workerURL, SecretsDir: secretsDir, Client: workerClient, DB: pool}, DB: pool, SecretsDir: secretsDir, Jobs: inserter}
 			res, runErr := api.CronSweepAt(ctx, orgID, now)
 			if runErr != nil && res.At == "" {
 				return runErr

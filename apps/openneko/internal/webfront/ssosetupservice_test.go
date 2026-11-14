@@ -163,8 +163,9 @@ func TestSSOSetupWorkspaceToolsAndRefresh(t *testing.T) {
 		toolReplies: map[string]string{"list_environments": "ID: env_1 | Name: Dev Env | Type: DEV | Domain: dev.scalekit.com | Status: active"},
 	}
 	api := &API{
-		Gate:       &Gate{SecretsDir: dir, Client: &http.Client{Transport: mcp}},
-		SecretsDir: dir,
+		Gate:         &Gate{SecretsDir: dir},
+		SecretsDir:   dir,
+		SignInClient: &http.Client{Transport: mcp},
 	}
 
 	if _, err := api.callScalekitWorkspaceTool(ctx, "list_environments", nil); err == nil || !strings.Contains(err.Error(), "not connected") {
@@ -225,9 +226,10 @@ func TestSSOSetupFullFlowAndPoll(t *testing.T) {
 		},
 	}
 	api := &API{
-		Gate:       &Gate{SecretsDir: dir, Client: &http.Client{Transport: mcp}, DB: db},
-		DB:         db,
-		SecretsDir: dir,
+		Gate:         &Gate{SecretsDir: dir, DB: db},
+		DB:           db,
+		SecretsDir:   dir,
+		SignInClient: &http.Client{Transport: mcp},
 	}
 	if err := writeScalekitOperatorCredential(dir, &scalekitOperatorCredential{
 		Tokens: map[string]any{
