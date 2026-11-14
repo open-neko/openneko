@@ -11,12 +11,9 @@ import {
   isBuiltInChannelId,
   type BuiltInChannelId,
   type ChannelEnv,
-  type ChannelRecipient,
   type ChannelSubstrate,
-  type DeliverResult,
   type ParsedInbound,
 } from "@neko/channels";
-import type { InteractionEvent } from "@neko/interaction";
 import {
   readSecretsStore,
   writeSecretsStore,
@@ -77,27 +74,6 @@ export async function channelEnv(id: string, store?: SecretsStore): Promise<Chan
   const channel = requireChannel(id);
   const secrets = store ?? (await readSecretsStore());
   return { ...(secrets[channelSecretSection(channel.id as BuiltInChannelId)] ?? {}) };
-}
-
-async function requireEnabled(id: string): Promise<ChannelSubstrate> {
-  const channel = requireChannel(id);
-  if (!(await enabledChannelIds()).includes(channel.id as BuiltInChannelId)) {
-    throw new Error(`channel ${channel.id} is not turned on: set its required settings in Admin, Settings, Channels`);
-  }
-  return channel;
-}
-
-export async function deliverOnChannel(
-  id: string,
-  recipient: Record<string, unknown>,
-  events: unknown[],
-): Promise<DeliverResult> {
-  const channel = await requireEnabled(id);
-  return channel.deliver({
-    recipient: recipient as ChannelRecipient,
-    events: events as InteractionEvent[],
-    env: await channelEnv(channel.id),
-  });
 }
 
 export async function parseChannelInbound(id: string, raw: unknown): Promise<ParsedInbound> {

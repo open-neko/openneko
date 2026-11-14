@@ -2694,7 +2694,6 @@ export function createOpenNekoBackendDriver(
               : {}),
           },
         },
-        { onOutputDelivered: (_orgId, output) => deliveredOutputIds.push(String(output.id)) },
       );
       try {
         episode.activate();
@@ -2706,6 +2705,7 @@ export function createOpenNekoBackendDriver(
           mcpUrl,
         });
         await seedModel(slot.variant, fixture, episode);
+        await episode.bindEvalChannel(fixture.orgId);
         const feed = new RunEventFeed();
         const turn = scripted
           ? model!.arm(
@@ -2891,6 +2891,7 @@ export function createOpenNekoBackendDriver(
         }
 
         if (isStatefulScenario(scenario)) {
+          deliveredOutputIds.push(...(await episode.deliveredOutputIds(fixture.orgId)));
           stateMachine = await observeStateMachine({
             scenario,
             fixture,

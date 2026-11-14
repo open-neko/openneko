@@ -53,7 +53,6 @@ import {
   dispatchExternalEvent,
   handleSourceChangeMatch,
   handleSubscriptionMatch,
-  notifyWorkflowOutputDeliveryHook,
   registerActionRequestCreatedHook,
   registerBuiltinAdapters,
   registerFallbackActionAdapterResolver,
@@ -67,12 +66,10 @@ import { removeRetiredQueue } from "./pg-boss-helpers.js";
 import { setCoreSecretsInstance } from "./secrets/instance.js";
 import {
   ingestInboundWebhook,
-  registerChannelOutputDelivery,
 } from "./channels/delivery.js";
 import { startChannelInbound } from "./channels/inbound-poll.js";
 import {
   channelSettings,
-  deliverOnChannel,
   getChannelProviders,
   migrateLegacyChannelSecrets,
   notifyChannelsChanged,
@@ -197,10 +194,6 @@ const server = createServer(
       ready: () => actionAdaptersReady,
       execute: (input) => runActionExecute(input),
     },
-    outputs: {
-      deliver: (orgId, output) =>
-        notifyWorkflowOutputDeliveryHook(orgId, output as unknown as Parameters<typeof notifyWorkflowOutputDeliveryHook>[1]),
-    },
     actionRequests: {
       create: async (input) => {
         if (!actionRequestPreflightReady) {
@@ -292,8 +285,6 @@ const server = createServer(
     ssoSetup: ssoSetupSurface(),
     channels: {
       getChannelProviders: () => getChannelProviders(),
-      deliver: (channelId, recipient, events) =>
-        deliverOnChannel(channelId, recipient, events),
       ingestInbound: (channelId, headers, body) =>
         ingestInboundWebhook(ADMIN_ORG_ID, channelId, headers, body),
       settings: () => channelSettings(),
@@ -369,7 +360,6 @@ signInService = new SignInService(coreSecrets);
 }
 ssoSetupService = new SsoSetupService(signInService);
 startSsoSetupPoller({ service: ssoSetupService, orgId: ADMIN_ORG_ID });
-registerChannelOutputDelivery();
 {
   const moved = await migrateLegacyChannelSecrets().catch((err) => {
     console.warn(`[worker] channel secrets migration failed: ${err instanceof Error ? err.message : err}`);

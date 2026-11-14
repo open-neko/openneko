@@ -487,8 +487,8 @@ func scanOutputWire(row pgx.Row) (*jsObj, error) {
 }
 
 // emitOutput is emitWorkflowOutput(): an identical finding inside 24 hours
-// raises the first card's count. The worker then sends the output to the
-// bound channels.
+// raises the first card's count. The output then goes to the bound
+// channels.
 func (r *runTools) emitOutput(ctx context.Context, in outputIn) (any, error) {
 	a := r.api
 	now := jsNow()
@@ -531,13 +531,8 @@ func (r *runTools) emitOutput(ctx context.Context, in outputIn) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	body := []byte(jsStringify(jsObjOf("orgId", in.OrgID, "output", output), false))
 	go func() {
-		status, reply, err := a.workerDo(context.WithoutCancel(ctx), http.MethodPost, "/admin/workflow-outputs/deliver", workerAdminTimeout, body)
-		if err == nil && status != http.StatusAccepted {
-			err = fmt.Errorf("worker answered %d: %s", status, strings.TrimSpace(string(reply)))
-		}
-		if err != nil {
+		if err := a.deliverWorkflowOutput(context.WithoutCancel(ctx), in.OrgID, output); err != nil {
 			log.Printf("[workflow-output] delivery hook failed: %v", err)
 		}
 	}()

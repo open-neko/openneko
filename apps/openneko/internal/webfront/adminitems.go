@@ -189,18 +189,9 @@ func (a *API) listItemOptions(ctx context.Context, orgID, typ string) ([]itemOpt
 		}
 		return out, nil
 	case "channel":
-		var body struct {
-			Providers []struct {
-				ID            string `json:"id"`
-				ProviderLabel string `json:"providerLabel"`
-			} `json:"providers"`
-		}
-		if _, reply, err := a.workerDo(ctx, http.MethodGet, "/admin/channels/providers", workerAdminTimeout, nil); err == nil {
-			_ = json.Unmarshal(reply, &body)
-		}
 		labels := map[string]string{}
-		for _, p := range body.Providers {
-			labels[p.ID] = p.ProviderLabel
+		for _, ch := range a.enabledChannels() {
+			labels[ch.ID] = ch.Label
 		}
 		plugins, err := collectStrings(ctx, a, `select distinct channel_plugin from channel_identity where org_id = $1`, orgID)
 		if err != nil {

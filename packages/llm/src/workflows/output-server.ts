@@ -5,17 +5,11 @@ import {
   WORKFLOW_OUTPUT_SCHEMA,
   type WorkflowOutputPayload,
 } from "./fence-schemas";
-import { notifyWorkflowOutputDeliveryHook } from "./output-delivery";
 import {
   emitWorkflowOutput,
   type WorkflowOutputInput,
   type WorkflowOutputRecord,
 } from "./store";
-
-export {
-  setWorkflowOutputDeliveryHook,
-  type WorkflowOutputDeliveryHook,
-} from "./output-delivery";
 
 export type WorkflowOutputContext = {
   orgId: string;
@@ -59,7 +53,6 @@ export async function handleWorkflowOutput(
     output = await ctx.controlPlane.emitWorkflowOutput(input);
   } else {
     output = await emitWorkflowOutput(input);
-    notifyWorkflowOutputDeliveryHook(ctx.orgId, output);
   }
   await ctx.emit({
     type: "output_emit",

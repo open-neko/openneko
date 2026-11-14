@@ -1,21 +1,15 @@
-// Channel delivery + inbound dispatch — the worker glue that turns the V2
-// channel contract into a live capability. Outbound: a newly-emitted workflow
-// output fans out to every enabled delivery_binding through the built-in
-// channel's deliver. Inbound: an IntentEvent routes to the SAME agent entry
-// points the web uses — approve/reject an action_request, or start a chat run.
+// Inbound channel dispatch: an IntentEvent routes to the same agent entry
+// points the web uses: approve or reject an action_request, or start a chat
+// run. openneko web sends every outbound message.
 import { and, db, delivery_binding, eq, processing_job } from "@neko/db";
-import { audienceReceivesOutput } from "./audience.js";
 import { enqueueActionExecute, enqueueChannelDeliver, enqueueWorkRun } from "@neko/db/jobs";
 import { resolveAgentBackend } from "@neko/llm";
 import { SpendBudgetExceeded } from "@neko/llm/spend";
-import { outputRowToInteractionEvent, type OutputRow } from "@neko/llm/interaction";
 import type { InteractionEvent } from "@neko/interaction";
 import {
   approveActionRequest,
   getActionRequest,
   rejectActionRequest,
-  setWorkflowOutputDeliveryHook,
-  type WorkflowOutputDeliveryHook,
 } from "@neko/llm/workflows";
 import {
   channelThreadId,
@@ -62,14 +56,6 @@ type IntentEvent =
   | { kind: "select"; ref: string; optionId: string }
   | { kind: "invoke"; command: string; args?: Record<string, unknown> };
 
-const MOODS = ["good", "watch", "act"] as const;
-
-/**
- * Queue a durable, retryable outbound delivery on River instead of sending
- * inline; `openneko web` runs the job and the worker's channel sends it.
- * `idempotencyKey` collapses repeated queueing (e.g. a retried hook) to one
- * delivery.
- */
 async function enqueueChannelDelivery(
   orgId: string,
   channelPlugin: string,
@@ -78,39 +64,6 @@ async function enqueueChannelDelivery(
   idempotencyKey: string,
 ): Promise<void> {
   await enqueueChannelDeliver({ orgId, channelPlugin, recipient, events }, idempotencyKey);
-}
-
-const onOutput: WorkflowOutputDeliveryHook = async (orgId, output) => {
-  const bindings = await db()
-    .select()
-    .from(delivery_binding)
-    .where(
-      and(eq(delivery_binding.org_id, orgId), eq(delivery_binding.enabled, true)),
-    );
-  if (bindings.length === 0) return;
-  const mood = MOODS.find((m) => m === output.mood);
-  const row: OutputRow = {
-    id: output.id,
-    title: output.title,
-    body: output.body,
-    ...(mood ? { mood } : {}),
-  };
-  const event = outputRowToInteractionEvent(row);
-  for (const b of bindings) {
-    if (!(await audienceReceivesOutput(orgId, b.audience, output.workflowRunId))) continue;
-    await enqueueChannelDelivery(
-      orgId,
-      b.channel_plugin,
-      (b.recipient ?? {}) as Record<string, unknown>,
-      [event],
-      `output-${output.id}-${b.channel_plugin}`,
-    );
-  }
-};
-
-/** Register the output→channel fan-out hook. Called once at worker startup. */
-export function registerChannelOutputDelivery(): void {
-  setWorkflowOutputDeliveryHook(onOutput);
 }
 
 /**

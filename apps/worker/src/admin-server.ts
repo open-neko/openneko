@@ -36,11 +36,6 @@
  *                               before returning an approval-card-safe id.
  *   POST /admin/actions/execute → run an approved action ({ orgId, actionRequestId });
  *                               the action_execute job on River calls it.
- *   POST /admin/workflow-outputs/deliver → 202; queues a stored output
- *                               ({ orgId, output }) for the bound channels.
- *   POST /admin/channels/:id/deliver → send events on a channel
- *                               ({ recipient, events }); the channel_deliver
- *                               job on River calls it.
  *
  * Extracted from index.ts so the handler can be unit-tested without
  * booting pg-boss / the agent stack.
@@ -219,11 +214,6 @@ export interface ChannelHandlerSurface {
     directions: string[];
     ingress: string;
   }>>;
-  deliver(
-    channelId: string,
-    recipient: Record<string, unknown>,
-    events: unknown[],
-  ): Promise<{ delivered: boolean; ref?: string }>;
   ingestInbound(
     channelId: string,
     headers: Record<string, string>,
@@ -336,12 +326,7 @@ export type AdminHandlerOptions = {
   /** Writes group grants into the GraphJin config, now or batched. */
   groupGrants?: GroupGrantsHandlerSurface | null;
   sources?: SourceCheckHandlerSurface | null;
-  outputs?: OutputDeliveryHandlerSurface | null;
 };
-
-export interface OutputDeliveryHandlerSurface {
-  deliver(orgId: string, output: Record<string, unknown>): void;
-}
 
 export interface SourceCheckHandlerSurface {
   check(input: { answers: Record<string, unknown>; password?: string }): Promise<unknown>;
@@ -396,7 +381,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const directory = opts.directory ?? null;
   const groupGrants = opts.groupGrants ?? null;
   const sources = opts.sources ?? null;
-  const outputs = opts.outputs ?? null;
 
   return function handle(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "GET" && req.url === "/health") {
@@ -570,10 +554,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       void handleActionRequestCreate(req, res, actionRequests);
       return;
     }
-    if (req.method === "POST" && req.url === "/admin/workflow-outputs/deliver") {
-      void handleOutputDeliver(req, res, outputs);
-      return;
-    }
     if (req.method === "POST" && req.url === "/admin/actions/execute") {
       void handleActionExecute(req, res, actions);
       return;
@@ -667,13 +647,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
     if (req.url === "/admin/channels/settings") {
       void handleChannelSettings(req, res, channels);
       return;
-    }
-    if (req.method === "POST" && req.url?.startsWith("/admin/channels/")) {
-      const m = /^\/admin\/channels\/([^/]+)\/deliver(?:[?#]|$)/.exec(req.url);
-      if (m) {
-        void handleChannelDeliver(req, res, decodeURIComponent(m[1]!), channels);
-        return;
-      }
     }
     if (req.method === "POST" && req.url?.startsWith("/channels/")) {
       const m = /^\/channels\/([^/]+)\/inbound(?:[?#]|$)/.exec(req.url);
@@ -855,32 +828,6 @@ async function handleActionRequestCreate(
   } catch (err) {
     json(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }
-}
-
-async function handleOutputDeliver(
-  req: IncomingMessage,
-  res: ServerResponse,
-  outputs: OutputDeliveryHandlerSurface | null,
-): Promise<void> {
-  if (!outputs) {
-    json(res, 503, { error: "output delivery is not ready" });
-    return;
-  }
-  const body = (await readJson(req).catch(() => null)) as { orgId?: unknown; output?: unknown } | null;
-  const output = body?.output;
-  if (
-    typeof body?.orgId !== "string" ||
-    !body.orgId ||
-    !output ||
-    typeof output !== "object" ||
-    Array.isArray(output) ||
-    typeof (output as { id?: unknown }).id !== "string"
-  ) {
-    json(res, 400, { error: "orgId and output are required" });
-    return;
-  }
-  outputs.deliver(body.orgId, output as Record<string, unknown>);
-  json(res, 202, {});
 }
 
 async function handleActionExecute(
@@ -1660,41 +1607,6 @@ async function handleChannelSettings(
     const message = err instanceof Error ? err.message : String(err);
     const status = err instanceof Error && err.name === "ChannelSettingsError" ? 400 : 500;
     return json(res, status, { error: message });
-  }
-}
-
-async function handleChannelDeliver(
-  req: IncomingMessage,
-  res: ServerResponse,
-  pluginName: string,
-  channels: ChannelHandlerSurface | null,
-) {
-  if (!channels) {
-    json(res, 503, { error: "channel subsystem disabled" });
-    return;
-  }
-  const body = (await readJson(req).catch(() => null)) as Record<string, unknown> | null;
-  if (!body || typeof body !== "object") {
-    json(res, 400, { error: "request body must be JSON" });
-    return;
-  }
-  if (!body.recipient || typeof body.recipient !== "object") {
-    json(res, 400, { error: "recipient (object) is required" });
-    return;
-  }
-  if (!Array.isArray(body.events)) {
-    json(res, 400, { error: "events (array) is required" });
-    return;
-  }
-  try {
-    const result = await channels.deliver(
-      pluginName,
-      body.recipient as Record<string, unknown>,
-      body.events,
-    );
-    json(res, 200, result);
-  } catch (err) {
-    json(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }
 }
 

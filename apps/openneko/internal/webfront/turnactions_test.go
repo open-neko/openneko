@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 )
 
 func TestPolicyEngineMatchesNode(t *testing.T) {
@@ -78,12 +79,11 @@ func TestPolicyEngineMatchesNode(t *testing.T) {
 }
 
 type fakeActionWorker struct {
-	mu        sync.Mutex
-	db        *pgxpool.Pool
-	creates   []map[string]any
-	delivered []map[string]any
-	status    int
-	reply     string
+	mu      sync.Mutex
+	db      *pgxpool.Pool
+	creates []map[string]any
+	status  int
+	reply   string
 }
 
 func (w *fakeActionWorker) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
@@ -93,9 +93,6 @@ func (w *fakeActionWorker) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	switch r.URL.Path {
-	case "/admin/workflow-outputs/deliver":
-		w.delivered = append(w.delivered, in)
-		rw.WriteHeader(http.StatusAccepted)
 	case "/admin/action-requests/create":
 		w.creates = append(w.creates, in)
 		if w.status != 0 {
@@ -122,12 +119,6 @@ func (w *fakeActionWorker) lastCreate() map[string]any {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.creates[len(w.creates)-1]
-}
-
-func (w *fakeActionWorker) deliveries() []map[string]any {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return slices.Clone(w.delivered)
 }
 
 const (
@@ -403,6 +394,7 @@ func TestTurnActionsDatabase(t *testing.T) {
 		}
 		return row
 	}
+	seed(t, db, `insert into delivery_binding (org_id, audience, channel_plugin, recipient, enabled) values ('org', 'administrators', 'hud', '{}', true)`)
 	first := emit(map[string]any{"kind": "finding", "title": " Low Stock ", "timeWindowStart": "2026-11-01T00:00Z", "freshnessTtlSeconds": 60})
 	again := emit(map[string]any{"kind": "finding", "title": "low stock"})
 	other := emit(map[string]any{"kind": "summary", "title": "low stock", "payload": map[string]any{"a": 1}})
@@ -418,19 +410,23 @@ func TestTurnActionsDatabase(t *testing.T) {
 	if other.vals["id"] == first.vals["id"] || jsStringify(other.vals["payload"], false) != `{"a":1}` || untitled.vals["id"] == first.vals["id"] {
 		t.Fatalf("separate outputs: %s %s", jsStringify(other, false), jsStringify(untitled, false))
 	}
+	deliveries := func() map[string]bool {
+		ids := map[string]bool{}
+		for _, j := range riverJobs(t, db, "channel_deliver") {
+			var args jobs.ChannelDeliverArgs
+			_ = json.Unmarshal([]byte(j.Args), &args)
+			if args.ChannelPlugin == "hud" && args.OrgID == "org" {
+				ids[strings.TrimSuffix(strings.TrimPrefix(args.Key, "output-"), "-hud")] = true
+			}
+		}
+		return ids
+	}
 	deadline := time.Now().Add(5 * time.Second)
-	for len(worker.deliveries()) < 5 && time.Now().Before(deadline) {
+	for len(deliveries()) < 4 && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
-	ids := map[any]bool{}
-	for _, d := range worker.deliveries() {
-		if d["orgId"] != "org" {
-			t.Fatalf("delivery: %v", d)
-		}
-		ids[d["output"].(map[string]any)["id"]] = true
-	}
-	if len(worker.deliveries()) != 5 || !ids[first.vals["id"]] || !ids[untitled.vals["id"]] || !ids[claimedOut.vals["id"]] {
-		t.Fatalf("deliveries: %v", worker.deliveries())
+	if ids := deliveries(); len(ids) != 4 || !ids[first.vals["id"].(string)] || !ids[untitled.vals["id"].(string)] || !ids[claimedOut.vals["id"].(string)] {
+		t.Fatalf("deliveries: %v", ids)
 	}
 }
 
