@@ -28,6 +28,7 @@ import (
 // the condition watchers. A failure in either half is logged and does not fail
 // the job.
 func (a *API) CronSweep(ctx context.Context) error {
+	a.RunWorkflowSchedulerTick(ctx, time.Now())
 	orgID, err := a.OrgID(ctx)
 	if err != nil {
 		return err

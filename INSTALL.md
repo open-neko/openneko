@@ -365,9 +365,9 @@ server, then run `openneko graphjin check`.
 ### Audit logging failure alerts
 
 Every failed tamper-evident audit append emits a structured
-`security.audit_logging_failure` event to stderr. The worker also exposes
-process-local state at `GET /health/security`; monitor for
-`status: "degraded"` or `auditLogging.healthy: false`.
+`security.audit_logging_failure` event to stderr. `openneko web` also exposes
+process-local state at `GET /health` and `GET /health/security`; monitor for
+HTTP 503 or `status: "degraded"`.
 
 For immediate delivery independent of PostgreSQL, configure an HTTPS webhook
 on both processes that can write audit events:
