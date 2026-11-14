@@ -14,7 +14,12 @@ import (
 )
 
 func newSeedCmd() *cobra.Command {
-	return &cobra.Command{
+	var (
+		loadOnly bool
+		orgOnly  bool
+		localOrg bool
+	)
+	cmd := &cobra.Command{
 		Use:   "seed [adventureworks]",
 		Short: "Load demo data (currently only adventureworks)",
 		Args:  cobra.MaximumNArgs(1),
@@ -26,6 +31,32 @@ func newSeedCmd() *cobra.Command {
 			if target != "adventureworks" {
 				return WithExit(2, fmt.Errorf("seed: unknown target %q (want: adventureworks)", target))
 			}
+
+			runOrg := orgOnly || localOrg
+			if loadOnly || runOrg {
+				ctx := cmd.Context()
+				out := cmd.OutOrStdout()
+				if loadOnly {
+					cfg, err := adventureWorksLoadConfigFromEnv(out)
+					if err != nil {
+						return err
+					}
+					if err := runAdventureWorksLoad(ctx, cfg); err != nil {
+						return err
+					}
+				}
+				if runOrg {
+					cfg, err := adventureWorksOrgSeedConfigFromEnv(out)
+					if err != nil {
+						return err
+					}
+					if err := runAdventureWorksOrgSeed(ctx, cfg); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+
 			if instance.Current() != "" {
 				settings, ok, err := requireConfiguredNamedInstallation()
 				if err != nil {
@@ -68,4 +99,8 @@ func newSeedCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&loadOnly, "load", false, "Load the AdventureWorks dataset into the customer database")
+	cmd.Flags().BoolVar(&orgOnly, "org", false, "Seed the AdventureWorks organization, data source, workflows, and policy into neko-db")
+	cmd.Flags().BoolVar(&localOrg, "local", false, "Alias for --org")
+	return cmd
 }

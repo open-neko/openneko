@@ -21,7 +21,8 @@ services:
   adventureworks-init:
     build:
       context: .
-      target: adventureworks-loader
+      target: neko-cli
+    command: ["seed", "adventureworks", "--load"]
     depends_on:
       adventureworks-db:
         condition: service_healthy
@@ -141,7 +142,7 @@ services:
     profiles: ["steps"]
     build:
       context: .
-      target: init-tools
+      target: neko-cli
     depends_on:
       # neko-migrate completion guarantees the organization / data_source /
       # onboarding_wizard / workflow tables this seed writes into exist.
@@ -169,7 +170,7 @@ services:
       no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,graphjin,adventureworks-db,host.docker.internal,host.internal
     volumes:
       - openneko-config:/config/openneko
-    command: ["node", "/app/seed-adventureworks.js"]
+    command: ["seed", "adventureworks", "--org"]
     restart: "no"
 
   web:
