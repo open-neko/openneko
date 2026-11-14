@@ -47,6 +47,7 @@ func TestMaskSecret(t *testing.T) {
 }
 
 func TestResolveRuntime(t *testing.T) {
+	t.Setenv("OPENNEKO_IN_CONTAINER", "1")
 	for _, c := range []struct {
 		provider string
 		config   map[string]any

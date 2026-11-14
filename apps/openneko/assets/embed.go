@@ -5,6 +5,7 @@
 //	compose/core.yml, dev.yml, demo.yml, bundled-db.yml
 //	migrations/*.sql
 //	env/.env.example
+//	graphjin/customer.sources.yml, a copy of db/graphjin/customer.sources.example.yml
 package assets
 
 import "embed"
@@ -17,3 +18,6 @@ var MigrationsFS embed.FS
 
 //go:embed env/.env.example
 var DefaultEnvExample []byte
+
+//go:embed graphjin/customer.sources.yml
+var GraphJinSeed []byte

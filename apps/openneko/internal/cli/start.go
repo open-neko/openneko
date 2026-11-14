@@ -19,7 +19,8 @@ func newStartCmd() *cobra.Command {
 	var mode string
 	var detach bool
 	var skipMigrate bool
-	var pullPolicy string
+	var pullPolicy, webDir, databaseURLFlag string
+	var runNative bool
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Bring up the OpenNeko stack",
@@ -28,9 +29,17 @@ func newStartCmd() *cobra.Command {
 Modes:
   prod  Core services only (default; production stack)
   dev   Developer defaults; source checkouts should use pnpm dev:setup + pnpm dev
-  demo  Core + AdventureWorks trial bundle`,
+  demo  Core + AdventureWorks trial bundle
+
+With --native, or on an installation that a native start made, start runs
+openneko serve and openneko web as processes on this host under one
+supervisor, with no Docker. The database is external, by URL. Logs and
+state go to $XDG_DATA_HOME/openneko/logs and run.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if _, ok := nativeInstall(); ok || runNative {
+				return startNative(cmd, webDir, databaseURLFlag, detach, skipMigrate)
+			}
 			ctx, cancel := context.WithCancel(cmd.Context())
 			defer cancel()
 			selectedMode, err := modeForStart(cmd, mode)
@@ -56,6 +65,9 @@ Modes:
 	cmd.Flags().StringVar(&mode, "mode", "prod", "Stack mode: prod|dev|demo")
 	cmd.Flags().BoolVarP(&detach, "detach", "d", false, "Run in the background after services start")
 	cmd.Flags().BoolVar(&skipMigrate, "skip-migrate", false, "Skip running migrations on start (advanced)")
+	cmd.Flags().BoolVar(&runNative, "native", false, "Run the processes on this host, with no Docker")
+	cmd.Flags().StringVar(&databaseURLFlag, "database-url", "", "Native: OpenNeko's Postgres URL, stored encrypted in config.json")
+	cmd.Flags().StringVar(&webDir, "web-dir", "", "Native: folder of the built web app (default: share/openneko/web beside the release's bin folder)")
 	cmd.Flags().StringVar(&pullPolicy, "pull", "", "Override compose pull policy: always|missing|never (default: compose decides)")
 	return cmd
 }
