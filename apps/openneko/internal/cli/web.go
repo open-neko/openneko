@@ -115,13 +115,14 @@ with exit code 0, so its supervisor starts it again.`,
 			}
 			gate := &webfront.Gate{WorkerURL: workerURL, DB: pool}
 			api := &webfront.API{Gate: gate, DB: pool, Version: webfront.AppVersion(dir, version.Version),
-				SecureCookies: os.Getenv("NODE_ENV") == "production", Restart: stop, Jobs: inserter, EvalTrace: trace}
+				SecureCookies: os.Getenv("NODE_ENV") == "production", Restart: stop, Jobs: inserter, EvalTrace: trace,
+				MetricsRefresh: jobs.MetricsRefreshOn()}
 			results, err := api.ConvertConfigRepos(ctx, false)
 			reportConfigRepos(cmd.OutOrStdout(), results, false)
 			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: config repository not moved: %v\n", err)
 			}
-			queue := &jobs.Queue{Pool: pool, MetricSweep: api.MetricSweep, CronSweep: api.CronSweep,
+			queue := &jobs.Queue{Pool: pool, MetricsOn: api.MetricsRefresh, MetricSweep: api.MetricSweep, MemorySweep: api.MemorySweep, CronSweep: api.CronSweep,
 				DirectorySync: api.DirectorySync, ActionExecute: api.ActionExecute,
 				SkillLearn: api.SkillLearn, BotNameSweep: api.BotNameSweep, Build: api.RunBuild, WorkflowRunFire: api.WorkflowRunFire,
 				WorkflowAPISweep: api.WorkflowAPISweep, WorkRun: api.WorkRun, ChannelDeliver: api.ChannelDeliver,

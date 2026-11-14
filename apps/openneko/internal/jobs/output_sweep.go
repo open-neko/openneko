@@ -22,8 +22,9 @@ func (OutputSweepArgs) InsertOpts() river.InsertOpts { return river.InsertOpts{M
 
 type outputSweep struct {
 	river.WorkerDefaults[OutputSweepArgs]
-	pool *pgxpool.Pool
-	logf func(string, ...any)
+	pool     *pgxpool.Pool
+	logf     func(string, ...any)
+	memories func(context.Context) error
 }
 
 func (w *outputSweep) Work(ctx context.Context, _ *river.Job[OutputSweepArgs]) error {
@@ -33,6 +34,11 @@ func (w *outputSweep) Work(ctx context.Context, _ *river.Job[OutputSweepArgs]) e
 	}
 	if n > 0 {
 		w.logf("[workflow-output-ttl] deleted %d stale output(s) (grace %ds)", n, int(OutputGrace.Seconds()))
+	}
+	if w.memories != nil {
+		if err := w.memories(ctx); err != nil {
+			w.logf("[memory-ttl] sweep failed: %v", err)
+		}
 	}
 	return nil
 }

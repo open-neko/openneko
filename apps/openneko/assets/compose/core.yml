@@ -16,6 +16,7 @@ x-neko-app-env: &neko-app-env
   NEKO_EMBEDDING_URL: ${NEKO_EMBEDDING_URL:-}
   NEKO_EMBEDDING_MODEL: ${NEKO_EMBEDDING_MODEL:-}
   NEKO_EMBEDDING_API_KEY: ${NEKO_EMBEDDING_API_KEY:-}
+  OPENNEKO_METRICS_REFRESH: ${OPENNEKO_METRICS_REFRESH:-off}
   NEKO_EMBEDDING_DIMENSIONS: ${NEKO_EMBEDDING_DIMENSIONS:-}
   NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
   no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal

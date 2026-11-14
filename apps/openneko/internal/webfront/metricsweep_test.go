@@ -41,6 +41,7 @@ func TestMetricRefreshDue(t *testing.T) {
 func TestMetricSweep(t *testing.T) {
 	f, db := memoryFront(t)
 	seedRiver(t, db, f)
+	f.API.MetricsRefresh = true
 	ctx := context.Background()
 	const due, pendingID, daily, inactive = "e0000000-0000-4000-8000-000000000001", "e0000000-0000-4000-8000-000000000002",
 		"e0000000-0000-4000-8000-000000000003", "e0000000-0000-4000-8000-000000000004"
@@ -55,6 +56,9 @@ func TestMetricSweep(t *testing.T) {
 	seed(t, db, `insert into workflow_definition (org_id, name, description, owner_user_id) values ('org', 'My digest', 'Mine', 'member')`)
 
 	if err := f.API.MetricSweep(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.API.MemorySweep(ctx); err != nil {
 		t.Fatal(err)
 	}
 	var status, jobRef, kind, trigger, payload string
@@ -118,4 +122,21 @@ func TestMetricSweep(t *testing.T) {
 		t.Errorf("a failed sweep left the metric %s", status)
 	}
 	f.API.Jobs = inserter
+}
+
+func TestMetricSweepOff(t *testing.T) {
+	f, db := memoryFront(t)
+	seedRiver(t, db, f)
+	ctx := context.Background()
+	seed(t, db, `insert into metric (org_id, role, slug, source, title, chart_hint, cadence, active, last_refresh_status, updated_at) values
+		('org', 'CFO', 'a', 'bootstrap', 'A', 'line', 'hourly', true, 'ok', now() - interval '2 days')`)
+	if err := f.API.MetricSweep(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := rowText(t, db, `select count(*)::text from processing_job where kind = 'metric_refresh'`); n != "0" {
+		t.Errorf("refresh rows: %s", n)
+	}
+	if got := riverQueueJobs(t, db, jobs.KindMetricRefresh, jobs.QueueMetricRefresh); len(got) != 0 {
+		t.Errorf("queued jobs: %+v", got)
+	}
 }

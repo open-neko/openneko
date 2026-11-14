@@ -1,14 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SolutionPackBundle } from "@neko/packs";
 
-const { graphjinQuery } = vi.hoisted(() => ({ graphjinQuery: vi.fn() }));
+const { graphjinQuery, enqueueMetricRefresh } = vi.hoisted(() => ({ graphjinQuery: vi.fn(), enqueueMetricRefresh: vi.fn() }));
 
 vi.mock("@neko/llm/graphjin", () => ({
   graphjinQuery,
   mintGraphjinToken: () => "fixture-token",
 }));
 
-import { PackPreflightError, runPackReadPreflight } from "../src/packs/preflight.js";
+vi.mock("@neko/db/jobs", () => ({ enqueueMetricRefresh }));
+
+import { PackPreflightError, enqueuePackMetricRefreshes, metricsRefreshOn, runPackReadPreflight } from "../src/packs/preflight.js";
 
 function pack(): SolutionPackBundle {
   return {
@@ -54,5 +56,21 @@ describe("pack query preflight errors", () => {
     });
     expect((failure as Error).message).toContain("graphjin/saved-queries/account_profile.gql");
     expect((failure as Error).message).toContain("table not found: customer_api_get_profile");
+  });
+});
+
+describe("pack metric refreshes", () => {
+  it("are off unless OPENNEKO_METRICS_REFRESH is on", () => {
+    expect(metricsRefreshOn({})).toBe(false);
+    expect(metricsRefreshOn({ OPENNEKO_METRICS_REFRESH: "off" })).toBe(false);
+    expect(metricsRefreshOn({ OPENNEKO_METRICS_REFRESH: " ON " })).toBe(true);
+  });
+
+  it("queue nothing on install with the default setting", async () => {
+    vi.stubEnv("OPENNEKO_METRICS_REFRESH", "");
+    const bundle = { ...pack(), artifacts: [{ kind: "metric", key: "metric.revenue", targetRef: "revenue", path: "metrics/revenue.yaml", hash: "fixture", content: "role: CEO\n" }] } as unknown as SolutionPackBundle;
+    await expect(enqueuePackMetricRefreshes("org", bundle)).resolves.toBe(0);
+    expect(enqueueMetricRefresh).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
   });
 });

@@ -250,12 +250,20 @@ func (a *API) buildBootstrapMetrics(ctx context.Context, jobID, orgID string) er
 				continue
 			}
 			var metricID, refreshID string
+			var status *string
+			if a.MetricsRefresh {
+				pending := "pending"
+				status = &pending
+			}
 			if err := tx.QueryRow(ctx, `insert into metric (org_id, role, slug, source, title, description, why, chart_hint, created_by_job, last_refresh_status)
-				values ($1, $2, $3, 'bootstrap', $4, $5, $5, $6, $7, 'pending') returning id::text`,
-				orgID, m.Role, m.Slug, m.Title, m.Why, m.ChartHint, jobID).Scan(&metricID); err != nil {
+				values ($1, $2, $3, 'bootstrap', $4, $5, $5, $6, $7, $8) returning id::text`,
+				orgID, m.Role, m.Slug, m.Title, m.Why, m.ChartHint, jobID, status).Scan(&metricID); err != nil {
 				return err
 			}
 			inserted++
+			if !a.MetricsRefresh {
+				continue
+			}
 			if err := tx.QueryRow(ctx, `insert into processing_job (org_id, kind, status, trigger, trigger_payload)
 				values ($1, 'metric_refresh', 'queued', 'chain_after_bootstrap_metrics_build', jsonb_build_object('metricId', $2::text)) returning id::text`,
 				orgID, metricID).Scan(&refreshID); err != nil {

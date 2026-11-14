@@ -3,6 +3,7 @@ package webfront
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -273,6 +274,37 @@ func TestMetricRefreshAgentThroughServe(t *testing.T) {
 	}
 	if got := rowText(t, db, `select count(*)::text from metric_snapshot where metric_id = $1`, cardID); got != "1" {
 		t.Errorf("snapshots: %s", got)
+	}
+}
+
+func TestMetricRefreshOffCancelsWithNoModelCall(t *testing.T) {
+	f, db := buildFront(t)
+	a := f.API
+	a.MetricsRefresh = false
+	model, calls := usageModel(t, axReplies(goodMetricReply))
+	a.turnResolve = fixedBackend(model.URL)
+	g := &fakeGateway{}
+	a.Gateway = g.generate
+	a.jobTools = func(turnBinding) toolBackend { t.Error("the cancelled refresh got tools"); return &fakeTools{} }
+	cardID := rowText(t, db, `insert into metric (org_id, role, slug, source, title, why, chart_hint) values ('org', 'CEO', 'revenue-ttm', 'bootstrap', 'Revenue TTM', 'Top line', 'kpi') returning id::text`)
+	jobID := metricJob(t, db, `{"metricId":"`+cardID+`"}`)
+	seed(t, db, `update metric set last_refresh_status = 'pending', last_refresh_job_id = $2 where id = $1`, cardID, jobID)
+
+	err := a.RunBuild(t.Context(), jobs.KindMetricRefresh, "org", jobID)
+	if !errors.Is(err, jobs.ErrNoRetry) {
+		t.Fatalf("RunBuild = %v, want a no-retry error", err)
+	}
+	if got := jobState(t, db, jobID); got != "cancelled "+metricsOffError+" " {
+		t.Errorf("job: %q", got)
+	}
+	if got := rowText(t, db, `select coalesce(last_refresh_status, 'none') from metric where id = $1`, cardID); got != "none" {
+		t.Errorf("card state: %s", got)
+	}
+	if len(calls.all()) != 0 || len(g.calls) != 0 {
+		t.Errorf("model calls %d, gateway calls %d, want none", len(calls.all()), len(g.calls))
+	}
+	if got := rowText(t, db, `select count(*)::text from spend_reservation where org_id = 'org'`); got != "0" {
+		t.Errorf("spend reservations: %s", got)
 	}
 }
 

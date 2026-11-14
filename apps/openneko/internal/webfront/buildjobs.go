@@ -24,6 +24,9 @@ func (a *API) RunBuild(ctx context.Context, kind, orgID, jobID string) error {
 	if run == nil {
 		return fmt.Errorf("unknown build job %s", kind)
 	}
+	if kind == jobs.KindMetricRefresh && !a.MetricsRefresh {
+		return a.cancelMetricRefresh(ctx, jobID)
+	}
 	log.Printf("[jobs] running %s job=%s org=%s", kind, jobID, orgID)
 	if _, err := a.DB.Exec(ctx, `update processing_job set status = 'running', started_at = now(), updated_at = now() where id = $1`, jobID); err != nil {
 		return err
@@ -47,6 +50,25 @@ func (a *API) RunBuild(ctx context.Context, kind, orgID, jobID string) error {
 	}
 	log.Printf("[jobs] job %s attempt failed; River may retry: %v", jobID, err)
 	return err
+}
+
+const metricsOffError = "the metric refresh is off (OPENNEKO_METRICS_REFRESH)"
+
+func (a *API) cancelMetricRefresh(ctx context.Context, jobID string) error {
+	log.Printf("[jobs] metric_refresh job=%s cancelled: %s", jobID, metricsOffError)
+	err := pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `update processing_job set status = 'cancelled', finished_at = now(), error = $2, updated_at = now() where id = $1`,
+			jobID, metricsOffError); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `update metric set last_refresh_status = null, updated_at = now()
+			where last_refresh_job_id::text = $1 and last_refresh_status = 'pending'`, jobID)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	return fmt.Errorf("%w: %s", jobs.ErrNoRetry, metricsOffError)
 }
 
 func (a *API) jobProgress(ctx context.Context, jobID, message string) {
