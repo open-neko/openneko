@@ -28,10 +28,6 @@ const (
 
 var providerClient = &http.Client{Timeout: providerTimeout}
 
-func packOAuthPath(packID, key, action string) string {
-	return "/admin/packs/" + encodeURIComponent(packID) + "/oauth/" + encodeURIComponent(key) + "/" + action
-}
-
 // packAdminTarget applies requireAdminActor() and validPackId() for the
 // admin pack OAuth routes.
 func (a *API) packAdminTarget(w http.ResponseWriter, r *http.Request, invalid string) (actor, string, string, bool) {
