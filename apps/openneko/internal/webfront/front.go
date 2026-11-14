@@ -30,7 +30,6 @@ var (
 var ServerPages = []string{
 	"/chat/connectors",
 	"/admin/access",
-	"/admin/settings/graphjin",
 	"/admin/settings/packs/magento/operations",
 	"/admin/users",
 	"/admin/users/groups/:groupId",
