@@ -445,6 +445,7 @@ func LoadBundle(rootInput string) (*Bundle, error) {
 	if err != nil {
 		return nil, err
 	}
+	manifest.Health.ReadinessKeys = readinessKeys(raw)
 	gj := manifest.Artifacts.GraphJin
 	art := manifest.Artifacts
 	var targets []string

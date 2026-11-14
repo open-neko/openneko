@@ -98,6 +98,7 @@ type Health struct {
 	Readiness         map[string][]string `json:"readiness"`
 	PostInstall       []string            `json:"postInstall"`
 	PostWriteCanary   []string            `json:"postWriteCanary"`
+	ReadinessKeys     []string            `json:"-"`
 }
 
 // Manifest is the parsed pack.yaml with the schema defaults applied.

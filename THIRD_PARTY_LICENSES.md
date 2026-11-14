@@ -71,6 +71,7 @@ OpenNeko's runtime dependencies are listed in the `package.json` and `go.mod` fi
 | `drizzle-orm` | Apache-2.0 | DB schema + queries |
 | DuckDB CLI | MIT | Shipped in the `neko-serve` image; runs SQL over sheet tables |
 | `github.com/xuri/excelize/v2` | BSD-3-Clause | Reads Excel files in `openneko serve` |
+| `github.com/vektah/gqlparser/v2` | MIT | Parses the saved queries of a pack in `openneko web` |
 | `github.com/ledongthuc/pdf` | BSD-3-Clause | Reads PDF text in `openneko serve` |
 | `github.com/parquet-go/parquet-go` | Apache-2.0 | Writes sheet tables as Parquet |
 | `github.com/aws/aws-sdk-go-v2` (`config`, `credentials`, `service/s3`) | Apache-2.0 | Reads and writes the files bucket in `openneko serve` when `OPENNEKO_FILES_BUCKET` is set; GraphJin already links it |
