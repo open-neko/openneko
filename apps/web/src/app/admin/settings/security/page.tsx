@@ -1,16 +1,14 @@
-import { connection } from "next/server";
-import { AdminDenied } from "@/app/admin/AdminShell";
-import { getCurrentActor } from "@/lib/actor";
-import { getOrgId } from "@/lib/db";
-import { getInstallPolicyPayload } from "@/lib/install-policy-settings";
+"use client";
+
+import AdminLoad from "@/app/admin/AdminLoad";
 import SecurityForm from "./SecurityForm";
 
-export default async function SettingsSecurityPage() {
-  await connection();
-  const actor = await getCurrentActor();
-  if (actor.role !== "admin") return <AdminDenied />;
+type Initial = Parameters<typeof SecurityForm>[0]["initial"];
 
-  const orgId = await getOrgId();
-  const payload = await getInstallPolicyPayload(orgId);
-  return <SecurityForm initial={payload} />;
+export default function SettingsSecurityPage() {
+  return (
+    <AdminLoad title="Security" paths={["/api/v1/settings/install-policy"]}>
+      {([initial]) => <SecurityForm initial={initial as Initial} />}
+    </AdminLoad>
+  );
 }

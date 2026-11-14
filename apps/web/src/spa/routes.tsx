@@ -157,6 +157,13 @@ export const routes: RouteObject[] = [
           { path: "admin/settings/channels", ...page(() => import("@/app/admin/settings/channels/page")) },
           { path: "admin/settings/packs", ...page(() => import("@/app/admin/settings/packs/page")) },
           { path: "admin/settings/signin", ...page(() => import("@/app/admin/settings/signin/page")) },
+          { path: "admin/settings/agent", ...page(() => import("@/app/admin/settings/agent/page")) },
+          { path: "admin/settings/data", ...page(() => import("@/app/admin/settings/data/page")) },
+          { path: "admin/settings/models", ...page(() => import("@/app/admin/settings/models/page")) },
+          { path: "admin/settings/research", ...page(() => import("@/app/admin/settings/research/page")) },
+          { path: "admin/settings/security", ...page(() => import("@/app/admin/settings/security/page")) },
+          { path: "admin/settings/spend", ...page(() => import("@/app/admin/settings/spend/page")) },
+          { path: "admin/settings/sso", ...page(() => import("@/app/admin/settings/sso/page")) },
           {
             path: "skills/:name",
             lazy: async () => {

@@ -271,3 +271,75 @@ func AllValues(store Store) []string {
 	sort.Strings(out)
 	return out
 }
+
+// AllValuesFull is allSecretValuesFull() in packages/secrets: every value of
+// the env sections and every string inside an operator credential's tokens.
+func AllValuesFull(overrideDir string) ([]string, error) {
+	store, err := Read(overrideDir)
+	if err != nil {
+		return nil, err
+	}
+	set := map[string]struct{}{}
+	for _, v := range AllValues(store) {
+		set[v] = struct{}{}
+	}
+	raw, err := os.ReadFile(Path(overrideDir))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	var parsed struct {
+		Operators map[string]map[string]json.RawMessage `json:"_operators"`
+	}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &parsed); err != nil {
+			parsed.Operators = nil
+		}
+	}
+	for _, connectors := range parsed.Operators {
+		for _, cred := range connectors {
+			collectTokenStrings(overrideDir, cred, set)
+		}
+	}
+	out := make([]string, 0, len(set))
+	for v := range set {
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func collectTokenStrings(overrideDir string, cred json.RawMessage, set map[string]struct{}) {
+	var sealed string
+	if json.Unmarshal(cred, &sealed) == nil {
+		plain, err := config.MaybeDecryptValue(overrideDir, sealed)
+		if err != nil {
+			return
+		}
+		cred = json.RawMessage(plain)
+	}
+	var obj struct {
+		Tokens      map[string]any `json:"tokens"`
+		ConnectedAt *string        `json:"connectedAt"`
+	}
+	if json.Unmarshal(cred, &obj) != nil || obj.Tokens == nil || obj.ConnectedAt == nil {
+		return
+	}
+	var walk func(any)
+	walk = func(v any) {
+		switch t := v.(type) {
+		case string:
+			if t != "" {
+				set[t] = struct{}{}
+			}
+		case []any:
+			for _, item := range t {
+				walk(item)
+			}
+		case map[string]any:
+			for _, item := range t {
+				walk(item)
+			}
+		}
+	}
+	walk(obj.Tokens)
+}
