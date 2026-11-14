@@ -23,7 +23,7 @@ func newStopCmd() *cobra.Command {
 				if volumes {
 					return errors.New("--volumes is for a Docker install; a native install keeps its data in its folders")
 				}
-				return stopNative(cmd.OutOrStdout())
+				return stopNative(cmd.Context(), cmd.OutOrStdout())
 			}
 			sup := compose.New(assets.ComposeFS)
 			// Materialize against the broadest mode (demo) so we tear down any

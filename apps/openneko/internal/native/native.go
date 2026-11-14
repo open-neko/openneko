@@ -48,6 +48,14 @@ func (l Layout) Log(name string) string {
 	return filepath.Join(l.Logs(), name+".log")
 }
 
+// DataFolders maps each data folder that a backup holds to its path.
+func (l Layout) DataFolders() map[string]string {
+	return map[string]string{
+		"files": l.Files(), "file-index": l.Index(), "subscriptions": l.Subscriptions(),
+		"credentials": l.Credentials(), "graphjin": filepath.Dir(l.GraphJin()), "agent-runs": l.AgentRuns(),
+	}
+}
+
 func (l Layout) Prepare() error {
 	for _, dir := range []string{l.Root, l.Files(), l.Index(), l.Credentials(), filepath.Dir(l.GraphJin()), l.Run(), l.Logs(), l.AgentRuns(), l.Subscriptions()} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
