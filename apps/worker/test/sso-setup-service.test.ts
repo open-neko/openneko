@@ -41,15 +41,19 @@ describe("SsoSetupService.setSignInCredentials", () => {
   it("stores the credentials and makes Scalekit the sign-in provider", async () => {
     const { dir, signIn } = await signInFixture();
     try {
-      expect(signIn.getAuthProvider()).toBeNull();
+      expect(signIn.selectedProvider()).toBeNull();
       const service = new SsoSetupService(signIn);
       await service.setSignInCredentials("org-1", {
         environmentUrl: "https://acme.scalekit.dev",
         clientId: "skc_1",
         clientSecret: "secret",
       });
-      expect(signIn.getAuthProvider()).toMatchObject({ pluginName: "scalekit", provisioning: "automatic" });
-      expect(signIn.authSignInReady()).toBe(true);
+      expect(signIn.selectedProvider()).toBe("scalekit");
+      expect(signIn.providerValues("scalekit")).toEqual({
+        SCALEKIT_ENVIRONMENT_URL: "https://acme.scalekit.dev",
+        SCALEKIT_CLIENT_ID: "skc_1",
+        SCALEKIT_CLIENT_SECRET: "secret",
+      });
       await expect(
         service.setSignInCredentials("org-1", { environmentUrl: "", clientId: "x", clientSecret: "y" }),
       ).rejects.toThrow(/required/);

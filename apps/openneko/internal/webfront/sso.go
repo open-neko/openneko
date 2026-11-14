@@ -97,16 +97,7 @@ func (a *API) authBegin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.setCookie(w, StateCookie, value, stateTTLSeconds)
-	var hint any
-	if loginHint != "" {
-		hint = loginHint
-	}
-	var out struct {
-		AuthorizationURL string `json:"authorizationUrl"`
-	}
-	err = a.workerCall(ctx, "/admin/auth/begin", beginTimeout, "sign-in begin", map[string]any{
-		"redirectUri": a.redirectURI(r), "state": state, "loginHint": hint,
-	}, &out)
+	authURL, err := a.beginSignIn(ctx, a.redirectURI(r), state, loginHint)
 	if err != nil {
 		if manual {
 			log.Printf("[auth] magic-link begin failed: %v", err)
@@ -116,7 +107,7 @@ func (a *API) authBegin(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	w.Header().Set("Location", out.AuthorizationURL)
+	w.Header().Set("Location", authURL)
 	w.WriteHeader(http.StatusFound)
 }
 
@@ -157,16 +148,7 @@ func (a *API) authCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) completeSignIn(ctx context.Context, r *http.Request, code, state string) (string, error) {
-	var out struct {
-		Identity json.RawMessage `json:"identity"`
-	}
-	err := a.workerCall(ctx, "/admin/auth/complete", completeTimeout, "sign-in complete", map[string]any{
-		"code": code, "redirectUri": a.redirectURI(r), "state": state,
-	}, &out)
-	if err != nil {
-		return "", err
-	}
-	id, err := parseIdentity(out.Identity)
+	id, err := a.completeSignInAuth(ctx, code, a.redirectURI(r), state)
 	if err != nil {
 		return "", err
 	}

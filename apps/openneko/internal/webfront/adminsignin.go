@@ -5,22 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 )
 
 const (
-	signinWriteTimeout = 10 * time.Second
-	publicURLScope     = "public-url"
-	magicLinkPlugin    = "magic-link"
+	publicURLScope  = "public-url"
+	magicLinkPlugin = "magic-link"
 )
 
 var emailProviderKeys = map[string]string{
@@ -48,6 +45,7 @@ func (a *API) adminSigninStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	_ = a.secretsDir()
 	a.Gate.Reset()
 	gate := a.Gate.Status(ctx)
 	var total, admins int
@@ -95,31 +93,6 @@ func rawOrNull(raw json.RawMessage) json.RawMessage {
 	return raw
 }
 
-// signinWrite posts to a worker sign-in route as lib/auth.ts does: the
-// worker's error text, or the fallback with the status.
-func (a *API) signinWrite(ctx context.Context, path string, body any, fallback string) error {
-	raw, err := json.Marshal(body)
-	if err != nil {
-		return err
-	}
-	status, reply, err := a.workerDo(ctx, http.MethodPost, path, signinWriteTimeout, raw)
-	if err != nil {
-		log.Printf("%s: %v", path, err)
-		return errors.New("the worker did not answer")
-	}
-	if status < 200 || status > 299 {
-		var parsed struct {
-			Error *string `json:"error"`
-		}
-		if json.Unmarshal(reply, &parsed) == nil && parsed.Error != nil {
-			return errors.New(*parsed.Error)
-		}
-		return fmt.Errorf("%s (%d)", fallback, status)
-	}
-	a.Gate.Reset()
-	return nil
-}
-
 func (a *API) adminSigninProvider(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.settingsAdmin(w, r); !ok {
 		return
@@ -134,7 +107,8 @@ func (a *API) adminSigninProvider(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, "provider must be scalekit, magic-link, or null")
 		return
 	}
-	if err := a.signinWrite(r.Context(), "/admin/auth/provider", map[string]any{"provider": provider}, "sign-in provider change failed"); err != nil {
+	providerID, _ := provider.(string)
+	if err := a.selectSignInProvider(providerID); err != nil {
 		sendError(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -145,6 +119,7 @@ func (a *API) adminSigninEmailProvider(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.settingsAdmin(w, r); !ok {
 		return
 	}
+	_ = a.secretsDir()
 	gate := a.Gate.Status(r.Context())
 	chosen := gate.Provider
 	if chosen == nil {
@@ -192,16 +167,16 @@ func (a *API) adminSigninEmailProvider(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, fmt.Sprintf("paste the %s API key — none is stored yet", emailProvider))
 		return
 	}
-	values := map[string]any{"MAGIC_LINK_FROM": from}
+	values := map[string]*string{"MAGIC_LINK_FROM": &from}
 	for _, key := range emailProviderKeys {
 		if key != chosenKey {
 			values[key] = nil
 		}
 	}
 	if apiKey != nil {
-		values[chosenKey] = *apiKey
+		values[chosenKey] = apiKey
 	}
-	if err := a.signinWrite(r.Context(), "/admin/auth/secrets", map[string]any{"values": values}, "auth secrets write failed"); err != nil {
+	if err := a.setSignInProviderValues(magicLinkPlugin, values); err != nil {
 		sendError(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -241,13 +216,7 @@ func (a *API) adminSigninTest(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
-	var out struct {
-		AuthorizationURL string `json:"authorizationUrl"`
-	}
-	err = a.workerCall(r.Context(), "/admin/auth/begin", beginTimeout, "sign-in begin", map[string]any{
-		"redirectUri": a.redirectURI(r), "state": "delivery-test-" + nonce, "loginHint": email,
-	}, &out)
-	if err != nil {
+	if _, err := a.beginSignIn(r.Context(), a.redirectURI(r), "delivery-test-"+nonce, email); err != nil {
 		sendError(w, http.StatusBadGateway, err.Error())
 		return
 	}

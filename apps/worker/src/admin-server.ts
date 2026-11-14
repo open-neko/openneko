@@ -12,18 +12,6 @@
  *                               pg-boss singleton holds the old creds and
  *                               there's no clean way to re-register handlers
  *                               in-place against a fresh pool.
- *   GET  /admin/auth/status   → 200 + { provider: null | {pluginName, providerLabel}, pending }
- *                               Tells the web app which sign-in provider is
- *                               live so the sign-in page can render the
- *                               appropriate button.
- *   POST /admin/auth/provider → { provider: "scalekit" | "magic-link" | null }
- *                               chooses the sign-in provider.
- *   POST /admin/auth/begin    → 200 + { authorizationUrl }
- *                               Body: { redirectUri, state, loginHint? }
- *                               Starts sign-in with the chosen provider.
- *   POST /admin/auth/complete → 200 + { identity }
- *                               Body: { code, redirectUri, state }
- *                               Finishes sign-in with the chosen provider.
  *   GET  /admin/directory/status → directory provider and last sync state.
  *   POST /admin/directory/sync  → run a full directory sync now.
  *   POST /admin/directory/users → create a user in the identity provider ({ email, name? }).
@@ -40,7 +28,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ConnectorCredential } from "@neko/secrets";
 import type {
-  AuthIdentity,
   BeginConnectParams,
   CompleteConnectParams,
 } from "./signin/types.js";
@@ -61,52 +48,6 @@ const PACK_FAILURE_NEXT_STEP: Record<PackErrorPhase, string> = {
 
 function packFailure(error: unknown, phase: PackErrorPhase) {
   return packFailurePayload(error, phase, PACK_FAILURE_NEXT_STEP[phase]);
-}
-
-export interface AuthHandlerSurface {
-  getAuthProvider(): {
-    pluginName: string;
-    providerLabel: string;
-    provisioning?: "automatic" | "manual";
-    loginHintRequired?: boolean;
-  } | null;
-  /**
-   * Whether sign-in is actually usable (all required env vars set).
-   * The web proxy gates on this, NOT on a provider merely being chosen — so the
-   * admin isn't locked out of the setup UI before SSO is configured.
-   */
-  authSignInReady(): boolean;
-  /**
-   * Names of required env vars still unset (empty = env complete);
-   * null/undefined when unavailable. Key names only, never values.
-   */
-  getAuthEnvGaps?(): string[] | null;
-  /** Declared env keys currently holding a value — names only. */
-  getAuthConfiguredEnvKeys?(): string[];
-  /** All declared env keys — the allowlist for setAuthSecret. */
-  getAuthDeclaredEnvKeys?(): string[];
-  /**
-   * ≥1 active admin app_user exists. Manual-provisioning providers
-   * (magic link) must not go live before this — flipping the sign-in
-   * gate with zero provisioned admins locks everyone out.
-   */
-  hasProvisionedAdmin?(): Promise<boolean>;
-  /** A bootstrapped solo owner must supply a real email before sign-in activates. */
-  soloAdminNeedsEmail?(): Promise<boolean>;
-  /** Write (string) or delete (null) one value of the chosen provider. */
-  setAuthSecret?(key: string, value: string | null): Promise<void>;
-  /** Chooses the sign-in provider; null turns sign-in off. */
-  selectProvider?(provider: string | null): Promise<void>;
-  beginAuth(params: {
-    redirectUri: string;
-    state: string;
-    loginHint?: string | null;
-  }): Promise<{ authorizationUrl: string }>;
-  completeAuth(params: {
-    code: string;
-    redirectUri: string;
-    state: string;
-  }): Promise<AuthIdentity>;
 }
 
 /**
@@ -250,11 +191,6 @@ export type AdminHandlerOptions = {
   /** The independent durable scheduler's process-local progress signal. */
   scheduler?: SchedulerHealthSurface | null;
   /**
-   * Auth surface — wired to the SignInService. Absent in tests, in which
-   * case /admin/auth/* routes report no provider or return 503.
-   */
-  auth?: AuthHandlerSurface | null;
-  /**
    * Connector surface — wired to the SignInService (Scalekit workspace).
    * Absent in tests, in which case /admin/connect/* routes return 503.
    */
@@ -327,7 +263,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const exit = opts.exit ?? ((code = 0) => process.exit(code));
   const exitDelayMs = opts.exitDelayMs ?? 100;
   const scheduler = opts.scheduler ?? null;
-  const auth = opts.auth ?? null;
   const connect = opts.connect ?? null;
   const ssoSetup = opts.ssoSetup ?? null;
   const installPolicy = opts.installPolicy ?? null;
@@ -372,26 +307,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
         "[worker] /admin/reconnect received — exiting for clean restart",
       );
       setTimeout(() => exit(0), exitDelayMs);
-      return;
-    }
-    if (req.method === "GET" && req.url === "/admin/auth/status") {
-      void handleAuthStatus(res, auth);
-      return;
-    }
-    if (req.method === "POST" && req.url === "/admin/auth/secrets") {
-      void handleAuthSecrets(req, res, auth);
-      return;
-    }
-    if (req.method === "POST" && req.url === "/admin/auth/provider") {
-      void handleAuthProvider(req, res, auth);
-      return;
-    }
-    if (req.method === "POST" && req.url === "/admin/auth/begin") {
-      void handleAuthBegin(req, res, auth);
-      return;
-    }
-    if (req.method === "POST" && req.url === "/admin/auth/complete") {
-      void handleAuthComplete(req, res, auth);
       return;
     }
     if (req.method === "GET" && req.url?.split("?")[0] === "/admin/sso/setup/status") {
@@ -793,127 +708,6 @@ async function handleDirectory(
   }
 }
 
-async function handleAuthStatus(
-  res: ServerResponse,
-  auth: AuthHandlerSurface | null,
-) {
-  if (!auth) {
-    json(res, 200, { provider: null, pending: null });
-    return;
-  }
-  const info = auth.getAuthProvider();
-  if (!info) {
-    json(res, 200, { provider: null, pending: null });
-    return;
-  }
-  // Only surface the provider once sign-in is truly usable — before
-  // that the deployment stays in single-operator mode so the admin can
-  // reach the setup UI. Usable means: every required env var is set,
-  // AND (for manual-provisioning providers like magic link) at least
-  // one active admin user is provisioned. Any bootstrapped solo owner must
-  // also have a real email before switching to sign-in — otherwise the gate
-  // would lock everyone out with no way back in.
-  const missingEnv =
-    auth.getAuthEnvGaps?.() ?? (auth.authSignInReady() ? [] : null);
-  const envComplete = missingEnv !== null && missingEnv.length === 0;
-  const manual = (info.provisioning ?? "automatic") === "manual";
-  const needsAdminUser = (await auth.soloAdminNeedsEmail?.()) === true ||
-    (manual && !(await (auth.hasProvisionedAdmin?.() ?? Promise.resolve(true))));
-  const ready = envComplete && !needsAdminUser;
-  const summary = {
-    pluginName: info.pluginName,
-    providerLabel: info.providerLabel,
-    provisioning: info.provisioning ?? "automatic",
-    loginHintRequired: info.loginHintRequired ?? false,
-  };
-  json(res, 200, {
-    provider: ready ? summary : null,
-    pending: ready
-      ? null
-      : {
-          ...summary,
-          missingEnv: missingEnv ?? [],
-          needsAdminUser,
-          configuredEnv: auth.getAuthConfiguredEnvKeys?.() ?? [],
-        },
-  });
-}
-
-/**
- * POST /admin/auth/provider — choose the sign-in provider. Body:
- * { provider: "scalekit" | "magic-link" | null }. The provider goes live
- * once its required values are set; null turns sign-in off.
- */
-async function handleAuthProvider(
-  req: IncomingMessage,
-  res: ServerResponse,
-  auth: AuthHandlerSurface | null,
-) {
-  if (!auth?.selectProvider) {
-    json(res, 503, { error: "sign-in is unavailable" });
-    return;
-  }
-  const body = (await readJson(req).catch(() => null)) as { provider?: unknown } | null;
-  const provider = body?.provider;
-  if (provider !== null && provider !== "scalekit" && provider !== "magic-link") {
-    json(res, 400, { error: "provider must be scalekit, magic-link, or null" });
-    return;
-  }
-  try {
-    await auth.selectProvider(provider);
-    json(res, 200, { ok: true });
-  } catch (err) {
-    json(res, 500, { error: err instanceof Error ? err.message : String(err) });
-  }
-}
-
-/**
- * POST /admin/auth/secrets — write or delete values of the chosen
- * sign-in provider. Body: { values: { KEY: string | null } }.
- * Keys are restricted to the provider's declared values; loopback-only like
- * every admin route, and the web re-gates it behind an admin session.
- */
-async function handleAuthSecrets(
-  req: IncomingMessage,
-  res: ServerResponse,
-  auth: AuthHandlerSurface | null,
-) {
-  if (!auth?.setAuthSecret) {
-    json(res, 503, { error: "auth secrets surface unavailable" });
-    return;
-  }
-  const body = await readJson(req).catch(() => null);
-  const values = (body as { values?: unknown } | null)?.values;
-  if (!values || typeof values !== "object" || Array.isArray(values)) {
-    json(res, 400, { error: "values (object) is required" });
-    return;
-  }
-  const declared = new Set(auth.getAuthDeclaredEnvKeys?.() ?? []);
-  const entries = Object.entries(values as Record<string, unknown>);
-  if (entries.length === 0) {
-    json(res, 400, { error: "values must contain at least one key" });
-    return;
-  }
-  for (const [key, value] of entries) {
-    if (!declared.has(key)) {
-      json(res, 400, { error: `"${key}" is not a declared value of the sign-in provider` });
-      return;
-    }
-    if (value !== null && (typeof value !== "string" || value.length === 0)) {
-      json(res, 400, { error: `"${key}" must be a non-empty string or null` });
-      return;
-    }
-  }
-  try {
-    for (const [key, value] of entries) {
-      await auth.setAuthSecret(key, value as string | null);
-    }
-    json(res, 200, { ok: true });
-  } catch (err) {
-    json(res, 500, { error: err instanceof Error ? err.message : String(err) });
-  }
-}
-
 async function handleExternalEvent(
   req: IncomingMessage,
   res: ServerResponse,
@@ -952,83 +746,6 @@ async function handleExternalEvent(
       ...(typeof dedupeKey === "string" && dedupeKey ? { dedupeKey } : {}),
     });
     json(res, 200, result);
-  } catch (err) {
-    json(res, 500, {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-}
-
-async function handleAuthBegin(
-  req: IncomingMessage,
-  res: ServerResponse,
-  auth: AuthHandlerSurface | null,
-) {
-  if (!auth) {
-    json(res, 503, { error: "sign-in is unavailable" });
-    return;
-  }
-  const body = await readJson(req).catch(() => null);
-  if (!body || typeof body !== "object") {
-    json(res, 400, { error: "request body must be JSON" });
-    return;
-  }
-  const { redirectUri, state, loginHint } = body as Record<string, unknown>;
-  if (typeof redirectUri !== "string" || !redirectUri) {
-    json(res, 400, { error: "redirectUri (string) is required" });
-    return;
-  }
-  if (typeof state !== "string" || !state) {
-    json(res, 400, { error: "state (string) is required" });
-    return;
-  }
-  try {
-    const result = await auth.beginAuth({
-      redirectUri,
-      state,
-      loginHint:
-        typeof loginHint === "string" && loginHint.length > 0
-          ? loginHint
-          : null,
-    });
-    json(res, 200, { authorizationUrl: result.authorizationUrl });
-  } catch (err) {
-    json(res, 500, {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-}
-
-async function handleAuthComplete(
-  req: IncomingMessage,
-  res: ServerResponse,
-  auth: AuthHandlerSurface | null,
-) {
-  if (!auth) {
-    json(res, 503, { error: "sign-in is unavailable" });
-    return;
-  }
-  const body = await readJson(req).catch(() => null);
-  if (!body || typeof body !== "object") {
-    json(res, 400, { error: "request body must be JSON" });
-    return;
-  }
-  const { code, redirectUri, state } = body as Record<string, unknown>;
-  if (typeof code !== "string" || !code) {
-    json(res, 400, { error: "code (string) is required" });
-    return;
-  }
-  if (typeof redirectUri !== "string" || !redirectUri) {
-    json(res, 400, { error: "redirectUri (string) is required" });
-    return;
-  }
-  if (typeof state !== "string" || !state) {
-    json(res, 400, { error: "state (string) is required" });
-    return;
-  }
-  try {
-    const identity = await auth.completeAuth({ code, redirectUri, state });
-    json(res, 200, { identity });
   } catch (err) {
     json(res, 500, {
       error: err instanceof Error ? err.message : String(err),
