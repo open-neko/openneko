@@ -14,11 +14,6 @@ import {
   scheduleGroupGrantsApply,
 } from "./graphjin/group-grants-service.js";
 import {
-  createDirectoryUser,
-  directoryStatus,
-  runDirectorySync,
-} from "./directory/directory-service.js";
-import {
   cancelAllAgents,
   provisionHostConfig,
   resolveAgentConcurrency,
@@ -126,11 +121,6 @@ const server = createServer(
         const { listConfigApiOperations } = await import("@neko/llm/graphjin");
         return listConfigApiOperations(await readFile(configFile, "utf8"));
       },
-    },
-    directory: {
-      status: async () => directoryStatus(signInService, await getOrgId()),
-      sync: async () => runDirectorySync(signIn(), await getOrgId()),
-      createUser: async (input) => createDirectoryUser(signIn(), input),
     },
     connect: {
       getConnectProviders: () => signInService?.getConnectProviders() ?? [],

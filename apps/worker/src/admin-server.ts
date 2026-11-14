@@ -2,9 +2,6 @@
  * Admin HTTP handler for the worker process.
  *
  * Routes:
- *   GET  /admin/directory/status → directory provider and last sync state.
- *   POST /admin/directory/sync  → run a full directory sync now.
- *   POST /admin/directory/users → create a user in the identity provider ({ email, name? }).
  *   POST /admin/graphjin/group-grants → apply group grants now ({ immediate: true }) or in a batch.
  *   POST /admin/action-requests/create → persist + run worker-owned preflight
  *                               before returning an approval-card-safe id.
@@ -69,8 +66,6 @@ export type AdminHandlerOptions = {
   /** Trusted web→worker action creation so worker-owned preflight hooks run. */
   actionRequests?: ActionRequestHandlerSurface | null;
   actions?: ActionExecuteHandlerSurface | null;
-  /** Directory provider status and on-demand sync. */
-  directory?: DirectoryHandlerSurface | null;
   /** Writes group grants into the GraphJin config, now or batched. */
   groupGrants?: GroupGrantsHandlerSurface | null;
 };
@@ -81,12 +76,6 @@ export interface GroupGrantsHandlerSurface {
   enable(actorUserId: string | null): Promise<unknown>;
   disable(actorUserId: string | null): Promise<unknown>;
   apiOperations(): Promise<string[]>;
-}
-
-export interface DirectoryHandlerSurface {
-  status(): Promise<unknown>;
-  sync(): Promise<unknown>;
-  createUser(input: { email: string; name: string | null }): Promise<unknown>;
 }
 
 export interface ActionRequestHandlerSurface {
@@ -113,7 +102,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const events = opts.events ?? null;
   const actionRequests = opts.actionRequests ?? null;
   const actions = opts.actions ?? null;
-  const directory = opts.directory ?? null;
   const groupGrants = opts.groupGrants ?? null;
 
   return function handle(req: IncomingMessage, res: ServerResponse) {
@@ -144,10 +132,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
           json(res, 500, { error: err instanceof Error ? err.message : String(err) });
         }
       })();
-      return;
-    }
-    if (req.url === "/admin/directory/status" || req.url === "/admin/directory/sync" || req.url === "/admin/directory/users") {
-      void handleDirectory(req, res, directory);
       return;
     }
     if (req.method === "GET" && req.url === "/admin/connect/providers") {
@@ -240,41 +224,6 @@ async function handleActionExecute(
     json(res, 200, { ok: true });
   } catch (err) {
     json(res, 500, { error: err instanceof Error ? err.message : String(err) });
-  }
-}
-
-async function handleDirectory(
-  req: IncomingMessage,
-  res: ServerResponse,
-  directory: DirectoryHandlerSurface | null,
-) {
-  if (!directory) {
-    json(res, 503, { error: "directory is not configured" });
-    return;
-  }
-  const sync = req.url === "/admin/directory/sync";
-  const users = req.url === "/admin/directory/users";
-  if (req.method !== (sync || users ? "POST" : "GET")) {
-    json(res, 405, { error: "method not allowed" });
-    return;
-  }
-  try {
-    if (users) {
-      const body = (await readJson(req).catch(() => null)) as { email?: unknown; name?: unknown } | null;
-      const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
-      if (!email.includes("@")) {
-        json(res, 400, { error: "a valid email address is required" });
-        return;
-      }
-      const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : null;
-      json(res, 200, await directory.createUser({ email, name }));
-      return;
-    }
-    json(res, 200, sync ? { stats: await directory.sync() } : await directory.status());
-  } catch (err) {
-    const code = (err as { code?: string }).code;
-    const status = code === "no_provider" ? 404 : code === "running" || code === "lockout" ? 409 : code === "unsupported" ? 400 : 500;
-    json(res, status, { error: err instanceof Error ? err.message : String(err), code: code ?? null });
   }
 }
 

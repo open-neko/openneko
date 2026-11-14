@@ -2,8 +2,6 @@ package webfront
 
 import (
 	"encoding/json"
-	"io"
-	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
@@ -277,73 +275,5 @@ func TestAdminIdpRules(t *testing.T) {
 	seed(t, db, `update app_user set disabled_at = now() where id = 'member'`)
 	if w := call(f, "DELETE", "/api/v1/admin/idp-rules/"+adminRule, "", admin); w.Code != 409 || !strings.Contains(w.Body.String(), "last active administrator") {
 		t.Errorf("lockout: %d %s", w.Code, w.Body.String())
-	}
-}
-
-func TestAdminDirectory(t *testing.T) {
-	f, _, wk := groupsFront(t)
-	admin := sessionCookie("admin")
-	wk.reply["/admin/directory/status"] = `{"lastSyncAt": null, "count": 1.50}`
-	wk.reply["/admin/directory/sync"] = `{"ok":true}`
-	if w := call(f, "GET", "/api/v1/admin/directory", "", admin); w.Code != 200 || w.Body.String() != `{"lastSyncAt":null,"count":1.5}` {
-		t.Errorf("status: %d %s", w.Code, w.Body.String())
-	}
-	if w := call(f, "POST", "/api/v1/admin/directory", "", admin); w.Code != 200 || w.Body.String() != `{"ok":true}` {
-		t.Errorf("sync: %d %s", w.Code, w.Body.String())
-	}
-	if !slices.Contains(wk.calls, "POST /admin/directory/sync {}") {
-		t.Errorf("calls: %v", wk.calls)
-	}
-	delete(wk.reply, "/admin/directory/status")
-	if w := call(f, "GET", "/api/v1/admin/directory", "", admin); w.Code != 404 || w.Body.String() != `{"error":"Worker returned HTTP 404"}` {
-		t.Errorf("not JSON: %d %s", w.Code, w.Body.String())
-	}
-	wk.fail = `{"error":"directory sync is not configured"}`
-	if w := call(f, "POST", "/api/v1/admin/directory", "", admin); w.Code != 502 || w.Body.String() != `{"error":"directory sync is not configured"}` {
-		t.Errorf("worker error: %d %s", w.Code, w.Body.String())
-	}
-	f.API.Gate.WorkerURL = "http://127.0.0.1:1"
-	r := httptest.NewRequest("GET", "/api/v1/admin/directory", nil)
-	w := httptest.NewRecorder()
-	f.API.relayWorker(w, r, "/admin/directory/status", nil)
-	if w.Code != 503 || w.Body.String() != `{"error":"worker is unavailable"}` {
-		t.Errorf("worker down: %d %s", w.Code, w.Body.String())
-	}
-}
-
-func TestDirectorySyncJob(t *testing.T) {
-	var status int
-	var reply string
-	var calls []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		calls = append(calls, r.Method+" "+r.URL.Path+" "+string(body))
-		w.WriteHeader(status)
-		_, _ = w.Write([]byte(reply))
-	}))
-	defer srv.Close()
-	a := &API{Gate: &Gate{WorkerURL: srv.URL}}
-	status, reply = 200, `{"stats":{"usersSeen":2}}`
-	if err := a.DirectorySync(t.Context()); err != nil {
-		t.Errorf("ok: %v", err)
-	}
-	if !slices.Equal(calls, []string{"POST /admin/directory/sync {}"}) {
-		t.Errorf("calls: %v", calls)
-	}
-	status, reply = 404, `{"error":"no directory provider is configured","code":"no_provider"}`
-	if err := a.DirectorySync(t.Context()); err != nil {
-		t.Errorf("no provider: %v", err)
-	}
-	status, reply = 409, `{"error":"a directory sync is already running","code":"running"}`
-	if err := a.DirectorySync(t.Context()); err == nil || err.Error() != "directory sync failed (409): a directory sync is already running" {
-		t.Errorf("running: %v", err)
-	}
-	status, reply = 500, ``
-	if err := a.DirectorySync(t.Context()); err == nil || err.Error() != "directory sync failed (500): Internal Server Error" {
-		t.Errorf("no body: %v", err)
-	}
-	a.Gate.WorkerURL = "http://127.0.0.1:1"
-	if err := a.DirectorySync(t.Context()); err == nil || !strings.Contains(err.Error(), "the worker did not answer") {
-		t.Errorf("worker down: %v", err)
 	}
 }

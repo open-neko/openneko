@@ -1,20 +1,10 @@
-// Directory sync and the Scalekit workspace connection in the worker.
-// Sign-in (/admin/auth/*) now runs in Go.
+// The Scalekit workspace connection in the worker.
+// Sign-in (/admin/auth/*) and directory sync run in Go.
 import type { ConnectorCredential } from "@neko/secrets";
-import type {
-  ApplyDirectoryChangeResult,
-  DirectoryCapabilities,
-  DirectoryChange,
-  ListDirectoryResult,
-} from "../directory/types.js";
-import { directoryChangeAllowed } from "../directory/types.js";
 import type { CoreSecrets } from "../secrets/core-secrets.js";
 import {
-  applyScalekitDirectoryChange,
   beginScalekitConnect,
   completeScalekitConnect,
-  listScalekitDirectory,
-  SCALEKIT_DIRECTORY,
   SCALEKIT_SETTINGS,
   SCALEKIT_WORKSPACE_LABEL,
   SCALEKIT_WORKSPACE_SCOPES,
@@ -48,11 +38,6 @@ export const signInSection = (id: SignInProviderId): string => `signin.${id}`;
 
 export const isSignInProviderId = (value: string): value is SignInProviderId =>
   Object.prototype.hasOwnProperty.call(SIGNIN_PROVIDERS, value);
-
-export interface DirectoryProviderInfo {
-  id: SignInProviderId;
-  capabilities: DirectoryCapabilities;
-}
 
 export class SignInSettingsError extends Error {
   constructor(message: string) {
@@ -93,25 +78,6 @@ export class SignInService {
       if (!declared.has(key)) throw new SignInSettingsError(`"${key}" is not a ${SIGNIN_PROVIDERS[id].label} setting`);
     }
     await this.secrets.setValues(signInSection(id), values);
-  }
-
-  /** Scalekit supplies the directory while it is the sign-in provider. */
-  getDirectoryProvider(): DirectoryProviderInfo | null {
-    return this.selectedProvider() === "scalekit" ? { id: "scalekit", capabilities: SCALEKIT_DIRECTORY } : null;
-  }
-
-  listDirectory(cursor: string | null): Promise<ListDirectoryResult> {
-    if (!this.getDirectoryProvider()) throw new Error("no directory provider is configured");
-    return listScalekitDirectory({ cursor }, this.providerValues("scalekit"), this.options.scalekit);
-  }
-
-  async applyDirectoryChange(change: DirectoryChange): Promise<ApplyDirectoryChangeResult> {
-    const provider = this.getDirectoryProvider();
-    if (!provider) throw new Error("no directory provider is configured");
-    if (!directoryChangeAllowed(provider.capabilities, change)) {
-      throw new Error(`${provider.capabilities.providerLabel} does not accept "${change.op}"`);
-    }
-    return applyScalekitDirectoryChange({ change }, this.providerValues("scalekit"), this.options.scalekit);
   }
 
   getConnectProviders(): Array<{
