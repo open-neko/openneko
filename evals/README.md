@@ -127,15 +127,20 @@ read the Node manifest in `skill-deps.ts`.
 
 AdventureWorks metric episodes start at the same natural-language seam as an
 ad-hoc production request: a case supplies only `question` and `role`, the
-classifier derives `slug`/`title`/`why`/`chartHint`, and the metric
-agent receives both the exact user question and that derived metadata. Tables,
+classifier derives `slug`/`title`/`why`/`chartHint`, and the metric job
+receives both the exact user question and that derived metadata. Tables,
 columns, formulas, anchor details, and expected current/baseline values remain
-in the host-only SQL oracle. Episode token, cost, and latency measurements
-include classification as well as metric-agent execution. The adapter still
-calls the Node metric agent in `packages/llm`. Production runs the Go
-`metric_refresh` job in `openneko web`, so this suite does not yet test the
-shipped metric path. The classifier has had no product caller since the
-briefing routes went; the adapter still calls it.
+in the host-only SQL oracle.
+
+Each episode runs on its own eval install, as the work adapters do. The
+adapter writes a `processing_job` row with the question payload and queues
+the Go `metric_refresh` job on River with one attempt. `openneko web` runs the
+job, the same code that production runs. The adapter then reads the snapshot
+from `metric_snapshot` and the job's usage from `spend_ledger`. The ledger
+keeps total tokens and a priced cost per row, so the episode reports total
+tokens and cost, with no input and output split. The episode measurements add
+the classifier's usage. The classifier has had no product caller since the
+briefing routes went; the adapter still calls it in Node.
 
 ### Production OpenTelemetry
 

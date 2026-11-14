@@ -1,5 +1,22 @@
 import { resolveWatcherVariables } from "@neko/llm/workflows";
-import type { MetricAgentResult } from "@neko/llm";
+
+type MetricAgentResult = {
+  reasoning: string;
+  headlineMetric: string;
+  headlineLabel: string;
+  insightText: string;
+  detailText: string;
+  mood: "good" | "watch" | "bad";
+  chartType: "kpi" | "line" | "bar" | "donut" | "area";
+  chartData: Array<{ d: string; v: number; t?: number }>;
+  baselineValue: number | null;
+  timeWindow: {
+    grain: "day" | "week" | "month" | "quarter" | "year" | "all_time" | "snapshot";
+    start: string | null;
+    end: string | null;
+    label: string;
+  };
+};
 
 type MetricDefinition = {
   title: string;

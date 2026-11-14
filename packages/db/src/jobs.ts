@@ -146,11 +146,11 @@ export async function enqueueActionExecute(payload: ActionExecutePayload): Promi
  * the queue and max_attempts match `jobs.QueueMetricRefresh` and
  * `jobs.BuildAttempts`.
  */
-export async function enqueueMetricRefresh(payload: ProcessingJobPayload): Promise<string> {
+export async function enqueueMetricRefresh(payload: ProcessingJobPayload, maxAttempts = 3): Promise<string> {
   const { rows } = await pool().query<{ id: string }>(
     `insert into river.river_job (kind, args, max_attempts, queue)
-     values ('metric_refresh', $1::jsonb, 3, 'metric_refresh') returning id::text`,
-    [JSON.stringify({ orgId: payload.orgId, processingJobId: payload.processingJobId })],
+     values ('metric_refresh', $1::jsonb, $2, 'metric_refresh') returning id::text`,
+    [JSON.stringify({ orgId: payload.orgId, processingJobId: payload.processingJobId }), maxAttempts],
   );
   return rows[0]!.id;
 }
