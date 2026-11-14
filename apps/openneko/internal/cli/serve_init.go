@@ -211,7 +211,7 @@ func roleDatabaseURL(c db.ConnConfig, user, password string) (string, error) {
 
 func writeFileAtomic(path string, data []byte) error {
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	if err := os.WriteFile(tmp, data, 0o640); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)

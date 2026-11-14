@@ -378,7 +378,7 @@ func (f *Files) write(ctx context.Context, raw json.RawMessage) (json.RawMessage
 		return nil, err
 	}
 	tmp := filepath.Join(filepath.Dir(input.Path), ".harness-write-"+hex.EncodeToString(nonce[:]))
-	file, err := f.root.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	file, err := f.root.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o660)
 	if err != nil {
 		return nil, err
 	}
