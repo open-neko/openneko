@@ -80,7 +80,15 @@ func seedSignInSecrets(t *testing.T, dir, status string) {
 		}
 		store[signInProviderSection(id)] = sec
 	}
-	if err := secrets.Write(store, dir); err != nil {
+	raw, err := json.Marshal(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := secrets.Path(dir)
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

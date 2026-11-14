@@ -415,84 +415,26 @@ describe("worker channel routes", () => {
     }
   });
 
-  it("GET /admin/sso/setup/status returns the setup state", async () => {
-    const srv = await startServer(
-      createAdminHandler({
-        ssoSetup: {
-          getStatus: async () => ({
-            status: "awaiting_portal",
-            portalLink: "https://scalekit.test/portal",
-            portalLinkExpiresAt: null,
-            provider: "OKTA",
-            connection: { status: "in_progress", provider: "OKTA", enabled: false },
-            lastError: null,
-            setupCompletedAt: null,
-            environmentId: "env_1",
-            organizationId: "org_1",
-            environmentTier: "dev",
-            signInConfigured: false,
-          }),
-          setScalekitIds: async () => {},
-          setSignInCredentials: async () => {},
-          listEnvironments: async () => [
-            { id: "env_1", name: "Dev", tier: "DEV", domain: "acme.scalekit.dev" },
-          ],
-          listOrganizations: async () => [{ id: "org_1", name: "Acme" }],
-          getEnvironmentCredentials: async () => ({
-            environmentUrl: "https://acme.scalekit.dev",
-            clientId: "skc_1",
-          }),
-          generatePortalLink: async () => ({
-            portalLink: "https://scalekit.test/portal",
-            expiresAt: null,
-          }),
-          checkConnection: async () => ({
-            status: "connected",
-            connection: { status: "connected", provider: "OKTA", enabled: true },
-            lastError: null,
-            setupCompletedAt: "2026-08-13T12:00:00Z",
-          }),
-        },
-      }),
-    );
-    try {
-      const status = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/sso/setup/status?orgId=org-1`,
-      );
-      expect(status.status).toBe(200);
-      const body = (await status.json()) as { status: string; environmentTier: string };
-      expect(body.status).toBe("awaiting_portal");
-      expect(body.environmentTier).toBe("dev");
-
-      const envs = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/sso/setup/environments?orgId=org-1`,
-      );
-      expect(envs.status).toBe(200);
-      const envBody = (await envs.json()) as {
-        environments: Array<{ tier: string }>;
-      };
-      expect(envBody.environments).toHaveLength(1);
-
-      const check = await fetch(`http://127.0.0.1:${srv.port}/admin/sso/setup/check`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orgId: "org-1" }),
-      });
-      expect(check.status).toBe(200);
-      const checkBody = (await check.json()) as { status: string };
-      expect(checkBody.status).toBe("connected");
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("sso setup endpoints return 503 when surface absent", async () => {
+  it("the /admin/sso/setup/* routes are gone: openneko web owns them", async () => {
     const srv = await startServer(createAdminHandler());
     try {
-      const res = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/sso/setup/status?orgId=org-1`,
-      );
-      expect(res.status).toBe(503);
+      for (const [method, path] of [
+        ["GET", "/admin/sso/setup/status?orgId=org-1"],
+        ["GET", "/admin/sso/setup/environments?orgId=org-1"],
+        ["GET", "/admin/sso/setup/organizations?orgId=org-1&environmentId=env-1"],
+        ["GET", "/admin/sso/setup/credentials-info?orgId=org-1&environmentId=env-1"],
+        ["POST", "/admin/sso/setup/ids"],
+        ["POST", "/admin/sso/setup/credentials"],
+        ["POST", "/admin/sso/setup/generate-portal-link"],
+        ["POST", "/admin/sso/setup/check"],
+      ]) {
+        const res = await fetch(`http://127.0.0.1:${srv.port}${path}`, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          ...(method === "POST" ? { body: "{}" } : {}),
+        });
+        expect(res.status).toBe(404);
+      }
     } finally {
       await srv.close();
     }

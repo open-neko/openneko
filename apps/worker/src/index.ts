@@ -4,14 +4,7 @@ import "dotenv/config";
 import { createServer } from "node:http";
 import { adminSocketPath, listenAdmin } from "./admin-listen.js";
 import { boss, MOVED_QUEUES, RETIRED_QUEUES } from "@neko/db/jobs";
-import {
-  createAdminHandler,
-  type SsoSetupHandlerSurface,
-} from "./admin-server.js";
-import {
-  SsoSetupService,
-  startSsoSetupPoller,
-} from "./sso/sso-setup-service.js";
+import { createAdminHandler } from "./admin-server.js";
 import { CoreSecrets } from "./secrets/core-secrets.js";
 import { SignInService } from "./signin/signin-service.js";
 import {
@@ -81,7 +74,6 @@ reportDeploymentProfile();
 // server starts taking requests; the admin handler reaches them through
 // closures and reports "not ready" until then.
 let coreSecrets: CoreSecrets | null = null;
-let ssoSetupService: SsoSetupService | null = null;
 let signInService: SignInService | null = null;
 function signIn(): SignInService {
   if (!signInService) throw new Error("sign-in service not ready");
@@ -89,42 +81,6 @@ function signIn(): SignInService {
 }
 let actionRequestPreflightReady = false;
 let actionAdaptersReady = false;
-function ssoSetupSurface(): SsoSetupHandlerSurface {
-  return {
-    getStatus: (orgId) => {
-      if (!ssoSetupService) throw new Error("SSO setup service not ready");
-      return ssoSetupService.getStatus(orgId);
-    },
-    setScalekitIds: (orgId, input) => {
-      if (!ssoSetupService) throw new Error("SSO setup service not ready");
-      return ssoSetupService.setScalekitIds(orgId, input);
-    },
-    listEnvironments: (orgId) => {
-      if (!ssoSetupService) throw new Error("SSO setup service not ready");
-      return ssoSetupService.listEnvironments(orgId);
-    },
-    listOrganizations: (orgId, environmentId) => {
-      if (!ssoSetupService) throw new Error("SSO setup service not ready");
-      return ssoSetupService.listOrganizations(orgId, environmentId);
-    },
-    getEnvironmentCredentials: (orgId, environmentId) => {
-      if (!ssoSetupService) throw new Error("SSO setup service not ready");
-      return ssoSetupService.getEnvironmentCredentials(orgId, environmentId);
-    },
-    setSignInCredentials: (orgId, input) => {
-      if (!ssoSetupService) throw new Error("SSO setup service not ready");
-      return ssoSetupService.setSignInCredentials(orgId, input);
-    },
-    generatePortalLink: (orgId) => {
-      if (!ssoSetupService) throw new Error("SSO setup service not ready");
-      return ssoSetupService.generatePortalLink(orgId);
-    },
-    checkConnection: (orgId) => {
-      if (!ssoSetupService) throw new Error("SSO setup service not ready");
-      return ssoSetupService.checkConnection(orgId);
-    },
-  };
-}
 const server = createServer(
   createAdminHandler({
     actions: {
@@ -186,7 +142,6 @@ const server = createServer(
       completeConnect: (name, params) => signIn().completeConnect(name, params),
       disconnect: (name, operatorId) => signIn().disconnect(name, operatorId),
     },
-    ssoSetup: ssoSetupSurface(),
   }),
 );
 
@@ -233,8 +188,6 @@ coreSecrets = new CoreSecrets();
 await coreSecrets.start();
 setCoreSecretsInstance(coreSecrets);
 signInService = new SignInService(coreSecrets);
-ssoSetupService = new SsoSetupService(signInService);
-startSsoSetupPoller({ service: ssoSetupService, orgId: ADMIN_ORG_ID });
 const concurrency = await resolveAgentConcurrency(ADMIN_ORG_ID);
 // Every agent job on this host, from any queue, shares one cap.
 setAgentSlotLimit(concurrency.globalCap);
