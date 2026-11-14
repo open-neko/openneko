@@ -1,0 +1,43 @@
+{
+  "reconciliation": [
+    {"name": "category parent and position match", "operation": {"operationId": "magentoMoveCategory", "entityType": "category", "readPath": "/V1/categories/{categoryId}"}, "reconciled": {"parent_id": 2, "position": 1}, "expected": {"parentId": 2, "afterId": 0, "position": 1}, "confirmed": true},
+    {"name": "category parent differs", "operation": {"operationId": "magentoMoveCategory", "entityType": "category", "readPath": "/V1/categories/{categoryId}"}, "reconciled": {"parent_id": 3, "position": 1}, "expected": {"parentId": 2, "position": 1}, "confirmed": false},
+    {"name": "category position differs", "operation": {"operationId": "magentoMoveCategory", "entityType": "category", "readPath": "/V1/categories/{categoryId}"}, "reconciled": {"parent_id": 2, "position": 2}, "expected": {"parentId": 2, "position": 1}, "confirmed": false},
+    {"name": "coupon enum maps to its name", "operation": {"operationId": "magentoUpdateSalesRule", "entityType": "sales_rule", "readPath": "/V1/salesRules/{ruleId}"}, "reconciled": {"coupon_type": "SPECIFIC_COUPON", "discount_amount": 5}, "expected": {"coupon_type": 2, "discount_amount": 5}, "confirmed": true},
+    {"name": "coupon enum differs", "operation": {"operationId": "magentoUpdateSalesRule", "entityType": "sales_rule", "readPath": "/V1/salesRules/{ruleId}"}, "reconciled": {"coupon_type": "NO_COUPON"}, "expected": {"coupon_type": 2}, "confirmed": false},
+    {"name": "customer timestamp is ignored", "operation": {"operationId": "magentoUpdateCustomer", "entityType": "customer", "readPath": "/V1/customers/{customerId}"}, "reconciled": {"firstname": "New", "updated_at": "later"}, "expected": {"firstname": "New", "updated_at": "earlier"}, "confirmed": true},
+    {"name": "customer value differs", "operation": {"operationId": "magentoUpdateCustomer", "entityType": "customer", "readPath": "/V1/customers/{customerId}"}, "reconciled": {"firstname": "Wrong"}, "expected": {"firstname": "New"}, "confirmed": false},
+    {"name": "invoice matches order and items", "operation": {"operationId": "magentoCreateInvoice", "entityType": "fulfillment", "readPath": "/V1/orders/{orderId}"}, "reconciled": {"entity_id": 8, "order_id": 63, "items": [{"order_item_id": 189, "qty": 1}], "notify": false}, "expected": {"order_id": 63, "items": [{"order_item_id": 189, "qty": 1}], "notify": false}, "confirmed": true},
+    {"name": "shipment for another order", "operation": {"operationId": "magentoCreateShipment", "entityType": "fulfillment", "readPath": "/V1/orders/{orderId}"}, "reconciled": {"order_id": 64, "items": [{"order_item_id": 189, "qty": 1}]}, "expected": {"order_id": 63, "items": [{"order_item_id": 189, "qty": 1}]}, "confirmed": false},
+    {"name": "invoice item quantity differs", "operation": {"operationId": "magentoCreateInvoice", "entityType": "fulfillment", "readPath": "/V1/orders/{orderId}"}, "reconciled": {"order_id": 63, "items": [{"order_item_id": 189, "qty": 2}]}, "expected": {"order_id": 63, "items": [{"order_item_id": 189, "qty": 1}]}, "confirmed": false},
+    {"name": "invoice without items", "operation": {"operationId": "magentoCreateInvoice", "entityType": "fulfillment", "readPath": "/V1/orders/{orderId}"}, "reconciled": {"order_id": 63, "items": []}, "expected": {"order_id": 63, "items": [{"order_item_id": 189, "qty": 1}]}, "confirmed": false},
+    {"name": "invoice with no requested items", "operation": {"operationId": "magentoCreateInvoice", "entityType": "fulfillment", "readPath": "/V1/orders/{orderId}"}, "reconciled": {"order_id": 63, "items": [{"order_item_id": 189, "qty": 2}]}, "expected": {"order_id": 63}, "confirmed": true},
+    {"name": "order comment is in the history", "operation": {"operationId": "magentoAddOrderComment", "entityType": "order", "readPath": "/V1/orders/{id}"}, "reconciled": {"status_histories": [{"comment": "older"}, {"comment": "Packed twice"}]}, "expected": {"statusHistory": {"comment": "Packed twice", "is_customer_notified": 0}}, "confirmed": true},
+    {"name": "order comment is missing", "operation": {"operationId": "magentoAddOrderComment", "entityType": "order", "readPath": "/V1/orders/{id}"}, "reconciled": {"status_histories": [{"comment": "older"}]}, "expected": {"statusHistory": {"comment": "Packed twice"}}, "confirmed": false},
+    {"name": "hold confirmed", "operation": {"operationId": "magentoHoldOrder", "entityType": "order", "readPath": "/V1/orders/{id}"}, "reconciled": {"state": "holded"}, "expected": {}, "confirmed": true},
+    {"name": "unhold not yet", "operation": {"operationId": "magentoUnholdOrder", "entityType": "order", "readPath": "/V1/orders/{id}"}, "reconciled": {"state": "holded"}, "expected": {}, "confirmed": false},
+    {"name": "cancel by status", "operation": {"operationId": "magentoCancelOrder", "entityType": "order", "readPath": "/V1/orders/{id}"}, "reconciled": {"state": "processing", "status": "canceled"}, "expected": {}, "confirmed": true},
+    {"name": "source items all present", "operation": {"operationId": "magentoSaveSourceItems", "entityType": "source_item", "readPath": "/V1/inventory/source-items"}, "reconciled": {"sku": "A", "source_code": "w", "quantity": 21, "status": 1}, "expected": [{"sku": "A", "source_code": "w", "quantity": 21}], "confirmed": true},
+    {"name": "source item quantity differs", "operation": {"operationId": "magentoSaveSourceItems", "entityType": "source_item", "readPath": "/V1/inventory/source-items"}, "reconciled": {"sku": "A", "source_code": "w", "quantity": 20}, "expected": [{"sku": "A", "source_code": "w", "quantity": 21}], "confirmed": false},
+    {"name": "delete confirmed by absence", "operation": {"operationId": "magentoDeleteProduct", "entityType": "product", "readPath": "/V1/products/{sku}"}, "reconciled": null, "expected": {}, "confirmed": true},
+    {"name": "delete still present", "operation": {"operationId": "magentoDeleteProduct", "entityType": "product", "readPath": "/V1/products/{sku}"}, "reconciled": {"sku": "A"}, "expected": {}, "confirmed": false},
+    {"name": "no read path", "operation": {"operationId": "magentoReindex", "entityType": "indexer"}, "reconciled": null, "expected": {"x": 1}, "confirmed": true},
+    {"name": "absent entity after update", "operation": {"operationId": "magentoUpdateProduct", "entityType": "product", "readPath": "/V1/products/{sku}"}, "reconciled": null, "expected": {"name": "New"}, "confirmed": false},
+    {"name": "number and numeric text compare equal", "operation": {"operationId": "magentoUpdateProduct", "entityType": "product", "readPath": "/V1/products/{sku}"}, "reconciled": {"price": "10", "extension_attributes": {"website_ids": [1, 2]}}, "expected": {"price": 10, "extension_attributes": {"website_ids": [1]}}, "confirmed": true},
+    {"name": "nested value differs", "operation": {"operationId": "magentoUpdateProduct", "entityType": "product", "readPath": "/V1/products/{sku}"}, "reconciled": {"custom_attributes": [{"attribute_code": "color", "value": "red"}]}, "expected": {"custom_attributes": [{"attribute_code": "color", "value": "blue"}]}, "confirmed": false},
+    {"name": "null expected and missing value differ", "operation": {"operationId": "magentoUpdateProduct", "entityType": "product", "readPath": "/V1/products/{sku}"}, "reconciled": {"name": "A"}, "expected": {"special_price": null}, "confirmed": false}
+  ],
+  "mutationField": [
+    {"root": "magento_operator_v2_magento_update_product", "field": "magento_update_product"},
+    {"root": "magento_update_product", "error": "invalid Magento V2 mutation root"},
+    {"root": "magento_operator_v2_bad-name", "error": "invalid Magento V2 mutation root"}
+  ],
+  "terminalBulk": [
+    {"status": 1, "terminal": true},
+    {"status": 2, "terminal": true},
+    {"status": 3, "terminal": true},
+    {"status": 4, "terminal": false},
+    {"status": 5, "terminal": true},
+    {"status": 0, "terminal": false}
+  ]
+}

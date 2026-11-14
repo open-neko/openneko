@@ -4,7 +4,7 @@ import { Check, Loader2, ShieldCheck, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
-import { createApprovalPasskeyAssertion } from "@/lib/passkey";
+import { createApprovalPasskeyAssertion, sendApproval, type PasskeyAssertionPayload } from "@/lib/passkey";
 import { ToolDetail } from "./work-tool-detail";
 import type { ApprovalItem, ToolItem } from "./work-types";
 
@@ -189,13 +189,8 @@ export function ActionApprovalRow({
     setBusy(true);
     setLocalError(null);
     try {
-      const passkey =
-        decision === "approve" && withPasskey
-          ? await createApprovalPasskeyAssertion(approval.actionRequestId)
-          : undefined;
-      const res = await fetch(
-        `/api/v1/work/threads/${threadId}/runs/${runId}/approve-action`,
-        {
+      const send = (passkey?: PasskeyAssertionPayload) =>
+        fetch(`/api/v1/work/threads/${threadId}/runs/${runId}/approve-action`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -206,8 +201,13 @@ export function ActionApprovalRow({
               ? { rejectionReason: rejectReason }
               : {}),
           }),
-        },
-      );
+        });
+      const res =
+        decision !== "approve"
+          ? await send()
+          : withPasskey
+            ? await send(await createApprovalPasskeyAssertion(approval.actionRequestId))
+            : await sendApproval(approval.actionRequestId, send);
       if (!res.ok) {
         if (res.status === 409) {
           const snapshot = await fetchActionRequestSnapshot(

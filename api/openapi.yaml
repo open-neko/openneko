@@ -532,7 +532,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '403':
-          description: The action's policy needs a member of its approver group
+          description: The action's policy needs a member of its approver group, or the approval needs a passkey (code passkey_required)
           content:
             application/json:
               schema:
@@ -6649,11 +6649,12 @@ paths:
               properties:
                 purpose:
                   type: string
+                  description: register, approve or remove
                 actionRequestId:
                   type: string
       responses:
         '200':
-          description: WebAuthn public-key options for registration or approval
+          description: WebAuthn public-key options for registration, approval or removal
           content:
             application/json:
               schema:
@@ -6739,6 +6740,16 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                passkey:
+                  type: object
+                  description: An assertion for a challenge with purpose remove. The last passkey needs it.
       responses:
         '200':
           description: Passkey removed
@@ -6754,6 +6765,18 @@ paths:
                     type: boolean
         '401':
           description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '400':
+          description: The passkey assertion is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The last passkey needs a passkey assertion (code passkey_required)
           content:
             application/json:
               schema:
@@ -11251,7 +11274,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '403':
-          description: The action request belongs to another run
+          description: The action request belongs to another run, or the approval needs a passkey (code passkey_required)
           content:
             application/json:
               schema:

@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -158,12 +159,12 @@ func (a *API) passkeyChallenge(w http.ResponseWriter, r *http.Request) {
 	}
 	body, ok := readBody(r)
 	if !ok {
-		sendError(w, http.StatusBadRequest, "purpose must be 'register' or 'approve'")
+		sendError(w, http.StatusBadRequest, "purpose must be 'register', 'approve' or 'remove'")
 		return
 	}
 	purpose, _ := fieldString(body, "purpose")
-	if purpose != "register" && purpose != "approve" {
-		sendError(w, http.StatusBadRequest, "purpose must be 'register' or 'approve'")
+	if purpose != "register" && purpose != "approve" && purpose != "remove" {
+		sendError(w, http.StatusBadRequest, "purpose must be 'register', 'approve' or 'remove'")
 		return
 	}
 
@@ -442,12 +443,50 @@ func (a *API) passkeyDelete(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusNotFound, "not found")
 		return
 	}
+	body, _ := readBody(r)
+	rawPasskey, _ := field(body, "passkey")
+	var assertion *passkeyAssertion
+	if rawPasskey != nil {
+		if assertion, err = a.takePasskeyAssertion(ctx, act, "remove", nil, rawPasskey); err != nil {
+			var refused *decisionError
+			if errors.As(err, &refused) {
+				sendDecisionError(w, refused)
+			} else {
+				a.fail(w, r, err)
+			}
+			return
+		}
+	}
 	var credID, name string
-	err = a.DB.QueryRow(ctx, `
-		delete from app_passkey
-		where org_id = $1 and user_id = $2 and id = $3
-		returning credential_id, name`,
-		act.OrgID, act.UserID, id).Scan(&credID, &name)
+	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `select id::text from app_passkey where org_id = $1 and user_id = $2 for update`,
+			act.OrgID, act.UserID)
+		if err != nil {
+			return err
+		}
+		ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(ids, id) {
+			return pgx.ErrNoRows
+		}
+		if assertion != nil {
+			if _, err := verifyPasskeyAssertion(ctx, tx, a.passkeyRP(r), act, assertion); err != nil {
+				return err
+			}
+		} else if len(ids) == 1 {
+			return &decisionError{status: http.StatusForbidden, code: passkeyRequiredCode,
+				message: "Confirm with your passkey to remove your last passkey."}
+		}
+		return tx.QueryRow(ctx, `delete from app_passkey where org_id = $1 and user_id = $2 and id = $3
+			returning credential_id, name`, act.OrgID, act.UserID, id).Scan(&credID, &name)
+	})
+	var refused *decisionError
+	if errors.As(err, &refused) {
+		sendDecisionError(w, refused)
+		return
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		sendError(w, http.StatusNotFound, "not found")
 		return
@@ -481,9 +520,9 @@ type passkeyAssertion struct {
 	sigB64        string
 }
 
-// takePasskeyAssertion deletes the challenge outside the decision
+// takePasskeyAssertion deletes the challenge outside the caller's
 // transaction, so that a failed check still spends it.
-func (a *API) takePasskeyAssertion(ctx context.Context, act actor, actionID string, raw any) (*passkeyAssertion, error) {
+func (a *API) takePasskeyAssertion(ctx context.Context, act actor, purpose string, actionID *string, raw any) (*passkeyAssertion, error) {
 	obj, ok := raw.(map[string]any)
 	if !ok || obj == nil {
 		return nil, badPasskey("passkey assertion must be an object")
@@ -504,10 +543,10 @@ func (a *API) takePasskeyAssertion(ctx context.Context, act actor, actionID stri
 	var challengeID string
 	err = a.DB.QueryRow(ctx, `
 		delete from app_passkey_challenge
-		where org_id = $1 and user_id = $2 and purpose = 'approve'
-		  and action_request_id = $3 and challenge = $4 and expires_at > now()
+		where org_id = $1 and user_id = $2 and purpose = $3
+		  and action_request_id is not distinct from $4::uuid and challenge = $5 and expires_at > now()
 		returning id::text`,
-		act.OrgID, act.UserID, actionID, clientData.Challenge).Scan(&challengeID)
+		act.OrgID, act.UserID, purpose, actionID, clientData.Challenge).Scan(&challengeID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, badPasskey("passkey challenge is invalid or expired")
 	}
@@ -524,7 +563,55 @@ func (a *API) takePasskeyAssertion(ctx context.Context, act actor, actionID stri
 	}, nil
 }
 
-func verifyPasskeyApproval(ctx context.Context, tx pgx.Tx, rp passkeyRP, act actor, p *passkeyAssertion) (*verifiedPasskey, error) {
+const passkeyRequiredCode = "passkey_required"
+
+// approvalMethod names how a request signed in: a browser session, or a
+// device or API token in the Authorization header. currentUser reads them
+// in the same order.
+func approvalMethod(r *http.Request) string {
+	if c, err := r.Cookie(SessionCookie); err == nil && c.Value != "" {
+		return "session"
+	}
+	if r.Header.Get("Authorization") != "" {
+		return "token"
+	}
+	return "session"
+}
+
+// checkApprovalPasskey verifies the assertion when one came with the
+// approval. With none, a browser session of a user who holds a passkey is
+// refused.
+func checkApprovalPasskey(ctx context.Context, tx pgx.Tx, rp passkeyRP, act actor, method string, p *passkeyAssertion) (*verifiedPasskey, error) {
+	if p != nil {
+		return verifyPasskeyAssertion(ctx, tx, rp, act, p)
+	}
+	if method != "session" || act.UserID == "" {
+		return nil, nil
+	}
+	var held bool
+	if err := tx.QueryRow(ctx, `select exists (select 1 from app_passkey where org_id = $1 and user_id = $2)`,
+		act.OrgID, act.UserID).Scan(&held); err != nil {
+		return nil, err
+	}
+	if held {
+		return nil, &decisionError{status: http.StatusForbidden, code: passkeyRequiredCode,
+			message: "This approval needs your passkey."}
+	}
+	return nil, nil
+}
+
+func approvedPayload(act actor, kind, method string, pk *verifiedPasskey) map[string]any {
+	payload := map[string]any{"approvedBy": nullable(act.UserID), "kind": kind, "soloOperator": false, "method": method}
+	if pk != nil {
+		payload["method"] = "passkey"
+		payload["passkeyCredentialId"] = pk.CredentialID
+		payload["passkeyName"] = pk.Name
+		payload["userVerified"] = pk.UserVerified
+	}
+	return payload
+}
+
+func verifyPasskeyAssertion(ctx context.Context, tx pgx.Tx, rp passkeyRP, act actor, p *passkeyAssertion) (*verifiedPasskey, error) {
 	wa, err := rp.webAuthn(p.origin)
 	if err != nil {
 		return nil, err

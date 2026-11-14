@@ -157,7 +157,7 @@ func TestActionRequestDecision(t *testing.T) {
 	if s := row(arHeldRun); s != "approved member - true" {
 		t.Errorf("approved row: %s", s)
 	}
-	if a := lastAudit(t, db, arHeldRun); a != `approved {"kind": "note", "approvedBy": "member", "soloOperator": false}` {
+	if a := lastAudit(t, db, arHeldRun); a != `approved {"kind": "note", "method": "session", "approvedBy": "member", "soloOperator": false}` {
 		t.Errorf("approve audit: %s", a)
 	}
 	want := riverJob{`{"orgId": "org", "actionRequestId": "` + arHeldRun + `"}`, 3}
@@ -178,6 +178,7 @@ func TestActionRequestDecision(t *testing.T) {
 		t.Errorf("refused decision changed the row: %s", s)
 	}
 	seed(t, db, `insert into user_group_membership (org_id, group_id, user_id, source) values ('org', $1, 'member', 'local')`, group)
+	seed(t, db, `insert into app_passkey (org_id, user_id, credential_id, public_key, name) values ('org', 'member', 'cred-member', 'key', 'Phone')`)
 	if code, body := patch("30000000-0000-4000-8000-0000000000c0", `{"decision":"reject"}`, member); code != 200 {
 		t.Errorf("inside the approver group: %d %s", code, body)
 	}
