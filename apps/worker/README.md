@@ -14,11 +14,6 @@ surfaces that `openneko web` still calls over `--worker-admin-url`:
   `/admin/directory/sync`, and `/admin/directory/users`).
 - **GraphJin group grants** (`/admin/graphjin/group-grants*` and
   `/admin/graphjin/api-operations`).
-- **Built-in action adapters** (`/admin/action-requests/create` and
-  `/admin/actions/execute` for `channel_admin`, `code_create_issue`,
-  `code_draft_patch`, `data_source_admin`, `group_admin`, `send_webhook`,
-  `source_config_admin`, and `user_admin`; pack actions and Magento store
-  changes run in Go).
 - **External-event ingress** (`POST /admin/events/external`).
 
 ## Durable workflow scheduler

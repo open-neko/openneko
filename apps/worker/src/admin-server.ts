@@ -6,8 +6,6 @@
  *   POST /admin/directory/sync  → run a full directory sync now.
  *   POST /admin/directory/users → create a user in the identity provider ({ email, name? }).
  *   POST /admin/graphjin/group-grants → apply group grants now ({ immediate: true }) or in a batch.
- *   POST /admin/action-requests/create → persist + run worker-owned preflight
- *                               before returning an approval-card-safe id.
  *
  * Extracted from index.ts so the handler can be unit-tested without
  * booting pg-boss / the agent stack.
@@ -64,8 +62,6 @@ export type AdminHandlerOptions = {
    * /admin/events/external to fire external_event subscriptions.
    */
   events?: ExternalEventHandlerSurface | null;
-  /** Trusted web→worker action creation so worker-owned preflight hooks run. */
-  actionRequests?: ActionRequestHandlerSurface | null;
   /** Directory provider status and on-demand sync. */
   directory?: DirectoryHandlerSurface | null;
   /** Writes group grants into the GraphJin config, now or batched. */
@@ -86,10 +82,6 @@ export interface DirectoryHandlerSurface {
   createUser(input: { email: string; name: string | null }): Promise<unknown>;
 }
 
-export interface ActionRequestHandlerSurface {
-  create(input: Record<string, unknown>): Promise<{ id: string; status: string }>;
-}
-
 export interface ExternalEventHandlerSurface {
   dispatchExternal(input: {
     orgId: string;
@@ -103,7 +95,6 @@ export interface ExternalEventHandlerSurface {
 export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const connect = opts.connect ?? null;
   const events = opts.events ?? null;
-  const actionRequests = opts.actionRequests ?? null;
   const directory = opts.directory ?? null;
   const groupGrants = opts.groupGrants ?? null;
 
@@ -170,40 +161,8 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       void handleExternalEvent(req, res, events);
       return;
     }
-    if (
-      req.method === "POST" &&
-      req.url === "/admin/action-requests/create"
-    ) {
-      void handleActionRequestCreate(req, res, actionRequests);
-      return;
-    }
     res.writeHead(404).end();
   };
-}
-
-async function handleActionRequestCreate(
-  req: IncomingMessage,
-  res: ServerResponse,
-  actionRequests: ActionRequestHandlerSurface | null,
-): Promise<void> {
-  if (!actionRequests) {
-    json(res, 503, { error: "action request preflight is not ready" });
-    return;
-  }
-  try {
-    const body = await readJson(req);
-    if (!body || typeof body !== "object" || Array.isArray(body)) {
-      json(res, 400, { error: "request body must be a JSON object" });
-      return;
-    }
-    json(
-      res,
-      200,
-      await actionRequests.create(body as Record<string, unknown>),
-    );
-  } catch (err) {
-    json(res, 500, { error: err instanceof Error ? err.message : String(err) });
-  }
 }
 
 async function handleDirectory(

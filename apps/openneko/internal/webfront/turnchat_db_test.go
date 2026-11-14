@@ -199,8 +199,8 @@ func TestChatTurnThroughServe(t *testing.T) {
 			t.Fatalf("an event holds the model key: %s", e)
 		}
 	}
-	if len(worker.creates) != 1 || worker.creates[0]["status"] != "approved" || worker.creates[0]["intent"] != "Post the stock summary" {
-		t.Fatalf("worker creates %v", worker.creates)
+	if creates := worker.created(t); len(creates) != 1 || creates[0]["status"] != "approved" || creates[0]["intent"] != "Post the stock summary" {
+		t.Fatalf("creates %v", creates)
 	}
 	for sql, want := range map[string]string{
 		`select status || ':' || coalesce(error, '-') || ':' || analysis_minutes_saved || ':' || analysis_minutes_basis from work_run where id = '` + runAdmin + `'`: "completed:-:12:two reports",
@@ -359,19 +359,19 @@ func TestChatTurnOutcomes(t *testing.T) {
 			return axRunResult{Status: "completed", FinalText: "Posted.\n```neko_action_request\n" +
 				`{"scope":"external","kind":"slack_post","summary":"Post it"}` + "\n```\n```neko_workflow_save\n{\"name\":\"\"}\n```"}, nil
 		}
-		before := len(worker.creates)
+		before := len(worker.created(t))
 		res, err, log := run(ctx, newRun("member"), fence)
 		if err != nil || res.Status != "completed" || res.FinalText != "Posted." {
 			t.Fatalf("%+v %v", res, err)
 		}
-		if len(worker.creates) != before || log.count("action_request_emit") != 0 {
-			t.Fatalf("a member with no grant for slack_post created a request: %v", worker.creates)
+		if len(worker.created(t)) != before || log.count("action_request_emit") != 0 {
+			t.Fatalf("a member with no grant for slack_post created a request: %v", worker.created(t))
 		}
 		if log.count(`{"type":"error","message":"workflow save fence invalid: [`) != 1 {
 			t.Fatalf("events %v", log.all())
 		}
 		seed(t, db, `insert into item_grant (org_id, group_id, item_type, item_id) select 'org', id, 'action', 'slack_post' from user_group where org_id = 'org' and slug = 'everyone'`)
-		if _, _, log = run(ctx, newRun("member"), fence); len(worker.creates) != before+1 || log.count(`"decision":"auto_approved"`) != 1 {
+		if _, _, log = run(ctx, newRun("member"), fence); len(worker.created(t)) != before+1 || log.count(`"decision":"auto_approved"`) != 1 {
 			t.Fatalf("with the grant the request is made: %v", log.all())
 		}
 	})

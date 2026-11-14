@@ -4,11 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
-	"net/http"
 	"regexp"
 	"slices"
 	"strings"
@@ -318,8 +316,7 @@ func (a *API) sourceConfigGate(ctx context.Context, orgID, runID string) (string
 }
 
 // createActionRequest is InProcessControlPlane.createActionRequest(): the
-// run's grant checks, then the worker, which stores the request and runs the
-// pack preflight.
+// run's grant checks, then the store and the preflight hooks.
 func (r *runTools) createActionRequest(ctx context.Context, in *jsObj) (any, error) {
 	a := r.api
 	orgID, _ := in.vals["orgId"].(string)
@@ -359,43 +356,14 @@ func (r *runTools) createActionRequest(ctx context.Context, in *jsObj) (any, err
 			}
 		}
 	}
-	if inGo, err := a.shouldCreateActionRequestInGo(ctx, orgID, kind); err != nil {
-		return nil, err
-	} else if inGo {
-		out, err := a.createActionRequestInGo(ctx, in)
-		if err != nil {
-			return nil, err
-		}
-		if id, _ := out.vals["id"].(string); id != "" && out.vals["status"] == "pending_approval" {
-			a.queueApprovalWaitingPush(ctx, orgID, id)
-		}
-		return out, nil
-	}
-	status, reply, err := a.workerDo(ctx, http.MethodPost, "/admin/action-requests/create", 65*time.Second, []byte(jsStringify(in, false)))
+	out, err := a.createActionRequestInGo(ctx, in)
 	if err != nil {
 		return nil, err
 	}
-	var body struct {
-		ID     any `json:"id"`
-		Status any `json:"status"`
-		Error  any `json:"error"`
-	}
-	parseErr := json.Unmarshal(reply, &body)
-	if status < 200 || status > 299 {
-		if msg, ok := body.Error.(string); ok && parseErr == nil {
-			return nil, errors.New(msg)
-		}
-		return nil, fmt.Errorf("worker action preflight failed with status %d", status)
-	}
-	id, idOK := body.ID.(string)
-	state, stateOK := body.Status.(string)
-	if parseErr != nil || !idOK || id == "" || !stateOK {
-		return nil, errors.New("worker action preflight returned an invalid response")
-	}
-	if state == "pending_approval" {
+	if id, _ := out.vals["id"].(string); id != "" && out.vals["status"] == "pending_approval" {
 		a.queueApprovalWaitingPush(ctx, orgID, id)
 	}
-	return jsObjOf("id", id, "status", state), nil
+	return out, nil
 }
 
 func (r *runTools) enqueueAction(ctx context.Context, in actionRefIn) error {
