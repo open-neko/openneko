@@ -32,6 +32,12 @@ export function DeviceApproval({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userCode: code, approve }),
       });
+      if (res.status === 401) {
+        const trimmed = code.trim();
+        const returnTo = trimmed ? `/device?code=${encodeURIComponent(trimmed)}` : "/device";
+        window.location.assign(`/signin?returnTo=${encodeURIComponent(returnTo)}`);
+        return;
+      }
       const body = (await res.json().catch(() => ({}))) as { error?: string; name?: string };
       if (!res.ok) setError(body.error ?? `The request failed (${res.status}).`);
       else setOutcome({ approved: approve, name: body.name ?? "the device" });

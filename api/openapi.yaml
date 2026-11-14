@@ -4749,7 +4749,9 @@ paths:
       - auth
       summary: Look up a pending device request by user code
       x-access: public
-      security: []
+      security:
+      - session: []
+      description: The route needs a browser session. A request with a device token gets 403.
       parameters:
       - name: code
         in: query
@@ -4771,6 +4773,24 @@ paths:
                     type:
                     - object
                     - 'null'
+        '401':
+          description: No signed-in user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '403':
+          description: The request carries a device token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
     post:
       operationId: postAuthDeviceApprove
       tags:
