@@ -224,6 +224,7 @@ export interface PacksHandlerSurface {
   beginOAuth(packId: string, connectionKey: string, input: Record<string, unknown>): Promise<unknown>;
   completeOAuth(packId: string, connectionKey: string, input: Record<string, unknown>): Promise<unknown>;
   disconnectOAuth(packId: string, connectionKey: string): Promise<unknown>;
+  syncOAuth(packId: string, connectionKey: string, enabled: boolean): Promise<void>;
   magentoStoreManagement(): Promise<unknown>;
   updateMagentoStoreManagement(input: Record<string, unknown>): Promise<unknown>;
 }
@@ -549,7 +550,7 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       return;
     }
     const packPath = (req.url ?? "").split(/[?#]/, 1)[0] ?? "";
-    const packOAuthRoute = /^\/admin\/packs\/([^/]+)\/oauth\/([^/]+)\/(status|configure|begin|complete|disconnect)$/.exec(packPath);
+    const packOAuthRoute = /^\/admin\/packs\/([^/]+)\/oauth\/([^/]+)\/(status|configure|begin|complete|disconnect|sync)$/.exec(packPath);
     if (packOAuthRoute) {
       let packId: string;
       let connectionKey: string;
@@ -572,7 +573,7 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
             packs,
             packId,
             connectionKey,
-            action as "begin" | "complete" | "disconnect",
+            action as "begin" | "complete" | "disconnect" | "sync",
             body && typeof body === "object" ? body as Record<string, unknown> : {},
           ))
           .catch(() => json(res, 400, { error: "request body must be JSON" }));
@@ -615,7 +616,7 @@ async function handlePackOAuth(
   packs: PacksHandlerSurface | null,
   packId: string,
   connectionKey: string,
-  action: "status" | "configure" | "begin" | "complete" | "disconnect",
+  action: "status" | "configure" | "begin" | "complete" | "disconnect" | "sync",
   input: Record<string, unknown>,
 ): Promise<void> {
   if (!packs) { json(res, 503, { error: "solution-pack service unavailable" }); return; }
@@ -628,7 +629,9 @@ async function handlePackOAuth(
         ? await packs.beginOAuth(packId, connectionKey, input)
         : action === "complete"
           ? await packs.completeOAuth(packId, connectionKey, input)
-          : { disconnected: await packs.disconnectOAuth(packId, connectionKey) };
+          : action === "disconnect"
+            ? { disconnected: await packs.disconnectOAuth(packId, connectionKey) }
+            : await packs.syncOAuth(packId, connectionKey, input.enabled === true).then(() => ({ synced: true }));
     json(res, 200, result);
   } catch (error) {
     json(res, 400, packFailure(error, "oauth"));

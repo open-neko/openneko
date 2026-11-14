@@ -162,7 +162,7 @@ export class PackService {
     this.magentoAdmin = new MagentoPackAdminService(orgId);
     this.oauth = new PackOAuthService(orgId, {
       loadBundle: (packId, version) => this.bundle(packId, version),
-      syncInstalledConnection: (packId, connectionKey, enabled) => this.syncInstalledOAuthConnection(packId, connectionKey, enabled),
+      syncInstalledConnection: (packId, connectionKey, enabled) => this.syncOAuthConnection(packId, connectionKey, enabled),
     });
   }
 
@@ -213,7 +213,7 @@ export class PackService {
     return this.oauth.disconnect(packId, connectionKey);
   }
 
-  private async syncInstalledOAuthConnection(packId: string, connectionKey: string, enabled: boolean): Promise<void> {
+  async syncOAuthConnection(packId: string, connectionKey: string, enabled: boolean): Promise<void> {
     const [installation] = await db().select().from(pack_install).where(and(
       eq(pack_install.org_id, this.orgId),
       eq(pack_install.pack_id, packId),
