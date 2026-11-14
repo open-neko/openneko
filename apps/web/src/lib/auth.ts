@@ -46,6 +46,7 @@ import {
   verifyDeviceToken,
 } from "@neko/db";
 import { getOrgId } from "@/lib/db";
+import { workerAdminFetch } from "@neko/llm/worker-admin";
 
 export const SESSION_COOKIE_NAME = "openneko_session";
 
@@ -88,11 +89,6 @@ export interface SessionPayload {
   expiresAt: number;
 }
 
-function workerAdminBase(): string {
-  const raw = process.env.WORKER_ADMIN_URL ?? "http://127.0.0.1:4100";
-  return raw.replace(/\/+$/, "");
-}
-
 function sessionSecret(): string {
   // OPENNEKO_SESSION_SECRET is the HMAC key for session cookies. When it
   // is not set (no compose file sets it), derive a stable per-install
@@ -132,7 +128,7 @@ export async function getAuthGateStatus(): Promise<AuthGateStatus> {
     return providerCache.value;
   }
   try {
-    const res = await fetch(`${workerAdminBase()}/admin/auth/status`, {
+    const res = await workerAdminFetch(`/admin/auth/status`, {
       method: "GET",
       cache: "no-store",
       signal: AbortSignal.timeout(2000),

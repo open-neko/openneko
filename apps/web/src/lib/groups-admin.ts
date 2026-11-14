@@ -18,15 +18,12 @@ import { graphjinQuery, mintGraphjinToken } from "@neko/llm/graphjin";
 import { listWatchers, listWorkflows } from "@neko/llm/workflows";
 import { listConnectProviders } from "@/lib/integrations";
 import { listWorkSkills } from "@/lib/work-files";
-
-function workerAdminBase(): string {
-  return (process.env.WORKER_ADMIN_URL ?? "http://127.0.0.1:4100").replace(/\/+$/, "");
-}
+import { workerAdminFetch } from "@neko/llm/worker-admin";
 
 export async function requestWorker(path: string, body?: unknown): Promise<{ status: number; body: unknown }> {
   let response: Response;
   try {
-    response = await fetch(`${workerAdminBase()}${path}`, {
+    response = await workerAdminFetch(path, {
       method: body === undefined ? "GET" : "POST",
       headers: body === undefined ? undefined : { "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),

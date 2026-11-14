@@ -175,7 +175,7 @@ services:
     secrets: *database-url
     environment:
       <<: *neko-app-env
-      WORKER_ADMIN_URL: http://worker:4100
+      WORKER_ADMIN_URL: unix:///run/openneko/worker.sock
       OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE: "1"
       # Base URL for emailed sign-in links and OAuth callbacks. Set it to the
       # URL people open when the web port is behind a proxy or another host.
@@ -216,8 +216,8 @@ services:
       OPENNEKO_SANDBOX_URL: ${OPENNEKO_SANDBOX_URL:-}
       OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
       OPENNEKO_AGENT_RUNS_DIR: /var/lib/openneko/agent-runs
-    expose:
-      - "4100"
+      OPENNEKO_WORKER_SOCKET: /run/openneko/worker.sock
+      WORKER_ADMIN_URL: unix:///run/openneko/worker.sock
     volumes:
       - openneko-config:/config/openneko
       - openneko-graphjin-cli:/config/graphjin
@@ -226,7 +226,7 @@ services:
       - openneko-agent-runs:/var/lib/openneko/agent-runs
       - openneko-run:/run/openneko
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4100/health"]
+      test: ["CMD", "curl", "-fsS", "--unix-socket", "/run/openneko/worker.sock", "http://worker/health"]
       interval: 5s
       timeout: 3s
       retries: 20

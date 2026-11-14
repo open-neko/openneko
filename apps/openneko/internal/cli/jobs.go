@@ -12,6 +12,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
+	"github.com/open-neko/neko/apps/openneko/internal/workeradmin"
 )
 
 var jobRunKinds = []string{jobs.KindCronSweep}
@@ -72,7 +73,11 @@ sweep for a past minute.`,
 			if err != nil {
 				return err
 			}
-			api := &webfront.API{Gate: &webfront.Gate{WorkerURL: envOr("WORKER_ADMIN_URL", "http://127.0.0.1:4100"), DB: pool}, DB: pool, Jobs: inserter}
+			workerURL, workerClient, err := workeradmin.Endpoint(workeradmin.URL())
+			if err != nil {
+				return err
+			}
+			api := &webfront.API{Gate: &webfront.Gate{WorkerURL: workerURL, Client: workerClient, DB: pool}, DB: pool, Jobs: inserter}
 			res, runErr := api.CronSweepAt(ctx, orgID, now)
 			if runErr != nil && res.At == "" {
 				return runErr

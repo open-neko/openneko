@@ -6,6 +6,7 @@
  */
 
 import "server-only";
+import { workerAdminFetch } from "@neko/llm/worker-admin";
 
 export interface ConnectProvider {
   pluginId: string;
@@ -22,14 +23,9 @@ export interface ConnectStatus {
   scopes?: string[];
 }
 
-function workerAdminBase(): string {
-  const raw = process.env.WORKER_ADMIN_URL ?? "http://127.0.0.1:4100";
-  return raw.replace(/\/+$/, "");
-}
-
 export async function listConnectProviders(): Promise<ConnectProvider[]> {
   try {
-    const res = await fetch(`${workerAdminBase()}/admin/connect/providers`, {
+    const res = await workerAdminFetch(`/admin/connect/providers`, {
       cache: "no-store",
       signal: AbortSignal.timeout(2000),
     });
@@ -45,8 +41,8 @@ export async function getOperatorConnectStatus(
   operatorId: string,
 ): Promise<ConnectStatus[]> {
   try {
-    const res = await fetch(
-      `${workerAdminBase()}/admin/connect/status/${encodeURIComponent(operatorId)}`,
+    const res = await workerAdminFetch(
+      `/admin/connect/status/${encodeURIComponent(operatorId)}`,
       { cache: "no-store", signal: AbortSignal.timeout(2000) },
     );
     if (!res.ok) return [];
@@ -59,8 +55,8 @@ export async function getOperatorConnectStatus(
 
 export async function getDeploymentConnectStatus(): Promise<ConnectStatus[]> {
   try {
-    const res = await fetch(
-      `${workerAdminBase()}/admin/connect/deployment/status`,
+    const res = await workerAdminFetch(
+      `/admin/connect/deployment/status`,
       { cache: "no-store", signal: AbortSignal.timeout(2000) },
     );
     if (!res.ok) return [];

@@ -1,3 +1,4 @@
+import { workerAdminFetch } from "../worker-admin";
 import { enqueueActionExecute } from "@neko/db/jobs";
 import { holds } from "@neko/db";
 import { actionKindIsGranted, entitlementActorForRun, runWorkflowFilter } from "./entitlement-scope";
@@ -85,15 +86,18 @@ function toWire<T>(value: T): Wire<T> {
 export async function createActionRequestViaWorker(
   baseUrl: string,
   input: CreateActionRequestInput,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl?: typeof fetch,
 ): Promise<{ id: string; status: string }> {
-  const url = `${baseUrl.replace(/\/$/, "")}/admin/action-requests/create`;
-  const response = await fetchImpl(url, {
+  const path = "/admin/action-requests/create";
+  const init: RequestInit = {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
     signal: AbortSignal.timeout(65_000),
-  });
+  };
+  const response = fetchImpl
+    ? await fetchImpl(`${baseUrl.replace(/\/$/, "")}${path}`, init)
+    : await workerAdminFetch(path, init, baseUrl);
   const body = (await response.json().catch(() => null)) as
     | { id?: unknown; status?: unknown; error?: unknown }
     | null;
