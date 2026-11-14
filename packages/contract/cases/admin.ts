@@ -244,6 +244,7 @@ export const adminCases: Case[] = [
   },
   { op: "PATCH /admin/users/{userId}", name: "needs a change", status: 400, request: (c) => ({ params: { userId: c.ids.newUserId }, body: {} }) },
   { op: "GET /onboarding/status", name: "reports the onboarding state", status: 200 },
+  { op: "GET /onboarding/wizard", name: "reads the onboarding wizard state", status: 200 },
   { op: "POST /onboarding/submit", name: "needs a company name", status: 400, request: { body: {} } },
   { op: "GET /policies", name: "lists the policies", status: 200 },
   { op: "GET /policies/{policyId}", name: "refuses an unknown policy", status: 404, request: (c) => ({ params: { policyId: c.ids.unknownId } }) },

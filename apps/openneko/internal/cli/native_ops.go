@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -32,27 +34,63 @@ import (
 
 const nativeBackupProject = "openneko-native"
 
+// A nativeFolder is one backup volume. place gives the host path of each
+// top-level archive name it takes; tops lists the names present on the host.
 type nativeFolder struct {
-	volume  string
-	root    func() string
-	include func(top string) bool
+	volume string
+	place  func(top string) (string, bool)
+	tops   func() ([]string, error)
 }
 
-var nativeDataFolders = map[string]bool{
-	"files": true, "file-index": true, "credentials": true,
-	"graphjin": true, "agent-runs": true, "subscriptions": true,
+func folderUnder(root string, include func(top string) bool) nativeFolder {
+	return nativeFolder{
+		place: func(top string) (string, bool) {
+			if !include(top) {
+				return "", false
+			}
+			return filepath.Join(root, top), true
+		},
+		tops: func() ([]string, error) {
+			entries, err := os.ReadDir(root)
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil, nil
+			}
+			var names []string
+			for _, e := range entries {
+				if include(e.Name()) {
+					names = append(names, e.Name())
+				}
+			}
+			return names, err
+		},
+	}
 }
 
-// installation.json names host paths, and instances/ holds other installs.
-var nativeFolders = []nativeFolder{
-	{volume: "native-config", root: func() string { return config.Dir("") },
-		include: func(top string) bool { return top != "installation.json" && top != "instances" }},
-	{volume: "native-data", root: func() string { return nativeLayout().Root },
-		include: func(top string) bool { return nativeDataFolders[top] }},
+func folderOf(paths map[string]string) nativeFolder {
+	return nativeFolder{
+		place: func(top string) (string, bool) { p, ok := paths[top]; return p, ok },
+		tops: func() ([]string, error) {
+			names := slices.Collect(maps.Keys(paths))
+			slices.Sort(names)
+			return names, nil
+		},
+	}
+}
+
+// installation.json and server.json name host paths, and instances/ holds
+// other installs.
+func nativeFolders() []nativeFolder {
+	cfg := folderUnder(config.Dir(""), func(top string) bool {
+		return top != "installation.json" && top != native.ServerFile && top != "instances"
+	})
+	cfg.volume = "native-config"
+	data := folderOf(nativeLayout().DataFolders())
+	data.volume = "native-data"
+	return []nativeFolder{cfg, data}
 }
 
 func isNativeBackupVolume(name string) bool {
-	for _, f := range nativeFolders {
+	for _, f := range nativeFolders() {
 		if f.volume == name {
 			return true
 		}
@@ -73,6 +111,9 @@ func nativeDatabaseURL() (string, error) {
 }
 
 func createNativeBackup(ctx context.Context, destination string, out io.Writer) (string, error) {
+	if err := requireServerRoot("backup"); err != nil {
+		return "", err
+	}
 	dsn, err := nativeDatabaseURL()
 	if err != nil {
 		return "", err
@@ -106,24 +147,37 @@ func createNativeBackup(ctx context.Context, destination string, out io.Writer) 
 	manifest.Database.User, manifest.Database.Name, manifest.Database.ServerVersion = parts[0], parts[1], parts[2]
 	manifest.Database.External = true
 	folders := map[string]nativeFolder{}
-	for _, f := range nativeFolders {
+	for _, f := range nativeFolders() {
 		manifest.Volumes = append(manifest.Volumes, f.volume)
 		folders[f.volume] = f
 	}
 	return writeBackupFile(target, key, keyPath, manifest, backupSource{
 		volume: func(name string, w io.Writer) error {
-			f := folders[name]
-			return archiveFolder(f.root(), f.include, w)
+			return archiveFolder(folders[name], w)
 		},
 		dump: func(w io.Writer) error { return dumpDatabaseTo(ctx, dsn, w) },
 	}, out)
 }
 
-// archiveFolder writes the folders and regular files under root whose first
-// path part passes include. Links and devices are left out.
-func archiveFolder(root string, include func(string) bool, w io.Writer) error {
+// archiveFolder writes the folders and regular files of each top-level name
+// of f. Links and devices are left out.
+func archiveFolder(f nativeFolder, w io.Writer) error {
 	tw := tar.NewWriter(w)
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	tops, err := f.tops()
+	if err != nil {
+		return err
+	}
+	for _, top := range tops {
+		root, _ := f.place(top)
+		if err := archiveTop(tw, top, root); err != nil {
+			return err
+		}
+	}
+	return tw.Close()
+}
+
+func archiveTop(tw *tar.Writer, top, root string) error {
+	return filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if p == root && errors.Is(err, fs.ErrNotExist) {
 				return filepath.SkipAll
@@ -131,15 +185,12 @@ func archiveFolder(root string, include func(string) bool, w io.Writer) error {
 			return err
 		}
 		rel, err := filepath.Rel(root, p)
-		if err != nil || rel == "." {
+		if err != nil {
 			return err
 		}
-		rel = filepath.ToSlash(rel)
-		if !include(strings.SplitN(rel, "/", 2)[0]) {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
+		name := top
+		if rel != "." {
+			name = top + "/" + filepath.ToSlash(rel)
 		}
 		info, err := d.Info()
 		if err != nil {
@@ -152,7 +203,7 @@ func archiveFolder(root string, include func(string) bool, w io.Writer) error {
 		if err != nil {
 			return err
 		}
-		hdr.Name, hdr.Uid, hdr.Gid, hdr.Uname, hdr.Gname = rel, 0, 0, "", ""
+		hdr.Name, hdr.Uid, hdr.Gid, hdr.Uname, hdr.Gname = name, 0, 0, "", ""
 		if d.IsDir() {
 			hdr.Name += "/"
 		}
@@ -162,35 +213,27 @@ func archiveFolder(root string, include func(string) bool, w io.Writer) error {
 		if d.IsDir() {
 			return nil
 		}
-		f, err := os.Open(p)
+		file, err := os.Open(p)
 		if err != nil {
 			return err
 		}
-		defer f.Close()
-		_, err = io.CopyN(tw, f, hdr.Size)
+		defer file.Close()
+		_, err = io.CopyN(tw, file, hdr.Size)
 		return err
 	})
-	if err != nil {
-		return err
-	}
-	return tw.Close()
 }
 
-// restoreFolder empties the parts of root that include passes, then writes
-// the archive's folders and regular files there.
-func restoreFolder(root string, include func(string) bool, r io.Reader) error {
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		return err
-	}
-	entries, err := os.ReadDir(root)
+// restoreFolder empties each top-level name of f, then writes the archive's
+// folders and regular files to the place of their top-level name.
+func restoreFolder(f nativeFolder, r io.Reader) error {
+	tops, err := f.tops()
 	if err != nil {
 		return err
 	}
-	for _, e := range entries {
-		if include(e.Name()) {
-			if err := os.RemoveAll(filepath.Join(root, e.Name())); err != nil {
-				return err
-			}
+	for _, top := range tops {
+		p, _ := f.place(top)
+		if err := os.RemoveAll(p); err != nil {
+			return err
 		}
 	}
 	tr := tar.NewReader(r)
@@ -209,28 +252,34 @@ func restoreFolder(root string, include func(string) bool, r io.Reader) error {
 		if path.IsAbs(name) || name == ".." || strings.HasPrefix(name, "../") {
 			return fmt.Errorf("archive entry %q leaves the folder", hdr.Name)
 		}
-		if !include(strings.SplitN(name, "/", 2)[0]) {
+		top, rest, _ := strings.Cut(name, "/")
+		root, ok := f.place(top)
+		if !ok {
 			continue
 		}
-		target := filepath.Join(root, filepath.FromSlash(name))
+		target := filepath.Join(root, filepath.FromSlash(rest))
+		mode := hdr.FileInfo().Mode().Perm() | 0o700
 		switch hdr.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, 0o700); err != nil {
+				return err
+			}
+			if err := os.Chmod(target, mode); err != nil {
 				return err
 			}
 		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 				return err
 			}
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, hdr.FileInfo().Mode().Perm()|0o600)
+			out, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, hdr.FileInfo().Mode().Perm()|0o600)
 			if err != nil {
 				return err
 			}
-			if _, err := io.Copy(f, tr); err != nil {
-				f.Close()
+			if _, err := io.Copy(out, tr); err != nil {
+				out.Close()
 				return err
 			}
-			if err := f.Close(); err != nil {
+			if err := out.Close(); err != nil {
 				return err
 			}
 		}
@@ -241,6 +290,9 @@ func restoreFolder(root string, include func(string) bool, r io.Reader) error {
 
 func runNativeRestore(ctx context.Context, cmd *cobra.Command, path, keyFile string, dropForeign bool) error {
 	out := cmd.OutOrStdout()
+	if err := requireServerRoot("restore"); err != nil {
+		return err
+	}
 	key, err := readRestoreKey(keyFile)
 	if err != nil {
 		return err
@@ -272,15 +324,19 @@ func runNativeRestore(ctx context.Context, cmd *cobra.Command, path, keyFile str
 	}
 	local, _ := config.ReadLocal("")
 
-	layout := nativeLayout()
-	_, wasRunning := native.Running(layout)
+	wasRunning := nativeRunning(ctx)
 	if wasRunning {
 		fmt.Fprintln(out, "Stopping OpenNeko...")
-		if err := native.Stop(layout, 30*time.Second); err != nil && !errors.Is(err, native.ErrNotRunning) {
+		if err := nativeStop(ctx, out); err != nil {
 			return err
 		}
 	}
 	failed := func(step string, err error) error {
+		if activeServer != nil {
+			if ownErr := ownServerData(*activeServer); ownErr != nil {
+				err = errors.Join(err, fmt.Errorf("set the owners of the restored files: %w", ownErr))
+			}
+		}
 		return fmt.Errorf("restore failed while %s; OpenNeko is stopped and may hold partly restored data. Run the restore again once the cause is fixed: %w", step, err)
 	}
 	file, err := os.Open(path)
@@ -293,7 +349,7 @@ func runNativeRestore(ctx context.Context, cmd *cobra.Command, path, keyFile str
 		return err
 	}
 	folders := map[string]nativeFolder{}
-	for _, f := range nativeFolders {
+	for _, f := range nativeFolders() {
 		folders[f.volume] = f
 	}
 	bundle := newBackupBundleReader(plain)
@@ -314,8 +370,8 @@ func runNativeRestore(ctx context.Context, cmd *cobra.Command, path, keyFile str
 				fmt.Fprintf(out, "Skipping volume %s: a native install does not use it.\n", volume)
 				continue
 			}
-			fmt.Fprintf(out, "Restoring %s into %s...\n", volume, f.root())
-			if err := restoreFolder(f.root(), f.include, entry); err != nil {
+			fmt.Fprintf(out, "Restoring %s...\n", volume)
+			if err := restoreFolder(f, entry); err != nil {
 				return failed("restoring "+volume, err)
 			}
 		case name == backupDatabaseEntry:
@@ -334,12 +390,17 @@ func runNativeRestore(ctx context.Context, cmd *cobra.Command, path, keyFile str
 			return failed("keeping the database URL", err)
 		}
 	}
+	if activeServer != nil {
+		if err := ownServerData(*activeServer); err != nil {
+			return failed("setting the owners of the restored files", err)
+		}
+	}
 	if !wasRunning {
 		fmt.Fprintf(out, "Restore complete from %s. `openneko start` starts OpenNeko and applies the migrations.\n", path)
 		return nil
 	}
 	fmt.Fprintln(out, "Starting OpenNeko...")
-	if err := runSelf(ctx, out, cmd.ErrOrStderr(), "", "start", "--native", "-d"); err != nil {
+	if err := nativeStartAgain(ctx, out, cmd.ErrOrStderr(), ""); err != nil {
 		return fmt.Errorf("restore completed but OpenNeko did not start: %w", err)
 	}
 	fmt.Fprintf(out, "Restore complete from %s.\n", path)
@@ -419,7 +480,7 @@ func postgresToolLine(ctx context.Context, tool, serverVersion string) (string, 
 
 func runNativeDoctor(ctx context.Context, out io.Writer) error {
 	failed := false
-	h := host.Check()
+	h := host.Platform()
 	if h.Supported {
 		fmt.Fprintf(out, "host: %s (supported)\n", h.Triple)
 	} else {
@@ -430,6 +491,9 @@ func runNativeDoctor(ctx context.Context, out io.Writer) error {
 		failed = true
 	}
 	fmt.Fprintln(out, "runtime: native")
+	if activeServer != nil {
+		failed = serverDoctorLines(out) || failed
+	}
 	if settings, ok := nativeInstall(); ok {
 		if err := webfront.Check(settings.WebDir); err != nil {
 			fmt.Fprintf(out, "web app: FAIL, %v\n", err)
@@ -475,6 +539,9 @@ func runNativeDoctor(ctx context.Context, out io.Writer) error {
 
 func runNativeUpgrade(ctx context.Context, cmd *cobra.Command, settings installation.Settings, from string, skipBackup bool) error {
 	out, errOut := cmd.OutOrStdout(), cmd.ErrOrStderr()
+	if err := requireServerRoot("upgrade"); err != nil {
+		return err
+	}
 	from, err := filepath.Abs(from)
 	if err != nil {
 		return err
@@ -497,6 +564,9 @@ func runNativeUpgrade(ctx context.Context, cmd *cobra.Command, settings installa
 	if err != nil {
 		return err
 	}
+	if activeServer != nil {
+		exe = activeServer.Exe
+	}
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = resolved
 	}
@@ -508,11 +578,10 @@ func runNativeUpgrade(ctx context.Context, cmd *cobra.Command, settings installa
 			return fmt.Errorf("the backup before the upgrade failed, so nothing was changed (--skip-backup upgrades without one): %w", err)
 		}
 	}
-	layout := nativeLayout()
-	_, wasRunning := native.Running(layout)
+	wasRunning := nativeRunning(ctx)
 	if wasRunning {
 		fmt.Fprintln(out, "Stopping OpenNeko...")
-		if err := native.Stop(layout, 30*time.Second); err != nil && !errors.Is(err, native.ErrNotRunning) {
+		if err := nativeStop(ctx, out); err != nil {
 			return err
 		}
 	}
@@ -531,7 +600,7 @@ func runNativeUpgrade(ctx context.Context, cmd *cobra.Command, settings installa
 		return nil
 	}
 	fmt.Fprintln(out, "Starting OpenNeko...")
-	if err := runSelf(ctx, out, errOut, exe, "start", "--native", "-d"); err != nil {
+	if err := nativeStartAgain(ctx, out, errOut, exe); err != nil {
 		return fmt.Errorf("the files are upgraded but OpenNeko did not start: %w", err)
 	}
 	fmt.Fprintln(out, "Upgrade complete.")

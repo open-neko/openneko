@@ -310,7 +310,7 @@ export default function ActionPage() {
                     <Button
                       variant="ghost"
                       type="button"
-                      className="bg-transparent border-0 cursor-pointer font-inherit p-0 font-semibold text-text underline underline-offset-2 hover:text-accent"
+                      className="inline min-h-0 whitespace-normal text-left bg-transparent border-0 cursor-pointer font-inherit p-0 font-semibold text-text underline underline-offset-2 hover:text-accent"
                       onClick={() =>
                         ar.workflowRunId &&
                         router.push(`/runs/${ar.workflowRunId}`)
@@ -428,7 +428,7 @@ export default function ActionPage() {
                 <Button
                   variant="ghost"
                   type="button"
-                  className="bg-transparent border-0 cursor-pointer font-inherit p-0 font-semibold text-text underline underline-offset-2 hover:text-accent"
+                  className="inline min-h-0 whitespace-normal text-left bg-transparent border-0 cursor-pointer font-inherit p-0 font-semibold text-text underline underline-offset-2 hover:text-accent"
                   onClick={() => router.push(`/runs/${ar.workflowRunId}`)}
                 >
                   {workflow.name}
@@ -446,7 +446,7 @@ export default function ActionPage() {
                     <Button
                       variant="ghost"
                       type="button"
-                      className="bg-transparent border-0 cursor-pointer font-inherit p-0 font-semibold text-text underline underline-offset-2 hover:text-accent"
+                      className="inline min-h-0 whitespace-normal text-left bg-transparent border-0 cursor-pointer font-inherit p-0 font-semibold text-text underline underline-offset-2 hover:text-accent"
                       onClick={() =>
                         router.push(`/runs/${upstreamOutput.workflowRunId}`)
                       }
@@ -557,7 +557,7 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-[110px_1fr] gap-x-4 gap-y-2.5 items-baseline">
+    <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-x-4 gap-y-2.5 items-baseline">
       <dt className="text-ui-caption font-semibold text-text3 m-0">
         {label}
       </dt>

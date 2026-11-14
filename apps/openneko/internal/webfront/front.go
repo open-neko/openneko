@@ -17,6 +17,9 @@ import (
 var (
 	fileExtension = regexp.MustCompile(`\.[a-zA-Z0-9]+$`)
 	serverPage    = func() *regexp.Regexp {
+		if len(ServerPages) == 0 {
+			return nil
+		}
 		alternatives := make([]string, len(ServerPages))
 		for i, page := range ServerPages {
 			alternatives[i] = regexp.MustCompile(`:[^/]+`).ReplaceAllString(regexp.QuoteMeta(page), `[^/]+`)
@@ -27,13 +30,7 @@ var (
 
 // ServerPages must equal serverPages in apps/web/src/spa/server-pages.ts;
 // TestServerPagesMatchWeb compares them.
-var ServerPages = []string{
-	"/chat/connectors",
-	"/admin/settings/packs/magento/operations",
-	"/device",
-	"/integrations",
-	"/onboarding",
-}
+var ServerPages = []string{}
 
 type Front struct {
 	App  fs.FS
@@ -96,7 +93,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h(w, r)
 		return
 	}
-	if p == "/api" || strings.HasPrefix(p, "/api/") || serverPage.MatchString(p) ||
+	if p == "/api" || strings.HasPrefix(p, "/api/") || (serverPage != nil && serverPage.MatchString(p)) ||
 		(r.Method != http.MethodGet && r.Method != http.MethodHead) {
 		f.node(w, r)
 		return

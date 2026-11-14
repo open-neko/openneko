@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -34,6 +35,9 @@ Give OpenNeko a Postgres database that you run, then do one of these:
   set OPENNEKO_DATABASE_URL_FILE to a file that holds the URL`)
 
 func nativeLayout() native.Layout {
+	if activeServer != nil {
+		return activeServer.Layout()
+	}
 	return native.Layout{Root: instance.ScopeConfigDir(filepath.Join(dataHome(), "openneko"))}
 }
 
@@ -103,6 +107,12 @@ func nativeOptions(settings installation.Settings) (native.Options, error) {
 
 func startNative(cmd *cobra.Command, webDir, dbURL string, detach, skipMigrate bool) error {
 	out := cmd.OutOrStdout()
+	if activeServer != nil {
+		if webDir != "" || dbURL != "" {
+			return errors.New("--web-dir and --database-url are set by `sudo openneko server-install` on a server install")
+		}
+		return startServer(cmd.Context(), out)
+	}
 	settings, err := nativeSettings(webDir)
 	if err != nil {
 		return err
@@ -136,13 +146,8 @@ func startNative(cmd *cobra.Command, webDir, dbURL string, detach, skipMigrate b
 	if err != nil {
 		return err
 	}
-	for _, step := range native.Steps(layout, opts, !skipMigrate) {
-		fmt.Fprintf(out, "→ %s\n", step.Name)
-		c := exec.CommandContext(cmd.Context(), step.Args[0], step.Args[1:]...)
-		c.Env, c.Stdout, c.Stderr = step.Env, out, cmd.ErrOrStderr()
-		if err := c.Run(); err != nil {
-			return fmt.Errorf("%s: %w", step.Name, err)
-		}
+	if err := runNativeSteps(cmd, layout, opts, !skipMigrate); err != nil {
+		return err
 	}
 	if err := installation.Save(config.Dir(""), settings); err != nil {
 		return err
@@ -174,6 +179,18 @@ func startNative(cmd *cobra.Command, webDir, dbURL string, detach, skipMigrate b
 		return WithExit(1, nil)
 	}
 	fmt.Fprintf(out, "OpenNeko runs at %s.\n`openneko status` checks it, `openneko logs` shows its logs and `openneko stop` stops it.\n", opts.PublicURL)
+	return nil
+}
+
+func runNativeSteps(cmd *cobra.Command, layout native.Layout, opts native.Options, migrate bool) error {
+	for _, step := range native.Steps(layout, opts, migrate) {
+		fmt.Fprintf(cmd.OutOrStdout(), "→ %s\n", step.Name)
+		c := exec.CommandContext(cmd.Context(), step.Args[0], step.Args[1:]...)
+		c.Env, c.Stdout, c.Stderr = step.Env, cmd.OutOrStdout(), cmd.ErrOrStderr()
+		if err := c.Run(); err != nil {
+			return fmt.Errorf("%s: %w", step.Name, err)
+		}
+	}
 	return nil
 }
 
@@ -239,7 +256,17 @@ func probeNative(ctx context.Context, url string) error {
 	return nil
 }
 
-func stopNative(out io.Writer) error {
+func stopNative(ctx context.Context, out io.Writer) error {
+	if activeServer != nil {
+		if err := requireServerRoot("stop"); err != nil {
+			return err
+		}
+		if err := nativeStop(ctx, out); err != nil {
+			return err
+		}
+		fmt.Fprintln(out, "OpenNeko stopped.")
+		return nil
+	}
 	err := native.Stop(nativeLayout(), 30*time.Second)
 	if errors.Is(err, native.ErrNotRunning) {
 		fmt.Fprintln(out, "OpenNeko is not running.")
@@ -252,6 +279,9 @@ func stopNative(out io.Writer) error {
 }
 
 func statusNative(ctx context.Context, out io.Writer) error {
+	if activeServer != nil {
+		return statusServer(ctx, out)
+	}
 	layout := nativeLayout()
 	pid, ok := native.Running(layout)
 	if !ok {
@@ -310,17 +340,24 @@ func classifyNative(st native.State, now time.Time) (health, []string) {
 
 func logsNative(ctx context.Context, out io.Writer, services []string, follow bool, tail int) error {
 	layout := nativeLayout()
+	known := []string{"supervisor", "serve", "web"}
+	if activeServer != nil {
+		known = known[1:]
+	}
 	if len(services) == 0 {
-		services = []string{"supervisor", "serve", "web"}
+		services = known
 	}
 	for _, s := range services {
-		if s != "supervisor" && s != "serve" && s != "web" {
-			return fmt.Errorf("unknown service %q; the native services are supervisor, serve and web", s)
+		if !slices.Contains(known, s) {
+			return fmt.Errorf("unknown service %q; the native services are %s", s, strings.Join(known, ", "))
 		}
 	}
 	offsets := map[string]int64{}
 	for _, s := range services {
 		lines, end, err := lastLines(layout.Log(s), tail)
+		if errors.Is(err, os.ErrPermission) {
+			return fmt.Errorf("%w: run `sudo openneko logs`", err)
+		}
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}

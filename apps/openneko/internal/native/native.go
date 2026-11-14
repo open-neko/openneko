@@ -10,21 +10,50 @@ import (
 	"strings"
 )
 
-type Layout struct{ Root string }
+type Layout struct {
+	Root   string
+	Agent  string
+	Shared string
+}
 
-func (l Layout) Files() string         { return filepath.Join(l.Root, "files") }
-func (l Layout) Index() string         { return filepath.Join(l.Root, "file-index") }
-func (l Layout) Credentials() string   { return filepath.Join(l.Root, "credentials") }
-func (l Layout) GraphJin() string      { return filepath.Join(l.Root, "graphjin", "agentic.yml") }
-func (l Layout) Seed() string          { return filepath.Join(l.Root, "graphjin", "seed.yml") }
-func (l Layout) Run() string           { return filepath.Join(l.Root, "run") }
+func (l Layout) agent() string {
+	if l.Agent != "" {
+		return l.Agent
+	}
+	return l.Root
+}
+
+func (l Layout) shared() string {
+	if l.Shared != "" {
+		return l.Shared
+	}
+	return l.Root
+}
+
+func (l Layout) Files() string         { return filepath.Join(l.agent(), "files") }
+func (l Layout) Index() string         { return filepath.Join(l.agent(), "file-index") }
+func (l Layout) Subscriptions() string { return filepath.Join(l.agent(), "subscriptions") }
+func (l Layout) Credentials() string   { return filepath.Join(l.shared(), "credentials") }
+func (l Layout) GraphJin() string      { return filepath.Join(l.shared(), "graphjin", "agentic.yml") }
+func (l Layout) Seed() string          { return filepath.Join(l.shared(), "graphjin", "seed.yml") }
+func (l Layout) Run() string           { return filepath.Join(l.shared(), "run") }
+func (l Layout) AgentRuns() string     { return filepath.Join(l.shared(), "agent-runs") }
 func (l Layout) Logs() string          { return filepath.Join(l.Root, "logs") }
-func (l Layout) AgentRuns() string     { return filepath.Join(l.Root, "agent-runs") }
-func (l Layout) Subscriptions() string { return filepath.Join(l.Root, "subscriptions") }
 func (l Layout) State() string         { return filepath.Join(l.Run(), "state.json") }
 func (l Layout) Lock() string          { return filepath.Join(l.Run(), "supervisor.lock") }
 func (l Layout) Log(name string) string {
+	if name == "serve" {
+		return filepath.Join(l.agent(), "logs", "serve.log")
+	}
 	return filepath.Join(l.Logs(), name+".log")
+}
+
+// DataFolders maps each data folder that a backup holds to its path.
+func (l Layout) DataFolders() map[string]string {
+	return map[string]string{
+		"files": l.Files(), "file-index": l.Index(), "subscriptions": l.Subscriptions(),
+		"credentials": l.Credentials(), "graphjin": filepath.Dir(l.GraphJin()), "agent-runs": l.AgentRuns(),
+	}
 }
 
 func (l Layout) Prepare() error {
@@ -76,7 +105,7 @@ func (o Options) env(extra map[string]string) []string {
 	return out
 }
 
-func (o Options) shared(l Layout) map[string]string {
+func sharedEnv(l Layout) map[string]string {
 	return map[string]string{
 		"OPENNEKO_GRAPHJIN_CONFIG":     l.GraphJin(),
 		"OPENNEKO_SERVE_SOCKET":        filepath.Join(l.Run(), "serve.sock"),
@@ -91,7 +120,7 @@ func (o Options) shared(l Layout) map[string]string {
 // Steps run in order before the processes start; the first failure stops
 // the start.
 func Steps(l Layout, o Options, migrate bool) []Proc {
-	env := o.env(o.shared(l))
+	env := o.env(sharedEnv(l))
 	steps := []Proc{{Name: "database check", Args: []string{o.Exe, "database", "check"}, Env: env}}
 	if migrate {
 		steps = append(steps, Proc{Name: "migrate", Args: []string{o.Exe, "migrate"}, Env: env})
@@ -99,15 +128,18 @@ func Steps(l Layout, o Options, migrate bool) []Proc {
 	return append(steps, Proc{Name: "serve-init", Args: []string{o.Exe, "serve-init", "--dir", l.Credentials(), "--graphjin-config", l.GraphJin(), "--graphjin-seed", l.Seed()}, Env: env})
 }
 
-func Procs(l Layout, o Options) []Proc {
-	serve := o.shared(l)
+func ServeEnv(l Layout) map[string]string {
+	serve := sharedEnv(l)
 	serve["OPENNEKO_SERVE_CREDENTIALS"] = l.Credentials()
 	serve["OPENNEKO_SERVE_ADDR"] = ServeAddr
 	serve["OPENNEKO_GRAPHJIN_ADDR"] = GraphJinAddr
 	serve["OPENNEKO_SUBSCRIPTIONS_ADDR"] = SubscriptionsAddr
 	serve["OPENNEKO_SUBSCRIPTIONS_DIR"] = l.Subscriptions()
+	return serve
+}
 
-	web := o.shared(l)
+func WebEnv(l Layout, o Options) map[string]string {
+	web := sharedEnv(l)
 	web["NODE_ENV"] = "production"
 	web["OPENNEKO_WEB_ADDR"] = o.WebAddr
 	web["OPENNEKO_WEB_DIR"] = o.WebDir
@@ -119,9 +151,13 @@ func Procs(l Layout, o Options) []Proc {
 	if !hasEnv(o.Env, "OPENNEKO_METRICS_REFRESH") {
 		web["OPENNEKO_METRICS_REFRESH"] = "off"
 	}
+	return web
+}
+
+func Procs(l Layout, o Options) []Proc {
 	return []Proc{
-		{Name: "serve", Args: []string{o.Exe, "serve"}, Env: o.env(serve)},
-		{Name: "web", Args: []string{o.Exe, "web"}, Env: o.env(web)},
+		{Name: "serve", Args: []string{o.Exe, "serve"}, Env: o.env(ServeEnv(l))},
+		{Name: "web", Args: []string{o.Exe, "web"}, Env: o.env(WebEnv(l, o))},
 	}
 }
 
