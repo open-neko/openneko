@@ -391,11 +391,11 @@ events.
 
 ### Agent runtime
 
-Web and worker start one agent runner per run. The runner stages the run's
-files in a shared folder and sends each turn to `openneko serve` over a Unix
-socket. The model key travels with the turn, and serve keeps every `*_API_KEY`
-variable out of the agent's tools. The agent reads and writes files in its
-run folder and reaches data only through the OpenNeko broker. The agent has
+`openneko web` runs every agent turn. It stages the run's files in a shared
+folder and sends each turn to `openneko serve` over a Unix socket. The model
+key travels with the turn, and serve keeps every `*_API_KEY` variable out of
+the agent's tools. The agent reads and writes files in its run folder and
+reaches data only through the tools that `openneko web` serves for the run. The agent has
 a terminal only when a sandbox is connected.
 
 ### External services
