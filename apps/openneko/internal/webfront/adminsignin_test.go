@@ -2,11 +2,18 @@ package webfront
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/open-neko/neko/apps/openneko/internal/secrets"
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
@@ -16,8 +23,6 @@ func signinFront(t *testing.T, status string) (*Front, *setupWorker, *pgxpool.Po
 	db := testpg.Migrated(t)
 	seedOrg(t, db)
 	f, wk := newSetupFront(t, status, db)
-	wk.reply["/admin/auth/provider"] = `{"ok":true}`
-	wk.reply["/admin/auth/secrets"] = `{"ok":true}`
 	return f, wk, db
 }
 
@@ -52,16 +57,14 @@ func TestAdminSigninAdminOnly(t *testing.T) {
 }
 
 func TestAdminSigninStatus(t *testing.T) {
-	f, wk, db := signinFront(t, `{"provider":{"pluginName":"magic-link"},"pending":null}`)
+	f, _, db := signinFront(t, `{"provider":{"pluginName":"magic-link"},"pending":null}`)
 	got := decode(t, call(f, "GET", "/api/v1/admin/signin/status", "", sessionCookie("admin")))
 	users, _ := got["users"].(map[string]any)
 	if pr, _ := got["provider"].(map[string]any); pr["pluginName"] != "magic-link" || got["pending"] != nil || users["total"] != 2.0 ||
 		users["activeAdmins"] != 1.0 || got["selfEmail"] != "a@example.com" || got["selfNeedsEmail"] != false {
 		t.Fatalf("status %v", got)
 	}
-	wk.mu.Lock()
-	wk.status = signinPending(`["RESEND_API_KEY"]`)
-	wk.mu.Unlock()
+	seedSignInSecrets(t, f.Gate.SecretsDir, signinPending(`["RESEND_API_KEY"]`))
 	f.API.Gate.Reset()
 	seed(t, db, `update app_user set email = 'owner@solo.openneko.invalid' where id = 'admin'`)
 	got = decode(t, call(f, "GET", "/api/v1/admin/signin/status", "", nil))
@@ -73,7 +76,7 @@ func TestAdminSigninStatus(t *testing.T) {
 }
 
 func TestAdminSigninProvider(t *testing.T) {
-	f, wk, _ := signinFront(t, signinPending("[]"))
+	f, _, _ := signinFront(t, `{"provider":null}`)
 	admin := sessionCookie("admin")
 	for _, c := range []struct {
 		body string
@@ -89,41 +92,27 @@ func TestAdminSigninProvider(t *testing.T) {
 			t.Errorf("%s: %d %s", c.body, w.Code, w.Body.String())
 		}
 	}
-	want := []string{`POST /admin/auth/provider {"provider":"magic-link"}`, `POST /admin/auth/provider {"provider":null}`}
-	if strings.Join(wk.calls, "|") != strings.Join(want, "|") {
-		t.Errorf("calls %v", wk.calls)
+	store, err := secrets.Read(f.API.SecretsDir)
+	if err != nil {
+		t.Fatal(err)
 	}
-	wk.fail = `{"error":"no such provider"}`
-	if w := call(f, "POST", "/api/v1/admin/signin/provider", `{"provider":"scalekit"}`, admin); w.Code != 502 || w.Body.String() != `{"error":"no such provider"}` {
-		t.Errorf("worker failure: %d %s", w.Code, w.Body.String())
+	if store["signin"]["PROVIDER"] != "" || len(store["signin.magic-link"]["MAGIC_LINK_SIGNING_SECRET"]) != 64 {
+		t.Errorf("store after provider changes: %v", store)
 	}
-	wk.fail = "plain text"
-	if w := call(f, "POST", "/api/v1/admin/signin/provider", `{"provider":"scalekit"}`, admin); w.Code != 502 || w.Body.String() != `{"error":"sign-in provider change failed (502)"}` {
-		t.Errorf("worker failure without JSON: %d %s", w.Code, w.Body.String())
+
+	corruptSignInSecrets(t, f.API.SecretsDir)
+	if w := call(f, "POST", "/api/v1/admin/signin/provider", `{"provider":"scalekit"}`, admin); w.Code != 502 || !strings.Contains(w.Body.String(), "invalid JSON") {
+		t.Errorf("secrets failure: %d %s", w.Code, w.Body.String())
 	}
 }
 
 func TestAdminSigninEmailProvider(t *testing.T) {
-	f, wk, _ := signinFront(t, signinPending(`["RESEND_API_KEY"]`))
+	f, _, _ := signinFront(t, signinPending(`["RESEND_API_KEY"]`))
 	admin := sessionCookie("admin")
 	post := func(body string) (int, string) {
 		w := call(f, "POST", "/api/v1/admin/signin/email-provider", body, admin)
 		return w.Code, w.Body.String()
 	}
-	if code, body := post(`{"provider":"postmark","apiKey":" pm_key ","from":" OpenNeko <signin@c.co> "}`); code != 200 || body != `{"ok":true}` {
-		t.Fatalf("write: %d %s", code, body)
-	}
-	if code, _ := post(`{"provider":"resend","from":"a <b@c.co>"}`); code != 200 {
-		t.Errorf("stored key kept: %d", code)
-	}
-	want := []string{
-		`POST /admin/auth/secrets {"values":{"MAGIC_LINK_FROM":"OpenNeko \u003csignin@c.co\u003e","POSTMARK_SERVER_TOKEN":"pm_key","RESEND_API_KEY":null,"SENDGRID_API_KEY":null}}`,
-		`POST /admin/auth/secrets {"values":{"MAGIC_LINK_FROM":"a \u003cb@c.co\u003e","POSTMARK_SERVER_TOKEN":null,"SENDGRID_API_KEY":null}}`,
-	}
-	if strings.Join(wk.calls, "|") != strings.Join(want, "|") {
-		t.Errorf("calls %v", wk.calls)
-	}
-	wk.calls = nil
 	for body, message := range map[string]string{
 		`{"provider":"sendgrid","from":"a <b@c.co>"}`:                                  "paste the sendgrid API key — none is stored yet",
 		`{"provider":"smtp","apiKey":"k","from":"a <b@c.co>"}`:                         "provider must be resend, postmark, or sendgrid",
@@ -137,17 +126,38 @@ func TestAdminSigninEmailProvider(t *testing.T) {
 			t.Errorf("%s: %d %s", body, code, got)
 		}
 	}
-	if len(wk.calls) != 0 {
-		t.Errorf("a refused body reached the worker: %v", wk.calls)
+	if code, _ := post(`{"provider":"resend","from":"a <b@c.co>"}`); code != 200 {
+		t.Errorf("stored key kept: %d", code)
 	}
-	wk.fail = `{"error":"secrets store is read-only"}`
-	if code, body := post(`{"provider":"resend","apiKey":"k","from":"a <b@c.co>"}`); code != 502 || body != `{"error":"secrets store is read-only"}` {
-		t.Errorf("worker failure: %d %s", code, body)
+	store, err := secrets.Read(f.API.SecretsDir)
+	if err != nil || store["signin.magic-link"]["MAGIC_LINK_FROM"] != "a <b@c.co>" || store["signin.magic-link"]["RESEND_API_KEY"] != "test-value" {
+		t.Fatalf("after resend keep: %v %v", store, err)
+	}
+	if code, body := post(`{"provider":"postmark","apiKey":" pm_key ","from":" OpenNeko <signin@c.co> "}`); code != 200 || body != `{"ok":true}` {
+		t.Fatalf("write: %d %s", code, body)
+	}
+	store, err = secrets.Read(f.API.SecretsDir)
+	if err != nil || store["signin.magic-link"]["MAGIC_LINK_FROM"] != "OpenNeko <signin@c.co>" ||
+		store["signin.magic-link"]["POSTMARK_SERVER_TOKEN"] != "pm_key" ||
+		store["signin.magic-link"]["RESEND_API_KEY"] != "" ||
+		store["signin.magic-link"]["SENDGRID_API_KEY"] != "" {
+		t.Fatalf("after postmark write: %v %v", store, err)
 	}
 
-	wk.mu.Lock()
-	wk.status = liveScalekit
-	wk.mu.Unlock()
+	if err := os.Chmod(f.API.SecretsDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(f.API.SecretsDir, 0o700) })
+	if err := os.Chmod(filepath.Join(f.API.SecretsDir, secrets.StoreFilename), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := post(`{"provider":"resend","apiKey":"k","from":"a <b@c.co>"}`); code != 502 {
+		t.Errorf("read-only failure: %d", code)
+	}
+	_ = os.Chmod(f.API.SecretsDir, 0o700)
+	_ = os.Chmod(filepath.Join(f.API.SecretsDir, secrets.StoreFilename), 0o600)
+
+	seedSignInSecrets(t, f.Gate.SecretsDir, liveScalekit)
 	f.API.Gate.Reset()
 	if code, body := post(`{"provider":"resend","apiKey":"k","from":"a <b@c.co>"}`); code != 409 || body != `{"error":"email-link sign-in is not the chosen sign-in provider"}` {
 		t.Errorf("other provider: %d %s", code, body)
@@ -155,37 +165,72 @@ func TestAdminSigninEmailProvider(t *testing.T) {
 }
 
 func TestAdminSigninEmailProviderLive(t *testing.T) {
-	f, wk, _ := signinFront(t, `{"provider":{"pluginName":"magic-link"},"pending":null}`)
+	f, _, _ := signinFront(t, `{"provider":{"pluginName":"magic-link"},"pending":null}`)
 	if w := call(f, "POST", "/api/v1/admin/signin/email-provider", `{"provider":"resend","from":"a <b@c.co>"}`, sessionCookie("admin")); w.Code != 200 {
 		t.Errorf("live provider keeps its key: %d %s", w.Code, w.Body.String())
 	}
-	if len(wk.calls) != 1 || strings.Contains(wk.calls[0], "RESEND_API_KEY") {
-		t.Errorf("calls %v", wk.calls)
+	store, err := secrets.Read(f.API.SecretsDir)
+	if err != nil || store["signin.magic-link"]["RESEND_API_KEY"] != "re_test" || store["signin.magic-link"]["MAGIC_LINK_FROM"] != "a <b@c.co>" {
+		t.Errorf("store %v %v", store, err)
 	}
 }
 
+type testEmailTransport struct {
+	mu    sync.Mutex
+	calls []map[string]any
+	fail  bool
+}
+
+func (tr *testEmailTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	raw, _ := io.ReadAll(r.Body)
+	var body map[string]any
+	_ = json.Unmarshal(raw, &body)
+	tr.calls = append(tr.calls, body)
+	if tr.fail {
+		return &http.Response{
+			StatusCode: http.StatusUnprocessableEntity,
+			Header:     http.Header{"Content-Type": {"text/plain"}},
+			Body:       io.NopCloser(strings.NewReader("sender not verified")),
+		}, nil
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"em_1"}`)),
+	}, nil
+}
+
 func TestAdminSigninTest(t *testing.T) {
-	f, wk, _ := signinFront(t, signinPending("[]"))
+	f, _, _ := signinFront(t, `{"provider":{"pluginName":"magic-link"},"pending":null}`)
+	tr := &testEmailTransport{}
+	f.Gate.Client = &http.Client{Transport: tr}
 	admin := sessionCookie("admin")
-	wk.reply["/admin/auth/begin"] = `{"authorizationUrl":"https://x"}`
 	if w := call(f, "POST", "/api/v1/admin/signin/test", `{"email":" Admin@Company.com "}`, admin); w.Code != 200 || w.Body.String() != `{"ok":true}` {
 		t.Fatalf("test: %d %s", w.Code, w.Body.String())
 	}
-	if len(wk.calls) != 1 || !strings.Contains(wk.calls[0], `"loginHint":"admin@company.com"`) ||
-		!strings.Contains(wk.calls[0], `"redirectUri":"https://neko.example/api/auth/callback"`) || !strings.Contains(wk.calls[0], `"state":"delivery-test-`) {
-		t.Errorf("calls %v", wk.calls)
+	if len(tr.calls) != 1 {
+		t.Fatalf("email calls: %d", len(tr.calls))
+	}
+	to, _ := tr.calls[0]["to"].([]any)
+	text, _ := tr.calls[0]["text"].(string)
+	if len(to) != 1 || to[0] != "admin@company.com" ||
+		!strings.Contains(text, "https://neko.example/api/auth/callback?code=") ||
+		!strings.Contains(text, "&state=delivery-test-") {
+		t.Errorf("email payload %v", tr.calls[0])
 	}
 	for _, body := range []string{`{"email":"nope"}`, `{"email":"a b@c.co"}`, `{"email":"a@b"}`, `{}`, `nope`} {
 		if w := call(f, "POST", "/api/v1/admin/signin/test", body, admin); w.Code != 400 {
 			t.Errorf("%s: %d", body, w.Code)
 		}
 	}
-	if len(wk.calls) != 1 {
-		t.Errorf("a refused address reached the worker: %v", wk.calls)
+	if len(tr.calls) != 1 {
+		t.Errorf("a refused address reached the email sender: %v", tr.calls)
 	}
-	wk.fail = "Resend rejected the sign-in email (422): sender not verified"
+	tr.fail = true
 	w := call(f, "POST", "/api/v1/admin/signin/test", `{"email":"a@b.co"}`, admin)
-	if w.Code != 502 || !strings.Contains(w.Body.String(), "sender not verified") {
+	if w.Code != 502 || !strings.Contains(w.Body.String(), "Resend rejected the sign-in email (422): sender not verified") {
 		t.Errorf("provider failure: %d %s", w.Code, w.Body.String())
 	}
 }

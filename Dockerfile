@@ -108,7 +108,6 @@ COPY packages/db/package.json packages/db/package.json
 COPY packages/evals/package.json packages/evals/package.json
 COPY packages/interaction/package.json packages/interaction/package.json
 COPY packages/llm/package.json packages/llm/package.json
-COPY packages/packs/package.json packages/packs/package.json
 COPY packages/secrets/package.json packages/secrets/package.json
 COPY packages/secret-crypt/package.json packages/secret-crypt/package.json
 COPY packages/telemetry/package.json packages/telemetry/package.json

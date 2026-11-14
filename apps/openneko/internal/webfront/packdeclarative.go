@@ -38,7 +38,6 @@ func ianaTimezone(name string) bool {
 	return err == nil
 }
 
-// packValue is packValue() of apps/worker/src/packs/declarative.ts.
 func packValue(value any, inputs map[string]any, secrets map[string]string) (any, error) {
 	switch t := value.(type) {
 	case string:

@@ -102,13 +102,14 @@ func (n *recorder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func newAPIFront(t *testing.T, workerBody string, db *pgxpool.Pool) (*Front, *recorder) {
-	g := newGate(t, newWorker(t, workerBody).srv.URL)
+	g := newGate(t, "")
+	seedSignInSecrets(t, g.SecretsDir, workerBody)
 	g.DB = db
 	node := &recorder{}
 	return &Front{
 		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
 		Gate: g,
-		API:  &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example/"},
+		API:  &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example/", SecretsDir: g.SecretsDir},
 		Node: node,
 	}, node
 }
@@ -188,26 +189,27 @@ func TestRemovedRoutesGone(t *testing.T) {
 func TestAuthStatusRoute(t *testing.T) {
 	f, _ := newAPIFront(t, `{"provider":{"pluginName":"magic-link","providerLabel":"Email link","provisioning":"manual"},"pending":null}`, nil)
 	w := call(f, "GET", "/api/v1/auth/status", "", nil)
-	if w.Body.String() != `{"pending":null,"provider":{"pluginName":"magic-link","providerLabel":"Email link","provisioning":"manual"}}` {
+	if w.Body.String() != `{"pending":null,"provider":{"pluginName":"magic-link","providerLabel":"Email link","provisioning":"manual","loginHintRequired":true}}` {
 		t.Errorf("live: %q", w.Body.String())
 	}
 	raw, _ := os.ReadFile(f.Gate.MarkerPath)
-	if string(raw) != `{"provider":{"pluginName":"magic-link","providerLabel":"Email link","provisioning":"manual"}}` {
+	if string(raw) != `{"provider":{"pluginName":"magic-link","providerLabel":"Email link","provisioning":"manual","loginHintRequired":true}}` {
 		t.Errorf("marker %q", raw)
 	}
 
 	f, _ = newAPIFront(t, `{"provider":null,"pending":{"pluginName":"scalekit","providerLabel":"SSO","missingEnv":["SCALEKIT_CLIENT_SECRET"]}}`, nil)
-	if w := call(f, "GET", "/api/v1/auth/status", "", nil); w.Body.String() != `{"pending":{"providerLabel":"SSO"},"provider":null}` {
+	if w := call(f, "GET", "/api/v1/auth/status", "", nil); w.Body.String() != `{"pending":{"providerLabel":"Scalekit"},"provider":null}` {
 		t.Errorf("pending: %q", w.Body.String())
 	}
 
-	down := newGate(t, "http://127.0.0.1:1")
+	down := newGate(t, "")
+	corruptSignInSecrets(t, down.SecretsDir)
 	if err := os.WriteFile(down.MarkerPath, []byte(`{"provider":{"pluginName":"magic-link"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	f.Gate, f.API.Gate = down, down
 	if w := call(f, "GET", "/api/v1/auth/status", "", nil); w.Body.String() != `{"pending":null,"provider":{"pluginName":"magic-link"}}` {
-		t.Errorf("worker down: %q", w.Body.String())
+		t.Errorf("marker fallback: %q", w.Body.String())
 	}
 }
 

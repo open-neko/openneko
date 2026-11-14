@@ -1,7 +1,22 @@
 import { createHash } from "node:crypto";
-import type { SolutionPackManifest } from "./manifest.js";
 
-export type PackOAuthConnection = SolutionPackManifest["oauth"][number];
+export type PackOAuthConnection = {
+  key: string;
+  providerLabel: string;
+  scope: "deployment" | "user";
+  experience?: { description: string; setupInstructions?: string; helpUrl?: string };
+  authorizationUrl: string;
+  tokenUrl: string;
+  userInfoUrl: string;
+  clientIdInput: string;
+  clientSecret: string;
+  accessToken: string;
+  refreshToken: string;
+  scopes: string[];
+  authorizationParams?: Record<string, string>;
+  accountIdField: string;
+  accountLabelField: string;
+};
 
 export type PackOAuthTokens = {
   accessToken: string;

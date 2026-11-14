@@ -92,7 +92,7 @@ Custom inputs should have defaults or be supplied by the installer. Do not assum
 Magento's application-specific discovery runs for a new pack. Declaring a health
 check name also does not implement a new runtime check.
 
-The [manifest schema](packages/packs/src/manifest.ts) is the authoritative field
+The [manifest schema](apps/openneko/internal/packs/manifest.go) is the authoritative field
 reference. Unknown manifest fields are rejected.
 
 ## Artifacts and stable identities
@@ -144,8 +144,8 @@ adapter:
       idempotencyHeader: Idempotency-Key
 ```
 
-See the [artifact schemas](packages/packs/src/artifact-schema.ts) for exact fields
-and the [bundle loader](packages/packs/src/bundle.ts) for identity and reference
+See the [artifact schemas](apps/openneko/internal/packs/artifacts.go) for exact fields
+and the [bundle loader](apps/openneko/internal/packs/bundle.go) for identity and reference
 validation. Avoid renaming a query file or skill casually: filenames and skill
 names participate in artifact identity.
 
@@ -381,17 +381,16 @@ personal accounts.
 
 ## Validate and exercise the pack
 
-From the repository root, with workspace dependencies installed, validate the
-small example through the same bundle loader used by installation. Create its
-empty artifact directories first; Git does not preserve empty directories:
+Validate the small example with the same bundle loader that installation uses.
+Put the pack folder in a ZIP archive, then upload it. The upload checks the
+archive and stores the pack for review. It does not install the pack:
 
 ```sh
-mkdir -p apps/worker/test/fixtures/service-health/{actions,policies}
-pnpm --filter @neko/worker exec tsx -e 'import { loadSolutionPack } from "@neko/packs"; loadSolutionPack(process.argv[1]).then(b => console.log(b.manifest.metadata.id, b.artifacts.length)).catch(e => { console.error(e.message); process.exitCode = 1; })' ./test/fixtures/service-health
+cd apps/worker/test/fixtures && zip -r /tmp/service-health.zip service-health
+openneko pack upload /tmp/service-health.zip
 ```
 
-Replace the final path with your pack directory. Relative paths in this command
-resolve from `apps/worker`; use an absolute path for a pack in another repository.
+Use your own pack folder in place of `service-health`.
 
 Bundle validation checks structure and references. It does not prove provider
 compatibility or successful end-user execution. Before submitting a change:
@@ -410,17 +409,17 @@ compatibility or successful end-user execution. Before submitting a change:
    installed-but-unconfigured and uninstalled states on Integrations.
 6. Exercise upgrade behavior, including locally modified installed artifacts.
 
-Relevant suites include `pnpm --filter @neko/packs test` and the worker's
-`pack-declarative`, `pack-connector.integration`, `pack-lifecycle.integration`, and
-`pack-uploads` tests. `openneko web` lists, inspects, plans and stores uploaded packs
-with the Go loader in `apps/openneko/internal/packs`. The plan reads each installed
+The relevant suites are the Go tests in `apps/openneko/internal/packs` and the
+`Pack` tests in `apps/openneko/internal/webfront`. The Node fixtures in their
+`testdata` folders are fixed records of the former Node pack code. `openneko web`
+lists, inspects, plans and stores uploaded packs with the Go loader in `apps/openneko/internal/packs`. The plan reads each installed
 artifact from its target: the database row, the skill folder, the GraphJin config
 file, or the live GraphJin. `openneko web` also reviews a pack: it resolves the
 inputs and secrets, checks the source bindings against the GraphJin config and the
 live GraphJin, runs the declarative checks and the native target check, and signs
 the review hash that install checks. Run `go test ./internal/packs` in `apps/openneko`:
 it checks that the Go loader gives the same manifest, bundle, plan and target state
-hashes as the Node code, as well as the Magento V2 attribute classification, cap
+hashes as the Node fixtures, as well as the Magento V2 attribute classification, cap
 evaluation and activity presentation. `go test -run TestPackReviewNodeFixture ./internal/webfront`
 checks the review against the Node fixture. `openneko web` also runs the pack doctor.
 For a custom pack, it runs each metric, watcher and saved query once against the

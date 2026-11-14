@@ -25,10 +25,6 @@ type packWorker struct {
 }
 
 func (p *packWorker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/admin/auth/status" {
-		_, _ = w.Write([]byte(liveScalekit))
-		return
-	}
 	body, _ := io.ReadAll(r.Body)
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -52,11 +48,12 @@ func packFront(t *testing.T) (*Front, *packWorker) {
 	srv := httptest.NewServer(wk)
 	t.Cleanup(srv.Close)
 	g := newGate(t, srv.URL)
+	seedSignInSecrets(t, g.SecretsDir, liveScalekit)
 	g.DB = db
 	return &Front{
 		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
 		Gate: g,
-		API:  &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecretsDir: t.TempDir()},
+		API:  &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecretsDir: g.SecretsDir},
 		Node: &recorder{},
 	}, wk
 }

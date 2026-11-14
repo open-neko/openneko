@@ -4,16 +4,16 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"net/http"
+	"encoding/json"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/secrets"
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
@@ -22,30 +22,92 @@ const (
 	nodeCookie = "user-1.4102444800.fuhUjYixR83Qta_i7HSQrajXFOuU8O4oLA3uhQmX9Is"
 )
 
-type worker struct {
-	srv   *httptest.Server
-	body  atomic.Value
-	calls atomic.Int32
+func seedSignInSecrets(t *testing.T, dir, status string) {
+	t.Helper()
+	var parsed struct {
+		Provider *struct {
+			PluginName string `json:"pluginName"`
+		} `json:"provider"`
+		Pending *struct {
+			PluginName    string   `json:"pluginName"`
+			MissingEnv    []string `json:"missingEnv"`
+			ConfiguredEnv []string `json:"configuredEnv"`
+		} `json:"pending"`
+	}
+	_ = json.Unmarshal([]byte(status), &parsed)
+	store := secrets.Store{}
+	switch {
+	case parsed.Provider != nil:
+		id := parsed.Provider.PluginName
+		if id != magicLinkPlugin {
+			id = scalekitPlugin
+		}
+		store[signInSectionName] = map[string]string{"PROVIDER": id}
+		if id == magicLinkPlugin {
+			store[signInProviderSection(id)] = map[string]string{
+				"MAGIC_LINK_SIGNING_SECRET": strings.Repeat("k", 64),
+				"MAGIC_LINK_FROM":           "signin@example.com",
+				"RESEND_API_KEY":            "re_test",
+			}
+		} else {
+			store[signInProviderSection(id)] = map[string]string{
+				"SCALEKIT_ENVIRONMENT_URL": "https://env.scalekit.com",
+				"SCALEKIT_CLIENT_ID":       "cid",
+				"SCALEKIT_CLIENT_SECRET":   "sec",
+			}
+		}
+	case parsed.Pending != nil:
+		id := parsed.Pending.PluginName
+		if id != magicLinkPlugin {
+			id = scalekitPlugin
+		}
+		store[signInSectionName] = map[string]string{"PROVIDER": id}
+		sec := map[string]string{}
+		if id == magicLinkPlugin {
+			sec["MAGIC_LINK_SIGNING_SECRET"] = strings.Repeat("k", 64)
+			for _, k := range parsed.Pending.ConfiguredEnv {
+				if k != "MAGIC_LINK_SIGNING_SECRET" {
+					sec[k] = "test-value"
+				}
+			}
+		} else {
+			sec["SCALEKIT_ENVIRONMENT_URL"] = "https://env.scalekit.com"
+			sec["SCALEKIT_CLIENT_ID"] = "cid"
+			sec["SCALEKIT_CLIENT_SECRET"] = "sec"
+			for _, k := range parsed.Pending.MissingEnv {
+				delete(sec, k)
+			}
+		}
+		store[signInProviderSection(id)] = sec
+	}
+	raw, err := json.Marshal(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := secrets.Path(dir)
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
-func newWorker(t *testing.T, body string) *worker {
-	w := &worker{}
-	w.body.Store(body)
-	w.srv = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		w.calls.Add(1)
-		if r.URL.Path != "/admin/auth/status" {
-			http.NotFound(rw, r)
-			return
-		}
-		_, _ = rw.Write([]byte(w.body.Load().(string)))
-	}))
-	t.Cleanup(w.srv.Close)
-	return w
+func corruptSignInSecrets(t *testing.T, dir string) {
+	t.Helper()
+	file := secrets.Path(dir)
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func newGate(t *testing.T, workerURL string) *Gate {
 	return &Gate{
 		WorkerURL:     workerURL,
+		SecretsDir:    t.TempDir(),
 		SessionSecret: func() (string, error) { return testSecret, nil },
 		MarkerPath:    filepath.Join(t.TempDir(), "auth-gate.json"),
 	}
@@ -101,7 +163,7 @@ func TestDefaultSessionSecretMatchesNode(t *testing.T) {
 }
 
 func TestGateOpenWithoutSignIn(t *testing.T) {
-	g := newGate(t, newWorker(t, `{"provider":null}`).srv.URL)
+	g := newGate(t, "")
 	for _, p := range []string{"/chat", "/admin/settings", "/api/v1/settings/models"} {
 		if _, ok := run(g, "GET", p, nil); !ok {
 			t.Errorf("%s refused on an install with no sign-in", p)
@@ -118,8 +180,8 @@ func TestGateOpenWithoutSignIn(t *testing.T) {
 }
 
 func TestGateWithSignIn(t *testing.T) {
-	wk := newWorker(t, `{"provider":{"pluginName":"oidc"}}`)
-	g := newGate(t, wk.srv.URL)
+	g := newGate(t, "")
+	seedSignInSecrets(t, g.SecretsDir, liveScalekit)
 
 	w, ok := run(g, "GET", "/chat/a%20b?x=1&y=%C3%A9!*()", nil)
 	if ok || w.Code != 302 || w.Header().Get("Location") != "/signin?returnTo=%2Fchat%2Fa%2520b%3Fx%3D1%26y%3D%25C3%25A9!*()" {
@@ -158,34 +220,33 @@ func TestGateWithSignIn(t *testing.T) {
 	if _, ok := run(g, "GET", "/admin/settings", cookie); !ok {
 		t.Error("admin refused")
 	}
-	if wk.calls.Load() != 1 {
-		t.Errorf("worker asked %d times inside the cache second", wk.calls.Load())
-	}
 }
 
 func TestGateMarker(t *testing.T) {
-	wk := newWorker(t, `{"provider":{"pluginName":"oidc","issuer":"x"}}`)
-	g := newGate(t, wk.srv.URL)
+	g := newGate(t, "")
+	seedSignInSecrets(t, g.SecretsDir, liveScalekit)
 	if _, ok := run(g, "GET", "/chat", nil); ok {
 		t.Fatal("gate open with a live provider")
 	}
 	raw, err := os.ReadFile(g.MarkerPath)
-	if err != nil || string(raw) != `{"provider":{"pluginName":"oidc","issuer":"x"}}` {
+	if err != nil || string(raw) != `{"provider":{"pluginName":"scalekit","providerLabel":"Scalekit","provisioning":"automatic","loginHintRequired":false}}` {
 		t.Fatalf("marker %q %v", raw, err)
 	}
 
-	down := newGate(t, "http://127.0.0.1:1")
+	down := newGate(t, "")
+	corruptSignInSecrets(t, down.SecretsDir)
 	down.MarkerPath = g.MarkerPath
 	if _, ok := run(down, "GET", "/chat", nil); ok {
-		t.Error("worker down after sign-in was live: the gate must stay closed")
+		t.Error("secrets unreadable after sign-in was live: the gate must stay closed")
 	}
 
-	fresh := newGate(t, "http://127.0.0.1:1")
+	fresh := newGate(t, "")
+	corruptSignInSecrets(t, fresh.SecretsDir)
 	if _, ok := run(fresh, "GET", "/chat", nil); !ok {
-		t.Error("worker down on an install that never had sign-in: the gate must stay open")
+		t.Error("secrets unreadable on an install that never had sign-in: the gate must stay open")
 	}
 
-	wk.body.Store(`{"provider":null}`)
+	seedSignInSecrets(t, g.SecretsDir, `{"provider":null}`)
 	g.provider = nil
 	if _, ok := run(g, "GET", "/chat", nil); !ok {
 		t.Error("sign-in turned off: the gate must open")
@@ -196,7 +257,8 @@ func TestGateMarker(t *testing.T) {
 }
 
 func TestGateReadsNodeMarker(t *testing.T) {
-	g := newGate(t, "http://127.0.0.1:1")
+	g := newGate(t, "")
+	corruptSignInSecrets(t, g.SecretsDir)
 	if err := os.WriteFile(g.MarkerPath, []byte(`{"provider":{"pluginName":"entra","tenant":"t"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -209,15 +271,15 @@ func TestGateDatabase(t *testing.T) {
 	pool := testpg.Pool(t)
 	ctx := context.Background()
 	_, err := pool.Exec(ctx, `
-		create table organization (id text primary key, created_at timestamptz not null default now());
-		create table app_user (id text primary key, org_id text not null, disabled_at timestamptz);
+		create table organization (id text primary key, solo_admin_user_id text, created_at timestamptz not null default now());
+		create table app_user (id text primary key, org_id text not null, email text not null default 'a@example.com', disabled_at timestamptz);
 		create table app_device (id text primary key, org_id text not null, user_id text not null,
 			token_prefix text not null, token_verifier text not null, revoked_at timestamptz,
 			last_used_at timestamptz not null default now());
 		create table user_group (id text primary key, org_id text not null, slug text not null);
 		create table user_group_membership (group_id text not null, user_id text not null);
-		insert into organization values ('org', now() - interval '1 day'), ('org2', now());
-		insert into app_user values ('admin', 'org', null), ('member', 'org', null), ('gone', 'org', now());
+		insert into organization (id, created_at) values ('org', now() - interval '1 day'), ('org2', now());
+		insert into app_user (id, org_id, disabled_at) values ('admin', 'org', null), ('member', 'org', null), ('gone', 'org', now());
 		insert into user_group values ('g-admin', 'org', 'administrators'), ('g-ops', 'org', 'ops');
 		insert into user_group_membership values ('g-admin', 'admin'), ('g-ops', 'member'), ('g-admin', 'gone');`)
 	if err != nil {
@@ -243,7 +305,8 @@ func TestGateDatabase(t *testing.T) {
 	device("d5", "org2", "member", "eeeeeeeeeeee", "")
 	device("d6", "org", "admin", "ffffffffffff", "")
 
-	g := newGate(t, newWorker(t, `{"provider":{"pluginName":"oidc"}}`).srv.URL)
+	g := newGate(t, "")
+	seedSignInSecrets(t, g.SecretsDir, liveScalekit)
 	g.DB = pool
 	if got := g.deviceUserID(ctx, "Bearer "+token("aaaaaaaaaaaa")); got != "member" {
 		t.Errorf("valid device: %q", got)

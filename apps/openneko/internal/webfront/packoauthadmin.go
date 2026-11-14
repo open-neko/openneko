@@ -21,8 +21,7 @@ import (
 // this process.
 var packSecretsMu sync.Mutex
 
-// packOAuth is PackOAuthService of apps/worker/src/packs/oauth.ts for one
-// connection of one pack.
+// packOAuth serves one connection of one pack.
 type packOAuth struct {
 	a         *API
 	orgID     string

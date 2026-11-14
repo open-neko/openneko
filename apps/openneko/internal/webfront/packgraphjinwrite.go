@@ -20,9 +20,6 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
 )
 
-// This file is apps/worker/src/packs/graphjin-config.ts with the config
-// lock of persist-source-config.ts and restart.ts.
-
 const (
 	packConfigAttempts      = 8
 	graphjinConfigLockStale = 10 * time.Minute

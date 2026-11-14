@@ -1,9 +1,8 @@
-// Scalekit: OIDC sign-in through Scalekit's hosted gateway (Okta, Entra ID,
-// Google Workspace, … behind one integration), SCIM directory sync of one
-// Scalekit organization, and deployment-scoped OAuth consent against the
-// Scalekit workspace MCP server that the SSO setup page drives. Every
-// function takes its settings explicitly; SignInService reads them from the
-// `signin.scalekit` section of the secrets store.
+// Scalekit SCIM directory sync of one Scalekit organization, and
+// deployment-scoped OAuth consent against the Scalekit workspace MCP server
+// that the SSO setup page drives. Every function takes its settings
+// explicitly; SignInService reads them from the `signin.scalekit` section of
+// the secrets store.
 import type { ConnectorCredential } from "@neko/secrets";
 import type {
   ApplyDirectoryChangeParams,
@@ -13,16 +12,11 @@ import type {
   ListDirectoryResult,
 } from "../../directory/types.js";
 import type {
-  AuthIdentity,
-  BeginAuthParams,
   BeginConnectParams,
-  CompleteAuthParams,
   CompleteConnectParams,
   SignInSetting,
 } from "../types.js";
-import { createScalekitClient, type ScalekitClient, type ScalekitUserinfo } from "./client.js";
 import { createScalekitDirectory } from "./directory.js";
-import { createMcpClient, joinTextContent, type McpToolClient } from "./mcp-client.js";
 import {
   createMcpOAuth,
   generatePkceVerifier,
@@ -60,10 +54,8 @@ export const SCALEKIT_WORKSPACE_SCOPES = ["wks:read", "wks:write", "env:read", "
 
 /** Test seam: inject fakes instead of constructing the real clients. */
 export interface ScalekitOptions {
-  createClient?: (env: ResolvedEnv) => ScalekitClient;
   createMcpOAuth?: () => ReturnType<typeof createMcpOAuth>;
   createDirectory?: (env: ResolvedEnv & { organizationId: string }) => ReturnType<typeof createScalekitDirectory>;
-  createMcpClient?: (options: { url: string; accessToken: string }) => Promise<McpToolClient>;
 }
 
 export class ScalekitError extends Error {
@@ -97,68 +89,7 @@ function resolveMcpUrl(env: ScalekitEnv): string {
   return (env.SCALEKIT_MCP_URL || DEFAULT_MCP_URL).trim().replace(/\/+$/, "");
 }
 
-function client(env: ScalekitEnv, options: ScalekitOptions): ScalekitClient {
-  const resolved = resolveEnv(env);
-  return (options.createClient ?? ((e) => createScalekitClient(e)))(resolved);
-}
-
 const mcpOAuth = (options: ScalekitOptions) => (options.createMcpOAuth ? options.createMcpOAuth() : createMcpOAuth());
-
-
-export async function beginScalekitAuth(
-  params: BeginAuthParams,
-  env: ScalekitEnv,
-  options: ScalekitOptions = {},
-): Promise<{ authorizationUrl: string }> {
-  if (!params.redirectUri) throw new ScalekitError("params.redirectUri is required");
-  if (!params.state) throw new ScalekitError("params.state is required");
-  const authorizationUrl = client(env, options).buildAuthorizationUrl({
-    redirectUri: params.redirectUri,
-    state: params.state,
-    loginHint: params.loginHint ?? null,
-  });
-  return { authorizationUrl };
-}
-
-export async function completeScalekitAuth(
-  params: CompleteAuthParams,
-  env: ScalekitEnv,
-  options: ScalekitOptions = {},
-): Promise<AuthIdentity> {
-  if (!params.code) throw new ScalekitError("params.code is required");
-  if (!params.redirectUri) throw new ScalekitError("params.redirectUri is required");
-  if (!params.state) throw new ScalekitError("params.state is required");
-  const scalekit = client(env, options);
-  const tokens = await scalekit.exchangeCode({ code: params.code, redirectUri: params.redirectUri });
-  return toIdentity(await scalekit.fetchUserinfo(tokens.access_token));
-}
-
-function toIdentity(info: ScalekitUserinfo): AuthIdentity {
-  const email = info.email ?? "";
-  if (!email) {
-    // OpenNeko keys app_user off email; an IdP that doesn't return one is
-    // not usable here.
-    throw new ScalekitError("Scalekit userinfo returned no email — check the IdP's released scopes");
-  }
-  const displayName = info.name ?? [info.given_name, info.family_name].filter(Boolean).join(" ").trim();
-  return {
-    sub: info.sub,
-    email,
-    name: displayName && displayName.length > 0 ? displayName : null,
-    orgId: info.organization_id ?? null,
-    groups: collectGroups(info),
-  };
-}
-
-function collectGroups(info: ScalekitUserinfo): string[] {
-  // Downstream IdPs surface membership under `groups` (Okta), `roles`
-  // (Entra), or both; the union keeps role mapping to one list.
-  const out = new Set<string>();
-  for (const g of info.groups ?? []) if (typeof g === "string" && g) out.add(g);
-  for (const r of info.roles ?? []) if (typeof r === "string" && r) out.add(r);
-  return [...out];
-}
-
 
 function directory(env: ScalekitEnv, options: ScalekitOptions) {
   const resolved = resolveEnv(env);
@@ -184,7 +115,6 @@ export async function applyScalekitDirectoryChange(
 ): Promise<ApplyDirectoryChangeResult> {
   return directory(env, options).apply(params);
 }
-
 
 /**
  * Begin the MCP-OAuth-2.1 dance: discover the protected resource + AS
@@ -217,8 +147,6 @@ export async function beginScalekitConnect(
   }
   if (!clientId) throw new ScalekitError("Scalekit MCP authorization server did not support client registration (DCR)");
   const codeVerifier = params.codeVerifier ?? generatePkceVerifier();
-  // The authorization server's discovered scopes are the truth: requesting
-  // less than the full menu yields a token that fails per-tool scope checks.
   const scopes = resource.scopesSupported;
   const authorizationUrl = oauth.buildAuthorizationUrl({
     authorizationEndpoint: as.authorizationEndpoint,
@@ -274,81 +202,3 @@ export async function completeScalekitConnect(
   };
 }
 
-/** Rotate the deployment's refresh token; the caller persists the result. */
-export async function refreshScalekitConnect(
-  current: ConnectorCredential,
-  options: ScalekitOptions = {},
-): Promise<ConnectorCredential> {
-  const t = current.tokens as Record<string, unknown>;
-  const tokenEndpoint = str(t.token_endpoint);
-  const clientId = str(t.client_id);
-  const refreshToken = str(t.refresh_token);
-  if (!tokenEndpoint || !clientId || !refreshToken) {
-    throw new ScalekitError("stored credential is missing token_endpoint/client_id/refresh_token — reconnect the workspace");
-  }
-  const tokens = await mcpOAuth(options).refreshTokens({
-    tokenEndpoint,
-    clientId,
-    clientSecret: strOrNull(t.client_secret),
-    refreshToken,
-  });
-  return {
-    ...current,
-    tokens: {
-      ...t,
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token ?? refreshToken,
-      expires_at: tokens.expires_in != null ? String(Date.now() + tokens.expires_in * 1000) : t.expires_at,
-    },
-    refreshedAt: new Date().toISOString(),
-  };
-}
-
-/** Whether a stored credential expires within the next minute. */
-export function scalekitCredentialNearExpiry(credential: ConnectorCredential, nowMs = Date.now()): boolean {
-  const expiresAt = num((credential.tokens as Record<string, unknown>).expires_at);
-  return expiresAt !== null && expiresAt <= nowMs + 60_000;
-}
-
-/**
- * Call one Scalekit workspace MCP tool with the deployment credential and
- * return its text. Throws when the workspace is not connected or the tool
- * reports an error.
- */
-export async function callScalekitTool(
-  tool: string,
-  args: Record<string, unknown>,
-  credential: ConnectorCredential | null,
-  env: ScalekitEnv,
-  options: ScalekitOptions = {},
-): Promise<string> {
-  const accessToken = str((credential?.tokens as Record<string, unknown> | undefined)?.access_token);
-  if (!accessToken) {
-    throw new ScalekitError("Scalekit workspace is not connected — authorize it on the Single sign-on settings page first");
-  }
-  const make = options.createMcpClient ?? ((opts) => createMcpClient(opts));
-  const mcp = await make({ url: resolveMcpUrl(env), accessToken });
-  try {
-    const result = await mcp.callTool(tool, args);
-    const text = joinTextContent(result);
-    if (result.isError === true) throw new ScalekitError(text || `Scalekit tool ${tool} failed`);
-    if (!text) throw new ScalekitError(`Scalekit tool ${tool} returned no result — is the workspace connected?`);
-    return text;
-  } finally {
-    await mcp.close().catch(() => {});
-  }
-}
-
-function str(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function strOrNull(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function num(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && /^\d+$/.test(value)) return Number(value);
-  return null;
-}
