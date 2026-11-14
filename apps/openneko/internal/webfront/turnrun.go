@@ -389,6 +389,7 @@ func (s *runEventStore) flushLocked(ctx context.Context) error {
 }
 
 func (s *runEventStore) persistLocked(ctx context.Context, event any) error {
+	event = scrubRunEvent(s.api.runEventScrubber(), event)
 	id, err := s.api.appendRunEvent(ctx, s.orgID, s.threadID, s.runID, event)
 	if err != nil {
 		if s.err == nil {
