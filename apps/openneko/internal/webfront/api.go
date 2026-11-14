@@ -34,6 +34,9 @@ type API struct {
 	SecureCookies bool
 	// SecretsDir overrides the config folder that holds secrets.json.
 	SecretsDir string
+	inboundMu  sync.Mutex
+	inbound    *channelLoops
+	settingsMu sync.Mutex
 	// Jobs adds River jobs in a route's transaction.
 	Jobs *jobs.Inserter
 	// MetricsRefresh lets the metric_refresh jobs run; see jobs.MetricsRefreshOn.
@@ -135,6 +138,7 @@ var GoRoutes = map[string][]string{
 	"/api/v1/workflow-runs":                                       {"GET"},
 	"/api/v1/hooks/{workflowId}":                                  {"POST"},
 	"/api/v1/hooks/{workflowId}/result/{runId}":                   {"GET"},
+	"/api/v1/channels/{channelId}/inbound":                        {"POST"},
 	"/api/v1/workflow-runs/{workflowRunId}":                       {"GET"},
 	"/api/v1/workflow-runs/{workflowRunId}/artifact":              {"GET"},
 	"/api/v1/workflows/{workflowId}/runs":                         {"POST"},
@@ -285,6 +289,7 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/workflow-runs/{workflowRunId}/artifact":       {"GET": a.workflowRunArtifact},
 			"/api/v1/hooks/{workflowId}":                           {"POST": a.hookStart},
 			"/api/v1/hooks/{workflowId}/result/{runId}":            {"GET": a.hookResult},
+			"/api/v1/channels/{channelId}/inbound":                 {"POST": a.channelWebhook},
 			"/api/v1/workflows/{workflowId}/runs":                  {"POST": a.workflowAPIStart},
 			"/api/v1/workflows/{workflowId}/runs/{runId}":          {"GET": a.workflowAPIRun},
 			"/api/v1/workflows/{workflowId}/runs/{runId}/artifact": {"GET": a.workflowAPIArtifact},

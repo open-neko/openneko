@@ -136,6 +136,12 @@ with exit code 0, so its supervisor starts it again.`,
 				Logf:      func(format string, args ...any) { fmt.Fprintf(cmd.OutOrStdout(), format+"\n", args...) }}
 			runner := startJobs(context.WithoutCancel(ctx), runJobs, queue, cmd.OutOrStdout(), cmd.ErrOrStderr())
 			webfront.SweepStagesEvery(ctx, 5*time.Minute)
+			if _, err := api.MigrateLegacyChannelSecrets(); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: channel settings not moved: %v\n", err)
+			}
+			if runner != nil {
+				api.StartChannelInbound(ctx)
+			}
 			var node *exec.Cmd
 			nodeDone := make(chan error, 1)
 			if len(args) > 0 {

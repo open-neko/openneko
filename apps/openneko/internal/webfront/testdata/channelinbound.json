@@ -1,0 +1,1152 @@
+{
+  "parse": [
+    {
+      "channel": "slack",
+      "raw": {
+        "command": "/openneko",
+        "text": "  report weekly  sales ",
+        "channel_id": "C1",
+        "user_id": "U1",
+        "user_name": "ada",
+        "team_id": "T1"
+      },
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "invoke",
+            "command": "report",
+            "args": {
+              "text": "weekly sales"
+            }
+          }
+        ],
+        "recipient": {
+          "kind": "slack",
+          "channel": "C1",
+          "user": "U1",
+          "ephemeral": true
+        },
+        "sender": {
+          "id": "U1",
+          "displayName": "ada",
+          "workspaceId": "T1"
+        }
+      }
+    },
+    {
+      "channel": "slack",
+      "raw": {
+        "command": "/status",
+        "text": "",
+        "channel_id": "C1"
+      },
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "invoke",
+            "command": "status",
+            "args": {}
+          }
+        ],
+        "recipient": {
+          "kind": "slack",
+          "channel": "C1"
+        }
+      }
+    },
+    {
+      "channel": "slack",
+      "raw": {
+        "command": "/",
+        "text": "   ",
+        "channel_id": "",
+        "user_id": "U2"
+      },
+      "env": {},
+      "parsed": {
+        "intents": [],
+        "sender": {
+          "id": "U2"
+        }
+      }
+    },
+    {
+      "channel": "slack",
+      "raw": {
+        "type": "block_actions",
+        "user": {
+          "id": "U3",
+          "username": "grace"
+        },
+        "team": {
+          "id": "T2"
+        },
+        "channel": {
+          "id": "C2"
+        },
+        "message": {
+          "ts": "1700.1"
+        },
+        "actions": [
+          {
+            "action_id": "approve",
+            "value": "3f1c2b9a-0d4e-4c55-8a71-2b3c4d5e6f70"
+          },
+          {
+            "action_id": "noop"
+          },
+          "bad"
+        ]
+      },
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "decision",
+            "decisionRef": "3f1c2b9a-0d4e-4c55-8a71-2b3c4d5e6f70",
+            "choice": "approve"
+          }
+        ],
+        "recipient": {
+          "kind": "slack",
+          "channel": "C2",
+          "thread_ts": "1700.1"
+        },
+        "sender": {
+          "id": "U3",
+          "displayName": "grace",
+          "workspaceId": "T2"
+        }
+      }
+    },
+    {
+      "channel": "slack",
+      "raw": {
+        "type": "block_actions",
+        "user": {
+          "id": "U3",
+          "name": "",
+          "username": "grace"
+        },
+        "container": {
+          "channel_id": "C3",
+          "message_ts": "1700.2"
+        },
+        "actions": [
+          {
+            "action_id": "reject",
+            "value": 7
+          },
+          {
+            "action_id": "select:opt-1",
+            "text": {
+              "text": "Weekly"
+            }
+          },
+          {
+            "action_id": "select:opt-2"
+          }
+        ]
+      },
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "decision",
+            "decisionRef": "",
+            "choice": "reject"
+          },
+          {
+            "kind": "utterance",
+            "text": "Weekly",
+            "threadRef": "1700.2"
+          },
+          {
+            "kind": "utterance",
+            "text": "opt-2",
+            "threadRef": "1700.2"
+          }
+        ],
+        "recipient": {
+          "kind": "slack",
+          "channel": "C3",
+          "thread_ts": "1700.2"
+        },
+        "sender": {
+          "id": "U3"
+        }
+      }
+    },
+    {
+      "channel": "slack",
+      "raw": {
+        "type": "block_actions",
+        "actions": "none"
+      },
+      "env": {},
+      "parsed": {
+        "intents": []
+      }
+    },
+    {
+      "channel": "slack",
+      "raw": {
+        "type": "event_callback",
+        "team_id": "T1",
+        "event": {
+          "type": "app_mention",
+          "text": " <@U0BOT>  what sold  ",
+          "user": "U4",
+          "channel": "C4",
+          "ts": "1700.3"
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "utterance",
+            "text": "what sold",
+            "threadRef": "1700.3"
+          }
+        ],
+        "recipient": {
+          "kind": "slack",
+          "channel": "C4",
+          "thread_ts": "1700.3"
+        },
+        "sender": {
+          "id": "U4",
+          "workspaceId": "T1"
+        }
+      }
+    },
+    {
+      "channel": "slack",
+      "raw": {
+        "type": "event_callback",
+        "event": {
+          "type": "app_mention",
+          "text": "<@U0BOT>",
+          "user": "U4",
+          "channel": "C4",
+          "ts": "1700.4",
+          "thread_ts": "1700.0"
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [],
+        "recipient": {
+          "kind": "slack",
+          "channel": "C4",
+          "thread_ts": "1700.0"
+        },
+        "sender": {
+          "id": "U4"
+        }
+      }
+    },
+    {
+      "channel": "slack",
+      "raw": {
+        "type": "event_callback",
+        "event": {
+          "type": "message",
+          "channel_type": "im",
+          "text": "hello",
+          "user": "U5",
+          "channel": "D1",
+          "thread_ts": "1700.5",
+          "team": "T9"
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "utterance",
+            "text": "hello",
+            "threadRef": "1700.5"
+          }
+        ],
+        "recipient": {
+          "kind": "slack",
+          "channel": "D1",
+          "thread_ts": "1700.5"
+        },
+        "sender": {
+          "id": "U5",
+          "workspaceId": "T9"
+        }
+      }
+    },
+    {
+      "channel": "slack",
+      "raw": {
+        "type": "event_callback",
+        "event": {
+          "type": "message",
+          "channel_type": "im",
+          "text": "hi",
+          "user": "U5",
+          "channel": "D1"
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "utterance",
+            "text": "hi"
+          }
+        ],
+        "recipient": {
+          "kind": "slack",
+          "channel": "D1"
+        },
+        "sender": {
+          "id": "U5"
+        }
+      }
+    },
+    {
+      "channel": "slack",
+      "raw": {
+        "type": "event_callback",
+        "event": {
+          "type": "message",
+          "channel_type": "channel",
+          "text": "more",
+          "user": "U6",
+          "channel": "C5",
+          "thread_ts": "1700.6"
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "utterance",
+            "text": "more",
+            "threadRef": "1700.6"
+          }
+        ],
+        "recipient": {
+          "kind": "slack",
+          "channel": "C5",
+          "thread_ts": "1700.6",
+          "requireThread": true
+        },
+        "sender": {
+          "id": "U6"
+        }
+      }
+    },
+    {
+      "channel": "slack",
+      "raw": {
+        "type": "event_callback",
+        "event": {
+          "type": "message",
+          "channel_type": "channel",
+          "text": "chatter",
+          "user": "U6",
+          "channel": "C5"
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [],
+        "recipient": {
+          "kind": "slack",
+          "channel": "C5"
+        },
+        "sender": {
+          "id": "U6"
+        }
+      }
+    },
+    {
+      "channel": "slack",
+      "raw": {
+        "type": "event_callback",
+        "event": {
+          "type": "message",
+          "channel_type": "im",
+          "text": "beep",
+          "bot_id": "B1",
+          "channel": "D2"
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [],
+        "recipient": {
+          "kind": "slack",
+          "channel": "D2"
+        }
+      }
+    },
+    {
+      "channel": "slack",
+      "raw": {
+        "type": "event_callback",
+        "event": {
+          "type": "message",
+          "channel_type": "im",
+          "text": "edit",
+          "subtype": "message_changed",
+          "user": "U5",
+          "channel": "D1"
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [],
+        "recipient": {
+          "kind": "slack",
+          "channel": "D1"
+        },
+        "sender": {
+          "id": "U5"
+        }
+      }
+    },
+    {
+      "channel": "slack",
+      "raw": {
+        "type": "event_callback",
+        "event": {
+          "type": "message",
+          "channel_type": "channel",
+          "text": "x",
+          "user": "U6",
+          "channel": "C5",
+          "thread_ts": ""
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [],
+        "recipient": {
+          "kind": "slack",
+          "channel": "C5",
+          "requireThread": true
+        },
+        "sender": {
+          "id": "U6"
+        }
+      }
+    },
+    {
+      "channel": "slack",
+      "raw": {
+        "type": "url_verification",
+        "challenge": "abc"
+      },
+      "env": {},
+      "parsed": {
+        "intents": []
+      }
+    },
+    {
+      "channel": "slack",
+      "raw": "not an object",
+      "env": {},
+      "parsed": {
+        "intents": []
+      }
+    },
+    {
+      "channel": "slack",
+      "raw": null,
+      "env": {},
+      "parsed": {
+        "intents": []
+      }
+    },
+    {
+      "channel": "telegram",
+      "raw": {
+        "update_id": 10,
+        "message": {
+          "message_id": 1,
+          "chat": {
+            "id": 4242,
+            "type": "private"
+          },
+          "from": {
+            "id": 99,
+            "first_name": "Ada",
+            "last_name": "Lovelace"
+          },
+          "text": "What sold today?"
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "utterance",
+            "text": "What sold today?",
+            "threadRef": "4242"
+          }
+        ],
+        "recipient": {
+          "kind": "telegram",
+          "chatId": 4242
+        },
+        "sender": {
+          "id": "99",
+          "displayName": "Ada Lovelace"
+        }
+      }
+    },
+    {
+      "channel": "telegram",
+      "raw": {
+        "update_id": 11,
+        "message": {
+          "chat": {
+            "id": -1001234567890
+          },
+          "from": {
+            "id": 99,
+            "username": "ada"
+          },
+          "text": "/report  weekly sales  "
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "invoke",
+            "command": "report",
+            "args": {
+              "text": "weekly sales "
+            }
+          }
+        ],
+        "recipient": {
+          "kind": "telegram",
+          "chatId": -1001234567890
+        },
+        "sender": {
+          "id": "99",
+          "displayName": "ada"
+        }
+      }
+    },
+    {
+      "channel": "telegram",
+      "raw": {
+        "update_id": 12,
+        "message": {
+          "chat": {
+            "id": 4242
+          },
+          "from": {
+            "id": 99
+          },
+          "text": "/start"
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "invoke",
+            "command": "start"
+          }
+        ],
+        "recipient": {
+          "kind": "telegram",
+          "chatId": 4242
+        },
+        "sender": {
+          "id": "99"
+        }
+      }
+    },
+    {
+      "channel": "telegram",
+      "raw": {
+        "update_id": 13,
+        "message": {
+          "chat": {
+            "id": 4242
+          },
+          "from": {
+            "id": 99
+          },
+          "text": "/ hi"
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "utterance",
+            "text": "/ hi",
+            "threadRef": "4242"
+          }
+        ],
+        "recipient": {
+          "kind": "telegram",
+          "chatId": 4242
+        },
+        "sender": {
+          "id": "99"
+        }
+      }
+    },
+    {
+      "channel": "telegram",
+      "raw": {
+        "update_id": 14,
+        "callback_query": {
+          "id": "cq",
+          "data": "approve:3f1c2b9a-0d4e-4c55-8a71-2b3c4d5e6f70",
+          "from": {
+            "id": 98,
+            "first_name": "Grace"
+          },
+          "message": {
+            "chat": {
+              "id": 4242
+            }
+          }
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "decision",
+            "decisionRef": "3f1c2b9a-0d4e-4c55-8a71-2b3c4d5e6f70",
+            "choice": "approve"
+          }
+        ],
+        "recipient": {
+          "kind": "telegram",
+          "chatId": 4242
+        },
+        "sender": {
+          "id": "98",
+          "displayName": "Grace"
+        }
+      }
+    },
+    {
+      "channel": "telegram",
+      "raw": {
+        "update_id": 15,
+        "callback_query": {
+          "data": "select:pick:opt-2",
+          "from": {
+            "id": 98
+          },
+          "message": {
+            "chat": {
+              "id": "chat-7"
+            }
+          }
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "select",
+            "ref": "pick",
+            "optionId": "opt-2"
+          }
+        ],
+        "recipient": {
+          "kind": "telegram",
+          "chatId": "chat-7"
+        },
+        "sender": {
+          "id": "98"
+        }
+      }
+    },
+    {
+      "channel": "telegram",
+      "raw": {
+        "update_id": 16,
+        "callback_query": {
+          "data": "noop:x",
+          "from": {
+            "id": 98
+          },
+          "message": {
+            "chat": {
+              "id": 4242
+            }
+          }
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [],
+        "recipient": {
+          "kind": "telegram",
+          "chatId": 4242
+        },
+        "sender": {
+          "id": "98"
+        }
+      }
+    },
+    {
+      "channel": "telegram",
+      "raw": {
+        "update_id": 17,
+        "callback_query": {
+          "data": "",
+          "from": {
+            "id": 98
+          }
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [],
+        "sender": {
+          "id": "98"
+        }
+      }
+    },
+    {
+      "channel": "telegram",
+      "raw": {
+        "update_id": 18,
+        "channel_post": {
+          "chat": {
+            "id": -100
+          },
+          "text": "posted"
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "utterance",
+            "text": "posted",
+            "threadRef": "-100"
+          }
+        ],
+        "recipient": {
+          "kind": "telegram",
+          "chatId": -100
+        }
+      }
+    },
+    {
+      "channel": "telegram",
+      "raw": {
+        "update_id": 19,
+        "edited_message": {
+          "chat": {
+            "id": 4242
+          },
+          "from": {
+            "id": "99"
+          },
+          "text": "edited"
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "utterance",
+            "text": "edited",
+            "threadRef": "4242"
+          }
+        ],
+        "recipient": {
+          "kind": "telegram",
+          "chatId": 4242
+        },
+        "sender": {
+          "id": "99"
+        }
+      }
+    },
+    {
+      "channel": "telegram",
+      "raw": {
+        "update_id": 20,
+        "message": {
+          "chat": {
+            "id": 4242
+          },
+          "from": {
+            "id": 99
+          },
+          "photo": []
+        }
+      },
+      "env": {},
+      "parsed": {
+        "intents": [],
+        "recipient": {
+          "kind": "telegram",
+          "chatId": 4242
+        },
+        "sender": {
+          "id": "99"
+        }
+      }
+    },
+    {
+      "channel": "telegram",
+      "raw": {
+        "ok": true,
+        "result": [
+          {
+            "message": {
+              "chat": {
+                "id": 1
+              },
+              "text": "a"
+            }
+          },
+          {
+            "callback_query": {
+              "data": "reject:r1"
+            }
+          },
+          5
+        ]
+      },
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "utterance",
+            "text": "a",
+            "threadRef": "1"
+          },
+          {
+            "kind": "decision",
+            "decisionRef": "r1",
+            "choice": "reject"
+          }
+        ]
+      }
+    },
+    {
+      "channel": "telegram",
+      "raw": [
+        {
+          "message": {
+            "chat": {
+              "id": 2
+            },
+            "text": "b"
+          }
+        }
+      ],
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "utterance",
+            "text": "b",
+            "threadRef": "2"
+          }
+        ]
+      }
+    },
+    {
+      "channel": "telegram",
+      "raw": "text",
+      "env": {},
+      "parsed": {
+        "intents": []
+      }
+    },
+    {
+      "channel": "hud",
+      "raw": {
+        "kind": "decision",
+        "decisionRef": "3f1c2b9a-0d4e-4c55-8a71-2b3c4d5e6f70",
+        "choice": "approve",
+        "reason": "fine",
+        "operatorId": "op-1",
+        "operatorName": "Ops"
+      },
+      "env": {
+        "HUD_CHANNEL_WORKSPACE": " plant-7 "
+      },
+      "parsed": {
+        "intents": [
+          {
+            "kind": "decision",
+            "decisionRef": "3f1c2b9a-0d4e-4c55-8a71-2b3c4d5e6f70",
+            "choice": "approve",
+            "reason": "fine"
+          }
+        ],
+        "recipient": {
+          "kind": "hud",
+          "workspace": "plant-7"
+        },
+        "sender": {
+          "id": "op-1",
+          "displayName": "Ops",
+          "workspaceId": "plant-7"
+        }
+      }
+    },
+    {
+      "channel": "hud",
+      "raw": {
+        "kind": "decision",
+        "decisionRef": "3f1c2b9a-0d4e-4c55-8a71-2b3c4d5e6f70",
+        "choice": "reject"
+      },
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "decision",
+            "decisionRef": "3f1c2b9a-0d4e-4c55-8a71-2b3c4d5e6f70",
+            "choice": "reject"
+          }
+        ],
+        "recipient": {
+          "kind": "hud",
+          "workspace": "demo"
+        },
+        "sender": {
+          "id": "demo-operator",
+          "workspaceId": "demo"
+        }
+      }
+    },
+    {
+      "channel": "hud",
+      "raw": {
+        "kind": "utterance",
+        "text": "  status of line 3  "
+      },
+      "env": {},
+      "parsed": {
+        "intents": [
+          {
+            "kind": "utterance",
+            "text": "status of line 3"
+          }
+        ],
+        "recipient": {
+          "kind": "hud",
+          "workspace": "demo"
+        },
+        "sender": {
+          "id": "demo-operator",
+          "workspaceId": "demo"
+        }
+      }
+    },
+    {
+      "channel": "hud",
+      "raw": {
+        "kind": "utterance",
+        "text": "   "
+      },
+      "env": {},
+      "error": "text is required"
+    },
+    {
+      "channel": "hud",
+      "raw": {
+        "kind": "decision",
+        "choice": "approve"
+      },
+      "env": {},
+      "error": "decisionRef is required"
+    },
+    {
+      "channel": "hud",
+      "raw": {
+        "kind": "decision",
+        "decisionRef": "x",
+        "choice": "maybe"
+      },
+      "env": {},
+      "error": "choice must be approve or reject"
+    },
+    {
+      "channel": "hud",
+      "raw": {
+        "kind": "wave"
+      },
+      "env": {},
+      "error": "unsupported inbound event kind: wave"
+    },
+    {
+      "channel": "hud",
+      "raw": [],
+      "env": {},
+      "error": "unsupported inbound event kind: missing"
+    }
+  ],
+  "verify": [
+    {
+      "channel": "slack",
+      "env": {
+        "SLACK_SIGNING_SECRET": "signing-secret"
+      },
+      "headers": {
+        "X-Slack-Request-Timestamp": "1763099990",
+        "X-Slack-Signature": "v0=b0b5bcd7c804369eecb45db975e95daa4e89f03be9e23f781e33c7676a17f7d2"
+      },
+      "body": "{\"type\":\"event_callback\",\"event\":{\"type\":\"message\"}}",
+      "now": 1763100000,
+      "ok": true
+    },
+    {
+      "channel": "slack",
+      "env": {
+        "SLACK_SIGNING_SECRET": "signing-secret"
+      },
+      "headers": {
+        "x-slack-request-timestamp": "1763099699",
+        "x-slack-signature": "v0=537051336070d06bbaf63d41b6c9e0157cd9abaadc8017e37bdbeba61529fcee"
+      },
+      "body": "{\"type\":\"event_callback\",\"event\":{\"type\":\"message\"}}",
+      "now": 1763100000,
+      "ok": false
+    },
+    {
+      "channel": "slack",
+      "env": {
+        "SLACK_SIGNING_SECRET": "signing-secret"
+      },
+      "headers": {
+        "x-slack-request-timestamp": "1763100000",
+        "x-slack-signature": "v0=87f73df8e801713a2339f8e80150d1c45ddf0abf048ecab6f66bea836ec2991a"
+      },
+      "body": "{\"type\":\"event_callback\",\"event\":{\"type\":\"message\"}}",
+      "now": 1763100000,
+      "ok": false
+    },
+    {
+      "channel": "slack",
+      "env": {
+        "SLACK_SIGNING_SECRET": "signing-secret"
+      },
+      "headers": {
+        "x-slack-request-timestamp": "soon",
+        "x-slack-signature": "v0=2825da2e93284ba9e00d57c137023723b1c4395a1d168b404d9b43adf648b5fb"
+      },
+      "body": "{\"type\":\"event_callback\",\"event\":{\"type\":\"message\"}}",
+      "now": 1763100000,
+      "ok": false
+    },
+    {
+      "channel": "slack",
+      "env": {},
+      "headers": {
+        "x-slack-request-timestamp": "1763100000",
+        "x-slack-signature": "v0=f729942c670a9444396e38db85fbe3f9db4379dd4ef2353cb4ff5df34e80a49a"
+      },
+      "body": "{\"type\":\"event_callback\",\"event\":{\"type\":\"message\"}}",
+      "now": 1763100000,
+      "ok": false
+    },
+    {
+      "channel": "telegram",
+      "env": {
+        "TELEGRAM_WEBHOOK_SECRET": "tg-secret"
+      },
+      "headers": {
+        "X-Telegram-Bot-Api-Secret-Token": "tg-secret"
+      },
+      "body": "{}",
+      "ok": true
+    },
+    {
+      "channel": "telegram",
+      "env": {
+        "TELEGRAM_WEBHOOK_SECRET": "tg-secret"
+      },
+      "headers": {
+        "x-telegram-bot-api-secret-token": "tg-secreT"
+      },
+      "body": "{}",
+      "ok": false
+    },
+    {
+      "channel": "telegram",
+      "env": {},
+      "headers": {
+        "x-telegram-bot-api-secret-token": ""
+      },
+      "body": "{}",
+      "ok": false
+    },
+    {
+      "channel": "hud",
+      "env": {
+        "HUD_CHANNEL_SECRET": "hud-secret"
+      },
+      "headers": {
+        "x-openneko-hud-signature": "sha256=470915014e4e37d5a62cea1e73e3ef73b5a674946d78cd3c7f48112d0c4e70f0"
+      },
+      "body": "{\"kind\":\"utterance\",\"text\":\"hi\"}",
+      "ok": true
+    },
+    {
+      "channel": "hud",
+      "env": {
+        "HUD_CHANNEL_SECRET": " hud-secret "
+      },
+      "headers": {
+        "x-openneko-hud-signature": "470915014E4E37D5A62CEA1E73E3EF73B5A674946D78CD3C7F48112D0C4E70F0"
+      },
+      "body": "{\"kind\":\"utterance\",\"text\":\"hi\"}",
+      "ok": true
+    },
+    {
+      "channel": "hud",
+      "env": {
+        "HUD_CHANNEL_SECRET": "hud-secret"
+      },
+      "headers": {
+        "x-openneko-hud-signature": "sha256=0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "body": "{\"kind\":\"utterance\",\"text\":\"hi\"}",
+      "ok": false
+    },
+    {
+      "channel": "hud",
+      "env": {
+        "HUD_CHANNEL_SECRET": "hud-secret"
+      },
+      "headers": {
+        "x-openneko-hud-signature": "sha256=zz"
+      },
+      "body": "{\"kind\":\"utterance\",\"text\":\"hi\"}",
+      "ok": false
+    },
+    {
+      "channel": "hud",
+      "env": {},
+      "headers": {
+        "x-openneko-hud-signature": "sha256=470915014e4e37d5a62cea1e73e3ef73b5a674946d78cd3c7f48112d0c4e70f0"
+      },
+      "body": "{\"kind\":\"utterance\",\"text\":\"hi\"}",
+      "ok": false
+    }
+  ]
+}

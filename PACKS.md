@@ -268,6 +268,13 @@ under `channel.<id>`. Slack needs `SLACK_BOT_TOKEN`; Telegram needs
 `TELEGRAM_BOT_TOKEN`. The HUD needs no tokens: **Turn on** generates its
 signing secret. **Turn off** removes the channel's stored settings.
 
+`openneko web` receives channel messages. It polls Telegram every 3 seconds.
+Slack needs `SLACK_APP_TOKEN` for its Socket Mode connection. When
+`OPENNEKO_PUBLIC_URL` is set, Telegram and the HUD bridge post to
+`<OPENNEKO_PUBLIC_URL>/api/v1/channels/<id>/inbound` in place of the poll.
+Telegram's webhook needs `TELEGRAM_WEBHOOK_SECRET`; the HUD bridge signs each
+post with its generated secret.
+
 Channel tokens are not pack secrets. A manifest may still list channels:
 
 ```yaml
