@@ -126,14 +126,14 @@ func (d *scriptData) load() error {
 }
 
 func (d *scriptData) save(r DataRecord) error {
-	if err := os.MkdirAll(filepath.Join(d.runRoot, privateDir), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(d.runRoot, privateDir), 0o770); err != nil {
 		return err
 	}
 	line, err := json.Marshal(r)
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(d.recordPath(), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	f, err := os.OpenFile(d.recordPath(), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o660)
 	if err != nil {
 		return err
 	}
@@ -162,7 +162,7 @@ func (d *scriptData) prepare() error {
 	if len(d.records) == 0 {
 		return nil
 	}
-	if err := os.MkdirAll(answers, 0o755); err != nil {
+	if err := os.MkdirAll(answers, 0o775); err != nil {
 		return err
 	}
 	for key, r := range d.records {
@@ -171,7 +171,7 @@ func (d *scriptData) prepare() error {
 		if old, err := os.ReadFile(p); err == nil && bytes.Equal(old, body) {
 			continue
 		}
-		if err := os.WriteFile(p, body, 0o644); err != nil {
+		if err := os.WriteFile(p, body, 0o664); err != nil {
 			return err
 		}
 	}

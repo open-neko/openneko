@@ -73,7 +73,7 @@ func TestServeInitGivesEachServeRoleOnlyItsTables(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if info.Mode().Perm() != 0o600 {
+		if info.Mode().Perm() != 0o640 {
 			t.Fatalf("%s mode %v", f, info.Mode().Perm())
 		}
 	}
@@ -221,7 +221,7 @@ func TestSeedGraphjinConfigCreatesOnceAndDropsTheShellSupervisor(t *testing.T) {
 	if bytes.Contains(first, []byte(graphjinKeystorePlaceholder)) {
 		t.Fatalf("the keystore placeholder is still in the config:\n%s", first)
 	}
-	if info, _ := os.Stat(file); info.Mode().Perm() != 0o600 {
+	if info, _ := os.Stat(file); info.Mode().Perm() != 0o640 {
 		t.Fatalf("config mode %v", info.Mode().Perm())
 	}
 

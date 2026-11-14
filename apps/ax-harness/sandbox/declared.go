@@ -339,7 +339,7 @@ func (c *Client) runDeclared(ctx context.Context, command, dir, skillDir string,
 		requests[name] = r
 	}
 	out := filepath.Join(c.data.runRoot, dataDir, declaredDir)
-	if err := os.MkdirAll(out, 0o755); err != nil {
+	if err := os.MkdirAll(out, 0o775); err != nil {
 		return "", err
 	}
 	for _, name := range names {
@@ -356,7 +356,7 @@ func (c *Client) runDeclared(ctx context.Context, command, dir, skillDir string,
 		if r.Error != "" {
 			return fmt.Sprintf("%s did not start: its declared query %s failed: %s", rel, name, r.Error), nil
 		}
-		if err := os.WriteFile(filepath.Join(out, name+".json"), r.Data, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(out, name+".json"), r.Data, 0o664); err != nil {
 			return "", err
 		}
 	}
