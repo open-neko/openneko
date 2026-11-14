@@ -19,9 +19,7 @@ surfaces that `openneko web` still calls over `--worker-admin-url`:
   `code_draft_patch`, `data_source_admin`, `group_admin`, `send_webhook`,
   `source_config_admin`, and `user_admin`; pack actions and Magento store
   changes run in Go).
-- **External-event ingress and health** (`POST /admin/events/external`,
-  `POST /admin/reconnect`, `GET /health`, `GET /health/scheduler`, and
-  `GET /health/security`).
+- **External-event ingress** (`POST /admin/events/external`).
 
 ## Durable workflow scheduler
 
@@ -32,9 +30,8 @@ firing ledger and outbox. A materialization transaction inserts the firing and
 advances its cursor together; the unique `(workflow_id, scheduled_for)` key
 makes concurrent or repeated sweeps idempotent.
 
-`openneko web` runs the cron sweep every 15 seconds in Go
-(`apps/openneko/internal/webfront/cronsweep.go`), and the Node worker runs the
-same 30-second loop (`apps/worker/src/workflow-scheduler.ts`):
+`openneko web` runs the durable workflow scheduler and cron sweep in Go
+(`apps/openneko/internal/webfront/scheduler.go` and `cronsweep.go`):
 
 1. Synchronizes active definitions and materializes due firings.
 2. Recovers expired dispatch/run leases.
@@ -77,16 +74,17 @@ both existing workflow runs and materialized firings.
 
 ### Health and deployment
 
-The loop persists progress in `workflow_scheduler_health` and exposes a
-process-local progress signal:
+`openneko web` persists progress in `workflow_scheduler_health` and exposes
+health endpoints:
 
-- `GET /health` returns 503 while the scheduler is starting, failing, or has
-  not succeeded for 120 seconds.
+- `GET /health` returns 200 `ok`, or 503 `degraded` when audit logging has
+  recorded a failure.
 - `GET /health/scheduler` returns timestamps, the last error, consecutive
   failures, and materialized/dispatched/recovered counts.
+- `GET /health/security` returns the audit logging health state.
 
-The released-image VM deployment polls `/health/scheduler` inside the new
-worker and fails unless that boot completes a successful scheduler database
+The released-image VM deployment polls `/health/scheduler` on `openneko web`
+and fails unless that boot completes a successful scheduler database
 transaction. This detects a live process whose schedule loop is not making
 progress.
 

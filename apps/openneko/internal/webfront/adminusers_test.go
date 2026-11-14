@@ -298,7 +298,6 @@ func TestChangePassword(t *testing.T) {
 	t.Cleanup(func() { _, _ = db.Exec(context.Background(), `drop role if exists `+role) })
 	f.API.DBRole = role
 	dir := f.API.SecretsDir
-	wk.reply["/admin/reconnect"] = `{"ok":true}`
 
 	if w := call(f, "GET", "/api/v1/admin/change-password", "", admin); w.Body.String() != `{"changed":false}` {
 		t.Errorf("before: %s", w.Body.String())
@@ -316,11 +315,11 @@ func TestChangePassword(t *testing.T) {
 	}
 
 	w := call(f, "POST", "/api/v1/admin/change-password", `{"password":" A-safe-passphrase-2026 "}`, admin)
-	if w.Code != 200 || w.Body.String() != `{"ok":true,"workerNotified":true}` {
+	if w.Code != 200 || w.Body.String() != `{"ok":true}` {
 		t.Fatalf("rotate: %d %s", w.Code, w.Body.String())
 	}
-	if last := wk.calls[len(wk.calls)-1]; last != "POST /admin/reconnect null" {
-		t.Errorf("worker call %q", last)
+	if len(wk.calls) != 0 {
+		t.Errorf("worker calls: %v", wk.calls)
 	}
 	raw, _ := os.ReadFile(filepath.Join(dir, "config.json"))
 	if strings.Contains(string(raw), "A-safe-passphrase-2026") || !strings.Contains(string(raw), "enc:v1:") {
@@ -344,9 +343,8 @@ func TestChangePassword(t *testing.T) {
 	restarted := make(chan struct{})
 	f.API.Restart = func() { close(restarted) }
 	t.Setenv("OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE", "1")
-	delete(wk.reply, "/admin/reconnect")
-	if w := call(f, "POST", "/api/v1/admin/change-password", `{"password":"Another-safe-one"}`, admin); w.Body.String() != `{"ok":true,"workerNotified":false}` {
-		t.Errorf("worker down: %d %s", w.Code, w.Body.String())
+	if w := call(f, "POST", "/api/v1/admin/change-password", `{"password":"Another-safe-one"}`, admin); w.Body.String() != `{"ok":true}` {
+		t.Errorf("restart: %d %s", w.Code, w.Body.String())
 	}
 	select {
 	case <-restarted:

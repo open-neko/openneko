@@ -2,16 +2,6 @@
  * Admin HTTP handler for the worker process.
  *
  * Routes:
- *   GET  /health              → liveness + scheduler readiness
- *   GET  /health/scheduler    → scheduler progress diagnostics
- *   GET  /health/security     → process-local security subsystem health
- *   POST /admin/reconnect     → 202 + clean exit so the supervisor restarts
- *                               us with fresh DB credentials. Used by the
- *                               web app's /api/v1/admin/change-password handler
- *                               after rotating the Postgres password — the
- *                               pg-boss singleton holds the old creds and
- *                               there's no clean way to re-register handlers
- *                               in-place against a fresh pool.
  *   GET  /admin/auth/status   → 200 + { provider: null | {pluginName, providerLabel}, pending }
  *                               Tells the web app which sign-in provider is
  *                               live so the sign-in page can render the
@@ -44,7 +34,6 @@ import type {
   BeginConnectParams,
   CompleteConnectParams,
 } from "./signin/types.js";
-import { getAuditLoggingHealth } from "@neko/llm/workflows";
 import { packFailurePayload, type PackErrorPhase } from "./packs/errors.js";
 
 const PACK_FAILURE_NEXT_STEP: Record<PackErrorPhase, string> = {
@@ -193,16 +182,6 @@ export interface SsoSetupHandlerSurface {
   }>;
 }
 
-/**
- * Install-policy surface exposed to the CLI (via the worker admin
- * port) for the install-time enforcement check. The CLI calls
- * `GET /admin/install-policy` before installing a community skill from
- * a git URL and refuses when the policy disallows it.
- */
-export interface InstallPolicyHandlerSurface {
-  getInstallPolicy(): Promise<{ allowGitUrlInstalls: boolean }>;
-}
-
 export interface PacksHandlerSurface {
   upload(bytes: Buffer, input: { actorUserId?: string | null; signal?: AbortSignal }): Promise<unknown>;
   review(packId: string, input: Record<string, unknown>, operation: "install" | "configure" | "upgrade"): Promise<unknown>;
@@ -219,36 +198,7 @@ export interface PacksHandlerSurface {
   updateMagentoStoreManagement(input: Record<string, unknown>): Promise<unknown>;
 }
 
-export interface SchedulerHealthSurface {
-  getHealth(): {
-    status: "starting" | "ok" | "degraded";
-    running: boolean;
-    stale: boolean;
-    startedAt: string;
-    lastAttemptAt: string | null;
-    lastSuccessAt: string | null;
-    lastErrorAt: string | null;
-    lastError: string | null;
-    consecutiveFailures: number;
-    materialized: number;
-    dispatched: number;
-    recovered: number;
-  };
-}
-
 export type AdminHandlerOptions = {
-  /**
-   * Called from POST /admin/reconnect after responding 202. Defaults to
-   * `process.exit(0)`; tests pass a spy.
-   */
-  exit?: (code?: number) => void;
-  /**
-   * Delay (ms) between sending the 202 and calling exit. Default 100ms —
-   * enough for the response to flush to the caller. Set to 0 in tests.
-   */
-  exitDelayMs?: number;
-  /** The independent durable scheduler's process-local progress signal. */
-  scheduler?: SchedulerHealthSurface | null;
   /**
    * Auth surface — wired to the SignInService. Absent in tests, in which
    * case /admin/auth/* routes report no provider or return 503.
@@ -265,11 +215,6 @@ export type AdminHandlerOptions = {
    */
   ssoSetup?: SsoSetupHandlerSurface | null;
   /**
-   * Install-policy reader. When absent, /admin/install-policy returns the
-   * most-restrictive default so the CLI refuses git-URL skill installs.
-   */
-  installPolicy?: InstallPolicyHandlerSurface | null;
-  /**
    * External-event ingress (OL3): watchers and integrations POST
    * /admin/events/external to fire external_event subscriptions.
    */
@@ -283,12 +228,7 @@ export type AdminHandlerOptions = {
   directory?: DirectoryHandlerSurface | null;
   /** Writes group grants into the GraphJin config, now or batched. */
   groupGrants?: GroupGrantsHandlerSurface | null;
-  sources?: SourceCheckHandlerSurface | null;
 };
-
-export interface SourceCheckHandlerSurface {
-  check(input: { answers: Record<string, unknown>; password?: string }): Promise<unknown>;
-}
 
 export interface GroupGrantsHandlerSurface {
   apply(): Promise<unknown>;
@@ -324,56 +264,17 @@ export interface ExternalEventHandlerSurface {
 }
 
 export function createAdminHandler(opts: AdminHandlerOptions = {}) {
-  const exit = opts.exit ?? ((code = 0) => process.exit(code));
-  const exitDelayMs = opts.exitDelayMs ?? 100;
-  const scheduler = opts.scheduler ?? null;
   const auth = opts.auth ?? null;
   const connect = opts.connect ?? null;
   const ssoSetup = opts.ssoSetup ?? null;
-  const installPolicy = opts.installPolicy ?? null;
   const events = opts.events ?? null;
   const actionRequests = opts.actionRequests ?? null;
   const actions = opts.actions ?? null;
   const packs = opts.packs ?? null;
   const directory = opts.directory ?? null;
   const groupGrants = opts.groupGrants ?? null;
-  const sources = opts.sources ?? null;
 
   return function handle(req: IncomingMessage, res: ServerResponse) {
-    if (req.method === "GET" && req.url === "/health") {
-      const health = scheduler?.getHealth();
-      const ready = health === undefined || health.status === "ok";
-      res.writeHead(ready ? 200 : 503).end(ready ? "ok" : health.status);
-      return;
-    }
-    if (req.method === "GET" && req.url === "/health/scheduler") {
-      if (!scheduler) {
-        json(res, 503, {
-          status: "unavailable",
-          error: "scheduler health is not configured",
-        });
-        return;
-      }
-      const health = scheduler.getHealth();
-      json(res, health.status === "ok" ? 200 : 503, health);
-      return;
-    }
-    if (req.method === "GET" && req.url === "/health/security") {
-      const auditLogging = getAuditLoggingHealth();
-      json(res, 200, {
-        status: auditLogging.healthy ? "ok" : "degraded",
-        auditLogging,
-      });
-      return;
-    }
-    if (req.method === "POST" && req.url === "/admin/reconnect") {
-      res.writeHead(202).end("restarting");
-      console.log(
-        "[worker] /admin/reconnect received — exiting for clean restart",
-      );
-      setTimeout(() => exit(0), exitDelayMs);
-      return;
-    }
     if (req.method === "GET" && req.url === "/admin/auth/status") {
       void handleAuthStatus(res, auth);
       return;
@@ -509,14 +410,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
     }
     if (req.method === "POST" && req.url === "/admin/actions/execute") {
       void handleActionExecute(req, res, actions);
-      return;
-    }
-    if (req.method === "POST" && req.url === "/admin/sources/check") {
-      void handleSourceCheck(req, res, sources);
-      return;
-    }
-    if (req.method === "GET" && req.url === "/admin/install-policy") {
-      void handleInstallPolicy(res, installPolicy);
       return;
     }
     if (req.method === "GET" && req.url === "/admin/packs") {
@@ -732,27 +625,6 @@ async function handleActionExecute(
     }
     await actions.execute({ orgId, actionRequestId });
     json(res, 200, { ok: true });
-  } catch (err) {
-    json(res, 500, { error: err instanceof Error ? err.message : String(err) });
-  }
-}
-
-async function handleInstallPolicy(
-  res: ServerResponse,
-  installPolicy: InstallPolicyHandlerSurface | null,
-) {
-  if (!installPolicy) {
-    // No reader wired → return defaults (most-restrictive). The CLI
-    // will treat this as "no privileged install paths allowed".
-    json(res, 200, {
-      policy: { allowGitUrlInstalls: false },
-      source: "default",
-    });
-    return;
-  }
-  try {
-    const policy = await installPolicy.getInstallPolicy();
-    json(res, 200, { policy, source: "org" });
   } catch (err) {
     json(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }
@@ -1409,32 +1281,6 @@ function json(res: ServerResponse, status: number, body: unknown) {
     "Content-Length": Buffer.byteLength(payload).toString(),
   });
   res.end(payload);
-}
-
-async function handleSourceCheck(
-  req: IncomingMessage,
-  res: ServerResponse,
-  sources: SourceCheckHandlerSurface | null,
-): Promise<void> {
-  if (!sources) {
-    json(res, 503, { error: "source check is not available" });
-    return;
-  }
-  try {
-    const body = ((await readJson(req)) ?? {}) as Record<string, unknown>;
-    const answers = {
-      type: body.type,
-      host: body.host,
-      port: body.port,
-      dbname: body.dbname,
-      user: body.user,
-      secretRef: body.secretRef,
-    };
-    const password = typeof body.password === "string" ? body.password : undefined;
-    json(res, 200, { check: await sources.check({ answers, password }) });
-  } catch (error) {
-    json(res, 500, { error: error instanceof Error ? error.message : String(error) });
-  }
 }
 
 async function readJson(req: IncomingMessage): Promise<unknown> {

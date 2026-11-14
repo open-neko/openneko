@@ -27,7 +27,7 @@ Integrations and channels are installed as solution packs: see
 ` + "`openneko pack`" + `.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+			if code, proxied := MaybeProxyToWeb(cmd); proxied {
 				return WithExit(code, nil)
 			}
 			spec := args[0]
@@ -43,9 +43,9 @@ Integrations and channels are installed as solution packs: see
 
 			// Fetch the deployment-wide install policy. Git-URL skills need
 			// an admin to have opted in via /admin/settings/security. If the
-			// worker is unreachable, the fetch falls back to the secure
-			// default — operators can't turn off the policy by killing the
-			// worker.
+			// database is unreachable, the fetch falls back to the secure
+			// default — operators can't turn off the policy by stopping the
+			// database.
 			pol, source, fetchErr := skill.FetchPolicy(context.Background())
 			if fetchErr != nil {
 				fmt.Fprintf(errOut, "WARNING: install policy check failed (%s) — defaulting to most-restrictive\n", fetchErr.Error())
@@ -53,7 +53,7 @@ Integrations and channels are installed as solution packs: see
 			if !pol.AllowGitURLInstalls {
 				hint := "ask an admin to enable Git-URL skill installs at /admin/settings/security"
 				if source == "unreachable" {
-					hint = "start the worker so the policy can be read, or ask an admin to enable Git-URL skill installs at /admin/settings/security"
+					hint = "start OpenNeko so the policy can be read, or ask an admin to enable Git-URL skill installs at /admin/settings/security"
 				}
 				return WithExit(2, fmt.Errorf("install: Git-URL skill installs are disabled by deployment policy. %s", hint))
 			}

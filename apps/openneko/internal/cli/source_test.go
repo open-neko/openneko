@@ -2,13 +2,17 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
-	"net/http"
-	"net/http/httptest"
+	"net"
+	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
 const failedCheck = `{"check":{"ok":false,"supported":true,"type":"mysql","host":"db.internal","port":3306,"database":"shop","user":"writer",
@@ -18,20 +22,23 @@ const failedCheck = `{"check":{"ok":false,"supported":true,"type":"mysql","host"
  {"step":"read_only","status":"fail","field":"user","message":"writer holds rights beyond reading (INSERT).","sql":["REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'writer'@'%';","GRANT SELECT, SHOW VIEW ON ` + "`shop`" + `.* TO 'writer'@'%';"]}
 ],"tables":[{"name":"sales_order","rows":3}],"moreTables":0}}`
 
-func runSourceCheck(t *testing.T, stdin string, reply string, args ...string) (map[string]any, string, error) {
+func runSourceCheck(t *testing.T, stdin string, reply string, args ...string) (sourceCheckOptions, string, string, error) {
 	t.Helper()
-	var body map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/admin/sources/check" {
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
-		}
-		raw, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(raw, &body)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, reply)
-	}))
-	t.Cleanup(server.Close)
-	t.Setenv("WORKER_ADMIN_URL", server.URL)
+	var seenOpts sourceCheckOptions
+	var seenPassword string
+	var decoded struct {
+		Check sourceCheckResult `json:"check"`
+	}
+	if err := json.Unmarshal([]byte(reply), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	prev := checkSource
+	checkSource = func(_ context.Context, opts sourceCheckOptions, password string) (sourceCheckResult, error) {
+		seenOpts = opts
+		seenPassword = password
+		return decoded.Check, nil
+	}
+	t.Cleanup(func() { checkSource = prev })
 	command := newSourceCmd()
 	var output bytes.Buffer
 	command.SetOut(&output)
@@ -41,20 +48,17 @@ func runSourceCheck(t *testing.T, stdin string, reply string, args ...string) (m
 	command.SetIn(strings.NewReader(stdin))
 	command.SetArgs(append([]string{"check"}, args...))
 	err := command.Execute()
-	return body, output.String(), err
+	return seenOpts, seenPassword, output.String(), err
 }
 
 func TestSourceCheckPrintsEachStepAndTheSQL(t *testing.T) {
-	body, output, err := runSourceCheck(t, "", failedCheck,
+	opts, password, output, err := runSourceCheck(t, "", failedCheck,
 		"--type", "mysql", "--host", "db.internal", "--port", "3306", "--database", "shop", "--user", "writer", "--secret", "shop-password")
 	if !errors.Is(err, errSourceNotReady) {
 		t.Fatalf("err = %v, want errSourceNotReady", err)
 	}
-	if body["secretRef"] != "shop-password" || body["port"] != float64(3306) || body["dbname"] != "shop" {
-		t.Fatalf("request body = %v", body)
-	}
-	if _, ok := body["password"]; ok {
-		t.Fatalf("request body holds a password: %v", body)
+	if opts.secret != "shop-password" || opts.port != 3306 || opts.database != "shop" || password != "" {
+		t.Fatalf("opts = %+v password = %q", opts, password)
 	}
 	for _, want := range []string{
 		"source: mysql writer@db.internal:3306/shop",
@@ -75,16 +79,16 @@ func TestSourceCheckPrintsEachStepAndTheSQL(t *testing.T) {
 
 func TestSourceCheckReadsThePasswordFromStandardInput(t *testing.T) {
 	passed := strings.Replace(strings.Replace(failedCheck, `"ok":false`, `"ok":true`, 1), `"status":"fail"`, `"status":"ok"`, 1)
-	body, output, err := runSourceCheck(t, "pw from stdin\n", passed,
+	opts, password, output, err := runSourceCheck(t, "pw from stdin\n", passed,
 		"--type", "mysql", "--host", "db.internal", "--database", "shop", "--user", "writer", "--password-stdin")
 	if err != nil {
 		t.Fatalf("err = %v\n%s", err, output)
 	}
-	if body["password"] != "pw from stdin" {
-		t.Fatalf("password = %v", body["password"])
+	if password != "pw from stdin" {
+		t.Fatalf("password = %q", password)
 	}
-	if _, ok := body["port"]; ok {
-		t.Fatalf("port sent without --port: %v", body)
+	if opts.port != 0 {
+		t.Fatalf("port set without --port: %+v", opts)
 	}
 	if !strings.Contains(output, "tables the login can read: 1\n  sales_order (about 3 rows)") {
 		t.Fatalf("output lacks the table list:\n%s", output)
@@ -92,18 +96,18 @@ func TestSourceCheckReadsThePasswordFromStandardInput(t *testing.T) {
 }
 
 func TestSourceCheckNeedsAPassword(t *testing.T) {
-	_, _, err := runSourceCheck(t, "", failedCheck, "--host", "h", "--database", "d", "--user", "u")
+	_, _, _, err := runSourceCheck(t, "", failedCheck, "--host", "h", "--database", "d", "--user", "u")
 	if err == nil || !strings.Contains(err.Error(), "--secret") {
 		t.Fatalf("err = %v", err)
 	}
-	_, _, err = runSourceCheck(t, "", failedCheck, "--host", "h", "--database", "d", "--user", "u", "--password-stdin")
+	_, _, _, err = runSourceCheck(t, "", failedCheck, "--host", "h", "--database", "d", "--user", "u", "--password-stdin")
 	if err == nil || !strings.Contains(err.Error(), "no password") {
 		t.Fatalf("err = %v", err)
 	}
 }
 
 func TestSourceCheckJSON(t *testing.T) {
-	_, output, err := runSourceCheck(t, "", failedCheck, "--host", "h", "--database", "d", "--user", "u", "--secret", "s", "-o", "json")
+	_, _, output, err := runSourceCheck(t, "", failedCheck, "--host", "h", "--database", "d", "--user", "u", "--secret", "s", "-o", "json")
 	if !errors.Is(err, errSourceNotReady) {
 		t.Fatalf("err = %v", err)
 	}
@@ -112,5 +116,67 @@ func TestSourceCheckJSON(t *testing.T) {
 	}
 	if jsonErr := json.Unmarshal([]byte(output), &decoded); jsonErr != nil || len(decoded.Check.Findings) != 3 {
 		t.Fatalf("output is not the check JSON (%v):\n%s", jsonErr, output)
+	}
+}
+
+func TestSourceCheckReadsStoredSecretFromDatabase(t *testing.T) {
+	pool := testpg.Pool(t, "0001_initial_schema.sql", "0029_data_source_secret.sql")
+	ctx := context.Background()
+	var schema string
+	if err := pool.QueryRow(ctx, `select current_schema()`).Scan(&schema); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	u, err := url.Parse(testpg.URL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+	if err := config.WriteLocalDatabaseURL("", u.String()); err != nil {
+		t.Fatal(err)
+	}
+	pw, _ := u.User.Password()
+	enc, err := config.EncryptValue("", pw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `insert into organization (id, slug, name) values ('org', 'org', 'Org')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `insert into data_source_secret (org_id, name, value_enc) values ('org', 'db-pw', $1)`, enc); err != nil {
+		t.Fatal(err)
+	}
+	host, portStr, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := newSourceCmd()
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(io.Discard)
+	command.SilenceUsage = true
+	command.SilenceErrors = true
+	command.SetArgs([]string{
+		"check", "--type", "postgres", "--host", host, "--port", portStr,
+		"--database", strings.TrimPrefix(u.Path, "/"), "--user", u.User.Username(), "--secret", "db-pw", "-o", "json",
+	})
+	_ = command.Execute()
+	var decoded struct {
+		Check sourceCheckResult `json:"check"`
+	}
+	if err := json.Unmarshal(output.Bytes(), &decoded); err != nil {
+		t.Fatalf("unmarshal %s: %v", output.String(), err)
+	}
+	loginPassed := false
+	for _, f := range decoded.Check.Findings {
+		if f.Step == "login" && f.Status == "ok" {
+			loginPassed = true
+		}
+	}
+	if !loginPassed {
+		t.Fatalf("expected login pass with stored secret, got %+v", decoded.Check.Findings)
 	}
 }
