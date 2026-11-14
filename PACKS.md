@@ -444,10 +444,10 @@ the GraphJin update against a Node fixture. The install of a built-in pack befor
 configuration also runs in Go. The configured Magento install, configure and upgrade
 still run in the worker. `openneko web` also runs the OAuth routes
 (client setup, connect and callback, status and disconnect) and the Magento
-store-management settings and activity route. Until the
-pack apply moves to Go, a deployment-scope connection on an installed pack with
-GraphJin sources asks the worker to apply the new token to those sources, and the
-worker still refreshes deployment-scope tokens. Integration tests need their documented test dependencies;
+store-management settings and activity route. On a deployment-scope connection,
+`openneko web` applies the new token to the installed pack's GraphJin sources and
+sets the readiness of the actions that use them. Each minute it refreshes a
+deployment-scope token that ends within five minutes, then applies it again. Integration tests need their documented test dependencies;
 a skipped test is not a live pass.
 
 ## Save changes, submit a PR, and release
