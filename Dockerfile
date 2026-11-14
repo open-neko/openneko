@@ -297,7 +297,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     && sh scripts/prune-node-runtime.sh /out/worker-app "$TARGETARCH"
 
 # The worker runs from source via tsx (not a build step). It serves /health +
-# admin endpoints on port 4100 for liveness probes. Records config validation
+# admin endpoints on OPENNEKO_WORKER_SOCKET, or on port 4100 when that is unset. Records config validation
 # and approved schema diff/sync require the shared pinned GraphJin CLI; this
 # parent supplies it without inheriting the document toolchain.
 FROM graphjin-node-runtime AS worker
@@ -345,7 +345,6 @@ RUN chmod -R a+rX /opt/openneko-agent
 USER neko
 RUN cd /opt/openneko-agent && node entry.js --preflight \
     && node --input-type=module -e "await import('./mcp-bridge.js')"
-EXPOSE 4100
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["node", "--import", "tsx/esm", "src/index.ts"]
 

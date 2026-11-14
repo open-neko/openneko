@@ -3,8 +3,11 @@ package skill
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -68,5 +71,30 @@ func TestFetchPolicyReturnsDefaultsOn500(t *testing.T) {
 	}
 	if pol.AllowGitURLInstalls {
 		t.Errorf("expected fallback to default on 500")
+	}
+}
+
+func TestFetchPolicyOverWorkerSocket(t *testing.T) {
+	dir, err := os.MkdirTemp("", "policy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	socket := filepath.Join(dir, "worker.sock")
+	ln, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"policy": map[string]any{"allowGitUrlInstalls": r.URL.Path == "/admin/install-policy"}, "source": "org"})
+	}))
+	srv.Listener = ln
+	srv.Start()
+	defer srv.Close()
+	t.Setenv("WORKER_ADMIN_URL", "unix://"+socket)
+
+	pol, source, err := FetchPolicy(context.Background())
+	if err != nil || source != "org" || !pol.AllowGitURLInstalls {
+		t.Fatalf("got %+v %q %v", pol, source, err)
 	}
 }
