@@ -18,3 +18,12 @@ release removes that backend. When `config.json` still sets
 start and print one message. To upgrade, copy each secret into the local file
 with `openneko secrets set <section> <key>`, remove the `secrets` block from
 `config.json`, then start again.
+
+## Secrets in run events
+
+`openneko web` replaces each secret value with `[REDACTED]` before it stores
+a run event or sends it to the live stream. This covers chat, channel, cron,
+watcher, manual and API runs. The rule takes every value of 8 or more
+characters in the secrets file, the operator OAuth tokens included, and
+reads the file again when it changes. The rule catches a value that appears
+as written. It does not catch an encoded or partial value.
