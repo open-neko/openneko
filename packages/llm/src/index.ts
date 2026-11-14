@@ -1,19 +1,14 @@
 /**
  * @neko/llm — shared LLM machinery: providers, agents, classifier.
  *
- * Both apps/web (sync RPC: classify, provider-test) and apps/worker (job
- * handlers: metric-agent) consume this package. Keeping it shared lets the web app
- * call LLM functions in-process instead of round-tripping through the
- * worker over HTTP.
+ * apps/web and apps/worker consume this package.
  */
 
 export * from "./config";
 export * from "./llm";
 export { generate, hostProgram, type GenerateResult, type HostProgram } from "./inference";
 export * from "./classifier";
-export * from "./metric-agent";
 export * from "./usage-normalization";
-export * from "./discovery-pathways";
 export * from "./agent-backend";
 export { makeAgentBackend } from "./agent-runtime";
 export {

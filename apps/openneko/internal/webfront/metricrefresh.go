@@ -120,9 +120,9 @@ func optText(s *string) any {
 	return *s
 }
 
-// buildMetricPrompt is buildMetricPrompt() in packages/llm/src/metric-prompt.ts
-// with the discovery pathways that runMetricAgent() adds. The job has no
-// files tool, so the memory section leaves out the files text.
+// buildMetricPrompt gives the prompt of testdata/metricrefresh.json, with the
+// discovery pathways. The job has no files tool, so the memory section
+// leaves out the files text.
 func buildMetricPrompt(c metricCard, k knowledgePack, memoryContext string) string {
 	input := &jsObj{}
 	if c.Question != "" {

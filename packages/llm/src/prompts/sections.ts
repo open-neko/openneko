@@ -20,9 +20,8 @@ export const GRAPHJIN_DATE_RULE = `- For GraphJin date/range filters, do not put
   anchor minus N-1 days. A year or 12 months is 365 days, a month 30, a
   week 7. Never count back to the same calendar date. State the dates used.`;
 
-// Anti-fanout rule we keep separately so it can be cited in the
-// metric-agent's HARD CONSTRAINTS *and* in the chat agent's data-access
-// rules without copy-paste drift. Born from the CEO #1 fact-check.
+// Anti-fanout rule we keep separately so it can be cited in more than one
+// prompt without copy-paste drift. Born from the CEO #1 fact-check.
 export const GRAPHJIN_FANOUT_RULE = `- A nested GraphJin response is flattened — one row per child. Summing
   the parent column from that flattened payload double-counts by N
   children per parent. To get a correct parent-side total either (a)
