@@ -2,7 +2,7 @@ import type { A2UIMessage } from "@/a2ui/types";
 
 type Component = Record<string, unknown> & { id: string; component: string };
 
-function answer(id: string, title: string, body: Component[], extra: Record<string, unknown> = {}): A2UIMessage[] {
+function answer(id: string, title: string, body: Component[], extra: Record<string, unknown> = {}, nested: Component[] = []): A2UIMessage[] {
   return [{
     version: "v1.0",
     createSurface: {
@@ -12,6 +12,7 @@ function answer(id: string, title: string, body: Component[], extra: Record<stri
       components: [
         { id: "root", component: "Answer", title, children: body.map((part) => part.id), ...extra },
         ...body,
+        ...nested,
       ],
     },
   } as A2UIMessage];
@@ -28,6 +29,9 @@ const CATEGORY_ROWS = [
   { c0: "Touring Bikes", c1: "1,845", c2: "2,089,568", c3: "14.13" },
   { c0: "Road Bikes", c1: "1,822", c2: "1,848,407", c3: "18.79" },
 ];
+const LONG_TABLE = "inventory_source_item_reservation_history_by_warehouse_and_day";
+const LONG_SKU = "SKU_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+const LONG_LINK = "https://example.com/a/very/long/path/that/does/not/break/anywhere/inventory_reservation_report_2026_11_14";
 const DRILL = "Break down {label} revenue by month for the last 90 days";
 
 export const ANSWER_FIXTURES: Record<string, { label: string; messages: A2UIMessage[] }> = {
@@ -183,6 +187,43 @@ function calc() {
 p.oninput = calc; d.oninput = calc; calc();
 </script>`,
       },
+    ]),
+  },
+  wide: {
+    label: "Wide",
+    messages: answer("wide", `Stock by warehouse and ${LONG_SKU}`, [
+      { id: "row", component: "Row", children: ["m1", "m2", "m3"] },
+      {
+        id: "table", component: "Table", caption: LONG_TABLE, drill: "Show the reservations for {label}",
+        columns: ["Warehouse", "SKU", "On hand", "Reserved", "Available", "Days of cover", "Reorder point", "Supplier", "Last receipt"].map((label, index) => ({ key: `c${index}`, label, align: index > 1 && index < 7 ? "right" : "left" })),
+        rows: [
+          { c0: "North distribution centre", c1: "SKU-1001-BLUE-XL", c2: "49,310", c3: "12,004", c4: "37,306", c5: "18.4", c6: "20,000", c7: "Acme Industrial Supplies Ltd", c8: "04 Sep 2026" },
+          { c0: "South", c1: LONG_SKU, c2: "2", c3: "0", c4: "2", c5: "0.1", c6: "50", c7: "Beta", c8: "21 Aug 2026" },
+        ],
+      },
+      {
+        id: "compare", component: "Compare",
+        columns: ["Measure", "North distribution centre", "South", "East", "West", "Central"].map((label, index) => ({ key: `c${index}`, label, align: index ? "right" : "left" })),
+        rows: [
+          { c0: "Units on hand", c1: "49,310", c2: "2", c3: "8,120", c4: "11,904", c5: "6,233" },
+          { c0: "Place-order rate change since 2:14am", c1: "-94%", c2: "-3%", c3: "+1%", c4: "0%", c5: "-12%" },
+        ],
+      },
+      { id: "tabs", component: "Tabs", tabs: [{ title: "Detail", child: "detail" }, { title: "Query", child: "query" }] },
+      { id: "section", component: "Section", title: `How OpenNeko read ${LONG_TABLE}`, collapsible: true, children: ["note"] },
+      { id: "picker", component: "ChoicePicker", label: "Warehouses", options: ["North distribution centre", "South", "East", "West", "Central"].map((label) => ({ label, value: label })), value: ["South"], displayStyle: "chips" },
+      { id: "field", component: "TextField", label: "Reorder note for Acme Industrial Supplies Ltd", value: LONG_SKU },
+      { id: "confirm", component: "Confirmation", label: "Created workflow", title: `Daily low-stock check for ${LONG_TABLE}`, children: ["confirmText"] },
+    ], {}, [
+      ...[["m1", "$4,712,330", "Revenue month to date"], ["m2", "49,310", "Units on hand"], ["m3", "18.4", "Days of cover"]].map(([id, metric, label]) => ({
+        id: id!, component: "MetricCard", metricId: id!, source: "chat", mood: "watch", text: `${label} moved since 04 September`,
+        metric: metric!, label: label!, detail: `Read from ${LONG_TABLE}.`,
+        chartType: "line", chartData: [{ d: "Mon", v: 3 }, { d: "Tue", v: 5 }, { d: "Wed", v: 4 }],
+      })),
+      { id: "detail", component: "Markdown", text: "| Order | Customer | Ship-to | Carrier | Tracking |\n|---|---|---|---|---|\n| 100045218 | Acme Industrial Supplies Ltd | 1200 North Distribution Centre Road | Freight carrier | 1Z999AA10123456784 |" },
+      { id: "query", component: "Markdown", text: "```sql\nselect sku, sum(quantity) as on_hand from inventory_source_item group by sku order by on_hand desc;\n```" },
+      { id: "note", component: "Text", text: `See ${LONG_LINK} for detail.` },
+      { id: "confirmText", component: "Markdown", text: "Runs at 06:00 and reports SKUs below the reorder point." },
     ]),
   },
   draft: {

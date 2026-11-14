@@ -47,27 +47,54 @@ func (a *API) packAdminTarget(w http.ResponseWriter, r *http.Request, invalid st
 	return act, packID, key, true
 }
 
+// packOAuthTarget loads the connection for an admin pack OAuth route, or
+// sends the failure.
+func (a *API) packOAuthTarget(w http.ResponseWriter, r *http.Request, invalid string) (actor, *packOAuth, bool) {
+	act, packID, key, ok := a.packAdminTarget(w, r, invalid)
+	if !ok {
+		return act, nil, false
+	}
+	p, err := a.packOAuthFor(r.Context(), act.OrgID, packID, key)
+	if err != nil {
+		a.packOAuthFailed(w, r, err)
+		return act, nil, false
+	}
+	return act, p, true
+}
+
+func (a *API) packOAuthFailed(w http.ResponseWriter, r *http.Request, err error) {
+	var refusal packError
+	if !errors.As(err, &refusal) {
+		log.Printf("pack OAuth %s: %v", r.URL.Path, err)
+	}
+	sendPackFailure(w, http.StatusBadRequest, err, "oauth")
+}
+
 func (a *API) packOAuthStatus(w http.ResponseWriter, r *http.Request) {
-	_, packID, key, ok := a.packAdminTarget(w, r, "invalid pack OAuth connection")
+	_, p, ok := a.packOAuthTarget(w, r, "invalid pack OAuth connection")
 	if !ok {
 		return
 	}
-	status, reply := a.packWorker(context.WithoutCancel(r.Context()), http.MethodGet, packOAuthPath(packID, key, "status"), nil, nil)
-	body := &jsObj{vals: map[string]any{}}
-	switch reply.(type) {
-	case *jsObj, []any:
-		body = jsSpread(reply)
+	status, err := p.status()
+	if err != nil {
+		a.packOAuthFailed(w, r, err)
+		return
 	}
-	body.set("callbackUrl", a.packCallbackURI(r, packID, key))
-	sendJSValue(w, status, body)
+	status.CallbackURL = a.packCallbackURI(r, p.packID, p.conn.Key)
+	sendJSON(w, http.StatusOK, status)
 }
 
 func (a *API) packOAuthDisconnect(w http.ResponseWriter, r *http.Request) {
-	_, packID, key, ok := a.packAdminTarget(w, r, "invalid pack OAuth connection")
+	_, p, ok := a.packOAuthTarget(w, r, "invalid pack OAuth connection")
 	if !ok {
 		return
 	}
-	a.relayPackWorker(context.WithoutCancel(r.Context()), w, http.MethodPost, packOAuthPath(packID, key, "disconnect"), jsonHeader, []byte("{}"))
+	removed, err := p.disconnect(context.WithoutCancel(r.Context()))
+	if err != nil {
+		a.packOAuthFailed(w, r, err)
+		return
+	}
+	sendJSON(w, http.StatusOK, map[string]bool{"disconnected": removed})
 }
 
 // packJSONBody is `await request.json().catch(() => null)` for a body read
@@ -87,7 +114,7 @@ func packJSONBody(w http.ResponseWriter, r *http.Request) (*jsObj, bool) {
 }
 
 func (a *API) packOAuthConfigure(w http.ResponseWriter, r *http.Request) {
-	_, packID, key, ok := a.packAdminTarget(w, r, "Invalid pack connection")
+	act, packID, key, ok := a.packAdminTarget(w, r, "Invalid pack connection")
 	if !ok {
 		return
 	}
@@ -103,13 +130,19 @@ func (a *API) packOAuthConfigure(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, "Client ID is required")
 		return
 	}
-	out := &jsObj{}
-	out.set("clientId", clientID)
-	if secret, present := body.vals["clientSecret"]; present {
-		out.set("clientSecret", secret)
+	clientSecret, _ := body.vals["clientSecret"].(string)
+	ctx := context.WithoutCancel(r.Context())
+	p, err := a.packOAuthFor(ctx, act.OrgID, packID, key)
+	if err != nil {
+		a.packOAuthFailed(w, r, err)
+		return
 	}
-	a.relayPackWorker(context.WithoutCancel(r.Context()), w, http.MethodPost, packOAuthPath(packID, key, "configure"),
-		jsonHeader, []byte(jsStringify(out, false)))
+	status, err := p.configure(ctx, clientID.(string), clientSecret)
+	if err != nil {
+		a.packOAuthFailed(w, r, err)
+		return
+	}
+	sendJSON(w, http.StatusOK, status)
 }
 
 func (a *API) packOAuthStart(w http.ResponseWriter, r *http.Request) {
@@ -148,21 +181,26 @@ func (a *API) packOAuthStart(w http.ResponseWriter, r *http.Request) {
 	}
 	challenge := sha256.Sum256([]byte(verifier))
 	redirectURI := a.packCallbackURI(r, packID, key)
-	payload, _ := json.Marshal(map[string]string{"clientId": clientID, "clientSecret": clientSecret, "redirectUri": redirectURI,
-		"state": state, "codeChallenge": base64.RawURLEncoding.EncodeToString(challenge[:])})
-	status, reply := a.packWorker(context.WithoutCancel(r.Context()), http.MethodPost, packOAuthPath(packID, key, "begin"), jsonHeader, payload)
-	if status >= 200 && status <= 299 {
-		cookie, err := a.packStateCookie(map[string]any{
-			"packId": packID, "connectionKey": key, "state": state, "codeVerifier": verifier,
-			"returnPath": returnPath, "userId": act.UserID, "orgId": act.OrgID,
-			"expiresAt": time.Now().Add(packOAuthTTLSeconds * time.Second).UnixMilli(),
-		})
-		if a.packFailed(w, r, err) {
-			return
-		}
-		a.setCookie(w, PackOAuthCookie, cookie, packOAuthTTLSeconds)
+	p, err := a.packOAuthFor(r.Context(), act.OrgID, packID, key)
+	if err != nil {
+		a.packOAuthFailed(w, r, err)
+		return
 	}
-	sendJSValue(w, status, reply)
+	authorizationURL, err := p.begin(clientID, clientSecret, redirectURI, state, base64.RawURLEncoding.EncodeToString(challenge[:]))
+	if err != nil {
+		a.packOAuthFailed(w, r, err)
+		return
+	}
+	cookie, err := a.packStateCookie(map[string]any{
+		"packId": packID, "connectionKey": key, "state": state, "codeVerifier": verifier,
+		"returnPath": returnPath, "userId": act.UserID, "orgId": act.OrgID,
+		"expiresAt": time.Now().Add(packOAuthTTLSeconds * time.Second).UnixMilli(),
+	})
+	if a.packFailed(w, r, err) {
+		return
+	}
+	a.setCookie(w, PackOAuthCookie, cookie, packOAuthTTLSeconds)
+	sendJSON(w, http.StatusOK, map[string]string{"authorizationUrl": authorizationURL})
 }
 
 // readAndClearPackState matches readAndClearPackOAuthState() in the former
@@ -243,10 +281,13 @@ func (a *API) packOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusForbidden, "OAuth session changed")
 		return
 	}
-	payload, _ := json.Marshal(map[string]string{"code": code, "codeVerifier": verifier, "redirectUri": redirectURI})
-	status, reply := a.packWorker(context.WithoutCancel(r.Context()), http.MethodPost, packOAuthPath(packID, key, "complete"), jsonHeader, payload)
-	if status != http.StatusOK {
-		sendJSValue(w, status, reply)
+	ctx := context.WithoutCancel(r.Context())
+	p, err := a.packOAuthFor(ctx, act.OrgID, packID, key)
+	if err == nil {
+		err = p.complete(ctx, code, verifier, redirectURI)
+	}
+	if err != nil {
+		a.packOAuthFailed(w, r, err)
 		return
 	}
 	appRedirect(w, withSearch(saved["returnPath"].(string), searchParams{{"pack", packID}, {"connected", key}}))
