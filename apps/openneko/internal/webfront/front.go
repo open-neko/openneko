@@ -29,10 +29,7 @@ var (
 // TestServerPagesMatchWeb compares them.
 var ServerPages = []string{
 	"/chat/connectors",
-	"/admin/access",
 	"/admin/settings/packs/magento/operations",
-	"/admin/users",
-	"/admin/users/groups/:groupId",
 	"/device",
 	"/integrations",
 	"/onboarding",

@@ -11,7 +11,13 @@ type Loaded = { ok: true; bodies: unknown[] } | { ok: false; error: string };
 
 function Loader({ title, paths, children }: AdminLoadProps) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
+  const [tick, setTick] = useState(0);
   const key = paths.join("\n");
+  useEffect(() => {
+    const refresh = () => setTick((n) => n + 1);
+    window.addEventListener("openneko:refresh", refresh);
+    return () => window.removeEventListener("openneko:refresh", refresh);
+  }, []);
   useEffect(() => {
     let cancelled = false;
     void Promise.all(key.split("\n").map((path) => adminApi(path))).then((results) => {
@@ -26,7 +32,7 @@ function Loader({ title, paths, children }: AdminLoadProps) {
     return () => {
       cancelled = true;
     };
-  }, [key]);
+  }, [key, tick]);
   if (loaded === null) {
     return (
       <div className="root">
