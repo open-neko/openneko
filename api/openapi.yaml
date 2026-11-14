@@ -9286,6 +9286,8 @@ paths:
       tags:
       - work
       summary: Stop a run
+      description: The person who opened the run's thread stops it. An org admin also stops a service run, whose thread has no creator
+        (manual, cron, watcher, subscription and API runs).
       x-access: signed-in
       security:
       - session: []
@@ -9311,6 +9313,12 @@ paths:
                     type: boolean
         '401':
           description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: A running batch API run cannot be stopped
           content:
             application/json:
               schema:
@@ -10490,6 +10498,7 @@ paths:
                 - actions
                 - events
                 - lineage
+                - canStop
                 additionalProperties: false
                 properties:
                   workflow:
@@ -10504,6 +10513,9 @@ paths:
                     type: array
                   lineage:
                     type: object
+                  canStop:
+                    type: boolean
+                    description: True when the caller may stop this run now
         '401':
           description: The session or device token is not valid
           content:

@@ -181,6 +181,34 @@ func (a *API) saveUserMessage(ctx context.Context, orgID, threadID, runID, conte
 	return err
 }
 
+// stopTarget is a run that act may stop: a run of the actor's own thread, or
+// for an org admin a service run, whose thread has no creator.
+type stopTarget struct {
+	status, threadID string
+	runningBatch     bool
+}
+
+func (a *API) runStopTarget(ctx context.Context, act actor, runID string) (*stopTarget, error) {
+	if act.UserID == "" || !isUUID(runID) {
+		return nil, nil
+	}
+	var t stopTarget
+	var owned, service bool
+	err := a.DB.QueryRow(ctx, `select r.status, r.thread_id::text, coalesce(t.created_by_user_id = $3, false),
+		t.created_by_user_id is null, exists (select 1 from workflow_run w where w.work_run_id = r.id
+		and w.execution_mode = 'batch' and w.status = 'running')
+		from work_run r join work_thread t on t.id = r.thread_id where r.org_id = $1 and r.id = $2`,
+		act.OrgID, runID, act.UserID).Scan(&t.status, &t.threadID, &owned, &service, &t.runningBatch)
+	if errors.Is(err, pgx.ErrNoRows) || err == nil && !owned && !(service && act.Admin) {
+		return nil, nil
+	}
+	return &t, err
+}
+
+func (t *stopTarget) stoppable() bool {
+	return (t.status == "queued" || t.status == "running") && !t.runningBatch
+}
+
 // cancelRun is POST /api/v1/work/runs/{runId}/cancel. A run that no process
 // holds is still stopped in the database, so Stop never leaves it running.
 func (a *API) cancelRun(w http.ResponseWriter, r *http.Request) {
@@ -191,29 +219,41 @@ func (a *API) cancelRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	runID := r.PathValue("runId")
-	ok, err := a.workRunOwned(ctx, act, runID)
+	t, err := a.runStopTarget(ctx, act, runID)
 	if err != nil {
 		a.fail(w, r, err)
 		return
 	}
-	if !ok {
+	if t == nil {
 		sendError(w, http.StatusNotFound, "Run not found")
 		return
 	}
-	var status, threadID string
-	if err := a.DB.QueryRow(ctx, `select status, thread_id::text from work_run where org_id = $1 and id = $2`, act.OrgID, runID).
-		Scan(&status, &threadID); err != nil {
-		a.fail(w, r, err)
+	if a.stopRun(runID, act.UserID) {
+		sendJSON(w, http.StatusOK, obj("ok", true, "recovered", false))
 		return
 	}
-	if a.abortRun(runID) {
-		sendJSON(w, http.StatusOK, obj("ok", true, "recovered", false))
+	if t.runningBatch {
+		sendError(w, http.StatusConflict, "A running batch API run cannot be stopped. It ends at its runtime limit.")
 		return
 	}
 	reason := interruptedRunReason
 	var orgID string
-	err = a.DB.QueryRow(ctx, `update work_run set status = 'cancelled', error = $2, updated_at = now(), finished_at = now()
-		where id = $1 and status in ('queued', 'running') returning org_id`, runID, reason).Scan(&orgID)
+	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
+		err := tx.QueryRow(ctx, `update work_run set status = 'cancelled', error = $2, updated_at = now(), finished_at = now()
+			where id = $1 and status in ('queued', 'running') returning org_id`, runID, reason).Scan(&orgID)
+		if err != nil {
+			return err
+		}
+		var wfRunID string
+		err = tx.QueryRow(ctx, `update workflow_run set status = 'cancelled', error = $2, updated_at = now(), finished_at = now()
+			where work_run_id = $1 and status in ('queued', 'running') returning id::text`, runID, reason).Scan(&wfRunID)
+		if err := noRows(err); err != nil || wfRunID == "" {
+			return err
+		}
+		_, err = tx.Exec(ctx, `update workflow_api_admission set status = 'cancelled', completed_at = now(), lease_until = null,
+			updated_at = now() where workflow_run_id = $1 and status not in ('running', 'completed', 'failed', 'cancelled', 'expired')`, wfRunID)
+		return err
+	})
 	recovered := err == nil
 	if err := noRows(err); err != nil {
 		a.fail(w, r, err)
@@ -221,13 +261,13 @@ func (a *API) cancelRun(w http.ResponseWriter, r *http.Request) {
 	}
 	if recovered {
 		a.recordAudit(ctx, auditEvent{OrgID: orgID, EntityKind: "work_run", EntityID: runID, Event: "run:cancelled",
-			Payload: map[string]any{"status": "cancelled", "error": reason}})
-		if _, err := a.appendRunEvent(ctx, orgID, threadID, runID, doneEvent("cancelled")); err != nil {
+			Payload: map[string]any{"status": "cancelled", "error": reason, "stoppedBy": act.UserID}})
+		if _, err := a.appendRunEvent(ctx, orgID, t.threadID, runID, doneEvent("cancelled")); err != nil {
 			a.fail(w, r, err)
 			return
 		}
 	}
-	terminal := status == "completed" || status == "failed" || status == "cancelled" || status == "needs_input"
+	terminal := t.status == "completed" || t.status == "failed" || t.status == "cancelled" || t.status == "needs_input"
 	sendJSON(w, http.StatusOK, obj("ok", recovered || terminal, "recovered", recovered))
 }
 
@@ -380,7 +420,7 @@ func (a *API) beginWorkflowRun(base context.Context, cancel context.CancelCauseF
 		cancel(nil)
 		return nil, err
 	}
-	run := a.runs.register(o.RunID, orgID, o.ThreadID, cancel)
+	run := a.registerRun(o.RunID, orgID, o.ThreadID, cancel)
 	untrace := a.EvalTrace.register(o.RunID)
 	o.Emit = guarded
 	if o.wrapEmit != nil {

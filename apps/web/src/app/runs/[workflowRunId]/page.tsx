@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { SkeletonList } from "@/components/ui/skeleton";
 import { useParams, useRouter } from "next/navigation";
-import { Download, MessageCircle, TriangleAlert } from "lucide-react";
+import { Download, MessageCircle, Square, TriangleAlert } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import AppHeader from "@/components/AppHeader";
+import { confirmDialog } from "@/components/ConfirmModal";
 import CreatorCredit from "@/components/CreatorCredit";
 import PageHeading from "@/components/PageHeading";
 import SectionNav from "@/components/SectionNav";
@@ -126,6 +127,7 @@ type RunDetailPayload = {
       workflowRunId: string | null;
     };
   };
+  canStop: boolean;
 };
 
 function formatTime(iso: string | null): string {
@@ -280,6 +282,7 @@ export default function RunPage() {
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [stopping, setStopping] = useState(false);
 
   const load = useCallback(async () => {
     if (!workflowRunId) return;
@@ -348,6 +351,30 @@ export default function RunPage() {
     setRejectReason("");
   }, []);
 
+  const stopRun = useCallback(async () => {
+    const workRunId = data?.run.workRunId;
+    if (!workRunId) return;
+    const confirmed = await confirmDialog({
+      title: "Stop this run?",
+      description: "The run ends now as cancelled. Work it already did stays.",
+      confirmLabel: "Stop run",
+      destructive: true,
+    });
+    if (!confirmed) return;
+    setStopping(true);
+    try {
+      const res = await fetch(`/api/v1/work/runs/${workRunId}/cancel`, { method: "POST" });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => null)) as { error?: string } | null;
+        setError(json?.error ?? `Couldn't stop the run (HTTP ${res.status})`);
+        return;
+      }
+      await load();
+    } finally {
+      setStopping(false);
+    }
+  }, [data?.run.workRunId, load]);
+
   const askFollowUp = useCallback(async () => {
     if (!workflowRunId) return;
     try {
@@ -409,15 +436,29 @@ export default function RunPage() {
           meta={run.status.replace(/_/g, " ")}
           description={`${formatRunTimestamp(run.startedAt ?? run.createdAt)} · ${formatTrigger(run.triggerKind, run.executionMode)} · ${formatDuration(durationMs)}`}
           actions={
-            <Button
-              size="sm"
-              className="run-followup-control"
-              onClick={askFollowUp}
-              title="Open an Ask thread pre-loaded with this run's context"
-            >
-              <MessageCircle aria-hidden="true" />
-              <span>Ask about this run</span>
-            </Button>
+            <ActionGroup>
+              {data.canStop ? (
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={stopRun}
+                  disabled={stopping}
+                  title="Stop this run now"
+                >
+                  <Square aria-hidden="true" />
+                  <span>{stopping ? "Stopping…" : "Stop"}</span>
+                </Button>
+              ) : null}
+              <Button
+                size="sm"
+                className="run-followup-control"
+                onClick={askFollowUp}
+                title="Open an Ask thread pre-loaded with this run's context"
+              >
+                <MessageCircle aria-hidden="true" />
+                <span>Ask about this run</span>
+              </Button>
+            </ActionGroup>
           }
         />
 
