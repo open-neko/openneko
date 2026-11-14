@@ -8,7 +8,6 @@
   "exports": {
     ".": "./src/index.ts",
     "./agent-runtime": "./src/agent-runtime.ts",
-    "./sandbox-runtime": "./src/sandbox-runtime.ts",
     "./config": "./src/config.ts",
     "./provider-runtime": "./src/provider-runtime.ts",
     "./library/formats": "./src/library/formats.ts",
@@ -31,7 +30,6 @@
     "./graphjin/openapi-spec": "./src/graphjin/openapi-spec.ts",
     "./graphjin/persist-source-config": "./src/graphjin/persist-source-config.ts",
     "./graphjin/source-check": "./src/graphjin/source-check.ts",
-    "./work/sandbox-launcher": "./src/work/sandbox-launcher.ts",
     "./spend": "./src/spend/index.ts",
     "./model-tasks": "./src/model-tasks.ts",
     "./model-routes": "./src/model-routes.ts",

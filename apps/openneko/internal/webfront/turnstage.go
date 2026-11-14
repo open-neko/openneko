@@ -136,10 +136,8 @@ func copyIfPresent(src, dst string) error {
 	return copyTree(src, dst)
 }
 
-// stageTurn is the stage of makeSandboxCore() in
-// packages/llm/src/work/sandbox-launcher.ts, with the runner's built-in
-// skills: the company's changed skills, the built-in skills the run may
-// use, then the member's own skills in the run's scope.
+// stageTurn stages the company's changed skills, the built-in skills the run
+// may use, then the member's own skills in the run's scope.
 func stageTurn(host agentWorkspace, o stageOptions) (st *turnStage, err error) {
 	root := agentRunsRoot()
 	if err := os.MkdirAll(root, 0o755); err != nil {

@@ -3,78 +3,63 @@
 OpenNeko treats the agent loop as untrusted code: a prompt can steer it. Three
 pieces run it, and each holds only what its job needs:
 
-- the **runner**, a short-lived Node process that the worker starts for one
-  run (channel messages, scheduled, subscription and API workflows);
+- **`openneko web`**, the trusted control plane. It stages each run, serves
+  the agent's MCP tools and holds the database, secrets, policy and
+  approvals. It runs every turn: chat, channel messages, scheduled,
+  subscription, watcher, manual and API workflows, and background jobs;
 - **`openneko serve`**, which runs each agent turn and every other model call:
   the Ax harness, the inference and embedding gateways and the agent's file
   tools;
 - the optional **sandbox service** ([recipes/sandbox](recipes/sandbox/README.md)),
   which runs terminal commands, script skills and workflow script steps.
 
-Web and the worker are the trusted control plane. The database, secrets,
-policy and approvals live there. The agent reaches them only through the
-per-run broker.
+The agent reaches the database, secrets and policy only through the MCP tools
+that `openneko web` serves for the run.
 
 ## How a run flows
 
 ```
- user ─▶ web / worker  (control plane: DB, secrets, policy, broker)
+ user ─▶ openneko web  (control plane: DB, secrets, policy, MCP tools)
             │ stage the run's workspace in the shared runs folder
-            │ start the runner: node /opt/openneko-agent/entry.js
+            │ send each turn over the serve socket
             ▼
-        runner  ── one turn per connection ──▶  openneko serve
-        (child process,                          (openneko-serve container,
-         broker token, model key                  model key only for the turn)
-         for this run)                                 │ terminal commands
-            ▲                                          ▼ (only with a sandbox URL)
-            │ MCP tools over the serve socket     sandbox service
-            └──────── broker (loopback) ◀──       (own network, per-run user,
-                                                   no secrets)
+        openneko serve                         sandbox service
+        (model key only for the turn) ──────▶  (own network, per-run user,
+            │ terminal commands                 no secrets)
+            │ (only with a sandbox URL)
+            └── MCP tool calls back over the same socket to openneko web
 ```
 
-A chat question and a manual workflow run from the web app have no runner.
-`openneko web` runs them in its own process: it stages the run folder the
-same way, serves the agent's MCP tools from Go and sends each turn to serve's
-socket. The steps below hold for both paths, with `openneko web` in the
-runner's place.
-
-1. Web (chat) or the worker (channels, workflows, jobs) stages the run's
-   workspace, skills and job file in a new folder under
-   `OPENNEKO_AGENT_RUNS_DIR` (`/var/lib/openneko/agent-runs` in the images).
-2. It starts the runner, `node $OPENNEKO_AGENT_ENTRY` (default
-   `/opt/openneko-agent/entry.js`), as a child process in its own process
-   group. The runner gets the broker URL on loopback, a token bound to
-   `{run, org, thread}`, the serve socket, serve's address
-   (`OPENNEKO_SERVE_URL`, which turns on the file search tools) and the
-   org's model key. The launcher loads the key again for each run.
-3. The runner sends each turn to `openneko serve` over the Unix socket
-   `OPENNEKO_SERVE_SOCKET`. The turn carries the model key. Serve uses the key
-   for the model calls of that turn and keeps it nowhere else. The agent's MCP
-   tools (GraphJin, memory, files, actions) go back over the same socket to
-   the runner, which calls the broker.
-4. When `OPENNEKO_SANDBOX_URL` is set, serve sends terminal commands to the
+1. `openneko web` stages the run's workspace, skills and job file in a new
+   folder under `OPENNEKO_AGENT_RUNS_DIR` (`/var/lib/openneko/agent-runs` in
+   the images).
+2. It sends each turn to `openneko serve` over the Unix socket
+   `OPENNEKO_SERVE_SOCKET`. The turn carries the org's model key. Serve uses
+   the key for the model calls of that turn and keeps it nowhere else. The
+   agent's MCP tools (GraphJin, memory, files, actions) go back over the same
+   socket to `openneko web`, which checks the run's identity and policy.
+3. When `OPENNEKO_SANDBOX_URL` is set, serve sends terminal commands to the
    sandbox service. Without it, the agent has no terminal and the script
    skills are off. An admin can also turn the terminal off for one
-   organization at Admin, Settings, Agent. The launcher then gives the
-   runner no sandbox URL or key, does not stage the script skills, and the
-   prompt and skill search leave them out.
-5. When the run ends, the launcher kills the runner's process group, copies
-   artifacts and skill edits back, and deletes the run folder. The next start
-   deletes folders that a restart left behind.
+   organization at Admin, Settings, Agent. The run then gets no sandbox URL
+   or key, the script skills are not staged, and the prompt and skill search
+   leave them out.
+4. When the run ends, `openneko web` copies artifacts and skill edits back
+   and deletes the run folder. The next start deletes folders that a restart
+   left behind.
 
-`runChatTurn` keeps its split. The **prologue** (build the prompt) and the
-**epilogue** (parse action and workflow fences, persist, scrub) run in the
-trusted host. Only the agent loop runs in the runner and serve.
+`openneko web` builds the prompt before the turn and parses the action and
+workflow fences, persists and scrubs after it. Only the agent loop runs in
+serve.
 
 ## What each piece holds
 
 | Piece | Runs as | Holds | Network |
 |---|---|---|---|
-| Runner | the worker user (`neko`, 1001) | the run's broker token and the org's model key, for this run only | that of the worker |
 | `openneko serve` | `neko`, 1001 | a turn's or a host call's model key while it runs; the files service; the `neko_files_<database>` login and the derived token key; the customer GraphJin and its config | the stack's network, for the model APIs and the customer's data sources |
 | Sandbox service | root, to give each run its own user | **no secrets**; a command gets only `PATH`, `HOME`, `TMPDIR`, `LANG`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH` | only its own network |
 
-Model keys exist only in the runner, in `openneko web` while it runs a turn, and in serve. Serve drops every
+Model keys exist only in `openneko web` while it runs a turn, and in serve. Serve drops every
 `OPENNEKO_SANDBOX_*` value that a turn sends, and the sandbox request carries
 no model key, so the terminal cannot read one.
 
@@ -137,7 +122,7 @@ only when the first model fails with an error that Ax classifies as
 retryable, such as a 503 or a timeout, after the first model's own retries.
 A refused key or a bad request does not go to the fallback. For a host call,
 the frame carries the fallback route and its key in `fallback_key`. For a
-turn, the runner gets the fallback key as `FALLBACK_MODEL_API_KEY`, and the
+turn, `openneko web` sends the fallback key as `FALLBACK_MODEL_API_KEY`, and the
 harness reads a two-route profile in `HARNESS_MODEL_ROUTES`. The fallback
 route never runs a tool call again. A streamed answer goes to the fallback
 only when the first model fails before it sends any text. After the first
@@ -185,7 +170,7 @@ the same.
 
 The stack has two zones. The control zone is web and the worker. It holds
 the secret key, the `neko` database login and the provider keys. The agent
-zone is serve and the runner's turns. Serve holds only these:
+zone is serve and its turns. Serve holds only these:
 
 - the `neko_files_<database>` login. The role can read and write the three
   `file_content_*` tables and nothing else. `openneko serve-init` creates it
@@ -203,7 +188,7 @@ mount the config volume.
 
 Containers and credentials separate the zones. The network does not: serve
 shares the stack network with the database, web and the worker. The
-database grants and the broker's per-run tokens stop serve from acting
+database grants and the per-run tokens stop serve from acting
 outside its zone.
 
 Agent runs read customer data only through the direct GraphJin tools. No run
@@ -398,7 +383,7 @@ The sandbox gives each run its own user and group from
 under `OPENNEKO_SANDBOX_WORKSPACES`. One run cannot read another. The
 sandbox shares no folder with the stack. Each command carries the run's
 files that changed since the last command, and the answer carries the files
-that the command changed; serve, or the runner for a workflow script step,
+that the command changed; serve, or `openneko web` for a workflow script step,
 writes them into the staged run. The run's `.openneko` folder, which holds
 the job file, never goes to the sandbox, and nothing the sandbox returns may
 land in it. When a command ends, the sandbox kills every process of the
@@ -406,7 +391,7 @@ run's user. Ending a run removes its folder and its home. The protocol is in
 `recipes/sandbox/README.md`.
 
 A skill script gets its data as files. When it asks for rows, it stops with
-its request; serve, or the runner for a script step, runs the query through
+its request; serve, or `openneko web` for a script step, runs the query through
 the run's GraphJin tools and runs the script again with the rows. The
 sandbox holds no key, token or socket for this. A script can also declare
 its queries in a `<script>.queries.json` file beside it; OpenNeko runs them
@@ -446,7 +431,6 @@ Compose sets all of these. They matter only for custom deployments.
 | `OPENNEKO_SERVE_SOCKET` | web, worker, serve | the agent socket of serve (`/run/openneko/serve.sock`) |
 | `OPENNEKO_SERVE_MAX_TURNS` | serve | turns that run at once (default 32) |
 | `OPENNEKO_AGENT_RUNS_DIR` | web, worker | where runs are staged |
-| `OPENNEKO_AGENT_ENTRY` | web, worker | the runner (`/opt/openneko-agent/entry.js`; a `.ts` path runs with tsx) |
 | `OPENNEKO_SANDBOX_URL` | web, worker, serve | the sandbox service (`unix:///path`, `http://` or `https://`); empty turns the terminal off |
 | `OPENNEKO_SANDBOX_KEY` | web, worker, serve, sandbox | the bearer key of the sandbox service |
 | `OPENNEKO_GRAPHJIN_CONFIG` | web, worker, serve, serve-init | the customer GraphJin config (`/config/graphjin/agentic.yml`); empty runs no GraphJin in serve |

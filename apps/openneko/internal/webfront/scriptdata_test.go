@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -25,17 +24,6 @@ func decodeJS(t *testing.T, s string) any {
 		t.Fatal(err)
 	}
 	return v
-}
-
-func TestDataClientMatchesNode(t *testing.T) {
-	raw, err := os.ReadFile("../../../worker/src/agent-sandbox/data-client.ts")
-	if err != nil {
-		t.Fatal(err)
-	}
-	parts := regexp.MustCompile("(?s)String\\.raw`(.*?)`;").FindAllStringSubmatch(string(raw), -1)
-	if len(parts) != 2 || parts[0][1] != nekoDataPy || parts[1][1] != nekoQueryCLI {
-		t.Fatal("dataclient/neko_data.py and dataclient/neko-query differ from apps/worker/src/agent-sandbox/data-client.ts")
-	}
 }
 
 func TestScriptDataToolIsHiddenFromTheModel(t *testing.T) {
