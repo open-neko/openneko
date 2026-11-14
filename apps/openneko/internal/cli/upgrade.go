@@ -25,6 +25,7 @@ func newUpgradeCmd() *cobra.Command {
 	var stackOnly bool
 	var cliOnly bool
 	var skipBackup bool
+	var from string
 
 	cmd := &cobra.Command{
 		Use:   "upgrade",
@@ -39,11 +40,24 @@ stack and stops if that fails; --skip-backup upgrades without one.
 The CLI honors its installation owner: Homebrew installations are upgraded
 through Homebrew; standalone installations use checksum-verified release
 artifacts and atomic replacement. Use --stack-only or --cli-only for recovery
-and specialized deployment workflows.`,
+and specialized deployment workflows.
+
+A native install upgrades from a release folder: --from <folder>. It takes a
+backup, stops OpenNeko, replaces the executable and the web app, and starts
+OpenNeko again if it ran; the start applies the migrations.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, cancel := context.WithCancel(cmd.Context())
 			defer cancel()
+			if settings, ok := nativeInstall(); ok {
+				if stackOnly || cliOnly || imageVersion != "" || noPrune {
+					return errors.New("a native install takes its release from --from; --version, --stack-only, --cli-only and --no-prune are for a Docker install")
+				}
+				return runNativeUpgrade(ctx, cmd, settings, from, skipBackup)
+			}
+			if from != "" {
+				return errors.New("--from is for a native install")
+			}
 			return runUpgrade(ctx, cmd, upgradeOptions{
 				mode:         mode,
 				imageVersion: imageVersion,
@@ -60,6 +74,7 @@ and specialized deployment workflows.`,
 	cmd.Flags().BoolVar(&stackOnly, "stack-only", false, "Upgrade only stack images; keep the current local CLI")
 	cmd.Flags().BoolVar(&cliOnly, "cli-only", false, "Upgrade only the local CLI; do not change the stack")
 	cmd.Flags().BoolVar(&skipBackup, "skip-backup", false, "Upgrade the stack without taking a backup first")
+	cmd.Flags().StringVar(&from, "from", "", "Native: release folder that holds bin/openneko and share/openneko/web")
 	return cmd
 }
 
