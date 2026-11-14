@@ -1,5 +1,5 @@
 import { withStartupTrace, startupPhase } from "@neko/telemetry/startup";
-import { keepProcessThroughDatabaseRestarts, readLocalConfig, secretsBackendError, soloAdminNeedsEmail } from "@neko/db";
+import { keepProcessThroughDatabaseRestarts, readLocalConfig, secretsBackendError } from "@neko/db";
 import "dotenv/config";
 
 import { createServer } from "node:http";
@@ -15,7 +15,7 @@ import {
   startSsoSetupPoller,
 } from "./sso/sso-setup-service.js";
 import { CoreSecrets } from "./secrets/core-secrets.js";
-import { SignInService, type SignInProviderId } from "./signin/signin-service.js";
+import { SignInService } from "./signin/signin-service.js";
 import {
   applyGroupGrants,
   disableGroupGrants,
@@ -33,7 +33,6 @@ import {
   db,
   desc,
   eq,
-  activeAdministratorIds,
   getOrgId,
   isNull,
 } from "@neko/db";
@@ -152,19 +151,6 @@ function ssoSetupSurface(): SsoSetupHandlerSurface {
 }
 const server = createServer(
   createAdminHandler({
-    auth: {
-      getAuthProvider: () => signInService?.getAuthProvider() ?? null,
-      authSignInReady: () => signInService?.authSignInReady() ?? false,
-      getAuthEnvGaps: () => signInService?.getAuthEnvGaps() ?? null,
-      getAuthConfiguredEnvKeys: () => signInService?.getAuthConfiguredEnvKeys() ?? [],
-      getAuthDeclaredEnvKeys: () => signInService?.getAuthDeclaredEnvKeys() ?? [],
-      soloAdminNeedsEmail: async () => soloAdminNeedsEmail(await getOrgId()),
-      hasProvisionedAdmin: async () => (await activeAdministratorIds(await getOrgId())).length > 0,
-      setAuthSecret: (key, value) => signIn().setAuthSecret(key, value),
-      selectProvider: (provider) => signIn().selectProvider(provider as SignInProviderId | null),
-      beginAuth: (params) => signIn().beginAuth(params),
-      completeAuth: (params) => signIn().completeAuth(params),
-    },
     actions: {
       ready: () => actionAdaptersReady,
       execute: (input) => runActionExecute(input),
@@ -271,17 +257,6 @@ coreSecrets = new CoreSecrets();
 await coreSecrets.start();
 setCoreSecretsInstance(coreSecrets);
 signInService = new SignInService(coreSecrets);
-{
-  const moved = await signInService.migrateLegacy().catch((err) => {
-    console.warn(`[worker] sign-in settings migration failed: ${err instanceof Error ? err.message : err}`);
-    return [];
-  });
-  if (moved.length > 0) console.log(`[worker] moved sign-in settings from ${moved.join(", ")}`);
-  const provider = signInService.getAuthProvider();
-  if (provider) {
-    console.log(`[worker] sign-in provider: ${provider.providerLabel}${signInService.authSignInReady() ? "" : " (setup pending)"}`);
-  }
-}
 ssoSetupService = new SsoSetupService(signInService);
 startSsoSetupPoller({ service: ssoSetupService, orgId: ADMIN_ORG_ID });
 {

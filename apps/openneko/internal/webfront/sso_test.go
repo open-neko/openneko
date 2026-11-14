@@ -3,6 +3,7 @@ package webfront
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,9 +11,11 @@ import (
 	"sync"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/open-neko/neko/apps/openneko/internal/secrets"
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
@@ -20,47 +23,92 @@ const nodeStateCookie = "abcState|L2NoYXQ_eD0x.PW77raE5KABLed-9mPUcO_mSWYfRSFrmM
 
 type ssoWorker struct {
 	mu       sync.Mutex
-	status   string
 	identity string
 	fail     bool
 	calls    []map[string]any
 }
 
-func (s *ssoWorker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *ssoWorker) RoundTrip(r *http.Request) (*http.Response, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if r.URL.Path == "/admin/auth/status" {
-		_, _ = w.Write([]byte(s.status))
-		return
-	}
-	var body map[string]any
-	_ = json.NewDecoder(r.Body).Decode(&body)
-	body["path"] = r.URL.Path
-	s.calls = append(s.calls, body)
-	if s.fail {
-		http.Error(w, `{"error":"provider down"}`, http.StatusInternalServerError)
-		return
+	raw, _ := io.ReadAll(r.Body)
+	reply := func(code int, body string) *http.Response {
+		return &http.Response{
+			StatusCode: code,
+			Header:     http.Header{"Content-Type": {"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(body)),
+		}
 	}
 	switch r.URL.Path {
-	case "/admin/auth/begin":
-		_, _ = w.Write([]byte(`{"authorizationUrl":"https://idp.example/authorize?state=` + body["state"].(string) + `"}`))
-	case "/admin/auth/complete":
-		_, _ = w.Write([]byte(`{"identity":` + s.identity + `}`))
+	case "/oauth/token":
+		vals, _ := url.ParseQuery(string(raw))
+		s.calls = append(s.calls, map[string]any{
+			"path":        "/oauth/token",
+			"code":        vals.Get("code"),
+			"redirectUri": vals.Get("redirect_uri"),
+		})
+		if s.fail {
+			return reply(http.StatusInternalServerError, `{"error":"provider down"}`), nil
+		}
+		return reply(http.StatusOK, `{"access_token":"at-1"}`), nil
+	case "/userinfo":
+		if s.fail {
+			return reply(http.StatusInternalServerError, `{"error":"provider down"}`), nil
+		}
+		var parsed map[string]any
+		_ = json.Unmarshal([]byte(s.identity), &parsed)
+		if orgID, ok := parsed["orgId"]; ok {
+			parsed["organization_id"] = orgID
+		}
+		encoded, _ := json.Marshal(parsed)
+		return reply(http.StatusOK, string(encoded)), nil
+	case "/emails":
+		var payload struct {
+			To   []string `json:"to"`
+			Text string   `json:"text"`
+		}
+		_ = json.Unmarshal(raw, &payload)
+		to := ""
+		if len(payload.To) > 0 {
+			to = payload.To[0]
+		}
+		s.calls = append(s.calls, map[string]any{
+			"path":  "/emails",
+			"to":    to,
+			"text":  payload.Text,
+			"state": extractCallbackParam(payload.Text, "state"),
+			"code":  extractCallbackParam(payload.Text, "code"),
+		})
+		if s.fail {
+			return reply(http.StatusUnprocessableEntity, "sender not verified"), nil
+		}
+		return reply(http.StatusOK, `{"id":"em_1"}`), nil
 	default:
-		http.NotFound(w, r)
+		return reply(http.StatusNotFound, `{"error":"not found"}`), nil
 	}
 }
 
+func extractCallbackParam(text, key string) string {
+	for _, line := range strings.Split(text, string(byte(10))) {
+		if strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://") {
+			if u, err := url.Parse(strings.TrimSpace(line)); err == nil {
+				return u.Query().Get(key)
+			}
+		}
+	}
+	return ""
+}
+
 func newSSOFront(t *testing.T, status string, db *pgxpool.Pool) (*Front, *ssoWorker) {
-	wk := &ssoWorker{status: status}
-	srv := httptest.NewServer(wk)
-	t.Cleanup(srv.Close)
-	g := newGate(t, srv.URL)
+	wk := &ssoWorker{}
+	g := newGate(t, "")
+	seedSignInSecrets(t, g.SecretsDir, status)
+	g.Client = &http.Client{Transport: wk}
 	g.DB = db
 	return &Front{
 		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
 		Gate: g,
-		API:  &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecureCookies: true},
+		API:  &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecureCookies: true, SecretsDir: g.SecretsDir},
 		Node: &recorder{},
 	}, wk
 }
@@ -75,36 +123,49 @@ func cookieFrom(w *httptest.ResponseRecorder, name string) *http.Cookie {
 }
 
 func TestAuthBegin(t *testing.T) {
-	f, wk := newSSOFront(t, `{"provider":null}`, nil)
+	f, _ := newSSOFront(t, `{"provider":null}`, nil)
 	if w := call(f, "GET", "/api/v1/auth/begin", "", nil); w.Code != 503 || w.Body.String() != `{"error":"sign-in is not set up"}` {
 		t.Errorf("off: %d %s", w.Code, w.Body.String())
 	}
 
-	wk.status = `{"provider":{"pluginName":"scalekit","provisioning":"automatic"}}`
-	f.Gate.provider = nil
+	seedSignInSecrets(t, f.Gate.SecretsDir, `{"provider":{"pluginName":"scalekit","provisioning":"automatic"}}`)
+	f.Gate.Reset()
 	w := call(f, "GET", "/api/auth/begin?returnTo=%2Fchat%3Fx%3D1&loginHint=%20a%40example.com%20", "", nil)
 	c := cookieFrom(w, StateCookie)
 	if w.Code != 302 || c == nil || !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteLaxMode || c.MaxAge != stateTTLSeconds || c.Path != "/" {
 		t.Fatalf("begin %d %v", w.Code, w.Header())
 	}
-	call0 := wk.calls[0]
-	if call0["redirectUri"] != "https://neko.example/api/auth/callback" || call0["loginHint"] != "a@example.com" ||
-		w.Header().Get("Location") != "https://idp.example/authorize?state="+call0["state"].(string) {
-		t.Errorf("worker call %v, location %q", call0, w.Header().Get("Location"))
-	}
 	state, path, ok := f.API.readAndClearState(httptest.NewRecorder(), &http.Request{Header: http.Header{"Cookie": {c.String()}}})
-	if !ok || state != call0["state"] || len(state) != 32 || path != "/chat?x=1" {
+	if !ok || len(state) != 32 || path != "/chat?x=1" {
 		t.Errorf("state cookie %q %q %v", state, path, ok)
+	}
+	loc, err := url.Parse(w.Header().Get("Location"))
+	if err != nil || loc.Host != "env.scalekit.com" || loc.Path != "/oauth/authorize" ||
+		loc.Query().Get("redirect_uri") != "https://neko.example/api/auth/callback" ||
+		loc.Query().Get("login_hint") != "a@example.com" ||
+		loc.Query().Get("state") != state {
+		t.Errorf("location %q", w.Header().Get("Location"))
 	}
 
 	w = call(f, "GET", "/api/v1/auth/begin?returnTo=%2F%2Fevil.example", "", nil)
-	if _, path, _ := f.API.readAndClearState(httptest.NewRecorder(), &http.Request{Header: http.Header{"Cookie": {cookieFrom(w, StateCookie).String()}}}); path != "/" || wk.calls[1]["loginHint"] != nil {
-		t.Errorf("external return path %q, hint %v", path, wk.calls[1]["loginHint"])
+	loc2, _ := url.Parse(w.Header().Get("Location"))
+	if _, path, _ := f.API.readAndClearState(httptest.NewRecorder(), &http.Request{Header: http.Header{"Cookie": {cookieFrom(w, StateCookie).String()}}}); path != "/" || loc2.Query().Has("login_hint") {
+		t.Errorf("external return path %q, location %q", path, w.Header().Get("Location"))
 	}
 
-	wk.fail = true
-	if w := call(f, "GET", "/api/v1/auth/begin", "", nil); w.Code != 502 || !strings.HasPrefix(decode(t, w)["error"].(string), "sign-in begin failed (500): ") {
-		t.Errorf("worker failure %d %s", w.Code, w.Body.String())
+	if err := secrets.Write(secrets.Store{
+		"signin": {"PROVIDER": "scalekit"},
+		"signin.scalekit": {
+			"SCALEKIT_ENVIRONMENT_URL": "http://insecure.scalekit.com",
+			"SCALEKIT_CLIENT_ID":       "cid",
+			"SCALEKIT_CLIENT_SECRET":   "sec",
+		},
+	}, f.Gate.SecretsDir); err != nil {
+		t.Fatal(err)
+	}
+	f.Gate.Reset()
+	if w := call(f, "GET", "/api/v1/auth/begin", "", nil); w.Code != 502 || !strings.Contains(decode(t, w)["error"].(string), "SCALEKIT_ENVIRONMENT_URL must be an https URL") {
+		t.Errorf("begin failure %d %s", w.Code, w.Body.String())
 	}
 }
 
@@ -112,6 +173,8 @@ func TestAuthBeginManual(t *testing.T) {
 	db := testpg.Migrated(t)
 	seed(t, db, `insert into organization (id, name) values ('org', 'Org')`)
 	seed(t, db, `insert into app_user (id, org_id, email) values ('u1', 'org', 'Known@Example.com')`)
+	seed(t, db, `insert into user_group_membership (org_id, group_id, user_id, source)
+		select 'org', id, 'u1', 'local' from user_group where org_id = 'org' and slug = 'administrators'`)
 	seed(t, db, `insert into app_user (id, org_id, email, disabled_at) values ('u2', 'org', 'gone@example.com', now())`)
 	f, wk := newSSOFront(t, `{"provider":{"pluginName":"magic-link","provisioning":"manual","loginHintRequired":true}}`, db)
 
@@ -125,10 +188,10 @@ func TestAuthBeginManual(t *testing.T) {
 		}
 	}
 	if len(wk.calls) != 0 {
-		t.Fatalf("the worker got %d calls for unknown addresses", len(wk.calls))
+		t.Fatalf("the email provider got %d calls for unknown addresses", len(wk.calls))
 	}
 	w := call(f, "GET", "/api/v1/auth/begin?loginHint=known%40example.com", "", nil)
-	if len(wk.calls) != 1 || w.Header().Get("Location") == "/signin?notice=link-sent" {
+	if len(wk.calls) != 1 || w.Header().Get("Location") != "https://neko.example/signin?notice=link-sent" {
 		t.Errorf("known address: %q, %d calls", w.Header().Get("Location"), len(wk.calls))
 	}
 	wk.fail = true
@@ -160,7 +223,11 @@ func TestStateCookieFromNode(t *testing.T) {
 func signIn(t *testing.T, f *Front, wk *ssoWorker, identity string) *httptest.ResponseRecorder {
 	t.Helper()
 	begin := call(f, "GET", "/api/v1/auth/begin?returnTo=%2Fwork", "", nil)
-	state := wk.calls[len(wk.calls)-1]["state"].(string)
+	loc, err := url.Parse(begin.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := loc.Query().Get("state")
 	wk.identity = identity
 	return call(f, "GET", "/api/auth/callback?code=c1&state="+state, "", map[string]string{"Cookie": cookieFrom(begin, StateCookie).String()})
 }
@@ -183,10 +250,10 @@ func TestAuthCallbackChecks(t *testing.T) {
 	}
 	wk.fail = true
 	w := call(f, "GET", "/api/v1/auth/callback?code=c1&state=abcState", "", state)
-	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/signin?error=sign-in%20complete%20failed%20(500)") || cookieFrom(w, SessionCookie) != nil {
-		t.Errorf("worker failure: %q", loc)
+	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/signin?error=Scalekit%20token%20exchange%20returned%20HTTP%20500") || cookieFrom(w, SessionCookie) != nil {
+		t.Errorf("provider failure: %q", loc)
 	}
-	if wk.calls[0]["code"] != "c1" || wk.calls[0]["state"] != "abcState" || wk.calls[0]["redirectUri"] != "https://neko.example/api/auth/callback" {
+	if wk.calls[0]["code"] != "c1" || wk.calls[0]["redirectUri"] != "https://neko.example/api/auth/callback" {
 		t.Errorf("complete call %v", wk.calls[0])
 	}
 }
@@ -253,7 +320,7 @@ func TestAuthCallbackSignsIn(t *testing.T) {
 	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/signin?error=app_user.email%20ADA%40example.com%20is%20already%20bound") || cookieFrom(w, SessionCookie) != nil {
 		t.Errorf("bound email: %q", loc)
 	}
-	if w := signIn(t, f, wk, `{"sub":"","email":"x@example.com"}`); !strings.HasPrefix(w.Header().Get("Location"), "/signin?error=the%20sign-in%20provider%20gave%20no") {
+	if w := signIn(t, f, wk, `{"sub":"","email":"x@example.com"}`); !strings.HasPrefix(w.Header().Get("Location"), "/signin?error=Scalekit%20userinfo%20returned%20no%20sub") {
 		t.Errorf("no subject: %q", w.Header().Get("Location"))
 	}
 }
@@ -280,10 +347,16 @@ func TestManualProvisioningRefusesNewUser(t *testing.T) {
 	db := testpg.Migrated(t)
 	seed(t, db, `insert into organization (id, name) values ('org', 'Org')`)
 	seed(t, db, `insert into app_user (id, org_id, email) values ('u1', 'org', 'known@example.com')`)
+	seed(t, db, `insert into user_group_membership (org_id, group_id, user_id, source)
+		select 'org', id, 'u1', 'local' from user_group where org_id = 'org' and slug = 'administrators'`)
 	f, wk := newSSOFront(t, `{"provider":{"pluginName":"magic-link","provisioning":"manual"}}`, db)
 	begin := call(f, "GET", "/api/v1/auth/begin?loginHint=known%40example.com", "", nil)
-	wk.identity = `{"sub":"ml:new","email":"new@example.com"}`
-	w := call(f, "GET", "/api/v1/auth/callback?code=c&state="+wk.calls[0]["state"].(string), "", map[string]string{"Cookie": cookieFrom(begin, StateCookie).String()})
+	state := wk.calls[0]["state"].(string)
+	token, err := mintMagicLinkToken("new@example.com", state, strings.Repeat("k", 64), 600, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := call(f, "GET", "/api/v1/auth/callback?code="+token+"&state="+state, "", map[string]string{"Cookie": cookieFrom(begin, StateCookie).String()})
 	if loc := w.Header().Get("Location"); loc != "/signin?error="+encodeURIComponent("no user is provisioned for new@example.com; ask an administrator to add you") {
 		t.Errorf("got %q", loc)
 	}
