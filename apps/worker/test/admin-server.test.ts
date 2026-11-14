@@ -914,7 +914,6 @@ describe("worker admin /admin/auth/*", () => {
     getOperatorConnectStatus: (operatorId: string) => ReturnType<NonNullable<Parameters<typeof createAdminHandler>[0]["connect"]>["getOperatorConnectStatus"]>;
     beginConnect: NonNullable<Parameters<typeof createAdminHandler>[0]["connect"]>["beginConnect"];
     completeConnect: NonNullable<Parameters<typeof createAdminHandler>[0]["connect"]>["completeConnect"];
-    refreshConnect: NonNullable<Parameters<typeof createAdminHandler>[0]["connect"]>["refreshConnect"];
     disconnect: NonNullable<Parameters<typeof createAdminHandler>[0]["connect"]>["disconnect"];
   }> = {}) {
     return {
@@ -925,8 +924,6 @@ describe("worker admin /admin/auth/*", () => {
         (async () => ({ authorizationUrl: "https://x" })),
       completeConnect:
         overrides.completeConnect ?? (async () => sampleCredential()),
-      refreshConnect:
-        overrides.refreshConnect ?? (async () => sampleCredential()),
       disconnect: overrides.disconnect ?? (async () => true),
     };
   }
@@ -1087,25 +1084,6 @@ describe("worker admin /admin/auth/*", () => {
         credential: { tokens: Record<string, string> };
       };
       expect(body.credential.tokens.access_token).toBe("at-1");
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("POST /admin/connect/refresh requires operatorId + pluginName", async () => {
-    const srv = await startServer(
-      createAdminHandler({ connect: fakeConnect() }),
-    );
-    try {
-      const res = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/connect/refresh`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pluginName: "@x/y" }),
-        },
-      );
-      expect(res.status).toBe(400);
     } finally {
       await srv.close();
     }

@@ -127,12 +127,6 @@ export type RunChatTurnDeps = {
   listInstalledSkills: typeof defaultListInstalledSkills;
   getThreadBot: typeof getThreadBot;
   syncSkillIndex: typeof syncSkillIndex;
-  /**
-   * Runs the agent loop. Production hosts inject the runner launcher
-   * (agentRuntimeDepsFromConfig) — SEC9: the only runtime. The default
-   * (runAgentBackend in-process) exists for tests, which exercise the
-   * core without a sandbox. The DB-bound prologue/epilogue stay host-side.
-   */
   runCore: typeof runAgentBackend;
 };
 
