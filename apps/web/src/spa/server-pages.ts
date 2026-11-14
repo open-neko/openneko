@@ -2,12 +2,9 @@
 // its TestServerPagesMatchWeb fails when the two differ.
 export const serverPages: string[] = [
   "/chat/connectors",
-  "/admin",
   "/admin/access",
-  "/admin/settings",
   "/admin/settings/graphjin",
   "/admin/settings/packs/magento/operations",
-  "/admin/settings/workflows",
   "/admin/users",
   "/admin/users/groups/:groupId",
   "/device",

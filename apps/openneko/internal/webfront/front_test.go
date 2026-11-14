@@ -39,7 +39,8 @@ func TestFront(t *testing.T) {
 		{"GET", "/api/v1/work", "node /api/v1/work", ""},
 		{"GET", "/api/work", "node /api/work", ""},
 		{"GET", "/admin/settings/models", "<html>app</html>", "no-cache"},
-		{"GET", "/admin/settings/workflows", "node /admin/settings/workflows", ""},
+		{"GET", "/admin/settings/workflows", "<html>app</html>", "no-cache"},
+		{"GET", "/admin/users", "node /admin/users", ""},
 		{"GET", "/admin/users/groups/g1", "node /admin/users/groups/g1", ""},
 		{"GET", "/device", "node /device", ""},
 		{"POST", "/chat", "node /chat", ""},
@@ -85,7 +86,7 @@ func TestFrontWithoutNode(t *testing.T) {
 	if w := get(f, "GET", "/api/v1/work"); w.Code != 502 || !strings.Contains(w.Body.String(), `"error"`) {
 		t.Errorf("API: %d %q", w.Code, w.Body.String())
 	}
-	if w := get(f, "GET", "/admin"); w.Code != 502 {
+	if w := get(f, "GET", "/admin/users"); w.Code != 502 {
 		t.Errorf("server page: %d", w.Code)
 	}
 	if w := get(f, "GET", "/chat"); w.Code != 200 {
