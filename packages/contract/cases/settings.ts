@@ -82,4 +82,16 @@ export const settingsCases: Case[] = [
     op: "DELETE /my/passkeys/{passkeyId}", name: "refuses an unknown passkey", status: 404,
     request: (c) => ({ params: { passkeyId: c.ids.unknownId } }),
   },
+  {
+    op: "GET /my/push-subscriptions", name: "lists the signed-in user's push subscriptions", status: 200,
+    check: (r) => expect(body(r)).toEqual({ subscriptions: [] }),
+  },
+  {
+    op: "POST /my/push-subscriptions", name: "needs a valid push subscription payload", status: 400,
+    request: { body: {} },
+  },
+  {
+    op: "DELETE /my/push-subscriptions/{subscriptionId}", name: "refuses an unknown push subscription", status: 404,
+    request: (c) => ({ params: { subscriptionId: c.ids.unknownId } }),
+  },
 ];
