@@ -91,7 +91,6 @@ export {
 } from "./durable-scheduler";
 export {
   appendWorkflowRunSourceWrite,
-  countSubscriptionsMatchingOutput,
   countWorkflowRunsForSubscription,
   countWorkflowRunsSince,
   createObservation,
@@ -105,8 +104,6 @@ export {
   getWorkflow,
   getWorkflowRun,
   getWorkflowByOrgName,
-  getWorkflowRunChainDepth,
-  hasRecentSourceWriteForWorkflow,
   linkOutputSourceObservations,
   listRecentOutputsByWorkflow,
   listCronWorkflows,
@@ -117,7 +114,6 @@ export {
   listWorkflows,
   saveWorkflow,
   startOfTodayUtc,
-  writeSourceChangeLog,
   type CreateObservationInput,
   type CreateSubscriptionInput,
   type CreateWorkflowRunInput,
@@ -136,33 +132,13 @@ export {
   type WorkflowTriggers,
 } from "./store";
 export {
-  buildSubscriptionQuery,
   parseSourceChangeFilter,
-  parseSourceChangeMatch,
-  parseWorkflowOutputMatch,
-  type JsonScalar,
   type SourceChangeFilter,
-  type SourceChangeMatch,
-  type SubscriptionQueryPayload,
-  type WorkflowOutputFilter,
-  type WorkflowOutputMatch,
 } from "./subscription-query";
 export {
-  startSubscriptionManager,
-  type SubscriptionManagerHandle,
-  type SubscriptionManagerOptions,
-  type SubscriptionMatchEvent,
-  type SubscriptionTransport,
-  type ResolveTransport,
-} from "./subscription-manager";
-export {
   handleExternalEventMatch,
-  handleSourceChangeMatch,
-  handleSubscriptionMatch,
   type ExternalEventMatch,
   type HandleExternalEventMatchOptions,
-  type HandleSourceChangeMatchOptions,
-  type HandleSubscriptionMatchOptions,
   type MatchHandlerDecision,
 } from "./match-handler";
 export {
@@ -173,7 +149,6 @@ export {
 } from "./external-events";
 export {
   detectMutationLoop,
-  isWorkflowInAncestorChain,
   type MutationLoopCheck,
 } from "./cycle-detection";
 export {

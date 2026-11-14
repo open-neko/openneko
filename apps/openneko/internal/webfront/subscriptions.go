@@ -373,6 +373,10 @@ func parseSourceChange(filter any) (sourceChange, bool) {
 // dryRunQuery is buildSourceChangeDryRunQuery(); where is the filter's
 // where object as sent, so its keys keep their order.
 func dryRunQuery(sc sourceChange, where json.RawMessage, limit int) (string, error) {
+	return sourceChangeOperation("query SourceChangeDryRun", sc, where, limit)
+}
+
+func sourceChangeOperation(head string, sc sourceChange, where json.RawMessage, limit int) (string, error) {
 	order := sc.VersionColumn
 	if order == "" {
 		order = sc.PrimaryKey[0]
@@ -406,7 +410,7 @@ func dryRunQuery(sc sourceChange, where json.RawMessage, limit int) (string, err
 		}
 	}
 	args = append(args, "order_by: { "+order+": desc }", fmt.Sprintf("limit: %d", limit))
-	return "query SourceChangeDryRun {\n  " + sc.Table + "(" + strings.Join(args, ", ") + ") {\n" +
+	return head + " {\n  " + sc.Table + "(" + strings.Join(args, ", ") + ") {\n" +
 		strings.Join(projection, "\n") + "\n  }\n}", nil
 }
 

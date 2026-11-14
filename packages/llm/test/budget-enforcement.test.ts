@@ -1,12 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { applyWorkflowDailyBudget } from "../src/workflows/durable-scheduler";
-import { handleSubscriptionMatch } from "../src/workflows/match-handler";
 import { startOfTodayUtc } from "../src/workflows/store";
 import type {
-  SubscriptionRecord,
   WorkflowRecord,
 } from "../src/workflows/store";
-import type { WorkflowOutputMatch } from "../src/workflows/subscription-query";
 
 function fakeWorkflow(
   overrides: Partial<WorkflowRecord> & { dailyRunBudget?: number | null },
@@ -30,37 +27,6 @@ function fakeWorkflow(
     createdByRunId: null,
     createdAt: new Date(),
     updatedAt: new Date(),
-  };
-}
-
-function fakeSubscription(): SubscriptionRecord {
-  return {
-    id: "sub-1",
-    orgId: "org-1",
-    workflowId: "wf-consumer",
-    sourceKind: "workflow_output",
-    filter: {},
-    enabled: true,
-    debounceMs: 0,
-    maxConcurrentRuns: 5,
-    maxChainDepthOverride: null,
-    idempotencyKeyTemplate: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
-}
-
-function fakeOutput(): WorkflowOutputMatch {
-  return {
-    id: "out-1",
-    org_id: "org-1",
-    workflow_run_id: "wfr-parent",
-    kind: "finding",
-    scope: "x",
-    topic: null,
-    mood: "watch",
-    title: "x",
-    created_at: "2026-05-13T12:00:00.000Z",
   };
 }
 
@@ -111,76 +77,5 @@ describe("durable scheduler — daily_run_budget", () => {
       alreadyConsumed: 10_000,
     });
     expect(budgeted).toEqual({ selected: ["12:00"], skipped: 0 });
-  });
-});
-
-describe("match handler — daily_run_budget", () => {
-  it("drops the match when consumer workflow has exhausted its budget", async () => {
-    const enqueue = vi.fn();
-    const createObservation = vi.fn();
-    const decision = await handleSubscriptionMatch({
-      subscription: fakeSubscription(),
-      output: fakeOutput(),
-      enqueue: enqueue as never,
-      createObservation: createObservation as never,
-      countSubscriptionsMatchingOutput: async () => 0,
-      countWorkflowRunsForSubscription: async () => 0,
-      isWorkflowInAncestorChain: async () => false,
-      resolveProducingRunChainDepth: async () => 0,
-      getWorkflow: async () =>
-        fakeWorkflow({ id: "wf-consumer", dailyRunBudget: 5 }),
-      countWorkflowRunsSince: async () => 5,
-    });
-    expect(decision.action).toBe("dropped");
-    if (decision.action === "dropped") {
-      expect(decision.reason).toMatch(/daily_run_budget/);
-    }
-    expect(enqueue).not.toHaveBeenCalled();
-    expect(createObservation).not.toHaveBeenCalled();
-  });
-
-  it("allows the match when consumer is under budget", async () => {
-    const enqueue = vi.fn().mockResolvedValue("job-id");
-    const createObservation = vi
-      .fn()
-      .mockResolvedValue({ id: "obs-1", orgId: "org-1" });
-    const decision = await handleSubscriptionMatch({
-      subscription: fakeSubscription(),
-      output: fakeOutput(),
-      enqueue: enqueue as never,
-      createObservation: createObservation as never,
-      countSubscriptionsMatchingOutput: async () => 0,
-      countWorkflowRunsForSubscription: async () => 0,
-      isWorkflowInAncestorChain: async () => false,
-      resolveProducingRunChainDepth: async () => 0,
-      getWorkflow: async () =>
-        fakeWorkflow({ id: "wf-consumer", dailyRunBudget: 5 }),
-      countWorkflowRunsSince: async () => 2,
-    });
-    expect(decision.action).toBe("enqueued");
-    expect(enqueue).toHaveBeenCalledTimes(1);
-  });
-
-  it("skips the budget check entirely when daily_run_budget is null", async () => {
-    const enqueue = vi.fn().mockResolvedValue("job-id");
-    const createObservation = vi
-      .fn()
-      .mockResolvedValue({ id: "obs-1", orgId: "org-1" });
-    const countRunsSince = vi.fn();
-    const decision = await handleSubscriptionMatch({
-      subscription: fakeSubscription(),
-      output: fakeOutput(),
-      enqueue: enqueue as never,
-      createObservation: createObservation as never,
-      countSubscriptionsMatchingOutput: async () => 0,
-      countWorkflowRunsForSubscription: async () => 0,
-      isWorkflowInAncestorChain: async () => false,
-      resolveProducingRunChainDepth: async () => 0,
-      getWorkflow: async () =>
-        fakeWorkflow({ id: "wf-consumer", dailyRunBudget: null }),
-      countWorkflowRunsSince: countRunsSince as never,
-    });
-    expect(decision.action).toBe("enqueued");
-    expect(countRunsSince).not.toHaveBeenCalled();
   });
 });
