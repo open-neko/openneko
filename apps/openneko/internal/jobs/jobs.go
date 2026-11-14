@@ -49,6 +49,7 @@ type Queue struct {
 	// ChannelDeliver asks the Node worker to send on a channel; the channel
 	// adapters live in the worker until the channels move.
 	ChannelDeliver func(ctx context.Context, args ChannelDeliverArgs) error
+	WebPush        func(ctx context.Context, args WebPushArgs) error
 	Embedding      Embedding
 }
 
@@ -187,6 +188,7 @@ func (q *Queue) config() *river.Config {
 	river.AddWorker(workers, &workflowAPISweep{run: q.WorkflowAPISweep})
 	river.AddWorker(workers, &workRun{run: q.WorkRun})
 	river.AddWorker(workers, &channelDeliver{run: q.ChannelDeliver})
+	river.AddWorker(workers, &webPush{run: q.WebPush})
 	return &river.Config{
 		Schema: q.schema(),
 		Logger: quietLogger(),

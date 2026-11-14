@@ -380,6 +380,9 @@ func (r *runTools) createActionRequest(ctx context.Context, in *jsObj) (any, err
 	if parseErr != nil || !idOK || id == "" || !stateOK {
 		return nil, errors.New("worker action preflight returned an invalid response")
 	}
+	if state == "pending_approval" {
+		a.queueApprovalWaitingPush(ctx, orgID, id)
+	}
 	return jsObjOf("id", id, "status", state), nil
 }
 

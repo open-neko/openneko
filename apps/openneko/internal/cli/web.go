@@ -131,13 +131,16 @@ with exit code 0, so its supervisor starts it again.`,
 			queue := &jobs.Queue{Pool: pool, MetricsOn: api.MetricsRefresh, MetricSweep: api.MetricSweep, MemorySweep: api.MemorySweep, CronSweep: api.CronSweep,
 				DirectorySync: api.DirectorySync, ActionExecute: api.ActionExecute,
 				SkillLearn: api.SkillLearn, BotNameSweep: api.BotNameSweep, Build: api.RunBuild, WorkflowRunFire: api.WorkflowRunFire,
-				WorkflowAPISweep: api.WorkflowAPISweep, WorkRun: api.WorkRun, ChannelDeliver: api.ChannelDeliver,
+				WorkflowAPISweep: api.WorkflowAPISweep, WorkRun: api.WorkRun, ChannelDeliver: api.ChannelDeliver, WebPush: api.WebPushDeliver,
 				Embedding: jobs.Embedding{Model: api.EmbeddingModel, Embed: api.EmbedText},
 				Logf:      func(format string, args ...any) { fmt.Fprintf(cmd.OutOrStdout(), format+"\n", args...) }}
 			runner := startJobs(context.WithoutCancel(ctx), runJobs, queue, cmd.OutOrStdout(), cmd.ErrOrStderr())
 			webfront.SweepStagesEvery(ctx, 5*time.Minute)
 			if _, err := api.MigrateLegacyChannelSecrets(); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: channel settings not moved: %v\n", err)
+			}
+			if err := api.EnsureVAPIDKeys(); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: VAPID keys not ready: %v\n", err)
 			}
 			if runner != nil {
 				api.StartChannelInbound(ctx)
