@@ -1,4 +1,5 @@
 import type { RailIdentity } from "@/components/AppRail";
+import { reportNetworkOffline, reportNetworkOnline } from "./pwa";
 
 type SessionResponse = {
   user: { email: string; name: string | null } | null;
@@ -19,8 +20,10 @@ export function identityFromSession(data: SessionResponse): RailIdentity | undef
 export async function loadIdentity(): Promise<RailIdentity | undefined> {
   try {
     const res = await fetch("/api/v1/auth/session", { cache: "no-store" });
+    reportNetworkOnline();
     return res.ok ? identityFromSession((await res.json()) as SessionResponse) : undefined;
   } catch {
+    reportNetworkOffline();
     return undefined;
   }
 }
