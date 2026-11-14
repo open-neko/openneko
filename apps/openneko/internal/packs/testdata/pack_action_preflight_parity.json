@@ -1,0 +1,91 @@
+{
+  "readinessCases": [
+    {
+      "name": "enabled_ready",
+      "kind": "magento.add_internal_order_comment",
+      "definition": { "enabled": true, "readiness": "ready", "reason": null },
+      "expectedError": null
+    },
+    {
+      "name": "blocked_with_reason",
+      "kind": "magento.add_internal_order_comment",
+      "definition": { "enabled": true, "readiness": "blocked", "reason": "GraphJin REST mutations require a newer release" },
+      "expectedError": "pack action magento.add_internal_order_comment is blocked: GraphJin REST mutations require a newer release"
+    },
+    {
+      "name": "trimmed_reason",
+      "kind": "resend.send_email",
+      "definition": { "enabled": true, "readiness": "degraded", "reason": "  API source resend is unreachable  " },
+      "expectedError": "pack action resend.send_email is blocked: API source resend is unreachable"
+    },
+    {
+      "name": "disabled_ready_without_reason",
+      "kind": "magento.add_internal_order_comment",
+      "definition": { "enabled": false, "readiness": "ready", "reason": null },
+      "expectedError": "pack action magento.add_internal_order_comment is blocked: the pack operator is unavailable"
+    },
+    {
+      "name": "whitespace_reason_fallback",
+      "kind": "magento.manage_prices",
+      "definition": { "enabled": true, "readiness": "blocked", "reason": "   " },
+      "expectedError": "pack action magento.manage_prices is blocked: the pack operator is unavailable"
+    }
+  ],
+  "lockBodyCases": [
+    {
+      "name": "no_locked_fields_preserves_body",
+      "kind": "google_workspace.sheets",
+      "hasBody": true,
+      "body": { "values": [["SKU-1", 19.99]] },
+      "locked": {},
+      "config": {},
+      "expectedHasBody": true,
+      "expectedBody": { "values": [["SKU-1", 19.99]] },
+      "expectedError": null
+    },
+    {
+      "name": "locked_field_replaces_attacker_value",
+      "kind": "resend.send_email",
+      "hasBody": true,
+      "body": { "from": "attacker@evil.test", "to": ["ops@acme.com"] },
+      "locked": { "from": { "input": "from_address" } },
+      "config": { "from_address": "Billing <billing@acme.com>" },
+      "expectedHasBody": true,
+      "expectedBody": { "from": "Billing <billing@acme.com>", "to": ["ops@acme.com"] },
+      "expectedError": null
+    },
+    {
+      "name": "locked_field_populates_undefined_body",
+      "kind": "resend.send_email",
+      "hasBody": false,
+      "body": null,
+      "locked": { "from": { "input": "from_address" } },
+      "config": { "from_address": "Billing <billing@acme.com>" },
+      "expectedHasBody": true,
+      "expectedBody": { "from": "Billing <billing@acme.com>" },
+      "expectedError": null
+    },
+    {
+      "name": "locked_field_missing_input_fails",
+      "kind": "resend.send_email",
+      "hasBody": true,
+      "body": { "to": ["ops@acme.com"] },
+      "locked": { "from": { "input": "from_address" } },
+      "config": {},
+      "expectedHasBody": false,
+      "expectedBody": null,
+      "expectedError": "pack action resend.send_email needs the pack input from_address for body field from"
+    },
+    {
+      "name": "locked_field_non_object_body_fails",
+      "kind": "resend.send_email",
+      "hasBody": true,
+      "body": ["not-an-object"],
+      "locked": { "from": { "input": "from_address" } },
+      "config": { "from_address": "Billing <billing@acme.com>" },
+      "expectedHasBody": false,
+      "expectedBody": null,
+      "expectedError": "pack action body must be an object"
+    }
+  ]
+}
