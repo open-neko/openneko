@@ -147,7 +147,7 @@ func TestAdminPackWrites(t *testing.T) {
 	if got := sent(); got["actorUserId"] != "admin" || len(got["idempotencyKey"].(string)) != 36 || got["inputs"].(map[string]any)["database.host"] != "db" {
 		t.Errorf("install body %v", got)
 	}
-	for _, action := range []string{"review", "install"} {
+	for _, action := range []string{"install"} {
 		call(f, "POST", "/api/v1/admin/packs/service-health/"+action, `{"actorUserId":"forged","version":"0.1.0","reviewHash":"exact-review","idempotencyKey":"k-1"}`, admin)
 		if got := sent(); got["actorUserId"] != "admin" || got["reviewHash"] != "exact-review" || got["idempotencyKey"] != "k-1" {
 			t.Errorf("%s body %v", action, got)

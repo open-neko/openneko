@@ -2,10 +2,12 @@ package packs
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -144,3 +146,52 @@ func yamlScalar(n *yaml.Node) (any, error) {
 	}
 	return v, nil
 }
+
+// readinessKeys is Object.keys(manifest.health.readiness): the YAML order,
+// with integer-like keys first.
+func readinessKeys(raw []byte) []string {
+	var doc yaml.Node
+	if yaml.NewDecoder(bytes.NewReader(raw)).Decode(&doc) != nil || len(doc.Content) == 0 {
+		return nil
+	}
+	node := doc.Content[0]
+	for _, name := range []string{"health", "readiness"} {
+		var next *yaml.Node
+		for i := 0; node.Kind == yaml.MappingNode && i+1 < len(node.Content); i += 2 {
+			if node.Content[i].Value == name {
+				next = node.Content[i+1]
+			}
+		}
+		if next == nil {
+			return nil
+		}
+		node = next
+	}
+	var keys, indexes []string
+	seen := map[string]bool{}
+	for i := 0; node.Kind == yaml.MappingNode && i+1 < len(node.Content); i += 2 {
+		v, err := yamlScalar(node.Content[i])
+		if err != nil {
+			continue
+		}
+		k, err := yamlKey(v)
+		if err != nil || seen[k] {
+			continue
+		}
+		seen[k] = true
+		if n, err := strconv.ParseUint(k, 10, 32); err == nil && strconv.FormatUint(n, 10) == k && n < 1<<32-1 {
+			indexes = append(indexes, k)
+		} else {
+			keys = append(keys, k)
+		}
+	}
+	slices.SortFunc(indexes, func(a, b string) int {
+		x, _ := strconv.ParseUint(a, 10, 32)
+		y, _ := strconv.ParseUint(b, 10, 32)
+		return cmp.Compare(x, y)
+	})
+	return append(indexes, keys...)
+}
+
+// ParseYAML is parse() of the `yaml` package with the core schema.
+func ParseYAML(raw []byte) (any, error) { return parseYAML(raw) }
