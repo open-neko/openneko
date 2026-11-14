@@ -13,6 +13,78 @@ const SHELL_ASSETS = [
 const CACHE_PREFIX = "openneko-shell-";
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 
+const PUSH_NOTICES = {
+  approval_waiting: {
+    title: "OpenNeko",
+    body: "An approval is waiting.",
+    url: "/actions",
+  },
+  run_finished: {
+    title: "OpenNeko",
+    body: "A run finished.",
+    url: "/runs",
+  },
+  workflow_needs_attention: {
+    title: "OpenNeko",
+    body: "A workflow needs attention.",
+    url: "/workflows",
+  },
+};
+
+function resolvePushNotice(rawData) {
+  let parsed = null;
+  if (rawData && typeof rawData === "object") {
+    parsed = rawData;
+  } else if (typeof rawData === "string" && rawData.trim().length > 0) {
+    try {
+      parsed = JSON.parse(rawData);
+    } catch {
+      parsed = null;
+    }
+  }
+  const eventKey = parsed && typeof parsed.event === "string" ? parsed.event : "";
+  const fixed = Object.prototype.hasOwnProperty.call(PUSH_NOTICES, eventKey)
+    ? PUSH_NOTICES[eventKey]
+    : null;
+  if (!fixed) return null;
+  return {
+    event: eventKey,
+    title: fixed.title,
+    body: fixed.body,
+    url: fixed.url,
+  };
+}
+
+async function handlePushPayload(rawData) {
+  const notice = resolvePushNotice(rawData);
+  if (!notice) return null;
+  try {
+    await self.registration.showNotification(notice.title, {
+      body: notice.body,
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      tag: notice.event,
+      data: { event: notice.event, url: notice.url },
+    });
+  } catch {
+    // Continue posting to window clients when no OS notification tray is present.
+  }
+  const windowClients = await self.clients.matchAll({
+    type: "window",
+    includeUncontrolled: true,
+  });
+  for (const client of windowClients) {
+    client.postMessage({
+      type: "OPENNEKO_PUSH_NOTICE",
+      event: notice.event,
+      title: notice.title,
+      body: notice.body,
+      url: notice.url,
+    });
+  }
+  return notice;
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
@@ -50,6 +122,42 @@ self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") {
     void self.skipWaiting();
   }
+});
+
+self.addEventListener("push", (event) => {
+  const raw = event.data ? event.data.text() : "";
+  event.waitUntil(handlePushPayload(raw));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const path =
+    event.notification &&
+    event.notification.data &&
+    typeof event.notification.data.url === "string"
+      ? event.notification.data.url
+      : "/chat";
+  const targetUrl = new URL(path, self.location.origin).href;
+  event.waitUntil(
+    (async () => {
+      const windowClients = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
+      for (const client of windowClients) {
+        if ("navigate" in client) {
+          await client.navigate(targetUrl);
+        }
+        if ("focus" in client) {
+          await client.focus();
+        }
+        return;
+      }
+      if (self.clients.openWindow) {
+        await self.clients.openWindow(targetUrl);
+      }
+    })(),
+  );
 });
 
 self.addEventListener("fetch", (event) => {
