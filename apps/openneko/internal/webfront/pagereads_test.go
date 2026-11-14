@@ -11,7 +11,17 @@ func TestDeviceRequestRead(t *testing.T) {
 	f, _, db := signinFront(t, liveScalekit)
 	seed(t, db, `insert into app_device_request (org_id, device_code_verifier, user_code, name, expires_at)
 		values ('org', 'hash-read', 'BCDFGHJK', 'My Tablet', now() + interval '5 minutes')`)
-	w := call(f, "GET", "/api/v1/auth/device/approve?code=bcdf-ghjk", "", nil)
+	if w := call(f, "GET", "/api/v1/auth/device/approve?code=bcdf-ghjk", "", nil); w.Code != 401 {
+		t.Fatalf("anonymous: %d %s", w.Code, w.Body.String())
+	}
+	const token = "onk_dev_010203040506_0123456789abcdefghijklmnopqrstuvwxyzABCDEFG"
+	seed(t, db, `insert into app_device (org_id, user_id, name, token_prefix, token_verifier)
+		values ('org', 'admin', 'Phone', 'onk_dev_010203040506', $1)`, sha256Hex(token))
+	if w := call(f, "GET", "/api/v1/auth/device/approve?code=bcdf-ghjk", "", map[string]string{"Authorization": "Bearer " + token}); w.Code != 403 {
+		t.Fatalf("device token: %d %s", w.Code, w.Body.String())
+	}
+	member := sessionCookie("member")
+	w := call(f, "GET", "/api/v1/auth/device/approve?code=bcdf-ghjk", "", member)
 	var found struct {
 		Request *pendingDevice `json:"request"`
 	}
@@ -19,7 +29,7 @@ func TestDeviceRequestRead(t *testing.T) {
 		found.Request.UserCode != "BCDF-GHJK" || found.Request.Name != "My Tablet" {
 		t.Fatalf("found: %d %s", w.Code, w.Body.String())
 	}
-	w = call(f, "GET", "/api/v1/auth/device/approve?code=ZZZZZZZZ", "", nil)
+	w = call(f, "GET", "/api/v1/auth/device/approve?code=ZZZZZZZZ", "", member)
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &found) != nil || found.Request != nil {
 		t.Fatalf("missing: %d %s", w.Code, w.Body.String())
 	}

@@ -94,12 +94,12 @@ func TestAdminPacksAdminOnly(t *testing.T) {
 func TestAdminPackRelay(t *testing.T) {
 	f, wk := packFront(t)
 	admin := sessionCookie("admin")
-	wk.reply = `{"packId":"magento","entries":[]}`
-	if w := call(f, "GET", "/api/v1/admin/packs/magento/plan?version=1.2.0+rc", "", admin); w.Code != 200 || decode(t, w)["packId"] != "magento" {
-		t.Errorf("plan: %d %s", w.Code, w.Body.String())
+	wk.reply = `{"packId":"magento","status":"ready"}`
+	if w := call(f, "GET", "/api/v1/admin/packs/magento/doctor?version=1.2.0+rc", "", admin); w.Code != 200 || decode(t, w)["packId"] != "magento" {
+		t.Errorf("doctor: %d %s", w.Code, w.Body.String())
 	}
 	calls := wk.take()
-	if len(calls) != 1 || calls[0].uri != "/admin/packs/magento/plan?version=1.2.0%20rc" {
+	if len(calls) != 1 || calls[0].uri != "/admin/packs/magento/doctor?version=1.2.0%20rc" {
 		t.Errorf("calls %v", calls)
 	}
 	for _, p := range []string{"/api/v1/admin/packs/magento/erase", "/api/v1/admin/packs/Magento/status", "/api/v1/admin/packs/magento/install"} {

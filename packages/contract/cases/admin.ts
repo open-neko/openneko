@@ -140,6 +140,16 @@ export const adminCases: Case[] = [
     },
   },
   {
+    op: "GET /admin/packs/{packId}/{action}", name: "plans a pack that is not installed", status: 200,
+    request: { params: { packId: "slack", action: "plan" } },
+    check: (r) => {
+      const plan = body(r) as { packId: string; entries: Array<{ action: string }> };
+      expect(plan.packId).toBe("slack");
+      expect(plan.entries.length).toBeGreaterThan(0);
+      expect(plan.entries.every((entry) => entry.action === "create")).toBe(true);
+    },
+  },
+  {
     op: "GET /admin/packs/{packId}/{action}", name: "fails on a pack that is not in the catalog", status: 400,
     request: { params: { packId: "no-such-pack", action: "inspect" } },
   },

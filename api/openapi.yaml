@@ -2667,8 +2667,7 @@ paths:
                         status:
                           type: string
                         lastError:
-                          type: string
-                          nullable: true
+                          type: [string, 'null']
         '401':
           description: The session or device token is not valid
           content:
@@ -2844,8 +2843,7 @@ paths:
                   uploadedAt:
                     type: string
                   uploadedBy:
-                    type: string
-                    nullable: true
+                    type: [string, 'null']
         '400':
           description: The body could not be read, or the archive or its manifest is not valid
           content:
@@ -2917,7 +2915,7 @@ paths:
         description: Pack version
       responses:
         '200':
-          description: The inspection or the install status; plan and doctor pass through the worker
+          description: The inspection, the install status or the plan; doctor passes through the worker
           content:
             application/json:
               schema:
@@ -4721,7 +4719,9 @@ paths:
       - auth
       summary: Look up a pending device request by user code
       x-access: public
-      security: []
+      security:
+      - session: []
+      description: The route needs a browser session. A request with a device token gets 403.
       parameters:
       - name: code
         in: query
@@ -4743,6 +4743,24 @@ paths:
                     type:
                     - object
                     - 'null'
+        '401':
+          description: No signed-in user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '403':
+          description: The request carries a device token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
     post:
       operationId: postAuthDeviceApprove
       tags:
