@@ -2,14 +2,20 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
+	"strconv"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/spf13/cobra"
+
+	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/db"
+	"github.com/open-neko/neko/apps/openneko/internal/sourcecheck"
 )
 
 var (
@@ -17,29 +23,69 @@ var (
 	errSourceUnsupported = errors.New("OpenNeko has no source check for this database type yet")
 )
 
-type sourceCheckFinding struct {
-	Step    string   `json:"step"`
-	Status  string   `json:"status"`
-	Message string   `json:"message"`
-	Field   string   `json:"field,omitempty"`
-	SQL     []string `json:"sql,omitempty"`
+type sourceCheckFinding = sourcecheck.Finding
+type sourceCheckResult = sourcecheck.Result
+
+var checkSource = func(ctx context.Context, opts sourceCheckOptions, password string) (sourceCheckResult, error) {
+	in := sourcecheck.Input{
+		Type:     strings.TrimSpace(opts.kind),
+		Host:     strings.TrimSpace(opts.host),
+		Database: strings.TrimSpace(opts.database),
+		User:     strings.TrimSpace(opts.user),
+		Password: password,
+	}
+	if in.Type == "" {
+		in.Type = "postgres"
+	}
+	if opts.port > 0 {
+		p := float64(opts.port)
+		in.Port = &p
+	}
+	ref := strings.TrimSpace(opts.secret)
+	if ref != "" && in.Password == "" {
+		stored, found, err := loadStoredSourcePassword(ctx, ref)
+		if err != nil {
+			return sourceCheckResult{}, err
+		}
+		if !found {
+			check := sourcecheck.Check(ctx, in)
+			for i, f := range check.Findings {
+				if f.Step == "login" && f.Status == "fail" {
+					check.Findings[i].Message = `No stored password is named "` + ref + `". Save the password in the card first.`
+				}
+			}
+			return check, nil
+		}
+		in.Password = stored
+	}
+	return sourcecheck.Check(ctx, in), nil
 }
 
-type sourceCheckResult struct {
-	OK            bool                 `json:"ok"`
-	Supported     bool                 `json:"supported"`
-	Type          string               `json:"type"`
-	Host          string               `json:"host"`
-	Port          int                  `json:"port"`
-	Database      string               `json:"database"`
-	User          string               `json:"user"`
-	ServerVersion string               `json:"serverVersion,omitempty"`
-	Findings      []sourceCheckFinding `json:"findings"`
-	Tables        []struct {
-		Name string `json:"name"`
-		Rows *int64 `json:"rows"`
-	} `json:"tables"`
-	MoreTables int `json:"moreTables"`
+func loadStoredSourcePassword(ctx context.Context, name string) (string, bool, error) {
+	target, err := defaultConn()
+	if err != nil {
+		return "", false, err
+	}
+	conn, err := db.Connect(ctx, target, "openneko source check")
+	if err != nil {
+		return "", false, err
+	}
+	defer conn.Close(ctx)
+	var enc string
+	err = conn.QueryRow(ctx, `select s.value_enc from data_source_secret s
+		where s.org_id = (select id from organization order by created_at asc limit 1)
+		  and s.name = $1 limit 1`, name).Scan(&enc)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	plain, err := config.MaybeDecryptValue("", enc)
+	if err != nil {
+		return "", false, err
+	}
+	return plain, true, nil
 }
 
 type sourceCheckOptions struct {
@@ -76,44 +122,35 @@ Admin settings) or on standard input (--password-stdin).`,
 			if opts.output != "text" && opts.output != "json" {
 				return errors.New("--output must be text or json")
 			}
-			body := map[string]any{
-				"type":      opts.kind,
-				"host":      opts.host,
-				"dbname":    opts.database,
-				"user":      opts.user,
-				"secretRef": opts.secret,
-			}
-			if opts.port > 0 {
-				body["port"] = opts.port
-			}
+			var password string
 			if opts.passwordStdin {
-				password, err := readPasswordLine(cmd.InOrStdin())
+				var err error
+				password, err = readPasswordLine(cmd.InOrStdin())
 				if err != nil {
 					return err
 				}
-				body["password"] = password
 			} else if opts.secret == "" {
 				return errors.New("give the password with --secret <stored name> or --password-stdin")
 			}
-			var response struct {
-				Check sourceCheckResult `json:"check"`
-			}
-			raw, err := requestWorkerAPI(cmd.Context(), "source check", http.MethodPost, "/admin/sources/check", body, &response)
+			check, err := checkSource(cmd.Context(), opts, password)
 			if err != nil {
 				return err
 			}
 			if opts.output == "json" {
-				var pretty any
-				_ = json.Unmarshal(raw, &pretty)
-				encoded, _ := json.MarshalIndent(pretty, "", "  ")
+				encoded, err := json.MarshalIndent(struct {
+					Check sourceCheckResult `json:"check"`
+				}{Check: check}, "", "  ")
+				if err != nil {
+					return err
+				}
 				fmt.Fprintln(cmd.OutOrStdout(), string(encoded))
 			} else {
-				writeSourceCheck(cmd.OutOrStdout(), response.Check)
+				writeSourceCheck(cmd.OutOrStdout(), check)
 			}
-			if !response.Check.Supported {
+			if !check.Supported {
 				return errSourceUnsupported
 			}
-			if !response.Check.OK {
+			if !check.OK {
 				return errSourceNotReady
 			}
 			return nil
@@ -146,7 +183,8 @@ func readPasswordLine(in io.Reader) (string, error) {
 }
 
 func writeSourceCheck(out io.Writer, check sourceCheckResult) {
-	fmt.Fprintf(out, "source: %s %s@%s:%d/%s\n", check.Type, check.User, check.Host, check.Port, check.Database)
+	port := strconv.FormatFloat(check.Port, 'f', -1, 64)
+	fmt.Fprintf(out, "source: %s %s@%s:%s/%s\n", check.Type, check.User, check.Host, port, check.Database)
 	for _, f := range check.Findings {
 		level := f.Status
 		if level == "fail" {

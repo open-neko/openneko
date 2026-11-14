@@ -71,10 +71,6 @@ import {
   initializeWorkerTelemetry,
   shutdownWorkerTelemetry,
 } from "./telemetry.js";
-import {
-  getWorkflowSchedulerHealth,
-  startDurableWorkflowScheduler,
-} from "./workflow-scheduler.js";
 
 {
   const problem = secretsBackendError(readLocalConfig());
@@ -156,7 +152,6 @@ function ssoSetupSurface(): SsoSetupHandlerSurface {
 }
 const server = createServer(
   createAdminHandler({
-    scheduler: { getHealth: getWorkflowSchedulerHealth },
     auth: {
       getAuthProvider: () => signInService?.getAuthProvider() ?? null,
       authSignInReady: () => signInService?.authSignInReady() ?? false,
@@ -199,12 +194,6 @@ const server = createServer(
         return { matched: result.matched, enqueued: result.enqueued };
       },
     },
-    installPolicy: {
-      getInstallPolicy: async () => {
-        const { getInstallPolicyForOrg } = await import("@neko/db");
-        return getInstallPolicyForOrg(ADMIN_ORG_ID);
-      },
-    },
     groupGrants: {
       apply: async () => applyGroupGrants(await getOrgId()),
       schedule: () => {
@@ -218,12 +207,6 @@ const server = createServer(
         const { readFile } = await import("node:fs/promises");
         const { listConfigApiOperations } = await import("@neko/llm/graphjin");
         return listConfigApiOperations(await readFile(configFile, "utf8"));
-      },
-    },
-    sources: {
-      check: async ({ answers, password }) => {
-        const { checkSourceForOrg } = await import("@neko/llm/graphjin/source-check");
-        return checkSourceForOrg({ orgId: await getOrgId(), answers, password });
       },
     },
     directory: {
@@ -483,12 +466,6 @@ subscriptionManager.ready
   });
 
 
-// Cron workflow delivery owns its timer and persisted cursor. It deliberately
-// does not ride on pg-boss's in-process schedule polling: queue timers remain
-// useful for auxiliary maintenance, but cannot be the source of truth for a
-// business schedule that must catch up after downtime.
-const workflowScheduler = await startDurableWorkflowScheduler();
-
 const reconcileTimer = setInterval(() => {
   reconcileStaleRuns({ minAgeMs: RECONCILE_SWEEP_MIN_AGE_MS })
     .then((s) => {
@@ -521,7 +498,7 @@ if (filesEnabled()) {
 }
 
 listenAdmin(server, adminSocketPath(), PORT, (where) => {
-  console.log(`[worker] pg-boss running; /health on ${where}`);
+  console.log(`[worker] pg-boss running; admin socket on ${where}`);
 });
 
 
@@ -529,7 +506,6 @@ const shutdown = async (signal: string) => {
   console.log(`[worker] received ${signal}; shutting down`);
   clearInterval(reconcileTimer);
   clearInterval(knowledgeRefreshTimer);
-  workflowScheduler.stop();
   coreSecrets?.stop();
   server.close();
   const cancelled = cancelAllAgents();

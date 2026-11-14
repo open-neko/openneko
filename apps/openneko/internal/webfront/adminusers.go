@@ -552,12 +552,7 @@ func (a *API) changePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.DB.Reset()
-	status, _, err := a.workerDo(r.Context(), http.MethodPost, "/admin/reconnect", 5*time.Second, nil)
-	notified := err == nil && status >= 200 && status < 300
-	if !notified {
-		log.Print("[change-password] worker reconnect notification failed; its job runner keeps the old credentials until it restarts")
-	}
-	sendJSON(w, http.StatusOK, map[string]bool{"ok": true, "workerNotified": notified})
+	sendJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	if os.Getenv("OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE") == "1" && a.Restart != nil {
 		time.AfterFunc(250*time.Millisecond, a.Restart)
 	}
