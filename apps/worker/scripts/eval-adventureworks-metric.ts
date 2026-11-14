@@ -506,7 +506,7 @@ export function createAdventureWorksMetricDriver(
       host ??= await EvalInstallHost.prepare(options.host);
       const started = Date.now();
       const operationId = `metric:${runId}-${slot.caseId}-${slot.repetition}`;
-      const episode = await host.startEpisode({ label: slot.caseId });
+      const episode = await host.startEpisode({ label: slot.caseId, env: { OPENNEKO_METRICS_REFRESH: "on" } });
       try {
         episode.activate();
         const orgId = await seedOrg(slot.variant, episode);

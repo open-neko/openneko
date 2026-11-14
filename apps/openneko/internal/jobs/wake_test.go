@@ -12,7 +12,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
-type wakeCounts struct{ metric, cron, directory, bots, action, api atomic.Int32 }
+type wakeCounts struct{ metric, memory, cron, directory, bots, action, api atomic.Int32 }
 
 func wakeQueue(t *testing.T, action func(context.Context) error) (*Queue, *wakeCounts) {
 	t.Helper()
@@ -23,6 +23,8 @@ func wakeQueue(t *testing.T, action func(context.Context) error) (*Queue, *wakeC
 		t.Fatal(err)
 	}
 	c := &wakeCounts{}
+	q.MetricsOn = true
+	q.MemorySweep = func(context.Context) error { c.memory.Add(1); return nil }
 	q.MetricSweep = func(context.Context) error { c.metric.Add(1); return nil }
 	q.CronSweep = func(context.Context) error { c.cron.Add(1); return nil }
 	q.DirectorySync = func(context.Context) error { c.directory.Add(1); return nil }
@@ -78,8 +80,8 @@ func TestWakeRunsQueuedAndDueJobs(t *testing.T) {
 	if res.Inserted != len(cronJobs) || res.Ran != len(cronJobs)+1 || res.TimedOut {
 		t.Fatalf("first wake = %+v, want %d inserted and %d ran", res, len(cronJobs), len(cronJobs)+1)
 	}
-	if c.metric.Load() != 1 || c.cron.Load() != 1 || c.directory.Load() != 1 || c.bots.Load() != 1 || c.action.Load() != 1 || c.api.Load() != 1 {
-		t.Fatalf("runs: metric %d cron %d directory %d bots %d action %d api %d, want 1 each", c.metric.Load(), c.cron.Load(), c.directory.Load(), c.bots.Load(), c.action.Load(), c.api.Load())
+	if c.metric.Load() != 1 || c.memory.Load() != 1 || c.cron.Load() != 1 || c.directory.Load() != 1 || c.bots.Load() != 1 || c.action.Load() != 1 || c.api.Load() != 1 {
+		t.Fatalf("runs: metric %d memory %d cron %d directory %d bots %d action %d api %d, want 1 each", c.metric.Load(), c.memory.Load(), c.cron.Load(), c.directory.Load(), c.bots.Load(), c.action.Load(), c.api.Load())
 	}
 	for kind, states := range jobStates(t, q) {
 		if states != "completed " {
@@ -203,7 +205,32 @@ func TestCronPeriodsMatchSchedules(t *testing.T) {
 			t.Errorf("%s: period %s, schedule step %s", c.args.Kind(), c.period, got)
 		}
 	}
-	if len(periodicJobs()) != len(cronJobs) {
+	on := &Queue{MetricsOn: true}
+	if len(periodicJobs(on.cronJobs())) != len(cronJobs) {
 		t.Fatal("periodicJobs does not list every cron job")
+	}
+	for _, c := range (&Queue{}).cronJobs() {
+		if c.args.Kind() == KindMetricSweep {
+			t.Fatal("the metric sweep is scheduled with the metric refresh off")
+		}
+	}
+}
+
+func TestWakeWithMetricsOffInsertsNoMetricSweep(t *testing.T) {
+	ctx := context.Background()
+	q, c := wakeQueue(t, nil)
+	q.MetricsOn = false
+	res, err := q.Wake(ctx, 30*time.Second, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Inserted != len(cronJobs)-1 {
+		t.Fatalf("wake = %+v, want %d inserted", res, len(cronJobs)-1)
+	}
+	if got := jobStates(t, q)[KindMetricSweep]; got != "" {
+		t.Fatalf("the metric sweep is in the queue: %q", got)
+	}
+	if c.metric.Load() != 0 || c.memory.Load() != 1 {
+		t.Fatalf("runs: metric %d memory %d, want 0 and 1", c.metric.Load(), c.memory.Load())
 	}
 }

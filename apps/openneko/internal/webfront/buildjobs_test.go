@@ -196,6 +196,7 @@ func buildFront(t *testing.T) (*Front, *pgxpool.Pool) {
 	t.Setenv("OPENNEKO_AGENT_RUNS_DIR", t.TempDir())
 	t.Setenv("OPENNEKO_SERVE_SOCKET", startServe(t))
 	seedRiver(t, db, f)
+	f.API.MetricsRefresh = true
 	g := &fakeGateway{reply: map[string]any{"missionCharter": "  Investigate the bicycle trade.  "}}
 	f.API.Gateway = g.generate
 	f.API.hostProv.applied = map[string]string{}
@@ -400,5 +401,33 @@ func TestBootstrapMetricsBuild(t *testing.T) {
 	}
 	if len(calls.all()) != 3 || jobState(t, db, again) != "succeeded  Bootstrap metrics already present" {
 		t.Errorf("seeded seats called the model: %d %q", len(calls.all()), jobState(t, db, again))
+	}
+}
+
+func TestBootstrapMetricsBuildWithRefreshOff(t *testing.T) {
+	f, db := buildFront(t)
+	a := f.API
+	a.MetricsRefresh = false
+	seed(t, db, `insert into customer_profile (org_id, version, is_current, business_profile, industry_insights) values ('org', 1, true, 'We sell bikes.', 'Bikes grow.')`)
+	seed(t, db, `insert into metric (org_id, role, slug, source, title) values ('org', 'CFO', 'cash', 'bootstrap', 'Cash')`)
+	cards := []string{}
+	for _, s := range []string{"road-mix", "shop-count", "repeat-rate", "cash"} {
+		cards = append(cards, `{"role":"CEO","slug":"`+s+`","title":"T `+s+`","why":"Because.","chart_hint":"bar"}`)
+	}
+	model, _ := recordingModel(t, axReplies("```json\n{\"metrics\":["+strings.Join(cards, ",")+"]}\n```"))
+	a.turnResolve = fixedBackend(model.URL)
+	a.jobTools = func(turnBinding) toolBackend { return &fakeTools{} }
+	jobID := newBuildJob(t, db, jobs.KindBootstrapMetricsBuild)
+	if err := a.RunBuild(t.Context(), jobs.KindBootstrapMetricsBuild, "org", jobID); err != nil {
+		t.Fatal(err)
+	}
+	if got := rowText(t, db, `select count(*)::text || '/' || count(last_refresh_status)::text from metric where org_id = 'org'`); got != "5/0" {
+		t.Errorf("cards and refresh states: %s, want 5 cards and no state", got)
+	}
+	if n := rowText(t, db, `select count(*)::text from processing_job where kind = 'metric_refresh'`); n != "0" {
+		t.Errorf("refresh rows: %s", n)
+	}
+	if j := riverQueueJobs(t, db, jobs.KindMetricRefresh, jobs.QueueMetricRefresh); len(j) != 0 {
+		t.Errorf("refresh jobs: %+v", j)
 	}
 }

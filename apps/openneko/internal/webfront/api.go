@@ -36,6 +36,8 @@ type API struct {
 	SecretsDir string
 	// Jobs adds River jobs in a route's transaction.
 	Jobs *jobs.Inserter
+	// MetricsRefresh lets the metric_refresh jobs run; see jobs.MetricsRefreshOn.
+	MetricsRefresh bool
 	// DBRole is the role that a password change rotates; "" means neko.
 	DBRole string
 	// Restart stops the web process after a password change when

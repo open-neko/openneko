@@ -23,7 +23,7 @@ func TestWake(t *testing.T) {
 		t.Fatal(err)
 	}
 	var actions, sweeps atomic.Int32
-	q := &jobs.Queue{Pool: pool, Schema: schema + "_river", BossSchema: schema + "_boss", Logf: t.Logf,
+	q := &jobs.Queue{Pool: pool, Schema: schema + "_river", BossSchema: schema + "_boss", Logf: t.Logf, MetricsOn: true,
 		MetricSweep:      func(context.Context) error { sweeps.Add(1); return nil },
 		CronSweep:        func(context.Context) error { sweeps.Add(1); return nil },
 		DirectorySync:    func(context.Context) error { sweeps.Add(1); return nil },

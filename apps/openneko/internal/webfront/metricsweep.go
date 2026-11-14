@@ -16,18 +16,22 @@ import (
 const pendingMemoryTTL = 14 * 24 * time.Hour
 
 // MetricSweep is the hourly metric_refresh_scheduled_sweep: it queues the
-// metric refreshes that are due and ages out memories. Only a failure to
-// queue refreshes fails the job.
+// metric refreshes that are due.
 func (a *API) MetricSweep(ctx context.Context) error {
-	if err := a.queueDueMetrics(ctx, time.Now()); err != nil {
-		return err
+	if !a.MetricsRefresh {
+		log.Printf("[metric-sweep] skipped: the metric refresh is off (OPENNEKO_METRICS_REFRESH)")
+		return nil
 	}
-	if archived, expired, err := a.sweepExpiredMemories(ctx, jsNow()); err != nil {
-		log.Printf("[metric-sweep] memory TTL sweep failed: %v", err)
-	} else if archived > 0 || expired > 0 {
-		log.Printf("[metric-sweep] memory TTL sweep: archived %d, expired %d pending", archived, expired)
+	return a.queueDueMetrics(ctx, time.Now())
+}
+
+// MemorySweep ages out memories; the hourly output sweep runs it.
+func (a *API) MemorySweep(ctx context.Context) error {
+	archived, expired, err := a.sweepExpiredMemories(ctx, jsNow())
+	if err == nil && (archived > 0 || expired > 0) {
+		log.Printf("[memory-ttl] archived %d, expired %d pending", archived, expired)
 	}
-	return nil
+	return err
 }
 
 func metricCadence(cadence string) time.Duration {

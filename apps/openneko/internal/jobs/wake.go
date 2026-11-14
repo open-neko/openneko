@@ -40,7 +40,7 @@ func (q *Queue) InsertDue(ctx context.Context, now time.Time) (int, error) {
 		return 0, err
 	}
 	var params []river.InsertManyParams
-	for _, c := range cronJobs {
+	for _, c := range q.cronJobs() {
 		var ran bool
 		if err := tx.QueryRow(ctx, `select exists (select 1 from `+pgx.Identifier{q.schema()}.Sanitize()+`.river_job
   where kind = $1 and scheduled_at >= $2)`, c.args.Kind(), now.UTC().Truncate(c.period)).Scan(&ran); err != nil {

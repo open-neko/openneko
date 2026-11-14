@@ -116,7 +116,12 @@ export async function runPackReadPreflight(bundle: SolutionPackBundle, endpoint:
   }
 }
 
+export function metricsRefreshOn(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.OPENNEKO_METRICS_REFRESH?.trim().toLowerCase() === "on";
+}
+
 export async function enqueuePackMetricRefreshes(orgId: string, bundle: SolutionPackBundle): Promise<number> {
+  if (!metricsRefreshOn()) return 0;
   const { enqueueMetricRefresh } = await import("@neko/db/jobs");
   let enqueued = 0;
   for (const artifact of bundle.artifacts.filter((value) => value.kind === "metric")) {

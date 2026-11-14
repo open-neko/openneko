@@ -542,6 +542,29 @@ counts, for example `{"inserted":5,"ran":6,"timedOut":false}`. Without the
 token, or with a wrong one, the call gets 401. The endpoint is outside
 `/api/v1` and takes no session.
 
+### Metric refresh (optional)
+
+Each metric refresh is a paid model call, so the refresh is off by default.
+With it off, `openneko web` does not schedule the hourly metric sweep, and a
+pack install queues no refresh. A refresh that is already in the queue ends
+as cancelled, with one log line and no model call. The metric cards keep
+their last values. To turn the refresh on, set the variable for web and
+worker, then run `openneko stop` and `openneko start`:
+
+```yaml
+# ~/.config/openneko/compose.override.yml
+services:
+  web:
+    environment:
+      OPENNEKO_METRICS_REFRESH: "on"
+  worker:
+    environment:
+      OPENNEKO_METRICS_REFRESH: "on"
+```
+
+With the refresh on, the metric refresh setting on the spend page applies
+as before.
+
 ### File search
 
 The `openneko-serve` container keeps each user's files in a private folder

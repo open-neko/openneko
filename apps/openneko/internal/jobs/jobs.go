@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -31,7 +32,9 @@ type Queue struct {
 	Schema        string
 	BossSchema    string
 	Logf          func(string, ...any)
+	MetricsOn     bool
 	MetricSweep   func(context.Context) error
+	MemorySweep   func(context.Context) error
 	CronSweep     func(context.Context) error
 	DirectorySync func(context.Context) error
 	// ActionExecute asks the Node worker to run an approved action; the
@@ -157,7 +160,7 @@ type Runner struct {
 // leader among running clients inserts the scheduled jobs.
 func (q *Queue) Start(ctx context.Context) (*Runner, error) {
 	config := q.config()
-	config.PeriodicJobs = periodicJobs()
+	config.PeriodicJobs = periodicJobs(q.cronJobs())
 	client, err := river.NewClient(riverpgxv5.New(q.Pool), config)
 	if err != nil {
 		return nil, err
@@ -170,7 +173,7 @@ func (q *Queue) Start(ctx context.Context) (*Runner, error) {
 
 func (q *Queue) config() *river.Config {
 	workers := river.NewWorkers()
-	river.AddWorker(workers, &outputSweep{pool: q.Pool, logf: q.logf})
+	river.AddWorker(workers, &outputSweep{pool: q.Pool, logf: q.logf, memories: q.MemorySweep})
 	river.AddWorker(workers, &metricSweep{run: q.MetricSweep})
 	river.AddWorker(workers, &cronSweep{run: q.CronSweep})
 	river.AddWorker(workers, &embeddingSweep{q: q})
@@ -217,9 +220,26 @@ var cronJobs = []cronJob{
 	{schedule: EveryMinute{}, period: time.Minute, args: WorkflowAPISweepArgs{}, runOnStart: true},
 }
 
-func periodicJobs() []*river.PeriodicJob {
-	out := make([]*river.PeriodicJob, len(cronJobs))
-	for i, c := range cronJobs {
+// MetricsRefreshOn reports OPENNEKO_METRICS_REFRESH=on. Each metric refresh
+// is a paid model call, so the sweep and the refreshes are off by default.
+func MetricsRefreshOn() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("OPENNEKO_METRICS_REFRESH")), "on")
+}
+
+func (q *Queue) cronJobs() []cronJob {
+	out := make([]cronJob, 0, len(cronJobs))
+	for _, c := range cronJobs {
+		if c.args.Kind() == KindMetricSweep && !q.MetricsOn {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+func periodicJobs(list []cronJob) []*river.PeriodicJob {
+	out := make([]*river.PeriodicJob, len(list))
+	for i, c := range list {
 		out[i] = river.NewPeriodicJob(c.schedule, func() (river.JobArgs, *river.InsertOpts) {
 			return c.args, nil
 		}, &river.PeriodicJobOpts{ID: c.args.Kind(), RunOnStart: c.runOnStart})
