@@ -424,5 +424,12 @@ func (a *API) servePackRead(w http.ResponseWriter, r *http.Request, act actor, p
 			return
 		}
 		sendJSON(w, http.StatusOK, out)
+	case "doctor":
+		out, err := a.packDoctor(context.WithoutCancel(r.Context()), act.OrgID, packID)
+		if err != nil {
+			sendPackFailure(w, http.StatusBadRequest, err, "inspection")
+			return
+		}
+		sendJSON(w, http.StatusOK, out)
 	}
 }
