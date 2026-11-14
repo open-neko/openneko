@@ -1,25 +1,21 @@
-import { connection } from "next/server";
+"use client";
+
 import DensityToggle from "@/components/DensityToggle";
 import PageHeading from "@/components/PageHeading";
-import { getCurrentActor } from "@/lib/actor";
-import { getAuthProvider, getCurrentUser } from "@/lib/auth";
+import { useSession } from "@/lib/session-client";
 import { ProfileClient } from "./ProfileClient";
 
-export default async function ProfilePage() {
-  await connection();
-  const [user, actor, provider] = await Promise.all([
-    getCurrentUser(),
-    getCurrentActor(),
-    getAuthProvider(),
-  ]);
+export default function ProfilePage() {
+  const session = useSession();
+  if (session === undefined) return null;
   return (
     <div className="library-page">
       <PageHeading
         title="Your account"
-        description={actor.role === "admin" ? "Your persona and sign-in. Administration lives under Admin." : "Your persona and sign-in."}
+        description={session?.role === "admin" ? "Your persona and sign-in. Administration lives under Admin." : "Your persona and sign-in."}
       />
       <main className="library-main">
-        <ProfileClient email={user?.email ?? ""} signInEnabled={Boolean(provider)} />
+        <ProfileClient email={session?.user?.email ?? ""} signInEnabled={Boolean(session?.authEnabled)} />
         <section className="settings-card mt-4 max-w-(--form-max)">
           <div className="settings-card-head">
             <div>
