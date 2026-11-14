@@ -61,4 +61,25 @@ export const settingsCases: Case[] = [
   { op: "DELETE /settings/source-secrets", name: "needs a name", status: 400 },
   { op: "GET /profile", name: "reports no business profile", status: 404 },
   { op: "PATCH /profile", name: "needs a field", status: 400, request: { body: {} } },
+  {
+    op: "GET /my/passkeys", name: "lists the signed-in user's passkeys", status: 200,
+    check: (r) => expect(body(r)).toEqual({ passkeys: [] }),
+  },
+  {
+    op: "POST /my/passkeys/challenge", name: "issues a registration challenge", status: 200,
+    request: { body: { purpose: "register" } },
+    check: (r) => expect(body(r)).toMatchObject({ purpose: "register", rp: { name: "OpenNeko" }, userVerification: "required" }),
+  },
+  {
+    op: "POST /my/passkeys/challenge", name: "refuses an unknown purpose", status: 400,
+    request: { body: { purpose: "other" } },
+  },
+  {
+    op: "POST /my/passkeys", name: "needs a valid registration payload", status: 400,
+    request: { body: {} },
+  },
+  {
+    op: "DELETE /my/passkeys/{passkeyId}", name: "refuses an unknown passkey", status: 404,
+    request: (c) => ({ params: { passkeyId: c.ids.unknownId } }),
+  },
 ];

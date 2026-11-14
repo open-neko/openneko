@@ -146,10 +146,10 @@ func TestAdminPackWrites(t *testing.T) {
 	if got := sent(); got["actorUserId"] != "admin" || len(got["idempotencyKey"].(string)) != 36 || got["inputs"].(map[string]any)["database.host"] != "db" {
 		t.Errorf("install body %v", got)
 	}
-	for _, action := range []string{"install"} {
-		call(f, "POST", "/api/v1/admin/packs/service-health/"+action, `{"actorUserId":"forged","version":"0.1.0","reviewHash":"exact-review","idempotencyKey":"k-1"}`, admin)
-		if got := sent(); got["actorUserId"] != "admin" || got["reviewHash"] != "exact-review" || got["idempotencyKey"] != "k-1" {
-			t.Errorf("%s body %v", action, got)
+	for _, action := range []string{"install", "configure", "upgrade"} {
+		w := call(f, "POST", "/api/v1/admin/packs/service-health/"+action, `{"version":"0.1.0","reviewHash":"exact-review","idempotencyKey":"k-1"}`, admin)
+		if d, _ := decode(t, w)["diagnostic"].(map[string]any); w.Code != 400 || d["phase"] != action || len(wk.take()) != 0 {
+			t.Errorf("%s stays in Go: %d %s", action, w.Code, w.Body.String())
 		}
 	}
 	call(f, "POST", "/api/v1/admin/packs/magento/configure", "", admin)
