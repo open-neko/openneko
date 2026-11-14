@@ -104,7 +104,6 @@ COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY apps/web/package.json apps/web/package.json
 COPY apps/worker/package.json apps/worker/package.json
 COPY packages/avatars/package.json packages/avatars/package.json
-COPY packages/channels/package.json packages/channels/package.json
 COPY packages/db/package.json packages/db/package.json
 COPY packages/evals/package.json packages/evals/package.json
 COPY packages/interaction/package.json packages/interaction/package.json

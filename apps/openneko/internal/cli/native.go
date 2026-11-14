@@ -136,13 +136,8 @@ func startNative(cmd *cobra.Command, webDir, dbURL string, detach, skipMigrate b
 	if err != nil {
 		return err
 	}
-	for _, step := range native.Steps(layout, opts, !skipMigrate) {
-		fmt.Fprintf(out, "→ %s\n", step.Name)
-		c := exec.CommandContext(cmd.Context(), step.Args[0], step.Args[1:]...)
-		c.Env, c.Stdout, c.Stderr = step.Env, out, cmd.ErrOrStderr()
-		if err := c.Run(); err != nil {
-			return fmt.Errorf("%s: %w", step.Name, err)
-		}
+	if err := runNativeSteps(cmd, layout, opts, !skipMigrate); err != nil {
+		return err
 	}
 	if err := installation.Save(config.Dir(""), settings); err != nil {
 		return err
@@ -174,6 +169,18 @@ func startNative(cmd *cobra.Command, webDir, dbURL string, detach, skipMigrate b
 		return WithExit(1, nil)
 	}
 	fmt.Fprintf(out, "OpenNeko runs at %s.\n`openneko status` checks it, `openneko logs` shows its logs and `openneko stop` stops it.\n", opts.PublicURL)
+	return nil
+}
+
+func runNativeSteps(cmd *cobra.Command, layout native.Layout, opts native.Options, migrate bool) error {
+	for _, step := range native.Steps(layout, opts, migrate) {
+		fmt.Fprintf(cmd.OutOrStdout(), "→ %s\n", step.Name)
+		c := exec.CommandContext(cmd.Context(), step.Args[0], step.Args[1:]...)
+		c.Env, c.Stdout, c.Stderr = step.Env, cmd.OutOrStdout(), cmd.ErrOrStderr()
+		if err := c.Run(); err != nil {
+			return fmt.Errorf("%s: %w", step.Name, err)
+		}
+	}
 	return nil
 }
 

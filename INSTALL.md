@@ -897,6 +897,44 @@ serve roles; the database check prints the SQL when it does not have it.
 these ports free. The embedding service and the sandbox stay external: set
 `NEKO_EMBEDDING_URL` and `OPENNEKO_SANDBOX_URL` before the start.
 
+#### Server install (systemd, two users)
+
+On a Linux server, run the install script once as root with `--server`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/open-neko/openneko/main/scripts/install-native.sh \
+  | sudo sh -s -- --server \
+  --database-url 'postgres://USER:PASSWORD@HOST:5432/DATABASE?sslmode=verify-full' --start
+```
+
+The script puts the release in `/opt/openneko` and links
+`/usr/local/bin/openneko`. Then it runs `openneko server-install`, which
+needs root once. It makes two system users and two systemd services:
+
+| Service | User | Owns |
+|---|---|---|
+| `openneko-web.service` | `openneko` (control zone) | `/etc/openneko` (the secret key, `config.json` with the database login, the provider settings) and `/var/lib/openneko/control`, both mode 700 |
+| `openneko-serve.service` | `openneko-agent` (agent zone) | `/var/lib/openneko/agent` (files, file index, subscriptions, serve log), mode 700, and the socket folder |
+
+The two users share the group `openneko-shared`. Only these folders under
+`/var/lib/openneko/shared` use it: `run` (the sockets; serve writes, web
+connects), `agent-runs` and `graphjin`. Web writes serve's database
+credentials to `shared/credentials`, which only the `openneko-agent` group
+can read. The serve unit makes `/etc/openneko` and the control folder
+inaccessible to serve. Both services run with umask 0007.
+
+Before each start, web runs the database check, the migrations and serve's
+credentials step. Put extra settings for a service, such as
+`NEKO_EMBEDDING_URL` or `OPENNEKO_SANDBOX_URL` for serve, in
+`/etc/openneko/web.env` or `/etc/openneko/serve.env`. systemd reads these
+files as root. The logs are `/var/lib/openneko/control/logs/web.log` and
+`/var/lib/openneko/agent/logs/serve.log`.
+
+`server-install` options: `--database-url`, `--port` (3000), `--bind`
+(0.0.0.0), `--public-url`, `--start`, and `--one-user`, which runs both
+services as the `openneko` user with no agent-zone user. A second run of
+`server-install` keeps the data and sets the given values again.
+
 A native install has no Node worker. A new install opens as the solo
 administrator, with no sign-in. Chat and the routes that `openneko web`
 answers work. A sign-in provider (SSO or an email link) and pack account

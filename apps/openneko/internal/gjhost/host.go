@@ -129,7 +129,7 @@ func readToken(path string) string {
 
 func writeAtomic(path string, data []byte) error {
 	tmp := fmt.Sprintf("%s.%d", path, os.Getpid())
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	if err := os.WriteFile(tmp, data, 0o660); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
