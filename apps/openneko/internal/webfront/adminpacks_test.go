@@ -95,12 +95,11 @@ func TestAdminPackRelay(t *testing.T) {
 	f, wk := packFront(t)
 	admin := sessionCookie("admin")
 	wk.reply = `{"packId":"magento","status":"ready"}`
-	if w := call(f, "GET", "/api/v1/admin/packs/magento/doctor?version=1.2.0+rc", "", admin); w.Code != 200 || decode(t, w)["packId"] != "magento" {
+	if w := call(f, "GET", "/api/v1/admin/packs/magento/doctor?version=1.2.0+rc", "", admin); w.Code != 200 || decode(t, w)["status"] != "blocked" {
 		t.Errorf("doctor: %d %s", w.Code, w.Body.String())
 	}
-	calls := wk.take()
-	if len(calls) != 1 || calls[0].uri != "/admin/packs/magento/doctor?version=1.2.0%20rc" {
-		t.Errorf("calls %v", calls)
+	if calls := wk.take(); len(calls) != 0 {
+		t.Errorf("doctor calls the worker: %v", calls)
 	}
 	for _, p := range []string{"/api/v1/admin/packs/magento/erase", "/api/v1/admin/packs/Magento/status", "/api/v1/admin/packs/magento/install"} {
 		if w := call(f, "GET", p, "", admin); w.Code != 404 || w.Body.String() != `{"error":"unknown pack operation"}` {
@@ -115,7 +114,7 @@ func TestAdminPackRelay(t *testing.T) {
 	}
 
 	wk.status, wk.reply = 503, "<html>down</html>"
-	if w := call(f, "GET", "/api/v1/admin/packs/magento/doctor", "", admin); w.Code != 503 || w.Body.String() != `{"error":"Worker returned HTTP 503"}` {
+	if w := call(f, "POST", "/api/v1/admin/packs/magento/install", `{}`, admin); w.Code != 503 || w.Body.String() != `{"error":"Worker returned HTTP 503"}` {
 		t.Errorf("text reply: %d %s", w.Code, w.Body.String())
 	}
 	wk.status, wk.reply = 409, `{"error":"busy"}`
@@ -123,7 +122,7 @@ func TestAdminPackRelay(t *testing.T) {
 		t.Errorf("worker error: %d %s", w.Code, w.Body.String())
 	}
 	f.API.Gate.WorkerURL = "http://127.0.0.1:1"
-	if w := call(f, "GET", "/api/v1/admin/packs/magento/store-management", "", admin); w.Code != 502 || w.Body.String() != `{"error":"worker is unavailable"}` {
+	if w := call(f, "POST", "/api/v1/admin/packs/magento/install", `{}`, admin); w.Code != 502 || w.Body.String() != `{"error":"worker is unavailable"}` {
 		t.Errorf("worker down: %d %s", w.Code, w.Body.String())
 	}
 }
@@ -153,13 +152,12 @@ func TestAdminPackWrites(t *testing.T) {
 			t.Errorf("%s body %v", action, got)
 		}
 	}
-	call(f, "POST", "/api/v1/admin/packs/magento/uninstall", "", admin)
+	call(f, "POST", "/api/v1/admin/packs/magento/configure", "", admin)
 	if got := sent(); got["actorUserId"] != "admin" || got["idempotencyKey"] == nil {
 		t.Errorf("empty body %v", got)
 	}
-	call(f, "POST", "/api/v1/admin/packs/magento/store-management", `{"domain":"catalog","enabled":true,"actorUserId":"forged"}`, admin)
-	if got := sent(); got["actorUserId"] != "admin" || got["domain"] != "catalog" || got["idempotencyKey"] != nil {
-		t.Errorf("store management body %v", got)
+	if w := call(f, "POST", "/api/v1/admin/packs/magento/uninstall", "", admin); w.Code != 400 || !strings.Contains(w.Body.String(), "pack magento is not installed") || len(wk.take()) != 0 {
+		t.Errorf("uninstall goes to Go: %d %s", w.Code, w.Body.String())
 	}
 	for _, c := range []struct {
 		path, body string
@@ -186,6 +184,107 @@ func TestAdminPackWrites(t *testing.T) {
 	}
 	if calls := wk.take(); len(calls) != 0 {
 		t.Errorf("worker calls for refused bodies: %d", len(calls))
+	}
+}
+
+func TestMagentoStoreManagement(t *testing.T) {
+	f, wk := packFront(t)
+	admin := sessionCookie("admin")
+	ctx := context.Background()
+	db := f.API.DB
+	f.API.Gate.WorkerURL = "http://127.0.0.1:1"
+
+	seed(t, db, `insert into magento_store_control (org_id, domain, risk_class, enabled, auto_execute, caps, scope) values
+		('org', 'catalog', 2, true, false, '{"maxRowsPerChangeset":50,"maxDailyAutoActions":10,"skuCooldownSeconds":3600}'::jsonb, '{"storeCode":"all"}'::jsonb),
+		('org', 'promotions', 1, false, false, '{"maxRowsPerChangeset":10,"maxDiscountPercent":25}'::jsonb, '{}'::jsonb)`)
+	seed(t, db, `insert into pack_action_definition (org_id, kind, definition, definition_hash, enabled, readiness, readiness_reason) values
+		('org', 'magento.manage_catalog', '{"kind":"magento.manage_catalog","domain":"catalog","adapter":{"kind":"magento_changeset","operations":{"product_update":{"operationId":"magentoUpdateProduct","defaultClass":2,"reversible":true,"resultMode":"sync"}}}}'::jsonb, 'h1', true, 'ready', 'ready'),
+		('org', 'magento.financial_handoff', '{"kind":"magento.financial_handoff","domain":"orders","adapter":{"kind":"magento_financial_handoff"}}'::jsonb, 'h2', true, 'ready', 'ready')`)
+	var csID string
+	if err := db.QueryRow(ctx, `insert into action_changeset (org_id, domain, scope, operation_id, risk_class, status, summary, idempotency_key, cap_snapshot)
+		values ('org', 'catalog', '{"storeCode":"all"}'::jsonb, 'product_update', 2, 'applied', 'Update price', 'idem-key-1234', '{}'::jsonb) returning id::text`).Scan(&csID); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, db, `insert into action_changeset_row (changeset_id, row_index, entity_ref, operation_id, before_image, expected_current, after_image, status)
+		values ($1, 0, 'SKU-1', 'product_update', '{"price":100}'::jsonb, '{"price":100}'::jsonb, '{"product":{"price":105}}'::jsonb, 'applied')`, csID)
+	seed(t, db, `insert into magento_financial_handoff (org_id, kind, entity_ref, status, draft, evidence)
+		values ('org', 'online_refund', '000000101', 'ready_for_human', '{"amount":50}'::jsonb, '{"reason":"damaged"}'::jsonb)`)
+
+	w := call(f, "GET", "/api/v1/admin/packs/magento/store-management", "", admin)
+	if w.Code != 200 {
+		t.Fatalf("GET store-management: %d %s", w.Code, w.Body.String())
+	}
+	got := decode(t, w)
+	controls := got["controls"].([]any)
+	if len(controls) != 2 || controls[0].(map[string]any)["domain"] != "catalog" ||
+		controls[0].(map[string]any)["readiness"] != "ready" ||
+		controls[0].(map[string]any)["readinessMessage"] != "Changes can run under the configured store limits." ||
+		controls[1].(map[string]any)["domain"] != "promotions" ||
+		controls[1].(map[string]any)["readiness"] != "blocked" ||
+		controls[1].(map[string]any)["readinessReason"] != "change_access_unavailable" {
+		t.Fatalf("controls %v", controls)
+	}
+	ops := got["operations"].([]any)
+	if len(ops) != 1 || ops[0].(map[string]any)["name"] != "product_update" ||
+		ops[0].(map[string]any)["executionMode"] != "controlled_automation_eligible" {
+		t.Fatalf("operations %v", ops)
+	}
+	activity := got["activity"].([]any)
+	if len(activity) != 2 {
+		t.Fatalf("activity %v", activity)
+	}
+
+	// Enable autoExecute and update cap on catalog.
+	w = call(f, "POST", "/api/v1/admin/packs/magento/store-management",
+		`{"action":"update_domain","domain":"catalog","autoExecute":true,"caps":{"maxRowsPerChangeset":25},"actorUserId":"forged"}`, admin)
+	if w.Code != 200 {
+		t.Fatalf("POST update_domain: %d %s", w.Code, w.Body.String())
+	}
+	var updatedBy string
+	if err := db.QueryRow(ctx, `select updated_by_user_id from magento_store_control where org_id = 'org' and domain = 'catalog'`).Scan(&updatedBy); err != nil || updatedBy != "admin" {
+		t.Errorf("updated_by_user_id = %q (%v)", updatedBy, err)
+	}
+
+	// Reject autoExecute on Class 1 domain.
+	w = call(f, "POST", "/api/v1/admin/packs/magento/store-management",
+		`{"action":"update_domain","domain":"promotions","autoExecute":true}`, admin)
+	if w.Code != 400 || decode(t, w)["error"] != "Automatic execution is not available for this Magento domain" ||
+		decode(t, w)["diagnostic"].(map[string]any)["phase"] != "store_management" {
+		t.Errorf("promotions autoExecute: %d %s", w.Code, w.Body.String())
+	}
+
+	// Create automatic rule.
+	w = call(f, "POST", "/api/v1/admin/packs/magento/store-management",
+		`{"action":"create_rule","name":"Low stock","instruction":"Update copy","domain":"catalog","actionKind":"magento.manage_catalog","dailyCap":5,"cooldownSeconds":600,"enabled":true}`, admin)
+	if w.Code != 200 {
+		t.Fatalf("POST create_rule: %d %s", w.Code, w.Body.String())
+	}
+	rules := decode(t, w)["rules"].([]any)
+	if len(rules) != 1 || rules[0].(map[string]any)["name"] != "Low stock" || rules[0].(map[string]any)["enabled"] != true {
+		t.Fatalf("rules %v", rules)
+	}
+	ruleID := rules[0].(map[string]any)["id"].(string)
+
+	// Exceed daily cap ceiling.
+	w = call(f, "POST", "/api/v1/admin/packs/magento/store-management",
+		`{"action":"create_rule","name":"Too high","instruction":"Update copy","domain":"catalog","actionKind":"magento.manage_catalog","dailyCap":15,"cooldownSeconds":600,"enabled":true}`, admin)
+	if w.Code != 400 || decode(t, w)["error"] != "Rule daily cap exceeds the domain ceiling of 10" {
+		t.Errorf("cap ceiling: %d %s", w.Code, w.Body.String())
+	}
+
+	// Suspend rule.
+	w = call(f, "POST", "/api/v1/admin/packs/magento/store-management",
+		`{"action":"set_rule_status","ruleId":"`+ruleID+`","enabled":false}`, admin)
+	if w.Code != 200 {
+		t.Fatalf("POST set_rule_status: %d %s", w.Code, w.Body.String())
+	}
+	rules = decode(t, w)["rules"].([]any)
+	if rules[0].(map[string]any)["enabled"] != false || rules[0].(map[string]any)["suspendedReason"] != "suspended_by_admin" {
+		t.Errorf("suspended rule %v", rules[0])
+	}
+
+	if calls := wk.take(); len(calls) != 0 {
+		t.Errorf("worker should not be called for store-management: %v", calls)
 	}
 }
 

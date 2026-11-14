@@ -420,9 +420,23 @@ inputs and secrets, checks the source bindings against the GraphJin config and t
 live GraphJin, runs the declarative checks and the native target check, and signs
 the review hash that install checks. Run `go test ./internal/packs` in `apps/openneko`:
 it checks that the Go loader gives the same manifest, bundle, plan and target state
-hashes as the Node code. `go test -run TestPackReviewNodeFixture ./internal/webfront`
-checks the review against the Node fixture. `openneko web` also runs the OAuth routes: the
-client setup, the connect and callback, the status and the disconnect. Until the
+hashes as the Node code, as well as the Magento V2 attribute classification, cap
+evaluation and activity presentation. `go test -run TestPackReviewNodeFixture ./internal/webfront`
+checks the review against the Node fixture. `openneko web` also runs the pack doctor.
+For a custom pack, it runs each metric, watcher and saved query once against the
+pack's data source. For Magento, it checks the analytics account (SELECT-only grants,
+the table prefix, the store codes, the database version), the store version, the
+GraphJin catalog, the smoke queries and the change-domain probes. `go test -run
+TestPackDoctorNodeFixture ./internal/webfront` checks it against the Node fixture.
+Set `OPENNEKO_TEST_MAGENTO_MYSQL` to a root DSN of a MySQL 8 or MariaDB 10.6+ server
+to run the live preflight test. `openneko web` also uninstalls a pack. It revokes the
+pack's GraphJin sources and keeps them, removes its saved queries, files and skill
+folders, deletes its secrets, switches off its metrics, watchers, workflows, policies
+and actions, and retires each receipt. A drift conflict stops the uninstall and marks
+the changed artifacts as modified. A failure puts the files and secrets back. Install,
+configure and upgrade still run in the worker. `openneko web` also runs the OAuth routes
+(client setup, connect and callback, status and disconnect) and the Magento
+store-management settings and activity route. Until the
 pack apply moves to Go, a deployment-scope connection on an installed pack with
 GraphJin sources asks the worker to apply the new token to those sources, and the
 worker still refreshes deployment-scope tokens. Integration tests need their documented test dependencies;
