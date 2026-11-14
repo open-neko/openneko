@@ -21,11 +21,8 @@ services:
       retries: 20
 
   adventureworks-init:
-    # Uses the worker image with the baked AdventureWorks loader
-    # (db/load-adventureworks-baked.sh + apps/worker/scripts/load-adventureworks.ts).
-    # No separate image needed — the worker image already has node, tsx,
-    # pg, curl, unzip, and postgresql-client.
-    image: ghcr.io/open-neko/neko-worker:${OPENNEKO_VERSION:-latest}
+    image: ghcr.io/open-neko/neko-cli:${OPENNEKO_VERSION:-latest}
+    command: ["seed", "adventureworks", "--load"]
     depends_on:
       adventureworks-db:
         condition: service_healthy
@@ -36,7 +33,6 @@ services:
       PGPASSWORD: ${CUSTOMER_PGPASSWORD:-postgres}
       ADVENTUREWORKS_DB: ${ADVENTUREWORKS_DB:-adventureworks}
       ADVENTUREWORKS_CACHE_DIR: /cache
-    entrypoint: ["/bin/sh", "/app/db/load-adventureworks-baked.sh"]
     volumes:
       - adventureworks-cache:/cache
     restart: "no"
@@ -66,7 +62,7 @@ services:
 
   neko-adventureworks-seed:
     profiles: ["steps"]
-    image: ghcr.io/open-neko/neko-worker:${OPENNEKO_VERSION:-latest}
+    image: ghcr.io/open-neko/neko-cli:${OPENNEKO_VERSION:-latest}
     depends_on:
       # neko-migrate completion guarantees the organization / data_source /
       # onboarding_wizard / workflow tables this seed writes into exist.
@@ -96,9 +92,7 @@ services:
       ADVENTUREWORKS_RECONCILE_AUTH_MODE: "1"
     volumes:
       - openneko-config:/config/openneko
-    # --import tsx/esm so the seed's `import("@neko/secret-crypt")` (raw .ts
-    # under node_modules) transpiles; plain node refuses to strip those types.
-    command: ["node", "--import", "tsx/esm", "node_modules/@neko/db/src/seed-adventureworks.mjs"]
+    command: ["seed", "adventureworks", "--org"]
     restart: "no"
 
   adventureworks-simulator:

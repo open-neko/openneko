@@ -21,3 +21,7 @@ var DefaultEnvExample []byte
 
 //go:embed graphjin/customer.sources.yml
 var GraphJinSeed []byte
+
+//go:embed adventureworks/install.sql
+var AdventureWorksInstallSQL []byte
+

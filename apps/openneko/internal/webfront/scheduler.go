@@ -278,7 +278,7 @@ func (a *API) materializeDueWorkflowFirings(ctx context.Context, now time.Time) 
 		recovered = r
 
 		rows, err := tx.Query(ctx, `
-			select d.id::text, d.org_id, d.cron, coalesce(nullif(d.cron_timezone, ''), 'UTC'), s.next_fire_at
+			select d.id::text, d.org_id, d.cron, coalesce(nullif(d.cron_timezone, ''), 'UTC'), d.updated_at, s.next_fire_at
 			from workflow_definition d
 			left join workflow_schedule_state s on s.workflow_id = d.id
 			where d.enabled = true
@@ -291,15 +291,16 @@ func (a *API) materializeDueWorkflowFirings(ctx context.Context, now time.Time) 
 			return err
 		}
 		type scheduleRow struct {
-			id         string
-			orgID      string
-			cron       string
-			timezone   string
-			nextFireAt *time.Time
+			id                  string
+			orgID               string
+			cron                string
+			timezone            string
+			definitionUpdatedAt time.Time
+			nextFireAt          *time.Time
 		}
 		defs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (scheduleRow, error) {
 			var s scheduleRow
-			err := row.Scan(&s.id, &s.orgID, &s.cron, &s.timezone, &s.nextFireAt)
+			err := row.Scan(&s.id, &s.orgID, &s.cron, &s.timezone, &s.definitionUpdatedAt, &s.nextFireAt)
 			return s, err
 		})
 		if err != nil {
@@ -310,43 +311,51 @@ func (a *API) materializeDueWorkflowFirings(ctx context.Context, now time.Time) 
 			plan, err := advanceWorkflowSchedule(row.cron, row.timezone, row.nextFireAt, now)
 			if err != nil {
 				if _, uerr := tx.Exec(ctx, `
-					insert into workflow_schedule_state (workflow_id, org_id, next_fire_at, catch_up_policy, last_error, updated_at)
-					values ($1, $2, null, 'coalesce', $3, $4)
-					on conflict (workflow_id) do update
-					set last_error = excluded.last_error, updated_at = excluded.updated_at`,
-					row.id, row.orgID, err.Error(), now); uerr != nil {
+					update workflow_schedule_firing
+					set status = 'cancelled', completed_at = $2, lease_until = null,
+					    last_error = 'schedule is invalid before dispatch',
+					    updated_at = $2
+					where workflow_id = $1
+					  and status in ('pending', 'dispatching', 'enqueued')`,
+					row.id, now); uerr != nil {
 					return uerr
+				}
+				if _, derr := tx.Exec(ctx, `delete from workflow_schedule_state where workflow_id = $1`, row.id); derr != nil {
+					return derr
 				}
 				continue
 			}
 			coalesced += plan.Coalesced
-			var lastScheduledFor *time.Time
+			var lastMaterializedAt *time.Time
 			for _, sf := range plan.ScheduledFor {
 				sfCopy := sf
-				lastScheduledFor = &sfCopy
 				tag, ierr := tx.Exec(ctx, `
-					insert into workflow_schedule_firing (org_id, workflow_id, scheduled_for, status, updated_at)
-					values ($1, $2, $3, 'pending', $4)
+					insert into workflow_schedule_firing (org_id, workflow_id, scheduled_for, status, available_at, created_at, updated_at)
+					values ($1, $2, $3, 'pending', $4, $4, $4)
 					on conflict (workflow_id, scheduled_for) do nothing`,
 					row.orgID, row.id, sf, now)
 				if ierr != nil {
 					return ierr
 				}
-				materialized += int(tag.RowsAffected())
+				if tag.RowsAffected() > 0 {
+					materialized += int(tag.RowsAffected())
+					lastMaterializedAt = &sfCopy
+				}
 			}
 			if _, err := tx.Exec(ctx, `
 				insert into workflow_schedule_state
-				  (workflow_id, org_id, next_fire_at, last_scheduled_for, last_evaluated_at, catch_up_policy, last_error, updated_at)
-				values ($1, $2, $3, $4, $5, 'coalesce', null, $5)
+				  (workflow_id, org_id, cron, cron_timezone, definition_updated_at, next_fire_at, catch_up_policy, last_materialized_at, created_at, updated_at)
+				values ($1, $2, $3, $4, $5, $6, 'coalesce', $7, $8, $8)
 				on conflict (workflow_id) do update
 				set org_id = excluded.org_id,
+				    cron = excluded.cron,
+				    cron_timezone = excluded.cron_timezone,
+				    definition_updated_at = excluded.definition_updated_at,
 				    next_fire_at = excluded.next_fire_at,
-				    last_scheduled_for = coalesce(excluded.last_scheduled_for, workflow_schedule_state.last_scheduled_for),
-				    last_evaluated_at = excluded.last_evaluated_at,
+				    last_materialized_at = coalesce(excluded.last_materialized_at, workflow_schedule_state.last_materialized_at),
 				    catch_up_policy = excluded.catch_up_policy,
-				    last_error = null,
 				    updated_at = excluded.updated_at`,
-				row.id, row.orgID, plan.NextFireAt, lastScheduledFor, now); err != nil {
+				row.id, row.orgID, row.cron, row.timezone, row.definitionUpdatedAt, plan.NextFireAt, lastMaterializedAt, now); err != nil {
 				return err
 			}
 		}
@@ -469,7 +478,8 @@ func (a *API) dispatchPendingWorkflowFirings(ctx context.Context, now time.Time)
 		if _, err := a.DB.Exec(ctx, `
 			update workflow_schedule_firing
 			set status = 'enqueued',
-			    pgboss_job_id = coalesce($2, pgboss_job_id),
+			    queue_job_id = coalesce($2, queue_job_id),
+			    dispatched_at = coalesce(dispatched_at, now()),
 			    lease_until = null,
 			    last_error = null,
 			    updated_at = now()
@@ -484,13 +494,11 @@ func (a *API) dispatchPendingWorkflowFirings(ctx context.Context, now time.Time)
 func (a *API) recordDBSchedulerSuccess(ctx context.Context, now time.Time, materialized, dispatched int) error {
 	_, err := a.DB.Exec(ctx, `
 		insert into workflow_scheduler_health
-		  (id, started_at, last_tick_at, last_success_at, consecutive_failures,
-		   last_error, last_materialized_count, last_dispatched_count, updated_at)
-		values ($1, $2, $2, $2, 0, null, $3, $4, $2)
+		  (id, last_started_at, last_succeeded_at, last_error, last_materialized_count, last_dispatched_count, updated_at)
+		values ($1, $2, $2, null, $3, $4, $2)
 		on conflict (id) do update
-		set last_tick_at = excluded.last_tick_at,
-		    last_success_at = excluded.last_success_at,
-		    consecutive_failures = 0,
+		set last_started_at = excluded.last_started_at,
+		    last_succeeded_at = excluded.last_succeeded_at,
 		    last_error = null,
 		    last_materialized_count = excluded.last_materialized_count,
 		    last_dispatched_count = excluded.last_dispatched_count,
@@ -502,12 +510,11 @@ func (a *API) recordDBSchedulerSuccess(ctx context.Context, now time.Time, mater
 func (a *API) recordDBSchedulerFailure(ctx context.Context, now time.Time, msg string) error {
 	_, err := a.DB.Exec(ctx, `
 		insert into workflow_scheduler_health
-		  (id, started_at, last_tick_at, last_error_at, consecutive_failures, last_error, updated_at)
-		values ($1, $2, $2, $2, 1, $3, $2)
+		  (id, last_started_at, last_error_at, last_error, updated_at)
+		values ($1, $2, $2, $3, $2)
 		on conflict (id) do update
-		set last_tick_at = excluded.last_tick_at,
+		set last_started_at = excluded.last_started_at,
 		    last_error_at = excluded.last_error_at,
-		    consecutive_failures = workflow_scheduler_health.consecutive_failures + 1,
 		    last_error = excluded.last_error,
 		    updated_at = excluded.updated_at`,
 		workflowSchedulerHealthID, now, msg)

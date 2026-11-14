@@ -20,7 +20,7 @@
     "dev:web:stack": "sh scripts/dev-web-stack.sh",
     "dev:worker": ". scripts/dev-env.sh && OPENNEKO_BROKER_PORT=\"${OPENNEKO_WORKER_BROKER_PORT:-4199}\" pnpm --filter @neko/worker dev",
     "dev:up": "sh scripts/dev-up.sh",
-    "dev:seed": ". scripts/dev-env.sh && ADVENTUREWORKS_GRAPHJIN_ROOT=\"http://localhost:${GRAPHJIN_PORT:-8080}\" ADVENTUREWORKS_UPDATE_DATA_SOURCE=1 pnpm --filter @neko/worker exec tsx ../../packages/db/src/seed-adventureworks.mjs",
+    "dev:seed": ". scripts/dev-env.sh && ADVENTUREWORKS_GRAPHJIN_ROOT=\"http://localhost:${GRAPHJIN_PORT:-8080}\" ADVENTUREWORKS_UPDATE_DATA_SOURCE=1 pnpm openneko seed adventureworks --org",
     "dev:setup": "pnpm dev:up && pnpm dev:seed",
     "dev:down": "docker compose -f compose.yml -f compose.db.yml -f compose.adventureworks.yml -f compose.dev.yml down",
     "build": "pnpm -r build",
