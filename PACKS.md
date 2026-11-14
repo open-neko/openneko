@@ -415,7 +415,11 @@ Relevant suites include `pnpm --filter @neko/packs test` and the worker's
 `pack-uploads` tests. `openneko web` lists, inspects and stores uploaded packs with
 the Go loader in `apps/openneko/internal/packs`. Run `go test ./internal/packs` in
 `apps/openneko`: it checks that the Go loader gives the same manifest, bundle and
-plan hashes as the Node loader. Integration tests need their documented test dependencies;
+plan hashes as the Node loader. `openneko web` also runs the OAuth routes: the
+client setup, the connect and callback, the status and the disconnect. Until the
+pack apply moves to Go, a deployment-scope connection on an installed pack with
+GraphJin sources asks the worker to apply the new token to those sources, and the
+worker still refreshes deployment-scope tokens. Integration tests need their documented test dependencies;
 a skipped test is not a live pass.
 
 ## Save changes, submit a PR, and release
