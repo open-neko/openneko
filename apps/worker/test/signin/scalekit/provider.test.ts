@@ -1,66 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { ConnectorCredential } from "@neko/secrets";
 import {
-  beginScalekitAuth,
   beginScalekitConnect,
   callScalekitTool,
-  completeScalekitAuth,
   completeScalekitConnect,
   refreshScalekitConnect,
   scalekitCredentialNearExpiry,
-  ScalekitError,
 } from "../../../src/signin/scalekit/provider";
-import type {
-  ScalekitClient,
-  ScalekitTokenResponse,
-  ScalekitUserinfo,
-} from "../../../src/signin/scalekit/client";
 import {
   pkceChallenge,
   serializeOauthState,
   type TokenSet,
 } from "../../../src/signin/scalekit/mcp-oauth";
 
-const ENV = {
-  SCALEKIT_ENVIRONMENT_URL: "https://foo.scalekit.com",
-  SCALEKIT_CLIENT_ID: "c",
-  SCALEKIT_CLIENT_SECRET: "s",
-};
-
 const MCP_URL = "https://mcp.scalekit.com";
-
-function fakeClient(opts: {
-  authorizationUrl?: string;
-  tokens?: ScalekitTokenResponse;
-  userinfo?: ScalekitUserinfo;
-}): ScalekitClient {
-  return {
-    buildAuthorizationUrl({ redirectUri, state, loginHint }) {
-      return (
-        opts.authorizationUrl ??
-        `https://foo.scalekit.com/oauth/authorize?state=${state}&redirect=${redirectUri}&hint=${loginHint ?? ""}`
-      );
-    },
-    async exchangeCode() {
-      return (
-        opts.tokens ?? {
-          access_token: "at-1",
-          token_type: "Bearer",
-          expires_in: 3600,
-        }
-      );
-    },
-    async fetchUserinfo() {
-      return (
-        opts.userinfo ?? {
-          sub: "user-1",
-          email: "amit@example.com",
-          name: "Amit",
-        }
-      );
-    },
-  };
-}
 
 interface FakeOauthRecorder {
   discoverResourceCalls: string[];
@@ -152,64 +105,6 @@ function fakeMcpOauth(overrides: {
     },
   };
 }
-
-describe("sign-in", () => {
-  it("fails with the missing settings named when credentials are unset", async () => {
-    await expect(
-      beginScalekitAuth(
-        { redirectUri: "https://app.example.com/cb", state: "x" },
-        {},
-        { createClient: () => ({} as ScalekitClient) },
-      ),
-    ).rejects.toThrow(ScalekitError);
-    await expect(
-      beginScalekitAuth({ redirectUri: "https://app.example.com/cb", state: "x" }, { ...ENV, SCALEKIT_ENVIRONMENT_URL: "" }),
-    ).rejects.toThrow(/SCALEKIT_ENVIRONMENT_URL/);
-  });
-
-  it("begin returns the client-built URL", async () => {
-    const result = await beginScalekitAuth(
-      { redirectUri: "https://app.example.com/cb", state: "csrf" },
-      ENV,
-      {
-        createClient: () =>
-          fakeClient({
-            authorizationUrl: "https://foo.scalekit.com/oauth/authorize?stub=1",
-          }),
-      },
-    );
-    expect(result.authorizationUrl).toBe(
-      "https://foo.scalekit.com/oauth/authorize?stub=1",
-    );
-  });
-
-  it("complete maps identity + groups", async () => {
-    const result = await completeScalekitAuth(
-      { code: "c", redirectUri: "https://app.example.com/cb", state: "s" },
-      ENV,
-      {
-        createClient: () =>
-          fakeClient({
-            userinfo: {
-              sub: "user-1",
-              email: "amit@example.com",
-              name: "Amit",
-              organization_id: "org-1",
-              groups: ["everyone"],
-              roles: ["admin"],
-            },
-          }),
-      },
-    );
-    expect(result).toEqual({
-      sub: "user-1",
-      email: "amit@example.com",
-      name: "Amit",
-      orgId: "org-1",
-      groups: ["everyone", "admin"],
-    });
-  });
-});
 
 describe("workspace consent (mcp-oauth)", () => {
   it("begin discovers + registers + returns authorizationUrl with oauthState", async () => {

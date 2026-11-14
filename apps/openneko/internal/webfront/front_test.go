@@ -18,7 +18,7 @@ func newFront(t *testing.T, node http.Handler) *Front {
 		"icon.png":             {Data: []byte("png")},
 		"connectors/x.md":      {Data: []byte("md")},
 	}
-	return &Front{App: app, Gate: newGate(t, newWorker(t, `{"provider":null}`).srv.URL), Node: node}
+	return &Front{App: app, Gate: newGate(t, ""), Node: node}
 }
 
 func get(f *Front, method, target string) *httptest.ResponseRecorder {
@@ -83,7 +83,8 @@ func TestFront(t *testing.T) {
 func TestFrontGatesPagesBeforeNode(t *testing.T) {
 	reached := false
 	f := newFront(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
-	f.Gate = newGate(t, newWorker(t, `{"provider":{"pluginName":"oidc"}}`).srv.URL)
+	f.Gate = newGate(t, "")
+	seedSignInSecrets(t, f.Gate.SecretsDir, liveScalekit)
 	for _, p := range []string{"/admin/settings", "/api/v1/work", "/chat"} {
 		if w := get(f, "GET", p); w.Code != 302 || !strings.HasPrefix(w.Header().Get("Location"), "/signin?returnTo=") {
 			t.Errorf("%s: %d %q", p, w.Code, w.Header().Get("Location"))
