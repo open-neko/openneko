@@ -1,4 +1,3 @@
-import { workerAdminFetch } from "../worker-admin";
 import { enqueueActionExecute } from "@neko/db/jobs";
 import { holds } from "@neko/db";
 import { actionKindIsGranted, entitlementActorForRun, runWorkflowFilter } from "./entitlement-scope";
@@ -80,42 +79,6 @@ export type Wire<T> = T extends Date
 
 function toWire<T>(value: T): Wire<T> {
   return JSON.parse(JSON.stringify(value ?? null)) as Wire<T>;
-}
-
-export async function createActionRequestViaWorker(
-  baseUrl: string,
-  input: CreateActionRequestInput,
-  fetchImpl?: typeof fetch,
-): Promise<{ id: string; status: string }> {
-  const path = "/admin/action-requests/create";
-  const init: RequestInit = {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
-    signal: AbortSignal.timeout(65_000),
-  };
-  const response = fetchImpl
-    ? await fetchImpl(`${baseUrl.replace(/\/$/, "")}${path}`, init)
-    : await workerAdminFetch(path, init, baseUrl);
-  const body = (await response.json().catch(() => null)) as
-    | { id?: unknown; status?: unknown; error?: unknown }
-    | null;
-  if (!response.ok) {
-    const message =
-      body && typeof body.error === "string"
-        ? body.error
-        : `worker action preflight failed with status ${response.status}`;
-    throw new Error(message);
-  }
-  if (
-    !body ||
-    typeof body.id !== "string" ||
-    !body.id ||
-    typeof body.status !== "string"
-  ) {
-    throw new Error("worker action preflight returned an invalid response");
-  }
-  return { id: body.id, status: body.status };
 }
 
 async function requireSourceConfigAccess(input: {
@@ -684,10 +647,6 @@ export class InProcessControlPlane implements AgentControlPlane {
       if (!actor || !(await holds(actor, "action", input.kind)).allowed) {
         throw new Error(`action ${input.kind} is not available to this run`);
       }
-    }
-    const workerAdminUrl = process.env.WORKER_ADMIN_URL?.trim();
-    if (workerAdminUrl) {
-      return createActionRequestViaWorker(workerAdminUrl, input);
     }
     const request = await createActionRequest(input);
     return { id: request.id, status: request.status };
