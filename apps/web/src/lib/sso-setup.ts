@@ -1,7 +1,5 @@
-// SSO setup status for the server-rendered setup page. The setup routes are
-// in Go (`openneko web`); both reach the worker's /admin/sso/setup/* endpoints.
-
-import { workerAdminFetch } from "@neko/llm/worker-admin";
+// SSO setup types shared by the admin SSO settings page.
+// The /api/v1/sso/setup/* routes and the SSO setup poller run in Go (`openneko web`).
 
 export type SsoSetupStatus =
   | "not_started"
@@ -11,7 +9,7 @@ export type SsoSetupStatus =
   | "failed";
 
 export interface SsoSetupConnection {
-  status: string;
+  status: "connected" | "in_progress" | "none";
   provider: string | null;
   enabled: boolean;
 }
@@ -30,29 +28,6 @@ export interface SsoSetupStatusResult {
   signInConfigured: boolean;
 }
 
-async function readError(res: Response, label: string): Promise<Error> {
-  const text = await res.text().catch(() => "");
-  let detail = text;
-  try {
-    const parsed = JSON.parse(text) as { error?: string };
-    if (parsed.error) detail = parsed.error;
-  } catch {
-    // non-JSON body — use raw text.
-  }
-  return new Error(`${label} failed (${res.status}): ${detail || res.statusText}`);
-}
-
-export async function getSsoSetupStatus(
-  orgId: string,
-): Promise<SsoSetupStatusResult> {
-  const res = await workerAdminFetch(
-    `/admin/sso/setup/status?orgId=${encodeURIComponent(orgId)}`,
-    { method: "GET", cache: "no-store", signal: AbortSignal.timeout(2000) },
-  );
-  if (!res.ok) throw await readError(res, "SSO setup status");
-  return (await res.json()) as SsoSetupStatusResult;
-}
-
 export interface SsoEnvironmentRow {
   id: string;
   name: string | null;
@@ -64,4 +39,3 @@ export interface SsoOrganizationRow {
   id: string;
   name: string | null;
 }
-

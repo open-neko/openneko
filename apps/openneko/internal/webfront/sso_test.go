@@ -31,7 +31,10 @@ type ssoWorker struct {
 func (s *ssoWorker) RoundTrip(r *http.Request) (*http.Response, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	raw, _ := io.ReadAll(r.Body)
+	var raw []byte
+	if r.Body != nil {
+		raw, _ = io.ReadAll(r.Body)
+	}
 	reply := func(code int, body string) *http.Response {
 		return &http.Response{
 			StatusCode: code,

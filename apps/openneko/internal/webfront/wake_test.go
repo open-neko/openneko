@@ -29,6 +29,7 @@ func TestWake(t *testing.T) {
 		DirectorySync:    func(context.Context) error { sweeps.Add(1); return nil },
 		BotNameSweep:     func(context.Context) error { sweeps.Add(1); return nil },
 		WorkflowAPISweep: func(context.Context) error { sweeps.Add(1); return nil },
+		SSOSetupPoll:     func(context.Context) error { sweeps.Add(1); return nil },
 		ActionExecute:    func(context.Context, string, string) error { actions.Add(1); return nil },
 	}
 	t.Cleanup(func() { pool.Exec(context.Background(), "drop schema if exists "+q.Schema+" cascade") }) //nolint:errcheck
@@ -83,14 +84,14 @@ func TestWake(t *testing.T) {
 	}
 
 	code, res := call("POST", WakePath+"?max_seconds=30", "Bearer wake-secret")
-	if code != 200 || res.Inserted != 7 || res.Ran != 8 || res.TimedOut {
-		t.Fatalf("wake with jobs off = %d %+v, want 7 inserted and 8 ran", code, res)
+	if code != 200 || res.Inserted != 8 || res.Ran != 9 || res.TimedOut {
+		t.Fatalf("wake with jobs off = %d %+v, want 8 inserted and 9 ran", code, res)
 	}
-	if actions.Load() != 1 || sweeps.Load() != 5 {
-		t.Fatalf("ran %d actions and %d sweeps, want 1 and 5", actions.Load(), sweeps.Load())
+	if actions.Load() != 1 || sweeps.Load() != 6 {
+		t.Fatalf("ran %d actions and %d sweeps, want 1 and 6", actions.Load(), sweeps.Load())
 	}
 	code, res = call("POST", WakePath, "Bearer wake-secret")
-	if code != 200 || res.Inserted > 3 || res.Ran != res.Inserted {
+	if code != 200 || res.Inserted > 4 || res.Ran != res.Inserted {
 		t.Fatalf("second wake = %d %+v, want nothing new outside a new minute", code, res)
 	}
 

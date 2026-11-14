@@ -35,26 +35,8 @@ describe("SignInService directory and Scalekit settings", () => {
 });
 
 describe("Scalekit workspace connection", () => {
-  it("stores the workspace credential in the deployment slot and refreshes it before a tool call", async () => {
-    const refreshed: string[] = [];
-    const seenTokens: string[] = [];
-    const signIn = new SignInService(secrets, {
-      scalekit: {
-        createMcpOAuth: () => ({
-          refreshTokens: async () => {
-            refreshed.push("x");
-            return { access_token: "at-new", refresh_token: "rt-new", expires_in: 3600 };
-          },
-        }) as never,
-        createMcpClient: async ({ accessToken }) => ({
-          callTool: async () => {
-            seenTokens.push(accessToken);
-            return { content: [{ type: "text", text: "ok" }] };
-          },
-          close: async () => {},
-        }),
-      },
-    });
+  it("stores and disconnects the workspace credential in the deployment slot", async () => {
+    const signIn = new SignInService(secrets);
     expect(signIn.getDeploymentConnectStatus()).toEqual([]);
     await secrets.setOperatorCredential("deployment", "scalekit", credential({
       access_token: "at-old",
@@ -66,11 +48,6 @@ describe("Scalekit workspace connection", () => {
     expect(signIn.getDeploymentConnectStatus()).toEqual([
       { pluginName: "scalekit", connectedAt: "2026-01-01T00:00:00.000Z", scopes: undefined },
     ]);
-
-    expect(await signIn.callWorkspaceTool("list_environments", {})).toBe("ok");
-    expect(refreshed).toHaveLength(1);
-    expect(seenTokens).toEqual(["at-new"]);
-    expect(secrets.operatorCredential("deployment", "scalekit")?.tokens.access_token).toBe("at-new");
 
     expect(await signIn.disconnect("scalekit", "anyone")).toBe(true);
     expect(signIn.getDeploymentConnectStatus()).toEqual([]);
