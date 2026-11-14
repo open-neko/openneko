@@ -8,12 +8,6 @@ import { createAdminHandler } from "./admin-server.js";
 import { CoreSecrets } from "./secrets/core-secrets.js";
 import { SignInService } from "./signin/signin-service.js";
 import {
-  applyGroupGrants,
-  disableGroupGrants,
-  enableGroupGrants,
-  scheduleGroupGrantsApply,
-} from "./graphjin/group-grants-service.js";
-import {
   createDirectoryUser,
   directoryStatus,
   runDirectorySync,
@@ -24,7 +18,6 @@ import {
   resolveAgentConcurrency,
   verifyAiCredentials,
 } from "@neko/llm";
-import { dispatchExternalEvent } from "@neko/llm/workflows";
 import { reportDeploymentProfile, setAgentSlotLimit } from "@neko/llm/work";
 import { removeRetiredQueue } from "./pg-boss-helpers.js";
 import { setCoreSecretsInstance } from "./secrets/instance.js";
@@ -68,35 +61,6 @@ function signIn(): SignInService {
 }
 const server = createServer(
   createAdminHandler({
-    events: {
-      dispatchExternal: async (input) => {
-        const result = await dispatchExternalEvent({
-          orgId: input.orgId,
-          event: {
-            name: input.name,
-            source: input.source,
-            payload: input.payload,
-            ...(input.dedupeKey ? { dedupeKey: input.dedupeKey } : {}),
-          },
-        });
-        return { matched: result.matched, enqueued: result.enqueued };
-      },
-    },
-    groupGrants: {
-      apply: async () => applyGroupGrants(await getOrgId()),
-      schedule: () => {
-        void getOrgId().then((orgId) => scheduleGroupGrantsApply(orgId));
-      },
-      enable: async (actorUserId) => enableGroupGrants(await getOrgId(), actorUserId),
-      disable: async (actorUserId) => disableGroupGrants(await getOrgId(), actorUserId),
-      apiOperations: async () => {
-        const configFile = process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim();
-        if (!configFile) return [];
-        const { readFile } = await import("node:fs/promises");
-        const { listConfigApiOperations } = await import("@neko/llm/graphjin");
-        return listConfigApiOperations(await readFile(configFile, "utf8"));
-      },
-    },
     directory: {
       status: async () => directoryStatus(signInService, await getOrgId()),
       sync: async () => runDirectorySync(signIn(), await getOrgId()),
