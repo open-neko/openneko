@@ -1,12 +1,21 @@
 # openneko
 
-The OpenNeko operator CLI — a single Go binary that supervises the Docker
-stack and installs solution packs. Same binary works on an operator's
-laptop, on a self-hosted server, and inside the worker container.
+The OpenNeko CLI and server — a single Go binary that runs `openneko web`
+(the static web app server, `/api/v1/*` routes, River background jobs,
+channels, solution packs, and Ax agent turns), `openneko serve` (the Ax
+harness socket, customer and subscriptions GraphJin supervisors, and file
+search/SQL), and the operator CLI (native Linux supervisor, Docker Compose
+stack supervisor, migrations, backups, and solution pack commands).
 
 ## Install
 
-One line, any platform:
+On Linux without Docker (native install):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/open-neko/openneko/main/scripts/install-native.sh | sh
+```
+
+With Docker (macOS or Linux):
 
 ```bash
 curl -fsSL https://openneko.app/install.sh | sh
@@ -14,7 +23,7 @@ curl -fsSL https://openneko.app/install.sh | sh
 
 The installer detects your OS/arch and installs via Homebrew on macOS or a
 checksum-verified release tarball on Linux (amd64 / arm64). Then run the guided
-`openneko setup`.
+`openneko setup` (Docker) or `openneko start --native` (Linux native).
 
 Manual:
 

@@ -1,7 +1,27 @@
 # Worker
 
-The worker owns background jobs, workflow execution, sign-in, channel
-delivery, and the durable workflow scheduler.
+`openneko web` (in `apps/openneko/internal/webfront` and `internal/jobs`) now
+runs the River background jobs, workflow execution, channel polling and
+delivery, solution pack install/doctor/OAuth/actions, and the durable cron and
+subscription loops in Go.
+
+The Node worker (`apps/worker`) remains in the Docker stack for the admin
+surfaces that `openneko web` still calls over `--worker-admin-url`:
+
+- **Sign-in provider, Scalekit SSO setup, and Scalekit workspace connectors**
+  (`/admin/auth/*`, `/admin/sso/setup/*`, `/admin/connect/*`).
+- **Directory sync and provisioning** (`/admin/directory/status`,
+  `/admin/directory/sync`, and `/admin/directory/users`).
+- **GraphJin group grants** (`/admin/graphjin/group-grants*` and
+  `/admin/graphjin/api-operations`).
+- **Built-in action adapters** (`/admin/action-requests/create` and
+  `/admin/actions/execute` for `channel_admin`, `code_create_issue`,
+  `code_draft_patch`, `data_source_admin`, `group_admin`, `send_webhook`,
+  `source_config_admin`, and `user_admin`; pack actions and Magento store
+  changes run in Go).
+- **External-event ingress and health** (`POST /admin/events/external`,
+  `POST /admin/reconnect`, `GET /health`, `GET /health/scheduler`, and
+  `GET /health/security`).
 
 ## Durable workflow scheduler
 
@@ -12,7 +32,9 @@ firing ledger and outbox. A materialization transaction inserts the firing and
 advances its cursor together; the unique `(workflow_id, scheduled_for)` key
 makes concurrent or repeated sweeps idempotent.
 
-An independent 30-second worker loop:
+`openneko web` runs the cron sweep every 15 seconds in Go
+(`apps/openneko/internal/webfront/cronsweep.go`), and the Node worker runs the
+same 30-second loop (`apps/worker/src/workflow-scheduler.ts`):
 
 1. Synchronizes active definitions and materializes due firings.
 2. Recovers expired dispatch/run leases.

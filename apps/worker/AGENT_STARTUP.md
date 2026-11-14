@@ -1,13 +1,19 @@
 # Agent startup
 
-The web and worker images carry the agent runner at `/opt/openneko-agent`: two
-JavaScript bundles (`entry.js` and `mcp-bridge.js`) and the built-in skills. It
-does not include the worker's Node dependency tree, tsx, database libraries or
-embedding stack. The neko-serve image runs `openneko serve`. Terminal commands
-and script skills run in the optional sandbox service
+In production and native installs, `openneko web` runs chat, channel, workflow,
+metric and setup agent turns in Go (`apps/openneko/internal/webfront/turn*.go`),
+staging each run's workspace under `OPENNEKO_AGENT_RUNS_DIR`, serving MCP tool
+calls in-process, and running the Ax agent loop in `openneko serve` (or
+in-process when `OPENNEKO_SERVE_SOCKET` is unset). Terminal commands and script
+skills run in the optional sandbox service
 ([recipes/sandbox](../../recipes/sandbox/README.md)), which carries the
 document tools. See [AGENT_RUNTIME.md](../../AGENT_RUNTIME.md) for how they fit
 together.
+
+The web and worker Docker images also carry the legacy Node agent runner at
+`/opt/openneko-agent`: two JavaScript bundles (`entry.js` and `mcp-bridge.js`)
+and the built-in skills, exercised by the `apps/worker/test/agent-sandbox`
+and `@neko/llm` bundle tests described below.
 
 Each run stages its workspace in a fresh folder under `OPENNEKO_AGENT_RUNS_DIR`
 and starts `node /opt/openneko-agent/entry.js` as a child process in its own
