@@ -4,9 +4,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"regexp"
 	"testing"
 	"time"
+
+	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 )
 
 func TestMetricRefreshDue(t *testing.T) {
@@ -39,7 +40,7 @@ func TestMetricRefreshDue(t *testing.T) {
 
 func TestMetricSweep(t *testing.T) {
 	f, db := memoryFront(t)
-	seedPgBoss(t, db, f)
+	seedRiver(t, db, f)
 	ctx := context.Background()
 	const due, pendingID, daily, inactive = "e0000000-0000-4000-8000-000000000001", "e0000000-0000-4000-8000-000000000002",
 		"e0000000-0000-4000-8000-000000000003", "e0000000-0000-4000-8000-000000000004"
@@ -64,11 +65,8 @@ func TestMetricSweep(t *testing.T) {
 	if status != "pending" || kind != "metric_refresh" || trigger != "scheduled" || payload != `{"metricId": "`+due+`"}` {
 		t.Errorf("due metric: %s %s %s %s", status, kind, trigger, payload)
 	}
-	got := bossJobs(t, db, f, queueMetricRefresh)
-	for i := range got {
-		got[i].Data = regexp.MustCompile(`"queuedAt": \d{13}, `).ReplaceAllString(got[i].Data, "")
-	}
-	if len(got) != 1 || got[0].Data != `{"orgId": "org", "processingJobId": "`+jobRef+`"}` || got[0].RetryLimit != 2 || got[0].RetryWait != 30 || got[0].KeepDays != 7 {
+	got := riverQueueJobs(t, db, jobs.KindMetricRefresh, jobs.QueueMetricRefresh)
+	if len(got) != 1 || got[0].Args != `{"orgId": "org", "processingJobId": "`+jobRef+`"}` || got[0].MaxAttempts != 3 {
 		t.Errorf("queued jobs: %+v", got)
 	}
 	var others int
@@ -104,14 +102,14 @@ func TestMetricSweep(t *testing.T) {
 	if err := f.API.MetricSweep(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if got := bossJobs(t, db, f, queueMetricRefresh); len(got) != 1 {
+	if got := riverQueueJobs(t, db, jobs.KindMetricRefresh, jobs.QueueMetricRefresh); len(got) != 1 {
 		t.Errorf("second sweep queued again: %+v", got)
 	}
 
 	seed(t, db, `update spend_limit set metric_refresh = null where org_id = 'org' and workflow_id is null`)
 	seed(t, db, `update metric set updated_at = now() - interval '2 days' where id = $1`, daily)
-	f.API.BossSchema = "missing_boss"
-	f.API.queues.Delete(queueMetricRefresh)
+	inserter := f.API.Jobs
+	f.API.Jobs = nil
 	if err := f.API.MetricSweep(ctx); err == nil {
 		t.Errorf("the sweep passed with no queue")
 	}
@@ -119,4 +117,5 @@ func TestMetricSweep(t *testing.T) {
 	if status != "ok" {
 		t.Errorf("a failed sweep left the metric %s", status)
 	}
+	f.API.Jobs = inserter
 }

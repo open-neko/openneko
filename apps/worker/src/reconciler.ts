@@ -4,7 +4,6 @@ import {
   eq,
   inArray,
   lte,
-  metric,
   notInArray,
   processing_job,
   sql,
@@ -162,7 +161,6 @@ export async function reconcileStaleProcessingJobs(opts?: {
         .update(processing_job)
         .set({ status: "failed", error: reason, finished_at: now, updated_at: now })
         .where(eq(processing_job.id, c.id));
-      await failOwningMetricIfRefresh(c.id, c.kind, reason);
       summary.lost++;
       continue;
     }
@@ -188,7 +186,6 @@ export async function reconcileStaleProcessingJobs(opts?: {
         .update(processing_job)
         .set({ status: "failed", error: msg, finished_at: now, updated_at: now })
         .where(eq(processing_job.id, c.id));
-      await failOwningMetricIfRefresh(c.id, c.kind, msg);
       summary.failed++;
       continue;
     }
@@ -216,20 +213,4 @@ export async function reconcileStaleProcessingJobs(opts?: {
   }
 
   return summary;
-}
-
-async function failOwningMetricIfRefresh(
-  processingJobId: string,
-  kind: string,
-  errorMsg: string,
-): Promise<void> {
-  if (kind !== "metric_refresh") return;
-  await db()
-    .update(metric)
-    .set({
-      last_refresh_status: "failed",
-      last_refresh_error: errorMsg,
-      updated_at: new Date(),
-    })
-    .where(eq(metric.last_refresh_job_id, processingJobId));
 }

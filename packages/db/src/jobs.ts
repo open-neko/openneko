@@ -13,7 +13,6 @@ import { buildPoolConfig } from "./connection";
 import { pool } from "./index";
 
 export const QUEUE = {
-  METRIC_REFRESH: "metric_refresh",
   WORK_RUN: "work_run",
   WORKFLOW_RUN_FIRE: "workflow_run_fire",
   CHANNEL_DELIVER: "channel_deliver",
@@ -36,6 +35,7 @@ export const MOVED_QUEUES = [
   "business_profile_build",
   "industry_insights_build",
   "bootstrap_metrics_build",
+  "metric_refresh",
 ] as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
@@ -61,10 +61,6 @@ export type ProcessingJobPayload = {
   queuedAt?: number;
   processingJobId: string;
   orgId: string;
-};
-
-export type MetricRefreshPayload = ProcessingJobPayload & {
-  trigger?: string;
 };
 
 export type WorkRunPayload = ProcessingJobPayload & {
@@ -140,6 +136,21 @@ export async function enqueueActionExecute(payload: ActionExecutePayload): Promi
     `insert into river.river_job (kind, args, max_attempts, queue)
      values ('action_execute', $1::jsonb, 3, 'default') returning id::text`,
     [JSON.stringify({ orgId: payload.orgId, actionRequestId: payload.actionRequestId })],
+  );
+  return rows[0]!.id;
+}
+
+/**
+ * Queues one metric refresh on River for its processing_job row.
+ * `jobs.MetricRefreshArgs` in apps/openneko/internal/jobs reads the row;
+ * the queue and max_attempts match `jobs.QueueMetricRefresh` and
+ * `jobs.BuildAttempts`.
+ */
+export async function enqueueMetricRefresh(payload: ProcessingJobPayload): Promise<string> {
+  const { rows } = await pool().query<{ id: string }>(
+    `insert into river.river_job (kind, args, max_attempts, queue)
+     values ('metric_refresh', $1::jsonb, 3, 'metric_refresh') returning id::text`,
+    [JSON.stringify({ orgId: payload.orgId, processingJobId: payload.processingJobId })],
   );
   return rows[0]!.id;
 }
@@ -230,7 +241,7 @@ export async function enqueue<T extends object>(
 ): Promise<string | null> {
   await ensureQueue(queue);
   const b = await boss();
-  return b.send(queue, (queue === QUEUE.WORK_RUN || queue === QUEUE.METRIC_REFRESH || queue === QUEUE.WORKFLOW_RUN_FIRE) ? { ...(data as object), queuedAt: Date.now() } : data as object, { ...DEFAULT_SEND_OPTS, ...(opts ?? {}) });
+  return b.send(queue, (queue === QUEUE.WORK_RUN || queue === QUEUE.WORKFLOW_RUN_FIRE) ? { ...(data as object), queuedAt: Date.now() } : data as object, { ...DEFAULT_SEND_OPTS, ...(opts ?? {}) });
 }
 
 export async function stopBoss(): Promise<void> {

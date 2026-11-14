@@ -391,8 +391,8 @@ func TestBootstrapMetricsBuild(t *testing.T) {
 	if n := rowText(t, db, `select count(*)::text from processing_job where kind = 'metric_refresh' and trigger = 'chain_after_bootstrap_metrics_build' and trigger_payload ? 'metricId'`); n != "4" {
 		t.Errorf("refresh rows: %s", n)
 	}
-	if j := bossJobs(t, db, f, queueMetricRefresh); len(j) != 4 {
-		t.Errorf("refresh jobs: %d", len(j))
+	if j := riverQueueJobs(t, db, jobs.KindMetricRefresh, jobs.QueueMetricRefresh); len(j) != 4 || j[0].MaxAttempts != 3 {
+		t.Errorf("refresh jobs: %+v", j)
 	}
 
 	again := newBuildJob(t, db, jobs.KindBootstrapMetricsBuild)

@@ -4,7 +4,6 @@ import {
   AGENT_BACKEND_OPTIONS,
   AGENT_DEFAULT_GLOBAL_CAP,
   isAgentBackendId,
-  metricRefreshConcurrency,
 } from "../src/agent-backend";
 
 describe("isAgentBackendId", () => {
@@ -44,18 +43,3 @@ describe("default concurrency cap", () => {
   });
 });
 
-describe("metricRefreshConcurrency", () => {
-  it("defaults to two refreshes and never exceeds the global cap", () => {
-    expect(metricRefreshConcurrency(3)).toBe(2);
-    expect(metricRefreshConcurrency(1)).toBe(1);
-  });
-  it("follows a valid override up to the global cap", () => {
-    expect(metricRefreshConcurrency(8, "4")).toBe(4);
-    expect(metricRefreshConcurrency(3, "6")).toBe(3);
-  });
-  it("ignores an invalid override", () => {
-    expect(metricRefreshConcurrency(8, "0")).toBe(2);
-    expect(metricRefreshConcurrency(8, "many")).toBe(2);
-    expect(metricRefreshConcurrency(8, "")).toBe(2);
-  });
-});

@@ -3,6 +3,9 @@ package jobs
 import (
 	"context"
 	"errors"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -17,16 +20,20 @@ const (
 	KindBusinessProfileBuild  = "business_profile_build"
 	KindIndustryInsightsBuild = "industry_insights_build"
 	KindBootstrapMetricsBuild = "bootstrap_metrics_build"
+	KindMetricRefresh         = "metric_refresh"
+	QueueMetricRefresh        = "metric_refresh"
 	BuildAttempts             = 3
 	BuildRetryDelay           = 30 * time.Second
 )
 
 // buildTimeouts cover each job's own model limits: three profiler turns, two
-// deep research calls of up to 20 minutes, one bootstrap turn.
+// deep research calls of up to 20 minutes, one bootstrap turn, three metric
+// agent turns.
 var buildTimeouts = map[string]time.Duration{
 	KindBusinessProfileBuild:  35 * time.Minute,
 	KindIndustryInsightsBuild: 50 * time.Minute,
 	KindBootstrapMetricsBuild: 15 * time.Minute,
+	KindMetricRefresh:         30 * time.Minute,
 }
 
 // ErrNoRetry marks a build failure that a retry cannot fix, such as a model
@@ -50,9 +57,17 @@ type BootstrapMetricsBuildArgs BuildArgs
 
 func (BootstrapMetricsBuildArgs) Kind() string { return KindBootstrapMetricsBuild }
 
+type MetricRefreshArgs BuildArgs
+
+func (MetricRefreshArgs) Kind() string { return KindMetricRefresh }
+
+func (MetricRefreshArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{MaxAttempts: BuildAttempts, Queue: QueueMetricRefresh}
+}
+
 type buildArgs interface {
 	river.JobArgs
-	BusinessProfileBuildArgs | IndustryInsightsBuildArgs | BootstrapMetricsBuildArgs
+	BusinessProfileBuildArgs | IndustryInsightsBuildArgs | BootstrapMetricsBuildArgs | MetricRefreshArgs
 }
 
 // BuildFunc runs one build and keeps its processing_job row up to date.
@@ -86,6 +101,17 @@ func addBuildWorkers(workers *river.Workers, run BuildFunc) {
 	river.AddWorker(workers, &buildWorker[BusinessProfileBuildArgs]{run: run})
 	river.AddWorker(workers, &buildWorker[IndustryInsightsBuildArgs]{run: run})
 	river.AddWorker(workers, &buildWorker[BootstrapMetricsBuildArgs]{run: run})
+	river.AddWorker(workers, &buildWorker[MetricRefreshArgs]{run: run})
+}
+
+// MetricRefreshWorkers is metricRefreshConcurrency() of the worker:
+// OPENNEKO_METRIC_REFRESH_CONCURRENCY, else 2. The agent slots bound all
+// turns of the process.
+func MetricRefreshWorkers() int {
+	if n, err := strconv.Atoi(strings.TrimSpace(os.Getenv("OPENNEKO_METRIC_REFRESH_CONCURRENCY"))); err == nil && n >= 1 {
+		return n
+	}
+	return 2
 }
 
 // Build queues one setup build in the caller's transaction.
@@ -99,9 +125,15 @@ func (i *Inserter) Build(ctx context.Context, tx pgx.Tx, kind, orgID, processing
 		args = IndustryInsightsBuildArgs(a)
 	case KindBootstrapMetricsBuild:
 		args = BootstrapMetricsBuildArgs(a)
+	case KindMetricRefresh:
+		args = MetricRefreshArgs(a)
 	default:
 		return errors.New("unknown build job " + kind)
 	}
-	_, err := i.client.InsertTx(ctx, tx, args, &river.InsertOpts{MaxAttempts: attempts})
+	opts := &river.InsertOpts{MaxAttempts: attempts}
+	if kind == KindMetricRefresh {
+		opts.Queue = QueueMetricRefresh
+	}
+	_, err := i.client.InsertTx(ctx, tx, args, opts)
 	return err
 }

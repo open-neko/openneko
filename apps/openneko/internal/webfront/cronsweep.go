@@ -605,10 +605,15 @@ func watcherGraphQL(ctx context.Context, endpoint string, header http.Header, qu
 				messages = append(messages, jsValueString(t))
 			}
 		}
-		return nil, errors.New(strings.Join(messages, "; "))
+		return nil, graphqlErrors(strings.Join(messages, "; "))
 	}
 	return out.vals["data"], nil
 }
+
+// graphqlErrors holds the messages of a response's errors array.
+type graphqlErrors string
+
+func (e graphqlErrors) Error() string { return string(e) }
 
 // packArtifactSource is packArtifactSource() of
 // packages/llm/src/graphjin/pack-source.ts. A pack artifact runs only on the

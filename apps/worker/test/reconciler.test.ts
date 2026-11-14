@@ -17,7 +17,6 @@ import {
   and,
   db,
   eq,
-  metric,
   inArray,
   pool,
   processing_job,
@@ -202,11 +201,11 @@ describeIfReady("reconcileStaleProcessingJobs", () => {
   it("mirrors pg-boss completed state to processing_job=succeeded", async () => {
     const jobId = await insertProcessingJob({
       orgId,
-      kind: "metric_refresh",
+      kind: "work_run",
       status: "running",
     });
     await insertPgbossJob({
-      name: "metric_refresh",
+      name: "work_run",
       processingJobId: jobId,
       state: "completed",
     });
@@ -223,11 +222,11 @@ describeIfReady("reconcileStaleProcessingJobs", () => {
   it("mirrors pg-boss failed state and propagates the error message", async () => {
     const jobId = await insertProcessingJob({
       orgId,
-      kind: "metric_refresh",
+      kind: "work_run",
       status: "running",
     });
     await insertPgbossJob({
-      name: "metric_refresh",
+      name: "work_run",
       processingJobId: jobId,
       state: "failed",
       outputMessage: "agent crashed: ENOENT",
@@ -243,11 +242,11 @@ describeIfReady("reconcileStaleProcessingJobs", () => {
   it("treats pg-boss timeout (failed state with timeout message) as failed", async () => {
     const jobId = await insertProcessingJob({
       orgId,
-      kind: "metric_refresh",
+      kind: "work_run",
       status: "running",
     });
     await insertPgbossJob({
-      name: "metric_refresh",
+      name: "work_run",
       processingJobId: jobId,
       state: "failed",
       outputMessage: "job failed by timeout in active state",
@@ -259,61 +258,14 @@ describeIfReady("reconcileStaleProcessingJobs", () => {
     expect(row.error).toContain("timeout");
   });
 
-  it("propagates metric_refresh failure to metric.last_refresh_status", async () => {
-    const metricInsert = await db()
-      .insert(metric)
-      .values({
-        org_id: orgId,
-        role: "CEO",
-        slug: "rec-test",
-        source: "bootstrap",
-        title: "Reconciler test",
-        why: "Validate the reconciler propagates failure to metric",
-        chart_hint: "kpi",
-        active: true,
-        last_refresh_status: "pending",
-      })
-      .returning({ id: metric.id });
-    const metricId = metricInsert[0]!.id;
-
-    const jobId = await insertProcessingJob({
-      orgId,
-      kind: "metric_refresh",
-      status: "queued",
-    });
-    await db()
-      .update(metric)
-      .set({ last_refresh_job_id: jobId })
-      .where(eq(metric.id, metricId));
-    await insertPgbossJob({
-      name: "metric_refresh",
-      processingJobId: jobId,
-      state: "failed",
-      outputMessage: "upstream provider unavailable",
-    });
-
-    await reconcileStaleProcessingJobs({ orgId });
-
-    const m = await db()
-      .select({
-        status: metric.last_refresh_status,
-        err: metric.last_refresh_error,
-      })
-      .from(metric)
-      .where(eq(metric.id, metricId))
-      .limit(1);
-    expect(m[0]?.status).toBe("failed");
-    expect(m[0]?.err).toBe("upstream provider unavailable");
-  });
-
   it("resets running -> queued when pg-boss is still active (handler crashed mid-flight)", async () => {
     const jobId = await insertProcessingJob({
       orgId,
-      kind: "metric_refresh",
+      kind: "work_run",
       status: "running",
     });
     await insertPgbossJob({
-      name: "metric_refresh",
+      name: "work_run",
       processingJobId: jobId,
       state: "active",
     });
@@ -329,11 +281,11 @@ describeIfReady("reconcileStaleProcessingJobs", () => {
   it("leaves a queued row alone when pg-boss is still active", async () => {
     const jobId = await insertProcessingJob({
       orgId,
-      kind: "metric_refresh",
+      kind: "work_run",
       status: "queued",
     });
     await insertPgbossJob({
-      name: "metric_refresh",
+      name: "work_run",
       processingJobId: jobId,
       state: "created",
     });
@@ -346,7 +298,7 @@ describeIfReady("reconcileStaleProcessingJobs", () => {
   it("marks orphaned (no pg-boss row) processing_job as failed", async () => {
     const jobId = await insertProcessingJob({
       orgId,
-      kind: "metric_refresh",
+      kind: "work_run",
       status: "queued",
     });
 
@@ -359,26 +311,25 @@ describeIfReady("reconcileStaleProcessingJobs", () => {
   });
 
   it("leaves the rows of a River queue alone", async () => {
-    const jobId = await insertProcessingJob({
-      orgId,
-      kind: "business_profile_build",
-      status: "running",
-    });
+    const ids = [
+      await insertProcessingJob({ orgId, kind: "business_profile_build", status: "running" }),
+      await insertProcessingJob({ orgId, kind: "metric_refresh", status: "queued" }),
+    ];
 
     const summary = await reconcileStaleProcessingJobs({ orgId });
     expect(summary.lost).toBe(0);
-    const row = await readProcessingJob(jobId);
-    expect(row.status).toBe("running");
+    expect((await readProcessingJob(ids[0]!)).status).toBe("running");
+    expect((await readProcessingJob(ids[1]!)).status).toBe("queued");
   });
 
   it("respects minAgeMs — leaves recent rows untouched", async () => {
     const jobId = await insertProcessingJob({
       orgId,
-      kind: "metric_refresh",
+      kind: "work_run",
       status: "running",
     });
     await insertPgbossJob({
-      name: "metric_refresh",
+      name: "work_run",
       processingJobId: jobId,
       state: "failed",
       outputMessage: "permanent",

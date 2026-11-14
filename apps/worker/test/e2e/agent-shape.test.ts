@@ -32,9 +32,9 @@ import { randomUUID } from "node:crypto";
 import {
   provisionHostConfig,
   runMetricAgent,
+  validateMetricResult,
   type MetricAgentInput,
 } from "@neko/llm";
-import { validateResult } from "../../src/jobs/metric-refresh.js";
 import { detectRunnablePlans, type RunPlan } from "./_can-run";
 import { seedE2ETestOrg } from "./_seed-org";
 import { applyPlan } from "./_set-backend";
@@ -151,7 +151,7 @@ describeIfRunnable("E2E: metric agent shape", () => {
           windowLabel: result.timeWindow?.label ?? "",
         });
 
-        const validationError = validateResult(result);
+        const validationError = validateMetricResult(result);
         expect(
           validationError,
           `validateResult error: ${validationError}`,

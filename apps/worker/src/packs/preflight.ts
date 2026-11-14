@@ -117,7 +117,7 @@ export async function runPackReadPreflight(bundle: SolutionPackBundle, endpoint:
 }
 
 export async function enqueuePackMetricRefreshes(orgId: string, bundle: SolutionPackBundle): Promise<number> {
-  const { enqueue, QUEUE } = await import("@neko/db/jobs");
+  const { enqueueMetricRefresh } = await import("@neko/db/jobs");
   let enqueued = 0;
   for (const artifact of bundle.artifacts.filter((value) => value.kind === "metric")) {
     const definition = artifactRecord(artifact);
@@ -127,7 +127,7 @@ export async function enqueuePackMetricRefreshes(orgId: string, bundle: Solution
     if (!job) continue;
     await db().update(metric).set({ last_refresh_status: "pending", last_refresh_error: null, last_refresh_job_id: job.id, updated_at: new Date() }).where(eq(metric.id, card.id));
     try {
-      await enqueue(QUEUE.METRIC_REFRESH, { processingJobId: job.id, orgId });
+      await enqueueMetricRefresh({ processingJobId: job.id, orgId });
       enqueued++;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

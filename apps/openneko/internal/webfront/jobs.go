@@ -103,7 +103,7 @@ func (a *API) send(ctx context.Context, tx pgx.Tx, queue string, data any, retry
 	if err != nil {
 		return "", err
 	}
-	if queue == queueMetricRefresh || queue == queueWorkflowRunFire {
+	if queue == queueWorkflowRunFire {
 		if raw, err = withQueuedAt(raw); err != nil {
 			return "", err
 		}

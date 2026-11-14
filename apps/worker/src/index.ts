@@ -51,7 +51,6 @@ import {
 import {
   agentTurnTimeoutMs,
   cancelAllAgents,
-  metricRefreshConcurrency,
   prefetchKnowledgeForOrg,
   provisionHostConfig,
   resolveAgentConcurrency,
@@ -94,7 +93,6 @@ import {
   setChannelsChangedHook,
 } from "./channels/runtime.js";
 import type PgBossLib from "pg-boss";
-import { runMetricRefresh } from "./jobs/metric-refresh.js";
 import { runWorkRun } from "./jobs/work-run.js";
 import { runWorkflowRunFire } from "./jobs/workflow-run-fire.js";
 import { runActionExecute } from "./jobs/action-execute.js";
@@ -605,24 +603,6 @@ for (let i = 0; i < concurrency.globalCap; i++) {
     QUEUE.WORK_RUN,
     { batchSize: 1, pollingIntervalSeconds: 0.5 },
     workRunHandler,
-  );
-}
-
-const metricRefreshHandler = makeHandler<ProcessingJobPayload>(
-  async (jobId, orgId) => {
-    await runMetricRefresh(jobId, orgId);
-  },
-);
-const metricRefreshCap = metricRefreshConcurrency(
-  concurrency.globalCap,
-  process.env.OPENNEKO_METRIC_REFRESH_CONCURRENCY,
-);
-console.log(`[worker] concurrency: metric refresh=${metricRefreshCap}`);
-for (let i = 0; i < metricRefreshCap; i++) {
-  await b.work(
-    QUEUE.METRIC_REFRESH,
-    { batchSize: 1, pollingIntervalSeconds: 0.5 },
-    metricRefreshHandler,
   );
 }
 
