@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -28,13 +27,11 @@ import (
 )
 
 const (
-	SessionCookie        = "openneko_session"
-	providerCacheTTL     = time.Second
-	adminCacheTTL        = 5 * time.Second
-	workerStatusTimeout  = 1500 * time.Millisecond
-	workerStatusMaxBytes = 64 * 1024
-	deviceIdleDays       = 30
-	lastUsedResolution   = 60
+	SessionCookie      = "openneko_session"
+	providerCacheTTL   = time.Second
+	adminCacheTTL      = 5 * time.Second
+	deviceIdleDays     = 30
+	lastUsedResolution = 60
 )
 
 var (
@@ -46,8 +43,9 @@ var (
 // server: it reads the signed session cookie or a device token and the
 // Administrators membership.
 type Gate struct {
-	WorkerURL string
-	DB        *pgxpool.Pool
+	WorkerURL  string
+	SecretsDir string
+	DB         *pgxpool.Pool
 	// SessionSecret returns the cookie signing secret; nil reads
 	// OPENNEKO_SESSION_SECRET or derives it from the secret-key file.
 	SessionSecret func() (string, error)
@@ -325,47 +323,6 @@ func (g *Gate) Status(ctx context.Context) AuthStatus {
 	return status
 }
 
-func (g *Gate) fetchStatus(ctx context.Context) (AuthStatus, error) {
-	base := strings.TrimRight(g.WorkerURL, "/")
-	if base == "" {
-		base = "http://127.0.0.1:4100"
-	}
-	ctx, cancel := context.WithTimeout(ctx, workerStatusTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/admin/auth/status", nil)
-	if err != nil {
-		return AuthStatus{}, err
-	}
-	req.Header.Set("Accept", "application/json")
-	client := g.Client
-	if client == nil {
-		client = http.DefaultClient
-	}
-	res, err := client.Do(req)
-	if err != nil {
-		return AuthStatus{}, err
-	}
-	defer res.Body.Close()
-	if res.StatusCode < 200 || res.StatusCode > 299 {
-		return AuthStatus{}, errStatus
-	}
-	raw, err := io.ReadAll(io.LimitReader(res.Body, workerStatusMaxBytes+1))
-	if err != nil {
-		return AuthStatus{}, err
-	}
-	if len(raw) > workerStatusMaxBytes {
-		return AuthStatus{}, errStatus
-	}
-	var body struct {
-		Provider json.RawMessage `json:"provider"`
-		Pending  json.RawMessage `json:"pending"`
-	}
-	if err := json.Unmarshal(raw, &body); err != nil {
-		return AuthStatus{}, err
-	}
-	return AuthStatus{Provider: object(body.Provider), Pending: object(body.Pending)}, nil
-}
-
 func object(raw json.RawMessage) json.RawMessage {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
@@ -384,12 +341,6 @@ func pluginName(provider json.RawMessage) string {
 	_ = json.Unmarshal(provider, &p)
 	return p.PluginName
 }
-
-type statusError string
-
-func (e statusError) Error() string { return string(e) }
-
-const errStatus = statusError("the worker did not give the sign-in status")
 
 // DefaultMarkerPath matches markerPath() in apps/web/src/lib/auth-gate-marker.ts.
 func DefaultMarkerPath() string {

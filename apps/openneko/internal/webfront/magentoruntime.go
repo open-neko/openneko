@@ -513,8 +513,6 @@ func magentoStringField(value any, field string) (string, bool) {
 func isMagentoCreate(op *magentoOperation) bool { return strings.Contains(op.OperationID, "Create") }
 func isMagentoDelete(op *magentoOperation) bool { return strings.Contains(op.OperationID, "Delete") }
 
-// magentoReconciliationConfirmed matches reconciliationConfirmed() in
-// apps/worker/src/packs/magento-v2-runtime.ts.
 func magentoReconciliationConfirmed(op *magentoOperation, reconciled *jsObj, expected any) bool {
 	if op.ReadPath == "" {
 		return true
@@ -1111,9 +1109,8 @@ func (a *API) setActionRequestPayload(ctx context.Context, req *actionRequestRec
 	return nil
 }
 
-// prepareMagentoChangeset matches prepareChangeset() in
-// apps/worker/src/packs/magento-v2-runtime.ts: it reads the before-images,
-// classifies and caps the change, and stores the change-set preview.
+// prepareMagentoChangeset reads the before-images, classifies and caps the
+// change, and stores the change-set preview.
 func (a *API) prepareMagentoChangeset(ctx context.Context, req *actionRequestRecord, def *magentoActionDefinition) error {
 	payload, err := parseMagentoChangePayload(req.Payload)
 	if err != nil {

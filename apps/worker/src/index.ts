@@ -1,21 +1,14 @@
 import { withStartupTrace, startupPhase } from "@neko/telemetry/startup";
-import { keepProcessThroughDatabaseRestarts, readLocalConfig, secretsBackendError, soloAdminNeedsEmail } from "@neko/db";
+import { keepProcessThroughDatabaseRestarts, readLocalConfig, secretsBackendError } from "@neko/db";
 import "dotenv/config";
 
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { adminSocketPath, listenAdmin } from "./admin-listen.js";
 import { boss, MOVED_QUEUES, RETIRED_QUEUES } from "@neko/db/jobs";
-import {
-  createAdminHandler,
-  type SsoSetupHandlerSurface,
-} from "./admin-server.js";
-import {
-  SsoSetupService,
-  startSsoSetupPoller,
-} from "./sso/sso-setup-service.js";
+import { createAdminHandler } from "./admin-server.js";
 import { CoreSecrets } from "./secrets/core-secrets.js";
-import { SignInService, type SignInProviderId } from "./signin/signin-service.js";
+import { SignInService } from "./signin/signin-service.js";
 import {
   applyGroupGrants,
   disableGroupGrants,
@@ -33,7 +26,6 @@ import {
   db,
   desc,
   eq,
-  activeAdministratorIds,
   getOrgId,
   isNull,
 } from "@neko/db";
@@ -54,12 +46,10 @@ import {
   handleSubscriptionMatch,
   registerActionRequestCreatedHook,
   registerBuiltinAdapters,
-  registerFallbackActionAdapterResolver,
   seedDefaultActionPolicies,
   startSubscriptionManager,
   type DataSourceContext,
 } from "@neko/llm/workflows";
-import { resolveDeclarativePackActionAdapter, registerPackConnectionPreflight } from "./packs/declarative-action-runtime.js";
 import { ensureOrgWorkspace, getOrgAgentRoot, reportDeploymentProfile, setAgentSlotLimit } from "@neko/llm/work";
 import { removeRetiredQueue } from "./pg-boss-helpers.js";
 import { setCoreSecretsInstance } from "./secrets/instance.js";
@@ -73,9 +63,6 @@ import {
   initializeWorkerTelemetry,
   shutdownWorkerTelemetry,
 } from "./telemetry.js";
-import { PackService } from "./packs/service.js";
-import { registerPackActionPreflight } from "./packs/action-preflight.js";
-import { registerMagentoV2Runtime } from "./packs/magento-v2-runtime.js";
 
 {
   const problem = secretsBackendError(readLocalConfig());
@@ -103,7 +90,6 @@ if (initializeWorkerTelemetry()) {
 }
 
 const ADMIN_ORG_ID = await getOrgId();
-const packService = new PackService(ADMIN_ORG_ID);
 // SEC8: state the security posture once at boot; hardened warns when
 // the model host is a public cloud API (on-prem LLM is client-provided).
 reportDeploymentProfile();
@@ -112,7 +98,6 @@ reportDeploymentProfile();
 // server starts taking requests; the admin handler reaches them through
 // closures and reports "not ready" until then.
 let coreSecrets: CoreSecrets | null = null;
-let ssoSetupService: SsoSetupService | null = null;
 let signInService: SignInService | null = null;
 function signIn(): SignInService {
   if (!signInService) throw new Error("sign-in service not ready");
@@ -120,57 +105,8 @@ function signIn(): SignInService {
 }
 let actionRequestPreflightReady = false;
 let actionAdaptersReady = false;
-function ssoSetupSurface(): SsoSetupHandlerSurface {
-  return {
-    getStatus: (orgId) => {
-      if (!ssoSetupService) throw new Error("SSO setup service not ready");
-      return ssoSetupService.getStatus(orgId);
-    },
-    setScalekitIds: (orgId, input) => {
-      if (!ssoSetupService) throw new Error("SSO setup service not ready");
-      return ssoSetupService.setScalekitIds(orgId, input);
-    },
-    listEnvironments: (orgId) => {
-      if (!ssoSetupService) throw new Error("SSO setup service not ready");
-      return ssoSetupService.listEnvironments(orgId);
-    },
-    listOrganizations: (orgId, environmentId) => {
-      if (!ssoSetupService) throw new Error("SSO setup service not ready");
-      return ssoSetupService.listOrganizations(orgId, environmentId);
-    },
-    getEnvironmentCredentials: (orgId, environmentId) => {
-      if (!ssoSetupService) throw new Error("SSO setup service not ready");
-      return ssoSetupService.getEnvironmentCredentials(orgId, environmentId);
-    },
-    setSignInCredentials: (orgId, input) => {
-      if (!ssoSetupService) throw new Error("SSO setup service not ready");
-      return ssoSetupService.setSignInCredentials(orgId, input);
-    },
-    generatePortalLink: (orgId) => {
-      if (!ssoSetupService) throw new Error("SSO setup service not ready");
-      return ssoSetupService.generatePortalLink(orgId);
-    },
-    checkConnection: (orgId) => {
-      if (!ssoSetupService) throw new Error("SSO setup service not ready");
-      return ssoSetupService.checkConnection(orgId);
-    },
-  };
-}
 const server = createServer(
   createAdminHandler({
-    auth: {
-      getAuthProvider: () => signInService?.getAuthProvider() ?? null,
-      authSignInReady: () => signInService?.authSignInReady() ?? false,
-      getAuthEnvGaps: () => signInService?.getAuthEnvGaps() ?? null,
-      getAuthConfiguredEnvKeys: () => signInService?.getAuthConfiguredEnvKeys() ?? [],
-      getAuthDeclaredEnvKeys: () => signInService?.getAuthDeclaredEnvKeys() ?? [],
-      soloAdminNeedsEmail: async () => soloAdminNeedsEmail(await getOrgId()),
-      hasProvisionedAdmin: async () => (await activeAdministratorIds(await getOrgId())).length > 0,
-      setAuthSecret: (key, value) => signIn().setAuthSecret(key, value),
-      selectProvider: (provider) => signIn().selectProvider(provider as SignInProviderId | null),
-      beginAuth: (params) => signIn().beginAuth(params),
-      completeAuth: (params) => signIn().completeAuth(params),
-    },
     actions: {
       ready: () => actionAdaptersReady,
       execute: (input) => runActionExecute(input),
@@ -220,21 +156,6 @@ const server = createServer(
       sync: async () => runDirectorySync(signIn(), await getOrgId()),
       createUser: async (input) => createDirectoryUser(signIn(), input),
     },
-    packs: {
-      upload: (bytes, input) => packService.upload(bytes, input),
-      review: (packId, input, operation) => packService.review(packId, input, operation),
-      list: () => packService.list(),
-      inspect: (packId, version) => packService.inspect(packId, version),
-      plan: (packId, version) => packService.plan(packId, version),
-      status: (packId) => packService.status(packId),
-      doctor: (packId) => packService.doctor(packId),
-      install: (packId, input) => packService.install(packId, input),
-      configure: (packId, input) => packService.configure(packId, input),
-      upgrade: (packId, input) => packService.upgrade(packId, input),
-      uninstall: (packId, input) => packService.uninstall(packId, input),
-      magentoStoreManagement: () => packService.magentoStoreManagement(),
-      updateMagentoStoreManagement: (input) => packService.updateMagentoStoreManagement(input),
-    },
     connect: {
       getConnectProviders: () => signInService?.getConnectProviders() ?? [],
       getOperatorConnectStatus: (operatorId) =>
@@ -245,7 +166,6 @@ const server = createServer(
       completeConnect: (name, params) => signIn().completeConnect(name, params),
       disconnect: (name, operatorId) => signIn().disconnect(name, operatorId),
     },
-    ssoSetup: ssoSetupSurface(),
   }),
 );
 
@@ -266,10 +186,6 @@ console.log(
 
 await seedDefaultActionPolicies(ADMIN_ORG_ID);
 registerBuiltinAdapters();
-registerFallbackActionAdapterResolver(resolveDeclarativePackActionAdapter);
-const unregisterPackActionPreflight = registerPackActionPreflight();
-const unregisterPackConnectionPreflight = registerPackConnectionPreflight();
-const unregisterMagentoV2Runtime = registerMagentoV2Runtime();
 // Only now may the web process create action requests through this worker:
 // every worker-owned preflight hook is registered and will finish before the
 // request id is returned for an approval card.
@@ -296,19 +212,6 @@ coreSecrets = new CoreSecrets();
 await coreSecrets.start();
 setCoreSecretsInstance(coreSecrets);
 signInService = new SignInService(coreSecrets);
-{
-  const moved = await signInService.migrateLegacy().catch((err) => {
-    console.warn(`[worker] sign-in settings migration failed: ${err instanceof Error ? err.message : err}`);
-    return [];
-  });
-  if (moved.length > 0) console.log(`[worker] moved sign-in settings from ${moved.join(", ")}`);
-  const provider = signInService.getAuthProvider();
-  if (provider) {
-    console.log(`[worker] sign-in provider: ${provider.providerLabel}${signInService.authSignInReady() ? "" : " (setup pending)"}`);
-  }
-}
-ssoSetupService = new SsoSetupService(signInService);
-startSsoSetupPoller({ service: ssoSetupService, orgId: ADMIN_ORG_ID });
 {
   const sources = await db()
     .select({ mcp_url: data_source.mcp_url })
@@ -532,8 +435,6 @@ const shutdown = async (signal: string) => {
   clearInterval(reconcileTimer);
   clearInterval(knowledgeRefreshTimer);
   coreSecrets?.stop();
-  unregisterPackActionPreflight();
-  unregisterPackConnectionPreflight();
   server.close();
   const cancelled = cancelAllAgents();
   if (cancelled > 0) {

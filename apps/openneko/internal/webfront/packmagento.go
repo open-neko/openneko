@@ -291,8 +291,6 @@ func probeMagentoDomain(ctx context.Context, endpoint, token string, client *htt
 	return "acl_missing"
 }
 
-// runMagentoPreflight is runMagentoPreflight() of
-// apps/worker/src/packs/magento-preflight.ts, in the same order of checks.
 func runMagentoPreflight(ctx context.Context, in magentoPreflightInput, client *http.Client) (*magentoPreflightResult, error) {
 	cfg := mysql.NewConfig()
 	cfg.User, cfg.Passwd, cfg.DBName = in.username, in.password, in.database

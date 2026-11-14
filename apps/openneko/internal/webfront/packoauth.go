@@ -385,8 +385,9 @@ func holdsAll(have, want []string) bool {
 	return true
 }
 
-// packTokens matches PackOAuthTokens in packages/packs/src/oauth-client.ts;
-// the worker decrypts and reads this JSON.
+// packTokens matches PackOAuthTokens in
+// packages/llm/src/graphjin/pack-oauth-client.ts; the worker decrypts and
+// reads this JSON.
 type packTokens struct {
 	AccessToken  string   `json:"accessToken"`
 	RefreshToken string   `json:"refreshToken,omitempty"`
@@ -394,7 +395,6 @@ type packTokens struct {
 	Scopes       []string `json:"scopes"`
 }
 
-// providerJSON matches providerJson() in packages/packs/src/oauth-client.ts.
 func providerJSON(req *http.Request, operation string) (map[string]any, error) {
 	res, err := providerClient.Do(req)
 	if err != nil {
@@ -423,7 +423,6 @@ func refreshPackToken(ctx context.Context, conn *packConnection, clientID, clien
 		{"client_id", clientID}, {"client_secret", clientSecret}, {"refresh_token", refreshToken}})
 }
 
-// packTokenRequest matches parseTokens() in packages/packs/src/oauth-client.ts.
 func packTokenRequest(ctx context.Context, conn *packConnection, operation, fallbackRefresh string, fallbackScopes []string, fields [][2]string) (*packTokens, error) {
 	var form searchParams
 	for _, kv := range fields {

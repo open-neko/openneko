@@ -45,6 +45,7 @@ type Queue struct {
 	Build            BuildFunc
 	WorkflowRunFire  WorkflowRunFireFunc
 	WorkflowAPISweep func(context.Context) error
+	SSOSetupPoll     func(context.Context) error
 	WorkRun          func(ctx context.Context, args WorkRunArgs) error
 	// ChannelDeliver asks the Node worker to send on a channel; the channel
 	// adapters live in the worker until the channels move.
@@ -186,6 +187,7 @@ func (q *Queue) config() *river.Config {
 	addBuildWorkers(workers, q.Build)
 	river.AddWorker(workers, &workflowRunFire{run: q.WorkflowRunFire})
 	river.AddWorker(workers, &workflowAPISweep{run: q.WorkflowAPISweep})
+	river.AddWorker(workers, &ssoSetupPoll{run: q.SSOSetupPoll})
 	river.AddWorker(workers, &workRun{run: q.WorkRun})
 	river.AddWorker(workers, &channelDeliver{run: q.ChannelDeliver})
 	river.AddWorker(workers, &webPush{run: q.WebPush})
@@ -220,6 +222,7 @@ var cronJobs = []cronJob{
 	{schedule: SixHourly{}, period: 6 * time.Hour, args: DirectorySyncArgs{}},
 	{schedule: QuarterHourly{}, period: 15 * time.Minute, args: BotNameSweepArgs{}, runOnStart: true},
 	{schedule: EveryMinute{}, period: time.Minute, args: WorkflowAPISweepArgs{}, runOnStart: true},
+	{schedule: EveryMinute{}, period: time.Minute, args: SSOSetupPollArgs{}},
 }
 
 // MetricsRefreshOn reports OPENNEKO_METRICS_REFRESH=on. Each metric refresh

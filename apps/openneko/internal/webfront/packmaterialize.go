@@ -62,8 +62,6 @@ func jsURLText(raw string) string {
 	return strings.TrimSuffix(u.String(), "/")
 }
 
-// declarativeGraphjinUpdate is declarativeGraphjinUpdate() of
-// apps/worker/src/packs/declarative.ts.
 func declarativeGraphjinUpdate(bundle *packs.Bundle, inputs map[string]any, secretValues map[string]string, retired []string,
 	bindings map[string]string, api *packAPIArtifacts, callerAccess string) (map[string]any, error) {
 	if err := declarativePackChecks(bundle, inputs, secretValues, bindings); err != nil {

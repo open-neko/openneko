@@ -52,7 +52,6 @@ func isJSObj(v any) bool {
 	return ok
 }
 
-// resolvePackInputs is resolveInputs() of apps/worker/src/packs/configuration.ts.
 func resolvePackInputs(bundle *packs.Bundle, supplied *jsObj) (*jsObj, error) {
 	for _, k := range supplied.ordered() {
 		if !bundle.Manifest.InputDeclared(k) {
@@ -453,8 +452,6 @@ var nativeTargetQuery = map[packs.ArtifactKind]string{
 	packs.KindAction:   `select 1 from pack_action_definition where org_id = $1 and kind = $2 limit 1`,
 }
 
-// assertNativeTargetsAvailable is assertNativeTargetsAvailable() of
-// apps/worker/src/packs/native-targets.ts.
 func (a *API) assertNativeTargetsAvailable(ctx context.Context, orgID string, bundle *packs.Bundle, plan *packs.Plan) error {
 	creates := map[string]bool{}
 	for _, e := range plan.Entries {

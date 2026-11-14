@@ -1,12 +1,22 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parse } from "yaml";
-import { parseManifest } from "@neko/packs/manifest";
 import { expect, test } from "@playwright/test";
+
+type Manifest = {
+  metadata: { id: string; name: string; version: string };
+  inputs: { key: string; type: string }[];
+  secrets: { key: string; purpose: string; required?: boolean }[];
+  oauth?: unknown[];
+  permissions?: { network: string[] };
+};
 
 // Only installation state is synthetic; provider content is read from the packs.
 test("built-in installation unlocks each pack's declared configuration", async ({ page }, testInfo) => {
-  const manifests = await Promise.all(["magento", "google-workspace"].map(async id => parseManifest(parse(await readFile(resolve("../../packs", id, "pack.yaml"), "utf8")))));
+  const manifests = await Promise.all(["magento", "google-workspace"].map(async id => {
+    const raw = parse(await readFile(resolve("../../packs", id, "pack.yaml"), "utf8")) as Manifest;
+    return { ...raw, oauth: raw.oauth ?? [], permissions: raw.permissions ?? { network: [] }, secrets: raw.secrets.map(secret => ({ required: true, ...secret })) };
+  }));
   const installed = new Set<string>();
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
