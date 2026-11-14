@@ -359,6 +359,11 @@ func (r *runTools) createActionRequest(ctx context.Context, in *jsObj) (any, err
 			}
 		}
 	}
+	if inGo, err := a.shouldCreateActionRequestInGo(ctx, orgID, kind); err != nil {
+		return nil, err
+	} else if inGo {
+		return a.createActionRequestInGo(ctx, in)
+	}
 	status, reply, err := a.workerDo(ctx, http.MethodPost, "/admin/action-requests/create", 65*time.Second, []byte(jsStringify(in, false)))
 	if err != nil {
 		return nil, err

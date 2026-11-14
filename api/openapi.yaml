@@ -6666,6 +6666,7 @@ paths:
                 - pubKeyCredParams
                 - excludeCredentials
                 - allowCredentials
+                - userVerification
                 additionalProperties: false
                 properties:
                   purpose:
@@ -6688,6 +6689,10 @@ paths:
                     type: array
                     items:
                       type: object
+                  userVerification:
+                    type: string
+                    enum:
+                    - required
         '400':
           description: The purpose or actionRequestId is not valid
           content:

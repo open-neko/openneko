@@ -1212,6 +1212,18 @@ func (a *API) approveRunAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	next := map[bool]string{true: "approved", false: "rejected"}[decision == "approve"]
+	var refused *decisionError
+	var assertion *passkeyAssertion
+	if next == "approved" && rawPasskey != nil {
+		if assertion, err = a.takePasskeyAssertion(ctx, act, id, rawPasskey); err != nil {
+			if errors.As(err, &refused) {
+				sendError(w, refused.status, refused.message)
+			} else {
+				a.fail(w, r, err)
+			}
+			return
+		}
+	}
 	var pk *verifiedPasskey
 	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
 		var current string
@@ -1226,9 +1238,9 @@ func (a *API) approveRunAction(w http.ResponseWriter, r *http.Request) {
 		if current != "draft" && current != "pending_approval" {
 			return transitionError(current, next)
 		}
-		if next == "approved" && rawPasskey != nil {
+		if assertion != nil {
 			var err error
-			pk, err = verifyPasskeyApproval(ctx, tx, passkeyRPID(r), act, id, rawPasskey)
+			pk, err = verifyPasskeyApproval(ctx, tx, a.passkeyRP(r), act, assertion)
 			if err != nil {
 				return err
 			}
@@ -1253,7 +1265,6 @@ func (a *API) approveRunAction(w http.ResponseWriter, r *http.Request) {
 			act.OrgID, threadID, runID, payload)
 		return err
 	})
-	var refused *decisionError
 	if errors.As(err, &refused) {
 		sendError(w, refused.status, refused.message)
 		return

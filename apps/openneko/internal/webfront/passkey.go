@@ -14,7 +14,6 @@ import (
 	"errors"
 	"io"
 	"math/big"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -52,37 +51,41 @@ func badPasskey(msg string) error {
 	return &decisionError{status: http.StatusBadRequest, message: msg}
 }
 
-func passkeyRPID(r *http.Request) string {
-	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
-	if i := strings.IndexByte(host, ','); i >= 0 {
-		host = strings.TrimSpace(host[:i])
-	}
-	if host == "" {
-		host = strings.TrimSpace(r.Host)
-	}
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	host = strings.Trim(strings.ToLower(host), "[]")
-	if host == "" || net.ParseIP(host) != nil {
-		return "localhost"
-	}
-	return host
+type passkeyRP struct {
+	id     string
+	origin string
 }
 
-func originRPID(origin string) string {
-	u, err := url.Parse(origin)
+func (a *API) passkeyRP(r *http.Request) passkeyRP {
+	u, err := url.Parse(a.publicBaseURL(r))
 	if err != nil {
-		return ""
+		return passkeyRP{}
 	}
-	host := strings.Trim(strings.ToLower(u.Hostname()), "[]")
-	if host == "" {
-		return ""
+	rp := passkeyRP{id: strings.ToLower(u.Hostname())}
+	if a.configuredPublicURL() != "" {
+		rp.origin = originOf(u)
 	}
-	if net.ParseIP(host) != nil {
-		return "localhost"
+	return rp
+}
+
+func (rp passkeyRP) checkOrigin(origin string) error {
+	u, err := url.Parse(origin)
+	if err != nil || rp.id == "" || strings.ToLower(u.Hostname()) != rp.id {
+		return badPasskey("passkey origin does not match the relying party")
 	}
-	return host
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+	case "http":
+		if rp.id != "localhost" {
+			return badPasskey("passkey origin must use https")
+		}
+	default:
+		return badPasskey("passkey origin must use https")
+	}
+	if rp.origin != "" && originOf(u) != rp.origin {
+		return badPasskey("passkey origin does not match the relying party")
+	}
+	return nil
 }
 
 func decodeB64URL(s string) ([]byte, error) {
@@ -251,7 +254,7 @@ func (a *API) passkeyChallenge(w http.ResponseWriter, r *http.Request) {
 		descriptors = append(descriptors, passkeyCredDescriptor{ID: cid, Type: "public-key"})
 	}
 
-	rpID := passkeyRPID(r)
+	rpID := a.passkeyRP(r).id
 	sendJSON(w, http.StatusOK, struct {
 		Purpose            string                  `json:"purpose"`
 		Challenge          string                  `json:"challenge"`
@@ -260,6 +263,7 @@ func (a *API) passkeyChallenge(w http.ResponseWriter, r *http.Request) {
 		PubKeyCredParams   []passkeyAlgParam       `json:"pubKeyCredParams"`
 		ExcludeCredentials []passkeyCredDescriptor `json:"excludeCredentials"`
 		AllowCredentials   []passkeyCredDescriptor `json:"allowCredentials"`
+		UserVerification   string                  `json:"userVerification"`
 	}{
 		Purpose:   purpose,
 		Challenge: challenge,
@@ -272,6 +276,7 @@ func (a *API) passkeyChallenge(w http.ResponseWriter, r *http.Request) {
 		PubKeyCredParams:   []passkeyAlgParam{{Type: "public-key", Alg: -7}},
 		ExcludeCredentials: descriptors,
 		AllowCredentials:   descriptors,
+		UserVerification:   "required",
 	})
 }
 
@@ -342,12 +347,17 @@ func (a *API) passkeyCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rp := a.passkeyRP(r)
+	if err := rp.checkOrigin(clientData.Origin); err != nil {
+		sendError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	attRaw, err := decodeB64URL(attestationB64)
 	if err != nil {
 		sendError(w, http.StatusBadRequest, "invalid attestationObject encoding")
 		return
 	}
-	pubKeyB64, signCount, err := parseAttestationObject(attRaw, credID, passkeyRPID(r), originRPID(clientData.Origin))
+	pubKeyB64, signCount, err := parseAttestationObject(attRaw, credID, rp.id)
 	if err != nil {
 		sendError(w, http.StatusBadRequest, err.Error())
 		return
@@ -440,7 +450,17 @@ func (a *API) passkeyDelete(w http.ResponseWriter, r *http.Request) {
 	}{OK: true})
 }
 
-func verifyPasskeyApproval(ctx context.Context, tx pgx.Tx, reqRPID string, act actor, actionID string, raw any) (*verifiedPasskey, error) {
+type passkeyAssertion struct {
+	credID        string
+	origin        string
+	clientDataRaw []byte
+	authData      []byte
+	signature     []byte
+}
+
+// takePasskeyAssertion deletes the challenge outside the decision
+// transaction, so that a failed check still spends it.
+func (a *API) takePasskeyAssertion(ctx context.Context, act actor, actionID string, raw any) (*passkeyAssertion, error) {
 	obj, ok := raw.(map[string]any)
 	if !ok || obj == nil {
 		return nil, badPasskey("passkey assertion must be an object")
@@ -470,17 +490,8 @@ func verifyPasskeyApproval(ctx context.Context, tx pgx.Tx, reqRPID string, act a
 		return nil, badPasskey("passkey clientDataJSON type must be webauthn.get")
 	}
 
-	authData, err := decodeB64URL(authDataB64)
-	if err != nil || len(authData) < 37 {
-		return nil, badPasskey("invalid passkey authenticatorData")
-	}
-	sigBytes, err := decodeB64URL(sigB64)
-	if err != nil || len(sigBytes) == 0 {
-		return nil, badPasskey("invalid passkey signature")
-	}
-
 	var challengeID string
-	err = tx.QueryRow(ctx, `
+	err = a.DB.QueryRow(ctx, `
 		delete from app_passkey_challenge
 		where org_id = $1 and user_id = $2 and purpose = 'approve'
 		  and action_request_id = $3 and challenge = $4 and expires_at > now()
@@ -493,14 +504,36 @@ func verifyPasskeyApproval(ctx context.Context, tx pgx.Tx, reqRPID string, act a
 		return nil, err
 	}
 
+	authData, err := decodeB64URL(authDataB64)
+	if err != nil || len(authData) < 37 {
+		return nil, badPasskey("invalid passkey authenticatorData")
+	}
+	sigBytes, err := decodeB64URL(sigB64)
+	if err != nil || len(sigBytes) == 0 {
+		return nil, badPasskey("invalid passkey signature")
+	}
+	return &passkeyAssertion{
+		credID:        credID,
+		origin:        clientData.Origin,
+		clientDataRaw: clientDataRaw,
+		authData:      authData,
+		signature:     sigBytes,
+	}, nil
+}
+
+func verifyPasskeyApproval(ctx context.Context, tx pgx.Tx, rp passkeyRP, act actor, p *passkeyAssertion) (*verifiedPasskey, error) {
+	if err := rp.checkOrigin(p.origin); err != nil {
+		return nil, err
+	}
+	authData := p.authData
 	var pkID, pubKeyB64, name string
 	var storedSignCount int64
-	err = tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `
 		select id::text, public_key, name, sign_count
 		from app_passkey
 		where org_id = $1 and user_id = $2 and credential_id = $3
 		for update`,
-		act.OrgID, act.UserID, credID).Scan(&pkID, &pubKeyB64, &name, &storedSignCount)
+		act.OrgID, act.UserID, p.credID).Scan(&pkID, &pubKeyB64, &name, &storedSignCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, badPasskey("passkey is not registered for this user")
 	}
@@ -508,14 +541,16 @@ func verifyPasskeyApproval(ctx context.Context, tx pgx.Tx, reqRPID string, act a
 		return nil, err
 	}
 
-	if !matchesRPIDHash(authData[:32], reqRPID, originRPID(clientData.Origin)) {
+	if !matchesRPIDHash(authData[:32], rp.id) {
 		return nil, badPasskey("passkey relying party ID mismatch")
 	}
 	flags := authData[32]
 	if flags&0x01 == 0 {
 		return nil, badPasskey("passkey assertion requires user presence")
 	}
-	userVerified := (flags & 0x04) != 0
+	if flags&0x04 == 0 {
+		return nil, badPasskey("passkey assertion requires user verification")
+	}
 	signCount := int64(binary.BigEndian.Uint32(authData[33:37]))
 	if storedSignCount > 0 && signCount <= storedSignCount {
 		return nil, badPasskey("passkey sign count did not advance")
@@ -534,12 +569,12 @@ func verifyPasskeyApproval(ctx context.Context, tx pgx.Tx, reqRPID string, act a
 		Y:     new(big.Int).SetBytes(pubBytes[33:65]),
 	}
 
-	clientHash := sha256.Sum256(clientDataRaw)
+	clientHash := sha256.Sum256(p.clientDataRaw)
 	signed := make([]byte, 0, len(authData)+len(clientHash))
 	signed = append(signed, authData...)
 	signed = append(signed, clientHash[:]...)
 	digest := sha256.Sum256(signed)
-	if !ecdsa.VerifyASN1(pubKey, digest[:], sigBytes) {
+	if !ecdsa.VerifyASN1(pubKey, digest[:], p.signature) {
 		return nil, badPasskey("passkey signature verification failed")
 	}
 
@@ -553,30 +588,30 @@ func verifyPasskeyApproval(ctx context.Context, tx pgx.Tx, reqRPID string, act a
 
 	return &verifiedPasskey{
 		ID:           pkID,
-		CredentialID: credID,
+		CredentialID: p.credID,
 		Name:         name,
-		UserVerified: userVerified,
+		UserVerified: true,
 	}, nil
 }
 
-func matchesRPIDHash(rpIDHash []byte, reqRPID, origRPID string) bool {
-	if reqRPID != "" {
-		sum := sha256.Sum256([]byte(reqRPID))
-		if bytes.Equal(rpIDHash, sum[:]) {
-			return true
-		}
+func matchesRPIDHash(rpIDHash []byte, rpID string) bool {
+	if rpID == "" {
+		return false
 	}
-	if origRPID != "" && origRPID == reqRPID {
-		sum := sha256.Sum256([]byte(origRPID))
-		if bytes.Equal(rpIDHash, sum[:]) {
-			return true
-		}
-	}
-	return false
+	sum := sha256.Sum256([]byte(rpID))
+	return bytes.Equal(rpIDHash, sum[:])
 }
 
-func parseAttestationObject(attRaw []byte, expectedCredID, reqRPID, origRPID string) (string, int64, error) {
-	val, _, err := readCBORItem(attRaw)
+const (
+	maxAttestationBytes = 64 << 10
+	maxCBORDepth        = 8
+)
+
+func parseAttestationObject(attRaw []byte, expectedCredID, rpID string) (string, int64, error) {
+	if len(attRaw) > maxAttestationBytes {
+		return "", 0, badPasskey("attestationObject is too large")
+	}
+	val, _, err := readCBORItem(attRaw, 0)
 	if err != nil {
 		return "", 0, badPasskey("invalid CBOR attestationObject")
 	}
@@ -588,7 +623,7 @@ func parseAttestationObject(attRaw []byte, expectedCredID, reqRPID, origRPID str
 	if !ok || len(authData) < 55 {
 		return "", 0, badPasskey("attestationObject missing valid authData")
 	}
-	if !matchesRPIDHash(authData[:32], reqRPID, origRPID) {
+	if !matchesRPIDHash(authData[:32], rpID) {
 		return "", 0, badPasskey("passkey relying party ID mismatch")
 	}
 	flags := authData[32]
@@ -606,7 +641,7 @@ func parseAttestationObject(attRaw []byte, expectedCredID, reqRPID, origRPID str
 		return "", 0, badPasskey("attested credential ID does not match credentialId")
 	}
 
-	coseVal, _, err := readCBORItem(authData[55+credLen:])
+	coseVal, _, err := readCBORItem(authData[55+credLen:], 0)
 	if err != nil {
 		return "", 0, badPasskey("invalid COSE public key")
 	}
@@ -632,7 +667,10 @@ func parseAttestationObject(attRaw []byte, expectedCredID, reqRPID, origRPID str
 	return base64.RawURLEncoding.EncodeToString(uncompressed), signCount, nil
 }
 
-func readCBORItem(b []byte) (any, []byte, error) {
+func readCBORItem(b []byte, depth int) (any, []byte, error) {
+	if depth > maxCBORDepth {
+		return nil, nil, errors.New("CBOR nesting too deep")
+	}
 	if len(b) == 0 {
 		return nil, nil, errors.New("unexpected end of CBOR")
 	}
@@ -666,7 +704,7 @@ func readCBORItem(b []byte) (any, []byte, error) {
 		cur := rest
 		for i := uint64(0); i < n; i++ {
 			var item any
-			item, cur, err = readCBORItem(cur)
+			item, cur, err = readCBORItem(cur, depth+1)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -681,11 +719,11 @@ func readCBORItem(b []byte) (any, []byte, error) {
 		cur := rest
 		for i := uint64(0); i < n; i++ {
 			var k, v any
-			k, cur, err = readCBORItem(cur)
+			k, cur, err = readCBORItem(cur, depth+1)
 			if err != nil {
 				return nil, nil, err
 			}
-			v, cur, err = readCBORItem(cur)
+			v, cur, err = readCBORItem(cur, depth+1)
 			if err != nil {
 				return nil, nil, err
 			}
