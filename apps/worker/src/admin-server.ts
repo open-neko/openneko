@@ -5,7 +5,6 @@
  *   GET  /admin/directory/status → directory provider and last sync state.
  *   POST /admin/directory/sync  → run a full directory sync now.
  *   POST /admin/directory/users → create a user in the identity provider ({ email, name? }).
- *   POST /admin/graphjin/group-grants → apply group grants now ({ immediate: true }) or in a batch.
  *   POST /admin/action-requests/create → persist + run worker-owned preflight
  *                               before returning an approval-card-safe id.
  *   POST /admin/actions/execute → run an approved action ({ orgId, actionRequestId });
@@ -61,27 +60,12 @@ export type AdminHandlerOptions = {
    * Absent in tests, in which case /admin/connect/* routes return 503.
    */
   connect?: ConnectHandlerSurface | null;
-  /**
-   * External-event ingress (OL3): watchers and integrations POST
-   * /admin/events/external to fire external_event subscriptions.
-   */
-  events?: ExternalEventHandlerSurface | null;
   /** Trusted web→worker action creation so worker-owned preflight hooks run. */
   actionRequests?: ActionRequestHandlerSurface | null;
   actions?: ActionExecuteHandlerSurface | null;
   /** Directory provider status and on-demand sync. */
   directory?: DirectoryHandlerSurface | null;
-  /** Writes group grants into the GraphJin config, now or batched. */
-  groupGrants?: GroupGrantsHandlerSurface | null;
 };
-
-export interface GroupGrantsHandlerSurface {
-  apply(): Promise<unknown>;
-  schedule(): void;
-  enable(actorUserId: string | null): Promise<unknown>;
-  disable(actorUserId: string | null): Promise<unknown>;
-  apiOperations(): Promise<string[]>;
-}
 
 export interface DirectoryHandlerSurface {
   status(): Promise<unknown>;
@@ -98,54 +82,13 @@ export interface ActionExecuteHandlerSurface {
   execute(input: { orgId: string; actionRequestId: string }): Promise<void>;
 }
 
-export interface ExternalEventHandlerSurface {
-  dispatchExternal(input: {
-    orgId: string;
-    name: string;
-    source: string | null;
-    payload: Record<string, unknown>;
-    dedupeKey?: string;
-  }): Promise<{ matched: number; enqueued: number }>;
-}
-
 export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const connect = opts.connect ?? null;
-  const events = opts.events ?? null;
   const actionRequests = opts.actionRequests ?? null;
   const actions = opts.actions ?? null;
   const directory = opts.directory ?? null;
-  const groupGrants = opts.groupGrants ?? null;
 
   return function handle(req: IncomingMessage, res: ServerResponse) {
-    if (req.url === "/admin/graphjin/api-operations" && req.method === "GET") {
-      void (async () => {
-        if (!groupGrants) return json(res, 503, { error: "group grants are not configured" });
-        try {
-          json(res, 200, { operations: await groupGrants.apiOperations() });
-        } catch (err) {
-          json(res, 500, { error: err instanceof Error ? err.message : String(err) });
-        }
-      })();
-      return;
-    }
-    if (req.url?.startsWith("/admin/graphjin/group-grants") && req.method === "POST") {
-      void (async () => {
-        if (!groupGrants) return json(res, 503, { error: "group grants are not configured" });
-        try {
-          const body = (await readJson(req)) as { immediate?: unknown; actorUserId?: unknown };
-          const actorUserId = typeof body.actorUserId === "string" ? body.actorUserId : null;
-          if (req.url === "/admin/graphjin/group-grants/enable") return json(res, 200, await groupGrants.enable(actorUserId));
-          if (req.url === "/admin/graphjin/group-grants/disable") return json(res, 200, await groupGrants.disable(actorUserId));
-          if (req.url !== "/admin/graphjin/group-grants") return json(res, 404, { error: "not found" });
-          if (body.immediate === true) return json(res, 200, await groupGrants.apply());
-          groupGrants.schedule();
-          json(res, 202, { scheduled: true });
-        } catch (err) {
-          json(res, 500, { error: err instanceof Error ? err.message : String(err) });
-        }
-      })();
-      return;
-    }
     if (req.url === "/admin/directory/status" || req.url === "/admin/directory/sync" || req.url === "/admin/directory/users") {
       void handleDirectory(req, res, directory);
       return;
@@ -173,10 +116,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
     }
     if (req.method === "POST" && req.url === "/admin/connect/disconnect") {
       void handleConnectDisconnect(req, res, connect);
-      return;
-    }
-    if (req.method === "POST" && req.url === "/admin/events/external") {
-      void handleExternalEvent(req, res, events);
       return;
     }
     if (
@@ -275,51 +214,6 @@ async function handleDirectory(
     const code = (err as { code?: string }).code;
     const status = code === "no_provider" ? 404 : code === "running" || code === "lockout" ? 409 : code === "unsupported" ? 400 : 500;
     json(res, status, { error: err instanceof Error ? err.message : String(err), code: code ?? null });
-  }
-}
-
-async function handleExternalEvent(
-  req: IncomingMessage,
-  res: ServerResponse,
-  events: ExternalEventHandlerSurface | null,
-) {
-  if (!events) {
-    json(res, 503, { error: "external-event ingress unavailable" });
-    return;
-  }
-  const body = await readJson(req).catch(() => null);
-  if (!body || typeof body !== "object") {
-    json(res, 400, { error: "request body must be JSON" });
-    return;
-  }
-  const { orgId, name, source, payload, dedupeKey } = body as Record<
-    string,
-    unknown
-  >;
-  if (typeof orgId !== "string" || !orgId) {
-    json(res, 400, { error: "orgId (string) is required" });
-    return;
-  }
-  if (typeof name !== "string" || !name) {
-    json(res, 400, { error: "name (string) is required" });
-    return;
-  }
-  try {
-    const result = await events.dispatchExternal({
-      orgId,
-      name,
-      source: typeof source === "string" && source ? source : null,
-      payload:
-        payload && typeof payload === "object" && !Array.isArray(payload)
-          ? (payload as Record<string, unknown>)
-          : {},
-      ...(typeof dedupeKey === "string" && dedupeKey ? { dedupeKey } : {}),
-    });
-    json(res, 200, result);
-  } catch (err) {
-    json(res, 500, {
-      error: err instanceof Error ? err.message : String(err),
-    });
   }
 }
 

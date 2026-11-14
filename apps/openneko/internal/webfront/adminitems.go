@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"slices"
 	"strings"
@@ -159,13 +160,7 @@ func (a *API) listItemOptions(ctx context.Context, orgID, typ string) ([]itemOpt
 		}
 		return out, nil
 	case "api_operation":
-		var body struct {
-			Operations []string `json:"operations"`
-		}
-		if _, reply, err := a.workerDo(ctx, http.MethodGet, "/admin/graphjin/api-operations", workerAdminTimeout, nil); err == nil {
-			_ = json.Unmarshal(reply, &body)
-		}
-		for _, id := range body.Operations {
+		for _, id := range listGraphjinAPIOperations(os.Getenv("OPENNEKO_GRAPHJIN_CONFIG")) {
 			parts := strings.Split(id, ":")
 			out = append(out, option(id, strings.Join(parts[1:], " · "), parts[0]))
 		}
@@ -534,7 +529,7 @@ func (a *API) adminItemGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if typ == "data_source" || typ == "api_operation" {
-		a.scheduleGroupGrantsApply(r.Context())
+		a.scheduleGroupGrantsApply(r.Context(), act.OrgID)
 	}
 	sendJSON(w, http.StatusOK, result)
 }
@@ -687,7 +682,7 @@ func (a *API) adminDataAccessCreate(w http.ResponseWriter, r *http.Request) {
 		a.groupFailure(w, r, err)
 		return
 	}
-	a.scheduleGroupGrantsApply(r.Context())
+	a.scheduleGroupGrantsApply(r.Context(), act.OrgID)
 	sendJSON(w, http.StatusCreated, map[string]any{"rule": rule})
 }
 
@@ -711,13 +706,18 @@ func (a *API) upsertDataAccessRule(ctx context.Context, act actor, groupID, sour
 	if !sqlIdentifier.MatchString(tableName) {
 		return nil, groupErr("invalid", "invalid table name")
 	}
+	var createdBy *string
+	if act.UserID != "" {
+		u := act.UserID
+		createdBy = &u
+	}
 	var id string
 	err = a.DB.QueryRow(ctx, `
 		insert into data_access_rule (org_id, group_id, source, table_schema, table_name, columns, row_filter, created_by_user_id)
 		values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
 		on conflict (org_id, group_id, source, table_schema, table_name)
 		do update set columns = excluded.columns, row_filter = excluded.row_filter, updated_at = now()
-		returning id::text`, act.OrgID, g.id, source, tableSchema, tableName, columns, rowFilter, act.UserID).Scan(&id)
+		returning id::text`, act.OrgID, g.id, source, tableSchema, tableName, columns, rowFilter, createdBy).Scan(&id)
 	if err != nil {
 		return nil, err
 	}
@@ -747,7 +747,7 @@ func (a *API) adminDataAccessDelete(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusNotFound, "rule not found")
 		return
 	}
-	a.scheduleGroupGrantsApply(r.Context())
+	a.scheduleGroupGrantsApply(r.Context(), act.OrgID)
 	sendJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -774,12 +774,32 @@ func (a *API) adminDataAccessSettingsPatch(w http.ResponseWriter, r *http.Reques
 		sendError(w, http.StatusBadRequest, "enabled must be true or false")
 		return
 	}
-	path := "/admin/graphjin/group-grants/disable"
+	actorID := act.UserID
 	if enabled {
-		path = "/admin/graphjin/group-grants/enable"
+		res, err := a.enableGroupGrants(r.Context(), act.OrgID, &actorID, nil)
+		if err != nil {
+			sendError(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
+		sendJSON(w, http.StatusOK, map[string]any{
+			"ok":          true,
+			"enabled":     res.Enabled,
+			"changed":     res.Changed,
+			"roles":       res.Roles,
+			"seededRules": res.SeededRules,
+		})
+		return
 	}
-	payload, _ := json.Marshal(map[string]string{"actorUserId": act.UserID})
-	a.relayWorker(w, r, path, payload)
+	res, err := a.disableGroupGrants(r.Context(), act.OrgID, &actorID, nil)
+	if err != nil {
+		sendError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	sendJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"enabled": false,
+		"changed": res.Changed,
+	})
 }
 
 const (

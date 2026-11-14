@@ -206,14 +206,22 @@ func (a *API) behaviorSweep(ctx context.Context, orgID string, limits behaviorTh
 		}
 		log.Printf("[behavior-monitor] ALERT org=%s %s subject=%s observed=%d > threshold=%d in %ds",
 			orgID, alert.Kind, alert.Subject, alert.Observed, alert.Threshold, alert.WindowSeconds)
-		payload := fmt.Sprintf(`{"kind":%s,"subject":%s,"observed":%d,"threshold":%d,"windowSeconds":%d}`,
-			jsStringify(alert.Kind, false), jsStringify(alert.Subject, false), alert.Observed, alert.Threshold, alert.WindowSeconds)
+		payloadObj := obj(
+			"kind", alert.Kind,
+			"subject", alert.Subject,
+			"observed", alert.Observed,
+			"threshold", alert.Threshold,
+			"windowSeconds", alert.WindowSeconds,
+		)
 		dedupe := fmt.Sprintf("%s:%s:%d", alert.Kind, alert.Subject, now.UnixMilli()/(int64(alert.WindowSeconds)*1000))
-		body := fmt.Sprintf(`{"orgId":%s,"name":"security.behavior_threshold","source":"behavior-monitor","payload":%s,"dedupeKey":%s}`,
-			jsStringify(orgID, false), payload, jsStringify(dedupe, false))
-		status, reply, err := a.workerDo(ctx, http.MethodPost, "/admin/events/external", 10*time.Second, []byte(body))
-		if err != nil || status != http.StatusOK {
-			log.Printf("[behavior-monitor] external event dispatch failed: %d %v %s", status, err, reply)
+		source := "behavior-monitor"
+		if _, err := a.dispatchExternalEvent(ctx, orgID, externalEventMatch{
+			Name:      "security.behavior_threshold",
+			Source:    &source,
+			Payload:   payloadObj,
+			DedupeKey: dedupe,
+		}); err != nil {
+			log.Printf("[behavior-monitor] external event dispatch failed: %v", err)
 		}
 		persisted = append(persisted, alert)
 	}
