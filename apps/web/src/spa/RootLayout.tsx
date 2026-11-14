@@ -4,6 +4,7 @@ import AppRail, { type RailIdentity } from "@/components/AppRail";
 import CommandDock from "@/components/CommandDock";
 import CommandBar from "@/components/CommandBar";
 import AppToaster from "@/components/AppToaster";
+import OfflineBanner from "./OfflineBanner";
 
 export function useIdentity(): RailIdentity | undefined {
   return useRouteLoaderData("root") as RailIdentity | undefined;
@@ -19,6 +20,7 @@ export default function RootLayout() {
       <DensityProvider>
         <AppRail initial={identity} />
         <div id="main-content">
+          <OfflineBanner />
           <Outlet />
         </div>
         <CommandDock />
