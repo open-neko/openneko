@@ -33,6 +33,7 @@ export OPENNEKO_DATABASE_URL_FILE="$work/database-url"
 (cd "$root/apps/openneko" && OPENNEKO_WORKSPACE_ROOT="$root" "$work/openneko" migrate --local >"$work/migrate.log")
 (cd "$contract" && pnpm exec tsx scripts/seed.ts "$work/tokens")
 (cd "$web" && node test/phone/seed.mjs "$database_url")
+(cd "$contract" && pnpm exec tsx "$web/test/phone/seed-cards.ts" "$database_url")
 
 "$work/openneko" web --addr "127.0.0.1:$port" --dir "$web/dist" --jobs=false >"$work/front.log" 2>&1 &
 front=$!
