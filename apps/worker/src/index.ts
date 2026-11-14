@@ -6,7 +6,6 @@ import { adminSocketPath, listenAdmin } from "./admin-listen.js";
 import { boss, MOVED_QUEUES, RETIRED_QUEUES } from "@neko/db/jobs";
 import { createAdminHandler } from "./admin-server.js";
 import { CoreSecrets } from "./secrets/core-secrets.js";
-import { SignInService } from "./signin/signin-service.js";
 import {
   cancelAllAgents,
   provisionHostConfig,
@@ -50,15 +49,7 @@ const ADMIN_ORG_ID = await getOrgId();
 // the model host is a public cloud API (on-prem LLM is client-provided).
 reportDeploymentProfile();
 
-// The secrets view and sign-in service are constructed below, after the
-// server starts taking requests; the admin handler reaches them through
-// closures and reports "not ready" until then.
 let coreSecrets: CoreSecrets | null = null;
-let signInService: SignInService | null = null;
-function signIn(): SignInService {
-  if (!signInService) throw new Error("sign-in service not ready");
-  return signInService;
-}
 let actionRequestPreflightReady = false;
 const server = createServer(
   createAdminHandler({
@@ -72,16 +63,6 @@ const server = createServer(
         );
         return { id: request.id, status: request.status };
       },
-    },
-    connect: {
-      getConnectProviders: () => signInService?.getConnectProviders() ?? [],
-      getOperatorConnectStatus: (operatorId) =>
-        signInService?.getOperatorConnectStatus(operatorId) ?? [],
-      getDeploymentConnectStatus: () =>
-        signInService?.getDeploymentConnectStatus() ?? [],
-      beginConnect: (name, params) => signIn().beginConnect(name, params),
-      completeConnect: (name, params) => signIn().completeConnect(name, params),
-      disconnect: (name, operatorId) => signIn().disconnect(name, operatorId),
     },
   }),
 );
@@ -111,7 +92,6 @@ console.log("[worker] action policies seeded");
 coreSecrets = new CoreSecrets();
 await coreSecrets.start();
 setCoreSecretsInstance(coreSecrets);
-signInService = new SignInService(coreSecrets);
 const concurrency = await resolveAgentConcurrency(ADMIN_ORG_ID);
 // Every agent job on this host, from any queue, shares one cap.
 setAgentSlotLimit(concurrency.globalCap);

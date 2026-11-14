@@ -25,7 +25,7 @@ describe("worker admin HTTP handler", () => {
     vi.restoreAllMocks();
   });
 
-  it("moved health, reconnect, source-check, install-policy, graphjin, external-event and directory routes return 404", async () => {
+  it("moved health, reconnect, source-check, install-policy, graphjin, external-event, directory and connect routes return 404", async () => {
     const srv = await startServer(createAdminHandler());
     try {
       for (const [method, path] of [
@@ -43,6 +43,12 @@ describe("worker admin HTTP handler", () => {
         ["GET", "/admin/directory/status"],
         ["POST", "/admin/directory/sync"],
         ["POST", "/admin/directory/users"],
+        ["GET", "/admin/connect/providers"],
+        ["GET", "/admin/connect/deployment/status"],
+        ["GET", "/admin/connect/status/op-1"],
+        ["POST", "/admin/connect/begin"],
+        ["POST", "/admin/connect/complete"],
+        ["POST", "/admin/connect/disconnect"],
       ] as const) {
         const res = await fetch(`http://127.0.0.1:${srv.port}${path}`, {
           method,
@@ -117,241 +123,6 @@ describe("worker admin: removed plugin, action-descriptor and pack routes", () =
       for (const path of ["/admin/action-descriptors", "/admin/actions/execute", "/admin/plugins/status", "/admin/plugins/settings", "/admin/plugins/action-descriptors", "/admin/packs", "/admin/packs/magento/inspect", "/admin/packs/magento/store-management"]) {
         expect((await fetch(`http://127.0.0.1:${srv.port}${path}`)).status).toBe(404);
       }
-    } finally {
-      await srv.close();
-    }
-  });
-});
-
-describe("worker admin /admin/connect/*", () => {
-  const sampleCredential = () => ({
-    tokens: { access_token: "at-1", refresh_token: "rt-1" },
-    scopes: ["gmail.send"],
-    providerLabel: "Google Workspace",
-    connectedAt: "2026-05-21T10:00:00Z",
-  });
-
-  function fakeConnect(overrides: Partial<{
-    getConnectProviders: () => ReturnType<NonNullable<Parameters<typeof createAdminHandler>[0]["connect"]>["getConnectProviders"]>;
-    getOperatorConnectStatus: (operatorId: string) => ReturnType<NonNullable<Parameters<typeof createAdminHandler>[0]["connect"]>["getOperatorConnectStatus"]>;
-    beginConnect: NonNullable<Parameters<typeof createAdminHandler>[0]["connect"]>["beginConnect"];
-    completeConnect: NonNullable<Parameters<typeof createAdminHandler>[0]["connect"]>["completeConnect"];
-    disconnect: NonNullable<Parameters<typeof createAdminHandler>[0]["connect"]>["disconnect"];
-  }> = {}) {
-    return {
-      getConnectProviders: overrides.getConnectProviders ?? (() => []),
-      getOperatorConnectStatus: overrides.getOperatorConnectStatus ?? (() => []),
-      beginConnect:
-        overrides.beginConnect ??
-        (async () => ({ authorizationUrl: "https://x" })),
-      completeConnect:
-        overrides.completeConnect ?? (async () => sampleCredential()),
-      disconnect: overrides.disconnect ?? (async () => true),
-    };
-  }
-
-  it("GET /admin/connect/providers returns the registry's list", async () => {
-    const srv = await startServer(
-      createAdminHandler({
-        connect: fakeConnect({
-          getConnectProviders: () => [
-            {
-              pluginId: "open-neko-connector-google-workspace",
-              pluginName: "@open-neko/connector-google-workspace",
-              providerLabel: "Google Workspace",
-              scopes: ["gmail.readonly"],
-            },
-          ],
-        }),
-      }),
-    );
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/connect/providers`);
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as { providers: Array<{ providerLabel: string }> };
-      expect(body.providers[0]?.providerLabel).toBe("Google Workspace");
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("GET /admin/connect/providers returns [] when connect surface absent", async () => {
-    const srv = await startServer(createAdminHandler());
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/connect/providers`);
-      const body = (await res.json()) as { providers: unknown[] };
-      expect(body.providers).toEqual([]);
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("GET /admin/connect/status/:operatorId returns per-operator status", async () => {
-    const srv = await startServer(
-      createAdminHandler({
-        connect: fakeConnect({
-          getOperatorConnectStatus: (operatorId) => [
-            {
-              pluginName: `${operatorId}-plugin`,
-              connectedAt: "2026-05-21T10:00:00Z",
-            },
-          ],
-        }),
-      }),
-    );
-    try {
-      const res = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/connect/status/op-1`,
-      );
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as {
-        connected: Array<{ pluginName: string }>;
-      };
-      expect(body.connected[0]?.pluginName).toBe("op-1-plugin");
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("POST /admin/connect/begin proxies to the plugin", async () => {
-    let captured: { plugin?: string; params?: unknown } = {};
-    const srv = await startServer(
-      createAdminHandler({
-        connect: fakeConnect({
-          beginConnect: async (plugin, params) => {
-            captured = { plugin, params };
-            return { authorizationUrl: "https://provider/auth?x" };
-          },
-        }),
-      }),
-    );
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/connect/begin`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pluginName: "@x/y",
-          params: {
-            operatorId: "op-1",
-            redirectUri: "https://app/cb",
-            state: "csrf",
-            scopes: ["s"],
-          },
-        }),
-      });
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as { authorizationUrl: string };
-      expect(body.authorizationUrl).toBe("https://provider/auth?x");
-      expect(captured.plugin).toBe("@x/y");
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("POST /admin/connect/begin returns 400 on missing pluginName", async () => {
-    const srv = await startServer(
-      createAdminHandler({ connect: fakeConnect() }),
-    );
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/connect/begin`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ params: {} }),
-      });
-      expect(res.status).toBe(400);
-      expect(((await res.json()) as { error: string }).error).toMatch(/pluginName/);
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("POST /admin/connect/begin returns 503 when connect surface disabled", async () => {
-    const srv = await startServer(createAdminHandler());
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/connect/begin`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pluginName: "@x/y", params: {} }),
-      });
-      expect(res.status).toBe(503);
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("POST /admin/connect/complete returns the credential", async () => {
-    const srv = await startServer(
-      createAdminHandler({ connect: fakeConnect() }),
-    );
-    try {
-      const res = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/connect/complete`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            pluginName: "@x/y",
-            params: {
-              operatorId: "op-1",
-              code: "auth-code",
-              redirectUri: "https://app/cb",
-              state: "csrf",
-              scopes: [],
-            },
-          }),
-        },
-      );
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as {
-        credential: { tokens: Record<string, string> };
-      };
-      expect(body.credential.tokens.access_token).toBe("at-1");
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("POST /admin/connect/disconnect returns { removed }", async () => {
-    const srv = await startServer(
-      createAdminHandler({
-        connect: fakeConnect({ disconnect: async () => true }),
-      }),
-    );
-    try {
-      const res = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/connect/disconnect`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pluginName: "@x/y", operatorId: "op-1" }),
-        },
-      );
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as { removed: boolean };
-      expect(body.removed).toBe(true);
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("POST /admin/connect/begin propagates provider errors as 500", async () => {
-    const srv = await startServer(
-      createAdminHandler({
-        connect: fakeConnect({
-          beginConnect: async () => {
-            throw new Error("auth_url_build_failed");
-          },
-        }),
-      }),
-    );
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/connect/begin`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pluginName: "@x/y", params: {} }),
-      });
-      expect(res.status).toBe(500);
-      expect(((await res.json()) as { error: string }).error).toMatch(/auth_url_build_failed/);
     } finally {
       await srv.close();
     }
