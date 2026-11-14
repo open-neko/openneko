@@ -124,6 +124,55 @@ components:
           - 'null'
         callbackUrl:
           type: string
+    MagentoStoreManagement:
+      type: object
+      additionalProperties: false
+      required:
+      - controls
+      - rules
+      - changesets
+      - handoffs
+      - activity
+      - operations
+      - handoffOnly
+      properties:
+        controls:
+          type: array
+          items:
+            type: object
+        rules:
+          type: array
+          items:
+            type: object
+        changesets:
+          type: array
+          items:
+            type: object
+        handoffs:
+          type: array
+          items:
+            type: object
+        activity:
+          type: array
+          items:
+            type: object
+        operations:
+          type: array
+          items:
+            type: object
+        handoffOnly:
+          type: object
+          additionalProperties: false
+          required:
+          - executePath
+          - handoffKinds
+          properties:
+            executePath:
+              type: boolean
+            handoffKinds:
+              type: array
+              items:
+                type: string
     Error:
       type: object
       required:
@@ -2786,13 +2835,17 @@ paths:
       - deviceToken: []
       responses:
         '200':
-          description: Worker response, passed through with the worker status
+          description: The Magento store management settings, rules and activity
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: false
-                properties: {}
+                $ref: '#/components/schemas/MagentoStoreManagement'
+        '400':
+          description: The store management settings could not be read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackOAuthFailure'
         '401':
           description: The session or device token is not valid
           content:
@@ -2801,15 +2854,6 @@ paths:
                 $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-        '502':
-          description: The worker is not reachable
           content:
             application/json:
               schema:
@@ -2834,22 +2878,17 @@ paths:
               type: object
       responses:
         '200':
-          description: Worker response, passed through with the worker status
+          description: The updated Magento store management settings, rules and activity
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: false
-                properties: {}
+                $ref: '#/components/schemas/MagentoStoreManagement'
         '400':
-          description: The body is not a valid JSON object
+          description: The body is not a valid JSON object, or the store management action is invalid
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
+                $ref: '#/components/schemas/PackOAuthFailure'
         '401':
           description: The session or device token is not valid
           content:
@@ -2867,15 +2906,6 @@ paths:
                     type: string
         '413':
           description: The body is larger than 64 KB
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-        '502':
-          description: The worker is not reachable
           content:
             application/json:
               schema:
@@ -2997,7 +3027,7 @@ paths:
         description: Pack version
       responses:
         '200':
-          description: The inspection, the install status or the plan; doctor passes through the worker
+          description: The inspection, the install status, the plan or the doctor checks
           content:
             application/json:
               schema:
@@ -3112,7 +3142,7 @@ paths:
                   type: string
       responses:
         '200':
-          description: The review from the Go server; the other actions pass through from the worker
+          description: The review, or after uninstall the pack status, from the Go server; install, configure and upgrade pass through from the worker
           content:
             application/json:
               schema:
@@ -3132,8 +3162,15 @@ paths:
                   plan: {}
                   secrets: {}
                   reviewHash: {}
+                  packId: {}
+                  version: {}
+                  status: {}
+                  readiness: {}
+                  installedAt: {}
+                  lastError: {}
+                  configuration: {}
         '400':
-          description: The body is not a valid JSON object, or the pack review failed
+          description: The body is not a valid JSON object, or the pack review or uninstall failed
           content:
             application/json:
               schema:

@@ -1201,6 +1201,36 @@ export const app_passkey_challenge = pgTable(
   }),
 );
 
+export const app_push_subscription = pgTable(
+  "app_push_subscription",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => app_user.id, { onDelete: "cascade" }),
+    device_id: uuid("device_id").references(() => app_device.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    endpoint_unique: uniqueIndex("app_push_subscription_org_id_endpoint_key").on(
+      t.org_id,
+      t.endpoint,
+    ),
+    user_idx: index("app_push_subscription_user_idx").on(
+      t.org_id,
+      t.user_id,
+      t.created_at.desc(),
+    ),
+  }),
+);
+
 export const bot = pgTable(
   "bot",
   {

@@ -150,6 +150,13 @@ export const adminCases: Case[] = [
     },
   },
   {
+    op: "GET /admin/packs/{packId}/{action}", name: "checks a pack that is not installed", status: 200,
+    request: { params: { packId: "slack", action: "doctor" } },
+    check: (r) => {
+      expect(body(r)).toEqual({ packId: "slack", status: "blocked", checks: [{ id: "installation", status: "blocked", detail: "pack is not installed" }] });
+    },
+  },
+  {
     op: "GET /admin/packs/{packId}/{action}", name: "fails on a pack that is not in the catalog", status: 400,
     request: { params: { packId: "no-such-pack", action: "inspect" } },
   },
@@ -167,11 +174,22 @@ export const adminCases: Case[] = [
     check: (r) => expect(body(r).error).toBe("pack must be installed before reviewing this operation"),
   },
   {
+    op: "POST /admin/packs/{packId}/{action}", name: "refuses to uninstall a pack that is not installed", status: 400,
+    request: { params: { packId: "slack", action: "uninstall" }, body: {} },
+    check: (r) => {
+      expect(body(r).error).toBe("pack slack is not installed");
+      expect((body(r).diagnostic as { phase: string }).phase).toBe("uninstall");
+    },
+  },
+  {
     op: "POST /admin/packs/upload", name: "refuses an archive that is not a ZIP", status: 400,
     request: { raw: { body: "not a zip", type: "application/zip" } },
   },
-  { op: "GET /admin/packs/magento/store-management", name: "needs the worker", status: 502 },
-  { op: "POST /admin/packs/magento/store-management", name: "needs the worker", status: 502, request: { body: {} } },
+  {
+    op: "GET /admin/packs/magento/store-management", name: "lists the store management settings", status: 200,
+    check: (r) => expect(body(r)).toMatchObject({ controls: [], rules: [], changesets: [], handoffs: [], activity: [], operations: [] }),
+  },
+  { op: "POST /admin/packs/magento/store-management", name: "refuses an unknown action", status: 400, request: { body: {} } },
   { op: "POST /admin/packs/upload", name: "needs a ZIP archive", status: 415, request: { raw: { body: "not a zip", type: "text/plain" } } },
   { op: "GET /admin/packs/{packId}/{action}", name: "refuses an unknown operation", status: 404, request: { params: { packId: "magento", action: "nothing" } } },
   { op: "POST /admin/packs/{packId}/{action}", name: "refuses an unknown operation", status: 404, request: { params: { packId: "magento", action: "nothing" }, body: {} } },
