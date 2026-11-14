@@ -1,8 +1,16 @@
+import { expect } from "vitest";
 import type { Case } from "../src/case";
 
 const pack = { packId: "contract", connectionKey: "contract" };
 
 export const connectionCases: Case[] = [
+  {
+    op: "POST /channels/{channelId}/inbound", name: "refuses an update with no signature", as: "anonymous", status: 200,
+    request: { params: { channelId: "telegram" }, body: { update_id: 1 } },
+    check: (r) => {
+      expect(r.body).toEqual({ ok: false, dispatched: 0 });
+    },
+  },
   { op: "GET /bots", name: "lists the bots", status: 200 },
   {
     op: "POST /bots", name: "adds a bot", status: 201, request: { body: { name: "Contract cat", coat: "snow", pattern: "tabby" } },

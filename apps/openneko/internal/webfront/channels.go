@@ -26,7 +26,9 @@ type channelProfile struct {
 type channelSetting struct {
 	Key          string
 	Required     bool
+	Secret       bool
 	Autogenerate bool
+	Description  string
 }
 
 type channelDeliverResult struct {
@@ -51,11 +53,15 @@ var (
 // builtInChannels is BUILT_IN_CHANNELS in packages/channels, in its order.
 var builtInChannels = []builtInChannel{
 	{ID: "slack", Label: "Slack", Profile: slackProfile, Deliver: deliverSlack, Settings: []channelSetting{
-		{Key: "SLACK_BOT_TOKEN", Required: true}, {Key: "SLACK_APP_TOKEN"}, {Key: "SLACK_SIGNING_SECRET"}}},
+		{Key: "SLACK_BOT_TOKEN", Required: true, Secret: true, Description: "xoxb-... bot token from your Slack app. Scopes: chat:write, im:write, im:history (DMs), app_mentions:read (mentions)."},
+		{Key: "SLACK_APP_TOKEN", Secret: true, Description: "xapp-... app-level token with connections:write. Enables inbound (DMs, @-mentions, slash commands) over Socket Mode. Subscribe bot events message.im + app_mention and add a /openneko slash command in the Slack app."},
+		{Key: "SLACK_SIGNING_SECRET", Secret: true, Description: "Slack app signing secret. Verifies inbound webhook requests; only needed for webhook ingress, not Socket Mode."}}},
 	{ID: "telegram", Label: "Telegram", Profile: telegramProfile, Deliver: deliverTelegram, Settings: []channelSetting{
-		{Key: "TELEGRAM_BOT_TOKEN", Required: true}, {Key: "TELEGRAM_WEBHOOK_SECRET"}}},
+		{Key: "TELEGRAM_BOT_TOKEN", Required: true, Secret: true, Description: "Bot token from @BotFather (e.g. 123456789:AAH…). Without it, delivery runs dry and sends nothing."},
+		{Key: "TELEGRAM_WEBHOOK_SECRET", Secret: true, Description: "The secret_token you set with setWebhook. Webhook requests must carry it. Not needed for long polling."}}},
 	{ID: "hud", Label: "HUD surface", Profile: hudProfile, Deliver: deliverHUD, Settings: []channelSetting{
-		{Key: "HUD_CHANNEL_SECRET", Required: true, Autogenerate: true}, {Key: "HUD_CHANNEL_WORKSPACE"}}},
+		{Key: "HUD_CHANNEL_SECRET", Required: true, Secret: true, Autogenerate: true, Description: "HMAC secret shared with the HUD bridge. OpenNeko generates it when the channel turns on."},
+		{Key: "HUD_CHANNEL_WORKSPACE", Description: "Stable identifier that scopes inbound senders and recipients, for example the HUD's pack id. Default: demo."}}},
 }
 
 // legacyChannelNames are the package names the channels had as plugins;
