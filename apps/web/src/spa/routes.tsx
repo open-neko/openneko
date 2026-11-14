@@ -165,8 +165,11 @@ export const routes: RouteObject[] = [
           { path: "admin/settings/spend", ...page(() => import("@/app/admin/settings/spend/page")) },
           { path: "admin/settings/sso", ...page(() => import("@/app/admin/settings/sso/page")) },
           { path: "admin", ...page(() => import("@/app/admin/page")) },
+          { path: "admin/access", ...page(() => import("@/app/admin/access/page")) },
           { path: "admin/settings", ...page(() => import("@/app/admin/settings/page")) },
           { path: "admin/settings/workflows", ...page(() => import("@/app/admin/settings/workflows/page")) },
+          { path: "admin/users", ...page(() => import("@/app/admin/users/page")) },
+          { path: "admin/users/groups/:groupId", ...page(() => import("@/app/admin/users/groups/[groupId]/page")) },
           { path: "admin/settings/graphjin", ...page(() => import("@/app/admin/settings/graphjin/page")) },
           {
             path: "skills/:name",
