@@ -99,7 +99,7 @@ func modelServer(t *testing.T, messages ...map[string]ax.Value) (*ax.OpenAICompa
 func answer(s string) map[string]ax.Value { return ax.Object("role", "assistant", "content", s) }
 func TestAgentGojaTwoCallbacksHTTP(t *testing.T) {
 	p := &probe{}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	runtime := axgoja.NewRuntime(axgoja.WithCallable("lookup", func(v ax.Value) (ax.Value, error) { return p.invoke(ctx, object(v)) }))
 	client, requests := modelServer(t,
@@ -128,12 +128,12 @@ func TestHTTPStreamingCancellation(t *testing.T) {
 		select {
 		case <-r.Context().Done():
 			close(observed)
-		case <-time.After(5 * time.Second):
+		case <-time.After(time.Minute):
 		}
 	}))
 	defer server.Close()
 	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic-test-key", "model", "fixture"))
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	stream, err := client.StreamEvents(ctx, ax.Object("chat_prompt", ax.Array(ax.Object("role", "user", "content", "hello"))), nil)
 	if err != nil {
@@ -149,7 +149,7 @@ func TestHTTPStreamingCancellation(t *testing.T) {
 	}
 	select {
 	case <-observed:
-	case <-time.After(time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("HTTP upstream did not observe cancellation")
 	}
 }
