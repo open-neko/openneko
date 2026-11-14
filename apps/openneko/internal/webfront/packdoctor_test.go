@@ -2,7 +2,6 @@ package webfront
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,9 +16,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
-	"github.com/go-sql-driver/mysql"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
 	"github.com/vektah/gqlparser/v2/parser"
@@ -344,50 +341,9 @@ func TestPackDoctorRoute(t *testing.T) {
 }
 
 func TestMagentoPreflightDatabase(t *testing.T) {
-	dsn := os.Getenv("OPENNEKO_TEST_MAGENTO_MYSQL")
-	if dsn == "" {
-		t.Skip("OPENNEKO_TEST_MAGENTO_MYSQL is not set (a root DSN of a MySQL 8 or MariaDB 10.6+ server)")
-	}
-	cfg, err := mysql.ParseDSN(dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg.MultiStatements = true
-	connector, _ := mysql.NewConnector(cfg)
-	root := sql.OpenDB(connector)
-	t.Cleanup(func() { root.Close() })
-	name := fmt.Sprintf("doctor_%d", time.Now().UnixNano())
-	exec := func(stmt string) {
-		t.Helper()
-		if _, err := root.Exec(stmt); err != nil {
-			t.Fatalf("%s: %v", stmt, err)
-		}
-	}
-	exec("CREATE DATABASE " + name)
-	t.Cleanup(func() {
-		_, _ = root.Exec("DROP DATABASE " + name)
-		_, _ = root.Exec("DROP USER IF EXISTS '" + name + "'@'%'")
-	})
-	for _, table := range magentoRequiredTables {
-		exec(fmt.Sprintf("CREATE TABLE %s.m2_%s (id INT)", name, table))
-	}
-	exec(fmt.Sprintf("DROP TABLE %[1]s.m2_store; CREATE TABLE %[1]s.m2_store (store_id INT, code VARCHAR(32), website_id INT, group_id INT, name VARCHAR(64), is_active INT)", name))
-	exec(fmt.Sprintf("INSERT INTO %s.m2_store VALUES (0, 'admin', 0, 0, 'Admin', 1), (1, 'default', 1, 1, 'Default', 1), (2, 'de', 1, 2, 'DE', 1), (3, 'old', 1, 3, 'Old', 0)", name))
-	exec(fmt.Sprintf("CREATE TABLE %s.m2_core_config_data (scope VARCHAR(8), scope_id INT, path VARCHAR(255), value TEXT)", name))
-	exec(fmt.Sprintf("DROP TABLE %[1]s.m2_cron_schedule; CREATE TABLE %[1]s.m2_cron_schedule (job_code VARCHAR(255), status VARCHAR(16), executed_at DATETIME)", name))
-	exec(fmt.Sprintf("CREATE USER '%[1]s'@'%%' IDENTIFIED BY 'pw'; GRANT SELECT ON %[1]s.* TO '%[1]s'@'%%'", name))
-
-	host, port, _ := net.SplitHostPort(cfg.Addr)
-	var portNumber float64
-	_, _ = fmt.Sscan(port, &portNumber)
-	shop := &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
-		body := ""
-		if r.URL.Path == "/magento_version" {
-			body = "Magento/2.4.7 (Community)"
-		}
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{}, Request: r}, nil
-	})}
-	in := magentoPreflightInput{host: host, port: portNumber, database: name, username: name, password: "pw", baseURL: "https://shop.test", storeCode: "all"}
+	in, exec := magentoTestStore(t)
+	name := in.database
+	shop := magentoTestShop(nil)
 
 	got, err := runMagentoPreflight(context.Background(), in, shop)
 	if err != nil {
