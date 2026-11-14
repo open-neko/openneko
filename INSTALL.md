@@ -294,6 +294,7 @@ openneko instances                 # configured host installations
 openneko start [--mode prod|dev|demo] [--detach]
 openneko start --native [--database-url URL] [--web-dir DIR] [--detach]  # no Docker; see "Run without Docker"
 openneko upgrade [--version vX.Y.Z] [--mode auto|prod|dev|demo]
+openneko upgrade --from <release folder> [--skip-backup]   # native install
 openneko status                    # serving, degraded or down
 openneko logs [service…] [-f] [--tail N]
 openneko stop [--volumes]          # --volumes wipes data (Docker only)
@@ -838,8 +839,31 @@ openneko start --native -d \
    background and the command waits until web answers.
 
 The start writes `"runtime": "native"` to `installation.json`. After that,
-`openneko start`, `stop`, `status` and `logs` act on the native processes.
-`openneko logs` reads the `supervisor`, `serve` and `web` logs.
+`openneko start`, `stop`, `status`, `logs`, `doctor`, `backup`, `restore`
+and `upgrade` act on the native install. `openneko logs` reads the
+`supervisor`, `serve` and `web` logs.
+
+- `openneko doctor` checks the host, the web app folder, the database (the
+  same checks as the start), `pg_dump` and `pg_restore`, the latest backup
+  and the processes.
+- `openneko backup` writes one encrypted file. It holds a `pg_dump` of the
+  database, the config folder (`installation.json` stays out) and the data
+  folders: files, file index, serve credentials, GraphJin config, agent runs
+  and subscriptions. Logs and `run` stay out. The default folder is
+  `~/.local/share/openneko/backups/<installation>/openneko-native`.
+- `openneko restore <file> --confirm RESTORE` verifies the whole file, stops
+  OpenNeko, replaces those folders and the objects that the login owns in
+  the database, and keeps the database URL of this install. It starts
+  OpenNeko again when it ran before. The start applies the migrations.
+- `openneko upgrade --from <folder>` takes a backup, stops OpenNeko, puts
+  the release's `bin/openneko` and `share/openneko/web` in place of the
+  current ones, and starts OpenNeko again when it ran before.
+  `--skip-backup` upgrades with no backup.
+
+Backup and restore run `pg_dump` and `pg_restore` on this host. Install the
+PostgreSQL client tools of the server's major version or later (on Debian
+and Ubuntu, `postgresql-client-16`). The login needs `CREATEROLE` for the
+serve roles; the database check prints the SQL when it does not have it.
 
 | What | Where |
 |---|---|
@@ -854,9 +878,11 @@ The start writes `"runtime": "native"` to `installation.json`. After that,
 these ports free. The embedding service and the sandbox stay external: set
 `NEKO_EMBEDDING_URL` and `OPENNEKO_SANDBOX_URL` before the start.
 
-A native install has no Node worker. Password sign-in, chat and the routes
-that `openneko web` answers work. SSO sign-in and pack account connections
-need the worker today. Windows does not run the native runtime yet.
+A native install has no Node worker. A new install opens as the solo
+administrator, with no sign-in. Chat and the routes that `openneko web`
+answers work. A sign-in provider (SSO or an email link) and pack account
+connections need the worker today. Windows does not run the native runtime
+yet.
 
 ## Reset
 
