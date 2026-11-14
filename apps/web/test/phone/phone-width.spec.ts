@@ -35,6 +35,13 @@ const screens = [
   "/admin/settings/workflows",
   "/admin/settings/graphjin",
   "/admin/users",
+  "/admin/users/groups/c0a7ac70-0000-4000-8000-000000000061",
+  `/admin/access?type=workflow&id=${F.adminWorkflowId}`,
+  "/device",
+  "/integrations",
+  "/chat/connectors",
+  "/onboarding",
+  "/admin/settings/packs/magento/operations",
   ...cardThreads.map((card) => `/work/${card.threadId}`),
 ];
 
