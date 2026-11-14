@@ -59,12 +59,6 @@ func readObject(r *http.Request) map[string]any {
 	return m
 }
 
-// scheduleGroupGrantsApply asks the worker to apply GraphJin roles and
-// ignores the answer, as Node does.
-func (a *API) scheduleGroupGrantsApply(ctx context.Context) {
-	_, _, _ = a.workerDo(context.WithoutCancel(ctx), http.MethodPost, "/admin/graphjin/group-grants", workerAdminTimeout, []byte("{}"))
-}
-
 // relayWorker is requestWorker() with the route's catch: any failure gives
 // 503 "worker is unavailable".
 func (a *API) relayWorker(w http.ResponseWriter, r *http.Request, path string, body []byte) {
@@ -586,7 +580,7 @@ func (a *API) adminGroupDelete(w http.ResponseWriter, r *http.Request) {
 		a.groupFailure(w, r, err)
 		return
 	}
-	a.scheduleGroupGrantsApply(ctx)
+	a.scheduleGroupGrantsApply(ctx, act.OrgID)
 	sendJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

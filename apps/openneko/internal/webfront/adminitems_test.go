@@ -141,7 +141,11 @@ func TestAdminItems(t *testing.T) {
 		('org', 'shop', '1.2', 'installed', 'h', '{}'), ('org', 'gone', '1', 'removed', 'h', '{}')`)
 	seed(t, db, `insert into channel_identity (id, org_id, channel_plugin, channel_user_id, first_seen_at, created_at, updated_at)
 		values ('cccccccc-0000-4000-8000-000000000001', 'org', 'telegram', 'u1', now(), now(), now())`)
-	wk.reply["/admin/graphjin/api-operations"] = `{"operations":["erp:orders:list"]}`
+	gjCfg := filepath.Join(t.TempDir(), "dev.yml")
+	if err := os.WriteFile(gjCfg, []byte("sources:\n  - name: erp\n    kind: api\n    specs:\n      orders:\n        operations:\n          list: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENNEKO_GRAPHJIN_CONFIG", gjCfg)
 	wk.reply["/admin/connect/providers"] = `{"providers":[{"pluginName":"slack","providerLabel":"Slack"}]}`
 	if err := secrets.Write(secrets.Store{"channel.slack": {"SLACK_BOT_TOKEN": "xoxb-1"}, "channel.hud": {"HUD_CHANNEL_WORKSPACE": "pack"}}, f.API.SecretsDir); err != nil {
 		t.Fatal(err)
@@ -257,6 +261,8 @@ func TestAdminCatalogPages(t *testing.T) {
 
 func TestAdminItemGrants(t *testing.T) {
 	f, db, wk := groupsFront(t)
+	var scheduled []string
+	f.API.GroupGrantsScheduled = func(orgID string) { scheduled = append(scheduled, orgID) }
 	admin := sessionCookie("admin")
 	groupID := decode(t, call(f, "POST", "/api/v1/admin/groups", `{"name":"Finance"}`, admin))["group"].(map[string]any)["id"].(string)
 	var adminsID, everyoneID string
@@ -275,14 +281,14 @@ func TestAdminItemGrants(t *testing.T) {
 	if w := call(f, "POST", grants, `{"groupId":"`+everyoneID+`","itemType":"skill","itemId":"*"}`, admin); w.Code != 200 || w.Body.String() != `{"created":false}` {
 		t.Errorf("grant all: %d %s", w.Code, w.Body.String())
 	}
-	if len(wk.calls) != 0 {
-		t.Errorf("skill grant called the worker: %v", wk.calls)
+	if len(scheduled) != 0 || len(wk.calls) != 0 {
+		t.Errorf("skill grant scheduled or called worker: scheduled=%v worker=%v", scheduled, wk.calls)
 	}
 	if w := call(f, "POST", grants, `{"groupId":"`+groupID+`","itemType":"data_source","itemIds":[" shop","crm","shop"],"itemId":"ignored"}`, admin); w.Code != 200 || w.Body.String() != `{"created":2}` {
 		t.Errorf("grant list: %d %s", w.Code, w.Body.String())
 	}
-	if len(wk.calls) != 1 || wk.calls[0] != "POST /admin/graphjin/group-grants {}" {
-		t.Errorf("worker calls: %v", wk.calls)
+	if !slices.Equal(scheduled, []string{"org"}) || len(wk.calls) != 0 {
+		t.Errorf("scheduled=%v worker=%v", scheduled, wk.calls)
 	}
 	seed(t, db, `insert into pack_install (id, org_id, pack_id, version, status, manifest_hash, config) values
 		('90000000-0000-4000-8000-000000000001', 'org', 'office', '1', 'installed', 'h', '{}')`)
@@ -351,6 +357,8 @@ func TestAdminItemGrants(t *testing.T) {
 
 func TestAdminDataAccess(t *testing.T) {
 	f, db, wk := groupsFront(t)
+	var scheduled []string
+	f.API.GroupGrantsScheduled = func(orgID string) { scheduled = append(scheduled, orgID) }
 	admin := sessionCookie("admin")
 	groupID := decode(t, call(f, "POST", "/api/v1/admin/groups", `{"name":"Sales"}`, admin))["group"].(map[string]any)["id"].(string)
 	var adminsID string
@@ -444,14 +452,8 @@ func TestAdminDataAccess(t *testing.T) {
 		t.Errorf("many: %d %s", w.Code, w.Body.String())
 	}
 
-	applies := 0
-	for _, c := range wk.calls {
-		if c == "POST /admin/graphjin/group-grants {}" {
-			applies++
-		}
-	}
-	if applies != 3 {
-		t.Errorf("grant applies after creates: %d %v", applies, wk.calls)
+	if len(scheduled) != 3 || len(wk.calls) != 0 {
+		t.Errorf("grant applies after creates: scheduled=%v worker=%v", scheduled, wk.calls)
 	}
 	if w := call(f, "DELETE", rules+"/"+ruleID, "", admin); w.Code != 200 || w.Body.String() != `{"ok":true}` {
 		t.Errorf("delete: %d %s", w.Code, w.Body.String())
@@ -459,8 +461,8 @@ func TestAdminDataAccess(t *testing.T) {
 	if w := call(f, "DELETE", rules+"/"+ruleID, "", admin); w.Code != 404 || w.Body.String() != `{"error":"rule not found"}` {
 		t.Errorf("delete again: %d %s", w.Code, w.Body.String())
 	}
-	if len(wk.calls) != 4 {
-		t.Errorf("worker calls after delete: %v", wk.calls)
+	if len(scheduled) != 4 || len(wk.calls) != 0 {
+		t.Errorf("scheduled after delete: scheduled=%v worker=%v", scheduled, wk.calls)
 	}
 
 	settings := rules + "/settings"
@@ -474,12 +476,21 @@ func TestAdminDataAccess(t *testing.T) {
 	if w := call(f, "PATCH", settings, `{"enabled":"yes"}`, admin); w.Code != 400 || w.Body.String() != `{"error":"enabled must be true or false"}` {
 		t.Errorf("settings bad: %d %s", w.Code, w.Body.String())
 	}
-	wk.reply["/admin/graphjin/group-grants/disable"] = `{"ok":true,"enabled":false}`
-	if w := call(f, "PATCH", settings, `{"enabled":false}`, admin); w.Code != 200 || w.Body.String() != `{"ok":true,"enabled":false}` ||
-		wk.calls[len(wk.calls)-1] != `POST /admin/graphjin/group-grants/disable {"actorUserId":"admin"}` {
-		t.Errorf("settings off: %d %s %v", w.Code, w.Body.String(), wk.calls)
+	if w := call(f, "PATCH", settings, `{"enabled":false}`, admin); w.Code != 503 || w.Body.String() != `{"error":"GraphJin configuration is unavailable"}` {
+		t.Errorf("settings without config: %d %s", w.Code, w.Body.String())
 	}
-	if w := call(f, "PATCH", settings, `{"enabled":true}`, admin); w.Code != 404 || wk.calls[len(wk.calls)-1] != `POST /admin/graphjin/group-grants/enable {"actorUserId":"admin"}` {
-		t.Errorf("settings on: %d %s", w.Code, w.Body.String())
+	gjCfg := filepath.Join(t.TempDir(), "dev.yml")
+	if err := os.WriteFile(gjCfg, []byte("sources:\n  - name: shop\n    kind: database\n    access:\n      read: authenticated\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENNEKO_GRAPHJIN_CONFIG", gjCfg)
+	if w := call(f, "PATCH", settings, `{"enabled":false}`, admin); w.Code != 200 || w.Body.String() != `{"changed":true,"enabled":false,"ok":true}` {
+		t.Errorf("settings off: %d %s", w.Code, w.Body.String())
+	}
+	if w := call(f, "PATCH", settings, `{"enabled":true}`, admin); w.Code != 503 || w.Body.String() != `{"error":"no enabled GraphJin data source"}` {
+		t.Errorf("settings on without source: %d %s", w.Code, w.Body.String())
+	}
+	if len(wk.calls) != 0 {
+		t.Errorf("unexpected worker calls: %v", wk.calls)
 	}
 }
