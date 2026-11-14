@@ -931,7 +931,8 @@ files as root. The logs are `/var/lib/openneko/control/logs/web.log` and
 `/var/lib/openneko/agent/logs/serve.log`.
 
 `server-install` options: `--database-url`, `--port` (3000), `--bind`
-(0.0.0.0), `--public-url`, `--start`, and `--one-user`, which runs both
+(0.0.0.0), `--public-url`, `--start` (start both services and wait until web
+answers), and `--one-user`, which runs both
 services as the `openneko` user with no agent-zone user. A second run of
 `server-install` keeps the data and sets the given values again.
 
