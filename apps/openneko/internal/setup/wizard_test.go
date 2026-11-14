@@ -115,7 +115,7 @@ func TestHeadlessConfigure(t *testing.T) {
 	}); !ok {
 		t.Error("research not explicitly disabled")
 	}
-	if _, ok := findWhere(recs, "POST", "/settings/finish", nil); !ok {
+	if _, ok := findWhere(recs, "POST", "/api/v1/settings/finish", nil); !ok {
 		t.Error("setup not finished")
 	}
 }

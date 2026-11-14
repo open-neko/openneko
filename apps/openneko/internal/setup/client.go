@@ -227,7 +227,7 @@ func (c *Client) SaveProvider(ctx context.Context, draft ProviderDraft) error {
 }
 
 func (c *Client) Finish(ctx context.Context) error {
-	return c.do(ctx, http.MethodPost, "/settings/finish", nil, nil)
+	return c.do(ctx, http.MethodPost, "/api/v1/settings/finish", nil, nil)
 }
 
 // do issues a JSON request and decodes a JSON response. Non-2xx responses
