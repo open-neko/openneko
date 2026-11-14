@@ -57,6 +57,9 @@ func newStatusCmd() *cobra.Command {
 		Short: "Is the stack serving, degraded, or down?",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if _, ok := nativeInstall(); ok {
+				return statusNative(cmd.Context(), cmd.OutOrStdout())
+			}
 			sup := compose.New(assets.ComposeFS)
 			files, err := sup.Materialize(compose.ModeDemo)
 			if err != nil {
