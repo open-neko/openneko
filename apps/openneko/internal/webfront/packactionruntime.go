@@ -76,8 +76,6 @@ type actionExecutionOutcome struct {
 	Result             *jsObj
 }
 
-// packActionPreflight matches registerPackActionPreflight() in
-// apps/worker/src/packs/action-preflight.ts.
 func (a *API) packActionPreflight(ctx context.Context, orgID, kind string) error {
 	var enabled bool
 	var readiness string
@@ -143,8 +141,6 @@ func (a *API) packConnectionBindings(ctx context.Context, orgID, userID, install
 	return bindings, nil
 }
 
-// installedPackAction matches installedAction() in
-// apps/worker/src/packs/declarative-action-runtime.ts.
 func (a *API) installedPackAction(ctx context.Context, orgID, kind string) (*installedPackActionRow, error) {
 	var row installedPackActionRow
 	var rawConfig, rawDef, rawSource []byte
@@ -200,8 +196,6 @@ func (a *API) installedPackAction(ctx context.Context, orgID, kind string) (*ins
 	return &row, nil
 }
 
-// packConnectionPreflight matches registerPackConnectionPreflight() in
-// apps/worker/src/packs/declarative-action-runtime.ts.
 func (a *API) packConnectionPreflight(ctx context.Context, req *actionRequestRecord) (*actionRequestRecord, error) {
 	var owned bool
 	if err := a.DB.QueryRow(ctx, `select exists (select 1 from pack_action_definition where org_id = $1 and kind = $2)`,
@@ -303,24 +297,11 @@ func (a *API) shouldCreateActionRequestInGo(ctx context.Context, orgID, kind str
 	if isMagentoV2ActionKind(kind) {
 		return true, nil
 	}
-	var enabled, hasArtifact bool
-	var readiness string
+	var owned bool
 	err := a.DB.QueryRow(ctx, `
-		select d.enabled, d.readiness,
-		       exists (
-		         select 1 from pack_artifact a
-		          where a.org_id = d.org_id and a.artifact_kind = 'action' and a.target_ref = d.kind
-		       )
-		  from pack_action_definition d
-		 where d.org_id = $1 and d.kind = $2
-		 limit 1`, orgID, kind).Scan(&enabled, &readiness, &hasArtifact)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return !enabled || readiness != "ready" || hasArtifact, nil
+		select exists (select 1 from pack_action_definition where org_id = $1 and kind = $2)`,
+		orgID, kind).Scan(&owned)
+	return owned, err
 }
 
 // createActionRequestInGo matches createActionRequest() in
@@ -548,8 +529,6 @@ func nullableStringPtr(s *string) any {
 	return *s
 }
 
-// approvedPackConnections matches approvedConnections() in
-// apps/worker/src/packs/declarative-action-runtime.ts.
 func (a *API) approvedPackConnections(ctx context.Context, req *actionRequestRecord, action *installedPackActionRow) ([]connectionBinding, error) {
 	if len(action.Connections) == 0 {
 		return nil, nil
@@ -586,8 +565,6 @@ func (a *API) approvedPackConnections(ctx context.Context, req *actionRequestRec
 	return current, nil
 }
 
-// executeDeclarativePackAction matches declarativePackActionAdapter in
-// apps/worker/src/packs/declarative-action-runtime.ts.
 func (a *API) executeDeclarativePackAction(ctx context.Context, req *actionRequestRecord) (*actionExecutionOutcome, error) {
 	serializedPayload := jsStringify(req.Payload, false)
 	var plainPayload any

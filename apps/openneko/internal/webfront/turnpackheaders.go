@@ -23,7 +23,8 @@ type connectionBinding struct {
 
 var errApprovedConnectionGone = errors.New("The approved pack connection is no longer available")
 
-// packConnectionHeader matches packConnectionHeader() in packages/packs/src/oauth-client.ts.
+// packConnectionHeader matches packConnectionHeader() in
+// packages/llm/src/graphjin/pack-oauth-client.ts.
 func packConnectionHeader(packID, key string) string {
 	sum := sha256.Sum256([]byte(jsStringify([]any{packID, key}, false)))
 	return "X-OpenNeko-Pack-" + hex.EncodeToString(sum[:])[:24]

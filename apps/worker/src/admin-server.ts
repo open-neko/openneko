@@ -21,23 +21,6 @@ import type {
   BeginConnectParams,
   CompleteConnectParams,
 } from "./signin/types.js";
-import { packFailurePayload, type PackErrorPhase } from "./packs/errors.js";
-
-const PACK_FAILURE_NEXT_STEP: Record<PackErrorPhase, string> = {
-  upload: "Correct the archive layout or manifest, then upload the pack again.",
-  inspection: "Correct the reported manifest or artifact, then inspect the pack again.",
-  review: "Correct the reported configuration or artifact, then review the pack again.",
-  install: "Correct the reported configuration or artifact, then review and install the pack again.",
-  configure: "Correct the reported configuration or artifact, then review and apply the change again.",
-  upgrade: "Correct the reported configuration or artifact, then review and apply the upgrade again.",
-  uninstall: "Check the reported pack state, then try removing the pack again.",
-  oauth: "Check the OAuth client, redirect URI, and requested scopes, then connect the account again.",
-  query_preflight: "Correct the reported query or source configuration, then review the pack again.",
-};
-
-function packFailure(error: unknown, phase: PackErrorPhase) {
-  return packFailurePayload(error, phase, PACK_FAILURE_NEXT_STEP[phase]);
-}
 
 /**
  * Connector OAuth surface exposed to the web app (the Scalekit workspace
@@ -72,22 +55,6 @@ export interface ConnectHandlerSurface {
   disconnect(pluginName: string, operatorId: string): Promise<boolean>;
 }
 
-export interface PacksHandlerSurface {
-  upload(bytes: Buffer, input: { actorUserId?: string | null; signal?: AbortSignal }): Promise<unknown>;
-  review(packId: string, input: Record<string, unknown>, operation: "install" | "configure" | "upgrade"): Promise<unknown>;
-  list(): Promise<unknown>;
-  inspect(packId: string, version?: string): Promise<unknown>;
-  plan(packId: string, version?: string): Promise<unknown>;
-  status(packId: string): Promise<unknown>;
-  doctor(packId: string): Promise<unknown>;
-  install(packId: string, input: Record<string, unknown>): Promise<unknown>;
-  configure(packId: string, input: Record<string, unknown>): Promise<unknown>;
-  upgrade(packId: string, input: Record<string, unknown>): Promise<unknown>;
-  uninstall(packId: string, input: Record<string, unknown>): Promise<unknown>;
-  magentoStoreManagement(): Promise<unknown>;
-  updateMagentoStoreManagement(input: Record<string, unknown>): Promise<unknown>;
-}
-
 export type AdminHandlerOptions = {
   /**
    * Connector surface — wired to the SignInService (Scalekit workspace).
@@ -102,8 +69,6 @@ export type AdminHandlerOptions = {
   /** Trusted web→worker action creation so worker-owned preflight hooks run. */
   actionRequests?: ActionRequestHandlerSurface | null;
   actions?: ActionExecuteHandlerSurface | null;
-  /** Shared first-party and uploaded solution-pack lifecycle. */
-  packs?: PacksHandlerSurface | null;
   /** Directory provider status and on-demand sync. */
   directory?: DirectoryHandlerSurface | null;
   /** Writes group grants into the GraphJin config, now or batched. */
@@ -148,7 +113,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const events = opts.events ?? null;
   const actionRequests = opts.actionRequests ?? null;
   const actions = opts.actions ?? null;
-  const packs = opts.packs ?? null;
   const directory = opts.directory ?? null;
   const groupGrants = opts.groupGrants ?? null;
 
@@ -226,173 +190,8 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       void handleActionExecute(req, res, actions);
       return;
     }
-    if (req.method === "GET" && req.url === "/admin/packs") {
-      void handlePacksList(res, packs);
-      return;
-    }
-    if (req.method === "POST" && req.url === "/admin/packs/upload") {
-      void handlePackUpload(req, res, packs);
-      return;
-    }
-    if (req.method === "GET" && req.url === "/admin/packs/magento/store-management") {
-      void handleMagentoStoreManagementRead(res, packs);
-      return;
-    }
-    if (req.method === "POST" && req.url === "/admin/packs/magento/store-management") {
-      void handleMagentoStoreManagementWrite(req, res, packs);
-      return;
-    }
-    const packPath = (req.url ?? "").split(/[?#]/, 1)[0] ?? "";
-    const packRoute = /^\/admin\/packs\/([^/]+)(?:\/(inspect|plan|status|doctor|review|install|configure|upgrade|uninstall))?$/.exec(
-      packPath,
-    );
-    if (packRoute) {
-      let packId: string;
-      try {
-        packId = decodeURIComponent(packRoute[1]!);
-      } catch {
-        json(res, 400, { error: "pack id contains invalid URL encoding" });
-        return;
-      }
-      const action = packRoute[2] ?? "inspect";
-      if (req.method === "GET" && !["review", "install", "configure", "upgrade", "uninstall"].includes(action)) {
-        void handlePackRead(res, packs, packId, action as "inspect" | "plan" | "status" | "doctor", new URL(req.url!, "http://localhost").searchParams.get("version") ?? undefined);
-        return;
-      }
-      if (req.method === "POST" && ["review", "install", "configure", "upgrade", "uninstall"].includes(action)) {
-        void handlePackApply(
-          req,
-          res,
-          packs,
-          packId,
-          action as "review" | "install" | "configure" | "upgrade" | "uninstall",
-        );
-        return;
-      }
-    }
     res.writeHead(404).end();
   };
-}
-
-async function handlePackUpload(req: IncomingMessage, res: ServerResponse, packs: PacksHandlerSurface | null): Promise<void> {
-  if (!packs) { json(res, 503, { error: "solution-pack service unavailable" }); return; }
-  if (req.headers["content-type"]?.split(";", 1)[0]?.trim() !== "application/zip") {
-    json(res, 415, { error: "upload a ZIP with Content-Type application/zip" }); return;
-  }
-  const controller = new AbortController();
-  const abort = () => { if (!res.writableEnded) controller.abort(); };
-  res.once("close", abort);
-  try {
-    const bytes = await readBody(req, 16 * 1024 * 1024);
-    const actor = req.headers["x-openneko-actor"];
-    if (Array.isArray(actor)) throw new Error("invalid upload actor");
-    json(res, 200, await packs.upload(bytes, { actorUserId: actor ? decodeURIComponent(actor) : null, signal: controller.signal }));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    json(res, message === "body too large" ? 413 : 400, packFailure(error, "upload"));
-  } finally { res.off("close", abort); }
-}
-
-async function handlePacksList(
-  res: ServerResponse,
-  packs: PacksHandlerSurface | null,
-): Promise<void> {
-  if (!packs) {
-    json(res, 503, { error: "solution-pack service unavailable" });
-    return;
-  }
-  try {
-    json(res, 200, { packs: await packs.list() });
-  } catch (error) {
-    json(res, 500, { error: error instanceof Error ? error.message : String(error) });
-  }
-}
-
-async function handleMagentoStoreManagementRead(
-  res: ServerResponse,
-  packs: PacksHandlerSurface | null,
-): Promise<void> {
-  if (!packs) {
-    json(res, 503, { error: "solution-pack service unavailable" });
-    return;
-  }
-  try {
-    json(res, 200, await packs.magentoStoreManagement());
-  } catch (error) {
-    json(res, 400, packFailure(error, "inspection"));
-  }
-}
-
-async function handleMagentoStoreManagementWrite(
-  req: IncomingMessage,
-  res: ServerResponse,
-  packs: PacksHandlerSurface | null,
-): Promise<void> {
-  if (!packs) {
-    json(res, 503, { error: "solution-pack service unavailable" });
-    return;
-  }
-  const body = await readJson(req).catch(() => null);
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    json(res, 400, { error: "request body must be a JSON object" });
-    return;
-  }
-  try {
-    json(res, 200, await packs.updateMagentoStoreManagement(body as Record<string, unknown>));
-  } catch (error) {
-    json(res, 400, packFailure(error, "inspection"));
-  }
-}
-
-async function handlePackRead(
-  res: ServerResponse,
-  packs: PacksHandlerSurface | null,
-  packId: string,
-  action: "inspect" | "plan" | "status" | "doctor",
-  version?: string,
-): Promise<void> {
-  if (!packs) {
-    json(res, 503, { error: "solution-pack service unavailable" });
-    return;
-  }
-  try {
-    const result = version && (action === "inspect" || action === "plan") ? await packs[action](packId, version) : await packs[action](packId);
-    if (action === "status" && result === null) {
-      json(res, 404, { error: `pack ${packId} is not installed` });
-      return;
-    }
-    json(res, 200, result);
-  } catch (error) {
-    json(res, 400, packFailure(error, "inspection"));
-  }
-}
-
-async function handlePackApply(
-  req: IncomingMessage,
-  res: ServerResponse,
-  packs: PacksHandlerSurface | null,
-  packId: string,
-  action: "review" | "install" | "configure" | "upgrade" | "uninstall",
-): Promise<void> {
-  if (!packs) {
-    json(res, 503, { error: "solution-pack service unavailable" });
-    return;
-  }
-  const body = await readJson(req).catch(() => null);
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    json(res, 400, { error: "request body must be a JSON object" });
-    return;
-  }
-  try {
-    const input = body as Record<string, unknown>;
-    if (action === "review") {
-      const operation = input.operation ?? "install";
-      if (operation !== "install" && operation !== "configure" && operation !== "upgrade") throw new Error("invalid pack review operation");
-      json(res, 200, await packs.review(packId, input, operation));
-    } else json(res, 200, await packs[action](packId, input));
-  } catch (error) {
-    json(res, 400, packFailure(error, action === "review" ? "review" : action));
-  }
 }
 
 async function handleActionRequestCreate(
