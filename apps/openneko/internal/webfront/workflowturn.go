@@ -532,6 +532,7 @@ func (a *API) finishWorkflowRun(ctx context.Context, workflowRunID, status strin
 	if err := a.postRunToBotChat(ctx, workflowRunID, status, deref(summary), deref(runErr)); err != nil {
 		log.Printf("[workflow-run] bot chat post failed: %v", err)
 	}
+	a.queueWorkflowRunPush(ctx, workflowRunID, status)
 	return nil
 }
 
