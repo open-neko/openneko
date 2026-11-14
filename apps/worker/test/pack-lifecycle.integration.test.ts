@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { stringify, parse } from "yaml";
 
 const state = vi.hoisted(() => ({ workspace: "", failQuery: false, queries: [] as Array<{ baseUrl: string; query: string; variables?: Record<string, unknown> }> }));
-vi.mock("@neko/db/jobs", () => ({ enqueue: async () => "fixture-job", QUEUE: { METRIC_REFRESH: "metric_refresh" } }));
+vi.mock("@neko/db/jobs", () => ({ enqueueMetricRefresh: async () => "fixture-job" }));
 vi.mock("@neko/llm/work", () => ({ ensureOrgWorkspace: async () => ({ orgRoot: state.workspace, skillsRoot: join(state.workspace, "skills") }) }));
 vi.mock("@neko/llm/graphjin", async importOriginal => ({
   ...await importOriginal<object>(),
@@ -59,7 +59,6 @@ vi.mock("../src/packs/magento-preflight.js", async importOriginal => {
 import { runMagentoPreflight } from "../src/packs/magento-preflight.js";
 import { packArtifactSource } from "@neko/llm/graphjin";
 import { sweepWatchers } from "@neko/llm/workflows";
-import { runMetricRefresh } from "../src/jobs/metric-refresh.js";
 import { buildSavedQueryVariables } from "../src/jobs/deterministic-metric.js";
 import { pool } from "@neko/db";
 import { PackService } from "../src/packs/service.js";
@@ -207,18 +206,12 @@ describe.skipIf(!enabled)("shared pack lifecycle with Postgres", () => {
     expect(buildSavedQueryVariables(card.definition_json).timezone).toBe("Asia/Kolkata");
     const other = (await pool().query("insert into data_source (org_id,name,kind,graphql_url,is_default) values ($1,'other','graphjin','http://wrong.invalid/graphql',true) returning id", [org])).rows[0].id;
     expect((await packArtifactSource(org, "metric", card.id))?.id).toBe(dataSourceId);
-    const job = (await pool().query("insert into processing_job (org_id,kind,status,trigger,trigger_payload) values ($1,'metric_refresh','running','test',$2) returning id", [org, JSON.stringify({ metricId: card.id })])).rows[0].id;
-    await runMetricRefresh(job, org);
-    expect(state.queries.at(-1)).toMatchObject({ baseUrl: "http://fixture.invalid/api/v1/graphql", variables: { timezone: "Asia/Kolkata" } });
-    expect((await pool().query("select value from metric_snapshot where metric_id=$1", [card.id])).rows[0].value).toBe("1");
+    expect((await packArtifactSource(org, "metric", card.id))?.graphqlUrl).toBe("http://fixture.invalid/api/v1/graphql");
     const query = vi.fn(async () => ({ data: { health: { healthy: 1 } } }));
     await sweepWatchers(org, { query, enqueueFire: async () => {} });
     expect(query).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: "http://fixture.invalid/api/v1/graphql", variables: { timezone: "Asia/Kolkata" } }));
     await pool().query("update data_source set enabled=false where id=$1", [dataSourceId]);
     await expect(packArtifactSource(org, "metric", card.id)).rejects.toThrow(/unavailable/);
-    const count = state.queries.length;
-    await expect(runMetricRefresh(job, org)).rejects.toThrow(/unavailable/);
-    expect(state.queries.length).toBe(count);
     await expect(service.configure("service-health")).rejects.toThrow(/unavailable/);
     await pool().query("update data_source set enabled=true,graphql_url='http://changed.invalid/graphql' where id=$1", [dataSourceId]);
     await expect(packArtifactSource(org, "metric", card.id)).rejects.toThrow(/changed/);
@@ -261,9 +254,8 @@ describe.skipIf(!enabled)("shared pack lifecycle with Postgres", () => {
     expect((await packArtifactSource(org, "metric", card.id))?.id).toBe(dataSourceId);
     expect(state.queries.filter(value => !value.query.includes("gj_config")).at(-1)?.query).toContain('@database(name: "customer_db")');
     expect(await readFile(join(root, "queries/database_health_health.gql"), "utf8")).toContain('@database(name: "customer_db")');
-    const job = (await pool().query("insert into processing_job (org_id,kind,status,trigger,trigger_payload) values ($1,'metric_refresh','running','test',$2) returning id", [org, JSON.stringify({ metricId: card.id })])).rows[0].id;
-    await runMetricRefresh(job, org);
-    expect(state.queries.at(-1)?.query).toContain('@database(name: "customer_db")');
+    const document = async () => (await pool().query("select definition_json->'execution'->>'document' as document from metric where id=$1", [card.id])).rows[0].document as string;
+    expect(await document()).toContain('@database(name: "customer_db")');
     const query = vi.fn(async () => ({ data: { health: { healthy: 1 } } }));
     await sweepWatchers(org, { query, enqueueFire: async () => {} });
     expect(query).toHaveBeenCalledWith(expect.objectContaining({ query: expect.stringContaining('@database(name: "customer_db")') }));
@@ -271,7 +263,7 @@ describe.skipIf(!enabled)("shared pack lifecycle with Postgres", () => {
     const routingChanged = parse(routingBefore);
     routingChanged.tables.find((table: any) => table.source === "customer_db").source = "wrong_database";
     await writeFile(join(root, "graphjin.yml"), stringify(routingChanged));
-    await expect(runMetricRefresh(job, org)).rejects.toThrow(/routing changed/);
+    await expect(packArtifactSource(org, "metric", card.id)).rejects.toThrow(/routing changed/);
     await expect(service.configure("database-health")).rejects.toThrow(/routing changed/);
     await writeFile(join(root, "graphjin.yml"), routingBefore);
     const changed = parse(await readFile(join(root, "graphjin.yml"), "utf8"));
@@ -292,8 +284,8 @@ describe.skipIf(!enabled)("shared pack lifecycle with Postgres", () => {
     rebindConfig.sources.push({ ...physical, name: "another_db" });
     await writeFile(join(root, "graphjin.yml"), stringify(rebindConfig));
     await service.configure("database-health", { sourceBindings: { "source.service_health": "another_db" } });
-    await runMetricRefresh(job, org);
-    expect(state.queries.at(-1)?.query).toContain('@database(name: "another_db")');
+    expect((await packArtifactSource(org, "metric", card.id))?.id).toBe(dataSourceId);
+    expect(await document()).toContain('@database(name: "another_db")');
     const reboundTables = parse(await readFile(join(root, "graphjin.yml"), "utf8")).tables;
     expect(new Set(reboundTables.map((table: any) => table.name)).size).toBe(reboundTables.length);
     await service.configure("database-health", { sourceBindings });

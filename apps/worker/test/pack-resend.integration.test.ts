@@ -23,7 +23,7 @@ import { PackService } from "../src/packs/service.js";
 // OpenNeko database. OPENNEKO_GRAPHJIN_BIN names a GraphJin binary; without it
 // the test builds one from graphjin/.
 const workspace = vi.hoisted(() => ({ root: "" }));
-vi.mock("@neko/db/jobs", () => ({ enqueue: async () => "fixture-job", QUEUE: { METRIC_REFRESH: "metric_refresh" } }));
+vi.mock("@neko/db/jobs", () => ({ enqueueMetricRefresh: async () => "fixture-job" }));
 vi.mock("@neko/llm/work", () => ({ ensureOrgWorkspace: async () => ({ orgRoot: workspace.root, skillsRoot: join(workspace.root, "skills") }) }));
 
 const exec = promisify(execFile);

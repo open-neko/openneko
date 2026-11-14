@@ -217,8 +217,12 @@ func memoryTools(b turnBinding, be toolBackend) []toolDef {
 			}
 			be.audit(ctx, "/v1/memory/search")
 			query := stringArg(args, "query")
+			runID := b.runID()
+			if b.Kind == "agent-job" {
+				runID = nil
+			}
 			results, err := traceMemorySearch(b.trace(), query, &limit, func() (any, error) {
-				return be.searchMemory(ctx, memorySearchIn{OrgID: b.OrgID, Query: query, Limit: limit, RunID: b.runID()})
+				return be.searchMemory(ctx, memorySearchIn{OrgID: b.OrgID, Query: query, Limit: limit, RunID: runID})
 			})
 			if err != nil {
 				return toolResult{}, err

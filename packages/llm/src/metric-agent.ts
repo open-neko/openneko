@@ -576,3 +576,71 @@ async function loadMetricKnowledge(input: MetricAgentInput, knowledgeRoot: strin
     knowledgePackPaths(knowledgeRoot),
   ));
 }
+
+const VALID_MOODS = new Set(["good", "watch", "bad"]);
+const VALID_CHART_TYPES = new Set(["kpi", "line", "bar", "donut", "area"]);
+const FAIL_SENTINELS = new Set([
+  "error",
+  "errors",
+  "n/a",
+  "na",
+  "unavailable",
+  "data unavailable",
+  "data unavilable",
+  "no data",
+  "null",
+  "undefined",
+  "—",
+  "-",
+  "?",
+  "tbd",
+]);
+const ALL_PUNCT_RE = /^[\s\-—?_.]+$/;
+const VALID_TIME_GRAINS = new Set([
+  "day",
+  "week",
+  "month",
+  "quarter",
+  "year",
+  "all_time",
+  "snapshot",
+]);
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function validateMetricResult(r: MetricAgentResult): string | null {
+  if (!r.headlineMetric || !r.headlineMetric.trim()) return "empty headlineMetric";
+  const headlineNorm = r.headlineMetric.trim().toLowerCase();
+  if (FAIL_SENTINELS.has(headlineNorm) || ALL_PUNCT_RE.test(headlineNorm)) {
+    return `agent emitted error sentinel as headlineMetric: "${r.headlineMetric}"`;
+  }
+  if (!r.headlineLabel) return "empty headlineLabel";
+  if (!r.insightText) return "empty insightText";
+  if (!VALID_MOODS.has(r.mood)) return `invalid mood: ${r.mood}`;
+  if (!VALID_CHART_TYPES.has(r.chartType)) return `invalid chartType: ${r.chartType}`;
+  if (!Array.isArray(r.chartData) || r.chartData.length === 0) return "empty chartData";
+  for (const item of r.chartData) {
+    if (typeof item.v !== "number" || isNaN(item.v)) return "chartData item has non-numeric v";
+    if (!item.d) return "chartData item missing d label";
+  }
+  if (r.chartType === "kpi" && r.chartData.length !== 1) {
+    return `kpi chartType requires exactly 1 chartData item, got ${r.chartData.length}`;
+  }
+  if (r.chartType === "kpi" && r.chartData[0].t == null) {
+    return "kpi chartType requires a baseline (t) value";
+  }
+
+  if (!r.timeWindow) return "missing timeWindow";
+  if (!VALID_TIME_GRAINS.has(r.timeWindow.grain)) {
+    return `invalid timeWindow.grain: ${r.timeWindow.grain}`;
+  }
+  if (!r.timeWindow.label) return "empty timeWindow.label";
+  if (r.timeWindow.grain !== "all_time") {
+    if (!r.timeWindow.start || !ISO_DATE_RE.test(r.timeWindow.start)) {
+      return `timeWindow.start must be yyyy-mm-dd (got "${r.timeWindow.start}")`;
+    }
+    if (!r.timeWindow.end || !ISO_DATE_RE.test(r.timeWindow.end)) {
+      return `timeWindow.end must be yyyy-mm-dd (got "${r.timeWindow.end}")`;
+    }
+  }
+  return null;
+}

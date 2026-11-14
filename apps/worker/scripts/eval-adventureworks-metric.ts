@@ -31,6 +31,7 @@ import {
   ensureHostConfigProvisioned,
   provisionHostConfig,
   runMetricAgent,
+  validateMetricResult,
   shutdownAgentBroker,
   type AgentTokenUsage,
   type MetricAgentDiagnostics,
@@ -40,7 +41,6 @@ import {
 } from "@neko/llm";
 import { maybeEncryptSecret } from "@neko/llm/secrets";
 import pg from "pg";
-import { validateResult } from "../src/jobs/metric-refresh.js";
 
 type AdventureWorksOracle = {
   anchorDate: string;
@@ -556,7 +556,7 @@ export function createAdventureWorksMetricDriver(context: {
         kind: "output.contract",
         operationId: `${operationId}:contract`,
         parentOperationId: operationId,
-        status: validateResult(output) ? "error" : "ok",
+        status: validateMetricResult(output) ? "error" : "ok",
       });
       return {
         output,
@@ -670,7 +670,7 @@ export function createAdventureWorksMetricDriver(context: {
           };
         }
         if (assertion.kind === "metric.contract") {
-          const validationError = validateResult(output);
+          const validationError = validateMetricResult(output);
           return {
             assertionId: assertion.id,
             dimension: assertion.dimension,

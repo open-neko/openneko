@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 )
 
 var bootstrapRoleFocus = map[string]string{
@@ -160,7 +162,7 @@ func validateBootstrapMetrics(raw any, seats []string) ([]bootstrapMetric, error
 
 // buildBootstrapMetrics is the bootstrap_metrics_build job: four starter
 // cards for each seat that has no metric yet, each followed by a
-// metric_refresh job.
+// metric_refresh job on River.
 func (a *API) buildBootstrapMetrics(ctx context.Context, jobID, orgID string) error {
 	a.jobProgress(ctx, jobID, "Loading profile")
 	var orgName string
@@ -237,8 +239,8 @@ func (a *API) buildBootstrapMetrics(ctx context.Context, jobID, orgID string) er
 	log.Printf("[bootstrap-metrics] org=%s generated %d cards for seats %s in %.0fs", orgID, len(metrics), strings.Join(need, ", "), time.Since(started).Seconds())
 	a.jobProgress(ctx, jobID, fmt.Sprintf("Generated %d cards", len(metrics)))
 	a.jobProgress(ctx, jobID, "Saving cards")
-	if err := a.ensureQueue(ctx, queueMetricRefresh); err != nil {
-		return err
+	if a.Jobs == nil {
+		return errors.New("the job queue is not ready")
 	}
 	inserted, skipped, chained := 0, 0, 0
 	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
@@ -259,7 +261,7 @@ func (a *API) buildBootstrapMetrics(ctx context.Context, jobID, orgID string) er
 				orgID, metricID).Scan(&refreshID); err != nil {
 				return err
 			}
-			if _, err := a.enqueue(ctx, tx, queueMetricRefresh, map[string]string{"processingJobId": refreshID, "orgId": orgID}); err != nil {
+			if err := a.Jobs.Build(ctx, tx, jobs.KindMetricRefresh, orgID, refreshID, jobs.BuildAttempts); err != nil {
 				return err
 			}
 			chained++

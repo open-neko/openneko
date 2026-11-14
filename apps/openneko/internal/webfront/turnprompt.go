@@ -243,7 +243,31 @@ func memorySection(searchTool, files bool, memoryContext string) string {
 		"usage", "\n\n"+strings.Join(usage, "\n\n"))
 }
 
+// readOnlyMemorySection is buildMemorySection() with saveMode "none".
+func readOnlyMemorySection(searchTool, files bool, memoryContext string) string {
+	loaded := jsTrim(memoryContext)
+	if loaded == "" {
+		loaded = "No memories are currently saved for this workspace."
+	}
+	var usage []string
+	if searchTool {
+		usage = append(usage, section("memory_search"))
+		if files {
+			usage = append(usage, section("memory_files"))
+		}
+	}
+	joined := ""
+	if len(usage) > 0 {
+		joined = "\n\n" + strings.Join(usage, "\n\n")
+	}
+	return section("memory", "loaded", loaded, "application", section("memory_apply"), "usage", joined)
+}
+
 func dataAccessSection(k knowledgePack, readOnly, scripts bool) string {
+	return dataAccessSectionAs(k, readOnly, scripts, "actor credential")
+}
+
+func dataAccessSectionAs(k knowledgePack, readOnly, scripts bool, credential string) string {
 	tool := func(name string) string { return strings.TrimSuffix(graphjinExecuteTool, "execute_graphql") + name }
 	agentic := k.Mode == "agentic"
 	var block string
@@ -256,7 +280,7 @@ func dataAccessSection(k knowledgePack, readOnly, scripts bool) string {
 			"insights", k.Insights, "syntax", k.Syntax)
 	}
 	return section("data_access",
-		"credential", "actor credential",
+		"credential", credential,
 		"catalogTool", tool("query_catalog"),
 		"helpTool", tool("graphql_help"),
 		"validateTool", tool("validate_where_clause"),
@@ -275,7 +299,7 @@ func utf16Len(s string) int { return len(utf16.Encode([]rune(s))) }
 
 func jsTruthy(v any) bool {
 	switch x := v.(type) {
-	case nil:
+	case nil, jsUndefined:
 		return false
 	case bool:
 		return x

@@ -11,7 +11,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 )
 
-// RunBuild runs one setup build as the worker's makeHandler() did: the
+// RunBuild runs one setup build or metric refresh as the worker's makeHandler() did: the
 // processing_job row goes to running, then to succeeded or failed with the
 // error. A failed attempt that River retries goes back to running.
 func (a *API) RunBuild(ctx context.Context, kind, orgID, jobID string) error {
@@ -19,6 +19,7 @@ func (a *API) RunBuild(ctx context.Context, kind, orgID, jobID string) error {
 		jobs.KindBusinessProfileBuild:  a.buildBusinessProfile,
 		jobs.KindIndustryInsightsBuild: a.buildIndustryInsights,
 		jobs.KindBootstrapMetricsBuild: a.buildBootstrapMetrics,
+		jobs.KindMetricRefresh:         a.refreshMetric,
 	}[kind]
 	if run == nil {
 		return fmt.Errorf("unknown build job %s", kind)

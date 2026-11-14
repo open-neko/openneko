@@ -2,18 +2,18 @@ package webfront
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 )
 
-const (
-	queueMetricRefresh = "metric_refresh"
-	pendingMemoryTTL   = 14 * 24 * time.Hour
-)
+const pendingMemoryTTL = 14 * 24 * time.Hour
 
 // MetricSweep is the hourly metric_refresh_scheduled_sweep: it queues the
 // metric refreshes that are due and ages out memories. Only a failure to
@@ -81,8 +81,8 @@ func (a *API) queueDueMetrics(ctx context.Context, now time.Time) error {
 	if len(due) == 0 {
 		return nil
 	}
-	if err := a.ensureQueue(ctx, queueMetricRefresh); err != nil {
-		return err
+	if a.Jobs == nil {
+		return errors.New("the job queue is not ready")
 	}
 	stamp := now.UTC().Truncate(time.Millisecond)
 	for _, c := range due {
@@ -97,8 +97,7 @@ func (a *API) queueDueMetrics(ctx context.Context, now time.Time) error {
 				last_refresh_job_id = $2, updated_at = $3 where id = $1`, c.id, jobID, stamp); err != nil {
 				return err
 			}
-			_, err := a.enqueue(ctx, tx, queueMetricRefresh, map[string]string{"processingJobId": jobID, "orgId": c.orgID})
-			return err
+			return a.Jobs.Build(ctx, tx, jobs.KindMetricRefresh, c.orgID, jobID, jobs.BuildAttempts)
 		})
 		if err != nil {
 			return fmt.Errorf("queue the refresh of metric %s: %w", c.id, err)

@@ -116,12 +116,18 @@ func usdToMicros(usd float64) float64 { return math.Max(0, math.Ceil(usd*1_000_0
 // admitRunSpend checks the four budgets and reserves the run cap inside
 // the caller's transaction.
 func admitRunSpend(ctx context.Context, tx pgx.Tx, orgID, workflowID, workRunID, source string, now time.Time) error {
+	_, err := reserveRunSpend(ctx, tx, orgID, workflowID, workRunID, source, now)
+	return err
+}
+
+// reserveRunSpend is admitRunSpend that returns the reservation id.
+func reserveRunSpend(ctx context.Context, tx pgx.Tx, orgID, workflowID, workRunID, source string, now time.Time) (string, error) {
 	if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock(hashtext('openneko:spend:' || $1))`, orgID); err != nil {
-		return err
+		return "", err
 	}
 	limits, err := spendLimits(ctx, tx, orgID, workflowID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	hourStart := now.Truncate(time.Hour)
 	dayStart := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
@@ -144,17 +150,18 @@ func admitRunSpend(ctx context.Context, tx pgx.Tx, orgID, workflowID, workRunID,
 	for _, c := range checks {
 		committed, err := committedSpend(ctx, tx, orgID, c.workflowID, c.since)
 		if err != nil {
-			return err
+			return "", err
 		}
 		if committed+reserve > c.limit {
-			return &spendExceeded{budget: c.budget, limitMicros: c.limit, committedMicros: committed, reserve: reserve,
+			return "", &spendExceeded{budget: c.budget, limitMicros: c.limit, committedMicros: committed, reserve: reserve,
 				resetsAt: c.resetsAt, windowStart: c.since, orgID: orgID, workflowID: c.workflowID, source: source,
 				retryAfter: max(1, int64(math.Ceil(float64(c.resetsAt.Sub(now).Milliseconds())/1000)))}
 		}
 	}
-	_, err = tx.Exec(ctx, `insert into spend_reservation (org_id, work_run_id, workflow_id, source, reserved_micros, created_at)
-	     values ($1, $2::uuid, $3::uuid, $4, $5, $6)`, orgID, nullable(workRunID), nullable(workflowID), source, int64(reserve), now)
-	return err
+	var id string
+	err = tx.QueryRow(ctx, `insert into spend_reservation (org_id, work_run_id, workflow_id, source, reserved_micros, created_at)
+	     values ($1, $2::uuid, $3::uuid, $4, $5, $6) returning id::text`, orgID, nullable(workRunID), nullable(workflowID), source, int64(reserve), now).Scan(&id)
+	return id, err
 }
 
 func committedSpend(ctx context.Context, tx pgx.Tx, orgID, workflowID string, since time.Time) (float64, error) {

@@ -35,6 +35,21 @@ func (a *API) recordTurnSpend(ctx context.Context, orgID, runID string, event an
 		Scan(&reservationID, &source, &workflowID)); err != nil {
 		return err
 	}
+	return a.recordSpend(ctx, orgID, nullable(runID), reservationID, source, workflowID, event, now)
+}
+
+// recordReservedSpend is recordUsageSpend() with a reservation id and task
+// "turn", for a job that has no work run.
+func (a *API) recordReservedSpend(ctx context.Context, orgID, reservationID string, event any, now time.Time) error {
+	var id, source, workflowID *string
+	if err := noRows(a.DB.QueryRow(ctx, `select id::text, source, workflow_id::text from spend_reservation where id::text = $1`, reservationID).
+		Scan(&id, &source, &workflowID)); err != nil {
+		return err
+	}
+	return a.recordSpend(ctx, orgID, nil, id, source, workflowID, event, now)
+}
+
+func (a *API) recordSpend(ctx context.Context, orgID string, runID any, reservationID, source, workflowID *string, event any, now time.Time) error {
 	runCap := usdToMicros(5)
 	limits, err := spendLimits(ctx, a.DB, orgID, "")
 	switch {

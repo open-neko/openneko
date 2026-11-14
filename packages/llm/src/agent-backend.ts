@@ -1,6 +1,5 @@
 import type { HarnessRunSummary, NormalizedUsage } from "@neko/telemetry";
 import {
-  METRIC_REFRESH_DEFAULT_CAP,
   agentLimits,
   type AgentReasoningEffort,
 } from "./agent-limits";
@@ -11,14 +10,7 @@ export type AgentBackendId = (typeof AGENT_BACKEND_IDS)[number];
 /** The backend every org runs. */
 export const DEFAULT_AGENT_BACKEND: AgentBackendId = "ax";
 
-export { AGENT_DEFAULT_GLOBAL_CAP, METRIC_REFRESH_DEFAULT_CAP } from "./agent-limits";
-
-/** Concurrent metric refreshes: OPENNEKO_METRIC_REFRESH_CONCURRENCY, else the default, never above globalCap. */
-export function metricRefreshConcurrency(globalCap: number, configured?: string): number {
-  const value = Number(configured);
-  const cap = configured?.trim() && Number.isInteger(value) && value >= 1 ? value : METRIC_REFRESH_DEFAULT_CAP;
-  return Math.max(1, Math.min(cap, globalCap));
-}
+export { AGENT_DEFAULT_GLOBAL_CAP } from "./agent-limits";
 
 export const AGENT_BACKEND_OPTIONS = [
   {

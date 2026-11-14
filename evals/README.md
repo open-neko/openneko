@@ -131,9 +131,11 @@ classifier derives `slug`/`title`/`why`/`chartHint`, and the metric
 agent receives both the exact user question and that derived metadata. Tables,
 columns, formulas, anchor details, and expected current/baseline values remain
 in the host-only SQL oracle. Episode token, cost, and latency measurements
-include classification as well as metric-agent execution. The metric agent is
-the one the worker's `metric_refresh` job runs. The classifier has had no
-product caller since the briefing routes went; the adapter still calls it.
+include classification as well as metric-agent execution. The adapter still
+calls the Node metric agent in `packages/llm`. Production runs the Go
+`metric_refresh` job in `openneko web`, so this suite does not yet test the
+shipped metric path. The classifier has had no product caller since the
+briefing routes went; the adapter still calls it.
 
 ### Production OpenTelemetry
 

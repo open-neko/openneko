@@ -58,13 +58,18 @@ func actionJobs(t *testing.T, db *pgxpool.Pool) []riverJob {
 
 func riverJobs(t *testing.T, db *pgxpool.Pool, kind string) []riverJob {
 	t.Helper()
+	return riverQueueJobs(t, db, kind, "default")
+}
+
+func riverQueueJobs(t *testing.T, db *pgxpool.Pool, kind, queue string) []riverJob {
+	t.Helper()
 	ctx := context.Background()
 	var schema string
 	if err := db.QueryRow(ctx, `select current_schema() || '_river'`).Scan(&schema); err != nil {
 		t.Fatal(err)
 	}
 	rows, err := db.Query(ctx, `select args::text, max_attempts from `+schema+`.river_job
-		where kind = $1 and queue = 'default' and state = 'available' order by id`, kind)
+		where kind = $1 and queue = $2 and state = 'available' order by id`, kind, queue)
 	if err != nil {
 		t.Fatal(err)
 	}

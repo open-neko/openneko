@@ -14,7 +14,7 @@ import (
 
 // An agent job is one non-interactive Ax turn for a background job, such as
 // the business profile or the bootstrap metrics. It gets an empty workspace
-// and, at most, read-only GraphJin tools.
+// and, at most, read-only GraphJin tools and the memory search.
 
 type upstreamProviderError struct{ msg string }
 
@@ -133,10 +133,11 @@ func isolatedJobWorkspace(label string) (agentWorkspace, func(), error) {
 
 type agentJob struct {
 	OrgID, RunID, Label, Prompt string
-	GraphjinRead                bool
+	GraphjinRead, MemorySearch  bool
 	TimeoutMs                   int
 	MaxAttempts                 int
 	Validate                    func(finalText string) error
+	OnEvent                     func(attempt int, event any)
 }
 
 // runAgentJob is sandboxAgentBackendForJob() with runValidatedAgentTurn():
@@ -158,9 +159,14 @@ func (a *API) runAgentJob(ctx context.Context, j agentJob) (string, error) {
 	defer cleanup()
 	o := axTurnOptions{OrgID: j.OrgID, ThreadID: j.RunID, Tag: j.Label + " " + j.RunID, Workspace: &ws,
 		TimeoutMs: j.TimeoutMs, Keys: keys, Socket: a.serveSocket()}
-	if j.GraphjinRead {
-		b := turnBinding{OrgID: j.OrgID, ThreadID: j.RunID, RunID: j.RunID, Kind: "agent-job"}
-		o.Servers = []string{"neko_graphjin"}
+	if j.GraphjinRead || j.MemorySearch {
+		b := turnBinding{OrgID: j.OrgID, ThreadID: j.RunID, RunID: j.RunID, Kind: "agent-job", MemoryReadOnly: true}
+		if j.GraphjinRead {
+			o.Servers = append(o.Servers, "neko_graphjin")
+		}
+		if j.MemorySearch {
+			o.Servers = append(o.Servers, "neko_memory")
+		}
 		var be toolBackend = a.runTools(b)
 		if a.jobTools != nil {
 			be = a.jobTools(b)
@@ -177,6 +183,13 @@ func (a *API) runAgentJob(ctx context.Context, j agentJob) (string, error) {
 	attempts := max(1, j.MaxAttempts)
 	var lastErr, lastOutput string
 	for attempt := 1; attempt <= attempts; attempt++ {
+		if j.OnEvent != nil {
+			n := attempt
+			o.Emit = func(_ context.Context, event any) error {
+				j.OnEvent(n, event)
+				return nil
+			}
+		}
 		o.Prompt = j.Prompt
 		if attempt > 1 {
 			o.Prompt = agentCorrectionPrompt(j.Prompt, lastOutput, lastErr)

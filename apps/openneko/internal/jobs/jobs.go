@@ -24,7 +24,7 @@ const (
 // Moved lists the queues that River runs. MOVED_QUEUES in
 // packages/db/src/jobs.ts must hold the same names.
 var Moved = []string{KindOutputSweep, KindMetricSweep, KindCronSweep, KindEmbeddingIndex, KindEmbeddingSweep, KindDirectorySync, KindActionExecute, KindSkillLearn, KindBotNameSweep,
-	KindBusinessProfileBuild, KindIndustryInsightsBuild, KindBootstrapMetricsBuild}
+	KindBusinessProfileBuild, KindIndustryInsightsBuild, KindBootstrapMetricsBuild, KindMetricRefresh}
 
 type Queue struct {
 	Pool          *pgxpool.Pool
@@ -129,8 +129,11 @@ from moved`, name, queueOf(name))
 }
 
 func queueOf(kind string) string {
-	if kind == KindEmbeddingIndex {
+	switch kind {
+	case KindEmbeddingIndex:
 		return QueueEmbedding
+	case KindMetricRefresh:
+		return QueueMetricRefresh
 	}
 	return river.QueueDefault
 }
@@ -168,9 +171,10 @@ func (q *Queue) config() *river.Config {
 	river.AddWorker(workers, &botNameSweep{run: q.BotNameSweep})
 	addBuildWorkers(workers, q.Build)
 	return &river.Config{
-		Schema:  q.schema(),
-		Logger:  quietLogger(),
-		Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 4}, QueueEmbedding: {MaxWorkers: 1}},
+		Schema: q.schema(),
+		Logger: quietLogger(),
+		Queues: map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 4}, QueueEmbedding: {MaxWorkers: 1},
+			QueueMetricRefresh: {MaxWorkers: MetricRefreshWorkers()}},
 		Workers: workers,
 	}
 }

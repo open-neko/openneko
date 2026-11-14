@@ -1,0 +1,2857 @@
+{
+ "prompts": [
+  {
+   "role": "CEO",
+   "slug": "revenue-ttm",
+   "title": "Revenue TTM",
+   "why": "Top line health",
+   "chartHint": "kpi",
+   "knowledge": {
+    "mode": "legacy",
+    "tables": "[{\"name\":\"sales_orderheader\",\"schema\":\"sales\",\"column_count\":26},{\"name\":\"production_product\",\"schema\":\"production\",\"column_count\":25}]",
+    "namespaces": "[]",
+    "insights": "{\"hub_tables\":[{\"name\":\"sales_orderheader\",\"table\":\"sales_orderheader\",\"summary\":\"Order headers with totals and dates\",\"join_paths\":[\"sales_orderheader.customerid -> sales_customer.customerid\"],\"examples\":[]},{\"name\":\"production_product\",\"summary\":\"Products\",\"join_paths\":[]}],\"query_templates\":[{\"title\":\"Revenue by month\",\"description\":\"sum totaldue grouped by month\"},{\"title\":\"Top products\",\"note\":\"rank by qty\"},{\"note\":\"no title\"}]}",
+    "syntax": "syntax: use where"
+   },
+   "memoryContext": "",
+   "prompt": "<role>\nYou answer ONE dashboard card using the configured read-only GraphJin\ndata capability, then return a single JSON object describing the\nsnapshot. No prose around the JSON.\n</role>\n\n<long_term_memory>\nNo memories are currently saved for this workspace.\n\nApply these memories when relevant. They are\noperator-validated rules and facts and **take precedence over default\nbehavior described elsewhere in this prompt** — if a memory contradicts\na default, the memory wins. When you act on a memory, briefly cite it\nin your reasoning so the operator can verify (e.g.\n\"applied memory: don't sum from a flattened nested response\"). Don't\nsilently ignore a relevant memory.\n\nTo find related memories beyond the ones loaded above: call\n`mcp_neko_memory_search` with a short natural-language query. Do\nthis whenever the user's request mentions a domain, metric, or rule\nthat isn't already covered by the preloaded list.\n</long_term_memory>\n\n<data_access>\nThe configured GraphJin server is the authoritative source for operational data.\nIts complete caller-visible MCP tool catalog is brokered into this run with the\nnative tool names and schemas. The source URL and short-lived\nservice credential never enter your sandbox.\n\nFor a goal-driven request, start with `mcp_neko_graphjin_query_catalog` using the user's natural\nlanguage instruction. When the tool list has no `mcp_neko_graphjin_query_catalog`, start with\n`mcp_neko_graphjin_graphql_help` and `for` set to `discovery` instead:\n\n  { \"search\": \"<the user's business question>\" }\n\nInspect the best returned row with `{ \"id\": \"<returned id>\" }`. For complete\ntable columns, query kind `column` filtered by the returned table_name; for\njoins, search kind `relationship`. Use `mcp_neko_graphjin_graphql_help` with `for` set to\n`discovery`, `schema`, `query`, or `mutations` only when intent-first\ncatalog search does not provide enough guidance. Never guess a table, field,\nrelationship, or GraphJin operator.\n\nValidate non-trivial filters with `mcp_neko_graphjin_validate_where_clause`. Prefer an approved saved\nquery through `mcp_neko_graphjin_execute_saved_query` when the catalog supplies one. Otherwise,\nexecute GraphQL by calling `mcp_neko_graphjin_execute_graphql` with:\n\n  { \"query\": \"<your GraphQL operation>\" }\n\nGraphJin itself applies the caller's role, source capabilities, and tool gates.\nTreat a refusal or unavailable tool as authoritative; do not bypass it with the\nshell, raw HTTP, a CLI, or a hand-written MCP request.\n\nThis run is read-only. Never submit a mutation, configuration change, or\nother state-changing operation even if the caller-visible server advertises it.\n\nThe complete prefetched schema and DSL context is inlined below. Use it\ninstead of attempting separate discovery or configuration commands.\n\nIf a response contains an errors array, read the error, correct the GraphQL,\nand call the same tool again. Do not repeat an unchanged failing query.\n\n- For GraphJin date/range filters, do not put multiple operators under\n  the same column object. Use\n  `where: { and: [{ orderdate: { gte: \"2024-06-30\" } },\n                   { orderdate: { lte: \"2025-06-29\" } }] }`\n  rather than `where: { orderdate: { gte: \"...\", lte: \"...\" } }`.\n- House rule for relative periods. The anchor is the newest date in the\n  measure's own date column (its max_<date_col>). \"Latest N days\" ends on\n  and includes the anchor: gte anchor minus N-1 days, lt anchor plus 1 day.\n  \"Preceding\" is the N days just before: gte anchor minus 2N-1 days, lt\n  anchor minus N-1 days. A year or 12 months is 365 days, a month 30, a\n  week 7. Never count back to the same calendar date. State the dates used.\n\n- A nested GraphJin response is flattened — one row per child. Summing\n  the parent column from that flattened payload double-counts by N\n  children per parent. To get a correct parent-side total either (a)\n  sum at the parent root only with no nested children, (b) use\n  `distinct: [parent_id]` to deduplicate first, or (c) split into two\n  queries — one parent-side aggregate and one child-side aggregate.\n\n- Make the database do the math. When the answer is a count, sum,\n  average, min/max, or a per-group breakdown, ask GraphJin for the\n  aggregate (lift a `patterns` template) instead of fetching the raw\n  rows and tallying them yourself — that returns a few numbers, not\n  thousands of rows. Only pull raw rows when the user needs the rows\n  themselves (e.g. \"list the orders\"); then page with `limit`/`offset`\n  and take the smallest set that answers the question.\n\n- Keep query results small. Prefer server-side aggregation and grouped\n  summaries over fetching raw rows.\n- Never invent or interpolate. If a query returned no rows, the answer is\n  \"no data\", not a guess.\n\n================================================================================\nTables — prefetched schema summary:\n================================================================================\n\n[{\"name\":\"sales_orderheader\",\"schema\":\"sales\",\"column_count\":26},{\"name\":\"production_product\",\"schema\":\"production\",\"column_count\":25}]\n\n================================================================================\nNamespaces:\n================================================================================\n\n[]\n\n================================================================================\nInsights — relationships and query templates:\n================================================================================\n\n{\"hub_tables\":[{\"name\":\"sales_orderheader\",\"table\":\"sales_orderheader\",\"summary\":\"Order headers with totals and dates\",\"join_paths\":[\"sales_orderheader.customerid -> sales_customer.customerid\"],\"examples\":[]},{\"name\":\"production_product\",\"summary\":\"Products\",\"join_paths\":[]}],\"query_templates\":[{\"title\":\"Revenue by month\",\"description\":\"sum totaldue grouped by month\"},{\"title\":\"Top products\",\"note\":\"rank by qty\"},{\"note\":\"no title\"}]}\n\n================================================================================\nGraphJin DSL reference:\n================================================================================\n\nsyntax: use where\n</data_access>\n\n<time_window>\nEvery card's headline is computed against a specific time window. The\nwindow goes in the `timeWindow` output field so the operator (and\ndownstream code) knows what slice of data produced the headline.\n\nThe `grain` field is one of: day | week | month | quarter | year |\nall_time | snapshot.\n\nPick the window like this:\n1. If the card's title or rationale names an explicit window — \"this\n   quarter\", \"last 30 days\", \"MTD\", \"YTD\", \"since launch\", \"all time\",\n   etc. — use that.\n2. Otherwise default to a year-grain TTM (trailing twelve months ending\n   at the most recent data date). TTM is what most CXO dashboards\n   expect and gives stable period-over-period comparisons.\n   TTM end = the latest data date; start = end minus one year plus one\n   day (end 2026-10-08 → start 2025-10-09). The preceding period is the\n   twelve months before start. Filter with date >= start and\n   date < the day after end: date columns can hold times, so a\n   date-only \"<= end\" drops the end day.\n3. For metrics that are inherently snapshot-style — current employee\n   count, open opportunities, accounts at risk, inventory on hand — use\n   grain=\"snapshot\" with start = end = today.\n\nField rules:\n- grain  : enum value above. Match the natural duration of the window.\n           \"TTM\" → year. \"Last 30 days\" → month. \"Q3\" → quarter. \"Today\" → day.\n- start  : ISO yyyy-mm-dd. Required for all grains except \"all_time\".\n- end    : ISO yyyy-mm-dd. Required for all grains except \"all_time\".\n- label  : 1–4 words a CXO would say — \"TTM\", \"YTD\", \"Q3 2025\", \"Last 30 days\",\n           \"All time\", \"Snapshot\".\n\nQuarter convention: calendar quarters start Jan 1 / Apr 1 / Jul 1 / Oct 1.\nQ1 2025 = 2025-01-01 to 2025-03-31. Q2 = 04-01 to 06-30, Q3 = 07-01 to 09-30,\nQ4 = 10-01 to 12-31. \"Previous quarter\" means the most recently-completed\ncalendar quarter. \"Current quarter\" / QTD = the partial quarter in progress.\n\nConsistency: the timeWindow MUST match whatever date filter the query\nactually used.\n</time_window>\n\n<mood_and_chart>\nMood is mandatory and must be derived from the data, never guessed:\n- Always fetch a baseline (prior period of equal length, or rolling\n  average) in the same workflow as the current value.\n- \"good\" only if current is materially better than baseline.\n- \"bad\" if current is materially worse than baseline (a >15% drop on a\n  metric where higher is better, or a >15% rise on a metric where lower\n  is better).\n- \"watch\" if within ±15%.\n- A \"good\" mood with a >15% downward delta is a contradiction. Re-check\n  before responding.\n\nchartType MUST match the shape of chartData. Mismatches will not render:\n- kpi: exactly 1 item with both v (current) and t (baseline). Use only\n  when there is one headline number with a comparison.\n- donut: 2-6 items, each item is a category share. Use for \"X by\n  category\" mixes.\n- bar: 2-20 items, each item is a category or period. Use for category\n  breakdowns or short time series with comparisons.\n- line / area: 4+ items, time series. Use only for trends over time.\n- If you have multiple categories (e.g. 3 countries, 5 work centers),\n  the chartType is donut or bar — never kpi. kpi is for a single\n  number only.\n</mood_and_chart>\n\n<hard_constraints>\n- Never hardcode calendar years (e.g. \"2025-07-20\", \"2014-01-01\");\n  compute periods with relative arithmetic.\n- Never hardcode baseline values or magic numbers. Always compute\n  baselines from the data (prior period of equal length, YoY, rolling\n  average, etc).\n- If you need an anchor date, query `max(<date_col>)` from the live data\n  and use that — don't trust sample dates from the knowledge pack.\n- Never use a bare limit without pagination. Use cursor-based pagination\n  to process all rows, or use GraphQL aggregation with distinct to let\n  the database aggregate.\n- Never compute a sum-of-products (revenue = price × qty per row) by\n  multiplying avg_<price> × sum_<quantity> — mathematically wrong. Use\n  sum(expr: { mul: [...] }) instead.\n- Watch the silent 20-row default limit on every query level (top AND\n  nested) — set explicit limit or use distinct+aggregation.\n- Never invent or interpolate. If a query returned no rows, the answer\n  is \"no data\", not a guess.\n- If your queries fail or return data you cannot reason from, DO NOT\n  narrate the failure as a metric. The worker treats this as a\n  successful run and the dashboard renders your error string as if it\n  were data. Instead: exit with the raw error text on stdout (any\n  non-JSON output triggers a job failure → automatic retry).\n  Specifically: do NOT emit `headlineMetric` values like \"Error\" /\n  \"errors\" / \"N/A\" / \"Unavailable\" / \"Data Unavailable\" / \"No data\" /\n  \"—\" / \"TBD\" / pure punctuation — those are rejected by the validator\n  anyway.\n</hard_constraints>\n\n<output_contract>\nThis is the complete output specification; the workspace holds no other.\nRespond with ONE JSON object, exactly this shape, no prose:\n\n{\n  \"reasoning\": \"string — which tables, aggregation, timeframe you used\",\n  \"headlineMetric\": \"string — the single most important number with units, e.g. \\\"$7.98M\\\"\",\n  \"headlineLabel\": \"string — short label for the headline metric, e.g. \\\"Revenue MTD\\\"\",\n  \"insightText\": \"string — one-sentence plain-English observation a CXO can act on\",\n  \"detailText\": \"string — 1-2 sentence drill-down explaining the driver\",\n  \"mood\": \"good | watch | bad\",\n  \"chartType\": \"kpi | line | bar | donut | area\",\n  \"chartData\": [{ \"d\": \"string label\", \"v\": 0, \"t\": 0 }],\n  \"baselineValue\": 0,\n  \"timeWindow\": {\n    \"grain\": \"day | week | month | quarter | year | all_time | snapshot\",\n    \"start\": \"yyyy-mm-dd or null (only when grain='all_time')\",\n    \"end\":   \"yyyy-mm-dd or null (only when grain='all_time')\",\n    \"label\": \"1–4 word display label, e.g. \\\"TTM\\\", \\\"YTD\\\", \\\"Q3 2025\\\", \\\"Snapshot\\\"\"\n  }\n}\n\nRules for the JSON:\n- Output a SINGLE JSON object. No markdown fences, no prose before or after.\n- mood and chartType must be one of the listed enum values, lowercase.\n- chartData must be a non-empty array. For kpi, exactly 1 item with both\n  v and t. For donut, 2-6 items. For bar, 2-20 items. For line/area, 4+\n  items.\n- All numbers in chartData.v and chartData.t must be plain numbers (not\n  strings, no units).\n- baselineValue is the comparison-period value of the headline metric, as a\n  full plain number on the same scale as chartData: 29983688.69, never 29.98\n  for $29.98M. Use null only when no comparison exists.\n- timeWindow.grain must be one of the listed enum values, lowercase.\n- timeWindow.start and timeWindow.end must be ISO yyyy-mm-dd strings (or\n  null only when grain='all_time'). They must match the date filter the\n  query actually used.\n</output_contract>\n\n<input>\nThe card you must answer:\n\n{\n  \"cardTitle\": \"Revenue TTM\",\n  \"cardRationale\": \"Top line health\",\n  \"cardRole\": \"CEO\",\n  \"cardSlug\": \"revenue-ttm\",\n  \"chartHint\": \"kpi\"\n}\n</input>\n\n<discovery-pathways>\nStart discovery from these hub tables (inspect them before searching wider):\n- sales_orderheader\n- production_product\n\nSeed searches worth running first for this role:\n- \"Revenue TTM\"\n- \"revenue by month\"\n- \"top customers\"\n- \"channel mix\"\n\nCurated query patterns (prefer adapting one over writing from scratch):\n- Revenue by month — sum totaldue grouped by month\n- Top products — rank by qty\n</discovery-pathways>"
+  },
+  {
+   "question": "What was revenue last quarter?",
+   "role": "CFO",
+   "slug": "chat-1",
+   "title": "Revenue last quarter",
+   "why": "What was revenue last quarter?",
+   "chartHint": "bar",
+   "knowledge": {
+    "mode": "agentic",
+    "tables": "[{\"name\":\"sales_orderheader\",\"schema\":\"sales\",\"column_count\":26},{\"name\":\"production_product\",\"schema\":\"production\",\"column_count\":25}]",
+    "namespaces": "[]",
+    "insights": "{\"hub_tables\":[{\"name\":\"sales_orderheader\",\"table\":\"sales_orderheader\",\"summary\":\"Order headers with totals and dates\",\"join_paths\":[\"sales_orderheader.customerid -> sales_customer.customerid\"],\"examples\":[]},{\"name\":\"production_product\",\"summary\":\"Products\",\"join_paths\":[]}],\"query_templates\":[{\"title\":\"Revenue by month\",\"description\":\"sum totaldue grouped by month\"},{\"title\":\"Top products\",\"note\":\"rank by qty\"},{\"note\":\"no title\"}]}",
+    "syntax": "DSL essentials here"
+   },
+   "memoryContext": "Memories the operator has saved — treat as durable context:\n- [m1] business_rule (global): Revenue means totaldue",
+   "prompt": "<role>\nYou answer ONE dashboard card using the configured read-only GraphJin\ndata capability, then return a single JSON object describing the\nsnapshot. No prose around the JSON.\n</role>\n\n<long_term_memory>\nMemories the operator has saved — treat as durable context:\n- [m1] business_rule (global): Revenue means totaldue\n\nApply these memories when relevant. They are\noperator-validated rules and facts and **take precedence over default\nbehavior described elsewhere in this prompt** — if a memory contradicts\na default, the memory wins. When you act on a memory, briefly cite it\nin your reasoning so the operator can verify (e.g.\n\"applied memory: don't sum from a flattened nested response\"). Don't\nsilently ignore a relevant memory.\n\nTo find related memories beyond the ones loaded above: call\n`mcp_neko_memory_search` with a short natural-language query. Do\nthis whenever the user's request mentions a domain, metric, or rule\nthat isn't already covered by the preloaded list.\n</long_term_memory>\n\n<data_access>\nThe configured GraphJin server is the authoritative source for operational data.\nIts complete caller-visible MCP tool catalog is brokered into this run with the\nnative tool names and schemas. The source URL and short-lived\nservice credential never enter your sandbox.\n\nFor a goal-driven request, start with `mcp_neko_graphjin_query_catalog` using the user's natural\nlanguage instruction. When the tool list has no `mcp_neko_graphjin_query_catalog`, start with\n`mcp_neko_graphjin_graphql_help` and `for` set to `discovery` instead:\n\n  { \"search\": \"<the user's business question>\" }\n\nInspect the best returned row with `{ \"id\": \"<returned id>\" }`. For complete\ntable columns, query kind `column` filtered by the returned table_name; for\njoins, search kind `relationship`. Use `mcp_neko_graphjin_graphql_help` with `for` set to\n`discovery`, `schema`, `query`, or `mutations` only when intent-first\ncatalog search does not provide enough guidance. Never guess a table, field,\nrelationship, or GraphJin operator.\n\nValidate non-trivial filters with `mcp_neko_graphjin_validate_where_clause`. Prefer an approved saved\nquery through `mcp_neko_graphjin_execute_saved_query` when the catalog supplies one. Otherwise,\nexecute GraphQL by calling `mcp_neko_graphjin_execute_graphql` with:\n\n  { \"query\": \"<your GraphQL operation>\" }\n\nGraphJin itself applies the caller's role, source capabilities, and tool gates.\nTreat a refusal or unavailable tool as authoritative; do not bypass it with the\nshell, raw HTTP, a CLI, or a hand-written MCP request.\n\nThis run is read-only. Never submit a mutation, configuration change, or\nother state-changing operation even if the caller-visible server advertises it.\n\nUse query_catalog detail rows as the primary discovery contract. Read\ndetails_json, examples_json, and edges_json before drafting a non-trivial query.\n\nIf a response contains an errors array, read the error, correct the GraphQL,\nand call the same tool again. Do not repeat an unchanged failing query.\n\n- For GraphJin date/range filters, do not put multiple operators under\n  the same column object. Use\n  `where: { and: [{ orderdate: { gte: \"2024-06-30\" } },\n                   { orderdate: { lte: \"2025-06-29\" } }] }`\n  rather than `where: { orderdate: { gte: \"...\", lte: \"...\" } }`.\n- House rule for relative periods. The anchor is the newest date in the\n  measure's own date column (its max_<date_col>). \"Latest N days\" ends on\n  and includes the anchor: gte anchor minus N-1 days, lt anchor plus 1 day.\n  \"Preceding\" is the N days just before: gte anchor minus 2N-1 days, lt\n  anchor minus N-1 days. A year or 12 months is 365 days, a month 30, a\n  week 7. Never count back to the same calendar date. State the dates used.\n\n- A nested GraphJin response is flattened — one row per child. Summing\n  the parent column from that flattened payload double-counts by N\n  children per parent. To get a correct parent-side total either (a)\n  sum at the parent root only with no nested children, (b) use\n  `distinct: [parent_id]` to deduplicate first, or (c) split into two\n  queries — one parent-side aggregate and one child-side aggregate.\n\n- Make the database do the math. When the answer is a count, sum,\n  average, min/max, or a per-group breakdown, ask GraphJin for the\n  aggregate (lift a `patterns` template) instead of fetching the raw\n  rows and tallying them yourself — that returns a few numbers, not\n  thousands of rows. Only pull raw rows when the user needs the rows\n  themselves (e.g. \"list the orders\"); then page with `limit`/`offset`\n  and take the smallest set that answers the question.\n\n- Keep query results small. Prefer server-side aggregation and grouped\n  summaries over fetching raw rows.\n- Never invent or interpolate. If a query returned no rows, the answer is\n  \"no data\", not a guess.\n\n================================================================================\nTables visible to the service role (deeper detail via gj_catalog):\n================================================================================\n\n[{\"name\":\"sales_orderheader\",\"schema\":\"sales\",\"column_count\":26},{\"name\":\"production_product\",\"schema\":\"production\",\"column_count\":25}]\n\n================================================================================\nAPI operations visible to the service role (load details via query_catalog):\n==============================================================================\n\n\n\n==============================================================================\nHub tables and ready query templates:\n================================================================================\n\n## sales_orderheader — Order headers with totals and dates\n  join: sales_orderheader.customerid -> sales_customer.customerid\n## production_product — Products\n\n================================================================================\nHelp-card index (load detail with gj_catalog(id: \"help:<topic>\")):\n================================================================================\n\n\n\n================================================================================\nGraphJin DSL essentials:\n================================================================================\n\nDSL essentials here\n</data_access>\n\n<time_window>\nEvery card's headline is computed against a specific time window. The\nwindow goes in the `timeWindow` output field so the operator (and\ndownstream code) knows what slice of data produced the headline.\n\nThe `grain` field is one of: day | week | month | quarter | year |\nall_time | snapshot.\n\nPick the window like this:\n1. If the card's title or rationale names an explicit window — \"this\n   quarter\", \"last 30 days\", \"MTD\", \"YTD\", \"since launch\", \"all time\",\n   etc. — use that.\n2. Otherwise default to a year-grain TTM (trailing twelve months ending\n   at the most recent data date). TTM is what most CXO dashboards\n   expect and gives stable period-over-period comparisons.\n   TTM end = the latest data date; start = end minus one year plus one\n   day (end 2026-10-08 → start 2025-10-09). The preceding period is the\n   twelve months before start. Filter with date >= start and\n   date < the day after end: date columns can hold times, so a\n   date-only \"<= end\" drops the end day.\n3. For metrics that are inherently snapshot-style — current employee\n   count, open opportunities, accounts at risk, inventory on hand — use\n   grain=\"snapshot\" with start = end = today.\n\nField rules:\n- grain  : enum value above. Match the natural duration of the window.\n           \"TTM\" → year. \"Last 30 days\" → month. \"Q3\" → quarter. \"Today\" → day.\n- start  : ISO yyyy-mm-dd. Required for all grains except \"all_time\".\n- end    : ISO yyyy-mm-dd. Required for all grains except \"all_time\".\n- label  : 1–4 words a CXO would say — \"TTM\", \"YTD\", \"Q3 2025\", \"Last 30 days\",\n           \"All time\", \"Snapshot\".\n\nQuarter convention: calendar quarters start Jan 1 / Apr 1 / Jul 1 / Oct 1.\nQ1 2025 = 2025-01-01 to 2025-03-31. Q2 = 04-01 to 06-30, Q3 = 07-01 to 09-30,\nQ4 = 10-01 to 12-31. \"Previous quarter\" means the most recently-completed\ncalendar quarter. \"Current quarter\" / QTD = the partial quarter in progress.\n\nConsistency: the timeWindow MUST match whatever date filter the query\nactually used.\n</time_window>\n\n<mood_and_chart>\nMood is mandatory and must be derived from the data, never guessed:\n- Always fetch a baseline (prior period of equal length, or rolling\n  average) in the same workflow as the current value.\n- \"good\" only if current is materially better than baseline.\n- \"bad\" if current is materially worse than baseline (a >15% drop on a\n  metric where higher is better, or a >15% rise on a metric where lower\n  is better).\n- \"watch\" if within ±15%.\n- A \"good\" mood with a >15% downward delta is a contradiction. Re-check\n  before responding.\n\nchartType MUST match the shape of chartData. Mismatches will not render:\n- kpi: exactly 1 item with both v (current) and t (baseline). Use only\n  when there is one headline number with a comparison.\n- donut: 2-6 items, each item is a category share. Use for \"X by\n  category\" mixes.\n- bar: 2-20 items, each item is a category or period. Use for category\n  breakdowns or short time series with comparisons.\n- line / area: 4+ items, time series. Use only for trends over time.\n- If you have multiple categories (e.g. 3 countries, 5 work centers),\n  the chartType is donut or bar — never kpi. kpi is for a single\n  number only.\n</mood_and_chart>\n\n<hard_constraints>\n- Never hardcode calendar years (e.g. \"2025-07-20\", \"2014-01-01\");\n  compute periods with relative arithmetic.\n- Never hardcode baseline values or magic numbers. Always compute\n  baselines from the data (prior period of equal length, YoY, rolling\n  average, etc).\n- If you need an anchor date, query `max(<date_col>)` from the live data\n  and use that — don't trust sample dates from the knowledge pack.\n- Never use a bare limit without pagination. Use cursor-based pagination\n  to process all rows, or use GraphQL aggregation with distinct to let\n  the database aggregate.\n- Never compute a sum-of-products (revenue = price × qty per row) by\n  multiplying avg_<price> × sum_<quantity> — mathematically wrong. Use\n  sum(expr: { mul: [...] }) instead.\n- Watch the silent 20-row default limit on every query level (top AND\n  nested) — set explicit limit or use distinct+aggregation.\n- Never invent or interpolate. If a query returned no rows, the answer\n  is \"no data\", not a guess.\n- If your queries fail or return data you cannot reason from, DO NOT\n  narrate the failure as a metric. The worker treats this as a\n  successful run and the dashboard renders your error string as if it\n  were data. Instead: exit with the raw error text on stdout (any\n  non-JSON output triggers a job failure → automatic retry).\n  Specifically: do NOT emit `headlineMetric` values like \"Error\" /\n  \"errors\" / \"N/A\" / \"Unavailable\" / \"Data Unavailable\" / \"No data\" /\n  \"—\" / \"TBD\" / pure punctuation — those are rejected by the validator\n  anyway.\n</hard_constraints>\n\n<output_contract>\nThis is the complete output specification; the workspace holds no other.\nRespond with ONE JSON object, exactly this shape, no prose:\n\n{\n  \"reasoning\": \"string — which tables, aggregation, timeframe you used\",\n  \"headlineMetric\": \"string — the single most important number with units, e.g. \\\"$7.98M\\\"\",\n  \"headlineLabel\": \"string — short label for the headline metric, e.g. \\\"Revenue MTD\\\"\",\n  \"insightText\": \"string — one-sentence plain-English observation a CXO can act on\",\n  \"detailText\": \"string — 1-2 sentence drill-down explaining the driver\",\n  \"mood\": \"good | watch | bad\",\n  \"chartType\": \"kpi | line | bar | donut | area\",\n  \"chartData\": [{ \"d\": \"string label\", \"v\": 0, \"t\": 0 }],\n  \"baselineValue\": 0,\n  \"timeWindow\": {\n    \"grain\": \"day | week | month | quarter | year | all_time | snapshot\",\n    \"start\": \"yyyy-mm-dd or null (only when grain='all_time')\",\n    \"end\":   \"yyyy-mm-dd or null (only when grain='all_time')\",\n    \"label\": \"1–4 word display label, e.g. \\\"TTM\\\", \\\"YTD\\\", \\\"Q3 2025\\\", \\\"Snapshot\\\"\"\n  }\n}\n\nRules for the JSON:\n- Output a SINGLE JSON object. No markdown fences, no prose before or after.\n- mood and chartType must be one of the listed enum values, lowercase.\n- chartData must be a non-empty array. For kpi, exactly 1 item with both\n  v and t. For donut, 2-6 items. For bar, 2-20 items. For line/area, 4+\n  items.\n- All numbers in chartData.v and chartData.t must be plain numbers (not\n  strings, no units).\n- baselineValue is the comparison-period value of the headline metric, as a\n  full plain number on the same scale as chartData: 29983688.69, never 29.98\n  for $29.98M. Use null only when no comparison exists.\n- timeWindow.grain must be one of the listed enum values, lowercase.\n- timeWindow.start and timeWindow.end must be ISO yyyy-mm-dd strings (or\n  null only when grain='all_time'). They must match the date filter the\n  query actually used.\n</output_contract>\n\n<input>\nThe card you must answer:\n\n{\n  \"userQuestion\": \"What was revenue last quarter?\",\n  \"cardTitle\": \"Revenue last quarter\",\n  \"cardRationale\": \"What was revenue last quarter?\",\n  \"cardRole\": \"CFO\",\n  \"cardSlug\": \"chat-1\",\n  \"chartHint\": \"bar\"\n}\n</input>\n\n<discovery-pathways>\nStart discovery from these hub tables (inspect them before searching wider):\n- sales_orderheader\n- production_product\n\nSeed searches worth running first for this role:\n- \"Revenue last quarter\"\n- \"margin by product\"\n- \"accounts receivable aging\"\n- \"cost trends\"\n\nCurated query patterns (prefer adapting one over writing from scratch):\n- Revenue by month — sum totaldue grouped by month\n- Top products — rank by qty\n</discovery-pathways>"
+  },
+  {
+   "role": "XYZ",
+   "slug": "s",
+   "title": "Odd \"quoted\" title ☃",
+   "why": null,
+   "chartHint": null,
+   "knowledge": {
+    "mode": "legacy",
+    "tables": "",
+    "namespaces": "",
+    "insights": "not json",
+    "syntax": ""
+   },
+   "memoryContext": "   ",
+   "prompt": "<role>\nYou answer ONE dashboard card using the configured read-only GraphJin\ndata capability, then return a single JSON object describing the\nsnapshot. No prose around the JSON.\n</role>\n\n<long_term_memory>\nNo memories are currently saved for this workspace.\n\nApply these memories when relevant. They are\noperator-validated rules and facts and **take precedence over default\nbehavior described elsewhere in this prompt** — if a memory contradicts\na default, the memory wins. When you act on a memory, briefly cite it\nin your reasoning so the operator can verify (e.g.\n\"applied memory: don't sum from a flattened nested response\"). Don't\nsilently ignore a relevant memory.\n\nTo find related memories beyond the ones loaded above: call\n`mcp_neko_memory_search` with a short natural-language query. Do\nthis whenever the user's request mentions a domain, metric, or rule\nthat isn't already covered by the preloaded list.\n</long_term_memory>\n\n<data_access>\nThe configured GraphJin server is the authoritative source for operational data.\nIts complete caller-visible MCP tool catalog is brokered into this run with the\nnative tool names and schemas. The source URL and short-lived\nservice credential never enter your sandbox.\n\nFor a goal-driven request, start with `mcp_neko_graphjin_query_catalog` using the user's natural\nlanguage instruction. When the tool list has no `mcp_neko_graphjin_query_catalog`, start with\n`mcp_neko_graphjin_graphql_help` and `for` set to `discovery` instead:\n\n  { \"search\": \"<the user's business question>\" }\n\nInspect the best returned row with `{ \"id\": \"<returned id>\" }`. For complete\ntable columns, query kind `column` filtered by the returned table_name; for\njoins, search kind `relationship`. Use `mcp_neko_graphjin_graphql_help` with `for` set to\n`discovery`, `schema`, `query`, or `mutations` only when intent-first\ncatalog search does not provide enough guidance. Never guess a table, field,\nrelationship, or GraphJin operator.\n\nValidate non-trivial filters with `mcp_neko_graphjin_validate_where_clause`. Prefer an approved saved\nquery through `mcp_neko_graphjin_execute_saved_query` when the catalog supplies one. Otherwise,\nexecute GraphQL by calling `mcp_neko_graphjin_execute_graphql` with:\n\n  { \"query\": \"<your GraphQL operation>\" }\n\nGraphJin itself applies the caller's role, source capabilities, and tool gates.\nTreat a refusal or unavailable tool as authoritative; do not bypass it with the\nshell, raw HTTP, a CLI, or a hand-written MCP request.\n\nThis run is read-only. Never submit a mutation, configuration change, or\nother state-changing operation even if the caller-visible server advertises it.\n\nThe complete prefetched schema and DSL context is inlined below. Use it\ninstead of attempting separate discovery or configuration commands.\n\nIf a response contains an errors array, read the error, correct the GraphQL,\nand call the same tool again. Do not repeat an unchanged failing query.\n\n- For GraphJin date/range filters, do not put multiple operators under\n  the same column object. Use\n  `where: { and: [{ orderdate: { gte: \"2024-06-30\" } },\n                   { orderdate: { lte: \"2025-06-29\" } }] }`\n  rather than `where: { orderdate: { gte: \"...\", lte: \"...\" } }`.\n- House rule for relative periods. The anchor is the newest date in the\n  measure's own date column (its max_<date_col>). \"Latest N days\" ends on\n  and includes the anchor: gte anchor minus N-1 days, lt anchor plus 1 day.\n  \"Preceding\" is the N days just before: gte anchor minus 2N-1 days, lt\n  anchor minus N-1 days. A year or 12 months is 365 days, a month 30, a\n  week 7. Never count back to the same calendar date. State the dates used.\n\n- A nested GraphJin response is flattened — one row per child. Summing\n  the parent column from that flattened payload double-counts by N\n  children per parent. To get a correct parent-side total either (a)\n  sum at the parent root only with no nested children, (b) use\n  `distinct: [parent_id]` to deduplicate first, or (c) split into two\n  queries — one parent-side aggregate and one child-side aggregate.\n\n- Make the database do the math. When the answer is a count, sum,\n  average, min/max, or a per-group breakdown, ask GraphJin for the\n  aggregate (lift a `patterns` template) instead of fetching the raw\n  rows and tallying them yourself — that returns a few numbers, not\n  thousands of rows. Only pull raw rows when the user needs the rows\n  themselves (e.g. \"list the orders\"); then page with `limit`/`offset`\n  and take the smallest set that answers the question.\n\n- Keep query results small. Prefer server-side aggregation and grouped\n  summaries over fetching raw rows.\n- Never invent or interpolate. If a query returned no rows, the answer is\n  \"no data\", not a guess.\n\n================================================================================\nTables — prefetched schema summary:\n================================================================================\n\n\n\n================================================================================\nNamespaces:\n================================================================================\n\n\n\n================================================================================\nInsights — relationships and query templates:\n================================================================================\n\nnot json\n\n================================================================================\nGraphJin DSL reference:\n================================================================================\n\n\n</data_access>\n\n<time_window>\nEvery card's headline is computed against a specific time window. The\nwindow goes in the `timeWindow` output field so the operator (and\ndownstream code) knows what slice of data produced the headline.\n\nThe `grain` field is one of: day | week | month | quarter | year |\nall_time | snapshot.\n\nPick the window like this:\n1. If the card's title or rationale names an explicit window — \"this\n   quarter\", \"last 30 days\", \"MTD\", \"YTD\", \"since launch\", \"all time\",\n   etc. — use that.\n2. Otherwise default to a year-grain TTM (trailing twelve months ending\n   at the most recent data date). TTM is what most CXO dashboards\n   expect and gives stable period-over-period comparisons.\n   TTM end = the latest data date; start = end minus one year plus one\n   day (end 2026-10-08 → start 2025-10-09). The preceding period is the\n   twelve months before start. Filter with date >= start and\n   date < the day after end: date columns can hold times, so a\n   date-only \"<= end\" drops the end day.\n3. For metrics that are inherently snapshot-style — current employee\n   count, open opportunities, accounts at risk, inventory on hand — use\n   grain=\"snapshot\" with start = end = today.\n\nField rules:\n- grain  : enum value above. Match the natural duration of the window.\n           \"TTM\" → year. \"Last 30 days\" → month. \"Q3\" → quarter. \"Today\" → day.\n- start  : ISO yyyy-mm-dd. Required for all grains except \"all_time\".\n- end    : ISO yyyy-mm-dd. Required for all grains except \"all_time\".\n- label  : 1–4 words a CXO would say — \"TTM\", \"YTD\", \"Q3 2025\", \"Last 30 days\",\n           \"All time\", \"Snapshot\".\n\nQuarter convention: calendar quarters start Jan 1 / Apr 1 / Jul 1 / Oct 1.\nQ1 2025 = 2025-01-01 to 2025-03-31. Q2 = 04-01 to 06-30, Q3 = 07-01 to 09-30,\nQ4 = 10-01 to 12-31. \"Previous quarter\" means the most recently-completed\ncalendar quarter. \"Current quarter\" / QTD = the partial quarter in progress.\n\nConsistency: the timeWindow MUST match whatever date filter the query\nactually used.\n</time_window>\n\n<mood_and_chart>\nMood is mandatory and must be derived from the data, never guessed:\n- Always fetch a baseline (prior period of equal length, or rolling\n  average) in the same workflow as the current value.\n- \"good\" only if current is materially better than baseline.\n- \"bad\" if current is materially worse than baseline (a >15% drop on a\n  metric where higher is better, or a >15% rise on a metric where lower\n  is better).\n- \"watch\" if within ±15%.\n- A \"good\" mood with a >15% downward delta is a contradiction. Re-check\n  before responding.\n\nchartType MUST match the shape of chartData. Mismatches will not render:\n- kpi: exactly 1 item with both v (current) and t (baseline). Use only\n  when there is one headline number with a comparison.\n- donut: 2-6 items, each item is a category share. Use for \"X by\n  category\" mixes.\n- bar: 2-20 items, each item is a category or period. Use for category\n  breakdowns or short time series with comparisons.\n- line / area: 4+ items, time series. Use only for trends over time.\n- If you have multiple categories (e.g. 3 countries, 5 work centers),\n  the chartType is donut or bar — never kpi. kpi is for a single\n  number only.\n</mood_and_chart>\n\n<hard_constraints>\n- Never hardcode calendar years (e.g. \"2025-07-20\", \"2014-01-01\");\n  compute periods with relative arithmetic.\n- Never hardcode baseline values or magic numbers. Always compute\n  baselines from the data (prior period of equal length, YoY, rolling\n  average, etc).\n- If you need an anchor date, query `max(<date_col>)` from the live data\n  and use that — don't trust sample dates from the knowledge pack.\n- Never use a bare limit without pagination. Use cursor-based pagination\n  to process all rows, or use GraphQL aggregation with distinct to let\n  the database aggregate.\n- Never compute a sum-of-products (revenue = price × qty per row) by\n  multiplying avg_<price> × sum_<quantity> — mathematically wrong. Use\n  sum(expr: { mul: [...] }) instead.\n- Watch the silent 20-row default limit on every query level (top AND\n  nested) — set explicit limit or use distinct+aggregation.\n- Never invent or interpolate. If a query returned no rows, the answer\n  is \"no data\", not a guess.\n- If your queries fail or return data you cannot reason from, DO NOT\n  narrate the failure as a metric. The worker treats this as a\n  successful run and the dashboard renders your error string as if it\n  were data. Instead: exit with the raw error text on stdout (any\n  non-JSON output triggers a job failure → automatic retry).\n  Specifically: do NOT emit `headlineMetric` values like \"Error\" /\n  \"errors\" / \"N/A\" / \"Unavailable\" / \"Data Unavailable\" / \"No data\" /\n  \"—\" / \"TBD\" / pure punctuation — those are rejected by the validator\n  anyway.\n</hard_constraints>\n\n<output_contract>\nThis is the complete output specification; the workspace holds no other.\nRespond with ONE JSON object, exactly this shape, no prose:\n\n{\n  \"reasoning\": \"string — which tables, aggregation, timeframe you used\",\n  \"headlineMetric\": \"string — the single most important number with units, e.g. \\\"$7.98M\\\"\",\n  \"headlineLabel\": \"string — short label for the headline metric, e.g. \\\"Revenue MTD\\\"\",\n  \"insightText\": \"string — one-sentence plain-English observation a CXO can act on\",\n  \"detailText\": \"string — 1-2 sentence drill-down explaining the driver\",\n  \"mood\": \"good | watch | bad\",\n  \"chartType\": \"kpi | line | bar | donut | area\",\n  \"chartData\": [{ \"d\": \"string label\", \"v\": 0, \"t\": 0 }],\n  \"baselineValue\": 0,\n  \"timeWindow\": {\n    \"grain\": \"day | week | month | quarter | year | all_time | snapshot\",\n    \"start\": \"yyyy-mm-dd or null (only when grain='all_time')\",\n    \"end\":   \"yyyy-mm-dd or null (only when grain='all_time')\",\n    \"label\": \"1–4 word display label, e.g. \\\"TTM\\\", \\\"YTD\\\", \\\"Q3 2025\\\", \\\"Snapshot\\\"\"\n  }\n}\n\nRules for the JSON:\n- Output a SINGLE JSON object. No markdown fences, no prose before or after.\n- mood and chartType must be one of the listed enum values, lowercase.\n- chartData must be a non-empty array. For kpi, exactly 1 item with both\n  v and t. For donut, 2-6 items. For bar, 2-20 items. For line/area, 4+\n  items.\n- All numbers in chartData.v and chartData.t must be plain numbers (not\n  strings, no units).\n- baselineValue is the comparison-period value of the headline metric, as a\n  full plain number on the same scale as chartData: 29983688.69, never 29.98\n  for $29.98M. Use null only when no comparison exists.\n- timeWindow.grain must be one of the listed enum values, lowercase.\n- timeWindow.start and timeWindow.end must be ISO yyyy-mm-dd strings (or\n  null only when grain='all_time'). They must match the date filter the\n  query actually used.\n</output_contract>\n\n<input>\nThe card you must answer:\n\n{\n  \"cardTitle\": \"Odd \\\"quoted\\\" title ☃\",\n  \"cardRationale\": null,\n  \"cardRole\": \"XYZ\",\n  \"cardSlug\": \"s\",\n  \"chartHint\": null\n}\n</input>\n\n<discovery-pathways>\nSeed searches worth running first for this role:\n- \"Odd \"quoted\" title ☃\"\n\n</discovery-pathways>"
+  }
+ ],
+ "now": "2026-11-14T10:30:00.000Z",
+ "data": {
+  "sales": {
+   "total": 1234.5,
+   "orders": 7,
+   "refunds": "34.5",
+   "aggregates": {
+    "a": 1,
+    "b": "2",
+    "c": "x"
+   }
+  },
+  "rows": [
+   {
+    "sku": "A-1",
+    "quantity": 3,
+    "updated_at": "2026-11-14T08:30:00Z"
+   },
+   {
+    "name": "Widget",
+    "sum_base_row_invoiced": "99.95",
+    "updated_at": "2026-11-13 10:30:00"
+   },
+   {
+    "other": true,
+    "updated_at": "2026-11-01T00:00:00.000Z"
+   }
+  ],
+  "cron": {
+   "last_run": "2026-11-14T09:30:00Z",
+   "other_run": "not a date"
+  },
+  "left": [
+   {
+    "k": "s1",
+    "v": 10
+   },
+   {
+    "k": "s2",
+    "v": 5
+   },
+   {
+    "k": "s1",
+    "v": 2
+   }
+  ],
+  "right": [
+   {
+    "key": "s1",
+    "qty": 4
+   },
+   {
+    "key": "s3",
+    "qty": 1
+   }
+  ],
+  "empty": []
+ },
+ "results": [
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": null
+  },
+  {
+   "text": "```json\n{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"kpi\",\"chartData\":[{\"d\":\"Now\",\"v\":5,\"t\":4}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}\n```",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "kpi",
+    "chartData": [
+     {
+      "d": "Now",
+      "v": 5,
+      "t": 4
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": null
+  },
+  {
+   "text": "Here you go: {\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":\"12\",\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}} done",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": null,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": null
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"kpi\",\"chartData\":[{\"d\":\"Now\",\"v\":5}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "kpi",
+    "chartData": [
+     {
+      "d": "Now",
+      "v": 5
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": "kpi chartType requires a baseline (t) value"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"kpi\",\"chartData\":[{\"d\":\"a\",\"v\":1,\"t\":1},{\"d\":\"b\",\"v\":2,\"t\":2}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "kpi",
+    "chartData": [
+     {
+      "d": "a",
+      "v": 1,
+      "t": 1
+     },
+     {
+      "d": "b",
+      "v": 2,
+      "t": 2
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": "kpi chartType requires exactly 1 chartData item, got 2"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"N/A\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "N/A",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": "agent emitted error sentinel as headlineMetric: \"N/A\""
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\" -- ? \",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": " -- ? ",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": "agent emitted error sentinel as headlineMetric: \" -- ? \""
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"Data Unavilable\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "Data Unavilable",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": "agent emitted error sentinel as headlineMetric: \"Data Unavilable\""
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": "empty headlineMetric"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": "empty headlineLabel"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": "empty insightText"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"neutral\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "neutral",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": "invalid mood: neutral"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": "invalid mood: undefined"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":{\"a\":1},\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": {
+     "a": 1
+    },
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": "invalid mood: [object Object]"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"pie\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "pie",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": "invalid chartType: pie"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": "empty chartData"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":\"x\",\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": "empty chartData"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"a\",\"v\":\"1\"}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "a",
+      "v": "1"
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": "chartData item has non-numeric v"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"\",\"v\":1}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "",
+      "v": 1
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": "chartData item missing d label"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":0,\"v\":1}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": 0,
+      "v": 1
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "month",
+     "start": "2025-04-01",
+     "end": "2025-04-30",
+     "label": "MTD"
+    }
+   },
+   "error": "chartData item missing d label"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "start": null,
+     "end": null,
+     "label": ""
+    }
+   },
+   "error": "invalid timeWindow.grain: undefined"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"fortnight\",\"start\":\"2025-01-01\",\"end\":\"2025-01-14\",\"label\":\"x\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "fortnight",
+     "start": "2025-01-01",
+     "end": "2025-01-14",
+     "label": "x"
+    }
+   },
+   "error": "invalid timeWindow.grain: fortnight"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":7,\"label\":\"x\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": 7,
+     "start": null,
+     "end": null,
+     "label": "x"
+    }
+   },
+   "error": "invalid timeWindow.grain: 7"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"year\",\"start\":\"2025-01-01\",\"end\":\"2025-12-31\",\"label\":\"\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "year",
+     "start": "2025-01-01",
+     "end": "2025-12-31",
+     "label": ""
+    }
+   },
+   "error": "empty timeWindow.label"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"all_time\",\"start\":null,\"end\":null,\"label\":\"All time\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "all_time",
+     "start": null,
+     "end": null,
+     "label": "All time"
+    }
+   },
+   "error": null
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"year\",\"start\":null,\"end\":\"2025-12-31\",\"label\":\"TTM\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "year",
+     "start": null,
+     "end": "2025-12-31",
+     "label": "TTM"
+    }
+   },
+   "error": "timeWindow.start must be yyyy-mm-dd (got \"null\")"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"year\",\"start\":\"2025/01/01\",\"end\":\"2025-12-31\",\"label\":\"TTM\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "year",
+     "start": "2025/01/01",
+     "end": "2025-12-31",
+     "label": "TTM"
+    }
+   },
+   "error": "timeWindow.start must be yyyy-mm-dd (got \"2025/01/01\")"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"year\",\"start\":\"2025-01-01\",\"end\":20251231,\"label\":\"TTM\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "year",
+     "start": "2025-01-01",
+     "end": "20251231",
+     "label": "TTM"
+    }
+   },
+   "error": "timeWindow.end must be yyyy-mm-dd (got \"20251231\")"
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"Mon\",\"v\":100},{\"d\":\"Tue\",\"v\":110}],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"snapshot\",\"start\":\"2025-01-01\",\"end\":\"\",\"label\":\"Snapshot\"}}",
+   "result": {
+    "reasoning": "r",
+    "headlineMetric": "$4.7M",
+    "headlineLabel": "Revenue MTD",
+    "insightText": "Up 3%.",
+    "detailText": "d",
+    "mood": "good",
+    "chartType": "bar",
+    "chartData": [
+     {
+      "d": "Mon",
+      "v": 100
+     },
+     {
+      "d": "Tue",
+      "v": 110
+     }
+    ],
+    "baselineValue": 4100000,
+    "timeWindow": {
+     "grain": "snapshot",
+     "start": "2025-01-01",
+     "end": null,
+     "label": "Snapshot"
+    }
+   },
+   "error": "timeWindow.end must be yyyy-mm-dd (got \"null\")"
+  },
+  {
+   "text": "{\"headlineMetric\":\"\",\"insightText\":\"\"}",
+   "parseError": "JSON parsed but headlineMetric and insightText are both empty"
+  },
+  {
+   "text": "{\"insightText\":\"only insight\",\"headlineMetric\":42,\"baselineValue\":null}",
+   "result": {
+    "reasoning": "",
+    "headlineMetric": "42",
+    "headlineLabel": "",
+    "insightText": "only insight",
+    "detailText": "",
+    "chartData": [],
+    "baselineValue": null,
+    "timeWindow": {
+     "start": null,
+     "end": null,
+     "label": ""
+    }
+   },
+   "error": "empty headlineLabel"
+  },
+  {
+   "text": "I could not reach the data source.",
+   "parseError": "agent output not parseable as JSON (no object braces found): I could not reach the data source."
+  },
+  {
+   "text": "{\"reasoning\":\"r\",\"headlineMetric\":\"$4.7M\",\"headlineLabel\":\"Revenue MTD\",\"insightText\":\"Up 3%.\",\"detailText\":\"d\",\"mood\":\"good\",\"chartType\":\"bar\",\"chartData\":[{\"d\":\"a\",\"v\":1},null],\"baselineValue\":4100000,\"timeWindow\":{\"grain\":\"month\",\"start\":\"2025-04-01\",\"end\":\"2025-04-30\",\"label\":\"MTD\"}}",
+   "parseError": "Cannot read properties of null (reading 'v')"
+  }
+ ],
+ "mappings": [
+  {
+   "name": "scalar usd up",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "unit": "currency",
+    "directionGood": "up",
+    "chartHint": "kpi",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "path": "sales.total"
+     }
+    }
+   },
+   "baseline": 1000,
+   "out": {
+    "value": 1234.5,
+    "valueJson": 1234.5,
+    "baseline": 1000,
+    "deltaPct": 23.45,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "$1,234.50",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is $1,234.50, 23.4% above the prior refresh.",
+     "detailText": "calc note",
+     "mood": "good",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Current",
+       "v": 1234.5,
+       "t": 1000
+      }
+     ],
+     "baselineValue": 1000,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "scalar usd no baseline",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "unit": "currency",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "path": "sales.total"
+     }
+    }
+   },
+   "baseline": null,
+   "out": {
+    "value": 1234.5,
+    "valueJson": 1234.5,
+    "baseline": null,
+    "deltaPct": null,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "$1,234.50",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is $1,234.50; a comparison will appear after the next refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Current",
+       "v": 1234.5,
+       "t": 1234.5
+      }
+     ],
+     "baselineValue": null,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "scalar eur down",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "unit": "currency",
+    "directionGood": "down",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "path": "sales.total"
+     },
+     "runtime": {
+      "currency": "EUR",
+      "windowDays": 7
+     }
+    }
+   },
+   "baseline": 2000,
+   "out": {
+    "value": 1234.5,
+    "valueJson": 1234.5,
+    "baseline": 2000,
+    "deltaPct": -38.275,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "€1,234.50",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is €1,234.50, 38.3% below the prior refresh.",
+     "detailText": "calc note",
+     "mood": "good",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Current",
+       "v": 1234.5,
+       "t": 2000
+      }
+     ],
+     "baselineValue": 2000,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-11-07",
+      "end": "2026-11-14",
+      "label": "Last 7 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "scalar jpy",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "unit": "currency",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "path": "sales.total"
+     },
+     "runtime": {
+      "currency": "JPY"
+     }
+    }
+   },
+   "baseline": 1234.5,
+   "out": {
+    "value": 1234.5,
+    "valueJson": 1234.5,
+    "baseline": 1234.5,
+    "deltaPct": 0,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "¥1,234.5",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is ¥1,234.5, 0.0% above the prior refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Current",
+       "v": 1234.5,
+       "t": 1234.5
+      }
+     ],
+     "baselineValue": 1234.5,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "scalar gbp",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "unit": "currency",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "path": "sales.refunds"
+     },
+     "runtime": {
+      "currency": "GBP"
+     }
+    }
+   },
+   "baseline": 0,
+   "out": {
+    "value": 34.5,
+    "valueJson": 34.5,
+    "baseline": 0,
+    "deltaPct": null,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "£34.50",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is £34.50, with no comparable percentage change.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Current",
+       "v": 34.5,
+       "t": 0
+      }
+     ],
+     "baselineValue": 0,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "scalar chf",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "unit": "currency",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "path": "sales.total"
+     },
+     "runtime": {
+      "currency": "CHF"
+     }
+    }
+   },
+   "baseline": -50,
+   "out": {
+    "value": 1234.5,
+    "valueJson": 1234.5,
+    "baseline": -50,
+    "deltaPct": 2569,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "CHF 1,234.50",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is CHF 1,234.50, 2569.0% above the prior refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Current",
+       "v": 1234.5,
+       "t": -50
+      }
+     ],
+     "baselineValue": -50,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "scalar inr",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "unit": "currency",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "path": "sales.total"
+     },
+     "runtime": {
+      "currency": "INR"
+     }
+    }
+   },
+   "baseline": null,
+   "out": {
+    "value": 1234.5,
+    "valueJson": 1234.5,
+    "baseline": null,
+    "deltaPct": null,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "₹1,234.50",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is ₹1,234.50; a comparison will appear after the next refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Current",
+       "v": 1234.5,
+       "t": 1234.5
+      }
+     ],
+     "baselineValue": null,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "scalar cad",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "unit": "currency",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "path": "sales.total"
+     },
+     "runtime": {
+      "currency": "CAD"
+     }
+    }
+   },
+   "baseline": null,
+   "out": {
+    "value": 1234.5,
+    "valueJson": 1234.5,
+    "baseline": null,
+    "deltaPct": null,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "CA$1,234.50",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is CA$1,234.50; a comparison will appear after the next refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Current",
+       "v": 1234.5,
+       "t": 1234.5
+      }
+     ],
+     "baselineValue": null,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "scalar aud",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "unit": "currency",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "path": "sales.total"
+     },
+     "runtime": {
+      "currency": "AUD"
+     }
+    }
+   },
+   "baseline": null,
+   "out": {
+    "value": 1234.5,
+    "valueJson": 1234.5,
+    "baseline": null,
+    "deltaPct": null,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "A$1,234.50",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is A$1,234.50; a comparison will appear after the next refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Current",
+       "v": 1234.5,
+       "t": 1234.5
+      }
+     ],
+     "baselineValue": null,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "expr add",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "expression": {
+       "add": [
+        "sales.total",
+        "sales.refunds",
+        0.005
+       ]
+      }
+     }
+    }
+   },
+   "baseline": null,
+   "out": {
+    "value": 1269.005,
+    "valueJson": 1269.005,
+    "baseline": null,
+    "deltaPct": null,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "1,269.01",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is 1,269.01; a comparison will appear after the next refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Current",
+       "v": 1269.005,
+       "t": 1269.005
+      }
+     ],
+     "baselineValue": null,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "expr ratio percent",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "unit": "percent",
+    "directionGood": "neutral",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "expression": {
+       "divide": [
+        "sales.refunds",
+        "sales.total"
+       ]
+      }
+     }
+    }
+   },
+   "baseline": 0.02,
+   "out": {
+    "value": 0.027946537059538274,
+    "valueJson": 0.027946537059538274,
+    "baseline": 0.02,
+    "deltaPct": 39.73268529769137,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "2.79%",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is 2.79%, 39.7% above the prior refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Current",
+       "v": 0.027946537059538274,
+       "t": 0.02
+      }
+     ],
+     "baselineValue": 0.02,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "expr divide zero",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "unit": "percent",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "expression": {
+       "divide": [
+        "sales.total",
+        {
+         "subtract": [
+          "sales.orders",
+          7
+         ]
+        }
+       ]
+      }
+     }
+    }
+   },
+   "baseline": 1,
+   "out": {
+    "value": null,
+    "valueJson": null,
+    "baseline": 1,
+    "deltaPct": null,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "Not yet available",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is Not yet available, with no comparable percentage change.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Current",
+       "v": 0,
+       "t": 1
+      }
+     ],
+     "baselineValue": 1,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "expr multiply",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "expression": {
+       "multiply": [
+        "sales.orders",
+        2.5,
+        3
+       ]
+      }
+     }
+    }
+   },
+   "baseline": 52.5,
+   "out": {
+    "value": 52.5,
+    "valueJson": 52.5,
+    "baseline": 52.5,
+    "deltaPct": 0,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "52.5",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is 52.5, 0.0% above the prior refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Current",
+       "v": 52.5,
+       "t": 52.5
+      }
+     ],
+     "baselineValue": 52.5,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "expr bad op",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "expression": {
+       "pow": [
+        "sales.orders",
+        2
+       ]
+      }
+     }
+    }
+   },
+   "baseline": null,
+   "error": "saved-query result expression operator pow is not allowed"
+  },
+  {
+   "name": "expr one operand",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "expression": {
+       "add": [
+        "sales.orders"
+       ]
+      }
+     }
+    }
+   },
+   "baseline": null,
+   "error": "saved-query expression add requires at least two operands"
+  },
+  {
+   "name": "expr two keys",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "expression": {
+       "add": [
+        1,
+        2
+       ],
+       "subtract": [
+        1,
+        2
+       ]
+      }
+     }
+    }
+   },
+   "baseline": null,
+   "error": "saved-query expression must contain one operator"
+  },
+  {
+   "name": "scalar not numeric",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "path": "sales.aggregates.c"
+     }
+    }
+   },
+   "baseline": null,
+   "error": "saved-query result path sales.aggregates.c is not numeric"
+  },
+  {
+   "name": "scalar missing",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "path": "sales.none"
+     }
+    }
+   },
+   "baseline": null,
+   "error": "saved-query result path sales.none is not numeric"
+  },
+  {
+   "name": "object",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "object",
+      "paths": [
+       "sales.aggregates.a",
+       "sales.aggregates.b",
+       "sales.aggregates.c",
+       "nope.x"
+      ]
+     }
+    }
+   },
+   "baseline": 2,
+   "out": {
+    "value": 3,
+    "valueJson": {
+     "sales.aggregates.a": 1,
+     "sales.aggregates.b": "2",
+     "sales.aggregates.c": "x",
+     "nope.x": null
+    },
+    "baseline": 2,
+    "deltaPct": 50,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "3",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is 3, 50.0% above the prior refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "bar",
+     "chartData": [
+      {
+       "d": "aggregates",
+       "v": 1
+      },
+      {
+       "d": "aggregates",
+       "v": 2
+      }
+     ],
+     "baselineValue": 2,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "object empty",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "chartHint": "kpi",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "object",
+      "paths": [
+       "nope"
+      ]
+     }
+    }
+   },
+   "baseline": null,
+   "out": {
+    "value": 0,
+    "valueJson": {
+     "nope": null
+    },
+    "baseline": null,
+    "deltaPct": null,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "0",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is 0; a comparison will appear after the next refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Current",
+       "v": 0,
+       "t": 0
+      }
+     ],
+     "baselineValue": null,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "timestamps duration",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "unit": "duration_seconds",
+    "directionGood": "down",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "timestamps",
+      "paths": [
+       "cron.last_run",
+       "cron.other_run"
+      ]
+     }
+    }
+   },
+   "baseline": 7200,
+   "out": {
+    "value": 3600,
+    "valueJson": {
+     "cron.last_run": "2026-11-14T09:30:00Z",
+     "cron.other_run": "not a date"
+    },
+    "baseline": 7200,
+    "deltaPct": -50,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "1.0h",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is 1.0h, 50.0% below the prior refresh.",
+     "detailText": "calc note",
+     "mood": "good",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "last_run",
+       "v": 3600,
+       "t": 7200
+      }
+     ],
+     "baselineValue": 7200,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "timestamps none",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "unit": "duration_seconds",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "timestamps",
+      "paths": [
+       "cron.other_run"
+      ]
+     }
+    }
+   },
+   "baseline": null,
+   "out": {
+    "value": null,
+    "valueJson": {
+     "cron.other_run": "not a date"
+    },
+    "baseline": null,
+    "deltaPct": null,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "Not yet available",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is Not yet available; a comparison will appear after the next refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Not yet available",
+       "v": 0,
+       "t": 0
+      }
+     ],
+     "baselineValue": null,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "age summary",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "unit": "duration_seconds",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "timestamp_age_summary",
+      "rowsPath": "rows",
+      "timestampPath": "updated_at"
+     }
+    }
+   },
+   "baseline": null,
+   "out": {
+    "value": 86400,
+    "valueJson": {
+     "median": 86400,
+     "max": 1161000,
+     "count": 3
+    },
+    "baseline": null,
+    "deltaPct": null,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "1.0d",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is 1.0d; a comparison will appear after the next refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "bar",
+     "chartData": [
+      {
+       "d": "Median",
+       "v": 86400
+      },
+      {
+       "d": "Oldest",
+       "v": 1161000
+      }
+     ],
+     "baselineValue": null,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "age summary empty",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "unit": "duration_seconds",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "timestamp_age_summary",
+      "rowsPath": "empty",
+      "timestampPath": "updated_at"
+     }
+    }
+   },
+   "baseline": null,
+   "out": {
+    "value": 0,
+    "valueJson": {
+     "median": 0,
+     "max": 0,
+     "count": 0
+    },
+    "baseline": null,
+    "deltaPct": null,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "0s",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is 0s; a comparison will appear after the next refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "bar",
+     "chartData": [
+      {
+       "d": "Median",
+       "v": 0
+      },
+      {
+       "d": "Oldest",
+       "v": 0
+      }
+     ],
+     "baselineValue": null,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "age summary bad",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "timestamp_age_summary",
+      "rowsPath": "cron",
+      "timestampPath": "updated_at"
+     }
+    }
+   },
+   "baseline": null,
+   "error": "saved-query result path cron is not an array"
+  },
+  {
+   "name": "rows",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "directionGood": "down",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "rows",
+      "path": "rows"
+     }
+    }
+   },
+   "baseline": 3,
+   "out": {
+    "value": 3,
+    "valueJson": [
+     {
+      "sku": "A-1",
+      "quantity": 3,
+      "updated_at": "2026-11-14T08:30:00Z"
+     },
+     {
+      "name": "Widget",
+      "sum_base_row_invoiced": "99.95",
+      "updated_at": "2026-11-13 10:30:00"
+     },
+     {
+      "other": true,
+      "updated_at": "2026-11-01T00:00:00.000Z"
+     }
+    ],
+    "baseline": 3,
+    "deltaPct": 0,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "3",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is 3, 0.0% above the prior refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "bar",
+     "chartData": [
+      {
+       "d": "A-1",
+       "v": 3
+      },
+      {
+       "d": "Widget",
+       "v": 99.95
+      },
+      {
+       "d": "3",
+       "v": 1
+      }
+     ],
+     "baselineValue": 3,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "rows empty",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "rows",
+      "path": "empty"
+     }
+    }
+   },
+   "baseline": null,
+   "out": {
+    "value": 0,
+    "valueJson": [],
+    "baseline": null,
+    "deltaPct": null,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "0",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is 0; a comparison will appear after the next refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "None",
+       "v": 0,
+       "t": 0
+      }
+     ],
+     "baselineValue": null,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "keyed",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "keyed_subtract",
+      "left": {
+       "rowsPath": "left",
+       "keyPath": "k",
+       "valuePath": "v"
+      },
+      "right": {
+       "rowsPath": "right",
+       "keyPath": "key",
+       "valuePath": "qty"
+      }
+     }
+    }
+   },
+   "baseline": 12,
+   "out": {
+    "value": 12,
+    "valueJson": {
+     "s1": 8,
+     "s2": 5,
+     "s3": -1
+    },
+    "baseline": 12,
+    "deltaPct": 0,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "12",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is 12, 0.0% above the prior refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "bar",
+     "chartData": [
+      {
+       "d": "s1",
+       "v": 8
+      },
+      {
+       "d": "s2",
+       "v": 5
+      },
+      {
+       "d": "s3",
+       "v": -1
+      }
+     ],
+     "baselineValue": 12,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "unknown kind",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "histogram"
+     }
+    }
+   },
+   "baseline": null,
+   "error": "saved-query result kind histogram is not supported"
+  },
+  {
+   "name": "big number",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "expression": {
+       "multiply": [
+        "sales.total",
+        1000000
+       ]
+      }
+     }
+    }
+   },
+   "baseline": null,
+   "out": {
+    "value": 1234500000,
+    "valueJson": 1234500000,
+    "baseline": null,
+    "deltaPct": null,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "1,234,500,000",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is 1,234,500,000; a comparison will appear after the next refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Current",
+       "v": 1234500000,
+       "t": 1234500000
+      }
+     ],
+     "baselineValue": null,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "duration hours",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "unit": "duration_seconds",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "expression": {
+       "multiply": [
+        3600,
+        2.25
+       ]
+      }
+     }
+    }
+   },
+   "baseline": null,
+   "out": {
+    "value": 8100,
+    "valueJson": 8100,
+    "baseline": null,
+    "deltaPct": null,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "2.3h",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is 2.3h; a comparison will appear after the next refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Current",
+       "v": 8100,
+       "t": 8100
+      }
+     ],
+     "baselineValue": null,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "duration seconds",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "unit": "duration_seconds",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "expression": {
+       "add": [
+        59.5,
+        0
+       ]
+      }
+     }
+    }
+   },
+   "baseline": null,
+   "out": {
+    "value": 59.5,
+    "valueJson": 59.5,
+    "baseline": null,
+    "deltaPct": null,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "60s",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is 60s; a comparison will appear after the next refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Current",
+       "v": 59.5,
+       "t": 59.5
+      }
+     ],
+     "baselineValue": null,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "rounding",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "unit": "currency",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "expression": {
+       "add": [
+        1.005,
+        0
+       ]
+      }
+     }
+    }
+   },
+   "baseline": null,
+   "out": {
+    "value": 1.005,
+    "valueJson": 1.005,
+    "baseline": null,
+    "deltaPct": null,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "$1.01",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is $1.01; a comparison will appear after the next refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Current",
+       "v": 1.005,
+       "t": 1.005
+      }
+     ],
+     "baselineValue": null,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "rounding plain",
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "scalar",
+      "expression": {
+       "add": [
+        2.675,
+        1000
+       ]
+      }
+     }
+    }
+   },
+   "baseline": null,
+   "out": {
+    "value": 1002.675,
+    "valueJson": 1002.675,
+    "baseline": null,
+    "deltaPct": null,
+    "sourceFreshnessAt": "2026-11-14T09:30:00.000Z",
+    "result": {
+     "reasoning": "Computed deterministically from a reviewed saved query; no language model selected or transformed the value.",
+     "headlineMetric": "1,002.68",
+     "headlineLabel": "Net revenue",
+     "insightText": "Net revenue is 1,002.68; a comparison will appear after the next refresh.",
+     "detailText": "calc note",
+     "mood": "watch",
+     "chartType": "kpi",
+     "chartData": [
+      {
+       "d": "Current",
+       "v": 1002.675,
+       "t": 1002.675
+      }
+     ],
+     "baselineValue": null,
+     "timeWindow": {
+      "grain": "month",
+      "start": "2026-10-15",
+      "end": "2026-11-14",
+      "label": "Last 30 days"
+     }
+    }
+   }
+  },
+  {
+   "name": "no title",
+   "definition": {
+    "execution": {
+     "mode": "saved_query",
+     "source": "s",
+     "query": "q",
+     "document": "d",
+     "freshnessSeconds": 1,
+     "result": {
+      "kind": "rows",
+      "path": "rows"
+     }
+    }
+   },
+   "baseline": null,
+   "error": "saved-query metric title is required"
+  },
+  {
+   "name": "bad freshness",
+   "definition": {
+    "title": "t",
+    "execution": {
+     "mode": "saved_query",
+     "source": "s",
+     "query": "q",
+     "document": "d",
+     "freshnessSeconds": 1.5,
+     "result": {
+      "kind": "rows",
+      "path": "rows"
+     }
+    }
+   },
+   "baseline": null,
+   "error": "saved-query metric freshnessSeconds must be a positive integer"
+  },
+  {
+   "name": "bad mode",
+   "definition": {
+    "title": "t",
+    "execution": {
+     "mode": "agent",
+     "source": "s",
+     "query": "q",
+     "document": "d",
+     "freshnessSeconds": 1,
+     "result": {
+      "kind": "rows"
+     }
+    }
+   },
+   "baseline": null,
+   "error": "saved-query metric execution.mode is invalid"
+  },
+  {
+   "name": "no document",
+   "definition": {
+    "title": "t",
+    "execution": {
+     "mode": "saved_query",
+     "source": "s",
+     "query": "q",
+     "document": " ",
+     "freshnessSeconds": 1,
+     "result": {
+      "kind": "rows"
+     }
+    }
+   },
+   "baseline": null,
+   "error": "saved-query metric execution.document is required"
+  }
+ ],
+ "variables": [
+  {
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "rows",
+      "path": "rows"
+     }
+    }
+   },
+   "variables": {
+    "from": "2026-10-15T10:30:00.000Z",
+    "to": "2026-11-14T10:30:00.000Z",
+    "now": "2026-11-14T10:30:00.000Z",
+    "staleBefore": "2026-11-14T08:30:00.000Z",
+    "olderThan": "2026-11-12T10:30:00.000Z",
+    "storeIds": [
+     1
+    ],
+    "threshold": 5
+   }
+  },
+  {
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "rows",
+      "path": "rows"
+     },
+     "runtime": {
+      "storeIds": [
+       2,
+       3
+      ],
+      "windowDays": 7,
+      "staleAfterSeconds": 60,
+      "agedAfterSeconds": -5,
+      "stockThreshold": 0
+     }
+    }
+   },
+   "variables": {
+    "from": "2026-11-07T10:30:00.000Z",
+    "to": "2026-11-14T10:30:00.000Z",
+    "now": "2026-11-14T10:30:00.000Z",
+    "staleBefore": "2026-11-14T10:29:00.000Z",
+    "olderThan": "2026-11-12T10:30:00.000Z",
+    "storeIds": [
+     2,
+     3
+    ],
+    "threshold": 0
+   }
+  },
+  {
+   "definition": {
+    "title": "Net revenue",
+    "description": "desc",
+    "calculationNote": "calc note",
+    "execution": {
+     "mode": "saved_query",
+     "source": "magento",
+     "query": "q",
+     "document": "query q { x }",
+     "freshnessSeconds": 3600,
+     "result": {
+      "kind": "rows",
+      "path": "rows"
+     },
+     "runtime": {
+      "storeIds": [],
+      "windowDays": "10",
+      "stockThreshold": "3"
+     }
+    }
+   },
+   "variables": {
+    "from": "2026-11-04T10:30:00.000Z",
+    "to": "2026-11-14T10:30:00.000Z",
+    "now": "2026-11-14T10:30:00.000Z",
+    "staleBefore": "2026-11-14T08:30:00.000Z",
+    "olderThan": "2026-11-12T10:30:00.000Z",
+    "storeIds": [
+     1
+    ],
+    "threshold": 5
+   }
+  }
+ ]
+}

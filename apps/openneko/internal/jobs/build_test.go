@@ -90,3 +90,75 @@ insert into `+b+`.job (name, data, state, retry_limit) values
 		t.Errorf("ran %q", ran)
 	}
 }
+
+func TestMetricRefreshRunsOnItsQueue(t *testing.T) {
+	ctx := context.Background()
+	pool := testpg.Pool(t)
+	t.Setenv("OPENNEKO_METRIC_REFRESH_CONCURRENCY", "1")
+	q := testQueue(t, pool)
+	b := q.BossSchema
+	if _, err := pool.Exec(ctx, `
+create schema `+b+`;
+create table `+b+`.job (id uuid primary key default gen_random_uuid(), name text not null, data jsonb,
+  state text not null, retry_limit int not null default 2, start_after timestamptz not null default now());
+insert into `+b+`.job (name, data, state) values
+  ('metric_refresh', '{"orgId":"org-1","processingJobId":"pj-a","queuedAt":1}', 'created'),
+  ('metric_refresh', '{"orgId":"org-1","processingJobId":"pj-b","queuedAt":1}', 'retry');`); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var moved string
+	if err := pool.QueryRow(ctx, `select string_agg(queue || ' ' || max_attempts, ',') from `+q.Schema+`.river_job where kind = 'metric_refresh'`).Scan(&moved); err != nil {
+		t.Fatal(err)
+	}
+	if moved != "metric_refresh 3,metric_refresh 3" {
+		t.Errorf("moved jobs: %q", moved)
+	}
+	var mu sync.Mutex
+	running, most := 0, 0
+	var ran []string
+	q.Build = func(_ context.Context, kind, orgID, jobID string) error {
+		mu.Lock()
+		running++
+		most = max(most, running)
+		ran = append(ran, kind+" "+jobID)
+		mu.Unlock()
+		time.Sleep(200 * time.Millisecond)
+		mu.Lock()
+		running--
+		mu.Unlock()
+		return nil
+	}
+	runner, err := q.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runner.Stop(ctx)
+	for deadline := time.Now().Add(20 * time.Second); ; {
+		var done int
+		_ = pool.QueryRow(ctx, `select count(*) from `+q.Schema+`.river_job where kind = 'metric_refresh' and state = 'completed'`).Scan(&done)
+		if done == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d of 2 refreshes completed", done)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if most != 1 || len(ran) != 2 || !slices.Contains(ran, "metric_refresh pj-a") {
+		t.Errorf("ran %q, at most %d at once", ran, most)
+	}
+}
+
+func TestMetricRefreshWorkers(t *testing.T) {
+	for env, want := range map[string]int{"": 2, "5": 5, "0": 2, "x": 2, " 3 ": 3} {
+		t.Setenv("OPENNEKO_METRIC_REFRESH_CONCURRENCY", env)
+		if got := MetricRefreshWorkers(); got != want {
+			t.Errorf("%q: %d", env, got)
+		}
+	}
+}

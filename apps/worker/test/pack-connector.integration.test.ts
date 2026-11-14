@@ -14,13 +14,12 @@ import { graphjinQuery, graphjinSigningSecretB64, mintGraphjinToken } from "@nek
 import { applyPackGraphjinConfig } from "../src/packs/graphjin-config.js";
 import { PackService } from "../src/packs/service.js";
 import { sweepWatchers } from "@neko/llm/workflows";
-import { runMetricRefresh } from "../src/jobs/metric-refresh.js";
 import { createAdminHandler } from "../src/admin-server.js";
 
 // Only the scheduler and workspace location are substituted. Connector HTTP,
 // GraphJin preview/apply/restart, credentials, and metadata use the real code.
 const workspace = vi.hoisted(() => ({ root: "" }));
-vi.mock("@neko/db/jobs", () => ({ enqueue: async () => "fixture-job", QUEUE: { METRIC_REFRESH: "metric_refresh" } }));
+vi.mock("@neko/db/jobs", () => ({ enqueueMetricRefresh: async () => "fixture-job" }));
 vi.mock("@neko/llm/work", () => ({ ensureOrgWorkspace: async () => ({ orgRoot: workspace.root, skillsRoot: join(workspace.root, "skills") }) }));
 
 const exec = promisify(execFile);
@@ -135,10 +134,6 @@ describe.skipIf(!enabled)("pack-owned connector on packaged GraphJin", () => {
     expect(config).toContain("gjsecret://");
     expect(await readFile(join(root, "graphjin/secrets.enc.yml"), "utf8")).not.toContain(token);
     expect((await service.doctor("service-health")).status).toBe("ready");
-    const metric = (await pool().query("select id from metric where org_id=$1", [org])).rows[0];
-    const job = (await pool().query("insert into processing_job(org_id,kind,status,trigger,trigger_payload) values ($1,'metric_refresh','running','fixture',$2) returning id", [org, JSON.stringify({ metricId: metric.id })])).rows[0].id;
-    await runMetricRefresh(job, org);
-    expect((await pool().query("select value from metric_snapshot where metric_id=$1", [metric.id])).rows[0].value).toBe("1");
     expect((await sweepWatchers(org, { enqueueFire: async () => {} })).checked).toBe(1);
     expect((await pool().query("select last_value,last_error from watcher where org_id=$1", [org])).rows[0]).toEqual({ last_value: 1, last_error: null });
     await docker("restart", graphjin);
