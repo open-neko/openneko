@@ -42,7 +42,11 @@ func TestFront(t *testing.T) {
 		{"GET", "/admin/settings/workflows", "<html>app</html>", "no-cache"},
 		{"GET", "/admin/users", "<html>app</html>", "no-cache"},
 		{"GET", "/admin/users/groups/g1", "<html>app</html>", "no-cache"},
-		{"GET", "/device", "node /device", ""},
+		{"GET", "/device", "<html>app</html>", "no-cache"},
+		{"GET", "/integrations", "<html>app</html>", "no-cache"},
+		{"GET", "/chat/connectors", "<html>app</html>", "no-cache"},
+		{"GET", "/onboarding", "<html>app</html>", "no-cache"},
+		{"GET", "/admin/settings/packs/magento/operations", "<html>app</html>", "no-cache"},
 		{"POST", "/chat", "node /chat", ""},
 	}
 	for _, c := range cases {
@@ -86,11 +90,10 @@ func TestFrontWithoutNode(t *testing.T) {
 	if w := get(f, "GET", "/api/v1/work"); w.Code != 502 || !strings.Contains(w.Body.String(), `"error"`) {
 		t.Errorf("API: %d %q", w.Code, w.Body.String())
 	}
-	if w := get(f, "GET", "/device"); w.Code != 502 {
-		t.Errorf("server page: %d", w.Code)
-	}
-	if w := get(f, "GET", "/chat"); w.Code != 200 {
-		t.Errorf("static page: %d", w.Code)
+	for _, p := range []string{"/chat", "/device", "/integrations", "/chat/connectors", "/onboarding", "/admin/settings/packs/magento/operations", "/admin/settings/graphjin"} {
+		if w := get(f, "GET", p); w.Code != 200 || w.Body.String() != "<html>app</html>" {
+			t.Errorf("static page %s: %d %q", p, w.Code, w.Body.String())
+		}
 	}
 }
 

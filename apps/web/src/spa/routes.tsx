@@ -107,6 +107,7 @@ const workShell: RouteObject = {
             return { Component: () => <BotInfoRoute BotInfo={BotInfo} /> };
           },
         },
+        { path: "connectors", ...page(() => import("@/app/(work)/chat/connectors/page")) },
       ],
     },
     {
@@ -152,10 +153,14 @@ export const routes: RouteObject[] = [
           { path: "runs", ...page(() => import("@/app/runs/page")) },
           { path: "runs/:workflowRunId", ...page(() => import("@/app/runs/[workflowRunId]/page")) },
           { path: "signin", ...page(() => import("@/app/signin/page")) },
+          { path: "device", ...page(() => import("@/app/device/page")) },
+          { path: "integrations", ...page(() => import("@/app/integrations/page")) },
+          { path: "onboarding", ...page(() => import("@/app/onboarding/page")) },
           { path: "admin/rules", ...page(() => import("@/app/admin/rules/page")) },
           { path: "admin/rules/:policyId", ...page(() => import("@/app/admin/rules/[policyId]/page")) },
           { path: "admin/settings/channels", ...page(() => import("@/app/admin/settings/channels/page")) },
           { path: "admin/settings/packs", ...page(() => import("@/app/admin/settings/packs/page")) },
+          { path: "admin/settings/packs/magento/operations", ...page(() => import("@/app/admin/settings/packs/magento/operations/page")) },
           { path: "admin/settings/signin", ...page(() => import("@/app/admin/settings/signin/page")) },
           { path: "admin/settings/agent", ...page(() => import("@/app/admin/settings/agent/page")) },
           { path: "admin/settings/data", ...page(() => import("@/app/admin/settings/data/page")) },

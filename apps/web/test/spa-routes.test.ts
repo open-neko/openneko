@@ -98,6 +98,11 @@ describe("static web app routes", () => {
       "/admin/users",
       "/admin/users/groups/:groupId",
       "/admin/settings/graphjin",
+      "/device",
+      "/integrations",
+      "/chat/connectors",
+      "/onboarding",
+      "/admin/settings/packs/magento/operations",
     ];
     const wrong = ported.filter((page) => {
       const route = (matchRoutes(routes, concrete(page)) ?? []).at(-1)?.route;
@@ -111,12 +116,18 @@ describe("static web app routes", () => {
     expect(serverPages.filter((page) => !pages.includes(page))).toEqual([]);
   });
 
-  it("passes server pages to Node and keeps ported pages in the app", () => {
+  it("has an empty server page list and passes no page to Node", () => {
+    expect(serverPages).toEqual([]);
     const pattern = serverPagePattern();
-    expect(pattern.test("/device")).toBe(true);
-    expect(pattern.test("/admin/users/groups/g1?tab=members")).toBe(false);
-    expect(pattern.test("/chat")).toBe(false);
-    expect(pattern.test("/device/extra")).toBe(false);
+    for (const page of pages) {
+      expect(pattern.test(concrete(page))).toBe(false);
+    }
+    expect(pattern.test("/")).toBe(false);
+    expect(pattern.test("/device")).toBe(false);
+    expect(pattern.test("/integrations")).toBe(false);
+    expect(pattern.test("/chat/connectors")).toBe(false);
+    expect(pattern.test("/onboarding")).toBe(false);
+    expect(pattern.test("/admin/settings/packs/magento/operations")).toBe(false);
     expect(pattern.test("/admin/settings/graphjin")).toBe(false);
     expect(pattern.test("/api/v1/version")).toBe(false);
   });
