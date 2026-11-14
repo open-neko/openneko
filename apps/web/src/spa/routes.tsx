@@ -167,6 +167,7 @@ export const routes: RouteObject[] = [
           { path: "admin", ...page(() => import("@/app/admin/page")) },
           { path: "admin/settings", ...page(() => import("@/app/admin/settings/page")) },
           { path: "admin/settings/workflows", ...page(() => import("@/app/admin/settings/workflows/page")) },
+          { path: "admin/settings/graphjin", ...page(() => import("@/app/admin/settings/graphjin/page")) },
           {
             path: "skills/:name",
             lazy: async () => {

@@ -1,8 +1,18 @@
-import {
-  readGraphjinConfigFileView,
-  type GraphjinRunState,
-} from "@neko/llm/graphjin/config-file-view";
 import { Disclosure } from "@/components/ui/disclosure";
+
+export type GraphjinRunState = {
+  state: string;
+  reason: string | null;
+  since: string | null;
+  restarts: number;
+};
+
+export type GraphjinConfigFileView = {
+  path: string | null;
+  yaml: string | null;
+  error: string | null;
+  state: GraphjinRunState | null;
+};
 
 function stateLine(state: GraphjinRunState | null): string {
   if (!state) return "OpenNeko cannot read GraphJin's state.";
@@ -19,8 +29,7 @@ function stateLine(state: GraphjinRunState | null): string {
   return state.reason ? `${label}: ${state.reason}` : `${label}.`;
 }
 
-export async function ConfigFileView() {
-  const view = await readGraphjinConfigFileView();
+export function ConfigFileView({ view }: { view: GraphjinConfigFileView }) {
   const tone = view.state?.state === "running" ? "text-text2" : "text-danger";
 
   return (
