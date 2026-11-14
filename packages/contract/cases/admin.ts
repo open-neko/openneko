@@ -157,8 +157,11 @@ export const adminCases: Case[] = [
     op: "POST /admin/packs/upload", name: "refuses an archive that is not a ZIP", status: 400,
     request: { raw: { body: "not a zip", type: "application/zip" } },
   },
-  { op: "GET /admin/packs/magento/store-management", name: "needs the worker", status: 502 },
-  { op: "POST /admin/packs/magento/store-management", name: "needs the worker", status: 502, request: { body: {} } },
+  {
+    op: "GET /admin/packs/magento/store-management", name: "lists the store management settings", status: 200,
+    check: (r) => expect(body(r)).toMatchObject({ controls: [], rules: [], changesets: [], handoffs: [], activity: [], operations: [] }),
+  },
+  { op: "POST /admin/packs/magento/store-management", name: "refuses an unknown action", status: 400, request: { body: {} } },
   { op: "POST /admin/packs/upload", name: "needs a ZIP archive", status: 415, request: { raw: { body: "not a zip", type: "text/plain" } } },
   { op: "GET /admin/packs/{packId}/{action}", name: "refuses an unknown operation", status: 404, request: { params: { packId: "magento", action: "nothing" } } },
   { op: "POST /admin/packs/{packId}/{action}", name: "refuses an unknown operation", status: 404, request: { params: { packId: "magento", action: "nothing" }, body: {} } },

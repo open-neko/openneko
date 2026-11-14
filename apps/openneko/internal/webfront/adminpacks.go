@@ -164,8 +164,6 @@ func (a *API) adminPackWrite(w http.ResponseWriter, r *http.Request) {
 		jsonHeader, []byte(jsStringify(body, false)))
 }
 
-const storeManagementPath = "/admin/packs/magento/store-management"
-
 func (a *API) adminStoreManagement(w http.ResponseWriter, r *http.Request) {
 	act, ok := a.settingsAdmin(w, r)
 	if !ok {
@@ -173,7 +171,12 @@ func (a *API) adminStoreManagement(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := context.WithoutCancel(r.Context())
 	if r.Method != http.MethodPost {
-		a.relayPackWorker(ctx, w, http.MethodGet, storeManagementPath, nil, nil)
+		out, err := a.readMagentoStoreManagement(ctx, act.OrgID)
+		if err != nil {
+			sendPackFailure(w, http.StatusBadRequest, err, "store_management")
+			return
+		}
+		sendJSValue(w, http.StatusOK, out)
 		return
 	}
 	body, ok := packObjectBody(w, r)
@@ -181,5 +184,10 @@ func (a *API) adminStoreManagement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body.set("actorUserId", nullable(act.UserID))
-	a.relayPackWorker(ctx, w, http.MethodPost, storeManagementPath, jsonHeader, []byte(jsStringify(body, false)))
+	out, err := a.updateMagentoStoreManagement(ctx, act.OrgID, body)
+	if err != nil {
+		sendPackFailure(w, http.StatusBadRequest, err, "store_management")
+		return
+	}
+	sendJSValue(w, http.StatusOK, out)
 }
