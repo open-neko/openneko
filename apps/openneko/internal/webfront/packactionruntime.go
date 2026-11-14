@@ -289,22 +289,8 @@ func isMagentoV2ActionKind(kind string) bool {
 		strings.HasPrefix(kind, "magento.manage_")
 }
 
-func (a *API) shouldCreateActionRequestInGo(ctx context.Context, orgID, kind string) (bool, error) {
-	if a.Gate == nil || a.Gate.WorkerURL == "" {
-		return true, nil
-	}
-	if isMagentoV2ActionKind(kind) {
-		return true, nil
-	}
-	var owned bool
-	err := a.DB.QueryRow(ctx, `
-		select exists (select 1 from pack_action_definition where org_id = $1 and kind = $2)`,
-		orgID, kind).Scan(&owned)
-	return owned, err
-}
-
 // createActionRequestInGo matches createActionRequest() in
-// packages/llm/src/workflows/action-store.ts for Go-handled action requests.
+// packages/llm/src/workflows/action-store.ts.
 func (a *API) createActionRequestInGo(ctx context.Context, in *jsObj) (*jsObj, error) {
 	orgID, _ := in.vals["orgId"].(string)
 	scope, _ := in.vals["scope"].(string)

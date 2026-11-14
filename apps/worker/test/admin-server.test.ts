@@ -60,46 +60,14 @@ describe("worker admin HTTP handler", () => {
     }
   });
 
-  it("POST /admin/action-requests/create delegates to worker preflight", async () => {
-    const create = vi.fn(async () => ({ id: "action-prepared", status: "approved" }));
-    const srv = await startServer(
-      createAdminHandler({ actionRequests: { create } }),
-    );
-    try {
-      const input = {
-        orgId: "org-test",
-        kind: "user_admin",
-        scope: "internal",
-        status: "pending_approval",
-        payload: { email: "new@example.com" },
-      };
-      const res = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/action-requests/create`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(input),
-        },
-      );
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ id: "action-prepared", status: "approved" });
-      expect(create).toHaveBeenCalledWith(input);
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("POST /admin/action-requests/create fails closed before preflight is ready", async () => {
+  it("POST /admin/action-requests/create is gone: openneko web creates action requests", async () => {
     const srv = await startServer(createAdminHandler());
     try {
       const res = await fetch(
         `http://127.0.0.1:${srv.port}/admin/action-requests/create`,
         { method: "POST", body: "{}" },
       );
-      expect(res.status).toBe(503);
-      expect(await res.json()).toEqual({
-        error: "action request preflight is not ready",
-      });
+      expect(res.status).toBe(404);
     } finally {
       await srv.close();
     }
