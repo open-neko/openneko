@@ -1,0 +1,1650 @@
+{
+  "classifications": [
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "name",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible catalog metadata"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "sku",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible catalog metadata"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "attribute_set_id",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible catalog metadata"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "type_id",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible catalog metadata"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "status",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible catalog metadata"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "visibility",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible catalog metadata"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "weight",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible catalog metadata"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "description",
+      "riskClass": 2,
+      "category": "content",
+      "rationale": "Reversible catalog metadata"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "short_description",
+      "riskClass": 2,
+      "category": "content",
+      "rationale": "Reversible catalog metadata"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "meta_title",
+      "riskClass": 2,
+      "category": "content",
+      "rationale": "Reversible catalog metadata"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "meta_keyword",
+      "riskClass": 2,
+      "category": "content",
+      "rationale": "Reversible catalog metadata"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "meta_description",
+      "riskClass": 2,
+      "category": "content",
+      "rationale": "Reversible catalog metadata"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "url_key",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible catalog metadata"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "website_ids",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible catalog metadata"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "category_links",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible catalog metadata"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "product_links",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible catalog metadata"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "media_gallery_entries",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible catalog metadata"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "price",
+      "riskClass": 2,
+      "category": "financial",
+      "rationale": "Price changes can run automatically only within the configured delta limit"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "special_price",
+      "riskClass": 2,
+      "category": "financial",
+      "rationale": "Price changes can run automatically only within the configured delta limit"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "tier_price",
+      "riskClass": 2,
+      "category": "financial",
+      "rationale": "Price changes can run automatically only within the configured delta limit"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "value",
+      "riskClass": 2,
+      "category": "financial",
+      "rationale": "Price changes can run automatically only within the configured delta limit"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "product",
+      "attribute": "cost",
+      "riskClass": 1,
+      "category": "financial",
+      "rationale": "Changes margin-sensitive cost data"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "category",
+      "attribute": "name",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible category configuration"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "category",
+      "attribute": "is_active",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible category configuration"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "category",
+      "attribute": "include_in_menu",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible category configuration"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "category",
+      "attribute": "parent_id",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible category configuration"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "category",
+      "attribute": "position",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible category configuration"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "category",
+      "attribute": "available_sort_by",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible category configuration"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "category",
+      "attribute": "default_sort_by",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible category configuration"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "category",
+      "attribute": "description",
+      "riskClass": 2,
+      "category": "content",
+      "rationale": "Reversible category configuration"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "category",
+      "attribute": "meta_title",
+      "riskClass": 2,
+      "category": "content",
+      "rationale": "Reversible category configuration"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "category",
+      "attribute": "meta_keywords",
+      "riskClass": 2,
+      "category": "content",
+      "rationale": "Reversible category configuration"
+    },
+    {
+      "domain": "catalog",
+      "entityType": "category",
+      "attribute": "meta_description",
+      "riskClass": 2,
+      "category": "content",
+      "rationale": "Reversible category configuration"
+    },
+    {
+      "domain": "inventory",
+      "entityType": "source_item",
+      "attribute": "source_code",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible inventory operation with reservation-aware preview"
+    },
+    {
+      "domain": "inventory",
+      "entityType": "source_item",
+      "attribute": "sku",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible inventory operation with reservation-aware preview"
+    },
+    {
+      "domain": "inventory",
+      "entityType": "source_item",
+      "attribute": "quantity",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible inventory operation with reservation-aware preview"
+    },
+    {
+      "domain": "inventory",
+      "entityType": "source_item",
+      "attribute": "status",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible inventory operation with reservation-aware preview"
+    },
+    {
+      "domain": "inventory",
+      "entityType": "source_item",
+      "attribute": "notify_stock_qty",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible inventory operation with reservation-aware preview"
+    },
+    {
+      "domain": "inventory",
+      "entityType": "source_item",
+      "attribute": "use_config_notify_stock_qty",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Reversible inventory operation with reservation-aware preview"
+    },
+    {
+      "domain": "orders",
+      "entityType": "order",
+      "attribute": "comment",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Routine order operations"
+    },
+    {
+      "domain": "orders",
+      "entityType": "order",
+      "attribute": "is_customer_notified",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Routine order operations"
+    },
+    {
+      "domain": "orders",
+      "entityType": "order",
+      "attribute": "is_visible_on_front",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Routine order operations"
+    },
+    {
+      "domain": "orders",
+      "entityType": "order",
+      "attribute": "hold_before_state",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Routine order operations"
+    },
+    {
+      "domain": "orders",
+      "entityType": "order",
+      "attribute": "hold_before_status",
+      "riskClass": 2,
+      "category": "operational",
+      "rationale": "Routine order operations"
+    },
+    {
+      "domain": "orders",
+      "entityType": "order",
+      "attribute": "firstname",
+      "riskClass": 1,
+      "category": "pii",
+      "rationale": "Customer address or identity data"
+    },
+    {
+      "domain": "orders",
+      "entityType": "order",
+      "attribute": "lastname",
+      "riskClass": 1,
+      "category": "pii",
+      "rationale": "Customer address or identity data"
+    },
+    {
+      "domain": "orders",
+      "entityType": "order",
+      "attribute": "street",
+      "riskClass": 1,
+      "category": "pii",
+      "rationale": "Customer address or identity data"
+    },
+    {
+      "domain": "orders",
+      "entityType": "order",
+      "attribute": "city",
+      "riskClass": 1,
+      "category": "pii",
+      "rationale": "Customer address or identity data"
+    },
+    {
+      "domain": "orders",
+      "entityType": "order",
+      "attribute": "region",
+      "riskClass": 1,
+      "category": "pii",
+      "rationale": "Customer address or identity data"
+    },
+    {
+      "domain": "orders",
+      "entityType": "order",
+      "attribute": "postcode",
+      "riskClass": 1,
+      "category": "pii",
+      "rationale": "Customer address or identity data"
+    },
+    {
+      "domain": "orders",
+      "entityType": "order",
+      "attribute": "country_id",
+      "riskClass": 1,
+      "category": "pii",
+      "rationale": "Customer address or identity data"
+    },
+    {
+      "domain": "orders",
+      "entityType": "order",
+      "attribute": "telephone",
+      "riskClass": 1,
+      "category": "pii",
+      "rationale": "Customer address or identity data"
+    },
+    {
+      "domain": "orders",
+      "entityType": "order",
+      "attribute": "email",
+      "riskClass": 1,
+      "category": "pii",
+      "rationale": "Customer address or identity data"
+    },
+    {
+      "domain": "orders",
+      "entityType": "fulfillment",
+      "attribute": "carrier_code",
+      "riskClass": 1,
+      "category": "operational",
+      "rationale": "Customer-visible fulfillment state"
+    },
+    {
+      "domain": "orders",
+      "entityType": "fulfillment",
+      "attribute": "title",
+      "riskClass": 1,
+      "category": "operational",
+      "rationale": "Customer-visible fulfillment state"
+    },
+    {
+      "domain": "orders",
+      "entityType": "fulfillment",
+      "attribute": "track_number",
+      "riskClass": 1,
+      "category": "operational",
+      "rationale": "Customer-visible fulfillment state"
+    },
+    {
+      "domain": "orders",
+      "entityType": "fulfillment",
+      "attribute": "items",
+      "riskClass": 1,
+      "category": "operational",
+      "rationale": "Customer-visible fulfillment state"
+    },
+    {
+      "domain": "orders",
+      "entityType": "fulfillment",
+      "attribute": "capture",
+      "riskClass": 1,
+      "category": "operational",
+      "rationale": "Customer-visible fulfillment state"
+    },
+    {
+      "domain": "orders",
+      "entityType": "fulfillment",
+      "attribute": "notify",
+      "riskClass": 1,
+      "category": "operational",
+      "rationale": "Customer-visible fulfillment state"
+    },
+    {
+      "domain": "orders",
+      "entityType": "fulfillment",
+      "attribute": "append_comment",
+      "riskClass": 1,
+      "category": "operational",
+      "rationale": "Customer-visible fulfillment state"
+    },
+    {
+      "domain": "promotions",
+      "entityType": "sales_rule",
+      "attribute": "name",
+      "riskClass": 1,
+      "category": "financial",
+      "rationale": "Promotion configuration changes financial exposure"
+    },
+    {
+      "domain": "promotions",
+      "entityType": "sales_rule",
+      "attribute": "description",
+      "riskClass": 1,
+      "category": "content",
+      "rationale": "Promotion configuration changes financial exposure"
+    },
+    {
+      "domain": "promotions",
+      "entityType": "sales_rule",
+      "attribute": "from_date",
+      "riskClass": 1,
+      "category": "financial",
+      "rationale": "Promotion configuration changes financial exposure"
+    },
+    {
+      "domain": "promotions",
+      "entityType": "sales_rule",
+      "attribute": "to_date",
+      "riskClass": 1,
+      "category": "financial",
+      "rationale": "Promotion configuration changes financial exposure"
+    },
+    {
+      "domain": "promotions",
+      "entityType": "sales_rule",
+      "attribute": "is_active",
+      "riskClass": 1,
+      "category": "financial",
+      "rationale": "Promotion configuration changes financial exposure"
+    },
+    {
+      "domain": "promotions",
+      "entityType": "sales_rule",
+      "attribute": "uses_per_customer",
+      "riskClass": 1,
+      "category": "financial",
+      "rationale": "Promotion configuration changes financial exposure"
+    },
+    {
+      "domain": "promotions",
+      "entityType": "sales_rule",
+      "attribute": "stop_rules_processing",
+      "riskClass": 1,
+      "category": "financial",
+      "rationale": "Promotion configuration changes financial exposure"
+    },
+    {
+      "domain": "promotions",
+      "entityType": "sales_rule",
+      "attribute": "sort_order",
+      "riskClass": 1,
+      "category": "financial",
+      "rationale": "Promotion configuration changes financial exposure"
+    },
+    {
+      "domain": "promotions",
+      "entityType": "sales_rule",
+      "attribute": "discount_amount",
+      "riskClass": 1,
+      "category": "financial",
+      "rationale": "Promotion or coupon exposure"
+    },
+    {
+      "domain": "promotions",
+      "entityType": "sales_rule",
+      "attribute": "discount_qty",
+      "riskClass": 1,
+      "category": "financial",
+      "rationale": "Promotion or coupon exposure"
+    },
+    {
+      "domain": "promotions",
+      "entityType": "sales_rule",
+      "attribute": "discount_step",
+      "riskClass": 1,
+      "category": "financial",
+      "rationale": "Promotion or coupon exposure"
+    },
+    {
+      "domain": "promotions",
+      "entityType": "sales_rule",
+      "attribute": "times_used",
+      "riskClass": 1,
+      "category": "financial",
+      "rationale": "Promotion or coupon exposure"
+    },
+    {
+      "domain": "promotions",
+      "entityType": "sales_rule",
+      "attribute": "uses_per_coupon",
+      "riskClass": 1,
+      "category": "financial",
+      "rationale": "Promotion or coupon exposure"
+    },
+    {
+      "domain": "promotions",
+      "entityType": "sales_rule",
+      "attribute": "usage_limit",
+      "riskClass": 1,
+      "category": "financial",
+      "rationale": "Promotion or coupon exposure"
+    },
+    {
+      "domain": "promotions",
+      "entityType": "sales_rule",
+      "attribute": "qty",
+      "riskClass": 1,
+      "category": "financial",
+      "rationale": "Promotion or coupon exposure"
+    },
+    {
+      "domain": "content",
+      "entityType": "cms",
+      "attribute": "identifier",
+      "riskClass": 2,
+      "category": "content",
+      "rationale": "Versioned CMS content"
+    },
+    {
+      "domain": "content",
+      "entityType": "cms",
+      "attribute": "title",
+      "riskClass": 2,
+      "category": "content",
+      "rationale": "Versioned CMS content"
+    },
+    {
+      "domain": "content",
+      "entityType": "cms",
+      "attribute": "content",
+      "riskClass": 2,
+      "category": "content",
+      "rationale": "Versioned CMS content"
+    },
+    {
+      "domain": "content",
+      "entityType": "cms",
+      "attribute": "page_layout",
+      "riskClass": 2,
+      "category": "content",
+      "rationale": "Versioned CMS content"
+    },
+    {
+      "domain": "content",
+      "entityType": "cms",
+      "attribute": "meta_title",
+      "riskClass": 2,
+      "category": "content",
+      "rationale": "Versioned CMS content"
+    },
+    {
+      "domain": "content",
+      "entityType": "cms",
+      "attribute": "meta_keywords",
+      "riskClass": 2,
+      "category": "content",
+      "rationale": "Versioned CMS content"
+    },
+    {
+      "domain": "content",
+      "entityType": "cms",
+      "attribute": "meta_description",
+      "riskClass": 2,
+      "category": "content",
+      "rationale": "Versioned CMS content"
+    },
+    {
+      "domain": "content",
+      "entityType": "cms",
+      "attribute": "is_active",
+      "riskClass": 2,
+      "category": "content",
+      "rationale": "Versioned CMS content"
+    },
+    {
+      "domain": "content",
+      "entityType": "cms",
+      "attribute": "store_id",
+      "riskClass": 2,
+      "category": "content",
+      "rationale": "Versioned CMS content"
+    },
+    {
+      "domain": "content",
+      "entityType": "cms",
+      "attribute": "stores",
+      "riskClass": 2,
+      "category": "content",
+      "rationale": "Versioned CMS content"
+    },
+    {
+      "domain": "customers",
+      "entityType": "customer",
+      "attribute": "firstname",
+      "riskClass": 1,
+      "category": "pii",
+      "rationale": "Customer personal data; domain is off by default"
+    },
+    {
+      "domain": "customers",
+      "entityType": "customer",
+      "attribute": "lastname",
+      "riskClass": 1,
+      "category": "pii",
+      "rationale": "Customer personal data; domain is off by default"
+    },
+    {
+      "domain": "customers",
+      "entityType": "customer",
+      "attribute": "email",
+      "riskClass": 1,
+      "category": "pii",
+      "rationale": "Customer personal data; domain is off by default"
+    },
+    {
+      "domain": "customers",
+      "entityType": "customer",
+      "attribute": "group_id",
+      "riskClass": 1,
+      "category": "pii",
+      "rationale": "Customer personal data; domain is off by default"
+    },
+    {
+      "domain": "customers",
+      "entityType": "customer",
+      "attribute": "dob",
+      "riskClass": 1,
+      "category": "pii",
+      "rationale": "Customer personal data; domain is off by default"
+    },
+    {
+      "domain": "customers",
+      "entityType": "customer",
+      "attribute": "taxvat",
+      "riskClass": 1,
+      "category": "pii",
+      "rationale": "Customer personal data; domain is off by default"
+    },
+    {
+      "domain": "customers",
+      "entityType": "customer",
+      "attribute": "gender",
+      "riskClass": 1,
+      "category": "pii",
+      "rationale": "Customer personal data; domain is off by default"
+    },
+    {
+      "domain": "customers",
+      "entityType": "customer",
+      "attribute": "addresses",
+      "riskClass": 1,
+      "category": "pii",
+      "rationale": "Customer personal data; domain is off by default"
+    },
+    {
+      "domain": "customers",
+      "entityType": "customer",
+      "attribute": "default_billing",
+      "riskClass": 1,
+      "category": "pii",
+      "rationale": "Customer personal data; domain is off by default"
+    },
+    {
+      "domain": "customers",
+      "entityType": "customer",
+      "attribute": "default_shipping",
+      "riskClass": 1,
+      "category": "pii",
+      "rationale": "Customer personal data; domain is off by default"
+    }
+  ],
+  "updates": [
+    {
+      "name": "read-only",
+      "secrets": {
+        "database.analytics_username": "ro",
+        "database.analytics_password": "pw"
+      },
+      "retired": [],
+      "inputs": {
+        "database.host": "db.shop",
+        "database.port": 3306,
+        "database.name": "magento",
+        "magento.base_url": "https://shop.test"
+      },
+      "preflight": {
+        "databaseType": "mariadb",
+        "tablePrefix": "m2_",
+        "availableAnalyticsTables": [
+          "sales_order",
+          "sales_order_item",
+          "customer_entity",
+          "store",
+          "catalog_product_entity"
+        ],
+        "blockedTables": [
+          "m2_admin_user",
+          "m2_oauth_token"
+        ]
+      },
+      "update": {
+        "roles": [
+          {
+            "name": "magento_ops_executor",
+            "comment": "Short-lived Magento executor for approved automations"
+          },
+          {
+            "name": "magento_sensitive_executor",
+            "comment": "Short-lived Magento executor minted after administrator approval"
+          }
+        ],
+        "update_sources": [
+          {
+            "name": "magento_analytics",
+            "kind": "database",
+            "default": false,
+            "type": "mariadb",
+            "host": "db.shop",
+            "port": 3306,
+            "dbname": "magento",
+            "user": "ro",
+            "password": "pw",
+            "read_only": true,
+            "analytics_mode": true,
+            "capabilities": {
+              "data.read": true,
+              "data.write": false,
+              "schema.read": true,
+              "schema.write": false
+            },
+            "access": {
+              "read": "authenticated",
+              "write": "blocked",
+              "delete": "blocked",
+              "blocked_tables": [
+                "m2_admin_user",
+                "m2_oauth_token"
+              ]
+            }
+          },
+          {
+            "name": "magento_operator",
+            "kind": "api",
+            "default": false,
+            "specs_dir": "/config/specs",
+            "specs": {
+              "magento-operator-v1": {
+                "base_url": "https://shop.test",
+                "operations": {
+                  "magentoAddInternalOrderComment": {
+                    "expose_mutation": false,
+                    "allowed_roles": []
+                  }
+                }
+              },
+              "magento-operator-v2": {
+                "base_url": "https://shop.test",
+                "operations": {
+                  "magentoCreateProduct": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_create_product"
+                  },
+                  "magentoUpdateProduct": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_update_product"
+                  },
+                  "magentoBulkUpdateProducts": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_bulk_update_products"
+                  },
+                  "magentoDeleteProduct": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_delete_product"
+                  },
+                  "magentoSetBasePrices": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_set_base_prices"
+                  },
+                  "magentoSetSpecialPrices": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_set_special_prices"
+                  },
+                  "magentoDeleteSpecialPrices": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_delete_special_prices"
+                  },
+                  "magentoSetTierPrices": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_set_tier_prices"
+                  },
+                  "magentoDeleteTierPrices": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_delete_tier_prices"
+                  },
+                  "magentoCreateCategory": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_create_category"
+                  },
+                  "magentoUpdateCategory": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_update_category"
+                  },
+                  "magentoDeleteCategory": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_delete_category"
+                  },
+                  "magentoMoveCategory": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_move_category"
+                  },
+                  "magentoAssignCategoryProduct": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_assign_category_product"
+                  },
+                  "magentoReplaceCategoryProducts": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_replace_category_products"
+                  },
+                  "magentoCreateCmsPage": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_create_cms_page"
+                  },
+                  "magentoUpdateCmsPage": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_update_cms_page"
+                  },
+                  "magentoDeleteCmsPage": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_delete_cms_page"
+                  },
+                  "magentoCreateCmsBlock": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_create_cms_block"
+                  },
+                  "magentoUpdateCmsBlock": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_update_cms_block"
+                  },
+                  "magentoDeleteCmsBlock": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_delete_cms_block"
+                  },
+                  "magentoUpdateCustomer": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_update_customer"
+                  },
+                  "magentoSaveSourceItems": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_save_source_items"
+                  },
+                  "magentoDeleteSourceItems": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_delete_source_items"
+                  },
+                  "magentoAddOrderComment": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_add_order_comment"
+                  },
+                  "magentoHoldOrder": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_hold_order"
+                  },
+                  "magentoUnholdOrder": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_unhold_order"
+                  },
+                  "magentoCancelOrder": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_cancel_order"
+                  },
+                  "magentoUpdateOrder": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_update_order"
+                  },
+                  "magentoCreateShipment": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_create_shipment"
+                  },
+                  "magentoCreateInvoice": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_create_invoice"
+                  },
+                  "magentoCreateSalesRule": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_create_sales_rule"
+                  },
+                  "magentoUpdateSalesRule": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_update_sales_rule"
+                  },
+                  "magentoDeleteSalesRule": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_delete_sales_rule"
+                  },
+                  "magentoGenerateCoupons": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_generate_coupons"
+                  }
+                }
+              }
+            },
+            "read_only": true,
+            "capabilities": {
+              "api.read": true,
+              "api.write": false,
+              "api.delete": false
+            },
+            "access": {
+              "read": "authenticated",
+              "write": "blocked",
+              "delete": "blocked"
+            }
+          }
+        ],
+        "tables": [
+          {
+            "name": "sales_order",
+            "table": "m2_sales_order",
+            "source": "magento_analytics",
+            "database": "magento_analytics",
+            "read_only": true,
+            "blocklist": [
+              "protect_code"
+            ]
+          },
+          {
+            "name": "sales_order_item",
+            "table": "m2_sales_order_item",
+            "source": "magento_analytics",
+            "database": "magento_analytics",
+            "read_only": true
+          },
+          {
+            "name": "customer_entity",
+            "table": "m2_customer_entity",
+            "source": "magento_analytics",
+            "database": "magento_analytics",
+            "read_only": true,
+            "blocklist": [
+              "password_hash",
+              "rp_token",
+              "rp_token_created_at",
+              "confirmation"
+            ]
+          },
+          {
+            "name": "catalog_product_entity",
+            "table": "m2_catalog_product_entity",
+            "source": "magento_analytics",
+            "database": "magento_analytics",
+            "read_only": true
+          },
+          {
+            "name": "store",
+            "table": "m2_store",
+            "source": "magento_analytics",
+            "database": "magento_analytics",
+            "read_only": true
+          }
+        ],
+        "relationships": [
+          {
+            "from": "magento_analytics:sales_order.entity_id",
+            "to": "magento_analytics:sales_order_item.order_id"
+          },
+          {
+            "from": "magento_analytics:sales_order.customer_id",
+            "to": "magento_analytics:customer_entity.entity_id"
+          },
+          {
+            "from": "magento_analytics:sales_order.store_id",
+            "to": "magento_analytics:store.store_id"
+          },
+          {
+            "from": "magento_analytics:sales_order_item.product_id",
+            "to": "magento_analytics:catalog_product_entity.entity_id"
+          }
+        ]
+      }
+    },
+    {
+      "name": "write",
+      "secrets": {
+        "database.analytics_username": "ro",
+        "database.analytics_password": "pw",
+        "magento.integration_token": "tok"
+      },
+      "retired": [
+        "old_source"
+      ],
+      "inputs": {
+        "database.host": "db.shop",
+        "database.port": 3306,
+        "database.name": "magento",
+        "magento.base_url": "https://shop.test"
+      },
+      "preflight": {
+        "databaseType": "mariadb",
+        "tablePrefix": "m2_",
+        "availableAnalyticsTables": [
+          "sales_order",
+          "sales_order_item",
+          "customer_entity",
+          "store",
+          "catalog_product_entity"
+        ],
+        "blockedTables": [
+          "m2_admin_user",
+          "m2_oauth_token"
+        ]
+      },
+      "update": {
+        "roles": [
+          {
+            "name": "magento_ops_executor",
+            "comment": "Short-lived Magento executor for approved automations"
+          },
+          {
+            "name": "magento_sensitive_executor",
+            "comment": "Short-lived Magento executor minted after administrator approval"
+          }
+        ],
+        "update_sources": [
+          {
+            "name": "magento_analytics",
+            "kind": "database",
+            "default": false,
+            "type": "mariadb",
+            "host": "db.shop",
+            "port": 3306,
+            "dbname": "magento",
+            "user": "ro",
+            "password": "pw",
+            "read_only": true,
+            "analytics_mode": true,
+            "capabilities": {
+              "data.read": true,
+              "data.write": false,
+              "schema.read": true,
+              "schema.write": false
+            },
+            "access": {
+              "read": "authenticated",
+              "write": "blocked",
+              "delete": "blocked",
+              "blocked_tables": [
+                "m2_admin_user",
+                "m2_oauth_token"
+              ]
+            }
+          },
+          {
+            "name": "magento_operator",
+            "kind": "api",
+            "default": false,
+            "specs_dir": "/config/specs",
+            "specs": {
+              "magento-operator-v1": {
+                "base_url": "https://shop.test",
+                "auth": {
+                  "scheme": "bearer",
+                  "token": "tok"
+                },
+                "operations": {
+                  "magentoAddInternalOrderComment": {
+                    "expose_mutation": false,
+                    "allowed_roles": []
+                  }
+                }
+              },
+              "magento-operator-v2": {
+                "base_url": "https://shop.test",
+                "auth": {
+                  "scheme": "bearer",
+                  "token": "tok"
+                },
+                "operations": {
+                  "magentoCreateProduct": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_create_product"
+                  },
+                  "magentoUpdateProduct": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_update_product"
+                  },
+                  "magentoBulkUpdateProducts": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_bulk_update_products"
+                  },
+                  "magentoDeleteProduct": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_delete_product"
+                  },
+                  "magentoSetBasePrices": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_set_base_prices"
+                  },
+                  "magentoSetSpecialPrices": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_set_special_prices"
+                  },
+                  "magentoDeleteSpecialPrices": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_delete_special_prices"
+                  },
+                  "magentoSetTierPrices": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_set_tier_prices"
+                  },
+                  "magentoDeleteTierPrices": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_delete_tier_prices"
+                  },
+                  "magentoCreateCategory": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_create_category"
+                  },
+                  "magentoUpdateCategory": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_update_category"
+                  },
+                  "magentoDeleteCategory": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_delete_category"
+                  },
+                  "magentoMoveCategory": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_move_category"
+                  },
+                  "magentoAssignCategoryProduct": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_assign_category_product"
+                  },
+                  "magentoReplaceCategoryProducts": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_replace_category_products"
+                  },
+                  "magentoCreateCmsPage": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_create_cms_page"
+                  },
+                  "magentoUpdateCmsPage": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_update_cms_page"
+                  },
+                  "magentoDeleteCmsPage": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_delete_cms_page"
+                  },
+                  "magentoCreateCmsBlock": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_create_cms_block"
+                  },
+                  "magentoUpdateCmsBlock": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_update_cms_block"
+                  },
+                  "magentoDeleteCmsBlock": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_delete_cms_block"
+                  },
+                  "magentoUpdateCustomer": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_update_customer"
+                  },
+                  "magentoSaveSourceItems": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_save_source_items"
+                  },
+                  "magentoDeleteSourceItems": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_delete_source_items"
+                  },
+                  "magentoAddOrderComment": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_add_order_comment"
+                  },
+                  "magentoHoldOrder": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_hold_order"
+                  },
+                  "magentoUnholdOrder": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_ops_executor",
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_unhold_order"
+                  },
+                  "magentoCancelOrder": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_cancel_order"
+                  },
+                  "magentoUpdateOrder": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_update_order"
+                  },
+                  "magentoCreateShipment": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_create_shipment"
+                  },
+                  "magentoCreateInvoice": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_create_invoice"
+                  },
+                  "magentoCreateSalesRule": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_create_sales_rule"
+                  },
+                  "magentoUpdateSalesRule": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_update_sales_rule"
+                  },
+                  "magentoDeleteSalesRule": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_delete_sales_rule"
+                  },
+                  "magentoGenerateCoupons": {
+                    "expose_mutation": true,
+                    "allowed_roles": [
+                      "magento_sensitive_executor"
+                    ],
+                    "expose_as": "magento_generate_coupons"
+                  }
+                }
+              }
+            },
+            "read_only": false,
+            "capabilities": {
+              "api.read": true,
+              "api.write": true,
+              "api.delete": true
+            },
+            "access": {
+              "read": "authenticated",
+              "write": "authenticated",
+              "delete": "authenticated"
+            }
+          }
+        ],
+        "source_patches": [
+          {
+            "name": "old_source",
+            "read_only": true,
+            "access": {
+              "read": "blocked",
+              "write": "blocked",
+              "delete": "blocked"
+            }
+          }
+        ],
+        "tables": [
+          {
+            "name": "sales_order",
+            "table": "m2_sales_order",
+            "source": "magento_analytics",
+            "database": "magento_analytics",
+            "read_only": true,
+            "blocklist": [
+              "protect_code"
+            ]
+          },
+          {
+            "name": "sales_order_item",
+            "table": "m2_sales_order_item",
+            "source": "magento_analytics",
+            "database": "magento_analytics",
+            "read_only": true
+          },
+          {
+            "name": "customer_entity",
+            "table": "m2_customer_entity",
+            "source": "magento_analytics",
+            "database": "magento_analytics",
+            "read_only": true,
+            "blocklist": [
+              "password_hash",
+              "rp_token",
+              "rp_token_created_at",
+              "confirmation"
+            ]
+          },
+          {
+            "name": "catalog_product_entity",
+            "table": "m2_catalog_product_entity",
+            "source": "magento_analytics",
+            "database": "magento_analytics",
+            "read_only": true
+          },
+          {
+            "name": "store",
+            "table": "m2_store",
+            "source": "magento_analytics",
+            "database": "magento_analytics",
+            "read_only": true
+          }
+        ],
+        "relationships": [
+          {
+            "from": "magento_analytics:sales_order.entity_id",
+            "to": "magento_analytics:sales_order_item.order_id"
+          },
+          {
+            "from": "magento_analytics:sales_order.customer_id",
+            "to": "magento_analytics:customer_entity.entity_id"
+          },
+          {
+            "from": "magento_analytics:sales_order.store_id",
+            "to": "magento_analytics:store.store_id"
+          },
+          {
+            "from": "magento_analytics:sales_order_item.product_id",
+            "to": "magento_analytics:catalog_product_entity.entity_id"
+          }
+        ]
+      }
+    }
+  ]
+}

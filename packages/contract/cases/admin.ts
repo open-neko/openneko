@@ -190,6 +190,14 @@ export const adminCases: Case[] = [
     },
   },
   {
+    op: "POST /admin/packs/{packId}/{action}", name: "refuses to upgrade a Magento pack that is not installed", status: 400,
+    request: { params: { packId: "magento", action: "upgrade" }, body: {} },
+    check: (r) => {
+      expect(body(r).error).toBe("pack magento must be installed before it can be upgraded");
+      expect((body(r).diagnostic as { phase: string }).phase).toBe("upgrade");
+    },
+  },
+  {
     op: "POST /admin/packs/upload", name: "refuses an archive that is not a ZIP", status: 400,
     request: { raw: { body: "not a zip", type: "application/zip" } },
   },

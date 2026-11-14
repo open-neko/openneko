@@ -244,9 +244,9 @@ func TestPackDefinitionInstall(t *testing.T) {
 	if w.Code != 400 || !strings.Contains(w.Body.String(), "reload the pack list") {
 		t.Errorf("version check: %d %s", w.Code, w.Body.String())
 	}
-	call(f, "POST", "/api/v1/admin/packs/magento/configure", `{"inputs":{}}`, admin)
-	if calls := wk.take(); len(calls) != 1 || calls[0].uri != "/admin/packs/magento/configure" {
-		t.Errorf("Magento configure goes to the worker: %v", calls)
+	w = call(f, "POST", "/api/v1/admin/packs/magento/configure", `{"inputs":{}}`, admin)
+	if d, _ := decode(t, w)["diagnostic"].(map[string]any); w.Code != 400 || d["phase"] != "configure" || len(wk.take()) != 0 {
+		t.Errorf("Magento configure stays in Go: %d %s", w.Code, w.Body.String())
 	}
 }
 
