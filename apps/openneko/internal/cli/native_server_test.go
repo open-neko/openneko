@@ -172,3 +172,18 @@ func TestServerStopAndStatus(t *testing.T) {
 		t.Errorf("logs supervisor on a server: %v", err)
 	}
 }
+
+func TestServerStatusWithoutUnitState(t *testing.T) {
+	s := testServer(t)
+	activeServer = &s
+	fakeSystemctl(t, "")
+	var out bytes.Buffer
+	if err := statusNative(context.Background(), &out); ExitCodeFor(err) != 1 {
+		t.Errorf("status exit %v", err)
+	}
+	for _, want := range []string{"degraded", "openneko-web.service: unknown (systemctl gave no state", "web: not answering"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("status lacks %q:\n%s", want, out.String())
+		}
+	}
+}
