@@ -1,0 +1,405 @@
+{
+  "files": {
+    "graphjin.yml": "sources:\n  - name: db\n    kind: database\n    read_only: true\n    port: 5432\ntables:\n  - name: orders\n    source: db\n  - name: pack_0123456789abcdef0123\n    database: db\n  - name: other\n    source: x\nrelationships:\n  - from: db:orders.id\n    to: x:items.order_id\n  - from: y:a\n    to: y:b\n",
+    "queries/top.graphql": "query Top {\r\n  orders { id }\r\n}\r\n",
+    "specs/shop.yaml": "openapi: 3.0.0\r\ninfo:\r\n  title: Shop\r\n  version: '1'\r\n",
+    "specs/shop.json": "{\"b\": [1, 2.50], \"a\": {\"z\": null}}",
+    "skills/review/SKILL.md": "# Review\r\nRead it.\n",
+    "skills/review/notes/a.md": "a",
+    "skills/review/notes/B.md": "b",
+    "skills/review/notes/b.md": "b2",
+    "skills/review/empty/.keep.md": ""
+  },
+  "native": [
+    {
+      "kind": "metric",
+      "row": {
+        "role": "owner",
+        "slug": "orders",
+        "source": "pack",
+        "title": "Orders",
+        "description": null,
+        "active": true,
+        "cadence": "daily",
+        "execution_mode": "deterministic",
+        "definition_json": {
+          "query": "q",
+          "map": {
+            "value": "$.n"
+          },
+          "list": [
+            1,
+            2.5,
+            null
+          ]
+        },
+        "definition_version": 2,
+        "definition_hash": "abc",
+        "last_refresh_status": "ok"
+      },
+      "hash": "1aa4b4dcf75ade6afee5f1e6d1a919fa92706e6cb8faaf737318aab245925bfa"
+    },
+    {
+      "kind": "workflow",
+      "row": {
+        "name": "Daily",
+        "description": "",
+        "enabled": true,
+        "status": "active",
+        "goal": "g",
+        "cron": "0 7 * * *",
+        "cron_timezone": "UTC",
+        "cron_enabled": true,
+        "output_contract": {
+          "kind": "text"
+        }
+      },
+      "hash": "4e542d430e07bea646e8d1cde9f8d9961ece6b2972566c77acf5c5ad11a714e1"
+    },
+    {
+      "kind": "watcher",
+      "row": {
+        "workflow_id": "1b4e28ba-2fa1-11d2-883f-0016d3cca427",
+        "name": "Stock",
+        "description": "",
+        "enabled": true,
+        "query": "q",
+        "value_path": "$.a",
+        "op": "lt",
+        "threshold": 5,
+        "cadence_seconds": 300,
+        "debounce_seconds": 3600,
+        "cooldown_seconds": 0,
+        "dedupe_key": null,
+        "activation": "edge",
+        "variables_json": {
+          "sku": "A"
+        },
+        "severity": "high"
+      },
+      "hash": "0ea92e85337aa4b50394b5f1a0d576322da704b2f226e8aabcd01f3eea7b6d95"
+    },
+    {
+      "kind": "action",
+      "row": {
+        "kind": "shop.refund",
+        "description": "Refund",
+        "definition": {
+          "steps": [
+            {
+              "call": "x"
+            }
+          ]
+        },
+        "definition_hash": "d",
+        "enabled": false
+      },
+      "hash": "54214a65c73508a9f8cb79edfe53628dfe406a735ffe770fa86e3f39088ba907"
+    }
+  ],
+  "policy": {
+    "row": {
+      "name": "Governed changes",
+      "description": "Approval required",
+      "applies_to_kinds": [
+        "magento.manage_catalog"
+      ],
+      "applies_to_scopes": [
+        "external"
+      ],
+      "mode": "approval_required",
+      "allowed_targets": {
+        "source": "magento_operator"
+      },
+      "limits": {
+        "retry": "never"
+      },
+      "priority": 10,
+      "enabled": false
+    },
+    "legacyReceipt": "421bd4a072054224f16a7ec0acc11368d8d6fb37f0782eb370f87ace2e8518b4",
+    "current": "2ff10a043f16364a89f363f78a2b7d362ae17f8891f8ba01b1f666f5b1691304",
+    "withLegacy": "421bd4a072054224f16a7ec0acc11368d8d6fb37f0782eb370f87ace2e8518b4",
+    "withOther": "2ff10a043f16364a89f363f78a2b7d362ae17f8891f8ba01b1f666f5b1691304"
+  },
+  "liveSources": [
+    {
+      "source": {
+        "name": "shop",
+        "kind": "api",
+        "read_only": false,
+        "access": {
+          "roles": [],
+          "tables": null,
+          "note": "",
+          "keep": false,
+          "n": 0
+        },
+        "capabilities": {
+          "api.write": true
+        },
+        "specs": {
+          "shop": {
+            "base_url": "https://x",
+            "operations": {
+              "list": {
+                "allow": []
+              },
+              "get": {
+                "allow": [
+                  "a"
+                ]
+              }
+            },
+            "document": "x: 1"
+          }
+        },
+        "password": "***"
+      },
+      "hash": "2ca92d68efbc6fac0fe25f1d57769aad8b37fdd986f8e7e33bfce324fbdb6069"
+    },
+    {
+      "source": {
+        "name": "db",
+        "kind": "database",
+        "read_only": true
+      },
+      "hash": "0b4a50bdb2a3601331f95a33aab417f3bb75e97016c2ad445c55f5bcc35c5ded"
+    }
+  ],
+  "liveSourceMiss": "2ca92d68efbc6fac0fe25f1d57769aad8b37fdd986f8e7e33bfce324fbdb6069",
+  "locators": [
+    {
+      "artifact": {
+        "kind": "source",
+        "key": "source.db",
+        "targetRef": "db",
+        "path": "s.yaml",
+        "hash": "h",
+        "content": {
+          "name": "db"
+        }
+      },
+      "locator": {
+        "name": "db"
+      }
+    },
+    {
+      "artifact": {
+        "kind": "relationships",
+        "key": "rel",
+        "targetRef": "db",
+        "path": "r.yaml",
+        "hash": "h",
+        "content": {
+          "source": "orders"
+        }
+      },
+      "locator": {
+        "source": "orders"
+      }
+    },
+    {
+      "artifact": {
+        "kind": "metric",
+        "key": "m",
+        "targetRef": "orders",
+        "path": "m.yaml",
+        "hash": "h",
+        "content": {
+          "role": "owner"
+        }
+      },
+      "locator": {
+        "role": "owner",
+        "slug": "orders"
+      }
+    },
+    {
+      "artifact": {
+        "kind": "metric",
+        "key": "m2",
+        "targetRef": "orders",
+        "path": "m.yaml",
+        "hash": "h",
+        "content": {}
+      },
+      "locator": {
+        "role": "",
+        "slug": "orders"
+      }
+    },
+    {
+      "artifact": {
+        "kind": "watcher",
+        "key": "w",
+        "targetRef": "stock",
+        "path": "w.yaml",
+        "hash": "h",
+        "content": {
+          "name": "Stock"
+        }
+      },
+      "locator": {
+        "name": "Stock"
+      }
+    },
+    {
+      "artifact": {
+        "kind": "action",
+        "key": "a",
+        "targetRef": "refund",
+        "path": "a.yaml",
+        "hash": "h",
+        "content": {
+          "kind": 7
+        }
+      },
+      "locator": {
+        "kind": "7"
+      }
+    },
+    {
+      "artifact": {
+        "kind": "skill",
+        "key": "k",
+        "targetRef": "skill",
+        "path": "k",
+        "hash": "h",
+        "content": "x"
+      },
+      "locator": {}
+    }
+  ],
+  "state": [
+    {
+      "name": "source",
+      "kind": "source",
+      "targetRef": "db",
+      "metadata": {},
+      "hash": "cb77794d3e3115fa985abf8c7de244d1f5cae1d1ebe199e95eec938330ffcf7d",
+      "error": null
+    },
+    {
+      "name": "source missing",
+      "kind": "source",
+      "targetRef": "gone",
+      "metadata": {},
+      "hash": null,
+      "error": null
+    },
+    {
+      "name": "relationships",
+      "kind": "relationships",
+      "targetRef": "db",
+      "metadata": {},
+      "hash": "df530c8f4dbd63c90ed96205be57f4166449869cfab41d7fb6ed13ee13286a73",
+      "error": null
+    },
+    {
+      "name": "relationships without aliases",
+      "kind": "relationships",
+      "targetRef": "x",
+      "metadata": {
+        "locator": {
+          "source": "db",
+          "ignorePackAliases": true
+        }
+      },
+      "hash": "f0fe8b8919daebf5cd328fde1a16bf9fce133d5fbf48ec09da4d0d57b0b132b6",
+      "error": null
+    },
+    {
+      "name": "relationships by source name only",
+      "kind": "relationships",
+      "targetRef": "none",
+      "metadata": {
+        "locator": {
+          "source": "db2"
+        }
+      },
+      "hash": null,
+      "error": null
+    },
+    {
+      "name": "saved query",
+      "kind": "saved_query",
+      "targetRef": "top",
+      "metadata": {
+        "materializedTarget": "queries/top.graphql"
+      },
+      "hash": "704c01b338c7bf73b890d34e508633ac851918404db0dd8e4796c98875ea3505",
+      "error": null
+    },
+    {
+      "name": "spec yaml",
+      "kind": "spec",
+      "targetRef": "shop",
+      "metadata": {
+        "materializedTarget": "specs/shop.yaml"
+      },
+      "hash": "d8e93b6ab908d9c9c4838a722c3ce40ed9663e4c0589dc85ba5261dbc6b953e5",
+      "error": null
+    },
+    {
+      "name": "spec json",
+      "kind": "spec",
+      "targetRef": "shop",
+      "metadata": {
+        "materializedTarget": "specs/shop.json"
+      },
+      "hash": "edd3af7ccaaa058ba39b134dd251938092c3f4c092a717942522b9aab94003cd",
+      "error": null
+    },
+    {
+      "name": "spec missing",
+      "kind": "spec",
+      "targetRef": "shop",
+      "metadata": {
+        "materializedTarget": "specs/none.yaml"
+      },
+      "hash": null,
+      "error": null
+    },
+    {
+      "name": "spec escapes",
+      "kind": "spec",
+      "targetRef": "shop",
+      "metadata": {
+        "materializedTarget": "../outside.yaml"
+      },
+      "hash": null,
+      "error": "pack materialized target escapes GraphJin config root: /tmp/outside.yaml"
+    },
+    {
+      "name": "spec on the api",
+      "kind": "spec",
+      "targetRef": "shop",
+      "metadata": {
+        "materializedTarget": "graphjin:spec:specs/shop.yaml"
+      },
+      "hash": null,
+      "error": null
+    },
+    {
+      "name": "skill",
+      "kind": "skill",
+      "targetRef": "review",
+      "metadata": {
+        "materializedTarget": "skills/review"
+      },
+      "hash": "27d2907d66c0dbdfb522179ab8b907b00af00dad2a48cb6403149bf71c48a92e",
+      "error": null
+    },
+    {
+      "name": "skill missing",
+      "kind": "skill",
+      "targetRef": "review",
+      "metadata": {
+        "materializedTarget": "skills/none"
+      },
+      "hash": null,
+      "error": null
+    }
+  ]
+}

@@ -412,10 +412,12 @@ compatibility or successful end-user execution. Before submitting a change:
 
 Relevant suites include `pnpm --filter @neko/packs test` and the worker's
 `pack-declarative`, `pack-connector.integration`, `pack-lifecycle.integration`, and
-`pack-uploads` tests. `openneko web` lists, inspects and stores uploaded packs with
-the Go loader in `apps/openneko/internal/packs`. Run `go test ./internal/packs` in
-`apps/openneko`: it checks that the Go loader gives the same manifest, bundle and
-plan hashes as the Node loader. `openneko web` also runs the OAuth routes: the
+`pack-uploads` tests. `openneko web` lists, inspects, plans and stores uploaded packs
+with the Go loader in `apps/openneko/internal/packs`. The plan reads each installed
+artifact from its target: the database row, the skill folder, the GraphJin config
+file, or the live GraphJin. Run `go test ./internal/packs` in `apps/openneko`: it
+checks that the Go loader gives the same manifest, bundle, plan and target state
+hashes as the Node code. `openneko web` also runs the OAuth routes: the
 client setup, the connect and callback, the status and the disconnect. Until the
 pack apply moves to Go, a deployment-scope connection on an installed pack with
 GraphJin sources asks the worker to apply the new token to those sources, and the
