@@ -89,6 +89,47 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   };
 }
 
+function handleConnectProviders(
+  res: ServerResponse,
+  connect: ConnectHandlerSurface | null,
+) {
+  if (!connect) {
+    json(res, 200, { providers: [] });
+    return;
+  }
+  json(res, 200, { providers: connect.getConnectProviders() });
+}
+
+function handleConnectStatus(
+  res: ServerResponse,
+  connect: ConnectHandlerSurface | null,
+  url: string,
+) {
+  if (!connect) {
+    json(res, 200, { connected: [] });
+    return;
+  }
+  const operatorId = decodeURIComponent(
+    url.slice("/admin/connect/status/".length).split(/[?#]/, 1)[0] ?? "",
+  );
+  if (!operatorId) {
+    json(res, 400, { error: "operatorId path segment required" });
+    return;
+  }
+  json(res, 200, { connected: connect.getOperatorConnectStatus(operatorId) });
+}
+
+function handleDeploymentConnectStatus(
+  res: ServerResponse,
+  connect: ConnectHandlerSurface | null,
+) {
+  if (!connect) {
+    json(res, 200, { connected: [] });
+    return;
+  }
+  json(res, 200, { connected: connect.getDeploymentConnectStatus() });
+}
+
 async function handleConnectBegin(
   req: IncomingMessage,
   res: ServerResponse,
