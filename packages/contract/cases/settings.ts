@@ -13,6 +13,7 @@ export const settingsCases: Case[] = [
   { op: "GET /settings/data-sources", name: "lists the data sources", status: 200 },
   { op: "PUT /settings/data-sources", name: "refuses a bad name", status: 400, request: { body: { name: "Not Valid" } } },
   { op: "POST /settings/file-sources", name: "needs the file store", status: 503, request: { body: {} } },
+  { op: "POST /settings/finish", name: "refuses a member", as: "member", status: 403 },
   { op: "GET /settings/graphjin-config", name: "reports the setting", status: 200 },
   {
     op: "PATCH /settings/graphjin-config", name: "keeps ask-based config on", status: 200, request: { body: { sourceConfigEnabled: true } },
