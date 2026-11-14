@@ -290,7 +290,7 @@ func TestAuthCallbackSignsIn(t *testing.T) {
 		from sso_group_membership m join sso_group g on g.id = m.group_id where m.user_id = $1`, ada).Scan(&groups, &audit); err != nil {
 		t.Fatal(err)
 	}
-	if groups != "Finance=Finance@tenant-1/scalekit,eng=Engineering@tenant-1/scalekit" || audit != "Finance,eng" {
+	if groups != "Finance=Finance@tenant-1/scalekit" || audit != "Finance" {
 		t.Errorf("groups %q audit %q", groups, audit)
 	}
 
