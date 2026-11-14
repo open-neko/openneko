@@ -69,6 +69,8 @@ func (g *fakePackGraphjin) server(t *testing.T, liveSource map[string]any, query
 				g.mu.Unlock()
 				reply(map[string]any{"applied": true, "catalog_revision": "r2"})
 			}
+		case strings.Contains(body.Query, "channels"):
+			_, _ = io.WriteString(w, `{"data":{"channels":[]}}`)
 		default:
 			_, _ = io.WriteString(w, `{"errors":[{"message":"unexpected"}]}`)
 		}
