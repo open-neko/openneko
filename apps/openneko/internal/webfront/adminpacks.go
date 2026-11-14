@@ -3,9 +3,7 @@ package webfront
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"slices"
 	"strings"
@@ -38,26 +36,6 @@ func readPackBody(r *http.Request, limit int64) ([]byte, error) {
 	return b, nil
 }
 
-// packWorker returns the status and the parsed body that requestPackWorker() returns.
-func (a *API) packWorker(ctx context.Context, method, path string, header http.Header, body []byte) (int, any) {
-	status, reply, err := a.workerSend(ctx, method, path, workerAdminTimeout, header, body)
-	if err != nil {
-		log.Printf("pack worker %s %s: %v", method, path, err)
-		return http.StatusBadGateway, errorObj("worker is unavailable")
-	}
-	parsed, err := jsParse(reply)
-	if err != nil {
-		return status, errorObj(fmt.Sprintf("Worker returned HTTP %d", status))
-	}
-	return status, parsed
-}
-
-func errorObj(message string) *jsObj {
-	o := &jsObj{}
-	o.set("error", message)
-	return o
-}
-
 func packObjectBody(w http.ResponseWriter, r *http.Request) (*jsObj, bool) {
 	raw, err := readPackBody(r, packBodyLimit)
 	if errors.Is(err, errPackTooLarge) {
@@ -83,8 +61,6 @@ func packObjectBody(w http.ResponseWriter, r *http.Request) (*jsObj, bool) {
 	}
 	return obj, true
 }
-
-var jsonHeader = http.Header{"Content-Type": {"application/json"}}
 
 func (a *API) adminPacks(w http.ResponseWriter, r *http.Request) {
 	if act, ok := a.settingsAdmin(w, r); ok {
