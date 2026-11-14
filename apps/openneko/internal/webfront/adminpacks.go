@@ -38,12 +38,6 @@ func readPackBody(r *http.Request, limit int64) ([]byte, error) {
 	return b, nil
 }
 
-// relayPackWorker is requestPackWorker() with the routes' catch.
-func (a *API) relayPackWorker(ctx context.Context, w http.ResponseWriter, method, path string, header http.Header, body []byte) {
-	status, reply := a.packWorker(ctx, method, path, header, body)
-	sendJSValue(w, status, reply)
-}
-
 // packWorker returns the status and the parsed body that requestPackWorker() returns.
 func (a *API) packWorker(ctx context.Context, method, path string, header http.Header, body []byte) (int, any) {
 	status, reply, err := a.workerSend(ctx, method, path, workerAdminTimeout, header, body)
@@ -160,12 +154,7 @@ func (a *API) adminPackWrite(w http.ResponseWriter, r *http.Request) {
 		a.servePackUninstall(w, r, act, packID, body)
 		return
 	}
-	if packID != "magento" || action == "install" && packTruthy(body.vals["deferConfiguration"]) {
-		a.servePackApply(w, r, act, packID, action, body)
-		return
-	}
-	a.relayPackWorker(context.WithoutCancel(r.Context()), w, http.MethodPost, "/admin/packs/"+encodeURIComponent(packID)+"/"+action,
-		jsonHeader, []byte(jsStringify(body, false)))
+	a.servePackApply(w, r, act, packID, action, body)
 }
 
 func (a *API) adminStoreManagement(w http.ResponseWriter, r *http.Request) {
