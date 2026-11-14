@@ -103,6 +103,7 @@ func (n *recorder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func newAPIFront(t *testing.T, workerBody string, db *pgxpool.Pool) (*Front, *recorder) {
 	g := newGate(t, "")
+	g.PublicURL = "https://neko.example/"
 	seedSignInSecrets(t, g.SecretsDir, workerBody)
 	g.DB = db
 	node := &recorder{}

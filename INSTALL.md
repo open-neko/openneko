@@ -42,7 +42,7 @@ Then run `openneko setup` (guided), or `openneko start` to bring the stack up wi
 
 Both paths drive the same web endpoints with the same validation (a live provider-key test, a data-source connectivity check), and each step persists independently — so you can start in the terminal and finish in the browser, or vice versa. For unattended installs (CI), pass `--admin-password`, `--provider`, `--provider-key`, etc. to run setup headless.
 
-Integrations come from **solution packs**, installed after setup from **Admin → Settings → Solution packs** or with `openneko pack install`. Slack, Telegram and the HUD are built-in channels that turn on when an admin saves their settings under **Admin → Settings → Channels**; sign-in (Scalekit SSO or email link) is configured under **Admin → Settings**. (`--skip-plugins` and `--plugins` are still accepted by `setup` but do nothing.)
+Integrations come from **solution packs**, installed after setup from **Admin → Settings → Solution packs** or with `openneko pack install`. Slack, Telegram and the HUD are built-in channels that turn on when an admin saves their settings under **Admin → Settings → Channels**; sign-in (Scalekit SSO or email link) is configured under **Admin → Settings**. Email-link sign-in requires `OPENNEKO_PUBLIC_URL` or a saved public URL (`localhost` works for a local install). (`--skip-plugins` and `--plugins` are still accepted by `setup` but do nothing.)
 
 The AdventureWorks seed pre-fills business onboarding (`AdventureWorks Cycles`, fiscal year `July`, seats `CEO`/`CFO`/`COO`, priorities `Defend wholesale margins` / `Grow DTC in Europe`). Otherwise fill it in at `/onboarding`.
 
