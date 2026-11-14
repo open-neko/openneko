@@ -612,6 +612,9 @@ func (a *API) finishWorkRun(ctx context.Context, runID, status string, runErr *s
 		payload["stoppedBy"] = by
 	}
 	a.recordAudit(ctx, auditEvent{OrgID: orgID, EntityKind: "work_run", EntityID: runID, Event: "run:" + status, Payload: payload})
+	if status == "completed" {
+		a.queueWorkRunFinishedPush(ctx, orgID, runID)
+	}
 	return nil
 }
 
