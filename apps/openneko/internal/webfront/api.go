@@ -62,6 +62,7 @@ type API struct {
 	runs        runRegistry
 	slots       agentSlots
 	hostProv    hostProvision
+	eventScrub  eventScrubber
 
 	turnResolve func(ctx context.Context, orgID string) (*llm.AxBackendConfig, map[string]string, error)
 	turnCore    func(ctx context.Context, in agentCoreInput) (axRunResult, error)
