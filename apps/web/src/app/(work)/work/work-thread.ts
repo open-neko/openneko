@@ -40,14 +40,22 @@ export function withAssistantTimelinePlaceholders(bundle: ThreadBundle): ThreadB
 
   for (const run of bundle.runs) {
     if (assistantRunIds.has(run.id)) continue;
-    if (!needsAssistantTimelinePlaceholder(run, bundle.eventsByRun[run.id])) {
+    const runEvents = bundle.eventsByRun[run.id];
+    if (!needsAssistantTimelinePlaceholder(run, runEvents)) {
       continue;
     }
+    const streamedContent = (runEvents ?? [])
+      .filter(
+        (event): event is Extract<WorkEvent, { type: "message" }> =>
+          event.type === "message" && event.role === "assistant",
+      )
+      .map((event) => event.content)
+      .join("");
     placeholders.push({
       id: `assistant-${run.id}`,
       runId: run.id,
       role: "assistant",
-      content: "",
+      content: streamedContent,
       createdAt: run.createdAt,
     });
   }
@@ -66,6 +74,51 @@ export function withAssistantTimelinePlaceholders(bundle: ThreadBundle): ThreadB
   }
 
   return { ...bundle, messages };
+}
+
+export function applyStreamEventToBundle(
+  bundle: ThreadBundle,
+  runId: string,
+  event: WorkEvent,
+): ThreadBundle {
+  const messages =
+    event.type === "message" && event.role === "assistant"
+      ? bundle.messages.map((message) =>
+          message.runId === runId && message.role === "assistant"
+            ? { ...message, content: message.content + event.content }
+            : message,
+        )
+      : bundle.messages;
+  const currentEvents = bundle.eventsByRun[runId] ?? [];
+  const nextEvents = [...currentEvents, event];
+  const nextRuns = bundle.runs.map((run) =>
+    run.id === runId
+      ? {
+          ...run,
+          status:
+            event.type === "done"
+              ? String((event.result as { status?: string } | undefined)?.status ?? run.status)
+              : event.type === "error"
+              ? "failed"
+              : run.status,
+          error:
+            event.type === "error"
+              ? event.message
+              : runWasCancelled(event)
+              ? null
+              : run.error,
+        }
+      : run,
+  );
+  return {
+    ...bundle,
+    messages,
+    runs: nextRuns,
+    eventsByRun: {
+      ...bundle.eventsByRun,
+      [runId]: nextEvents,
+    },
+  };
 }
 
 export function runWasCancelled(event: { type: string; result?: unknown }): boolean {

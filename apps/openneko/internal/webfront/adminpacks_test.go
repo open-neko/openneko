@@ -95,12 +95,11 @@ func TestAdminPackRelay(t *testing.T) {
 	f, wk := packFront(t)
 	admin := sessionCookie("admin")
 	wk.reply = `{"packId":"magento","status":"ready"}`
-	if w := call(f, "GET", "/api/v1/admin/packs/magento/doctor?version=1.2.0+rc", "", admin); w.Code != 200 || decode(t, w)["packId"] != "magento" {
+	if w := call(f, "GET", "/api/v1/admin/packs/magento/doctor?version=1.2.0+rc", "", admin); w.Code != 200 || decode(t, w)["status"] != "blocked" {
 		t.Errorf("doctor: %d %s", w.Code, w.Body.String())
 	}
-	calls := wk.take()
-	if len(calls) != 1 || calls[0].uri != "/admin/packs/magento/doctor?version=1.2.0%20rc" {
-		t.Errorf("calls %v", calls)
+	if calls := wk.take(); len(calls) != 0 {
+		t.Errorf("doctor calls the worker: %v", calls)
 	}
 	for _, p := range []string{"/api/v1/admin/packs/magento/erase", "/api/v1/admin/packs/Magento/status", "/api/v1/admin/packs/magento/install"} {
 		if w := call(f, "GET", p, "", admin); w.Code != 404 || w.Body.String() != `{"error":"unknown pack operation"}` {
@@ -115,7 +114,7 @@ func TestAdminPackRelay(t *testing.T) {
 	}
 
 	wk.status, wk.reply = 503, "<html>down</html>"
-	if w := call(f, "GET", "/api/v1/admin/packs/magento/doctor", "", admin); w.Code != 503 || w.Body.String() != `{"error":"Worker returned HTTP 503"}` {
+	if w := call(f, "POST", "/api/v1/admin/packs/magento/install", `{}`, admin); w.Code != 503 || w.Body.String() != `{"error":"Worker returned HTTP 503"}` {
 		t.Errorf("text reply: %d %s", w.Code, w.Body.String())
 	}
 	wk.status, wk.reply = 409, `{"error":"busy"}`
@@ -123,7 +122,7 @@ func TestAdminPackRelay(t *testing.T) {
 		t.Errorf("worker error: %d %s", w.Code, w.Body.String())
 	}
 	f.API.Gate.WorkerURL = "http://127.0.0.1:1"
-	if w := call(f, "GET", "/api/v1/admin/packs/magento/doctor", "", admin); w.Code != 502 || w.Body.String() != `{"error":"worker is unavailable"}` {
+	if w := call(f, "POST", "/api/v1/admin/packs/magento/install", `{}`, admin); w.Code != 502 || w.Body.String() != `{"error":"worker is unavailable"}` {
 		t.Errorf("worker down: %d %s", w.Code, w.Body.String())
 	}
 }
@@ -147,15 +146,18 @@ func TestAdminPackWrites(t *testing.T) {
 	if got := sent(); got["actorUserId"] != "admin" || len(got["idempotencyKey"].(string)) != 36 || got["inputs"].(map[string]any)["database.host"] != "db" {
 		t.Errorf("install body %v", got)
 	}
-	for _, action := range []string{"review", "install"} {
+	for _, action := range []string{"install"} {
 		call(f, "POST", "/api/v1/admin/packs/service-health/"+action, `{"actorUserId":"forged","version":"0.1.0","reviewHash":"exact-review","idempotencyKey":"k-1"}`, admin)
 		if got := sent(); got["actorUserId"] != "admin" || got["reviewHash"] != "exact-review" || got["idempotencyKey"] != "k-1" {
 			t.Errorf("%s body %v", action, got)
 		}
 	}
-	call(f, "POST", "/api/v1/admin/packs/magento/uninstall", "", admin)
+	call(f, "POST", "/api/v1/admin/packs/magento/configure", "", admin)
 	if got := sent(); got["actorUserId"] != "admin" || got["idempotencyKey"] == nil {
 		t.Errorf("empty body %v", got)
+	}
+	if w := call(f, "POST", "/api/v1/admin/packs/magento/uninstall", "", admin); w.Code != 400 || !strings.Contains(w.Body.String(), "pack magento is not installed") || len(wk.take()) != 0 {
+		t.Errorf("uninstall goes to Go: %d %s", w.Code, w.Body.String())
 	}
 	for _, c := range []struct {
 		path, body string

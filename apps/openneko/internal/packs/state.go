@@ -180,7 +180,7 @@ func Locator(a Artifact) map[string]any {
 	return map[string]any{}
 }
 
-func locatorFromMetadata(metadata map[string]any, fallback *Artifact) map[string]any {
+func LocatorFromMetadata(metadata map[string]any, fallback *Artifact) map[string]any {
 	if l, ok := metadata["locator"].(map[string]any); ok {
 		return l
 	}
@@ -226,7 +226,7 @@ type StateInput struct {
 // InspectInstalled is inspectInstalledPackArtifactCurrent(): the hash of the
 // target as it is now, or nil when it is missing or cannot be read.
 func InspectInstalled(ctx context.Context, native NativeLookup, in StateInput) (*string, error) {
-	locator := locatorFromMetadata(in.Metadata, in.Fallback)
+	locator := LocatorFromMetadata(in.Metadata, in.Fallback)
 	switch in.Kind {
 	case KindSource, KindRelationships:
 		if in.Graphjin == nil {

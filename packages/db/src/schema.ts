@@ -1154,6 +1154,53 @@ export const app_device = pgTable(
   }),
 );
 
+export const app_passkey = pgTable(
+  "app_passkey",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => app_user.id, { onDelete: "cascade" }),
+    credential_id: text("credential_id").notNull(),
+    public_key: text("public_key").notNull(),
+    algorithm: integer("algorithm").notNull().default(-7),
+    sign_count: bigint("sign_count", { mode: "number" }).notNull().default(0),
+    name: text("name").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+    last_used_at: ts("last_used_at"),
+  },
+  (t) => ({
+    cred_unique: uniqueIndex("app_passkey_org_id_credential_id_key").on(t.org_id, t.credential_id),
+    user_idx: index("app_passkey_user_idx").on(t.org_id, t.user_id, t.created_at.desc()),
+  }),
+);
+
+export const app_passkey_challenge = pgTable(
+  "app_passkey_challenge",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => app_user.id, { onDelete: "cascade" }),
+    purpose: text("purpose").notNull(),
+    action_request_id: uuid("action_request_id").references(() => action_request.id, {
+      onDelete: "cascade",
+    }),
+    challenge: text("challenge").notNull().unique(),
+    expires_at: ts("expires_at").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    user_idx: index("app_passkey_challenge_user_idx").on(t.org_id, t.user_id, t.expires_at.desc()),
+  }),
+);
+
 export const bot = pgTable(
   "bot",
   {
