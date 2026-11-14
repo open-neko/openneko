@@ -22,6 +22,7 @@ var packFailureNextStep = map[string]string{
 	"upload":     "Correct the archive layout or manifest, then upload the pack again.",
 	"inspection": "Correct the reported manifest or artifact, then inspect the pack again.",
 	"review":     "Correct the reported configuration or artifact, then review the pack again.",
+	"oauth":      "Check the OAuth client, redirect URI, and requested scopes, then connect the account again.",
 }
 
 type packDiagnostic struct {

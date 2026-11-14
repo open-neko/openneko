@@ -303,6 +303,7 @@ describe("worker solution-pack admin routes", () => {
       beginOAuth: vi.fn(async () => ({ authorizationUrl: "https://accounts.example.test/authorize" })),
       completeOAuth: vi.fn(async () => ({ connected: true })),
       disconnectOAuth: vi.fn(async () => true),
+      syncOAuth: vi.fn(async () => undefined),
       magentoStoreManagement: vi.fn(async () => ({ controls: [{ domain: "catalog" }] })),
       updateMagentoStoreManagement: vi.fn(async (input: Record<string, unknown>) => ({ input })),
     };
@@ -438,6 +439,9 @@ describe("worker solution-pack admin routes", () => {
       }
       expect((await fetch(`${oauthBase}/disconnect`, { method: "POST", body: "{}" })).status).toBe(200);
       expect(surface.disconnectOAuth).toHaveBeenCalledWith("google-workspace", "workspace");
+      const sync = await fetch(`${oauthBase}/sync`, { method: "POST", body: JSON.stringify({ enabled: true }) });
+      expect(await sync.json()).toEqual({ synced: true });
+      expect(surface.syncOAuth).toHaveBeenCalledWith("google-workspace", "workspace", true);
     } finally {
       await srv.close();
     }
