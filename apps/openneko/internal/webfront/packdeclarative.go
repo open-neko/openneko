@@ -13,6 +13,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/formatter"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"github.com/vektah/gqlparser/v2/parser"
 
@@ -476,10 +477,17 @@ func readPackQuery(query string) (*ast.QueryDocument, error) {
 	return doc, nil
 }
 
-// packQueryTables is the tables of bindPackQueries(): the pack-owned table
-// alias for each root field of each saved query, in document order.
 func packQueryTables(bundle *packs.Bundle, bindings map[string]string) ([]map[string]string, error) {
+	tables, _, err := bindPackQueries(bundle, bindings)
+	return tables, err
+}
+
+// bindPackQueries is bindPackQueries(): the pack-owned table alias for each
+// root field of each saved query, in document order, and the bound saved
+// queries by artifact path. The printed text is gqlparser's, not graphql-js's.
+func bindPackQueries(bundle *packs.Bundle, bindings map[string]string) ([]map[string]string, map[string]string, error) {
 	tables := []map[string]string{}
+	queries := map[string]string{}
 	var sources, databases []packs.Artifact
 	for _, a := range bundle.Artifacts {
 		if a.Kind == packs.KindSource {
@@ -490,7 +498,7 @@ func packQueryTables(bundle *packs.Bundle, bindings map[string]string) ([]map[st
 		}
 	}
 	if len(databases) == 0 {
-		return tables, nil
+		return tables, queries, nil
 	}
 	names := map[string]string{}
 	defaultDatabase := ""
@@ -511,7 +519,7 @@ func packQueryTables(bundle *packs.Bundle, bindings map[string]string) ([]map[st
 		}
 		doc, err := readPackQuery(packString(art.Content))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		roots := map[*ast.Field]bool{}
 		var collect func(set ast.SelectionSet, seen []string) error
@@ -537,7 +545,7 @@ func packQueryTables(bundle *packs.Bundle, bindings map[string]string) ([]map[st
 			return nil
 		}
 		if err := collect(doc.Operations[0].SelectionSet, nil); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		var visit func(set ast.SelectionSet) error
 		visit = func(set ast.SelectionSet) error {
@@ -576,6 +584,16 @@ func packQueryTables(bundle *packs.Bundle, bindings map[string]string) ([]map[st
 								tables = append(tables, map[string]string{"name": name, "table": s.Name, "source": names[logical]})
 							}
 						}
+						kept := slices.DeleteFunc(slices.Clone(s.Directives), func(d *ast.Directive) bool { return d.Name == "database" })
+						s.Directives = append(kept, &ast.Directive{Name: "database", Arguments: ast.ArgumentList{
+							{Name: "name", Value: &ast.Value{Kind: ast.StringValue, Raw: names[logical]}},
+						}})
+						if roots[s] {
+							if s.Alias == "" {
+								s.Alias = s.Name
+							}
+							s.Name = "pack_" + packs.SHA256([]byte(bundle.Manifest.Metadata.ID + ":" + logical + ":" + names[logical] + ":" + s.Name))[:20]
+						}
 					}
 					if err := visit(s.SelectionSet); err != nil {
 						return err
@@ -602,9 +620,12 @@ func packQueryTables(bundle *packs.Bundle, bindings map[string]string) ([]map[st
 		slices.SortFunc(defs, func(a, b definition) int { return a.start - b.start })
 		for _, d := range defs {
 			if err := visit(d.set); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
+		var printed strings.Builder
+		formatter.NewFormatter(&printed, formatter.WithIndent("  ")).FormatQueryDocument(doc)
+		queries[art.Path] = printed.String()
 	}
-	return tables, nil
+	return tables, queries, nil
 }
