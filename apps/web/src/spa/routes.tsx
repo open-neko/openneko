@@ -121,6 +121,7 @@ const workShell: RouteObject = {
     { path: "library", ...page(() => import("@/app/(work)/library/page")) },
     { path: "memory", ...page(() => import("@/app/(work)/memory/page")) },
     { path: "skills", ...page(() => import("@/app/(work)/skills/page")) },
+    { path: "profile", ...page(() => import("@/app/(work)/profile/page")) },
   ],
 };
 
@@ -151,6 +152,11 @@ export const routes: RouteObject[] = [
           { path: "runs", ...page(() => import("@/app/runs/page")) },
           { path: "runs/:workflowRunId", ...page(() => import("@/app/runs/[workflowRunId]/page")) },
           { path: "signin", ...page(() => import("@/app/signin/page")) },
+          { path: "admin/rules", ...page(() => import("@/app/admin/rules/page")) },
+          { path: "admin/rules/:policyId", ...page(() => import("@/app/admin/rules/[policyId]/page")) },
+          { path: "admin/settings/channels", ...page(() => import("@/app/admin/settings/channels/page")) },
+          { path: "admin/settings/packs", ...page(() => import("@/app/admin/settings/packs/page")) },
+          { path: "admin/settings/signin", ...page(() => import("@/app/admin/settings/signin/page")) },
           {
             path: "skills/:name",
             lazy: async () => {
