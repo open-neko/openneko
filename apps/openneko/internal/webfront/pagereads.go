@@ -17,9 +17,27 @@ type pendingDevice struct {
 
 func (a *API) deviceRequest(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	deviceID, _, err := a.Gate.Device(ctx, r.Header.Get("Authorization"))
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	if deviceID != "" {
+		sendError(w, http.StatusForbidden, "approve a device from a browser")
+		return
+	}
 	orgID, err := a.OrgID(ctx)
 	if err != nil {
 		a.fail(w, r, err)
+		return
+	}
+	u, err := a.currentUser(ctx, r, orgID)
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	if u == nil {
+		sendError(w, http.StatusUnauthorized, "sign in first")
 		return
 	}
 	userCode := normalizeUserCode(r.URL.Query().Get("code"))
