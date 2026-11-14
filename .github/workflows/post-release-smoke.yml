@@ -295,7 +295,7 @@ jobs:
             exit 1
           fi
 
-      - name: Agent runner and serve socket smoke
+      - name: Serve socket smoke
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         run: |
           set -euo pipefail
@@ -303,7 +303,6 @@ jobs:
             --filter label=com.docker.compose.project=openneko-demo \
             --filter label=com.docker.compose.service=worker | head -1)
           test -n "$worker"
-          docker exec "$worker" sh -c 'cd /opt/openneko-agent && node entry.js --preflight'
           docker exec "$worker" node -e '
             require("node:net").connect(process.env.OPENNEKO_SERVE_SOCKET)
               .on("connect", () => process.exit(0))

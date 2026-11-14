@@ -226,21 +226,7 @@ COPY evals/environment/adventureworks/api/server.mjs /app/server.mjs
 EXPOSE 8090
 ENTRYPOINT ["node", "/app/server.mjs"]
 
-# ─── 4z. agent runner bundle ───────────────────────────────────────────
-# The runner entry and multiplexed tool bridge, without the worker's
-# dependency closure. Web and worker run it from /opt/openneko-agent.
-FROM source AS agent-deploy
-RUN cd apps/worker && pnpm exec esbuild \
-      src/agent-sandbox/entry.ts src/agent-sandbox/mcp-bridge.ts \
-      --bundle --platform=node --format=esm \
-      --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" \
-      --outdir=/out/agent-app \
-    && printf '{"type":"module"}\n' > /out/agent-app/package.json \
-    && mkdir -p /out/agent-app/assets \
-    && cp -R ../../packages/llm/assets/builtin-skills ../../packages/llm/assets/sandbox-skills /out/agent-app/assets/
-
 # ─── 5a. web runtime ───────────────────────────────────────────────────
-# Web runs each agent run's runner from /opt/openneko-agent; turns run in serve.
 FROM runtime-base AS web
 ARG OPENNEKO_VERSION=unknown
 ARG OPENNEKO_COMMIT=unknown
@@ -278,8 +264,6 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # worker image and the host install.
 COPY --from=go-build --chown=neko:neko /out/openneko /usr/local/bin/openneko
 RUN chmod +x /usr/local/bin/openneko
-COPY --from=agent-deploy /out/agent-app /opt/openneko-agent
-RUN chmod -R a+rX /opt/openneko-agent
 USER neko
 EXPOSE 8080
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
@@ -287,8 +271,8 @@ CMD ["openneko", "web", "--", "node", "apps/web/server.js"]
 
 # ─── 5b. worker runtime ────────────────────────────────────────────────
 # Trimmed prod closure of @neko/worker: drops devDeps + other apps' sources +
-# web/Next, keeps src + tsx + @neko/llm (with assets). Same
-# mechanism as agent-deploy; rooted at /app, so the entry is /app/src/index.ts.
+# web/Next, keeps src + tsx + @neko/llm (with assets); rooted at /app, so
+# the entry is /app/src/index.ts.
 FROM source AS worker-deploy
 ARG TARGETARCH
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
@@ -340,11 +324,7 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # extra install step. Same binary operators install on their host.
 COPY --from=go-build --chown=neko:neko /out/openneko /usr/local/bin/openneko
 RUN chmod +x /usr/local/bin/openneko
-COPY --from=agent-deploy /out/agent-app /opt/openneko-agent
-RUN chmod -R a+rX /opt/openneko-agent
 USER neko
-RUN cd /opt/openneko-agent && node entry.js --preflight \
-    && node --input-type=module -e "await import('./mcp-bridge.js')"
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["node", "--import", "tsx/esm", "src/index.ts"]
 
