@@ -173,6 +173,53 @@ components:
               type: array
               items:
                 type: string
+    SsoSetupState:
+      type: object
+      additionalProperties: false
+      required:
+      - status
+      - signInConfigured
+      properties:
+        status:
+          type: string
+        portalLink:
+          type:
+          - string
+          - 'null'
+        portalLinkExpiresAt:
+          type:
+          - string
+          - 'null'
+        provider:
+          type:
+          - string
+          - 'null'
+        connection:
+          type:
+          - object
+          - 'null'
+        lastError:
+          type:
+          - string
+          - 'null'
+        setupCompletedAt:
+          type:
+          - string
+          - 'null'
+        environmentId:
+          type:
+          - string
+          - 'null'
+        organizationId:
+          type:
+          - string
+          - 'null'
+        environmentTier:
+          type:
+          - string
+          - 'null'
+        signInConfigured:
+          type: boolean
     Error:
       type: object
       required:
@@ -9465,21 +9512,11 @@ paths:
       security: []
       responses:
         '200':
-          description: Connection check result
+          description: The SSO setup state after the check
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: false
-                properties:
-                  status:
-                    type: string
-                  connection:
-                    type: object
-                  lastError:
-                    type: string
-                  setupCompletedAt:
-                    type: string
+                $ref: '#/components/schemas/SsoSetupState'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -9822,31 +9859,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: false
-                properties:
-                  status:
-                    type: string
-                  portalLink:
-                    type: string
-                  portalLinkExpiresAt:
-                    type: string
-                  provider:
-                    type: string
-                  connection:
-                    type: object
-                  lastError:
-                    type: string
-                  setupCompletedAt:
-                    type: string
-                  environmentId:
-                    type: string
-                  organizationId:
-                    type: string
-                  environmentTier:
-                    type: string
-                  signInConfigured:
-                    type: boolean
+                $ref: '#/components/schemas/SsoSetupState'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
