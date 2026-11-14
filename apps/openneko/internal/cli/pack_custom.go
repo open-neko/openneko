@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"unicode"
 
 	"github.com/google/uuid"
+	"github.com/open-neko/neko/apps/openneko/internal/dockerproxy"
 	"github.com/open-neko/neko/apps/openneko/internal/prompt"
 	"github.com/spf13/cobra"
 )
@@ -63,7 +65,7 @@ func newPackReviewCmd() *cobra.Command {
 	var operation, output string
 	cmd := &cobra.Command{Use: "review <pack>", Short: "Review exact pack content and configuration before approval", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+			if code, proxied := MaybeProxyToWeb(cmd); proxied {
 				return WithExit(code, nil)
 			}
 			if operation != "install" && operation != "configure" && operation != "upgrade" {
@@ -107,7 +109,7 @@ func runReviewedPack(cmd *cobra.Command, packID, operation string, opts packRequ
 	if opts.version != "" {
 		query = "?version=" + url.QueryEscape(opts.version)
 	}
-	if _, err := requestPackAPI(cmd.Context(), http.MethodGet, path+query, nil, &inspect); err != nil {
+	if _, err := requestPackAPI(cmd.Context(), http.MethodGet, path+"/inspect"+query, nil, &inspect); err != nil {
 		return err
 	}
 	values, err := packPairs(opts.inputs)
@@ -229,26 +231,32 @@ func newPackUploadCmd() *cobra.Command {
 			if len(archive) == 0 || len(archive) > 16<<20 {
 				return fmt.Errorf("choose a non-empty ZIP of at most 16 MiB")
 			}
-			var raw []byte
-			// Read the host file here and stream it to the selected worker. A host
-			// path is not meaningful inside the worker's container filesystem.
-			code, proxied := MaybeProxyToWorker(cmd, func(container string) int {
-				process := exec.CommandContext(cmd.Context(), "docker", "exec", "-i", container, "curl", "--silent", "--show-error", "--fail-with-body", "--max-time", "120", "-H", "Content-Type: application/zip", "--data-binary", "@-", "--unix-socket", composeWorkerSocket, "http://worker/admin/packs/upload")
-				process.Stdin, process.Stderr = bytes.NewReader(archive), cmd.ErrOrStderr()
-				raw, err = process.Output()
-				if err != nil {
+			code, proxied := MaybeProxyToWeb(cmd, func(container string) int {
+				args := []string{"exec", "-i", "-e", dockerproxy.EnvMarker + "=1", container, "openneko", "pack", "upload", "-"}
+				if output != "" {
+					args = append(args, "--output", output)
+				}
+				process := exec.CommandContext(cmd.Context(), "docker", args...)
+				process.Stdin, process.Stdout, process.Stderr = bytes.NewReader(archive), cmd.OutOrStdout(), cmd.ErrOrStderr()
+				if err := process.Run(); err != nil {
+					var exit *exec.ExitError
+					if errors.As(err, &exit) {
+						return exit.ExitCode()
+					}
+					fmt.Fprintf(cmd.ErrOrStderr(), "openneko: pack upload: %v\n", err)
 					return 1
 				}
 				return 0
 			})
-			if proxied && code != 0 {
-				return fmt.Errorf("pack upload failed: %s", strings.TrimSpace(string(raw)))
-			}
-			if !proxied {
-				raw, err = requestPackAPI(cmd.Context(), http.MethodPost, "/admin/packs/upload", archive, nil)
-				if err != nil {
-					return err
+			if proxied {
+				if code != 0 {
+					return WithExit(code, nil)
 				}
+				return nil
+			}
+			raw, err := requestPackAPI(cmd.Context(), http.MethodPost, "/admin/packs/upload", archive, nil)
+			if err != nil {
+				return err
 			}
 			if output == "json" {
 				_, err = cmd.OutOrStdout().Write(append(raw, '\n'))

@@ -30,6 +30,16 @@ import (
 // caller should fall through to the local implementation. An optional handler
 // lets host-file uploads stream to that same selected worker without copying.
 func MaybeProxyToWorker(cmd *cobra.Command, run ...func(container string) int) (int, bool) {
+	return maybeProxy(cmd, "worker", run...)
+}
+
+// MaybeProxyToWeb is MaybeProxyToWorker for commands that the web container
+// answers.
+func MaybeProxyToWeb(cmd *cobra.Command, run ...func(container string) int) (int, bool) {
+	return maybeProxy(cmd, "web", run...)
+}
+
+func maybeProxy(cmd *cobra.Command, service string, run ...func(container string) int) (int, bool) {
 	if local, _ := cmd.Flags().GetBool("local"); local {
 		return 0, false
 	}
@@ -54,26 +64,26 @@ func MaybeProxyToWorker(cmd *cobra.Command, run ...func(container string) int) (
 		fmt.Fprintf(cmd.ErrOrStderr(), "openneko: instance %q has not been configured; run `openneko --instance %s setup` first\n", instance.Current(), instance.Current())
 		return 1, true
 	}
-	container, resolveErr := dockerproxy.ResolveRunningWorker(project)
+	container, resolveErr := dockerproxy.ResolveRunningService(project, service)
 	if resolveErr != nil {
 		if project == "" && !errors.Is(resolveErr, dockerproxy.ErrAmbiguousWorkers) {
 			// No packaged installation was selected. Preserve the source-dev
 			// workflow, where worker-backed commands intentionally execute locally.
 			return 0, false
 		}
-		fmt.Fprintf(cmd.ErrOrStderr(), "openneko: cannot locate instance worker: %v\n", resolveErr)
+		fmt.Fprintf(cmd.ErrOrStderr(), "openneko: cannot locate instance %s: %v\n", service, resolveErr)
 		return 1, true
 	}
 	if container == "" {
 		if project != "" {
-			fmt.Fprintf(cmd.ErrOrStderr(), "openneko: worker for %s is not running; start the selected instance or pass --local\n", project)
+			fmt.Fprintf(cmd.ErrOrStderr(), "openneko: %s for %s is not running; start the selected instance or pass --local\n", service, project)
 			return 1, true
 		}
 		return 0, false
 	}
 	if project == "" {
-		if name, named := namedInstanceFromWorkerContainer(container); named {
-			fmt.Fprintf(cmd.ErrOrStderr(), "openneko: worker %s belongs to named instance %q; re-run with --instance %s\n", container, name, name)
+		if name, named := namedInstanceFromContainer(container, service); named {
+			fmt.Fprintf(cmd.ErrOrStderr(), "openneko: %s %s belongs to named instance %q; re-run with --instance %s\n", service, container, name, name)
 			return 1, true
 		}
 	}
@@ -84,7 +94,11 @@ func MaybeProxyToWorker(cmd *cobra.Command, run ...func(container string) int) (
 }
 
 func namedInstanceFromWorkerContainer(container string) (string, bool) {
-	const suffix = "-worker-1"
+	return namedInstanceFromContainer(container, "worker")
+}
+
+func namedInstanceFromContainer(container, service string) (string, bool) {
+	suffix := "-" + service + "-1"
 	project := strings.TrimSuffix(strings.TrimSpace(container), suffix)
 	if project == container {
 		return "", false

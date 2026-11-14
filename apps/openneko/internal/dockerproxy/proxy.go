@@ -47,6 +47,12 @@ func FindRunningWorker(project ...string) string {
 // ambiguous multi-stack host must fail closed instead of silently performing a
 // worker-backed operation in the caller's current directory.
 func ResolveRunningWorker(project string) (string, error) {
+	return ResolveRunningService(project, "worker")
+}
+
+// ResolveRunningService finds the running container of a Compose service
+// (worker or web) the same way.
+func ResolveRunningService(project, service string) (string, error) {
 	if os.Getenv(EnvMarker) == "1" {
 		return "", nil
 	}
@@ -58,7 +64,7 @@ func ResolveRunningWorker(project string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	name, ambiguous := selectWorkerForProject(strings.Split(strings.TrimSpace(string(out)), "\n"), strings.TrimSpace(project))
+	name, ambiguous := selectServiceForProject(strings.Split(strings.TrimSpace(string(out)), "\n"), strings.TrimSpace(project), service)
 	if len(ambiguous) > 0 {
 		return "", fmt.Errorf("%w (%s); select one with --instance <name> or pass --local", ErrAmbiguousWorkers, strings.Join(ambiguous, ", "))
 	}
@@ -73,17 +79,22 @@ func selectWorker(lines []string) (string, []string) {
 }
 
 func selectWorkerForProject(lines []string, project string) (string, []string) {
+	return selectServiceForProject(lines, project, "worker")
+}
+
+func selectServiceForProject(lines []string, project, service string) (string, []string) {
 	var workers []string
+	suffix := "-" + service + "-1"
 	target := ""
 	if project != "" {
-		target = project + "-worker-1"
+		target = project + suffix
 	}
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if target != "" && line == target {
 			return line, nil
 		}
-		if target == "" && strings.HasPrefix(line, "openneko-") && strings.HasSuffix(line, "-worker-1") {
+		if target == "" && strings.HasPrefix(line, "openneko-") && strings.HasSuffix(line, suffix) {
 			workers = append(workers, line)
 		}
 	}
