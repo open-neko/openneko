@@ -136,7 +136,10 @@ Developer ops: eval.`,
 		Version:       version.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			if err := useServerInstall(cmd, selectedInstance); err != nil {
+				return err
+			}
 			return activateInstallation(selectedInstance)
 		},
 	}

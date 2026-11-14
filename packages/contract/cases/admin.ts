@@ -125,7 +125,28 @@ export const adminCases: Case[] = [
   { op: "DELETE /admin/idp-rules/{ruleId}", name: "removes nothing for an unknown rule", status: 200, request: (c) => ({ params: { ruleId: c.ids.unknownId } }) },
   { op: "DELETE /admin/groups/{groupId}", name: "deletes the group", status: 200, request: (c) => ({ params: { groupId: c.ids.groupId } }) },
   { op: "DELETE /admin/groups/{groupId}", name: "refuses a deleted group", status: 404, request: (c) => ({ params: { groupId: c.ids.groupId } }) },
-  { op: "GET /admin/packs", name: "needs the worker", status: 502 },
+  {
+    op: "GET /admin/packs", name: "lists the pack catalog", status: 200,
+    check: (r) => {
+      expect(Array.isArray(body(r).packs)).toBe(true);
+    },
+  },
+  { op: "GET /admin/packs", name: "is for administrators only", as: "member", status: 403 },
+  {
+    op: "GET /admin/packs/{packId}/{action}", name: "reports a pack that is not installed", status: 404,
+    request: { params: { packId: "slack", action: "status" } },
+    check: (r) => {
+      expect(body(r).error).toBe("pack slack is not installed");
+    },
+  },
+  {
+    op: "GET /admin/packs/{packId}/{action}", name: "fails on a pack that is not in the catalog", status: 400,
+    request: { params: { packId: "no-such-pack", action: "inspect" } },
+  },
+  {
+    op: "POST /admin/packs/upload", name: "refuses an archive that is not a ZIP", status: 400,
+    request: { raw: { body: "not a zip", type: "application/zip" } },
+  },
   { op: "GET /admin/packs/magento/store-management", name: "needs the worker", status: 502 },
   { op: "POST /admin/packs/magento/store-management", name: "needs the worker", status: 502, request: { body: {} } },
   { op: "POST /admin/packs/upload", name: "needs a ZIP archive", status: 415, request: { raw: { body: "not a zip", type: "text/plain" } } },
@@ -223,6 +244,7 @@ export const adminCases: Case[] = [
   },
   { op: "PATCH /admin/users/{userId}", name: "needs a change", status: 400, request: (c) => ({ params: { userId: c.ids.newUserId }, body: {} }) },
   { op: "GET /onboarding/status", name: "reports the onboarding state", status: 200 },
+  { op: "GET /onboarding/wizard", name: "reads the onboarding wizard state", status: 200 },
   { op: "POST /onboarding/submit", name: "needs a company name", status: 400, request: { body: {} } },
   { op: "GET /policies", name: "lists the policies", status: 200 },
   { op: "GET /policies/{policyId}", name: "refuses an unknown policy", status: 404, request: (c) => ({ params: { policyId: c.ids.unknownId } }) },
