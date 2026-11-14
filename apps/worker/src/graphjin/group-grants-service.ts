@@ -22,8 +22,8 @@ import {
   mintGraphjinToken,
   readDatabaseSourceReadModes,
   removeGroupGrantsFromConfig,
+  requestGraphjinRestart,
 } from "@neko/llm/graphjin";
-import { requestGraphjinRestart } from "../packs/graphjin-config.js";
 
 export type GroupGrantsApplyResult = { enabled: boolean; changed: boolean; roles: string[] };
 
