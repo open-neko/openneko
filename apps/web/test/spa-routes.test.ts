@@ -92,8 +92,11 @@ describe("static web app routes", () => {
       "/admin/settings/spend",
       "/admin/settings/sso",
       "/admin",
+      "/admin/access",
       "/admin/settings",
       "/admin/settings/workflows",
+      "/admin/users",
+      "/admin/users/groups/:groupId",
     ];
     const wrong = ported.filter((page) => {
       const route = (matchRoutes(routes, concrete(page)) ?? []).at(-1)?.route;
@@ -110,7 +113,8 @@ describe("static web app routes", () => {
   it("passes server pages to Node and keeps ported pages in the app", () => {
     const pattern = serverPagePattern();
     expect(pattern.test("/admin/settings/graphjin")).toBe(true);
-    expect(pattern.test("/admin/users/groups/g1?tab=members")).toBe(true);
+    expect(pattern.test("/device")).toBe(true);
+    expect(pattern.test("/admin/users/groups/g1?tab=members")).toBe(false);
     expect(pattern.test("/chat")).toBe(false);
     expect(pattern.test("/admin/settings/graphjin/extra")).toBe(false);
     expect(pattern.test("/api/v1/version")).toBe(false);

@@ -2,45 +2,13 @@ import "server-only";
 
 import {
   and,
-  channel_identity,
   data_source,
   db,
   desc,
   eq,
-  metric,
-  operator_profile,
-  pack_action_definition,
-  pack_install,
-  ne,
   type ItemType,
 } from "@neko/db";
 import { graphjinQuery, mintGraphjinToken } from "@neko/llm/graphjin";
-import { listWatchers, listWorkflows } from "@neko/llm/workflows";
-import { listConnectProviders } from "@/lib/integrations";
-import { listWorkSkills } from "@/lib/work-files";
-import { workerAdminFetch } from "@neko/llm/worker-admin";
-
-export async function requestWorker(path: string, body?: unknown): Promise<{ status: number; body: unknown }> {
-  let response: Response;
-  try {
-    response = await workerAdminFetch(path, {
-      method: body === undefined ? "GET" : "POST",
-      headers: body === undefined ? undefined : { "content-type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      cache: "no-store",
-      signal: AbortSignal.timeout(120_000),
-    });
-  } catch (error) {
-    if (error instanceof TypeError) return { status: 503, body: { error: "worker is unavailable" } };
-    throw error;
-  }
-  return { status: response.status, body: await response.json().catch(() => ({ error: `Worker returned HTTP ${response.status}` })) };
-}
-
-export async function readJsonBody(request: Request): Promise<Record<string, unknown> | null> {
-  const body = await request.json().catch(() => null);
-  return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
-}
 
 export type ItemOption = { id: string; label: string; detail?: string };
 
@@ -101,67 +69,4 @@ export async function graphjinCatalog(orgId: string, kind: string, databaseName?
     if (page.length < pageSize) break;
   }
   return rows;
-}
-
-/** Every grantable item of a type, for pickers and access panels. */
-export async function listItemOptions(orgId: string, type: ItemType): Promise<ItemOption[]> {
-  switch (type) {
-    case "skill":
-      return (await listWorkSkills(orgId)).map((s) => ({ id: s.name, label: s.name, detail: s.description }));
-    case "workflow":
-      return (await listWorkflows(orgId))
-        .filter((w) => !w.ownerUserId)
-        .map((w) => ({ id: w.id, label: w.name, detail: w.description }));
-    case "metric":
-      return (await db()
-        .select({ id: metric.id, title: metric.title, role: metric.role })
-        .from(metric)
-        .where(and(eq(metric.org_id, orgId), eq(metric.active, true)))
-        .orderBy(metric.title)).map((m) => ({ id: m.id, label: m.title, detail: m.role }));
-    case "dashboard": {
-      const roles = new Set<string>();
-      for (const r of await db().selectDistinct({ role: metric.role }).from(metric).where(eq(metric.org_id, orgId))) roles.add(r.role);
-      for (const r of await db()
-        .selectDistinct({ role: operator_profile.role_template })
-        .from(operator_profile)
-        .where(and(eq(operator_profile.org_id, orgId), ne(operator_profile.role_template, "")))) roles.add(r.role);
-      return [...roles].filter(Boolean).sort().map((r) => ({ id: r, label: `${r} dashboard` }));
-    }
-    case "watcher":
-      return (await listWatchers(orgId)).map((w) => ({ id: w.id, label: w.name, detail: w.description ?? undefined }));
-    case "team_memory": {
-      const sources = (await graphjinCatalog(orgId, "database")).map((d) => d.name ?? d.id);
-      return [{ id: "global", label: "Global company memory" }, ...sources.map((s) => ({ id: `database:${s}`, label: `Memory for ${s}` }))];
-    }
-    case "data_source":
-      return (await graphjinCatalog(orgId, "database")).map((d) => ({ id: d.name ?? d.id, label: d.name ?? d.id, detail: d.summary ?? undefined }));
-    case "saved_query":
-      return (await graphjinCatalog(orgId, "saved_query")).map((q) => ({ id: q.name ?? q.id, label: q.name ?? q.id, detail: q.summary ?? undefined }));
-    case "api_operation": {
-      const result = await requestWorker("/admin/graphjin/api-operations").catch(() => ({ status: 500, body: {} }));
-      const operations = (result.body as { operations?: string[] }).operations ?? [];
-      return operations.map((id) => ({ id, label: id.split(":").slice(1).join(" · "), detail: id.split(":")[0] }));
-    }
-    case "action": {
-      return (await db()
-        .select({ kind: pack_action_definition.kind, description: pack_action_definition.description })
-        .from(pack_action_definition)
-        .where(eq(pack_action_definition.org_id, orgId))).map((a) => ({ id: a.kind, label: a.kind, detail: a.description }))
-        .sort((a, b) => a.label.localeCompare(b.label));
-    }
-    case "integration":
-      return (await listConnectProviders()).map((p) => ({ id: p.pluginName, label: p.providerLabel, detail: p.pluginName }));
-    case "channel": {
-      const labels = new Map<string, string>([["hud", "HUD surface"], ["slack", "Slack"], ["telegram", "Telegram"]]);
-      for (const row of await db().selectDistinct({ plugin: channel_identity.channel_plugin }).from(channel_identity).where(eq(channel_identity.org_id, orgId))) {
-        if (!labels.has(row.plugin)) labels.set(row.plugin, row.plugin);
-      }
-      return [...labels].sort(([a], [b]) => a.localeCompare(b)).map(([id, label]) => ({ id, label, detail: id }));
-    }
-    case "pack":
-      return (await db()
-        .select({ id: pack_install.pack_id, version: pack_install.version })
-        .from(pack_install)
-        .where(and(eq(pack_install.org_id, orgId), ne(pack_install.status, "removed")))).map((p) => ({ id: p.id, label: p.id, detail: `v${p.version}` }));
-  }
 }

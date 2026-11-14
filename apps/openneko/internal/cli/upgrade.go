@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -42,7 +43,10 @@ through Homebrew; standalone installations use checksum-verified release
 artifacts and atomic replacement. Use --stack-only or --cli-only for recovery
 and specialized deployment workflows.
 
-A native install upgrades from a release folder: --from <folder>. It takes a
+A native install downloads the release archive for this host, checks it
+against checksums-native.txt and upgrades from it. --version picks the
+release; OPENNEKO_RELEASE_URL points at a mirror. --from <folder> upgrades
+from a release folder instead. The upgrade takes a
 backup, stops OpenNeko, replaces the executable and the web app, and starts
 OpenNeko again if it ran; the start applies the migrations.`,
 		Args: cobra.NoArgs,
@@ -50,8 +54,24 @@ OpenNeko again if it ran; the start applies the migrations.`,
 			ctx, cancel := context.WithCancel(cmd.Context())
 			defer cancel()
 			if settings, ok := nativeInstall(); ok {
-				if stackOnly || cliOnly || imageVersion != "" || noPrune {
-					return errors.New("a native install takes its release from --from; --version, --stack-only, --cli-only and --no-prune are for a Docker install")
+				if stackOnly || cliOnly || noPrune || mode != "auto" {
+					return errors.New("--mode, --stack-only, --cli-only and --no-prune are for a Docker install")
+				}
+				if from != "" && imageVersion != "" {
+					return errors.New("give --from or --version, not both")
+				}
+				if from == "" {
+					target, err := resolveNativeTarget(ctx, imageVersion)
+					if err != nil {
+						return err
+					}
+					fmt.Fprintf(cmd.OutOrStdout(), "Downloading OpenNeko %s...\n", target)
+					release, err := downloadNativeRelease(ctx, target, os.TempDir())
+					if err != nil {
+						return fmt.Errorf("%w (nothing was changed)", err)
+					}
+					defer os.RemoveAll(filepath.Dir(release))
+					from = release
 				}
 				return runNativeUpgrade(ctx, cmd, settings, from, skipBackup)
 			}
@@ -74,7 +94,7 @@ OpenNeko again if it ran; the start applies the migrations.`,
 	cmd.Flags().BoolVar(&stackOnly, "stack-only", false, "Upgrade only stack images; keep the current local CLI")
 	cmd.Flags().BoolVar(&cliOnly, "cli-only", false, "Upgrade only the local CLI; do not change the stack")
 	cmd.Flags().BoolVar(&skipBackup, "skip-backup", false, "Upgrade the stack without taking a backup first")
-	cmd.Flags().StringVar(&from, "from", "", "Native: release folder that holds bin/openneko and share/openneko/web")
+	cmd.Flags().StringVar(&from, "from", "", "Native: upgrade from this release folder (bin/openneko and share/openneko/web) instead of a download")
 	return cmd
 }
 

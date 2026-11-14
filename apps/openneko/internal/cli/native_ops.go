@@ -475,9 +475,6 @@ func runNativeDoctor(ctx context.Context, out io.Writer) error {
 
 func runNativeUpgrade(ctx context.Context, cmd *cobra.Command, settings installation.Settings, from string, skipBackup bool) error {
 	out, errOut := cmd.OutOrStdout(), cmd.ErrOrStderr()
-	if from == "" {
-		return errors.New("a native install upgrades from a release folder that holds bin/openneko and share/openneko/web: openneko upgrade --from <folder>")
-	}
 	from, err := filepath.Abs(from)
 	if err != nil {
 		return err

@@ -41,7 +41,10 @@ export function useRouter(): AppRouter {
       replace: (href, options) => void navigate(href, { replace: true, preventScrollReset: options?.scroll === false }),
       back: () => void navigate(-1),
       forward: () => void navigate(1),
-      refresh: () => void revalidate(),
+      refresh: () => {
+        void revalidate();
+        window.dispatchEvent(new Event("openneko:refresh"));
+      },
       prefetch: () => {},
     }),
     [navigate, revalidate],
