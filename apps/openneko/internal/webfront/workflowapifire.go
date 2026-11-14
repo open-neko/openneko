@@ -328,7 +328,7 @@ func (a *API) finishAPIRun(ctx context.Context, c *wfAPIClaim, f wfAPIFinish) er
 	if f.errCode != nil {
 		errCode = jsSlice(*f.errCode, wfAPIErrorCodeUnits)
 	}
-	return a.wfSerializable(ctx, func(tx pgx.Tx) error {
+	err := a.wfSerializable(ctx, func(tx pgx.Tx) error {
 		now := time.Now()
 		if _, err := tx.Exec(ctx, `update workflow_api_admission
 		     set status = $2, completed_at = $3, lease_until = null, last_error_code = $4, updated_at = $3
@@ -348,6 +348,10 @@ func (a *API) finishAPIRun(ctx context.Context, c *wfAPIClaim, f wfAPIFinish) er
 		   where id = $1`, c.workRunID, f.status, errText, now)
 		return err
 	})
+	if err == nil {
+		a.queueWorkflowRunPush(ctx, c.workflowRunID, f.status)
+	}
+	return err
 }
 
 // workflowAPIRunFire runs one admitted API run. After the claim it never

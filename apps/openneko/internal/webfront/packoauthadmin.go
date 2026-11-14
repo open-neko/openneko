@@ -18,7 +18,7 @@ import (
 )
 
 // packSecretsMu serializes the read-modify-write of secrets.json within
-// this process; the worker still writes the same file without a lock.
+// this process.
 var packSecretsMu sync.Mutex
 
 // packOAuth is PackOAuthService of apps/worker/src/packs/oauth.ts for one
@@ -339,10 +339,7 @@ func (p *packOAuth) sync(ctx context.Context, enabled bool) error {
 	if !p.graphjin {
 		return nil
 	}
-	if err := p.a.syncPackOAuthSources(ctx, p.orgID, p.packID, p.conn.Key, enabled); err != nil {
-		return packError(err.Error())
-	}
-	return nil
+	return p.a.syncPackOAuth(ctx, p.orgID, p.packID, p.conn.Key, enabled)
 }
 
 func (p *packOAuth) bindInstallation(ctx context.Context, section map[string]string) error {
