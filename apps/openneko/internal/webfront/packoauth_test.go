@@ -8,14 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/secrets"
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
@@ -84,8 +83,7 @@ func TestPackOAuthPersonalCallback(t *testing.T) {
 	cfg := strings.Replace(driveConfig, `"scopes"`, `"tokenUrl":"`+srv.URL+`/token","userInfoUrl":"`+srv.URL+
 		`/userinfo","accountIdField":"sub","accountLabelField":"email","scopes"`, 1)
 	seed(t, db, `insert into pack_install (org_id, pack_id, version, status, manifest_hash, config) values ('org', 'drive', '1', 'installed', 'h', $1)`, cfg)
-	if err := os.WriteFile(filepath.Join(f.API.SecretsDir, "secrets.json"),
-		[]byte(`{"pack.drive":{"OAUTH_ACCOUNT_CLIENT_ID":"cid.apps","DRIVE_CLIENT_SECRET":"shh"}}`), 0o600); err != nil {
+	if err := writeKeepingSignIn(secrets.Store{"pack.drive": {"OAUTH_ACCOUNT_CLIENT_ID": "cid.apps", "DRIVE_CLIENT_SECRET": "shh"}}, f.API.SecretsDir); err != nil {
 		t.Fatal(err)
 	}
 	admin, member := sessionCookie("admin"), sessionCookie("member")

@@ -339,3 +339,13 @@ func TestGateDatabase(t *testing.T) {
 		t.Error("administrator check")
 	}
 }
+
+func writeKeepingSignIn(store secrets.Store, dir string) error {
+	old, _ := secrets.Read(dir)
+	for section, values := range old {
+		if _, set := store[section]; !set && (section == signInSectionName || strings.HasPrefix(section, signInSectionName+".")) {
+			store[section] = values
+		}
+	}
+	return secrets.Write(store, dir)
+}
