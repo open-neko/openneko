@@ -41,6 +41,10 @@ func (a *API) sourceCheck(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	a.serveSourceCheck(w, r, act)
+}
+
+func (a *API) serveSourceCheck(w http.ResponseWriter, r *http.Request, act actor) {
 	body, ok := readObjectBody(w, r)
 	if !ok {
 		return
@@ -55,7 +59,7 @@ func (a *API) sourceCheck(w http.ResponseWriter, r *http.Request) {
 
 // checkSourceForOrg is checkSourceForOrg() in
 // packages/llm/src/graphjin/source-check.ts: the password comes from the
-// stored secret that secretRef names.
+// request body or from the stored secret that secretRef names.
 func (a *API) checkSourceForOrg(ctx context.Context, orgID string, body any) (sourcecheck.Result, error) {
 	in := sourcecheck.Input{
 		Type:     answer(body, "type"),
@@ -67,8 +71,13 @@ func (a *API) checkSourceForOrg(ctx context.Context, orgID string, body any) (so
 	if in.Type == "" {
 		in.Type = "postgres"
 	}
+	if pw, ok := field(body, "password"); ok {
+		if s, ok := pw.(string); ok && s != "" {
+			in.Password = s
+		}
+	}
 	ref := answer(body, "secretRef")
-	if ref != "" {
+	if in.Password == "" && ref != "" {
 		var enc string
 		err := a.DB.QueryRow(ctx, `select value_enc from data_source_secret where org_id = $1 and name = $2 limit 1`,
 			orgID, ref).Scan(&enc)
