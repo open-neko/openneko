@@ -26,7 +26,8 @@ database_url="$(node -e 'const u = new URL(process.argv[1]); u.pathname = "/" + 
 printf '%s' "$database_url" > "$work/database-url"
 chmod 600 "$work/database-url"
 mkdir -p "$work/config/openneko"
-echo '{"provider":{"pluginName":"magic-link"}}' > "$work/config/openneko/auth-gate.json"
+node -e 'const k = require("crypto").randomBytes(32).toString("hex"); console.log(JSON.stringify({ signin: { PROVIDER: "magic-link" }, "signin.magic-link": { MAGIC_LINK_SIGNING_SECRET: k, MAGIC_LINK_FROM: "signin@contract.test", RESEND_API_KEY: "re_contract" } }))' > "$work/config/openneko/secrets.json"
+chmod 600 "$work/config/openneko/secrets.json"
 closed="$(node -e 'const s = require("net").createServer().listen(0, "127.0.0.1", () => { console.log(s.address().port); s.close(); })')"
 
 export XDG_CONFIG_HOME="$work/config"

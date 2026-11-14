@@ -65,8 +65,14 @@ export const connectionCases: Case[] = [
   { op: "POST /pack-accounts/{packId}/{connectionKey}/start", name: "needs a client id", status: 400, request: { params: pack, body: {} } },
   { op: "GET /pack-accounts/{packId}/{connectionKey}/callback", name: "refuses a callback without state", status: 400, request: { params: pack } },
   { op: "GET /sso/setup/status", name: "refuses an anonymous caller once sign-in is on", as: "anonymous", status: 403 },
-  { op: "GET /sso/setup/status", name: "needs the worker", status: 500 },
-  { op: "POST /sso/setup/check", name: "needs the worker", status: 500 },
+  {
+    op: "GET /sso/setup/status", name: "reports a setup that has not started", status: 200,
+    check: (r) => expect(body(r)).toMatchObject({ status: "not_started", signInConfigured: false }),
+  },
+  {
+    op: "POST /sso/setup/check", name: "fails without a Scalekit organization", status: 200,
+    check: (r) => expect(body(r)).toMatchObject({ status: "failed", signInConfigured: false }),
+  },
   { op: "POST /sso/setup/credentials", name: "needs an environment URL", status: 400, request: { body: {} } },
   { op: "GET /sso/setup/credentials-info", name: "needs an environment", status: 400 },
   { op: "GET /sso/setup/environments", name: "needs the worker", status: 500 },

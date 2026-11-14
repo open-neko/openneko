@@ -1,22 +1,13 @@
-// Scalekit SCIM directory sync of one Scalekit organization, and
-// deployment-scoped OAuth consent against the Scalekit workspace MCP server
+// Deployment-scoped OAuth consent against the Scalekit workspace MCP server
 // that the SSO setup page drives. Every function takes its settings
 // explicitly; SignInService reads them from the `signin.scalekit` section of
 // the secrets store.
 import type { ConnectorCredential } from "@neko/secrets";
 import type {
-  ApplyDirectoryChangeParams,
-  ApplyDirectoryChangeResult,
-  DirectoryCapabilities,
-  ListDirectoryParams,
-  ListDirectoryResult,
-} from "../../directory/types.js";
-import type {
   BeginConnectParams,
   CompleteConnectParams,
   SignInSetting,
 } from "../types.js";
-import { createScalekitDirectory } from "./directory.js";
 import {
   createMcpOAuth,
   generatePkceVerifier,
@@ -38,12 +29,6 @@ export const SCALEKIT_SETTINGS: SignInSetting[] = [
   { key: "SCALEKIT_MCP_URL", required: false, secret: false },
 ];
 
-export const SCALEKIT_DIRECTORY: DirectoryCapabilities = {
-  providerLabel: "Scalekit directory",
-  read: { users: true, groups: true, memberships: true },
-  write: { createUser: true, deactivateUser: false },
-};
-
 export const SCALEKIT_WORKSPACE_LABEL = "Scalekit workspace";
 
 /**
@@ -55,7 +40,6 @@ export const SCALEKIT_WORKSPACE_SCOPES = ["wks:read", "wks:write", "env:read", "
 /** Test seam: inject fakes instead of constructing the real clients. */
 export interface ScalekitOptions {
   createMcpOAuth?: () => ReturnType<typeof createMcpOAuth>;
-  createDirectory?: (env: ResolvedEnv & { organizationId: string }) => ReturnType<typeof createScalekitDirectory>;
 }
 
 export class ScalekitError extends Error {
@@ -65,56 +49,11 @@ export class ScalekitError extends Error {
   }
 }
 
-interface ResolvedEnv {
-  environmentUrl: string;
-  clientId: string;
-  clientSecret: string;
-}
-
-function resolveEnv(env: ScalekitEnv): ResolvedEnv {
-  const environmentUrl = env.SCALEKIT_ENVIRONMENT_URL;
-  const clientId = env.SCALEKIT_CLIENT_ID;
-  const clientSecret = env.SCALEKIT_CLIENT_SECRET;
-  const missing: string[] = [];
-  if (!environmentUrl) missing.push("SCALEKIT_ENVIRONMENT_URL");
-  if (!clientId) missing.push("SCALEKIT_CLIENT_ID");
-  if (!clientSecret) missing.push("SCALEKIT_CLIENT_SECRET");
-  if (missing.length > 0) {
-    throw new ScalekitError(`${missing.join(", ")} not set — enter them on the Single sign-on settings page`);
-  }
-  return { environmentUrl: environmentUrl!, clientId: clientId!, clientSecret: clientSecret! };
-}
-
 function resolveMcpUrl(env: ScalekitEnv): string {
   return (env.SCALEKIT_MCP_URL || DEFAULT_MCP_URL).trim().replace(/\/+$/, "");
 }
 
 const mcpOAuth = (options: ScalekitOptions) => (options.createMcpOAuth ? options.createMcpOAuth() : createMcpOAuth());
-
-function directory(env: ScalekitEnv, options: ScalekitOptions) {
-  const resolved = resolveEnv(env);
-  const organizationId = env.SCALEKIT_ORGANIZATION_ID?.trim();
-  if (!organizationId) {
-    throw new ScalekitError("SCALEKIT_ORGANIZATION_ID not set — select the organization on the Single sign-on settings page");
-  }
-  return (options.createDirectory ?? createScalekitDirectory)({ ...resolved, organizationId });
-}
-
-export async function listScalekitDirectory(
-  params: ListDirectoryParams,
-  env: ScalekitEnv,
-  options: ScalekitOptions = {},
-): Promise<ListDirectoryResult> {
-  return directory(env, options).list(params);
-}
-
-export async function applyScalekitDirectoryChange(
-  params: ApplyDirectoryChangeParams,
-  env: ScalekitEnv,
-  options: ScalekitOptions = {},
-): Promise<ApplyDirectoryChangeResult> {
-  return directory(env, options).apply(params);
-}
 
 /**
  * Begin the MCP-OAuth-2.1 dance: discover the protected resource + AS

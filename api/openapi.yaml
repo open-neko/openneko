@@ -173,6 +173,53 @@ components:
               type: array
               items:
                 type: string
+    SsoSetupState:
+      type: object
+      additionalProperties: false
+      required:
+      - status
+      - signInConfigured
+      properties:
+        status:
+          type: string
+        portalLink:
+          type:
+          - string
+          - 'null'
+        portalLinkExpiresAt:
+          type:
+          - string
+          - 'null'
+        provider:
+          type:
+          - string
+          - 'null'
+        connection:
+          type:
+          - object
+          - 'null'
+        lastError:
+          type:
+          - string
+          - 'null'
+        setupCompletedAt:
+          type:
+          - string
+          - 'null'
+        environmentId:
+          type:
+          - string
+          - 'null'
+        organizationId:
+          type:
+          - string
+          - 'null'
+        environmentTier:
+          type:
+          - string
+          - 'null'
+        signInConfigured:
+          type: boolean
     Error:
       type: object
       required:
@@ -1303,13 +1350,81 @@ paths:
       - deviceToken: []
       responses:
         '200':
-          description: Worker response, passed through with the worker status
+          description: The directory provider, or null, and the last sync
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: false
-                properties: {}
+                required:
+                - provider
+                - state
+                properties:
+                  provider:
+                    oneOf:
+                    - type: 'null'
+                    - type: object
+                      additionalProperties: false
+                      required:
+                      - pluginName
+                      - providerLabel
+                      - canCreateUsers
+                      - canDeactivateUsers
+                      properties:
+                        pluginName:
+                          type: string
+                        providerLabel:
+                          type: string
+                        canCreateUsers:
+                          type: boolean
+                        canDeactivateUsers:
+                          type: boolean
+                  state:
+                    type: object
+                    additionalProperties: false
+                    required:
+                    - status
+                    - startedAt
+                    - finishedAt
+                    - lastError
+                    - stats
+                    properties:
+                      status:
+                        type: string
+                        enum:
+                        - never
+                        - running
+                        - ok
+                        - failed
+                      startedAt:
+                        type:
+                        - string
+                        - 'null'
+                      finishedAt:
+                        type:
+                        - string
+                        - 'null'
+                      lastError:
+                        type:
+                        - string
+                        - 'null'
+                      stats:
+                        type: object
+                        properties:
+                          usersCreated:
+                            type: integer
+                          usersDisabled:
+                            type: integer
+                          usersEnabled:
+                            type: integer
+                          usersMatched:
+                            type: integer
+                          groups:
+                            type: integer
+                          groupsDeactivated:
+                            type: integer
+                          memberships:
+                            type: integer
         '401':
           description: The session or device token is not valid
           content:
@@ -1325,15 +1440,22 @@ paths:
                 properties:
                   error:
                     type: string
-        '503':
-          description: The worker is not reachable
+        '500':
+          description: The database read failed
           content:
             application/json:
               schema:
                 type: object
+                required:
+                - error
+                - code
                 properties:
                   error:
                     type: string
+                  code:
+                    type:
+                    - string
+                    - 'null'
     post:
       operationId: postAdminDirectory
       tags:
@@ -1345,15 +1467,32 @@ paths:
       - deviceToken: []
       responses:
         '200':
-          description: Worker response, passed through with the worker status
+          description: The sync finished
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: false
+                required:
+                - stats
                 properties:
                   stats:
                     type: object
+                    properties:
+                      usersCreated:
+                        type: integer
+                      usersDisabled:
+                        type: integer
+                      usersEnabled:
+                        type: integer
+                      usersMatched:
+                        type: integer
+                      groups:
+                        type: integer
+                      groupsDeactivated:
+                        type: integer
+                      memberships:
+                        type: integer
         '401':
           description: The session or device token is not valid
           content:
@@ -1369,15 +1508,54 @@ paths:
                 properties:
                   error:
                     type: string
-        '503':
-          description: The worker is not reachable
+        '404':
+          description: No directory provider is configured (code no_provider)
           content:
             application/json:
               schema:
                 type: object
+                required:
+                - error
+                - code
                 properties:
                   error:
                     type: string
+                  code:
+                    type:
+                    - string
+                    - 'null'
+        '409':
+          description: A sync is already running (code running), or the sync would remove the last administrator (code lockout)
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - error
+                - code
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type:
+                    - string
+                    - 'null'
+        '500':
+          description: The directory provider or the database failed
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - error
+                - code
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type:
+                    - string
+                    - 'null'
   /admin/groups:
     get:
       operationId: getAdminGroups
@@ -9334,21 +9512,11 @@ paths:
       security: []
       responses:
         '200':
-          description: Connection check result
+          description: The SSO setup state after the check
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: false
-                properties:
-                  status:
-                    type: string
-                  connection:
-                    type: object
-                  lastError:
-                    type: string
-                  setupCompletedAt:
-                    type: string
+                $ref: '#/components/schemas/SsoSetupState'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -9691,31 +9859,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: false
-                properties:
-                  status:
-                    type: string
-                  portalLink:
-                    type: string
-                  portalLinkExpiresAt:
-                    type: string
-                  provider:
-                    type: string
-                  connection:
-                    type: object
-                  lastError:
-                    type: string
-                  setupCompletedAt:
-                    type: string
-                  environmentId:
-                    type: string
-                  organizationId:
-                    type: string
-                  environmentTier:
-                    type: string
-                  signInConfigured:
-                    type: boolean
+                $ref: '#/components/schemas/SsoSetupState'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:

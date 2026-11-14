@@ -67,8 +67,15 @@ export const adminCases: Case[] = [
     },
   },
   { op: "DELETE /admin/devices/{deviceId}", name: "refuses an unknown device", status: 404, request: (c) => ({ params: { deviceId: c.ids.unknownId } }) },
-  { op: "GET /admin/directory", name: "needs the worker", status: 503 },
-  { op: "POST /admin/directory", name: "needs the worker", status: 503, request: { body: {} } },
+  {
+    op: "GET /admin/directory", name: "reports no provider without Scalekit sign-in", status: 200,
+    check: (r) => expect(body(r).provider).toBeNull(),
+  },
+  {
+    op: "POST /admin/directory", name: "refuses a sync without a provider", status: 404,
+    request: { body: {} },
+    check: (r) => expect(body(r)).toEqual({ error: "no directory provider is configured", code: "no_provider" }),
+  },
   {
     op: "GET /admin/groups", name: "lists the built-in groups", status: 200,
     check: (r) => expect((body(r).groups as { slug: string }[]).map((g) => g.slug)).toEqual(expect.arrayContaining(["administrators", "everyone"])),

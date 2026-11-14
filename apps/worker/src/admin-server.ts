@@ -2,9 +2,6 @@
  * Admin HTTP handler for the worker process.
  *
  * Routes:
- *   GET  /admin/directory/status → directory provider and last sync state.
- *   POST /admin/directory/sync  → run a full directory sync now.
- *   POST /admin/directory/users → create a user in the identity provider ({ email, name? }).
  *
  * Extracted from index.ts so the handler can be unit-tested without
  * booting pg-boss / the agent stack.
@@ -56,25 +53,13 @@ export type AdminHandlerOptions = {
    * Absent in tests, in which case /admin/connect/* routes return 503.
    */
   connect?: ConnectHandlerSurface | null;
-  /** Directory provider status and on-demand sync. */
-  directory?: DirectoryHandlerSurface | null;
 };
 
-export interface DirectoryHandlerSurface {
-  status(): Promise<unknown>;
-  sync(): Promise<unknown>;
-  createUser(input: { email: string; name: string | null }): Promise<unknown>;
-}
 
 export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const connect = opts.connect ?? null;
-  const directory = opts.directory ?? null;
 
   return function handle(req: IncomingMessage, res: ServerResponse) {
-    if (req.url === "/admin/directory/status" || req.url === "/admin/directory/sync" || req.url === "/admin/directory/users") {
-      void handleDirectory(req, res, directory);
-      return;
-    }
     if (req.method === "GET" && req.url === "/admin/connect/providers") {
       handleConnectProviders(res, connect);
       return;
@@ -102,84 +87,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
     }
     res.writeHead(404).end();
   };
-}
-
-async function handleDirectory(
-  req: IncomingMessage,
-  res: ServerResponse,
-  directory: DirectoryHandlerSurface | null,
-) {
-  if (!directory) {
-    json(res, 503, { error: "directory is not configured" });
-    return;
-  }
-  const sync = req.url === "/admin/directory/sync";
-  const users = req.url === "/admin/directory/users";
-  if (req.method !== (sync || users ? "POST" : "GET")) {
-    json(res, 405, { error: "method not allowed" });
-    return;
-  }
-  try {
-    if (users) {
-      const body = (await readJson(req).catch(() => null)) as { email?: unknown; name?: unknown } | null;
-      const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
-      if (!email.includes("@")) {
-        json(res, 400, { error: "a valid email address is required" });
-        return;
-      }
-      const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : null;
-      json(res, 200, await directory.createUser({ email, name }));
-      return;
-    }
-    json(res, 200, sync ? { stats: await directory.sync() } : await directory.status());
-  } catch (err) {
-    const code = (err as { code?: string }).code;
-    const status = code === "no_provider" ? 404 : code === "running" || code === "lockout" ? 409 : code === "unsupported" ? 400 : 500;
-    json(res, status, { error: err instanceof Error ? err.message : String(err), code: code ?? null });
-  }
-}
-
-// ─── Connect (per-operator OAuth) ──────────────────────────────────────
-
-function handleConnectProviders(
-  res: ServerResponse,
-  connect: ConnectHandlerSurface | null,
-) {
-  if (!connect) {
-    json(res, 200, { providers: [] });
-    return;
-  }
-  json(res, 200, { providers: connect.getConnectProviders() });
-}
-
-function handleConnectStatus(
-  res: ServerResponse,
-  connect: ConnectHandlerSurface | null,
-  url: string,
-) {
-  if (!connect) {
-    json(res, 200, { connected: [] });
-    return;
-  }
-  const operatorId = decodeURIComponent(
-    url.slice("/admin/connect/status/".length).split(/[?#]/, 1)[0] ?? "",
-  );
-  if (!operatorId) {
-    json(res, 400, { error: "operatorId path segment required" });
-    return;
-  }
-  json(res, 200, { connected: connect.getOperatorConnectStatus(operatorId) });
-}
-
-function handleDeploymentConnectStatus(
-  res: ServerResponse,
-  connect: ConnectHandlerSurface | null,
-) {
-  if (!connect) {
-    json(res, 200, { connected: [] });
-    return;
-  }
-  json(res, 200, { connected: connect.getDeploymentConnectStatus() });
 }
 
 async function handleConnectBegin(

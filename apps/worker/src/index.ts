@@ -8,11 +8,6 @@ import { createAdminHandler } from "./admin-server.js";
 import { CoreSecrets } from "./secrets/core-secrets.js";
 import { SignInService } from "./signin/signin-service.js";
 import {
-  createDirectoryUser,
-  directoryStatus,
-  runDirectorySync,
-} from "./directory/directory-service.js";
-import {
   cancelAllAgents,
   provisionHostConfig,
   resolveAgentConcurrency,
@@ -61,11 +56,6 @@ function signIn(): SignInService {
 }
 const server = createServer(
   createAdminHandler({
-    directory: {
-      status: async () => directoryStatus(signInService, await getOrgId()),
-      sync: async () => runDirectorySync(signIn(), await getOrgId()),
-      createUser: async (input) => createDirectoryUser(signIn(), input),
-    },
     connect: {
       getConnectProviders: () => signInService?.getConnectProviders() ?? [],
       getOperatorConnectStatus: (operatorId) =>
@@ -93,7 +83,6 @@ await provisionHostConfig(ADMIN_ORG_ID);
 console.log(
   `[worker] host config provisioned from DB (data_source + llm_provider_config)`,
 );
-
 
 coreSecrets = new CoreSecrets();
 await coreSecrets.start();
