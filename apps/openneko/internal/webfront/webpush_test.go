@@ -275,8 +275,23 @@ func TestWebPushSubscriptionsVAPIDAndThreeEvents(t *testing.T) {
 		t.Fatalf("admin create: %d %s", adminCreate.Code, adminCreate.Body.String())
 	}
 
-	// 1. Event: an approval waits ("approval_waiting").
-	f.API.queueApprovalWaitingPush(ctx, "org", arOrgRun)
+	// 1. Event: an approval waits ("approval_waiting"), created via r.createActionRequest on the Go path.
+	f.Gate.WorkerURL = ""
+	rt := f.API.runTools(turnBinding{OrgID: "org", Kind: "work"})
+	createdGoAR, err := rt.createActionRequest(ctx, jsObjOf(
+		"orgId", "org",
+		"scope", "internal",
+		"kind", "ops.note",
+		"status", "pending_approval",
+		"summary", "Sensitive revenue numbers: $999,000 for SKU-42",
+	))
+	if err != nil {
+		t.Fatalf("createActionRequest in Go: %v", err)
+	}
+	goARID, _ := jsField(createdGoAR, "id")
+	if goARID == "" {
+		t.Fatalf("createActionRequest returned empty id: %+v", createdGoAR)
+	}
 	// 2. Event: a run finished ("run_finished").
 	sensitiveSummary := "Sensitive revenue numbers: $999,000"
 	if err := f.API.finishWorkflowRun(ctx, runOrg, "completed", &sensitiveSummary, nil); err != nil {
