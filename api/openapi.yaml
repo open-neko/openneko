@@ -2986,7 +2986,7 @@ paths:
         description: Pack version
       responses:
         '200':
-          description: The inspection, the install status or the plan; doctor passes through the worker
+          description: The inspection, the install status, the plan or the doctor checks
           content:
             application/json:
               schema:
