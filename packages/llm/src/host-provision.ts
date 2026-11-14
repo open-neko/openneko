@@ -25,7 +25,6 @@ import {
 } from "./provider-runtime";
 import { createConnection } from "node:net";
 import { taskRouteRecords } from "./model-routes";
-import type { AgentRuntimeLaunchConfig } from "./work/sandbox-launcher";
 
 
 type StoredRow = {
@@ -360,6 +359,8 @@ export async function verifyAgentRuntimeReady(orgId: string): Promise<void> {
   }
   await loadAgentModelKeys(orgId);
 }
+
+type AgentRuntimeLaunchConfig = { modelKeys?: Record<string, string> };
 
 type HostProvisionState = {
   appliedRevision?: string;

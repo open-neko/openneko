@@ -89,8 +89,7 @@ func scriptDataTool(call func(ctx context.Context, q sandbox.DataQuery) (*jsObj,
 	}
 }
 
-// installDataClient writes neko_data.py and neko-query into binRoot, as
-// installDataClient() in apps/worker/src/agent-sandbox/data-client.ts does.
+// installDataClient writes neko_data.py and neko-query into binRoot.
 func installDataClient(binRoot string) error {
 	if err := os.MkdirAll(binRoot, 0o777); err != nil {
 		return err

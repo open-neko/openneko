@@ -19,15 +19,22 @@ Setup commands — Node deps, migrations, `pnpm dev`, the two GraphJin services 
 
 ```text
 apps/
-  web/                 Next.js UI and API routes
-  worker/              Background job runner, built-in channels and sign-in, agent runner
-  openneko/            `openneko` CLI + stack supervisor (Go), distributed as a single binary
+  openneko/            `openneko` CLI, stack supervisor, `openneko web` HTTP/River/pack/turn server, and `openneko serve` (Go)
+  ax-harness/          Ax agent harness, inference gateway, embedding gateway, and sandbox client (Go)
+  web/                 React UI (built as a static SPA in `apps/web/dist` and served by `openneko web`)
+  worker/              Node worker for Scalekit sign-in/SSO/directory sync, GraphJin group grants, and built-in action adapters
 packages/
-  db/                  Drizzle ORM client, schema, migrations, job queue
-  llm/                 Providers, agents, classifier, GraphJin work support; Library
-                       file storage (src/library), bundled skills (assets/)
-  secrets/             Deployment secrets store and at-rest cipher (TS, used by the worker)
+  avatars/             Animated cat avatars (`@neko/avatars`)
+  channels/            Shared Slack, Telegram and HUD formatting (`@neko/channels`)
   contract/            Contract tests for every route in api/openapi.yaml; they run against any server
+  db/                  Drizzle ORM client, schema, migrations, job payloads
+  evals/               Agent harness evaluation core and result verifier (`@neko/evals`)
+  interaction/         Modality-free interaction types (`@neko/interaction`)
+  llm/                 Shared model catalog fixtures, GraphJin helpers, A2UI contract, bundled skills (assets/)
+  packs/               Solution pack manifest, artifact schema, and bundle validation (`@neko/packs`)
+  secret-crypt/        AES-256-GCM `enc:v1` cipher (`@neko/secret-crypt`)
+  secrets/             Deployment secrets store (`@neko/secrets`)
+  telemetry/           OpenTelemetry and startup timing helpers (`@neko/telemetry`)
 db/
   migrations/          Metadata database migrations (mirrored into apps/openneko/assets/migrations/ for embedding)
   graphjin/            Sample GraphJin config
