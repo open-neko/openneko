@@ -51,6 +51,7 @@ type hostFixture struct {
 }
 
 func TestHostCallsMatchTypeScriptFixture(t *testing.T) {
+	t.Setenv("OPENNEKO_IN_CONTAINER", "1")
 	raw, err := os.ReadFile("../../../../packages/llm/test/fixtures/host-calls.json")
 	if err != nil {
 		t.Fatal(err)
