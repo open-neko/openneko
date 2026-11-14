@@ -1,66 +1,63 @@
-import { connection } from "next/server";
-import { notFound } from "next/navigation";
-import {
-  app_user,
-  asc,
-  db,
-  eq,
-  getGroupGrantsEnabled,
-  getUserGroup,
-  isNull,
-  and,
-  listDataAccessRules,
-  listGroupItemGrants,
-  listGroupMembers,
-  listIdpGroupRules,
-} from "@neko/db";
-import { getCurrentActor } from "@/lib/actor";
-import { getOrgId } from "@/lib/db";
-import { ITEM_TYPE_LABELS } from "@/lib/groups-admin";
-import { AdminDenied, AdminShell } from "../../../AdminShell";
-import { GroupDetailClient } from "./GroupDetailClient";
+"use client";
 
-export default async function GroupPage({ params }: { params: Promise<{ groupId: string }> }) {
-  await connection();
-  const actor = await getCurrentActor();
-  if (actor.role !== "admin") return <AdminDenied />;
-  const { groupId } = await params;
-  const orgId = await getOrgId();
-  const group = await getUserGroup(orgId, groupId).catch(() => null);
-  if (!group) notFound();
+import { useParams } from "next/navigation";
+import type { GroupMemberRow, UserGroupRow } from "@neko/db";
+import AdminLoad from "@/app/admin/AdminLoad";
+import { AdminShell } from "@/app/admin/AdminShell";
+import type { DataAccessRuleView } from "./DataAccessSection";
+import { GroupDetailClient, type ItemTypeView } from "./GroupDetailClient";
 
-  const [members, grants, rules, idpRules, users, groupGrantsEnabled] = await Promise.all([
-    listGroupMembers(orgId, groupId),
-    listGroupItemGrants(orgId, groupId),
-    listDataAccessRules(orgId, groupId),
-    listIdpGroupRules(orgId),
-    db()
-      .select({ id: app_user.id, email: app_user.email, name: app_user.name })
-      .from(app_user)
-      .where(and(eq(app_user.org_id, orgId), isNull(app_user.disabled_at)))
-      .orderBy(asc(app_user.email)),
-    getGroupGrantsEnabled(orgId),
-  ]);
-  const ruleNames = new Map(idpRules.map((r) => [`rule:${r.id}`, r.idpGroupName]));
+type GroupResponse = {
+  group: UserGroupRow;
+  members: GroupMemberRow[];
+  grants: Array<{ itemType: string; itemId: string }>;
+  rules: DataAccessRuleView[];
+  idpRules: Array<{ id: string; idpGroupName: string }>;
+};
 
+type UsersResponse = {
+  users: Array<{ id: string; email: string; name: string | null; disabled: boolean }>;
+};
+
+export default function GroupPage() {
+  const { groupId = "" } = useParams<{ groupId: string }>();
   return (
-    <AdminShell
-      title={group.name}
-      subtitle={group.description ?? (group.kind === "builtin" ? "Built-in group" : "Custom group")}
-      back={{ href: "/admin/users?tab=groups", label: "Groups" }}
+    <AdminLoad
+      title="Group"
+      paths={[
+        `/api/v1/admin/groups/${encodeURIComponent(groupId)}`,
+        "/api/v1/admin/users",
+        "/api/v1/admin/data-access/settings",
+        "/api/v1/admin/items",
+      ]}
     >
-      <GroupDetailClient
-        group={group}
-        members={members.map((m) => ({
-          ...m,
-          sources: m.sources.map((s) => (s === "local" || s === "implicit" ? s : `IdP rule: ${ruleNames.get(s) ?? "removed"}`)),
-        }))}
-        grants={grants.map((g) => ({ itemType: g.itemType, itemId: g.itemId }))}
-        rules={rules.map((r) => ({ ...r, updatedAt: new Date(r.updatedAt).toISOString() }))}
-        users={users}
-        itemTypes={Object.entries(ITEM_TYPE_LABELS).map(([type, labels]) => ({ type, ...labels }))}
-        groupGrantsEnabled={groupGrantsEnabled}
-      />
-    </AdminShell>
+      {([groupData, usersData, dataAccess, items]) => {
+        const { group, members, grants, rules, idpRules } = groupData as GroupResponse;
+        const ruleNames = new Map(idpRules.map((r) => [`rule:${r.id}`, r.idpGroupName]));
+        const users = (usersData as UsersResponse).users
+          .filter((u) => !u.disabled)
+          .map(({ id, email, name }) => ({ id, email, name }));
+        return (
+          <AdminShell
+            title={group.name}
+            subtitle={group.description ?? (group.kind === "builtin" ? "Built-in group" : "Custom group")}
+            back={{ href: "/admin/users?tab=groups", label: "Groups" }}
+          >
+            <GroupDetailClient
+              group={group}
+              members={members.map((m) => ({
+                ...m,
+                sources: m.sources.map((s) => (s === "local" || s === "implicit" ? s : `IdP rule: ${ruleNames.get(s) ?? "removed"}`)),
+              }))}
+              grants={grants.map((g) => ({ itemType: g.itemType, itemId: g.itemId }))}
+              rules={rules}
+              users={users}
+              itemTypes={(items as { types: ItemTypeView[] }).types}
+              groupGrantsEnabled={(dataAccess as { enabled: boolean }).enabled}
+            />
+          </AdminShell>
+        );
+      }}
+    </AdminLoad>
   );
 }
