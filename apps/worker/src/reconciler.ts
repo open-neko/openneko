@@ -5,11 +5,13 @@ import {
   inArray,
   lte,
   metric,
+  notInArray,
   processing_job,
   sql,
   work_run,
   workflow_run,
 } from "@neko/db";
+import { MOVED_QUEUES } from "@neko/db/jobs";
 
 export type ReconcileSummary = {
   succeeded: number;
@@ -111,12 +113,14 @@ export async function reconcileStaleProcessingJobs(opts?: {
 }): Promise<ReconcileSummary> {
   const minAgeMs = opts?.minAgeMs ?? 0;
 
+  // River runs the moved queues; their rows have no pg-boss job to check.
+  const onBoss = and(
+    inArray(processing_job.status, ["queued", "running"]),
+    notInArray(processing_job.kind, [...MOVED_QUEUES]),
+  );
   const baseFilter = opts?.orgId
-    ? and(
-        eq(processing_job.org_id, opts.orgId),
-        inArray(processing_job.status, ["queued", "running"]),
-      )
-    : inArray(processing_job.status, ["queued", "running"]);
+    ? and(eq(processing_job.org_id, opts.orgId), onBoss)
+    : onBoss;
   const filter = minAgeMs > 0
     ? and(
         baseFilter,

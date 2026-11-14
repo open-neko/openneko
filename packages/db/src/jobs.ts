@@ -13,9 +13,6 @@ import { buildPoolConfig } from "./connection";
 import { pool } from "./index";
 
 export const QUEUE = {
-  BUSINESS_PROFILE_BUILD: "business_profile_build",
-  INDUSTRY_INSIGHTS_BUILD: "industry_insights_build",
-  BOOTSTRAP_METRICS_BUILD: "bootstrap_metrics_build",
   METRIC_REFRESH: "metric_refresh",
   WORK_RUN: "work_run",
   WORKFLOW_RUN_FIRE: "workflow_run_fire",
@@ -36,6 +33,9 @@ export const MOVED_QUEUES = [
   "action_execute",
   "skill_learn",
   "bot_name_sweep",
+  "business_profile_build",
+  "industry_insights_build",
+  "bootstrap_metrics_build",
 ] as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];

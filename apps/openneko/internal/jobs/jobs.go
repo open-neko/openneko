@@ -23,7 +23,8 @@ const (
 
 // Moved lists the queues that River runs. MOVED_QUEUES in
 // packages/db/src/jobs.ts must hold the same names.
-var Moved = []string{KindOutputSweep, KindMetricSweep, KindCronSweep, KindEmbeddingIndex, KindEmbeddingSweep, KindDirectorySync, KindActionExecute, KindSkillLearn, KindBotNameSweep}
+var Moved = []string{KindOutputSweep, KindMetricSweep, KindCronSweep, KindEmbeddingIndex, KindEmbeddingSweep, KindDirectorySync, KindActionExecute, KindSkillLearn, KindBotNameSweep,
+	KindBusinessProfileBuild, KindIndustryInsightsBuild, KindBootstrapMetricsBuild}
 
 type Queue struct {
 	Pool          *pgxpool.Pool
@@ -38,6 +39,7 @@ type Queue struct {
 	ActionExecute func(ctx context.Context, orgID, actionRequestID string) error
 	SkillLearn    func(ctx context.Context, orgID, skillName string) error
 	BotNameSweep  func(context.Context) error
+	Build         BuildFunc
 	Embedding     Embedding
 }
 
@@ -164,6 +166,7 @@ func (q *Queue) config() *river.Config {
 	river.AddWorker(workers, &actionExecute{run: q.ActionExecute})
 	river.AddWorker(workers, &skillLearn{run: q.SkillLearn})
 	river.AddWorker(workers, &botNameSweep{run: q.BotNameSweep})
+	addBuildWorkers(workers, q.Build)
 	return &river.Config{
 		Schema:  q.schema(),
 		Logger:  quietLogger(),

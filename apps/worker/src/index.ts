@@ -94,9 +94,6 @@ import {
   setChannelsChangedHook,
 } from "./channels/runtime.js";
 import type PgBossLib from "pg-boss";
-import { runBusinessProfileBuild } from "./jobs/business-profile-build.js";
-import { runIndustryInsightsBuild } from "./jobs/industry-insights-build.js";
-import { runBootstrapMetricsBuild } from "./jobs/bootstrap-metrics-build.js";
 import { runMetricRefresh } from "./jobs/metric-refresh.js";
 import { runWorkRun } from "./jobs/work-run.js";
 import { runWorkflowRunFire } from "./jobs/workflow-run-fire.js";
@@ -590,27 +587,6 @@ for (const name of [...RETIRED_QUEUES, ...MOVED_QUEUES]) {
     );
   }
 }
-
-await b.work(
-  QUEUE.BUSINESS_PROFILE_BUILD,
-  makeHandler<ProcessingJobPayload>(async (jobId, orgId) => {
-    await runBusinessProfileBuild(jobId, orgId);
-  }),
-);
-
-await b.work(
-  QUEUE.INDUSTRY_INSIGHTS_BUILD,
-  makeHandler<ProcessingJobPayload>(async (jobId, orgId) => {
-    await runIndustryInsightsBuild(jobId, orgId);
-  }),
-);
-
-await b.work(
-  QUEUE.BOOTSTRAP_METRICS_BUILD,
-  makeHandler<ProcessingJobPayload>(async (jobId, orgId) => {
-    await runBootstrapMetricsBuild(jobId, orgId);
-  }),
-);
 
 const workRunHandler = makeHandler<WorkRunPayload>(
   async (jobId, orgId, payload) => {

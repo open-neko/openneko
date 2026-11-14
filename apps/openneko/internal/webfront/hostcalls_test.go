@@ -309,7 +309,7 @@ func TestServiceWhere(t *testing.T) {
 func onboardingFront(t *testing.T) (*Front, *pgxpool.Pool) {
 	t.Helper()
 	f, db, _ := hostFront(t)
-	seedPgBoss(t, db, f)
+	seedRiver(t, db, f)
 	seedPrimary(t, db, "openai", "gpt-5", `{}`, `{"apiKey":"`+plantedProviderKey+`"}`)
 	return f, db
 }
@@ -333,8 +333,8 @@ func TestOnboardingSubmit(t *testing.T) {
 	if name != "AdventureWorks Cycles" || note != "We sell bikes" || fy != 7 || seats != "{CEO,CFO}" || priorities != `{"Defend wholesale margins"}` || step != "submitting" {
 		t.Errorf("rows %q %q %d %s %s %s", name, note, fy, seats, priorities, step)
 	}
-	queued := bossJobs(t, db, f, queueBusinessProfile)
-	if len(queued) != 1 || queued[0].RetryLimit != 0 || queued[0].Data != `{"orgId": "org", "processingJobId": "`+jobID+`"}` {
+	queued := riverJobs(t, db, "business_profile_build")
+	if len(queued) != 1 || queued[0].MaxAttempts != 1 || queued[0].Args != `{"orgId": "org", "processingJobId": "`+jobID+`"}` {
 		t.Errorf("queued %+v", queued)
 	}
 
@@ -354,7 +354,7 @@ func TestOnboardingSubmit(t *testing.T) {
 	if err := db.QueryRow(t.Context(), `select count(*), max(company_note) from onboarding_wizard where org_id = 'org'`).Scan(&wizards, &note); err != nil || wizards != 1 || note != "second" {
 		t.Errorf("resubmit replaces the row: %d %q %v", wizards, note, err)
 	}
-	if n := len(bossJobs(t, db, f, queueBusinessProfile)); n != 2 {
+	if n := len(riverJobs(t, db, "business_profile_build")); n != 2 {
 		t.Errorf("jobs after resubmit: %d", n)
 	}
 }

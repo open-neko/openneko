@@ -197,3 +197,25 @@ func firstUnits(s string, n int) string {
 	}
 	return string(utf16.Decode(units[:n]))
 }
+
+// ResearchFor is resolveResearchProviderConfig(orgId): the org's stored
+// research row, else research off.
+func ResearchFor(ctx context.Context, db Querier, secretsDir, orgID string) (ResearchSettings, error) {
+	row, err := loadStored(ctx, db, secretsDir, orgID, "research")
+	if err != nil {
+		return ResearchSettings{}, err
+	}
+	if row == nil || !IsResearchProvider(row.Provider) {
+		return ResearchSettings{Source: "default", Provider: "disabled", Model: DefaultResearchModel("disabled")}, nil
+	}
+	r := ResearchSettings{Source: "org", Provider: row.Provider, Enabled: row.Enabled, Secrets: row.Secrets}
+	if row.Model != nil {
+		r.Model = *row.Model
+	} else {
+		r.Model = DefaultResearchModel(row.Provider)
+	}
+	if !r.Off() && r.Provider == "perplexity" && r.Secrets["apiKey"] == "" {
+		return r, fmt.Errorf("Perplexity research provider requires an API key")
+	}
+	return r, nil
+}

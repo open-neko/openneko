@@ -53,13 +53,18 @@ type riverJob struct {
 
 func actionJobs(t *testing.T, db *pgxpool.Pool) []riverJob {
 	t.Helper()
+	return riverJobs(t, db, "action_execute")
+}
+
+func riverJobs(t *testing.T, db *pgxpool.Pool, kind string) []riverJob {
+	t.Helper()
 	ctx := context.Background()
 	var schema string
 	if err := db.QueryRow(ctx, `select current_schema() || '_river'`).Scan(&schema); err != nil {
 		t.Fatal(err)
 	}
 	rows, err := db.Query(ctx, `select args::text, max_attempts from `+schema+`.river_job
-		where kind = 'action_execute' and queue = 'default' and state = 'available' order by id`)
+		where kind = $1 and queue = 'default' and state = 'available' order by id`, kind)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +262,7 @@ func TestEnsureInsights(t *testing.T) {
 	db := testpg.Migrated(t)
 	seedOrg(t, db)
 	f, _ := newSetupFront(t, `{"provider":{"pluginName":"magic-link"}}`, db)
-	seedPgBoss(t, db, f)
+	seedRiver(t, db, f)
 	member := sessionCookie("member")
 	ensure := func(body string) map[string]any {
 		t.Helper()
@@ -276,8 +281,8 @@ func TestEnsureInsights(t *testing.T) {
 	if got["state"] != "queued" || job(id) != "queued processing_next_ensure" {
 		t.Fatalf("no profile: %v", got)
 	}
-	want := queuedJob{`{"orgId": "org", "processingJobId": "` + id + `"}`, 2, 30, 7}
-	if j := bossJobs(t, db, f, queueIndustryInsights); len(j) != 1 || j[0] != want {
+	want := riverJob{`{"orgId": "org", "processingJobId": "` + id + `"}`, 3}
+	if j := riverJobs(t, db, "industry_insights_build"); len(j) != 1 || j[0] != want {
 		t.Errorf("queued job: %+v", j)
 	}
 	if w := call(f, "POST", "/api/v1/insights/ensure", `{"force":true}`, member); w.Body.String() != `{"state":"live","jobId":"`+id+`"}` {
@@ -300,7 +305,7 @@ func TestEnsureInsights(t *testing.T) {
 		(select industry_insights from customer_profile where not is_current)`).Scan(&insights, &old); err != nil || insights != "null" || old != "old insights" {
 		t.Errorf("force cleared %q, kept %q: %v", insights, old, err)
 	}
-	if j := bossJobs(t, db, f, queueIndustryInsights); len(j) != 2 {
+	if j := riverJobs(t, db, "industry_insights_build"); len(j) != 2 {
 		t.Errorf("jobs after force: %d", len(j))
 	}
 
