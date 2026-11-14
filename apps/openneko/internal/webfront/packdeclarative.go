@@ -230,105 +230,8 @@ func declarativePackChecks(bundle *packs.Bundle, inputs map[string]any, secrets 
 		}
 	}
 
-	exposures := map[string]map[string]packExposure{}
-	for _, art := range bundle.Artifacts {
-		source := art.Record()
-		ops, declared := source["operations"]
-		if art.Kind != packs.KindSource || source["kind"] != "api" || !declared {
-			continue
-		}
-		name := packString(source["name"])
-		overrides, ok := ops.(map[string]any)
-		if !ok {
-			return fmt.Errorf("API source %s operations must be an object", name)
-		}
-		spec := findSpec(bundle, source["openapi"])
-		if spec == nil {
-			return fmt.Errorf("API source %s must reference a bundled OpenAPI spec", name)
-		}
-		methods := specMethods(spec)
-		own := map[string]packExposure{}
-		for _, id := range sortedKeys(overrides) {
-			override, ok := overrides[id].(map[string]any)
-			if !ok {
-				return fmt.Errorf("API operation %s override must be an object", id)
-			}
-			if methods[id] != "get" {
-				return fmt.Errorf("API read override %s must reference a GET operation", id)
-			}
-			if len(override) != 1 || override["expose_top_level"] != true {
-				return fmt.Errorf("API read override %s may only set expose_top_level: true", id)
-			}
-			own[id] = packExposure{}
-		}
-		exposures[name] = own
-	}
-	for _, art := range bundle.Artifacts {
-		if art.Kind != packs.KindAction {
-			continue
-		}
-		adapter, _ := art.Record()["adapter"].(map[string]any)
-		if adapter["kind"] != "graphjin_api_operation" {
-			continue
-		}
-		sourceName := packString(adapter["source"])
-		var source map[string]any
-		for _, s := range bundle.Artifacts {
-			if s.Kind == packs.KindSource && packString(s.Record()["name"]) == sourceName {
-				source = s.Record()
-				break
-			}
-		}
-		if source == nil {
-			return fmt.Errorf("action %s references missing API source %s", art.Key, sourceName)
-		}
-		openapi := packString(source["openapi"])
-		sourceSpec := strings.TrimSuffix(path.Base(openapi), path.Ext(openapi))
-		specName := sourceSpec
-		if v, ok := adapter["spec"]; ok {
-			specName = packString(v)
-		}
-		if specName != sourceSpec {
-			return fmt.Errorf("action %s references spec %s outside source %s", art.Key, specName, sourceName)
-		}
-		methods := specMethods(findSpec(bundle, source["openapi"]))
-		declared, ok := adapter["operations"].(map[string]any)
-		if !ok {
-			declared = map[string]any{"default": adapter}
-		}
-		own := exposures[sourceName]
-		if own == nil {
-			own = map[string]packExposure{}
-		}
-		for _, k := range sortedKeys(declared) {
-			op, ok := declared[k].(map[string]any)
-			if !ok {
-				continue
-			}
-			id, root := "", ""
-			if v, ok := op["operationId"]; ok && v != nil {
-				id = packString(v)
-			}
-			if v, ok := op["mutationRoot"]; ok && v != nil {
-				root = packString(v)
-			}
-			if id == "" || !graphqlName.MatchString(root) {
-				return fmt.Errorf("action %s has an invalid GraphJin API operation", art.Key)
-			}
-			method, ok := methods[id]
-			if !ok {
-				return fmt.Errorf("action %s references missing OpenAPI operation %s", art.Key, id)
-			}
-			if method == "get" {
-				return fmt.Errorf("action %s cannot expose read operation %s as a mutation", art.Key, id)
-			}
-			exposure := packExposure{mutation: "yes", as: root}
-			if current, ok := own[id]; ok && current != exposure {
-				return fmt.Errorf("API operation %s has conflicting action exposure", id)
-			}
-			own[id] = exposure
-		}
-		exposures[sourceName] = own
+	if _, err := packExposures(bundle); err != nil {
+		return err
 	}
 
 	for _, art := range bundle.Artifacts {
@@ -431,6 +334,112 @@ func declarativePackChecks(bundle *packs.Bundle, inputs map[string]any, secrets 
 		}
 	}
 	return nil
+}
+
+// packExposures is the operation exposure of each API source: the read
+// overrides and the mutations its actions declare.
+func packExposures(bundle *packs.Bundle) (map[string]map[string]packExposure, error) {
+	exposures := map[string]map[string]packExposure{}
+	for _, art := range bundle.Artifacts {
+		source := art.Record()
+		ops, declared := source["operations"]
+		if art.Kind != packs.KindSource || source["kind"] != "api" || !declared {
+			continue
+		}
+		name := packString(source["name"])
+		overrides, ok := ops.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("API source %s operations must be an object", name)
+		}
+		spec := findSpec(bundle, source["openapi"])
+		if spec == nil {
+			return nil, fmt.Errorf("API source %s must reference a bundled OpenAPI spec", name)
+		}
+		methods := specMethods(spec)
+		own := map[string]packExposure{}
+		for _, id := range sortedKeys(overrides) {
+			override, ok := overrides[id].(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("API operation %s override must be an object", id)
+			}
+			if methods[id] != "get" {
+				return nil, fmt.Errorf("API read override %s must reference a GET operation", id)
+			}
+			if len(override) != 1 || override["expose_top_level"] != true {
+				return nil, fmt.Errorf("API read override %s may only set expose_top_level: true", id)
+			}
+			own[id] = packExposure{}
+		}
+		exposures[name] = own
+	}
+	for _, art := range bundle.Artifacts {
+		if art.Kind != packs.KindAction {
+			continue
+		}
+		adapter, _ := art.Record()["adapter"].(map[string]any)
+		if adapter["kind"] != "graphjin_api_operation" {
+			continue
+		}
+		sourceName := packString(adapter["source"])
+		var source map[string]any
+		for _, s := range bundle.Artifacts {
+			if s.Kind == packs.KindSource && packString(s.Record()["name"]) == sourceName {
+				source = s.Record()
+				break
+			}
+		}
+		if source == nil {
+			return nil, fmt.Errorf("action %s references missing API source %s", art.Key, sourceName)
+		}
+		openapi := packString(source["openapi"])
+		sourceSpec := strings.TrimSuffix(path.Base(openapi), path.Ext(openapi))
+		specName := sourceSpec
+		if v, ok := adapter["spec"]; ok {
+			specName = packString(v)
+		}
+		if specName != sourceSpec {
+			return nil, fmt.Errorf("action %s references spec %s outside source %s", art.Key, specName, sourceName)
+		}
+		methods := specMethods(findSpec(bundle, source["openapi"]))
+		declared, ok := adapter["operations"].(map[string]any)
+		if !ok {
+			declared = map[string]any{"default": adapter}
+		}
+		own := exposures[sourceName]
+		if own == nil {
+			own = map[string]packExposure{}
+		}
+		for _, k := range sortedKeys(declared) {
+			op, ok := declared[k].(map[string]any)
+			if !ok {
+				continue
+			}
+			id, root := "", ""
+			if v, ok := op["operationId"]; ok && v != nil {
+				id = packString(v)
+			}
+			if v, ok := op["mutationRoot"]; ok && v != nil {
+				root = packString(v)
+			}
+			if id == "" || !graphqlName.MatchString(root) {
+				return nil, fmt.Errorf("action %s has an invalid GraphJin API operation", art.Key)
+			}
+			method, ok := methods[id]
+			if !ok {
+				return nil, fmt.Errorf("action %s references missing OpenAPI operation %s", art.Key, id)
+			}
+			if method == "get" {
+				return nil, fmt.Errorf("action %s cannot expose read operation %s as a mutation", art.Key, id)
+			}
+			exposure := packExposure{mutation: "yes", as: root}
+			if current, ok := own[id]; ok && current != exposure {
+				return nil, fmt.Errorf("API operation %s has conflicting action exposure", id)
+			}
+			own[id] = exposure
+		}
+		exposures[sourceName] = own
+	}
+	return exposures, nil
 }
 
 func hasPassword(u *url.Userinfo) bool {

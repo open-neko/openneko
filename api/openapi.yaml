@@ -3142,7 +3142,7 @@ paths:
                   type: string
       responses:
         '200':
-          description: The review, or after uninstall the pack status, from the Go server; install, configure and upgrade pass through from the worker
+          description: The review, or the pack status after install, configure, upgrade or uninstall, from the Go server; the Magento pack's configured install, configure and upgrade pass through from the worker
           content:
             application/json:
               schema:
@@ -3170,7 +3170,7 @@ paths:
                   lastError: {}
                   configuration: {}
         '400':
-          description: The body is not a valid JSON object, or the pack review or uninstall failed
+          description: The body is not a valid JSON object, or the pack review, install, configure, upgrade or uninstall failed
           content:
             application/json:
               schema:
