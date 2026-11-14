@@ -417,8 +417,10 @@ with the Go loader in `apps/openneko/internal/packs`. The plan reads each instal
 artifact from its target: the database row, the skill folder, the GraphJin config
 file, or the live GraphJin. Run `go test ./internal/packs` in `apps/openneko`: it
 checks that the Go loader gives the same manifest, bundle, plan and target state
-hashes as the Node code. `openneko web` also runs the OAuth routes: the
-client setup, the connect and callback, the status and the disconnect. Until the
+hashes as the Node code, as well as the Magento V2 attribute classification, cap
+evaluation and activity presentation. `openneko web` also runs the OAuth routes
+(client setup, connect and callback, status and disconnect) and the Magento
+store-management settings and activity route. Until the
 pack apply moves to Go, a deployment-scope connection on an installed pack with
 GraphJin sources asks the worker to apply the new token to those sources, and the
 worker still refreshes deployment-scope tokens. Integration tests need their documented test dependencies;
