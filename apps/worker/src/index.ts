@@ -255,7 +255,6 @@ const server = createServer(
       beginOAuth: (packId, connectionKey, input) => packService.beginOAuth(packId, connectionKey, input),
       completeOAuth: (packId, connectionKey, input) => packService.completeOAuth(packId, connectionKey, input),
       disconnectOAuth: (packId, connectionKey) => packService.disconnectOAuth(packId, connectionKey),
-      syncOAuth: (packId, connectionKey, enabled) => packService.syncOAuthConnection(packId, connectionKey, enabled),
       magentoStoreManagement: () => packService.magentoStoreManagement(),
       updateMagentoStoreManagement: (input) => packService.updateMagentoStoreManagement(input),
     },
@@ -555,19 +554,6 @@ if (filesEnabled()) {
     });
 }
 
-const packOAuthRefresh = () => {
-  packService.refreshOAuthConnections()
-    .then((count) => {
-      if (count > 0) console.log(`[packs] refreshed ${count} OAuth connection(s)`);
-    })
-    .catch((error) => {
-      console.warn(`[packs] OAuth refresh failed: ${error instanceof Error ? error.message : String(error)}`);
-    });
-};
-void packOAuthRefresh();
-const packOAuthRefreshTimer = setInterval(packOAuthRefresh, 60_000);
-packOAuthRefreshTimer.unref();
-
 listenAdmin(server, adminSocketPath(), PORT, (where) => {
   console.log(`[worker] pg-boss running; /health on ${where}`);
 });
@@ -576,7 +562,6 @@ listenAdmin(server, adminSocketPath(), PORT, (where) => {
 const shutdown = async (signal: string) => {
   console.log(`[worker] received ${signal}; shutting down`);
   clearInterval(reconcileTimer);
-  clearInterval(packOAuthRefreshTimer);
   clearInterval(knowledgeRefreshTimer);
   workflowScheduler.stop();
   coreSecrets?.stop();
