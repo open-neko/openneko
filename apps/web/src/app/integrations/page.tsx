@@ -1,21 +1,57 @@
-import { getCurrentUser, getAuthProvider } from "@/lib/auth";
-import { personalConnectionsFixture, pluginConnectionsFixture } from "./visual-fixture";
-import { connection } from "next/server";
-import { redirect } from "next/navigation";
-import { getCurrentActor } from "@/lib/actor";
-import { loadIntegrations } from "./load";
-import IntegrationsList from "./IntegrationsList";
+"use client";
 
-export default async function IntegrationsPage({ searchParams }: { searchParams: Promise<{ state?: string }> }) {
-  await connection();
-  const query = await searchParams;
-  if (process.env.NODE_ENV !== "production" && process.env.OPENNEKO_VISUAL_TEST === "true" && query.state === "plugins") return <IntegrationsList key="preview-plugins" preview initial={pluginConnectionsFixture} />;
-  if (process.env.NODE_ENV !== "production" && process.env.OPENNEKO_VISUAL_TEST === "true" && ["connected", "unconfigured", "disconnected"].includes(query.state ?? "")) return <IntegrationsList key={`preview-${query.state}`} preview initial={{ workspace: [], connectors: [], personal: await personalConnectionsFixture(query.state!) }} isAdmin={false} />;
-  const actor = await getCurrentActor();
-  const user = await getCurrentUser();
-  if (!user && await getAuthProvider()) {
-    redirect("/signin?returnTo=/integrations");
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import IntegrationsList from "./IntegrationsList";
+import { useIntegrationsData } from "./load";
+import { personalConnectionsFixture, pluginConnectionsFixture } from "./visual-fixture";
+
+function visualTestEnabled(): boolean {
+  return (
+    process.env.NODE_ENV !== "production" &&
+    (process.env.OPENNEKO_VISUAL_TEST === "true" ||
+      process.env.NEXT_PUBLIC_VISUAL_TEST === "true")
+  );
+}
+
+function LiveIntegrations() {
+  const loaded = useIntegrationsData();
+  if (!loaded) return null;
+  return (
+    <IntegrationsList
+      key="live"
+      initial={{
+        workspace: loaded.workspace,
+        connectors: loaded.connectors,
+        personal: loaded.personal,
+      }}
+      isAdmin={loaded.role === "admin"}
+    />
+  );
+}
+
+export function IntegrationsView() {
+  const state = useSearchParams().get("state") ?? "";
+  if (visualTestEnabled() && state === "plugins") {
+    return <IntegrationsList key="preview-plugins" preview initial={pluginConnectionsFixture} />;
   }
-  const { workspace, connectors, personal } = await loadIntegrations(actor, user);
-  return <IntegrationsList key="live" initial={{ workspace, connectors, personal }} isAdmin={actor.role === "admin"} />;
+  if (visualTestEnabled() && ["connected", "unconfigured", "disconnected"].includes(state)) {
+    return (
+      <IntegrationsList
+        key={`preview-${state}`}
+        preview
+        initial={{ workspace: [], connectors: [], personal: personalConnectionsFixture(state) }}
+        isAdmin={false}
+      />
+    );
+  }
+  return <LiveIntegrations />;
+}
+
+export default function IntegrationsPage() {
+  return (
+    <Suspense fallback={null}>
+      <IntegrationsView />
+    </Suspense>
+  );
 }
