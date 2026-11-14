@@ -162,15 +162,18 @@ jobs:
             scheduler_ok=false
             for attempt in 1 2 3 4 5 6 7 8 9 10; do
               if docker exec "$WORKER" node -e '
-                fetch("http://127.0.0.1:4100/health/scheduler")
-                  .then(async (response) => {
-                    const health = await response.json();
-                    if (!response.ok || health.status !== "ok" || !health.lastSuccessAt) {
-                      throw new Error(JSON.stringify(health));
+                require("node:http").get({ socketPath: "/run/openneko/worker.sock", path: "/health/scheduler" }, (response) => {
+                  let text = "";
+                  response.on("data", (chunk) => { text += chunk; });
+                  response.on("end", () => {
+                    const health = JSON.parse(text || "{}");
+                    if (response.statusCode !== 200 || health.status !== "ok" || !health.lastSuccessAt) {
+                      console.error(text);
+                      process.exit(1);
                     }
                     console.log(`[deploy] scheduler healthy at ${health.lastSuccessAt}`);
-                  })
-                  .catch((error) => { console.error(error.message); process.exit(1); });
+                  });
+                }).on("error", (error) => { console.error(error.message); process.exit(1); });
               '; then
                 scheduler_ok=true
                 break

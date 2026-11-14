@@ -19,9 +19,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/open-neko/neko/apps/openneko/internal/prompt"
+	"github.com/open-neko/neko/apps/openneko/internal/workeradmin"
 )
 
-const defaultWorkerAdminURL = "http://127.0.0.1:4100"
+const composeWorkerSocket = "/run/openneko/worker.sock"
 
 type packListEntry struct {
 	ID        string `json:"id"`
@@ -677,9 +678,9 @@ func requestPackAPI(ctx context.Context, method, path string, body any, destinat
 }
 
 func requestWorkerAPI(ctx context.Context, service, method, path string, body any, destination any) ([]byte, error) {
-	base := strings.TrimRight(os.Getenv("WORKER_ADMIN_URL"), "/")
-	if base == "" {
-		base = defaultWorkerAdminURL
+	base, client, err := workeradmin.Endpoint(workeradmin.URL())
+	if err != nil {
+		return nil, err
 	}
 	endpoint := base + path
 	var reader io.Reader
@@ -706,9 +707,9 @@ func requestWorkerAPI(ctx context.Context, service, method, path string, body an
 			req.Header.Set("Content-Type", "application/zip")
 		}
 	}
-	res, err := http.DefaultClient.Do(req)
+	res, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%s at %s is unreachable: %w", service, base, err)
+		return nil, fmt.Errorf("%s at %s is unreachable: %w", service, workeradmin.URL(), err)
 	}
 	defer res.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(res.Body, 2<<20))

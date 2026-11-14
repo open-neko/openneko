@@ -139,7 +139,19 @@ export NEKO_PG_PORT="$endpoint_port"
 
 export OPENNEKO_PG_ENV_OVERRIDE=1
 
-export WORKER_ADMIN_URL="http://$(container_ip "$worker_container"):4100"
+relay_port_file="$state_root/tmp/worker-relay.port"
+rm -f "$relay_port_file"
+node scripts/worker-socket-relay.mjs "$worker_container" >"$relay_port_file" &
+relay_tries=0
+until [ -s "$relay_port_file" ]; do
+  relay_tries=$((relay_tries + 1))
+  if [ "$relay_tries" -gt 50 ]; then
+    echo "The worker socket relay did not start." >&2
+    exit 1
+  fi
+  sleep 0.1
+done
+export WORKER_ADMIN_URL="http://127.0.0.1:$(cat "$relay_port_file")"
 resolve_endpoint "$subscriptions_container" 8089
 export OPENNEKO_GRAPHJIN_URL="http://${endpoint_host}:${endpoint_port}"
 export OPENNEKO_GRAPHJIN_CONFIG="$state_root/config/graphjin/agentic.yml"
