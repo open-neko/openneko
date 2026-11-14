@@ -64,7 +64,6 @@ import { resolveDeclarativePackActionAdapter, registerPackConnectionPreflight } 
 import { ensureOrgWorkspace, getOrgAgentRoot, reportDeploymentProfile, setAgentSlotLimit } from "@neko/llm/work";
 import { removeRetiredQueue } from "./pg-boss-helpers.js";
 import { setCoreSecretsInstance } from "./secrets/instance.js";
-import { getChannelProviders } from "./channels/runtime.js";
 import { runActionExecute } from "./jobs/action-execute.js";
 import { moveLibraryDocumentsToStore } from "./jobs/library-recovery.js";
 import { filesEnabled } from "@neko/llm/files";
@@ -271,7 +270,6 @@ const server = createServer(
       disconnect: (name, operatorId) => signIn().disconnect(name, operatorId),
     },
     ssoSetup: ssoSetupSurface(),
-    channels: { getChannelProviders: () => getChannelProviders() },
   }),
 );
 
