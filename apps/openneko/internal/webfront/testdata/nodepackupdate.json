@@ -1,0 +1,1821 @@
+[
+  {
+    "pack": "slack",
+    "mode": "files",
+    "inputs": {},
+    "secrets": {
+      "slack.bot_token": "secret-slack.bot_token"
+    },
+    "update": {
+      "roles": [
+        {
+          "name": "pack_api_executor",
+          "comment": "Short-lived executor for approved pack API actions"
+        }
+      ],
+      "update_sources": [
+        {
+          "name": "slack",
+          "kind": "api",
+          "default": false,
+          "read_only": false,
+          "access": {
+            "read": "authenticated",
+            "write": "authenticated",
+            "delete": "blocked"
+          },
+          "specs_dir": "/config/specs",
+          "specs": {
+            "slack": {
+              "base_url": "https://slack.com",
+              "auth": {
+                "scheme": "bearer",
+                "token": "secret-slack.bot_token"
+              },
+              "operations": {
+                "lookupUserByEmail": {
+                  "expose_top_level": true
+                },
+                "getUser": {
+                  "expose_top_level": true
+                },
+                "listUsers": {
+                  "expose_top_level": true
+                },
+                "getConversation": {
+                  "expose_top_level": true
+                },
+                "listConversations": {
+                  "expose_top_level": true
+                },
+                "postMessage": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "slack_post_message"
+                },
+                "addReaction": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "slack_add_reaction"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": true,
+            "api.delete": false
+          }
+        }
+      ],
+      "source_patches": [
+        {
+          "name": "old_source",
+          "read_only": true,
+          "access": {
+            "read": "blocked",
+            "write": "blocked",
+            "delete": "blocked"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "pack": "slack",
+    "mode": "api",
+    "inputs": {},
+    "secrets": {
+      "slack.bot_token": "secret-slack.bot_token"
+    },
+    "update": {
+      "roles": [
+        {
+          "name": "pack_api_executor",
+          "comment": "Short-lived executor for approved pack API actions"
+        }
+      ],
+      "update_sources": [
+        {
+          "name": "slack",
+          "kind": "api",
+          "default": false,
+          "read_only": false,
+          "access": {
+            "read": "authenticated",
+            "write": "authenticated",
+            "delete": "blocked"
+          },
+          "specs": {
+            "slack": {
+              "document": "openapi: 3.0.3\ninfo:\n  title: Slack Web API\n  version: 1.0.0\n  description: The Slack Web API methods this pack uses. Posting and reacting are reviewed actions; lookups are reads.\nservers:\n  - url: https://slack.com\nsecurity:\n  - bearer: []\npaths:\n  /api/chat.postMessage:\n    post:\n      operationId: postMessage\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/PostMessageRequest\" }\n      responses:\n        \"200\":\n          description: Slack envelope. Slack reports errors with ok false and HTTP 200.\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  ok: { type: boolean }\n                  error: { type: string }\n                  channel: { type: string }\n                  ts: { type: string }\n  /api/reactions.add:\n    post:\n      operationId: addReaction\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/AddReactionRequest\" }\n      responses:\n        \"200\":\n          description: Slack envelope\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  ok: { type: boolean }\n                  error: { type: string }\n  /api/users.lookupByEmail:\n    get:\n      operationId: lookupUserByEmail\n      parameters:\n        - { name: email, in: query, required: true, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/UserEnvelope\" }\n  /api/users.info:\n    get:\n      operationId: getUser\n      parameters:\n        - { name: user, in: query, required: true, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/UserEnvelope\" }\n  /api/users.list:\n    get:\n      operationId: listUsers\n      parameters:\n        - { name: cursor, in: query, schema: { type: string } }\n      responses:\n        \"200\":\n          description: Users\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  ok: { type: boolean }\n                  error: { type: string }\n                  members:\n                    type: array\n                    items: { $ref: \"#/components/schemas/User\" }\n                  response_metadata: { $ref: \"#/components/schemas/ResponseMetadata\" }\n  /api/conversations.info:\n    get:\n      operationId: getConversation\n      parameters:\n        - { name: channel, in: query, required: true, schema: { type: string } }\n      responses:\n        \"200\":\n          description: Conversation\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  ok: { type: boolean }\n                  error: { type: string }\n                  channel: { $ref: \"#/components/schemas/Conversation\" }\n  /api/conversations.list:\n    get:\n      operationId: listConversations\n      parameters:\n        - { name: cursor, in: query, schema: { type: string } }\n        - { name: types, in: query, schema: { type: string }, description: \"Comma-separated: public_channel, private_channel, mpim, im\" }\n        - { name: exclude_archived, in: query, schema: { type: boolean } }\n      responses:\n        \"200\":\n          description: Conversations\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  ok: { type: boolean }\n                  error: { type: string }\n                  channels:\n                    type: array\n                    items: { $ref: \"#/components/schemas/Conversation\" }\n                  response_metadata: { $ref: \"#/components/schemas/ResponseMetadata\" }\ncomponents:\n  securitySchemes:\n    bearer: { type: http, scheme: bearer }\n  schemas:\n    # A channel, DM, or user id (C…, G…, D…, U…, W…). Posting to a user id\n    # delivers to that user's DM with the app. Names are refused, so a\n    # policy's channel list always matches the real destination.\n    ConversationId:\n      type: string\n      pattern: '^[CGDUW][A-Z0-9]{2,}$'\n    PostMessageRequest:\n      type: object\n      additionalProperties: false\n      required: [channel, text]\n      properties:\n        channel: { $ref: \"#/components/schemas/ConversationId\" }\n        text: { type: string, minLength: 1, maxLength: 40000 }\n        blocks:\n          type: array\n          maxItems: 50\n          items: { type: object, additionalProperties: true }\n        thread_ts: { type: string, pattern: '^[0-9]+\\.[0-9]+$' }\n        reply_broadcast: { type: boolean }\n        unfurl_links: { type: boolean }\n        unfurl_media: { type: boolean }\n        mrkdwn: { type: boolean }\n    AddReactionRequest:\n      type: object\n      additionalProperties: false\n      required: [channel, timestamp, name]\n      properties:\n        channel: { $ref: \"#/components/schemas/ConversationId\" }\n        timestamp: { type: string, pattern: '^[0-9]+\\.[0-9]+$' }\n        name: { type: string, pattern: '^[a-z0-9_+\\-]{1,100}$', description: Emoji name without colons }\n    User:\n      type: object\n      properties:\n        id: { type: string }\n        name: { type: string }\n        real_name: { type: string }\n        deleted: { type: boolean }\n        is_bot: { type: boolean }\n        tz: { type: string }\n        profile:\n          type: object\n          properties:\n            display_name: { type: string }\n            real_name: { type: string }\n            email: { type: string }\n            title: { type: string }\n    Conversation:\n      type: object\n      properties:\n        id: { type: string }\n        name: { type: string }\n        is_channel: { type: boolean }\n        is_private: { type: boolean }\n        is_im: { type: boolean }\n        is_archived: { type: boolean }\n        is_member: { type: boolean }\n        num_members: { type: integer }\n    ResponseMetadata:\n      type: object\n      properties:\n        next_cursor: { type: string }\n  responses:\n    UserEnvelope:\n      description: One user\n      content:\n        application/json:\n          schema:\n            type: object\n            properties:\n              ok: { type: boolean }\n              error: { type: string }\n              user: { $ref: \"#/components/schemas/User\" }\n",
+              "base_url": "https://slack.com",
+              "auth": {
+                "scheme": "bearer",
+                "token": "secret-slack.bot_token"
+              },
+              "operations": {
+                "lookupUserByEmail": {
+                  "expose_top_level": true
+                },
+                "getUser": {
+                  "expose_top_level": true
+                },
+                "listUsers": {
+                  "expose_top_level": true
+                },
+                "getConversation": {
+                  "expose_top_level": true
+                },
+                "listConversations": {
+                  "expose_top_level": true
+                },
+                "postMessage": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "slack_post_message"
+                },
+                "addReaction": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "slack_add_reaction"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": true,
+            "api.delete": false
+          }
+        }
+      ],
+      "update_saved_queries": [
+        {
+          "name": "slack_channels",
+          "query": "query SlackChannels {\n  slack_list_conversations(types: \"public_channel,private_channel\", exclude_archived: true) {\n    ok\n    error\n    channels {\n      id\n      name\n      is_private\n      is_member\n    }\n  }\n}\n"
+        }
+      ]
+    }
+  },
+  {
+    "pack": "slack",
+    "mode": "public",
+    "inputs": {},
+    "secrets": {
+      "slack.bot_token": "secret-slack.bot_token"
+    },
+    "update": {
+      "update_sources": [
+        {
+          "name": "slack",
+          "kind": "api",
+          "default": false,
+          "read_only": true,
+          "access": {
+            "read": "public",
+            "write": "blocked",
+            "delete": "blocked"
+          },
+          "specs": {
+            "slack": {
+              "document": "openapi: 3.0.3\ninfo:\n  title: Slack Web API\n  version: 1.0.0\n  description: The Slack Web API methods this pack uses. Posting and reacting are reviewed actions; lookups are reads.\nservers:\n  - url: https://slack.com\nsecurity:\n  - bearer: []\npaths:\n  /api/chat.postMessage:\n    post:\n      operationId: postMessage\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/PostMessageRequest\" }\n      responses:\n        \"200\":\n          description: Slack envelope. Slack reports errors with ok false and HTTP 200.\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  ok: { type: boolean }\n                  error: { type: string }\n                  channel: { type: string }\n                  ts: { type: string }\n  /api/reactions.add:\n    post:\n      operationId: addReaction\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/AddReactionRequest\" }\n      responses:\n        \"200\":\n          description: Slack envelope\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  ok: { type: boolean }\n                  error: { type: string }\n  /api/users.lookupByEmail:\n    get:\n      operationId: lookupUserByEmail\n      parameters:\n        - { name: email, in: query, required: true, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/UserEnvelope\" }\n  /api/users.info:\n    get:\n      operationId: getUser\n      parameters:\n        - { name: user, in: query, required: true, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/UserEnvelope\" }\n  /api/users.list:\n    get:\n      operationId: listUsers\n      parameters:\n        - { name: cursor, in: query, schema: { type: string } }\n      responses:\n        \"200\":\n          description: Users\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  ok: { type: boolean }\n                  error: { type: string }\n                  members:\n                    type: array\n                    items: { $ref: \"#/components/schemas/User\" }\n                  response_metadata: { $ref: \"#/components/schemas/ResponseMetadata\" }\n  /api/conversations.info:\n    get:\n      operationId: getConversation\n      parameters:\n        - { name: channel, in: query, required: true, schema: { type: string } }\n      responses:\n        \"200\":\n          description: Conversation\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  ok: { type: boolean }\n                  error: { type: string }\n                  channel: { $ref: \"#/components/schemas/Conversation\" }\n  /api/conversations.list:\n    get:\n      operationId: listConversations\n      parameters:\n        - { name: cursor, in: query, schema: { type: string } }\n        - { name: types, in: query, schema: { type: string }, description: \"Comma-separated: public_channel, private_channel, mpim, im\" }\n        - { name: exclude_archived, in: query, schema: { type: boolean } }\n      responses:\n        \"200\":\n          description: Conversations\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  ok: { type: boolean }\n                  error: { type: string }\n                  channels:\n                    type: array\n                    items: { $ref: \"#/components/schemas/Conversation\" }\n                  response_metadata: { $ref: \"#/components/schemas/ResponseMetadata\" }\ncomponents:\n  securitySchemes:\n    bearer: { type: http, scheme: bearer }\n  schemas:\n    # A channel, DM, or user id (C…, G…, D…, U…, W…). Posting to a user id\n    # delivers to that user's DM with the app. Names are refused, so a\n    # policy's channel list always matches the real destination.\n    ConversationId:\n      type: string\n      pattern: '^[CGDUW][A-Z0-9]{2,}$'\n    PostMessageRequest:\n      type: object\n      additionalProperties: false\n      required: [channel, text]\n      properties:\n        channel: { $ref: \"#/components/schemas/ConversationId\" }\n        text: { type: string, minLength: 1, maxLength: 40000 }\n        blocks:\n          type: array\n          maxItems: 50\n          items: { type: object, additionalProperties: true }\n        thread_ts: { type: string, pattern: '^[0-9]+\\.[0-9]+$' }\n        reply_broadcast: { type: boolean }\n        unfurl_links: { type: boolean }\n        unfurl_media: { type: boolean }\n        mrkdwn: { type: boolean }\n    AddReactionRequest:\n      type: object\n      additionalProperties: false\n      required: [channel, timestamp, name]\n      properties:\n        channel: { $ref: \"#/components/schemas/ConversationId\" }\n        timestamp: { type: string, pattern: '^[0-9]+\\.[0-9]+$' }\n        name: { type: string, pattern: '^[a-z0-9_+\\-]{1,100}$', description: Emoji name without colons }\n    User:\n      type: object\n      properties:\n        id: { type: string }\n        name: { type: string }\n        real_name: { type: string }\n        deleted: { type: boolean }\n        is_bot: { type: boolean }\n        tz: { type: string }\n        profile:\n          type: object\n          properties:\n            display_name: { type: string }\n            real_name: { type: string }\n            email: { type: string }\n            title: { type: string }\n    Conversation:\n      type: object\n      properties:\n        id: { type: string }\n        name: { type: string }\n        is_channel: { type: boolean }\n        is_private: { type: boolean }\n        is_im: { type: boolean }\n        is_archived: { type: boolean }\n        is_member: { type: boolean }\n        num_members: { type: integer }\n    ResponseMetadata:\n      type: object\n      properties:\n        next_cursor: { type: string }\n  responses:\n    UserEnvelope:\n      description: One user\n      content:\n        application/json:\n          schema:\n            type: object\n            properties:\n              ok: { type: boolean }\n              error: { type: string }\n              user: { $ref: \"#/components/schemas/User\" }\n",
+              "base_url": "https://slack.com",
+              "auth": {
+                "scheme": "bearer",
+                "token": "secret-slack.bot_token"
+              },
+              "operations": {
+                "lookupUserByEmail": {
+                  "expose_top_level": true
+                },
+                "getUser": {
+                  "expose_top_level": true
+                },
+                "listUsers": {
+                  "expose_top_level": true
+                },
+                "getConversation": {
+                  "expose_top_level": true
+                },
+                "listConversations": {
+                  "expose_top_level": true
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.write": false,
+            "api.delete": false
+          }
+        }
+      ],
+      "update_saved_queries": [
+        {
+          "name": "slack_channels",
+          "query": "query SlackChannels {\n  slack_list_conversations(types: \"public_channel,private_channel\", exclude_archived: true) {\n    ok\n    error\n    channels {\n      id\n      name\n      is_private\n      is_member\n    }\n  }\n}\n"
+        }
+      ]
+    }
+  },
+  {
+    "pack": "shopify",
+    "mode": "files",
+    "inputs": {
+      "shopify.store_url": "https://acme.myshopify.com"
+    },
+    "secrets": {
+      "shopify.access_token": "secret-shopify.access_token"
+    },
+    "update": {
+      "roles": [
+        {
+          "name": "pack_api_executor",
+          "comment": "Short-lived executor for approved pack API actions"
+        }
+      ],
+      "update_sources": [
+        {
+          "name": "shopify",
+          "kind": "api",
+          "default": false,
+          "read_only": false,
+          "access": {
+            "read": "authenticated",
+            "write": "authenticated",
+            "delete": "blocked"
+          },
+          "specs_dir": "/config/specs",
+          "specs": {
+            "shopify": {
+              "base_url": "https://acme.myshopify.com",
+              "auth": {
+                "scheme": "api_key",
+                "key_name": "X-Shopify-Access-Token",
+                "key_value": "secret-shopify.access_token",
+                "key_in": "header"
+              },
+              "operations": {
+                "listOrders": {
+                  "expose_top_level": true
+                },
+                "countOrders": {
+                  "expose_top_level": true
+                },
+                "getOrder": {
+                  "expose_top_level": true
+                },
+                "updateOrder": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "shopify_update_order"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": true,
+            "api.delete": false
+          }
+        }
+      ],
+      "source_patches": [
+        {
+          "name": "old_source",
+          "read_only": true,
+          "access": {
+            "read": "blocked",
+            "write": "blocked",
+            "delete": "blocked"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "pack": "shopify",
+    "mode": "api",
+    "inputs": {
+      "shopify.store_url": "https://acme.myshopify.com"
+    },
+    "secrets": {
+      "shopify.access_token": "secret-shopify.access_token"
+    },
+    "update": {
+      "roles": [
+        {
+          "name": "pack_api_executor",
+          "comment": "Short-lived executor for approved pack API actions"
+        }
+      ],
+      "update_sources": [
+        {
+          "name": "shopify",
+          "kind": "api",
+          "default": false,
+          "read_only": false,
+          "access": {
+            "read": "authenticated",
+            "write": "authenticated",
+            "delete": "blocked"
+          },
+          "specs": {
+            "shopify": {
+              "document": "openapi: 3.0.3\ninfo:\n  title: Shopify Admin REST API, orders\n  version: 2026-01\n  description: The Shopify Admin REST order operations this pack uses, pinned to API version 2026-01. Updating an order is a reviewed action; the rest are reads.\nservers:\n  - url: https://store.myshopify.com\nsecurity:\n  - accessToken: []\npaths:\n  /admin/api/2026-01/orders.json:\n    get:\n      operationId: listOrders\n      parameters:\n        - { name: status, in: query, schema: { type: string, enum: [open, closed, cancelled, any] } }\n        - { name: financial_status, in: query, schema: { type: string, enum: [authorized, pending, paid, partially_paid, refunded, voided, partially_refunded, any, unpaid] } }\n        - { name: fulfillment_status, in: query, schema: { type: string, enum: [shipped, partial, unshipped, any, unfulfilled] } }\n        - { name: created_at_min, in: query, schema: { type: string } }\n        - { name: created_at_max, in: query, schema: { type: string } }\n        - { name: updated_at_min, in: query, schema: { type: string } }\n        - { name: since_id, in: query, schema: { type: integer } }\n        - { name: name, in: query, schema: { type: string }, description: \"Order name, such as 1001\" }\n        - { name: fields, in: query, schema: { type: string }, description: \"Comma-separated fields to return\" }\n      responses:\n        \"200\":\n          description: Orders\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  orders:\n                    type: array\n                    items: { $ref: \"#/components/schemas/Order\" }\n  /admin/api/2026-01/orders/count.json:\n    get:\n      operationId: countOrders\n      parameters:\n        - { name: status, in: query, schema: { type: string, enum: [open, closed, cancelled, any] } }\n        - { name: financial_status, in: query, schema: { type: string } }\n        - { name: fulfillment_status, in: query, schema: { type: string } }\n        - { name: created_at_min, in: query, schema: { type: string } }\n        - { name: created_at_max, in: query, schema: { type: string } }\n      responses:\n        \"200\":\n          description: Order count\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  count: { type: integer }\n  /admin/api/2026-01/orders/{order_id}.json:\n    get:\n      operationId: getOrder\n      parameters:\n        - $ref: \"#/components/parameters/OrderId\"\n        - { name: fields, in: query, schema: { type: string } }\n      responses:\n        \"200\":\n          description: One order\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  order: { $ref: \"#/components/schemas/Order\" }\n    put:\n      operationId: updateOrder\n      parameters:\n        - $ref: \"#/components/parameters/OrderId\"\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/UpdateOrderRequest\" }\n      responses:\n        \"200\":\n          description: The updated order\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  order: { $ref: \"#/components/schemas/Order\" }\ncomponents:\n  securitySchemes:\n    accessToken: { type: apiKey, in: header, name: X-Shopify-Access-Token }\n  parameters:\n    OrderId:\n      name: order_id\n      in: path\n      required: true\n      schema: { type: integer, minimum: 1 }\n  schemas:\n    # Only the internal note and tags. Customer-facing fields, prices, and\n    # addresses cannot change through this pack.\n    UpdateOrderRequest:\n      type: object\n      additionalProperties: false\n      required: [order]\n      properties:\n        order:\n          type: object\n          additionalProperties: false\n          required: [id]\n          minProperties: 2\n          properties:\n            id: { type: integer, minimum: 1 }\n            note: { type: string, maxLength: 5000 }\n            tags: { type: string, maxLength: 4000, description: The complete comma-separated tag list. It replaces the current tags. }\n    Money: { type: string }\n    Order:\n      type: object\n      properties:\n        id: { type: integer }\n        name: { type: string }\n        order_number: { type: integer }\n        email: { type: string, nullable: true }\n        financial_status: { type: string, nullable: true }\n        fulfillment_status: { type: string, nullable: true }\n        cancelled_at: { type: string, nullable: true }\n        cancel_reason: { type: string, nullable: true }\n        closed_at: { type: string, nullable: true }\n        total_price: { $ref: \"#/components/schemas/Money\" }\n        subtotal_price: { $ref: \"#/components/schemas/Money\" }\n        total_tax: { $ref: \"#/components/schemas/Money\" }\n        total_discounts: { $ref: \"#/components/schemas/Money\" }\n        currency: { type: string }\n        created_at: { type: string }\n        updated_at: { type: string }\n        processed_at: { type: string }\n        tags: { type: string }\n        note: { type: string, nullable: true }\n        customer:\n          type: object\n          nullable: true\n          properties:\n            id: { type: integer }\n            email: { type: string, nullable: true }\n            first_name: { type: string, nullable: true }\n            last_name: { type: string, nullable: true }\n        line_items:\n          type: array\n          items:\n            type: object\n            properties:\n              id: { type: integer }\n              title: { type: string }\n              quantity: { type: integer }\n              sku: { type: string, nullable: true }\n              price: { $ref: \"#/components/schemas/Money\" }\n              fulfillment_status: { type: string, nullable: true }\n        shipping_address: { type: object, nullable: true, additionalProperties: true }\n        billing_address: { type: object, nullable: true, additionalProperties: true }\n        refunds:\n          type: array\n          items: { type: object, additionalProperties: true }\n        fulfillments:\n          type: array\n          items: { type: object, additionalProperties: true }\n",
+              "base_url": "https://acme.myshopify.com",
+              "auth": {
+                "scheme": "api_key",
+                "key_name": "X-Shopify-Access-Token",
+                "key_value": "secret-shopify.access_token",
+                "key_in": "header"
+              },
+              "operations": {
+                "listOrders": {
+                  "expose_top_level": true
+                },
+                "countOrders": {
+                  "expose_top_level": true
+                },
+                "getOrder": {
+                  "expose_top_level": true
+                },
+                "updateOrder": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "shopify_update_order"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": true,
+            "api.delete": false
+          }
+        }
+      ],
+      "update_saved_queries": [
+        {
+          "name": "shopify_open_orders",
+          "query": "query ShopifyOpenOrders {\n  shopify_list_orders(status: \"open\") {\n    orders {\n      id\n      name\n      email\n      financial_status\n      fulfillment_status\n      total_price\n      currency\n      created_at\n      tags\n      note\n    }\n  }\n}\n"
+        }
+      ]
+    }
+  },
+  {
+    "pack": "shopify",
+    "mode": "public",
+    "inputs": {
+      "shopify.store_url": "https://acme.myshopify.com"
+    },
+    "secrets": {
+      "shopify.access_token": "secret-shopify.access_token"
+    },
+    "update": {
+      "update_sources": [
+        {
+          "name": "shopify",
+          "kind": "api",
+          "default": false,
+          "read_only": true,
+          "access": {
+            "read": "public",
+            "write": "blocked",
+            "delete": "blocked"
+          },
+          "specs": {
+            "shopify": {
+              "document": "openapi: 3.0.3\ninfo:\n  title: Shopify Admin REST API, orders\n  version: 2026-01\n  description: The Shopify Admin REST order operations this pack uses, pinned to API version 2026-01. Updating an order is a reviewed action; the rest are reads.\nservers:\n  - url: https://store.myshopify.com\nsecurity:\n  - accessToken: []\npaths:\n  /admin/api/2026-01/orders.json:\n    get:\n      operationId: listOrders\n      parameters:\n        - { name: status, in: query, schema: { type: string, enum: [open, closed, cancelled, any] } }\n        - { name: financial_status, in: query, schema: { type: string, enum: [authorized, pending, paid, partially_paid, refunded, voided, partially_refunded, any, unpaid] } }\n        - { name: fulfillment_status, in: query, schema: { type: string, enum: [shipped, partial, unshipped, any, unfulfilled] } }\n        - { name: created_at_min, in: query, schema: { type: string } }\n        - { name: created_at_max, in: query, schema: { type: string } }\n        - { name: updated_at_min, in: query, schema: { type: string } }\n        - { name: since_id, in: query, schema: { type: integer } }\n        - { name: name, in: query, schema: { type: string }, description: \"Order name, such as 1001\" }\n        - { name: fields, in: query, schema: { type: string }, description: \"Comma-separated fields to return\" }\n      responses:\n        \"200\":\n          description: Orders\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  orders:\n                    type: array\n                    items: { $ref: \"#/components/schemas/Order\" }\n  /admin/api/2026-01/orders/count.json:\n    get:\n      operationId: countOrders\n      parameters:\n        - { name: status, in: query, schema: { type: string, enum: [open, closed, cancelled, any] } }\n        - { name: financial_status, in: query, schema: { type: string } }\n        - { name: fulfillment_status, in: query, schema: { type: string } }\n        - { name: created_at_min, in: query, schema: { type: string } }\n        - { name: created_at_max, in: query, schema: { type: string } }\n      responses:\n        \"200\":\n          description: Order count\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  count: { type: integer }\n  /admin/api/2026-01/orders/{order_id}.json:\n    get:\n      operationId: getOrder\n      parameters:\n        - $ref: \"#/components/parameters/OrderId\"\n        - { name: fields, in: query, schema: { type: string } }\n      responses:\n        \"200\":\n          description: One order\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  order: { $ref: \"#/components/schemas/Order\" }\n    put:\n      operationId: updateOrder\n      parameters:\n        - $ref: \"#/components/parameters/OrderId\"\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/UpdateOrderRequest\" }\n      responses:\n        \"200\":\n          description: The updated order\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  order: { $ref: \"#/components/schemas/Order\" }\ncomponents:\n  securitySchemes:\n    accessToken: { type: apiKey, in: header, name: X-Shopify-Access-Token }\n  parameters:\n    OrderId:\n      name: order_id\n      in: path\n      required: true\n      schema: { type: integer, minimum: 1 }\n  schemas:\n    # Only the internal note and tags. Customer-facing fields, prices, and\n    # addresses cannot change through this pack.\n    UpdateOrderRequest:\n      type: object\n      additionalProperties: false\n      required: [order]\n      properties:\n        order:\n          type: object\n          additionalProperties: false\n          required: [id]\n          minProperties: 2\n          properties:\n            id: { type: integer, minimum: 1 }\n            note: { type: string, maxLength: 5000 }\n            tags: { type: string, maxLength: 4000, description: The complete comma-separated tag list. It replaces the current tags. }\n    Money: { type: string }\n    Order:\n      type: object\n      properties:\n        id: { type: integer }\n        name: { type: string }\n        order_number: { type: integer }\n        email: { type: string, nullable: true }\n        financial_status: { type: string, nullable: true }\n        fulfillment_status: { type: string, nullable: true }\n        cancelled_at: { type: string, nullable: true }\n        cancel_reason: { type: string, nullable: true }\n        closed_at: { type: string, nullable: true }\n        total_price: { $ref: \"#/components/schemas/Money\" }\n        subtotal_price: { $ref: \"#/components/schemas/Money\" }\n        total_tax: { $ref: \"#/components/schemas/Money\" }\n        total_discounts: { $ref: \"#/components/schemas/Money\" }\n        currency: { type: string }\n        created_at: { type: string }\n        updated_at: { type: string }\n        processed_at: { type: string }\n        tags: { type: string }\n        note: { type: string, nullable: true }\n        customer:\n          type: object\n          nullable: true\n          properties:\n            id: { type: integer }\n            email: { type: string, nullable: true }\n            first_name: { type: string, nullable: true }\n            last_name: { type: string, nullable: true }\n        line_items:\n          type: array\n          items:\n            type: object\n            properties:\n              id: { type: integer }\n              title: { type: string }\n              quantity: { type: integer }\n              sku: { type: string, nullable: true }\n              price: { $ref: \"#/components/schemas/Money\" }\n              fulfillment_status: { type: string, nullable: true }\n        shipping_address: { type: object, nullable: true, additionalProperties: true }\n        billing_address: { type: object, nullable: true, additionalProperties: true }\n        refunds:\n          type: array\n          items: { type: object, additionalProperties: true }\n        fulfillments:\n          type: array\n          items: { type: object, additionalProperties: true }\n",
+              "base_url": "https://acme.myshopify.com",
+              "auth": {
+                "scheme": "api_key",
+                "key_name": "X-Shopify-Access-Token",
+                "key_value": "secret-shopify.access_token",
+                "key_in": "header"
+              },
+              "operations": {
+                "listOrders": {
+                  "expose_top_level": true
+                },
+                "countOrders": {
+                  "expose_top_level": true
+                },
+                "getOrder": {
+                  "expose_top_level": true
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.write": false,
+            "api.delete": false
+          }
+        }
+      ],
+      "update_saved_queries": [
+        {
+          "name": "shopify_open_orders",
+          "query": "query ShopifyOpenOrders {\n  shopify_list_orders(status: \"open\") {\n    orders {\n      id\n      name\n      email\n      financial_status\n      fulfillment_status\n      total_price\n      currency\n      created_at\n      tags\n      note\n    }\n  }\n}\n"
+        }
+      ]
+    }
+  },
+  {
+    "pack": "resend",
+    "mode": "files",
+    "inputs": {
+      "resend.from": "Acme Ops <ops@mail.acme.com>"
+    },
+    "secrets": {
+      "resend.api_key": "secret-resend.api_key"
+    },
+    "update": {
+      "roles": [
+        {
+          "name": "pack_api_executor",
+          "comment": "Short-lived executor for approved pack API actions"
+        }
+      ],
+      "update_sources": [
+        {
+          "name": "resend",
+          "kind": "api",
+          "default": false,
+          "read_only": false,
+          "access": {
+            "read": "authenticated",
+            "write": "authenticated",
+            "delete": "blocked"
+          },
+          "specs_dir": "/config/specs",
+          "specs": {
+            "resend": {
+              "base_url": "https://api.resend.com",
+              "auth": {
+                "scheme": "bearer",
+                "token": "secret-resend.api_key"
+              },
+              "operations": {
+                "getEmail": {
+                  "expose_top_level": true
+                },
+                "listTemplates": {
+                  "expose_top_level": true
+                },
+                "getTemplate": {
+                  "expose_top_level": true
+                },
+                "sendEmail": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "resend_send_email"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": true,
+            "api.delete": false
+          }
+        }
+      ],
+      "source_patches": [
+        {
+          "name": "old_source",
+          "read_only": true,
+          "access": {
+            "read": "blocked",
+            "write": "blocked",
+            "delete": "blocked"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "pack": "resend",
+    "mode": "api",
+    "inputs": {
+      "resend.from": "Acme Ops <ops@mail.acme.com>"
+    },
+    "secrets": {
+      "resend.api_key": "secret-resend.api_key"
+    },
+    "update": {
+      "roles": [
+        {
+          "name": "pack_api_executor",
+          "comment": "Short-lived executor for approved pack API actions"
+        }
+      ],
+      "update_sources": [
+        {
+          "name": "resend",
+          "kind": "api",
+          "default": false,
+          "read_only": false,
+          "access": {
+            "read": "authenticated",
+            "write": "authenticated",
+            "delete": "blocked"
+          },
+          "specs": {
+            "resend": {
+              "document": "openapi: 3.0.3\ninfo:\n  title: Resend email API\n  version: 1.0.0\n  description: The Resend operations this pack uses. Sending is a reviewed action; the rest are reads.\nservers:\n  - url: https://api.resend.com\nsecurity:\n  - bearer: []\npaths:\n  /emails:\n    post:\n      operationId: sendEmail\n      parameters:\n        - name: Idempotency-Key\n          in: header\n          required: false\n          schema: { type: string, minLength: 1, maxLength: 256 }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/SendEmailRequest\" }\n      responses:\n        \"200\":\n          description: Email accepted\n          content:\n            application/json:\n              schema:\n                type: object\n                required: [id]\n                properties:\n                  id: { type: string }\n  /emails/{email_id}:\n    get:\n      operationId: getEmail\n      parameters:\n        - { name: email_id, in: path, required: true, schema: { type: string } }\n      responses:\n        \"200\":\n          description: A sent email and its latest delivery event\n          content:\n            application/json:\n              schema: { $ref: \"#/components/schemas/Email\" }\n  /templates:\n    get:\n      operationId: listTemplates\n      parameters:\n        - { name: after, in: query, schema: { type: string } }\n      responses:\n        \"200\":\n          description: Templates\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  object: { type: string }\n                  has_more: { type: boolean }\n                  data:\n                    type: array\n                    items: { $ref: \"#/components/schemas/TemplateSummary\" }\n  /templates/{template_id}:\n    get:\n      operationId: getTemplate\n      parameters:\n        - { name: template_id, in: path, required: true, schema: { type: string }, description: Template id or alias }\n      responses:\n        \"200\":\n          description: A template, its subject, and its variables\n          content:\n            application/json:\n              schema: { $ref: \"#/components/schemas/Template\" }\ncomponents:\n  securitySchemes:\n    bearer: { type: http, scheme: bearer }\n  schemas:\n    # One address, bare or with a display name. Commas are refused, so each\n    # list item is one recipient and the policy engine sees every domain.\n    Address:\n      type: string\n      maxLength: 320\n      pattern: '^(?:[^<>,@]*<[^@\\s<>,]+@[^@\\s<>,]+\\.[^@\\s<>,]+>|[^@\\s<>,]+@[^@\\s<>,]+\\.[^@\\s<>,]+)$'\n    AddressList:\n      type: array\n      minItems: 1\n      maxItems: 50\n      items: { $ref: \"#/components/schemas/Address\" }\n    SendEmailRequest:\n      type: object\n      additionalProperties: false\n      required: [from, to]\n      properties:\n        from: { $ref: \"#/components/schemas/Address\" }\n        to: { $ref: \"#/components/schemas/AddressList\" }\n        cc: { $ref: \"#/components/schemas/AddressList\" }\n        bcc: { $ref: \"#/components/schemas/AddressList\" }\n        reply_to: { $ref: \"#/components/schemas/AddressList\" }\n        subject: { type: string, minLength: 1, maxLength: 998 }\n        html: { type: string, minLength: 1 }\n        text: { type: string, minLength: 1 }\n        template:\n          type: object\n          additionalProperties: false\n          required: [id]\n          properties:\n            id: { type: string, minLength: 1, description: Template id or alias }\n            variables:\n              type: object\n              additionalProperties:\n                oneOf:\n                  - { type: string }\n                  - { type: number }\n        tags:\n          type: array\n          maxItems: 10\n          items:\n            type: object\n            additionalProperties: false\n            required: [name, value]\n            properties:\n              name: { type: string, pattern: '^[A-Za-z0-9_-]{1,256}$' }\n              value: { type: string, pattern: '^[A-Za-z0-9_-]{1,256}$' }\n      # One body: a template, or a subject with html and/or text.\n      anyOf:\n        - required: [template]\n        - required: [subject, html]\n        - required: [subject, text]\n      not:\n        anyOf:\n          - required: [template, html]\n          - required: [template, text]\n    Email:\n      type: object\n      properties:\n        id: { type: string }\n        to: { type: array, items: { type: string } }\n        from: { type: string }\n        subject: { type: string }\n        created_at: { type: string }\n        last_event: { type: string }\n    TemplateSummary:\n      type: object\n      properties:\n        id: { type: string }\n        alias: { type: string, nullable: true }\n        name: { type: string }\n        status: { type: string }\n    Template:\n      type: object\n      properties:\n        id: { type: string }\n        alias: { type: string, nullable: true }\n        name: { type: string }\n        status: { type: string }\n        subject: { type: string, nullable: true }\n        variables:\n          type: array\n          items:\n            type: object\n            properties:\n              key: { type: string }\n              type: { type: string }\n              fallback_value: { nullable: true }\n",
+              "base_url": "https://api.resend.com",
+              "auth": {
+                "scheme": "bearer",
+                "token": "secret-resend.api_key"
+              },
+              "operations": {
+                "getEmail": {
+                  "expose_top_level": true
+                },
+                "listTemplates": {
+                  "expose_top_level": true
+                },
+                "getTemplate": {
+                  "expose_top_level": true
+                },
+                "sendEmail": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "resend_send_email"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": true,
+            "api.delete": false
+          }
+        }
+      ],
+      "update_saved_queries": [
+        {
+          "name": "resend_email_templates",
+          "query": "query ResendEmailTemplates {\n  resend_list_templates {\n    id\n    alias\n    name\n    status\n  }\n}\n"
+        }
+      ]
+    }
+  },
+  {
+    "pack": "resend",
+    "mode": "public",
+    "inputs": {
+      "resend.from": "Acme Ops <ops@mail.acme.com>"
+    },
+    "secrets": {
+      "resend.api_key": "secret-resend.api_key"
+    },
+    "update": {
+      "update_sources": [
+        {
+          "name": "resend",
+          "kind": "api",
+          "default": false,
+          "read_only": true,
+          "access": {
+            "read": "public",
+            "write": "blocked",
+            "delete": "blocked"
+          },
+          "specs": {
+            "resend": {
+              "document": "openapi: 3.0.3\ninfo:\n  title: Resend email API\n  version: 1.0.0\n  description: The Resend operations this pack uses. Sending is a reviewed action; the rest are reads.\nservers:\n  - url: https://api.resend.com\nsecurity:\n  - bearer: []\npaths:\n  /emails:\n    post:\n      operationId: sendEmail\n      parameters:\n        - name: Idempotency-Key\n          in: header\n          required: false\n          schema: { type: string, minLength: 1, maxLength: 256 }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/SendEmailRequest\" }\n      responses:\n        \"200\":\n          description: Email accepted\n          content:\n            application/json:\n              schema:\n                type: object\n                required: [id]\n                properties:\n                  id: { type: string }\n  /emails/{email_id}:\n    get:\n      operationId: getEmail\n      parameters:\n        - { name: email_id, in: path, required: true, schema: { type: string } }\n      responses:\n        \"200\":\n          description: A sent email and its latest delivery event\n          content:\n            application/json:\n              schema: { $ref: \"#/components/schemas/Email\" }\n  /templates:\n    get:\n      operationId: listTemplates\n      parameters:\n        - { name: after, in: query, schema: { type: string } }\n      responses:\n        \"200\":\n          description: Templates\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  object: { type: string }\n                  has_more: { type: boolean }\n                  data:\n                    type: array\n                    items: { $ref: \"#/components/schemas/TemplateSummary\" }\n  /templates/{template_id}:\n    get:\n      operationId: getTemplate\n      parameters:\n        - { name: template_id, in: path, required: true, schema: { type: string }, description: Template id or alias }\n      responses:\n        \"200\":\n          description: A template, its subject, and its variables\n          content:\n            application/json:\n              schema: { $ref: \"#/components/schemas/Template\" }\ncomponents:\n  securitySchemes:\n    bearer: { type: http, scheme: bearer }\n  schemas:\n    # One address, bare or with a display name. Commas are refused, so each\n    # list item is one recipient and the policy engine sees every domain.\n    Address:\n      type: string\n      maxLength: 320\n      pattern: '^(?:[^<>,@]*<[^@\\s<>,]+@[^@\\s<>,]+\\.[^@\\s<>,]+>|[^@\\s<>,]+@[^@\\s<>,]+\\.[^@\\s<>,]+)$'\n    AddressList:\n      type: array\n      minItems: 1\n      maxItems: 50\n      items: { $ref: \"#/components/schemas/Address\" }\n    SendEmailRequest:\n      type: object\n      additionalProperties: false\n      required: [from, to]\n      properties:\n        from: { $ref: \"#/components/schemas/Address\" }\n        to: { $ref: \"#/components/schemas/AddressList\" }\n        cc: { $ref: \"#/components/schemas/AddressList\" }\n        bcc: { $ref: \"#/components/schemas/AddressList\" }\n        reply_to: { $ref: \"#/components/schemas/AddressList\" }\n        subject: { type: string, minLength: 1, maxLength: 998 }\n        html: { type: string, minLength: 1 }\n        text: { type: string, minLength: 1 }\n        template:\n          type: object\n          additionalProperties: false\n          required: [id]\n          properties:\n            id: { type: string, minLength: 1, description: Template id or alias }\n            variables:\n              type: object\n              additionalProperties:\n                oneOf:\n                  - { type: string }\n                  - { type: number }\n        tags:\n          type: array\n          maxItems: 10\n          items:\n            type: object\n            additionalProperties: false\n            required: [name, value]\n            properties:\n              name: { type: string, pattern: '^[A-Za-z0-9_-]{1,256}$' }\n              value: { type: string, pattern: '^[A-Za-z0-9_-]{1,256}$' }\n      # One body: a template, or a subject with html and/or text.\n      anyOf:\n        - required: [template]\n        - required: [subject, html]\n        - required: [subject, text]\n      not:\n        anyOf:\n          - required: [template, html]\n          - required: [template, text]\n    Email:\n      type: object\n      properties:\n        id: { type: string }\n        to: { type: array, items: { type: string } }\n        from: { type: string }\n        subject: { type: string }\n        created_at: { type: string }\n        last_event: { type: string }\n    TemplateSummary:\n      type: object\n      properties:\n        id: { type: string }\n        alias: { type: string, nullable: true }\n        name: { type: string }\n        status: { type: string }\n    Template:\n      type: object\n      properties:\n        id: { type: string }\n        alias: { type: string, nullable: true }\n        name: { type: string }\n        status: { type: string }\n        subject: { type: string, nullable: true }\n        variables:\n          type: array\n          items:\n            type: object\n            properties:\n              key: { type: string }\n              type: { type: string }\n              fallback_value: { nullable: true }\n",
+              "base_url": "https://api.resend.com",
+              "auth": {
+                "scheme": "bearer",
+                "token": "secret-resend.api_key"
+              },
+              "operations": {
+                "getEmail": {
+                  "expose_top_level": true
+                },
+                "listTemplates": {
+                  "expose_top_level": true
+                },
+                "getTemplate": {
+                  "expose_top_level": true
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.write": false,
+            "api.delete": false
+          }
+        }
+      ],
+      "update_saved_queries": [
+        {
+          "name": "resend_email_templates",
+          "query": "query ResendEmailTemplates {\n  resend_list_templates {\n    id\n    alias\n    name\n    status\n  }\n}\n"
+        }
+      ]
+    }
+  },
+  {
+    "pack": "parallel-search",
+    "mode": "files",
+    "inputs": {},
+    "secrets": {
+      "parallel-search.api_key": "secret-parallel-search.api_key"
+    },
+    "update": {
+      "roles": [
+        {
+          "name": "pack_api_executor",
+          "comment": "Short-lived executor for approved pack API actions"
+        }
+      ],
+      "update_sources": [
+        {
+          "name": "parallel",
+          "kind": "api",
+          "default": false,
+          "read_only": false,
+          "access": {
+            "read": "authenticated",
+            "write": "authenticated",
+            "delete": "blocked"
+          },
+          "specs_dir": "/config/specs",
+          "specs": {
+            "parallel": {
+              "base_url": "https://api.parallel.ai",
+              "auth": {
+                "scheme": "api_key",
+                "key_name": "x-api-key",
+                "key_value": "secret-parallel-search.api_key",
+                "key_in": "header"
+              },
+              "operations": {
+                "webSearch": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "parallel_web_search"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": true,
+            "api.delete": false
+          }
+        }
+      ],
+      "source_patches": [
+        {
+          "name": "old_source",
+          "read_only": true,
+          "access": {
+            "read": "blocked",
+            "write": "blocked",
+            "delete": "blocked"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "pack": "parallel-search",
+    "mode": "api",
+    "inputs": {},
+    "secrets": {
+      "parallel-search.api_key": "secret-parallel-search.api_key"
+    },
+    "update": {
+      "roles": [
+        {
+          "name": "pack_api_executor",
+          "comment": "Short-lived executor for approved pack API actions"
+        }
+      ],
+      "update_sources": [
+        {
+          "name": "parallel",
+          "kind": "api",
+          "default": false,
+          "read_only": false,
+          "access": {
+            "read": "authenticated",
+            "write": "authenticated",
+            "delete": "blocked"
+          },
+          "specs": {
+            "parallel": {
+              "document": "openapi: 3.0.3\ninfo:\n  title: Parallel Search API\n  version: v1beta\n  description: Parallel's web search. It reads the open web and changes nothing, but the API takes POST, so it is a reviewed action.\nservers:\n  - url: https://api.parallel.ai\nsecurity:\n  - apiKey: []\npaths:\n  /v1beta/search:\n    post:\n      operationId: webSearch\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/SearchRequest\" }\n      responses:\n        \"200\":\n          description: Ranked results with excerpts\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  search_id: { type: string }\n                  results:\n                    type: array\n                    items:\n                      type: object\n                      properties:\n                        url: { type: string }\n                        title: { type: string, nullable: true }\n                        publish_date: { type: string, nullable: true }\n                        excerpts: { type: array, items: { type: string } }\n                  warnings: { type: array, nullable: true, items: { type: object, additionalProperties: true } }\ncomponents:\n  securitySchemes:\n    apiKey: { type: apiKey, in: header, name: x-api-key }\n  schemas:\n    SearchRequest:\n      type: object\n      additionalProperties: false\n      anyOf:\n        - required: [objective]\n        - required: [search_queries]\n      properties:\n        objective: { type: string, minLength: 1, maxLength: 5000, description: The goal of the search in plain language }\n        search_queries:\n          type: array\n          minItems: 1\n          maxItems: 5\n          items: { type: string, minLength: 1, maxLength: 200 }\n        processor: { type: string, enum: [base, pro] }\n        max_results: { type: integer, minimum: 1, maximum: 20 }\n        max_chars_per_result: { type: integer, minimum: 100, maximum: 30000 }\n        source_policy:\n          type: object\n          additionalProperties: false\n          properties:\n            include_domains: { type: array, maxItems: 10, items: { type: string } }\n            exclude_domains: { type: array, maxItems: 10, items: { type: string } }\n",
+              "base_url": "https://api.parallel.ai",
+              "auth": {
+                "scheme": "api_key",
+                "key_name": "x-api-key",
+                "key_value": "secret-parallel-search.api_key",
+                "key_in": "header"
+              },
+              "operations": {
+                "webSearch": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "parallel_web_search"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": true,
+            "api.delete": false
+          }
+        }
+      ]
+    }
+  },
+  {
+    "pack": "parallel-search",
+    "mode": "public",
+    "inputs": {},
+    "secrets": {
+      "parallel-search.api_key": "secret-parallel-search.api_key"
+    },
+    "update": {
+      "update_sources": [
+        {
+          "name": "parallel",
+          "kind": "api",
+          "default": false,
+          "read_only": true,
+          "access": {
+            "read": "public",
+            "write": "blocked",
+            "delete": "blocked"
+          },
+          "specs": {
+            "parallel": {
+              "document": "openapi: 3.0.3\ninfo:\n  title: Parallel Search API\n  version: v1beta\n  description: Parallel's web search. It reads the open web and changes nothing, but the API takes POST, so it is a reviewed action.\nservers:\n  - url: https://api.parallel.ai\nsecurity:\n  - apiKey: []\npaths:\n  /v1beta/search:\n    post:\n      operationId: webSearch\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/SearchRequest\" }\n      responses:\n        \"200\":\n          description: Ranked results with excerpts\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  search_id: { type: string }\n                  results:\n                    type: array\n                    items:\n                      type: object\n                      properties:\n                        url: { type: string }\n                        title: { type: string, nullable: true }\n                        publish_date: { type: string, nullable: true }\n                        excerpts: { type: array, items: { type: string } }\n                  warnings: { type: array, nullable: true, items: { type: object, additionalProperties: true } }\ncomponents:\n  securitySchemes:\n    apiKey: { type: apiKey, in: header, name: x-api-key }\n  schemas:\n    SearchRequest:\n      type: object\n      additionalProperties: false\n      anyOf:\n        - required: [objective]\n        - required: [search_queries]\n      properties:\n        objective: { type: string, minLength: 1, maxLength: 5000, description: The goal of the search in plain language }\n        search_queries:\n          type: array\n          minItems: 1\n          maxItems: 5\n          items: { type: string, minLength: 1, maxLength: 200 }\n        processor: { type: string, enum: [base, pro] }\n        max_results: { type: integer, minimum: 1, maximum: 20 }\n        max_chars_per_result: { type: integer, minimum: 100, maximum: 30000 }\n        source_policy:\n          type: object\n          additionalProperties: false\n          properties:\n            include_domains: { type: array, maxItems: 10, items: { type: string } }\n            exclude_domains: { type: array, maxItems: 10, items: { type: string } }\n",
+              "base_url": "https://api.parallel.ai",
+              "auth": {
+                "scheme": "api_key",
+                "key_name": "x-api-key",
+                "key_value": "secret-parallel-search.api_key",
+                "key_in": "header"
+              }
+            }
+          },
+          "capabilities": {
+            "api.write": false,
+            "api.delete": false
+          }
+        }
+      ]
+    }
+  },
+  {
+    "pack": "google-workspace",
+    "mode": "files",
+    "inputs": {
+      "google-workspace.oauth_client_id": "client-1"
+    },
+    "secrets": {
+      "google-workspace.oauth_client_secret": "secret-google-workspace.oauth_client_secret",
+      "google-workspace.access_token": "secret-google-workspace.access_token",
+      "google-workspace.refresh_token": "secret-google-workspace.refresh_token"
+    },
+    "update": {
+      "roles": [
+        {
+          "name": "pack_api_executor",
+          "comment": "Short-lived executor for approved pack API actions"
+        }
+      ],
+      "update_sources": [
+        {
+          "name": "google_workspace_calendar",
+          "kind": "api",
+          "default": false,
+          "read_only": false,
+          "access": {
+            "read": "authenticated",
+            "write": "authenticated",
+            "delete": "authenticated"
+          },
+          "specs_dir": "/config/specs",
+          "specs": {
+            "calendar": {
+              "base_url": "https://www.googleapis.com",
+              "auth": {
+                "scheme": "bearer",
+                "token_from_request": {
+                  "header": "X-OpenNeko-Pack-4a1e6232901548e4f7210403"
+                }
+              },
+              "operations": {
+                "listCalendarEvents": {
+                  "expose_top_level": true
+                },
+                "getCalendarEvent": {
+                  "expose_top_level": true
+                },
+                "createCalendarEvent": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_calendar_create_event"
+                },
+                "updateCalendarEvent": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_calendar_update_event"
+                },
+                "deleteCalendarEvent": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_calendar_delete_event"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": true,
+            "api.delete": true
+          }
+        },
+        {
+          "name": "google_workspace_docs",
+          "kind": "api",
+          "default": false,
+          "read_only": true,
+          "access": {
+            "read": "authenticated",
+            "write": "blocked",
+            "delete": "blocked"
+          },
+          "specs_dir": "/config/specs",
+          "specs": {
+            "docs": {
+              "base_url": "https://docs.googleapis.com",
+              "auth": {
+                "scheme": "bearer",
+                "token_from_request": {
+                  "header": "X-OpenNeko-Pack-4a1e6232901548e4f7210403"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": false,
+            "api.delete": false
+          }
+        },
+        {
+          "name": "google_workspace_drive",
+          "kind": "api",
+          "default": false,
+          "read_only": false,
+          "access": {
+            "read": "authenticated",
+            "write": "authenticated",
+            "delete": "authenticated"
+          },
+          "specs_dir": "/config/specs",
+          "specs": {
+            "drive": {
+              "base_url": "https://www.googleapis.com",
+              "auth": {
+                "scheme": "bearer",
+                "token_from_request": {
+                  "header": "X-OpenNeko-Pack-4a1e6232901548e4f7210403"
+                }
+              },
+              "operations": {
+                "listDrivePermissions": {
+                  "expose_top_level": true
+                },
+                "getDrivePermission": {
+                  "expose_top_level": true
+                },
+                "createDriveFile": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_drive_create_file"
+                },
+                "copyDriveFile": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_drive_copy_file"
+                },
+                "updateDriveFile": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_drive_update_file"
+                },
+                "createDrivePermission": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_drive_create_permission"
+                },
+                "updateDrivePermission": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_drive_update_permission"
+                },
+                "deleteDrivePermission": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_drive_delete_permission"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": true,
+            "api.delete": true
+          }
+        },
+        {
+          "name": "google_workspace_gmail",
+          "kind": "api",
+          "default": false,
+          "read_only": false,
+          "access": {
+            "read": "authenticated",
+            "write": "authenticated",
+            "delete": "authenticated"
+          },
+          "specs_dir": "/config/specs",
+          "specs": {
+            "gmail": {
+              "base_url": "https://gmail.googleapis.com",
+              "auth": {
+                "scheme": "bearer",
+                "token_from_request": {
+                  "header": "X-OpenNeko-Pack-4a1e6232901548e4f7210403"
+                }
+              },
+              "operations": {
+                "getProfile": {
+                  "expose_top_level": true
+                },
+                "listMessages": {
+                  "expose_top_level": true
+                },
+                "getMessage": {
+                  "expose_top_level": true
+                },
+                "listThreads": {
+                  "expose_top_level": true
+                },
+                "getThread": {
+                  "expose_top_level": true
+                },
+                "listDrafts": {
+                  "expose_top_level": true
+                },
+                "getDraft": {
+                  "expose_top_level": true
+                },
+                "listLabels": {
+                  "expose_top_level": true
+                },
+                "getLabel": {
+                  "expose_top_level": true
+                },
+                "listHistory": {
+                  "expose_top_level": true
+                },
+                "getAttachment": {
+                  "expose_top_level": true
+                },
+                "createDraft": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_gmail_create_draft"
+                },
+                "sendMessage": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_gmail_send_message"
+                },
+                "modifyMessageLabels": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_gmail_modify_message_labels"
+                },
+                "createLabel": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_gmail_create_label"
+                },
+                "updateLabel": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_gmail_update_label"
+                },
+                "deleteLabel": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_gmail_delete_label"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": true,
+            "api.delete": true
+          }
+        },
+        {
+          "name": "google_workspace_sheets",
+          "kind": "api",
+          "default": false,
+          "read_only": false,
+          "access": {
+            "read": "authenticated",
+            "write": "authenticated",
+            "delete": "blocked"
+          },
+          "specs_dir": "/config/specs",
+          "specs": {
+            "sheets": {
+              "base_url": "https://sheets.googleapis.com",
+              "auth": {
+                "scheme": "bearer",
+                "token_from_request": {
+                  "header": "X-OpenNeko-Pack-4a1e6232901548e4f7210403"
+                }
+              },
+              "operations": {
+                "getSpreadsheetValues": {
+                  "expose_top_level": true
+                },
+                "batchGetSpreadsheetValues": {
+                  "expose_top_level": true
+                },
+                "updateSpreadsheetValues": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_sheets_update_values"
+                },
+                "appendSpreadsheetValues": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_sheets_append_values"
+                },
+                "clearSpreadsheetValues": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_sheets_clear_values"
+                },
+                "batchUpdateSpreadsheetValues": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_sheets_batch_update_values"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": true,
+            "api.delete": false
+          }
+        },
+        {
+          "name": "google_workspace_slides",
+          "kind": "api",
+          "default": false,
+          "read_only": true,
+          "access": {
+            "read": "authenticated",
+            "write": "blocked",
+            "delete": "blocked"
+          },
+          "specs_dir": "/config/specs",
+          "specs": {
+            "slides": {
+              "base_url": "https://slides.googleapis.com",
+              "auth": {
+                "scheme": "bearer",
+                "token_from_request": {
+                  "header": "X-OpenNeko-Pack-4a1e6232901548e4f7210403"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": false,
+            "api.delete": false
+          }
+        }
+      ],
+      "source_patches": [
+        {
+          "name": "old_source",
+          "read_only": true,
+          "access": {
+            "read": "blocked",
+            "write": "blocked",
+            "delete": "blocked"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "pack": "google-workspace",
+    "mode": "api",
+    "inputs": {
+      "google-workspace.oauth_client_id": "client-1"
+    },
+    "secrets": {
+      "google-workspace.oauth_client_secret": "secret-google-workspace.oauth_client_secret",
+      "google-workspace.access_token": "secret-google-workspace.access_token",
+      "google-workspace.refresh_token": "secret-google-workspace.refresh_token"
+    },
+    "update": {
+      "roles": [
+        {
+          "name": "pack_api_executor",
+          "comment": "Short-lived executor for approved pack API actions"
+        }
+      ],
+      "update_sources": [
+        {
+          "name": "google_workspace_calendar",
+          "kind": "api",
+          "default": false,
+          "read_only": false,
+          "access": {
+            "read": "authenticated",
+            "write": "authenticated",
+            "delete": "authenticated"
+          },
+          "specs": {
+            "calendar": {
+              "document": "openapi: 3.0.3\ninfo: { title: Google Calendar read API, version: 1.0.0 }\nservers: [{ url: https://www.googleapis.com }]\nsecurity: [{ oauthBearer: [] }]\npaths:\n  /calendar/v3/users/me/calendarList:\n    get:\n      operationId: listCalendars\n      parameters:\n        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 250 } }\n        - { name: pageToken, in: query, schema: { type: string } }\n        - { name: showDeleted, in: query, schema: { type: boolean } }\n        - { name: showHidden, in: query, schema: { type: boolean } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /calendar/v3/calendars/{calendarId}/events:\n    get:\n      operationId: listCalendarEvents\n      parameters:\n        - { name: calendarId, in: path, required: true, schema: { type: string } }\n        - { name: timeMin, in: query, schema: { type: string, format: date-time } }\n        - { name: timeMax, in: query, schema: { type: string, format: date-time } }\n        - { name: q, in: query, schema: { type: string } }\n        - { name: singleEvents, in: query, schema: { type: boolean } }\n        - { name: orderBy, in: query, schema: { type: string, enum: [startTime, updated] } }\n        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 2500 } }\n        - { name: pageToken, in: query, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    post:\n      operationId: createCalendarEvent\n      parameters:\n        - { name: calendarId, in: path, required: true, schema: { type: string } }\n        - { name: sendUpdates, in: query, schema: { type: string, enum: [all, externalOnly, none] } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/Event\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /calendar/v3/calendars/{calendarId}/events/{eventId}:\n    get:\n      operationId: getCalendarEvent\n      parameters:\n        - { name: calendarId, in: path, required: true, schema: { type: string } }\n        - { name: eventId, in: path, required: true, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    put:\n      operationId: updateCalendarEvent\n      parameters:\n        - { name: calendarId, in: path, required: true, schema: { type: string } }\n        - { name: eventId, in: path, required: true, schema: { type: string } }\n        - { name: sendUpdates, in: query, schema: { type: string, enum: [all, externalOnly, none] } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/Event\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    delete:\n      operationId: deleteCalendarEvent\n      parameters:\n        - { name: calendarId, in: path, required: true, schema: { type: string } }\n        - { name: eventId, in: path, required: true, schema: { type: string } }\n        - { name: sendUpdates, in: query, schema: { type: string, enum: [all, externalOnly, none] } }\n      responses:\n        \"204\": { description: Event deleted }\ncomponents:\n  securitySchemes:\n    oauthBearer: { type: http, scheme: bearer }\n  responses:\n    Object:\n      description: Google API response\n      content:\n        application/json:\n          schema: { type: object, additionalProperties: true }\n  schemas:\n    EventDateTime:\n      type: object\n      additionalProperties: false\n      properties:\n        date: { type: string, format: date }\n        dateTime: { type: string, format: date-time }\n        timeZone: { type: string }\n    Event:\n      type: object\n      additionalProperties: true\n      required: [start, end]\n      properties:\n        summary: { type: string }\n        description: { type: string }\n        location: { type: string }\n        start: { $ref: \"#/components/schemas/EventDateTime\" }\n        end: { $ref: \"#/components/schemas/EventDateTime\" }\n        attendees:\n          type: array\n          items:\n            type: object\n            additionalProperties: true\n            properties:\n              email: { type: string }\n        recurrence: { type: array, items: { type: string } }\n",
+              "base_url": "https://www.googleapis.com",
+              "auth": {
+                "scheme": "bearer",
+                "token_from_request": {
+                  "header": "X-OpenNeko-Pack-4a1e6232901548e4f7210403"
+                }
+              },
+              "operations": {
+                "listCalendarEvents": {
+                  "expose_top_level": true
+                },
+                "getCalendarEvent": {
+                  "expose_top_level": true
+                },
+                "createCalendarEvent": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_calendar_create_event"
+                },
+                "updateCalendarEvent": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_calendar_update_event"
+                },
+                "deleteCalendarEvent": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_calendar_delete_event"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": true,
+            "api.delete": true
+          }
+        },
+        {
+          "name": "google_workspace_docs",
+          "kind": "api",
+          "default": false,
+          "read_only": true,
+          "access": {
+            "read": "authenticated",
+            "write": "blocked",
+            "delete": "blocked"
+          },
+          "specs": {
+            "docs": {
+              "document": "openapi: 3.0.3\ninfo: { title: Google Docs read API, version: 1.0.0 }\nservers: [{ url: https://docs.googleapis.com }]\nsecurity: [{ oauthBearer: [] }]\npaths:\n  /v1/documents/{documentId}:\n    get:\n      operationId: getDocument\n      parameters:\n        - { name: documentId, in: path, required: true, schema: { type: string } }\n        - { name: suggestionsViewMode, in: query, schema: { type: string } }\n        - { name: includeTabsContent, in: query, schema: { type: boolean } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\ncomponents:\n  securitySchemes:\n    oauthBearer: { type: http, scheme: bearer }\n  responses:\n    Object:\n      description: Google API response\n      content:\n        application/json:\n          schema: { type: object, additionalProperties: true }\n",
+              "base_url": "https://docs.googleapis.com",
+              "auth": {
+                "scheme": "bearer",
+                "token_from_request": {
+                  "header": "X-OpenNeko-Pack-4a1e6232901548e4f7210403"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": false,
+            "api.delete": false
+          }
+        },
+        {
+          "name": "google_workspace_drive",
+          "kind": "api",
+          "default": false,
+          "read_only": false,
+          "access": {
+            "read": "authenticated",
+            "write": "authenticated",
+            "delete": "authenticated"
+          },
+          "specs": {
+            "drive": {
+              "document": "openapi: 3.0.3\ninfo: { title: Google Drive read API, version: 1.0.0 }\nservers: [{ url: https://www.googleapis.com }]\nsecurity: [{ oauthBearer: [] }]\npaths:\n  /drive/v3/files:\n    get:\n      operationId: listDriveFiles\n      parameters:\n        - { name: q, in: query, schema: { type: string } }\n        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 1000 } }\n        - { name: pageToken, in: query, schema: { type: string } }\n        - { name: orderBy, in: query, schema: { type: string } }\n        - { name: fields, in: query, schema: { type: string } }\n        - { name: spaces, in: query, schema: { type: string } }\n        - { name: corpora, in: query, schema: { type: string } }\n        - { name: driveId, in: query, schema: { type: string } }\n        - { name: includeItemsFromAllDrives, in: query, schema: { type: boolean } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    post:\n      operationId: createDriveFile\n      parameters:\n        - { name: fields, in: query, schema: { type: string } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/File\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /drive/v3/files/{fileId}:\n    get:\n      operationId: getDriveFile\n      parameters:\n        - { name: fileId, in: path, required: true, schema: { type: string } }\n        - { name: fields, in: query, schema: { type: string } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    patch:\n      operationId: updateDriveFile\n      parameters:\n        - { name: fileId, in: path, required: true, schema: { type: string } }\n        - { name: addParents, in: query, schema: { type: string } }\n        - { name: removeParents, in: query, schema: { type: string } }\n        - { name: fields, in: query, schema: { type: string } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/File\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /drive/v3/files/{fileId}/copy:\n    post:\n      operationId: copyDriveFile\n      parameters:\n        - { name: fileId, in: path, required: true, schema: { type: string } }\n        - { name: fields, in: query, schema: { type: string } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/File\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /drive/v3/files/{fileId}/permissions:\n    get:\n      operationId: listDrivePermissions\n      parameters:\n        - { name: fileId, in: path, required: true, schema: { type: string } }\n        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }\n        - { name: pageToken, in: query, schema: { type: string } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n        - { name: fields, in: query, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    post:\n      operationId: createDrivePermission\n      parameters:\n        - { name: fileId, in: path, required: true, schema: { type: string } }\n        - { name: emailMessage, in: query, schema: { type: string } }\n        - { name: sendNotificationEmail, in: query, schema: { type: boolean } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n        - { name: fields, in: query, schema: { type: string } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/Permission\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /drive/v3/files/{fileId}/permissions/{permissionId}:\n    get:\n      operationId: getDrivePermission\n      parameters:\n        - { name: fileId, in: path, required: true, schema: { type: string } }\n        - { name: permissionId, in: path, required: true, schema: { type: string } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n        - { name: fields, in: query, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    patch:\n      operationId: updateDrivePermission\n      parameters:\n        - { name: fileId, in: path, required: true, schema: { type: string } }\n        - { name: permissionId, in: path, required: true, schema: { type: string } }\n        - { name: removeExpiration, in: query, schema: { type: boolean } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n        - { name: fields, in: query, schema: { type: string } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/Permission\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    delete:\n      operationId: deleteDrivePermission\n      parameters:\n        - { name: fileId, in: path, required: true, schema: { type: string } }\n        - { name: permissionId, in: path, required: true, schema: { type: string } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n      responses:\n        \"204\": { description: Permission deleted }\n  /drive/v3/about:\n    get:\n      operationId: getDriveAbout\n      parameters:\n        - { name: fields, in: query, required: true, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\ncomponents:\n  securitySchemes:\n    oauthBearer: { type: http, scheme: bearer }\n  responses:\n    Object:\n      description: Google API response\n      content:\n        application/json:\n          schema: { type: object, additionalProperties: true }\n  schemas:\n    File:\n      type: object\n      additionalProperties: true\n      properties:\n        name: { type: string }\n        mimeType: { type: string }\n        description: { type: string }\n        parents: { type: array, items: { type: string }, maxItems: 1 }\n        starred: { type: boolean }\n        trashed: { type: boolean }\n    Permission:\n      type: object\n      additionalProperties: true\n      properties:\n        type: { type: string, enum: [user, group, domain, anyone] }\n        role: { type: string, enum: [owner, organizer, fileOrganizer, writer, commenter, reader] }\n        emailAddress: { type: string }\n        domain: { type: string }\n        expirationTime: { type: string, format: date-time }\n",
+              "base_url": "https://www.googleapis.com",
+              "auth": {
+                "scheme": "bearer",
+                "token_from_request": {
+                  "header": "X-OpenNeko-Pack-4a1e6232901548e4f7210403"
+                }
+              },
+              "operations": {
+                "listDrivePermissions": {
+                  "expose_top_level": true
+                },
+                "getDrivePermission": {
+                  "expose_top_level": true
+                },
+                "createDriveFile": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_drive_create_file"
+                },
+                "copyDriveFile": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_drive_copy_file"
+                },
+                "updateDriveFile": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_drive_update_file"
+                },
+                "createDrivePermission": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_drive_create_permission"
+                },
+                "updateDrivePermission": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_drive_update_permission"
+                },
+                "deleteDrivePermission": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_drive_delete_permission"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": true,
+            "api.delete": true
+          }
+        },
+        {
+          "name": "google_workspace_gmail",
+          "kind": "api",
+          "default": false,
+          "read_only": false,
+          "access": {
+            "read": "authenticated",
+            "write": "authenticated",
+            "delete": "authenticated"
+          },
+          "specs": {
+            "gmail": {
+              "document": "openapi: 3.0.3\ninfo:\n  title: Google Gmail read API\n  version: 1.0.0\nservers:\n  - url: https://gmail.googleapis.com\nsecurity:\n  - oauthBearer: []\npaths:\n  /gmail/v1/users/{userId}/profile:\n    get:\n      operationId: getProfile\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n      responses:\n        \"200\":\n          description: Gmail profile\n          content:\n            application/json:\n              schema:\n                type: object\n                required: [emailAddress]\n                properties:\n                  emailAddress: { type: string }\n                  messagesTotal: { type: integer }\n                  threadsTotal: { type: integer }\n                  historyId: { type: string }\n  /gmail/v1/users/{userId}/messages:\n    get:\n      operationId: listMessages\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: q, in: query, schema: { type: string } }\n        - { name: labelIds, in: query, schema: { type: array, items: { type: string } } }\n        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 500 } }\n        - { name: pageToken, in: query, schema: { type: string } }\n      responses:\n        \"200\":\n          description: Message references\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  messages:\n                    type: array\n                    items: { $ref: \"#/components/schemas/MessageRef\" }\n                  nextPageToken: { type: string }\n                  resultSizeEstimate: { type: integer }\n  /gmail/v1/users/{userId}/messages/{messageId}:\n    get:\n      operationId: getMessage\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: messageId, in: path, required: true, schema: { type: string } }\n        - { name: format, in: query, schema: { type: string, enum: [minimal, full, raw, metadata] } }\n        - { name: metadataHeaders, in: query, schema: { type: array, items: { type: string } } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /gmail/v1/users/{userId}/threads:\n    get:\n      operationId: listThreads\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: q, in: query, schema: { type: string } }\n        - { name: labelIds, in: query, schema: { type: array, items: { type: string } } }\n        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 500 } }\n        - { name: pageToken, in: query, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /gmail/v1/users/{userId}/threads/{threadId}:\n    get:\n      operationId: getThread\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: threadId, in: path, required: true, schema: { type: string } }\n        - { name: format, in: query, schema: { type: string, enum: [full, metadata, minimal] } }\n        - { name: metadataHeaders, in: query, schema: { type: array, items: { type: string } } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /gmail/v1/users/{userId}/messages/{messageId}/modify:\n    post:\n      operationId: modifyMessageLabels\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: messageId, in: path, required: true, schema: { type: string } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/ModifyMessageRequest\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /gmail/v1/users/{userId}/messages/send:\n    post:\n      operationId: sendMessage\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/Message\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /gmail/v1/users/{userId}/drafts:\n    get:\n      operationId: listDrafts\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: q, in: query, schema: { type: string } }\n        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 500 } }\n        - { name: pageToken, in: query, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    post:\n      operationId: createDraft\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/Draft\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /gmail/v1/users/{userId}/drafts/{draftId}:\n    get:\n      operationId: getDraft\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: draftId, in: path, required: true, schema: { type: string } }\n        - { name: format, in: query, schema: { type: string, enum: [minimal, full, raw, metadata] } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /gmail/v1/users/{userId}/labels:\n    get:\n      operationId: listLabels\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    post:\n      operationId: createLabel\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/Label\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /gmail/v1/users/{userId}/labels/{labelId}:\n    get:\n      operationId: getLabel\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: labelId, in: path, required: true, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    patch:\n      operationId: updateLabel\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: labelId, in: path, required: true, schema: { type: string } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/Label\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    delete:\n      operationId: deleteLabel\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: labelId, in: path, required: true, schema: { type: string } }\n      responses:\n        \"204\": { description: Label deleted }\n  /gmail/v1/users/{userId}/history:\n    get:\n      operationId: listHistory\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: startHistoryId, in: query, required: true, schema: { type: string } }\n        - { name: historyTypes, in: query, schema: { type: array, items: { type: string } } }\n        - { name: labelId, in: query, schema: { type: string } }\n        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 500 } }\n        - { name: pageToken, in: query, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /gmail/v1/users/{userId}/messages/{messageId}/attachments/{attachmentId}:\n    get:\n      operationId: getAttachment\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: messageId, in: path, required: true, schema: { type: string } }\n        - { name: attachmentId, in: path, required: true, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\ncomponents:\n  securitySchemes:\n    oauthBearer: { type: http, scheme: bearer }\n  parameters:\n    UserId:\n      name: userId\n      in: path\n      required: true\n      schema: { type: string, default: me }\n  schemas:\n    MessageRef:\n      type: object\n      properties:\n        id: { type: string }\n        threadId: { type: string }\n    Message:\n      type: object\n      additionalProperties: false\n      required: [raw]\n      properties:\n        raw: { type: string, description: Base64url-encoded RFC 2822 message }\n        threadId: { type: string }\n    Draft:\n      type: object\n      additionalProperties: false\n      required: [message]\n      properties:\n        message: { $ref: \"#/components/schemas/Message\" }\n    Label:\n      type: object\n      additionalProperties: false\n      required: [name]\n      properties:\n        name: { type: string }\n        messageListVisibility: { type: string, enum: [show, hide] }\n        labelListVisibility: { type: string, enum: [labelShow, labelShowIfUnread, labelHide] }\n    ModifyMessageRequest:\n      type: object\n      additionalProperties: false\n      properties:\n        addLabelIds: { type: array, items: { type: string }, maxItems: 100 }\n        removeLabelIds: { type: array, items: { type: string }, maxItems: 100 }\n  responses:\n    Object:\n      description: Google API response\n      content:\n        application/json:\n          schema: { type: object, additionalProperties: true }\n",
+              "base_url": "https://gmail.googleapis.com",
+              "auth": {
+                "scheme": "bearer",
+                "token_from_request": {
+                  "header": "X-OpenNeko-Pack-4a1e6232901548e4f7210403"
+                }
+              },
+              "operations": {
+                "getProfile": {
+                  "expose_top_level": true
+                },
+                "listMessages": {
+                  "expose_top_level": true
+                },
+                "getMessage": {
+                  "expose_top_level": true
+                },
+                "listThreads": {
+                  "expose_top_level": true
+                },
+                "getThread": {
+                  "expose_top_level": true
+                },
+                "listDrafts": {
+                  "expose_top_level": true
+                },
+                "getDraft": {
+                  "expose_top_level": true
+                },
+                "listLabels": {
+                  "expose_top_level": true
+                },
+                "getLabel": {
+                  "expose_top_level": true
+                },
+                "listHistory": {
+                  "expose_top_level": true
+                },
+                "getAttachment": {
+                  "expose_top_level": true
+                },
+                "createDraft": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_gmail_create_draft"
+                },
+                "sendMessage": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_gmail_send_message"
+                },
+                "modifyMessageLabels": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_gmail_modify_message_labels"
+                },
+                "createLabel": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_gmail_create_label"
+                },
+                "updateLabel": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_gmail_update_label"
+                },
+                "deleteLabel": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_gmail_delete_label"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": true,
+            "api.delete": true
+          }
+        },
+        {
+          "name": "google_workspace_sheets",
+          "kind": "api",
+          "default": false,
+          "read_only": false,
+          "access": {
+            "read": "authenticated",
+            "write": "authenticated",
+            "delete": "blocked"
+          },
+          "specs": {
+            "sheets": {
+              "document": "openapi: 3.0.3\ninfo: { title: Google Sheets read API, version: 1.0.0 }\nservers: [{ url: https://sheets.googleapis.com }]\nsecurity: [{ oauthBearer: [] }]\npaths:\n  /v4/spreadsheets/{spreadsheetId}:\n    get:\n      operationId: getSpreadsheet\n      parameters:\n        - { name: spreadsheetId, in: path, required: true, schema: { type: string } }\n        - { name: ranges, in: query, schema: { type: array, items: { type: string } } }\n        - { name: includeGridData, in: query, schema: { type: boolean } }\n        - { name: fields, in: query, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /v4/spreadsheets/{spreadsheetId}/values/{range}:\n    get:\n      operationId: getSpreadsheetValues\n      parameters:\n        - { name: spreadsheetId, in: path, required: true, schema: { type: string } }\n        - { name: range, in: path, required: true, schema: { type: string } }\n        - { name: majorDimension, in: query, schema: { type: string, enum: [ROWS, COLUMNS] } }\n        - { name: valueRenderOption, in: query, schema: { type: string } }\n        - { name: dateTimeRenderOption, in: query, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    put:\n      operationId: updateSpreadsheetValues\n      parameters:\n        - { name: spreadsheetId, in: path, required: true, schema: { type: string } }\n        - { name: range, in: path, required: true, schema: { type: string } }\n        - { name: valueInputOption, in: query, required: true, schema: { type: string, enum: [RAW, USER_ENTERED] } }\n        - { name: includeValuesInResponse, in: query, schema: { type: boolean } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/ValueRange\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /v4/spreadsheets/{spreadsheetId}/values/{range}:append:\n    post:\n      operationId: appendSpreadsheetValues\n      parameters:\n        - { name: spreadsheetId, in: path, required: true, schema: { type: string } }\n        - { name: range, in: path, required: true, schema: { type: string } }\n        - { name: valueInputOption, in: query, required: true, schema: { type: string, enum: [RAW, USER_ENTERED] } }\n        - { name: insertDataOption, in: query, schema: { type: string, enum: [OVERWRITE, INSERT_ROWS] } }\n        - { name: includeValuesInResponse, in: query, schema: { type: boolean } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/ValueRange\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /v4/spreadsheets/{spreadsheetId}/values/{range}:clear:\n    post:\n      operationId: clearSpreadsheetValues\n      parameters:\n        - { name: spreadsheetId, in: path, required: true, schema: { type: string } }\n        - { name: range, in: path, required: true, schema: { type: string } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { type: object, additionalProperties: false }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /v4/spreadsheets/{spreadsheetId}/values:batchGet:\n    get:\n      operationId: batchGetSpreadsheetValues\n      parameters:\n        - { name: spreadsheetId, in: path, required: true, schema: { type: string } }\n        - { name: ranges, in: query, required: true, schema: { type: array, items: { type: string } } }\n        - { name: majorDimension, in: query, schema: { type: string, enum: [ROWS, COLUMNS] } }\n        - { name: valueRenderOption, in: query, schema: { type: string } }\n        - { name: dateTimeRenderOption, in: query, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /v4/spreadsheets/{spreadsheetId}/values:batchUpdate:\n    post:\n      operationId: batchUpdateSpreadsheetValues\n      parameters:\n        - { name: spreadsheetId, in: path, required: true, schema: { type: string } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/BatchUpdateValuesRequest\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\ncomponents:\n  securitySchemes:\n    oauthBearer: { type: http, scheme: bearer }\n  responses:\n    Object:\n      description: Google API response\n      content:\n        application/json:\n          schema: { type: object, additionalProperties: true }\n  schemas:\n    ValueRange:\n      type: object\n      additionalProperties: false\n      properties:\n        range: { type: string }\n        majorDimension: { type: string, enum: [ROWS, COLUMNS] }\n        values:\n          type: array\n          items:\n            type: array\n            items: {}\n    BatchUpdateValuesRequest:\n      type: object\n      additionalProperties: false\n      required: [valueInputOption, data]\n      properties:\n        valueInputOption: { type: string, enum: [RAW, USER_ENTERED] }\n        includeValuesInResponse: { type: boolean }\n        data:\n          type: array\n          minItems: 1\n          items: { $ref: \"#/components/schemas/ValueRange\" }\n",
+              "base_url": "https://sheets.googleapis.com",
+              "auth": {
+                "scheme": "bearer",
+                "token_from_request": {
+                  "header": "X-OpenNeko-Pack-4a1e6232901548e4f7210403"
+                }
+              },
+              "operations": {
+                "getSpreadsheetValues": {
+                  "expose_top_level": true
+                },
+                "batchGetSpreadsheetValues": {
+                  "expose_top_level": true
+                },
+                "updateSpreadsheetValues": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_sheets_update_values"
+                },
+                "appendSpreadsheetValues": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_sheets_append_values"
+                },
+                "clearSpreadsheetValues": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_sheets_clear_values"
+                },
+                "batchUpdateSpreadsheetValues": {
+                  "expose_mutation": true,
+                  "allowed_roles": [
+                    "pack_api_executor"
+                  ],
+                  "expose_as": "gws_sheets_batch_update_values"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": true,
+            "api.delete": false
+          }
+        },
+        {
+          "name": "google_workspace_slides",
+          "kind": "api",
+          "default": false,
+          "read_only": true,
+          "access": {
+            "read": "authenticated",
+            "write": "blocked",
+            "delete": "blocked"
+          },
+          "specs": {
+            "slides": {
+              "document": "openapi: 3.0.3\ninfo: { title: Google Slides read API, version: 1.0.0 }\nservers: [{ url: https://slides.googleapis.com }]\nsecurity: [{ oauthBearer: [] }]\npaths:\n  /v1/presentations/{presentationId}:\n    get:\n      operationId: getPresentation\n      parameters:\n        - { name: presentationId, in: path, required: true, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\ncomponents:\n  securitySchemes:\n    oauthBearer: { type: http, scheme: bearer }\n  responses:\n    Object:\n      description: Google API response\n      content:\n        application/json:\n          schema: { type: object, additionalProperties: true }\n",
+              "base_url": "https://slides.googleapis.com",
+              "auth": {
+                "scheme": "bearer",
+                "token_from_request": {
+                  "header": "X-OpenNeko-Pack-4a1e6232901548e4f7210403"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.read": true,
+            "api.write": false,
+            "api.delete": false
+          }
+        }
+      ],
+      "update_saved_queries": [
+        {
+          "name": "google_workspace_account_profile",
+          "query": "query GoogleWorkspaceAccountProfile {\n  gmail_get_profile(userId: \"me\") {\n    emailAddress\n    messagesTotal\n    threadsTotal\n  }\n}\n"
+        }
+      ]
+    }
+  },
+  {
+    "pack": "google-workspace",
+    "mode": "public",
+    "inputs": {
+      "google-workspace.oauth_client_id": "client-1"
+    },
+    "secrets": {
+      "google-workspace.oauth_client_secret": "secret-google-workspace.oauth_client_secret",
+      "google-workspace.access_token": "secret-google-workspace.access_token",
+      "google-workspace.refresh_token": "secret-google-workspace.refresh_token"
+    },
+    "update": {
+      "update_sources": [
+        {
+          "name": "google_workspace_calendar",
+          "kind": "api",
+          "default": false,
+          "read_only": true,
+          "access": {
+            "read": "public",
+            "write": "blocked",
+            "delete": "blocked"
+          },
+          "specs": {
+            "calendar": {
+              "document": "openapi: 3.0.3\ninfo: { title: Google Calendar read API, version: 1.0.0 }\nservers: [{ url: https://www.googleapis.com }]\nsecurity: [{ oauthBearer: [] }]\npaths:\n  /calendar/v3/users/me/calendarList:\n    get:\n      operationId: listCalendars\n      parameters:\n        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 250 } }\n        - { name: pageToken, in: query, schema: { type: string } }\n        - { name: showDeleted, in: query, schema: { type: boolean } }\n        - { name: showHidden, in: query, schema: { type: boolean } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /calendar/v3/calendars/{calendarId}/events:\n    get:\n      operationId: listCalendarEvents\n      parameters:\n        - { name: calendarId, in: path, required: true, schema: { type: string } }\n        - { name: timeMin, in: query, schema: { type: string, format: date-time } }\n        - { name: timeMax, in: query, schema: { type: string, format: date-time } }\n        - { name: q, in: query, schema: { type: string } }\n        - { name: singleEvents, in: query, schema: { type: boolean } }\n        - { name: orderBy, in: query, schema: { type: string, enum: [startTime, updated] } }\n        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 2500 } }\n        - { name: pageToken, in: query, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    post:\n      operationId: createCalendarEvent\n      parameters:\n        - { name: calendarId, in: path, required: true, schema: { type: string } }\n        - { name: sendUpdates, in: query, schema: { type: string, enum: [all, externalOnly, none] } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/Event\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /calendar/v3/calendars/{calendarId}/events/{eventId}:\n    get:\n      operationId: getCalendarEvent\n      parameters:\n        - { name: calendarId, in: path, required: true, schema: { type: string } }\n        - { name: eventId, in: path, required: true, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    put:\n      operationId: updateCalendarEvent\n      parameters:\n        - { name: calendarId, in: path, required: true, schema: { type: string } }\n        - { name: eventId, in: path, required: true, schema: { type: string } }\n        - { name: sendUpdates, in: query, schema: { type: string, enum: [all, externalOnly, none] } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/Event\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    delete:\n      operationId: deleteCalendarEvent\n      parameters:\n        - { name: calendarId, in: path, required: true, schema: { type: string } }\n        - { name: eventId, in: path, required: true, schema: { type: string } }\n        - { name: sendUpdates, in: query, schema: { type: string, enum: [all, externalOnly, none] } }\n      responses:\n        \"204\": { description: Event deleted }\ncomponents:\n  securitySchemes:\n    oauthBearer: { type: http, scheme: bearer }\n  responses:\n    Object:\n      description: Google API response\n      content:\n        application/json:\n          schema: { type: object, additionalProperties: true }\n  schemas:\n    EventDateTime:\n      type: object\n      additionalProperties: false\n      properties:\n        date: { type: string, format: date }\n        dateTime: { type: string, format: date-time }\n        timeZone: { type: string }\n    Event:\n      type: object\n      additionalProperties: true\n      required: [start, end]\n      properties:\n        summary: { type: string }\n        description: { type: string }\n        location: { type: string }\n        start: { $ref: \"#/components/schemas/EventDateTime\" }\n        end: { $ref: \"#/components/schemas/EventDateTime\" }\n        attendees:\n          type: array\n          items:\n            type: object\n            additionalProperties: true\n            properties:\n              email: { type: string }\n        recurrence: { type: array, items: { type: string } }\n",
+              "base_url": "https://www.googleapis.com",
+              "auth": {
+                "scheme": "bearer",
+                "token_from_request": {
+                  "header": "X-OpenNeko-Pack-4a1e6232901548e4f7210403"
+                }
+              },
+              "operations": {
+                "listCalendarEvents": {
+                  "expose_top_level": true
+                },
+                "getCalendarEvent": {
+                  "expose_top_level": true
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.write": false,
+            "api.delete": false
+          }
+        },
+        {
+          "name": "google_workspace_docs",
+          "kind": "api",
+          "default": false,
+          "read_only": true,
+          "access": {
+            "read": "public",
+            "write": "blocked",
+            "delete": "blocked"
+          },
+          "specs": {
+            "docs": {
+              "document": "openapi: 3.0.3\ninfo: { title: Google Docs read API, version: 1.0.0 }\nservers: [{ url: https://docs.googleapis.com }]\nsecurity: [{ oauthBearer: [] }]\npaths:\n  /v1/documents/{documentId}:\n    get:\n      operationId: getDocument\n      parameters:\n        - { name: documentId, in: path, required: true, schema: { type: string } }\n        - { name: suggestionsViewMode, in: query, schema: { type: string } }\n        - { name: includeTabsContent, in: query, schema: { type: boolean } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\ncomponents:\n  securitySchemes:\n    oauthBearer: { type: http, scheme: bearer }\n  responses:\n    Object:\n      description: Google API response\n      content:\n        application/json:\n          schema: { type: object, additionalProperties: true }\n",
+              "base_url": "https://docs.googleapis.com",
+              "auth": {
+                "scheme": "bearer",
+                "token_from_request": {
+                  "header": "X-OpenNeko-Pack-4a1e6232901548e4f7210403"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.write": false,
+            "api.delete": false
+          }
+        },
+        {
+          "name": "google_workspace_drive",
+          "kind": "api",
+          "default": false,
+          "read_only": true,
+          "access": {
+            "read": "public",
+            "write": "blocked",
+            "delete": "blocked"
+          },
+          "specs": {
+            "drive": {
+              "document": "openapi: 3.0.3\ninfo: { title: Google Drive read API, version: 1.0.0 }\nservers: [{ url: https://www.googleapis.com }]\nsecurity: [{ oauthBearer: [] }]\npaths:\n  /drive/v3/files:\n    get:\n      operationId: listDriveFiles\n      parameters:\n        - { name: q, in: query, schema: { type: string } }\n        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 1000 } }\n        - { name: pageToken, in: query, schema: { type: string } }\n        - { name: orderBy, in: query, schema: { type: string } }\n        - { name: fields, in: query, schema: { type: string } }\n        - { name: spaces, in: query, schema: { type: string } }\n        - { name: corpora, in: query, schema: { type: string } }\n        - { name: driveId, in: query, schema: { type: string } }\n        - { name: includeItemsFromAllDrives, in: query, schema: { type: boolean } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    post:\n      operationId: createDriveFile\n      parameters:\n        - { name: fields, in: query, schema: { type: string } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/File\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /drive/v3/files/{fileId}:\n    get:\n      operationId: getDriveFile\n      parameters:\n        - { name: fileId, in: path, required: true, schema: { type: string } }\n        - { name: fields, in: query, schema: { type: string } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    patch:\n      operationId: updateDriveFile\n      parameters:\n        - { name: fileId, in: path, required: true, schema: { type: string } }\n        - { name: addParents, in: query, schema: { type: string } }\n        - { name: removeParents, in: query, schema: { type: string } }\n        - { name: fields, in: query, schema: { type: string } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/File\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /drive/v3/files/{fileId}/copy:\n    post:\n      operationId: copyDriveFile\n      parameters:\n        - { name: fileId, in: path, required: true, schema: { type: string } }\n        - { name: fields, in: query, schema: { type: string } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/File\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /drive/v3/files/{fileId}/permissions:\n    get:\n      operationId: listDrivePermissions\n      parameters:\n        - { name: fileId, in: path, required: true, schema: { type: string } }\n        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }\n        - { name: pageToken, in: query, schema: { type: string } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n        - { name: fields, in: query, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    post:\n      operationId: createDrivePermission\n      parameters:\n        - { name: fileId, in: path, required: true, schema: { type: string } }\n        - { name: emailMessage, in: query, schema: { type: string } }\n        - { name: sendNotificationEmail, in: query, schema: { type: boolean } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n        - { name: fields, in: query, schema: { type: string } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/Permission\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /drive/v3/files/{fileId}/permissions/{permissionId}:\n    get:\n      operationId: getDrivePermission\n      parameters:\n        - { name: fileId, in: path, required: true, schema: { type: string } }\n        - { name: permissionId, in: path, required: true, schema: { type: string } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n        - { name: fields, in: query, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    patch:\n      operationId: updateDrivePermission\n      parameters:\n        - { name: fileId, in: path, required: true, schema: { type: string } }\n        - { name: permissionId, in: path, required: true, schema: { type: string } }\n        - { name: removeExpiration, in: query, schema: { type: boolean } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n        - { name: fields, in: query, schema: { type: string } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/Permission\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    delete:\n      operationId: deleteDrivePermission\n      parameters:\n        - { name: fileId, in: path, required: true, schema: { type: string } }\n        - { name: permissionId, in: path, required: true, schema: { type: string } }\n        - { name: supportsAllDrives, in: query, schema: { type: boolean } }\n      responses:\n        \"204\": { description: Permission deleted }\n  /drive/v3/about:\n    get:\n      operationId: getDriveAbout\n      parameters:\n        - { name: fields, in: query, required: true, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\ncomponents:\n  securitySchemes:\n    oauthBearer: { type: http, scheme: bearer }\n  responses:\n    Object:\n      description: Google API response\n      content:\n        application/json:\n          schema: { type: object, additionalProperties: true }\n  schemas:\n    File:\n      type: object\n      additionalProperties: true\n      properties:\n        name: { type: string }\n        mimeType: { type: string }\n        description: { type: string }\n        parents: { type: array, items: { type: string }, maxItems: 1 }\n        starred: { type: boolean }\n        trashed: { type: boolean }\n    Permission:\n      type: object\n      additionalProperties: true\n      properties:\n        type: { type: string, enum: [user, group, domain, anyone] }\n        role: { type: string, enum: [owner, organizer, fileOrganizer, writer, commenter, reader] }\n        emailAddress: { type: string }\n        domain: { type: string }\n        expirationTime: { type: string, format: date-time }\n",
+              "base_url": "https://www.googleapis.com",
+              "auth": {
+                "scheme": "bearer",
+                "token_from_request": {
+                  "header": "X-OpenNeko-Pack-4a1e6232901548e4f7210403"
+                }
+              },
+              "operations": {
+                "listDrivePermissions": {
+                  "expose_top_level": true
+                },
+                "getDrivePermission": {
+                  "expose_top_level": true
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.write": false,
+            "api.delete": false
+          }
+        },
+        {
+          "name": "google_workspace_gmail",
+          "kind": "api",
+          "default": false,
+          "read_only": true,
+          "access": {
+            "read": "public",
+            "write": "blocked",
+            "delete": "blocked"
+          },
+          "specs": {
+            "gmail": {
+              "document": "openapi: 3.0.3\ninfo:\n  title: Google Gmail read API\n  version: 1.0.0\nservers:\n  - url: https://gmail.googleapis.com\nsecurity:\n  - oauthBearer: []\npaths:\n  /gmail/v1/users/{userId}/profile:\n    get:\n      operationId: getProfile\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n      responses:\n        \"200\":\n          description: Gmail profile\n          content:\n            application/json:\n              schema:\n                type: object\n                required: [emailAddress]\n                properties:\n                  emailAddress: { type: string }\n                  messagesTotal: { type: integer }\n                  threadsTotal: { type: integer }\n                  historyId: { type: string }\n  /gmail/v1/users/{userId}/messages:\n    get:\n      operationId: listMessages\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: q, in: query, schema: { type: string } }\n        - { name: labelIds, in: query, schema: { type: array, items: { type: string } } }\n        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 500 } }\n        - { name: pageToken, in: query, schema: { type: string } }\n      responses:\n        \"200\":\n          description: Message references\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  messages:\n                    type: array\n                    items: { $ref: \"#/components/schemas/MessageRef\" }\n                  nextPageToken: { type: string }\n                  resultSizeEstimate: { type: integer }\n  /gmail/v1/users/{userId}/messages/{messageId}:\n    get:\n      operationId: getMessage\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: messageId, in: path, required: true, schema: { type: string } }\n        - { name: format, in: query, schema: { type: string, enum: [minimal, full, raw, metadata] } }\n        - { name: metadataHeaders, in: query, schema: { type: array, items: { type: string } } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /gmail/v1/users/{userId}/threads:\n    get:\n      operationId: listThreads\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: q, in: query, schema: { type: string } }\n        - { name: labelIds, in: query, schema: { type: array, items: { type: string } } }\n        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 500 } }\n        - { name: pageToken, in: query, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /gmail/v1/users/{userId}/threads/{threadId}:\n    get:\n      operationId: getThread\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: threadId, in: path, required: true, schema: { type: string } }\n        - { name: format, in: query, schema: { type: string, enum: [full, metadata, minimal] } }\n        - { name: metadataHeaders, in: query, schema: { type: array, items: { type: string } } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /gmail/v1/users/{userId}/messages/{messageId}/modify:\n    post:\n      operationId: modifyMessageLabels\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: messageId, in: path, required: true, schema: { type: string } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/ModifyMessageRequest\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /gmail/v1/users/{userId}/messages/send:\n    post:\n      operationId: sendMessage\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/Message\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /gmail/v1/users/{userId}/drafts:\n    get:\n      operationId: listDrafts\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: q, in: query, schema: { type: string } }\n        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 500 } }\n        - { name: pageToken, in: query, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    post:\n      operationId: createDraft\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/Draft\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /gmail/v1/users/{userId}/drafts/{draftId}:\n    get:\n      operationId: getDraft\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: draftId, in: path, required: true, schema: { type: string } }\n        - { name: format, in: query, schema: { type: string, enum: [minimal, full, raw, metadata] } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /gmail/v1/users/{userId}/labels:\n    get:\n      operationId: listLabels\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    post:\n      operationId: createLabel\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/Label\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /gmail/v1/users/{userId}/labels/{labelId}:\n    get:\n      operationId: getLabel\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: labelId, in: path, required: true, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    patch:\n      operationId: updateLabel\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: labelId, in: path, required: true, schema: { type: string } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/Label\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    delete:\n      operationId: deleteLabel\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: labelId, in: path, required: true, schema: { type: string } }\n      responses:\n        \"204\": { description: Label deleted }\n  /gmail/v1/users/{userId}/history:\n    get:\n      operationId: listHistory\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: startHistoryId, in: query, required: true, schema: { type: string } }\n        - { name: historyTypes, in: query, schema: { type: array, items: { type: string } } }\n        - { name: labelId, in: query, schema: { type: string } }\n        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 500 } }\n        - { name: pageToken, in: query, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /gmail/v1/users/{userId}/messages/{messageId}/attachments/{attachmentId}:\n    get:\n      operationId: getAttachment\n      parameters:\n        - $ref: \"#/components/parameters/UserId\"\n        - { name: messageId, in: path, required: true, schema: { type: string } }\n        - { name: attachmentId, in: path, required: true, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\ncomponents:\n  securitySchemes:\n    oauthBearer: { type: http, scheme: bearer }\n  parameters:\n    UserId:\n      name: userId\n      in: path\n      required: true\n      schema: { type: string, default: me }\n  schemas:\n    MessageRef:\n      type: object\n      properties:\n        id: { type: string }\n        threadId: { type: string }\n    Message:\n      type: object\n      additionalProperties: false\n      required: [raw]\n      properties:\n        raw: { type: string, description: Base64url-encoded RFC 2822 message }\n        threadId: { type: string }\n    Draft:\n      type: object\n      additionalProperties: false\n      required: [message]\n      properties:\n        message: { $ref: \"#/components/schemas/Message\" }\n    Label:\n      type: object\n      additionalProperties: false\n      required: [name]\n      properties:\n        name: { type: string }\n        messageListVisibility: { type: string, enum: [show, hide] }\n        labelListVisibility: { type: string, enum: [labelShow, labelShowIfUnread, labelHide] }\n    ModifyMessageRequest:\n      type: object\n      additionalProperties: false\n      properties:\n        addLabelIds: { type: array, items: { type: string }, maxItems: 100 }\n        removeLabelIds: { type: array, items: { type: string }, maxItems: 100 }\n  responses:\n    Object:\n      description: Google API response\n      content:\n        application/json:\n          schema: { type: object, additionalProperties: true }\n",
+              "base_url": "https://gmail.googleapis.com",
+              "auth": {
+                "scheme": "bearer",
+                "token_from_request": {
+                  "header": "X-OpenNeko-Pack-4a1e6232901548e4f7210403"
+                }
+              },
+              "operations": {
+                "getProfile": {
+                  "expose_top_level": true
+                },
+                "listMessages": {
+                  "expose_top_level": true
+                },
+                "getMessage": {
+                  "expose_top_level": true
+                },
+                "listThreads": {
+                  "expose_top_level": true
+                },
+                "getThread": {
+                  "expose_top_level": true
+                },
+                "listDrafts": {
+                  "expose_top_level": true
+                },
+                "getDraft": {
+                  "expose_top_level": true
+                },
+                "listLabels": {
+                  "expose_top_level": true
+                },
+                "getLabel": {
+                  "expose_top_level": true
+                },
+                "listHistory": {
+                  "expose_top_level": true
+                },
+                "getAttachment": {
+                  "expose_top_level": true
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.write": false,
+            "api.delete": false
+          }
+        },
+        {
+          "name": "google_workspace_sheets",
+          "kind": "api",
+          "default": false,
+          "read_only": true,
+          "access": {
+            "read": "public",
+            "write": "blocked",
+            "delete": "blocked"
+          },
+          "specs": {
+            "sheets": {
+              "document": "openapi: 3.0.3\ninfo: { title: Google Sheets read API, version: 1.0.0 }\nservers: [{ url: https://sheets.googleapis.com }]\nsecurity: [{ oauthBearer: [] }]\npaths:\n  /v4/spreadsheets/{spreadsheetId}:\n    get:\n      operationId: getSpreadsheet\n      parameters:\n        - { name: spreadsheetId, in: path, required: true, schema: { type: string } }\n        - { name: ranges, in: query, schema: { type: array, items: { type: string } } }\n        - { name: includeGridData, in: query, schema: { type: boolean } }\n        - { name: fields, in: query, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /v4/spreadsheets/{spreadsheetId}/values/{range}:\n    get:\n      operationId: getSpreadsheetValues\n      parameters:\n        - { name: spreadsheetId, in: path, required: true, schema: { type: string } }\n        - { name: range, in: path, required: true, schema: { type: string } }\n        - { name: majorDimension, in: query, schema: { type: string, enum: [ROWS, COLUMNS] } }\n        - { name: valueRenderOption, in: query, schema: { type: string } }\n        - { name: dateTimeRenderOption, in: query, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n    put:\n      operationId: updateSpreadsheetValues\n      parameters:\n        - { name: spreadsheetId, in: path, required: true, schema: { type: string } }\n        - { name: range, in: path, required: true, schema: { type: string } }\n        - { name: valueInputOption, in: query, required: true, schema: { type: string, enum: [RAW, USER_ENTERED] } }\n        - { name: includeValuesInResponse, in: query, schema: { type: boolean } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/ValueRange\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /v4/spreadsheets/{spreadsheetId}/values/{range}:append:\n    post:\n      operationId: appendSpreadsheetValues\n      parameters:\n        - { name: spreadsheetId, in: path, required: true, schema: { type: string } }\n        - { name: range, in: path, required: true, schema: { type: string } }\n        - { name: valueInputOption, in: query, required: true, schema: { type: string, enum: [RAW, USER_ENTERED] } }\n        - { name: insertDataOption, in: query, schema: { type: string, enum: [OVERWRITE, INSERT_ROWS] } }\n        - { name: includeValuesInResponse, in: query, schema: { type: boolean } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/ValueRange\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /v4/spreadsheets/{spreadsheetId}/values/{range}:clear:\n    post:\n      operationId: clearSpreadsheetValues\n      parameters:\n        - { name: spreadsheetId, in: path, required: true, schema: { type: string } }\n        - { name: range, in: path, required: true, schema: { type: string } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { type: object, additionalProperties: false }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /v4/spreadsheets/{spreadsheetId}/values:batchGet:\n    get:\n      operationId: batchGetSpreadsheetValues\n      parameters:\n        - { name: spreadsheetId, in: path, required: true, schema: { type: string } }\n        - { name: ranges, in: query, required: true, schema: { type: array, items: { type: string } } }\n        - { name: majorDimension, in: query, schema: { type: string, enum: [ROWS, COLUMNS] } }\n        - { name: valueRenderOption, in: query, schema: { type: string } }\n        - { name: dateTimeRenderOption, in: query, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\n  /v4/spreadsheets/{spreadsheetId}/values:batchUpdate:\n    post:\n      operationId: batchUpdateSpreadsheetValues\n      parameters:\n        - { name: spreadsheetId, in: path, required: true, schema: { type: string } }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/BatchUpdateValuesRequest\" }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\ncomponents:\n  securitySchemes:\n    oauthBearer: { type: http, scheme: bearer }\n  responses:\n    Object:\n      description: Google API response\n      content:\n        application/json:\n          schema: { type: object, additionalProperties: true }\n  schemas:\n    ValueRange:\n      type: object\n      additionalProperties: false\n      properties:\n        range: { type: string }\n        majorDimension: { type: string, enum: [ROWS, COLUMNS] }\n        values:\n          type: array\n          items:\n            type: array\n            items: {}\n    BatchUpdateValuesRequest:\n      type: object\n      additionalProperties: false\n      required: [valueInputOption, data]\n      properties:\n        valueInputOption: { type: string, enum: [RAW, USER_ENTERED] }\n        includeValuesInResponse: { type: boolean }\n        data:\n          type: array\n          minItems: 1\n          items: { $ref: \"#/components/schemas/ValueRange\" }\n",
+              "base_url": "https://sheets.googleapis.com",
+              "auth": {
+                "scheme": "bearer",
+                "token_from_request": {
+                  "header": "X-OpenNeko-Pack-4a1e6232901548e4f7210403"
+                }
+              },
+              "operations": {
+                "getSpreadsheetValues": {
+                  "expose_top_level": true
+                },
+                "batchGetSpreadsheetValues": {
+                  "expose_top_level": true
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.write": false,
+            "api.delete": false
+          }
+        },
+        {
+          "name": "google_workspace_slides",
+          "kind": "api",
+          "default": false,
+          "read_only": true,
+          "access": {
+            "read": "public",
+            "write": "blocked",
+            "delete": "blocked"
+          },
+          "specs": {
+            "slides": {
+              "document": "openapi: 3.0.3\ninfo: { title: Google Slides read API, version: 1.0.0 }\nservers: [{ url: https://slides.googleapis.com }]\nsecurity: [{ oauthBearer: [] }]\npaths:\n  /v1/presentations/{presentationId}:\n    get:\n      operationId: getPresentation\n      parameters:\n        - { name: presentationId, in: path, required: true, schema: { type: string } }\n      responses:\n        \"200\": { $ref: \"#/components/responses/Object\" }\ncomponents:\n  securitySchemes:\n    oauthBearer: { type: http, scheme: bearer }\n  responses:\n    Object:\n      description: Google API response\n      content:\n        application/json:\n          schema: { type: object, additionalProperties: true }\n",
+              "base_url": "https://slides.googleapis.com",
+              "auth": {
+                "scheme": "bearer",
+                "token_from_request": {
+                  "header": "X-OpenNeko-Pack-4a1e6232901548e4f7210403"
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "api.write": false,
+            "api.delete": false
+          }
+        }
+      ],
+      "update_saved_queries": [
+        {
+          "name": "google_workspace_account_profile",
+          "query": "query GoogleWorkspaceAccountProfile {\n  gmail_get_profile(userId: \"me\") {\n    emailAddress\n    messagesTotal\n    threadsTotal\n  }\n}\n"
+        }
+      ]
+    }
+  }
+]
