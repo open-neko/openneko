@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
@@ -36,6 +38,7 @@ func TestActionExecuteRunsAllKindsInGoWithoutWorker(t *testing.T) {
 		_, _ = w.Write([]byte(`{"received":true}`))
 	}))
 	defer hookSrv.Close()
+	allowLoopbackWebhooks(t)
 
 	a := &API{Gate: &Gate{WorkerURL: worker.URL}, DB: db}
 	seed(t, db, `insert into action_request (id, org_id, scope, kind, status, payload) values
@@ -88,8 +91,8 @@ func TestActionExecuteRunsAllKindsInGoWithoutWorker(t *testing.T) {
 func TestCodeActionAdaptersInGo(t *testing.T) {
 	db := testpg.Migrated(t)
 	seedOrg(t, db)
-	agentsRoot := t.TempDir()
-	t.Setenv("OPENNEKO_AGENTS_ROOT", agentsRoot)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 
 	var ghAuth, ghPath, ghBody string
 	ghSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -135,7 +138,10 @@ func TestCodeActionAdaptersInGo(t *testing.T) {
 	if err := a.ActionExecute(t.Context(), "org", "bbbbbbbb-0000-4000-8000-000000000003"); err != nil {
 		t.Fatal(err)
 	}
-	patchFile := filepath.Join(agentsRoot, "orgs", "org", "artifacts", "patches", "bbbbbbbb-fix-off-by-one.patch")
+	patchFile := filepath.Join(orgAgentRoot("org"), "artifacts", "patches", "bbbbbbbb-fix-off-by-one.patch")
+	if !strings.HasPrefix(patchFile, home) {
+		t.Fatalf("patch folder %s is outside the org agent root", patchFile)
+	}
 	written, err := os.ReadFile(patchFile)
 	if err != nil {
 		t.Fatalf("read patch artifact: %v", err)
@@ -153,8 +159,8 @@ func TestAdminActionAdaptersInGo(t *testing.T) {
 	execAction := func(kind, payload string) (string, string) {
 		t.Helper()
 		var id string
-		if err := db.QueryRow(ctx, `insert into action_request (org_id, scope, kind, status, approved_by_user_id, payload)
-			values ('org', 'org', $1, 'approved', 'admin', $2::jsonb) returning id::text`, kind, payload).Scan(&id); err != nil {
+		if err := db.QueryRow(ctx, `insert into action_request (org_id, scope, kind, status, actor_user_id, approved_by_user_id, payload)
+			values ('org', 'org', $1, 'approved', 'member', 'admin', $2::jsonb) returning id::text`, kind, payload).Scan(&id); err != nil {
 			t.Fatal(err)
 		}
 		_ = a.ActionExecute(ctx, "org", id)
@@ -170,41 +176,69 @@ func TestAdminActionAdaptersInGo(t *testing.T) {
 		return status, result
 	}
 
-	// group_admin lifecycle: create_group, add_member, grant_item, upsert_data_access_rule, delete_data_access_rule, revoke_item, remove_member, delete_group
+	var applied []string
+	a.GroupGrantsScheduled = func(org string) { applied = append(applied, org) }
+	a.GroupGrantsDelay = time.Hour
+	t.Cleanup(a.stopGroupGrantsTimers)
+	scheduled := func(want int, step string) {
+		t.Helper()
+		if len(applied) != want {
+			t.Fatalf("%s: GraphJin applies scheduled %v, want %d", step, applied, want)
+		}
+		for _, org := range applied {
+			if org != "org" {
+				t.Fatalf("%s: GraphJin apply scheduled for org %q", step, org)
+			}
+		}
+	}
+
 	st, res := execAction("group_admin", `{"action":"create_group","name":"Finance Analysts","description":"Quarter close"}`)
 	if st != "executed" {
 		t.Fatalf("create_group failed: %s", res)
 	}
-	groupObj, _ := jsGet(mustParse(t, []byte(res)), "group").(*jsObj)
-	groupID := ""
-	if groupObj != nil {
-		groupID = jsStr(groupObj.vals["id"])
+	groupID := jsStr(jsGet(mustParse(t, []byte(res)), "groupId"))
+	if groupID == "" || jsStr(jsGet(mustParse(t, []byte(res)), "slug")) != "finance-analysts" {
+		t.Fatalf("create_group result: %s", res)
 	}
-	if groupID == "" {
-		t.Fatalf("missing group id: %s", res)
-	}
+	scheduled(0, "create_group")
 	if st, res := execAction("group_admin", `{"action":"add_member","groupId":"`+groupID+`","userId":"member"}`); st != "executed" {
 		t.Fatalf("add_member: %s", res)
 	}
-	if st, res := execAction("group_admin", `{"action":"grant_item","groupId":"`+groupID+`","itemType":"skill","itemId":"margin-audit"}`); st != "executed" {
+	if st, res := execAction("group_admin", `{"action":"grant_item","groupId":"`+groupID+`","itemType":"skill","itemId":"margin-audit"}`); st != "executed" || !strings.Contains(res, `"created": true`) {
 		t.Fatalf("grant_item: %s", res)
 	}
-	st, res = execAction("group_admin", `{"action":"upsert_data_access_rule","groupId":"`+groupID+`","source":"erp","tableSchema":"sales","tableName":"orders","columns":["id","total"],"rowFilter":{"column":"owner_id","op":"eq","value":"u-1"}}`)
+	scheduled(0, "grant skill")
+	if st, res := execAction("group_admin", `{"action":"grant_item","groupId":"`+groupID+`","itemType":"data_source","itemId":"erp"}`); st != "executed" {
+		t.Fatalf("grant data_source: %s", res)
+	}
+	scheduled(1, "grant data_source")
+	if got := rowText(t, db, `select coalesce(created_by_user_id, '') || '|' || (action_request_id is not null)::text from item_grant where org_id = 'org' and item_type = 'data_source' and group_id = $1::uuid`, groupID); got != "member|true" {
+		t.Fatalf("grant actor: %s", got)
+	}
+	if st, errText := execAction("group_admin", `{"action":"grant_item","groupId":"`+groupID+`","itemType":"nothing","itemId":"x"}`); st != "failed" || !strings.Contains(errText, "unknown item type") {
+		t.Fatalf("unknown item type: %s %s", st, errText)
+	}
+	if st, errText := execAction("group_admin", `{"action":"set_table_access","groupId":"`+groupID+`","source":"erp","table":"orders","columns":["id"],"rowFilter":{"column":"id","op":"like","value":1}}`); st != "failed" || !strings.Contains(errText, "op must be one of") {
+		t.Fatalf("bad row filter: %s %s", st, errText)
+	}
+	st, res = execAction("group_admin", `{"action":"set_table_access","groupId":"`+groupID+`","source":"erp","table":"sales.orders","columns":["id","total","id"],"rowFilter":{"column":"owner_id","op":"eq","value":{"var":"user_id"}}}`)
 	if st != "executed" {
-		t.Fatalf("upsert_data_access_rule: %s", res)
+		t.Fatalf("set_table_access: %s", res)
 	}
-	ruleObj, _ := jsGet(mustParse(t, []byte(res)), "rule").(*jsObj)
-	ruleID := ""
-	if ruleObj != nil {
-		ruleID = jsStr(ruleObj.vals["id"])
+	ruleID := jsStr(jsGet(mustParse(t, []byte(res)), "ruleId"))
+	if got := rowText(t, db, `select table_schema || '|' || table_name || '|' || array_to_string(columns, ',') || '|' || coalesce(created_by_user_id, '') from data_access_rule where id = $1::uuid`, ruleID); got != "sales|orders|id,total|member" {
+		t.Fatalf("data access rule: %s", got)
 	}
-	if st, res := execAction("group_admin", `{"action":"delete_data_access_rule","ruleId":"`+ruleID+`"}`); st != "executed" {
-		t.Fatalf("delete_data_access_rule: %s", res)
+	scheduled(2, "set_table_access")
+	if st, res := execAction("group_admin", `{"action":"remove_table_access","ruleId":"`+ruleID+`"}`); st != "executed" || !strings.Contains(res, `"removed": true`) {
+		t.Fatalf("remove_table_access: %s", res)
 	}
-	if st, res := execAction("group_admin", `{"action":"revoke_item","groupId":"`+groupID+`","itemType":"skill","itemId":"margin-audit"}`); st != "executed" {
+	scheduled(3, "remove_table_access")
+	if st, res := execAction("group_admin", `{"action":"revoke_item","groupId":"`+groupID+`","itemType":"data_source","itemId":"erp"}`); st != "executed" || !strings.Contains(res, `"removed": true`) {
 		t.Fatalf("revoke_item: %s", res)
 	}
-	if st, res := execAction("group_admin", `{"action":"remove_member","groupId":"`+groupID+`","userId":"member"}`); st != "executed" {
+	scheduled(4, "revoke data_source")
+	if st, res := execAction("group_admin", `{"action":"remove_member","groupId":"`+groupID+`","userId":"member"}`); st != "executed" || !strings.Contains(res, `"stillMember": false`) {
 		t.Fatalf("remove_member: %s", res)
 	}
 	var ssoGroupID string
@@ -212,21 +246,37 @@ func TestAdminActionAdaptersInGo(t *testing.T) {
 		values ('org', 'scalekit', 'ten-1', 'ext-fin', 'IdP Finance') returning id::text`).Scan(&ssoGroupID); err != nil {
 		t.Fatal(err)
 	}
-	st, res = execAction("group_admin", `{"action":"add_idp_rule","ssoGroupId":"`+ssoGroupID+`","userGroupId":"`+groupID+`"}`)
+	st, res = execAction("group_admin", `{"action":"add_idp_rule","ssoGroupId":"`+ssoGroupID+`","groupId":"`+groupID+`"}`)
 	if st != "executed" {
 		t.Fatalf("add_idp_rule: %s", res)
 	}
-	idpRuleID, _ := jsGet(mustParse(t, []byte(res)), "id").(string)
+	idpRuleID := jsStr(jsGet(mustParse(t, []byte(res)), "id"))
 	if st, res := execAction("group_admin", `{"action":"remove_idp_rule","ruleId":"`+idpRuleID+`"}`); st != "executed" {
 		t.Fatalf("remove_idp_rule: %s", res)
 	}
 	if st, res := execAction("group_admin", `{"action":"delete_group","groupId":"`+groupID+`"}`); st != "executed" {
 		t.Fatalf("delete_group: %s", res)
 	}
+	scheduled(5, "delete_group")
+	if got := rowText(t, db, `select string_agg(slug, ',' order by slug) from user_group where org_id = 'org'`); got != "administrators,everyone" {
+		t.Fatalf("groups after delete: %s", got)
+	}
+	if st, errText := execAction("group_admin", `{"action":"upsert_data_access_rule","groupId":"`+groupID+`"}`); st != "failed" || errText != `group_admin: unknown action "upsert_data_access_rule"` {
+		t.Fatalf("unknown group action: %s %s", st, errText)
+	}
 
-	// user_admin: refuse to demote/disable last active admin, allow promoting member and disabling/enabling member
-	if st, errText := execAction("user_admin", `{"action":"disable","userId":"admin"}`); st != "failed" || !strings.Contains(errText, "administrator") {
-		t.Fatalf("disable sole admin: %s %s", st, errText)
+	if st, errText := execAction("user_admin", `{"action":"deactivate","userId":"admin"}`); st != "failed" || !strings.Contains(errText, "administrator") {
+		t.Fatalf("deactivate sole admin: %s %s", st, errText)
+	}
+	if st, res := execAction("user_admin", `{"action":"invite","email":"New@Example.com","role":"admin"}`); st != "executed" || !strings.Contains(res, `"role": "admin"`) {
+		t.Fatalf("invite: %s", res)
+	}
+	if got := rowText(t, db, `select count(*)::text from user_group_membership m join user_group g on g.id = m.group_id join app_user u on u.id = m.user_id
+		where u.email = 'new@example.com' and g.slug = 'administrators'`); got != "1" {
+		t.Fatalf("invited admin membership: %s", got)
+	}
+	if st, res := execAction("user_admin", `{"action":"invite","email":"new@example.com","role":"member"}`); st != "executed" || !strings.Contains(res, `"alreadyExisted": true`) {
+		t.Fatalf("second invite: %s", res)
 	}
 	if st, res := execAction("user_admin", `{"action":"set_role","userId":"member","role":"admin"}`); st != "executed" {
 		t.Fatalf("promote member: %s", res)
@@ -234,60 +284,76 @@ func TestAdminActionAdaptersInGo(t *testing.T) {
 	if st, res := execAction("user_admin", `{"action":"set_role","userId":"member","role":"member"}`); st != "executed" {
 		t.Fatalf("demote member: %s", res)
 	}
-	if st, res := execAction("user_admin", `{"action":"disable","userId":"member"}`); st != "executed" {
-		t.Fatalf("disable member: %s", res)
+	if st, errText := execAction("user_admin", `{"action":"set_role","userId":"nobody","role":"admin"}`); st != "failed" || errText != "user nobody not found" {
+		t.Fatalf("set_role unknown user: %s %s", st, errText)
 	}
-	if st, res := execAction("user_admin", `{"action":"enable","userId":"member"}`); st != "executed" {
-		t.Fatalf("enable member: %s", res)
+	if st, res := execAction("user_admin", `{"action":"deactivate","userId":"member"}`); st != "executed" {
+		t.Fatalf("deactivate member: %s", res)
+	}
+	if got := rowText(t, db, `select (disabled_at is not null)::text from app_user where id = 'member'`); got != "true" {
+		t.Fatalf("member disabled: %s", got)
+	}
+	if st, res := execAction("user_admin", `{"action":"reactivate","userId":"member"}`); st != "executed" {
+		t.Fatalf("reactivate member: %s", res)
+	}
+	if st, errText := execAction("user_admin", `{"action":"deactivate","userId":"nobody"}`); st != "failed" || errText != "user nobody not found" {
+		t.Fatalf("deactivate unknown user: %s %s", st, errText)
 	}
 
-	// channel_admin: upsert_workspace, link_identity, block_identity, reset_identity, remove_workspace
 	var identityID string
 	if err := db.QueryRow(ctx, `insert into channel_identity (org_id, channel_plugin, workspace_id, channel_user_id, display_name)
 		values ('org', 'slack', 'T123', 'U123', 'Alice') returning id::text`).Scan(&identityID); err != nil {
 		t.Fatal(err)
 	}
-	st, res = execAction("channel_admin", `{"action":"upsert_workspace","channelPlugin":"slack","workspaceId":"T123","workspaceName":"Acme"}`)
-	if st != "executed" {
-		t.Fatalf("upsert_workspace: %s", res)
+	identity := func() string {
+		return rowText(t, db, `select status || '|' || coalesce(app_user_id, '') || '|' || (verified_at is not null)::text from channel_identity where id = $1::uuid`, identityID)
 	}
-	wsID, _ := jsGet(mustParse(t, []byte(res)), "id").(string)
-	seed(t, db, `insert into organization (id, name) values ('other-org', 'Other') on conflict do nothing`)
-	seed(t, db, `insert into channel_workspace (org_id, channel_plugin, workspace_id) values ('other-org', 'slack', 'T-OTHER')`)
-	if st, errText := execAction("channel_admin", `{"action":"upsert_workspace","channelPlugin":"slack","workspaceId":"T-OTHER"}`); st != "failed" || !strings.Contains(errText, "already bound to another org") {
-		t.Fatalf("cross-org workspace should fail: %s %s", st, errText)
+	if st, res := execAction("channel_admin", `{"action":"link","identityId":"`+identityID+`","appUserId":"member"}`); st != "executed" || identity() != "linked|member|true" {
+		t.Fatalf("link: %s %s", res, identity())
 	}
-	if st, res := execAction("channel_admin", `{"action":"link_identity","identityId":"`+identityID+`","userEmail":"m@example.com"}`); st != "executed" {
-		t.Fatalf("link_identity: %s", res)
+	if st, res := execAction("channel_admin", `{"action":"block","identityId":"`+identityID+`"}`); st != "executed" || identity() != "blocked|member|true" {
+		t.Fatalf("block: %s %s", res, identity())
 	}
-	if st, res := execAction("channel_admin", `{"action":"block_identity","identityId":"`+identityID+`"}`); st != "executed" {
-		t.Fatalf("block_identity: %s", res)
+	if st, res := execAction("channel_admin", `{"action":"unblock","identityId":"`+identityID+`"}`); st != "executed" || identity() != "unverified||false" {
+		t.Fatalf("unblock: %s %s", res, identity())
 	}
-	if st, res := execAction("channel_admin", `{"action":"reset_identity","identityId":"`+identityID+`"}`); st != "executed" {
-		t.Fatalf("reset_identity: %s", res)
+	seed(t, db, `update app_user set disabled_at = now() where id = 'member'`)
+	if st, errText := execAction("channel_admin", `{"action":"link","identityId":"`+identityID+`","appUserId":"member"}`); st != "failed" || !strings.Contains(errText, "unknown or disabled") {
+		t.Fatalf("link to a disabled user: %s %s", st, errText)
 	}
-	if st, res := execAction("channel_admin", `{"action":"remove_workspace","id":"`+wsID+`"}`); st != "executed" {
-		t.Fatalf("remove_workspace: %s", res)
+	seed(t, db, `update app_user set disabled_at = null where id = 'member'`)
+	if st, errText := execAction("channel_admin", `{"action":"unlink","identityId":"00000000-0000-4000-8000-000000000000"}`); st != "failed" || !strings.Contains(errText, "not found") {
+		t.Fatalf("unlink unknown identity: %s %s", st, errText)
 	}
 
-	// data_source_admin: register_placeholder, refuse enable without URL, set_enabled after URL, set_default, remove
-	st, res = execAction("data_source_admin", `{"action":"register_placeholder","name":"warehouse","kind":"graphjin","label":"Warehouse"}`)
-	if st != "executed" {
-		t.Fatalf("register_placeholder: %s", res)
+	if st, res := execAction("data_source_admin", `{"action":"register","name":"weird","sourceKind":"blockchain"}`); st != "executed" {
+		t.Fatalf("register weird: %s", res)
 	}
-	dsID, _ := jsGet(mustParse(t, []byte(res)), "id").(string)
-	if st, errText := execAction("data_source_admin", `{"action":"set_enabled","id":"`+dsID+`","enabled":true}`); st != "failed" || !strings.Contains(errText, "until its GraphQL URL is configured") {
-		t.Fatalf("enable unconfigured source: %s %s", st, errText)
+	if got := rowText(t, db, `select kind || '|' || enabled::text || '|' || graphql_url from data_source where org_id = 'org' and name = 'weird'`); got != "graphjin|false|" {
+		t.Fatalf("placeholder: %s", got)
 	}
-	seed(t, db, `update data_source set graphql_url = 'http://warehouse.example/api/v1/graphql' where id = $1`, dsID)
-	if st, res := execAction("data_source_admin", `{"action":"set_enabled","id":"`+dsID+`","enabled":true}`); st != "executed" {
-		t.Fatalf("set_enabled: %s", res)
+	if st, res := execAction("data_source_admin", `{"action":"register","name":"Warehouse","label":"Warehouse","sourceKind":"api"}`); st != "executed" {
+		t.Fatalf("register: %s", res)
 	}
-	if st, res := execAction("data_source_admin", `{"action":"set_default","id":"`+dsID+`"}`); st != "executed" {
-		t.Fatalf("set_default: %s", res)
+	if st, res := execAction("data_source_admin", `{"action":"register","name":"Warehouse"}`); st != "executed" || !strings.Contains(res, `"alreadyExisted": true`) {
+		t.Fatalf("register again: %s", res)
 	}
-	if st, res := execAction("data_source_admin", `{"action":"remove","id":"`+dsID+`"}`); st != "executed" {
+	for _, step := range []string{"enable", "set_default"} {
+		if st, res := execAction("data_source_admin", `{"action":"`+step+`","name":"Warehouse"}`); st != "executed" {
+			t.Fatalf("%s: %s", step, res)
+		}
+	}
+	if got := rowText(t, db, `select string_agg(name || ':' || enabled::text || ':' || is_default::text, ',' order by name) from data_source where org_id = 'org'`); got != "Warehouse:true:true,weird:false:false" {
+		t.Fatalf("registry: %s", got)
+	}
+	if st, errText := execAction("data_source_admin", `{"action":"remove","name":"Warehouse"}`); st != "failed" || !strings.Contains(errText, "default") {
+		t.Fatalf("remove default: %s %s", st, errText)
+	}
+	if st, res := execAction("data_source_admin", `{"action":"remove","name":"weird"}`); st != "executed" {
 		t.Fatalf("remove: %s", res)
+	}
+	if st, errText := execAction("data_source_admin", `{"action":"disable","name":"missing"}`); st != "failed" || errText != "data source missing not found" {
+		t.Fatalf("disable missing: %s %s", st, errText)
 	}
 }
 
@@ -460,5 +526,75 @@ paths:
 	stagedSpec, err := os.ReadFile(filepath.Join(dir, "specs", specFile))
 	if err != nil || string(stagedSpec) != specContent {
 		t.Fatalf("staged OpenAPI spec mismatch: %v %s", err, string(stagedSpec))
+	}
+}
+
+func allowLoopbackWebhooks(t *testing.T) {
+	t.Helper()
+	blocked := webhookAddressBlocked
+	webhookAddressBlocked = func(ip net.IP) bool { return !ip.IsLoopback() && blocked(ip) }
+	t.Cleanup(func() { webhookAddressBlocked = blocked })
+}
+
+func TestWebhookAdapterRefusesLocalAddressesAndRedirects(t *testing.T) {
+	db := testpg.Migrated(t)
+	seedOrg(t, db)
+	a := &API{DB: db}
+	var hits int
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if r.URL.Path == "/hop" {
+			http.Redirect(w, r, "http://169.254.169.254/latest/meta-data/", http.StatusFound)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer target.Close()
+	run := func(url string) string {
+		t.Helper()
+		var id string
+		if err := db.QueryRow(t.Context(), `insert into action_request (org_id, scope, kind, status, payload)
+			values ('org', 'external', 'send_webhook', 'approved', $1::jsonb) returning id::text`,
+			jsStringify(jsObjOf("url", url), false)).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		_ = a.ActionExecute(t.Context(), "org", id)
+		return rowText(t, db, `select r.status || '|' || coalesce(e.error, '') from action_request r join action_execution e on e.action_request_id = r.id where r.id = $1`, id)
+	}
+	for _, url := range []string{target.URL + "/hook", "http://localhost:9/hook", "http://169.254.169.254/latest/meta-data/", "http://[::1]:9/", "http://0.0.0.0:9/"} {
+		if got := run(url); !strings.HasPrefix(got, "failed|") || !strings.Contains(got, "OpenNeko does not send a webhook to the loopback") {
+			t.Fatalf("%s: %s", url, got)
+		}
+	}
+	if hits != 0 {
+		t.Fatalf("a blocked webhook reached the server %d times", hits)
+	}
+	allowLoopbackWebhooks(t)
+	if got := run(target.URL + "/hop"); got != "failed|webhook to "+target.URL+"/hop returned 302 Found: " {
+		t.Fatalf("redirect: %s", got)
+	}
+	if hits != 1 {
+		t.Fatalf("the redirect was followed: %d requests", hits)
+	}
+	if got := run(target.URL + "/hook"); got != "executed|" {
+		t.Fatalf("allowed webhook: %s", got)
+	}
+}
+
+func TestSourceConfigAdminRefusesWhenCapabilityIsOff(t *testing.T) {
+	db := testpg.Migrated(t)
+	seedOrg(t, db)
+	a := &API{DB: db}
+	seed(t, db, `insert into llm_provider_config (org_id, scope, provider, enabled, config, secrets)
+		values ('org', 'graphjin-config', 'graphjin-config', false, '{"sourceConfigEnabled": false}', '{}')`)
+	var id string
+	if err := db.QueryRow(t.Context(), `insert into action_request (org_id, scope, kind, status, approved_by_user_id, payload)
+		values ('org', 'internal', 'source_config_admin', 'approved', 'admin',
+		'{"action":"add_role","name":"analyst","match":"role = ''analyst''","preview":{"valid":true,"catalogRevision":"rev-1","patchHash":"x"}}') returning id::text`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	_ = a.ActionExecute(t.Context(), "org", id)
+	if got := rowText(t, db, `select r.status || '|' || coalesce(e.error, '') from action_request r join action_execution e on e.action_request_id = r.id where r.id = $1`, id); got != "failed|source_config_admin: GraphJin config capability is disabled" {
+		t.Fatalf("capability off: %s", got)
 	}
 }
