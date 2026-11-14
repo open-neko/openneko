@@ -49,7 +49,7 @@ func TestProcsEnvironment(t *testing.T) {
 		"NODE_ENV": "production", "OPENNEKO_WEB_ADDR": "0.0.0.0:3000", "OPENNEKO_WEB_DIR": o.WebDir,
 		"OPENNEKO_SERVE_URL": "http://" + ServeAddr, "OPENNEKO_GRAPHJIN_URL": "http://" + SubscriptionsAddr,
 		"WORKER_ADMIN_URL": "unix:///srv/on/run/worker.sock", "OPENNEKO_METRICS_REFRESH": "on", "OPENNEKO_IN_CONTAINER": "false",
-		"OPENNEKO_AGENT_RUNS_DIR": "/srv/on/agent-runs",
+		"OPENNEKO_AGENT_RUNS_DIR": "/srv/on/agent-runs", "OPENNEKO_WEB_ADMIN_SOCKET": "/srv/on/web-admin.sock",
 	} {
 		if web[k] != want {
 			t.Errorf("web %s=%q, want %q", k, web[k], want)

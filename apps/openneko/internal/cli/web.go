@@ -68,6 +68,10 @@ stage or files folders.
 Web refuses to start on a database that lacks a migration of this release,
 unless OPENNEKO_SKIP_MIGRATE is set.
 
+With OPENNEKO_WEB_ADMIN_SOCKET set, web serves the pack routes of
+` + "`openneko pack`" + ` on that Unix socket, mode 600. The socket has no other
+check.
+
 The admin password route changes the neko role's password and writes it to
 config.json. With OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE=1, web then stops
 with exit code 0, so its supervisor starts it again.`,
@@ -123,6 +127,14 @@ with exit code 0, so its supervisor starts it again.`,
 			api := &webfront.API{Gate: gate, DB: pool, Version: webfront.AppVersion(dir, version.Version),
 				SecureCookies: os.Getenv("NODE_ENV") == "production", Restart: stop, Jobs: inserter, EvalTrace: trace,
 				MetricsRefresh: jobs.MetricsRefreshOn()}
+			if socket := strings.TrimSpace(os.Getenv(webAdminSocketEnv)); socket != "" {
+				stopAdmin, err := serveWebAdmin(socket, api.OperatorHandler())
+				if err != nil {
+					_ = ln.Close()
+					return fmt.Errorf("admin socket: %w", err)
+				}
+				defer stopAdmin()
+			}
 			results, err := api.ConvertConfigRepos(ctx, false)
 			reportConfigRepos(cmd.OutOrStdout(), results, false)
 			if err != nil {

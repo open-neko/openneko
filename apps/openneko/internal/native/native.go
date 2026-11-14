@@ -38,6 +38,7 @@ func (l Layout) GraphJin() string      { return filepath.Join(l.shared(), "graph
 func (l Layout) Seed() string          { return filepath.Join(l.shared(), "graphjin", "seed.yml") }
 func (l Layout) Run() string           { return filepath.Join(l.shared(), "run") }
 func (l Layout) AgentRuns() string     { return filepath.Join(l.shared(), "agent-runs") }
+func (l Layout) WebAdmin() string      { return filepath.Join(l.Root, "web-admin.sock") }
 func (l Layout) Logs() string          { return filepath.Join(l.Root, "logs") }
 func (l Layout) State() string         { return filepath.Join(l.Run(), "state.json") }
 func (l Layout) Lock() string          { return filepath.Join(l.Run(), "supervisor.lock") }
@@ -148,6 +149,7 @@ func WebEnv(l Layout, o Options) map[string]string {
 	web["OPENNEKO_SERVE_URL"] = "http://" + ServeAddr
 	web["OPENNEKO_GRAPHJIN_URL"] = "http://" + SubscriptionsAddr
 	web["WORKER_ADMIN_URL"] = "unix://" + filepath.Join(l.Run(), "worker.sock")
+	web["OPENNEKO_WEB_ADMIN_SOCKET"] = l.WebAdmin()
 	if !hasEnv(o.Env, "OPENNEKO_METRICS_REFRESH") {
 		web["OPENNEKO_METRICS_REFRESH"] = "off"
 	}

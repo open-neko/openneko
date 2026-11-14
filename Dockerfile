@@ -333,7 +333,6 @@ COPY --from=worker-deploy --chown=neko:neko /out/worker-app ./
 COPY --chown=neko:neko db ./db
 # Embedded first-party solution packs are loaded and validated by the worker.
 COPY --chown=neko:neko packs ./packs
-COPY --chown=neko:neko apps/worker/scripts/magento-v2-live-acceptance.ts ./scripts/magento-v2-live-acceptance.ts
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 # Vendor the openneko Go binary so the agent's Bash tool inside the worker

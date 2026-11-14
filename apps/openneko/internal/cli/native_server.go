@@ -27,7 +27,7 @@ var (
 
 var serverCommands = map[string]bool{
 	"start": true, "stop": true, "status": true, "logs": true,
-	"doctor": true, "backup": true, "restore": true, "upgrade": true,
+	"doctor": true, "backup": true, "restore": true, "upgrade": true, "pack": true,
 }
 
 func serverFilePath() string {

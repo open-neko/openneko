@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,7 +29,7 @@ func TestPackUploadReadsHostArchive(t *testing.T) {
 	}
 }
 
-func TestPackUploadStreamsHostFileToSelectedWorker(t *testing.T) {
+func TestPackUploadStreamsHostFileToSelectedWeb(t *testing.T) {
 	directory := t.TempDir()
 	archive := filepath.Join(directory, "host-only.zip")
 	if err := os.WriteFile(archive, []byte("host ZIP bytes"), 0600); err != nil {
@@ -39,6 +38,7 @@ func TestPackUploadStreamsHostFileToSelectedWorker(t *testing.T) {
 	script := `#!/bin/sh
 if [ "$1" = "ps" ]; then
   echo openneko-pack-upload-worker-1
+  echo openneko-pack-upload-web-1
 else
   printf '%s\n' "$@" > "$PACK_TEST_CAPTURE/args"
   cat > "$PACK_TEST_CAPTURE/body"
@@ -61,8 +61,11 @@ fi
 	}
 	args, _ := os.ReadFile(filepath.Join(directory, "args"))
 	body, _ := os.ReadFile(filepath.Join(directory, "body"))
-	if !strings.Contains(string(args), "exec\n-i\nopenneko-pack-upload-worker-1\ncurl") || strings.Contains(string(args), archive) || string(body) != "host ZIP bytes" {
+	if !strings.Contains(string(args), "exec\n-i\n-e\nOPENNEKO_PROXIED=1\nopenneko-pack-upload-web-1\nopenneko\npack\nupload\n-\n") || strings.Contains(string(args), archive) || string(body) != "host ZIP bytes" {
 		t.Fatalf("host transport was not streamed: %s", args)
+	}
+	if !strings.Contains(output.String(), `"packId":"service-health"`) {
+		t.Fatalf("inner output was not passed on: %s", output.String())
 	}
 }
 
@@ -113,16 +116,25 @@ func TestPackCustomReviewAndApproval(t *testing.T) {
 
 func runPackCommand(t *testing.T, handler http.Handler, args ...string) (string, error) {
 	t.Helper()
-	server := httptest.NewServer(handler)
-	t.Cleanup(server.Close)
-	t.Setenv("WORKER_ADMIN_URL", server.URL)
+	dir, err := os.MkdirTemp("", "wa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	socket := filepath.Join(dir, "web-admin.sock")
+	stop, err := serveWebAdmin(socket, handler)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(stop)
+	t.Setenv(webAdminSocketEnv, socket)
 	t.Setenv("OPENNEKO_PROXIED", "1")
 	command := newPackCmd()
 	var output bytes.Buffer
 	command.SetOut(&output)
 	command.SetErr(&output)
 	command.SetArgs(args)
-	err := command.Execute()
+	err = command.Execute()
 	return output.String(), err
 }
 
@@ -303,5 +315,46 @@ func TestPackUninstallRetainsHistoryAndData(t *testing.T) {
 	}
 	if output != "uninstalled magento@0.1.0 (history and data retained)\n" {
 		t.Fatalf("unexpected output: %q", output)
+	}
+}
+
+func TestWebAdminSocketIsOwnerOnly(t *testing.T) {
+	dir, err := os.MkdirTemp("", "wa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	socket := filepath.Join(dir, "web-admin.sock")
+	if err := os.WriteFile(socket, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := serveWebAdmin(socket, http.NotFoundHandler()); err == nil {
+		t.Fatal("a plain file at the socket path was replaced")
+	}
+	_ = os.Remove(socket)
+	stop, err := serveWebAdmin(socket, http.NotFoundHandler())
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(socket)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("socket mode %v: %v", info.Mode(), err)
+	}
+	stop()
+	if _, err := os.Stat(socket); !os.IsNotExist(err) {
+		t.Fatal("the socket stayed after stop")
+	}
+}
+
+func TestPackCommandsNeedNoWorker(t *testing.T) {
+	t.Setenv("WORKER_ADMIN_URL", "unix:///nonexistent/worker.sock")
+	output, err := runPackCommand(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/admin/packs/magento/inspect" || r.URL.Query().Get("version") != "" {
+			t.Fatalf("inspect path %s", r.URL)
+		}
+		io.WriteString(w, `{"manifest":{"metadata":{"id":"magento","name":"Magento","version":"2.0.0","publisher":"OpenNeko","category":"commerce"},"inputs":[]},"permissions":{}}`)
+	}), "inspect", "magento")
+	if err != nil || !strings.Contains(output, "Magento (magento)") {
+		t.Fatalf("%s: %v", output, err)
 	}
 }

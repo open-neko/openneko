@@ -176,6 +176,7 @@ services:
     environment:
       <<: *neko-app-env
       WORKER_ADMIN_URL: unix:///run/openneko/worker.sock
+      OPENNEKO_WEB_ADMIN_SOCKET: /tmp/openneko-web-admin.sock
       OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE: "1"
       # Base URL for emailed sign-in links and OAuth callbacks. Set it to the
       # URL people open when the web port is behind a proxy or another host.
