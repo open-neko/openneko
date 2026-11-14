@@ -964,10 +964,10 @@ answers every `/api/v1/*` and `/api/*` route (including `POST /api/v1/settings/f
 serves `openneko pack` on its local admin socket (`web-admin.sock`), and runs
 sign-in (device sign-in, session and token checks), passkeys, Web Push
 notifications, pack install/doctor/OAuth/actions, channels, GraphJin group
-grants, external-event subscription dispatch, and River background jobs in Go.
+grants, external-event subscription dispatch, the Scalekit workspace
+connection, and River background jobs in Go.
 A few paths still call the Node worker that runs in the Docker stack or a
-source checkout: Scalekit workspace connectors (`/admin/connect/*`) and
-the built-in action adapters (`channel_admin`, `code_create_issue`,
+source checkout: the built-in action adapters (`channel_admin`, `code_create_issue`,
 `code_draft_patch`, `data_source_admin`, `group_admin`, `send_webhook`,
 `source_config_admin`, and `user_admin`). Windows does not run the native
 runtime yet.

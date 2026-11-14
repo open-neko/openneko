@@ -102,7 +102,7 @@ func catalogKind(row catalogRow) string {
 }
 
 func TestAdminItems(t *testing.T) {
-	f, db, wk := groupsFront(t)
+	f, db, _ := groupsFront(t)
 	admin := sessionCookie("admin")
 	t.Setenv("HOME", t.TempDir())
 	if err := os.WriteFile(filepath.Join(f.API.SecretsDir, "secret-key"), []byte("items-test-key\n"), 0o600); err != nil {
@@ -146,7 +146,6 @@ func TestAdminItems(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("OPENNEKO_GRAPHJIN_CONFIG", gjCfg)
-	wk.reply["/admin/connect/providers"] = `{"providers":[{"pluginName":"slack","providerLabel":"Slack"}]}`
 	if err := secrets.Write(secrets.Store{"channel.slack": {"SLACK_BOT_TOKEN": "xoxb-1"}, "channel.hud": {"HUD_CHANNEL_WORKSPACE": "pack"}}, f.API.SecretsDir); err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +169,7 @@ func TestAdminItems(t *testing.T) {
 		"saved_query":   `[{"id":"top_orders","label":"top_orders"}]`,
 		"api_operation": `[{"id":"erp:orders:list","label":"orders · list","detail":"erp"}]`,
 		"action":        `[{"id":"crm.note","label":"crm.note","detail":"Note"},{"id":"shop.refund","label":"shop.refund","detail":"Refund"}]`,
-		"integration":   `[{"id":"slack","label":"Slack","detail":"slack"}]`,
+		"integration":   `[{"id":"scalekit","label":"Scalekit workspace","detail":"scalekit"}]`,
 		"channel":       `[{"id":"slack","label":"Slack","detail":"slack"},{"id":"telegram","label":"telegram","detail":"telegram"}]`,
 		"pack":          `[{"id":"shop","label":"shop","detail":"v1.2"}]`,
 	} {
