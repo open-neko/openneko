@@ -865,11 +865,12 @@ func (a *API) packActionGraphjinQuery(
 
 type actionAdapter func(context.Context, *actionRequestRecord) (*actionExecutionOutcome, error)
 
-// workerActionKinds are the built-in adapters that only the worker runs.
-// Every other kind, pack kinds included, runs in Go.
+// workerActionKinds are the built-in and eval adapters that only the worker
+// runs. Every other kind, pack kinds included, runs in Go.
 var workerActionKinds = []string{
 	"channel_admin", "code_create_issue", "code_draft_patch", "data_source_admin",
-	"group_admin", "send_webhook", "source_config_admin", "user_admin",
+	"eval_send_notice", "group_admin", "openneko_eval_mutation", "openneko_eval_priority",
+	"send_webhook", "source_config_admin", "user_admin",
 }
 
 // goActionAdapter is the Go executor of an action request, or nil when the
