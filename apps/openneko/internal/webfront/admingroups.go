@@ -15,10 +15,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-const (
-	workerAdminTimeout   = 120 * time.Second
-	directorySyncTimeout = 15 * time.Minute
-)
+const workerAdminTimeout = 120 * time.Second
 
 type groupError struct{ code, message string }
 
@@ -88,39 +85,47 @@ func (a *API) relayWorker(w http.ResponseWriter, r *http.Request, path string, b
 }
 
 func (a *API) directoryStatus(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.accessAdmin(w, r); ok {
-		a.relayWorker(w, r, "/admin/directory/status", nil)
+	act, ok := a.accessAdmin(w, r)
+	if !ok {
+		return
 	}
+	status, err := a.DirectoryStatus(r.Context(), act.OrgID)
+	if err != nil {
+		a.directoryFailure(w, r, err)
+		return
+	}
+	sendJSON(w, http.StatusOK, status)
 }
 
 func (a *API) directorySync(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.accessAdmin(w, r); ok {
-		a.relayWorker(w, r, "/admin/directory/sync", []byte("{}"))
+	act, ok := a.accessAdmin(w, r)
+	if !ok {
+		return
 	}
+	stats, err := a.RunDirectorySync(r.Context(), act.OrgID)
+	if err != nil {
+		a.directoryFailure(w, r, err)
+		return
+	}
+	sendJSON(w, http.StatusOK, map[string]any{"stats": stats})
 }
 
 // DirectorySync is the six-hourly directory_sync job. With no directory
 // provider it does nothing.
 func (a *API) DirectorySync(ctx context.Context) error {
-	status, reply, err := a.workerDo(ctx, http.MethodPost, "/admin/directory/sync", directorySyncTimeout, []byte("{}"))
-	if err != nil {
-		return fmt.Errorf("directory sync: the worker did not answer: %w", err)
-	}
-	if status == http.StatusNotFound {
+	if a.directorySource().GetDirectoryProvider() == nil {
 		return nil
 	}
-	var body struct {
-		Stats json.RawMessage `json:"stats"`
-		Error string          `json:"error"`
+	orgID, err := a.OrgID(ctx)
+	if err != nil {
+		return err
 	}
-	_ = json.Unmarshal(reply, &body)
-	if status != http.StatusOK {
-		if body.Error == "" {
-			body.Error = http.StatusText(status)
-		}
-		return fmt.Errorf("directory sync failed (%d): %s", status, body.Error)
+	stats, err := a.RunDirectorySync(ctx, orgID)
+	if err != nil {
+		return fmt.Errorf("directory sync failed: %w", err)
 	}
-	log.Printf("[directory-sync] %s", body.Stats)
+	statsJSON, _ := json.Marshal(stats)
+	log.Printf("[directory-sync] %s", statsJSON)
 	return nil
 }
 

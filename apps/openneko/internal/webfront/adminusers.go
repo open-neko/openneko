@@ -2,7 +2,6 @@ package webfront
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -156,9 +155,8 @@ func (a *API) adminUserCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	out := map[string]any{"user": map[string]any{"id": id, "email": email, "name": name, "role": role}}
 	if body["addToDirectory"] == true && !solo {
-		payload, _ := json.Marshal(map[string]any{"email": email, "name": name})
-		if msg := a.directoryUser(ctx, payload); msg != "" {
-			out["directoryError"] = msg
+		if _, err := a.CreateDirectoryUser(ctx, email, name); err != nil {
+			out["directoryError"] = err.Error()
 		}
 	}
 	status := http.StatusCreated
@@ -166,28 +164,6 @@ func (a *API) adminUserCreate(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusOK
 	}
 	sendJSON(w, status, out)
-}
-
-// directoryUser asks the worker to create the user in the directory and
-// returns the failure message, or "".
-func (a *API) directoryUser(ctx context.Context, payload []byte) string {
-	status, reply, err := a.workerDo(ctx, http.MethodPost, "/admin/directory/users", workerAdminTimeout, payload)
-	if err != nil {
-		return "worker is unavailable"
-	}
-	if status < 400 {
-		return ""
-	}
-	var parsed struct {
-		Error any `json:"error"`
-	}
-	if json.Unmarshal(reply, &parsed) != nil {
-		return fmt.Sprintf("Worker returned HTTP %d", status)
-	}
-	if msg, ok := parsed.Error.(string); ok && msg != "" {
-		return msg
-	}
-	return fmt.Sprintf("HTTP %d", status)
 }
 
 // setLocalAdministrator is the function of that name in packages/db/src/groups.ts.

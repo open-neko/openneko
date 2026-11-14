@@ -25,7 +25,7 @@ describe("worker admin HTTP handler", () => {
     vi.restoreAllMocks();
   });
 
-  it("moved health, reconnect, source-check, and install-policy routes return 404", async () => {
+  it("moved health, reconnect, source-check, install-policy and directory routes return 404", async () => {
     const srv = await startServer(createAdminHandler());
     try {
       for (const [method, path] of [
@@ -35,6 +35,9 @@ describe("worker admin HTTP handler", () => {
         ["POST", "/admin/reconnect"],
         ["POST", "/admin/sources/check"],
         ["GET", "/admin/install-policy"],
+        ["GET", "/admin/directory/status"],
+        ["POST", "/admin/directory/sync"],
+        ["POST", "/admin/directory/users"],
       ] as const) {
         const res = await fetch(`http://127.0.0.1:${srv.port}${path}`, {
           method,

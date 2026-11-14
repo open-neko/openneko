@@ -37,9 +37,11 @@ type API struct {
 	// SignInClient overrides the HTTP client for outbound sign-in and SSO
 	// setup calls; tests set it.
 	SignInClient *http.Client
-	inboundMu    sync.Mutex
-	inbound    *channelLoops
-	settingsMu sync.Mutex
+	// DirectorySource replaces the Scalekit directory; tests set it.
+	DirectorySource DirectorySource
+	inboundMu       sync.Mutex
+	inbound         *channelLoops
+	settingsMu      sync.Mutex
 	// Jobs adds River jobs in a route's transaction.
 	Jobs *jobs.Inserter
 	// MetricsRefresh lets the metric_refresh jobs run; see jobs.MetricsRefreshOn.
