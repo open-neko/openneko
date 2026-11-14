@@ -24,12 +24,7 @@ import {
   resolveAgentConcurrency,
   verifyAiCredentials,
 } from "@neko/llm";
-import {
-  createActionRequest,
-  dispatchExternalEvent,
-  registerActionRequestCreatedHook,
-  seedDefaultActionPolicies,
-} from "@neko/llm/workflows";
+import { dispatchExternalEvent } from "@neko/llm/workflows";
 import { reportDeploymentProfile, setAgentSlotLimit } from "@neko/llm/work";
 import { removeRetiredQueue } from "./pg-boss-helpers.js";
 import { setCoreSecretsInstance } from "./secrets/instance.js";
@@ -71,20 +66,8 @@ function signIn(): SignInService {
   if (!signInService) throw new Error("sign-in service not ready");
   return signInService;
 }
-let actionRequestPreflightReady = false;
 const server = createServer(
   createAdminHandler({
-    actionRequests: {
-      create: async (input) => {
-        if (!actionRequestPreflightReady) {
-          throw new Error("action request preflight is not ready");
-        }
-        const request = await createActionRequest(
-          input as Parameters<typeof createActionRequest>[0],
-        );
-        return { id: request.id, status: request.status };
-      },
-    },
     events: {
       dispatchExternal: async (input) => {
         const result = await dispatchExternalEvent({
@@ -147,12 +130,6 @@ console.log(
   `[worker] host config provisioned from DB (data_source + llm_provider_config)`,
 );
 
-await seedDefaultActionPolicies(ADMIN_ORG_ID);
-// Only now may the web process create action requests through this worker:
-// every worker-owned preflight hook is registered and will finish before the
-// request id is returned for an approval card.
-actionRequestPreflightReady = true;
-console.log("[worker] action policies seeded");
 
 coreSecrets = new CoreSecrets();
 await coreSecrets.start();
