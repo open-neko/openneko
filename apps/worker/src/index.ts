@@ -46,12 +46,10 @@ import {
   handleSubscriptionMatch,
   registerActionRequestCreatedHook,
   registerBuiltinAdapters,
-  registerFallbackActionAdapterResolver,
   seedDefaultActionPolicies,
   startSubscriptionManager,
   type DataSourceContext,
 } from "@neko/llm/workflows";
-import { resolveDeclarativePackActionAdapter, registerPackConnectionPreflight } from "./packs/declarative-action-runtime.js";
 import { ensureOrgWorkspace, getOrgAgentRoot, reportDeploymentProfile, setAgentSlotLimit } from "@neko/llm/work";
 import { removeRetiredQueue } from "./pg-boss-helpers.js";
 import { setCoreSecretsInstance } from "./secrets/instance.js";
@@ -65,9 +63,6 @@ import {
   initializeWorkerTelemetry,
   shutdownWorkerTelemetry,
 } from "./telemetry.js";
-import { PackService } from "./packs/service.js";
-import { registerPackActionPreflight } from "./packs/action-preflight.js";
-import { registerMagentoV2Runtime } from "./packs/magento-v2-runtime.js";
 
 {
   const problem = secretsBackendError(readLocalConfig());
@@ -95,7 +90,6 @@ if (initializeWorkerTelemetry()) {
 }
 
 const ADMIN_ORG_ID = await getOrgId();
-const packService = new PackService(ADMIN_ORG_ID);
 // SEC8: state the security posture once at boot; hardened warns when
 // the model host is a public cloud API (on-prem LLM is client-provided).
 reportDeploymentProfile();
@@ -162,21 +156,6 @@ const server = createServer(
       sync: async () => runDirectorySync(signIn(), await getOrgId()),
       createUser: async (input) => createDirectoryUser(signIn(), input),
     },
-    packs: {
-      upload: (bytes, input) => packService.upload(bytes, input),
-      review: (packId, input, operation) => packService.review(packId, input, operation),
-      list: () => packService.list(),
-      inspect: (packId, version) => packService.inspect(packId, version),
-      plan: (packId, version) => packService.plan(packId, version),
-      status: (packId) => packService.status(packId),
-      doctor: (packId) => packService.doctor(packId),
-      install: (packId, input) => packService.install(packId, input),
-      configure: (packId, input) => packService.configure(packId, input),
-      upgrade: (packId, input) => packService.upgrade(packId, input),
-      uninstall: (packId, input) => packService.uninstall(packId, input),
-      magentoStoreManagement: () => packService.magentoStoreManagement(),
-      updateMagentoStoreManagement: (input) => packService.updateMagentoStoreManagement(input),
-    },
     connect: {
       getConnectProviders: () => signInService?.getConnectProviders() ?? [],
       getOperatorConnectStatus: (operatorId) =>
@@ -207,10 +186,6 @@ console.log(
 
 await seedDefaultActionPolicies(ADMIN_ORG_ID);
 registerBuiltinAdapters();
-registerFallbackActionAdapterResolver(resolveDeclarativePackActionAdapter);
-const unregisterPackActionPreflight = registerPackActionPreflight();
-const unregisterPackConnectionPreflight = registerPackConnectionPreflight();
-const unregisterMagentoV2Runtime = registerMagentoV2Runtime();
 // Only now may the web process create action requests through this worker:
 // every worker-owned preflight hook is registered and will finish before the
 // request id is returned for an approval card.
@@ -460,8 +435,6 @@ const shutdown = async (signal: string) => {
   clearInterval(reconcileTimer);
   clearInterval(knowledgeRefreshTimer);
   coreSecrets?.stop();
-  unregisterPackActionPreflight();
-  unregisterPackConnectionPreflight();
   server.close();
   const cancelled = cancelAllAgents();
   if (cancelled > 0) {

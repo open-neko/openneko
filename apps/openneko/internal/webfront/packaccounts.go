@@ -372,8 +372,9 @@ func (a *API) withConnection(ctx context.Context, orgID, userID, installID, key 
 	})
 }
 
-// authorizationURL matches buildPackAuthorizationUrl() in packages/packs/src/oauth-client.ts,
-// with URLSearchParams order and encoding.
+// authorizationURL matches buildPackAuthorizationUrl() in
+// packages/llm/src/graphjin/pack-oauth-client.ts, with URLSearchParams order
+// and encoding.
 func authorizationURL(c *packConnection, clientID, redirectURI, state, challenge string) (string, error) {
 	u, err := url.Parse(c.AuthorizationURL)
 	if err != nil || u.Scheme == "" || u.Host == "" {

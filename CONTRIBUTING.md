@@ -31,7 +31,6 @@ packages/
   evals/               Agent harness evaluation core and result verifier (`@neko/evals`)
   interaction/         Modality-free interaction types (`@neko/interaction`)
   llm/                 Shared model catalog fixtures, GraphJin helpers, A2UI contract, bundled skills (assets/)
-  packs/               Solution pack manifest, artifact schema, and bundle validation (`@neko/packs`)
   secret-crypt/        AES-256-GCM `enc:v1` cipher (`@neko/secret-crypt`)
   secrets/             Deployment secrets store (`@neko/secrets`)
   telemetry/           OpenTelemetry and startup timing helpers (`@neko/telemetry`)
