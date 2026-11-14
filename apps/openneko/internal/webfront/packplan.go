@@ -23,7 +23,6 @@ func graphjinGraphQLEndpoint(url string) string {
 	return clean + "/api/v1/graphql"
 }
 
-// packGraphjinTarget is GraphjinTarget in apps/worker/src/packs/graphjin-target.ts.
 type packGraphjinTarget struct {
 	packs.GraphjinTarget
 	Endpoint           string

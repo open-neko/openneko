@@ -18,8 +18,6 @@ import (
 
 var magentoDomains = []string{"catalog", "inventory", "orders", "promotions", "content", "customers"}
 
-// operatorReadinessDetail is operatorReadinessDetail() of
-// apps/worker/src/packs/pack-artifacts.ts.
 func operatorReadinessDetail(reason string) string {
 	switch reason {
 	case "integration_token_missing":
@@ -77,9 +75,8 @@ var defaultPackVariables = map[string]any{
 	"threshold":   map[string]any{"kind": "literal", "value": float64(0)},
 }
 
-// packReadPreflight is runPackReadPreflight() of
-// apps/worker/src/packs/preflight.ts: every metric, watcher and saved query
-// of the pack runs once against the source.
+// packReadPreflight runs every metric, watcher and saved query of the pack
+// once against the source.
 func (a *API) packReadPreflight(ctx context.Context, bundle *packs.Bundle, bound map[string]string, endpoint, orgID string, inputs map[string]any) error {
 	endpoint = graphjinGraphQLEndpoint(endpoint)
 	now := time.Now()

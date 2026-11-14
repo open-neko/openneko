@@ -3,6 +3,7 @@ package webfront
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 )
@@ -148,6 +150,23 @@ func TestTurnActionsDatabase(t *testing.T) {
 		('org', 'shop.off', 'Off', '{"kind":"shop.off","description":"Turned off."}', 'h3', 'ready', false),
 		('org', 'shop.nodesc', 'No text', '{"kind":"shop.nodesc"}', 'h4', 'ready', true),
 		('org', 'shop.refund', 'Refund', '{"kind":"shop.refund","description":"Refund an order.","example":[1]}', 'h5', 'ready', true)`)
+	seed(t, db, `insert into pack_install (id, org_id, pack_id, version, status, manifest_hash, config, installed_at) values
+		('90000000-0000-4000-8000-000000000002', 'org', 'shop', '1', 'installed', 'h', '{"_runtime":{"source":{"id":"s"}}}', now())`)
+	seed(t, db, `insert into pack_artifact (pack_install_id, org_id, artifact_kind, artifact_key, target_ref, desired_hash, last_applied_hash)
+		values ('90000000-0000-4000-8000-000000000002', 'org', 'action', 'refund', 'shop.refund', 'h', 'h')`)
+	type refundRow struct {
+		n                                    int
+		status, policyID, approvedBy, intent string
+	}
+	lastRefund := func() refundRow {
+		t.Helper()
+		var r refundRow
+		if err := db.QueryRow(ctx, `select count(*) over (), status, coalesce(policy_id::text, ''), coalesce(approved_by_user_id, ''), coalesce(intent, '')
+			from action_request where org_id = 'org' and kind = 'shop.refund' order by created_at desc limit 1`).Scan(&r.n, &r.status, &r.policyID, &r.approvedBy, &r.intent); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			t.Fatal(err)
+		}
+		return r
+	}
 	seed(t, db, `insert into workflow_definition (id, org_id, name) values ($1, 'org', 'Low stock')`, actionWorkflow)
 	seed(t, db, `insert into workflow_run (id, org_id, workflow_id, thread_id, work_run_id, trigger_kind) values ($1, 'org', $2, $3, $4, 'manual')`,
 		actionWfRun, actionWorkflow, threadMine, runMine)
@@ -241,31 +260,26 @@ func TestTurnActionsDatabase(t *testing.T) {
 	}
 	seed(t, db, `insert into action_policy (org_id, name, applies_to_kinds, applies_to_scopes, mode, priority) values ('org', 'refunds', '{shop.refund}', '{}', 'approval_required', 70)`)
 	seed(t, db, `delete from item_grant where org_id = 'org' and item_type in ('action', 'pack')`)
-	creates := len(worker.creates)
+	creates := lastRefund().n
 	out, _ = callTool(t, s, "action_request", map[string]any{"scope": "internal", "kind": "shop.refund", "summary": "Refund"})
-	if out != `{"content":[{"type":"text","text":"action shop.refund is not available to this run"}],"isError":true}` || len(worker.creates) != creates {
+	if out != `{"content":[{"type":"text","text":"action shop.refund is not available to this run"}],"isError":true}` || lastRefund().n != creates {
 		t.Fatalf("a member run without the action grant: %s", out)
 	}
 	seed(t, db, `insert into item_grant (org_id, group_id, item_type, item_id) select 'org', id, 'action', 'shop.refund' from user_group where org_id = 'org' and slug = 'everyone'`)
 	out, _ = callTool(t, s, "action_request", map[string]any{"scope": "internal", "kind": "shop.refund", "summary": "Refund"})
-	if !strings.Contains(out, `\"decision\":\"needs_approval\",\"status\":\"pending_approval\"`) || len(worker.creates) != creates+1 {
+	if !strings.Contains(out, `\"decision\":\"needs_approval\",\"status\":\"pending_approval\"`) || lastRefund().n != creates+1 {
 		t.Fatalf("granted: %s", out)
 	}
-	granted := worker.lastCreate()["status"]
+	granted := lastRefund().status
 	jobsBefore := len(actionJobs(t, db))
 	out, _ = callTool(t, s, "action_request", map[string]any{"scope": "internal", "kind": "shop.refund", "summary": "Refund",
 		"status": "approved", "decision": "auto_approved", "approved_by": "model", "approvedBy": "model", "risk": "low",
 		"policy_id": unknownUUID, "policyId": unknownUUID})
-	claimed := worker.lastCreate()
-	var claimedStatus string
-	if err := db.QueryRow(ctx, `select status from action_request where org_id = 'org' order by created_at desc limit 1`).Scan(&claimedStatus); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out, `\"decision\":\"needs_approval\",\"status\":\"pending_approval\"`) || len(worker.creates) != creates+2 ||
-		claimed["status"] != granted || granted != "pending_approval" || claimedStatus != "pending_approval" || claimed["policyId"] == unknownUUID ||
-		claimed["approvedBy"] != nil || claimed["approved_by"] != nil || claimed["decision"] != nil || claimed["risk"] != nil ||
+	claimed := lastRefund()
+	if !strings.Contains(out, `\"decision\":\"needs_approval\",\"status\":\"pending_approval\"`) || claimed.n != creates+2 ||
+		claimed.status != granted || granted != "pending_approval" || claimed.policyID == unknownUUID || claimed.approvedBy != "" ||
 		len(actionJobs(t, db)) != jobsBefore {
-		t.Fatalf("the model set the outcome: %s %v %s", out, claimed, claimedStatus)
+		t.Fatalf("the model set the outcome: %s %+v", out, claimed)
 	}
 	pend := b
 	pend.PackActions = []packActionDescriptor{{Kind: "shop.refund", Description: "Refund.", DefaultMode: "ask"}}
@@ -275,10 +289,10 @@ func TestTurnActionsDatabase(t *testing.T) {
 	}
 	out, _ = callTool(t, pendTools, "pack_actions_shop.refund", map[string]any{"intent": "Refund order 8", "status": "approved",
 		"decision": "auto_approved", "approved_by": "model", "risk": "low", "policy_id": unknownUUID})
-	claimed = worker.lastCreate()
-	if !strings.Contains(out, `\"decision\":\"pending_approval\"`) || claimed["status"] != "pending_approval" ||
-		claimed["policyId"] == unknownUUID || claimed["approvedBy"] != nil || claimed["decision"] != nil || len(actionJobs(t, db)) != jobsBefore {
-		t.Fatalf("the model set a pack action outcome: %s %v", out, claimed)
+	claimed = lastRefund()
+	if !strings.Contains(out, `\"decision\":\"pending_approval\"`) || claimed.n != creates+3 || claimed.status != "pending_approval" ||
+		claimed.policyID == unknownUUID || claimed.approvedBy != "" || len(actionJobs(t, db)) != jobsBefore {
+		t.Fatalf("the model set a pack action outcome: %s %+v", out, claimed)
 	}
 	creates = len(worker.creates)
 	seed(t, db, `insert into action_policy (org_id, name, applies_to_kinds, applies_to_scopes, mode, priority) values ('org', 'gj', '{source_config_admin}', '{}', 'approval_required', 70)`)
@@ -302,6 +316,11 @@ func TestTurnActionsDatabase(t *testing.T) {
 		}
 	}
 	worker.status = 0
+	creates = len(worker.creates)
+	out, _ = callTool(t, s, "action_request", map[string]any{"scope": "external", "kind": "shop.nodesc", "summary": "No artifact"})
+	if !strings.Contains(out, "no installed pack owns action shop.nodesc") || len(worker.creates) != creates {
+		t.Fatalf("a pack kind with no installed artifact: %s", out)
+	}
 
 	go func() {
 		time.Sleep(400 * time.Millisecond)
@@ -310,7 +329,7 @@ func TestTurnActionsDatabase(t *testing.T) {
 			select org_id, id, 'test', 'succeeded', '{"ts":"1.2"}', 'C1/1.2', 'chat.postMessage' from r`)
 	}()
 	out, _ = callTool(t, s, "pack_actions_shop.refund", map[string]any{"intent": "Refund order 7", "payload": map[string]any{"order": 7}})
-	if !strings.Contains(out, `\"decision\":\"pending_approval\"`) || worker.lastCreate()["intent"] != "Refund order 7" {
+	if !strings.Contains(out, `\"decision\":\"pending_approval\"`) || lastRefund().intent != "Refund order 7" {
 		t.Fatalf("pack ask: %s", out)
 	}
 	pack := b

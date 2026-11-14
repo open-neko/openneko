@@ -13,8 +13,7 @@ import (
 	"unicode/utf8"
 )
 
-// CanonicalJSON is canonicalJson() from packages/packs: JSON.stringify with
-// object keys sorted by UTF-16 code units.
+// CanonicalJSON is JSON.stringify with object keys sorted by UTF-16 code units.
 func CanonicalJSON(v any) (string, error) {
 	var b strings.Builder
 	if err := writeCanonical(&b, v); err != nil {

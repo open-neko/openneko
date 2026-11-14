@@ -45,7 +45,6 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "@neko/db": "workspace:*",
     "@neko/interaction": "workspace:*",
-    "@neko/packs": "workspace:*",
     "@neko/secret-crypt": "workspace:*",
     "@neko/secrets": "workspace:*",
     "@neko/telemetry": "workspace:*",
