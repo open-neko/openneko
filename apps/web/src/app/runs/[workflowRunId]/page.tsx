@@ -18,7 +18,7 @@ import { Disclosure } from "@/components/ui/disclosure";
 import { Field, Textarea } from "@/components/ui/field";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
-import { createApprovalPasskeyAssertion } from "@/lib/passkey";
+import { createApprovalPasskeyAssertion, sendApproval, type PasskeyAssertionPayload } from "@/lib/passkey";
 
 type RunDetailPayload = {
   workflow: {
@@ -330,19 +330,15 @@ export default function RunPage() {
     ) => {
       setActionBusyId(id);
       try {
-        const passkey =
-          decision === "approve" && withPasskey
-            ? await createApprovalPasskeyAssertion(id)
-            : undefined;
-        await fetch(`/api/v1/action-requests/${id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            decision,
-            reason,
-            ...(passkey ? { passkey } : {}),
-          }),
-        });
+        const send = (passkey?: PasskeyAssertionPayload) =>
+          fetch(`/api/v1/action-requests/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ decision, reason, ...(passkey ? { passkey } : {}) }),
+          });
+        if (decision !== "approve") await send();
+        else if (withPasskey) await send(await createApprovalPasskeyAssertion(id));
+        else await sendApproval(id, send);
         await load();
       } finally {
         setActionBusyId(null);

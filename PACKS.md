@@ -455,7 +455,14 @@ reached only through its API is refused. `go test -run TestMagentoGraphjinUpdate
 store-management settings and activity route. On a deployment-scope connection,
 `openneko web` applies the new token to the installed pack's GraphJin sources and
 sets the readiness of the actions that use them. Each minute it refreshes a
-deployment-scope token that ends within five minutes, then applies it again. Integration tests need their documented test dependencies;
+deployment-scope token that ends within five minutes, then applies it again.
+`openneko web` also runs pack actions. For a Magento change, it reads the current
+values, classifies and caps the change, and stores the preview. After approval, it
+writes each row through GraphJin and reads Magento again to confirm the result. A row
+whose write may have reached Magento is marked for reconciliation and never retried.
+An undo checks for drift first. A financial handoff only records the draft for a person
+to finish in Magento admin. `go test -run TestMagentoRuntimeParityFixture ./internal/webfront`
+checks the reconciliation rules against the Node fixture. Integration tests need their documented test dependencies;
 a skipped test is not a live pass.
 
 ## Save changes, submit a PR, and release

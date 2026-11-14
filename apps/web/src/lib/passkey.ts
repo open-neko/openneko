@@ -13,8 +13,10 @@ export type PasskeyAssertionPayload = {
   signature: string;
 };
 
+type Purpose = "register" | "approve" | "remove";
+
 type ChallengeResponse = {
-  purpose: "register" | "approve";
+  purpose: Purpose;
   challenge: string;
   rp: { id: string; name: string };
   user: { id: string; name: string; displayName: string };
@@ -55,8 +57,16 @@ export function isPasskeySupported(): boolean {
   );
 }
 
+export const PASSKEY_REQUIRED = "passkey_required";
+
+export async function needsPasskey(res: Response): Promise<boolean> {
+  if (res.status !== 403) return false;
+  const body = (await res.clone().json().catch(() => null)) as { code?: string } | null;
+  return body?.code === PASSKEY_REQUIRED;
+}
+
 async function requestChallenge(
-  purpose: "register" | "approve",
+  purpose: Purpose,
   actionRequestId?: string,
 ): Promise<ChallengeResponse> {
   const res = await fetch("/api/v1/my/passkeys/challenge", {
@@ -130,14 +140,33 @@ export async function registerPasskey(name = "This device"): Promise<PasskeySumm
   return body.passkey;
 }
 
-export async function deletePasskey(passkeyId: string): Promise<void> {
-  const res = await fetch(`/api/v1/my/passkeys/${encodeURIComponent(passkeyId)}`, {
-    method: "DELETE",
-  });
+export async function deletePasskey(passkeyId: string, last = false): Promise<void> {
+  const send = (passkey?: PasskeyAssertionPayload) =>
+    fetch(`/api/v1/my/passkeys/${encodeURIComponent(passkeyId)}`, {
+      method: "DELETE",
+      ...(passkey
+        ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ passkey }) }
+        : {}),
+    });
+  let res = await send(last ? await signChallenge(await requestChallenge("remove")) : undefined);
+  if (!last && (await needsPasskey(res))) {
+    res = await send(await signChallenge(await requestChallenge("remove")));
+  }
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
     throw new Error(body?.error ?? `Could not remove passkey (${res.status}).`);
   }
+}
+
+// sendApproval sends an approval. When the server answers passkey_required,
+// it signs a passkey challenge and sends the approval again.
+export async function sendApproval(
+  actionRequestId: string,
+  send: (passkey?: PasskeyAssertionPayload) => Promise<Response>,
+): Promise<Response> {
+  const res = await send();
+  if (!(await needsPasskey(res))) return res;
+  return send(await createApprovalPasskeyAssertion(actionRequestId));
 }
 
 export async function createApprovalPasskeyAssertion(
@@ -151,6 +180,13 @@ export async function createApprovalPasskeyAssertion(
     await registerPasskey("This device");
     challenge = await requestChallenge("approve", actionRequestId);
   }
+  return signChallenge(challenge);
+}
+
+async function signChallenge(challenge: ChallengeResponse): Promise<PasskeyAssertionPayload> {
+  if (!isPasskeySupported()) {
+    throw new Error("Passkeys are not supported in this browser.");
+  }
   const cred = (await navigator.credentials.get({
     publicKey: {
       challenge: fromBase64Url(challenge.challenge),
@@ -163,7 +199,7 @@ export async function createApprovalPasskeyAssertion(
     },
   })) as PublicKeyCredential | null;
   if (!cred) {
-    throw new Error("Passkey approval was cancelled.");
+    throw new Error("The passkey check was cancelled.");
   }
   const response = cred.response as AuthenticatorAssertionResponse;
   return {
