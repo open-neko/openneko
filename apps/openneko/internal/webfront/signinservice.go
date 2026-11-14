@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/open-neko/neko/apps/openneko/internal/secrets"
 )
@@ -123,24 +124,23 @@ func isSignInProviderID(id string) bool {
 	return ok
 }
 
+var defaultSignInClient = &http.Client{Timeout: scalekitHTTPTimeout}
+
 func (a *API) secretsDir() string {
 	if a.SecretsDir != "" {
-		if a.Gate != nil && a.Gate.SecretsDir == "" {
-			a.Gate.SecretsDir = a.SecretsDir
-		}
 		return a.SecretsDir
 	}
-	if a.Gate != nil && a.Gate.SecretsDir != "" {
+	if a.Gate != nil {
 		return a.Gate.SecretsDir
 	}
 	return ""
 }
 
 func (a *API) signInClient() *http.Client {
-	if a.Gate != nil && a.Gate.Client != nil {
-		return a.Gate.Client
+	if a != nil && a.SignInClient != nil {
+		return a.SignInClient
 	}
-	return http.DefaultClient
+	return defaultSignInClient
 }
 
 func (a *API) now() time.Time {
@@ -148,6 +148,41 @@ func (a *API) now() time.Time {
 		return a.Gate.now()
 	}
 	return time.Now()
+}
+
+func storedPublicURL(ctx context.Context, db *pgxpool.Pool) string {
+	if db == nil {
+		return ""
+	}
+	var saved *string
+	err := db.QueryRow(ctx, `
+		select config->>'url' from llm_provider_config
+		where org_id = (select id from organization order by created_at, id limit 1)
+		  and scope = $1`, publicURLScope).Scan(&saved)
+	if err != nil || saved == nil {
+		return ""
+	}
+	if normalized, ok := normalizePublicURL(*saved); ok {
+		return normalized
+	}
+	return ""
+}
+
+func (g *Gate) publicURL(ctx context.Context) string {
+	if g == nil {
+		return ""
+	}
+	if saved := storedPublicURL(ctx, g.DB); saved != "" {
+		return saved
+	}
+	configured := g.PublicURL
+	if configured == "" {
+		configured = os.Getenv("OPENNEKO_PUBLIC_URL")
+	}
+	if normalized, ok := normalizePublicURL(configured); ok {
+		return normalized
+	}
+	return ""
 }
 
 func (g *Gate) fetchStatus(ctx context.Context) (AuthStatus, error) {
@@ -168,6 +203,13 @@ func (g *Gate) fetchStatus(ctx context.Context) (AuthStatus, error) {
 			configuredEnv = append(configuredEnv, s.Key)
 		} else if s.Required {
 			missingEnv = append(missingEnv, s.Key)
+		}
+	}
+	if id == magicLinkPlugin {
+		if g.publicURL(ctx) != "" {
+			configuredEnv = append(configuredEnv, "OPENNEKO_PUBLIC_URL")
+		} else {
+			missingEnv = append(missingEnv, "OPENNEKO_PUBLIC_URL")
 		}
 	}
 	envReady := len(missingEnv) == 0
@@ -540,7 +582,11 @@ func (a *API) beginSignIn(ctx context.Context, redirectURI, state, loginHint str
 	if id == scalekitPlugin {
 		return beginScalekitAuth(redirectURI, state, loginHint, values)
 	}
-	return beginMagicLinkAuth(ctx, a.signInClient(), a.now(), redirectURI, state, loginHint, values)
+	publicURL := a.publicURL(ctx)
+	if publicURL == "" {
+		return "", errors.New("OPENNEKO_PUBLIC_URL is not set — set OPENNEKO_PUBLIC_URL or save a public URL under Admin → Settings")
+	}
+	return beginMagicLinkAuth(ctx, a.signInClient(), a.now(), publicURL+"/api/auth/callback", state, loginHint, values)
 }
 
 func (a *API) completeSignInAuth(ctx context.Context, code, redirectURI, state string) (identity, error) {
@@ -776,17 +822,12 @@ func scalekitUserinfoToIdentity(info map[string]any) (identity, error) {
 	}
 	orgID, _ := info["organization_id"].(string)
 	seen := map[string]bool{}
-	var groupList []any
+	var groupList []string
 	for _, field := range []string{"groups", "roles"} {
 		items, _ := info[field].([]any)
 		for _, item := range items {
-			switch v := item.(type) {
-			case string:
-				if v != "" && !seen[v] {
-					seen[v] = true
-					groupList = append(groupList, v)
-				}
-			case map[string]any:
+			if v, ok := item.(string); ok && v != "" && !seen[v] {
+				seen[v] = true
 				groupList = append(groupList, v)
 			}
 		}
@@ -806,7 +847,7 @@ func scalekitUserinfoToIdentity(info map[string]any) (identity, error) {
 
 func scalekitRequest(ctx context.Context, client *http.Client, timeout time.Duration, method, target string, headers map[string]string, body string, description string, out any) error {
 	if client == nil {
-		client = http.DefaultClient
+		client = defaultSignInClient
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -1159,7 +1200,7 @@ func resolveEmailProvider(client *http.Client, resendKey, postmarkToken, sendgri
 
 func postSignInEmail(ctx context.Context, client *http.Client, target string, headers map[string]string, body []byte, provider string) error {
 	if client == nil {
-		client = http.DefaultClient
+		client = defaultSignInClient
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, beginTimeout)
 	defer cancel()

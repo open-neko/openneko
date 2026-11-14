@@ -105,13 +105,13 @@ func extractCallbackParam(text, key string) string {
 func newSSOFront(t *testing.T, status string, db *pgxpool.Pool) (*Front, *ssoWorker) {
 	wk := &ssoWorker{}
 	g := newGate(t, "")
+	g.PublicURL = "https://neko.example"
 	seedSignInSecrets(t, g.SecretsDir, status)
-	g.Client = &http.Client{Transport: wk}
 	g.DB = db
 	return &Front{
 		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
 		Gate: g,
-		API:  &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecureCookies: true, SecretsDir: g.SecretsDir},
+		API:  &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecureCookies: true, SecretsDir: g.SecretsDir, SignInClient: &http.Client{Transport: wk}},
 		Node: &recorder{},
 	}, wk
 }
