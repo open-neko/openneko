@@ -142,16 +142,23 @@ func resolvePackInputs(bundle *packs.Bundle, supplied *jsObj) (*jsObj, error) {
 
 // resolvePackSecrets is resolveSecrets(): the values only.
 func (a *API) resolvePackSecrets(bundle *packs.Bundle, request *jsObj) (map[string]string, error) {
+	values, _, _, err := a.resolvePackSecretState(bundle, request)
+	return values, err
+}
+
+// resolvePackSecretState is resolveSecrets(): the values, the keys to clear
+// and the store they came from.
+func (a *API) resolvePackSecretState(bundle *packs.Bundle, request *jsObj) (map[string]string, map[string]bool, secrets.Store, error) {
 	store, err := secrets.Read(a.SecretsDir)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	current := store["pack."+bundle.Manifest.Metadata.ID]
 	direct := jsObjOrEmpty(request.vals["secrets"])
 	refs := jsObjOrEmpty(request.vals["secretRefs"])
 	for _, k := range append(direct.ordered(), refs.ordered()...) {
 		if !slices.ContainsFunc(bundle.Manifest.Secrets, func(s packs.Secret) bool { return s.Key == k }) {
-			return nil, fmt.Errorf("unknown pack secret %s", k)
+			return nil, nil, nil, fmt.Errorf("unknown pack secret %s", k)
 		}
 	}
 	personal := map[string]bool{}
@@ -160,21 +167,23 @@ func (a *API) resolvePackSecrets(bundle *packs.Bundle, request *jsObj) (map[stri
 			personal[c.AccessToken], personal[c.RefreshToken] = true, true
 		}
 	}
-	values := map[string]string{}
+	values, cleared := map[string]string{}, map[string]bool{}
 	for _, s := range bundle.Manifest.Secrets {
 		given, hasGiven := direct.vals[s.Key]
 		ref, hasRef := refs.vals[s.Key]
 		if personal[s.Key] {
 			if packTruthy(given) || packTruthy(ref) {
-				return nil, errors.New("Personal OAuth tokens must be connected on Integrations")
+				return nil, nil, nil, errors.New("Personal OAuth tokens must be connected on Integrations")
 			}
+			cleared[s.Key] = true
 			continue
 		}
 		text, isString := given.(string)
 		if hasGiven && !isString {
-			return nil, fmt.Errorf("pack secret %s must be a string", s.Key)
+			return nil, nil, nil, fmt.Errorf("pack secret %s must be a string", s.Key)
 		}
 		if hasGiven && strings.TrimSpace(text) == "" && !s.Required {
+			cleared[s.Key] = true
 			continue
 		}
 		value := current[secretEnvKey(s.Key)]
@@ -185,13 +194,13 @@ func (a *API) resolvePackSecrets(bundle *packs.Bundle, request *jsObj) (map[stri
 			value = text
 		}
 		if s.Required && strings.TrimSpace(value) == "" {
-			return nil, fmt.Errorf("required pack secret %s is missing", s.Key)
+			return nil, nil, nil, fmt.Errorf("required pack secret %s is missing", s.Key)
 		}
 		if value != "" {
 			values[s.Key] = value
 		}
 	}
-	return values, nil
+	return values, cleared, store, nil
 }
 
 func graphjinConfigTables(file string) ([]any, error) {
@@ -621,29 +630,11 @@ func (a *API) packReview(ctx context.Context, orgID, packID string, actorUserID 
 		if err != nil {
 			return nil, err
 		}
-		var tables []any
-		var names []string
-		merge := func(t any) {
-			name := jsValueString(jsObjOrEmpty(t).vals["name"])
-			if i := slices.Index(names, name); i >= 0 {
-				tables[i] = t
-				return
-			}
-			names, tables = append(names, name), append(tables, t)
+		var prior *jsObj
+		if existing != nil {
+			prior, _ = existing.Config.vals["_runtime"].(*jsObj)
 		}
-		if prior != nil {
-			old, _ := prior.vals["tables"].([]any)
-			for _, t := range old {
-				merge(t)
-			}
-		}
-		for _, t := range bound {
-			merge(jsObjOf("name", t["name"], "table", t["table"], "source", t["source"]))
-		}
-		if tables == nil {
-			tables = []any{}
-		}
-		runtime.set("tables", tables)
+		runtime.set("tables", mergePackTables(prior, bound))
 		plainInputs, _ := plainJSON(inputs).(map[string]any)
 		if err := declarativePackChecks(bundle, plainInputs, secretValues, bindings); err != nil {
 			return nil, err

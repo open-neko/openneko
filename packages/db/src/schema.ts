@@ -1168,6 +1168,7 @@ export const app_passkey = pgTable(
     public_key: text("public_key").notNull(),
     algorithm: integer("algorithm").notNull().default(-7),
     sign_count: bigint("sign_count", { mode: "number" }).notNull().default(0),
+    backup_eligible: boolean("backup_eligible"),
     name: text("name").notNull(),
     created_at: ts("created_at").notNull().defaultNow(),
     last_used_at: ts("last_used_at"),

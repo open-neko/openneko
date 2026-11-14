@@ -251,19 +251,7 @@ func (a *API) packDoctor(ctx context.Context, orgID, packID string) (*jsObj, err
 	if err == nil {
 		var secretValues map[string]string
 		if secretValues, err = a.resolvePackSecrets(bundle, &jsObj{vals: map[string]any{}}); err == nil {
-			token := secretValues["magento.integration_token"]
-			preflight, err = runMagentoPreflight(ctx, magentoPreflightInput{
-				host:             jsValueString(inputs.vals["database.host"]),
-				port:             jsToNumber(inputs.vals["database.port"]),
-				database:         jsValueString(inputs.vals["database.name"]),
-				username:         secretValues["database.analytics_username"],
-				password:         secretValues["database.analytics_password"],
-				tablePrefix:      jsValueString(nullishOr(inputs.vals["magento.table_prefix"], "")),
-				baseURL:          jsValueString(inputs.vals["magento.base_url"]),
-				storeCode:        jsValueString(nullishOr(inputs.vals["magento.store_code"], "all")),
-				integrationToken: token,
-				customersEnabled: packTruthy(inputs.vals["magento.customers_enabled"]),
-			}, http.DefaultClient)
+			preflight, err = runMagentoPreflight(ctx, magentoInputFrom(inputs, secretValues), magentoHTTPClient)
 		}
 	}
 	if err != nil {

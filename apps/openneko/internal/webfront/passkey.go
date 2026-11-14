@@ -3,23 +3,19 @@ package webfront
 import (
 	"bytes"
 	"context"
-	"crypto/ecdh"
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"io"
-	"math/big"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/go-webauthn/webauthn/protocol"
+	"github.com/go-webauthn/webauthn/protocol/webauthncose"
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -48,41 +44,47 @@ type verifiedPasskey struct {
 	UserVerified bool
 }
 
+const maxAttestationBytes = 64 << 10
+
 func badPasskey(msg string) error {
 	return &decisionError{status: http.StatusBadRequest, message: msg}
 }
 
-func passkeyRPID(r *http.Request) string {
-	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
-	if i := strings.IndexByte(host, ','); i >= 0 {
-		host = strings.TrimSpace(host[:i])
-	}
-	if host == "" {
-		host = strings.TrimSpace(r.Host)
-	}
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	host = strings.Trim(strings.ToLower(host), "[]")
-	if host == "" || net.ParseIP(host) != nil {
-		return "localhost"
-	}
-	return host
+type passkeyRP struct {
+	id     string
+	origin string
 }
 
-func originRPID(origin string) string {
-	u, err := url.Parse(origin)
+func (a *API) passkeyRP(r *http.Request) passkeyRP {
+	u, err := url.Parse(a.publicBaseURL(r))
 	if err != nil {
-		return ""
+		return passkeyRP{}
 	}
-	host := strings.Trim(strings.ToLower(u.Hostname()), "[]")
-	if host == "" {
-		return ""
+	rp := passkeyRP{id: strings.ToLower(u.Hostname())}
+	if a.configuredPublicURL() != "" {
+		rp.origin = originOf(u)
 	}
-	if net.ParseIP(host) != nil {
-		return "localhost"
+	return rp
+}
+
+func (rp passkeyRP) checkOrigin(origin string) error {
+	u, err := url.Parse(origin)
+	if err != nil || rp.id == "" || strings.ToLower(u.Hostname()) != rp.id {
+		return badPasskey("passkey origin does not match the relying party")
 	}
-	return host
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+	case "http":
+		if rp.id != "localhost" {
+			return badPasskey("passkey origin must use https")
+		}
+	default:
+		return badPasskey("passkey origin must use https")
+	}
+	if rp.origin != "" && originOf(u) != rp.origin {
+		return badPasskey("passkey origin does not match the relying party")
+	}
+	return nil
 }
 
 func decodeB64URL(s string) ([]byte, error) {
@@ -251,7 +253,7 @@ func (a *API) passkeyChallenge(w http.ResponseWriter, r *http.Request) {
 		descriptors = append(descriptors, passkeyCredDescriptor{ID: cid, Type: "public-key"})
 	}
 
-	rpID := passkeyRPID(r)
+	rpID := a.passkeyRP(r).id
 	sendJSON(w, http.StatusOK, struct {
 		Purpose            string                  `json:"purpose"`
 		Challenge          string                  `json:"challenge"`
@@ -260,6 +262,7 @@ func (a *API) passkeyChallenge(w http.ResponseWriter, r *http.Request) {
 		PubKeyCredParams   []passkeyAlgParam       `json:"pubKeyCredParams"`
 		ExcludeCredentials []passkeyCredDescriptor `json:"excludeCredentials"`
 		AllowCredentials   []passkeyCredDescriptor `json:"allowCredentials"`
+		UserVerification   string                  `json:"userVerification"`
 	}{
 		Purpose:   purpose,
 		Challenge: challenge,
@@ -272,6 +275,7 @@ func (a *API) passkeyChallenge(w http.ResponseWriter, r *http.Request) {
 		PubKeyCredParams:   []passkeyAlgParam{{Type: "public-key", Alg: -7}},
 		ExcludeCredentials: descriptors,
 		AllowCredentials:   descriptors,
+		UserVerification:   "required",
 	})
 }
 
@@ -308,17 +312,8 @@ func (a *API) passkeyCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clientDataRaw, err := decodeB64URL(clientDataB64)
+	clientData, err := readClientData(clientDataB64)
 	if err != nil {
-		sendError(w, http.StatusBadRequest, "invalid clientDataJSON encoding")
-		return
-	}
-	var clientData struct {
-		Type      string `json:"type"`
-		Challenge string `json:"challenge"`
-		Origin    string `json:"origin"`
-	}
-	if err := json.Unmarshal(clientDataRaw, &clientData); err != nil {
 		sendError(w, http.StatusBadRequest, "invalid clientDataJSON payload")
 		return
 	}
@@ -342,30 +337,67 @@ func (a *API) passkeyCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	attRaw, err := decodeB64URL(attestationB64)
-	if err != nil {
-		sendError(w, http.StatusBadRequest, "invalid attestationObject encoding")
+	if base64.RawURLEncoding.DecodedLen(len(strings.TrimRight(attestationB64, "="))) > maxAttestationBytes {
+		sendError(w, http.StatusBadRequest, "attestationObject is too large")
 		return
 	}
-	pubKeyB64, signCount, err := parseAttestationObject(attRaw, credID, passkeyRPID(r), originRPID(clientData.Origin))
+
+	rp := a.passkeyRP(r)
+	wa, err := rp.webAuthn(clientData.Origin)
 	if err != nil {
 		sendError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	credRaw, err := decodeB64URL(credID)
+	if err != nil {
+		sendError(w, http.StatusBadRequest, "invalid credentialId encoding")
+		return
+	}
+	payload, err := attestationJSON(credRaw, clientDataB64, attestationB64)
+	if err != nil {
+		sendError(w, http.StatusBadRequest, "invalid passkey registration encoding")
+		return
+	}
+	parsed, err := protocol.ParseCredentialCreationResponseBytes(payload)
+	if err == nil && !bytes.Equal(parsed.Response.AttestationObject.AuthData.AttData.CredentialID, credRaw) {
+		err = badPasskey("attested credential ID does not match credentialId")
+	}
+	var cred *webauthn.Credential
+	if err == nil {
+		cred, err = wa.CreateCredential(passkeyUser{id: []byte(act.UserID)}, webauthn.SessionData{
+			Challenge:        clientData.Challenge,
+			RelyingPartyID:   rp.id,
+			UserID:           []byte(act.UserID),
+			UserVerification: protocol.VerificationRequired,
+			CredParams:       []protocol.CredentialParameter{{Type: protocol.PublicKeyCredentialType, Algorithm: webauthncose.AlgES256}},
+		}, parsed)
+	}
+	var refused *decisionError
+	if errors.As(err, &refused) {
+		sendError(w, refused.status, refused.message)
+		return
+	}
+	if err != nil {
+		sendError(w, http.StatusBadRequest, passkeyCheckError(err).Error())
+		return
+	}
+	pubKeyB64 := base64.RawURLEncoding.EncodeToString(cred.PublicKey)
+	signCount := int64(cred.Authenticator.SignCount)
 
 	var p passkeySummary
 	var created time.Time
 	var used *time.Time
 	err = a.DB.QueryRow(ctx, `
-		insert into app_passkey (org_id, user_id, credential_id, public_key, algorithm, sign_count, name)
-		values ($1, $2, $3, $4, -7, $5, $6)
+		insert into app_passkey (org_id, user_id, credential_id, public_key, algorithm, sign_count, backup_eligible, name)
+		values ($1, $2, $3, $4, -7, $5, $6, $7)
 		on conflict (org_id, credential_id) do update
 		  set public_key = excluded.public_key,
 		      sign_count = excluded.sign_count,
+		      backup_eligible = excluded.backup_eligible,
 		      name = excluded.name
 		where app_passkey.user_id = excluded.user_id
 		returning id::text, credential_id, name, created_at, last_used_at`,
-		act.OrgID, act.UserID, credID, pubKeyB64, signCount, name).
+		act.OrgID, act.UserID, credID, pubKeyB64, signCount, cred.Flags.BackupEligible, name).
 		Scan(&p.ID, &p.CredentialID, &p.Name, &created, &used)
 	if errors.Is(err, pgx.ErrNoRows) {
 		sendError(w, http.StatusConflict, "passkey is already registered")
@@ -440,7 +472,18 @@ func (a *API) passkeyDelete(w http.ResponseWriter, r *http.Request) {
 	}{OK: true})
 }
 
-func verifyPasskeyApproval(ctx context.Context, tx pgx.Tx, reqRPID string, act actor, actionID string, raw any) (*verifiedPasskey, error) {
+type passkeyAssertion struct {
+	credID        string
+	origin        string
+	challenge     string
+	clientDataB64 string
+	authDataB64   string
+	sigB64        string
+}
+
+// takePasskeyAssertion deletes the challenge outside the decision
+// transaction, so that a failed check still spends it.
+func (a *API) takePasskeyAssertion(ctx context.Context, act actor, actionID string, raw any) (*passkeyAssertion, error) {
 	obj, ok := raw.(map[string]any)
 	if !ok || obj == nil {
 		return nil, badPasskey("passkey assertion must be an object")
@@ -453,34 +496,13 @@ func verifyPasskeyApproval(ctx context.Context, tx pgx.Tx, reqRPID string, act a
 	if credID == "" || clientDataB64 == "" || authDataB64 == "" || sigB64 == "" {
 		return nil, badPasskey("passkey assertion requires credentialId, clientDataJSON, authenticatorData, and signature")
 	}
-
-	clientDataRaw, err := decodeB64URL(clientDataB64)
-	if err != nil {
-		return nil, badPasskey("invalid passkey clientDataJSON")
-	}
-	var clientData struct {
-		Type      string `json:"type"`
-		Challenge string `json:"challenge"`
-		Origin    string `json:"origin"`
-	}
-	if err := json.Unmarshal(clientDataRaw, &clientData); err != nil {
-		return nil, badPasskey("invalid passkey clientDataJSON")
-	}
-	if clientData.Type != "webauthn.get" || clientData.Challenge == "" {
+	clientData, err := readClientData(clientDataB64)
+	if err != nil || clientData.Type != "webauthn.get" || clientData.Challenge == "" {
 		return nil, badPasskey("passkey clientDataJSON type must be webauthn.get")
 	}
 
-	authData, err := decodeB64URL(authDataB64)
-	if err != nil || len(authData) < 37 {
-		return nil, badPasskey("invalid passkey authenticatorData")
-	}
-	sigBytes, err := decodeB64URL(sigB64)
-	if err != nil || len(sigBytes) == 0 {
-		return nil, badPasskey("invalid passkey signature")
-	}
-
 	var challengeID string
-	err = tx.QueryRow(ctx, `
+	err = a.DB.QueryRow(ctx, `
 		delete from app_passkey_challenge
 		where org_id = $1 and user_id = $2 and purpose = 'approve'
 		  and action_request_id = $3 and challenge = $4 and expires_at > now()
@@ -492,247 +514,191 @@ func verifyPasskeyApproval(ctx context.Context, tx pgx.Tx, reqRPID string, act a
 	if err != nil {
 		return nil, err
 	}
+	return &passkeyAssertion{
+		credID:        credID,
+		origin:        clientData.Origin,
+		challenge:     clientData.Challenge,
+		clientDataB64: clientDataB64,
+		authDataB64:   authDataB64,
+		sigB64:        sigB64,
+	}, nil
+}
+
+func verifyPasskeyApproval(ctx context.Context, tx pgx.Tx, rp passkeyRP, act actor, p *passkeyAssertion) (*verifiedPasskey, error) {
+	wa, err := rp.webAuthn(p.origin)
+	if err != nil {
+		return nil, err
+	}
+	credRaw, err := decodeB64URL(p.credID)
+	if err != nil {
+		return nil, badPasskey("invalid passkey credentialId")
+	}
+	payload, err := assertionJSON(credRaw, p)
+	if err != nil {
+		return nil, badPasskey("invalid passkey assertion encoding")
+	}
+	parsed, err := protocol.ParseCredentialRequestResponseBytes(payload)
+	if err != nil {
+		return nil, passkeyCheckError(err)
+	}
 
 	var pkID, pubKeyB64, name string
 	var storedSignCount int64
+	var backupEligible *bool
 	err = tx.QueryRow(ctx, `
-		select id::text, public_key, name, sign_count
+		select id::text, public_key, name, sign_count, backup_eligible
 		from app_passkey
 		where org_id = $1 and user_id = $2 and credential_id = $3
 		for update`,
-		act.OrgID, act.UserID, credID).Scan(&pkID, &pubKeyB64, &name, &storedSignCount)
+		act.OrgID, act.UserID, p.credID).Scan(&pkID, &pubKeyB64, &name, &storedSignCount, &backupEligible)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, badPasskey("passkey is not registered for this user")
 	}
 	if err != nil {
 		return nil, err
 	}
-
-	if !matchesRPIDHash(authData[:32], reqRPID, originRPID(clientData.Origin)) {
-		return nil, badPasskey("passkey relying party ID mismatch")
+	pubKey, err := decodeB64URL(pubKeyB64)
+	if err != nil {
+		return nil, badPasskey("stored passkey public key is invalid")
 	}
-	flags := authData[32]
-	if flags&0x01 == 0 {
-		return nil, badPasskey("passkey assertion requires user presence")
+	be := parsed.Response.AuthenticatorData.Flags.HasBackupEligible()
+	if backupEligible != nil {
+		be = *backupEligible
 	}
-	userVerified := (flags & 0x04) != 0
-	signCount := int64(binary.BigEndian.Uint32(authData[33:37]))
-	if storedSignCount > 0 && signCount <= storedSignCount {
+	user := passkeyUser{id: []byte(act.UserID), cred: webauthn.Credential{
+		ID:            credRaw,
+		PublicKey:     pubKey,
+		Flags:         webauthn.CredentialFlags{BackupEligible: be},
+		Authenticator: webauthn.Authenticator{SignCount: uint32(storedSignCount)},
+	}}
+	cred, err := wa.ValidateLogin(user, webauthn.SessionData{
+		Challenge:            p.challenge,
+		RelyingPartyID:       rp.id,
+		UserID:               user.id,
+		AllowedCredentialIDs: [][]byte{credRaw},
+		UserVerification:     protocol.VerificationRequired,
+	}, parsed)
+	if err != nil {
+		return nil, passkeyCheckError(err)
+	}
+	if cred.Authenticator.CloneWarning {
 		return nil, badPasskey("passkey sign count did not advance")
-	}
-
-	pubBytes, err := decodeB64URL(pubKeyB64)
-	if err != nil || len(pubBytes) != 65 || pubBytes[0] != 0x04 {
-		return nil, badPasskey("stored passkey public key is invalid")
-	}
-	if _, err := ecdh.P256().NewPublicKey(pubBytes); err != nil {
-		return nil, badPasskey("stored passkey public key is invalid")
-	}
-	pubKey := &ecdsa.PublicKey{
-		Curve: elliptic.P256(),
-		X:     new(big.Int).SetBytes(pubBytes[1:33]),
-		Y:     new(big.Int).SetBytes(pubBytes[33:65]),
-	}
-
-	clientHash := sha256.Sum256(clientDataRaw)
-	signed := make([]byte, 0, len(authData)+len(clientHash))
-	signed = append(signed, authData...)
-	signed = append(signed, clientHash[:]...)
-	digest := sha256.Sum256(signed)
-	if !ecdsa.VerifyASN1(pubKey, digest[:], sigBytes) {
-		return nil, badPasskey("passkey signature verification failed")
 	}
 
 	if _, err := tx.Exec(ctx, `
 		update app_passkey
-		set sign_count = greatest(sign_count, $1), last_used_at = now()
-		where id = $2`,
-		signCount, pkID); err != nil {
+		set sign_count = greatest(sign_count, $1), backup_eligible = $2, last_used_at = now()
+		where id = $3`,
+		int64(cred.Authenticator.SignCount), cred.Flags.BackupEligible, pkID); err != nil {
 		return nil, err
 	}
 
 	return &verifiedPasskey{
 		ID:           pkID,
-		CredentialID: credID,
+		CredentialID: p.credID,
 		Name:         name,
-		UserVerified: userVerified,
+		UserVerified: parsed.Response.AuthenticatorData.Flags.HasUserVerified(),
 	}, nil
 }
 
-func matchesRPIDHash(rpIDHash []byte, reqRPID, origRPID string) bool {
-	if reqRPID != "" {
-		sum := sha256.Sum256([]byte(reqRPID))
-		if bytes.Equal(rpIDHash, sum[:]) {
-			return true
-		}
-	}
-	if origRPID != "" && origRPID == reqRPID {
-		sum := sha256.Sum256([]byte(origRPID))
-		if bytes.Equal(rpIDHash, sum[:]) {
-			return true
-		}
-	}
-	return false
+type passkeyUser struct {
+	id   []byte
+	cred webauthn.Credential
 }
 
-func parseAttestationObject(attRaw []byte, expectedCredID, reqRPID, origRPID string) (string, int64, error) {
-	val, _, err := readCBORItem(attRaw)
-	if err != nil {
-		return "", 0, badPasskey("invalid CBOR attestationObject")
+func (u passkeyUser) WebAuthnID() []byte          { return u.id }
+func (u passkeyUser) WebAuthnName() string        { return string(u.id) }
+func (u passkeyUser) WebAuthnDisplayName() string { return string(u.id) }
+func (u passkeyUser) WebAuthnCredentials() []webauthn.Credential {
+	if u.cred.ID == nil {
+		return nil
 	}
-	m, ok := val.(map[any]any)
-	if !ok {
-		return "", 0, badPasskey("attestationObject must be a CBOR map")
-	}
-	authData, ok := m["authData"].([]byte)
-	if !ok || len(authData) < 55 {
-		return "", 0, badPasskey("attestationObject missing valid authData")
-	}
-	if !matchesRPIDHash(authData[:32], reqRPID, origRPID) {
-		return "", 0, badPasskey("passkey relying party ID mismatch")
-	}
-	flags := authData[32]
-	if flags&0x01 == 0 || flags&0x40 == 0 {
-		return "", 0, badPasskey("attestation authData requires user presence and attested credential data")
-	}
-	signCount := int64(binary.BigEndian.Uint32(authData[33:37]))
-	credLen := int(binary.BigEndian.Uint16(authData[53:55]))
-	if credLen <= 0 || len(authData) <= 55+credLen {
-		return "", 0, badPasskey("invalid attested credential length")
-	}
-	attestedCredRaw := authData[55 : 55+credLen]
-	wantCredRaw, err := decodeB64URL(expectedCredID)
-	if err != nil || !bytes.Equal(attestedCredRaw, wantCredRaw) {
-		return "", 0, badPasskey("attested credential ID does not match credentialId")
-	}
-
-	coseVal, _, err := readCBORItem(authData[55+credLen:])
-	if err != nil {
-		return "", 0, badPasskey("invalid COSE public key")
-	}
-	coseMap, ok := coseVal.(map[any]any)
-	if !ok {
-		return "", 0, badPasskey("COSE public key must be a map")
-	}
-	kty, _ := coseMap[int64(1)].(int64)
-	alg, _ := coseMap[int64(3)].(int64)
-	crv, _ := coseMap[int64(-1)].(int64)
-	xBytes, _ := coseMap[int64(-2)].([]byte)
-	yBytes, _ := coseMap[int64(-3)].([]byte)
-	if kty != 2 || alg != -7 || crv != 1 || len(xBytes) != 32 || len(yBytes) != 32 {
-		return "", 0, badPasskey("passkey public key must be ES256 (P-256)")
-	}
-	uncompressed := make([]byte, 65)
-	uncompressed[0] = 0x04
-	copy(uncompressed[1:33], xBytes)
-	copy(uncompressed[33:65], yBytes)
-	if _, err := ecdh.P256().NewPublicKey(uncompressed); err != nil {
-		return "", 0, badPasskey("passkey public key is not on P-256 curve")
-	}
-	return base64.RawURLEncoding.EncodeToString(uncompressed), signCount, nil
+	return []webauthn.Credential{u.cred}
 }
 
-func readCBORItem(b []byte) (any, []byte, error) {
-	if len(b) == 0 {
-		return nil, nil, errors.New("unexpected end of CBOR")
-	}
-	major := b[0] >> 5
-	info := b[0] & 0x1f
-	n, rest, err := readCBORUint(info, b[1:])
-	if err != nil {
-		return nil, nil, err
-	}
-	switch major {
-	case 0:
-		return int64(n), rest, nil
-	case 1:
-		return -1 - int64(n), rest, nil
-	case 2:
-		if uint64(len(rest)) < n {
-			return nil, nil, errors.New("truncated CBOR byte string")
-		}
-		out := bytes.Clone(rest[:n])
-		return out, rest[n:], nil
-	case 3:
-		if uint64(len(rest)) < n {
-			return nil, nil, errors.New("truncated CBOR text string")
-		}
-		return string(rest[:n]), rest[n:], nil
-	case 4:
-		if n > 1024 {
-			return nil, nil, errors.New("CBOR array too large")
-		}
-		arr := make([]any, 0, n)
-		cur := rest
-		for i := uint64(0); i < n; i++ {
-			var item any
-			item, cur, err = readCBORItem(cur)
-			if err != nil {
-				return nil, nil, err
-			}
-			arr = append(arr, item)
-		}
-		return arr, cur, nil
-	case 5:
-		if n > 1024 {
-			return nil, nil, errors.New("CBOR map too large")
-		}
-		m := make(map[any]any, n)
-		cur := rest
-		for i := uint64(0); i < n; i++ {
-			var k, v any
-			k, cur, err = readCBORItem(cur)
-			if err != nil {
-				return nil, nil, err
-			}
-			v, cur, err = readCBORItem(cur)
-			if err != nil {
-				return nil, nil, err
-			}
-			m[k] = v
-		}
-		return m, cur, nil
-	case 7:
-		switch info {
-		case 20:
-			return false, rest, nil
-		case 21:
-			return true, rest, nil
-		case 22, 23:
-			return nil, rest, nil
-		default:
-			return n, rest, nil
-		}
-	default:
-		return nil, nil, errors.New("unsupported CBOR major type")
-	}
+type clientData struct {
+	Type      string `json:"type"`
+	Challenge string `json:"challenge"`
+	Origin    string `json:"origin"`
 }
 
-func readCBORUint(info byte, b []byte) (uint64, []byte, error) {
-	switch {
-	case info < 24:
-		return uint64(info), b, nil
-	case info == 24:
-		if len(b) < 1 {
-			return 0, nil, errors.New("truncated CBOR uint8")
-		}
-		return uint64(b[0]), b[1:], nil
-	case info == 25:
-		if len(b) < 2 {
-			return 0, nil, errors.New("truncated CBOR uint16")
-		}
-		return uint64(binary.BigEndian.Uint16(b[:2])), b[2:], nil
-	case info == 26:
-		if len(b) < 4 {
-			return 0, nil, errors.New("truncated CBOR uint32")
-		}
-		return uint64(binary.BigEndian.Uint32(b[:4])), b[4:], nil
-	case info == 27:
-		if len(b) < 8 {
-			return 0, nil, errors.New("truncated CBOR uint64")
-		}
-		return binary.BigEndian.Uint64(b[:8]), b[8:], nil
-	default:
-		return 0, nil, errors.New("unsupported CBOR length")
+func readClientData(b64 string) (clientData, error) {
+	var cd clientData
+	raw, err := decodeB64URL(b64)
+	if err != nil {
+		return cd, err
 	}
+	return cd, json.Unmarshal(raw, &cd)
+}
+
+func attestationJSON(credRaw []byte, clientDataB64, attestationB64 string) ([]byte, error) {
+	clientData, err := decodeB64URL(clientDataB64)
+	if err != nil {
+		return nil, err
+	}
+	att, err := decodeB64URL(attestationB64)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(map[string]any{
+		"id":    base64.RawURLEncoding.EncodeToString(credRaw),
+		"rawId": protocol.URLEncodedBase64(credRaw),
+		"type":  "public-key",
+		"response": map[string]any{
+			"clientDataJSON":    protocol.URLEncodedBase64(clientData),
+			"attestationObject": protocol.URLEncodedBase64(att),
+		},
+	})
+}
+
+func assertionJSON(credRaw []byte, p *passkeyAssertion) ([]byte, error) {
+	resp := map[string]any{}
+	for key, value := range map[string]string{
+		"clientDataJSON":    p.clientDataB64,
+		"authenticatorData": p.authDataB64,
+		"signature":         p.sigB64,
+	} {
+		b, err := decodeB64URL(value)
+		if err != nil {
+			return nil, err
+		}
+		resp[key] = protocol.URLEncodedBase64(b)
+	}
+	return json.Marshal(map[string]any{
+		"id":       base64.RawURLEncoding.EncodeToString(credRaw),
+		"rawId":    protocol.URLEncodedBase64(credRaw),
+		"type":     "public-key",
+		"response": resp,
+	})
+}
+
+func (rp passkeyRP) webAuthn(origin string) (*webauthn.WebAuthn, error) {
+	if err := rp.checkOrigin(origin); err != nil {
+		return nil, err
+	}
+	allowed := rp.origin
+	if allowed == "" {
+		allowed = origin
+	}
+	wa, err := webauthn.New(&webauthn.Config{
+		RPID:          rp.id,
+		RPDisplayName: "OpenNeko",
+		RPOrigins:     []string{allowed},
+	})
+	if err != nil {
+		return nil, badPasskey("passkey relying party is not valid")
+	}
+	return wa, nil
+}
+
+func passkeyCheckError(err error) error {
+	var pe *protocol.Error
+	if !errors.As(err, &pe) {
+		return badPasskey("passkey check failed")
+	}
+	msg := strings.TrimSpace(pe.Details)
+	if info := strings.TrimSpace(pe.DevInfo); info != "" {
+		msg += ": " + info
+	}
+	return badPasskey("passkey check failed: " + strings.ToLower(msg))
 }
