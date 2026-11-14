@@ -1,0 +1,1691 @@
+{
+  "events": {
+    "markdown": [
+      {
+        "kind": "converse",
+        "id": "c1",
+        "role": "assistant",
+        "text": "# Stock report\nRevenue rose to **$4.7M** in *Q3*; see `orders_daily` and [the board](https://example.com/b?x=1&y=2).\n\n\n\n- first_item with snake_case\n2) second __bold__ ~~old~~\n> quoted <tag> & more\n> second quote line\n---\n```sql\nselect * from t where a < 3\n```\n```\nplain fence\n```\n***\nDone. Next line"
+      }
+    ],
+    "surfaces": [
+      {
+        "kind": "converse",
+        "id": "c2",
+        "role": "assistant",
+        "text": "ignored",
+        "enrichment": {
+          "surfaces": [
+            {
+              "version": "v1.0",
+              "createSurface": {
+                "surfaceId": "s",
+                "catalogId": "urn:app:catalog:answer:v1"
+              }
+            },
+            {
+              "version": "v1.0",
+              "updateComponents": {
+                "surfaceId": "s",
+                "components": [
+                  {
+                    "id": "root",
+                    "component": "Answer",
+                    "eyebrow": "Daily <stock>",
+                    "title": "Three SKUs are low",
+                    "subtitle": "As of 04 September",
+                    "children": [
+                      "md",
+                      {
+                        "id": "card",
+                        "component": "MetricCard",
+                        "metric": "$18,400",
+                        "label": "At risk",
+                        "mood": "act",
+                        "detail": "## Detail\n- one\n```\nx\n```"
+                      },
+                      "table",
+                      "callout",
+                      "section",
+                      "missing",
+                      "choice",
+                      "divider",
+                      "plain-divider",
+                      "confirm"
+                    ]
+                  },
+                  {
+                    "id": "md",
+                    "component": "Markdown",
+                    "text": "Two **suppliers** are late."
+                  },
+                  {
+                    "id": "table",
+                    "component": "Table",
+                    "caption": "Low stock",
+                    "columns": [
+                      {
+                        "key": "sku",
+                        "label": "SKU"
+                      },
+                      {
+                        "key": "qty",
+                        "label": "Qty",
+                        "align": "right"
+                      },
+                      {
+                        "key": "note",
+                        "label": "Note"
+                      }
+                    ],
+                    "rows": [
+                      {
+                        "sku": "A-1",
+                        "qty": 3,
+                        "note": "ok 🚚"
+                      },
+                      {
+                        "sku": "LONG-SKU-22",
+                        "qty": 120
+                      }
+                    ]
+                  },
+                  {
+                    "id": "callout",
+                    "component": "Callout",
+                    "mood": "watch",
+                    "title": "Watch",
+                    "text": "> late `ETA`\n# Head"
+                  },
+                  {
+                    "id": "section",
+                    "component": "Section",
+                    "title": "More",
+                    "children": [
+                      {
+                        "id": "sec-md",
+                        "component": "Markdown",
+                        "text": "Inner text"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "choice",
+                    "component": "Choice",
+                    "options": [
+                      {
+                        "label": "Show suppliers"
+                      },
+                      {
+                        "prompt": "Reorder now"
+                      },
+                      {}
+                    ]
+                  },
+                  {
+                    "id": "divider",
+                    "component": "Divider",
+                    "label": "Then"
+                  },
+                  {
+                    "id": "plain-divider",
+                    "component": "Divider"
+                  },
+                  {
+                    "id": "confirm",
+                    "component": "Confirmation",
+                    "label": "Saved",
+                    "title": "Watcher <on>",
+                    "children": []
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "flat": [
+      {
+        "kind": "inform",
+        "id": "i0",
+        "mood": "good",
+        "title": "t",
+        "body": "b",
+        "enrichment": {
+          "surfaces": [
+            {
+              "updateComponents": {
+                "components": [
+                  {
+                    "id": "a",
+                    "component": "Markdown",
+                    "text": "First"
+                  },
+                  {
+                    "id": "b",
+                    "component": "Callout",
+                    "text": "Second"
+                  },
+                  {
+                    "id": "c",
+                    "component": "Unknown"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rootless": [
+      {
+        "kind": "converse",
+        "id": "c3",
+        "role": "assistant",
+        "text": "",
+        "enrichment": {
+          "surfaces": [
+            {
+              "updateComponents": {
+                "components": [
+                  {
+                    "id": "root",
+                    "component": "Briefing",
+                    "greeting": "Good morning"
+                  },
+                  {
+                    "id": "x",
+                    "component": "MetricCard",
+                    "metric": "12",
+                    "label": "Orders"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "inform": [
+      {
+        "kind": "inform",
+        "id": "o1",
+        "mood": "act",
+        "title": "Stock <low>",
+        "body": "Three SKUs are low. Reorder today! More text.\n\nSecond paragraph.",
+        "metric": {
+          "label": "SKUs",
+          "value": "3"
+        },
+        "series": [
+          {
+            "t": "a",
+            "v": 1
+          }
+        ],
+        "evidence": [
+          {
+            "ref": "sku:A-1"
+          }
+        ]
+      },
+      {
+        "kind": "inform",
+        "id": "o2",
+        "mood": "unknown",
+        "title": "Plain",
+        "body": ""
+      }
+    ],
+    "asks": [
+      {
+        "kind": "ask",
+        "id": "a1",
+        "ask": "approval",
+        "prompt": "Approve the **refund**?",
+        "decisionRef": "req-1",
+        "risk": "high"
+      },
+      {
+        "kind": "ask",
+        "id": "a2",
+        "ask": "choice",
+        "prompt": "Pick one",
+        "decisionRef": "req-2",
+        "options": [
+          {
+            "id": "o0",
+            "label": "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL"
+          },
+          {
+            "id": "o1",
+            "label": "Option 1"
+          },
+          {
+            "id": "o2",
+            "label": "Option 2"
+          },
+          {
+            "id": "o3",
+            "label": "Option 3"
+          },
+          {
+            "id": "o4",
+            "label": "Option 4"
+          },
+          {
+            "id": "o5",
+            "label": "Option 5"
+          }
+        ]
+      }
+    ],
+    "choiceOnly": [
+      {
+        "kind": "ask",
+        "id": "a3",
+        "ask": "choice",
+        "prompt": "Pick",
+        "decisionRef": "req-3",
+        "options": [
+          {
+            "id": "x",
+            "label": "X"
+          }
+        ]
+      },
+      {
+        "kind": "ask",
+        "id": "a4",
+        "ask": "free",
+        "prompt": "Say more",
+        "decisionRef": "req-4"
+      }
+    ],
+    "misc": [
+      {
+        "kind": "resolve",
+        "id": "r1",
+        "ref": "req-1",
+        "status": "succeeded",
+        "summary": "Refund <sent>"
+      },
+      {
+        "kind": "resolve",
+        "id": "r2",
+        "ref": "req-2",
+        "status": "rejected",
+        "summary": "No"
+      },
+      {
+        "kind": "resolve",
+        "id": "r3",
+        "ref": "req-3",
+        "status": "failed",
+        "summary": "Broke"
+      },
+      {
+        "kind": "highlight",
+        "id": "h1",
+        "metrics": [
+          {
+            "label": "Orders",
+            "value": "49,310",
+            "sub": "+4%"
+          },
+          {
+            "label": "AOV",
+            "value": "$75"
+          }
+        ]
+      },
+      {
+        "kind": "offer",
+        "id": "f1",
+        "label": "Report <pdf>",
+        "artifactRef": "https://example.com/r.pdf?a=1&b=2",
+        "mime": "application/pdf"
+      },
+      {
+        "kind": "offer",
+        "id": "f2",
+        "label": "Local",
+        "artifactRef": "files/r.csv"
+      },
+      {
+        "kind": "progress",
+        "id": "p1",
+        "phase": "start",
+        "label": "Reading orders"
+      }
+    ],
+    "followupsWithApproval": [
+      {
+        "kind": "converse",
+        "id": "c4",
+        "role": "assistant",
+        "text": "x",
+        "enrichment": {
+          "surfaces": [
+            {
+              "version": "v1.0",
+              "createSurface": {
+                "surfaceId": "s",
+                "catalogId": "urn:app:catalog:answer:v1"
+              }
+            },
+            {
+              "version": "v1.0",
+              "updateComponents": {
+                "surfaceId": "s",
+                "components": [
+                  {
+                    "id": "root",
+                    "component": "Answer",
+                    "eyebrow": "Daily <stock>",
+                    "title": "Three SKUs are low",
+                    "subtitle": "As of 04 September",
+                    "children": [
+                      "md",
+                      {
+                        "id": "card",
+                        "component": "MetricCard",
+                        "metric": "$18,400",
+                        "label": "At risk",
+                        "mood": "act",
+                        "detail": "## Detail\n- one\n```\nx\n```"
+                      },
+                      "table",
+                      "callout",
+                      "section",
+                      "missing",
+                      "choice",
+                      "divider",
+                      "plain-divider",
+                      "confirm"
+                    ]
+                  },
+                  {
+                    "id": "md",
+                    "component": "Markdown",
+                    "text": "Two **suppliers** are late."
+                  },
+                  {
+                    "id": "table",
+                    "component": "Table",
+                    "caption": "Low stock",
+                    "columns": [
+                      {
+                        "key": "sku",
+                        "label": "SKU"
+                      },
+                      {
+                        "key": "qty",
+                        "label": "Qty",
+                        "align": "right"
+                      },
+                      {
+                        "key": "note",
+                        "label": "Note"
+                      }
+                    ],
+                    "rows": [
+                      {
+                        "sku": "A-1",
+                        "qty": 3,
+                        "note": "ok 🚚"
+                      },
+                      {
+                        "sku": "LONG-SKU-22",
+                        "qty": 120
+                      }
+                    ]
+                  },
+                  {
+                    "id": "callout",
+                    "component": "Callout",
+                    "mood": "watch",
+                    "title": "Watch",
+                    "text": "> late `ETA`\n# Head"
+                  },
+                  {
+                    "id": "section",
+                    "component": "Section",
+                    "title": "More",
+                    "children": [
+                      {
+                        "id": "sec-md",
+                        "component": "Markdown",
+                        "text": "Inner text"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "choice",
+                    "component": "Choice",
+                    "options": [
+                      {
+                        "label": "Show suppliers"
+                      },
+                      {
+                        "prompt": "Reorder now"
+                      },
+                      {}
+                    ]
+                  },
+                  {
+                    "id": "divider",
+                    "component": "Divider",
+                    "label": "Then"
+                  },
+                  {
+                    "id": "plain-divider",
+                    "component": "Divider"
+                  },
+                  {
+                    "id": "confirm",
+                    "component": "Confirmation",
+                    "label": "Saved",
+                    "title": "Watcher <on>",
+                    "children": []
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "kind": "ask",
+        "id": "a5",
+        "ask": "approval",
+        "prompt": "Go?",
+        "decisionRef": "req-5"
+      }
+    ],
+    "followupsOnly": [
+      {
+        "kind": "converse",
+        "id": "c5",
+        "role": "assistant",
+        "text": "x",
+        "enrichment": {
+          "surfaces": [
+            {
+              "updateComponents": {
+                "components": [
+                  {
+                    "id": "root",
+                    "component": "Answer",
+                    "children": [
+                      "ch"
+                    ]
+                  },
+                  {
+                    "id": "ch",
+                    "component": "Choice",
+                    "options": [
+                      {
+                        "label": "Next"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "long": [
+      {
+        "kind": "converse",
+        "id": "c6",
+        "role": "assistant",
+        "text": "Paragraph 0 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 1 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 2 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 3 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 4 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 5 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 6 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 7 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 8 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 9 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 10 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 11 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 12 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 13 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 14 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 15 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 16 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 17 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 18 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 19 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 20 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 21 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 22 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 23 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 24 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 25 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 26 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 27 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 28 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 29 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 30 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 31 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 32 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 33 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 34 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 35 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 36 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 37 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 38 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 39 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 40 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 41 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 42 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 43 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 44 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 45 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 46 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 47 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 48 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 49 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 50 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 51 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 52 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 53 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 54 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 55 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 56 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 57 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 58 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 59 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 60 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 61 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 62 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 63 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 64 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 65 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 66 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 67 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 68 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 69 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 70 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 71 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 72 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 73 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 74 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 75 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 76 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 77 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 78 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 79 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 80 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 81 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 82 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 83 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 84 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 85 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 86 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 87 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 88 has **bold words** and _plain_ text that runs on for a while to fill space.\n\nParagraph 89 has **bold words** and _plain_ text that runs on for a while to fill space."
+      }
+    ],
+    "longTable": [
+      {
+        "kind": "converse",
+        "id": "c7",
+        "role": "assistant",
+        "text": "Intro **bold** line\n\n```\nrow 0 xxxxxxxxxxxxxxxxxxxx\nrow 1 xxxxxxxxxxxxxxxxxxxx\nrow 2 xxxxxxxxxxxxxxxxxxxx\nrow 3 xxxxxxxxxxxxxxxxxxxx\nrow 4 xxxxxxxxxxxxxxxxxxxx\nrow 5 xxxxxxxxxxxxxxxxxxxx\nrow 6 xxxxxxxxxxxxxxxxxxxx\nrow 7 xxxxxxxxxxxxxxxxxxxx\nrow 8 xxxxxxxxxxxxxxxxxxxx\nrow 9 xxxxxxxxxxxxxxxxxxxx\nrow 10 xxxxxxxxxxxxxxxxxxxx\nrow 11 xxxxxxxxxxxxxxxxxxxx\nrow 12 xxxxxxxxxxxxxxxxxxxx\nrow 13 xxxxxxxxxxxxxxxxxxxx\nrow 14 xxxxxxxxxxxxxxxxxxxx\nrow 15 xxxxxxxxxxxxxxxxxxxx\nrow 16 xxxxxxxxxxxxxxxxxxxx\nrow 17 xxxxxxxxxxxxxxxxxxxx\nrow 18 xxxxxxxxxxxxxxxxxxxx\nrow 19 xxxxxxxxxxxxxxxxxxxx\nrow 20 xxxxxxxxxxxxxxxxxxxx\nrow 21 xxxxxxxxxxxxxxxxxxxx\nrow 22 xxxxxxxxxxxxxxxxxxxx\nrow 23 xxxxxxxxxxxxxxxxxxxx\nrow 24 xxxxxxxxxxxxxxxxxxxx\nrow 25 xxxxxxxxxxxxxxxxxxxx\nrow 26 xxxxxxxxxxxxxxxxxxxx\nrow 27 xxxxxxxxxxxxxxxxxxxx\nrow 28 xxxxxxxxxxxxxxxxxxxx\nrow 29 xxxxxxxxxxxxxxxxxxxx\nrow 30 xxxxxxxxxxxxxxxxxxxx\nrow 31 xxxxxxxxxxxxxxxxxxxx\nrow 32 xxxxxxxxxxxxxxxxxxxx\nrow 33 xxxxxxxxxxxxxxxxxxxx\nrow 34 xxxxxxxxxxxxxxxxxxxx\nrow 35 xxxxxxxxxxxxxxxxxxxx\nrow 36 xxxxxxxxxxxxxxxxxxxx\nrow 37 xxxxxxxxxxxxxxxxxxxx\nrow 38 xxxxxxxxxxxxxxxxxxxx\nrow 39 xxxxxxxxxxxxxxxxxxxx\nrow 40 xxxxxxxxxxxxxxxxxxxx\nrow 41 xxxxxxxxxxxxxxxxxxxx\nrow 42 xxxxxxxxxxxxxxxxxxxx\nrow 43 xxxxxxxxxxxxxxxxxxxx\nrow 44 xxxxxxxxxxxxxxxxxxxx\nrow 45 xxxxxxxxxxxxxxxxxxxx\nrow 46 xxxxxxxxxxxxxxxxxxxx\nrow 47 xxxxxxxxxxxxxxxxxxxx\nrow 48 xxxxxxxxxxxxxxxxxxxx\nrow 49 xxxxxxxxxxxxxxxxxxxx\nrow 50 xxxxxxxxxxxxxxxxxxxx\nrow 51 xxxxxxxxxxxxxxxxxxxx\nrow 52 xxxxxxxxxxxxxxxxxxxx\nrow 53 xxxxxxxxxxxxxxxxxxxx\nrow 54 xxxxxxxxxxxxxxxxxxxx\nrow 55 xxxxxxxxxxxxxxxxxxxx\nrow 56 xxxxxxxxxxxxxxxxxxxx\nrow 57 xxxxxxxxxxxxxxxxxxxx\nrow 58 xxxxxxxxxxxxxxxxxxxx\nrow 59 xxxxxxxxxxxxxxxxxxxx\nrow 60 xxxxxxxxxxxxxxxxxxxx\nrow 61 xxxxxxxxxxxxxxxxxxxx\nrow 62 xxxxxxxxxxxxxxxxxxxx\nrow 63 xxxxxxxxxxxxxxxxxxxx\nrow 64 xxxxxxxxxxxxxxxxxxxx\nrow 65 xxxxxxxxxxxxxxxxxxxx\nrow 66 xxxxxxxxxxxxxxxxxxxx\nrow 67 xxxxxxxxxxxxxxxxxxxx\nrow 68 xxxxxxxxxxxxxxxxxxxx\nrow 69 xxxxxxxxxxxxxxxxxxxx\nrow 70 xxxxxxxxxxxxxxxxxxxx\nrow 71 xxxxxxxxxxxxxxxxxxxx\nrow 72 xxxxxxxxxxxxxxxxxxxx\nrow 73 xxxxxxxxxxxxxxxxxxxx\nrow 74 xxxxxxxxxxxxxxxxxxxx\nrow 75 xxxxxxxxxxxxxxxxxxxx\nrow 76 xxxxxxxxxxxxxxxxxxxx\nrow 77 xxxxxxxxxxxxxxxxxxxx\nrow 78 xxxxxxxxxxxxxxxxxxxx\nrow 79 xxxxxxxxxxxxxxxxxxxx\nrow 80 xxxxxxxxxxxxxxxxxxxx\nrow 81 xxxxxxxxxxxxxxxxxxxx\nrow 82 xxxxxxxxxxxxxxxxxxxx\nrow 83 xxxxxxxxxxxxxxxxxxxx\nrow 84 xxxxxxxxxxxxxxxxxxxx\nrow 85 xxxxxxxxxxxxxxxxxxxx\nrow 86 xxxxxxxxxxxxxxxxxxxx\nrow 87 xxxxxxxxxxxxxxxxxxxx\nrow 88 xxxxxxxxxxxxxxxxxxxx\nrow 89 xxxxxxxxxxxxxxxxxxxx\nrow 90 xxxxxxxxxxxxxxxxxxxx\nrow 91 xxxxxxxxxxxxxxxxxxxx\nrow 92 xxxxxxxxxxxxxxxxxxxx\nrow 93 xxxxxxxxxxxxxxxxxxxx\nrow 94 xxxxxxxxxxxxxxxxxxxx\nrow 95 xxxxxxxxxxxxxxxxxxxx\nrow 96 xxxxxxxxxxxxxxxxxxxx\nrow 97 xxxxxxxxxxxxxxxxxxxx\nrow 98 xxxxxxxxxxxxxxxxxxxx\nrow 99 xxxxxxxxxxxxxxxxxxxx\nrow 100 xxxxxxxxxxxxxxxxxxxx\nrow 101 xxxxxxxxxxxxxxxxxxxx\nrow 102 xxxxxxxxxxxxxxxxxxxx\nrow 103 xxxxxxxxxxxxxxxxxxxx\nrow 104 xxxxxxxxxxxxxxxxxxxx\nrow 105 xxxxxxxxxxxxxxxxxxxx\nrow 106 xxxxxxxxxxxxxxxxxxxx\nrow 107 xxxxxxxxxxxxxxxxxxxx\nrow 108 xxxxxxxxxxxxxxxxxxxx\nrow 109 xxxxxxxxxxxxxxxxxxxx\nrow 110 xxxxxxxxxxxxxxxxxxxx\nrow 111 xxxxxxxxxxxxxxxxxxxx\nrow 112 xxxxxxxxxxxxxxxxxxxx\nrow 113 xxxxxxxxxxxxxxxxxxxx\nrow 114 xxxxxxxxxxxxxxxxxxxx\nrow 115 xxxxxxxxxxxxxxxxxxxx\nrow 116 xxxxxxxxxxxxxxxxxxxx\nrow 117 xxxxxxxxxxxxxxxxxxxx\nrow 118 xxxxxxxxxxxxxxxxxxxx\nrow 119 xxxxxxxxxxxxxxxxxxxx\nrow 120 xxxxxxxxxxxxxxxxxxxx\nrow 121 xxxxxxxxxxxxxxxxxxxx\nrow 122 xxxxxxxxxxxxxxxxxxxx\nrow 123 xxxxxxxxxxxxxxxxxxxx\nrow 124 xxxxxxxxxxxxxxxxxxxx\nrow 125 xxxxxxxxxxxxxxxxxxxx\nrow 126 xxxxxxxxxxxxxxxxxxxx\nrow 127 xxxxxxxxxxxxxxxxxxxx\nrow 128 xxxxxxxxxxxxxxxxxxxx\nrow 129 xxxxxxxxxxxxxxxxxxxx\nrow 130 xxxxxxxxxxxxxxxxxxxx\nrow 131 xxxxxxxxxxxxxxxxxxxx\nrow 132 xxxxxxxxxxxxxxxxxxxx\nrow 133 xxxxxxxxxxxxxxxxxxxx\nrow 134 xxxxxxxxxxxxxxxxxxxx\nrow 135 xxxxxxxxxxxxxxxxxxxx\nrow 136 xxxxxxxxxxxxxxxxxxxx\nrow 137 xxxxxxxxxxxxxxxxxxxx\nrow 138 xxxxxxxxxxxxxxxxxxxx\nrow 139 xxxxxxxxxxxxxxxxxxxx\nrow 140 xxxxxxxxxxxxxxxxxxxx\nrow 141 xxxxxxxxxxxxxxxxxxxx\nrow 142 xxxxxxxxxxxxxxxxxxxx\nrow 143 xxxxxxxxxxxxxxxxxxxx\nrow 144 xxxxxxxxxxxxxxxxxxxx\nrow 145 xxxxxxxxxxxxxxxxxxxx\nrow 146 xxxxxxxxxxxxxxxxxxxx\nrow 147 xxxxxxxxxxxxxxxxxxxx\nrow 148 xxxxxxxxxxxxxxxxxxxx\nrow 149 xxxxxxxxxxxxxxxxxxxx\nrow 150 xxxxxxxxxxxxxxxxxxxx\nrow 151 xxxxxxxxxxxxxxxxxxxx\nrow 152 xxxxxxxxxxxxxxxxxxxx\nrow 153 xxxxxxxxxxxxxxxxxxxx\nrow 154 xxxxxxxxxxxxxxxxxxxx\nrow 155 xxxxxxxxxxxxxxxxxxxx\nrow 156 xxxxxxxxxxxxxxxxxxxx\nrow 157 xxxxxxxxxxxxxxxxxxxx\nrow 158 xxxxxxxxxxxxxxxxxxxx\nrow 159 xxxxxxxxxxxxxxxxxxxx\n```\n\nAfter"
+      }
+    ],
+    "spatial": [
+      {
+        "kind": "inform",
+        "id": "s1",
+        "mood": "watch",
+        "title": "Here",
+        "body": "b",
+        "spatial": {
+          "kind": "site",
+          "id": "plant-2",
+          "longitude": "12.5",
+          "latitude": 41.9
+        }
+      },
+      {
+        "kind": "inform",
+        "id": "s2",
+        "mood": "watch",
+        "title": "There",
+        "body": "b",
+        "enrichment": {
+          "spatial": {
+            "longitude": 1,
+            "latitude": 2
+          }
+        }
+      },
+      {
+        "kind": "converse",
+        "id": "s3",
+        "role": "assistant",
+        "text": "Hello"
+      }
+    ],
+    "empty": []
+  },
+  "cases": [
+    {
+      "name": "slack markdown",
+      "channel": "slack",
+      "recipient": {
+        "kind": "slack",
+        "channel": "D1",
+        "thread_ts": "1700.1"
+      },
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-1"
+      },
+      "events": "markdown",
+      "requests": [
+        {
+          "path": "/chat.postMessage",
+          "body": "{\"channel\":\"D1\",\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"# Stock report\\nRevenue rose to **$4.7M** in *Q3*; see `orders_daily` and [the board](https://example.com/b?x=1&y=2).\\n\\n\\n\\n- first_item with snake_case\\n2) second __bold__ ~~old~~\\n> quoted <tag> & more\\n> second quote line\\n---\\n```sql\\nselect * from t where a < 3\\n```\\n```\\nplain fence\\n```\\n***\\nDone. Next line\"}}],\"text\":\"# Stock report\\nRevenue rose to **$4.7M** in *Q3*; see `orders_daily` and [the board](https://example.com/b?x=1&y=2).\\n\\n\\n\\n- first_item with snake_case\\n2) second __bold__ ~~old~~\\n> quoted <tag> & more\\n> second quote line\\n---\\n```sql\\nselect * from t where a < 3\\n```\\n```\\nplain fence\\n```\\n***\\nDone. Next line\",\"thread_ts\":\"1700.1\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "1700.9"
+      }
+    },
+    {
+      "name": "telegram markdown",
+      "channel": "telegram",
+      "recipient": {
+        "kind": "telegram",
+        "chatId": 7
+      },
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "123:abc"
+      },
+      "events": "markdown",
+      "requests": [
+        {
+          "path": "/bot123:abc/sendMessage",
+          "body": "{\"chat_id\":7,\"text\":\"<b>Stock report</b>\\nRevenue rose to <b>$4.7M</b> in <i>Q3</i>; see <code>orders_daily</code> and <a href=\\\"https://example.com/b?x=1&amp;y=2\\\">the board</a>.\\n\\n• first_item with snake_case\\n• second <b>bold</b> <s>old</s>\\n<blockquote>quoted &lt;tag&gt; &amp; more\\nsecond quote line</blockquote>\\n—\\n<pre><code class=\\\"language-sql\\\">select * from t where a &lt; 3</code></pre>\\n<pre>plain fence</pre>\\n—\\nDone. Next line\",\"parse_mode\":\"HTML\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "101"
+      }
+    },
+    {
+      "name": "hud markdown",
+      "channel": "hud",
+      "recipient": {
+        "kind": "hud",
+        "workspace": "plant"
+      },
+      "env": {
+        "HUD_CHANNEL_SECRET": "s3cret",
+        "HUD_CHANNEL_WORKSPACE": " pack "
+      },
+      "events": "markdown",
+      "requests": [
+        {
+          "path": "http://demo-channel:443/api/deliver",
+          "headers": {
+            "x-openneko-hud-delivery-id": "delivery-1",
+            "x-openneko-hud-signature": "sha256=6aeac1775c226c985b8e6cfa127b4ab54f046b97b19db642fd5e2c4dd3698dec"
+          },
+          "body": "{\"schema\":\"openneko.hud.delivery.v1\",\"deliveryId\":\"delivery-1\",\"deliveredAt\":\"2026-11-14T10:00:00.000Z\",\"workspace\":\"pack\",\"recipient\":{\"kind\":\"hud\",\"workspace\":\"plant\"},\"projections\":[{\"id\":\"c1\",\"kind\":\"converse\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"message\",\"title\":\"OpenNeko\",\"body\":\"# Stock report\\nRevenue rose to **$4.7M** in *Q3*; see `orders_daily` and [the board](https://example.com/b?x=1&y=2).\\n\\n\\n\\n- first_item with snake_case\\n2) second __bold__ ~~old~~\\n> quoted <tag> & more\\n> second quote line\\n---\\n```sql\\nselect * from t where a < 3\\n```\\n```\\nplain fence\\n```\\n***\\nDone. Next line\"}]}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "delivery-1"
+      }
+    },
+    {
+      "name": "slack surfaces",
+      "channel": "slack",
+      "recipient": {
+        "kind": "slack",
+        "channel": "D1",
+        "thread_ts": "1700.1"
+      },
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-1"
+      },
+      "events": "surfaces",
+      "requests": [
+        {
+          "path": "/chat.postMessage",
+          "body": "{\"channel\":\"D1\",\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"ignored\"}}],\"text\":\"ignored\",\"thread_ts\":\"1700.1\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "1700.9"
+      }
+    },
+    {
+      "name": "telegram surfaces",
+      "channel": "telegram",
+      "recipient": {
+        "kind": "telegram",
+        "chatId": 7
+      },
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "123:abc"
+      },
+      "events": "surfaces",
+      "requests": [
+        {
+          "path": "/bot123:abc/sendMessage",
+          "body": "{\"chat_id\":7,\"text\":\"<i>Daily &lt;stock&gt;</i>\\n<b>Three SKUs are low</b>\\nAs of 04 September\\n\\nTwo <b>suppliers</b> are late.\\n\\n🚨 <b>$18,400</b> — At risk\\n<b>Detail</b>\\n• one\\nx\\n\\nLow stock\\n<pre>SKU          Qty  Note \\n───────────  ───  ─────\\nA-1            3  ok 🚚\\nLONG-SKU-22  120       </pre>\\n\\n<blockquote>👀 <b>Watch</b>\\nlate <code>ETA</code>\\n<b>Head</b></blockquote>\\n\\n<b>More</b>\\nInner text\\n\\n— Then —\\n\\n———\\n\\n✅ <b>Saved</b>\\nWatcher &lt;on&gt;\",\"parse_mode\":\"HTML\",\"reply_markup\":{\"keyboard\":[[{\"text\":\"Show suppliers\"}],[{\"text\":\"Reorder now\"}]],\"one_time_keyboard\":true,\"resize_keyboard\":true,\"input_field_placeholder\":\"Ask a follow-up…\"}}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "101"
+      }
+    },
+    {
+      "name": "hud surfaces",
+      "channel": "hud",
+      "recipient": {
+        "kind": "hud",
+        "workspace": "plant"
+      },
+      "env": {
+        "HUD_CHANNEL_SECRET": "s3cret",
+        "HUD_CHANNEL_WORKSPACE": " pack "
+      },
+      "events": "surfaces",
+      "requests": [
+        {
+          "path": "http://demo-channel:443/api/deliver",
+          "headers": {
+            "x-openneko-hud-delivery-id": "delivery-1",
+            "x-openneko-hud-signature": "sha256=0b6fcf59fcd8bce08d1fa89ee7c23b58b86ba712921fc3a91eabe1322c5a8d82"
+          },
+          "body": "{\"schema\":\"openneko.hud.delivery.v1\",\"deliveryId\":\"delivery-1\",\"deliveredAt\":\"2026-11-14T10:00:00.000Z\",\"workspace\":\"pack\",\"recipient\":{\"kind\":\"hud\",\"workspace\":\"plant\"},\"projections\":[{\"id\":\"c2\",\"kind\":\"converse\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"message\",\"title\":\"OpenNeko\",\"body\":\"ignored\"}]}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "delivery-1"
+      }
+    },
+    {
+      "name": "slack flat",
+      "channel": "slack",
+      "recipient": {
+        "kind": "slack",
+        "channel": "D1",
+        "thread_ts": "1700.1"
+      },
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-1"
+      },
+      "events": "flat",
+      "requests": [
+        {
+          "path": "/chat.postMessage",
+          "body": "{\"channel\":\"D1\",\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*t*\\nb\"}}],\"text\":\"t\",\"thread_ts\":\"1700.1\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "1700.9"
+      }
+    },
+    {
+      "name": "telegram flat",
+      "channel": "telegram",
+      "recipient": {
+        "kind": "telegram",
+        "chatId": 7
+      },
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "123:abc"
+      },
+      "events": "flat",
+      "requests": [
+        {
+          "path": "/bot123:abc/sendMessage",
+          "body": "{\"chat_id\":7,\"text\":\"First\\n\\n<blockquote>Second</blockquote>\",\"parse_mode\":\"HTML\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "101"
+      }
+    },
+    {
+      "name": "hud flat",
+      "channel": "hud",
+      "recipient": {
+        "kind": "hud",
+        "workspace": "plant"
+      },
+      "env": {
+        "HUD_CHANNEL_SECRET": "s3cret",
+        "HUD_CHANNEL_WORKSPACE": " pack "
+      },
+      "events": "flat",
+      "requests": [
+        {
+          "path": "http://demo-channel:443/api/deliver",
+          "headers": {
+            "x-openneko-hud-delivery-id": "delivery-1",
+            "x-openneko-hud-signature": "sha256=e0df990964713faf550a9c224c7a4f3e9bd46dc3ba1a94d99bb4cb8b2b2fcd25"
+          },
+          "body": "{\"schema\":\"openneko.hud.delivery.v1\",\"deliveryId\":\"delivery-1\",\"deliveredAt\":\"2026-11-14T10:00:00.000Z\",\"workspace\":\"pack\",\"recipient\":{\"kind\":\"hud\",\"workspace\":\"plant\"},\"projections\":[{\"id\":\"i0\",\"kind\":\"inform\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"finding\",\"title\":\"t\",\"body\":\"b\",\"mood\":\"good\",\"evidence\":[]}]}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "delivery-1"
+      }
+    },
+    {
+      "name": "slack rootless",
+      "channel": "slack",
+      "recipient": {
+        "kind": "slack",
+        "channel": "D1",
+        "thread_ts": "1700.1"
+      },
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-1"
+      },
+      "events": "rootless",
+      "requests": [
+        {
+          "path": "/chat.postMessage",
+          "body": "{\"channel\":\"D1\",\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"\"}}],\"text\":\"\",\"thread_ts\":\"1700.1\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "1700.9"
+      }
+    },
+    {
+      "name": "telegram rootless",
+      "channel": "telegram",
+      "recipient": {
+        "kind": "telegram",
+        "chatId": 7
+      },
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "123:abc"
+      },
+      "events": "rootless",
+      "requests": [
+        {
+          "path": "/bot123:abc/sendMessage",
+          "body": "{\"chat_id\":7,\"text\":\"<b>Good morning</b>\\n\\n<b>12</b> — Orders\",\"parse_mode\":\"HTML\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "101"
+      }
+    },
+    {
+      "name": "hud rootless",
+      "channel": "hud",
+      "recipient": {
+        "kind": "hud",
+        "workspace": "plant"
+      },
+      "env": {
+        "HUD_CHANNEL_SECRET": "s3cret",
+        "HUD_CHANNEL_WORKSPACE": " pack "
+      },
+      "events": "rootless",
+      "requests": [
+        {
+          "path": "http://demo-channel:443/api/deliver",
+          "headers": {
+            "x-openneko-hud-delivery-id": "delivery-1",
+            "x-openneko-hud-signature": "sha256=a906b0e66237fb860afda149f4667e3d032d12fcfab3e7e44eed21817b5d8dc7"
+          },
+          "body": "{\"schema\":\"openneko.hud.delivery.v1\",\"deliveryId\":\"delivery-1\",\"deliveredAt\":\"2026-11-14T10:00:00.000Z\",\"workspace\":\"pack\",\"recipient\":{\"kind\":\"hud\",\"workspace\":\"plant\"},\"projections\":[{\"id\":\"c3\",\"kind\":\"converse\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"message\",\"title\":\"OpenNeko\",\"body\":\"\"}]}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "delivery-1"
+      }
+    },
+    {
+      "name": "slack inform",
+      "channel": "slack",
+      "recipient": {
+        "kind": "slack",
+        "channel": "D1",
+        "thread_ts": "1700.1"
+      },
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-1"
+      },
+      "events": "inform",
+      "requests": [
+        {
+          "path": "/chat.postMessage",
+          "body": "{\"channel\":\"D1\",\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Stock <low>*\\nThree SKUs are low.\"},\"fields\":[{\"type\":\"mrkdwn\",\"text\":\"*SKUs*\\n3\"}]},{\"type\":\"context\",\"elements\":[{\"type\":\"mrkdwn\",\"text\":\"📊 Chart available in the web dashboard.\"}]},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Plain*\"}}],\"text\":\"Stock <low> · Plain\",\"thread_ts\":\"1700.1\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "1700.9"
+      }
+    },
+    {
+      "name": "telegram inform",
+      "channel": "telegram",
+      "recipient": {
+        "kind": "telegram",
+        "chatId": 7
+      },
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "123:abc"
+      },
+      "events": "inform",
+      "requests": [
+        {
+          "path": "/bot123:abc/sendMessage",
+          "body": "{\"chat_id\":7,\"text\":\"🚨 <b>Stock &lt;low&gt;</b>\\nThree SKUs are low. Reorder today! More text.\\n<b>SKUs:</b> 3\\n\\n<b>Plain</b>\",\"parse_mode\":\"HTML\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "101"
+      }
+    },
+    {
+      "name": "hud inform",
+      "channel": "hud",
+      "recipient": {
+        "kind": "hud",
+        "workspace": "plant"
+      },
+      "env": {
+        "HUD_CHANNEL_SECRET": "s3cret",
+        "HUD_CHANNEL_WORKSPACE": " pack "
+      },
+      "events": "inform",
+      "requests": [
+        {
+          "path": "http://demo-channel:443/api/deliver",
+          "headers": {
+            "x-openneko-hud-delivery-id": "delivery-1",
+            "x-openneko-hud-signature": "sha256=04a991a2b52ce8dde0d871896e65c17941914225463bbdcd4977f22601825d83"
+          },
+          "body": "{\"schema\":\"openneko.hud.delivery.v1\",\"deliveryId\":\"delivery-1\",\"deliveredAt\":\"2026-11-14T10:00:00.000Z\",\"workspace\":\"pack\",\"recipient\":{\"kind\":\"hud\",\"workspace\":\"plant\"},\"projections\":[{\"id\":\"o1\",\"kind\":\"inform\",\"anchor\":{\"kind\":\"sku\",\"id\":\"A-1\"},\"type\":\"finding\",\"title\":\"Stock <low>\",\"body\":\"Three SKUs are low. Reorder today! More text.\\n\\nSecond paragraph.\",\"mood\":\"act\",\"evidence\":[{\"ref\":\"sku:A-1\"}],\"metric\":{\"label\":\"SKUs\",\"value\":\"3\"},\"series\":[{\"t\":\"a\",\"v\":1}]},{\"id\":\"o2\",\"kind\":\"inform\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"finding\",\"title\":\"Plain\",\"body\":\"\",\"mood\":\"unknown\",\"evidence\":[]}]}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "delivery-1"
+      }
+    },
+    {
+      "name": "slack asks",
+      "channel": "slack",
+      "recipient": {
+        "kind": "slack",
+        "channel": "D1",
+        "thread_ts": "1700.1"
+      },
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-1"
+      },
+      "events": "asks",
+      "requests": [
+        {
+          "path": "/chat.postMessage",
+          "body": "{\"channel\":\"D1\",\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"Approve the **refund**?\"}},{\"type\":\"actions\",\"elements\":[{\"type\":\"button\",\"action_id\":\"approve\",\"style\":\"primary\",\"value\":\"req-1\",\"text\":{\"type\":\"plain_text\",\"text\":\"Approve\"}},{\"type\":\"button\",\"action_id\":\"reject\",\"style\":\"danger\",\"value\":\"req-1\",\"text\":{\"type\":\"plain_text\",\"text\":\"Reject\"}}]},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"Pick one\"}},{\"type\":\"actions\",\"elements\":[{\"type\":\"button\",\"action_id\":\"select:o0\",\"value\":\"req-2:o0\",\"text\":{\"type\":\"plain_text\",\"text\":\"LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL\"}},{\"type\":\"button\",\"action_id\":\"select:o1\",\"value\":\"req-2:o1\",\"text\":{\"type\":\"plain_text\",\"text\":\"Option 1\"}},{\"type\":\"button\",\"action_id\":\"select:o2\",\"value\":\"req-2:o2\",\"text\":{\"type\":\"plain_text\",\"text\":\"Option 2\"}},{\"type\":\"button\",\"action_id\":\"select:o3\",\"value\":\"req-2:o3\",\"text\":{\"type\":\"plain_text\",\"text\":\"Option 3\"}},{\"type\":\"button\",\"action_id\":\"select:o4\",\"value\":\"req-2:o4\",\"text\":{\"type\":\"plain_text\",\"text\":\"Option 4\"}},{\"type\":\"button\",\"action_id\":\"select:o5\",\"value\":\"req-2:o5\",\"text\":{\"type\":\"plain_text\",\"text\":\"Option 5\"}}]}],\"text\":\"Approve the **refund**? · Pick one\",\"thread_ts\":\"1700.1\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "1700.9"
+      }
+    },
+    {
+      "name": "telegram asks",
+      "channel": "telegram",
+      "recipient": {
+        "kind": "telegram",
+        "chatId": 7
+      },
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "123:abc"
+      },
+      "events": "asks",
+      "requests": [
+        {
+          "path": "/bot123:abc/sendMessage",
+          "body": "{\"chat_id\":7,\"text\":\"Approve the <b>refund</b>?\\n\\nPick one\",\"parse_mode\":\"HTML\",\"reply_markup\":{\"inline_keyboard\":[[{\"text\":\"✅ Approve\",\"callback_data\":\"approve:req-1\"},{\"text\":\"🚫 Reject\",\"callback_data\":\"reject:req-1\"}]]}}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "101"
+      }
+    },
+    {
+      "name": "hud asks",
+      "channel": "hud",
+      "recipient": {
+        "kind": "hud",
+        "workspace": "plant"
+      },
+      "env": {
+        "HUD_CHANNEL_SECRET": "s3cret",
+        "HUD_CHANNEL_WORKSPACE": " pack "
+      },
+      "events": "asks",
+      "requests": [
+        {
+          "path": "http://demo-channel:443/api/deliver",
+          "headers": {
+            "x-openneko-hud-delivery-id": "delivery-1",
+            "x-openneko-hud-signature": "sha256=a8dda2a83ba24b85f81f308e72f318984be311d1c149334ae6fa9235e7662fb7"
+          },
+          "body": "{\"schema\":\"openneko.hud.delivery.v1\",\"deliveryId\":\"delivery-1\",\"deliveredAt\":\"2026-11-14T10:00:00.000Z\",\"workspace\":\"pack\",\"recipient\":{\"kind\":\"hud\",\"workspace\":\"plant\"},\"projections\":[{\"id\":\"a1\",\"kind\":\"ask\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"decision\",\"title\":\"Operator decision\",\"body\":\"Approve the **refund**?\",\"ask\":\"approval\",\"decisionRef\":\"req-1\",\"risk\":\"high\",\"options\":[]},{\"id\":\"a2\",\"kind\":\"ask\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"decision\",\"title\":\"Operator decision\",\"body\":\"Pick one\",\"ask\":\"choice\",\"decisionRef\":\"req-2\",\"risk\":\"medium\",\"options\":[{\"id\":\"o0\",\"label\":\"LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL\"},{\"id\":\"o1\",\"label\":\"Option 1\"},{\"id\":\"o2\",\"label\":\"Option 2\"},{\"id\":\"o3\",\"label\":\"Option 3\"},{\"id\":\"o4\",\"label\":\"Option 4\"},{\"id\":\"o5\",\"label\":\"Option 5\"}]}]}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "delivery-1"
+      }
+    },
+    {
+      "name": "slack choiceOnly",
+      "channel": "slack",
+      "recipient": {
+        "kind": "slack",
+        "channel": "D1",
+        "thread_ts": "1700.1"
+      },
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-1"
+      },
+      "events": "choiceOnly",
+      "requests": [
+        {
+          "path": "/chat.postMessage",
+          "body": "{\"channel\":\"D1\",\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"Pick\"}},{\"type\":\"actions\",\"elements\":[{\"type\":\"button\",\"action_id\":\"select:x\",\"value\":\"req-3:x\",\"text\":{\"type\":\"plain_text\",\"text\":\"X\"}}]},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"Say more\"}}],\"text\":\"Pick · Say more\",\"thread_ts\":\"1700.1\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "1700.9"
+      }
+    },
+    {
+      "name": "telegram choiceOnly",
+      "channel": "telegram",
+      "recipient": {
+        "kind": "telegram",
+        "chatId": 7
+      },
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "123:abc"
+      },
+      "events": "choiceOnly",
+      "requests": [
+        {
+          "path": "/bot123:abc/sendMessage",
+          "body": "{\"chat_id\":7,\"text\":\"Pick\\n\\nSay more\",\"parse_mode\":\"HTML\",\"reply_markup\":{\"inline_keyboard\":[[{\"text\":\"X\",\"callback_data\":\"select:req-3:x\"}]]}}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "101"
+      }
+    },
+    {
+      "name": "hud choiceOnly",
+      "channel": "hud",
+      "recipient": {
+        "kind": "hud",
+        "workspace": "plant"
+      },
+      "env": {
+        "HUD_CHANNEL_SECRET": "s3cret",
+        "HUD_CHANNEL_WORKSPACE": " pack "
+      },
+      "events": "choiceOnly",
+      "requests": [
+        {
+          "path": "http://demo-channel:443/api/deliver",
+          "headers": {
+            "x-openneko-hud-delivery-id": "delivery-1",
+            "x-openneko-hud-signature": "sha256=f90c4839b5718a3e7f1220cf6c01f84fac36e56f5bd5fb15cfc7b0e8b331c808"
+          },
+          "body": "{\"schema\":\"openneko.hud.delivery.v1\",\"deliveryId\":\"delivery-1\",\"deliveredAt\":\"2026-11-14T10:00:00.000Z\",\"workspace\":\"pack\",\"recipient\":{\"kind\":\"hud\",\"workspace\":\"plant\"},\"projections\":[{\"id\":\"a3\",\"kind\":\"ask\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"decision\",\"title\":\"Operator decision\",\"body\":\"Pick\",\"ask\":\"choice\",\"decisionRef\":\"req-3\",\"risk\":\"medium\",\"options\":[{\"id\":\"x\",\"label\":\"X\"}]},{\"id\":\"a4\",\"kind\":\"ask\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"decision\",\"title\":\"Operator decision\",\"body\":\"Say more\",\"ask\":\"free\",\"decisionRef\":\"req-4\",\"risk\":\"medium\",\"options\":[]}]}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "delivery-1"
+      }
+    },
+    {
+      "name": "slack misc",
+      "channel": "slack",
+      "recipient": {
+        "kind": "slack",
+        "channel": "D1",
+        "thread_ts": "1700.1"
+      },
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-1"
+      },
+      "events": "misc",
+      "requests": [
+        {
+          "path": "/chat.postMessage",
+          "body": "{\"channel\":\"D1\",\"blocks\":[{\"type\":\"context\",\"elements\":[{\"type\":\"mrkdwn\",\"text\":\"✓ Refund <sent>\"}]},{\"type\":\"context\",\"elements\":[{\"type\":\"mrkdwn\",\"text\":\"⊘ No\"}]},{\"type\":\"context\",\"elements\":[{\"type\":\"mrkdwn\",\"text\":\"✗ Broke\"}]},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Key figures*\"},\"fields\":[{\"type\":\"mrkdwn\",\"text\":\"*Orders*\\n49,310 _(+4%)_\"},{\"type\":\"mrkdwn\",\"text\":\"*AOV*\\n$75\"}]},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"📎 Report <pdf>\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"📎 Local\"}}],\"text\":\"Orders 49,310 · AOV $75\",\"thread_ts\":\"1700.1\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "1700.9"
+      }
+    },
+    {
+      "name": "telegram misc",
+      "channel": "telegram",
+      "recipient": {
+        "kind": "telegram",
+        "chatId": 7
+      },
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "123:abc"
+      },
+      "events": "misc",
+      "requests": [
+        {
+          "path": "/bot123:abc/sendMessage",
+          "body": "{\"chat_id\":7,\"text\":\"✅ Refund &lt;sent&gt;\\n\\n🚫 No\\n\\n⚠️ Broke\\n\\n<b>Key figures</b>\\n• <b>49,310</b> — Orders <i>(+4%)</i>\\n• <b>$75</b> — AOV\\n\\n📎 <a href=\\\"https://example.com/r.pdf?a=1&amp;b=2\\\">Report &lt;pdf&gt;</a>\\n\\n📎 Local\",\"parse_mode\":\"HTML\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "101"
+      }
+    },
+    {
+      "name": "hud misc",
+      "channel": "hud",
+      "recipient": {
+        "kind": "hud",
+        "workspace": "plant"
+      },
+      "env": {
+        "HUD_CHANNEL_SECRET": "s3cret",
+        "HUD_CHANNEL_WORKSPACE": " pack "
+      },
+      "events": "misc",
+      "requests": [
+        {
+          "path": "http://demo-channel:443/api/deliver",
+          "headers": {
+            "x-openneko-hud-delivery-id": "delivery-1",
+            "x-openneko-hud-signature": "sha256=562a164d93c697472958c622bfec9e1daa87ddf9d44ccd766a2e95311db0991a"
+          },
+          "body": "{\"schema\":\"openneko.hud.delivery.v1\",\"deliveryId\":\"delivery-1\",\"deliveredAt\":\"2026-11-14T10:00:00.000Z\",\"workspace\":\"pack\",\"recipient\":{\"kind\":\"hud\",\"workspace\":\"plant\"},\"projections\":[{\"id\":\"r1\",\"kind\":\"resolve\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"resolution\",\"title\":\"succeeded\",\"body\":\"Refund <sent>\",\"decisionRef\":\"req-1\",\"status\":\"succeeded\"},{\"id\":\"r2\",\"kind\":\"resolve\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"resolution\",\"title\":\"rejected\",\"body\":\"No\",\"decisionRef\":\"req-2\",\"status\":\"rejected\"},{\"id\":\"r3\",\"kind\":\"resolve\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"resolution\",\"title\":\"failed\",\"body\":\"Broke\",\"decisionRef\":\"req-3\",\"status\":\"failed\"},{\"id\":\"h1\",\"kind\":\"highlight\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"figures\",\"title\":\"Key figures\",\"metrics\":[{\"label\":\"Orders\",\"value\":\"49,310\",\"sub\":\"+4%\"},{\"label\":\"AOV\",\"value\":\"$75\"}]},{\"id\":\"f1\",\"kind\":\"offer\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"artifact\",\"title\":\"Report <pdf>\",\"artifactRef\":\"https://example.com/r.pdf?a=1&b=2\",\"mime\":\"application/pdf\"},{\"id\":\"f2\",\"kind\":\"offer\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"artifact\",\"title\":\"Local\",\"artifactRef\":\"files/r.csv\"},{\"id\":\"p1\",\"kind\":\"progress\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"progress\",\"title\":\"Reading orders\",\"phase\":\"start\"}]}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "delivery-1"
+      }
+    },
+    {
+      "name": "slack followupsWithApproval",
+      "channel": "slack",
+      "recipient": {
+        "kind": "slack",
+        "channel": "D1",
+        "thread_ts": "1700.1"
+      },
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-1"
+      },
+      "events": "followupsWithApproval",
+      "requests": [
+        {
+          "path": "/chat.postMessage",
+          "body": "{\"channel\":\"D1\",\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"x\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"Go?\"}},{\"type\":\"actions\",\"elements\":[{\"type\":\"button\",\"action_id\":\"approve\",\"style\":\"primary\",\"value\":\"req-5\",\"text\":{\"type\":\"plain_text\",\"text\":\"Approve\"}},{\"type\":\"button\",\"action_id\":\"reject\",\"style\":\"danger\",\"value\":\"req-5\",\"text\":{\"type\":\"plain_text\",\"text\":\"Reject\"}}]}],\"text\":\"x · Go?\",\"thread_ts\":\"1700.1\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "1700.9"
+      }
+    },
+    {
+      "name": "telegram followupsWithApproval",
+      "channel": "telegram",
+      "recipient": {
+        "kind": "telegram",
+        "chatId": 7
+      },
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "123:abc"
+      },
+      "events": "followupsWithApproval",
+      "requests": [
+        {
+          "path": "/bot123:abc/sendMessage",
+          "body": "{\"chat_id\":7,\"text\":\"<i>Daily &lt;stock&gt;</i>\\n<b>Three SKUs are low</b>\\nAs of 04 September\\n\\nTwo <b>suppliers</b> are late.\\n\\n🚨 <b>$18,400</b> — At risk\\n<b>Detail</b>\\n• one\\nx\\n\\nLow stock\\n<pre>SKU          Qty  Note \\n───────────  ───  ─────\\nA-1            3  ok 🚚\\nLONG-SKU-22  120       </pre>\\n\\n<blockquote>👀 <b>Watch</b>\\nlate <code>ETA</code>\\n<b>Head</b></blockquote>\\n\\n<b>More</b>\\nInner text\\n\\n— Then —\\n\\n———\\n\\n✅ <b>Saved</b>\\nWatcher &lt;on&gt;\\n\\nGo?\\n\\n💡 <b>Ask next</b>\\n• Show suppliers\\n• Reorder now\",\"parse_mode\":\"HTML\",\"reply_markup\":{\"inline_keyboard\":[[{\"text\":\"✅ Approve\",\"callback_data\":\"approve:req-5\"},{\"text\":\"🚫 Reject\",\"callback_data\":\"reject:req-5\"}]]}}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "101"
+      }
+    },
+    {
+      "name": "hud followupsWithApproval",
+      "channel": "hud",
+      "recipient": {
+        "kind": "hud",
+        "workspace": "plant"
+      },
+      "env": {
+        "HUD_CHANNEL_SECRET": "s3cret",
+        "HUD_CHANNEL_WORKSPACE": " pack "
+      },
+      "events": "followupsWithApproval",
+      "requests": [
+        {
+          "path": "http://demo-channel:443/api/deliver",
+          "headers": {
+            "x-openneko-hud-delivery-id": "delivery-1",
+            "x-openneko-hud-signature": "sha256=fba54bb7b76f1899bef3e70408572bb045a8e280e3787e77379f381504c67f23"
+          },
+          "body": "{\"schema\":\"openneko.hud.delivery.v1\",\"deliveryId\":\"delivery-1\",\"deliveredAt\":\"2026-11-14T10:00:00.000Z\",\"workspace\":\"pack\",\"recipient\":{\"kind\":\"hud\",\"workspace\":\"plant\"},\"projections\":[{\"id\":\"c4\",\"kind\":\"converse\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"message\",\"title\":\"OpenNeko\",\"body\":\"x\"},{\"id\":\"a5\",\"kind\":\"ask\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"decision\",\"title\":\"Operator decision\",\"body\":\"Go?\",\"ask\":\"approval\",\"decisionRef\":\"req-5\",\"risk\":\"medium\",\"options\":[]}]}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "delivery-1"
+      }
+    },
+    {
+      "name": "slack followupsOnly",
+      "channel": "slack",
+      "recipient": {
+        "kind": "slack",
+        "channel": "D1",
+        "thread_ts": "1700.1"
+      },
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-1"
+      },
+      "events": "followupsOnly",
+      "requests": [
+        {
+          "path": "/chat.postMessage",
+          "body": "{\"channel\":\"D1\",\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"x\"}}],\"text\":\"x\",\"thread_ts\":\"1700.1\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "1700.9"
+      }
+    },
+    {
+      "name": "telegram followupsOnly",
+      "channel": "telegram",
+      "recipient": {
+        "kind": "telegram",
+        "chatId": 7
+      },
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "123:abc"
+      },
+      "events": "followupsOnly",
+      "requests": [
+        {
+          "path": "/bot123:abc/sendMessage",
+          "body": "{\"chat_id\":7,\"text\":\"💡 <b>Ask next</b>\\n• Next\",\"parse_mode\":\"HTML\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "101"
+      }
+    },
+    {
+      "name": "hud followupsOnly",
+      "channel": "hud",
+      "recipient": {
+        "kind": "hud",
+        "workspace": "plant"
+      },
+      "env": {
+        "HUD_CHANNEL_SECRET": "s3cret",
+        "HUD_CHANNEL_WORKSPACE": " pack "
+      },
+      "events": "followupsOnly",
+      "requests": [
+        {
+          "path": "http://demo-channel:443/api/deliver",
+          "headers": {
+            "x-openneko-hud-delivery-id": "delivery-1",
+            "x-openneko-hud-signature": "sha256=cb7370ded7e14bec24b1c5a0a5a9c78276ec13527929111634c01f9c36877196"
+          },
+          "body": "{\"schema\":\"openneko.hud.delivery.v1\",\"deliveryId\":\"delivery-1\",\"deliveredAt\":\"2026-11-14T10:00:00.000Z\",\"workspace\":\"pack\",\"recipient\":{\"kind\":\"hud\",\"workspace\":\"plant\"},\"projections\":[{\"id\":\"c5\",\"kind\":\"converse\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"message\",\"title\":\"OpenNeko\",\"body\":\"x\"}]}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "delivery-1"
+      }
+    },
+    {
+      "name": "slack long",
+      "channel": "slack",
+      "recipient": {
+        "kind": "slack",
+        "channel": "D1",
+        "thread_ts": "1700.1"
+      },
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-1"
+      },
+      "events": "long",
+      "requests": [
+        {
+          "path": "/chat.postMessage",
+          "body": "{\"channel\":\"D1\",\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"Paragraph 0 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 1 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 2 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 3 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 4 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 5 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 6 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 7 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 8 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 9 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 10 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 11 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 12 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 13 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 14 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 15 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 16 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 17 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 18 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 19 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 20 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 21 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 22 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 23 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 24 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 25 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 26 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 27 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 28 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 29 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 30 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 31 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 32 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 33 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 34 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 35 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 36 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 37 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 38 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 39 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 40 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 41 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 42 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 43 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 44 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 45 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 46 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 47 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 48 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 49 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 50 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 51 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 52 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 53 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 54 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 55 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 56 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 57 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 58 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 59 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 60 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 61 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 62 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 63 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 64 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 65 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 66 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 67 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 68 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 69 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 70 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 71 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 72 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 73 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 74 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 75 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 76 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 77 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 78 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 79 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 80 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 81 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 82 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 83 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 84 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 85 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 86 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 87 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 88 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 89 has **bold words** and _plain_ text that runs on for a while to fill space.\"}}],\"text\":\"Paragraph 0 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 1 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 2 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 3 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 4 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 5 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 6 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 7 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 8 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 9 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 10 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 11 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 12 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 13 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 14 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 15 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 16 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 17 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 18 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 19 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 20 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 21 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 22 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 23 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 24 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 25 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 26 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 27 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 28 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 29 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 30 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 31 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 32 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 33 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 34 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 35 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 36 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 37 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 38 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 39 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 40 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 41 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 42 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 43 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 44 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 45 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 46 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 47 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 48 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 49 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 50 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 51 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 52 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 53 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 54 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 55 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 56 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 57 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 58 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 59 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 60 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 61 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 62 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 63 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 64 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 65 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 66 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 67 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 68 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 69 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 70 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 71 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 72 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 73 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 74 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 75 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 76 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 77 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 78 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 79 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 80 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 81 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 82 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 83 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 84 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 85 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 86 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 87 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 88 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 89 has **bold words** and _plain_ text that runs on for a while to fill space.\",\"thread_ts\":\"1700.1\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "1700.9"
+      }
+    },
+    {
+      "name": "telegram long",
+      "channel": "telegram",
+      "recipient": {
+        "kind": "telegram",
+        "chatId": 7
+      },
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "123:abc"
+      },
+      "events": "long",
+      "requests": [
+        {
+          "path": "/bot123:abc/sendMessage",
+          "body": "{\"chat_id\":7,\"text\":\"Paragraph 0 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 1 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 2 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 3 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 4 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 5 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 6 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 7 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 8 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 9 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 10 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 11 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 12 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 13 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 14 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 15 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 16 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 17 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 18 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 19 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 20 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 21 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 22 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 23 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 24 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 25 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 26 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 27 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 28 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 29 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 30 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 31 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 32 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 33 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 34 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 35 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 36 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 37 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 38 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 39 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 40 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 41 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 42 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\",\"parse_mode\":\"HTML\"}"
+        },
+        {
+          "path": "/bot123:abc/sendMessage",
+          "body": "{\"chat_id\":7,\"text\":\"Paragraph 43 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 44 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 45 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 46 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 47 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 48 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 49 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 50 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 51 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 52 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 53 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 54 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 55 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 56 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 57 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 58 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 59 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 60 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 61 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 62 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 63 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 64 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 65 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 66 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 67 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 68 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 69 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 70 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 71 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 72 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 73 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 74 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 75 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 76 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 77 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 78 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 79 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 80 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 81 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 82 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 83 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 84 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 85 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\",\"parse_mode\":\"HTML\"}"
+        },
+        {
+          "path": "/bot123:abc/sendMessage",
+          "body": "{\"chat_id\":7,\"text\":\"Paragraph 86 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 87 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 88 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 89 has <b>bold words</b> and _plain_ text that runs on for a while to fill space.\",\"parse_mode\":\"HTML\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "103"
+      }
+    },
+    {
+      "name": "hud long",
+      "channel": "hud",
+      "recipient": {
+        "kind": "hud",
+        "workspace": "plant"
+      },
+      "env": {
+        "HUD_CHANNEL_SECRET": "s3cret",
+        "HUD_CHANNEL_WORKSPACE": " pack "
+      },
+      "events": "long",
+      "requests": [
+        {
+          "path": "http://demo-channel:443/api/deliver",
+          "headers": {
+            "x-openneko-hud-delivery-id": "delivery-1",
+            "x-openneko-hud-signature": "sha256=be500d018a9e2a9c46de98cb6a5ba089d5b1f6ef2eac2e0cbeccd21647393fd3"
+          },
+          "body": "{\"schema\":\"openneko.hud.delivery.v1\",\"deliveryId\":\"delivery-1\",\"deliveredAt\":\"2026-11-14T10:00:00.000Z\",\"workspace\":\"pack\",\"recipient\":{\"kind\":\"hud\",\"workspace\":\"plant\"},\"projections\":[{\"id\":\"c6\",\"kind\":\"converse\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"message\",\"title\":\"OpenNeko\",\"body\":\"Paragraph 0 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 1 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 2 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 3 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 4 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 5 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 6 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 7 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 8 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 9 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 10 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 11 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 12 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 13 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 14 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 15 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 16 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 17 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 18 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 19 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 20 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 21 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 22 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 23 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 24 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 25 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 26 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 27 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 28 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 29 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 30 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 31 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 32 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 33 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 34 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 35 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 36 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 37 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 38 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 39 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 40 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 41 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 42 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 43 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 44 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 45 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 46 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 47 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 48 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 49 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 50 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 51 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 52 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 53 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 54 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 55 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 56 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 57 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 58 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 59 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 60 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 61 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 62 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 63 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 64 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 65 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 66 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 67 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 68 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 69 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 70 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 71 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 72 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 73 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 74 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 75 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 76 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 77 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 78 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 79 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 80 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 81 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 82 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 83 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 84 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 85 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 86 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 87 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 88 has **bold words** and _plain_ text that runs on for a while to fill space.\\n\\nParagraph 89 has **bold words** and _plain_ text that runs on for a while to fill space.\"}]}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "delivery-1"
+      }
+    },
+    {
+      "name": "slack longTable",
+      "channel": "slack",
+      "recipient": {
+        "kind": "slack",
+        "channel": "D1",
+        "thread_ts": "1700.1"
+      },
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-1"
+      },
+      "events": "longTable",
+      "requests": [
+        {
+          "path": "/chat.postMessage",
+          "body": "{\"channel\":\"D1\",\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"Intro **bold** line\\n\\n```\\nrow 0 xxxxxxxxxxxxxxxxxxxx\\nrow 1 xxxxxxxxxxxxxxxxxxxx\\nrow 2 xxxxxxxxxxxxxxxxxxxx\\nrow 3 xxxxxxxxxxxxxxxxxxxx\\nrow 4 xxxxxxxxxxxxxxxxxxxx\\nrow 5 xxxxxxxxxxxxxxxxxxxx\\nrow 6 xxxxxxxxxxxxxxxxxxxx\\nrow 7 xxxxxxxxxxxxxxxxxxxx\\nrow 8 xxxxxxxxxxxxxxxxxxxx\\nrow 9 xxxxxxxxxxxxxxxxxxxx\\nrow 10 xxxxxxxxxxxxxxxxxxxx\\nrow 11 xxxxxxxxxxxxxxxxxxxx\\nrow 12 xxxxxxxxxxxxxxxxxxxx\\nrow 13 xxxxxxxxxxxxxxxxxxxx\\nrow 14 xxxxxxxxxxxxxxxxxxxx\\nrow 15 xxxxxxxxxxxxxxxxxxxx\\nrow 16 xxxxxxxxxxxxxxxxxxxx\\nrow 17 xxxxxxxxxxxxxxxxxxxx\\nrow 18 xxxxxxxxxxxxxxxxxxxx\\nrow 19 xxxxxxxxxxxxxxxxxxxx\\nrow 20 xxxxxxxxxxxxxxxxxxxx\\nrow 21 xxxxxxxxxxxxxxxxxxxx\\nrow 22 xxxxxxxxxxxxxxxxxxxx\\nrow 23 xxxxxxxxxxxxxxxxxxxx\\nrow 24 xxxxxxxxxxxxxxxxxxxx\\nrow 25 xxxxxxxxxxxxxxxxxxxx\\nrow 26 xxxxxxxxxxxxxxxxxxxx\\nrow 27 xxxxxxxxxxxxxxxxxxxx\\nrow 28 xxxxxxxxxxxxxxxxxxxx\\nrow 29 xxxxxxxxxxxxxxxxxxxx\\nrow 30 xxxxxxxxxxxxxxxxxxxx\\nrow 31 xxxxxxxxxxxxxxxxxxxx\\nrow 32 xxxxxxxxxxxxxxxxxxxx\\nrow 33 xxxxxxxxxxxxxxxxxxxx\\nrow 34 xxxxxxxxxxxxxxxxxxxx\\nrow 35 xxxxxxxxxxxxxxxxxxxx\\nrow 36 xxxxxxxxxxxxxxxxxxxx\\nrow 37 xxxxxxxxxxxxxxxxxxxx\\nrow 38 xxxxxxxxxxxxxxxxxxxx\\nrow 39 xxxxxxxxxxxxxxxxxxxx\\nrow 40 xxxxxxxxxxxxxxxxxxxx\\nrow 41 xxxxxxxxxxxxxxxxxxxx\\nrow 42 xxxxxxxxxxxxxxxxxxxx\\nrow 43 xxxxxxxxxxxxxxxxxxxx\\nrow 44 xxxxxxxxxxxxxxxxxxxx\\nrow 45 xxxxxxxxxxxxxxxxxxxx\\nrow 46 xxxxxxxxxxxxxxxxxxxx\\nrow 47 xxxxxxxxxxxxxxxxxxxx\\nrow 48 xxxxxxxxxxxxxxxxxxxx\\nrow 49 xxxxxxxxxxxxxxxxxxxx\\nrow 50 xxxxxxxxxxxxxxxxxxxx\\nrow 51 xxxxxxxxxxxxxxxxxxxx\\nrow 52 xxxxxxxxxxxxxxxxxxxx\\nrow 53 xxxxxxxxxxxxxxxxxxxx\\nrow 54 xxxxxxxxxxxxxxxxxxxx\\nrow 55 xxxxxxxxxxxxxxxxxxxx\\nrow 56 xxxxxxxxxxxxxxxxxxxx\\nrow 57 xxxxxxxxxxxxxxxxxxxx\\nrow 58 xxxxxxxxxxxxxxxxxxxx\\nrow 59 xxxxxxxxxxxxxxxxxxxx\\nrow 60 xxxxxxxxxxxxxxxxxxxx\\nrow 61 xxxxxxxxxxxxxxxxxxxx\\nrow 62 xxxxxxxxxxxxxxxxxxxx\\nrow 63 xxxxxxxxxxxxxxxxxxxx\\nrow 64 xxxxxxxxxxxxxxxxxxxx\\nrow 65 xxxxxxxxxxxxxxxxxxxx\\nrow 66 xxxxxxxxxxxxxxxxxxxx\\nrow 67 xxxxxxxxxxxxxxxxxxxx\\nrow 68 xxxxxxxxxxxxxxxxxxxx\\nrow 69 xxxxxxxxxxxxxxxxxxxx\\nrow 70 xxxxxxxxxxxxxxxxxxxx\\nrow 71 xxxxxxxxxxxxxxxxxxxx\\nrow 72 xxxxxxxxxxxxxxxxxxxx\\nrow 73 xxxxxxxxxxxxxxxxxxxx\\nrow 74 xxxxxxxxxxxxxxxxxxxx\\nrow 75 xxxxxxxxxxxxxxxxxxxx\\nrow 76 xxxxxxxxxxxxxxxxxxxx\\nrow 77 xxxxxxxxxxxxxxxxxxxx\\nrow 78 xxxxxxxxxxxxxxxxxxxx\\nrow 79 xxxxxxxxxxxxxxxxxxxx\\nrow 80 xxxxxxxxxxxxxxxxxxxx\\nrow 81 xxxxxxxxxxxxxxxxxxxx\\nrow 82 xxxxxxxxxxxxxxxxxxxx\\nrow 83 xxxxxxxxxxxxxxxxxxxx\\nrow 84 xxxxxxxxxxxxxxxxxxxx\\nrow 85 xxxxxxxxxxxxxxxxxxxx\\nrow 86 xxxxxxxxxxxxxxxxxxxx\\nrow 87 xxxxxxxxxxxxxxxxxxxx\\nrow 88 xxxxxxxxxxxxxxxxxxxx\\nrow 89 xxxxxxxxxxxxxxxxxxxx\\nrow 90 xxxxxxxxxxxxxxxxxxxx\\nrow 91 xxxxxxxxxxxxxxxxxxxx\\nrow 92 xxxxxxxxxxxxxxxxxxxx\\nrow 93 xxxxxxxxxxxxxxxxxxxx\\nrow 94 xxxxxxxxxxxxxxxxxxxx\\nrow 95 xxxxxxxxxxxxxxxxxxxx\\nrow 96 xxxxxxxxxxxxxxxxxxxx\\nrow 97 xxxxxxxxxxxxxxxxxxxx\\nrow 98 xxxxxxxxxxxxxxxxxxxx\\nrow 99 xxxxxxxxxxxxxxxxxxxx\\nrow 100 xxxxxxxxxxxxxxxxxxxx\\nrow 101 xxxxxxxxxxxxxxxxxxxx\\nrow 102 xxxxxxxxxxxxxxxxxxxx\\nrow 103 xxxxxxxxxxxxxxxxxxxx\\nrow 104 xxxxxxxxxxxxxxxxxxxx\\nrow 105 xxxxxxxxxxxxxxxxxxxx\\nrow 106 xxxxxxxxxxxxxxxxxxxx\\nrow 107 xxxxxxxxxxxxxxxxxxxx\\nrow 108 xxxxxxxxxxxxxxxxxxxx\\nrow 109 xxxxxxxxxxxxxxxxxxxx\\nrow 110 xxxxxxxxxxxxxxxxxxxx\\nrow 111 xxxxxxxxxxxxxxxxxxxx\\nrow 112 xxxxxxxxxxxxxxxxxxxx\\nrow 113 xxxxxxxxxxxxxxxxxxxx\\nrow 114 xxxxxxxxxxxxxxxxxxxx\\nrow 115 xxxxxxxxxxxxxxxxxxxx\\nrow 116 xxxxxxxxxxxxxxxxxxxx\\nrow 117 xxxxxxxxxxxxxxxxxxxx\\nrow 118 xxxxxxxxxxxxxxxxxxxx\\nrow 119 xxxxxxxxxxxxxxxxxxxx\\nrow 120 xxxxxxxxxxxxxxxxxxxx\\nrow 121 xxxxxxxxxxxxxxxxxxxx\\nrow 122 xxxxxxxxxxxxxxxxxxxx\\nrow 123 xxxxxxxxxxxxxxxxxxxx\\nrow 124 xxxxxxxxxxxxxxxxxxxx\\nrow 125 xxxxxxxxxxxxxxxxxxxx\\nrow 126 xxxxxxxxxxxxxxxxxxxx\\nrow 127 xxxxxxxxxxxxxxxxxxxx\\nrow 128 xxxxxxxxxxxxxxxxxxxx\\nrow 129 xxxxxxxxxxxxxxxxxxxx\\nrow 130 xxxxxxxxxxxxxxxxxxxx\\nrow 131 xxxxxxxxxxxxxxxxxxxx\\nrow 132 xxxxxxxxxxxxxxxxxxxx\\nrow 133 xxxxxxxxxxxxxxxxxxxx\\nrow 134 xxxxxxxxxxxxxxxxxxxx\\nrow 135 xxxxxxxxxxxxxxxxxxxx\\nrow 136 xxxxxxxxxxxxxxxxxxxx\\nrow 137 xxxxxxxxxxxxxxxxxxxx\\nrow 138 xxxxxxxxxxxxxxxxxxxx\\nrow 139 xxxxxxxxxxxxxxxxxxxx\\nrow 140 xxxxxxxxxxxxxxxxxxxx\\nrow 141 xxxxxxxxxxxxxxxxxxxx\\nrow 142 xxxxxxxxxxxxxxxxxxxx\\nrow 143 xxxxxxxxxxxxxxxxxxxx\\nrow 144 xxxxxxxxxxxxxxxxxxxx\\nrow 145 xxxxxxxxxxxxxxxxxxxx\\nrow 146 xxxxxxxxxxxxxxxxxxxx\\nrow 147 xxxxxxxxxxxxxxxxxxxx\\nrow 148 xxxxxxxxxxxxxxxxxxxx\\nrow 149 xxxxxxxxxxxxxxxxxxxx\\nrow 150 xxxxxxxxxxxxxxxxxxxx\\nrow 151 xxxxxxxxxxxxxxxxxxxx\\nrow 152 xxxxxxxxxxxxxxxxxxxx\\nrow 153 xxxxxxxxxxxxxxxxxxxx\\nrow 154 xxxxxxxxxxxxxxxxxxxx\\nrow 155 xxxxxxxxxxxxxxxxxxxx\\nrow 156 xxxxxxxxxxxxxxxxxxxx\\nrow 157 xxxxxxxxxxxxxxxxxxxx\\nrow 158 xxxxxxxxxxxxxxxxxxxx\\nrow 159 xxxxxxxxxxxxxxxxxxxx\\n```\\n\\nAfter\"}}],\"text\":\"Intro **bold** line\\n\\n```\\nrow 0 xxxxxxxxxxxxxxxxxxxx\\nrow 1 xxxxxxxxxxxxxxxxxxxx\\nrow 2 xxxxxxxxxxxxxxxxxxxx\\nrow 3 xxxxxxxxxxxxxxxxxxxx\\nrow 4 xxxxxxxxxxxxxxxxxxxx\\nrow 5 xxxxxxxxxxxxxxxxxxxx\\nrow 6 xxxxxxxxxxxxxxxxxxxx\\nrow 7 xxxxxxxxxxxxxxxxxxxx\\nrow 8 xxxxxxxxxxxxxxxxxxxx\\nrow 9 xxxxxxxxxxxxxxxxxxxx\\nrow 10 xxxxxxxxxxxxxxxxxxxx\\nrow 11 xxxxxxxxxxxxxxxxxxxx\\nrow 12 xxxxxxxxxxxxxxxxxxxx\\nrow 13 xxxxxxxxxxxxxxxxxxxx\\nrow 14 xxxxxxxxxxxxxxxxxxxx\\nrow 15 xxxxxxxxxxxxxxxxxxxx\\nrow 16 xxxxxxxxxxxxxxxxxxxx\\nrow 17 xxxxxxxxxxxxxxxxxxxx\\nrow 18 xxxxxxxxxxxxxxxxxxxx\\nrow 19 xxxxxxxxxxxxxxxxxxxx\\nrow 20 xxxxxxxxxxxxxxxxxxxx\\nrow 21 xxxxxxxxxxxxxxxxxxxx\\nrow 22 xxxxxxxxxxxxxxxxxxxx\\nrow 23 xxxxxxxxxxxxxxxxxxxx\\nrow 24 xxxxxxxxxxxxxxxxxxxx\\nrow 25 xxxxxxxxxxxxxxxxxxxx\\nrow 26 xxxxxxxxxxxxxxxxxxxx\\nrow 27 xxxxxxxxxxxxxxxxxxxx\\nrow 28 xxxxxxxxxxxxxxxxxxxx\\nrow 29 xxxxxxxxxxxxxxxxxxxx\\nrow 30 xxxxxxxxxxxxxxxxxxxx\\nrow 31 xxxxxxxxxxxxxxxxxxxx\\nrow 32 xxxxxxxxxxxxxxxxxxxx\\nrow 33 xxxxxxxxxxxxxxxxxxxx\\nrow 34 xxxxxxxxxxxxxxxxxxxx\\nrow 35 xxxxxxxxxxxxxxxxxxxx\\nrow 36 xxxxxxxxxxxxxxxxxxxx\\nrow 37 xxxxxxxxxxxxxxxxxxxx\\nrow 38 xxxxxxxxxxxxxxxxxxxx\\nrow 39 xxxxxxxxxxxxxxxxxxxx\\nrow 40 xxxxxxxxxxxxxxxxxxxx\\nrow 41 xxxxxxxxxxxxxxxxxxxx\\nrow 42 xxxxxxxxxxxxxxxxxxxx\\nrow 43 xxxxxxxxxxxxxxxxxxxx\\nrow 44 xxxxxxxxxxxxxxxxxxxx\\nrow 45 xxxxxxxxxxxxxxxxxxxx\\nrow 46 xxxxxxxxxxxxxxxxxxxx\\nrow 47 xxxxxxxxxxxxxxxxxxxx\\nrow 48 xxxxxxxxxxxxxxxxxxxx\\nrow 49 xxxxxxxxxxxxxxxxxxxx\\nrow 50 xxxxxxxxxxxxxxxxxxxx\\nrow 51 xxxxxxxxxxxxxxxxxxxx\\nrow 52 xxxxxxxxxxxxxxxxxxxx\\nrow 53 xxxxxxxxxxxxxxxxxxxx\\nrow 54 xxxxxxxxxxxxxxxxxxxx\\nrow 55 xxxxxxxxxxxxxxxxxxxx\\nrow 56 xxxxxxxxxxxxxxxxxxxx\\nrow 57 xxxxxxxxxxxxxxxxxxxx\\nrow 58 xxxxxxxxxxxxxxxxxxxx\\nrow 59 xxxxxxxxxxxxxxxxxxxx\\nrow 60 xxxxxxxxxxxxxxxxxxxx\\nrow 61 xxxxxxxxxxxxxxxxxxxx\\nrow 62 xxxxxxxxxxxxxxxxxxxx\\nrow 63 xxxxxxxxxxxxxxxxxxxx\\nrow 64 xxxxxxxxxxxxxxxxxxxx\\nrow 65 xxxxxxxxxxxxxxxxxxxx\\nrow 66 xxxxxxxxxxxxxxxxxxxx\\nrow 67 xxxxxxxxxxxxxxxxxxxx\\nrow 68 xxxxxxxxxxxxxxxxxxxx\\nrow 69 xxxxxxxxxxxxxxxxxxxx\\nrow 70 xxxxxxxxxxxxxxxxxxxx\\nrow 71 xxxxxxxxxxxxxxxxxxxx\\nrow 72 xxxxxxxxxxxxxxxxxxxx\\nrow 73 xxxxxxxxxxxxxxxxxxxx\\nrow 74 xxxxxxxxxxxxxxxxxxxx\\nrow 75 xxxxxxxxxxxxxxxxxxxx\\nrow 76 xxxxxxxxxxxxxxxxxxxx\\nrow 77 xxxxxxxxxxxxxxxxxxxx\\nrow 78 xxxxxxxxxxxxxxxxxxxx\\nrow 79 xxxxxxxxxxxxxxxxxxxx\\nrow 80 xxxxxxxxxxxxxxxxxxxx\\nrow 81 xxxxxxxxxxxxxxxxxxxx\\nrow 82 xxxxxxxxxxxxxxxxxxxx\\nrow 83 xxxxxxxxxxxxxxxxxxxx\\nrow 84 xxxxxxxxxxxxxxxxxxxx\\nrow 85 xxxxxxxxxxxxxxxxxxxx\\nrow 86 xxxxxxxxxxxxxxxxxxxx\\nrow 87 xxxxxxxxxxxxxxxxxxxx\\nrow 88 xxxxxxxxxxxxxxxxxxxx\\nrow 89 xxxxxxxxxxxxxxxxxxxx\\nrow 90 xxxxxxxxxxxxxxxxxxxx\\nrow 91 xxxxxxxxxxxxxxxxxxxx\\nrow 92 xxxxxxxxxxxxxxxxxxxx\\nrow 93 xxxxxxxxxxxxxxxxxxxx\\nrow 94 xxxxxxxxxxxxxxxxxxxx\\nrow 95 xxxxxxxxxxxxxxxxxxxx\\nrow 96 xxxxxxxxxxxxxxxxxxxx\\nrow 97 xxxxxxxxxxxxxxxxxxxx\\nrow 98 xxxxxxxxxxxxxxxxxxxx\\nrow 99 xxxxxxxxxxxxxxxxxxxx\\nrow 100 xxxxxxxxxxxxxxxxxxxx\\nrow 101 xxxxxxxxxxxxxxxxxxxx\\nrow 102 xxxxxxxxxxxxxxxxxxxx\\nrow 103 xxxxxxxxxxxxxxxxxxxx\\nrow 104 xxxxxxxxxxxxxxxxxxxx\\nrow 105 xxxxxxxxxxxxxxxxxxxx\\nrow 106 xxxxxxxxxxxxxxxxxxxx\\nrow 107 xxxxxxxxxxxxxxxxxxxx\\nrow 108 xxxxxxxxxxxxxxxxxxxx\\nrow 109 xxxxxxxxxxxxxxxxxxxx\\nrow 110 xxxxxxxxxxxxxxxxxxxx\\nrow 111 xxxxxxxxxxxxxxxxxxxx\\nrow 112 xxxxxxxxxxxxxxxxxxxx\\nrow 113 xxxxxxxxxxxxxxxxxxxx\\nrow 114 xxxxxxxxxxxxxxxxxxxx\\nrow 115 xxxxxxxxxxxxxxxxxxxx\\nrow 116 xxxxxxxxxxxxxxxxxxxx\\nrow 117 xxxxxxxxxxxxxxxxxxxx\\nrow 118 xxxxxxxxxxxxxxxxxxxx\\nrow 119 xxxxxxxxxxxxxxxxxxxx\\nrow 120 xxxxxxxxxxxxxxxxxxxx\\nrow 121 xxxxxxxxxxxxxxxxxxxx\\nrow 122 xxxxxxxxxxxxxxxxxxxx\\nrow 123 xxxxxxxxxxxxxxxxxxxx\\nrow 124 xxxxxxxxxxxxxxxxxxxx\\nrow 125 xxxxxxxxxxxxxxxxxxxx\\nrow 126 xxxxxxxxxxxxxxxxxxxx\\nrow 127 xxxxxxxxxxxxxxxxxxxx\\nrow 128 xxxxxxxxxxxxxxxxxxxx\\nrow 129 xxxxxxxxxxxxxxxxxxxx\\nrow 130 xxxxxxxxxxxxxxxxxxxx\\nrow 131 xxxxxxxxxxxxxxxxxxxx\\nrow 132 xxxxxxxxxxxxxxxxxxxx\\nrow 133 xxxxxxxxxxxxxxxxxxxx\\nrow 134 xxxxxxxxxxxxxxxxxxxx\\nrow 135 xxxxxxxxxxxxxxxxxxxx\\nrow 136 xxxxxxxxxxxxxxxxxxxx\\nrow 137 xxxxxxxxxxxxxxxxxxxx\\nrow 138 xxxxxxxxxxxxxxxxxxxx\\nrow 139 xxxxxxxxxxxxxxxxxxxx\\nrow 140 xxxxxxxxxxxxxxxxxxxx\\nrow 141 xxxxxxxxxxxxxxxxxxxx\\nrow 142 xxxxxxxxxxxxxxxxxxxx\\nrow 143 xxxxxxxxxxxxxxxxxxxx\\nrow 144 xxxxxxxxxxxxxxxxxxxx\\nrow 145 xxxxxxxxxxxxxxxxxxxx\\nrow 146 xxxxxxxxxxxxxxxxxxxx\\nrow 147 xxxxxxxxxxxxxxxxxxxx\\nrow 148 xxxxxxxxxxxxxxxxxxxx\\nrow 149 xxxxxxxxxxxxxxxxxxxx\\nrow 150 xxxxxxxxxxxxxxxxxxxx\\nrow 151 xxxxxxxxxxxxxxxxxxxx\\nrow 152 xxxxxxxxxxxxxxxxxxxx\\nrow 153 xxxxxxxxxxxxxxxxxxxx\\nrow 154 xxxxxxxxxxxxxxxxxxxx\\nrow 155 xxxxxxxxxxxxxxxxxxxx\\nrow 156 xxxxxxxxxxxxxxxxxxxx\\nrow 157 xxxxxxxxxxxxxxxxxxxx\\nrow 158 xxxxxxxxxxxxxxxxxxxx\\nrow 159 xxxxxxxxxxxxxxxxxxxx\\n```\\n\\nAfter\",\"thread_ts\":\"1700.1\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "1700.9"
+      }
+    },
+    {
+      "name": "telegram longTable",
+      "channel": "telegram",
+      "recipient": {
+        "kind": "telegram",
+        "chatId": 7
+      },
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "123:abc"
+      },
+      "events": "longTable",
+      "requests": [
+        {
+          "path": "/bot123:abc/sendMessage",
+          "body": "{\"chat_id\":7,\"text\":\"Intro <b>bold</b> line\\n\\n<pre>row 0 xxxxxxxxxxxxxxxxxxxx\\nrow 1 xxxxxxxxxxxxxxxxxxxx\\nrow 2 xxxxxxxxxxxxxxxxxxxx\\nrow 3 xxxxxxxxxxxxxxxxxxxx\\nrow 4 xxxxxxxxxxxxxxxxxxxx\\nrow 5 xxxxxxxxxxxxxxxxxxxx\\nrow 6 xxxxxxxxxxxxxxxxxxxx\\nrow 7 xxxxxxxxxxxxxxxxxxxx\\nrow 8 xxxxxxxxxxxxxxxxxxxx\\nrow 9 xxxxxxxxxxxxxxxxxxxx\\nrow 10 xxxxxxxxxxxxxxxxxxxx\\nrow 11 xxxxxxxxxxxxxxxxxxxx\\nrow 12 xxxxxxxxxxxxxxxxxxxx\\nrow 13 xxxxxxxxxxxxxxxxxxxx\\nrow 14 xxxxxxxxxxxxxxxxxxxx\\nrow 15 xxxxxxxxxxxxxxxxxxxx\\nrow 16 xxxxxxxxxxxxxxxxxxxx\\nrow 17 xxxxxxxxxxxxxxxxxxxx\\nrow 18 xxxxxxxxxxxxxxxxxxxx\\nrow 19 xxxxxxxxxxxxxxxxxxxx\\nrow 20 xxxxxxxxxxxxxxxxxxxx\\nrow 21 xxxxxxxxxxxxxxxxxxxx\\nrow 22 xxxxxxxxxxxxxxxxxxxx\\nrow 23 xxxxxxxxxxxxxxxxxxxx\\nrow 24 xxxxxxxxxxxxxxxxxxxx\\nrow 25 xxxxxxxxxxxxxxxxxxxx\\nrow 26 xxxxxxxxxxxxxxxxxxxx\\nrow 27 xxxxxxxxxxxxxxxxxxxx\\nrow 28 xxxxxxxxxxxxxxxxxxxx\\nrow 29 xxxxxxxxxxxxxxxxxxxx\\nrow 30 xxxxxxxxxxxxxxxxxxxx\\nrow 31 xxxxxxxxxxxxxxxxxxxx\\nrow 32 xxxxxxxxxxxxxxxxxxxx\\nrow 33 xxxxxxxxxxxxxxxxxxxx\\nrow 34 xxxxxxxxxxxxxxxxxxxx\\nrow 35 xxxxxxxxxxxxxxxxxxxx\\nrow 36 xxxxxxxxxxxxxxxxxxxx\\nrow 37 xxxxxxxxxxxxxxxxxxxx\\nrow 38 xxxxxxxxxxxxxxxxxxxx\\nrow 39 xxxxxxxxxxxxxxxxxxxx\\nrow 40 xxxxxxxxxxxxxxxxxxxx\\nrow 41 xxxxxxxxxxxxxxxxxxxx\\nrow 42 xxxxxxxxxxxxxxxxxxxx\\nrow 43 xxxxxxxxxxxxxxxxxxxx\\nrow 44 xxxxxxxxxxxxxxxxxxxx\\nrow 45 xxxxxxxxxxxxxxxxxxxx\\nrow 46 xxxxxxxxxxxxxxxxxxxx\\nrow 47 xxxxxxxxxxxxxxxxxxxx\\nrow 48 xxxxxxxxxxxxxxxxxxxx\\nrow 49 xxxxxxxxxxxxxxxxxxxx\\nrow 50 xxxxxxxxxxxxxxxxxxxx\\nrow 51 xxxxxxxxxxxxxxxxxxxx\\nrow 52 xxxxxxxxxxxxxxxxxxxx\\nrow 53 xxxxxxxxxxxxxxxxxxxx\\nrow 54 xxxxxxxxxxxxxxxxxxxx\\nrow 55 xxxxxxxxxxxxxxxxxxxx\\nrow 56 xxxxxxxxxxxxxxxxxxxx\\nrow 57 xxxxxxxxxxxxxxxxxxxx\\nrow 58 xxxxxxxxxxxxxxxxxxxx\\nrow 59 xxxxxxxxxxxxxxxxxxxx\\nrow 60 xxxxxxxxxxxxxxxxxxxx\\nrow 61 xxxxxxxxxxxxxxxxxxxx\\nrow 62 xxxxxxxxxxxxxxxxxxxx\\nrow 63 xxxxxxxxxxxxxxxxxxxx\\nrow 64 xxxxxxxxxxxxxxxxxxxx\\nrow 65 xxxxxxxxxxxxxxxxxxxx\\nrow 66 xxxxxxxxxxxxxxxxxxxx\\nrow 67 xxxxxxxxxxxxxxxxxxxx\\nrow 68 xxxxxxxxxxxxxxxxxxxx\\nrow 69 xxxxxxxxxxxxxxxxxxxx\\nrow 70 xxxxxxxxxxxxxxxxxxxx\\nrow 71 xxxxxxxxxxxxxxxxxxxx\\nrow 72 xxxxxxxxxxxxxxxxxxxx\\nrow 73 xxxxxxxxxxxxxxxxxxxx\\nrow 74 xxxxxxxxxxxxxxxxxxxx\\nrow 75 xxxxxxxxxxxxxxxxxxxx\\nrow 76 xxxxxxxxxxxxxxxxxxxx\\nrow 77 xxxxxxxxxxxxxxxxxxxx\\nrow 78 xxxxxxxxxxxxxxxxxxxx\\nrow 79 xxxxxxxxxxxxxxxxxxxx\\nrow 80 xxxxxxxxxxxxxxxxxxxx\\nrow 81 xxxxxxxxxxxxxxxxxxxx\\nrow 82 xxxxxxxxxxxxxxxxxxxx\\nrow 83 xxxxxxxxxxxxxxxxxxxx\\nrow 84 xxxxxxxxxxxxxxxxxxxx\\nrow 85 xxxxxxxxxxxxxxxxxxxx\\nrow 86 xxxxxxxxxxxxxxxxxxxx\\nrow 87 xxxxxxxxxxxxxxxxxxxx\\nrow 88 xxxxxxxxxxxxxxxxxxxx\\nrow 89 xxxxxxxxxxxxxxxxxxxx\\nrow 90 xxxxxxxxxxxxxxxxxxxx\\nrow 91 xxxxxxxxxxxxxxxxxxxx\\nrow 92 xxxxxxxxxxxxxxxxxxxx\\nrow 93 xxxxxxxxxxxxxxxxxxxx\\nrow 94 xxxxxxxxxxxxxxxxxxxx\\nrow 95 xxxxxxxxxxxxxxxxxxxx\\nrow 96 xxxxxxxxxxxxxxxxxxxx\\nrow 97 xxxxxxxxxxxxxxxxxxxx\\nrow 98 xxxxxxxxxxxxxxxxxxxx\\nrow 99 xxxxxxxxxxxxxxxxxxxx\\nrow 100 xxxxxxxxxxxxxxxxxxxx\\nrow 101 xxxxxxxxxxxxxxxxxxxx\\nrow 102 xxxxxxxxxxxxxxxxxxxx\\nrow 103 xxxxxxxxxxxxxxxxxxxx\\nrow 104 xxxxxxxxxxxxxxxxxxxx\\nrow 105 xxxxxxxxxxxxxxxxxxxx\\nrow 106 xxxxxxxxxxxxxxxxxxxx\\nrow 107 xxxxxxxxxxxxxxxxxxxx\\nrow 108 xxxxxxxxxxxxxxxxxxxx\\nrow 109 xxxxxxxxxxxxxxxxxxxx\\nrow 110 xxxxxxxxxxxxxxxxxxxx\\nrow 111 xxxxxxxxxxxxxxxxxxxx\\nrow 112 xxxxxxxxxxxxxxxxxxxx\\nrow 113 xxxxxxxxxxxxxxxxxxxx\\nrow 114 xxxxxxxxxxxxxxxxxxxx\\nrow 115 xxxxxxxxxxxxxxxxxxxx\\nrow 116 xxxxxxxxxxxxxxxxxxxx\\nrow 117 xxxxxxxxxxxxxxxxxxxx\\nrow 118 xxxxxxxxxxxxxxxxxxxx\\nrow 119 xxxxxxxxxxxxxxxxxxxx\\nrow 120 xxxxxxxxxxxxxxxxxxxx\\nrow 121 xxxxxxxxxxxxxxxxxxxx\\nrow 122 xxxxxxxxxxxxxxxxxxxx\\nrow 123 xxxxxxxxxxxxxxxxxxxx\\nrow 124 xxxxxxxxxxxxxxxxxxxx\\nrow 125 xxxxxxxxxxxxxxxxxxxx\\nrow 126 xxxxxxxxxxxxxxxxxxxx\\nrow 127 xxxxxxxxxxxxxxxxxxxx\\nrow 128 xxxxxxxxxxxxxxxxxxxx\\nrow 129 xxxxxxxxxxxxxxxxxxxx\\nrow 130 xxxxxxxxxxxxxxxxxxxx\\nrow 131 xxxxxxxxxxxxxxxxxxxx\\nrow 132 xxxxxxxxxxxxxxxxxxxx\\nrow 133 xxxxxxxxxxxxxxxxxxxx\\nrow 134 xxxxxxxxxxxxxxxxxxxx\\nrow 135 xxxxxxxxxxxxxxxxxxxx\\nrow 136 xxxxxxxxxxxxxxxxxxxx\\nrow 137 xxxxxxxxxxxxxxxxxxxx\\nrow 138 xxxxxxxxxxxxxxxxxxxx\\nrow 139 xxxxxxxxxxxxxxxxxxxx\\nrow 140 xxxxxxxxxxxxxxxxxxxx\\nrow 141 xxxxxxxxxxxxxxxxxxxx\\nrow 142 xxxxxxxxxxxxxxxxxxxx\\n</pre>\",\"parse_mode\":\"HTML\"}"
+        },
+        {
+          "path": "/bot123:abc/sendMessage",
+          "body": "{\"chat_id\":7,\"text\":\"<pre>row 143 xxxxxxxxxxxxxxxxxxxx\\nrow 144 xxxxxxxxxxxxxxxxxxxx\\nrow 145 xxxxxxxxxxxxxxxxxxxx\\nrow 146 xxxxxxxxxxxxxxxxxxxx\\nrow 147 xxxxxxxxxxxxxxxxxxxx\\nrow 148 xxxxxxxxxxxxxxxxxxxx\\nrow 149 xxxxxxxxxxxxxxxxxxxx\\nrow 150 xxxxxxxxxxxxxxxxxxxx\\nrow 151 xxxxxxxxxxxxxxxxxxxx\\nrow 152 xxxxxxxxxxxxxxxxxxxx\\nrow 153 xxxxxxxxxxxxxxxxxxxx\\nrow 154 xxxxxxxxxxxxxxxxxxxx\\nrow 155 xxxxxxxxxxxxxxxxxxxx\\nrow 156 xxxxxxxxxxxxxxxxxxxx\\nrow 157 xxxxxxxxxxxxxxxxxxxx\\nrow 158 xxxxxxxxxxxxxxxxxxxx\\nrow 159 xxxxxxxxxxxxxxxxxxxx</pre>\\n\\nAfter\",\"parse_mode\":\"HTML\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "102"
+      }
+    },
+    {
+      "name": "hud longTable",
+      "channel": "hud",
+      "recipient": {
+        "kind": "hud",
+        "workspace": "plant"
+      },
+      "env": {
+        "HUD_CHANNEL_SECRET": "s3cret",
+        "HUD_CHANNEL_WORKSPACE": " pack "
+      },
+      "events": "longTable",
+      "requests": [
+        {
+          "path": "http://demo-channel:443/api/deliver",
+          "headers": {
+            "x-openneko-hud-delivery-id": "delivery-1",
+            "x-openneko-hud-signature": "sha256=717a6cb9f3f84a29e188186d6ddebe35b00845d6072d1f2c1311c3c38801c49e"
+          },
+          "body": "{\"schema\":\"openneko.hud.delivery.v1\",\"deliveryId\":\"delivery-1\",\"deliveredAt\":\"2026-11-14T10:00:00.000Z\",\"workspace\":\"pack\",\"recipient\":{\"kind\":\"hud\",\"workspace\":\"plant\"},\"projections\":[{\"id\":\"c7\",\"kind\":\"converse\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"message\",\"title\":\"OpenNeko\",\"body\":\"Intro **bold** line\\n\\n```\\nrow 0 xxxxxxxxxxxxxxxxxxxx\\nrow 1 xxxxxxxxxxxxxxxxxxxx\\nrow 2 xxxxxxxxxxxxxxxxxxxx\\nrow 3 xxxxxxxxxxxxxxxxxxxx\\nrow 4 xxxxxxxxxxxxxxxxxxxx\\nrow 5 xxxxxxxxxxxxxxxxxxxx\\nrow 6 xxxxxxxxxxxxxxxxxxxx\\nrow 7 xxxxxxxxxxxxxxxxxxxx\\nrow 8 xxxxxxxxxxxxxxxxxxxx\\nrow 9 xxxxxxxxxxxxxxxxxxxx\\nrow 10 xxxxxxxxxxxxxxxxxxxx\\nrow 11 xxxxxxxxxxxxxxxxxxxx\\nrow 12 xxxxxxxxxxxxxxxxxxxx\\nrow 13 xxxxxxxxxxxxxxxxxxxx\\nrow 14 xxxxxxxxxxxxxxxxxxxx\\nrow 15 xxxxxxxxxxxxxxxxxxxx\\nrow 16 xxxxxxxxxxxxxxxxxxxx\\nrow 17 xxxxxxxxxxxxxxxxxxxx\\nrow 18 xxxxxxxxxxxxxxxxxxxx\\nrow 19 xxxxxxxxxxxxxxxxxxxx\\nrow 20 xxxxxxxxxxxxxxxxxxxx\\nrow 21 xxxxxxxxxxxxxxxxxxxx\\nrow 22 xxxxxxxxxxxxxxxxxxxx\\nrow 23 xxxxxxxxxxxxxxxxxxxx\\nrow 24 xxxxxxxxxxxxxxxxxxxx\\nrow 25 xxxxxxxxxxxxxxxxxxxx\\nrow 26 xxxxxxxxxxxxxxxxxxxx\\nrow 27 xxxxxxxxxxxxxxxxxxxx\\nrow 28 xxxxxxxxxxxxxxxxxxxx\\nrow 29 xxxxxxxxxxxxxxxxxxxx\\nrow 30 xxxxxxxxxxxxxxxxxxxx\\nrow 31 xxxxxxxxxxxxxxxxxxxx\\nrow 32 xxxxxxxxxxxxxxxxxxxx\\nrow 33 xxxxxxxxxxxxxxxxxxxx\\nrow 34 xxxxxxxxxxxxxxxxxxxx\\nrow 35 xxxxxxxxxxxxxxxxxxxx\\nrow 36 xxxxxxxxxxxxxxxxxxxx\\nrow 37 xxxxxxxxxxxxxxxxxxxx\\nrow 38 xxxxxxxxxxxxxxxxxxxx\\nrow 39 xxxxxxxxxxxxxxxxxxxx\\nrow 40 xxxxxxxxxxxxxxxxxxxx\\nrow 41 xxxxxxxxxxxxxxxxxxxx\\nrow 42 xxxxxxxxxxxxxxxxxxxx\\nrow 43 xxxxxxxxxxxxxxxxxxxx\\nrow 44 xxxxxxxxxxxxxxxxxxxx\\nrow 45 xxxxxxxxxxxxxxxxxxxx\\nrow 46 xxxxxxxxxxxxxxxxxxxx\\nrow 47 xxxxxxxxxxxxxxxxxxxx\\nrow 48 xxxxxxxxxxxxxxxxxxxx\\nrow 49 xxxxxxxxxxxxxxxxxxxx\\nrow 50 xxxxxxxxxxxxxxxxxxxx\\nrow 51 xxxxxxxxxxxxxxxxxxxx\\nrow 52 xxxxxxxxxxxxxxxxxxxx\\nrow 53 xxxxxxxxxxxxxxxxxxxx\\nrow 54 xxxxxxxxxxxxxxxxxxxx\\nrow 55 xxxxxxxxxxxxxxxxxxxx\\nrow 56 xxxxxxxxxxxxxxxxxxxx\\nrow 57 xxxxxxxxxxxxxxxxxxxx\\nrow 58 xxxxxxxxxxxxxxxxxxxx\\nrow 59 xxxxxxxxxxxxxxxxxxxx\\nrow 60 xxxxxxxxxxxxxxxxxxxx\\nrow 61 xxxxxxxxxxxxxxxxxxxx\\nrow 62 xxxxxxxxxxxxxxxxxxxx\\nrow 63 xxxxxxxxxxxxxxxxxxxx\\nrow 64 xxxxxxxxxxxxxxxxxxxx\\nrow 65 xxxxxxxxxxxxxxxxxxxx\\nrow 66 xxxxxxxxxxxxxxxxxxxx\\nrow 67 xxxxxxxxxxxxxxxxxxxx\\nrow 68 xxxxxxxxxxxxxxxxxxxx\\nrow 69 xxxxxxxxxxxxxxxxxxxx\\nrow 70 xxxxxxxxxxxxxxxxxxxx\\nrow 71 xxxxxxxxxxxxxxxxxxxx\\nrow 72 xxxxxxxxxxxxxxxxxxxx\\nrow 73 xxxxxxxxxxxxxxxxxxxx\\nrow 74 xxxxxxxxxxxxxxxxxxxx\\nrow 75 xxxxxxxxxxxxxxxxxxxx\\nrow 76 xxxxxxxxxxxxxxxxxxxx\\nrow 77 xxxxxxxxxxxxxxxxxxxx\\nrow 78 xxxxxxxxxxxxxxxxxxxx\\nrow 79 xxxxxxxxxxxxxxxxxxxx\\nrow 80 xxxxxxxxxxxxxxxxxxxx\\nrow 81 xxxxxxxxxxxxxxxxxxxx\\nrow 82 xxxxxxxxxxxxxxxxxxxx\\nrow 83 xxxxxxxxxxxxxxxxxxxx\\nrow 84 xxxxxxxxxxxxxxxxxxxx\\nrow 85 xxxxxxxxxxxxxxxxxxxx\\nrow 86 xxxxxxxxxxxxxxxxxxxx\\nrow 87 xxxxxxxxxxxxxxxxxxxx\\nrow 88 xxxxxxxxxxxxxxxxxxxx\\nrow 89 xxxxxxxxxxxxxxxxxxxx\\nrow 90 xxxxxxxxxxxxxxxxxxxx\\nrow 91 xxxxxxxxxxxxxxxxxxxx\\nrow 92 xxxxxxxxxxxxxxxxxxxx\\nrow 93 xxxxxxxxxxxxxxxxxxxx\\nrow 94 xxxxxxxxxxxxxxxxxxxx\\nrow 95 xxxxxxxxxxxxxxxxxxxx\\nrow 96 xxxxxxxxxxxxxxxxxxxx\\nrow 97 xxxxxxxxxxxxxxxxxxxx\\nrow 98 xxxxxxxxxxxxxxxxxxxx\\nrow 99 xxxxxxxxxxxxxxxxxxxx\\nrow 100 xxxxxxxxxxxxxxxxxxxx\\nrow 101 xxxxxxxxxxxxxxxxxxxx\\nrow 102 xxxxxxxxxxxxxxxxxxxx\\nrow 103 xxxxxxxxxxxxxxxxxxxx\\nrow 104 xxxxxxxxxxxxxxxxxxxx\\nrow 105 xxxxxxxxxxxxxxxxxxxx\\nrow 106 xxxxxxxxxxxxxxxxxxxx\\nrow 107 xxxxxxxxxxxxxxxxxxxx\\nrow 108 xxxxxxxxxxxxxxxxxxxx\\nrow 109 xxxxxxxxxxxxxxxxxxxx\\nrow 110 xxxxxxxxxxxxxxxxxxxx\\nrow 111 xxxxxxxxxxxxxxxxxxxx\\nrow 112 xxxxxxxxxxxxxxxxxxxx\\nrow 113 xxxxxxxxxxxxxxxxxxxx\\nrow 114 xxxxxxxxxxxxxxxxxxxx\\nrow 115 xxxxxxxxxxxxxxxxxxxx\\nrow 116 xxxxxxxxxxxxxxxxxxxx\\nrow 117 xxxxxxxxxxxxxxxxxxxx\\nrow 118 xxxxxxxxxxxxxxxxxxxx\\nrow 119 xxxxxxxxxxxxxxxxxxxx\\nrow 120 xxxxxxxxxxxxxxxxxxxx\\nrow 121 xxxxxxxxxxxxxxxxxxxx\\nrow 122 xxxxxxxxxxxxxxxxxxxx\\nrow 123 xxxxxxxxxxxxxxxxxxxx\\nrow 124 xxxxxxxxxxxxxxxxxxxx\\nrow 125 xxxxxxxxxxxxxxxxxxxx\\nrow 126 xxxxxxxxxxxxxxxxxxxx\\nrow 127 xxxxxxxxxxxxxxxxxxxx\\nrow 128 xxxxxxxxxxxxxxxxxxxx\\nrow 129 xxxxxxxxxxxxxxxxxxxx\\nrow 130 xxxxxxxxxxxxxxxxxxxx\\nrow 131 xxxxxxxxxxxxxxxxxxxx\\nrow 132 xxxxxxxxxxxxxxxxxxxx\\nrow 133 xxxxxxxxxxxxxxxxxxxx\\nrow 134 xxxxxxxxxxxxxxxxxxxx\\nrow 135 xxxxxxxxxxxxxxxxxxxx\\nrow 136 xxxxxxxxxxxxxxxxxxxx\\nrow 137 xxxxxxxxxxxxxxxxxxxx\\nrow 138 xxxxxxxxxxxxxxxxxxxx\\nrow 139 xxxxxxxxxxxxxxxxxxxx\\nrow 140 xxxxxxxxxxxxxxxxxxxx\\nrow 141 xxxxxxxxxxxxxxxxxxxx\\nrow 142 xxxxxxxxxxxxxxxxxxxx\\nrow 143 xxxxxxxxxxxxxxxxxxxx\\nrow 144 xxxxxxxxxxxxxxxxxxxx\\nrow 145 xxxxxxxxxxxxxxxxxxxx\\nrow 146 xxxxxxxxxxxxxxxxxxxx\\nrow 147 xxxxxxxxxxxxxxxxxxxx\\nrow 148 xxxxxxxxxxxxxxxxxxxx\\nrow 149 xxxxxxxxxxxxxxxxxxxx\\nrow 150 xxxxxxxxxxxxxxxxxxxx\\nrow 151 xxxxxxxxxxxxxxxxxxxx\\nrow 152 xxxxxxxxxxxxxxxxxxxx\\nrow 153 xxxxxxxxxxxxxxxxxxxx\\nrow 154 xxxxxxxxxxxxxxxxxxxx\\nrow 155 xxxxxxxxxxxxxxxxxxxx\\nrow 156 xxxxxxxxxxxxxxxxxxxx\\nrow 157 xxxxxxxxxxxxxxxxxxxx\\nrow 158 xxxxxxxxxxxxxxxxxxxx\\nrow 159 xxxxxxxxxxxxxxxxxxxx\\n```\\n\\nAfter\"}]}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "delivery-1"
+      }
+    },
+    {
+      "name": "slack spatial",
+      "channel": "slack",
+      "recipient": {
+        "kind": "slack",
+        "channel": "D1",
+        "thread_ts": "1700.1"
+      },
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-1"
+      },
+      "events": "spatial",
+      "requests": [
+        {
+          "path": "/chat.postMessage",
+          "body": "{\"channel\":\"D1\",\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Here*\\nb\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*There*\\nb\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"Hello\"}}],\"text\":\"Here · There · Hello\",\"thread_ts\":\"1700.1\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "1700.9"
+      }
+    },
+    {
+      "name": "telegram spatial",
+      "channel": "telegram",
+      "recipient": {
+        "kind": "telegram",
+        "chatId": 7
+      },
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "123:abc"
+      },
+      "events": "spatial",
+      "requests": [
+        {
+          "path": "/bot123:abc/sendMessage",
+          "body": "{\"chat_id\":7,\"text\":\"👀 <b>Here</b>\\nb\\n\\n👀 <b>There</b>\\nb\\n\\nHello\",\"parse_mode\":\"HTML\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "101"
+      }
+    },
+    {
+      "name": "hud spatial",
+      "channel": "hud",
+      "recipient": {
+        "kind": "hud",
+        "workspace": "plant"
+      },
+      "env": {
+        "HUD_CHANNEL_SECRET": "s3cret",
+        "HUD_CHANNEL_WORKSPACE": " pack "
+      },
+      "events": "spatial",
+      "requests": [
+        {
+          "path": "http://demo-channel:443/api/deliver",
+          "headers": {
+            "x-openneko-hud-delivery-id": "delivery-1",
+            "x-openneko-hud-signature": "sha256=898feba3ed7f1115ce9f686abfe91f3794c26afedcb86e42211d4963a3242192"
+          },
+          "body": "{\"schema\":\"openneko.hud.delivery.v1\",\"deliveryId\":\"delivery-1\",\"deliveredAt\":\"2026-11-14T10:00:00.000Z\",\"workspace\":\"pack\",\"recipient\":{\"kind\":\"hud\",\"workspace\":\"plant\"},\"projections\":[{\"id\":\"s1\",\"kind\":\"inform\",\"anchor\":{\"kind\":\"site\",\"id\":\"plant-2\",\"longitude\":12.5,\"latitude\":41.9},\"type\":\"finding\",\"title\":\"Here\",\"body\":\"b\",\"mood\":\"watch\",\"evidence\":[]},{\"id\":\"s2\",\"kind\":\"inform\",\"anchor\":{\"kind\":\"coordinate\",\"longitude\":1,\"latitude\":2},\"type\":\"finding\",\"title\":\"There\",\"body\":\"b\",\"mood\":\"watch\",\"evidence\":[]},{\"id\":\"s3\",\"kind\":\"converse\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"plant\"},\"type\":\"message\",\"title\":\"OpenNeko\",\"body\":\"Hello\"}]}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "delivery-1"
+      }
+    },
+    {
+      "name": "slack empty",
+      "channel": "slack",
+      "recipient": {
+        "kind": "slack",
+        "channel": "D1",
+        "thread_ts": "1700.1"
+      },
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-1"
+      },
+      "events": "empty",
+      "requests": [],
+      "result": {
+        "delivered": false
+      }
+    },
+    {
+      "name": "telegram empty",
+      "channel": "telegram",
+      "recipient": {
+        "kind": "telegram",
+        "chatId": 7
+      },
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "123:abc"
+      },
+      "events": "empty",
+      "requests": [],
+      "result": {
+        "delivered": false
+      }
+    },
+    {
+      "name": "hud empty",
+      "channel": "hud",
+      "recipient": {
+        "kind": "hud",
+        "workspace": "plant"
+      },
+      "env": {
+        "HUD_CHANNEL_SECRET": "s3cret",
+        "HUD_CHANNEL_WORKSPACE": " pack "
+      },
+      "events": "empty",
+      "requests": [],
+      "result": {
+        "delivered": false
+      }
+    },
+    {
+      "name": "slack ephemeral",
+      "channel": "slack",
+      "recipient": {
+        "kind": "slack",
+        "channel": "C9",
+        "user": "U1",
+        "ephemeral": true
+      },
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-1"
+      },
+      "events": "misc",
+      "requests": [
+        {
+          "path": "/chat.postEphemeral",
+          "body": "{\"channel\":\"C9\",\"blocks\":[{\"type\":\"context\",\"elements\":[{\"type\":\"mrkdwn\",\"text\":\"✓ Refund <sent>\"}]},{\"type\":\"context\",\"elements\":[{\"type\":\"mrkdwn\",\"text\":\"⊘ No\"}]},{\"type\":\"context\",\"elements\":[{\"type\":\"mrkdwn\",\"text\":\"✗ Broke\"}]},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Key figures*\"},\"fields\":[{\"type\":\"mrkdwn\",\"text\":\"*Orders*\\n49,310 _(+4%)_\"},{\"type\":\"mrkdwn\",\"text\":\"*AOV*\\n$75\"}]},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"📎 Report <pdf>\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"📎 Local\"}}],\"text\":\"Orders 49,310 · AOV $75\",\"user\":\"U1\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "1700.9"
+      }
+    },
+    {
+      "name": "telegram string chat",
+      "channel": "telegram",
+      "recipient": {
+        "kind": "telegram",
+        "chatId": "-100"
+      },
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "123:abc"
+      },
+      "events": "inform",
+      "requests": [
+        {
+          "path": "/bot123:abc/sendMessage",
+          "body": "{\"chat_id\":\"-100\",\"text\":\"🚨 <b>Stock &lt;low&gt;</b>\\nThree SKUs are low. Reorder today! More text.\\n<b>SKUs:</b> 3\\n\\n<b>Plain</b>\",\"parse_mode\":\"HTML\"}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "101"
+      }
+    },
+    {
+      "name": "hud default anchor",
+      "channel": "hud",
+      "recipient": {
+        "kind": "hud",
+        "defaultAnchor": "line:4"
+      },
+      "env": {
+        "HUD_CHANNEL_SECRET": "s3cret"
+      },
+      "events": "spatial",
+      "requests": [
+        {
+          "path": "http://demo-channel:443/api/deliver",
+          "headers": {
+            "x-openneko-hud-delivery-id": "delivery-1",
+            "x-openneko-hud-signature": "sha256=b6432564eb03922feb02c7c23d43d1157c3f0abe1ae18023c3e88300a52dde63"
+          },
+          "body": "{\"schema\":\"openneko.hud.delivery.v1\",\"deliveryId\":\"delivery-1\",\"deliveredAt\":\"2026-11-14T10:00:00.000Z\",\"workspace\":\"demo\",\"recipient\":{\"kind\":\"hud\",\"defaultAnchor\":\"line:4\"},\"projections\":[{\"id\":\"s1\",\"kind\":\"inform\",\"anchor\":{\"kind\":\"site\",\"id\":\"plant-2\",\"longitude\":12.5,\"latitude\":41.9},\"type\":\"finding\",\"title\":\"Here\",\"body\":\"b\",\"mood\":\"watch\",\"evidence\":[]},{\"id\":\"s2\",\"kind\":\"inform\",\"anchor\":{\"kind\":\"coordinate\",\"longitude\":1,\"latitude\":2},\"type\":\"finding\",\"title\":\"There\",\"body\":\"b\",\"mood\":\"watch\",\"evidence\":[]},{\"id\":\"s3\",\"kind\":\"converse\",\"anchor\":{\"kind\":\"line\",\"id\":\"4\"},\"type\":\"message\",\"title\":\"OpenNeko\",\"body\":\"Hello\"}]}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "delivery-1"
+      }
+    },
+    {
+      "name": "hud plain default anchor",
+      "channel": "hud",
+      "recipient": {
+        "kind": "hud",
+        "defaultAnchor": "yard"
+      },
+      "env": {
+        "HUD_CHANNEL_SECRET": "s3cret"
+      },
+      "events": "misc",
+      "requests": [
+        {
+          "path": "http://demo-channel:443/api/deliver",
+          "headers": {
+            "x-openneko-hud-delivery-id": "delivery-1",
+            "x-openneko-hud-signature": "sha256=519dc88ef873920d73f6a088b815d44cb8fe0a01c43a73639c21b18379f80e31"
+          },
+          "body": "{\"schema\":\"openneko.hud.delivery.v1\",\"deliveryId\":\"delivery-1\",\"deliveredAt\":\"2026-11-14T10:00:00.000Z\",\"workspace\":\"demo\",\"recipient\":{\"kind\":\"hud\",\"defaultAnchor\":\"yard\"},\"projections\":[{\"id\":\"r1\",\"kind\":\"resolve\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"yard\"},\"type\":\"resolution\",\"title\":\"succeeded\",\"body\":\"Refund <sent>\",\"decisionRef\":\"req-1\",\"status\":\"succeeded\"},{\"id\":\"r2\",\"kind\":\"resolve\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"yard\"},\"type\":\"resolution\",\"title\":\"rejected\",\"body\":\"No\",\"decisionRef\":\"req-2\",\"status\":\"rejected\"},{\"id\":\"r3\",\"kind\":\"resolve\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"yard\"},\"type\":\"resolution\",\"title\":\"failed\",\"body\":\"Broke\",\"decisionRef\":\"req-3\",\"status\":\"failed\"},{\"id\":\"h1\",\"kind\":\"highlight\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"yard\"},\"type\":\"figures\",\"title\":\"Key figures\",\"metrics\":[{\"label\":\"Orders\",\"value\":\"49,310\",\"sub\":\"+4%\"},{\"label\":\"AOV\",\"value\":\"$75\"}]},{\"id\":\"f1\",\"kind\":\"offer\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"yard\"},\"type\":\"artifact\",\"title\":\"Report <pdf>\",\"artifactRef\":\"https://example.com/r.pdf?a=1&b=2\",\"mime\":\"application/pdf\"},{\"id\":\"f2\",\"kind\":\"offer\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"yard\"},\"type\":\"artifact\",\"title\":\"Local\",\"artifactRef\":\"files/r.csv\"},{\"id\":\"p1\",\"kind\":\"progress\",\"anchor\":{\"kind\":\"workspace\",\"id\":\"yard\"},\"type\":\"progress\",\"title\":\"Reading orders\",\"phase\":\"start\"}]}"
+        }
+      ],
+      "result": {
+        "delivered": true,
+        "ref": "delivery-1"
+      }
+    }
+  ]
+}

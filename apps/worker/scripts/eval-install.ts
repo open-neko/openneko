@@ -11,7 +11,7 @@ import pg from "pg";
 import PgBoss from "pg-boss";
 import { reconnectPool } from "@neko/db";
 import { _resetSecretKeyCacheForTesting } from "@neko/llm/secrets";
-import { createActionRequest, notifyWorkflowOutputDeliveryHook } from "@neko/llm/workflows";
+import { createActionRequest } from "@neko/llm/workflows";
 import { createAdminHandler } from "../src/admin-server";
 import { runActionExecute } from "../src/jobs/action-execute";
 
@@ -210,10 +210,6 @@ async function stopChild(child: ChildProcess | undefined): Promise<void> {
   clearTimeout(timer);
   liveChildren.delete(child);
 }
-
-export type EvalWorkerHooks = {
-  onOutputDelivered?(orgId: string, output: Record<string, unknown>): void;
-};
 
 export type EvalEpisodeOptions = {
   label: string;
@@ -422,6 +418,41 @@ export class EvalEpisode {
     return JSON.parse(stdout) as Record<string, unknown>;
   }
 
+  // openneko web queues a channel_deliver job per bound channel when a
+  // workflow emits an output; the binding is the one bindEvalChannel adds.
+  async bindEvalChannel(orgId: string): Promise<void> {
+    await this.query(
+      `insert into user_group (org_id, slug, name, kind)
+         select $1, 'administrators', 'Administrators', 'system'
+         where not exists (select 1 from user_group where org_id = $1 and slug = 'administrators')`,
+      [orgId],
+    );
+    await this.query(
+      `insert into delivery_binding (org_id, audience, channel_plugin, recipient, enabled)
+         values ($1, 'administrators', 'telegram', '{"chatId":"eval"}', true)`,
+      [orgId],
+    );
+  }
+
+  async deliveredOutputIds(orgId: string): Promise<string[]> {
+    const rows = await this.query<{ key: string }>(
+      `select args->>'key' as key from river.river_job
+         where kind = 'channel_deliver' and args->>'orgId' = $1 and args->>'key' like 'output-%-telegram' order by id`,
+      [orgId],
+    );
+    return rows.map((row) => row.key.slice("output-".length, -"-telegram".length));
+  }
+
+  private async query<T extends pg.QueryResultRow>(text: string, values: unknown[]): Promise<T[]> {
+    const client = new pg.Client({ ...this.host.login, database: this.database, ssl: false });
+    await client.connect();
+    try {
+      return (await client.query<T>(text, values)).rows;
+    } finally {
+      await client.end();
+    }
+  }
+
   async readTrace(runId: string): Promise<{ events: Record<string, unknown>[]; steps: Record<string, unknown>[] }> {
     const text = await readFile(this.tracePath, "utf8").catch(() => "");
     const events: Record<string, unknown>[] = [];
@@ -444,7 +475,7 @@ export class EvalEpisode {
     return `${await tail("serve.log")}\n${await tail("web.log")}`;
   }
 
-  async start(options: EvalEpisodeOptions, hooks: EvalWorkerHooks): Promise<void> {
+  async start(options: EvalEpisodeOptions): Promise<void> {
     installExitHooks();
     for (const dir of [this.home, this.runsRoot, this.filesRoot, join(this.root, "app")]) {
       await mkdir(dir, { recursive: true, mode: 0o700 });
@@ -473,15 +504,6 @@ export class EvalEpisode {
           create: async (input) => {
             const request = await createActionRequest(input as Parameters<typeof createActionRequest>[0]);
             return { id: request.id, status: request.status };
-          },
-        },
-        outputs: {
-          deliver: (orgId, output) => {
-            hooks.onOutputDelivered?.(orgId, output);
-            notifyWorkflowOutputDeliveryHook(
-              orgId,
-              output as unknown as Parameters<typeof notifyWorkflowOutputDeliveryHook>[1],
-            );
           },
         },
       }),
@@ -696,7 +718,7 @@ export class EvalInstallHost {
     if (this.live.delete(episode)) this.waiters.shift()?.();
   }
 
-  async startEpisode(options: EvalEpisodeOptions, hooks: EvalWorkerHooks = {}): Promise<EvalEpisode> {
+  async startEpisode(options: EvalEpisodeOptions): Promise<EvalEpisode> {
     await this.slot();
     const database = episodeDatabaseName(options.label);
     const root = await mkdtemp(join(tmpdir(), evalEpisodeFolderPrefix(this.login)));
@@ -707,7 +729,7 @@ export class EvalInstallHost {
       await this.pool().query(
         `create database ${quoteIdent(database)} template ${quoteIdent(EVAL_TEMPLATE_DATABASE)}`,
       );
-      await episode.start(options, hooks);
+      await episode.start(options);
       return episode;
     } catch (cause) {
       await episode.stop().catch(() => {});

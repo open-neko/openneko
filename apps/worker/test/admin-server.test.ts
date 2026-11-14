@@ -257,31 +257,6 @@ describe("worker admin HTTP handler", () => {
     }
   });
 
-  it("POST /admin/workflow-outputs/deliver hands the output to the delivery hook", async () => {
-    const deliver = vi.fn();
-    const srv = await startServer(createAdminHandler({ outputs: { deliver } }));
-    const post = (port: number, body: string) =>
-      fetch(`http://127.0.0.1:${port}/admin/workflow-outputs/deliver`, { method: "POST", body });
-    try {
-      const output = { id: "out-1", title: "Low stock", body: "Three items", mood: "act", workflowRunId: "run-1" };
-      const res = await post(srv.port, JSON.stringify({ orgId: "org-test", output }));
-      expect(res.status).toBe(202);
-      expect(deliver).toHaveBeenCalledWith("org-test", output);
-      for (const bad of ["{}", "nope", JSON.stringify({ orgId: "org-test", output: [] }), JSON.stringify({ orgId: "", output })]) {
-        expect((await post(srv.port, bad)).status).toBe(400);
-      }
-      expect(deliver).toHaveBeenCalledTimes(1);
-      const closed = await startServer(createAdminHandler());
-      try {
-        expect((await post(closed.port, JSON.stringify({ orgId: "org-test", output }))).status).toBe(503);
-      } finally {
-        await closed.close();
-      }
-    } finally {
-      await srv.close();
-    }
-  });
-
   it("unknown path returns 404", async () => {
     const srv = await startServer(createAdminHandler({ exit }));
     try {
@@ -1246,7 +1221,6 @@ describe("worker channel routes", () => {
   ): NonNullable<Parameters<typeof createAdminHandler>[0]["channels"]> {
     return {
       getChannelProviders: overrides.getChannelProviders ?? (async () => []),
-      deliver: overrides.deliver ?? (async () => ({ delivered: true, ref: "1" })),
       ingestInbound: overrides.ingestInbound ?? (async () => ({ ok: true, dispatched: 0 })),
       ...(overrides.settings ? { settings: overrides.settings } : {}),
       ...(overrides.setSettings ? { setSettings: overrides.setSettings } : {}),
@@ -1289,52 +1263,7 @@ describe("worker channel routes", () => {
     }
   });
 
-  it("POST /admin/channels/:p/deliver proxies recipient + events to the surface", async () => {
-    let captured: { plugin?: string; recipient?: unknown; events?: unknown[] } = {};
-    const srv = await startServer(
-      createAdminHandler({
-        channels: fakeChannel({
-          deliver: async (plugin, recipient, events) => {
-            captured = { plugin, recipient, events };
-            return { delivered: true, ref: "278" };
-          },
-        }),
-      }),
-    );
-    try {
-      const res = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/channels/telegram/deliver`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ recipient: { kind: "telegram", chatId: 5 }, events: [{ kind: "inform" }] }),
-        },
-      );
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ delivered: true, ref: "278" });
-      expect(captured.plugin).toBe("telegram");
-      expect((captured.recipient as { chatId: number }).chatId).toBe(5);
-      expect(captured.events).toHaveLength(1);
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("POST /admin/channels/:p/deliver returns 400 on missing events", async () => {
-    const srv = await startServer(createAdminHandler({ channels: fakeChannel() }));
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/channels/x/deliver`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recipient: { kind: "x" } }),
-      });
-      expect(res.status).toBe(400);
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("POST /admin/channels/:p/deliver returns 503 when surface absent", async () => {
+  it("POST /admin/channels/:p/deliver is gone: openneko web sends", async () => {
     const srv = await startServer(createAdminHandler());
     try {
       const res = await fetch(`http://127.0.0.1:${srv.port}/admin/channels/x/deliver`, {
@@ -1342,7 +1271,7 @@ describe("worker channel routes", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ recipient: { kind: "x" }, events: [] }),
       });
-      expect(res.status).toBe(503);
+      expect(res.status).toBe(404);
     } finally {
       await srv.close();
     }

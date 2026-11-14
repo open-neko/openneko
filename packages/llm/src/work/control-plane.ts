@@ -33,7 +33,6 @@ import {
   type WorkflowOutputInput,
   type WorkflowOutputRecord,
 } from "../workflows/store";
-import { notifyWorkflowOutputDeliveryHook } from "../workflows/output-delivery";
 import {
   rememberWorkMemory,
   searchWorkMemoryByContext,
@@ -850,9 +849,7 @@ export class InProcessControlPlane implements AgentControlPlane {
   async emitWorkflowOutput(
     input: WorkflowOutputInput,
   ): Promise<Wire<WorkflowOutputRecord>> {
-    const output = await emitWorkflowOutput(input);
-    notifyWorkflowOutputDeliveryHook(input.orgId, output);
-    return toWire(output);
+    return toWire(await emitWorkflowOutput(input));
   }
 
   async listWorkflowsWithTriggers(input: {

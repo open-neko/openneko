@@ -255,10 +255,8 @@ describe.skipIf(!reachable)("eval install episode", () => {
       expect(existsSync(leftoverFolder)).toBe(false);
 
       model = await ScriptedModelServer.start();
-      const delivered: string[] = [];
       const episode = await host.startEpisode(
         { label: "install-test" },
-        { onOutputDelivered: (_org, output) => delivered.push(String(output.id)) },
       );
       const { root, database } = episode;
       try {
@@ -348,7 +346,7 @@ describe.skipIf(!reachable)("eval install episode", () => {
         expect(trace.steps.some((step) => step.operation === "memory.search")).toBe(true);
         expect((await stat(episode.tracePath)).mode & 0o777).toBe(0o600);
         expect(JSON.stringify(trace)).not.toContain(episode.modelKey);
-        expect(delivered).toEqual([]);
+        expect(await episode.deliveredOutputIds(orgId)).toEqual([]);
       } finally {
         await episode.stop();
       }

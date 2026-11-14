@@ -7,7 +7,6 @@ import { readSecretsStore, writeSecretsStore } from "@neko/secrets";
 import {
   channelEnv,
   channelSettings,
-  deliverOnChannel,
   enabledChannelIds,
   getChannelProviders,
   migrateLegacyChannelSecrets,
@@ -51,8 +50,7 @@ describe("enabled channels", () => {
     expect(await enabledChannelIds()).toEqual([]);
   });
 
-  it("refuses delivery and webhooks for a channel that is off", async () => {
-    await expect(deliverOnChannel("telegram", { chatId: 1 }, [])).rejects.toThrow(/not turned on/);
+  it("refuses webhooks for a channel that is off", async () => {
     expect(await verifyChannelInbound("telegram", {}, "{}")).toBe(false);
   });
 });

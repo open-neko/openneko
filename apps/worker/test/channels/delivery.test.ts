@@ -7,7 +7,6 @@ vi.mock("@neko/llm/workflows", () => ({
   getActionRequest: vi.fn(),
   approveActionRequest: vi.fn(async () => ({})),
   rejectActionRequest: vi.fn(async () => ({})),
-  setWorkflowOutputDeliveryHook: vi.fn(),
 }));
 vi.mock("@neko/db/jobs", () => ({
   enqueueActionExecute: vi.fn(async () => "1"),
@@ -17,7 +16,6 @@ vi.mock("@neko/db/jobs", () => ({
 const h = vi.hoisted(() => ({
   binds: [] as Array<Record<string, unknown>>,
   selectRows: [] as unknown[],
-  audience: vi.fn(async (_org: string, audience: string, _run: string) => audience !== "finance"),
 }));
 vi.mock("@neko/db", () => ({
   db: vi.fn(() => ({
@@ -29,8 +27,6 @@ vi.mock("@neko/db", () => ({
     }),
     select: () => ({
       from: () => ({
-        // Awaitable (onOutput awaits .where() directly) AND chainable with
-        // .limit() (ensureInboundBinding uses .where().limit(1)).
         where: () =>
           Object.assign(Promise.resolve(h.selectRows), {
             limit: async () => h.selectRows,
@@ -43,7 +39,6 @@ vi.mock("@neko/db", () => ({
   delivery_binding: { org_id: {}, enabled: {}, channel_plugin: {}, id: {} },
   processing_job: { id: {} },
 }));
-vi.mock("../../src/channels/audience", () => ({ audienceReceivesOutput: h.audience }));
 vi.mock("@neko/llm", () => ({ resolveAgentBackend: vi.fn(async () => ({ id: "ax" })) }));
 vi.mock("@neko/llm/work", () => ({
   createWorkThread: vi.fn(async () => ({ id: "thread-1" })),
@@ -53,9 +48,6 @@ vi.mock("@neko/llm/work", () => ({
   channelThreadId: vi.fn(() => "tid-1"),
   getWorkThread: vi.fn(async () => null),
 }));
-vi.mock("@neko/llm/interaction", () => ({
-  outputRowToInteractionEvent: (r: unknown) => ({ kind: "inform", ...(r as object) }),
-}));
 vi.mock("../../src/channels/inbound-store.js", () => ({
   inboundUpdateKey: vi.fn(() => "update-key"),
   beginInboundUpdate: vi.fn(async () => ({ proceed: true, attempts: 0, dead: false })),
@@ -63,7 +55,6 @@ vi.mock("../../src/channels/inbound-store.js", () => ({
   recordInboundFailure: vi.fn(async () => ({ dead: false, attempts: 1 })),
 }));
 vi.mock("../../src/channels/runtime.js", () => ({
-  deliverOnChannel: vi.fn(),
   parseChannelInbound: vi.fn(),
   verifyChannelInbound: vi.fn(),
 }));
@@ -73,7 +64,6 @@ import {
   approveActionRequest,
   getActionRequest,
   rejectActionRequest,
-  setWorkflowOutputDeliveryHook,
 } from "@neko/llm/workflows";
 import { createWorkRun, getOrCreateChannelThread, getWorkThread } from "@neko/llm/work";
 import {
@@ -82,7 +72,6 @@ import {
   dispatchInboundIntent,
   ensureInboundBinding,
   ingestInboundWebhook,
-  registerChannelOutputDelivery,
 } from "../../src/channels/delivery";
 import {
   beginInboundUpdate,
@@ -273,34 +262,6 @@ describe("deliverChatReply (channel reply path)", () => {
 
   it("does not enqueue an empty reply", async () => {
     await deliverChatReply("org-1", "p", {}, "run-9", "   ");
-    expect(enqueueChannelDeliver).not.toHaveBeenCalled();
-  });
-});
-
-describe("output → channel fan-out (registerChannelOutputDelivery)", () => {
-  it("enqueues one durable delivery per enabled binding, keyed by output+plugin", async () => {
-    h.selectRows = [
-      { channel_plugin: "telegram", recipient: { chatId: 1 } },
-      { channel_plugin: "@open-neko/channel-slack", recipient: { chatId: 2 } },
-      { channel_plugin: "@open-neko/channel-slack", recipient: { chatId: 3 }, audience: "finance" },
-    ];
-    registerChannelOutputDelivery();
-    const hook = vi.mocked(setWorkflowOutputDeliveryHook).mock.calls[0][0];
-    await hook("org-1", { id: "o1", workflowRunId: "wr-1", title: "Sales", body: "up 4%", mood: "good" } as never);
-    expect(h.audience).toHaveBeenCalledWith("org-1", "finance", "wr-1");
-    expect(enqueueChannelDeliver).toHaveBeenCalledTimes(2);
-    const keys = vi.mocked(enqueueChannelDeliver).mock.calls.map((c) => c[1]);
-    expect(keys).toEqual([
-      "output-o1-telegram",
-      "output-o1-@open-neko/channel-slack",
-    ]);
-  });
-
-  it("no bindings → no deliveries", async () => {
-    h.selectRows = [];
-    registerChannelOutputDelivery();
-    const hook = vi.mocked(setWorkflowOutputDeliveryHook).mock.calls[0][0];
-    await hook("org-1", { id: "o1", title: "t", body: "b" } as never);
     expect(enqueueChannelDeliver).not.toHaveBeenCalled();
   });
 });

@@ -3,10 +3,6 @@ package webfront
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"net/http"
-	"net/http/httptest"
-	"slices"
 	"strings"
 	"testing"
 
@@ -157,46 +153,5 @@ func TestChatReplyEvent(t *testing.T) {
 	if !strings.Contains(body, `"children":["answer-body","vital-0"]`) || !strings.Contains(body, `{"id":"answer-body","component":"Markdown","text":"Up 4%."}`) ||
 		!strings.Contains(body, `{"id":"vital-0","component":"MetricCard","metric":"$18,400","label":"Revenue","detail":"+4%"}`) {
 		t.Errorf("reply surface %s", body)
-	}
-}
-
-func TestChannelDeliverJob(t *testing.T) {
-	var status int
-	var reply string
-	var calls []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		calls = append(calls, r.Method+" "+r.URL.EscapedPath()+" "+string(body))
-		w.WriteHeader(status)
-		_, _ = w.Write([]byte(reply))
-	}))
-	defer srv.Close()
-	a := &API{Gate: &Gate{WorkerURL: srv.URL}}
-	job := jobs.ChannelDeliverArgs{OrgID: "org", ChannelPlugin: "telegram", Recipient: json.RawMessage(`{"chatId":7}`),
-		Events: json.RawMessage(`[{"kind":"converse","text":"hi"}]`), Key: "reply-r1"}
-	status, reply = 200, `{"delivered":true,"ref":"299"}`
-	if err := a.ChannelDeliver(t.Context(), job); err != nil {
-		t.Errorf("delivered: %v", err)
-	}
-	if !slices.Equal(calls, []string{`POST /admin/channels/telegram/deliver {"events":[{"kind":"converse","text":"hi"}],"recipient":{"chatId":7}}`}) {
-		t.Errorf("calls: %v", calls)
-	}
-	status, reply = 200, `{"delivered":false}`
-	if err := a.ChannelDeliver(t.Context(), job); err == nil || err.Error() != "channel-delivery: telegram reported delivered=false" {
-		t.Errorf("not delivered: %v", err)
-	}
-	status, reply = 500, `{"error":"channel telegram is not turned on"}`
-	if err := a.ChannelDeliver(t.Context(), job); err == nil || err.Error() != "channel-delivery: telegram failed (500): channel telegram is not turned on" {
-		t.Errorf("channel off: %v", err)
-	}
-	calls = nil
-	status, reply = 200, `{"delivered":true}`
-	job.ChannelPlugin = "@open-neko/channel-slack"
-	if err := a.ChannelDeliver(t.Context(), job); err != nil || len(calls) != 1 || !strings.HasPrefix(calls[0], "POST /admin/channels/@open-neko%2Fchannel-slack/deliver ") {
-		t.Errorf("a package name: %v %v", err, calls)
-	}
-	a.Gate.WorkerURL = "http://127.0.0.1:1"
-	if err := a.ChannelDeliver(t.Context(), job); err == nil || !strings.Contains(err.Error(), "the worker did not answer") {
-		t.Errorf("worker down: %v", err)
 	}
 }

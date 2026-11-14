@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/open-neko/neko/apps/openneko/internal/secrets"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -142,7 +143,9 @@ func TestAdminItems(t *testing.T) {
 		values ('cccccccc-0000-4000-8000-000000000001', 'org', 'telegram', 'u1', now(), now(), now())`)
 	wk.reply["/admin/graphjin/api-operations"] = `{"operations":["erp:orders:list"]}`
 	wk.reply["/admin/connect/providers"] = `{"providers":[{"pluginName":"slack","providerLabel":"Slack"}]}`
-	wk.reply["/admin/channels/providers"] = `{"providers":[{"id":"slack","providerLabel":"Slack"}]}`
+	if err := secrets.Write(secrets.Store{"channel.slack": {"SLACK_BOT_TOKEN": "xoxb-1"}, "channel.hud": {"HUD_CHANNEL_WORKSPACE": "pack"}}, f.API.SecretsDir); err != nil {
+		t.Fatal(err)
+	}
 
 	w := call(f, "GET", "/api/v1/admin/items", "", admin)
 	if w.Code != 200 || !strings.HasPrefix(w.Body.String(), `{"types":[{"type":"skill","label":"Skill","plural":"Skills"},`) ||

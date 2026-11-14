@@ -4,10 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
-	"net/http"
-	"net/url"
 	"strconv"
 
 	"github.com/jackc/pgx/v5"
@@ -226,39 +223,4 @@ func (a *API) queueChannelDelivery(ctx context.Context, orgID, channel string, r
 		return err
 	}
 	return tx.Commit(ctx)
-}
-
-// ChannelDeliver is the channel_deliver job. The worker sends on the
-// channel; any answer but a delivery fails the attempt, and River tries
-// again.
-func (a *API) ChannelDeliver(ctx context.Context, job jobs.ChannelDeliverArgs) error {
-	body, err := json.Marshal(map[string]json.RawMessage{"recipient": job.Recipient, "events": job.Events})
-	if err != nil {
-		return err
-	}
-	status, reply, err := a.workerDo(ctx, http.MethodPost, "/admin/channels/"+url.PathEscape(job.ChannelPlugin)+"/deliver", jobs.ChannelDeliverTimeout, body)
-	if err != nil {
-		return fmt.Errorf("channel-delivery: %s: the worker did not answer: %w", job.ChannelPlugin, err)
-	}
-	var out struct {
-		Delivered bool   `json:"delivered"`
-		Ref       string `json:"ref"`
-		Error     string `json:"error"`
-	}
-	_ = json.Unmarshal(reply, &out)
-	if status != http.StatusOK {
-		if out.Error == "" {
-			out.Error = http.StatusText(status)
-		}
-		return fmt.Errorf("channel-delivery: %s failed (%d): %s", job.ChannelPlugin, status, out.Error)
-	}
-	if !out.Delivered {
-		return fmt.Errorf("channel-delivery: %s reported delivered=false", job.ChannelPlugin)
-	}
-	ref := ""
-	if out.Ref != "" {
-		ref = " ref=" + out.Ref
-	}
-	log.Printf("[channel-delivery] %s delivered=true%s", job.ChannelPlugin, ref)
-	return nil
 }
