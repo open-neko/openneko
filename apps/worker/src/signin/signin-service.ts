@@ -12,11 +12,8 @@ import type { CoreSecrets } from "../secrets/core-secrets.js";
 import {
   applyScalekitDirectoryChange,
   beginScalekitConnect,
-  callScalekitTool,
   completeScalekitConnect,
   listScalekitDirectory,
-  refreshScalekitConnect,
-  scalekitCredentialNearExpiry,
   SCALEKIT_DIRECTORY,
   SCALEKIT_SETTINGS,
   SCALEKIT_WORKSPACE_LABEL,
@@ -167,32 +164,7 @@ export class SignInService {
     return credential;
   }
 
-  async refreshConnect(name: string, _operatorId: string): Promise<ConnectorCredential> {
-    this.requireConnector(name);
-    const current = this.workspaceCredential();
-    if (!current) throw new Error("the Scalekit workspace is not connected");
-    const credential = await refreshScalekitConnect(current, this.options.scalekit);
-    await this.secrets.setOperatorCredential(DEPLOYMENT_CONNECT_SLOT, "scalekit", credential);
-    return credential;
-  }
-
   async disconnect(name: string, _operatorId: string): Promise<boolean> {
     return this.secrets.setOperatorCredential(DEPLOYMENT_CONNECT_SLOT, name, null);
-  }
-
-  /**
-   * Calls one Scalekit workspace tool for the SSO setup flow, refreshing
-   * the deployment credential first when it is about to expire.
-   */
-  async callWorkspaceTool(tool: string, args: Record<string, unknown>): Promise<string> {
-    let credential = this.workspaceCredential();
-    if (credential && scalekitCredentialNearExpiry(credential)) {
-      try {
-        credential = await this.refreshConnect("scalekit", DEPLOYMENT_CONNECT_SLOT);
-      } catch (err) {
-        console.warn(`[signin] Scalekit workspace token refresh failed: ${err instanceof Error ? err.message : err}`);
-      }
-    }
-    return callScalekitTool(tool, args, credential, this.providerValues("scalekit"), this.options.scalekit);
   }
 }

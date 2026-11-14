@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { ConnectorCredential } from "@neko/secrets";
 import {
   beginScalekitConnect,
-  callScalekitTool,
   completeScalekitConnect,
-  refreshScalekitConnect,
-  scalekitCredentialNearExpiry,
 } from "../../../src/signin/scalekit/provider";
 import {
   pkceChallenge,
@@ -207,38 +203,6 @@ describe("workspace consent (mcp-oauth)", () => {
     expect(tokens.expires_at).toBeTypeOf("string");
   });
 
-  it("refresh rotates the stored credential", async () => {
-    const current: ConnectorCredential = {
-      tokens: {
-        access_token: "at-old",
-        refresh_token: "rt-old",
-        expires_at: "0",
-        token_endpoint: "https://as.scalekit.com/token",
-        client_id: "dcr-client-1",
-        client_secret: "",
-      },
-      connectedAt: new Date().toISOString(),
-    };
-    const recorder: FakeOauthRecorder = {
-      discoverResourceCalls: [],
-      discoverAsCalls: [],
-      registerCalls: [],
-      exchangeCalls: [],
-      refreshCalls: [],
-    };
-    const result = await refreshScalekitConnect(current, { createMcpOAuth: () => fakeMcpOauth({ recorder }) });
-    expect(recorder.refreshCalls[0]).toMatchObject({
-      refreshToken: "rt-old",
-      clientId: "dcr-client-1",
-    });
-    const tokens = result.tokens as Record<string, unknown>;
-    expect(tokens.access_token).toBe("at-refreshed");
-    expect(tokens.refresh_token).toBe("rt-rotated");
-    expect(result.refreshedAt).toBeTypeOf("string");
-    expect(scalekitCredentialNearExpiry(current)).toBe(true);
-    expect(scalekitCredentialNearExpiry(result)).toBe(false);
-  });
-
   it("complete without oauthState throws a clear error", async () => {
     await expect(
       completeScalekitConnect(
@@ -252,56 +216,5 @@ describe("workspace consent (mcp-oauth)", () => {
         { createMcpOAuth: () => fakeMcpOauth({}) },
       ),
     ).rejects.toThrow(/oauthState/);
-  });
-});
-
-describe("workspace tools", () => {
-  function credential(overrides: Record<string, unknown> = {}): ConnectorCredential {
-    return {
-      tokens: {
-        access_token: "at-fresh",
-        refresh_token: "rt-1",
-        expires_at: String(Date.now() + 3600_000),
-        token_endpoint: "https://as.scalekit.com/token",
-        client_id: "dcr-client-1",
-        client_secret: "",
-        ...overrides,
-      },
-      connectedAt: new Date().toISOString(),
-    };
-  }
-
-  it("calls the MCP tool with the arguments and returns the text", async () => {
-    const toolCalls: Array<{ name: string; args: Record<string, unknown>; url: string; token: string }> = [];
-    const text = await callScalekitTool("list_environments", { pageToken: "1" }, credential(), {}, {
-      createMcpClient: async ({ url, accessToken }) => ({
-        async callTool(name, args) {
-          toolCalls.push({ name, args, url, token: accessToken });
-          return { content: [{ type: "text", text: "env_1 DEV" }] };
-        },
-        async close() {},
-      }),
-    });
-    expect(text).toBe("env_1 DEV");
-    expect(toolCalls).toEqual([{ name: "list_environments", args: { pageToken: "1" }, url: MCP_URL, token: "at-fresh" }]);
-  });
-
-  it("surfaces a tool error as an exception", async () => {
-    await expect(
-      callScalekitTool("list_environments", {}, credential(), {}, {
-        createMcpClient: async () => ({
-          callTool: async () => ({ content: [{ type: "text", text: "forbidden" }], isError: true }),
-          close: async () => {},
-        }),
-      }),
-    ).rejects.toThrow("forbidden");
-  });
-
-  it("throws a clear error when the workspace is not connected", async () => {
-    await expect(
-      callScalekitTool("list_environments", {}, null, {}, {
-        createMcpClient: async () => ({ callTool: async () => ({ content: [] }), close: async () => {} }),
-      }),
-    ).rejects.toThrow(/not connected/);
   });
 });
