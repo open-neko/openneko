@@ -45,7 +45,6 @@ func threadsFront(t *testing.T) (*Front, *pgxpool.Pool) {
 	time.Local = time.UTC
 	t.Cleanup(func() { time.Local = saved })
 	f, _ := newSetupFront(t, `{"provider":{"pluginName":"scalekit"}}`, db)
-	seedPgBoss(t, db, f)
 	seedRiver(t, db, f)
 	seed(t, db, `insert into work_thread (id, org_id, title, channel, created_by_user_id, backend_state, created_at, updated_at, last_message_at) values
 		($1, 'org', '', 'web', 'member', '{"session":"s1","n":1}', '2026-11-05T08:00:00Z', '2026-11-05T08:00:00Z', '2026-11-05T09:00:00Z'),

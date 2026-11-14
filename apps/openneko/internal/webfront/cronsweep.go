@@ -20,9 +20,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"gopkg.in/yaml.v3"
-)
 
-const queueWorkflowRunFire = "workflow_run_fire"
+	"github.com/open-neko/neko/apps/openneko/internal/jobs"
+)
 
 // CronSweep is the minute workflow_cron_sweep: the behavior thresholds, then
 // the condition watchers. A failure in either half is logged and does not fail
@@ -474,16 +474,9 @@ func (a *API) sweepWatchersCounted(ctx context.Context, orgID string, now time.T
 			trigger.set("threshold", threshold)
 			trigger.set("op", w.op)
 			trigger.set("severity", w.severity)
-			job := &jsObj{}
-			job.set("orgId", orgID)
-			job.set("workflowId", w.workflowID)
-			job.set("triggerKind", "watcher")
-			job.set("triggerPayload", trigger)
-			if err := a.ensureQueue(ctx, queueWorkflowRunFire); err != nil {
-				return err
-			}
-			_, err := a.enqueueSingleton(ctx, tx, queueWorkflowRunFire, json.RawMessage(jsStringify(job, false)),
-				"watcher:"+w.id, max(w.cadence, quiet))
+			_, err := a.enqueueWorkflowRunFire(ctx, tx, jobs.WorkflowRunFireArgs{OrgID: orgID, WorkflowID: w.workflowID,
+				TriggerKind: "watcher", TriggerPayload: json.RawMessage(jsStringify(trigger, false))},
+				"watcher:"+w.id, time.Duration(max(w.cadence, quiet))*time.Second)
 			return err
 		})
 		if err != nil {

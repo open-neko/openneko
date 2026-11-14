@@ -136,6 +136,19 @@ export function mcpToolNames(prompt: string, server: string): string[] {
   ].sort();
 }
 
+export const BACKGROUND_RUN_ANSWER = "The scripted model runs no background workflow.";
+
+// A watcher or schedule fire runs its workflow in the episode while a member
+// turn is armed. Its requests get a final answer and never reach that turn.
+export function backgroundRunReply(request: ModelRequest): { status: number; content: string } | undefined {
+  const text = (request.messages ?? []).map((message) => messageText(message.content)).join("\n");
+  if (!text.includes("<mode>headless</mode>")) return undefined;
+  const kind = scriptedRequestKind(request);
+  if (kind === "rerank") return { status: 200, content: `Fitting: ${JSON.stringify(rerankNames(text))}` };
+  if (kind === "responder") return { status: 200, content: `Answer: ${BACKGROUND_RUN_ANSWER}` };
+  return { status: 200, content: JSON.stringify({ javascriptCode: "final('Report the scripted answer', {})" }) };
+}
+
 export class ScriptedTurn {
   prompt = "";
   finalText?: string;
@@ -298,6 +311,11 @@ export class ScriptedModelServer {
       request = JSON.parse(body) as ModelRequest;
     } catch {
       respond(res, {}, 400, "the request is not JSON");
+      return;
+    }
+    const background = backgroundRunReply(request);
+    if (background) {
+      respond(res, request, background.status, background.content);
       return;
     }
     if (!this.turn) {

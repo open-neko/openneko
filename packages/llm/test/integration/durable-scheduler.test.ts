@@ -8,7 +8,6 @@ import {
   uniqueOrgId,
 } from "@neko/db/test-helpers";
 import {
-  claimWorkflowScheduleFiring,
   leasePendingWorkflowFirings,
   materializeDueWorkflowFirings,
   recoverStaleWorkflowScheduleFirings,
@@ -128,7 +127,7 @@ describeIfDb("durable workflow scheduler persistence", () => {
     expect(Number(count.rows[0]?.total)).toBe(1);
   });
 
-  it("re-leases a crashed dispatch and permits only one consumer claim", async () => {
+  it("re-leases a crashed dispatch", async () => {
     const firstLeaseAt = new Date("2030-08-26T07:06:31.000Z");
     const first = await leasePendingWorkflowFirings({
       orgId,
@@ -154,21 +153,6 @@ describeIfDb("durable workflow scheduler persistence", () => {
       limit: 10,
     });
     expect(afterCrash.find((row) => row.id === target.id)?.attempts).toBe(2);
-
-    expect(
-      await claimWorkflowScheduleFiring({
-        firingId: target.id,
-        orgId,
-        workflowId,
-      }),
-    ).toBe(true);
-    expect(
-      await claimWorkflowScheduleFiring({
-        firingId: target.id,
-        orgId,
-        workflowId,
-      }),
-    ).toBe(false);
   });
 
   it("catches up a definition first seen after worker downtime", async () => {

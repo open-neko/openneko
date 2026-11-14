@@ -16,11 +16,10 @@ An independent 30-second worker loop:
 
 1. Synchronizes active definitions and materializes due firings.
 2. Recovers expired dispatch/run leases.
-3. Leases pending firings and delivers them to `workflow_run_fire` via
-   pg-boss.
+3. Leases pending firings and delivers them to `workflow_run_fire` on River.
+   `openneko web` runs the job.
 
-pg-boss is the delivery transport, not the schedule clock or source of truth.
-The minute pg-boss queue remains only for behavior and watcher maintenance.
+River is the delivery transport, not the schedule clock or source of truth.
 
 ### Delivery and recovery
 
@@ -36,7 +35,7 @@ work.
 | After queue send, before marking it enqueued       | The dispatch lease expires and the delivery is safely sent again.          |
 | Duplicate queue delivery                           | Only the first ledger claim succeeds.                                     |
 | Schedule disabled or edited before claim           | The unclaimed firing is cancelled; a queued duplicate cannot claim it.    |
-| Worker interruption during an agent run            | The run lease returns to pending for retry.                               |
+| A stop of `openneko web` during an agent run      | The run lease returns to pending for retry.                               |
 | Ledger completion update lost after a terminal run | Recovery observes the terminal run and completes the firing.              |
 
 External action adapters still need their own idempotency keys: no scheduler

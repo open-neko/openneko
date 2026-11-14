@@ -34,8 +34,6 @@ type API struct {
 	SecureCookies bool
 	// SecretsDir overrides the config folder that holds secrets.json.
 	SecretsDir string
-	// BossSchema overrides the pg-boss schema, pgboss; tests set it.
-	BossSchema string
 	// Jobs adds River jobs in a route's transaction.
 	Jobs *jobs.Inserter
 	// DBRole is the role that a password change rotates; "" means neko.
@@ -56,7 +54,6 @@ type API struct {
 	once   sync.Once
 	routes map[string]map[string]http.HandlerFunc
 	orgMu  sync.Mutex
-	queues sync.Map
 	orgID  string
 
 	hookWaiters atomic.Int64

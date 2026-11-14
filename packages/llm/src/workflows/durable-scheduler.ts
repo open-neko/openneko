@@ -5,7 +5,6 @@ export const WORKFLOW_SCHEDULER_HEALTH_ID = "cron";
 export const WORKFLOW_SCHEDULER_LOCK_KEY =
   "openneko.workflow-scheduler.materialize";
 export const DEFAULT_DISPATCH_LEASE_MS = 2 * 60_000;
-export const DEFAULT_RUN_LEASE_MS = 30 * 60_000;
 export const DEFAULT_REPLAY_LIMIT = 24;
 const MAX_COALESCE_SCAN = 1_000;
 
@@ -531,83 +530,6 @@ export async function releaseWorkflowFiringDispatch(
       now,
       delaySeconds,
     ],
-  );
-}
-
-export async function claimWorkflowScheduleFiring(input: {
-  firingId: string;
-  orgId: string;
-  workflowId: string;
-  now?: Date;
-  leaseMs?: number;
-}): Promise<boolean> {
-  const now = input.now ?? new Date();
-  const leaseUntil = new Date(
-    now.getTime() + (input.leaseMs ?? DEFAULT_RUN_LEASE_MS),
-  );
-  const claimed = await pool().query(
-    `update workflow_schedule_firing
-     set status = 'running', lease_until = $4, updated_at = $3
-     where id = $1 and org_id = $2 and workflow_id = $5
-       and status in ('pending', 'dispatching', 'enqueued')
-     returning id`,
-    [input.firingId, input.orgId, now, leaseUntil, input.workflowId],
-  );
-  return (claimed.rowCount ?? 0) === 1;
-}
-
-export async function linkWorkflowScheduleFiringRun(
-  firingId: string,
-  workflowRunId: string,
-  now = new Date(),
-): Promise<void> {
-  await pool().query(
-    `update workflow_schedule_firing
-     set workflow_run_id = $2, updated_at = $3
-     where id = $1 and status = 'running'`,
-    [firingId, workflowRunId, now],
-  );
-}
-
-export async function completeWorkflowScheduleFiring(
-  firingId: string,
-  now = new Date(),
-): Promise<void> {
-  await pool().query(
-    `update workflow_schedule_firing
-     set status = 'completed', lease_until = null, completed_at = $2,
-         last_error = null, updated_at = $2
-     where id = $1`,
-    [firingId, now],
-  );
-}
-
-export async function releaseWorkflowScheduleFiringRun(
-  firingId: string,
-  error: unknown,
-  now = new Date(),
-): Promise<void> {
-  await pool().query(
-    `update workflow_schedule_firing
-     set status = 'pending', workflow_run_id = null, lease_until = null,
-         available_at = $3 + interval '15 seconds', last_error = $2,
-         updated_at = $3
-     where id = $1 and status = 'running'`,
-    [firingId, error instanceof Error ? error.message : String(error), now],
-  );
-}
-
-export async function cancelWorkflowScheduleFiring(
-  firingId: string,
-  reason: string,
-  now = new Date(),
-): Promise<void> {
-  await pool().query(
-    `update workflow_schedule_firing
-     set status = 'cancelled', workflow_run_id = null, lease_until = null,
-         completed_at = $3, last_error = $2, updated_at = $3
-     where id = $1 and status = 'running'`,
-    [firingId, reason, now],
   );
 }
 

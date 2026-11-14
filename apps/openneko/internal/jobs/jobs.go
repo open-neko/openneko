@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -40,7 +41,10 @@ type Queue struct {
 	SkillLearn    func(ctx context.Context, orgID, skillName string) error
 	BotNameSweep  func(context.Context) error
 	Build         BuildFunc
-	Embedding     Embedding
+	// WorkflowRunFire runs the workflow_run_fire jobs that are not API
+	// runs; the worker runs those from pg-boss.
+	WorkflowRunFire WorkflowRunFireFunc
+	Embedding       Embedding
 }
 
 func (q *Queue) schema() string {
@@ -80,7 +84,7 @@ func (q *Queue) Migrate(ctx context.Context) error {
 	if len(res.Versions) > 0 {
 		q.logf("[migrate] job queue: %d River migration(s) applied", len(res.Versions))
 	}
-	for _, name := range Moved {
+	for _, name := range append(slices.Clone(Moved), KindWorkflowRunFire) {
 		n, err := q.drain(ctx, name)
 		if err != nil {
 			return fmt.Errorf("move the %s jobs from pg-boss: %w", name, err)
@@ -111,6 +115,7 @@ func (q *Queue) drain(ctx context.Context, name string) (int64, error) {
 	tag, err := tx.Exec(ctx, `
 with moved as (
   delete from `+boss+`.job where name = $1 and state in ('created', 'retry')
+    and ($1 <> '`+KindWorkflowRunFire+`' or coalesce(data->>'triggerKind', '') <> 'api')
   returning name, data, retry_limit, start_after
 )
 insert into `+river+`.river_job (kind, args, max_attempts, scheduled_at, state, queue)
@@ -120,7 +125,7 @@ from moved`, name, queueOf(name))
 	if err != nil {
 		return 0, err
 	}
-	if schedule != nil {
+	if schedule != nil && name != KindWorkflowRunFire {
 		if _, err := tx.Exec(ctx, `delete from `+boss+`.schedule where name = $1`, name); err != nil {
 			return 0, err
 		}
@@ -134,6 +139,8 @@ func queueOf(kind string) string {
 		return QueueEmbedding
 	case KindMetricRefresh:
 		return QueueMetricRefresh
+	case KindWorkflowRunFire:
+		return QueueWorkflowRun
 	}
 	return river.QueueDefault
 }
@@ -170,11 +177,12 @@ func (q *Queue) config() *river.Config {
 	river.AddWorker(workers, &skillLearn{run: q.SkillLearn})
 	river.AddWorker(workers, &botNameSweep{run: q.BotNameSweep})
 	addBuildWorkers(workers, q.Build)
+	river.AddWorker(workers, &workflowRunFire{run: q.WorkflowRunFire})
 	return &river.Config{
 		Schema: q.schema(),
 		Logger: quietLogger(),
 		Queues: map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 4}, QueueEmbedding: {MaxWorkers: 1},
-			QueueMetricRefresh: {MaxWorkers: MetricRefreshWorkers()}},
+			QueueMetricRefresh: {MaxWorkers: MetricRefreshWorkers()}, QueueWorkflowRun: {MaxWorkers: 1}},
 		Workers: workers,
 	}
 }

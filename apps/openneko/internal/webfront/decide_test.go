@@ -2,7 +2,6 @@ package webfront
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 
@@ -12,21 +11,6 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
-
-func seedPgBoss(t *testing.T, db *pgxpool.Pool, f *Front) {
-	t.Helper()
-	ddl, err := os.ReadFile("testdata/pgboss-10.4.2.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var schema string
-	if err := db.QueryRow(context.Background(), `select current_schema() || '_boss'`).Scan(&schema); err != nil {
-		t.Fatal(err)
-	}
-	seed(t, db, strings.ReplaceAll(string(ddl), "pgboss", schema))
-	t.Cleanup(func() { db.Exec(context.Background(), "drop schema "+schema+" cascade") }) //nolint:errcheck
-	f.API.BossSchema = schema
-}
 
 func seedRiver(t *testing.T, db *pgxpool.Pool, f *Front) {
 	t.Helper()
@@ -80,31 +64,6 @@ func riverQueueJobs(t *testing.T, db *pgxpool.Pool, kind, queue string) []riverJ
 	return out
 }
 
-type queuedJob struct {
-	Data                  string
-	RetryLimit, RetryWait int
-	KeepDays              float64
-}
-
-func bossJobs(t *testing.T, db *pgxpool.Pool, f *Front, queue string) []queuedJob {
-	t.Helper()
-	rows, err := db.Query(context.Background(), `select data::text, retry_limit, retry_delay,
-		extract(epoch from keep_until - start_after) / 86400 from `+f.API.BossSchema+`.job where name = $1 order by created_on`, queue)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var out []queuedJob
-	for rows.Next() {
-		var j queuedJob
-		if err := rows.Scan(&j.Data, &j.RetryLimit, &j.RetryWait, &j.KeepDays); err != nil {
-			t.Fatal(err)
-		}
-		out = append(out, j)
-	}
-	return out
-}
-
 func lastAudit(t *testing.T, db *pgxpool.Pool, id string) string {
 	t.Helper()
 	var event, payload string
@@ -121,7 +80,6 @@ func TestActionRequestDecision(t *testing.T) {
 	db := testpg.Migrated(t)
 	seedDaily(t, db)
 	f, _ := newSetupFront(t, `{"provider":{"pluginName":"scalekit"}}`, db)
-	seedPgBoss(t, db, f)
 	seedRiver(t, db, f)
 	admin, member := sessionCookie("admin"), sessionCookie("member")
 	patch := func(id, body string, who map[string]string) (int, string) {

@@ -46,29 +46,32 @@ insert into `+b+`.job (name, data, state, retry_limit, start_after) values
   ('workflow_output_ttl_sweep', '{"a":1}', 'created', 1, now()),
   ('workflow_output_ttl_sweep', null, 'retry', 0, now() + interval '1 hour'),
   ('workflow_output_ttl_sweep', null, 'completed', 1, now()),
-  ('work_run', '{"b":2}', 'created', 2, now());
-insert into `+b+`.schedule values ('workflow_output_ttl_sweep'), ('work_run');`); err != nil {
+  ('work_run', '{"b":2}', 'created', 2, now()),
+  ('workflow_run_fire', '{"triggerKind":"cron"}', 'created', 2, now()),
+  ('workflow_run_fire', '{"triggerKind":"api"}', 'created', 2, now());
+insert into `+b+`.schedule values ('workflow_output_ttl_sweep'), ('work_run'), ('workflow_run_fire');`); err != nil {
 		t.Fatal(err)
 	}
 	if err := q.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := pool.Query(ctx, `select kind, args::text, max_attempts, state::text from `+q.Schema+`.river_job order by state`)
+	rows, err := pool.Query(ctx, `select kind, args::text, max_attempts, state::text, queue from `+q.Schema+`.river_job order by state, kind`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var got []string
 	for rows.Next() {
-		var kind, args, state string
+		var kind, args, state, queue string
 		var attempts int
-		if err := rows.Scan(&kind, &args, &attempts, &state); err != nil {
+		if err := rows.Scan(&kind, &args, &attempts, &state, &queue); err != nil {
 			t.Fatal(err)
 		}
-		got = append(got, fmt.Sprintf("%s %s %s %d", kind, args, state, attempts))
+		got = append(got, fmt.Sprintf("%s %s %s %d %s", kind, args, state, attempts, queue))
 	}
 	want := []string{
-		`workflow_output_ttl_sweep {"a": 1} available 2`,
-		`workflow_output_ttl_sweep {} scheduled 1`,
+		`workflow_output_ttl_sweep {"a": 1} available 2 default`,
+		`workflow_run_fire {"triggerKind": "cron"} available 3 workflow_run`,
+		`workflow_output_ttl_sweep {} scheduled 1 default`,
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("river jobs = %q, want %q", got, want)
@@ -83,7 +86,8 @@ insert into `+b+`.schedule values ('workflow_output_ttl_sweep'), ('work_run');`)
 		_ = rows.Scan(&s)
 		left = append(left, s)
 	}
-	if want := []string{"schedule work_run", "work_run created", "workflow_output_ttl_sweep completed"}; !slices.Equal(left, want) {
+	if want := []string{"schedule work_run", "schedule workflow_run_fire", "work_run created", "workflow_output_ttl_sweep completed",
+		"workflow_run_fire created"}; !slices.Equal(left, want) {
 		t.Fatalf("pg-boss rows left = %q, want %q", left, want)
 	}
 	if err := q.Migrate(ctx); err != nil {
@@ -91,8 +95,8 @@ insert into `+b+`.schedule values ('workflow_output_ttl_sweep'), ('work_run');`)
 	}
 	var n int
 	_ = pool.QueryRow(ctx, `select count(*) from `+q.Schema+`.river_job`).Scan(&n)
-	if n != 2 {
-		t.Fatalf("a second migrate left %d river jobs, want 2", n)
+	if n != 3 {
+		t.Fatalf("a second migrate left %d river jobs, want 3", n)
 	}
 }
 

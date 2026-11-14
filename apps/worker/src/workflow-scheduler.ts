@@ -1,4 +1,4 @@
-import { enqueue, QUEUE, type WorkflowRunFirePayload } from "@neko/db/jobs";
+import { enqueueWorkflowRunFire, type WorkflowRunFirePayload } from "@neko/db/jobs";
 import {
   leasePendingWorkflowFirings,
   markWorkflowFiringEnqueued,
@@ -68,12 +68,7 @@ const defaultDependencies: WorkflowSchedulerDependencies = {
   materialize: materializeDueWorkflowFirings,
   recover: recoverStaleWorkflowScheduleFirings,
   lease: (input) => leasePendingWorkflowFirings(input),
-  enqueue: (payload, firing) =>
-    enqueue(QUEUE.WORKFLOW_RUN_FIRE, payload, {
-      retryLimit: 2,
-      retryDelay: 30,
-      retryBackoff: true,
-    }),
+  enqueue: (payload) => enqueueWorkflowRunFire(payload),
   markEnqueued: markWorkflowFiringEnqueued,
   releaseDispatch: releaseWorkflowFiringDispatch,
   recordSuccess: recordWorkflowSchedulerSuccess,
@@ -162,7 +157,7 @@ export async function runDurableWorkflowSchedulerTick(
       try {
         const queueJobId = await deps.enqueue(payload, firing);
         if (!queueJobId) {
-          throw new Error("pg-boss did not accept the workflow firing");
+          throw new Error("the job queue did not accept the workflow firing");
         }
         await deps.markEnqueued(firing.id, queueJobId, now);
         dispatched++;

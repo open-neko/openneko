@@ -111,15 +111,14 @@ describeIfDb("subscription-driven workflow chain", () => {
       expect(obsRow[0]?.subscription_id).toBe(sub.id);
 
       // Fire payload carries all three lineage FKs
-      const [queueName, jobData, jobOpts] = enqueue.mock.calls[0];
-      expect(queueName).toBe("workflow_run_fire");
+      const [jobData, jobOpts] = enqueue.mock.calls[0];
       expect(jobData.workflowId).toBe(consumer.id);
       expect(jobData.triggeredBySubscriptionId).toBe(sub.id);
       expect(jobData.triggeredByOutputId).toBe(output.id);
       expect(jobData.triggeredByObservationId).toBe(decision.observationId);
       // Idempotency key dedups repeat firings of the same (sub × output × version)
-      expect(jobOpts.singletonKey).toContain(sub.id);
-      expect(jobOpts.singletonKey).toContain(output.id);
+      expect(jobOpts.dedupeKey).toContain(sub.id);
+      expect(jobOpts.dedupeKey).toContain(output.id);
     });
   });
 

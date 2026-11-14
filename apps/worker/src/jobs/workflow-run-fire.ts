@@ -16,15 +16,9 @@ import {
   boundedWorkflowApiResult,
   workflowApiAnswer,
   claimWorkflowApiAdmission,
-  claimWorkflowScheduleFiring,
-  completeWorkflowScheduleFiring,
   finishWorkflowApiAdmission,
-  linkWorkflowScheduleFiringRun,
   loadPreparedWorkflowRun,
   persistWorkflowApiTelemetry,
-  prepareWorkflowRun,
-  releaseWorkflowScheduleFiringRun,
-  cancelWorkflowScheduleFiring,
   runCompiledWorkflowApiBatch,
   runWorkflowTurn,
   updateWorkflowApiRunProgress,
@@ -34,7 +28,7 @@ import {
   type WorkflowApiBatchProgress,
 } from "@neko/llm/workflows";
 import { errorCodeOf, observeSafely } from "@neko/telemetry";
-import { createRunSpendGuard, SpendBudgetExceeded } from "@neko/llm/spend";
+import { createRunSpendGuard } from "@neko/llm/spend";
 import { reckonSeedMessageFrom } from "@neko/llm/workflows/compat";
 import { getCurrentScrubber } from "../secrets/instance.js";
 import {
@@ -42,14 +36,6 @@ import {
   persistWorkflowRunTelemetry,
 } from "../telemetry.js";
 
-// Thrown when worker shutdown cuts a non-API headless run short, so pg-boss
-// can retry its existing scheduler/subscription delivery contract.
-export class WorkflowRunInterrupted extends Error {
-  constructor() {
-    super("Workflow run interrupted by worker shutdown");
-    this.name = "WorkflowRunInterrupted";
-  }
-}
 export class WorkflowApiRunCeilingExceeded extends Error {
   readonly code: string;
 
@@ -307,32 +293,18 @@ function failPreRun(error: unknown, payload: WorkflowRunFirePayload): Promise<vo
   });
 }
 
+// Cron, subscription and watcher runs run in `openneko web` on River; the
+// worker runs only the API runs.
 export function runWorkflowRunFire(payload: WorkflowRunFirePayload): Promise<void> {
-  return withStartupTrace({ requestId: payload.apiAdmissionId ?? payload.scheduleFiringId, workflowRunId: payload.workflowRunId }, () => startupPhase("workflow.dispatch", () => runWorkflowRunFireTraced(payload)));
+  if (payload.triggerKind !== "api") {
+    return Promise.reject(new Error(`workflow_run_fire for a ${payload.triggerKind} run belongs to openneko web`));
+  }
+  return withStartupTrace({ requestId: payload.apiAdmissionId, workflowRunId: payload.workflowRunId }, () => startupPhase("workflow.dispatch", () => runWorkflowRunFireTraced(payload)));
 }
 
 async function runWorkflowRunFireTraced(
   payload: WorkflowRunFirePayload,
 ): Promise<void> {
-  const scheduleFiringId = payload.scheduleFiringId;
-  if (scheduleFiringId) {
-    const claimed = await startupPhase("workflow.claim_schedule", async () => claimWorkflowScheduleFiring({
-      firingId: scheduleFiringId,
-      orgId: payload.orgId,
-      workflowId: payload.workflowId,
-    })).catch(async (error: unknown) => {
-      await failPreRun(error, payload);
-      throw error;
-    });
-    if (!claimed) {
-      console.log(
-        `[workflow-run-fire] duplicate delivery ignored firing=${scheduleFiringId}`,
-      );
-      return;
-    }
-  }
-
-  let workflowFinished = false;
   let apiClaim: ClaimedWorkflowApiAdmission | null = null;
   let prepared: PreparedWorkflowRun | null = null;
   let telemetry: ReturnType<typeof createWorkerHarnessObserver> | null = null;
@@ -342,35 +314,13 @@ async function runWorkflowRunFireTraced(
   const startedAt = Date.now();
 
   try {
-    if (payload.triggerKind === "api") {
-      apiClaim = await startupPhase("workflow.claim_api", async () => claimApiPayload(payload));
-      if (!apiClaim) return;
-      prepared = await startupPhase("workflow.load_prepared", async () => loadPreparedWorkflowRun({
-        orgId: payload.orgId,
-        workflowId: payload.workflowId,
-        workflowRunId: apiClaim!.workflowRunId,
-      }));
-    } else {
-      await startupPhase("config.provision", async () => ensureHostConfigProvisioned(payload.orgId));
-      prepared = await startupPhase("workflow.prepare", async () => prepareWorkflowRun({
-        orgId: payload.orgId,
-        workflowId: payload.workflowId,
-        triggerKind: payload.triggerKind,
-        triggerPayload: payload.triggerPayload,
-        threadId: payload.threadId,
-        parentChainDepth: payload.parentChainDepth,
-        triggeredBySubscriptionId: payload.triggeredBySubscriptionId,
-        triggeredByOutputId: payload.triggeredByOutputId,
-        triggeredByObservationId: payload.triggeredByObservationId,
-      }));
-    }
-
-    if (scheduleFiringId) {
-      await linkWorkflowScheduleFiringRun(
-        scheduleFiringId,
-        prepared.workflowRun.id,
-      );
-    }
+    apiClaim = await startupPhase("workflow.claim_api", async () => claimApiPayload(payload));
+    if (!apiClaim) return;
+    prepared = await startupPhase("workflow.load_prepared", async () => loadPreparedWorkflowRun({
+      orgId: payload.orgId,
+      workflowId: payload.workflowId,
+      workflowRunId: apiClaim!.workflowRunId,
+    }));
 
     const scrubber = getCurrentScrubber();
     emit = async (event: AgentEvent): Promise<void> => {
@@ -512,9 +462,6 @@ async function runWorkflowRunFireTraced(
       }
     }
 
-    if (result.status === "cancelled" && !apiClaim) {
-      throw new WorkflowRunInterrupted();
-    }
     if (apiClaim?.mode !== "batch") {
       await observeSafely(telemetry.observer, {
         kind: "output.contract",
@@ -551,10 +498,6 @@ async function runWorkflowRunFireTraced(
     });
     await emitRunTelemetry({ telemetry, emit, prepared, apiClaim, metered: meteredUsage?.() });
     telemetryClosed = true;
-    workflowFinished = true;
-    if (scheduleFiringId) {
-      await completeWorkflowScheduleFiring(scheduleFiringId);
-    }
   } catch (error) {
     if (telemetry && prepared && emit && !telemetryClosed) {
       await observeSafely(telemetry.observer, {
@@ -602,24 +545,6 @@ async function runWorkflowRunFireTraced(
       // Once execution has been claimed, never replay a possibly paid model
       // call. The canonical run carries the terminal failure for the caller.
       return;
-    }
-    if (error instanceof SpendBudgetExceeded && !prepared) {
-      if (scheduleFiringId) {
-        await cancelWorkflowScheduleFiring(scheduleFiringId, error.message);
-      }
-      console.warn(
-        `[workflow-run-fire] workflow=${payload.workflowId} not started: ${error.message}`,
-      );
-      return;
-    }
-    if (scheduleFiringId && !workflowFinished) {
-      await releaseWorkflowScheduleFiringRun(scheduleFiringId, error).catch(
-        (releaseError) => {
-          console.error(
-            `[workflow-run-fire] could not release firing=${scheduleFiringId}: ${releaseError instanceof Error ? releaseError.message : releaseError}`,
-          );
-        },
-      );
     }
     throw error;
   }

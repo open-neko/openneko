@@ -401,7 +401,7 @@ function buildWatcher(name: string, watch: Record<string, unknown>): ScriptedMod
 
 async function workflowRunFires(orgId: string): Promise<Array<Record<string, unknown>>> {
   const { rows } = await pool().query<{ data: Record<string, unknown> }>(
-    `select data from pgboss.job where name = 'workflow_run_fire' and data->>'orgId' = $1 order by created_on`,
+    `select args as data from river.river_job where kind = 'workflow_run_fire' and args->>'orgId' = $1 order by id`,
     [orgId],
   );
   return rows.map((row) => row.data);

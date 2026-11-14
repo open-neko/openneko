@@ -196,7 +196,7 @@ func (g *fakeGraphjin) set(reply string, status int) {
 
 func TestSweepWatchers(t *testing.T) {
 	f, db := memoryFront(t)
-	seedPgBoss(t, db, f)
+	seedRiver(t, db, f)
 	ctx := context.Background()
 	gj := &fakeGraphjin{}
 	srv := httptest.NewServer(gj)
@@ -226,20 +226,20 @@ func TestSweepWatchers(t *testing.T) {
 	if want := `{"query":"{ refunds_aggregate { rate } }","variables":{"since":"` + jsDate(now.Add(-time.Minute)) + `"}}`; gj.bodies[0] != want {
 		t.Errorf("body %s, want %s", gj.bodies[0], want)
 	}
-	var data, key string
-	var retry, wait int
-	if err := db.QueryRow(ctx, `select data::text, singleton_key, retry_limit, retry_delay from `+f.API.BossSchema+`.job where name = 'workflow_run_fire'`).
-		Scan(&data, &key, &retry, &wait); err != nil {
-		t.Fatal(err)
+	queued := riverQueueJobs(t, db, "workflow_run_fire", "workflow_run")
+	if len(queued) != 1 {
+		t.Fatalf("queued %+v", queued)
 	}
 	var payload map[string]any
-	_ = json.Unmarshal([]byte(data), &payload)
-	queued, _ := payload["queuedAt"].(float64)
+	_ = json.Unmarshal([]byte(queued[0].Args), &payload)
+	at, _ := payload["queuedAt"].(float64)
+	dedupe, _ := payload["dedupe"].(string)
 	delete(payload, "queuedAt")
+	delete(payload, "dedupe")
 	encoded, _ := json.Marshal(payload)
 	if string(encoded) != `{"orgId":"org","triggerKind":"watcher","triggerPayload":{"op":"gt","severity":"high","threshold":2,"value":4.2,"watcherId":"`+id+`","watcherName":"refund-rate"},"workflowId":"`+workflow+`"}` ||
-		queued < float64(now.UnixMilli()) || key != "watcher:"+id || retry != 2 || wait != 30 {
-		t.Errorf("queued %s key %s retry %d/%d", data, key, retry, wait)
+		at < float64(now.UnixMilli()) || !strings.HasPrefix(dedupe, "watcher:"+id+"@") || queued[0].MaxAttempts != 3 {
+		t.Errorf("queued %+v", queued[0])
 	}
 	var last string
 	var checked, firedAt time.Time
@@ -278,16 +278,14 @@ func TestSweepWatchers(t *testing.T) {
 	if lastError == nil || *lastError != "graphjin query failed: 502 bad gateway" {
 		t.Errorf("HTTP failure: %v", lastError)
 	}
-	var count int
-	_ = db.QueryRow(ctx, `select count(*) from `+f.API.BossSchema+`.job where name = 'workflow_run_fire'`).Scan(&count)
-	if count != 1 {
+	if count := len(riverQueueJobs(t, db, "workflow_run_fire", "workflow_run")); count != 1 {
 		t.Errorf("%d workflow_run_fire jobs, want 1: the second fire is inside the job's one-hour singleton window", count)
 	}
 }
 
 func TestSweepWatchersChangedOp(t *testing.T) {
 	f, db := memoryFront(t)
-	seedPgBoss(t, db, f)
+	seedRiver(t, db, f)
 	ctx := context.Background()
 	gj := &fakeGraphjin{}
 	srv := httptest.NewServer(gj)
@@ -321,7 +319,7 @@ func TestSweepWatchersChangedOp(t *testing.T) {
 
 func TestPackWatcherSource(t *testing.T) {
 	f, db := memoryFront(t)
-	seedPgBoss(t, db, f)
+	seedRiver(t, db, f)
 	ctx := context.Background()
 	gj := &fakeGraphjin{reply: `{"data":{"n":1}}`}
 	srv := httptest.NewServer(gj)
@@ -395,7 +393,7 @@ func TestPackWatcherSource(t *testing.T) {
 
 func TestCronSweepAt(t *testing.T) {
 	f, db := memoryFront(t)
-	seedPgBoss(t, db, f)
+	seedRiver(t, db, f)
 	ctx := context.Background()
 	gj := &fakeGraphjin{}
 	srv := httptest.NewServer(gj)
@@ -416,9 +414,7 @@ func TestCronSweepAt(t *testing.T) {
 	if err != nil || string(encoded) != `{"orgId":"org","at":"2030-01-01T00:00:00.000Z","behaviorAlerts":[],"checked":1,"fired":[{"watcherId":"`+id+`","name":"order-count","value":31465}]}` {
 		t.Fatalf("first: %s %v", encoded, err)
 	}
-	var queued int
-	_ = db.QueryRow(ctx, `select count(*)::int from `+f.API.BossSchema+`.job where name = 'workflow_run_fire'`).Scan(&queued)
-	if queued != 1 {
+	if queued := len(riverQueueJobs(t, db, "workflow_run_fire", "workflow_run")); queued != 1 {
 		t.Errorf("queued %d", queued)
 	}
 	res, err = f.API.CronSweepAt(ctx, "org", at.Add(time.Hour))

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { enqueue as defaultEnqueue, QUEUE } from "@neko/db/jobs";
+import { enqueueWorkflowRunFire as defaultEnqueue } from "@neko/db/jobs";
 import { isWorkflowInAncestorChain as defaultIsCycle } from "./cycle-detection";
 import {
   countSubscriptionsMatchingOutput as defaultCountSubsMatching,
@@ -144,13 +144,12 @@ export async function handleSubscriptionMatch(
     mood: (opts.output.mood as "good" | "watch" | "act" | null) ?? null,
   });
 
-  const singletonKey = buildWorkflowOutputIdempotencyKey(
+  const dedupeKey = buildWorkflowOutputIdempotencyKey(
     opts.subscription,
     opts.output,
   );
 
   const jobId = await enqueue(
-    QUEUE.WORKFLOW_RUN_FIRE,
     {
       orgId: opts.subscription.orgId,
       workflowId: opts.subscription.workflowId,
@@ -164,10 +163,7 @@ export async function handleSubscriptionMatch(
       triggeredByOutputId: opts.output.id,
       triggeredByObservationId: observationRow.id,
     },
-    {
-      singletonKey,
-      singletonHours: 1,
-    },
+    { dedupeKey, dedupeSeconds: 3600 },
   );
 
   return {
@@ -246,13 +242,12 @@ export async function handleSourceChangeMatch(
     },
   });
 
-  const singletonKey = buildSourceChangeIdempotencyKey(
+  const dedupeKey = buildSourceChangeIdempotencyKey(
     opts.subscription,
     opts.match,
   );
 
   const jobId = await enqueue(
-    QUEUE.WORKFLOW_RUN_FIRE,
     {
       orgId: opts.subscription.orgId,
       workflowId: opts.subscription.workflowId,
@@ -268,10 +263,7 @@ export async function handleSourceChangeMatch(
       triggeredBySubscriptionId: opts.subscription.id,
       triggeredByObservationId: observationRow.id,
     },
-    {
-      singletonKey,
-      singletonHours: 1,
-    },
+    { dedupeKey, dedupeSeconds: 3600 },
   );
 
   return {
@@ -337,13 +329,12 @@ export async function handleExternalEventMatch(
     mood: null,
   });
 
-  const singletonKey = buildExternalEventIdempotencyKey(
+  const dedupeKey = buildExternalEventIdempotencyKey(
     opts.subscription,
     opts.event,
   );
 
   const jobId = await enqueue(
-    QUEUE.WORKFLOW_RUN_FIRE,
     {
       orgId: opts.subscription.orgId,
       workflowId: opts.subscription.workflowId,
@@ -358,10 +349,7 @@ export async function handleExternalEventMatch(
       triggeredBySubscriptionId: opts.subscription.id,
       triggeredByObservationId: observationRow.id,
     },
-    {
-      singletonKey,
-      singletonHours: 1,
-    },
+    { dedupeKey, dedupeSeconds: 3600 },
   );
 
   return {
