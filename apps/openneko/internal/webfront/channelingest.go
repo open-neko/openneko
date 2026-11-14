@@ -322,7 +322,7 @@ func (a *API) dispatchIntent(ctx context.Context, orgID, channel string, intent,
 	text := func(k string) string { s, _ := jsGet(intent, k).(string); return s }
 	switch text("kind") {
 	case "decision":
-		return a.channelDecision(ctx, orgID, who, text("decisionRef"), text("choice"), jsGet(intent, "reason"))
+		return a.channelDecision(ctx, orgID, channel, who, text("decisionRef"), text("choice"), jsGet(intent, "reason"))
 	case "utterance":
 		return a.startChannelRun(ctx, orgID, channel, text("text"), text("threadRef"), recipient, sender, who)
 	case "invoke":
@@ -337,7 +337,7 @@ func (a *API) dispatchIntent(ctx context.Context, orgID, channel string, intent,
 
 // channelDecision approves or rejects a pending request. A refused decision
 // is logged and settled: a retry cannot change the answer.
-func (a *API) channelDecision(ctx context.Context, orgID string, who channelActor, ref, choice string, reason any) error {
+func (a *API) channelDecision(ctx context.Context, orgID, channel string, who channelActor, ref, choice string, reason any) error {
 	var status string
 	err := error(pgx.ErrNoRows)
 	if isUUID(ref) {
@@ -358,7 +358,7 @@ func (a *API) channelDecision(ctx context.Context, orgID string, who channelActo
 	if s, ok := reason.(string); ok {
 		why = &s
 	}
-	status, err = a.applyDecision(ctx, actor{OrgID: orgID, UserID: who.UserID, Admin: who.Admin}, ref, choice, why)
+	status, err = a.applyDecision(ctx, actor{OrgID: orgID, UserID: who.UserID, Admin: who.Admin}, channel, ref, choice, why)
 	var refused *decisionError
 	if errors.As(err, &refused) {
 		log.Printf("[channel-inbound] %s of action_request %s refused: %s", choice, ref, refused.message)

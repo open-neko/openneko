@@ -1215,9 +1215,9 @@ func (a *API) approveRunAction(w http.ResponseWriter, r *http.Request) {
 	var refused *decisionError
 	var assertion *passkeyAssertion
 	if next == "approved" && rawPasskey != nil {
-		if assertion, err = a.takePasskeyAssertion(ctx, act, id, rawPasskey); err != nil {
+		if assertion, err = a.takePasskeyAssertion(ctx, act, "approve", &id, rawPasskey); err != nil {
 			if errors.As(err, &refused) {
-				sendError(w, refused.status, refused.message)
+				sendDecisionError(w, refused)
 			} else {
 				a.fail(w, r, err)
 			}
@@ -1225,6 +1225,7 @@ func (a *API) approveRunAction(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var pk *verifiedPasskey
+	method := approvalMethod(r)
 	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
 		var current string
 		var policyID *string
@@ -1238,10 +1239,9 @@ func (a *API) approveRunAction(w http.ResponseWriter, r *http.Request) {
 		if current != "draft" && current != "pending_approval" {
 			return transitionError(current, next)
 		}
-		if assertion != nil {
+		if next == "approved" {
 			var err error
-			pk, err = verifyPasskeyApproval(ctx, tx, a.passkeyRP(r), act, assertion)
-			if err != nil {
+			if pk, err = checkApprovalPasskey(ctx, tx, a.passkeyRP(r), act, method, assertion); err != nil {
 				return err
 			}
 		}
@@ -1266,7 +1266,7 @@ func (a *API) approveRunAction(w http.ResponseWriter, r *http.Request) {
 		return err
 	})
 	if errors.As(err, &refused) {
-		sendError(w, refused.status, refused.message)
+		sendDecisionError(w, refused)
 		return
 	}
 	if err != nil {
@@ -1275,14 +1275,7 @@ func (a *API) approveRunAction(w http.ResponseWriter, r *http.Request) {
 	}
 	event := auditEvent{OrgID: act.OrgID, EntityKind: "action_request", EntityID: id, Event: next}
 	if next == "approved" {
-		payload := map[string]any{"approvedBy": nullable(act.UserID), "kind": kind, "soloOperator": false}
-		if pk != nil {
-			payload["method"] = "passkey"
-			payload["passkeyCredentialId"] = pk.CredentialID
-			payload["passkeyName"] = pk.Name
-			payload["userVerified"] = pk.UserVerified
-		}
-		event.Payload = payload
+		event.Payload = approvedPayload(act, kind, method, pk)
 		a.recordAudit(ctx, event)
 		sendJSON(w, http.StatusOK, approveReply{OK: true, Decision: "approved", ID: id, Status: "queued_for_execution"})
 		return

@@ -467,7 +467,7 @@ func TestApproveRunAction(t *testing.T) {
 	if row != "rejected member Not now" {
 		t.Errorf("rejected row: %s", row)
 	}
-	if got := lastAudit(t, db, arChat); got != `approved {"kind": "note", "approvedBy": "member", "soloOperator": false}` {
+	if got := lastAudit(t, db, arChat); got != `approved {"kind": "note", "method": "session", "approvedBy": "member", "soloOperator": false}` {
 		t.Errorf("approve audit: %s", got)
 	}
 	if got := lastAudit(t, db, arChat2); got != `rejected {"kind": "note", "reason": "Not now", "rejectedBy": "member"}` {
