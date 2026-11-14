@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -12,10 +11,11 @@ type GraphjinConfigSettings = {
 
 export default function GraphjinConfigControls({
   initial,
+  onChange,
 }: {
   initial: GraphjinConfigSettings;
+  onChange: (enabled: boolean) => void;
 }) {
-  const router = useRouter();
   const [enabled, setEnabled] = useState(initial.sourceConfigEnabled);
   const [saving, setSaving] = useState(false);
 
@@ -40,7 +40,7 @@ export default function GraphjinConfigControls({
           ? "GraphJin config tools enabled for admins."
           : "GraphJin config tools disabled.",
       );
-      router.refresh();
+      onChange(next);
     } catch (e) {
       setEnabled(previous);
       toast.error(e instanceof Error ? e.message : String(e));
