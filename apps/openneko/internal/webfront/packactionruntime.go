@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -842,19 +841,10 @@ func (a *API) packActionGraphjinQuery(
 
 type actionAdapter func(context.Context, *actionRequestRecord) (*actionExecutionOutcome, error)
 
-// workerActionKinds are the built-in and eval adapters that only the worker
-// runs. Every other kind, pack kinds included, runs in Go.
-var workerActionKinds = []string{
-	"channel_admin", "code_create_issue", "code_draft_patch", "data_source_admin",
-	"eval_send_notice", "group_admin", "openneko_eval_mutation", "openneko_eval_priority",
-	"send_webhook", "source_config_admin", "user_admin",
-}
-
-// goActionAdapter is the Go executor of an action request, or nil when the
-// worker runs its kind.
+// goActionAdapter returns the Go executor for an action request.
 func (a *API) goActionAdapter(ctx context.Context, orgID, actionRequestID string) (actionAdapter, error) {
 	if a.DB == nil {
-		return nil, nil
+		return nil, errors.New("action execution requires a database connection")
 	}
 	var kind string
 	var owned bool
@@ -865,7 +855,7 @@ func (a *API) goActionAdapter(ctx context.Context, orgID, actionRequestID string
 		 where r.org_id = $1 and r.id::text = $2
 		 limit 1`, orgID, actionRequestID).Scan(&kind, &owned)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, fmt.Errorf("action_request %s not found", actionRequestID)
 	}
 	if err != nil {
 		return nil, err
@@ -877,8 +867,31 @@ func (a *API) goActionAdapter(ctx context.Context, orgID, actionRequestID string
 		return a.executeMagentoChangeset, nil
 	case owned:
 		return a.executeDeclarativePackAction, nil
-	case slices.Contains(workerActionKinds, kind):
-		return nil, nil
+	case kind == "send_webhook":
+		return a.executeSendWebhook, nil
+	case kind == "code_create_issue":
+		return a.executeCodeCreateIssue, nil
+	case kind == "code_draft_patch":
+		return a.executeCodeDraftPatch, nil
+	case kind == "group_admin":
+		return a.executeGroupAdmin, nil
+	case kind == "user_admin":
+		return a.executeUserAdmin, nil
+	case kind == "channel_admin":
+		return a.executeChannelAdmin, nil
+	case kind == "data_source_admin":
+		return a.executeDataSourceAdmin, nil
+	case kind == "source_config_admin":
+		return a.executeSourceConfigAdmin, nil
+	case a.EvalTrace != nil && kind == "eval_send_notice":
+		return func(context.Context, *actionRequestRecord) (*actionExecutionOutcome, error) {
+			cmd := "eval:send_notice"
+			return &actionExecutionOutcome{
+				Status:             "succeeded",
+				CommandOrOperation: &cmd,
+				Result:             jsObjOf("mocked", true),
+			}, nil
+		}, nil
 	}
 	return func(context.Context, *actionRequestRecord) (*actionExecutionOutcome, error) {
 		return nil, fmt.Errorf("no adapter registered for kind %q", kind)

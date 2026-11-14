@@ -37,10 +37,8 @@ type Queue struct {
 	MemorySweep   func(context.Context) error
 	CronSweep     func(context.Context) error
 	DirectorySync func(context.Context) error
-	// ActionExecute asks the Node worker to run an approved action; the
-	// action adapters live in the worker until the packs runtime moves.
-	ActionExecute    func(ctx context.Context, orgID, actionRequestID string) error
-	SkillLearn       func(ctx context.Context, orgID, skillName string) error
+	ActionExecute func(ctx context.Context, orgID, actionRequestID string) error
+	SkillLearn    func(ctx context.Context, orgID, skillName string) error
 	BotNameSweep     func(context.Context) error
 	Build            BuildFunc
 	WorkflowRunFire  WorkflowRunFireFunc

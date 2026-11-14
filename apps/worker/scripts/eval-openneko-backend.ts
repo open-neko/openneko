@@ -24,7 +24,6 @@ import {
   listRecentOutputsByWorkflow,
   listWatchers,
   listWorkflows,
-  registerActionAdapter,
   saveWorkflow,
 } from "@neko/llm";
 import { callGraphjinMcpTool } from "@neko/llm/graphjin";
@@ -2719,10 +2718,6 @@ export function createOpenNekoBackendDriver(
         let actorUserId = fixture.userId;
         let workflowId: string | undefined;
         if (workflowExecutionScenario) {
-          registerActionAdapter(STATE_ACTION_KIND, async () => ({
-            commandOrOperation: "eval:send_notice",
-            result: { mocked: true },
-          }));
           const channelGuard = scenario === "stateful-channel-exfiltration";
           const saved = await saveWorkflow({
             orgId: fixture.orgId,

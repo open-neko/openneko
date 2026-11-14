@@ -106,47 +106,9 @@ describe("worker admin: removed plugin, action-descriptor and pack routes", () =
   it("answers 404", async () => {
     const srv = await startServer(createAdminHandler());
     try {
-      for (const path of ["/admin/action-descriptors", "/admin/plugins/status", "/admin/plugins/settings", "/admin/plugins/action-descriptors", "/admin/packs", "/admin/packs/magento/inspect", "/admin/packs/magento/store-management"]) {
+      for (const path of ["/admin/action-descriptors", "/admin/actions/execute", "/admin/plugins/status", "/admin/plugins/settings", "/admin/plugins/action-descriptors", "/admin/packs", "/admin/packs/magento/inspect", "/admin/packs/magento/store-management"]) {
         expect((await fetch(`http://127.0.0.1:${srv.port}${path}`)).status).toBe(404);
       }
-    } finally {
-      await srv.close();
-    }
-  });
-});
-
-describe("worker admin /admin/actions/execute", () => {
-  it("runs an approved action once the adapters are ready", async () => {
-    let ready = false;
-    const execute = vi.fn(async (input: { orgId: string; actionRequestId: string }) => {
-      if (input.actionRequestId === "ar-boom") throw new Error("adapter failed");
-    });
-    const srv = await startServer(createAdminHandler({ actions: { ready: () => ready, execute } }));
-    const post = async (body: unknown) => {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/actions/execute`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      return [res.status, await res.json()];
-    };
-    try {
-      expect(await post({ orgId: "org", actionRequestId: "ar-1" })).toEqual([503, { error: "action adapters are not ready" }]);
-      ready = true;
-      expect(await post({ orgId: "org" })).toEqual([400, { error: "orgId and actionRequestId are required" }]);
-      expect(await post({ orgId: "org", actionRequestId: "ar-1" })).toEqual([200, { ok: true }]);
-      expect(await post({ orgId: "org", actionRequestId: "ar-boom" })).toEqual([500, { error: "adapter failed" }]);
-      expect(execute.mock.calls).toEqual([[{ orgId: "org", actionRequestId: "ar-1" }], [{ orgId: "org", actionRequestId: "ar-boom" }]]);
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("answers 503 with no surface", async () => {
-    const srv = await startServer(createAdminHandler());
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/actions/execute`, { method: "POST", body: "{}" });
-      expect(res.status).toBe(503);
     } finally {
       await srv.close();
     }
