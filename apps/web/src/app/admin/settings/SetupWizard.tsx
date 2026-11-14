@@ -387,7 +387,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
         });
       }
 
-      const res = await fetch("/admin/settings/finish", { method: "POST" });
+      const res = await fetch("/api/v1/settings/finish", { method: "POST" });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Finish failed");
       toast.success("Setup complete. Now describe your business.");
