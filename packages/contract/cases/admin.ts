@@ -12,6 +12,13 @@ export const adminCases: Case[] = [
     },
   },
   { op: "GET /admin/services", name: "is for administrators only", as: "member", status: 403 },
+  {
+    op: "GET /admin/overview", name: "reports the counts for the index pages", status: 200,
+    check: (r) => {
+      expect(typeof body(r).setupComplete).toBe("boolean");
+    },
+  },
+  { op: "GET /admin/overview", name: "is for administrators only", as: "member", status: 403 },
   { op: "GET /admin/change-password", name: "reports the password state", status: 200 },
   {
     op: "POST /admin/change-password", name: "refuses an install that connects by URL", status: 409,

@@ -3239,6 +3239,84 @@ paths:
                 properties:
                   error:
                     type: string
+  /admin/overview:
+    get:
+      operationId: getAdminOverview
+      tags:
+      - admin
+      summary: Counts and setup states for the admin and settings index pages
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      responses:
+        '200':
+          description: The counts and states
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - setupComplete
+                - activeUsers
+                - activeAdmins
+                - enabledSources
+                - jwtSources
+                - policies
+                - workflows
+                - pendingActions
+                - dataReady
+                - primaryReady
+                - researchOn
+                - customWorkflowBudget
+                additionalProperties: false
+                properties:
+                  setupComplete:
+                    type: boolean
+                  activeUsers:
+                    type: integer
+                  activeAdmins:
+                    type: integer
+                  enabledSources:
+                    type: integer
+                  jwtSources:
+                    type: integer
+                  policies:
+                    type: object
+                    required: [total, on]
+                    additionalProperties: false
+                    properties:
+                      total: {type: integer}
+                      on: {type: integer}
+                  workflows:
+                    type: object
+                    required: [total, on]
+                    additionalProperties: false
+                    properties:
+                      total: {type: integer}
+                      on: {type: integer}
+                  pendingActions:
+                    type: integer
+                  dataReady:
+                    type: boolean
+                  primaryReady:
+                    type: boolean
+                  researchOn:
+                    type: boolean
+                  customWorkflowBudget:
+                    type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an administrator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /admin/services:
     get:
       operationId: getAdminServices
