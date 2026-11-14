@@ -94,16 +94,12 @@ func TestAdminPacksAdminOnly(t *testing.T) {
 func TestAdminPackRelay(t *testing.T) {
 	f, wk := packFront(t)
 	admin := sessionCookie("admin")
-	wk.reply = `{"packs": [{"id": "magento"}]}`
-	if w := call(f, "GET", "/api/v1/admin/packs", "", admin); w.Code != 200 || w.Body.String() != `{"packs":[{"id":"magento"}]}` {
-		t.Errorf("list: %d %s", w.Code, w.Body.String())
-	}
-	wk.reply = `{"packId":"magento","status":"installed"}`
-	if w := call(f, "GET", "/api/v1/admin/packs/magento/status?version=1.2.0+rc", "", admin); w.Code != 200 || decode(t, w)["status"] != "installed" {
-		t.Errorf("status: %d %s", w.Code, w.Body.String())
+	wk.reply = `{"packId":"magento","entries":[]}`
+	if w := call(f, "GET", "/api/v1/admin/packs/magento/plan?version=1.2.0+rc", "", admin); w.Code != 200 || decode(t, w)["packId"] != "magento" {
+		t.Errorf("plan: %d %s", w.Code, w.Body.String())
 	}
 	calls := wk.take()
-	if len(calls) != 2 || calls[0].uri != "/admin/packs" || calls[1].uri != "/admin/packs/magento/status?version=1.2.0%20rc" {
+	if len(calls) != 1 || calls[0].uri != "/admin/packs/magento/plan?version=1.2.0%20rc" {
 		t.Errorf("calls %v", calls)
 	}
 	for _, p := range []string{"/api/v1/admin/packs/magento/erase", "/api/v1/admin/packs/Magento/status", "/api/v1/admin/packs/magento/install"} {
@@ -119,7 +115,7 @@ func TestAdminPackRelay(t *testing.T) {
 	}
 
 	wk.status, wk.reply = 503, "<html>down</html>"
-	if w := call(f, "GET", "/api/v1/admin/packs", "", admin); w.Code != 503 || w.Body.String() != `{"error":"Worker returned HTTP 503"}` {
+	if w := call(f, "GET", "/api/v1/admin/packs/magento/doctor", "", admin); w.Code != 503 || w.Body.String() != `{"error":"Worker returned HTTP 503"}` {
 		t.Errorf("text reply: %d %s", w.Code, w.Body.String())
 	}
 	wk.status, wk.reply = 409, `{"error":"busy"}`
@@ -211,13 +207,12 @@ func TestAdminPackUpload(t *testing.T) {
 	if calls := wk.take(); len(calls) != 0 {
 		t.Fatalf("worker calls before a valid upload: %d", len(calls))
 	}
-	wk.reply = `{"packId":"service-health"}`
-	if w := upload("application/zip; charset=binary", "ZIP"); w.Code != 200 || w.Body.String() != `{"packId":"service-health"}` {
-		t.Errorf("upload: %d %s", w.Code, w.Body.String())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if w := upload("application/zip; charset=binary", "ZIP"); w.Code != 400 || decode(t, w)["diagnostic"].(map[string]any)["phase"] != "upload" {
+		t.Errorf("upload of a file that is not a ZIP: %d %s", w.Code, w.Body.String())
 	}
-	calls := wk.take()
-	if len(calls) != 1 || calls[0].uri != "/admin/packs/upload" || calls[0].contentType != "application/zip" || calls[0].actor != "admin" || calls[0].body != "ZIP" {
-		t.Errorf("calls %v", calls)
+	if calls := wk.take(); len(calls) != 0 {
+		t.Errorf("worker calls for an upload: %v", calls)
 	}
 }
 
