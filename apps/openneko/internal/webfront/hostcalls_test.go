@@ -79,6 +79,7 @@ func TestHostRoutesAdminOnly(t *testing.T) {
 		{"POST", "/api/v1/settings/provider/test", `{"scope":"primary","provider":"openai","secrets":{"apiKey":"k"}}`},
 		{"GET", "/api/v1/admin/services", ""},
 		{"POST", "/api/v1/onboarding/submit", `{"companyName":"Acme"}`},
+		{"POST", "/api/v1/settings/finish", ""},
 	} {
 		if w := call(f, c.method, c.path, c.body, sessionCookie("member")); w.Code != 403 || strings.TrimSpace(w.Body.String()) != `{"error":"admin only"}` {
 			t.Errorf("%s %s as a member: %d %s", c.method, c.path, w.Code, w.Body.String())
@@ -407,6 +408,53 @@ func TestOnboardingSubmitRefusals(t *testing.T) {
 		t.Errorf("no key: %d %v", w.Code, got)
 	}
 	none("a submit with no provider")
+}
+
+func TestSettingsFinish(t *testing.T) {
+	f, db, _ := hostFront(t)
+	admin := sessionCookie("admin")
+	finished := func() bool {
+		t.Helper()
+		var done bool
+		if err := db.QueryRow(t.Context(), `select setup_complete_at is not null from organization where id = 'org'`).Scan(&done); err != nil {
+			t.Fatal(err)
+		}
+		return done
+	}
+	refuse := func(label string, code int, want string) {
+		t.Helper()
+		w := call(f, "POST", "/api/v1/settings/finish", "", admin)
+		if got := decode(t, w); w.Code != code || got["error"] != want {
+			t.Errorf("%s: %d %v", label, w.Code, got)
+		}
+		if finished() {
+			t.Errorf("%s marked setup complete", label)
+		}
+	}
+	seed(t, db, `update organization set setup_complete_at = null where id = 'org'`)
+	refuse("no data source", 400, "Data source not configured.")
+	seed(t, db, `insert into data_source (org_id, kind, name, graphql_url) values ('org', 'graphjin', 'main', 'ftp://bad')`)
+	refuse("a bad data source URL", 400, "Data source not configured.")
+	seed(t, db, `update data_source set graphql_url = 'http://graphjin:8080/api/v1/graphql' where org_id = 'org'`)
+	refuse("no provider", 400, "Primary model provider not configured.")
+	seedPrimary(t, db, "openai", "gpt-5", `{}`, `{"apiKey":"k"}`)
+
+	t.Setenv("OPENNEKO_SERVE_SOCKET", filepath.Join(t.TempDir(), "absent.sock"))
+	refuse("serve down", 503, agentRuntimeUnavailable)
+
+	socket := filepath.Join(t.TempDir(), "serve.sock")
+	ln, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	t.Setenv("OPENNEKO_SERVE_SOCKET", socket)
+	if w := call(f, "POST", "/api/v1/settings/finish", "", admin); w.Code != 200 || strings.TrimSpace(w.Body.String()) != `{"ok":true}` {
+		t.Fatalf("finish: %d %s", w.Code, w.Body.String())
+	}
+	if !finished() {
+		t.Errorf("setup_complete_at is not set")
+	}
 }
 
 func TestHostGenerateSpend(t *testing.T) {

@@ -1,4 +1,3 @@
-import { prepareSandboxCapacity, closeSandboxLauncher } from "@neko/llm/work/sandbox-launcher";
 import { withStartupTrace, startupPhase } from "@neko/telemetry/startup";
 import { keepProcessThroughDatabaseRestarts, readLocalConfig, secretsBackendError, soloAdminNeedsEmail } from "@neko/db";
 import "dotenv/config";
@@ -261,7 +260,6 @@ const server = createServer(
         signInService?.getDeploymentConnectStatus() ?? [],
       beginConnect: (name, params) => signIn().beginConnect(name, params),
       completeConnect: (name, params) => signIn().completeConnect(name, params),
-      refreshConnect: (name, operatorId) => signIn().refreshConnect(name, operatorId),
       disconnect: (name, operatorId) => signIn().disconnect(name, operatorId),
     },
     ssoSetup: ssoSetupSurface(),
@@ -408,8 +406,6 @@ const GRAPHJIN_URL = toGraphqlEndpoint(
 console.log(`[worker] subscriptions GraphJin client targeting ${GRAPHJIN_URL}`);
 
 if (process.env.OPENNEKO_SERVE_SOCKET) {
-  try { await prepareSandboxCapacity(); }
-  catch (error) { console.error("[sandbox] startup preparation failed", error); }
 }
 const b = await boss();
 
@@ -578,8 +574,6 @@ const shutdown = async (signal: string) => {
   } catch (e) {
     console.error("[worker] pg-boss stop error:", e);
   }
-  try { closeSandboxLauncher(); }
-  catch (error) { console.error("[worker] sandbox shutdown error:", error); }
   await shutdownWorkerTelemetry();
   process.exit(0);
 };
