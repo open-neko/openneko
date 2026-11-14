@@ -19,7 +19,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/open-neko/neko/apps/openneko/internal/prompt"
-	"github.com/open-neko/neko/apps/openneko/internal/workeradmin"
 )
 
 type packListEntry struct {
@@ -672,18 +671,12 @@ func packReadinessReason(reason string) string {
 }
 
 func requestPackAPI(ctx context.Context, method, path string, body any, destination any) ([]byte, error) {
-	socket := webAdminSocket()
-	return requestAPI(ctx, "pack service", "http://web"+path, webAdminClient(socket), func(err error) error { return webAdminUnreachable(socket, err) }, method, body, destination)
+	return requestWebAdminAPI(ctx, "pack service", method, path, body, destination)
 }
 
-func requestWorkerAPI(ctx context.Context, service, method, path string, body any, destination any) ([]byte, error) {
-	base, client, err := workeradmin.Endpoint(workeradmin.URL())
-	if err != nil {
-		return nil, err
-	}
-	return requestAPI(ctx, service, base+path, client, func(err error) error {
-		return fmt.Errorf("%s at %s is unreachable: %w", service, workeradmin.URL(), err)
-	}, method, body, destination)
+func requestWebAdminAPI(ctx context.Context, service, method, path string, body any, destination any) ([]byte, error) {
+	socket := webAdminSocket()
+	return requestAPI(ctx, service, "http://web"+path, webAdminClient(socket), func(err error) error { return webAdminUnreachable(socket, err) }, method, body, destination)
 }
 
 func requestAPI(ctx context.Context, service, endpoint string, client *http.Client, unreachable func(error) error, method string, body any, destination any) ([]byte, error) {
