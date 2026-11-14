@@ -39,8 +39,7 @@ reaches them only through the per-run tool bridge.
 ```
 
 `openneko web` runs chat questions, channel messages, manual and scheduled
-workflows, metric refreshes, and setup builds in Go without spawning a Node
-runner process:
+workflows, metric refreshes, and setup builds in Go:
 
 1. `openneko web` stages the run's workspace and skills in a new folder under
    `OPENNEKO_AGENT_RUNS_DIR` (`/var/lib/openneko/agent-runs` in the images).
@@ -68,12 +67,9 @@ runner process:
    and deletes the run folder. The next start deletes folders that a restart
    left behind.
 
-(The legacy Node runner at `/opt/openneko-agent/entry.js` remains in the
-repository for standalone harness tests.)
-
-`runChatTurn` keeps its split. The **prologue** (build the prompt) and the
-**epilogue** (parse action and workflow fences, persist, scrub) run in the
-trusted host. Only the agent loop runs in the harness.
+`openneko web` builds the prompt before the turn, and parses the action and
+workflow fences, persists and scrubs after it. Only the agent loop runs in the
+harness.
 
 ## What each piece holds
 
@@ -147,7 +143,7 @@ only when the first model fails with an error that Ax classifies as
 retryable, such as a 503 or a timeout, after the first model's own retries.
 A refused key or a bad request does not go to the fallback. For a host call,
 the frame carries the fallback route and its key in `fallback_key`. For a
-turn, the runner gets the fallback key as `FALLBACK_MODEL_API_KEY`, and the
+turn, `openneko web` sends the fallback key as `FALLBACK_MODEL_API_KEY`, and the
 harness reads a two-route profile in `HARNESS_MODEL_ROUTES`. The fallback
 route never runs a tool call again. A streamed answer goes to the fallback
 only when the first model fails before it sends any text. After the first
@@ -191,7 +187,7 @@ and calls GraphJin's MCP or GraphQL route.
 
 The stack has two zones. The control zone is web and the worker. It holds
 the secret key, the `neko` database login and the provider keys. The agent
-zone is serve and the runner's turns. Serve holds only these:
+zone is serve and its turns. Serve holds only these:
 
 - the `neko_files_<database>` login. The role can read and write the three
   `file_content_*` tables and nothing else. `openneko serve-init` creates it
@@ -404,7 +400,7 @@ The sandbox gives each run its own user and group from
 under `OPENNEKO_SANDBOX_WORKSPACES`. One run cannot read another. The
 sandbox shares no folder with the stack. Each command carries the run's
 files that changed since the last command, and the answer carries the files
-that the command changed; serve, or the runner for a workflow script step,
+that the command changed; serve, or `openneko web` for a workflow script step,
 writes them into the staged run. The run's `.openneko` folder, which holds
 the job file, never goes to the sandbox, and nothing the sandbox returns may
 land in it. When a command ends, the sandbox kills every process of the
@@ -412,7 +408,7 @@ run's user. Ending a run removes its folder and its home. The protocol is in
 `recipes/sandbox/README.md`.
 
 A skill script gets its data as files. When it asks for rows, it stops with
-its request; serve, or the runner for a script step, runs the query through
+its request; serve, or `openneko web` for a script step, runs the query through
 the run's GraphJin tools and runs the script again with the rows. The
 sandbox holds no key, token or socket for this. A script can also declare
 its queries in a `<script>.queries.json` file beside it; OpenNeko runs them
@@ -452,7 +448,6 @@ Compose sets all of these. They matter only for custom deployments.
 | `OPENNEKO_SERVE_SOCKET` | web, worker, serve | the agent socket of serve (`/run/openneko/serve.sock`) |
 | `OPENNEKO_SERVE_MAX_TURNS` | serve | turns that run at once (default 32) |
 | `OPENNEKO_AGENT_RUNS_DIR` | web, worker | where runs are staged |
-| `OPENNEKO_AGENT_ENTRY` | web, worker | the runner (`/opt/openneko-agent/entry.js`; a `.ts` path runs with tsx) |
 | `OPENNEKO_SANDBOX_URL` | web, worker, serve | the sandbox service (`unix:///path`, `http://` or `https://`); empty turns the terminal off |
 | `OPENNEKO_SANDBOX_KEY` | web, worker, serve, sandbox | the bearer key of the sandbox service |
 | `OPENNEKO_GRAPHJIN_CONFIG` | web, worker, serve, serve-init | the customer GraphJin config (`/config/graphjin/agentic.yml`); empty runs no GraphJin in serve |

@@ -147,9 +147,7 @@ jobs:
               console.log("authenticated_datasource_query=ok");
             '
 
-            # The runner must boot from the worker image and reach the
-            # agent socket of openneko serve.
-            docker exec "$WORKER" sh -c 'cd /opt/openneko-agent && node entry.js --preflight'
+            # The worker must reach the agent socket of openneko serve.
             docker exec "$WORKER" node -e '
               require("node:net").connect(process.env.OPENNEKO_SERVE_SOCKET)
                 .on("connect", () => { console.log("serve_socket=ok"); process.exit(0); })

@@ -15,8 +15,7 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
-// The turn's tools are the multiplexed MCP server of
-// apps/worker/src/agent-sandbox/mcp-bridge.ts: one server whose tools are
+// The turn's tools are one multiplexed MCP server whose tools are
 // <logical server without "neko_">_<tool>. The harness reaches it over the
 // serve socket's bridge stream, one JSON-RPC message per line.
 
