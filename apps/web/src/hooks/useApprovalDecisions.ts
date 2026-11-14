@@ -9,6 +9,7 @@ import {
   describeOutcome,
   systemForActionKind,
 } from "@/lib/action-outcome";
+import { createApprovalPasskeyAssertion } from "@/lib/passkey";
 
 export const UNDO_WINDOW_MS = 5000;
 const FOLLOW_INTERVAL_MS = 2000;
@@ -163,6 +164,36 @@ export function useApprovalDecisions(onSettled: () => void | Promise<void>) {
 
   const approve = useCallback((id: string, label: string) => decide(id, "approve", label), [decide]);
 
+  const approveWithPasskey = useCallback(
+    async (id: string, label: string) => {
+      try {
+        const assertion = await createApprovalPasskeyAssertion(id);
+        setHidden(id, true);
+        const res = await fetch(`/api/v1/action-requests/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision: "approve", passkey: assertion }),
+        });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(body?.error ?? `HTTP ${res.status}`);
+        }
+        toast.success("Approved with passkey", { description: label });
+        void followOutcome(id, label, (href) => openRef.current(href));
+        await settledRef.current();
+      } catch (e) {
+        toast.error(
+          e instanceof Error && e.message
+            ? e.message
+            : "OpenNeko could not verify the passkey approval. Try again.",
+        );
+      } finally {
+        setHidden(id, false);
+      }
+    },
+    [setHidden],
+  );
+
   const beginReject = useCallback((id: string) => {
     setRejectingId(id);
     setRejectReason("");
@@ -191,6 +222,7 @@ export function useApprovalDecisions(onSettled: () => void | Promise<void>) {
     rejectReason,
     setRejectReason,
     approve,
+    approveWithPasskey,
     beginReject,
     cancelReject,
     submitReject,

@@ -67,7 +67,12 @@ func (a *API) actionRequestDecision(w http.ResponseWriter, r *http.Request) {
 			reason = &s
 		}
 	}
-	status, err := a.applyDecision(ctx, act, id, decision.(string), reason)
+	rawPasskey, hasPasskey := field(body, "passkey")
+	if hasPasskey && rawPasskey != nil && decision != "approve" {
+		sendError(w, http.StatusBadRequest, "passkey assertion is only valid for approve")
+		return
+	}
+	status, err := a.applyDecisionWithPasskey(ctx, passkeyRPID(r), act, id, decision.(string), reason, rawPasskey)
 	var refused *decisionError
 	if errors.As(err, &refused) {
 		sendError(w, refused.status, refused.message)
@@ -83,6 +88,10 @@ func (a *API) actionRequestDecision(w http.ResponseWriter, r *http.Request) {
 // applyDecision approves, rejects or retries one action request for act in
 // one transaction, and queues the execution of an approved request.
 func (a *API) applyDecision(ctx context.Context, act actor, id, decision string, reason *string) (string, error) {
+	return a.applyDecisionWithPasskey(ctx, "", act, id, decision, reason, nil)
+}
+
+func (a *API) applyDecisionWithPasskey(ctx context.Context, reqRPID string, act actor, id, decision string, reason *string, rawPasskey any) (string, error) {
 	var status, kind string
 	var event auditEvent
 	err := pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
@@ -101,13 +110,28 @@ func (a *API) applyDecision(ctx context.Context, act actor, id, decision string,
 			if current != "draft" && current != "pending_approval" {
 				return transitionError(current, status)
 			}
+			var pk *verifiedPasskey
+			if status == "approved" && rawPasskey != nil {
+				var err error
+				pk, err = verifyPasskeyApproval(ctx, tx, reqRPID, act, id, rawPasskey)
+				if err != nil {
+					return err
+				}
+			}
 			if _, err := tx.Exec(ctx, `update action_request set status = $3, approved_by_user_id = $4, approved_at = now(),
 				rejection_reason = case when $3 = 'rejected' then $5 else rejection_reason end, updated_at = now()
 				where org_id = $1 and id = $2`, act.OrgID, id, status, nullable(act.UserID), reason); err != nil {
 				return err
 			}
 			if status == "approved" {
-				event = auditEvent{Event: "approved", Payload: map[string]any{"approvedBy": nullable(act.UserID), "kind": kind, "soloOperator": false}}
+				payload := map[string]any{"approvedBy": nullable(act.UserID), "kind": kind, "soloOperator": false}
+				if pk != nil {
+					payload["method"] = "passkey"
+					payload["passkeyCredentialId"] = pk.CredentialID
+					payload["passkeyName"] = pk.Name
+					payload["userVerified"] = pk.UserVerified
+				}
+				event = auditEvent{Event: "approved", Payload: payload}
 			} else {
 				var why any
 				if reason != nil {
