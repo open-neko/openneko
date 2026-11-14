@@ -71,12 +71,12 @@ func TestPolicyFor(t *testing.T) {
 }
 
 func TestServerPagePattern(t *testing.T) {
-	for _, p := range []string{"/admin/settings/graphjin", "/admin/settings/graphjin/", "/device", "/chat/connectors"} {
+	for _, p := range []string{"/device", "/device/", "/chat/connectors"} {
 		if !serverPage.MatchString(p) {
 			t.Errorf("%s should go to Node", p)
 		}
 	}
-	for _, p := range []string{"/chat", "/admin", "/admin/access", "/admin/settings", "/admin/settings/workflows", "/admin/users", "/admin/users/groups/g1", "/admin/rules/p1", "/admin/users/groups/g1/x", "/profile", "/adminx", "/work", "/workflows/w1"} {
+	for _, p := range []string{"/chat", "/admin", "/admin/access", "/admin/settings", "/admin/settings/workflows", "/admin/settings/graphjin", "/admin/users", "/admin/users/groups/g1", "/admin/rules/p1", "/admin/users/groups/g1/x", "/profile", "/adminx", "/work", "/workflows/w1"} {
 		if serverPage.MatchString(p) {
 			t.Errorf("%s should be the static app", p)
 		}

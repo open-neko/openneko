@@ -1,4 +1,3 @@
-import { readSourceConfigView } from "@neko/llm/work";
 import { readConfigSentences } from "@/lib/config-summary";
 
 const KIND_LABELS: Record<string, string> = {
@@ -7,35 +6,18 @@ const KIND_LABELS: Record<string, string> = {
   file: "Files",
 };
 
-export type DescribedSource = { id: string; name: string };
+export type ConfigDescriptionItem = {
+  source: { id: string; name: string };
+  error: string | null;
+  summary: unknown;
+};
 
-async function describeOne(orgId: string, userId: string | null, source: DescribedSource) {
-  const view = await readSourceConfigView({
-    orgId,
-    userId,
-    dataSourceId: source.id,
-    signal: AbortSignal.timeout(8_000),
-  });
-  return {
-    source,
-    denied: Boolean(view.denied),
-    error: view.error ?? null,
-    summary: view.summary ? readConfigSentences(view.summary) : null,
-  };
-}
-
-export async function ConfigDescription({
-  orgId,
-  userId,
-  sources,
-}: {
-  orgId: string;
-  userId: string | null;
-  sources: DescribedSource[];
-}) {
-  const results = (
-    await Promise.all(sources.map((source) => describeOne(orgId, userId, source)))
-  ).filter((result) => !result.denied);
+export function ConfigDescription({ descriptions }: { descriptions: ConfigDescriptionItem[] }) {
+  const results = descriptions.map((item) => ({
+    source: item.source,
+    error: item.error,
+    summary: item.summary ? readConfigSentences(item.summary) : null,
+  }));
 
   return (
     <section className="settings-card" aria-labelledby="config-description-title">
