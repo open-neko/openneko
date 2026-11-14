@@ -25,6 +25,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 	"github.com/open-neko/neko/apps/openneko/internal/version"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
+	"github.com/open-neko/neko/apps/openneko/internal/workeradmin"
 )
 
 const (
@@ -113,7 +114,12 @@ with exit code 0, so its supervisor starts it again.`,
 				_ = ln.Close()
 				return err
 			}
-			gate := &webfront.Gate{WorkerURL: workerURL, DB: pool}
+			workerBase, workerClient, err := workeradmin.Endpoint(workerURL)
+			if err != nil {
+				_ = ln.Close()
+				return err
+			}
+			gate := &webfront.Gate{WorkerURL: workerBase, Client: workerClient, DB: pool}
 			api := &webfront.API{Gate: gate, DB: pool, Version: webfront.AppVersion(dir, version.Version),
 				SecureCookies: os.Getenv("NODE_ENV") == "production", Restart: stop, Jobs: inserter, EvalTrace: trace,
 				MetricsRefresh: jobs.MetricsRefreshOn()}
@@ -193,7 +199,7 @@ with exit code 0, so its supervisor starts it again.`,
 	cmd.Flags().StringVar(&dir, "dir", envOr("OPENNEKO_WEB_DIR", "apps/web/dist"), "Folder of the built web app, from pnpm --filter @neko/web build:spa")
 	cmd.Flags().StringVar(&nodeAddr, "node-addr", envOr("OPENNEKO_WEB_NODE_ADDR", "127.0.0.1:3001"), "Address of the Node server")
 	cmd.Flags().BoolVar(&runJobs, "jobs", envBool("OPENNEKO_WEB_JOBS", true), "Run the background jobs; false leaves them to another web")
-	cmd.Flags().StringVar(&workerURL, "worker-admin-url", envOr("WORKER_ADMIN_URL", "http://127.0.0.1:4100"), "Worker admin address that reports whether sign-in is on")
+	cmd.Flags().StringVar(&workerURL, "worker-admin-url", workeradmin.URL(), "Worker admin address (http://host:port or unix:///path/to/worker.sock)")
 	return cmd
 }
 

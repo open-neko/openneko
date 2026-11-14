@@ -41,6 +41,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { get as httpGet } from "node:http";
 import { get as httpsGet } from "node:https";
 import { deriveSigningSecret } from "@neko/secret-crypt";
+import { workerAdminTarget } from "@neko/llm/worker-admin";
 import { accessPolicyFor } from "./lib/access-policy";
 import {
   readAuthGateMarker,
@@ -74,7 +75,8 @@ function requestWorkerStatus(url: string): Promise<Response> {
   return new Promise((resolve, reject) => {
     const target = new URL(url);
     const get = target.protocol === "https:" ? httpsGet : httpGet;
-    const req = get(target, { headers: { accept: "application/json" } }, (res) => {
+    const { socketPath } = workerAdminTarget();
+    const req = get(target, { headers: { accept: "application/json" }, socketPath }, (res) => {
       const chunks: Buffer[] = [];
       let size = 0;
       res.on("data", (chunk: Buffer) => {
@@ -110,10 +112,7 @@ export function _setProviderStatusRequestForTest(
 }
 
 function workerAdminBase(): string {
-  return (process.env.WORKER_ADMIN_URL ?? "http://127.0.0.1:4100").replace(
-    /\/+$/,
-    "",
-  );
+  return workerAdminTarget().origin;
 }
 
 /**
