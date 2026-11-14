@@ -81,7 +81,7 @@ export function ProfileClient({ email, signInEnabled }: { email: string; signInE
     setPasskeyBusy(true);
     setPasskeyError(null);
     try {
-      await deletePasskey(id);
+      await deletePasskey(id, passkeys.length === 1);
       setPasskeys((current) => current.filter((p) => p.id !== id));
     } catch (e) {
       setPasskeyError(e instanceof Error ? e.message : String(e));
@@ -189,6 +189,9 @@ export function ProfileClient({ email, signInEnabled }: { email: string; signInE
         <h3 className="text-ui-body font-semibold text-text">Passkeys</h3>
         <p className="mt-1 text-ui-body-sm text-text2">
           Register a passkey on your phone or computer to approve actions with a biometric check.
+        </p>
+        <p className="mt-1 text-ui-body-sm text-text2" data-testid="passkey-approval-rule">
+          After you add a passkey, each approval in the browser asks for it.
         </p>
 
         {passkeyError ? (

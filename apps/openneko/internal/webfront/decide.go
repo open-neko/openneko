@@ -16,12 +16,21 @@ const unsafeRetry = "This action cannot be retried safely. Check its change set 
 type decisionError struct {
 	status  int
 	message string
+	code    string
+}
+
+func sendDecisionError(w http.ResponseWriter, e *decisionError) {
+	if e.code == "" {
+		sendError(w, e.status, e.message)
+		return
+	}
+	sendJSON(w, e.status, map[string]string{"error": e.message, "code": e.code})
 }
 
 func (e *decisionError) Error() string { return e.message }
 
 func transitionError(from, to string) error {
-	return &decisionError{http.StatusConflict, "invalid action_request transition: " + from + " → " + to}
+	return &decisionError{status: http.StatusConflict, message: "invalid action_request transition: " + from + " → " + to}
 }
 
 // actionRequestDecision answers PATCH action-requests/{id} as the Node route
@@ -72,10 +81,10 @@ func (a *API) actionRequestDecision(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, "passkey assertion is only valid for approve")
 		return
 	}
-	status, err := a.applyDecisionWithPasskey(ctx, a.passkeyRP(r), act, id, decision.(string), reason, rawPasskey)
+	status, err := a.applyDecisionWithPasskey(ctx, a.passkeyRP(r), act, approvalMethod(r), id, decision.(string), reason, rawPasskey)
 	var refused *decisionError
 	if errors.As(err, &refused) {
-		sendError(w, refused.status, refused.message)
+		sendDecisionError(w, refused)
 		return
 	}
 	if err != nil {
@@ -86,16 +95,17 @@ func (a *API) actionRequestDecision(w http.ResponseWriter, r *http.Request) {
 }
 
 // applyDecision approves, rejects or retries one action request for act in
-// one transaction, and queues the execution of an approved request.
-func (a *API) applyDecision(ctx context.Context, act actor, id, decision string, reason *string) (string, error) {
-	return a.applyDecisionWithPasskey(ctx, passkeyRP{}, act, id, decision, reason, nil)
+// one transaction, and queues the execution of an approved request. method
+// names the way the approval came in, for the audit log.
+func (a *API) applyDecision(ctx context.Context, act actor, method, id, decision string, reason *string) (string, error) {
+	return a.applyDecisionWithPasskey(ctx, passkeyRP{}, act, method, id, decision, reason, nil)
 }
 
-func (a *API) applyDecisionWithPasskey(ctx context.Context, rp passkeyRP, act actor, id, decision string, reason *string, rawPasskey any) (string, error) {
+func (a *API) applyDecisionWithPasskey(ctx context.Context, rp passkeyRP, act actor, method, id, decision string, reason *string, rawPasskey any) (string, error) {
 	var assertion *passkeyAssertion
 	if decision == "approve" && rawPasskey != nil {
 		var err error
-		if assertion, err = a.takePasskeyAssertion(ctx, act, id, rawPasskey); err != nil {
+		if assertion, err = a.takePasskeyAssertion(ctx, act, "approve", &id, rawPasskey); err != nil {
 			return "", err
 		}
 	}
@@ -118,10 +128,9 @@ func (a *API) applyDecisionWithPasskey(ctx context.Context, rp passkeyRP, act ac
 				return transitionError(current, status)
 			}
 			var pk *verifiedPasskey
-			if assertion != nil {
+			if status == "approved" {
 				var err error
-				pk, err = verifyPasskeyApproval(ctx, tx, rp, act, assertion)
-				if err != nil {
+				if pk, err = checkApprovalPasskey(ctx, tx, rp, act, method, assertion); err != nil {
 					return err
 				}
 			}
@@ -131,14 +140,7 @@ func (a *API) applyDecisionWithPasskey(ctx context.Context, rp passkeyRP, act ac
 				return err
 			}
 			if status == "approved" {
-				payload := map[string]any{"approvedBy": nullable(act.UserID), "kind": kind, "soloOperator": false}
-				if pk != nil {
-					payload["method"] = "passkey"
-					payload["passkeyCredentialId"] = pk.CredentialID
-					payload["passkeyName"] = pk.Name
-					payload["userVerified"] = pk.UserVerified
-				}
-				event = auditEvent{Event: "approved", Payload: payload}
+				event = auditEvent{Event: "approved", Payload: approvedPayload(act, kind, method, pk)}
 			} else {
 				var why any
 				if reason != nil {
@@ -199,7 +201,7 @@ func mayDecide(ctx context.Context, tx pgx.Tx, act actor, id string, policyID *s
 		}
 	}
 	if !member {
-		return &decisionError{http.StatusForbidden, "action_request " + id + ": approval needs a member of the policy's approver group"}
+		return &decisionError{status: http.StatusForbidden, message: "action_request " + id + ": approval needs a member of the policy's approver group"}
 	}
 	return nil
 }
@@ -225,7 +227,7 @@ func resetFailedChangeset(ctx context.Context, tx pgx.Tx, orgID, id string) erro
 		return err
 	}
 	if len(sets) != 1 || sets[0].status != "failed" || sets[0].bulk {
-		return &decisionError{http.StatusConflict, unsafeRetry}
+		return &decisionError{status: http.StatusConflict, message: unsafeRetry}
 	}
 	rows, err = tx.Query(ctx, `select status = 'failed' and started_at is null and external_ref is null
 		from action_changeset_row where changeset_id = $1 for update`, sets[0].id)
@@ -237,7 +239,7 @@ func resetFailedChangeset(ctx context.Context, tx pgx.Tx, orgID, id string) erro
 		return err
 	}
 	if len(safe) == 0 || slices.Contains(safe, false) {
-		return &decisionError{http.StatusConflict, unsafeRetry}
+		return &decisionError{status: http.StatusConflict, message: unsafeRetry}
 	}
 	if _, err := tx.Exec(ctx, `update action_changeset_row set status = 'draft', error = null, finished_at = null, updated_at = now()
 		where changeset_id = $1`, sets[0].id); err != nil {

@@ -402,8 +402,9 @@ func TestPasskeyRegisterAndApproveAction(t *testing.T) {
 	if w := call(f, "DELETE", "/api/v1/my/passkeys/"+created.Passkey.ID, "", admin); w.Code != 404 {
 		t.Fatalf("other user delete: %d %s", w.Code, w.Body.String())
 	}
-	// Member deletes own passkey
-	if w := call(f, "DELETE", "/api/v1/my/passkeys/"+created.Passkey.ID, "", member); w.Code != 200 || w.Body.String() != `{"ok":true}` {
+	removeBody, _ := json.Marshal(map[string]any{"passkey": buildTestAssertion(t, priv, "neko.example", credID,
+		testChallenge(t, f, member, `{"purpose":"remove"}`), 6, true)})
+	if w := call(f, "DELETE", "/api/v1/my/passkeys/"+created.Passkey.ID, string(removeBody), member); w.Code != 200 || w.Body.String() != `{"ok":true}` {
 		t.Fatalf("member delete: %d %s", w.Code, w.Body.String())
 	}
 	var count int

@@ -6,6 +6,7 @@ import {
   isPasskeySupported,
   listPasskeys,
   registerPasskey,
+  sendApproval,
   toBase64Url,
 } from "../src/lib/passkey";
 
@@ -152,5 +153,83 @@ describe("passkey client helpers", () => {
     expect(explicit.credentialId).toBe(credIdB64);
 
     await deletePasskey("pk-1");
+  });
+
+  function stubPasskeyBrowser(purposes: string[]) {
+    const rawId = new Uint8Array([7, 7, 7]).buffer;
+    const getMock = vi.fn().mockResolvedValue({
+      rawId,
+      response: {
+        clientDataJSON: new Uint8Array([1]).buffer,
+        authenticatorData: new Uint8Array([2]).buffer,
+        signature: new Uint8Array([3]).buffer,
+      },
+    });
+    vi.stubGlobal("window", { PublicKeyCredential: function PublicKeyCredential() {} });
+    vi.stubGlobal("navigator", { credentials: { create: vi.fn(), get: getMock } });
+    const challenge = (purpose: string) =>
+      new Response(
+        JSON.stringify({
+          purpose,
+          challenge: toBase64Url(new Uint8Array(32).fill(9)),
+          rp: { id: "localhost", name: "OpenNeko" },
+          user: { id: "dQ", name: "u", displayName: "u" },
+          pubKeyCredParams: [],
+          excludeCredentials: [],
+          allowCredentials: [{ id: toBase64Url(rawId), type: "public-key" }],
+          userVerification: "required",
+        }),
+        { status: 200 },
+      );
+    return {
+      getMock,
+      challengeFetch: (init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { purpose: string };
+        purposes.push(body.purpose);
+        return challenge(body.purpose);
+      },
+    };
+  }
+
+  it("sends an approval again with a passkey when the server asks for one", async () => {
+    const purposes: string[] = [];
+    const { getMock, challengeFetch } = stubPasskeyBrowser(purposes);
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => challengeFetch(init)));
+    const sent: unknown[] = [];
+    const send = vi.fn(async (passkey?: unknown) => {
+      sent.push(passkey);
+      return passkey
+        ? new Response(JSON.stringify({ ok: true }), { status: 200 })
+        : new Response(JSON.stringify({ error: "This approval needs your passkey.", code: "passkey_required" }), { status: 403 });
+    });
+    const res = await sendApproval("30000000-0000-4000-8000-000000000003", send);
+    expect(res.status).toBe(200);
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).toBeUndefined();
+    expect(sent[1]).toMatchObject({ credentialId: "BwcH" });
+    expect(purposes).toEqual(["approve"]);
+    expect(getMock).toHaveBeenCalledTimes(1);
+
+    const plain = vi.fn(async () => new Response(JSON.stringify({ error: "nope" }), { status: 403 }));
+    expect((await sendApproval("30000000-0000-4000-8000-000000000004", plain)).status).toBe(403);
+    expect(plain).toHaveBeenCalledTimes(1);
+  });
+
+  it("signs a remove challenge before it removes the last passkey", async () => {
+    const purposes: string[] = [];
+    const { challengeFetch } = stubPasskeyBrowser(purposes);
+    const deletes: Array<string | undefined> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/v1/my/passkeys/challenge") return challengeFetch(init);
+        deletes.push(init?.body ? String(init.body) : undefined);
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }),
+    );
+    await deletePasskey("pk-2", true);
+    expect(purposes).toEqual(["remove"]);
+    expect(deletes).toHaveLength(1);
+    expect(JSON.parse(deletes[0]!)).toMatchObject({ passkey: { credentialId: "BwcH" } });
   });
 });

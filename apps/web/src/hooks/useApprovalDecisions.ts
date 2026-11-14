@@ -9,7 +9,7 @@ import {
   describeOutcome,
   systemForActionKind,
 } from "@/lib/action-outcome";
-import { createApprovalPasskeyAssertion } from "@/lib/passkey";
+import { createApprovalPasskeyAssertion, needsPasskey } from "@/lib/passkey";
 
 export const UNDO_WINDOW_MS = 5000;
 const FOLLOW_INTERVAL_MS = 2000;
@@ -88,6 +88,7 @@ export function useApprovalDecisions(onSettled: () => void | Promise<void>) {
   const settledRef = useRef(onSettled);
   const router = useRouter();
   const openRef = useRef((href: string) => router.push(href));
+  const passkeyRef = useRef<(id: string, label: string) => Promise<void>>(async () => {});
 
   useEffect(() => {
     openRef.current = (href: string) => router.push(href);
@@ -135,6 +136,15 @@ export function useApprovalDecisions(onSettled: () => void | Promise<void>) {
         pending.current.delete(id);
         try {
           const res = await send(id, decision, reason);
+          if (decision === "approve" && (await needsPasskey(res))) {
+            toast("This approval needs your passkey", {
+              description: label,
+              duration: 15000,
+              action: { label: "Use passkey", onClick: () => void passkeyRef.current(id, label) },
+            });
+            setHidden(id, false);
+            return;
+          }
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           if (decision === "approve") void followOutcome(id, label, (href) => openRef.current(href));
         } catch {
@@ -193,6 +203,10 @@ export function useApprovalDecisions(onSettled: () => void | Promise<void>) {
     },
     [setHidden],
   );
+
+  useEffect(() => {
+    passkeyRef.current = approveWithPasskey;
+  }, [approveWithPasskey]);
 
   const beginReject = useCallback((id: string) => {
     setRejectingId(id);

@@ -150,6 +150,7 @@ auditor.
 | The agent's tools never see your keys | The model key travels to `openneko serve` with each turn. Serve removes every `*_API_KEY` variable from the environment the agent's tools run in. | #82 |
 | Secrets encrypted at rest | Tokens, passwords, and keys are encrypted on disk everywhere they're stored. | #96 |
 | Approval gates | Anything that changes the world — sending, installing, configuring, inviting — becomes a proposal a human approves first, governed by per-organisation policies. | #11, #96 |
+| Passkey approvals | Register a passkey on your phone or computer on your profile. From then on, each approval you give in the browser asks for that passkey, and removing your last passkey asks for it too. Approvals from Slack, Telegram and a device token work as before. The audit log records how each approval came in: passkey, session, Slack, Telegram or token. | Phase 4 |
 | Dual-identity audit | Every privileged call records both the human behind it and the agent acting for them — no anonymous actions. | #96 |
 | Tamper-evident log | The action trail is hash-chained: any edit or deletion after the fact is mathematically detectable. Exportable for auditors and SIEM tools. | #96 |
 | Memory integrity | Stored memories are sealed against tampering and expire on schedule — a poisoned or stale note can't quietly steer the assistant. | #96 |

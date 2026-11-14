@@ -15,7 +15,7 @@ import {
   systemForActionKind,
 } from "@/lib/action-outcome";
 import { cn } from "@/lib/cn";
-import { createApprovalPasskeyAssertion } from "@/lib/passkey";
+import { createApprovalPasskeyAssertion, sendApproval, type PasskeyAssertionPayload } from "@/lib/passkey";
 import { Button } from "@/components/ui/button";
 import { SkeletonList } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
@@ -175,19 +175,26 @@ export default function ActionPage() {
       setBusy(true);
       setDecisionError(null);
       try {
-        const response = await fetch(`/api/v1/action-requests/${actionRequestId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ decision, reason }),
-        });
+        const send = (passkey?: PasskeyAssertionPayload) =>
+          fetch(`/api/v1/action-requests/${actionRequestId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ decision, reason, ...(passkey ? { passkey } : {}) }),
+          });
+        const response =
+          decision === "approve" ? await sendApproval(actionRequestId, send) : await send();
         if (!response.ok) {
           const body = await response.json().catch(() => ({})) as { error?: string };
           setDecisionError(body.error ?? "Could not update this action. Refresh and try again.");
           return;
         }
         await load();
-      } catch {
-        setDecisionError("Could not update this action. Check your connection and try again.");
+      } catch (e) {
+        setDecisionError(
+          e instanceof Error && e.message
+            ? e.message
+            : "Could not update this action. Check your connection and try again.",
+        );
       } finally {
         setBusy(false);
       }

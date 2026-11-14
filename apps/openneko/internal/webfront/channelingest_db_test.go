@@ -196,12 +196,17 @@ func TestChannelDispatch(t *testing.T) {
 	seed(t, db, `insert into action_request (id, org_id, scope, kind, status, payload) values
 		($1, 'org', 'internal', 'note', 'pending_approval', '{}'), ($2, 'org', 'internal', 'note', 'pending_approval', '{}')`, arPending, arRejectMe)
 	tg := func(update string) bool { return a.processInbound(ctx, "org", "telegram", parse(t, update)) }
+	seed(t, db, `insert into app_passkey (org_id, user_id, credential_id, public_key, name)
+		select org_id, id, 'cred-' || id, 'key', 'Phone' from app_user where org_id = 'org'`)
 
 	if !tg(`{"update_id":1,"callback_query":{"data":"approve:` + arPending + `","from":{"id":98},"message":{"chat":{"id":4242}}}}`) {
 		t.Fatal("approve held")
 	}
 	if got := rowText(t, db, `select status from action_request where id = $1`, arPending); got != "approved" {
 		t.Errorf("approve: %s", got)
+	}
+	if got := lastAudit(t, db, arPending); !strings.Contains(got, `"method": "telegram"`) {
+		t.Errorf("telegram approval audit: %s", got)
 	}
 	if j := riverJobs(t, db, jobs.KindActionExecute); len(j) != 1 || !strings.Contains(j[0].Args, arPending) {
 		t.Errorf("execute job %+v", j)
