@@ -186,45 +186,50 @@ func readLiteral(source string) (string, bool) {
 
 var genericFieldNames = map[string]bool{"query": true, "response": true}
 
+var goHostProgram = regexp.MustCompile(`\bllm\.Program\{\s*Signature:\s*`)
+
 func TestEveryHostProgramSignatureParses(t *testing.T) {
-	root := filepath.Join("..", "..", "..", "packages", "llm", "src")
 	found := 0
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".ts") {
-			return err
-		}
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		source := string(raw)
-		for _, match := range hostProgramCall.FindAllStringIndex(source, -1) {
-			line := strings.Count(source[:match[0]], "\n") + 1
-			if strings.Contains(source[max(0, match[0]-16):match[0]], "function ") {
-				continue
+	walk := func(root, suffix string, start *regexp.Regexp) {
+		err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+			if err != nil || entry.IsDir() || !strings.HasSuffix(path, suffix) || strings.HasSuffix(path, "_test.go") {
+				return err
 			}
-			signature, ok := readLiteral(source[match[1]:])
-			if !ok {
-				t.Errorf("%s:%d: hostProgram needs a static signature literal", path, line)
-				continue
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				return err
 			}
-			found++
-			if err := CheckSignature(signature); err != nil {
-				t.Errorf("%s:%d: %v", path, line, err)
-				continue
-			}
-			parsed := parseSignature(signature)
-			for _, field := range append(parsed.GetInputFields(), parsed.GetOutputFields()...) {
-				if genericFieldNames[strings.ToLower(field.Name)] {
-					t.Errorf("%s:%d: field name %q is too generic", path, line, field.Name)
+			source := string(raw)
+			for _, match := range start.FindAllStringIndex(source, -1) {
+				line := strings.Count(source[:match[0]], "\n") + 1
+				if strings.Contains(source[max(0, match[0]-16):match[0]], "function ") {
+					continue
+				}
+				signature, ok := readLiteral(source[match[1]:])
+				if !ok {
+					t.Errorf("%s:%d: a host program needs a static signature literal", path, line)
+					continue
+				}
+				found++
+				if err := CheckSignature(signature); err != nil {
+					t.Errorf("%s:%d: %v", path, line, err)
+					continue
+				}
+				parsed := parseSignature(signature)
+				for _, field := range append(parsed.GetInputFields(), parsed.GetOutputFields()...) {
+					if genericFieldNames[strings.ToLower(field.Name)] {
+						t.Errorf("%s:%d: field name %q is too generic", path, line, field.Name)
+					}
 				}
 			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
+	walk(filepath.Join("..", "..", "..", "packages", "llm", "src"), ".ts", hostProgramCall)
+	walk(filepath.Join("..", "..", "openneko", "internal"), ".go", goHostProgram)
 	if found < 6 {
 		t.Fatalf("found %d host programs, want at least 6", found)
 	}

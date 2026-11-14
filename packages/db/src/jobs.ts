@@ -19,9 +19,7 @@ export const QUEUE = {
   METRIC_REFRESH: "metric_refresh",
   WORK_RUN: "work_run",
   WORKFLOW_RUN_FIRE: "workflow_run_fire",
-  BOT_NAME_SWEEP: "bot_name_sweep",
   CHANNEL_DELIVER: "channel_deliver",
-  SKILL_LEARN: "skill_learn",
 } as const;
 
 /**
@@ -36,6 +34,8 @@ export const MOVED_QUEUES = [
   "embedding_sweep",
   "directory_sync",
   "action_execute",
+  "skill_learn",
+  "bot_name_sweep",
 ] as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
@@ -148,6 +148,24 @@ export type SkillLearnPayload = {
   orgId: string;
   skillName: string;
 };
+
+/**
+ * Queues one skill learning run on River unless one for the same org and
+ * skill still waits. `jobs.SkillLearnArgs` in
+ * apps/openneko/internal/jobs reads the row; max_attempts matches
+ * `jobs.SkillLearnAttempts`.
+ */
+export async function enqueueSkillLearn(payload: SkillLearnPayload): Promise<void> {
+  const args = JSON.stringify({ orgId: payload.orgId, skillName: payload.skillName });
+  await pool().query(
+    `insert into river.river_job (kind, args, max_attempts, queue)
+     select 'skill_learn', $1::jsonb, 3, 'default'
+     where not exists (
+       select 1 from river.river_job where kind = 'skill_learn' and args = $1::jsonb
+         and state in ('available', 'pending', 'retryable', 'scheduled'))`,
+    [args],
+  );
+}
 
 let _boss: PgBoss | null = null;
 let _starting: Promise<PgBoss> | null = null;

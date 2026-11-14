@@ -12,7 +12,6 @@ import {
   QUEUE,
   RETIRED_QUEUES,
   type ChannelDeliverPayload,
-  type SkillLearnPayload,
   type ProcessingJobPayload,
   type WorkflowRunFirePayload,
   type WorkRunPayload,
@@ -75,7 +74,7 @@ import {
   type DataSourceContext,
 } from "@neko/llm/workflows";
 import { resolveDeclarativePackActionAdapter, registerPackConnectionPreflight } from "./packs/declarative-action-runtime.js";
-import { ensureOrgWorkspace, getOrgAgentRoot, nameBackfilledBots, reportDeploymentProfile, setAgentSlotLimit } from "@neko/llm/work";
+import { ensureOrgWorkspace, getOrgAgentRoot, reportDeploymentProfile, setAgentSlotLimit } from "@neko/llm/work";
 import { ensureQueueExists, removeRetiredQueue } from "./pg-boss-helpers.js";
 import { setCoreSecretsInstance } from "./secrets/instance.js";
 import {
@@ -104,7 +103,6 @@ import { runWorkflowRunFire } from "./jobs/workflow-run-fire.js";
 import { runActionExecute } from "./jobs/action-execute.js";
 import { moveLibraryDocumentsToStore } from "./jobs/library-recovery.js";
 import { filesEnabled } from "@neko/llm/files";
-import { runSkillLearnJob } from "./jobs/skill-learn.js";
 import {
   reconcileStaleProcessingJobs,
   reconcileStaleRuns,
@@ -670,23 +668,6 @@ await b.work(
 );
 
 await b.work(
-  QUEUE.SKILL_LEARN,
-  { batchSize: 1, pollingIntervalSeconds: 2 },
-  async (jobs: PgBossLib.Job<SkillLearnPayload>[]) => {
-    for (const job of jobs) {
-      try {
-        await runSkillLearnJob(job.data);
-      } catch (e) {
-        console.warn(
-          `[skill-learn] job ${job.id} failed; pg-boss may retry: ${e instanceof Error ? e.message : e}`,
-        );
-        throw e;
-      }
-    }
-  },
-);
-
-await b.work(
   QUEUE.CHANNEL_DELIVER,
   { batchSize: 1, pollingIntervalSeconds: 0.5 },
   async (jobs: PgBossLib.Job<ChannelDeliverPayload>[]) => {
@@ -702,15 +683,6 @@ await b.work(
     }
   },
 );
-
-await b.work(QUEUE.BOT_NAME_SWEEP, async () => {
-  const { named, failed } = await nameBackfilledBots();
-  if (named || failed) console.log(`[bot-names] named ${named} bot(s), ${failed} kept their chat title`);
-});
-
-await b.schedule(QUEUE.BOT_NAME_SWEEP, "*/15 * * * *", {}, { tz: "UTC", retryLimit: 0 });
-await b.send(QUEUE.BOT_NAME_SWEEP, {}, { singletonKey: "startup", retryLimit: 0 });
-console.log("[worker] scheduled bot name sweep every fifteen minutes");
 
 type CachedDataSource = { ctx: DataSourceContext; expiresAt: number };
 const DATA_SOURCE_CACHE_MS = 60_000;
