@@ -154,6 +154,10 @@ func (a *API) adminPackWrite(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if action == "review" {
+		a.servePackReview(w, r, act, packID, body)
+		return
+	}
 	body.set("actorUserId", nullable(act.UserID))
 	key, isString := body.vals["idempotencyKey"].(string)
 	if !isString {
