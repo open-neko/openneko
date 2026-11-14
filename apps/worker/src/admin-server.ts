@@ -197,16 +197,6 @@ export interface SsoSetupHandlerSurface {
   }>;
 }
 
-/** The turned-on built-in channels. openneko web owns sends, inbound and settings. */
-export interface ChannelHandlerSurface {
-  getChannelProviders(): Promise<Array<{
-    id: string;
-    providerLabel: string;
-    directions: string[];
-    ingress: string;
-  }>>;
-}
-
 /**
  * Install-policy surface exposed to the CLI (via the worker admin
  * port) for the install-time enforcement check. The CLI calls
@@ -283,8 +273,6 @@ export type AdminHandlerOptions = {
    * tests, in which case /admin/sso/setup/* routes return 503.
    */
   ssoSetup?: SsoSetupHandlerSurface | null;
-  /** Channel surface. Absent in tests, in which case the provider list is empty. */
-  channels?: ChannelHandlerSurface | null;
   /**
    * Install-policy reader. When absent, /admin/install-policy returns the
    * most-restrictive default so the CLI refuses git-URL skill installs.
@@ -351,7 +339,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const auth = opts.auth ?? null;
   const connect = opts.connect ?? null;
   const ssoSetup = opts.ssoSetup ?? null;
-  const channels = opts.channels ?? null;
   const installPolicy = opts.installPolicy ?? null;
   const events = opts.events ?? null;
   const actionRequests = opts.actionRequests ?? null;
@@ -618,10 +605,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
         );
         return;
       }
-    }
-    if (req.method === "GET" && req.url === "/admin/channels/providers") {
-      void handleChannelProviders(res, channels);
-      return;
     }
     res.writeHead(404).end();
   };
@@ -1514,19 +1497,6 @@ async function handleConnectDisconnect(
   try {
     const removed = await connect.disconnect(pluginName, operatorId);
     json(res, 200, { removed });
-  } catch (err) {
-    json(res, 500, { error: err instanceof Error ? err.message : String(err) });
-  }
-}
-
-// ─── Channel (frontend) ────────────────────────────────────────────────
-
-async function handleChannelProviders(
-  res: ServerResponse,
-  channels: ChannelHandlerSurface | null,
-) {
-  try {
-    json(res, 200, { providers: (await channels?.getChannelProviders()) ?? [] });
   } catch (err) {
     json(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }

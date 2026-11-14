@@ -1216,49 +1216,6 @@ describe("worker admin /admin/auth/*", () => {
 });
 
 describe("worker channel routes", () => {
-  function fakeChannel(
-    overrides: Partial<NonNullable<Parameters<typeof createAdminHandler>[0]["channels"]>> = {},
-  ): NonNullable<Parameters<typeof createAdminHandler>[0]["channels"]> {
-    return {
-      getChannelProviders: overrides.getChannelProviders ?? (async () => []),
-    };
-  }
-
-  it("GET /admin/channels/providers returns the turned-on channels", async () => {
-    const srv = await startServer(
-      createAdminHandler({
-        channels: fakeChannel({
-          getChannelProviders: async () => [
-            {
-              id: "telegram",
-              providerLabel: "Telegram",
-              directions: ["outbound", "inbound"],
-              ingress: "webhook",
-            },
-          ],
-        }),
-      }),
-    );
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/channels/providers`);
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as { providers: Array<{ providerLabel: string }> };
-      expect(body.providers[0]?.providerLabel).toBe("Telegram");
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("GET /admin/channels/providers returns [] when the channel surface is absent", async () => {
-    const srv = await startServer(createAdminHandler());
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/channels/providers`);
-      expect(((await res.json()) as { providers: unknown[] }).providers).toEqual([]);
-    } finally {
-      await srv.close();
-    }
-  });
-
   it("POST /admin/channels/:p/deliver is gone: openneko web sends", async () => {
     const srv = await startServer(createAdminHandler());
     try {
@@ -1273,10 +1230,10 @@ describe("worker channel routes", () => {
     }
   });
 
-  it("the inbound webhook and the channel settings are gone: openneko web owns them", async () => {
-    const srv = await startServer(createAdminHandler({ channels: fakeChannel() }));
+  it("the inbound webhook, the channel settings and the provider list are gone: openneko web owns them", async () => {
+    const srv = await startServer(createAdminHandler());
     try {
-      for (const [method, path] of [["POST", "/channels/telegram/inbound"], ["GET", "/admin/channels/settings"], ["POST", "/admin/channels/settings"]]) {
+      for (const [method, path] of [["POST", "/channels/telegram/inbound"], ["GET", "/admin/channels/settings"], ["POST", "/admin/channels/settings"], ["GET", "/admin/channels/providers"]]) {
         const res = await fetch(`http://127.0.0.1:${srv.port}${path}`, { method, headers: { "Content-Type": "application/json" }, ...(method === "POST" ? { body: "{}" } : {}) });
         expect(res.status).toBe(404);
       }

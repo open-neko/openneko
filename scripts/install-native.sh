@@ -1,5 +1,6 @@
 #!/bin/sh
-# Installs the native OpenNeko release for one user on Linux, with no Docker.
+# Installs the native OpenNeko release on Linux, with no Docker: for one
+# user, or with --server as two systemd services (needs root).
 set -eu
 
 fail() { echo "openneko install: $*" >&2; exit 1; }
@@ -10,11 +11,24 @@ case "$(uname -m)" in
   aarch64 | arm64) arch=arm64 ;;
   *) fail "no native release for $(uname -m)" ;;
 esac
+server=
+if [ "${1:-}" = --server ]; then
+  server=1
+  shift
+  [ "$(id -u)" = 0 ] || fail "--server needs root: run it with sudo"
+elif [ "$#" -gt 0 ]; then
+  fail "unknown option $1; the options go after --server"
+fi
 command -v curl >/dev/null || fail "curl is needed"
 command -v sha256sum >/dev/null || fail "sha256sum is needed"
 
-prefix="${OPENNEKO_PREFIX:-$HOME/.local/opt/openneko}"
-bindir="${OPENNEKO_BIN_DIR:-$HOME/.local/bin}"
+if [ -n "$server" ]; then
+  prefix="${OPENNEKO_PREFIX:-/opt/openneko}"
+  bindir="${OPENNEKO_BIN_DIR:-/usr/local/bin}"
+else
+  prefix="${OPENNEKO_PREFIX:-$HOME/.local/opt/openneko}"
+  bindir="${OPENNEKO_BIN_DIR:-$HOME/.local/bin}"
+fi
 base="${OPENNEKO_RELEASE_URL:-https://github.com/open-neko/openneko/releases/download}"
 tag="${OPENNEKO_VERSION:-}"
 if [ -z "$tag" ]; then
@@ -42,6 +56,12 @@ tar -xzf "$tmp/$name" -C "$prefix" --no-same-owner bin/openneko share/openneko/w
 ln -sf "$prefix/bin/openneko" "$bindir/openneko"
 "$bindir/openneko" version --short >/dev/null || fail "the installed executable does not run"
 
+if [ -n "$server" ]; then
+  chmod -R go-w "$prefix"
+  chmod -R a+rX "$prefix"
+  echo "OpenNeko $tag is in $prefix. Setting up the server install..."
+  exec "$prefix/bin/openneko" server-install "$@"
+fi
 echo "OpenNeko $tag is in $prefix; $bindir/openneko runs it."
 case ":$PATH:" in *":$bindir:"*) ;; *) echo "Add $bindir to your PATH." ;; esac
 echo "Start it with your Postgres database:"
