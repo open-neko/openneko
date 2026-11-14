@@ -13,7 +13,6 @@ import {
   RETIRED_QUEUES,
   type ChannelDeliverPayload,
   type ProcessingJobPayload,
-  type WorkflowRunFirePayload,
   type WorkRunPayload,
 } from "@neko/db/jobs";
 import {
@@ -94,7 +93,6 @@ import {
 } from "./channels/runtime.js";
 import type PgBossLib from "pg-boss";
 import { runWorkRun } from "./jobs/work-run.js";
-import { runWorkflowRunFire } from "./jobs/workflow-run-fire.js";
 import { runActionExecute } from "./jobs/action-execute.js";
 import { moveLibraryDocumentsToStore } from "./jobs/library-recovery.js";
 import { filesEnabled } from "@neko/llm/files";
@@ -110,7 +108,6 @@ import {
   getWorkflowSchedulerHealth,
   startDurableWorkflowScheduler,
 } from "./workflow-scheduler.js";
-import { startWorkflowApiDispatcher } from "./workflow-api-dispatcher.js";
 import { PackService } from "./packs/service.js";
 import { registerPackActionPreflight } from "./packs/action-preflight.js";
 import { registerMagentoV2Runtime } from "./packs/magento-v2-runtime.js";
@@ -607,23 +604,6 @@ for (let i = 0; i < concurrency.globalCap; i++) {
 }
 
 await b.work(
-  QUEUE.WORKFLOW_RUN_FIRE,
-  { batchSize: 1, pollingIntervalSeconds: 0.5 },
-  async (jobs: PgBossLib.Job<WorkflowRunFirePayload>[]) => {
-    for (const job of jobs) {
-      try {
-        await runWorkflowRunFire(job.data);
-      } catch (e) {
-        console.warn(
-          `[workflow-run-fire] job ${job.id} failed; pg-boss may retry: ${e instanceof Error ? e.message : e}`,
-        );
-        throw e;
-      }
-    }
-  },
-);
-
-await b.work(
   QUEUE.CHANNEL_DELIVER,
   { batchSize: 1, pollingIntervalSeconds: 0.5 },
   async (jobs: PgBossLib.Job<ChannelDeliverPayload>[]) => {
@@ -732,7 +712,6 @@ subscriptionManager.ready
 // useful for auxiliary maintenance, but cannot be the source of truth for a
 // business schedule that must catch up after downtime.
 const workflowScheduler = await startDurableWorkflowScheduler();
-const workflowApiDispatcher = await startWorkflowApiDispatcher();
 
 const reconcileTimer = setInterval(() => {
   reconcileStaleProcessingJobs({ minAgeMs: RECONCILE_SWEEP_MIN_AGE_MS })
@@ -811,7 +790,6 @@ const shutdown = async (signal: string) => {
   clearInterval(packOAuthRefreshTimer);
   clearInterval(knowledgeRefreshTimer);
   workflowScheduler.stop();
-  workflowApiDispatcher.stop();
   channelInbound.stop();
   coreSecrets?.stop();
   unregisterPackActionPreflight();

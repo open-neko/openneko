@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -25,7 +24,7 @@ const (
 // Moved lists the queues that River runs. MOVED_QUEUES in
 // packages/db/src/jobs.ts must hold the same names.
 var Moved = []string{KindOutputSweep, KindMetricSweep, KindCronSweep, KindEmbeddingIndex, KindEmbeddingSweep, KindDirectorySync, KindActionExecute, KindSkillLearn, KindBotNameSweep,
-	KindBusinessProfileBuild, KindIndustryInsightsBuild, KindBootstrapMetricsBuild, KindMetricRefresh}
+	KindBusinessProfileBuild, KindIndustryInsightsBuild, KindBootstrapMetricsBuild, KindMetricRefresh, KindWorkflowRunFire, KindWorkflowAPISweep}
 
 type Queue struct {
 	Pool          *pgxpool.Pool
@@ -37,14 +36,13 @@ type Queue struct {
 	DirectorySync func(context.Context) error
 	// ActionExecute asks the Node worker to run an approved action; the
 	// action adapters live in the worker until the packs runtime moves.
-	ActionExecute func(ctx context.Context, orgID, actionRequestID string) error
-	SkillLearn    func(ctx context.Context, orgID, skillName string) error
-	BotNameSweep  func(context.Context) error
-	Build         BuildFunc
-	// WorkflowRunFire runs the workflow_run_fire jobs that are not API
-	// runs; the worker runs those from pg-boss.
-	WorkflowRunFire WorkflowRunFireFunc
-	Embedding       Embedding
+	ActionExecute    func(ctx context.Context, orgID, actionRequestID string) error
+	SkillLearn       func(ctx context.Context, orgID, skillName string) error
+	BotNameSweep     func(context.Context) error
+	Build            BuildFunc
+	WorkflowRunFire  WorkflowRunFireFunc
+	WorkflowAPISweep func(context.Context) error
+	Embedding        Embedding
 }
 
 func (q *Queue) schema() string {
@@ -84,7 +82,7 @@ func (q *Queue) Migrate(ctx context.Context) error {
 	if len(res.Versions) > 0 {
 		q.logf("[migrate] job queue: %d River migration(s) applied", len(res.Versions))
 	}
-	for _, name := range append(slices.Clone(Moved), KindWorkflowRunFire) {
+	for _, name := range Moved {
 		n, err := q.drain(ctx, name)
 		if err != nil {
 			return fmt.Errorf("move the %s jobs from pg-boss: %w", name, err)
@@ -115,7 +113,6 @@ func (q *Queue) drain(ctx context.Context, name string) (int64, error) {
 	tag, err := tx.Exec(ctx, `
 with moved as (
   delete from `+boss+`.job where name = $1 and state in ('created', 'retry')
-    and ($1 <> '`+KindWorkflowRunFire+`' or coalesce(data->>'triggerKind', '') <> 'api')
   returning name, data, retry_limit, start_after
 )
 insert into `+river+`.river_job (kind, args, max_attempts, scheduled_at, state, queue)
@@ -125,7 +122,7 @@ from moved`, name, queueOf(name))
 	if err != nil {
 		return 0, err
 	}
-	if schedule != nil && name != KindWorkflowRunFire {
+	if schedule != nil {
 		if _, err := tx.Exec(ctx, `delete from `+boss+`.schedule where name = $1`, name); err != nil {
 			return 0, err
 		}
@@ -178,6 +175,7 @@ func (q *Queue) config() *river.Config {
 	river.AddWorker(workers, &botNameSweep{run: q.BotNameSweep})
 	addBuildWorkers(workers, q.Build)
 	river.AddWorker(workers, &workflowRunFire{run: q.WorkflowRunFire})
+	river.AddWorker(workers, &workflowAPISweep{run: q.WorkflowAPISweep})
 	return &river.Config{
 		Schema: q.schema(),
 		Logger: quietLogger(),
@@ -208,6 +206,7 @@ var cronJobs = []cronJob{
 	{schedule: EveryMinute{}, period: time.Minute, args: EmbeddingSweepArgs{}, runOnStart: true},
 	{schedule: SixHourly{}, period: 6 * time.Hour, args: DirectorySyncArgs{}},
 	{schedule: QuarterHourly{}, period: 15 * time.Minute, args: BotNameSweepArgs{}, runOnStart: true},
+	{schedule: EveryMinute{}, period: time.Minute, args: WorkflowAPISweepArgs{}, runOnStart: true},
 }
 
 func periodicJobs() []*river.PeriodicJob {

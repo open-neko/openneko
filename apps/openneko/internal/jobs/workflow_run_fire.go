@@ -12,14 +12,16 @@ import (
 )
 
 // The pg-boss send options of the queue: retry limit 2 and retry delay 30 s,
-// with backoff for cron firings. The worker ran one workflow at a time.
-// enqueueWorkflowRunFire in packages/db/src/jobs.ts writes the same queue,
-// max_attempts and dedupe value.
+// with backoff for cron firings, and 15 s with backoff for API runs. The
+// worker ran one workflow at a time. enqueueWorkflowRunFire in
+// packages/db/src/jobs.ts writes the same queue, max_attempts and dedupe
+// value.
 const (
-	KindWorkflowRunFire       = "workflow_run_fire"
-	QueueWorkflowRun          = "workflow_run"
-	WorkflowRunFireAttempts   = 3
-	WorkflowRunFireRetryDelay = 30 * time.Second
+	KindWorkflowRunFire          = "workflow_run_fire"
+	QueueWorkflowRun             = "workflow_run"
+	WorkflowRunFireAttempts      = 3
+	WorkflowRunFireRetryDelay    = 30 * time.Second
+	WorkflowAPIRunFireRetryDelay = 15 * time.Second
 )
 
 // WorkflowRunFireArgs is WorkflowRunFirePayload in packages/db/src/jobs.ts.
@@ -38,6 +40,12 @@ type WorkflowRunFireArgs struct {
 	TriggeredByOutputID       string          `json:"triggeredByOutputId,omitempty"`
 	TriggeredByObservationID  string          `json:"triggeredByObservationId,omitempty"`
 	Dedupe                    string          `json:"dedupe,omitempty"`
+	APIAdmissionID            string          `json:"apiAdmissionId,omitempty"`
+	WorkflowRunID             string          `json:"workflowRunId,omitempty"`
+	WorkRunID                 string          `json:"workRunId,omitempty"`
+	ExecutionMode             string          `json:"executionMode,omitempty"`
+	AdmittedAt                string          `json:"admittedAt,omitempty"`
+	QueueAttempt              int             `json:"queueAttempt,omitempty"`
 }
 
 func (WorkflowRunFireArgs) Kind() string { return KindWorkflowRunFire }
@@ -62,7 +70,7 @@ func (w *workflowRunFire) Work(ctx context.Context, job *river.Job[WorkflowRunFi
 		return river.JobCancel(errors.New("the job names no org or workflow"))
 	}
 	switch a.TriggerKind {
-	case "manual", "cron", "subscription", "watcher":
+	case "manual", "cron", "subscription", "watcher", "api":
 	default:
 		return river.JobCancel(errors.New("the job has trigger kind " + strconv.Quote(a.TriggerKind) + ", which this queue does not run"))
 	}
@@ -74,7 +82,10 @@ func (w *workflowRunFire) Timeout(*river.Job[WorkflowRunFireArgs]) time.Duration
 
 func (w *workflowRunFire) NextRetry(job *river.Job[WorkflowRunFireArgs]) time.Time {
 	delay := WorkflowRunFireRetryDelay
-	if job.Args.TriggerKind == "cron" {
+	switch job.Args.TriggerKind {
+	case "api":
+		delay = WorkflowAPIRunFireRetryDelay << max(job.Attempt-1, 0)
+	case "cron":
 		delay <<= max(job.Attempt-1, 0)
 	}
 	return time.Now().Add(delay)
@@ -113,3 +124,6 @@ func (i *Inserter) WorkflowRunFire(ctx context.Context, tx pgx.Tx, args Workflow
 	}
 	return strconv.FormatInt(res.Job.ID, 10), nil
 }
+
+// Snooze puts a job back in its queue after d without using an attempt.
+func Snooze(d time.Duration) error { return river.JobSnooze(d) }

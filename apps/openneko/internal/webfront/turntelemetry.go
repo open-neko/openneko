@@ -16,6 +16,7 @@ var runSummaryUsageKeys = []string{"inputTokens", "outputTokens", "cacheReadToke
 type runTelemetry struct {
 	mu    sync.Mutex
 	usage *jsObj
+	batch *jsObj
 }
 
 func (t *runTelemetry) wrap(emit func(context.Context, any) error) func(context.Context, any) error {
@@ -56,7 +57,12 @@ func (t *runTelemetry) summary(runID string) *jsObj {
 	}
 	usage.set("coverage", coverage)
 	usage.set("missingReasons", reasons)
-	return jsObjOf("schemaVersion", runSummarySchema, "runId", runID, "usage", usage)
+	out := jsObjOf("schemaVersion", runSummarySchema, "runId", runID)
+	if t.batch != nil {
+		out.set("batch", t.batch)
+	}
+	out.set("usage", usage)
+	return out
 }
 
 // storeRunTelemetry adds the summary as the run's telemetry event and, for a

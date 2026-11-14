@@ -18,7 +18,6 @@ import {
   type AgentWorkspace,
 } from "../agent-backend";
 import type { RunWorkflowAgentBackendInput } from "../workflows/agent-core";
-import type { RunWorkflowTurnDeps } from "../workflows/run-workflow-turn";
 import type { RunAgentBackendInput } from "./agent-core";
 import type { AxBackend } from "../agent-backends/ax";
 import type { RunBinding } from "./broker";
@@ -776,25 +775,6 @@ export function agentRuntimeDepsFromConfig(
 ): Pick<Partial<RunChatTurnDeps>, "runCore"> {
   return {
     runCore: makeSandboxRunCore(sandboxLauncherOptionsFromConfig(config, broker)),
-  };
-}
-
-export function workflowRuntimeDepsFromEnv(
-  broker?: SandboxBrokerHandle,
-): Pick<Partial<RunWorkflowTurnDeps>, "runCore"> {
-  return {
-    runCore: makeSandboxWorkflowRunCore(sandboxLauncherOptionsFromEnv(broker)),
-  };
-}
-
-export function workflowRuntimeDepsFromConfig(
-  config: AgentRuntimeLaunchConfig,
-  broker?: SandboxBrokerHandle,
-): Pick<Partial<RunWorkflowTurnDeps>, "runCore"> {
-  return {
-    runCore: makeSandboxWorkflowRunCore(
-      sandboxLauncherOptionsFromConfig(config, broker),
-    ),
   };
 }
 

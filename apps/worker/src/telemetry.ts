@@ -90,22 +90,6 @@ export async function persistProcessingJobTelemetry(
 }
 
 /** Canonical workflow-run summary used by history, API status, and budgets. */
-export async function persistWorkflowRunTelemetry(
-  workflowRunId: string,
-  summary: HarnessRunSummary,
-): Promise<void> {
-  try {
-    await db()
-      .update(workflow_run)
-      .set({ telemetry_summary: summary, updated_at: new Date() })
-      .where(eq(workflow_run.id, workflowRunId));
-  } catch {
-    console.warn(
-      `[telemetry] failed to persist workflow-run summary ${workflowRunId}`,
-    );
-  }
-}
-
 export async function shutdownWorkerTelemetry(): Promise<void> {
   const current = runtime;
   runtime = undefined;

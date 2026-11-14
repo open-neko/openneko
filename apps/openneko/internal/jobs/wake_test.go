@@ -12,7 +12,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
-type wakeCounts struct{ metric, cron, directory, bots, action atomic.Int32 }
+type wakeCounts struct{ metric, cron, directory, bots, action, api atomic.Int32 }
 
 func wakeQueue(t *testing.T, action func(context.Context) error) (*Queue, *wakeCounts) {
 	t.Helper()
@@ -27,6 +27,7 @@ func wakeQueue(t *testing.T, action func(context.Context) error) (*Queue, *wakeC
 	q.CronSweep = func(context.Context) error { c.cron.Add(1); return nil }
 	q.DirectorySync = func(context.Context) error { c.directory.Add(1); return nil }
 	q.BotNameSweep = func(context.Context) error { c.bots.Add(1); return nil }
+	q.WorkflowAPISweep = func(context.Context) error { c.api.Add(1); return nil }
 	q.ActionExecute = func(ctx context.Context, _, _ string) error {
 		c.action.Add(1)
 		if action != nil {
@@ -77,8 +78,8 @@ func TestWakeRunsQueuedAndDueJobs(t *testing.T) {
 	if res.Inserted != len(cronJobs) || res.Ran != len(cronJobs)+1 || res.TimedOut {
 		t.Fatalf("first wake = %+v, want %d inserted and %d ran", res, len(cronJobs), len(cronJobs)+1)
 	}
-	if c.metric.Load() != 1 || c.cron.Load() != 1 || c.directory.Load() != 1 || c.bots.Load() != 1 || c.action.Load() != 1 {
-		t.Fatalf("runs: metric %d cron %d directory %d bots %d action %d, want 1 each", c.metric.Load(), c.cron.Load(), c.directory.Load(), c.bots.Load(), c.action.Load())
+	if c.metric.Load() != 1 || c.cron.Load() != 1 || c.directory.Load() != 1 || c.bots.Load() != 1 || c.action.Load() != 1 || c.api.Load() != 1 {
+		t.Fatalf("runs: metric %d cron %d directory %d bots %d action %d api %d, want 1 each", c.metric.Load(), c.cron.Load(), c.directory.Load(), c.bots.Load(), c.action.Load(), c.api.Load())
 	}
 	for kind, states := range jobStates(t, q) {
 		if states != "completed " {
@@ -89,7 +90,7 @@ func TestWakeRunsQueuedAndDueJobs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Inserted > 2 {
+	if res.Inserted > 3 {
 		t.Fatalf("second wake inserted %d jobs, want none outside a new minute", res.Inserted)
 	}
 	if res.Ran != res.Inserted {
@@ -157,10 +158,10 @@ func TestInsertDueOncePerPeriod(t *testing.T) {
 	}{
 		{t0, len(cronJobs)},
 		{t0.Add(40 * time.Second), 0},
-		{t0.Add(time.Minute), 2},
-		{t0.Add(time.Hour), 5},
-		{t0.Add(2 * time.Hour), 6},
-		{t0.Add(2*time.Hour + 30*time.Minute), 3},
+		{t0.Add(time.Minute), 3},
+		{t0.Add(time.Hour), 6},
+		{t0.Add(2 * time.Hour), 7},
+		{t0.Add(2*time.Hour + 30*time.Minute), 4},
 	} {
 		n, err := q.InsertDue(ctx, step.at)
 		if err != nil {

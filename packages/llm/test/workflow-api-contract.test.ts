@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  boundedWorkflowApiResult,
   compileWorkflowApiBatchContract,
   defaultWorkflowApiLimits,
   issueWorkflowApiToken,
   parseCompiledWorkflowBatchContract,
   verifyWorkflowApiTokenDigest,
-  workflowApiAnswer,
   workflowApiLimitPatch,
 } from "../src/workflows/api-contract";
 
@@ -84,53 +82,6 @@ describe("workflow API contract", () => {
     expect(() => workflowApiLimitPatch({ queueCap: 0 })).toThrowError(
       expect.objectContaining({ code: "limit_out_of_range" }),
     );
-  });
-
-  it("returns valid JSON objects inside the exact terminal result ceiling", () => {
-    expect(boundedWorkflowApiResult('{"ok":true}', 1_024)).toEqual({ ok: true });
-    const bounded = boundedWorkflowApiResult("🙂".repeat(200), 96);
-    expect(Buffer.byteLength(JSON.stringify(bounded), "utf8")).toBeLessThanOrEqual(
-      96,
-    );
-    expect(bounded).toMatchObject({ truncated: true });
-  });
-
-  it("returns an API run's answer card as a table with numbers and row details", () => {
-    const answer = workflowApiAnswer([{
-      version: "v1.0",
-      createSurface: {
-        surfaceId: "answer-1",
-        components: [
-          { id: "root", component: "Answer", title: "Orders by region", children: ["table", "callout"] },
-          {
-            id: "table",
-            component: "Table",
-            columns: [{ key: "c0", label: "Region" }, { key: "c1", label: "Orders" }, { key: "c2", label: "Due by (UTC)" }, { key: "c3", label: "Orders" }, { key: "c4", label: "" }],
-            rows: [{ c0: "North", c1: "12,699.5", c2: "21 Aug", c3: "3", c4: "x" }],
-            details: { North: { columns: [{ key: "c0", label: "Store" }, { key: "c1", label: "Orders" }], rows: [{ c0: "Store 1", c1: "7" }] } },
-          },
-          { id: "callout", component: "Callout", text: "North is behind plan." },
-        ],
-      },
-    }]);
-    expect(answer).toEqual({
-      title: "Orders by region",
-      table: {
-        columns: [
-          { key: "region", label: "Region" },
-          { key: "orders", label: "Orders" },
-          { key: "due_by_utc", label: "Due by (UTC)" },
-          { key: "orders_2", label: "Orders" },
-          { key: "column_5", label: "" },
-        ],
-        rows: [{ region: "North", orders: 12699.5, due_by_utc: "21 Aug", orders_2: 3, column_5: "x" }],
-      },
-      details: { North: { columns: [{ key: "store", label: "Store" }, { key: "orders", label: "Orders" }], rows: [{ store: "Store 1", orders: 7 }] } },
-      callout: "North is behind plan.",
-    });
-    expect(workflowApiAnswer([])).toBeNull();
-    expect(boundedWorkflowApiResult("Done.", 4_096, answer)).toEqual({ text: "Done.", answer, truncated: false });
-    expect(boundedWorkflowApiResult("Done.", 64, answer)).toEqual({ text: "Done.", truncated: false });
   });
 
   it("takes new API access limits from the workflow agent limits", () => {
