@@ -31,6 +31,7 @@ closed="$(node -e 'const s = require("net").createServer().listen(0, "127.0.0.1"
 
 export XDG_CONFIG_HOME="$work/config"
 export OPENNEKO_DATABASE_URL_FILE="$work/database-url"
+export OPENNEKO_PACKS_DIR="$root/packs"
 
 (cd "$here" && pnpm exec tsx scripts/database.ts create "$OPENNEKO_CONTRACT_PG" "$database")
 (cd "$root/apps/openneko" && OPENNEKO_WORKSPACE_ROOT="$root" go run ./cmd/openneko migrate --local >"$work/migrate.log")

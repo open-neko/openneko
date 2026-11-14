@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { matchRoutes } from "react-router";
 import { describe, expect, it } from "vitest";
+import { deviceSignInUrl } from "@/app/device/page";
 import { hrefToString } from "@/spa/next/link";
 import { redirects, routes } from "@/spa/routes";
 import { serverPagePattern, serverPages } from "@/spa/server-pages";
@@ -136,6 +137,11 @@ describe("static web app routes", () => {
     expect(redirects["/"]).toBe("/chat");
     expect(redirects["/approvals"]).toBe("/actions");
     expect(Object.keys(redirects).every((from) => pages.includes(from))).toBe(true);
+  });
+
+  it("sends an unsigned /device visitor to /signin and preserves the device code in returnTo", () => {
+    expect(deviceSignInUrl("")).toBe("/signin?returnTo=%2Fdevice");
+    expect(deviceSignInUrl("BCDF-GHJK")).toBe("/signin?returnTo=%2Fdevice%3Fcode%3DBCDF-GHJK");
   });
 });
 
