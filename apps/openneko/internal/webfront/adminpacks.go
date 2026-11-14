@@ -129,15 +129,7 @@ func (a *API) adminPackRead(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusNotFound, "unknown pack operation")
 		return
 	}
-	if action == "inspect" || action == "status" || action == "plan" {
-		a.servePackRead(w, r, act, packID, action)
-		return
-	}
-	path := "/admin/packs/" + encodeURIComponent(packID) + "/" + action
-	if version := r.URL.Query().Get("version"); version != "" {
-		path += "?version=" + encodeURIComponent(version)
-	}
-	a.relayPackWorker(context.WithoutCancel(r.Context()), w, http.MethodGet, path, nil, nil)
+	a.servePackRead(w, r, act, packID, action)
 }
 
 func (a *API) adminPackWrite(w http.ResponseWriter, r *http.Request) {
@@ -154,12 +146,20 @@ func (a *API) adminPackWrite(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if action == "review" {
+		a.servePackReview(w, r, act, packID, body)
+		return
+	}
 	body.set("actorUserId", nullable(act.UserID))
 	key, isString := body.vals["idempotencyKey"].(string)
 	if !isString {
 		key = uuid.NewString()
 	}
 	body.set("idempotencyKey", key)
+	if action == "uninstall" {
+		a.servePackUninstall(w, r, act, packID, body)
+		return
+	}
 	a.relayPackWorker(context.WithoutCancel(r.Context()), w, http.MethodPost, "/admin/packs/"+encodeURIComponent(packID)+"/"+action,
 		jsonHeader, []byte(jsStringify(body, false)))
 }

@@ -21,6 +21,7 @@ import (
 var packFailureNextStep = map[string]string{
 	"upload":           "Correct the archive layout or manifest, then upload the pack again.",
 	"inspection":       "Correct the reported manifest or artifact, then inspect the pack again.",
+	"review":           "Correct the reported configuration or artifact, then review the pack again.",
 	"oauth":            "Check the OAuth client, redirect URI, and requested scopes, then connect the account again.",
 	"store_management": "Review the Magento store-management setting or rule limits and try again.",
 }
@@ -421,6 +422,13 @@ func (a *API) servePackRead(w http.ResponseWriter, r *http.Request, act actor, p
 		}
 		if out == nil {
 			sendError(w, http.StatusNotFound, fmt.Sprintf("pack %s is not installed", packID))
+			return
+		}
+		sendJSON(w, http.StatusOK, out)
+	case "doctor":
+		out, err := a.packDoctor(context.WithoutCancel(r.Context()), act.OrgID, packID)
+		if err != nil {
+			sendPackFailure(w, http.StatusBadRequest, err, "inspection")
 			return
 		}
 		sendJSON(w, http.StatusOK, out)

@@ -3016,7 +3016,7 @@ paths:
         description: Pack version
       responses:
         '200':
-          description: The inspection, the install status or the plan; doctor passes through the worker
+          description: The inspection, the install status, the plan or the doctor checks
           content:
             application/json:
               schema:
@@ -3112,17 +3112,54 @@ paths:
                 idempotencyKey:
                   type: string
                   description: Optional; the server makes one when absent
+                operation:
+                  type: string
+                  description: For review; install, configure or upgrade
+                version:
+                  type: string
+                inputs:
+                  type: object
+                dataSourceId:
+                  type: string
+                sourceBindings:
+                  type: object
+                secrets:
+                  type: object
+                secretRefs:
+                  type: object
+                reviewHash:
+                  type: string
       responses:
         '200':
-          description: Worker response, passed through with the worker status
+          description: The review, or after uninstall the pack status, from the Go server; install, configure and upgrade pass through from the worker
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: false
-                properties: {}
+                properties:
+                  source: {}
+                  upload: {}
+                  manifest: {}
+                  manifestHash: {}
+                  bindingRequirements: {}
+                  bundleHash: {}
+                  permissions: {}
+                  operation: {}
+                  inputs: {}
+                  runtime: {}
+                  plan: {}
+                  secrets: {}
+                  reviewHash: {}
+                  packId: {}
+                  version: {}
+                  status: {}
+                  readiness: {}
+                  installedAt: {}
+                  lastError: {}
+                  configuration: {}
         '400':
-          description: The body is not a valid JSON object
+          description: The body is not a valid JSON object, or the pack review or uninstall failed
           content:
             application/json:
               schema:

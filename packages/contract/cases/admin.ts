@@ -150,8 +150,36 @@ export const adminCases: Case[] = [
     },
   },
   {
+    op: "GET /admin/packs/{packId}/{action}", name: "checks a pack that is not installed", status: 200,
+    request: { params: { packId: "slack", action: "doctor" } },
+    check: (r) => {
+      expect(body(r)).toEqual({ packId: "slack", status: "blocked", checks: [{ id: "installation", status: "blocked", detail: "pack is not installed" }] });
+    },
+  },
+  {
     op: "GET /admin/packs/{packId}/{action}", name: "fails on a pack that is not in the catalog", status: 400,
     request: { params: { packId: "no-such-pack", action: "inspect" } },
+  },
+  {
+    op: "POST /admin/packs/{packId}/{action}", name: "refuses a review with an unknown input", status: 400,
+    request: { params: { packId: "slack", action: "review" }, body: { inputs: { nope: 1 } } },
+    check: (r) => {
+      expect(body(r).error).toBe("unknown pack input nope");
+      expect((body(r).diagnostic as { phase: string }).phase).toBe("review");
+    },
+  },
+  {
+    op: "POST /admin/packs/{packId}/{action}", name: "refuses to review a change to a pack that is not installed", status: 400,
+    request: { params: { packId: "slack", action: "review" }, body: { operation: "configure" } },
+    check: (r) => expect(body(r).error).toBe("pack must be installed before reviewing this operation"),
+  },
+  {
+    op: "POST /admin/packs/{packId}/{action}", name: "refuses to uninstall a pack that is not installed", status: 400,
+    request: { params: { packId: "slack", action: "uninstall" }, body: {} },
+    check: (r) => {
+      expect(body(r).error).toBe("pack slack is not installed");
+      expect((body(r).diagnostic as { phase: string }).phase).toBe("uninstall");
+    },
   },
   {
     op: "POST /admin/packs/upload", name: "refuses an archive that is not a ZIP", status: 400,

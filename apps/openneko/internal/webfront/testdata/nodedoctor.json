@@ -1,0 +1,434 @@
+{
+  "bound": [
+    {
+      "sources": [
+        {
+          "kind": "source",
+          "key": "source.shopdb",
+          "targetRef": "tbl.binding.shopdb",
+          "path": "s.yaml",
+          "hash": "h",
+          "content": {
+            "name": "shopdb",
+            "kind": "database"
+          }
+        }
+      ],
+      "queries": [
+        {
+          "kind": "saved_query",
+          "key": "q1",
+          "targetRef": "q1",
+          "path": "q1.gql",
+          "hash": "h",
+          "content": "query Q($n: Int) { orders(limit: $n) { id } customers: users @database(name: \"shopdb\") { id } }"
+        }
+      ],
+      "bindings": {},
+      "bound": {
+        "q1.gql": "query Q($n: Int) {\n  orders: pack_d926a8dc8c06f2d74118(limit: $n) @database(name: \"shopdb\") {\n    id\n  }\n  customers: pack_75024fe8570e4d5cd508 @database(name: \"shopdb\") {\n    id\n  }\n}"
+      }
+    },
+    {
+      "sources": [
+        {
+          "kind": "source",
+          "key": "source.shopdb",
+          "targetRef": "tbl.binding.shopdb",
+          "path": "s.yaml",
+          "hash": "h",
+          "content": {
+            "name": "shopdb",
+            "kind": "database"
+          }
+        }
+      ],
+      "queries": [
+        {
+          "kind": "saved_query",
+          "key": "q1",
+          "targetRef": "q1",
+          "path": "q1.gql",
+          "hash": "h",
+          "content": "query Q { orders { id } }"
+        },
+        {
+          "kind": "saved_query",
+          "key": "q2",
+          "targetRef": "q2",
+          "path": "q2.gql",
+          "hash": "h",
+          "content": "query R { orders { total } lines { id items @database(name: shopdb) @skip(if: false) { id } } }"
+        }
+      ],
+      "bindings": {
+        "source.shopdb": "live_db"
+      },
+      "bound": {
+        "q1.gql": "query Q {\n  orders: pack_c29fd225725ce790e64c @database(name: \"live_db\") {\n    id\n  }\n}",
+        "q2.gql": "query R {\n  orders: pack_c29fd225725ce790e64c @database(name: \"live_db\") {\n    total\n  }\n  lines: pack_711f2182aa8bd2bcf92c @database(name: \"live_db\") {\n    id\n    items @skip(if: false) @database(name: \"live_db\") {\n      id\n    }\n  }\n}"
+      }
+    },
+    {
+      "sources": [
+        {
+          "kind": "source",
+          "key": "source.shopdb",
+          "targetRef": "tbl.binding.shopdb",
+          "path": "s.yaml",
+          "hash": "h",
+          "content": {
+            "name": "shopdb",
+            "kind": "database"
+          }
+        }
+      ],
+      "queries": [
+        {
+          "kind": "saved_query",
+          "key": "q1",
+          "targetRef": "q1",
+          "path": "q1.gql",
+          "hash": "h",
+          "content": "fragment F on X { items { id } ... on Y { more { id } } } query Q { ...F orders { id } }"
+        }
+      ],
+      "bindings": {},
+      "bound": {
+        "q1.gql": "fragment F on X {\n  items: pack_cec63f338a5f392eb688 @database(name: \"shopdb\") {\n    id\n  }\n  ... on Y {\n    more: pack_dfadd9dd38defa9233db @database(name: \"shopdb\") {\n      id\n    }\n  }\n}\n\nquery Q {\n  ...F\n  orders: pack_d926a8dc8c06f2d74118 @database(name: \"shopdb\") {\n    id\n  }\n}"
+      }
+    },
+    {
+      "sources": [
+        {
+          "kind": "source",
+          "key": "source.shopdb",
+          "targetRef": "tbl.binding.shopdb",
+          "path": "s.yaml",
+          "hash": "h",
+          "content": {
+            "name": "shopdb",
+            "kind": "database"
+          }
+        },
+        {
+          "kind": "source",
+          "key": "source.api",
+          "targetRef": "api",
+          "path": "s.yaml",
+          "hash": "h",
+          "content": {
+            "name": "api",
+            "kind": "api"
+          }
+        }
+      ],
+      "queries": [
+        {
+          "kind": "saved_query",
+          "key": "q1",
+          "targetRef": "q1",
+          "path": "q1.gql",
+          "hash": "h",
+          "content": "query Q { orders @database(name: \"shopdb\") { id } }"
+        }
+      ],
+      "bindings": {},
+      "bound": {
+        "q1.gql": "query Q {\n  orders: pack_d926a8dc8c06f2d74118 @database(name: \"shopdb\") {\n    id\n  }\n}"
+      }
+    },
+    {
+      "sources": [
+        {
+          "kind": "source",
+          "key": "source.api",
+          "targetRef": "api",
+          "path": "s.yaml",
+          "hash": "h",
+          "content": {
+            "name": "api",
+            "kind": "api"
+          }
+        }
+      ],
+      "queries": [
+        {
+          "kind": "saved_query",
+          "key": "q1",
+          "targetRef": "q1",
+          "path": "q1.gql",
+          "hash": "h",
+          "content": "query Q { orders { id } }"
+        }
+      ],
+      "bindings": {},
+      "bound": {
+        "q1.gql": "query Q { orders { id } }"
+      }
+    }
+  ],
+  "databases": [
+    {
+      "version": "8.0.36",
+      "type": "mysql",
+      "error": null
+    },
+    {
+      "version": "8.4.3",
+      "type": "mysql",
+      "error": null
+    },
+    {
+      "version": "5.7.44",
+      "type": null,
+      "error": "MySQL 8.0+ is required; found 5.7.44"
+    },
+    {
+      "version": "10.6.18-MariaDB",
+      "type": "mariadb",
+      "error": null
+    },
+    {
+      "version": "10.5.9-MariaDB-log",
+      "type": null,
+      "error": "MariaDB 10.6+ is required; found 10.5.9-MariaDB-log"
+    },
+    {
+      "version": "11.4.2-MariaDB-ubu2404",
+      "type": "mariadb",
+      "error": null
+    },
+    {
+      "version": "nope",
+      "type": null,
+      "error": "could not parse MariaDB/MySQL version \"nope\""
+    },
+    {
+      "version": " 9.1.0 ",
+      "type": "mysql",
+      "error": null
+    }
+  ],
+  "readiness": [
+    {
+      "token": null,
+      "customersEnabled": false,
+      "statuses": {},
+      "requests": [],
+      "result": {
+        "overall": "integration_token_missing",
+        "domains": {
+          "catalog": "integration_token_missing",
+          "inventory": "integration_token_missing",
+          "orders": "integration_token_missing",
+          "promotions": "integration_token_missing",
+          "content": "integration_token_missing",
+          "customers": "domain_disabled"
+        }
+      }
+    },
+    {
+      "token": null,
+      "customersEnabled": true,
+      "statuses": {},
+      "requests": [],
+      "result": {
+        "overall": "integration_token_missing",
+        "domains": {
+          "catalog": "integration_token_missing",
+          "inventory": "integration_token_missing",
+          "orders": "integration_token_missing",
+          "promotions": "integration_token_missing",
+          "content": "integration_token_missing",
+          "customers": "integration_token_missing"
+        }
+      }
+    },
+    {
+      "token": "t",
+      "customersEnabled": true,
+      "statuses": {},
+      "requests": [
+        "https://shop.test/rest/de%20store/V1/products?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/inventory/source-items?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/orders?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/salesRules/search?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/cmsPage/search?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/customers/search?searchCriteria[pageSize]=1 Bearer t"
+      ],
+      "result": {
+        "overall": "ready",
+        "domains": {
+          "catalog": "ready",
+          "inventory": "ready",
+          "orders": "ready",
+          "promotions": "ready",
+          "content": "ready",
+          "customers": "ready"
+        }
+      }
+    },
+    {
+      "token": "t",
+      "customersEnabled": false,
+      "statuses": {
+        "products": 404,
+        "source-items": 400
+      },
+      "requests": [
+        "https://shop.test/rest/de%20store/V1/products?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/inventory/source-items?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/orders?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/salesRules/search?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/cmsPage/search?searchCriteria[pageSize]=1 Bearer t"
+      ],
+      "result": {
+        "overall": "ready",
+        "domains": {
+          "catalog": "ready",
+          "inventory": "ready",
+          "orders": "ready",
+          "promotions": "ready",
+          "content": "ready",
+          "customers": "domain_disabled"
+        }
+      }
+    },
+    {
+      "token": "t",
+      "customersEnabled": true,
+      "statuses": {
+        "orders": 403
+      },
+      "requests": [
+        "https://shop.test/rest/de%20store/V1/products?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/inventory/source-items?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/orders?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/salesRules/search?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/cmsPage/search?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/customers/search?searchCriteria[pageSize]=1 Bearer t"
+      ],
+      "result": {
+        "overall": "acl_missing",
+        "domains": {
+          "catalog": "ready",
+          "inventory": "ready",
+          "orders": "acl_missing",
+          "promotions": "ready",
+          "content": "ready",
+          "customers": "ready"
+        }
+      }
+    },
+    {
+      "token": "t",
+      "customersEnabled": true,
+      "statuses": {
+        "salesRules": 500,
+        "cmsPage": 401
+      },
+      "requests": [
+        "https://shop.test/rest/de%20store/V1/products?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/inventory/source-items?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/orders?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/salesRules/search?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/cmsPage/search?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/customers/search?searchCriteria[pageSize]=1 Bearer t"
+      ],
+      "result": {
+        "overall": "integration_token_invalid",
+        "domains": {
+          "catalog": "ready",
+          "inventory": "ready",
+          "orders": "ready",
+          "promotions": "acl_missing",
+          "content": "integration_token_invalid",
+          "customers": "ready"
+        }
+      }
+    },
+    {
+      "token": "t",
+      "customersEnabled": false,
+      "statuses": {
+        "customers": 401,
+        "orders": "error"
+      },
+      "requests": [
+        "https://shop.test/rest/de%20store/V1/products?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/inventory/source-items?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/orders?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/salesRules/search?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/cmsPage/search?searchCriteria[pageSize]=1 Bearer t"
+      ],
+      "result": {
+        "overall": "integration_token_invalid",
+        "domains": {
+          "catalog": "ready",
+          "inventory": "ready",
+          "orders": "integration_token_invalid",
+          "promotions": "ready",
+          "content": "ready",
+          "customers": "domain_disabled"
+        }
+      }
+    },
+    {
+      "token": "t",
+      "customersEnabled": true,
+      "statuses": {
+        "products": 302
+      },
+      "requests": [
+        "https://shop.test/rest/de%20store/V1/products?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/inventory/source-items?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/orders?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/salesRules/search?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/cmsPage/search?searchCriteria[pageSize]=1 Bearer t",
+        "https://shop.test/rest/de%20store/V1/customers/search?searchCriteria[pageSize]=1 Bearer t"
+      ],
+      "result": {
+        "overall": "acl_missing",
+        "domains": {
+          "catalog": "acl_missing",
+          "inventory": "ready",
+          "orders": "ready",
+          "promotions": "ready",
+          "content": "ready",
+          "customers": "ready"
+        }
+      }
+    }
+  ],
+  "details": [
+    {
+      "reason": "ready",
+      "detail": "Approved Magento changes are available. Each area follows its configured approval and automation limits."
+    },
+    {
+      "reason": "integration_token_missing",
+      "detail": "View only. Add a Magento API token if you later want to allow specific, approval-required changes; store insights and automations are fully available without it."
+    },
+    {
+      "reason": "integration_token_invalid",
+      "detail": "View only because Magento rejected the saved API token. Store insights and automations are unaffected."
+    },
+    {
+      "reason": "acl_missing",
+      "detail": "View only because the saved API token does not have the required Magento permissions. Store insights and automations are unaffected."
+    },
+    {
+      "reason": "graphjin_version_unsupported",
+      "detail": "View only in this version. Store insights and automations are fully available."
+    },
+    {
+      "reason": "domain_disabled",
+      "detail": "This change domain is disabled by the administrator."
+    },
+    {
+      "reason": null,
+      "detail": "View-only access could not be checked because the reporting connection is unavailable."
+    }
+  ]
+}

@@ -1,4 +1,5 @@
-import { copyFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { copyFileSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
@@ -12,6 +13,20 @@ const outDir = path.join(root, "dist");
 const apiTarget = process.env.OPENNEKO_SPA_API ?? "http://127.0.0.1:3000";
 const nodeProxy = { "/api": apiTarget, "/_next": apiTarget, [serverPagePattern().source]: apiTarget };
 
+const ROOT_SHELL_ASSETS = [
+  "/index.html",
+  "/manifest.webmanifest",
+  "/version.json",
+  "/favicon.ico",
+  "/icon.png",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/cat.png",
+  "/connectors/atlassian.svg",
+  "/connectors/google-workspace.svg",
+  "/connectors/microsoft-teams.svg",
+];
+
 function appIcons(): Plugin {
   return {
     name: "openneko-app-icons",
@@ -19,6 +34,22 @@ function appIcons(): Plugin {
     writeBundle() {
       for (const file of ["favicon.ico", "icon.png"]) copyFileSync(path.join(src, "app", file), path.join(outDir, file));
       writeFileSync(path.join(outDir, "version.json"), JSON.stringify({ version: pkg.version }));
+      const assetFiles = readdirSync(path.join(outDir, "assets"))
+        .filter((file) => !file.startsWith("maplibre-gl") && /\.(?:js|css|woff2)$/.test(file))
+        .sort()
+        .map((file) => `/assets/${file}`);
+      const shellAssets = [...ROOT_SHELL_ASSETS, ...assetFiles];
+      const hash = createHash("sha256")
+        .update(pkg.version)
+        .update(readFileSync(path.join(outDir, "index.html")))
+        .update(shellAssets.join("\n"))
+        .digest("hex")
+        .slice(0, 12);
+      const swPath = path.join(outDir, "sw.js");
+      const swSource = readFileSync(swPath, "utf8")
+        .replace("__OPENNEKO_SHELL_VERSION__", `${pkg.version}-${hash}`)
+        .replace(/const SHELL_ASSETS = \[[\s\S]*?\];/, `const SHELL_ASSETS = ${JSON.stringify(shellAssets, null, 2)};`);
+      writeFileSync(swPath, swSource);
     },
   };
 }
