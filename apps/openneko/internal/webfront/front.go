@@ -120,7 +120,13 @@ func (f *Front) serveFile(w http.ResponseWriter, r *http.Request, p string, asse
 	switch {
 	case strings.HasPrefix(name, "assets/"):
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-	case name == "index.html":
+	case strings.HasSuffix(name, ".webmanifest"):
+		w.Header().Set("Content-Type", "application/manifest+json; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+	case strings.HasSuffix(name, ".js"):
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+	case name == "index.html", name == "version.json":
 		w.Header().Set("Cache-Control", "no-cache")
 	}
 	http.ServeFileFS(w, r, f.App, name)

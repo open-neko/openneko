@@ -10,10 +10,13 @@ import (
 
 func newFront(t *testing.T, node http.Handler) *Front {
 	app := fstest.MapFS{
-		"index.html":      {Data: []byte("<html>app</html>")},
-		"assets/main.js":  {Data: []byte("js")},
-		"icon.png":        {Data: []byte("png")},
-		"connectors/x.md": {Data: []byte("md")},
+		"index.html":           {Data: []byte("<html>app</html>")},
+		"manifest.webmanifest": {Data: []byte(`{"name":"OpenNeko"}`)},
+		"sw.js":                {Data: []byte("self.addEventListener('fetch',()=>{})")},
+		"version.json":         {Data: []byte(`{"version":"5.0.0"}`)},
+		"assets/main.js":       {Data: []byte("js")},
+		"icon.png":             {Data: []byte("png")},
+		"connectors/x.md":      {Data: []byte("md")},
 	}
 	return &Front{App: app, Gate: newGate(t, newWorker(t, `{"provider":null}`).srv.URL), Node: node}
 }
@@ -31,6 +34,9 @@ func TestFront(t *testing.T) {
 		{"GET", "/chat", "<html>app</html>", "no-cache"},
 		{"GET", "/workflows/wf1", "<html>app</html>", "no-cache"},
 		{"HEAD", "/work", "", "no-cache"},
+		{"GET", "/manifest.webmanifest", `{"name":"OpenNeko"}`, "no-cache"},
+		{"GET", "/sw.js", "self.addEventListener('fetch',()=>{})", "no-cache"},
+		{"GET", "/version.json", `{"version":"5.0.0"}`, "no-cache"},
 		{"GET", "/assets/main.js", "js", "public, max-age=31536000, immutable"},
 		{"GET", "/icon.png", "png", ""},
 		{"GET", "/connectors/x.md", "md", ""},
@@ -54,6 +60,12 @@ func TestFront(t *testing.T) {
 		if w.Code != 200 || w.Body.String() != c.body || w.Header().Get("Cache-Control") != c.cache {
 			t.Errorf("%s %s: %d %q cache %q", c.method, c.path, w.Code, w.Body.String(), w.Header().Get("Cache-Control"))
 		}
+	}
+	if ct := get(f, "GET", "/manifest.webmanifest").Header().Get("Content-Type"); ct != "application/manifest+json; charset=utf-8" {
+		t.Errorf("manifest Content-Type %q", ct)
+	}
+	if ct := get(f, "GET", "/sw.js").Header().Get("Content-Type"); ct != "application/javascript; charset=utf-8" {
+		t.Errorf("sw.js Content-Type %q", ct)
 	}
 	if csp := get(f, "GET", "/chat").Header().Get("Content-Security-Policy"); csp != "frame-src 'self'" {
 		t.Errorf("CSP %q", csp)
