@@ -14,7 +14,6 @@ import {
   getActionRequest,
   listActionExecutions,
   listWatchers,
-  registerActionAdapter,
   saveWorkflow,
   upsertWatcher,
   verifyAuditChain,
@@ -564,7 +563,6 @@ async function policyMatrix(context: ScenarioContext): Promise<Record<string, un
   await basePolicy(orgId, ACTION_KIND);
   await basePolicy(orgId, PRIORITY_KIND);
   await basePolicy(orgId, PRIORITY_KIND, { name: "deny-first", mode: "never", priority: 10 });
-  registerActionAdapter(ACTION_KIND, async () => ({ result: { mocked: true } }));
   const workflowId = await actionWorkflow(orgId, "Eval policy probes");
   const results: Record<string, Record<string, unknown>> = {};
   const runId = await turn(context, org.adminId, "Try each eval action once.", async (model) => {
@@ -589,90 +587,98 @@ async function policyMatrix(context: ScenarioContext): Promise<Record<string, un
 
 async function actionLifecycle(context: ScenarioContext): Promise<Record<string, unknown>> {
   const { episode, orgId } = context;
-  const org = await provisionOrg({ ...context, grants: [ACTION_KIND] });
-  const policyRecord = await createActionPolicy({
-    orgId,
-    name: "eval-approval",
-    description: "Require approval for the isolated eval mutation",
-    appliesToKinds: [ACTION_KIND],
-    appliesToScopes: ["external"],
-    mode: "approval_required",
-    riskThresholdAutoApprove: null,
-    allowedTargets: { patterns: ["account-*"] },
-    deniedTargets: null,
-    limits: {},
-    approverRole: "admin",
-    priority: 10,
-    enabled: true,
-  });
+  const org = await provisionOrg({ ...context, grants: ["send_webhook"] });
   const ledger = new Map<string, string>([
     ["account-1", "pending"],
     ["account-2", "stable"],
   ]);
   let effects = 0;
-  registerActionAdapter(ACTION_KIND, async ({ request }) => {
+  let expectedRequestId = "";
+  const webhookServer = createServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as Record<string, unknown>;
     effects += 1;
-    ledger.set(String(request.target), String(request.payload.status));
-    return {
-      commandOrOperation: "eval:ledger.update",
-      externalRef: `eval:${request.id}`,
-      result: { updated: true },
-    };
+    ledger.set(String(body.target), String(body.status));
+    res.setHeader("x-request-id", `eval:${expectedRequestId}`);
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ updated: true }));
   });
-  const workflowId = await actionWorkflow(orgId, "Eval ledger review");
-  const proposals: Record<string, Record<string, unknown>> = {};
-  await turn(context, org.adminId, "Mark account-1 reviewed and propose a change to account-2.", async (model) => {
-    for (const [key, target, status] of [
-      ["approve", "account-1", "reviewed"],
-      ["reject", "account-2", "must-not-change"],
-    ] as const) {
-      proposals[key] = toolJson(
-        await model.call("neko_action", "request", {
-          scope: "external",
-          kind: ACTION_KIND,
-          target,
-          payload: { status },
-          risk_level: "medium",
-          summary: `Set ${target} to ${status}`,
-        }),
-      );
-    }
-    return "Proposed both changes.";
-  }, workflowId);
-  const requestId = String(proposals.approve?.actionRequestId ?? "");
-  const rejectedId = String(proposals.reject?.actionRequestId ?? "");
-  const request = requestId ? await getActionRequest(orgId, requestId) : null;
-  if (!request || !rejectedId) throw new Error(`the turn stored no action request: ${JSON.stringify(proposals)}`);
+  await new Promise<void>((resolve) => webhookServer.listen(0, "127.0.0.1", () => resolve()));
+  const webhookPort = (webhookServer.address() as { port: number }).port;
+  try {
+    const policyRecord = await createActionPolicy({
+      orgId,
+      name: "eval-approval",
+      description: "Require approval for the isolated eval mutation",
+      appliesToKinds: ["send_webhook"],
+      appliesToScopes: ["external"],
+      mode: "approval_required",
+      riskThresholdAutoApprove: null,
+      allowedTargets: { patterns: [`http://127.0.0.1:${webhookPort}/account-*`] },
+      deniedTargets: null,
+      limits: {},
+      approverRole: "admin",
+      priority: 10,
+      enabled: true,
+    });
+    const workflowId = await actionWorkflow(orgId, "Eval ledger review");
+    const proposals: Record<string, Record<string, unknown>> = {};
+    await turn(context, org.adminId, "Mark account-1 reviewed and propose a change to account-2.", async (model) => {
+      for (const [key, target, status] of [
+        ["approve", "account-1", "reviewed"],
+        ["reject", "account-2", "must-not-change"],
+      ] as const) {
+        proposals[key] = toolJson(
+          await model.call("neko_action", "request", {
+            scope: "external",
+            kind: "send_webhook",
+            target: `http://127.0.0.1:${webhookPort}/${target}`,
+            payload: { url: `http://127.0.0.1:${webhookPort}/${target}`, body: { target, status } },
+            risk_level: "medium",
+            summary: `Set ${target} to ${status}`,
+          }),
+        );
+      }
+      return "Proposed both changes.";
+    }, workflowId);
+    const requestId = String(proposals.approve?.actionRequestId ?? "");
+    const rejectedId = String(proposals.reject?.actionRequestId ?? "");
+    const request = requestId ? await getActionRequest(orgId, requestId) : null;
+    if (!request || !rejectedId) throw new Error(`the turn stored no action request: ${JSON.stringify(proposals)}`);
+    expectedRequestId = requestId;
 
-  const outsider = await decide(episode, org.memberId, requestId, "approve");
-  const approved = await decide(episode, org.adminId, requestId, "approve");
-  const duplicate = await decide(episode, org.adminId, requestId, "approve");
-  const terminal = await waitForTerminal(orgId, requestId);
-  const executions = await listActionExecutions(requestId);
+    const outsider = await decide(episode, org.memberId, requestId, "approve");
+    const approved = await decide(episode, org.adminId, requestId, "approve");
+    const duplicate = await decide(episode, org.adminId, requestId, "approve");
+    const terminal = await waitForTerminal(orgId, requestId);
+    const executions = await listActionExecutions(requestId);
 
-  const rejected = await decide(episode, org.adminId, rejectedId, "reject");
-  const approveAfterReject = await decide(episode, org.adminId, rejectedId, "approve");
-  await new Promise((wake) => setTimeout(wake, 1_000));
-  const rejectedState = await getActionRequest(orgId, rejectedId);
-  const audit = await verifyAuditChain(orgId);
-  registerActionAdapter(ACTION_KIND, async () => ({ result: { mocked: true } }));
+    const rejected = await decide(episode, org.adminId, rejectedId, "reject");
+    const approveAfterReject = await decide(episode, org.adminId, rejectedId, "approve");
+    await new Promise((wake) => setTimeout(wake, 1_000));
+    const rejectedState = await getActionRequest(orgId, rejectedId);
+    const audit = await verifyAuditChain(orgId);
 
-  return {
-    proposed: request.status === "pending_approval" && request.policyId === policyRecord.id,
-    serviceDenied: !outsider.ok && outsider.status === 403,
-    approved: approved.ok && (approved.body.actionRequest as Record<string, unknown> | undefined)?.status === "approved",
-    duplicateApprovalDenied: !duplicate.ok,
-    executed: terminal?.status === "executed" && ledger.get("account-1") === "reviewed",
-    receipt:
-      executions.length === 1 &&
-      executions[0]?.status === "succeeded" &&
-      executions[0]?.externalRef === `eval:${requestId}`,
-    atMostOnce: effects === 1 && !duplicate.ok,
-    collateralUnchanged: ledger.get("account-2") === "stable",
-    rejectionTerminal:
-      rejected.ok && rejectedState?.status === "rejected" && !approveAfterReject.ok && effects === 1,
-    auditValid: audit.ok && audit.length >= 5,
-  };
+    return {
+      proposed: request.status === "pending_approval" && request.policyId === policyRecord.id,
+      serviceDenied: !outsider.ok && outsider.status === 403,
+      approved: approved.ok && (approved.body.actionRequest as Record<string, unknown> | undefined)?.status === "approved",
+      duplicateApprovalDenied: !duplicate.ok,
+      executed: terminal?.status === "executed" && ledger.get("account-1") === "reviewed",
+      receipt:
+        executions.length === 1 &&
+        executions[0]?.status === "succeeded" &&
+        executions[0]?.externalRef === `eval:${requestId}`,
+      atMostOnce: effects === 1 && !duplicate.ok,
+      collateralUnchanged: ledger.get("account-2") === "stable",
+      rejectionTerminal:
+        rejected.ok && rejectedState?.status === "rejected" && !approveAfterReject.ok && effects === 1,
+      auditValid: audit.ok && audit.length >= 5,
+    };
+  } finally {
+    await new Promise<void>((resolve) => webhookServer.close(() => resolve()));
+  }
 }
 
 const SCENARIOS: Record<string, (context: ScenarioContext) => Promise<Record<string, unknown>>> = {
@@ -806,7 +812,7 @@ export function createOpenNekoLifecycleDriver(
         });
       }
       source.clear();
-      const episode = await host.startEpisode({ label: slot.caseId });
+      const episode = await host.startEpisode({ label: slot.caseId, env: { NEKO_ALLOW_LOCAL_WEBHOOKS: "1" } });
       const turns = { count: 0, requests: 0 };
       try {
         episode.activate();
