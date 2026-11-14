@@ -66,6 +66,7 @@ type API struct {
 
 	turnResolve func(ctx context.Context, orgID string) (*llm.AxBackendConfig, map[string]string, error)
 	turnCore    func(ctx context.Context, in agentCoreInput) (axRunResult, error)
+	jobTools    func(turnBinding) toolBackend
 }
 
 // GoRoutes lists the /api/v1 routes that Go answers, by method.

@@ -13,9 +13,6 @@ import (
 
 // The queue names and send options of packages/db/src/jobs.ts. The worker
 // creates the pgboss schema when it starts.
-const (
-	queueIndustryInsights = "industry_insights_build"
-)
 
 // insertJob is insertJob() of pg-boss 10.4.2 (src/plans.js).
 const insertJob = `

@@ -1,6 +1,8 @@
 package webfront
 
 import (
+	"github.com/open-neko/neko/apps/openneko/internal/jobs"
+
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,8 +23,6 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/embedding"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
-
-const queueBusinessProfile = "business_profile_build"
 
 func (a *API) serveSocket() string { return os.Getenv("OPENNEKO_SERVE_SOCKET") }
 
@@ -601,10 +601,6 @@ func (a *API) onboardingSubmit(w http.ResponseWriter, r *http.Request) {
 	if body.Priorities == nil {
 		body.Priorities = []string{}
 	}
-	if err := a.ensureQueue(ctx, queueBusinessProfile); err != nil {
-		a.fail(w, r, err)
-		return
-	}
 	var jobID, inflight string
 	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock(hashtext($1))`, "openneko.onboarding:"+orgID); err != nil {
@@ -624,8 +620,9 @@ func (a *API) onboardingSubmit(w http.ResponseWriter, r *http.Request) {
 		    values ($1, $2, $3, $4, $5, 'submitting', now())`, orgID, body.CompanyNote, body.FiscalYearStartMonth, body.ActiveSeats, body.Priorities); err != nil {
 			return err
 		}
-		return tx.QueryRow(ctx, `insert into processing_job (org_id, kind, status, trigger)
-		    values ($1, 'business_profile_build', 'queued', 'wizard_submit') returning id::text`, orgID).Scan(&jobID)
+		var qerr error
+		jobID, qerr = a.queueBuildJobWith(ctx, tx, jobs.KindBusinessProfileBuild, orgID, "wizard_submit", 1)
+		return qerr
 	})
 	if err != nil {
 		a.fail(w, r, err)
@@ -633,18 +630,6 @@ func (a *API) onboardingSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	if inflight != "" {
 		sendJSON(w, http.StatusOK, map[string]any{"ok": true, "jobId": inflight})
-		return
-	}
-	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
-		_, err := a.enqueueWith(ctx, tx, queueBusinessProfile, map[string]string{"processingJobId": jobID, "orgId": orgID}, 0)
-		return err
-	})
-	if err != nil {
-		msg := "enqueue failed: " + err.Error()
-		if _, uerr := a.DB.Exec(ctx, `update processing_job set status = 'failed', error = $2, finished_at = now(), updated_at = now() where id = $1`, jobID, msg); uerr != nil {
-			log.Printf("[onboarding] could not mark job %s failed: %v", jobID, uerr)
-		}
-		sendError(w, http.StatusInternalServerError, msg)
 		return
 	}
 	sendJSON(w, http.StatusOK, map[string]string{"jobId": jobID})

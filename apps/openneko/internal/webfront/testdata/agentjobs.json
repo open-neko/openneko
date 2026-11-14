@@ -1,0 +1,346 @@
+{
+  "profiler": [
+    {
+      "mode": "agentic",
+      "orgName": "Acme — Café \"Ünïcode\" 🚲",
+      "companyNote": "We sell <bikes> & parts.\nLine two   end",
+      "tables": "{\"tables\":[{\"schema\":\"sales\",\"name\":\"orders\",\"column_count\":9,\"summary\":\"Orders 🚚\"},{\"name\":\"customer\"}]}",
+      "insights": "{\"hub_tables\":[{\"name\":\"orders\",\"summary\":\"hub\",\"join_paths\":[\"orders -> customer\"],\"examples\":[\"query { orders { id } }\"]}],\"help_cards\":[{\"id\":\"help:dates\",\"title\":\"Dates\"}]}",
+      "namespaces": "{\"ns\":[]}",
+      "syntax": "SYNTAX",
+      "prompt": "You build a short markdown business profile about a customer company by querying its database via GraphJin.\n\nEXECUTION PATTERN:\n1. The knowledge sections below are a SLIM role-aware bootstrap, not the whole schema. Start with `mcp_neko_graphjin_query_catalog` using {\"search\":\"<the profiling goal>\"}, then inspect the best returned ids for evidence, examples, and relationship edges. Use `mcp_neko_graphjin_graphql_help` only when the catalog route is unclear. Prefer `mcp_neko_graphjin_execute_saved_query` when an approved query fits; never guess a field or relationship.\n2. Skim the tables + insights sections to identify what this business actually does (industry, offering, business model). Pick the handful of tables that matter.\n3. Run focused GraphQL queries to gather facts: main business event (date range, recent volume + value), top categories / products / services, geography, who is served, who does the work.\n4. Run queries by call `mcp_neko_graphjin_execute_graphql` with {\"query\":\"<your read-only graphql>\"}.\n5. If a response contains an \"errors\" array, read the GraphQL error and any errors[].extensions.graphjin_repair hint, then correct the query yourself.\n6. When you have enough facts, emit the final markdown body exactly per the OUTPUT FORMAT. No prose around it, no code fences.\n\nCOMPLETION CONTRACT:\n- Treat the requested output sections as an evidence checklist, not an invitation to exhaustively explore the schema.\n- A section is ready when you have representative queried evidence for it, or the available source does not expose it and the section can honestly say \"Not measured.\"\n- Stop querying and synthesize the profile as soon as every section is ready. Additional segmentations, alternative tables, or marginal precision that would not change the short profile are out of scope.\n- Do not get stuck repairing an optional fact. If a query cannot be corrected from the returned error and repair hint, use the evidence already collected and mark that fact \"Not measured.\"\n\nDATA ACCESS — READ-ONLY:\nUse only the caller-visible GraphJin MCP tools. The trusted host supplies their exact schemas and keeps the source URL and credential outside the sandbox. This profiler run is read-only: never submit a mutation, configuration change, or other state-changing operation even if a listed tool could perform one. DO NOT use `execute_code`, a shell, Python, raw HTTP requests, or any other path to talk to GraphJin.\n\n- Discover with `mcp_neko_graphjin_query_catalog` and inspect returned ids before querying data.\n- Execute data reads through `mcp_neko_graphjin_execute_saved_query` or `mcp_neko_graphjin_execute_graphql`.\n- Do not use configuration or write tools in this job.\n- For join planning, use catalog table cards, relationship rows, details_json, examples_json, and edges_json.\n- Do not use GraphJin dev tools or try to reach GraphJin outside its MCP surface.\n- Never invent data — every number in the profile must trace back to a GraphJin query-tool response from this run.\n\nQUERY CONSTRUCTION — let the database aggregate:\nPrefer one bulk query with server-side aggregation (count, sum, avg) over multiple round-trips that pull rows back to the agent. Specific GraphJin capabilities to reach for (consult `syntax.json` for full DSL reference):\n\n- Expression aggregates — sum(expr: {...}), ratio(expr: {...}) — USE THESE FIRST when a fact involves arithmetic across columns (e.g. SUM(price × qty)).\n- Joined-column access via dot-notation: { col: \"product.standardcost\" } works across FKs up to 3 hops.\n- For top-N by an aggregate, follow the prefetched syntax limitations. If GraphJin cannot order by an aggregate alias, fetch the grouped aggregate rows and sort the small result set in your reasoning.\n- Global single-row aggregate: a top-level select whose fields are ALL aggregates collapses to one row, no distinct needed.\n\nHARD CONSTRAINTS (violating any of these is a critical failure):\n- Never hardcode calendar years; compute periods with relative arithmetic. If you need an anchor date, use a recent date from the data.\n- For date/range filters, do not put multiple operators under the same column object. Use an explicit `and` array:\n  `where: { and: [{ orderdate: { gte: \"2024-06-30\" } }, { orderdate: { lte: \"2025-06-29\" } }] }`\n  not `where: { orderdate: { gte: \"...\", lte: \"...\" } }`.\n- Never use a bare limit without pagination. Use cursor-based pagination to process all rows, or use GraphQL aggregation with distinct to let the database aggregate.\n- Watch the silent 20-row default limit on every query level (top AND nested) — set explicit limit or use distinct+aggregation.\n- Never invent or interpolate. If a query returned no rows, the answer is \"Not measured.\", not a guess.\n\n================================================================================\nTables visible to your role (deeper detail via gj_catalog on demand):\n================================================================================\n\n- sales.orders — Orders 🚚\n- customer\n\n================================================================================\nHub tables — join paths and ready query templates (adapt, don't rediscover):\n================================================================================\n\n## orders — hub\n  join: orders -> customer\n  template: query { orders { id } }\n\n================================================================================\nHelp-card index — pull any card's full guidance with gj_catalog(id: \"help:<topic>\"):\n================================================================================\n\n- help:dates\n\n================================================================================\nQuery-DSL essentials — filters, query shape, aggregate patterns:\n================================================================================\n\nSYNTAX\n\n================================================================================\nOUTPUT FORMAT — respond with EXACTLY this markdown body, no code fences, no prose around it:\n================================================================================\n\n# Acme — Café \"Ünïcode\" 🚲 — Business Profile\n\n## What they are\n1–2 sentences: industry, offering, business model.\n\n## Who they serve\nRecipients in the business's own terms (customers, patients, members, accounts, …) with counts.\n\n## Where they operate\nGeographic / facility footprint with real names.\n\n## Scale\n- Date range covered, recent volume + value\n- Top revenue drivers\n- People served and people who do the work\n\n## Operational footprint\nBusiness functions the data represents.\n\n## What a downstream LLM should hold in mind\n3–5 non-obvious facts about the company's shape.\n\nRules for the markdown:\n- Every number must come from a query you actually ran.\n- Use human-readable names from the data, never bare IDs.\n- Match vocabulary to the business (a hospital has patients, not customers).\n- No meta talk about databases, schemas, queries, or the dataset.\n- If a fact isn't queryable, write \"Not measured.\"\n- Begin your response with the H1 `# Acme — Café \"Ünïcode\" 🚲 — Business Profile`. NOTHING may precede it — no preamble, no code fence, no acknowledgement.\n\n================================================================================\nINPUT — the company you must profile:\n================================================================================\n\n{\n  \"companyName\": \"Acme — Café \\\"Ünïcode\\\" 🚲\",\n  \"companyNote\": \"We sell <bikes> & parts.\\nLine two   end\"\n}\n"
+    },
+    {
+      "mode": "legacy",
+      "orgName": "Acme — Café \"Ünïcode\" 🚲",
+      "companyNote": "We sell <bikes> & parts.\nLine two   end",
+      "tables": "{\"tables\":[{\"schema\":\"sales\",\"name\":\"orders\",\"column_count\":9,\"summary\":\"Orders 🚚\"},{\"name\":\"customer\"}]}",
+      "insights": "{\"hub_tables\":[{\"name\":\"orders\",\"summary\":\"hub\",\"join_paths\":[\"orders -> customer\"],\"examples\":[\"query { orders { id } }\"]}],\"help_cards\":[{\"id\":\"help:dates\",\"title\":\"Dates\"}]}",
+      "namespaces": "{\"ns\":[]}",
+      "syntax": "SYNTAX",
+      "prompt": "You build a short markdown business profile about a customer company by querying its database via GraphJin.\n\nEXECUTION PATTERN:\n1. Read the prefetched GraphJin knowledge sections below before writing any query. They are the authoritative DSL + schema/relationship context for this database. Don't run schema-discovery commands; that context is already prefetched here.\n2. Skim the tables + insights sections to identify what this business actually does (industry, offering, business model). Pick the handful of tables that matter.\n3. Run focused GraphQL queries to gather facts: main business event (date range, recent volume + value), top categories / products / services, geography, who is served, who does the work.\n4. Run queries by call `mcp_neko_graphjin_execute_graphql` with {\"query\":\"<your read-only graphql>\"}.\n5. If a response contains an \"errors\" array, read the GraphQL error and any errors[].extensions.graphjin_repair hint, then correct the query yourself.\n6. When you have enough facts, emit the final markdown body exactly per the OUTPUT FORMAT. No prose around it, no code fences.\n\nCOMPLETION CONTRACT:\n- Treat the requested output sections as an evidence checklist, not an invitation to exhaustively explore the schema.\n- A section is ready when you have representative queried evidence for it, or the available source does not expose it and the section can honestly say \"Not measured.\"\n- Stop querying and synthesize the profile as soon as every section is ready. Additional segmentations, alternative tables, or marginal precision that would not change the short profile are out of scope.\n- Do not get stuck repairing an optional fact. If a query cannot be corrected from the returned error and repair hint, use the evidence already collected and mark that fact \"Not measured.\"\n\nDATA ACCESS — READ-ONLY:\nUse only the caller-visible GraphJin MCP tools. The trusted host supplies their exact schemas and keeps the source URL and credential outside the sandbox. This profiler run is read-only: never submit a mutation, configuration change, or other state-changing operation even if a listed tool could perform one. DO NOT use `execute_code`, a shell, Python, raw HTTP requests, or any other path to talk to GraphJin.\n\n- Discover with `mcp_neko_graphjin_query_catalog` and inspect returned ids before querying data.\n- Execute data reads through `mcp_neko_graphjin_execute_saved_query` or `mcp_neko_graphjin_execute_graphql`.\n- Do not use configuration or write tools in this job.\n- For join planning, use catalog table cards, relationship rows, details_json, examples_json, and edges_json.\n- Do not use GraphJin dev tools or try to reach GraphJin outside its MCP surface.\n- Never invent data — every number in the profile must trace back to a GraphJin query-tool response from this run.\n\nQUERY CONSTRUCTION — let the database aggregate:\nPrefer one bulk query with server-side aggregation (count, sum, avg) over multiple round-trips that pull rows back to the agent. Specific GraphJin capabilities to reach for (consult `syntax.json` for full DSL reference):\n\n- Expression aggregates — sum(expr: {...}), ratio(expr: {...}) — USE THESE FIRST when a fact involves arithmetic across columns (e.g. SUM(price × qty)).\n- Joined-column access via dot-notation: { col: \"product.standardcost\" } works across FKs up to 3 hops.\n- For top-N by an aggregate, follow the prefetched syntax limitations. If GraphJin cannot order by an aggregate alias, fetch the grouped aggregate rows and sort the small result set in your reasoning.\n- Global single-row aggregate: a top-level select whose fields are ALL aggregates collapses to one row, no distinct needed.\n\nHARD CONSTRAINTS (violating any of these is a critical failure):\n- Never hardcode calendar years; compute periods with relative arithmetic. If you need an anchor date, use a recent date from the data.\n- For date/range filters, do not put multiple operators under the same column object. Use an explicit `and` array:\n  `where: { and: [{ orderdate: { gte: \"2024-06-30\" } }, { orderdate: { lte: \"2025-06-29\" } }] }`\n  not `where: { orderdate: { gte: \"...\", lte: \"...\" } }`.\n- Never use a bare limit without pagination. Use cursor-based pagination to process all rows, or use GraphQL aggregation with distinct to let the database aggregate.\n- Watch the silent 20-row default limit on every query level (top AND nested) — set explicit limit or use distinct+aggregation.\n- Never invent or interpolate. If a query returned no rows, the answer is \"Not measured.\", not a guess.\n\n================================================================================\nTables — every table in the database (name, schema, column_count):\n================================================================================\n\n{\"tables\":[{\"schema\":\"sales\",\"name\":\"orders\",\"column_count\":9,\"summary\":\"Orders 🚚\"},{\"name\":\"customer\"}]}\n\n================================================================================\nNamespaces — multi-database routing context:\n================================================================================\n\n{\"ns\":[]}\n\n================================================================================\nInsights — hub tables, hot relationships, relationship paths, query templates, data-quality flags:\n================================================================================\n\n{\"hub_tables\":[{\"name\":\"orders\",\"summary\":\"hub\",\"join_paths\":[\"orders -> customer\"],\"examples\":[\"query { orders { id } }\"]}],\"help_cards\":[{\"id\":\"help:dates\",\"title\":\"Dates\"}]}\n\n================================================================================\nSyntax — authoritative GraphJin DSL reference (operators, aggregations, pagination):\n================================================================================\n\nSYNTAX\n\n================================================================================\nOUTPUT FORMAT — respond with EXACTLY this markdown body, no code fences, no prose around it:\n================================================================================\n\n# Acme — Café \"Ünïcode\" 🚲 — Business Profile\n\n## What they are\n1–2 sentences: industry, offering, business model.\n\n## Who they serve\nRecipients in the business's own terms (customers, patients, members, accounts, …) with counts.\n\n## Where they operate\nGeographic / facility footprint with real names.\n\n## Scale\n- Date range covered, recent volume + value\n- Top revenue drivers\n- People served and people who do the work\n\n## Operational footprint\nBusiness functions the data represents.\n\n## What a downstream LLM should hold in mind\n3–5 non-obvious facts about the company's shape.\n\nRules for the markdown:\n- Every number must come from a query you actually ran.\n- Use human-readable names from the data, never bare IDs.\n- Match vocabulary to the business (a hospital has patients, not customers).\n- No meta talk about databases, schemas, queries, or the dataset.\n- If a fact isn't queryable, write \"Not measured.\"\n- Begin your response with the H1 `# Acme — Café \"Ünïcode\" 🚲 — Business Profile`. NOTHING may precede it — no preamble, no code fence, no acknowledgement.\n\n================================================================================\nINPUT — the company you must profile:\n================================================================================\n\n{\n  \"companyName\": \"Acme — Café \\\"Ünïcode\\\" 🚲\",\n  \"companyNote\": \"We sell <bikes> & parts.\\nLine two   end\"\n}\n"
+    }
+  ],
+  "profileValidation": [
+    {
+      "raw": "# Acme — Business Profile\n\nok",
+      "value": "# Acme — Business Profile\n\nok"
+    },
+    {
+      "raw": "```markdown\n# A\nbody\n```",
+      "value": "# A\nbody"
+    },
+    {
+      "raw": "  \n",
+      "error": "profiler returned an empty business profile"
+    },
+    {
+      "raw": "I am sorry, I could not access it",
+      "error": "profiler returned failure text instead of a business profile"
+    },
+    {
+      "raw": "Notes on business_profile.md",
+      "error": "profiler returned failure text instead of a business profile"
+    }
+  ],
+  "bootstrap": [
+    {
+      "seats": [
+        "CEO",
+        "CFO",
+        "XYZ"
+      ],
+      "industryInsights": "Industry 🚲 text",
+      "orgName": "Acme — Café \"Ünïcode\" 🚲",
+      "businessProfile": "# Profile\nbody",
+      "prompt": "You are a senior BI consultant designing the first dashboard a new customer sees. You are handed a business_profile (what the company actually does) and an industry_insights briefing (industry context). You must propose exactly 12 starter dashboard cards: 4 per role for CEO, CFO, XYZ.\n\nNO TOOLS NEEDED. Do not call any tool — not `terminal`/`Bash`, not `read_file`/`Read`, not `write_file`/`Write`, not `execute_code`, not search/web/browser tools — every fact you need is inline below. Generate the JSON directly as your final answer.\n\nGROUNDING RULE — non-negotiable:\n- Every card must measure something the company ACTUALLY does, sells, operates, or employs, as named in the business_profile (products, channels, geographies, workforce, currencies, work centers, sales territories, etc.).\n- industry_insights is INTERPRETATION CONTEXT ONLY. It tells you what's normal in the industry. It does NOT give you license to invent product lines, markets, or segments the company is not in.\n- Concrete negative example: if business_profile lists only mountain, road, and touring bikes, you MUST NOT propose e-bike metrics, battery metrics, or e-bike-related KPIs — even if industry_insights talks about e-bike growth. Same rule for any other industry trend the company isn't actually exposed to.\n- If you can't ground a card in the business_profile, drop it and pick another.\n\nPer-role focus:\n- CEO: company-wide health, channel mix, geographic mix, product concentration.\n- CFO: margin, cost, AR/cash, FX/currency exposure if multi-currency.\n- XYZ: executive priorities relevant to this role for this specific company.\n\nField rules:\n- role: must be exactly one of CEO, CFO, XYZ.\n- slug: kebab-case, lowercase, unique within its role, descriptive (e.g. \"wholesale-vs-dtc-mix\", \"rep-quota-attainment\", \"wc-utilization\"). Match /^[a-z0-9]+(-[a-z0-9]+)*$/.\n- title: short, scannable, plain English (under 60 chars), no marketing fluff.\n- why: one sentence explaining why this matters for THIS specific company, citing a concrete fact from the business profile (a number, a product name, a territory, a workforce count). No generic \"important for executives\" prose.\n- chart_hint: one of \"kpi\" (single big number), \"line\" (trend), \"bar\" (categories), \"donut\" (mix/share), \"area\" (cumulative).\n\n================================================================================\nINPUT — companyName: Acme — Café \"Ünïcode\" 🚲\n================================================================================\n\n================================================================================\nbusiness_profile:\n================================================================================\n\n# Profile\nbody\n\n================================================================================\nindustry_insights:\n================================================================================\n\nIndustry 🚲 text\n\n================================================================================\nOUTPUT CONTRACT — respond with ONE JSON object, exactly this shape, no prose, no code fences:\n================================================================================\n\n{\n  \"metrics\": [\n    {\n      \"role\": \"CEO\",\n      \"slug\": \"kebab-case-slug\",\n      \"title\": \"Short title\",\n      \"why\": \"One sentence citing a concrete fact from the business profile.\",\n      \"chart_hint\": \"kpi\"\n    }\n  ]\n}\n\nRules for the JSON:\n- Output a SINGLE JSON object. No markdown fences, no prose before or after.\n- metrics array has exactly 12 entries: 4 for CEO, 4 for CFO, 4 for XYZ.\n- chart_hint must be one of: kpi, line, bar, donut, area.\n- slug must be unique within its role.\n"
+    },
+    {
+      "seats": [
+        "COO"
+      ],
+      "industryInsights": "  \n",
+      "orgName": "Acme — Café \"Ünïcode\" 🚲",
+      "businessProfile": "# Profile\nbody",
+      "prompt": "You are a senior BI consultant designing the first dashboard a new customer sees. You are handed a business_profile (what the company actually does) and an industry_insights briefing (industry context). You must propose exactly 4 starter dashboard cards: 4 per role for COO.\n\nNO TOOLS NEEDED. Do not call any tool — not `terminal`/`Bash`, not `read_file`/`Read`, not `write_file`/`Write`, not `execute_code`, not search/web/browser tools — every fact you need is inline below. Generate the JSON directly as your final answer.\n\nGROUNDING RULE — non-negotiable:\n- Every card must measure something the company ACTUALLY does, sells, operates, or employs, as named in the business_profile (products, channels, geographies, workforce, currencies, work centers, sales territories, etc.).\n- industry_insights is INTERPRETATION CONTEXT ONLY. It tells you what's normal in the industry. It does NOT give you license to invent product lines, markets, or segments the company is not in.\n- Concrete negative example: if business_profile lists only mountain, road, and touring bikes, you MUST NOT propose e-bike metrics, battery metrics, or e-bike-related KPIs — even if industry_insights talks about e-bike growth. Same rule for any other industry trend the company isn't actually exposed to.\n- If you can't ground a card in the business_profile, drop it and pick another.\n\nPer-role focus:\n- COO: production capacity, work center throughput, fulfillment, lead times, workforce productivity.\n\nField rules:\n- role: must be exactly one of COO.\n- slug: kebab-case, lowercase, unique within its role, descriptive (e.g. \"wholesale-vs-dtc-mix\", \"rep-quota-attainment\", \"wc-utilization\"). Match /^[a-z0-9]+(-[a-z0-9]+)*$/.\n- title: short, scannable, plain English (under 60 chars), no marketing fluff.\n- why: one sentence explaining why this matters for THIS specific company, citing a concrete fact from the business profile (a number, a product name, a territory, a workforce count). No generic \"important for executives\" prose.\n- chart_hint: one of \"kpi\" (single big number), \"line\" (trend), \"bar\" (categories), \"donut\" (mix/share), \"area\" (cumulative).\n\n================================================================================\nINPUT — companyName: Acme — Café \"Ünïcode\" 🚲\n================================================================================\n\n================================================================================\nbusiness_profile:\n================================================================================\n\n# Profile\nbody\n\n================================================================================\nindustry_insights:\n================================================================================\n\n(industry research is disabled for this org — work from business_profile alone)\n\n================================================================================\nOUTPUT CONTRACT — respond with ONE JSON object, exactly this shape, no prose, no code fences:\n================================================================================\n\n{\n  \"metrics\": [\n    {\n      \"role\": \"CEO\",\n      \"slug\": \"kebab-case-slug\",\n      \"title\": \"Short title\",\n      \"why\": \"One sentence citing a concrete fact from the business profile.\",\n      \"chart_hint\": \"kpi\"\n    }\n  ]\n}\n\nRules for the JSON:\n- Output a SINGLE JSON object. No markdown fences, no prose before or after.\n- metrics array has exactly 4 entries: 4 for COO.\n- chart_hint must be one of: kpi, line, bar, donut, area.\n- slug must be unique within its role.\n"
+    }
+  ],
+  "bootstrapValidation": [
+    {
+      "seats": [
+        "CEO"
+      ],
+      "raw": [
+        {
+          "role": "CEO",
+          "slug": "a-x",
+          "title": " T a-x ",
+          "why": " W ",
+          "chart_hint": "kpi"
+        },
+        {
+          "role": "CEO",
+          "slug": "b-x",
+          "title": " T b-x ",
+          "why": " W ",
+          "chart_hint": "kpi"
+        },
+        {
+          "role": "CEO",
+          "slug": "c-x",
+          "title": " T c-x ",
+          "why": " W ",
+          "chart_hint": "kpi"
+        },
+        {
+          "role": "CEO",
+          "slug": "d-x",
+          "title": " T d-x ",
+          "why": " W ",
+          "chart_hint": "kpi"
+        }
+      ],
+      "value": [
+        {
+          "role": "CEO",
+          "slug": "a-x",
+          "title": "T a-x",
+          "why": "W",
+          "chart_hint": "kpi"
+        },
+        {
+          "role": "CEO",
+          "slug": "b-x",
+          "title": "T b-x",
+          "why": "W",
+          "chart_hint": "kpi"
+        },
+        {
+          "role": "CEO",
+          "slug": "c-x",
+          "title": "T c-x",
+          "why": "W",
+          "chart_hint": "kpi"
+        },
+        {
+          "role": "CEO",
+          "slug": "d-x",
+          "title": "T d-x",
+          "why": "W",
+          "chart_hint": "kpi"
+        }
+      ]
+    },
+    {
+      "seats": [
+        "CEO"
+      ],
+      "raw": {
+        "metrics": []
+      },
+      "error": "bootstrap-metrics: expected array, got object"
+    },
+    {
+      "seats": [
+        "CEO",
+        "CFO"
+      ],
+      "raw": [
+        {
+          "role": "CEO",
+          "slug": "a-x",
+          "title": " T a-x ",
+          "why": " W ",
+          "chart_hint": "kpi"
+        },
+        {
+          "role": "CEO",
+          "slug": "b-x",
+          "title": " T b-x ",
+          "why": " W ",
+          "chart_hint": "kpi"
+        },
+        {
+          "role": "CEO",
+          "slug": "c-x",
+          "title": " T c-x ",
+          "why": " W ",
+          "chart_hint": "kpi"
+        },
+        {
+          "role": "CEO",
+          "slug": "d-x",
+          "title": " T d-x ",
+          "why": " W ",
+          "chart_hint": "kpi"
+        },
+        {
+          "role": "CFO",
+          "slug": "a",
+          "title": " T a ",
+          "why": " W ",
+          "chart_hint": "kpi"
+        },
+        {
+          "role": "CFO",
+          "slug": "a",
+          "title": " T a ",
+          "why": " W ",
+          "chart_hint": "kpi"
+        },
+        {
+          "role": "CTO",
+          "slug": "z",
+          "title": " T z ",
+          "why": " W ",
+          "chart_hint": "kpi"
+        },
+        {
+          "role": "CFO",
+          "slug": "Bad_Slug",
+          "title": " T Bad_Slug ",
+          "why": " W ",
+          "chart_hint": "kpi"
+        },
+        {
+          "role": "CFO",
+          "slug": "b",
+          "title": " ",
+          "why": " W ",
+          "chart_hint": "kpi"
+        },
+        {
+          "role": "CFO",
+          "slug": "c",
+          "title": " T c ",
+          "why": 3,
+          "chart_hint": "kpi"
+        },
+        {
+          "role": "CFO",
+          "slug": "d",
+          "title": " T d ",
+          "why": " W ",
+          "chart_hint": "pie"
+        },
+        null,
+        7
+      ],
+      "error": "bootstrap-metrics validation failed:\n  [5] duplicate slug a in role CFO\n  [6] bad role: CTO\n  [7] bad slug: Bad_Slug\n  [8] missing title\n  [9] missing why\n  [10] bad chart_hint: pie\n  [11] not an object\n  [12] not an object\n  role CFO has 1 cards, expected 4"
+    }
+  ],
+  "parseJson": [
+    {
+      "raw": "{\"metrics\":[1]}",
+      "value": {
+        "metrics": [
+          1
+        ]
+      }
+    },
+    {
+      "raw": "```json\n{\"a\":1}\n```",
+      "value": {
+        "a": 1
+      }
+    },
+    {
+      "raw": "Here: {\"a\": {\"b\": 2}} done",
+      "value": {
+        "a": {
+          "b": 2
+        }
+      }
+    },
+    {
+      "raw": "no braces here",
+      "error": "agent output not parseable as JSON (no object braces found): no braces here"
+    },
+    {
+      "raw": "{bad json}",
+      "error": "Expected property name or '}' in JSON at position 1 (line 1 column 2)"
+    },
+    {
+      "raw": "[1,2]",
+      "value": [
+        1,
+        2
+      ]
+    }
+  ],
+  "executionErrors": [
+    {
+      "raw": "Authentication token has expired, please log in",
+      "error": "Provider authentication failed — re-check the API key in /admin/settings/agent: Authentication token has expired, please log in",
+      "name": "UpstreamProviderError"
+    },
+    {
+      "raw": "Gemini HTTP 503 UNAVAILABLE retry later",
+      "error": "Upstream provider unavailable (google-gemini): Gemini HTTP 503 UNAVAILABLE retry later",
+      "name": "UpstreamProviderError"
+    },
+    {
+      "raw": "OpenAI HTTP 500",
+      "error": "Upstream provider unavailable (openai): OpenAI HTTP 500",
+      "name": "UpstreamProviderError"
+    },
+    {
+      "raw": "API call failed after 3 retries: HTTP 502",
+      "error": "Upstream provider unavailable: API call failed after 3 retries: HTTP 502",
+      "name": "UpstreamProviderError"
+    },
+    {
+      "raw": "{\"error\": \"HTTP 500\"}",
+      "error": null,
+      "name": null
+    },
+    {
+      "raw": "```\nHTTP 500\n```",
+      "error": null,
+      "name": null
+    },
+    {
+      "raw": "query blocked for role anon on table orders",
+      "error": "Data source authorization failed — verify the authentication mode in /admin/settings/data: query blocked for role anon on table orders",
+      "name": "DataSourceAuthorizationError"
+    },
+    {
+      "raw": "graphjin said: request unauthorized",
+      "error": "Data source authorization failed — verify the authentication mode in /admin/settings/data: graphjin said: request unauthorized",
+      "name": "DataSourceAuthorizationError"
+    },
+    {
+      "raw": "invalid api key provided",
+      "error": "Provider authentication failed — re-check the API key in /admin/settings/agent: invalid api key provided",
+      "name": "UpstreamProviderError"
+    },
+    {
+      "raw": "Everything fine. HTTP 200",
+      "error": null,
+      "name": null
+    },
+    {
+      "raw": "                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       HTTP 500 later",
+      "error": null,
+      "name": null
+    },
+    {
+      "raw": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx HTTP 401 yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+      "error": "Provider authentication failed — re-check the API key in /admin/settings/agent: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "name": "UpstreamProviderError"
+    }
+  ],
+  "correction": {
+    "base": "BASE",
+    "output": "🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲tail",
+    "error": "bad\nthing",
+    "prompt": "BASE\n\n<previous-attempt-rejected>\nYour previous reply was rejected by the output validator:\nbad\nthing\n\nTail of the rejected reply:\n🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲🚲tail\n</previous-attempt-rejected>\n\nRedo the task and reply in EXACTLY the required output format —\nno surrounding prose, no apologies."
+  },
+  "research": {
+    "orgName": "Acme — Café \"Ünïcode\" 🚲",
+    "mission": "Investigate.\nCover all.",
+    "userPrompt": "# Research mission\n\nInvestigate.\nCover all.\n\n# Output\n\nProduce the briefing as markdown. Your FIRST character must be the `#` of\nthe H1 title below. Nothing may precede it — no preamble, no <think>\nblock, no recap of this mission, no acknowledgement of these instructions.\n\n# Acme — Café \"Ünïcode\" 🚲 — Industry Insights\n\nThen use the eight section headings (H2) listed in the mission, in the\norder given.\n\n# Format — STRICT\n\n- Do NOT emit <think>…</think> tags, planning notes, step counts, search\n  logs, or any meta-commentary. Output ONLY the finished briefing body.\n- Sections are H2 headings followed immediately by a bulleted list. NO\n  introductory paragraph under any heading. NO narrative prose. NO transition\n  sentences.\n- Each bullet = one discrete fact: a concrete number, a named\n  company/regulator/geography/standard, a date, or a specific claim with\n  inline citation.\n- Aim for 8-15 bullets per section. Total briefing length MUST NOT exceed\n  12,000 characters. Density beats length. Cut, do not pad.\n- Sub-bullets are allowed for grouping (e.g. region breakdowns under a\n  player, or per-country regulation), but keep nesting to one level only.\n- Under \"What a downstream LLM should hold in mind\", give 5-7 bullets each\n  naming a non-obvious industry-specific fact (with the number or named\n  entity that anchors it) that should color how this company's KPIs are\n  interpreted.\n- No preamble before the H1. No trailing summary. No \"Sources:\" appendix —\n  inline citations only.\n- No marketing language. No \"robust\" / \"vibrant\" / \"compelling\" /\n  \"exciting growth story\". Plain factual prose inside each bullet.",
+    "missionInstructions": "You are a McKinsey associate scoping an\nindustry briefing for a partner. You will read a business_profile describing a\nspecific company and write a single research charter that a deep-research agent\nwill execute.\n\nThe charter must:\n\n- Name the industry and sub-segments in plain language drawn from the\n  business_profile. Do not invent industries the profile does not support.\n- Name the geographies the company actually operates in (use the real country /\n  region / city names from the profile, not generic phrases like \"global\").\n- Use the served-entity vocabulary the company itself uses — patients, riders,\n  members, accounts, tenants, students, customers — whichever the profile\n  shows. Tell the researcher to keep that vocabulary throughout.\n- Name the business model implied by the profile (transactional, subscription,\n  asset-based, regulated, project-based, services, membership, etc.).\n- Tell the researcher to investigate ALL of these dimensions, in this order:\n  industry definition, market size & growth, competitive landscape (top\n  players in THIS company's actual geographies), structural trends, regulatory\n  environment, value chain economics, risks & disruption vectors.\n- Tell the researcher to ground every claim in current public sources, prefer\n  the most recent data available, and use the section headings:\n  \"Industry definition\", \"Market size & growth\", \"Competitive landscape\",\n  \"Structural trends\", \"Regulatory environment\", \"Value chain & economics\",\n  \"Risks & disruption vectors\", \"What a downstream LLM should hold in mind\".\n- Tell the researcher the briefing will be read by downstream LLMs FIRST and\n  executives SECOND. Both want to scan, not read. So the output must be\n  BULLET POINTS ONLY — every bullet a concrete number, named entity, date,\n  or specific claim with an inline citation. No prose paragraphs. No narrative\n  transitions. No \"Overall\" / \"In summary\" / \"It is worth noting\" sentences.\n  Target 8-15 bullets per section, total briefing length MUST NOT exceed\n  12,000 characters. Cut, do not pad.\n  Marketing fluff is forbidden.\n\nHard rules:\n- Output ONLY the charter as flowing prose. No headings, no bullets, no\n  preamble like \"Here is the charter:\".\n- 150-300 words.\n- Address the researcher in second person (\"Investigate...\", \"Cover...\",\n  \"Use the vocabulary...\"), not third person.\n- If the business_profile is thin or vague on a dimension, instruct the\n  researcher to use industry defaults appropriate to the named industry and\n  geographies — do NOT make up facts about the company itself.",
+    "system": "You are a McKinsey-style industry analyst\nwriting for downstream LLMs FIRST and executives SECOND. Both want to scan,\nnot read.\n\nCRITICAL — response shape:\n- Your response IS the published briefing. It will be stored verbatim in a\n  database column and rendered to users as markdown.\n- Begin your response with the H1 heading the user specifies. NOTHING may\n  precede it — no preface, no \"Here is the briefing:\", no recap of the\n  mission, no acknowledgement.\n\nOutput rules — STRICT:\n- Use exactly the section headings (H2) the user requests, in the order\n  requested.\n- Each section is BULLET POINTS ONLY. No introductory paragraph. No transition\n  prose. No narrative.\n- Each bullet is one discrete fact: a concrete number, a named\n  company/regulator/geography, a date, or a specific claim. No filler. No\n  \"Overall,\" / \"In summary,\" / \"It is worth noting\" sentences.\n- Inline citations like [1] are encouraged on every bullet that makes a\n  factual claim.\n- Sub-bullets are allowed for grouping (e.g. by region or by player) but\n  keep nesting to one level deep.\n- Aim for 8-15 bullets per section. Total briefing length MUST NOT exceed\n  12,000 characters. Density beats length. Cut, do not pad.\n- Ground every claim in current public sources. Prefer the most recent data\n  available.\n- No marketing language, no hedging adjectives, no \"robust ecosystem\" /\n  \"vibrant market\" / \"compelling growth story\" type prose."
+  }
+}

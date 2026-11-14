@@ -1,6 +1,8 @@
 package webfront
 
 import (
+	"github.com/open-neko/neko/apps/openneko/internal/jobs"
+
 	"context"
 	"errors"
 	"net/http"
@@ -229,10 +231,6 @@ func (a *API) ensureInsights(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, http.StatusOK, map[string]string{"state": "disabled"})
 		return
 	}
-	if err := a.ensureQueue(ctx, queueIndustryInsights); err != nil {
-		a.fail(w, r, err)
-		return
-	}
 	var state, jobID string
 	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock(hashtext($1))`, "insights:"+orgID); err != nil {
@@ -264,12 +262,9 @@ func (a *API) ensureInsights(w http.ResponseWriter, r *http.Request) {
 		if forced {
 			trigger = "insights_regenerate"
 		}
-		if err := tx.QueryRow(ctx, `insert into processing_job (org_id, kind, status, trigger)
-			values ($1, 'industry_insights_build', 'queued', $2) returning id::text`, orgID, trigger).Scan(&jobID); err != nil {
-			return err
-		}
+		var err error
+		jobID, err = a.queueBuildJob(ctx, tx, jobs.KindIndustryInsightsBuild, orgID, trigger)
 		state = "queued"
-		_, err := a.enqueue(ctx, tx, queueIndustryInsights, map[string]string{"processingJobId": jobID, "orgId": orgID})
 		return err
 	})
 	if err != nil {
