@@ -14,6 +14,7 @@ tags:
 - name: approvals
 - name: auth
 - name: bots
+- name: channels
 - name: hooks
 - name: insights
 - name: integrations
@@ -543,15 +544,70 @@ paths:
       - deviceToken: []
       responses:
         '200':
-          description: Worker response, passed through with the worker status
+          description: The settings of each built-in channel. A secret setting reports only whether it is set
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: false
+                required:
+                - channels
                 properties:
                   channels:
                     type: array
+                    items:
+                      type: object
+                      required:
+                      - id
+                      - providerLabel
+                      - directions
+                      - ingress
+                      - enabled
+                      - fields
+                      - missing
+                      properties:
+                        id:
+                          type: string
+                        providerLabel:
+                          type: string
+                        directions:
+                          type: array
+                          items:
+                            type: string
+                        ingress:
+                          type: string
+                          enum:
+                          - webhook
+                          - socket
+                        enabled:
+                          type: boolean
+                        fields:
+                          type: array
+                          items:
+                            type: object
+                            required:
+                            - key
+                            - required
+                            - secret
+                            - description
+                            - set
+                            properties:
+                              key:
+                                type: string
+                              required:
+                                type: boolean
+                              secret:
+                                type: boolean
+                              description:
+                                type: string
+                              set:
+                                type: boolean
+                              value:
+                                type: string
+                        missing:
+                          type: array
+                          items:
+                            type: string
         '401':
           description: The session or device token is not valid
           content:
@@ -560,15 +616,6 @@ paths:
                 $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-        '502':
-          description: The worker is not reachable
           content:
             application/json:
               schema:
@@ -608,12 +655,14 @@ paths:
               - channel
       responses:
         '200':
-          description: Worker response, passed through with the worker status
+          description: The settings are saved
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: false
+                required:
+                - ok
                 properties:
                   ok:
                     type: boolean
@@ -631,15 +680,6 @@ paths:
                 $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an administrator
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-        '502':
-          description: The worker is not reachable
           content:
             application/json:
               schema:
@@ -5222,6 +5262,52 @@ paths:
                 $ref: '#/components/schemas/Error'
         '404':
           description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /channels/{channelId}/inbound:
+    post:
+      operationId: postChannelsByChannelIdInbound
+      tags:
+      - channels
+      summary: Receive a message from a channel provider
+      description: Telegram and the HUD bridge post here when OPENNEKO_PUBLIC_URL is set. The route checks the
+        channel's own signature (the Telegram secret token, the Slack request signature or the HUD HMAC) and
+        answers ok false when the channel is off, unknown or the signature does not match.
+      x-access: token
+      security: []
+      parameters:
+      - name: channelId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Channel id (slack, telegram or hud) or the package name the channel had as a plugin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Whether the update was handled. A failed update that will be tried again gives ok false
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                - ok
+                - dispatched
+                properties:
+                  ok:
+                    type: boolean
+                  dispatched:
+                    type: integer
+        '400':
+          description: The body is larger than 256 KB
           content:
             application/json:
               schema:

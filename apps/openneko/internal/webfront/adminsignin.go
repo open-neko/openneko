@@ -1,12 +1,10 @@
 package webfront
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -20,10 +18,9 @@ import (
 )
 
 const (
-	signinWriteTimeout     = 10 * time.Second
-	channelSettingsTimeout = 30 * time.Second
-	publicURLScope         = "public-url"
-	magicLinkPlugin        = "magic-link"
+	signinWriteTimeout = 10 * time.Second
+	publicURLScope     = "public-url"
+	magicLinkPlugin    = "magic-link"
 )
 
 var emailProviderKeys = map[string]string{
@@ -357,36 +354,4 @@ func normalizePublicURL(input string) (string, bool) {
 		p = path.Clean(escaped)
 	}
 	return strings.TrimRight(scheme+"://"+host+p, "/"), true
-}
-
-// adminChannelSettings passes the request to the worker's channel settings
-// route. Secret values go to the worker and never come back.
-func (a *API) adminChannelSettings(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.settingsAdmin(w, r); !ok {
-		return
-	}
-	method := http.MethodGet
-	var body []byte
-	if r.Method == http.MethodPost {
-		method = http.MethodPost
-		var err error
-		if body, err = io.ReadAll(io.LimitReader(r.Body, maxBody)); err != nil {
-			a.fail(w, r, err)
-			return
-		}
-	}
-	status, reply, err := a.workerDo(r.Context(), method, "/admin/channels/settings", channelSettingsTimeout, body)
-	if err != nil {
-		log.Printf("channel settings: %v", err)
-		sendError(w, http.StatusBadGateway, "the worker did not answer")
-		return
-	}
-	var compact bytes.Buffer
-	if json.Compact(&compact, reply) != nil {
-		sendError(w, status, fmt.Sprintf("Worker returned HTTP %d", status))
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_, _ = w.Write(compact.Bytes())
 }
