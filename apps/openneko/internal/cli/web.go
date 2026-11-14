@@ -151,6 +151,9 @@ with exit code 0, so its supervisor starts it again.`,
 			if _, err := api.MigrateLegacyChannelSecrets(); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: channel settings not moved: %v\n", err)
 			}
+			if _, err := api.MigrateLegacySignInSecrets(); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: sign-in settings not moved: %v\n", err)
+			}
 			if err := api.EnsureVAPIDKeys(); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: VAPID keys not ready: %v\n", err)
 			}

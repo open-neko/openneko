@@ -32,10 +32,6 @@ type setupWorker struct {
 func (s *setupWorker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if r.URL.Path == "/admin/auth/status" {
-		_, _ = w.Write([]byte(s.status))
-		return
-	}
 	body := ""
 	if r.Method == http.MethodPost {
 		var v map[string]any
@@ -61,11 +57,12 @@ func newSetupFront(t *testing.T, status string, db *pgxpool.Pool) (*Front, *setu
 	srv := httptest.NewServer(wk)
 	t.Cleanup(srv.Close)
 	g := newGate(t, srv.URL)
+	seedSignInSecrets(t, g.SecretsDir, status)
 	g.DB = db
 	return &Front{
 		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
 		Gate: g,
-		API:  &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecretsDir: t.TempDir()},
+		API:  &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecretsDir: g.SecretsDir},
 		Node: &recorder{},
 	}, wk
 }

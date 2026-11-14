@@ -31,9 +31,6 @@ func (c *connectWorker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	switch {
-	case r.URL.Path == "/admin/auth/status":
-		_, _ = w.Write([]byte(liveScalekit))
-		return
 	case r.URL.Path == "/admin/connect/providers":
 		_, _ = w.Write([]byte(c.providers))
 		return
@@ -77,11 +74,12 @@ func connectFront(t *testing.T) (*Front, *connectWorker) {
 	srv := httptest.NewServer(wk)
 	t.Cleanup(srv.Close)
 	g := newGate(t, srv.URL)
+	seedSignInSecrets(t, g.SecretsDir, liveScalekit)
 	g.DB = db
 	return &Front{
 		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
 		Gate: g,
-		API:  &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecretsDir: t.TempDir()},
+		API:  &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecretsDir: g.SecretsDir},
 		Node: &recorder{},
 	}, wk
 }

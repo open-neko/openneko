@@ -484,21 +484,22 @@ export class EvalEpisode {
     await writeFile(join(this.configHome, "openneko", "secret-key"), randomBytes(32).toString("base64"), {
       mode: 0o600,
     });
+    await writeFile(
+      join(this.configHome, "openneko", "secrets.json"),
+      JSON.stringify({
+        signin: { PROVIDER: "scalekit" },
+        "signin.scalekit": {
+          SCALEKIT_ENVIRONMENT_URL: "https://eval.scalekit.com",
+          SCALEKIT_CLIENT_ID: "eval",
+          SCALEKIT_CLIENT_SECRET: "eval",
+        },
+      }),
+      { mode: 0o600 },
+    );
     await writeFile(join(this.root, "app", "index.html"), "<!doctype html><title>OpenNeko eval</title>\n");
 
     this.worker = createServer(
       createAdminHandler({
-        exit: () => {},
-        auth: {
-          getAuthProvider: () => ({ pluginName: "eval", providerLabel: "Eval install" }),
-          authSignInReady: () => true,
-          beginAuth: async () => {
-            throw new Error("the eval install signs in with a session cookie");
-          },
-          completeAuth: async () => {
-            throw new Error("the eval install signs in with a session cookie");
-          },
-        },
         actions: { ready: () => true, execute: (input) => runActionExecute(input) },
         actionRequests: {
           create: async (input) => {
