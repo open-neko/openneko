@@ -194,6 +194,7 @@ function ActionsPageInner() {
     rejectReason,
     setRejectReason,
     approve,
+    approveWithPasskey,
     beginReject,
     cancelReject,
     submitReject,
@@ -343,6 +344,7 @@ function ActionsPageInner() {
                   onSubmitReject={() => submitReject(rejectingId ? labelFor(rejectingId) : "")}
                   onFocusRow={setFocusedId}
                   onApproveRow={(id) => approve(id, labelFor(id))}
+                  onApproveWithPasskeyRow={(id) => void approveWithPasskey(id, labelFor(id))}
                   onBeginRejectRow={beginReject}
                   rowRef={(id, el) => {
                     rowRefs.current[id] = el;
@@ -359,6 +361,9 @@ function ActionsPageInner() {
                 busy={false}
                 onApprove={() => {
                   if (visibleFocusedId) approve(visibleFocusedId, labelFor(visibleFocusedId));
+                }}
+                onApproveWithPasskey={() => {
+                  if (visibleFocusedId) void approveWithPasskey(visibleFocusedId, labelFor(visibleFocusedId));
                 }}
                 onReject={() => {
                   if (visibleFocusedId) beginReject(visibleFocusedId);
@@ -387,11 +392,13 @@ function ActionReadingPane({
   action,
   busy,
   onApprove,
+  onApproveWithPasskey,
   onReject,
 }: {
   action: ActionRow | null;
   busy: boolean;
   onApprove: () => void;
+  onApproveWithPasskey?: () => void;
   onReject: () => void;
 }) {
   if (!action) {
@@ -446,7 +453,7 @@ function ActionReadingPane({
           </div>
         )}
 
-        <div className="flex items-center gap-2.5 mt-[18px] pt-4 border-t border-border">
+        <div className="flex flex-wrap items-center gap-2.5 mt-[18px] pt-4 border-t border-border">
           <Button
             variant="primary"
             disabled={busy}
@@ -454,6 +461,15 @@ function ActionReadingPane({
           >
             Approve
           </Button>
+          {onApproveWithPasskey ? (
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={onApproveWithPasskey}
+            >
+              Approve with passkey
+            </Button>
+          ) : null}
           <Button
             variant="danger"
             disabled={busy}

@@ -18,6 +18,7 @@ import { Disclosure } from "@/components/ui/disclosure";
 import { Field, Textarea } from "@/components/ui/field";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
+import { createApprovalPasskeyAssertion } from "@/lib/passkey";
 
 type RunDetailPayload = {
   workflow: {
@@ -321,13 +322,26 @@ export default function RunPage() {
   }, [data?.run?.status, load]);
 
   const actOnRequest = useCallback(
-    async (id: string, decision: "approve" | "reject", reason?: string) => {
+    async (
+      id: string,
+      decision: "approve" | "reject",
+      reason?: string,
+      withPasskey = false,
+    ) => {
       setActionBusyId(id);
       try {
+        const passkey =
+          decision === "approve" && withPasskey
+            ? await createApprovalPasskeyAssertion(id)
+            : undefined;
         await fetch(`/api/v1/action-requests/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ decision, reason }),
+          body: JSON.stringify({
+            decision,
+            reason,
+            ...(passkey ? { passkey } : {}),
+          }),
         });
         await load();
       } finally {
@@ -546,11 +560,11 @@ export default function RunPage() {
                   key={a.id}
                   className="run-action-card bg-card border border-border rounded-2xl px-4 py-3.5"
                 >
-                  <div className="flex items-start justify-between gap-2 mb-1.5">
+                  <div className="flex flex-wrap items-start justify-between gap-2 mb-1.5">
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="font-semibold text-sm text-text leading-[1.4] bg-transparent border-0 p-0 text-left cursor-pointer hover:underline hover:underline-offset-[3px]"
+                      className="min-w-0 whitespace-normal font-semibold text-sm text-text leading-[1.4] bg-transparent border-0 p-0 text-left cursor-pointer hover:underline hover:underline-offset-[3px]"
                       onClick={() => router.push(`/actions/${a.id}`)}
                       title="Open action receipt"
                     >
@@ -608,7 +622,7 @@ export default function RunPage() {
                       </div>
                     </div>
                   ) : a.status === "pending_approval" ? (
-                    <div className="flex gap-2 mt-2.5">
+                    <div className="flex flex-wrap gap-2 mt-2.5">
                       <Button
                         variant="primary"
                         size="sm"
@@ -616,6 +630,14 @@ export default function RunPage() {
                         onClick={() => void actOnRequest(a.id, "approve")}
                       >
                         Approve
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={actionBusyId === a.id}
+                        onClick={() => void actOnRequest(a.id, "approve", undefined, true)}
+                      >
+                        Approve with passkey
                       </Button>
                       <Button
                         variant="danger"
