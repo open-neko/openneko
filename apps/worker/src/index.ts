@@ -5,6 +5,7 @@ import "dotenv/config";
 
 import { createServer } from "node:http";
 import { join } from "node:path";
+import { adminSocketPath, listenAdmin } from "./admin-listen.js";
 import { boss, MOVED_QUEUES, RETIRED_QUEUES } from "@neko/db/jobs";
 import {
   createAdminHandler,
@@ -610,10 +611,8 @@ void packOAuthRefresh();
 const packOAuthRefreshTimer = setInterval(packOAuthRefresh, 60_000);
 packOAuthRefreshTimer.unref();
 
-server.listen(PORT, () => {
-  console.log(
-    `[worker] pg-boss running; /health on http://localhost:${PORT}`,
-  );
+listenAdmin(server, adminSocketPath(), PORT, (where) => {
+  console.log(`[worker] pg-boss running; /health on ${where}`);
 });
 
 const channelInbound = startChannelInbound(ADMIN_ORG_ID);

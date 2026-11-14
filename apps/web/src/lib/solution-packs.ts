@@ -1,11 +1,9 @@
+import { workerAdminFetch } from "@neko/llm/worker-admin";
+
 const PACK_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export function validPackId(packId: string): boolean {
   return PACK_ID.test(packId);
-}
-
-function workerAdminBase(): string {
-  return (process.env.WORKER_ADMIN_URL ?? "http://127.0.0.1:4100").replace(/\/+$/, "");
 }
 
 export async function requestPackWorker(
@@ -14,7 +12,7 @@ export async function requestPackWorker(
 ): Promise<{ status: number; body: unknown }> {
   let response: Response;
   try {
-    response = await fetch(`${workerAdminBase()}${path}`, {
+    response = await workerAdminFetch(path, {
       ...init,
       cache: "no-store",
       signal: AbortSignal.any([AbortSignal.timeout(120_000), ...(init.signal ? [init.signal] : [])]),

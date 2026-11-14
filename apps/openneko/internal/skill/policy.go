@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"time"
+
+	"github.com/open-neko/neko/apps/openneko/internal/workeradmin"
 )
 
 // Policy mirrors packages/db/src/install-policy.ts; keep the two in sync.
@@ -19,16 +20,13 @@ type Policy struct {
 // worker cannot turn on git-URL installs.
 var DefaultPolicy = Policy{AllowGitURLInstalls: false}
 
-func workerAdminBase() string {
-	if v := os.Getenv("WORKER_ADMIN_URL"); v != "" {
-		return v
-	}
-	return "http://127.0.0.1:4100"
-}
-
 // FetchPolicy's source is "org", "default" or "unreachable", for diagnostics only.
 func FetchPolicy(ctx context.Context) (Policy, string, error) {
-	endpoint, err := url.JoinPath(workerAdminBase(), "/admin/install-policy")
+	base, client, err := workeradmin.Endpoint(workeradmin.URL())
+	if err != nil {
+		return DefaultPolicy, "unreachable", err
+	}
+	endpoint, err := url.JoinPath(base, "/admin/install-policy")
 	if err != nil {
 		return DefaultPolicy, "unreachable", err
 	}
@@ -38,7 +36,7 @@ func FetchPolicy(ctx context.Context) (Policy, string, error) {
 	if err != nil {
 		return DefaultPolicy, "unreachable", err
 	}
-	res, err := http.DefaultClient.Do(req)
+	res, err := client.Do(req)
 	if err != nil {
 		return DefaultPolicy, "unreachable", nil
 	}

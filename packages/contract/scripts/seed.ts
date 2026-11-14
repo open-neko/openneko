@@ -57,6 +57,11 @@ await seedWork(orgId, F.memberUserId, {
   workflow: F.memberWorkflowId, thread: F.memberThreadId, workRun: F.memberWorkRunId,
   workflowRun: F.memberWorkflowRunId, output: F.memberOutputId, action: F.memberActionRequestId,
 }, "watch");
+await db().execute(sql`
+  insert into work_thread (id, org_id, title, channel) values (${F.serviceThreadId}, ${orgId}, 'Contract service run', 'workflow')`);
+await db().execute(sql`
+  insert into work_run (id, org_id, thread_id, backend, status, actor_role)
+  values (${F.serviceWorkRunId}, ${orgId}, ${F.serviceThreadId}, 'ax', 'completed', 'service')`);
 
 await boss();
 await stopBoss();
