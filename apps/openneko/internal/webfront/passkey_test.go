@@ -11,9 +11,11 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
@@ -48,10 +50,12 @@ func buildTestAttestation(t *testing.T, priv *ecdsa.PrivateKey, rpID string, cre
 	cose.Write(yBuf[:])
 	authData.Write(cose.Bytes())
 
-	// CBOR attestationObject map with 1 entry: {"authData": bstr}
+	// CBOR attestationObject: {"fmt": "none", "attStmt": {}, "authData": bstr}
 	ad := authData.Bytes()
 	var att bytes.Buffer
-	att.WriteByte(0xa1)
+	att.WriteByte(0xa3)
+	att.Write([]byte{0x63, 'f', 'm', 't', 0x64, 'n', 'o', 'n', 'e'})
+	att.Write([]byte{0x67, 'a', 't', 't', 'S', 't', 'm', 't', 0xa0})
 	att.WriteByte(0x68)
 	att.WriteString("authData")
 	if len(ad) < 256 {
@@ -174,6 +178,35 @@ func TestPasskeyRegisterAndApproveAction(t *testing.T) {
 	}
 	if a := queryText(t, db, `select event || ' ' || payload::text from audit_chain where entity_kind = 'passkey' and entity_id = '`+created.Passkey.ID+`'`); a != `registered {"name": "Pixel 9 Passkey", "userId": "member", "credentialId": "`+credID+`"}` {
 		t.Fatalf("passkey register audit: %s", a)
+	}
+
+	if got := queryText(t, db, `select length(public_key)::text || ' ' || backup_eligible::text from app_passkey where id = '`+created.Passkey.ID+`'`); got != "103 false" {
+		t.Fatalf("stored COSE key: %s", got)
+	}
+	bigBody, _ := json.Marshal(map[string]any{
+		"credentialId":      credID,
+		"clientDataJSON":    base64.RawURLEncoding.EncodeToString(regClientJSON),
+		"attestationObject": base64.RawURLEncoding.EncodeToString(make([]byte, maxAttestationBytes+1)),
+	})
+	if w := call(f, "POST", "/api/v1/my/passkeys", string(bigBody), member); w.Code != 400 || !strings.Contains(w.Body.String(), "invalid or expired") {
+		t.Fatalf("large attestation with a spent challenge: %d %s", w.Code, w.Body.String())
+	}
+	bigCh := call(f, "POST", "/api/v1/my/passkeys/challenge", `{"purpose":"register"}`, member)
+	var bigChResp struct {
+		Challenge string `json:"challenge"`
+	}
+	_ = json.Unmarshal(bigCh.Body.Bytes(), &bigChResp)
+	bigClientJSON, _ := json.Marshal(map[string]any{"type": "webauthn.create", "challenge": bigChResp.Challenge, "origin": "https://neko.example"})
+	bigBody, _ = json.Marshal(map[string]any{
+		"credentialId":      credID,
+		"clientDataJSON":    base64.RawURLEncoding.EncodeToString(bigClientJSON),
+		"attestationObject": base64.RawURLEncoding.EncodeToString(make([]byte, maxAttestationBytes+1)),
+	})
+	if w := call(f, "POST", "/api/v1/my/passkeys", string(bigBody), member); w.Code != 400 || !strings.Contains(w.Body.String(), "too large") {
+		t.Fatalf("large attestation: %d %s", w.Code, w.Body.String())
+	}
+	if n := queryText(t, db, `select count(*)::text from app_passkey_challenge where challenge = '`+bigChResp.Challenge+`'`); n != "0" {
+		t.Fatalf("register challenge kept after a large attestation: %s", n)
 	}
 
 	// Replaying the same registration challenge must fail
@@ -342,6 +375,29 @@ func TestPasskeyRegisterAndApproveAction(t *testing.T) {
 		t.Fatalf("register challenge kept after a failed check: %s", n)
 	}
 
+	legacyKey := append([]byte{0x04}, append(priv.PublicKey.X.FillBytes(make([]byte, 32)), priv.PublicKey.Y.FillBytes(make([]byte, 32))...)...)
+	if _, err := db.Exec(ctx, `update app_passkey set public_key = $1, backup_eligible = null where id = $2`,
+		base64.RawURLEncoding.EncodeToString(legacyKey), created.Passkey.ID); err != nil {
+		t.Fatal(err)
+	}
+	migration, err := os.ReadFile("../../assets/migrations/0138_app_passkey_cose.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(ctx, string(migration)); err != nil {
+		t.Fatal(err)
+	}
+	legacyID := "30000000-0000-4000-8000-000000000095"
+	seed(t, db, `insert into action_request (id, org_id, workflow_run_id, scope, kind, status)
+		values ('`+legacyID+`', 'org', '`+runHeld+`', 'org', 'note', 'pending_approval')`)
+	legacyBody, _ := json.Marshal(map[string]any{"decision": "approve", "passkey": buildTestAssertion(t, priv, "neko.example", credID, approveChallenge(legacyID, member), 5, true)})
+	if w := call(f, "PATCH", "/api/v1/action-requests/"+legacyID, string(legacyBody), member); w.Code != 200 {
+		t.Fatalf("approval with a converted key: %d %s", w.Code, w.Body.String())
+	}
+	if got := queryText(t, db, `select sign_count::text || ' ' || backup_eligible::text from app_passkey where id = '`+created.Passkey.ID+`'`); got != "5 false" {
+		t.Fatalf("converted passkey row: %s", got)
+	}
+
 	// Admin cannot delete member's passkey
 	if w := call(f, "DELETE", "/api/v1/my/passkeys/"+created.Passkey.ID, "", admin); w.Code != 404 {
 		t.Fatalf("other user delete: %d %s", w.Code, w.Body.String())
@@ -402,32 +458,15 @@ func TestPasskeyRPFromPublicURL(t *testing.T) {
 	}
 }
 
-func TestMatchesRPIDHash(t *testing.T) {
-	sum := sha256.Sum256([]byte("neko.example"))
-	if !matchesRPIDHash(sum[:], "neko.example") || matchesRPIDHash(sum[:], "evil.example") || matchesRPIDHash(sum[:], "") {
-		t.Fatal("rp id hash check")
+func TestPasskeyRefusesDeepCBOR(t *testing.T) {
+	credRaw := []byte("cred")
+	clientData := base64.RawURLEncoding.EncodeToString([]byte(`{"type":"webauthn.create","challenge":"x","origin":"https://neko.example"}`))
+	nested := append(bytes.Repeat([]byte{0x81}, 9), 0x00)
+	payload, err := attestationJSON(credRaw, clientData, base64.RawURLEncoding.EncodeToString(nested))
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestReadCBORItemDepthLimit(t *testing.T) {
-	nested := func(depth int) []byte {
-		b := bytes.Repeat([]byte{0x81}, depth)
-		return append(b, 0x00)
-	}
-	if _, _, err := readCBORItem(nested(maxCBORDepth), 0); err != nil {
-		t.Fatalf("depth %d: %v", maxCBORDepth, err)
-	}
-	if _, _, err := readCBORItem(nested(maxCBORDepth+1), 0); err == nil || !strings.Contains(err.Error(), "too deep") {
-		t.Fatalf("depth %d: %v", maxCBORDepth+1, err)
-	}
-	if _, _, err := readCBORItem(nested(100000), 0); err == nil {
-		t.Fatal("deep input accepted")
-	}
-}
-
-func TestParseAttestationObjectSizeLimit(t *testing.T) {
-	big := make([]byte, maxAttestationBytes+1)
-	if _, _, err := parseAttestationObject(big, "", "neko.example"); err == nil || !strings.Contains(err.Error(), "too large") {
-		t.Fatalf("large attestation: %v", err)
+	if _, err := protocol.ParseCredentialCreationResponseBytes(payload); err == nil {
+		t.Fatal("deep CBOR accepted")
 	}
 }

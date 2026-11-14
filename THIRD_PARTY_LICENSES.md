@@ -81,6 +81,9 @@ OpenNeko's runtime dependencies are listed in the `package.json` and `go.mod` fi
 | `github.com/riverqueue/river` (with `riverdriver`, `riverpgxv5`, `rivershared`, `rivertype`) | MPL-2.0 | Job queue of `openneko web`, in the `river` schema. MPL-2.0 covers River's own files only; OpenNeko ships them unchanged. Source: https://github.com/riverqueue/river |
 | `github.com/tidwall/gjson`, `sjson`, `match`, `pretty` | MIT | Linked by River |
 | `golang.org/x/text` | BSD-3-Clause | Sorts skill names in `openneko web` in the same order as the Node server; GraphJin already links it |
+| `github.com/go-webauthn/webauthn` v0.18.2, `github.com/go-webauthn/x` | BSD-3-Clause | Checks passkey registration and approval in `openneko web` |
+| `github.com/fxamacker/cbor/v2`, `github.com/x448/float16` | MIT | Reads the CBOR of a passkey; linked by `go-webauthn` |
+| `github.com/tinylib/msgp`, `github.com/philhofer/fwd` | MIT | Linked by `go-webauthn` |
 | `golang.org/x/net` (`idna`) | BSD-3-Clause | Converts the host of an OpenAPI import URL to ASCII in `openneko web`; GraphJin already links it |
 
 Run `pnpm licenses ls -P` from the repo root to see the full transitive list at a given snapshot.
