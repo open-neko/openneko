@@ -233,7 +233,7 @@ func newPackUploadCmd() *cobra.Command {
 			// Read the host file here and stream it to the selected worker. A host
 			// path is not meaningful inside the worker's container filesystem.
 			code, proxied := MaybeProxyToWorker(cmd, func(container string) int {
-				process := exec.CommandContext(cmd.Context(), "docker", "exec", "-i", container, "curl", "--silent", "--show-error", "--fail-with-body", "--max-time", "120", "-H", "Content-Type: application/zip", "--data-binary", "@-", defaultWorkerAdminURL+"/admin/packs/upload")
+				process := exec.CommandContext(cmd.Context(), "docker", "exec", "-i", container, "curl", "--silent", "--show-error", "--fail-with-body", "--max-time", "120", "-H", "Content-Type: application/zip", "--data-binary", "@-", "--unix-socket", composeWorkerSocket, "http://worker/admin/packs/upload")
 				process.Stdin, process.Stderr = bytes.NewReader(archive), cmd.ErrOrStderr()
 				raw, err = process.Output()
 				if err != nil {
