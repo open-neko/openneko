@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"net/http"
 	"net/url"
 	"slices"
 	"strings"
@@ -19,7 +18,7 @@ import (
 )
 
 // packSecretsMu serializes the read-modify-write of secrets.json within
-// this process; the worker still writes the same file without a lock.
+// this process.
 var packSecretsMu sync.Mutex
 
 // packOAuth is PackOAuthService of apps/worker/src/packs/oauth.ts for one
@@ -336,23 +335,11 @@ func (p *packOAuth) disconnect(ctx context.Context) (bool, error) {
 	return removed, p.bindInstallation(ctx, next)
 }
 
-// sync asks the worker to apply the connection to the installed pack's
-// GraphJin sources, until the pack apply moves to Go.
 func (p *packOAuth) sync(ctx context.Context, enabled bool) error {
 	if !p.graphjin {
 		return nil
 	}
-	body, _ := json.Marshal(map[string]bool{"enabled": enabled})
-	status, reply := p.a.packWorker(ctx, http.MethodPost, packOAuthPath(p.packID, p.conn.Key, "sync"), jsonHeader, body)
-	if status == http.StatusOK {
-		return nil
-	}
-	if obj, ok := reply.(*jsObj); ok {
-		if message, ok := obj.vals["error"].(string); ok && message != "" {
-			return packError(message)
-		}
-	}
-	return packError(fmt.Sprintf("Worker returned HTTP %d", status))
+	return p.a.syncPackOAuth(ctx, p.orgID, p.packID, p.conn.Key, enabled)
 }
 
 func (p *packOAuth) bindInstallation(ctx context.Context, section map[string]string) error {

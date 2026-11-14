@@ -6787,6 +6787,166 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /my/push-subscriptions:
+    get:
+      operationId: getMyPushSubscriptions
+      tags:
+      - my
+      summary: List Web Push subscriptions registered by the signed-in user
+      x-access: signed-in
+      security:
+      - session: []
+      - deviceToken: []
+      responses:
+        '200':
+          description: Registered Web Push subscriptions
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - subscriptions
+                additionalProperties: false
+                properties:
+                  subscriptions:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - id
+                      - endpoint
+                      - deviceId
+                      - createdAt
+                      - updatedAt
+                      properties:
+                        id:
+                          type: string
+                        endpoint:
+                          type: string
+                        deviceId:
+                          type:
+                          - string
+                          - 'null'
+                        createdAt:
+                          type: string
+                        updatedAt:
+                          type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      operationId: postMyPushSubscriptions
+      tags:
+      - my
+      summary: Register or update a Web Push subscription for the signed-in user
+      x-access: signed-in
+      security:
+      - session: []
+      - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                endpoint:
+                  type: string
+                keys:
+                  type: object
+                  properties:
+                    p256dh:
+                      type: string
+                    auth:
+                      type: string
+      responses:
+        '200':
+          description: Registered Web Push subscription
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - subscription
+                additionalProperties: false
+                properties:
+                  subscription:
+                    type: object
+                    required:
+                    - id
+                    - endpoint
+                    - deviceId
+                    - createdAt
+                    - updatedAt
+                    properties:
+                      id:
+                        type: string
+                      endpoint:
+                        type: string
+                      deviceId:
+                        type:
+                        - string
+                        - 'null'
+                      createdAt:
+                        type: string
+                      updatedAt:
+                        type: string
+        '400':
+          description: The subscription payload is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /my/push-subscriptions/{subscriptionId}:
+    delete:
+      operationId: deleteMyPushSubscriptionsBySubscriptionId
+      tags:
+      - my
+      summary: Remove a Web Push subscription registered by the signed-in user
+      x-access: signed-in
+      security:
+      - session: []
+      - deviceToken: []
+      parameters:
+      - name: subscriptionId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Web Push subscription removed
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - ok
+                additionalProperties: false
+                properties:
+                  ok:
+                    type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Web Push subscription not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /observations:
     get:
       operationId: getObservations
