@@ -105,14 +105,14 @@ describe("handleSubscriptionMatch", () => {
     expect(createObservation).toHaveBeenCalledTimes(1);
     expect(enqueue).toHaveBeenCalledTimes(1);
 
-    const [, jobData, jobOpts] = enqueue.mock.calls[0];
+    const [jobData, jobOpts] = enqueue.mock.calls[0];
     expect(jobData.triggeredBySubscriptionId).toBe("sub-1");
     expect(jobData.triggeredByOutputId).toBe("out-1");
     expect(jobData.triggeredByObservationId).toBe("obs-1");
-    expect(jobOpts.singletonKey).toBe(
+    expect(jobOpts.dedupeKey).toBe(
       "sub-1:out-1:2026-05-13T12:00:00.000Z",
     );
-    expect(jobOpts.singletonHours).toBe(1);
+    expect(jobOpts.dedupeSeconds).toBe(3600);
   });
 
   it("honors a custom idempotencyKeyTemplate", async () => {
@@ -133,8 +133,8 @@ describe("handleSubscriptionMatch", () => {
       isWorkflowInAncestorChain: async () => false,
       resolveProducingRunChainDepth: async () => 0,
     });
-    const jobOpts = enqueue.mock.calls[0][2];
-    expect(jobOpts.singletonKey).toBe("sub:sub-1:out:out-1");
+    const jobOpts = enqueue.mock.calls[0][1];
+    expect(jobOpts.dedupeKey).toBe("sub:sub-1:out:out-1");
   });
 });
 
@@ -252,7 +252,7 @@ describe("handleSourceChangeMatch", () => {
       }),
     );
 
-    const [, jobData, jobOpts] = enqueue.mock.calls[0];
+    const [jobData, jobOpts] = enqueue.mock.calls[0];
     expect(jobData.triggeredBySubscriptionId).toBe("sub-1");
     expect(jobData.triggeredByObservationId).toBe("obs-sc-1");
     expect(jobData.triggerPayload).toMatchObject({
@@ -262,10 +262,10 @@ describe("handleSourceChangeMatch", () => {
 
     // Idempotency key: ${sub.id}:${pkHash}:${versionToken}
     // pkHash is sha256(sorted entries).slice(0,16), version_token = match.version_token
-    expect(jobOpts.singletonKey).toMatch(
+    expect(jobOpts.dedupeKey).toMatch(
       /^sub-1:[0-9a-f]{16}:2026-05-23T10:00:00\.000Z$/,
     );
-    expect(jobOpts.singletonHours).toBe(1);
+    expect(jobOpts.dedupeSeconds).toBe(3600);
   });
 
   it("idempotency key uses 'none' when version_token is null", async () => {
@@ -285,8 +285,8 @@ describe("handleSourceChangeMatch", () => {
       getWorkflow: async () => null,
       hasRecentSourceWriteForWorkflow: async () => false,
     });
-    const jobOpts = enqueue.mock.calls[0][2];
-    expect(jobOpts.singletonKey).toMatch(/^sub-1:[0-9a-f]{16}:none$/);
+    const jobOpts = enqueue.mock.calls[0][1];
+    expect(jobOpts.dedupeKey).toMatch(/^sub-1:[0-9a-f]{16}:none$/);
   });
 
   it("honors a custom idempotencyKeyTemplate with {primary_key}", async () => {
@@ -310,8 +310,8 @@ describe("handleSourceChangeMatch", () => {
       getWorkflow: async () => null,
       hasRecentSourceWriteForWorkflow: async () => false,
     });
-    const jobOpts = enqueue.mock.calls[0][2];
-    expect(jobOpts.singletonKey).toMatch(
+    const jobOpts = enqueue.mock.calls[0][1];
+    expect(jobOpts.dedupeKey).toMatch(
       /^reorder-[0-9a-f]{16}-2026-05-23T10:00:00\.000Z$/,
     );
   });

@@ -196,7 +196,6 @@ func buildFront(t *testing.T) (*Front, *pgxpool.Pool) {
 	t.Setenv("OPENNEKO_AGENT_RUNS_DIR", t.TempDir())
 	t.Setenv("OPENNEKO_SERVE_SOCKET", startServe(t))
 	seedRiver(t, db, f)
-	seedPgBoss(t, db, f)
 	g := &fakeGateway{reply: map[string]any{"missionCharter": "  Investigate the bicycle trade.  "}}
 	f.API.Gateway = g.generate
 	f.API.hostProv.applied = map[string]string{}

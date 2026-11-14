@@ -91,7 +91,7 @@ describe("independent durable workflow scheduler", () => {
     expect(deps.releaseDispatch).toHaveBeenCalledWith(
       firing.id,
       expect.objectContaining({
-        message: "pg-boss did not accept the workflow firing",
+        message: "the job queue did not accept the workflow firing",
       }),
       expect.any(Date),
     );

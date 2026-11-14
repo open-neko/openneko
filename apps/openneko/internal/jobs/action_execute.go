@@ -59,6 +59,7 @@ func (w *actionExecute) NextRetry(*river.Job[ActionExecuteArgs]) time.Time {
 // started with --jobs=false has one too.
 type Inserter struct {
 	client *river.Client[pgx.Tx]
+	schema string
 }
 
 func NewInserter(pool *pgxpool.Pool, schema string) (*Inserter, error) {
@@ -69,7 +70,7 @@ func NewInserter(pool *pgxpool.Pool, schema string) (*Inserter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Inserter{client: client}, nil
+	return &Inserter{client: client, schema: schema}, nil
 }
 
 func (i *Inserter) ActionExecute(ctx context.Context, tx pgx.Tx, orgID, actionRequestID string) error {

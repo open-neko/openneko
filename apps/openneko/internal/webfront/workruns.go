@@ -238,9 +238,17 @@ type preparedWorkflowRun struct {
 	workflowRunID, threadID, runID string
 }
 
+// workflowRunOrigin is the part of PrepareWorkflowRunOptions that a trigger
+// sets: a thread to run in and the subscription chain.
+type workflowRunOrigin struct {
+	threadID                                string
+	parentChainDepth                        int
+	subscriptionID, outputID, observationID string
+}
+
 // prepareWorkflowRun is prepareWorkflowRun(): the thread, the work run with
 // its spend reservation, and the workflow run.
-func (a *API) prepareWorkflowRun(ctx context.Context, orgID, workflowID, triggerKind string, payload any) (preparedWorkflowRun, error) {
+func (a *API) prepareWorkflowRun(ctx context.Context, orgID, workflowID, triggerKind string, payload any, from workflowRunOrigin) (preparedWorkflowRun, error) {
 	var p preparedWorkflowRun
 	notFound := errors.New("Workflow " + workflowID + " not found for org " + orgID + ".")
 	if !isUUID(workflowID) {
@@ -272,8 +280,8 @@ func (a *API) prepareWorkflowRun(ctx context.Context, orgID, workflowID, trigger
 		}
 		userID = wf.OwnerUserID
 	}
-	threadID := ""
-	if wf.CreatedByThreadID != nil {
+	threadID := from.threadID
+	if threadID == "" && wf.CreatedByThreadID != nil {
 		err := a.DB.QueryRow(ctx, `select b.thread_id::text from bot b join work_thread t on t.id = b.thread_id
 			where b.org_id = $1 and b.thread_id = $2 and ($3 = '' or t.created_by_user_id = $3) limit 1`,
 			orgID, *wf.CreatedByThreadID, wf.OwnerUserID).Scan(&threadID)
@@ -296,14 +304,16 @@ func (a *API) prepareWorkflowRun(ctx context.Context, orgID, workflowID, trigger
 	if err != nil {
 		return p, err
 	}
-	chainDepth := 0
+	chainDepth := from.parentChainDepth
 	if triggerKind == "subscription" {
-		chainDepth = 1
+		chainDepth++
 	}
 	var workflowRunID string
 	if err := a.DB.QueryRow(ctx, `insert into workflow_run (org_id, workflow_id, thread_id, work_run_id, trigger_kind, trigger_payload,
-		chain_depth, status, started_at) values ($1, $2, $3, $4, $5, $6::jsonb, $7, 'running', now()) returning id::text`,
-		orgID, wf.ID, threadID, runID, triggerKind, jsStringify(payload, false), chainDepth).Scan(&workflowRunID); err != nil {
+		chain_depth, triggered_by_subscription_id, triggered_by_output_id, triggered_by_observation_id, status, started_at)
+		values ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, 'running', now()) returning id::text`,
+		orgID, wf.ID, threadID, runID, triggerKind, jsStringify(payload, false), chainDepth,
+		nullable(from.subscriptionID), nullable(from.outputID), nullable(from.observationID)).Scan(&workflowRunID); err != nil {
 		return p, err
 	}
 	return preparedWorkflowRun{workflow: wf, workflowRunID: workflowRunID, threadID: threadID, runID: runID}, nil
@@ -328,7 +338,7 @@ func (a *API) manualRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	payload := jsObjOf("userMessage", userMessage)
-	p, err := a.prepareWorkflowRun(ctx, act.OrgID, workflowID, "manual", payload)
+	p, err := a.prepareWorkflowRun(ctx, act.OrgID, workflowID, "manual", payload, workflowRunOrigin{})
 	if err != nil {
 		sendError(w, http.StatusBadRequest, err.Error())
 		return
@@ -343,11 +353,27 @@ func (a *API) manualRun(w http.ResponseWriter, r *http.Request) {
 	sendJSON(w, http.StatusOK, obj("workflowRunId", p.workflowRunID, "workRunId", p.runID, "threadId", p.threadID))
 }
 
-// startWorkflowRun is the background part of the manual-runs route: it
-// registers the run, stores its events, guards its spend and runs the
-// workflow turn. The channel closes when the run is over.
+// startWorkflowRun is the background part of the manual-runs route: it runs
+// the workflow in a goroutine. The channel closes when the run is over.
 func (a *API) startWorkflowRun(ctx context.Context, orgID string, o workflowTurnOptions) (<-chan struct{}, error) {
 	base, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+	run, err := a.beginWorkflowRun(base, cancel, orgID, o)
+	if err != nil {
+		return nil, err
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = run()
+	}()
+	return done, nil
+}
+
+// beginWorkflowRun registers the run, stores its events and guards its
+// spend. The returned function runs the workflow turn and reports a thrown
+// failure on the run. It calls cancel when it ends, and so does a failure
+// here.
+func (a *API) beginWorkflowRun(base context.Context, cancel context.CancelCauseFunc, orgID string, o workflowTurnOptions) (func() (workflowTurnResult, error), error) {
 	store := a.newRunEventStore(orgID, o.ThreadID, o.RunID)
 	store.kind = "workflow"
 	tel := &runTelemetry{}
@@ -359,14 +385,12 @@ func (a *API) startWorkflowRun(ctx context.Context, orgID string, o workflowTurn
 	run := a.runs.register(o.RunID, orgID, o.ThreadID, cancel)
 	untrace := a.EvalTrace.register(o.RunID)
 	o.Emit = guarded
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
+	return func() (workflowTurnResult, error) {
 		defer a.runs.unregister(o.RunID, run)
 		defer untrace()
 		defer cancel(nil)
 		bg := context.WithoutCancel(runCtx)
-		_, err := a.runWorkflowTurn(runCtx, o)
+		res, err := a.runWorkflowTurn(runCtx, o)
 		a.storeRunTelemetry(bg, store, tel, o.WorkflowRunID)
 		if err != nil {
 			log.Printf("[workflow-run] run %s threw: %v", o.WorkflowRunID, err)
@@ -375,8 +399,11 @@ func (a *API) startWorkflowRun(ctx context.Context, orgID string, o workflowTurn
 		if err := store.finalize(bg); err != nil {
 			log.Printf("[workflow-run] finalize failed for %s: %v", o.WorkflowRunID, err)
 		}
-	}()
-	return done, nil
+		if err == nil && errors.Is(context.Cause(runCtx), errTurnShutdown) {
+			err = errTurnShutdown
+		}
+		return res, err
+	}, nil
 }
 
 func (a *API) failThrownWorkflowRun(ctx context.Context, orgID string, o workflowTurnOptions, store *runEventStore, cause error) {

@@ -248,12 +248,12 @@ async function defaultEnqueueFire(payload: {
   triggerPayload: Record<string, unknown>;
   windowSeconds?: number;
 }): Promise<void> {
-  const { enqueue, QUEUE } = await import("@neko/db/jobs");
+  const { enqueueWorkflowRunFire } = await import("@neko/db/jobs");
   const { windowSeconds = 3600, ...job } = payload;
   // Collapses duplicate sweeps of one check; the watcher's quiet period sets the window.
-  await enqueue(QUEUE.WORKFLOW_RUN_FIRE, job, {
-    singletonKey: `watcher:${String(payload.triggerPayload.watcherId)}`,
-    singletonSeconds: windowSeconds,
+  await enqueueWorkflowRunFire(job, {
+    dedupeKey: `watcher:${String(payload.triggerPayload.watcherId)}`,
+    dedupeSeconds: windowSeconds,
   });
 }
 

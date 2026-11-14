@@ -2,11 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   ensureHostConfigProvisioned: vi.fn(async () => ({ modelHosts: [] })),
-  claim: vi.fn(async () => true),
-  complete: vi.fn(async () => undefined),
-  link: vi.fn(async () => undefined),
-  release: vi.fn(async () => undefined),
-  prepare: vi.fn(),
   run: vi.fn(),
   claimApi: vi.fn(),
   loadPrepared: vi.fn(),
@@ -24,7 +19,6 @@ vi.mock("@neko/llm", () => ({
 }));
 
 vi.mock("@neko/llm/spend", () => ({
-  SpendBudgetExceeded: class SpendBudgetExceeded extends Error {},
   createRunSpendGuard: async (input: { emit: unknown; signal?: AbortSignal }) => ({
     emit: input.emit,
     signal: input.signal ?? new AbortController().signal,
@@ -43,14 +37,9 @@ vi.mock("@neko/llm/work", () => ({
 vi.mock("@neko/llm/workflows", () => ({
   boundedWorkflowApiResult: mocks.boundedResult,
   claimWorkflowApiAdmission: mocks.claimApi,
-  claimWorkflowScheduleFiring: mocks.claim,
-  completeWorkflowScheduleFiring: mocks.complete,
   finishWorkflowApiAdmission: mocks.finishApi,
-  linkWorkflowScheduleFiringRun: mocks.link,
   loadPreparedWorkflowRun: mocks.loadPrepared,
   persistWorkflowApiTelemetry: mocks.persistApiTelemetry,
-  prepareWorkflowRun: mocks.prepare,
-  releaseWorkflowScheduleFiringRun: mocks.release,
   runCompiledWorkflowApiBatch: mocks.runBatch,
   runWorkflowTurn: mocks.run,
   updateWorkflowApiRunProgress: mocks.updateProgress,
@@ -71,10 +60,7 @@ vi.mock("../../src/telemetry.js", async () => {
   };
 });
 
-import {
-  runWorkflowRunFire,
-  WorkflowRunInterrupted,
-} from "../../src/jobs/workflow-run-fire";
+import { runWorkflowRunFire } from "../../src/jobs/workflow-run-fire";
 
 const payload = {
   orgId: "org-test",
@@ -84,77 +70,13 @@ const payload = {
   triggerPayload: { firingTime: "2026-08-26T07:00:00.000Z" },
 };
 
-const prepared = {
-  workflow: { id: payload.workflowId },
-  workflowRun: {
-    id: "workflow-run-1",
-    createdAt: new Date("2026-08-26T07:00:00.000Z"),
-  },
-  threadId: "thread-1",
-  workRunId: "work-run-1",
-};
-
-describe("workflow schedule firing consumer", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.claim.mockResolvedValue(true);
-    mocks.prepare.mockResolvedValue(prepared);
-    mocks.run.mockResolvedValue({ status: "completed" });
-  });
-
-  it("ignores duplicate deliveries before creating a workflow run", async () => {
-    mocks.claim.mockResolvedValue(false);
-    vi.spyOn(console, "log").mockImplementation(() => undefined);
-
-    await runWorkflowRunFire(payload);
-
-    expect(mocks.ensureHostConfigProvisioned).not.toHaveBeenCalled();
-    expect(mocks.prepare).not.toHaveBeenCalled();
-    expect(mocks.complete).not.toHaveBeenCalled();
-  });
-
-  it("links and completes the durable firing around one workflow run", async () => {
-    await runWorkflowRunFire(payload);
-
-    expect(mocks.claim).toHaveBeenCalledWith({
-      firingId: payload.scheduleFiringId,
-      orgId: payload.orgId,
-      workflowId: payload.workflowId,
-    });
-    expect(mocks.link).toHaveBeenCalledWith(
-      payload.scheduleFiringId,
-      prepared.workflowRun.id,
-    );
-    expect(mocks.complete).toHaveBeenCalledWith(payload.scheduleFiringId);
-    expect(mocks.release).not.toHaveBeenCalled();
-    expect(mocks.persistRunTelemetry).toHaveBeenCalledWith(
-      prepared.workflowRun.id,
-      expect.objectContaining({ status: "completed", phases: expect.arrayContaining([expect.objectContaining({ name: "workflow.prepare", ok: true }), expect.objectContaining({ name: "config.provision", ok: true })]) }),
-    );
-  });
-
-  it("releases an interrupted firing for at-least-once retry", async () => {
-    mocks.run.mockResolvedValue({ status: "cancelled" });
-
-    await expect(runWorkflowRunFire(payload)).rejects.toBeInstanceOf(
-      WorkflowRunInterrupted,
-    );
-    expect(mocks.complete).not.toHaveBeenCalled();
-    expect(mocks.release).toHaveBeenCalledWith(
-      payload.scheduleFiringId,
-      expect.any(WorkflowRunInterrupted),
-    );
-  });
-
-  it("leaves a terminal linked run for recovery if ledger completion fails", async () => {
-    mocks.complete.mockRejectedValueOnce(
-      new Error("database connection reset"),
-    );
-
+describe("workflow run fire in the worker", () => {
+  it("refuses a cron run, which openneko web runs on River", async () => {
     await expect(runWorkflowRunFire(payload)).rejects.toThrow(
-      "database connection reset",
+      "workflow_run_fire for a cron run belongs to openneko web",
     );
-    expect(mocks.release).not.toHaveBeenCalled();
+    expect(mocks.ensureHostConfigProvisioned).not.toHaveBeenCalled();
+    expect(mocks.run).not.toHaveBeenCalled();
   });
 });
 
@@ -235,7 +157,6 @@ describe("workflow API execution consumer", () => {
   it("executes the pre-created canonical run and finalizes its bounded result", async () => {
     await runWorkflowRunFire(apiPayload);
 
-    expect(mocks.prepare).not.toHaveBeenCalled();
     expect(mocks.loadPrepared).toHaveBeenCalledWith({
       orgId: apiPayload.orgId,
       workflowId: apiPayload.workflowId,

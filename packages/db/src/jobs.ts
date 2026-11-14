@@ -155,6 +155,57 @@ export async function enqueueMetricRefresh(payload: ProcessingJobPayload, maxAtt
   return rows[0]!.id;
 }
 
+/**
+ * Queues one cron, subscription or watcher workflow run on River.
+ * `jobs.WorkflowRunFireArgs` in apps/openneko/internal/jobs reads the row;
+ * the queue, max_attempts and dedupe value match `Inserter.WorkflowRunFire`.
+ * With a dedupe key, no job is added while one with the key exists in the
+ * same window, as a pg-boss singleton did. Returns null for a duplicate.
+ */
+export async function enqueueWorkflowRunFire(
+  payload: WorkflowRunFirePayload,
+  opts: { dedupeKey?: string; dedupeSeconds?: number } = {},
+): Promise<string | null> {
+  if (payload.triggerKind === "api") {
+    throw new Error("API workflow runs go to the pg-boss workflow_run_fire queue");
+  }
+  const client = await pool().connect();
+  try {
+    await client.query("begin");
+    let dedupe: string | null = null;
+    if (opts.dedupeKey) {
+      const seconds = Math.max(Math.floor(opts.dedupeSeconds ?? 3600), 1);
+      const slot = await client.query<{ dedupe: string }>(
+        `select $1 || '@' || (floor(extract(epoch from now()) / $2)::bigint * $2)::text as dedupe`,
+        [opts.dedupeKey, seconds],
+      );
+      dedupe = slot.rows[0]!.dedupe;
+      await client.query(`select pg_advisory_xact_lock(hashtext('workflow_run_fire:' || $1))`, [dedupe]);
+      const seen = await client.query(
+        `select 1 from river.river_job where kind = 'workflow_run_fire' and args->>'dedupe' = $1 and state <> 'cancelled' limit 1`,
+        [dedupe],
+      );
+      if (seen.rowCount) {
+        await client.query("commit");
+        return null;
+      }
+    }
+    const args = { ...payload, queuedAt: Date.now(), ...(dedupe ? { dedupe } : {}) };
+    const { rows } = await client.query<{ id: string }>(
+      `insert into river.river_job (kind, args, max_attempts, queue)
+       values ('workflow_run_fire', $1::jsonb, 3, 'workflow_run') returning id::text`,
+      [JSON.stringify(args)],
+    );
+    await client.query("commit");
+    return rows[0]!.id;
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export type SkillLearnPayload = {
   orgId: string;
   skillName: string;

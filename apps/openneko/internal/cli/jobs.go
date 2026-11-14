@@ -36,8 +36,8 @@ not stop the scheduled job.
 
 Kinds:
   workflow_cron_sweep  the behavior thresholds, then the condition watchers.
-                       A watcher that fires queues its workflow on
-                       workflow_run_fire, as the minute job does.
+                       A watcher that fires queues its workflow on the
+                       River workflow_run_fire job, as the minute job does.
 
 --at sets the clock of the job (RFC 3339, default now). Use it to rerun a
 sweep for a past minute.`,
@@ -68,7 +68,11 @@ sweep for a past minute.`,
 				return err
 			}
 			defer pool.Close()
-			api := &webfront.API{Gate: &webfront.Gate{WorkerURL: envOr("WORKER_ADMIN_URL", "http://127.0.0.1:4100"), DB: pool}, DB: pool}
+			inserter, err := jobs.NewInserter(pool, "")
+			if err != nil {
+				return err
+			}
+			api := &webfront.API{Gate: &webfront.Gate{WorkerURL: envOr("WORKER_ADMIN_URL", "http://127.0.0.1:4100"), DB: pool}, DB: pool, Jobs: inserter}
 			res, runErr := api.CronSweepAt(ctx, orgID, now)
 			if runErr != nil && res.At == "" {
 				return runErr
