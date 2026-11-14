@@ -2,19 +2,16 @@ package cli
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strconv"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/spf13/cobra"
 
-	"github.com/open-neko/neko/apps/openneko/internal/config"
-	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/sourcecheck"
 )
 
@@ -25,68 +22,6 @@ var (
 
 type sourceCheckFinding = sourcecheck.Finding
 type sourceCheckResult = sourcecheck.Result
-
-var checkSource = func(ctx context.Context, opts sourceCheckOptions, password string) (sourceCheckResult, error) {
-	in := sourcecheck.Input{
-		Type:     strings.TrimSpace(opts.kind),
-		Host:     strings.TrimSpace(opts.host),
-		Database: strings.TrimSpace(opts.database),
-		User:     strings.TrimSpace(opts.user),
-		Password: password,
-	}
-	if in.Type == "" {
-		in.Type = "postgres"
-	}
-	if opts.port > 0 {
-		p := float64(opts.port)
-		in.Port = &p
-	}
-	ref := strings.TrimSpace(opts.secret)
-	if ref != "" && in.Password == "" {
-		stored, found, err := loadStoredSourcePassword(ctx, ref)
-		if err != nil {
-			return sourceCheckResult{}, err
-		}
-		if !found {
-			check := sourcecheck.Check(ctx, in)
-			for i, f := range check.Findings {
-				if f.Step == "login" && f.Status == "fail" {
-					check.Findings[i].Message = `No stored password is named "` + ref + `". Save the password in the card first.`
-				}
-			}
-			return check, nil
-		}
-		in.Password = stored
-	}
-	return sourcecheck.Check(ctx, in), nil
-}
-
-func loadStoredSourcePassword(ctx context.Context, name string) (string, bool, error) {
-	target, err := defaultConn()
-	if err != nil {
-		return "", false, err
-	}
-	conn, err := db.Connect(ctx, target, "openneko source check")
-	if err != nil {
-		return "", false, err
-	}
-	defer conn.Close(ctx)
-	var enc string
-	err = conn.QueryRow(ctx, `select s.value_enc from data_source_secret s
-		where s.org_id = (select id from organization order by created_at asc limit 1)
-		  and s.name = $1 limit 1`, name).Scan(&enc)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", false, nil
-	}
-	if err != nil {
-		return "", false, err
-	}
-	plain, err := config.MaybeDecryptValue("", enc)
-	if err != nil {
-		return "", false, err
-	}
-	return plain, true, nil
-}
 
 type sourceCheckOptions struct {
 	kind, host, database, user, secret, output string
@@ -106,6 +41,10 @@ func newSourceCmd() *cobra.Command {
 func newSourceCheckCmd() *cobra.Command {
 	var opts sourceCheckOptions
 	cmd := &cobra.Command{
+		Use:   "source",
+	}
+	_ = cmd
+	cmd = &cobra.Command{
 		Use:   "check",
 		Short: "Test one PostgreSQL, MySQL or MariaDB source: host, port, TLS, login, read rights and read-only rights",
 		Long: `Test one database source in order: the host resolves, the port answers,
@@ -119,38 +58,50 @@ Admin settings) or on standard input (--password-stdin).`,
   printf '%s' "$PW" | openneko source check --type mysql --host 10.0.0.5 --database magento --user openneko_ro --password-stdin`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if code, proxied := MaybeProxyToWeb(cmd); proxied {
+				return WithExit(code, nil)
+			}
 			if opts.output != "text" && opts.output != "json" {
 				return errors.New("--output must be text or json")
 			}
-			var password string
+			body := map[string]any{
+				"type":      opts.kind,
+				"host":      opts.host,
+				"dbname":    opts.database,
+				"user":      opts.user,
+				"secretRef": opts.secret,
+			}
+			if opts.port > 0 {
+				body["port"] = opts.port
+			}
 			if opts.passwordStdin {
-				var err error
-				password, err = readPasswordLine(cmd.InOrStdin())
+				password, err := readPasswordLine(cmd.InOrStdin())
 				if err != nil {
 					return err
 				}
+				body["password"] = password
 			} else if opts.secret == "" {
 				return errors.New("give the password with --secret <stored name> or --password-stdin")
 			}
-			check, err := checkSource(cmd.Context(), opts, password)
+			var response struct {
+				Check sourceCheckResult `json:"check"`
+			}
+			raw, err := requestWebAdminAPI(cmd.Context(), "source check", http.MethodPost, "/admin/sources/check", body, &response)
 			if err != nil {
 				return err
 			}
 			if opts.output == "json" {
-				encoded, err := json.MarshalIndent(struct {
-					Check sourceCheckResult `json:"check"`
-				}{Check: check}, "", "  ")
-				if err != nil {
-					return err
-				}
+				var pretty any
+				_ = json.Unmarshal(raw, &pretty)
+				encoded, _ := json.MarshalIndent(pretty, "", "  ")
 				fmt.Fprintln(cmd.OutOrStdout(), string(encoded))
 			} else {
-				writeSourceCheck(cmd.OutOrStdout(), check)
+				writeSourceCheck(cmd.OutOrStdout(), response.Check)
 			}
-			if !check.Supported {
+			if !response.Check.Supported {
 				return errSourceUnsupported
 			}
-			if !check.OK {
+			if !response.Check.OK {
 				return errSourceNotReady
 			}
 			return nil
