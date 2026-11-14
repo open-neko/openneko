@@ -78,15 +78,23 @@ func TestSSOSetupRoutes(t *testing.T) {
 	db := testpg.Migrated(t)
 	seedOrg(t, db)
 	f, wk := newSetupFront(t, `{"provider":{"pluginName":"scalekit"}}`, db)
+	mcp := &fakeScalekitMCP{
+		toolReplies: map[string]string{
+			"list_environments":             "none",
+			"list_organizations":            "Organization 1:\n  ID: o1\n  Name: <Acme>",
+			"get_environment_credentials":   "SCALEKIT_ENVIRONMENT_URL=https://env.example\nSCALEKIT_CLIENT_ID=cid",
+			"generate_admin_portal_link":    "Link: https://portal.example/x",
+			"list_organization_connections": "status: COMPLETED provider: OKTA",
+		},
+	}
+	f.API.Gate.Client = &http.Client{Transport: mcp}
+	if err := writeScalekitOperatorCredential(f.Gate.SecretsDir, &scalekitOperatorCredential{
+		Tokens:      map[string]any{"access_token": "at-1", "expires_at": "4102444800000"},
+		ConnectedAt: "2026-01-01T00:00:00.000Z",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	admin, member := sessionCookie("admin"), sessionCookie("member")
-	wk.reply["/admin/sso/setup/status"] = `{"status":"connected","portalLink":null}`
-	wk.reply["/admin/sso/setup/environments"] = `{}`
-	wk.reply["/admin/sso/setup/organizations"] = `{"organizations":[{"id":"o1","name":"<Acme>"}]}`
-	wk.reply["/admin/sso/setup/credentials-info"] = `{"environmentUrl":"https://env.example","clientId":"cid"}`
-	wk.reply["/admin/sso/setup/ids"] = `{"ok":true}`
-	wk.reply["/admin/sso/setup/credentials"] = `{"ok":true}`
-	wk.reply["/admin/sso/setup/generate-portal-link"] = `{"portalLink":"https://portal.example/x","expiresAt":null}`
-	wk.reply["/admin/sso/setup/check"] = `{"status":"connected","connection":null,"lastError":null,"setupCompletedAt":null}`
 
 	for _, who := range []map[string]string{nil, member} {
 		for _, p := range []string{"/api/v1/sso/setup/status", "/api/sso/setup/environments"} {
@@ -103,10 +111,10 @@ func TestSSOSetupRoutes(t *testing.T) {
 	}
 
 	for _, c := range []struct{ method, path, body, code, want string }{
-		{"GET", "/api/v1/sso/setup/status", "", "200", `{"status":"connected","portalLink":null}`},
+		{"GET", "/api/v1/sso/setup/status", "", "200", `{"status":"not_started","portalLink":null,"portalLinkExpiresAt":null,"provider":null,"connection":null,"lastError":null,"setupCompletedAt":null,"environmentId":null,"organizationId":null,"environmentTier":null,"signInConfigured":true}`},
 		{"GET", "/api/v1/sso/setup/environments", "", "200", `{"environments":[]}`},
 		{"GET", "/api/v1/sso/setup/organizations", "", "400", `{"error":"environmentId query parameter is required"}`},
-		{"GET", "/api/v1/sso/setup/organizations?environmentId=env%201", "", "200", `{"organizations":[{"id":"o1","name":"<Acme>"}]}`},
+		{"GET", "/api/v1/sso/setup/organizations?environmentId=env%201", "", "200", `{"organizations":[{"id":"o1","name":"\u003cAcme\u003e"}]}`},
 		{"GET", "/api/v1/sso/setup/credentials-info", "", "400", `{"error":"environmentId query parameter is required"}`},
 		{"GET", "/api/v1/sso/setup/credentials-info?environmentId=env1", "", "200", `{"environmentUrl":"https://env.example","clientId":"cid"}`},
 		{"POST", "/api/v1/sso/setup/ids", `{}`, "400", `{"error":"environmentId (string) is required"}`},
@@ -116,34 +124,25 @@ func TestSSOSetupRoutes(t *testing.T) {
 		{"POST", "/api/v1/sso/setup/credentials", `{"environmentUrl":"https://env.example","clientId":"cid"}`, "400", `{"error":"clientSecret (string) is required"}`},
 		{"POST", "/api/v1/sso/setup/credentials", `{"environmentUrl":"https://env.example","clientId":"cid","clientSecret":"s3cret"}`, "200", `{"ok":true}`},
 		{"POST", "/api/v1/sso/setup/generate-portal-link", "", "200", `{"portalLink":"https://portal.example/x","expiresAt":null}`},
-		{"POST", "/api/v1/sso/setup/check", "", "200", `{"status":"connected","connection":null,"lastError":null,"setupCompletedAt":null}`},
 	} {
 		w := call(f, c.method, c.path, c.body, admin)
 		if got := w.Body.String(); w.Result().Status[:3] != c.code || got != c.want {
 			t.Errorf("%s %s %s: %d %s", c.method, c.path, c.body, w.Code, got)
 		}
 	}
-	want := []string{
-		"GET /admin/sso/setup/status?orgId=org",
-		"GET /admin/sso/setup/environments?orgId=org",
-		"GET /admin/sso/setup/organizations?orgId=org&environmentId=env%201",
-		"GET /admin/sso/setup/credentials-info?orgId=org&environmentId=env1",
-		`POST /admin/sso/setup/ids {"environmentId":"env1","orgId":"org","organizationId":"o1","tier":"dev"}`,
-		`POST /admin/sso/setup/credentials {"clientId":"cid","clientSecret":"s3cret","environmentUrl":"https://env.example","orgId":"org"}`,
-		`POST /admin/sso/setup/generate-portal-link {"orgId":"org"}`,
-		`POST /admin/sso/setup/check {"orgId":"org"}`,
+	checkW := call(f, "POST", "/api/v1/sso/setup/check", "", admin)
+	var checkOut SSOSetupStatusResult
+	if checkW.Code != 200 || json.Unmarshal(checkW.Body.Bytes(), &checkOut) != nil ||
+		checkOut.Status != "connected" || checkOut.Connection == nil || !checkOut.Connection.Enabled || checkOut.SetupCompletedAt == nil {
+		t.Errorf("POST /api/v1/sso/setup/check: %d %s", checkW.Code, checkW.Body.String())
 	}
-	if strings.Join(wk.calls, "\n") != strings.Join(want, "\n") {
-		t.Errorf("worker calls:\n%s", strings.Join(wk.calls, "\n"))
+	if len(wk.calls) != 0 {
+		t.Errorf("unexpected worker calls: %v", wk.calls)
 	}
 
-	wk.fail = `{"error":"scalekit down"}`
-	if w := call(f, "GET", "/api/v1/sso/setup/status", "", admin); w.Code != 500 || w.Body.String() != `{"error":"SSO setup status failed (502): scalekit down"}` {
-		t.Errorf("worker error: %d %s", w.Code, w.Body.String())
-	}
-	wk.fail = "plain text"
-	if w := call(f, "POST", "/api/v1/sso/setup/check", "", admin); w.Body.String() != `{"error":"SSO connection check failed (502): plain text\n"}` {
-		t.Errorf("worker text: %s", w.Body.String())
+	mcp.failHTTP = true
+	if w := call(f, "GET", "/api/v1/sso/setup/environments", "", admin); w.Code != 500 || w.Body.String() != `{"error":"SSO environment list failed (500): Scalekit MCP HTTP 502"}` {
+		t.Errorf("mcp error: %d %s", w.Code, w.Body.String())
 	}
 	if w := call(f, "PUT", "/api/v1/sso/setup/check", "", admin); w.Code != 405 || w.Header().Get("Allow") != "POST" {
 		t.Errorf("PUT: %d %q", w.Code, w.Header().Get("Allow"))
@@ -153,14 +152,12 @@ func TestSSOSetupRoutes(t *testing.T) {
 func TestSSOSetupSoloAndWorkerDown(t *testing.T) {
 	db := testpg.Migrated(t)
 	seed(t, db, `insert into organization (id, name) values ('org', 'Org')`)
-	f, wk := newSetupFront(t, `{"provider":null}`, db)
-	wk.reply["/admin/sso/setup/status"] = `{"status":"not_started"}`
-	if w := call(f, "GET", "/api/v1/sso/setup/status", "", nil); w.Code != 200 || w.Body.String() != `{"status":"not_started"}` {
+	f, _ := newSetupFront(t, `{"provider":null}`, db)
+	if w := call(f, "GET", "/api/v1/sso/setup/status", "", nil); w.Code != 200 || !strings.Contains(w.Body.String(), `"status":"not_started"`) {
 		t.Errorf("solo administrator: %d %s", w.Code, w.Body.String())
 	}
-	f.API.Gate.WorkerURL = "http://127.0.0.1:1"
-	if w := call(f, "POST", "/api/v1/sso/setup/check", "", nil); w.Code != 500 || w.Body.String() != `{"error":"SSO connection check failed: the worker did not answer"}` {
-		t.Errorf("worker down: %d %s", w.Code, w.Body.String())
+	if w := call(f, "GET", "/api/v1/sso/setup/environments", "", nil); w.Code != 500 || !strings.Contains(w.Body.String(), "Scalekit workspace is not connected") {
+		t.Errorf("workspace not connected: %d %s", w.Code, w.Body.String())
 	}
 }
 

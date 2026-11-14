@@ -17,7 +17,6 @@ import type {
   SignInSetting,
 } from "../types.js";
 import { createScalekitDirectory } from "./directory.js";
-import { createMcpClient, joinTextContent, type McpToolClient } from "./mcp-client.js";
 import {
   createMcpOAuth,
   generatePkceVerifier,
@@ -57,7 +56,6 @@ export const SCALEKIT_WORKSPACE_SCOPES = ["wks:read", "wks:write", "env:read", "
 export interface ScalekitOptions {
   createMcpOAuth?: () => ReturnType<typeof createMcpOAuth>;
   createDirectory?: (env: ResolvedEnv & { organizationId: string }) => ReturnType<typeof createScalekitDirectory>;
-  createMcpClient?: (options: { url: string; accessToken: string }) => Promise<McpToolClient>;
 }
 
 export class ScalekitError extends Error {
@@ -204,81 +202,3 @@ export async function completeScalekitConnect(
   };
 }
 
-/** Rotate the deployment's refresh token; the caller persists the result. */
-export async function refreshScalekitConnect(
-  current: ConnectorCredential,
-  options: ScalekitOptions = {},
-): Promise<ConnectorCredential> {
-  const t = current.tokens as Record<string, unknown>;
-  const tokenEndpoint = str(t.token_endpoint);
-  const clientId = str(t.client_id);
-  const refreshToken = str(t.refresh_token);
-  if (!tokenEndpoint || !clientId || !refreshToken) {
-    throw new ScalekitError("stored credential is missing token_endpoint/client_id/refresh_token — reconnect the workspace");
-  }
-  const tokens = await mcpOAuth(options).refreshTokens({
-    tokenEndpoint,
-    clientId,
-    clientSecret: strOrNull(t.client_secret),
-    refreshToken,
-  });
-  return {
-    ...current,
-    tokens: {
-      ...t,
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token ?? refreshToken,
-      expires_at: tokens.expires_in != null ? String(Date.now() + tokens.expires_in * 1000) : t.expires_at,
-    },
-    refreshedAt: new Date().toISOString(),
-  };
-}
-
-/** Whether a stored credential expires within the next minute. */
-export function scalekitCredentialNearExpiry(credential: ConnectorCredential, nowMs = Date.now()): boolean {
-  const expiresAt = num((credential.tokens as Record<string, unknown>).expires_at);
-  return expiresAt !== null && expiresAt <= nowMs + 60_000;
-}
-
-/**
- * Call one Scalekit workspace MCP tool with the deployment credential and
- * return its text. Throws when the workspace is not connected or the tool
- * reports an error.
- */
-export async function callScalekitTool(
-  tool: string,
-  args: Record<string, unknown>,
-  credential: ConnectorCredential | null,
-  env: ScalekitEnv,
-  options: ScalekitOptions = {},
-): Promise<string> {
-  const accessToken = str((credential?.tokens as Record<string, unknown> | undefined)?.access_token);
-  if (!accessToken) {
-    throw new ScalekitError("Scalekit workspace is not connected — authorize it on the Single sign-on settings page first");
-  }
-  const make = options.createMcpClient ?? ((opts) => createMcpClient(opts));
-  const mcp = await make({ url: resolveMcpUrl(env), accessToken });
-  try {
-    const result = await mcp.callTool(tool, args);
-    const text = joinTextContent(result);
-    if (result.isError === true) throw new ScalekitError(text || `Scalekit tool ${tool} failed`);
-    if (!text) throw new ScalekitError(`Scalekit tool ${tool} returned no result — is the workspace connected?`);
-    return text;
-  } finally {
-    await mcp.close().catch(() => {});
-  }
-}
-
-function str(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function strOrNull(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function num(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && /^\d+$/.test(value)) return Number(value);
-  return null;
-}
