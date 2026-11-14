@@ -1,14 +1,14 @@
-import { connection } from "next/server";
-import { getModelSettings } from "@neko/llm/model-routes";
-import { AdminDenied } from "@/app/admin/AdminShell";
-import { getCurrentActor } from "@/lib/actor";
-import { getOrgId } from "@/lib/db";
+"use client";
+
+import AdminLoad from "@/app/admin/AdminLoad";
 import ModelsForm from "./ModelsForm";
 
-export default async function SettingsModelsPage() {
-  await connection();
-  const actor = await getCurrentActor();
-  if (actor.role !== "admin") return <AdminDenied />;
+type Initial = Parameters<typeof ModelsForm>[0]["initial"];
 
-  return <ModelsForm initial={await getModelSettings(await getOrgId())} />;
+export default function SettingsModelsPage() {
+  return (
+    <AdminLoad title="Models and task routes" paths={["/api/v1/admin/models"]}>
+      {([initial]) => <ModelsForm initial={initial as Initial} />}
+    </AdminLoad>
+  );
 }

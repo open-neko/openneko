@@ -1,20 +1,19 @@
-import { connection } from "next/server";
-import { AdminDenied, AdminShell } from "@/app/admin/AdminShell";
-import { getCurrentActor } from "@/lib/actor";
+"use client";
+
+import AdminOnly from "@/app/admin/AdminOnly";
+import { AdminShell } from "@/app/admin/AdminShell";
 import ChannelSettingsPanel from "./ChannelSettingsPanel";
 
-export default async function SettingsChannelsPage() {
-  await connection();
-  const actor = await getCurrentActor();
-  if (actor.role !== "admin") return <AdminDenied />;
-
+export default function SettingsChannelsPage() {
   return (
-    <AdminShell
-      title="Channels"
-      subtitle="Slack, Telegram, and other places where people talk to OpenNeko. A channel turns on when its settings are saved."
-      back={{ href: "/admin/settings", label: "Settings" }}
-    >
-      <ChannelSettingsPanel />
-    </AdminShell>
+    <AdminOnly>
+      <AdminShell
+        title="Channels"
+        subtitle="Slack, Telegram, and other places where people talk to OpenNeko. A channel turns on when its settings are saved."
+        back={{ href: "/admin/settings", label: "Settings" }}
+      >
+        <ChannelSettingsPanel />
+      </AdminShell>
+    </AdminOnly>
   );
 }

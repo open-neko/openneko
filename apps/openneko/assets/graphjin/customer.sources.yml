@@ -1,0 +1,132 @@
+# Production source-mode template for the CUSTOMER-data GraphJin.
+#
+# A fresh install intentionally has no customer database source. OpenNeko ships
+# GraphJin inside openneko serve with its governed config plane; an admin registers
+# the customer's existing database or API source through setup/chat. The demo
+# overlay replaces this seed with dev.sources.example.yml, which includes the
+# AdventureWorks source.
+#
+# The worker replaces the JWT placeholder with the deployment/org-derived
+# signing secret at boot. openneko serve-init replaces the keystore
+# placeholder with a random 32-byte key before GraphJin starts.
+
+app_name: OpenNeko Customer Data
+mode: agentic
+host_port: 0.0.0.0:8080
+production: true
+# OpenNeko and the GraphJin server agent compile ad-hoc, role-scoped GraphQL
+# from chat. This disables the production named-query allow-list; JWT auth,
+# source access, read_only, and admin-only roots still apply.
+disable_production_security: true
+debug: false
+log_format: plain
+log_level: info
+http_compress: true
+reload_on_config_change: true
+server_timing: true
+
+auth:
+  type: jwt
+  jwt:
+    secret: "REPLACE_WITH_PER_ORG_SECRET_B64"
+    audience: ""
+    issuer: ""
+
+roles_query: ""
+identity:
+  user_id_claim: sub
+  role_claims:
+    - role
+  namespace_claim: org_id
+  admin_roles:
+    - admin
+
+auth_fail_block: true
+
+cors_allowed_origins:
+  - '*'
+
+default_limit: 20
+enable_tracing: true
+subs_poll_duration: 5s
+
+mcp:
+  disable: false
+  # The approved OpenNeko worker applies reviewed gj_config previews. The
+  # GraphJin server agent itself remains read-only.
+  allow_config_updates: true
+  include_tools_with_agent: true
+  # Mutations pass the MCP layer so API sources can take governed writes.
+  # Every database source stays read_only: true; GraphJin core blocks its
+  # mutations and pins the flag at startup.
+  allow_mutations: true
+  allow_raw_queries: true
+  workflow_timeout: 300
+  allow_dev_tools: false
+  legacy_discovery: false
+
+# Agentic mode turns GraphJin's own agent on unless the config says otherwise.
+agent:
+  enabled: false
+
+analytics_mode: true
+
+# Customer sources are read-only by default and may be absent on first boot.
+# Durable GraphJin artifacts and watches live in OpenNeko's dedicated Records
+# GraphJin plane, never in a customer database.
+artifacts:
+  enabled: false
+watches:
+  enabled: false
+  runner: off
+tasks:
+  enabled: false
+
+# Keep every JWT role explicit: GraphJin re-normalizes roles on config updates,
+# and a source's access.write block is generated only for roles listed here.
+# A JWT role that is missing from this list gets no block.
+roles:
+  - name: user
+    comment: Authenticated user
+  - name: member
+    comment: OpenNeko organization member (JWT role minted by the worker)
+  - name: service
+    comment: OpenNeko worker service identity (JWT role minted by the worker)
+  - name: admin
+    comment: Org admin
+
+# Required for GraphJin to seal database passwords into gjsecret:// refs.
+secrets:
+  keystore:
+    key: "REPLACE_WITH_BASE64_32_BYTE_KEY"
+
+blocklist:
+  - ar_internal_metadata
+  - schema_migrations
+  - secret
+  - password
+  - encrypted
+  - token
+
+system:
+  capabilities:
+    catalog.read: true
+    security.read: true
+    config.read: true
+    config.write: true
+    runtime.read: true
+    raw_graphql.query: true
+    raw_graphql.mutate: true
+    schema.reload: false
+    schema.write: false
+    dev_tools.read: false
+    legacy_discovery.read: false
+  root_access:
+    gj_catalog: authenticated
+    gj_config: admin
+    gj_security: admin
+    gj_runtime: admin
+
+# Keep source mode explicit on a fresh install; admins add external database,
+# API, code, or file sources through OpenNeko's approved config workflow.
+sources: []

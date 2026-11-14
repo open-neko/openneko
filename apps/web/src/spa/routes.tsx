@@ -121,6 +121,7 @@ const workShell: RouteObject = {
     { path: "library", ...page(() => import("@/app/(work)/library/page")) },
     { path: "memory", ...page(() => import("@/app/(work)/memory/page")) },
     { path: "skills", ...page(() => import("@/app/(work)/skills/page")) },
+    { path: "profile", ...page(() => import("@/app/(work)/profile/page")) },
   ],
 };
 
@@ -151,6 +152,18 @@ export const routes: RouteObject[] = [
           { path: "runs", ...page(() => import("@/app/runs/page")) },
           { path: "runs/:workflowRunId", ...page(() => import("@/app/runs/[workflowRunId]/page")) },
           { path: "signin", ...page(() => import("@/app/signin/page")) },
+          { path: "admin/rules", ...page(() => import("@/app/admin/rules/page")) },
+          { path: "admin/rules/:policyId", ...page(() => import("@/app/admin/rules/[policyId]/page")) },
+          { path: "admin/settings/channels", ...page(() => import("@/app/admin/settings/channels/page")) },
+          { path: "admin/settings/packs", ...page(() => import("@/app/admin/settings/packs/page")) },
+          { path: "admin/settings/signin", ...page(() => import("@/app/admin/settings/signin/page")) },
+          { path: "admin/settings/agent", ...page(() => import("@/app/admin/settings/agent/page")) },
+          { path: "admin/settings/data", ...page(() => import("@/app/admin/settings/data/page")) },
+          { path: "admin/settings/models", ...page(() => import("@/app/admin/settings/models/page")) },
+          { path: "admin/settings/research", ...page(() => import("@/app/admin/settings/research/page")) },
+          { path: "admin/settings/security", ...page(() => import("@/app/admin/settings/security/page")) },
+          { path: "admin/settings/spend", ...page(() => import("@/app/admin/settings/spend/page")) },
+          { path: "admin/settings/sso", ...page(() => import("@/app/admin/settings/sso/page")) },
           {
             path: "skills/:name",
             lazy: async () => {

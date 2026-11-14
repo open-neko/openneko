@@ -23,6 +23,34 @@ function nextPagePaths(dir = appDir, prefix = ""): string[] {
   return found;
 }
 
+function nextPageFile(page: string, dir = appDir): string {
+  const [head, ...rest] = page.split("/").filter(Boolean);
+  if (head === undefined) {
+    const file = path.join(dir, "page.tsx");
+    statSync(file);
+    return path.relative(appDir, file);
+  }
+  for (const entry of readdirSync(dir)) {
+    const full = path.join(dir, entry);
+    if (!statSync(full).isDirectory()) continue;
+    if (/^\(.*\)$/.test(entry)) {
+      try {
+        return nextPageFile(page, full);
+      } catch {
+        continue;
+      }
+    }
+    if (entry === head || entry === head.replace(/^:(.+)$/, "[$1]")) {
+      try {
+        return nextPageFile(`/${rest.join("/")}`, full);
+      } catch {
+        continue;
+      }
+    }
+  }
+  throw new Error(`no page file for ${page}`);
+}
+
 function concrete(page: string): string {
   return page.replace(/:[^/]+/g, "sample");
 }
@@ -48,16 +76,40 @@ describe("static web app routes", () => {
     expect(serverPages).not.toContain("/admin/settings/repository");
   });
 
+  it("loads each page that left the server list as a client page", () => {
+    const ported = [
+      "/profile",
+      "/admin/rules",
+      "/admin/rules/:policyId",
+      "/admin/settings/channels",
+      "/admin/settings/packs",
+      "/admin/settings/signin",
+      "/admin/settings/agent",
+      "/admin/settings/data",
+      "/admin/settings/models",
+      "/admin/settings/research",
+      "/admin/settings/security",
+      "/admin/settings/spend",
+      "/admin/settings/sso",
+    ];
+    const wrong = ported.filter((page) => {
+      const route = (matchRoutes(routes, concrete(page)) ?? []).at(-1)?.route;
+      const source = readFileSync(path.join(appDir, nextPageFile(page)), "utf8");
+      return serverPages.includes(page) || !route?.lazy || !source.startsWith('"use client"');
+    });
+    expect(wrong).toEqual([]);
+  });
+
   it("lists only real Next pages as server pages", () => {
     expect(serverPages.filter((page) => !pages.includes(page))).toEqual([]);
   });
 
   it("passes server pages to Node and keeps ported pages in the app", () => {
     const pattern = serverPagePattern();
-    expect(pattern.test("/admin/settings/models")).toBe(true);
+    expect(pattern.test("/admin/settings/graphjin")).toBe(true);
     expect(pattern.test("/admin/users/groups/g1?tab=members")).toBe(true);
     expect(pattern.test("/chat")).toBe(false);
-    expect(pattern.test("/admin/settings/models/extra")).toBe(false);
+    expect(pattern.test("/admin/settings/graphjin/extra")).toBe(false);
     expect(pattern.test("/api/v1/version")).toBe(false);
   });
 
