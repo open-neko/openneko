@@ -1,6 +1,8 @@
 // SSO setup status for the server-rendered setup page. The setup routes are
 // in Go (`openneko web`); both reach the worker's /admin/sso/setup/* endpoints.
 
+import { workerAdminFetch } from "@neko/llm/worker-admin";
+
 export type SsoSetupStatus =
   | "not_started"
   | "awaiting_portal"
@@ -28,11 +30,6 @@ export interface SsoSetupStatusResult {
   signInConfigured: boolean;
 }
 
-function workerAdminBase(): string {
-  const raw = process.env.WORKER_ADMIN_URL ?? "http://127.0.0.1:4100";
-  return raw.replace(/\/+$/, "");
-}
-
 async function readError(res: Response, label: string): Promise<Error> {
   const text = await res.text().catch(() => "");
   let detail = text;
@@ -48,8 +45,8 @@ async function readError(res: Response, label: string): Promise<Error> {
 export async function getSsoSetupStatus(
   orgId: string,
 ): Promise<SsoSetupStatusResult> {
-  const res = await fetch(
-    `${workerAdminBase()}/admin/sso/setup/status?orgId=${encodeURIComponent(orgId)}`,
+  const res = await workerAdminFetch(
+    `/admin/sso/setup/status?orgId=${encodeURIComponent(orgId)}`,
     { method: "GET", cache: "no-store", signal: AbortSignal.timeout(2000) },
   );
   if (!res.ok) throw await readError(res, "SSO setup status");

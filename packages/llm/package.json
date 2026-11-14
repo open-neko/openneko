@@ -35,7 +35,8 @@
     "./spend": "./src/spend/index.ts",
     "./model-tasks": "./src/model-tasks.ts",
     "./model-routes": "./src/model-routes.ts",
-    "./files": "./src/files/client.ts"
+    "./files": "./src/files/client.ts",
+    "./worker-admin": "./src/worker-admin.ts"
   },
   "scripts": {
     "test": "vitest run",
