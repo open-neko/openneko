@@ -141,6 +141,7 @@ with exit code 0, so its supervisor starts it again.`,
 			}
 			if runner != nil {
 				api.StartChannelInbound(ctx)
+				api.StartPackOAuthRefresh(ctx)
 			}
 			var node *exec.Cmd
 			nodeDone := make(chan error, 1)
