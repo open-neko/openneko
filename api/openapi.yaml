@@ -53,6 +53,77 @@ components:
       in: header
       name: X-Webhook-Token
   schemas:
+    PackOAuthFailure:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          type: string
+        diagnostic:
+          type: object
+          properties:
+            code:
+              type: string
+            phase:
+              type: string
+            causes:
+              type: array
+              items:
+                type: string
+            nextStep:
+              type: string
+    PackOAuthStatus:
+      type: object
+      additionalProperties: false
+      required:
+      - scope
+      - configured
+      - key
+      - providerLabel
+      - clientId
+      - scopes
+      - connected
+      - account
+      - expiresAt
+      properties:
+        scope:
+          type: string
+          enum:
+          - deployment
+          - user
+        configured:
+          type: boolean
+        key:
+          type: string
+        providerLabel:
+          type: string
+        clientId:
+          type:
+          - string
+          - 'null'
+        scopes:
+          type: array
+          items:
+            type: string
+        connected:
+          type: boolean
+        account:
+          type:
+          - object
+          - 'null'
+          additionalProperties: false
+          properties:
+            id:
+              type: string
+            label:
+              type: string
+        expiresAt:
+          type:
+          - string
+          - 'null'
+        callbackUrl:
+          type: string
     Error:
       type: object
       required:
@@ -6669,22 +6740,23 @@ paths:
           type: string
       responses:
         '200':
-          description: Status and body passed through from the worker
+          description: Whether stored tokens were removed
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: false
-                properties: {}
+                required:
+                - disconnected
+                properties:
+                  disconnected:
+                    type: boolean
         '400':
-          description: Invalid pack ID or connection key
+          description: Invalid connection, unknown pack, or the operation failed
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
+                $ref: '#/components/schemas/PackOAuthFailure'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -6694,12 +6766,6 @@ paths:
                 properties:
                   error:
                     type: string
-        '502':
-          description: The worker is unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
     get:
       operationId: getPackAccountsByPackIdByConnectionKey
       tags:
@@ -6721,24 +6787,17 @@ paths:
           type: string
       responses:
         '200':
-          description: Worker status body plus the callback URL
+          description: The connection status and the callback URL
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: false
-                properties:
-                  callbackUrl:
-                    type: string
+                $ref: '#/components/schemas/PackOAuthStatus'
         '400':
-          description: Invalid pack ID or connection key
+          description: Invalid connection, unknown pack, or the operation failed
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
+                $ref: '#/components/schemas/PackOAuthFailure'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -6748,18 +6807,6 @@ paths:
                 properties:
                   error:
                     type: string
-        '502':
-          description: The worker is unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        default:
-          description: Status and body passed through from the worker
-          content:
-            application/json:
-              schema:
-                type: object
     post:
       operationId: postPackAccountsByPackIdByConnectionKey
       tags:
@@ -6794,22 +6841,17 @@ paths:
               - clientId
       responses:
         '200':
-          description: Status and body passed through from the worker
+          description: The connection status
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: false
-                properties: {}
+                $ref: '#/components/schemas/PackOAuthStatus'
         '400':
-          description: Invalid pack connection, or clientId is missing
+          description: Invalid connection, no client ID, unknown pack, or the operation failed
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
+                $ref: '#/components/schemas/PackOAuthFailure'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -6819,12 +6861,6 @@ paths:
                 properties:
                   error:
                     type: string
-        '502':
-          description: The worker is unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
   /pack-accounts/{packId}/{connectionKey}/callback:
     get:
       operationId: getPackAccountsByPackIdByConnectionKeyCallback
@@ -6878,18 +6914,6 @@ paths:
                 properties:
                   error:
                     type: string
-        '502':
-          description: The worker is unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        default:
-          description: Worker error status and body passed through
-          content:
-            application/json:
-              schema:
-                type: object
   /pack-accounts/{packId}/{connectionKey}/start:
     post:
       operationId: postPackAccountsByPackIdByConnectionKeyStart
@@ -6928,22 +6952,23 @@ paths:
               - clientId
       responses:
         '200':
-          description: Status and body passed through from the worker
+          description: The provider URL to open
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: false
-                properties: {}
+                required:
+                - authorizationUrl
+                properties:
+                  authorizationUrl:
+                    type: string
         '400':
-          description: Invalid pack connection, or clientId is missing
+          description: Invalid connection, no client ID, unknown pack, or the operation failed
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
+                $ref: '#/components/schemas/PackOAuthFailure'
         '403':
           description: The caller is not an admin, or SSO is live and no session is present
           content:
@@ -6953,12 +6978,6 @@ paths:
                 properties:
                   error:
                     type: string
-        '502':
-          description: The worker is unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
   /policies:
     get:
       operationId: getPolicies
