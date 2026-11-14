@@ -23,6 +23,11 @@ export const authCases: Case[] = [
     },
   },
   {
+    op: "GET /auth/device/approve", name: "finds a pending device request by user code", as: "anonymous", status: 200,
+    request: (c) => ({ query: { code: c.ids.userCode } }),
+    check: (r, c) => expect(body(r).request).toEqual({ userCode: c.ids.userCode, name: "Contract phone" }),
+  },
+  {
     op: "POST /auth/device/token", name: "waits for the approval", as: "anonymous", status: 400,
     request: (c) => ({ body: { deviceCode: c.ids.deviceCode } }),
     check: (r) => expect(body(r).error).toBe("authorization_pending"),
