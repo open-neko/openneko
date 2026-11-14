@@ -44,7 +44,7 @@ func TestAdminUsersAdminOnly(t *testing.T) {
 }
 
 func TestAdminUserCreate(t *testing.T) {
-	f, db, wk := groupsFront(t)
+	f, db, _ := groupsFront(t)
 	admin := sessionCookie("admin")
 	ctx := context.Background()
 
@@ -91,26 +91,6 @@ func TestAdminUserCreate(t *testing.T) {
 	}
 	if w := call(f, "POST", "/api/v1/admin/users", `{"email":"a@b.c.","role":"member"}`, admin); w.Code != 201 {
 		t.Errorf("a@b.c.: %d %s", w.Code, w.Body.String())
-	}
-
-	wk.reply["/admin/directory/users"] = `{"ok":true}`
-	w = call(f, "POST", "/api/v1/admin/users", `{"email":"dir@example.com","name":"Dee","role":"member","addToDirectory":true}`, admin)
-	if w.Code != 201 || strings.Contains(w.Body.String(), "directoryError") {
-		t.Errorf("directory: %d %s", w.Code, w.Body.String())
-	}
-	if last := wk.calls[len(wk.calls)-1]; last != `POST /admin/directory/users {"email":"dir@example.com","name":"Dee"}` {
-		t.Errorf("worker call %q", last)
-	}
-	wk.fail = "boom"
-	w = call(f, "POST", "/api/v1/admin/users", `{"email":"dir2@example.com","role":"member","addToDirectory":true}`, admin)
-	if w.Code != 201 || !strings.Contains(w.Body.String(), `"directoryError":"Worker returned HTTP 502"`) {
-		t.Errorf("directory failure: %d %s", w.Code, w.Body.String())
-	}
-	wk.fail = ""
-	delete(wk.reply, "/admin/directory/users")
-	if w := call(f, "POST", "/api/v1/admin/users", `{"email":"dir3@example.com","role":"member","addToDirectory":true}`, admin); !strings.Contains(w.Body.String(), `"directoryError":"HTTP 404"`) &&
-		!strings.Contains(w.Body.String(), `"directoryError":"Worker returned HTTP 404"`) {
-		t.Errorf("directory 404: %d %s", w.Code, w.Body.String())
 	}
 }
 

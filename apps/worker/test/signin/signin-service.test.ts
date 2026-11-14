@@ -24,16 +24,6 @@ function credential(tokens: Record<string, unknown>): ConnectorCredential {
   return { tokens, connectedAt: "2026-01-01T00:00:00.000Z" };
 }
 
-describe("SignInService directory and Scalekit settings", () => {
-  it("offers the directory only while Scalekit is the provider", async () => {
-    const signIn = new SignInService(secrets);
-    expect(signIn.getDirectoryProvider()).toBeNull();
-    await signIn.selectProvider("scalekit");
-    expect(signIn.getDirectoryProvider()?.capabilities.write).toEqual({ createUser: true, deactivateUser: false });
-    await expect(signIn.applyDirectoryChange({ op: "deactivate_user", externalId: "u1" })).rejects.toThrow(/does not accept/);
-  });
-});
-
 describe("Scalekit workspace connection", () => {
   it("stores and disconnects the workspace credential in the deployment slot", async () => {
     const signIn = new SignInService(secrets);

@@ -12,7 +12,10 @@ export const authCases: Case[] = [
     op: "GET /auth/session", name: "reports no user without a credential", as: "anonymous", status: 200,
     check: (r) => expect(body(r).signedIn).toBe(false),
   },
-  { op: "GET /auth/begin", name: "needs the worker to start a sign-in", as: "anonymous", status: 502 },
+  {
+    op: "GET /auth/begin", name: "sends a magic-link sign-in without an email back to sign-in", as: "anonymous", status: 302,
+    check: (r) => expect(r.headers.get("location")).toMatch(/\/signin/),
+  },
   { op: "GET /auth/callback", name: "sends a callback without state back to sign-in", as: "anonymous", status: 302 },
   {
     op: "POST /auth/device/code", name: "starts a device sign-in", as: "anonymous", status: 200,

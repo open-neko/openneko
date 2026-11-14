@@ -244,7 +244,7 @@ func TestReadMagentoVersion(t *testing.T) {
 func TestPackDoctorRoute(t *testing.T) {
 	f, wk, admin := reviewFront(t)
 	db := f.API.DB
-	if err := secrets.Write(secrets.Store{"pack.service-health": {"SERVICE_API_TOKEN": "t"}}, f.API.SecretsDir); err != nil {
+	if err := writeKeepingSignIn(secrets.Store{"pack.service-health": {"SERVICE_API_TOKEN": "t"}}, f.API.SecretsDir); err != nil {
 		t.Fatal(err)
 	}
 	doctor := func(pack string) (int, string) {
@@ -293,14 +293,14 @@ func TestPackDoctorRoute(t *testing.T) {
 		}
 	}
 	healthy = "1"
-	if err := secrets.Write(secrets.Store{}, f.API.SecretsDir); err != nil {
+	if err := writeKeepingSignIn(secrets.Store{}, f.API.SecretsDir); err != nil {
 		t.Fatal(err)
 	}
 	if code, body := doctor("service-health"); code != 200 || body != blocked {
 		t.Errorf("missing secret: %d %s", code, body)
 	}
 
-	if err := secrets.Write(secrets.Store{"pack.service-health": {"SERVICE_API_TOKEN": "t"}}, f.API.SecretsDir); err != nil {
+	if err := writeKeepingSignIn(secrets.Store{"pack.service-health": {"SERVICE_API_TOKEN": "t"}}, f.API.SecretsDir); err != nil {
 		t.Fatal(err)
 	}
 	seed(t, db, `update data_source set graphql_url = 'http://changed.test' where id::text = '`+sourceID+`'`)
@@ -311,7 +311,7 @@ func TestPackDoctorRoute(t *testing.T) {
 	if err := os.CopyFS(filepath.Join(os.Getenv("OPENNEKO_PACKS_DIR"), "magento"), os.DirFS(filepath.Join("..", "..", "..", "..", "packs", "magento"))); err != nil {
 		t.Fatal(err)
 	}
-	if err := secrets.Write(secrets.Store{"pack.magento": {"DATABASE_ANALYTICS_USERNAME": "ro", "DATABASE_ANALYTICS_PASSWORD": "pw"}}, f.API.SecretsDir); err != nil {
+	if err := writeKeepingSignIn(secrets.Store{"pack.magento": {"DATABASE_ANALYTICS_USERNAME": "ro", "DATABASE_ANALYTICS_PASSWORD": "pw"}}, f.API.SecretsDir); err != nil {
 		t.Fatal(err)
 	}
 	closed, _ := net.Listen("tcp", "127.0.0.1:0")

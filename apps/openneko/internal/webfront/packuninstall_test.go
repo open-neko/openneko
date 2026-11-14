@@ -152,7 +152,7 @@ func newUninstallFixture(t *testing.T) *uninstallFixture {
 		seed(t, db, `insert into pack_artifact (pack_install_id, org_id, artifact_kind, artifact_key, target_ref, desired_hash, last_applied_hash, metadata)
 			values ($1, 'org', $2, $3, $4, $5, $6, $7::jsonb)`, install, a.kind, a.key, a.target, desiredHash(t, bundle, a.key), a.applied, a.metadata)
 	}
-	if err := secrets.Write(secrets.Store{"pack.slack": {"SLACK_BOT_TOKEN": "xoxb-1"}, "other": {"KEY": "v"}}, f.API.SecretsDir); err != nil {
+	if err := writeKeepingSignIn(secrets.Store{"pack.slack": {"SLACK_BOT_TOKEN": "xoxb-1"}, "other": {"KEY": "v"}}, f.API.SecretsDir); err != nil {
 		t.Fatal(err)
 	}
 	return &uninstallFixture{f: f, wk: wk, admin: admin, gj: gj, install: install, skillDir: skillDir, actionRow: actionRow}

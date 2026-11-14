@@ -30,7 +30,7 @@ func inboundFront(t *testing.T) (*Front, *pgxpool.Pool) {
 	t.Helper()
 	f, db := memoryFront(t)
 	seedRiver(t, db, f)
-	if err := secrets.Write(secrets.Store{
+	if err := writeKeepingSignIn(secrets.Store{
 		"channel.telegram": {"TELEGRAM_BOT_TOKEN": "123:abc", "TELEGRAM_WEBHOOK_SECRET": "tg-secret"},
 		"channel.slack":    {"SLACK_BOT_TOKEN": "xoxb-1", "SLACK_APP_TOKEN": "xapp-1"},
 	}, f.API.SecretsDir); err != nil {
@@ -495,7 +495,7 @@ func TestSlackSocketMode(t *testing.T) {
 		t.Errorf("workspace %q", got)
 	}
 
-	if err := secrets.Write(secrets.Store{"channel.slack": {"SLACK_BOT_TOKEN": "xoxb-1"}}, a.SecretsDir); err != nil {
+	if err := writeKeepingSignIn(secrets.Store{"channel.slack": {"SLACK_BOT_TOKEN": "xoxb-1"}}, a.SecretsDir); err != nil {
 		t.Fatal(err)
 	}
 	finished := make(chan struct{})
@@ -519,7 +519,7 @@ func TestInboundLoopsFollowSettings(t *testing.T) {
 	a := f.API
 	a.PublicURL = ""
 	t.Setenv("OPENNEKO_PUBLIC_URL", "")
-	if err := secrets.Write(secrets.Store{"channel.telegram": {"TELEGRAM_BOT_TOKEN": "123:abc"}}, a.SecretsDir); err != nil {
+	if err := writeKeepingSignIn(secrets.Store{"channel.telegram": {"TELEGRAM_BOT_TOKEN": "123:abc"}}, a.SecretsDir); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
@@ -576,7 +576,7 @@ func TestChannelSettingsRoutes(t *testing.T) {
 	f, _ := inboundFront(t)
 	a := f.API
 	admin := sessionCookie("admin")
-	if err := secrets.Write(secrets.Store{"channel.hud": {"HUD_CHANNEL_WORKSPACE": "plant"}}, a.SecretsDir); err != nil {
+	if err := writeKeepingSignIn(secrets.Store{"channel.hud": {"HUD_CHANNEL_WORKSPACE": "plant"}}, a.SecretsDir); err != nil {
 		t.Fatal(err)
 	}
 	w := call(f, "GET", "/api/v1/admin/channels/settings", "", admin)
@@ -643,7 +643,7 @@ func TestMigrateLegacyChannelSecrets(t *testing.T) {
 	if moved, err := a.MigrateLegacyChannelSecrets(); err != nil || moved != nil {
 		t.Errorf("nothing to move: %v %v", moved, err)
 	}
-	if err := secrets.Write(secrets.Store{
+	if err := writeKeepingSignIn(secrets.Store{
 		"@open-neko/plugin-slack":     {"SLACK_BOT_TOKEN": "old", "SLACK_APP_TOKEN": "xapp-old", "UNRELATED": "x"},
 		"@open-neko/channel-telegram": {"TELEGRAM_BOT_TOKEN": "1:a"},
 		"channel.slack":               {"SLACK_BOT_TOKEN": "new"},
@@ -665,7 +665,7 @@ func TestMigrateLegacyChannelSecrets(t *testing.T) {
 func TestInboundLoopsCreateNoOrg(t *testing.T) {
 	db := testpg.Migrated(t)
 	a := &API{DB: db, SecretsDir: t.TempDir()}
-	if err := secrets.Write(secrets.Store{"channel.telegram": {"TELEGRAM_BOT_TOKEN": "123:abc"}}, a.SecretsDir); err != nil {
+	if err := writeKeepingSignIn(secrets.Store{"channel.telegram": {"TELEGRAM_BOT_TOKEN": "123:abc"}}, a.SecretsDir); err != nil {
 		t.Fatal(err)
 	}
 	l := &channelLoops{ctx: t.Context(), running: map[string]*inboundLoop{}, noted: map[string]bool{}, wake: make(chan struct{}, 1)}

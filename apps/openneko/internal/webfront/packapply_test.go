@@ -86,7 +86,7 @@ func newApplyFixture(t *testing.T) *applyFixture {
 	srv := gj.server(t, liveSource, "query Channels { channels { id } }\n")
 	seed(t, f.API.DB, `insert into data_source (org_id, kind, name, graphql_url, enabled, is_default, auth_mode)
 		values ('org', 'graphjin', 'GJ', $1, true, true, 'jwt')`, srv.URL)
-	if err := secrets.Write(secrets.Store{"other": {"KEY": "v"}}, f.API.SecretsDir); err != nil {
+	if err := writeKeepingSignIn(secrets.Store{"other": {"KEY": "v"}}, f.API.SecretsDir); err != nil {
 		t.Fatal(err)
 	}
 	workspace, err := orgWorkspace("org")
