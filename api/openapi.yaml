@@ -4047,6 +4047,85 @@ paths:
                   error:
                     type: string
   /admin/users:
+    get:
+      operationId: getAdminUsers
+      tags:
+      - admin
+      summary: List users and their group memberships
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      responses:
+        '200':
+          description: The users of the organization
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - users
+                additionalProperties: false
+                properties:
+                  users:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - id
+                      - email
+                      - name
+                      - role
+                      - source
+                      - groups
+                      - disabled
+                      - hasSignedIn
+                      - lastLoginAt
+                      - createdAt
+                      additionalProperties: false
+                      properties:
+                        id:
+                          type: string
+                        email:
+                          type: string
+                        name:
+                          type: [string, 'null']
+                        role:
+                          type: string
+                          enum: [admin, member]
+                        source:
+                          type: string
+                        groups:
+                          type: array
+                          items:
+                            type: object
+                            required: [name, fromRule]
+                            additionalProperties: false
+                            properties:
+                              name:
+                                type: string
+                              fromRule:
+                                type: boolean
+                        disabled:
+                          type: boolean
+                        hasSignedIn:
+                          type: boolean
+                        lastLoginAt:
+                          type: [string, 'null']
+                        createdAt:
+                          type: [string, 'null']
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an administrator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     post:
       operationId: postAdminUsers
       tags:
