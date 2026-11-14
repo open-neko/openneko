@@ -1,0 +1,2364 @@
+{
+  "canonical": [
+    {
+      "value": {
+        "b": 1,
+        "a": [
+          1.5,
+          0,
+          1e+21,
+          1e-7,
+          123456789012,
+          null,
+          true
+        ],
+        "é": "\u0001\"\\\n",
+        "A": {
+          "z": {},
+          "Z": []
+        }
+      },
+      "json": "{\"A\":{\"Z\":[],\"z\":{}},\"a\":[1.5,0,1e+21,1e-7,123456789012,null,true],\"b\":1,\"é\":\"\\u0001\\\"\\\\\\n\"}"
+    },
+    {
+      "value": "line sep 😀",
+      "json": "\"line sep 😀\""
+    },
+    {
+      "value": [
+        0.1,
+        2.5e-8,
+        100,
+        -3
+      ],
+      "json": "[0.1,2.5e-8,100,-3]"
+    }
+  ],
+  "sort": [
+    "action:action.10",
+    "action:action.9",
+    "action:action.a_b",
+    "action:action.a-b",
+    "action:action.ab",
+    "metric:metric.a",
+    "policy:policy.send-email",
+    "saved_query:saved_query.a",
+    "saved_query:saved-query.z",
+    "skill:skill.b",
+    "Skill:x",
+    "source:source.order_items",
+    "source:source.order-items",
+    "source:source.order.items",
+    "source:source.orders",
+    "source:source.Orders",
+    "spec:spec.slack"
+  ],
+  "yaml": [
+    {
+      "source": "a: 1\nb: 1.50\nc: 0o17\nd: 0x1F\ne: .5\nf: yes\ng: ~\nh: 2024-01-02\ni: '007'\nj: 1e3\nk: -0\nl: True\nm: +5",
+      "json": "{\"a\":1,\"b\":1.5,\"c\":15,\"d\":31,\"e\":0.5,\"f\":\"yes\",\"g\":null,\"h\":\"2024-01-02\",\"i\":\"007\",\"j\":1000,\"k\":0,\"l\":true,\"m\":5}"
+    },
+    {
+      "source": "list:\n  - [1, two, \"three\"]\n  - {x: null, y: false}\nblock: |\n  keep\n  lines\nfolded: >\n  one\n  two\n",
+      "json": "{\"block\":\"keep\\nlines\\n\",\"folded\":\"one two\\n\",\"list\":[[1,\"two\",\"three\"],{\"x\":null,\"y\":false}]}"
+    },
+    {
+      "source": "anchor: &a {k: v}\nref: *a\n\"quoted key\": 1\n",
+      "json": "{\"anchor\":{\"k\":\"v\"},\"quoted key\":1,\"ref\":{\"k\":\"v\"}}"
+    }
+  ],
+  "manifests": [
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [],
+        "secrets": [],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        }
+      },
+      "ok": true,
+      "normalized": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"skills\":[\"skills/review\"]},\"compatibility\":{\"applications\":[],\"databases\":[],\"openneko\":\">=2.40.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{},\"requiredPreflight\":[]},\"inputs\":[],\"kind\":\"SolutionPack\",\"metadata\":{\"category\":\"operations\",\"id\":\"skills-only\",\"name\":\"Skills only\",\"publisher\":\"fixture\",\"version\":\"1.0.0\"},\"oauth\":[],\"permissions\":{\"network\":[]},\"secrets\":[]}"
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [],
+        "secrets": [],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        },
+        "channels": []
+      },
+      "ok": true,
+      "normalized": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"skills\":[\"skills/review\"]},\"channels\":[],\"compatibility\":{\"applications\":[],\"databases\":[],\"openneko\":\">=2.40.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{},\"requiredPreflight\":[]},\"inputs\":[],\"kind\":\"SolutionPack\",\"metadata\":{\"category\":\"operations\",\"id\":\"skills-only\",\"name\":\"Skills only\",\"publisher\":\"fixture\",\"version\":\"1.0.0\"},\"oauth\":[],\"permissions\":{\"network\":[]},\"secrets\":[]}"
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [],
+        "secrets": [],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        },
+        "channels": [
+          "slack",
+          "telegram"
+        ]
+      },
+      "ok": true,
+      "normalized": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"skills\":[\"skills/review\"]},\"channels\":[\"slack\",\"telegram\"],\"compatibility\":{\"applications\":[],\"databases\":[],\"openneko\":\">=2.40.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{},\"requiredPreflight\":[]},\"inputs\":[],\"kind\":\"SolutionPack\",\"metadata\":{\"category\":\"operations\",\"id\":\"skills-only\",\"name\":\"Skills only\",\"publisher\":\"fixture\",\"version\":\"1.0.0\"},\"oauth\":[],\"permissions\":{\"network\":[]},\"secrets\":[]}"
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [],
+        "secrets": [],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        },
+        "channels": [
+          "discord"
+        ]
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [],
+        "secrets": [],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        },
+        "channels": [
+          "slack",
+          "slack"
+        ]
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [],
+        "secrets": [],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        },
+        "extra": true
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "Bad_Id",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [],
+        "secrets": [],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        }
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [],
+        "secrets": [],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        }
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [],
+        "secrets": [],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        },
+        "management": {
+          "label": "Open",
+          "path": "//evil"
+        }
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [],
+        "secrets": [],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        },
+        "management": {
+          "label": "Open",
+          "path": "/admin/settings"
+        }
+      },
+      "ok": true,
+      "normalized": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"skills\":[\"skills/review\"]},\"compatibility\":{\"applications\":[],\"databases\":[],\"openneko\":\">=2.40.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{},\"requiredPreflight\":[]},\"inputs\":[],\"kind\":\"SolutionPack\",\"management\":{\"label\":\"Open\",\"path\":\"/admin/settings\"},\"metadata\":{\"category\":\"operations\",\"id\":\"skills-only\",\"name\":\"Skills only\",\"publisher\":\"fixture\",\"version\":\"1.0.0\"},\"oauth\":[],\"permissions\":{\"network\":[]},\"secrets\":[]}"
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [],
+        "secrets": [],
+        "artifacts": {
+          "skills": [
+            "../escape"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        }
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [],
+        "secrets": [],
+        "artifacts": {
+          "skills": [
+            "a\\b"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        }
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [],
+        "secrets": [],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ],
+          "graphjin": {
+            "sources": "s.yaml",
+            "relationships": "r.yaml",
+            "specs": []
+          }
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        }
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [
+          {
+            "key": "x.y",
+            "type": "enum"
+          }
+        ],
+        "secrets": [],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        }
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [
+          {
+            "key": "x.y",
+            "type": "string",
+            "values": [
+              "a"
+            ]
+          }
+        ],
+        "secrets": [],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        }
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [
+          {
+            "key": "x.y",
+            "type": "enum",
+            "values": [
+              "a",
+              2,
+              true
+            ],
+            "default": "a"
+          },
+          {
+            "key": "x.z",
+            "type": "integer",
+            "default": 0
+          }
+        ],
+        "secrets": [],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        }
+      },
+      "ok": true,
+      "normalized": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"skills\":[\"skills/review\"]},\"compatibility\":{\"applications\":[],\"databases\":[],\"openneko\":\">=2.40.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{},\"requiredPreflight\":[]},\"inputs\":[{\"default\":\"a\",\"key\":\"x.y\",\"type\":\"enum\",\"values\":[\"a\",2,true]},{\"default\":0,\"key\":\"x.z\",\"type\":\"integer\"}],\"kind\":\"SolutionPack\",\"metadata\":{\"category\":\"operations\",\"id\":\"skills-only\",\"name\":\"Skills only\",\"publisher\":\"fixture\",\"version\":\"1.0.0\"},\"oauth\":[],\"permissions\":{\"network\":[]},\"secrets\":[]}"
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [
+          {
+            "key": "x.y",
+            "type": "string"
+          },
+          {
+            "key": "x.y",
+            "type": "url"
+          }
+        ],
+        "secrets": [],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        }
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [],
+        "secrets": [],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        },
+        "permissions": {}
+      },
+      "ok": true,
+      "normalized": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"skills\":[\"skills/review\"]},\"compatibility\":{\"applications\":[],\"databases\":[],\"openneko\":\">=2.40.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{},\"requiredPreflight\":[]},\"inputs\":[],\"kind\":\"SolutionPack\",\"metadata\":{\"category\":\"operations\",\"id\":\"skills-only\",\"name\":\"Skills only\",\"publisher\":\"fixture\",\"version\":\"1.0.0\"},\"oauth\":[],\"permissions\":{\"network\":[]},\"secrets\":[]}"
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [
+          {
+            "key": "google.client_id",
+            "type": "string"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "google.client_secret",
+            "purpose": "pack_oauth_client"
+          },
+          {
+            "key": "google.access",
+            "purpose": "pack_oauth_token",
+            "required": false
+          },
+          {
+            "key": "google.refresh",
+            "purpose": "pack_oauth_token"
+          }
+        ],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        },
+        "oauth": [
+          {
+            "key": "google",
+            "providerLabel": "Google",
+            "authorizationUrl": "https://accounts.example.com/auth",
+            "tokenUrl": "https://accounts.example.com/token",
+            "userInfoUrl": "https://accounts.example.com/me",
+            "clientIdInput": "google.client_id",
+            "clientSecret": "google.client_secret",
+            "accessToken": "google.access",
+            "refreshToken": "google.refresh",
+            "scopes": [
+              "email"
+            ]
+          }
+        ],
+        "permissions": {
+          "network": [
+            "accounts.example.com"
+          ]
+        }
+      },
+      "ok": true,
+      "normalized": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"skills\":[\"skills/review\"]},\"compatibility\":{\"applications\":[],\"databases\":[],\"openneko\":\">=2.40.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{},\"requiredPreflight\":[]},\"inputs\":[{\"key\":\"google.client_id\",\"type\":\"string\"}],\"kind\":\"SolutionPack\",\"metadata\":{\"category\":\"operations\",\"id\":\"skills-only\",\"name\":\"Skills only\",\"publisher\":\"fixture\",\"version\":\"1.0.0\"},\"oauth\":[{\"accessToken\":\"google.access\",\"accountIdField\":\"sub\",\"accountLabelField\":\"email\",\"authorizationUrl\":\"https://accounts.example.com/auth\",\"clientIdInput\":\"google.client_id\",\"clientSecret\":\"google.client_secret\",\"key\":\"google\",\"providerLabel\":\"Google\",\"refreshToken\":\"google.refresh\",\"scope\":\"deployment\",\"scopes\":[\"email\"],\"tokenUrl\":\"https://accounts.example.com/token\",\"userInfoUrl\":\"https://accounts.example.com/me\"}],\"permissions\":{\"network\":[\"accounts.example.com\"]},\"secrets\":[{\"key\":\"google.client_secret\",\"purpose\":\"pack_oauth_client\",\"required\":true},{\"key\":\"google.access\",\"purpose\":\"pack_oauth_token\",\"required\":false},{\"key\":\"google.refresh\",\"purpose\":\"pack_oauth_token\",\"required\":true}]}"
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [
+          {
+            "key": "google.client_id",
+            "type": "string"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "google.client_secret",
+            "purpose": "pack_oauth_client"
+          },
+          {
+            "key": "google.access",
+            "purpose": "pack_oauth_token",
+            "required": false
+          },
+          {
+            "key": "google.refresh",
+            "purpose": "pack_oauth_token"
+          }
+        ],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        },
+        "oauth": [
+          {
+            "key": "google",
+            "providerLabel": "Google",
+            "authorizationUrl": "https://accounts.example.com/auth",
+            "tokenUrl": "https://accounts.example.com/token",
+            "userInfoUrl": "https://accounts.example.com/me",
+            "clientIdInput": "google.client_id",
+            "clientSecret": "google.client_secret",
+            "accessToken": "google.access",
+            "refreshToken": "google.refresh",
+            "scopes": [
+              "email"
+            ]
+          }
+        ],
+        "permissions": {
+          "network": []
+        }
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [
+          {
+            "key": "google.client_id",
+            "type": "string"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "google.client_secret",
+            "purpose": "pack_oauth_client"
+          },
+          {
+            "key": "google.access",
+            "purpose": "pack_oauth_token",
+            "required": false
+          },
+          {
+            "key": "google.refresh",
+            "purpose": "pack_oauth_token"
+          }
+        ],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        },
+        "oauth": [
+          {
+            "key": "google",
+            "providerLabel": "Google",
+            "authorizationUrl": "https://accounts.example.com/auth",
+            "tokenUrl": "http://accounts.example.com/token",
+            "userInfoUrl": "https://accounts.example.com/me",
+            "clientIdInput": "google.client_id",
+            "clientSecret": "google.client_secret",
+            "accessToken": "google.access",
+            "refreshToken": "google.refresh",
+            "scopes": [
+              "email"
+            ]
+          }
+        ],
+        "permissions": {
+          "network": [
+            "accounts.example.com"
+          ]
+        }
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [
+          {
+            "key": "google.client_id",
+            "type": "string"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "google.client_secret",
+            "purpose": "pack_oauth_client"
+          },
+          {
+            "key": "google.access",
+            "purpose": "pack_oauth_token",
+            "required": false
+          },
+          {
+            "key": "google.refresh",
+            "purpose": "pack_oauth_token"
+          }
+        ],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        },
+        "oauth": [
+          {
+            "key": "google",
+            "providerLabel": "Google",
+            "authorizationUrl": "https://accounts.example.com/auth",
+            "tokenUrl": "https://accounts.example.com/token",
+            "userInfoUrl": "https://accounts.example.com/me",
+            "clientIdInput": "google.client_id",
+            "clientSecret": "google.client_secret",
+            "accessToken": "google.access",
+            "refreshToken": "google.refresh",
+            "scopes": [
+              "email"
+            ],
+            "scope": "user",
+            "experience": {
+              "description": "d",
+              "helpUrl": "https://help.example.com"
+            }
+          }
+        ],
+        "permissions": {
+          "network": [
+            "accounts.example.com"
+          ]
+        }
+      },
+      "ok": true,
+      "normalized": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"skills\":[\"skills/review\"]},\"compatibility\":{\"applications\":[],\"databases\":[],\"openneko\":\">=2.40.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{},\"requiredPreflight\":[]},\"inputs\":[{\"key\":\"google.client_id\",\"type\":\"string\"}],\"kind\":\"SolutionPack\",\"metadata\":{\"category\":\"operations\",\"id\":\"skills-only\",\"name\":\"Skills only\",\"publisher\":\"fixture\",\"version\":\"1.0.0\"},\"oauth\":[{\"accessToken\":\"google.access\",\"accountIdField\":\"sub\",\"accountLabelField\":\"email\",\"authorizationUrl\":\"https://accounts.example.com/auth\",\"clientIdInput\":\"google.client_id\",\"clientSecret\":\"google.client_secret\",\"experience\":{\"description\":\"d\",\"helpUrl\":\"https://help.example.com\"},\"key\":\"google\",\"providerLabel\":\"Google\",\"refreshToken\":\"google.refresh\",\"scope\":\"user\",\"scopes\":[\"email\"],\"tokenUrl\":\"https://accounts.example.com/token\",\"userInfoUrl\":\"https://accounts.example.com/me\"}],\"permissions\":{\"network\":[\"accounts.example.com\"]},\"secrets\":[{\"key\":\"google.client_secret\",\"purpose\":\"pack_oauth_client\",\"required\":true},{\"key\":\"google.access\",\"purpose\":\"pack_oauth_token\",\"required\":false},{\"key\":\"google.refresh\",\"purpose\":\"pack_oauth_token\",\"required\":true}]}"
+    },
+    {
+      "input": {
+        "apiVersion": "openneko.app/v1",
+        "kind": "SolutionPack",
+        "metadata": {
+          "id": "skills-only",
+          "name": "Skills only",
+          "version": "1.0.0",
+          "publisher": "fixture",
+          "category": "operations"
+        },
+        "compatibility": {
+          "openneko": ">=2.40.0",
+          "applications": [],
+          "databases": []
+        },
+        "inputs": [
+          {
+            "key": "google.client_id",
+            "type": "string"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "google.client_secret",
+            "purpose": "pack_oauth_client"
+          },
+          {
+            "key": "google.access",
+            "purpose": "pack_oauth_token",
+            "required": false
+          },
+          {
+            "key": "google.refresh",
+            "purpose": "pack_oauth_token"
+          }
+        ],
+        "artifacts": {
+          "skills": [
+            "skills/review"
+          ]
+        },
+        "health": {
+          "requiredPreflight": [],
+          "readiness": {},
+          "postInstall": [],
+          "postWriteCanary": []
+        },
+        "oauth": [
+          {
+            "key": "google",
+            "providerLabel": "Google",
+            "authorizationUrl": "https://accounts.example.com/auth",
+            "tokenUrl": "https://accounts.example.com/token",
+            "userInfoUrl": "https://accounts.example.com/me",
+            "clientIdInput": "missing",
+            "clientSecret": "google.client_secret",
+            "accessToken": "google.access",
+            "refreshToken": "google.refresh",
+            "scopes": [
+              "email"
+            ]
+          }
+        ],
+        "permissions": {
+          "network": [
+            "accounts.example.com"
+          ]
+        }
+      },
+      "ok": false
+    }
+  ],
+  "packs": [
+    {
+      "dir": "google-workspace",
+      "manifest": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"actions\":\"actions\",\"graphjin\":{\"relationships\":\"graphjin/relationships.yaml\",\"savedQueries\":\"graphjin/saved-queries\",\"sources\":\"graphjin/sources.yaml\",\"specs\":[\"graphjin/specs/gmail.yaml\",\"graphjin/specs/drive.yaml\",\"graphjin/specs/calendar.yaml\",\"graphjin/specs/sheets.yaml\",\"graphjin/specs/docs.yaml\",\"graphjin/specs/slides.yaml\"]},\"policies\":\"policies\",\"skills\":[\"skills/google-workspace-read\",\"skills/google-workspace-cross-app-research\",\"skills/google-workspace-gmail\",\"skills/google-workspace-calendar\",\"skills/google-workspace-drive\",\"skills/google-workspace-sheets\"],\"workflows\":\"workflows\"},\"compatibility\":{\"applications\":[{\"editions\":[\"workspace\"],\"id\":\"google-workspace\",\"versions\":\">=1.0.0\"}],\"databases\":[],\"graphjin\":{\"analytics\":\">=3.20.77 <4.0.0\",\"operator\":\">=3.20.77 <4.0.0\"},\"openneko\":\">=2.40.0 <3.0.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{\"workspace\":[]},\"requiredPreflight\":[]},\"inputs\":[{\"description\":\"OAuth client ID from the customer's Google Cloud project.\",\"key\":\"google-workspace.oauth_client_id\",\"required\":false,\"type\":\"string\"}],\"kind\":\"SolutionPack\",\"metadata\":{\"category\":\"productivity\",\"id\":\"google-workspace\",\"name\":\"Google Workspace\",\"publisher\":\"openneko\",\"version\":\"0.2.0\"},\"oauth\":[{\"accessToken\":\"google-workspace.access_token\",\"accountIdField\":\"sub\",\"accountLabelField\":\"email\",\"authorizationParams\":{\"access_type\":\"offline\",\"prompt\":\"select_account consent\"},\"authorizationUrl\":\"https://accounts.google.com/o/oauth2/v2/auth\",\"clientIdInput\":\"google-workspace.oauth_client_id\",\"clientSecret\":\"google-workspace.oauth_client_secret\",\"experience\":{\"description\":\"Connect Gmail, Drive, Calendar, Sheets, Docs, and Slides for your work and automations.\",\"helpUrl\":\"https://developers.google.com/identity/protocols/oauth2/web-server\",\"setupInstructions\":\"Create a Web application OAuth client in your Google Cloud project. Enable the APIs used by this pack and configure the consent screen. Add the redirect URI below, then save the client ID and client secret. Each user connects their own Google account on Integrations.\"},\"key\":\"workspace\",\"providerLabel\":\"Google Workspace\",\"refreshToken\":\"google-workspace.refresh_token\",\"scope\":\"user\",\"scopes\":[\"openid\",\"https://www.googleapis.com/auth/userinfo.email\",\"https://www.googleapis.com/auth/gmail.modify\",\"https://www.googleapis.com/auth/gmail.compose\",\"https://www.googleapis.com/auth/drive\",\"https://www.googleapis.com/auth/calendar.readonly\",\"https://www.googleapis.com/auth/calendar.events\",\"https://www.googleapis.com/auth/spreadsheets\",\"https://www.googleapis.com/auth/documents.readonly\",\"https://www.googleapis.com/auth/presentations.readonly\"],\"tokenUrl\":\"https://oauth2.googleapis.com/token\",\"userInfoUrl\":\"https://openidconnect.googleapis.com/v1/userinfo\"}],\"permissions\":{\"network\":[\"accounts.google.com\",\"oauth2.googleapis.com\",\"openidconnect.googleapis.com\",\"gmail.googleapis.com\",\"www.googleapis.com\",\"sheets.googleapis.com\",\"docs.googleapis.com\",\"slides.googleapis.com\"]},\"secrets\":[{\"key\":\"google-workspace.oauth_client_secret\",\"purpose\":\"pack_oauth_client\",\"required\":false},{\"key\":\"google-workspace.access_token\",\"purpose\":\"pack_oauth_token\",\"required\":false},{\"key\":\"google-workspace.refresh_token\",\"purpose\":\"pack_oauth_token\",\"required\":false}]}",
+      "manifestHash": "1a5ed11899ed5ee3fbd744615b4965e6302f870c66ddb5620169634e1ca71240",
+      "bundleHash": "01a7df55aecfebd51dce30e47b4ae3cf32442727331af42fe709c5afc7386ab9",
+      "filesHash": "5e1f002a26ed8d5b5d986e5978530993ac1efbde779a81e4d6035c6e8f8a3427",
+      "artifacts": [
+        {
+          "kind": "action",
+          "key": "action.google_workspace_calendar",
+          "targetRef": "google_workspace.calendar",
+          "path": "actions/calendar.yaml",
+          "hash": "026be7767edabe39284141e84e796a1a704234beaeab76040eff9a224b0e83e7"
+        },
+        {
+          "kind": "action",
+          "key": "action.google_workspace_drive",
+          "targetRef": "google_workspace.drive",
+          "path": "actions/drive.yaml",
+          "hash": "bd3bf36f1d90ae1f15c2a13c6e93fc47fa5c70714b0c308ff233ecedf7521513"
+        },
+        {
+          "kind": "action",
+          "key": "action.google_workspace_gmail",
+          "targetRef": "google_workspace.gmail",
+          "path": "actions/gmail.yaml",
+          "hash": "32d6f93095c9c20a4123387bce40dfd9468951d925f622b58d9f7769525cc493"
+        },
+        {
+          "kind": "action",
+          "key": "action.google_workspace_sheets",
+          "targetRef": "google_workspace.sheets",
+          "path": "actions/sheets.yaml",
+          "hash": "2f3353ca89f2c3b0924b88e2f41e4f7fbd61e4eadf24a82b2333d310b5f11ff2"
+        },
+        {
+          "kind": "policy",
+          "key": "policy.google_workspace_governed_writes",
+          "targetRef": "google_workspace.policy.governed_writes",
+          "path": "policies/governed-writes.yaml",
+          "hash": "68e27f77f03f073954077e1961f4ab0877e85b299cd0304addb10e744a2a5203"
+        },
+        {
+          "kind": "relationships",
+          "key": "relationships.google_workspace",
+          "targetRef": "google_workspace",
+          "path": "graphjin/relationships.yaml",
+          "hash": "c1927ead20a6d64cde09075a29b211641db85003df1dd7d94d94f6292baced39"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.account-profile",
+          "targetRef": "saved_query.account-profile",
+          "path": "graphjin/saved-queries/account_profile.gql",
+          "hash": "677b519b28b03aeed03c54c882c4847057c3217d0941bda96e199ab02b69c147"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.google-workspace-calendar",
+          "targetRef": "google-workspace-calendar",
+          "path": "skills/google-workspace-calendar/SKILL.md",
+          "hash": "b21dce33c2d00836657d9f8e2036d8f9de1bceb048549a0c1c2f58ce20a5047b"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.google-workspace-cross-app-research",
+          "targetRef": "google-workspace-cross-app-research",
+          "path": "skills/google-workspace-cross-app-research/SKILL.md",
+          "hash": "05e382ebd86eaf843eae30917527f3083c7efd314801223b7b16d2569631663a"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.google-workspace-drive",
+          "targetRef": "google-workspace-drive",
+          "path": "skills/google-workspace-drive/SKILL.md",
+          "hash": "2628505613513c0a87af0390af4ae3eec773e19dd1ef890366fd8dbe11e0bee1"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.google-workspace-gmail",
+          "targetRef": "google-workspace-gmail",
+          "path": "skills/google-workspace-gmail/SKILL.md",
+          "hash": "24660a74f1ab56fdd62d4d49847654d5c2b23662e3b76526523db2f372a20000"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.google-workspace-read",
+          "targetRef": "google-workspace-read",
+          "path": "skills/google-workspace-read/SKILL.md",
+          "hash": "e562f75a4f5b9fed12498f4926ddaa468e1c0206113d5c03604ece8ade5951d0"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.google-workspace-sheets",
+          "targetRef": "google-workspace-sheets",
+          "path": "skills/google-workspace-sheets/SKILL.md",
+          "hash": "18244d35650fa8da489ec09d45e691305ee96eba5d747fe1cf2d924268ce05af"
+        },
+        {
+          "kind": "source",
+          "key": "source.google_workspace_calendar",
+          "targetRef": "google_workspace_calendar",
+          "path": "graphjin/sources.yaml",
+          "hash": "80ebbc1ee4e1ea74d96f90ed07100313cc83a29317a603317475f2c88796a142"
+        },
+        {
+          "kind": "source",
+          "key": "source.google_workspace_docs",
+          "targetRef": "google_workspace_docs",
+          "path": "graphjin/sources.yaml",
+          "hash": "98d4cc235e7b88a5a17411aa7909026f1e64801387176d50c13e23c0597bba14"
+        },
+        {
+          "kind": "source",
+          "key": "source.google_workspace_drive",
+          "targetRef": "google_workspace_drive",
+          "path": "graphjin/sources.yaml",
+          "hash": "e4b449b95689acdae5532849a159b57c00a43946b87e9546e75c0af7ced30311"
+        },
+        {
+          "kind": "source",
+          "key": "source.google_workspace_gmail",
+          "targetRef": "google_workspace_gmail",
+          "path": "graphjin/sources.yaml",
+          "hash": "80dc5885818e16a5ea61dc411480a8375daa7f9596c858f7c8fb730044ecba39"
+        },
+        {
+          "kind": "source",
+          "key": "source.google_workspace_sheets",
+          "targetRef": "google_workspace_sheets",
+          "path": "graphjin/sources.yaml",
+          "hash": "afe01314204843d8ffa098624f4ee259c6c06553e16669c9ccaf4dcaada1eb32"
+        },
+        {
+          "kind": "source",
+          "key": "source.google_workspace_slides",
+          "targetRef": "google_workspace_slides",
+          "path": "graphjin/sources.yaml",
+          "hash": "c61ddf6cdbca36e376cafed16aabedbfccdfc9325d85ab3f19089e8ac001be72"
+        },
+        {
+          "kind": "spec",
+          "key": "spec.calendar",
+          "targetRef": "spec.calendar",
+          "path": "graphjin/specs/calendar.yaml",
+          "hash": "a9c6965b1fd61135180f7f1500f7daafd6a85afd126c1d14ad75e6eacb65fd10"
+        },
+        {
+          "kind": "spec",
+          "key": "spec.docs",
+          "targetRef": "spec.docs",
+          "path": "graphjin/specs/docs.yaml",
+          "hash": "ec565eb14be5a2ad9d6d127e1d778c3fa54cad954a311f44de8182b1c782c765"
+        },
+        {
+          "kind": "spec",
+          "key": "spec.drive",
+          "targetRef": "spec.drive",
+          "path": "graphjin/specs/drive.yaml",
+          "hash": "5697e293fa155de637f55f6ee529eab63c32805baa498939610e43ebf36d4357"
+        },
+        {
+          "kind": "spec",
+          "key": "spec.gmail",
+          "targetRef": "spec.gmail",
+          "path": "graphjin/specs/gmail.yaml",
+          "hash": "a7aadcbe72942d4f8f30aaf9ef2985759077b12483d0239e4ac864058e07cf4c"
+        },
+        {
+          "kind": "spec",
+          "key": "spec.sheets",
+          "targetRef": "spec.sheets",
+          "path": "graphjin/specs/sheets.yaml",
+          "hash": "9349b2f4d76a9c852026a8f2f33e2d962e9f6ecc444770ce9bf491c022e7ef99"
+        },
+        {
+          "kind": "spec",
+          "key": "spec.slides",
+          "targetRef": "spec.slides",
+          "path": "graphjin/specs/slides.yaml",
+          "hash": "1efeda90b1fa594141b8263de1c6555f4b3b8cc5a292da5cdf0c33e8e0911d04"
+        },
+        {
+          "kind": "workflow",
+          "key": "workflow.google_workspace_inbox_agenda",
+          "targetRef": "google_workspace.workflow.inbox_agenda",
+          "path": "workflows/inbox-agenda-briefing.yaml",
+          "hash": "0638e2e1f565b6a89caf3c342f7fe7c5b7e88f86b9605903d7d2699efcbcabea"
+        },
+        {
+          "kind": "workflow",
+          "key": "workflow.google_workspace_research",
+          "targetRef": "google_workspace.workflow.research",
+          "path": "workflows/workspace-research.yaml",
+          "hash": "5af07c9fe8520bb98f6f3820e259db65d5a55a0dea64ef86ff86aef64b177b24"
+        }
+      ]
+    },
+    {
+      "dir": "magento",
+      "manifest": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"actions\":\"actions\",\"graphjin\":{\"relationships\":\"graphjin/relationships.yaml\",\"savedQueries\":\"graphjin/saved-queries\",\"sources\":\"graphjin/sources.yaml\",\"specs\":[\"graphjin/specs/magento-operator-v1.yaml\",\"graphjin/specs/magento-operator-v2.yaml\"]},\"metrics\":\"metrics\",\"policies\":\"policies\",\"skills\":[\"skills/magento-review-performance\",\"skills/magento-investigate-order\",\"skills/magento-triage-fulfillment\",\"skills/magento-investigate-refunds\",\"skills/magento-check-inventory\",\"skills/magento-diagnose-platform-health\",\"skills/magento-manage-catalog\",\"skills/magento-run-promotions\",\"skills/magento-security-advisories\"],\"watchers\":\"watchers\",\"workflows\":\"workflows\"},\"compatibility\":{\"applications\":[{\"editions\":[\"open-source\",\"adobe-commerce\"],\"id\":\"magento\",\"versions\":\">=2.4.6 <2.5.0\"}],\"databases\":[{\"engine\":\"mariadb\",\"versions\":\">=10.6\"},{\"engine\":\"mysql\",\"versions\":\">=8.0\"}],\"graphjin\":{\"analytics\":\">=3.18.42 <4.0.0\",\"operator\":\">=3.20.77 <4.0.0\"},\"openneko\":\">=2.27.0 <3.0.0\"},\"health\":{\"postInstall\":[\"graphjin-restart-if-required\",\"analytics-smoke\",\"operator-catalog-smoke\"],\"postWriteCanary\":[\"domain-reconciled\",\"indexer-state-recorded\"],\"readiness\":{\"analytics\":[\"analytics-smoke\"],\"catalog\":[\"graphjin-mutations\",\"magento-api-token\",\"magento-catalog-acl\"],\"content\":[\"graphjin-mutations\",\"magento-api-token\",\"magento-content-acl\"],\"customers\":[\"graphjin-mutations\",\"magento-api-token\",\"magento-customers-acl\",\"magento-customers-enabled\"],\"inventory\":[\"graphjin-mutations\",\"magento-api-token\",\"magento-inventory-acl\",\"magento-bulk-consumers\"],\"orders\":[\"graphjin-mutations\",\"magento-api-token\",\"magento-orders-acl\"],\"promotions\":[\"graphjin-mutations\",\"magento-api-token\",\"magento-promotions-acl\"]},\"requiredPreflight\":[\"mariadb-connect\",\"mariadb-read-only\",\"magento-version\",\"magento-scopes\"]},\"inputs\":[{\"key\":\"magento.base_url\",\"required\":true,\"type\":\"url\"},{\"default\":\"all\",\"key\":\"magento.store_code\",\"type\":\"string\"},{\"default\":\"\",\"key\":\"magento.table_prefix\",\"type\":\"string\"},{\"discover\":true,\"key\":\"magento.base_currency\",\"type\":\"string\"},{\"discover\":true,\"key\":\"magento.timezone\",\"type\":\"timezone\"},{\"default\":\"external_network\",\"key\":\"database.connectivity_mode\",\"type\":\"enum\",\"values\":[\"external_network\",\"host_gateway\",\"remote\"]},{\"key\":\"database.host\",\"required\":true,\"type\":\"string\"},{\"default\":3306,\"key\":\"database.port\",\"type\":\"integer\"},{\"key\":\"database.name\",\"required\":true,\"type\":\"string\"},{\"discover\":true,\"key\":\"database.type\",\"type\":\"enum\",\"values\":[\"mariadb\",\"mysql\"]},{\"default\":500,\"key\":\"magento.max_rows_per_changeset\",\"type\":\"integer\"},{\"default\":10,\"key\":\"magento.max_price_delta_percent\",\"type\":\"integer\"},{\"default\":30,\"key\":\"magento.max_discount_percent\",\"type\":\"integer\"},{\"default\":500,\"key\":\"magento.max_coupon_count\",\"type\":\"integer\"},{\"default\":5000,\"key\":\"magento.max_projected_exposure\",\"type\":\"integer\"},{\"default\":25,\"key\":\"magento.max_daily_auto_actions\",\"type\":\"integer\"},{\"default\":3600,\"key\":\"magento.sku_cooldown_seconds\",\"type\":\"integer\"},{\"default\":false,\"key\":\"magento.customers_enabled\",\"type\":\"boolean\"}],\"kind\":\"SolutionPack\",\"management\":{\"label\":\"Manage store operations\",\"path\":\"/admin/settings/packs/magento/operations\"},\"metadata\":{\"category\":\"commerce\",\"id\":\"magento\",\"name\":\"Magento\",\"publisher\":\"openneko\",\"version\":\"0.3.1\"},\"oauth\":[],\"permissions\":{\"network\":[]},\"secrets\":[{\"key\":\"database.analytics_username\",\"purpose\":\"graphjin_source\",\"required\":true},{\"key\":\"database.analytics_password\",\"purpose\":\"graphjin_source\",\"required\":true},{\"key\":\"magento.integration_token\",\"purpose\":\"graphjin_api_auth\",\"required\":false}]}",
+      "manifestHash": "93063f8cd4f89f65db49bb9af2e833e5c9049823af112d7f98ad040fcf9e6375",
+      "bundleHash": "12ba870e63dc2ad6671a15f056b48aaa78ac8f8c2f7c22dd94d1bed70e773962",
+      "filesHash": "8db387f30f5e9d300d69fe95f4c96f66006c12f775833cb134662d02183484e8",
+      "artifacts": [
+        {
+          "kind": "action",
+          "key": "action.financial_handoff",
+          "targetRef": "magento.financial_handoff",
+          "path": "actions/financial_handoff.yaml",
+          "hash": "136aa8003a591fd834ffb315477e43994050a856a6f4dd0a7037aa5b7dda92d0"
+        },
+        {
+          "kind": "action",
+          "key": "action.manage_catalog",
+          "targetRef": "magento.manage_catalog",
+          "path": "actions/manage_catalog.yaml",
+          "hash": "e9989b7c763ce3ce6664b8045c965f57b0dd99d953c8cde4042d5be8794587e1"
+        },
+        {
+          "kind": "action",
+          "key": "action.manage_content",
+          "targetRef": "magento.manage_content",
+          "path": "actions/manage_content.yaml",
+          "hash": "5c822c8238f8bea00b1c8250298ba4a649a57d6fd4781f033ddc3f28c6a69d82"
+        },
+        {
+          "kind": "action",
+          "key": "action.manage_customers",
+          "targetRef": "magento.manage_customers",
+          "path": "actions/manage_customers.yaml",
+          "hash": "70f25c532978e052de97b6e340edb83c492b9627c52b3125d840acdfa60ca704"
+        },
+        {
+          "kind": "action",
+          "key": "action.manage_inventory",
+          "targetRef": "magento.manage_inventory",
+          "path": "actions/manage_inventory.yaml",
+          "hash": "09bdb757fb780d8c299fda0efe37a7605ade12715d7a384fb36749b15ab2638a"
+        },
+        {
+          "kind": "action",
+          "key": "action.manage_orders",
+          "targetRef": "magento.manage_orders",
+          "path": "actions/manage_orders.yaml",
+          "hash": "38980d3d917106d8c9e50e0c464dbcb28d3b801791a17a4cca2bfeea34d6dbf6"
+        },
+        {
+          "kind": "action",
+          "key": "action.manage_promotions",
+          "targetRef": "magento.manage_promotions",
+          "path": "actions/manage_promotions.yaml",
+          "hash": "e0bc7e895f3521d6b37a0601884b8904a1db0423f3b3587b627f1783e480ab98"
+        },
+        {
+          "kind": "action",
+          "key": "action.undo_changeset",
+          "targetRef": "magento.undo_changeset",
+          "path": "actions/undo_changeset.yaml",
+          "hash": "9cbd8c952f256a29fcad0695d82409180fca4f5a8d2bdd9b554e722b32a732e7"
+        },
+        {
+          "kind": "metric",
+          "key": "metric.average_order_value",
+          "targetRef": "magento.metric.average_order_value",
+          "path": "metrics/average_order_value.yaml",
+          "hash": "036d38ab7971e04f1f31c745bc3ba884aa8cb2e7235f19e01ad24d17dbc1d9d9"
+        },
+        {
+          "kind": "metric",
+          "key": "metric.cancellation_rate",
+          "targetRef": "magento.metric.cancellation_rate",
+          "path": "metrics/cancellation_rate.yaml",
+          "hash": "4df07e0bbf8d1a5350af04b3006c53e35a6c9feb27c301b17b138bf4c016016f"
+        },
+        {
+          "kind": "metric",
+          "key": "metric.cron_health",
+          "targetRef": "magento.metric.cron_health",
+          "path": "metrics/cron_health.yaml",
+          "hash": "c58befa0e692cf14d72c3c06449ae023b1cf1d183309359b4f7c6c0ddaaf0e85"
+        },
+        {
+          "kind": "metric",
+          "key": "metric.data_freshness",
+          "targetRef": "magento.metric.data_freshness",
+          "path": "metrics/data_freshness.yaml",
+          "hash": "bc0ba5234b86566a3249c2aaee780efe2bb12393ec5c5e5a5f6c0cd071f4adb3"
+        },
+        {
+          "kind": "metric",
+          "key": "metric.fulfillment_age",
+          "targetRef": "magento.metric.fulfillment_age",
+          "path": "metrics/fulfillment_age.yaml",
+          "hash": "7fe93a3442e6c6b4b5d55202d38cfd33d8487fea009101ffda5f7a839897622a"
+        },
+        {
+          "kind": "metric",
+          "key": "metric.fulfillment_backlog",
+          "targetRef": "magento.metric.fulfillment_backlog",
+          "path": "metrics/fulfillment_backlog.yaml",
+          "hash": "f917a743ac5be1cd2c30e9b6d453ceaaa54b6d336a338dda59fa632a0dadfd82"
+        },
+        {
+          "kind": "metric",
+          "key": "metric.indexer_health",
+          "targetRef": "magento.metric.indexer_health",
+          "path": "metrics/indexer_health.yaml",
+          "hash": "7c59767166edac11bcf2b11cc344b4a2d77aeb0df545308658d69f77966a8e82"
+        },
+        {
+          "kind": "metric",
+          "key": "metric.net_invoiced_revenue",
+          "targetRef": "magento.metric.net_invoiced_revenue",
+          "path": "metrics/net_invoiced_revenue.yaml",
+          "hash": "d24ebeff8ba1b2e008e784104d05c33472eddccdb271dd23be7ddd98f20c5f93"
+        },
+        {
+          "kind": "metric",
+          "key": "metric.orders_placed",
+          "targetRef": "magento.metric.orders_placed",
+          "path": "metrics/orders_placed.yaml",
+          "hash": "ce57505d082b06b82f961d0fcf241d51f5e23bcdbf832af9da1bc47d12f6b6f7"
+        },
+        {
+          "kind": "metric",
+          "key": "metric.refund_rate",
+          "targetRef": "magento.metric.refund_rate",
+          "path": "metrics/refund_rate.yaml",
+          "hash": "3ee3ebcdab04cf33891cd9c981c5ea9c4deff1b5dadd872fbedfce52b2107656"
+        },
+        {
+          "kind": "metric",
+          "key": "metric.sales_by_store",
+          "targetRef": "magento.metric.sales_by_store",
+          "path": "metrics/sales_by_store.yaml",
+          "hash": "39676d20dcc110bae57175ce7e9881e0f5e7bb62b7b046b8268d4c0ad7fb3e28"
+        },
+        {
+          "kind": "metric",
+          "key": "metric.stock_status",
+          "targetRef": "magento.metric.stock_status",
+          "path": "metrics/stock_status.yaml",
+          "hash": "4c281bb77377afc004d5e5b7b974a9d0ddcc9ddfa709667e5d132489148b73ec"
+        },
+        {
+          "kind": "metric",
+          "key": "metric.top_products",
+          "targetRef": "magento.metric.top_products",
+          "path": "metrics/top_products.yaml",
+          "hash": "ec2bed9ca65528e0617bd4ce3d824922451ea13498efa56bade44c5f6302752f"
+        },
+        {
+          "kind": "policy",
+          "key": "policy.financial_handoff",
+          "targetRef": "magento.policy.financial_handoff",
+          "path": "policies/financial_handoff.yaml",
+          "hash": "e0158ebea961269d25372ba20bfd53adeb9188ad7693c840a7bbda7db712d697"
+        },
+        {
+          "kind": "policy",
+          "key": "policy.governed_store_changes",
+          "targetRef": "magento.policy.governed_store_changes",
+          "path": "policies/governed_store_changes.yaml",
+          "hash": "4190bef12618535216f53a1a7cf37bbefd13bbc9a297b564022d2c047b645cec"
+        },
+        {
+          "kind": "relationships",
+          "key": "relationships.magento",
+          "targetRef": "magento",
+          "path": "graphjin/relationships.yaml",
+          "hash": "44ea56de255197d43cfa65e2b434ec9df96cafffbef5a0fb78588c7f1dbf1e58"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.average-order-value",
+          "targetRef": "saved_query.average-order-value",
+          "path": "graphjin/saved-queries/average_order_value.gql",
+          "hash": "0869b10f6e6c3f03dd7e561127f2132317feb14d37e064eeb160f4807ea97d18"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.cancellation-rate",
+          "targetRef": "saved_query.cancellation-rate",
+          "path": "graphjin/saved-queries/cancellation_rate.gql",
+          "hash": "55b6c241b54b9c8ad256abab551a680c79d02e813196e8c4fb5454def690768b"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.cron-health",
+          "targetRef": "saved_query.cron-health",
+          "path": "graphjin/saved-queries/cron_health.gql",
+          "hash": "c07b59f8ba67bccec85a36ab5b636e4d25113e958229e8888a1c8d3c9b710d4d"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.data-freshness",
+          "targetRef": "saved_query.data-freshness",
+          "path": "graphjin/saved-queries/data_freshness.gql",
+          "hash": "ba8387d3bd90716f4abc46eb507507972bcc96d91b1a05723e51b0aee5397272"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.fulfillment-age",
+          "targetRef": "saved_query.fulfillment-age",
+          "path": "graphjin/saved-queries/fulfillment_age.gql",
+          "hash": "ebf4917c9d8416b4a162330ee63586b5e5c2cc0b1e98442dad002fa11f7fa004"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.fulfillment-backlog",
+          "targetRef": "saved_query.fulfillment-backlog",
+          "path": "graphjin/saved-queries/fulfillment_backlog.gql",
+          "hash": "316e1b5c5bf57959bd9f4937f35508781882d9ccc5c647dea8027f38f5985552"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.indexer-health",
+          "targetRef": "saved_query.indexer-health",
+          "path": "graphjin/saved-queries/indexer_health.gql",
+          "hash": "d38f8ab15d059c25a90af756e55f6f89b3161430b9fc3c21910ea9cee272c8c1"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.net-invoiced-revenue",
+          "targetRef": "saved_query.net-invoiced-revenue",
+          "path": "graphjin/saved-queries/net_invoiced_revenue.gql",
+          "hash": "8310e04fbbcb891cdef7d672ccca7c92acbe2508d4bfa6b80baac67116a4a58f"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.orders-placed",
+          "targetRef": "saved_query.orders-placed",
+          "path": "graphjin/saved-queries/orders_placed.gql",
+          "hash": "08dd3fca4649c1eca9353f5e82e3485b1970ca1520b356d29a2e42171f19179e"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.refund-rate",
+          "targetRef": "saved_query.refund-rate",
+          "path": "graphjin/saved-queries/refund_rate.gql",
+          "hash": "c5bba7931ab6a37bfbf88106018dde9acfb5969307659bea68ffcdc1b296ccc6"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.sales-by-store",
+          "targetRef": "saved_query.sales-by-store",
+          "path": "graphjin/saved-queries/sales_by_store.gql",
+          "hash": "456472cb5ad529d69bebfbc5b31085a336c9c607cc41e21ac86e65ad7fd16f37"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.stock-status",
+          "targetRef": "saved_query.stock-status",
+          "path": "graphjin/saved-queries/stock_status.gql",
+          "hash": "8e8a135d8ac25ffc3f5c7f1bfb0f27c18503749e925855dd1d46cfb463a765fe"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.top-products",
+          "targetRef": "saved_query.top-products",
+          "path": "graphjin/saved-queries/top_products.gql",
+          "hash": "06fb9638a3b96fa531f972c0137e3515452214b53eec6140e8e71390c8e50b73"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.watch-aged-fulfillment",
+          "targetRef": "saved_query.watch-aged-fulfillment",
+          "path": "graphjin/saved-queries/watch_aged_fulfillment.gql",
+          "hash": "f2d639b5e6dc5f8353593932a923f2dea11c856b937af5eb4f5614c6fafa9d6b"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.watch-api-data-freshness",
+          "targetRef": "saved_query.watch-api-data-freshness",
+          "path": "graphjin/saved-queries/watch_api_data_freshness.gql",
+          "hash": "a470d0b4ca29a1705e82432509301a79911963740b883d93bf12cabf143fc526"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.watch-cron-health",
+          "targetRef": "saved_query.watch-cron-health",
+          "path": "graphjin/saved-queries/watch_cron_health.gql",
+          "hash": "ac21bef82fbb86d90c19b6233bcc1c6cf5c713ca08c204eac143c6a6409c94f3"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.watch-indexer-health",
+          "targetRef": "saved_query.watch-indexer-health",
+          "path": "graphjin/saved-queries/watch_indexer_health.gql",
+          "hash": "97ff63539a1e8c05ac3e0c857651e87632d449f418ccf254d9c9c173abde959a"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.watch-refund-cancellation",
+          "targetRef": "saved_query.watch-refund-cancellation",
+          "path": "graphjin/saved-queries/watch_refund_cancellation.gql",
+          "hash": "31dcf255179ca06c4215de62ce452b93426f360286d9ea46dcda8380ff427dc3"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.watch-stock-threshold",
+          "targetRef": "saved_query.watch-stock-threshold",
+          "path": "graphjin/saved-queries/watch_stock_threshold.gql",
+          "hash": "5b931b602960277d3ff86a666b4e8cc0f6d1e7f56e18e71ee9187ce17ab0efb6"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.magento-check-inventory",
+          "targetRef": "magento-check-inventory",
+          "path": "skills/magento-check-inventory/SKILL.md",
+          "hash": "5f42d219c1d154adba8bdf300874b4dcca950616188084c399b2624f3e34df29"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.magento-diagnose-platform-health",
+          "targetRef": "magento-diagnose-platform-health",
+          "path": "skills/magento-diagnose-platform-health/SKILL.md",
+          "hash": "4c119471ce416d6fef87eee1efdfb38a708eb488ad14cae857bf690e30e8462b"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.magento-investigate-order",
+          "targetRef": "magento-investigate-order",
+          "path": "skills/magento-investigate-order/SKILL.md",
+          "hash": "371f654bf8f8ce95cf3d67999479796f6d0b76754e18d24ea42d5f62e1ba376d"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.magento-investigate-refunds",
+          "targetRef": "magento-investigate-refunds",
+          "path": "skills/magento-investigate-refunds/SKILL.md",
+          "hash": "e447ed14a6f8ecfc7ff7f7eac4568df11af9ab29704d45e78aded0627134c7ad"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.magento-manage-catalog",
+          "targetRef": "magento-manage-catalog",
+          "path": "skills/magento-manage-catalog/SKILL.md",
+          "hash": "eb567a849d8dbae4a4affd78bc8f0bb717b9c77931383124ba758bc5491bdcdf"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.magento-review-performance",
+          "targetRef": "magento-review-performance",
+          "path": "skills/magento-review-performance/SKILL.md",
+          "hash": "7281f1c431f3158b38c989895143bee138f017b60fdd4dedcbfd1d0fbf6a9abf"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.magento-run-promotions",
+          "targetRef": "magento-run-promotions",
+          "path": "skills/magento-run-promotions/SKILL.md",
+          "hash": "4ccee000c8545e218a305fd8317bb13008993df71a4035ed2a82dee5e702e22a"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.magento-security-advisories",
+          "targetRef": "magento-security-advisories",
+          "path": "skills/magento-security-advisories/SKILL.md",
+          "hash": "77530ceb2bb2644d9e38d2d77eafea907486419346cd9903f70c757ece0fc141"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.magento-triage-fulfillment",
+          "targetRef": "magento-triage-fulfillment",
+          "path": "skills/magento-triage-fulfillment/SKILL.md",
+          "hash": "b9f32e50dba3c5adf0aec62acb871a1cb9f49ab7dcc478dbe8c8f53874a40852"
+        },
+        {
+          "kind": "source",
+          "key": "source.magento_analytics",
+          "targetRef": "magento_analytics",
+          "path": "graphjin/sources.yaml",
+          "hash": "5287f78dd83a96461b3e345d53afde53a8be6064e04b242749f1cf3a9b944a79"
+        },
+        {
+          "kind": "source",
+          "key": "source.magento_operator",
+          "targetRef": "magento_operator",
+          "path": "graphjin/sources.yaml",
+          "hash": "293ca3055e0331175b9a9b15bf301ddc303f160c40fa46fc4a0095a0ed6b9e92"
+        },
+        {
+          "kind": "spec",
+          "key": "spec.magento-operator-v1",
+          "targetRef": "spec.magento-operator-v1",
+          "path": "graphjin/specs/magento-operator-v1.yaml",
+          "hash": "a0f7230358a0d9c84c8fdf95c1a09d0b519f3ca31167273e87ea28077e8c57c3"
+        },
+        {
+          "kind": "spec",
+          "key": "spec.magento-operator-v2",
+          "targetRef": "spec.magento-operator-v2",
+          "path": "graphjin/specs/magento-operator-v2.yaml",
+          "hash": "699d7e026ba39063bd34337159db606164b0245c75c54702a0d4e1cb122aedc8"
+        },
+        {
+          "kind": "watcher",
+          "key": "watcher.aged_fulfillment",
+          "targetRef": "magento.watcher.aged_fulfillment",
+          "path": "watchers/aged_fulfillment.yaml",
+          "hash": "088af9c027f11526e263b1bcd5b36a0b967168077aa618169f79784fe003e135"
+        },
+        {
+          "kind": "watcher",
+          "key": "watcher.api_data_freshness",
+          "targetRef": "magento.watcher.api_data_freshness",
+          "path": "watchers/api_data_freshness.yaml",
+          "hash": "d983b0234c26524c83bf378249e2e656904e0c04ae26c2e684ced2f94a84f369"
+        },
+        {
+          "kind": "watcher",
+          "key": "watcher.cron_health",
+          "targetRef": "magento.watcher.cron_health",
+          "path": "watchers/cron_health.yaml",
+          "hash": "05f400c43f5bce35d5198dfe43548d0e1977c8c1bbefe101e7cb392455933752"
+        },
+        {
+          "kind": "watcher",
+          "key": "watcher.indexer_health",
+          "targetRef": "magento.watcher.indexer_health",
+          "path": "watchers/indexer_health.yaml",
+          "hash": "21ef7354c6db2702bf21ffa38ec0bc6746db6692a66dfedf69399f74c841454e"
+        },
+        {
+          "kind": "watcher",
+          "key": "watcher.refund_cancellation_spike",
+          "targetRef": "magento.watcher.refund_cancellation_spike",
+          "path": "watchers/refund_cancellation_spike.yaml",
+          "hash": "a5a5cbb597ac9be2d316bf57f6454eb5d52a7969e1292723cf250ac78bf07f8b"
+        },
+        {
+          "kind": "watcher",
+          "key": "watcher.stock_threshold",
+          "targetRef": "magento.watcher.stock_threshold",
+          "path": "watchers/stock_threshold.yaml",
+          "hash": "5ce0dc970397b3abf922bfbdfdd836d8e421dc453fdb5a7f6f74554447afc14a"
+        },
+        {
+          "kind": "workflow",
+          "key": "workflow.cron_indexer_health",
+          "targetRef": "magento.workflow.cron_indexer_health",
+          "path": "workflows/cron_indexer_health.yaml",
+          "hash": "43d437e8f4c4f657c1d099312ad897d47774c18333a1300f85467bf6c4a1c8ab"
+        },
+        {
+          "kind": "workflow",
+          "key": "workflow.customer_service_order_summary",
+          "targetRef": "magento.workflow.customer_service_order_summary",
+          "path": "workflows/customer_service_order_summary.yaml",
+          "hash": "2d4286f5e8e61679c06732eb3196423f442a57ac87e08f680571601e08217ad3"
+        },
+        {
+          "kind": "workflow",
+          "key": "workflow.daily_commerce_briefing",
+          "targetRef": "magento.workflow.daily_commerce_briefing",
+          "path": "workflows/daily_commerce_briefing.yaml",
+          "hash": "15c6821d400baf29ea9f0b2d5214f6ca20461796f47c715436a292797fd2eb45"
+        },
+        {
+          "kind": "workflow",
+          "key": "workflow.fulfillment_exceptions",
+          "targetRef": "magento.workflow.fulfillment_exceptions",
+          "path": "workflows/fulfillment_exceptions.yaml",
+          "hash": "f160a5ecddb1a80a60b55e343fc629ca1e93b32786978b2cdfc719ef74746c61"
+        },
+        {
+          "kind": "workflow",
+          "key": "workflow.low_stock_investigation",
+          "targetRef": "magento.workflow.low_stock_investigation",
+          "path": "workflows/low_stock_investigation.yaml",
+          "hash": "0dc816ae18edf68602ca1826bc751e8746d1c8c654ef850a3a28e43a8c1b4e6b"
+        },
+        {
+          "kind": "workflow",
+          "key": "workflow.refund_cancellation_spike",
+          "targetRef": "magento.workflow.refund_cancellation_spike",
+          "path": "workflows/refund_cancellation_spike.yaml",
+          "hash": "bedcb2d424def82ee8fd9f02b45d1c7f07e8fbb243749b3312e54d23cbfed58c"
+        },
+        {
+          "kind": "workflow",
+          "key": "workflow.security_advisory_check",
+          "targetRef": "magento.workflow.security_advisory_check",
+          "path": "workflows/security_advisory_check.yaml",
+          "hash": "dd7e691a230eb4393f072f876fe0495990fb18567724876e9958f9967981a350"
+        }
+      ]
+    },
+    {
+      "dir": "parallel-search",
+      "manifest": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"actions\":\"actions\",\"graphjin\":{\"relationships\":\"graphjin/relationships.yaml\",\"sources\":\"graphjin/sources.yaml\",\"specs\":[\"graphjin/specs/parallel.yaml\"]},\"policies\":\"policies\",\"skills\":[\"skills/parallel-web-search\"]},\"compatibility\":{\"applications\":[{\"editions\":[\"cloud\"],\"id\":\"parallel\",\"versions\":\"v1beta\"}],\"databases\":[],\"graphjin\":{\"analytics\":\">=3.21.0 <4.0.0\",\"operator\":\">=3.21.0 <4.0.0\"},\"openneko\":\">=4.9.0 <5.0.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{\"search\":[]},\"requiredPreflight\":[]},\"inputs\":[],\"kind\":\"SolutionPack\",\"metadata\":{\"category\":\"research\",\"id\":\"parallel-search\",\"name\":\"Parallel web search\",\"publisher\":\"openneko\",\"version\":\"0.1.0\"},\"oauth\":[],\"permissions\":{\"network\":[\"api.parallel.ai\"]},\"secrets\":[{\"key\":\"parallel-search.api_key\",\"purpose\":\"graphjin_api_auth\",\"required\":true}]}",
+      "manifestHash": "8feffabe8efc81a7cb6a3abc4f086e4418eb55c6c513e6e152cc430ea73d2d3f",
+      "bundleHash": "99f9077e8d4ca84a77f64866e2ef675635009785617511d5f6574a7610535556",
+      "filesHash": "05edaaabd734fd1f2436ddd6caf9d1bb7ac24904e1e83dbe74c685798367caf2",
+      "artifacts": [
+        {
+          "kind": "action",
+          "key": "action.parallel_web_search",
+          "targetRef": "parallel_search.web_search",
+          "path": "actions/web-search.yaml",
+          "hash": "2a33bf89acf63d1d1fcddcbd6ddc29c27dd717dedbd495dd3c1a08c4748327e2"
+        },
+        {
+          "kind": "policy",
+          "key": "policy.parallel_web_search",
+          "targetRef": "parallel_search.policy.web_search",
+          "path": "policies/web-search.yaml",
+          "hash": "9e3be1c9adbf11d6866a5f2aa12c8d15b5feae9a2ce1f5685cd5a6612a09c998"
+        },
+        {
+          "kind": "relationships",
+          "key": "relationships.parallel_search",
+          "targetRef": "parallel_search",
+          "path": "graphjin/relationships.yaml",
+          "hash": "ae36ac46e6e12e4e2e93633c7bee280b4d8c1485acd917b277c519f95ef0daf2"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.parallel-web-search",
+          "targetRef": "parallel-web-search",
+          "path": "skills/parallel-web-search/SKILL.md",
+          "hash": "a0854b68ea0aa17865c775e0b83a07fa201f3fd849b01c96c433548206715caa"
+        },
+        {
+          "kind": "source",
+          "key": "source.parallel",
+          "targetRef": "parallel",
+          "path": "graphjin/sources.yaml",
+          "hash": "64776025b94d9a2f4a2367d6487e252113b17e27d9fcc63a8f608280c4bcb1cc"
+        },
+        {
+          "kind": "spec",
+          "key": "spec.parallel",
+          "targetRef": "spec.parallel",
+          "path": "graphjin/specs/parallel.yaml",
+          "hash": "92366d0b1eec7c5265bc0752c09d37b8e60ee10d4a03b3b2565d61a1ec7fe593"
+        }
+      ]
+    },
+    {
+      "dir": "resend",
+      "manifest": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"actions\":\"actions\",\"graphjin\":{\"relationships\":\"graphjin/relationships.yaml\",\"savedQueries\":\"graphjin/saved-queries\",\"sources\":\"graphjin/sources.yaml\",\"specs\":[\"graphjin/specs/resend.yaml\"]},\"policies\":\"policies\",\"skills\":[\"skills/resend-email\"]},\"compatibility\":{\"applications\":[{\"editions\":[\"cloud\"],\"id\":\"resend\",\"versions\":\">=1.0.0\"}],\"databases\":[],\"graphjin\":{\"analytics\":\">=3.21.0 <4.0.0\",\"operator\":\">=3.21.0 <4.0.0\"},\"openneko\":\">=4.9.0 <5.0.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{\"email\":[]},\"requiredPreflight\":[]},\"inputs\":[{\"description\":\"Sender for every email, for example \\\"Acme Ops <ops@mail.acme.com>\\\". The domain must be verified in Resend. The agent cannot change it.\",\"key\":\"resend.from\",\"required\":true,\"type\":\"string\"}],\"kind\":\"SolutionPack\",\"metadata\":{\"category\":\"communication\",\"id\":\"resend\",\"name\":\"Resend\",\"publisher\":\"openneko\",\"version\":\"0.1.0\"},\"oauth\":[],\"permissions\":{\"network\":[\"api.resend.com\"]},\"secrets\":[{\"key\":\"resend.api_key\",\"purpose\":\"graphjin_api_auth\",\"required\":true}]}",
+      "manifestHash": "348336ca99d0c187a0787470b75c13267a7f00baed6f9246d602628697e649e5",
+      "bundleHash": "5dbf0d00741495539501ffbc7f14be4d7f600f3dab2f62f1384657119d3454c0",
+      "filesHash": "bcc42b63a9be66c45886b3c58ed6dc2ed8f3d76a5e12f4cdd7bf748f2c1deeeb",
+      "artifacts": [
+        {
+          "kind": "action",
+          "key": "action.resend_email",
+          "targetRef": "resend.email",
+          "path": "actions/email.yaml",
+          "hash": "3c9b83d462685be9023155c0475ce7c1141fa52ef0533ed6f8bbcaef655a7344"
+        },
+        {
+          "kind": "policy",
+          "key": "policy.resend_approved_domains",
+          "targetRef": "resend.policy.approved_domains",
+          "path": "policies/approved-domains.yaml",
+          "hash": "0c960e454f1bcd26cbaf56b09df91505d68e25f8b0ee2bf92001b5b7f3287635"
+        },
+        {
+          "kind": "policy",
+          "key": "policy.resend_governed_send",
+          "targetRef": "resend.policy.governed_send",
+          "path": "policies/governed-send.yaml",
+          "hash": "f47f86a8364b7eadffcd4ace887952b898275670856d2be3010272bec665ac77"
+        },
+        {
+          "kind": "relationships",
+          "key": "relationships.resend",
+          "targetRef": "resend",
+          "path": "graphjin/relationships.yaml",
+          "hash": "e4401a59e390757026f2eff3b13f01449a466ae04bbb7fe2f4d53beebb7798be"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.email-templates",
+          "targetRef": "saved_query.email-templates",
+          "path": "graphjin/saved-queries/email_templates.gql",
+          "hash": "12a6df9aea0bc1e7278bd98754c12d11a98314df1f094ef2ad6cff2c4614005b"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.resend-email",
+          "targetRef": "resend-email",
+          "path": "skills/resend-email/SKILL.md",
+          "hash": "635f33d07486263db364d924ccd2cd40547e3c06b575fd126be9ee78ff9afa3e"
+        },
+        {
+          "kind": "source",
+          "key": "source.resend",
+          "targetRef": "resend",
+          "path": "graphjin/sources.yaml",
+          "hash": "0591136cf8011762abaf33cbef00720985e9bff279aa0d581caea5705082e395"
+        },
+        {
+          "kind": "spec",
+          "key": "spec.resend",
+          "targetRef": "spec.resend",
+          "path": "graphjin/specs/resend.yaml",
+          "hash": "c7f9d105a7d1a457cac09eb913f73e1573d9956388c88f662f546367450001de"
+        }
+      ]
+    },
+    {
+      "dir": "shopify",
+      "manifest": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"actions\":\"actions\",\"graphjin\":{\"relationships\":\"graphjin/relationships.yaml\",\"savedQueries\":\"graphjin/saved-queries\",\"sources\":\"graphjin/sources.yaml\",\"specs\":[\"graphjin/specs/shopify.yaml\"]},\"policies\":\"policies\",\"skills\":[\"skills/shopify-orders\"]},\"compatibility\":{\"applications\":[{\"editions\":[\"cloud\"],\"id\":\"shopify\",\"versions\":\"2026-01\"}],\"databases\":[],\"graphjin\":{\"analytics\":\">=3.21.0 <4.0.0\",\"operator\":\">=3.21.0 <4.0.0\"},\"openneko\":\">=4.9.0 <5.0.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{\"orders\":[]},\"requiredPreflight\":[]},\"inputs\":[{\"description\":\"The store's permanent myshopify.com address, for example https://acme.myshopify.com. Use it even if the storefront has a custom domain; the Admin API answers only on myshopify.com.\",\"key\":\"shopify.store_url\",\"required\":true,\"type\":\"url\"}],\"kind\":\"SolutionPack\",\"metadata\":{\"category\":\"commerce\",\"id\":\"shopify\",\"name\":\"Shopify\",\"publisher\":\"openneko\",\"version\":\"0.1.0\"},\"oauth\":[],\"permissions\":{\"network\":[]},\"secrets\":[{\"key\":\"shopify.access_token\",\"purpose\":\"graphjin_api_auth\",\"required\":true}]}",
+      "manifestHash": "eb8b7b545f63947d27f1f1b36b76cf0479a4ec6683cc60035e06c3b14d3be79a",
+      "bundleHash": "62d7ff61157151c739aee8da8ae87a6706b922ee71291f06b44b1cc6a2e5f1fe",
+      "filesHash": "be264e2e2870cddb86a4a4ce43950c60da12743db0ceec71c8dd2ac3fe5e98bd",
+      "artifacts": [
+        {
+          "kind": "action",
+          "key": "action.shopify_order",
+          "targetRef": "shopify.order",
+          "path": "actions/order.yaml",
+          "hash": "e30f01426a81b3b911a7fa52123d51261e497ccd30294d236c9660a319ee950c"
+        },
+        {
+          "kind": "policy",
+          "key": "policy.shopify_governed_orders",
+          "targetRef": "shopify.policy.governed_orders",
+          "path": "policies/governed-orders.yaml",
+          "hash": "d782ddd4761ec912fb7caa22113bc61afac8ba541f47b691b5f1c3a5c951823e"
+        },
+        {
+          "kind": "relationships",
+          "key": "relationships.shopify",
+          "targetRef": "shopify",
+          "path": "graphjin/relationships.yaml",
+          "hash": "ca6153bb2b730c5c1f1b72f72aee8e07ca9ed1f30b927613dff21bbaf258f490"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.open-orders",
+          "targetRef": "saved_query.open-orders",
+          "path": "graphjin/saved-queries/open_orders.gql",
+          "hash": "2feda09b5fc136f42da1f63e04e3345519500b0823ffbfb4c9e71b6f837bf54a"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.shopify-orders",
+          "targetRef": "shopify-orders",
+          "path": "skills/shopify-orders/SKILL.md",
+          "hash": "93d5ae3f6d17713a941c781e372d8c9ec224e81b51e065f45092b0a2fd26428a"
+        },
+        {
+          "kind": "source",
+          "key": "source.shopify",
+          "targetRef": "shopify",
+          "path": "graphjin/sources.yaml",
+          "hash": "740e57c930da0cb015da1cd9d6d3a868ac8d319b62d5836294f33040154ba04f"
+        },
+        {
+          "kind": "spec",
+          "key": "spec.shopify",
+          "targetRef": "spec.shopify",
+          "path": "graphjin/specs/shopify.yaml",
+          "hash": "934f15246147d93b779447d4a1368f7fed9965168fdec07e7940eaf155ca8c2a"
+        }
+      ]
+    },
+    {
+      "dir": "slack",
+      "manifest": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"actions\":\"actions\",\"graphjin\":{\"relationships\":\"graphjin/relationships.yaml\",\"savedQueries\":\"graphjin/saved-queries\",\"sources\":\"graphjin/sources.yaml\",\"specs\":[\"graphjin/specs/slack.yaml\"]},\"policies\":\"policies\",\"skills\":[\"skills/slack-messages\"]},\"compatibility\":{\"applications\":[{\"editions\":[\"cloud\"],\"id\":\"slack\",\"versions\":\">=1.0.0\"}],\"databases\":[],\"graphjin\":{\"analytics\":\">=3.21.0 <4.0.0\",\"operator\":\">=3.21.0 <4.0.0\"},\"openneko\":\">=4.9.0 <5.0.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{\"messaging\":[]},\"requiredPreflight\":[]},\"inputs\":[],\"kind\":\"SolutionPack\",\"metadata\":{\"category\":\"communication\",\"id\":\"slack\",\"name\":\"Slack\",\"publisher\":\"openneko\",\"version\":\"0.1.0\"},\"oauth\":[],\"permissions\":{\"network\":[\"slack.com\"]},\"secrets\":[{\"key\":\"slack.bot_token\",\"purpose\":\"graphjin_api_auth\",\"required\":true}]}",
+      "manifestHash": "4cc0b504418726e5c8525f973312987c82bfd681015a4f7f968d005554ca96e0",
+      "bundleHash": "87c94a44412f4cda8d0cec68961b50053fe50d3dd8b0e6515bd515be9ce5aaf4",
+      "filesHash": "b9bc391812ee42d72b1231d3d62daecc9e2a73fd503e7e089f0fc1e14bc6a08e",
+      "artifacts": [
+        {
+          "kind": "action",
+          "key": "action.slack_message",
+          "targetRef": "slack.message",
+          "path": "actions/message.yaml",
+          "hash": "5bd16e75f45cb06fc09e9d058be12a0eb425151f9ecdab6bb41f6f88bb6ee693"
+        },
+        {
+          "kind": "policy",
+          "key": "policy.slack_approved_channels",
+          "targetRef": "slack.policy.approved_channels",
+          "path": "policies/approved-channels.yaml",
+          "hash": "fe49d871aadd7d11640f25ca4ccd9736ff067e37f80c3b37629a268084bfc898"
+        },
+        {
+          "kind": "policy",
+          "key": "policy.slack_governed_messages",
+          "targetRef": "slack.policy.governed_messages",
+          "path": "policies/governed-messages.yaml",
+          "hash": "eefeb4f6fdc0e077b77cda6329d9b8f8842522600b0b016610df4d299d3ce017"
+        },
+        {
+          "kind": "relationships",
+          "key": "relationships.slack",
+          "targetRef": "slack",
+          "path": "graphjin/relationships.yaml",
+          "hash": "4ede5fcdd62c24d02478565db0ba8c1954f08d501f9ebb1e7940db3eb09bfbd0"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.channels",
+          "targetRef": "saved_query.channels",
+          "path": "graphjin/saved-queries/channels.gql",
+          "hash": "a3b13bb47187a22141bead2ad81621d0a06fba0a0d6716321e0f78da35218579"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.slack-messages",
+          "targetRef": "slack-messages",
+          "path": "skills/slack-messages/SKILL.md",
+          "hash": "ff339571d77f817d662d0d2c7994487e6d30a4f3d1c194ade2dc1fed380d4db0"
+        },
+        {
+          "kind": "source",
+          "key": "source.slack",
+          "targetRef": "slack",
+          "path": "graphjin/sources.yaml",
+          "hash": "04615d76294cee8a449d21519c4692d8b8e9dc1d0965db8c81e736d8c38e4d26"
+        },
+        {
+          "kind": "spec",
+          "key": "spec.slack",
+          "targetRef": "spec.slack",
+          "path": "graphjin/specs/slack.yaml",
+          "hash": "5e41225254736c2288eb68a674d17e576b2e50e00c2ac7eb7c4fac8c1220bec8"
+        }
+      ]
+    }
+  ],
+  "upload": {
+    "id": "service-health",
+    "bundleHash": "3245b0092943242730a1893835a59aa02d2559a40d4ef1a083d1b9ef1e1f2a82",
+    "contentHash": "945fc70dacfc18cc6f7e4563b8bf9c1528e1b6118193adade61875ce2ca931ae"
+  },
+  "plans": [
+    {
+      "name": "fresh",
+      "installed": [],
+      "plan": {
+        "packId": "service-health",
+        "version": "0.1.0",
+        "bundleHash": "3245b0092943242730a1893835a59aa02d2559a40d4ef1a083d1b9ef1e1f2a82",
+        "entries": [
+          {
+            "action": "create",
+            "kind": "metric",
+            "key": "metric.health",
+            "targetRef": "service-health.healthy",
+            "desiredHash": "91b742eda37e7c91030850edc8c9e6eaeb4f1a0b05b605b14457cd56bfbe865e",
+            "currentHash": null
+          },
+          {
+            "action": "create",
+            "kind": "relationships",
+            "key": "relationships.health",
+            "targetRef": "service-health.relationships",
+            "desiredHash": "be1854851ab855e2a65a8601801e3221b0d67d215eac0fa1eb9b5786dacb6dd8",
+            "currentHash": null
+          },
+          {
+            "action": "create",
+            "kind": "saved_query",
+            "key": "saved_query.health",
+            "targetRef": "saved_query.health",
+            "desiredHash": "92acb01a1d3901467219da3a161ee8158906347b09c202b53b6f71a00d81517b",
+            "currentHash": null
+          },
+          {
+            "action": "create",
+            "kind": "skill",
+            "key": "skill.service-health-review",
+            "targetRef": "service-health-review",
+            "desiredHash": "330afe993f4fa4f5f0740e6d87cfa999fcdafd2aa4af5d1a4f134f70dbe40700",
+            "currentHash": null
+          },
+          {
+            "action": "create",
+            "kind": "source",
+            "key": "source.service_health",
+            "targetRef": "service_health",
+            "desiredHash": "cf909ab76a914890451d867caab2dcdf3f74fb88371e5125158bcb702fc24f86",
+            "currentHash": null
+          },
+          {
+            "action": "create",
+            "kind": "spec",
+            "key": "spec.service-health",
+            "targetRef": "spec.service-health",
+            "desiredHash": "7df63ab874bc1253689e43c47f606b21a0aaaabc08bead94e5f74acbc3a2e010",
+            "currentHash": null
+          },
+          {
+            "action": "create",
+            "kind": "watcher",
+            "key": "watcher.health",
+            "targetRef": "service-health.watch",
+            "desiredHash": "ec15f0e772df98be227032cf1be373809eda351291e633207918fc183a2d7f8f",
+            "currentHash": null
+          },
+          {
+            "action": "create",
+            "kind": "workflow",
+            "key": "workflow.health",
+            "targetRef": "service-health.review",
+            "desiredHash": "faac9e6f805d5c25fe3dce22f9853b8cbb9dfec6ee337bce8af2f0d6f0913ccd",
+            "currentHash": null
+          }
+        ],
+        "hash": "f3805f533617ff8a755381b98406e9b94c2b14082fbd562b082c8c5abf3297c6"
+      }
+    },
+    {
+      "name": "mixed",
+      "installed": [
+        {
+          "kind": "metric",
+          "key": "metric.health",
+          "targetRef": "service-health.healthy",
+          "desiredHash": "91b742eda37e7c91030850edc8c9e6eaeb4f1a0b05b605b14457cd56bfbe865e",
+          "lastAppliedHash": "applied",
+          "currentHash": "applied",
+          "ownership": "managed"
+        },
+        {
+          "kind": "relationships",
+          "key": "relationships.health",
+          "targetRef": "service-health.relationships",
+          "desiredHash": "old",
+          "lastAppliedHash": "applied",
+          "currentHash": "applied",
+          "ownership": "managed"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.health",
+          "targetRef": "saved_query.health",
+          "desiredHash": "92acb01a1d3901467219da3a161ee8158906347b09c202b53b6f71a00d81517b",
+          "lastAppliedHash": "applied",
+          "currentHash": "edited",
+          "ownership": "managed"
+        },
+        {
+          "kind": "skill",
+          "key": "skill.service-health-review",
+          "targetRef": "service-health-review",
+          "desiredHash": "330afe993f4fa4f5f0740e6d87cfa999fcdafd2aa4af5d1a4f134f70dbe40700",
+          "lastAppliedHash": "applied",
+          "currentHash": null,
+          "ownership": "managed"
+        },
+        {
+          "kind": "metric",
+          "key": "metric.gone",
+          "targetRef": "gone",
+          "desiredHash": "x",
+          "lastAppliedHash": "y",
+          "currentHash": "y",
+          "ownership": "managed"
+        },
+        {
+          "kind": "metric",
+          "key": "metric.gone-edited",
+          "targetRef": "gone2",
+          "desiredHash": "x",
+          "lastAppliedHash": "y",
+          "currentHash": "z",
+          "ownership": "modified"
+        },
+        {
+          "kind": "metric",
+          "key": "metric.detached",
+          "targetRef": "d",
+          "desiredHash": "x",
+          "lastAppliedHash": "y",
+          "currentHash": null,
+          "ownership": "detached"
+        }
+      ],
+      "plan": {
+        "packId": "service-health",
+        "version": "0.1.0",
+        "bundleHash": "3245b0092943242730a1893835a59aa02d2559a40d4ef1a083d1b9ef1e1f2a82",
+        "entries": [
+          {
+            "action": "retire",
+            "kind": "metric",
+            "key": "metric.gone",
+            "targetRef": "gone",
+            "desiredHash": null,
+            "currentHash": "y",
+            "reason": "removed_from_pack"
+          },
+          {
+            "action": "conflict",
+            "kind": "metric",
+            "key": "metric.gone-edited",
+            "targetRef": "gone2",
+            "desiredHash": null,
+            "currentHash": "z",
+            "reason": "user_modified"
+          },
+          {
+            "action": "noop",
+            "kind": "metric",
+            "key": "metric.health",
+            "targetRef": "service-health.healthy",
+            "desiredHash": "91b742eda37e7c91030850edc8c9e6eaeb4f1a0b05b605b14457cd56bfbe865e",
+            "currentHash": "applied"
+          },
+          {
+            "action": "update",
+            "kind": "relationships",
+            "key": "relationships.health",
+            "targetRef": "service-health.relationships",
+            "desiredHash": "be1854851ab855e2a65a8601801e3221b0d67d215eac0fa1eb9b5786dacb6dd8",
+            "currentHash": "applied"
+          },
+          {
+            "action": "conflict",
+            "kind": "saved_query",
+            "key": "saved_query.health",
+            "targetRef": "saved_query.health",
+            "desiredHash": "92acb01a1d3901467219da3a161ee8158906347b09c202b53b6f71a00d81517b",
+            "currentHash": "edited",
+            "reason": "user_modified"
+          },
+          {
+            "action": "conflict",
+            "kind": "skill",
+            "key": "skill.service-health-review",
+            "targetRef": "service-health-review",
+            "desiredHash": "330afe993f4fa4f5f0740e6d87cfa999fcdafd2aa4af5d1a4f134f70dbe40700",
+            "currentHash": null,
+            "reason": "target_missing"
+          },
+          {
+            "action": "create",
+            "kind": "source",
+            "key": "source.service_health",
+            "targetRef": "service_health",
+            "desiredHash": "cf909ab76a914890451d867caab2dcdf3f74fb88371e5125158bcb702fc24f86",
+            "currentHash": null
+          },
+          {
+            "action": "create",
+            "kind": "spec",
+            "key": "spec.service-health",
+            "targetRef": "spec.service-health",
+            "desiredHash": "7df63ab874bc1253689e43c47f606b21a0aaaabc08bead94e5f74acbc3a2e010",
+            "currentHash": null
+          },
+          {
+            "action": "create",
+            "kind": "watcher",
+            "key": "watcher.health",
+            "targetRef": "service-health.watch",
+            "desiredHash": "ec15f0e772df98be227032cf1be373809eda351291e633207918fc183a2d7f8f",
+            "currentHash": null
+          },
+          {
+            "action": "create",
+            "kind": "workflow",
+            "key": "workflow.health",
+            "targetRef": "service-health.review",
+            "desiredHash": "faac9e6f805d5c25fe3dce22f9853b8cbb9dfec6ee337bce8af2f0d6f0913ccd",
+            "currentHash": null
+          }
+        ],
+        "hash": "b45397acad0ee7280503c9874ec2e5315c0e26777fde3351c4e07322bf29a78d"
+      }
+    },
+    {
+      "name": "owners",
+      "installed": [
+        {
+          "kind": "metric",
+          "key": "metric.health",
+          "targetRef": "service-health.healthy",
+          "desiredHash": "91b742eda37e7c91030850edc8c9e6eaeb4f1a0b05b605b14457cd56bfbe865e",
+          "lastAppliedHash": "applied",
+          "currentHash": "applied",
+          "ownership": "detached"
+        },
+        {
+          "kind": "relationships",
+          "key": "relationships.health",
+          "targetRef": "service-health.relationships",
+          "desiredHash": "be1854851ab855e2a65a8601801e3221b0d67d215eac0fa1eb9b5786dacb6dd8",
+          "lastAppliedHash": "applied",
+          "currentHash": null,
+          "ownership": "retired"
+        },
+        {
+          "kind": "saved_query",
+          "key": "saved_query.health",
+          "targetRef": "saved_query.health",
+          "desiredHash": "92acb01a1d3901467219da3a161ee8158906347b09c202b53b6f71a00d81517b",
+          "lastAppliedHash": "applied",
+          "currentHash": "changed",
+          "ownership": "retired"
+        }
+      ],
+      "plan": {
+        "packId": "service-health",
+        "version": "0.1.0",
+        "bundleHash": "3245b0092943242730a1893835a59aa02d2559a40d4ef1a083d1b9ef1e1f2a82",
+        "entries": [
+          {
+            "action": "conflict",
+            "kind": "metric",
+            "key": "metric.health",
+            "targetRef": "service-health.healthy",
+            "desiredHash": "91b742eda37e7c91030850edc8c9e6eaeb4f1a0b05b605b14457cd56bfbe865e",
+            "currentHash": "applied",
+            "reason": "detached"
+          },
+          {
+            "action": "update",
+            "kind": "relationships",
+            "key": "relationships.health",
+            "targetRef": "service-health.relationships",
+            "desiredHash": "be1854851ab855e2a65a8601801e3221b0d67d215eac0fa1eb9b5786dacb6dd8",
+            "currentHash": null
+          },
+          {
+            "action": "conflict",
+            "kind": "saved_query",
+            "key": "saved_query.health",
+            "targetRef": "saved_query.health",
+            "desiredHash": "92acb01a1d3901467219da3a161ee8158906347b09c202b53b6f71a00d81517b",
+            "currentHash": "changed",
+            "reason": "user_modified"
+          },
+          {
+            "action": "create",
+            "kind": "skill",
+            "key": "skill.service-health-review",
+            "targetRef": "service-health-review",
+            "desiredHash": "330afe993f4fa4f5f0740e6d87cfa999fcdafd2aa4af5d1a4f134f70dbe40700",
+            "currentHash": null
+          },
+          {
+            "action": "create",
+            "kind": "source",
+            "key": "source.service_health",
+            "targetRef": "service_health",
+            "desiredHash": "cf909ab76a914890451d867caab2dcdf3f74fb88371e5125158bcb702fc24f86",
+            "currentHash": null
+          },
+          {
+            "action": "create",
+            "kind": "spec",
+            "key": "spec.service-health",
+            "targetRef": "spec.service-health",
+            "desiredHash": "7df63ab874bc1253689e43c47f606b21a0aaaabc08bead94e5f74acbc3a2e010",
+            "currentHash": null
+          },
+          {
+            "action": "create",
+            "kind": "watcher",
+            "key": "watcher.health",
+            "targetRef": "service-health.watch",
+            "desiredHash": "ec15f0e772df98be227032cf1be373809eda351291e633207918fc183a2d7f8f",
+            "currentHash": null
+          },
+          {
+            "action": "create",
+            "kind": "workflow",
+            "key": "workflow.health",
+            "targetRef": "service-health.review",
+            "desiredHash": "faac9e6f805d5c25fe3dce22f9853b8cbb9dfec6ee337bce8af2f0d6f0913ccd",
+            "currentHash": null
+          }
+        ],
+        "hash": "2013abeb37e9b8357d55cf10a5a56afbb714ba5a1db5e5e66e5abc97bba1b3a7"
+      }
+    }
+  ]
+}

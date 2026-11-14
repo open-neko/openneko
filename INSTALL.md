@@ -931,9 +931,28 @@ files as root. The logs are `/var/lib/openneko/control/logs/web.log` and
 `/var/lib/openneko/agent/logs/serve.log`.
 
 `server-install` options: `--database-url`, `--port` (3000), `--bind`
-(0.0.0.0), `--public-url`, `--start`, and `--one-user`, which runs both
+(0.0.0.0), `--public-url`, `--start` (start both services and wait until web
+answers), and `--one-user`, which runs both
 services as the `openneko` user with no agent-zone user. A second run of
 `server-install` keeps the data and sets the given values again.
+
+On a server install, the usual commands find `/etc/openneko/server.json` and
+act on the two services. Set `OPENNEKO_SERVER_FILE` when you gave
+`--config-dir`.
+
+| Command | Who runs it | What it does on a server install |
+|---|---|---|
+| `sudo openneko start`, `sudo openneko stop` | root | `systemctl start` or `stop` of both services |
+| `openneko status` | root or `openneko` | the state of each unit, then a check that serve and web answer |
+| `sudo openneko logs [serve\|web]` | root | `serve.log` and `web.log`; `-f` follows them |
+| `sudo openneko doctor` | root | the native checks, the owner and mode of each folder, and whether the units match what `server-install` writes |
+| `sudo openneko backup` | root | the config folder, the data folders of both zones and the database, to `/var/lib/openneko/control/openneko/backups` |
+| `sudo openneko restore <file> --confirm RESTORE` | root | stops the services, restores, gives each file the owner of its folder, and starts the services again if they ran |
+| `sudo openneko upgrade` | root | a backup, then a new executable and web folder in `/opt/openneko`, then a start if the services ran |
+
+The agent-zone user cannot read `server.json`, so each command refuses it.
+A backup of a one-user native install restores into a server install, and
+the reverse: the backup names each data folder, not its path.
 
 A native install has no Node worker. A new install opens as the solo
 administrator, with no sign-in. Chat and the routes that `openneko web`

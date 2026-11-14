@@ -1,49 +1,76 @@
-import { getOrgId } from "@neko/db";
-import { listPackUserConnections } from "@neko/llm/graphjin/pack-user-connections";
-import type { getCurrentActor } from "@/lib/actor";
-import type { getCurrentUser } from "@/lib/auth";
-import { heldItemIds } from "@/lib/entitlements";
-import {
-  getDeploymentConnectStatus,
-  getOperatorConnectStatus,
-  listConnectProviders,
-} from "@/lib/integrations";
+"use client";
 
-/** The connections the current person can see: org-wide ones for admins, and their own. */
-export async function loadIntegrations(
-  actor: Awaited<ReturnType<typeof getCurrentActor>>,
-  user: Awaited<ReturnType<typeof getCurrentUser>>,
-) {
-  const [providers, status, deploymentStatus] = await Promise.all([
-    actor.role === "admin" ? listConnectProviders() : Promise.resolve([]),
-    actor.userId ? getOperatorConnectStatus(actor.userId) : Promise.resolve([]),
-    actor.role === "admin" ? getDeploymentConnectStatus() : Promise.resolve([]),
-  ]);
-  const connectedByPlugin = new Map(status.map((s) => [s.pluginName, s]));
-  const deploymentConnectedByPlugin = new Map(
-    deploymentStatus.map((s) => [s.pluginName, s]),
-  );
-  const rowFor = (
-    p: (typeof providers)[number],
-    map: Map<string, { connectedAt: string; scopes?: string[] }>,
-  ) => ({
-    pluginId: p.pluginId,
-    pluginName: p.pluginName,
-    providerLabel: p.providerLabel,
-    scopes: p.scopes,
-    flow: p.flow,
-    credentialScope: p.credentialScope,
-    connected: map.has(p.pluginName),
-    connectedAt: map.get(p.pluginName)?.connectedAt ?? null,
-  });
-  const workspace = providers
-    .filter((p) => p.credentialScope === "deployment")
-    .map((p) => rowFor(p, deploymentConnectedByPlugin));
-  const connectors = providers
-    .filter((p) => p.credentialScope !== "deployment")
-    .map((p) => rowFor(p, connectedByPlugin));
-  const heldPacks = await heldItemIds("pack");
-  const personal = (user ? await listPackUserConnections({ orgId: await getOrgId(), userId: user.id }) : [])
-    .filter((connection) => heldPacks === "*" || heldPacks.has(connection.packId));
-  return { workspace, connectors, personal };
+import { useEffect, useState } from "react";
+import type { PackUserConnectionStatus } from "@neko/llm/graphjin/pack-user-connections";
+import { useSession } from "@/lib/session-client";
+
+export type IntegrationRow = {
+  pluginId: string;
+  pluginName: string;
+  providerLabel: string;
+  scopes: string[];
+  flow: string;
+  credentialScope: string;
+  connected: boolean;
+  connectedAt: string | null;
+};
+
+export type LoadedIntegrations = {
+  role: "admin" | "member" | null;
+  workspace: IntegrationRow[];
+  connectors: IntegrationRow[];
+  personal: PackUserConnectionStatus[];
+};
+
+export function useIntegrationsData(): LoadedIntegrations | null {
+  const session = useSession();
+  const [data, setData] = useState<{
+    workspace: IntegrationRow[];
+    connectors: IntegrationRow[];
+    personal: PackUserConnectionStatus[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (!session) return;
+    if (session.authEnabled && !session.user) {
+      window.location.assign("/signin?returnTo=/integrations");
+      return;
+    }
+    let cancelled = false;
+    const isAdmin = session.role === "admin";
+    void Promise.all([
+      isAdmin
+        ? fetch("/api/v1/integrations/list", { cache: "no-store" })
+            .then((res) => (res.ok ? res.json() : { workspace: [], connectors: [] }))
+            .catch(() => ({ workspace: [], connectors: [] }))
+        : Promise.resolve({ workspace: [] as IntegrationRow[], connectors: [] as IntegrationRow[] }),
+      session.user
+        ? fetch("/api/v1/my/pack-accounts", { cache: "no-store" })
+            .then((res) => (res.ok ? res.json() : { connections: [] }))
+            .catch(() => ({ connections: [] }))
+        : Promise.resolve({ connections: [] as PackUserConnectionStatus[] }),
+    ]).then(([listBody, personalBody]: [
+      { workspace?: IntegrationRow[]; connectors?: IntegrationRow[] },
+      { connections?: PackUserConnectionStatus[] },
+    ]) => {
+      if (!cancelled) {
+        setData({
+          workspace: listBody.workspace ?? [],
+          connectors: listBody.connectors ?? [],
+          personal: personalBody.connections ?? [],
+        });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
+  if (!session || !data) return null;
+  return {
+    role: session.role,
+    workspace: data.workspace,
+    connectors: data.connectors,
+    personal: data.personal,
+  };
 }

@@ -412,7 +412,10 @@ compatibility or successful end-user execution. Before submitting a change:
 
 Relevant suites include `pnpm --filter @neko/packs test` and the worker's
 `pack-declarative`, `pack-connector.integration`, `pack-lifecycle.integration`, and
-`pack-uploads` tests. Integration tests need their documented test dependencies;
+`pack-uploads` tests. `openneko web` lists, inspects and stores uploaded packs with
+the Go loader in `apps/openneko/internal/packs`. Run `go test ./internal/packs` in
+`apps/openneko`: it checks that the Go loader gives the same manifest, bundle and
+plan hashes as the Node loader. Integration tests need their documented test dependencies;
 a skipped test is not a live pass.
 
 ## Save changes, submit a PR, and release

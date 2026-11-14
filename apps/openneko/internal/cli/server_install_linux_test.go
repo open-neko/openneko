@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"io/fs"
 	"os"
 	"os/exec"
 	"os/user"
@@ -17,42 +18,7 @@ import (
 // TestServerInstallZones creates real system users, so it runs only as root
 // in a throwaway container: OPENNEKO_TEST_SERVER_INSTALL=1.
 func TestServerInstallZones(t *testing.T) {
-	if os.Getenv("OPENNEKO_TEST_SERVER_INSTALL") != "1" || os.Geteuid() != 0 {
-		t.Skip("needs root and OPENNEKO_TEST_SERVER_INSTALL=1")
-	}
-	base, err := os.MkdirTemp("/", "openneko-zone-test-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(base) })
-	if err := os.Chmod(base, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for _, d := range []string{"etc", "units", "opt/bin", "opt/share/openneko/web"} {
-		if err := os.MkdirAll(filepath.Join(base, d), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	o := serverInstallOptions{
-		server: native.Server{ControlUser: "ozt-control", AgentUser: "ozt-agent", Group: "ozt-shared",
-			ConfigDir: filepath.Join(base, "etc", "openneko"), DataDir: filepath.Join(base, "data"),
-			UnitDir: filepath.Join(base, "units"), Exe: filepath.Join(base, "opt", "bin", "openneko")},
-		databaseURL: "postgres://owner:control-secret@127.0.0.1:5432/neko?sslmode=disable",
-		port:        3000, bind: "127.0.0.1",
-	}
-	cmd := newServerInstallCmd()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	if err := runServerInstall(cmd, o); err != nil {
-		t.Fatalf("%v\n%s", err, out.String())
-	}
-	if err := runServerInstall(cmd, o); err != nil {
-		t.Fatalf("a second run: %v\n%s", err, out.String())
-	}
-	s, err := native.LoadServer(filepath.Join(o.server.ConfigDir, native.ServerFile))
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := installTestServer(t)
 	l := s.Layout()
 	as := func(name string, script string) error {
 		u, err := user.Lookup(name)
@@ -141,4 +107,91 @@ func TestServerInstallZones(t *testing.T) {
 			t.Error(err)
 		}
 	}
+}
+
+func TestServerRestoreOwners(t *testing.T) {
+	s := installTestServer(t)
+	l := s.Layout()
+	for _, d := range s.Dirs() {
+		if problem, err := dirProblem(d); err != nil || problem != "" {
+			t.Errorf("%s: %q, %v", d.Path, problem, err)
+		}
+	}
+	var buf bytes.Buffer
+	writeTree(t, l.Files(), map[string]string{"u1/report.pdf": "pdf"})
+	writeTree(t, l.AgentRuns(), map[string]string{"run1/out/answer": "a"})
+	if err := os.WriteFile(filepath.Join(s.ConfigDir, "planted.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ownServerData(s); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][2]string{
+		filepath.Join(l.Files(), "u1", "report.pdf"):          {s.AgentUser, s.AgentUser},
+		filepath.Join(l.AgentRuns(), "run1", "out"):           {s.ControlUser, s.Group},
+		filepath.Join(l.AgentRuns(), "run1", "out", "answer"): {s.ControlUser, s.Group},
+		filepath.Join(s.ConfigDir, "planted.json"):            {s.ControlUser, s.ControlUser},
+	}
+	for path, owner := range want {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		uid, gid, _ := lookupIDs(owner[0], owner[1])
+		if u, g, _ := fileOwner(info); u != uid || g != gid {
+			t.Errorf("%s owned by %d:%d, want %s:%s", path, u, g, owner[0], owner[1])
+		}
+	}
+	if info, _ := os.Stat(filepath.Join(l.AgentRuns(), "run1")); info.Mode()&fs.ModeSetgid == 0 {
+		t.Error("a restored folder in agent-runs lost the setgid bit")
+	}
+	if info, _ := os.Stat(filepath.Join(s.ConfigDir, "planted.json")); info.Mode().Perm() != 0o600 {
+		t.Errorf("config file mode %v", info.Mode().Perm())
+	}
+	activeServer = &s
+	t.Cleanup(func() { activeServer = nil })
+	if serverDoctorLines(&buf) {
+		t.Errorf("doctor failed on a fresh install:\n%s", buf.String())
+	}
+}
+
+func installTestServer(t *testing.T) native.Server {
+	t.Helper()
+	if os.Getenv("OPENNEKO_TEST_SERVER_INSTALL") != "1" || os.Geteuid() != 0 {
+		t.Skip("needs root and OPENNEKO_TEST_SERVER_INSTALL=1")
+	}
+	base, err := os.MkdirTemp("/", "openneko-zone-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(base) })
+	if err := os.Chmod(base, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{"etc", "units", "opt/bin", "opt/share/openneko/web"} {
+		if err := os.MkdirAll(filepath.Join(base, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	o := serverInstallOptions{
+		server: native.Server{ControlUser: "ozt-control", AgentUser: "ozt-agent", Group: "ozt-shared",
+			ConfigDir: filepath.Join(base, "etc", "openneko"), DataDir: filepath.Join(base, "data"),
+			UnitDir: filepath.Join(base, "units"), Exe: filepath.Join(base, "opt", "bin", "openneko")},
+		databaseURL: "postgres://owner:control-secret@127.0.0.1:5432/neko?sslmode=disable",
+		port:        3000, bind: "127.0.0.1",
+	}
+	cmd := newServerInstallCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	if err := runServerInstall(cmd, o); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	if err := runServerInstall(cmd, o); err != nil {
+		t.Fatalf("a second run: %v\n%s", err, out.String())
+	}
+	s, err := native.LoadServer(filepath.Join(o.server.ConfigDir, native.ServerFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
 }

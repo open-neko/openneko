@@ -57,12 +57,12 @@ func TestArchiveAndRestoreFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	var archive bytes.Buffer
-	if err := archiveFolder(src, include, &archive); err != nil {
+	if err := archiveFolder(folderUnder(src, include), &archive); err != nil {
 		t.Fatal(err)
 	}
 	dst := t.TempDir()
 	writeTree(t, dst, map[string]string{"files/old.txt": "gone", "logs/web.log": "kept"})
-	if err := restoreFolder(dst, include, &archive); err != nil {
+	if err := restoreFolder(folderUnder(dst, include), &archive); err != nil {
 		t.Fatal(err)
 	}
 	for name, want := range map[string]string{"files/u1/a.txt": "A", "graphjin/agentic.yml": "G", "logs/web.log": "kept", "files/old.txt": "missing", "files/link": "missing"} {
@@ -71,14 +71,14 @@ func TestArchiveAndRestoreFolder(t *testing.T) {
 		}
 	}
 	var empty bytes.Buffer
-	if err := archiveFolder(filepath.Join(src, "absent"), include, &empty); err != nil || empty.Len() == 0 {
+	if err := archiveFolder(folderUnder(filepath.Join(src, "absent"), include), &empty); err != nil || empty.Len() == 0 {
 		t.Errorf("a missing folder gives an empty archive: %d bytes, %v", empty.Len(), err)
 	}
 }
 
 func TestRestoreFolderRefusesAnEscape(t *testing.T) {
 	raw := testVolumeTar(t, map[string]string{"../escape.txt": "x"})
-	err := restoreFolder(t.TempDir(), func(string) bool { return true }, bytes.NewReader(raw))
+	err := restoreFolder(folderUnder(t.TempDir(), func(string) bool { return true }), bytes.NewReader(raw))
 	if err == nil || !strings.Contains(err.Error(), "leaves the folder") {
 		t.Fatalf("got %v", err)
 	}
