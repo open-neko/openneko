@@ -156,6 +156,10 @@ func (a *API) adminPackWrite(w http.ResponseWriter, r *http.Request) {
 		key = uuid.NewString()
 	}
 	body.set("idempotencyKey", key)
+	if action == "uninstall" {
+		a.servePackUninstall(w, r, act, packID, body)
+		return
+	}
 	a.relayPackWorker(context.WithoutCancel(r.Context()), w, http.MethodPost, "/admin/packs/"+encodeURIComponent(packID)+"/"+action,
 		jsonHeader, []byte(jsStringify(body, false)))
 }
