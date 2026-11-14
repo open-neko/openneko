@@ -57,6 +57,7 @@ func newSetupFront(t *testing.T, status string, db *pgxpool.Pool) (*Front, *setu
 	srv := httptest.NewServer(wk)
 	t.Cleanup(srv.Close)
 	g := newGate(t, srv.URL)
+	g.PublicURL = "https://neko.example"
 	seedSignInSecrets(t, g.SecretsDir, status)
 	g.DB = db
 	return &Front{
@@ -87,7 +88,7 @@ func TestSSOSetupRoutes(t *testing.T) {
 			"list_organization_connections": "status: COMPLETED provider: OKTA",
 		},
 	}
-	f.API.Gate.Client = &http.Client{Transport: mcp}
+	f.API.SignInClient = &http.Client{Transport: mcp}
 	if err := writeScalekitOperatorCredential(f.Gate.SecretsDir, &scalekitOperatorCredential{
 		Tokens:      map[string]any{"access_token": "at-1", "expires_at": "4102444800000"},
 		ConnectedAt: "2026-01-01T00:00:00.000Z",

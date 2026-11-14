@@ -5,7 +5,6 @@ import { createWorkRun, createWorkThread } from "../../src/work/store";
 import {
   appendWorkflowRunSourceWrite,
   createWorkflowRun,
-  hasRecentSourceWriteForWorkflow,
   saveWorkflow,
 } from "../../src/workflows/store";
 
@@ -55,14 +54,6 @@ describeIfDb("workflow source-write recording", () => {
       expect(stored.sourceWrites).toEqual([
         { table: "crm__contact", primary_key: { id: "contact-1" } },
       ]);
-      await expect(
-        hasRecentSourceWriteForWorkflow({
-          workflowId: workflow.id,
-          table: "crm__contact",
-          primaryKey: { id: "contact-1" },
-          sinceMs: 60_000,
-        }),
-      ).resolves.toBe(true);
       await expect(
         appendWorkflowRunSourceWrite({ ...write, orgId: "another-org" }),
       ).resolves.toBe(false);

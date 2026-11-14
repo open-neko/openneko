@@ -45,7 +45,6 @@ func (a *API) adminSigninStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	_ = a.secretsDir()
 	a.Gate.Reset()
 	gate := a.Gate.Status(ctx)
 	var total, admins int
@@ -119,7 +118,6 @@ func (a *API) adminSigninEmailProvider(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.settingsAdmin(w, r); !ok {
 		return
 	}
-	_ = a.secretsDir()
 	gate := a.Gate.Status(r.Context())
 	chosen := gate.Provider
 	if chosen == nil {
@@ -291,6 +289,9 @@ func (a *API) adminPublicURLSave(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		a.fail(w, r, err)
 		return
+	}
+	if a.Gate != nil {
+		a.Gate.Reset()
 	}
 	setting, err := a.publicURLSetting(ctx, act.OrgID)
 	if err != nil {
