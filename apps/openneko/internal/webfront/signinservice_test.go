@@ -6,15 +6,20 @@ import (
 	"encoding/json"
 	"io"
 	"math"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/open-neko/neko/apps/openneko/internal/secrets"
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
+	"github.com/open-neko/neko/apps/openneko/internal/workeradmin"
 )
 
 const (
@@ -198,7 +203,7 @@ func TestScalekitClientAndProvider(t *testing.T) {
 			}
 			return &http.Response{
 				StatusCode: 200,
-				Body:       io.NopCloser(strings.NewReader(`{"sub":"usr_1","email":"alice@example.com","given_name":"Alice","family_name":"Smith","organization_id":"org_1","groups":["g1","g2"],"roles":["g2","r1"]}`)),
+				Body:       io.NopCloser(strings.NewReader(`{"sub":"usr_1","email":"alice@example.com","given_name":"Alice","family_name":"Smith","organization_id":"org_1","groups":["g1",{"id":"obj-group","name":"Ignored"},"","g2"],"roles":[{"role":"admin"},"g2","r1",42]}`)),
 			}, nil
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -210,7 +215,8 @@ func TestScalekitClientAndProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id.Sub != "usr_1" || id.Email != "alice@example.com" || id.Name == nil || *id.Name != "Alice Smith" || id.OrgID != "org_1" || len(id.Groups) != 3 {
+	if id.Sub != "usr_1" || id.Email != "alice@example.com" || id.Name == nil || *id.Name != "Alice Smith" || id.OrgID != "org_1" ||
+		len(id.Groups) != 3 || id.Groups[0].ExternalID != "g1" || id.Groups[1].ExternalID != "g2" || id.Groups[2].ExternalID != "r1" {
 		t.Errorf("identity = %+v", id)
 	}
 
@@ -333,17 +339,19 @@ func TestMigrateLegacySignInSecrets(t *testing.T) {
 func TestMagicLinkEndToEndAndSoloGate(t *testing.T) {
 	db := testpg.Migrated(t)
 	ctx := context.Background()
-	seed(t, db, `insert into organization (id, name, solo_admin_user_id) values ('org', 'Org', 'admin')`)
+	seed(t, db, `insert into organization (id, name) values ('org', 'Org')`)
 	seed(t, db, `insert into app_user (id, org_id, email, name) values ('admin', 'org', 'owner@solo.openneko.invalid', 'Solo')`)
+	seed(t, db, `update organization set solo_admin_user_id = 'admin' where id = 'org'`)
 	seed(t, db, `insert into user_group_membership (org_id, group_id, user_id, source)
 		select 'org', id, 'admin', 'local' from user_group where org_id = 'org' and slug = 'administrators'`)
 
 	dir := t.TempDir()
 	g := newGate(t, "")
 	g.SecretsDir = dir
+	g.PublicURL = "https://neko.example"
 	g.DB = db
 	var sentLink string
-	g.Client = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+	signInClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		raw, _ := io.ReadAll(r.Body)
 		var body struct {
 			Text string `json:"text"`
@@ -356,7 +364,7 @@ func TestMagicLinkEndToEndAndSoloGate(t *testing.T) {
 		}
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"id":"1"}`))}, nil
 	})}
-	a := &API{Gate: g, DB: db, SecretsDir: dir, PublicURL: "https://neko.example"}
+	a := &API{Gate: g, DB: db, SecretsDir: dir, PublicURL: "https://neko.example", SignInClient: signInClient}
 
 	if err := a.selectSignInProvider("magic-link"); err != nil {
 		t.Fatal(err)
@@ -395,3 +403,250 @@ func TestMagicLinkEndToEndAndSoloGate(t *testing.T) {
 		t.Fatalf("completeSignInAuth = %+v, %v", id, err)
 	}
 }
+
+func TestSignInWithUnixWorkerEndpoint(t *testing.T) {
+	db := testpg.Migrated(t)
+	seedOrg(t, db)
+	workerBase, workerClient, err := workeradmin.Endpoint("unix://" + filepath.Join(t.TempDir(), "worker.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var sentLink string
+	providerSrv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/oauth/token":
+			_, _ = io.WriteString(w, `{"access_token":"at-tcp"}`)
+		case "/userinfo":
+			_, _ = io.WriteString(w, `{"sub":"usr_tcp","email":"a@example.com","name":"Ada","groups":["Administrators",{"id":"ignored"}]}`)
+		case "/emails":
+			raw, _ := io.ReadAll(r.Body)
+			var body struct {
+				Text string `json:"text"`
+			}
+			_ = json.Unmarshal(raw, &body)
+			for _, line := range strings.Split(body.Text, string(byte(10))) {
+				if strings.HasPrefix(line, "https://") {
+					sentLink = strings.TrimSpace(line)
+				}
+			}
+			_, _ = io.WriteString(w, `{"id":"mail_tcp"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(providerSrv.Close)
+
+	tcpBaseTransport := providerSrv.Client().Transport.(*http.Transport).Clone()
+	tcpBaseTransport.TLSClientConfig.ServerName = "example.com"
+	var dialer net.Dialer
+	tcpBaseTransport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return dialer.DialContext(ctx, network, providerSrv.Listener.Addr().String())
+	}
+	tcpClient := &http.Client{Transport: tcpBaseTransport, Timeout: 5 * time.Second}
+
+	savedDefault := defaultSignInClient
+	defaultSignInClient = tcpClient
+	t.Cleanup(func() { defaultSignInClient = savedDefault })
+
+	dir := t.TempDir()
+	g := newGate(t, workerBase)
+	g.SecretsDir = dir
+	g.PublicURL = "https://neko.example"
+	g.Client = workerClient
+	g.DB = db
+	a := &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecureCookies: true, SecretsDir: dir}
+	f := &Front{
+		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
+		Gate: g,
+		API:  a,
+		Node: &recorder{},
+	}
+
+	// 1. Scalekit begin and complete with SignInClient nil (uses defaultSignInClient on TCP, never Gate.Client on unix:).
+	if err := secrets.Write(secrets.Store{
+		"signin": {"PROVIDER": "scalekit"},
+		"signin.scalekit": {
+			"SCALEKIT_ENVIRONMENT_URL": providerSrv.URL,
+			"SCALEKIT_CLIENT_ID":       "cid",
+			"SCALEKIT_CLIENT_SECRET":   "csecret",
+		},
+	}, dir); err != nil {
+		t.Fatal(err)
+	}
+	g.Reset()
+	w := call(f, "GET", "/api/v1/auth/begin?loginHint=a@example.com&returnTo=/admin", "", nil)
+	if w.Code != http.StatusFound || !strings.HasPrefix(w.Header().Get("Location"), providerSrv.URL+"/oauth/authorize?") {
+		t.Fatalf("scalekit begin = %d %q %s", w.Code, w.Header().Get("Location"), w.Body.String())
+	}
+	stateCookie := cookieFrom(w, StateCookie)
+	locURL, err := url.Parse(w.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := locURL.Query().Get("state")
+	w = call(f, "GET", "/api/v1/auth/callback?code=c-tcp&state="+url.QueryEscape(state), "", map[string]string{
+		"Cookie": StateCookie + "=" + stateCookie.Value,
+	})
+	if w.Code != http.StatusFound || w.Header().Get("Location") != "/admin" || cookieFrom(w, SessionCookie) == nil {
+		t.Fatalf("scalekit callback = %d %q %s", w.Code, w.Header().Get("Location"), w.Body.String())
+	}
+
+	// 2. Magic-link begin and complete with SignInClient set to the TCP client while Gate.Client is on unix:.
+	a.SignInClient = tcpClient
+	if err := secrets.Write(secrets.Store{
+		"signin": {"PROVIDER": "magic-link"},
+		"signin.magic-link": {
+			"MAGIC_LINK_SIGNING_SECRET": strings.Repeat("m", 64),
+			"MAGIC_LINK_FROM":           "OpenNeko <signin@acme.com>",
+			"RESEND_API_KEY":            "re_tcp_1",
+		},
+	}, dir); err != nil {
+		t.Fatal(err)
+	}
+	g.Reset()
+	w = call(f, "GET", "/api/v1/auth/begin?loginHint=m@example.com&returnTo=/chat", "", nil)
+	if w.Code != http.StatusFound || w.Header().Get("Location") != "https://neko.example/signin?notice=link-sent" || sentLink == "" {
+		t.Fatalf("magic-link begin = %d %q sentLink=%q", w.Code, w.Header().Get("Location"), sentLink)
+	}
+	mlStateCookie := cookieFrom(w, StateCookie)
+	parsedLink, err := url.Parse(sentLink)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w = call(f, "GET", "/api/v1/auth/callback?"+parsedLink.RawQuery, "", map[string]string{
+		"Cookie": StateCookie + "=" + mlStateCookie.Value,
+	})
+	if w.Code != http.StatusFound || w.Header().Get("Location") != "/chat" || cookieFrom(w, SessionCookie) == nil {
+		t.Fatalf("magic-link callback = %d %q %s", w.Code, w.Header().Get("Location"), w.Body.String())
+	}
+}
+
+func TestMagicLinkRequiresPublicURL(t *testing.T) {
+	t.Setenv("OPENNEKO_PUBLIC_URL", "")
+	db := testpg.Migrated(t)
+	seedOrg(t, db)
+	dir := t.TempDir()
+	g := newGate(t, "")
+	g.SecretsDir = dir
+	g.PublicURL = ""
+	g.DB = db
+
+	var sentLinks []string
+	signInClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		raw, _ := io.ReadAll(r.Body)
+		var body struct {
+			Text string `json:"text"`
+		}
+		_ = json.Unmarshal(raw, &body)
+		for _, line := range strings.Split(body.Text, string(byte(10))) {
+			if strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://") {
+				sentLinks = append(sentLinks, strings.TrimSpace(line))
+			}
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"id":"1"}`))}, nil
+	})}
+	a := &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "", SecureCookies: true, SecretsDir: dir, SignInClient: signInClient}
+	f := &Front{
+		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
+		Gate: g,
+		API:  a,
+		Node: &recorder{},
+	}
+
+	if err := secrets.Write(secrets.Store{
+		"signin": {"PROVIDER": "magic-link"},
+		"signin.magic-link": {
+			"MAGIC_LINK_SIGNING_SECRET": strings.Repeat("k", 64),
+			"MAGIC_LINK_FROM":           "OpenNeko <signin@acme.com>",
+			"RESEND_API_KEY":            "re_live_123",
+		},
+	}, dir); err != nil {
+		t.Fatal(err)
+	}
+	admin := sessionCookie("admin")
+
+	// 1. With no OPENNEKO_PUBLIC_URL and no stored public URL, status is pending and names OPENNEKO_PUBLIC_URL; begin sends no mail.
+	g.Reset()
+	authStatusBody := decode(t, call(f, "GET", "/api/v1/auth/status", "", nil))
+	if authStatusBody["provider"] != nil || authStatusBody["pending"] == nil {
+		t.Fatalf("auth/status without public URL = %v", authStatusBody)
+	}
+	adminStatus := decode(t, call(f, "GET", "/api/v1/admin/signin/status", "", admin))
+	pendingObj, _ := adminStatus["pending"].(map[string]any)
+	missingRaw, _ := json.Marshal(pendingObj["missingEnv"])
+	if adminStatus["provider"] != nil || !strings.Contains(string(missingRaw), `"OPENNEKO_PUBLIC_URL"`) {
+		t.Fatalf("admin/signin/status without public URL = %v", adminStatus)
+	}
+
+	evilReq := httptest.NewRequest("GET", "http://evil.example.com/api/v1/auth/begin?loginHint=a@example.com", nil)
+	evilReq.Host = "evil.example.com"
+	evilW := httptest.NewRecorder()
+	f.ServeHTTP(evilW, evilReq)
+	if evilW.Code != http.StatusServiceUnavailable || len(sentLinks) != 0 {
+		t.Fatalf("auth/begin without public URL = %d %s, sent=%v", evilW.Code, evilW.Body.String(), sentLinks)
+	}
+	if _, err := a.beginSignIn(context.Background(), "http://evil.example.com/api/auth/callback", "st-1", "a@example.com"); err == nil || !strings.Contains(err.Error(), "OPENNEKO_PUBLIC_URL") || len(sentLinks) != 0 {
+		t.Fatalf("beginSignIn without public URL = %v, sent=%v", err, sentLinks)
+	}
+	testW := call(f, "POST", "/api/v1/admin/signin/test", `{"email":"a@example.com"}`, admin)
+	if testW.Code != http.StatusBadGateway || !strings.Contains(testW.Body.String(), "OPENNEKO_PUBLIC_URL") || len(sentLinks) != 0 {
+		t.Fatalf("admin/signin/test without public URL = %d %s, sent=%v", testW.Code, testW.Body.String(), sentLinks)
+	}
+
+	// 2. Saving a public URL makes magic-link ready and ignores the request Host header.
+	if w := call(f, "PUT", "/api/v1/admin/public-url", `{"url":"https://saved.example.com"}`, admin); w.Code != 200 {
+		t.Fatalf("save public-url = %d %s", w.Code, w.Body.String())
+	}
+	adminStatus = decode(t, call(f, "GET", "/api/v1/admin/signin/status", "", admin))
+	if adminStatus["provider"] == nil || adminStatus["pending"] != nil {
+		t.Fatalf("admin/signin/status with saved public URL = %v", adminStatus)
+	}
+	evilReq = httptest.NewRequest("GET", "http://evil.example.com/api/v1/auth/begin?loginHint=a@example.com", nil)
+	evilReq.Host = "evil.example.com"
+	evilW = httptest.NewRecorder()
+	f.ServeHTTP(evilW, evilReq)
+	if evilW.Code != http.StatusFound || len(sentLinks) != 1 || !strings.HasPrefix(sentLinks[0], "https://saved.example.com/api/auth/callback?") || strings.Contains(sentLinks[0], "evil.example.com") {
+		t.Fatalf("auth/begin with saved public URL = %d %q sent=%v", evilW.Code, evilW.Header().Get("Location"), sentLinks)
+	}
+
+	// 3. Clearing the stored public URL and setting OPENNEKO_PUBLIC_URL to localhost stays allowed for a local install.
+	if w := call(f, "PUT", "/api/v1/admin/public-url", `{"url":""}`, admin); w.Code != 200 {
+		t.Fatalf("clear public-url = %d %s", w.Code, w.Body.String())
+	}
+	t.Setenv("OPENNEKO_PUBLIC_URL", "http://localhost:3000")
+	g.Reset()
+	adminStatus = decode(t, call(f, "GET", "/api/v1/admin/signin/status", "", admin))
+	if adminStatus["provider"] == nil || adminStatus["pending"] != nil {
+		t.Fatalf("admin/signin/status with localhost OPENNEKO_PUBLIC_URL = %v", adminStatus)
+	}
+	sentLinks = nil
+	evilReq = httptest.NewRequest("GET", "http://evil.example.com/api/v1/auth/begin?loginHint=a@example.com", nil)
+	evilReq.Host = "evil.example.com"
+	evilW = httptest.NewRecorder()
+	f.ServeHTTP(evilW, evilReq)
+	if evilW.Code != http.StatusFound || len(sentLinks) != 1 || !strings.HasPrefix(sentLinks[0], "http://localhost:3000/api/auth/callback?") || strings.Contains(sentLinks[0], "evil.example.com") {
+		t.Fatalf("auth/begin with localhost OPENNEKO_PUBLIC_URL = %d %q sent=%v", evilW.Code, evilW.Header().Get("Location"), sentLinks)
+	}
+}
+
+func TestGateSecretsDirSetAtConstruction(t *testing.T) {
+	gateDir := t.TempDir()
+	apiDir := t.TempDir()
+	g := &Gate{SecretsDir: gateDir}
+	a := &API{Gate: g, SecretsDir: apiDir}
+	if got := a.secretsDir(); got != apiDir {
+		t.Fatalf("a.secretsDir() = %q, want %q", got, apiDir)
+	}
+	if g.SecretsDir != gateDir {
+		t.Fatalf("g.SecretsDir mutated to %q, want %q", g.SecretsDir, gateDir)
+	}
+	emptyGate := &Gate{}
+	a2 := &API{Gate: emptyGate, SecretsDir: apiDir}
+	_ = a2.secretsDir()
+	if emptyGate.SecretsDir != "" {
+		t.Fatalf("emptyGate.SecretsDir lazily mutated to %q", emptyGate.SecretsDir)
+	}
+}
+

@@ -205,7 +205,7 @@ func (tr *testEmailTransport) RoundTrip(r *http.Request) (*http.Response, error)
 func TestAdminSigninTest(t *testing.T) {
 	f, _, _ := signinFront(t, `{"provider":{"pluginName":"magic-link"},"pending":null}`)
 	tr := &testEmailTransport{}
-	f.Gate.Client = &http.Client{Transport: tr}
+	f.API.SignInClient = &http.Client{Transport: tr}
 	admin := sessionCookie("admin")
 	if w := call(f, "POST", "/api/v1/admin/signin/test", `{"email":" Admin@Company.com "}`, admin); w.Code != 200 || w.Body.String() != `{"ok":true}` {
 		t.Fatalf("test: %d %s", w.Code, w.Body.String())

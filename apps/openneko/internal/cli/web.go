@@ -123,9 +123,10 @@ with exit code 0, so its supervisor starts it again.`,
 				_ = ln.Close()
 				return err
 			}
-			gate := &webfront.Gate{WorkerURL: workerBase, Client: workerClient, DB: pool}
+			secretsDir := config.Dir("")
+			gate := &webfront.Gate{WorkerURL: workerBase, SecretsDir: secretsDir, Client: workerClient, DB: pool}
 			api := &webfront.API{Gate: gate, DB: pool, Version: webfront.AppVersion(dir, version.Version),
-				SecureCookies: os.Getenv("NODE_ENV") == "production", Restart: stop, Jobs: inserter, EvalTrace: trace,
+				SecureCookies: os.Getenv("NODE_ENV") == "production", SecretsDir: secretsDir, Restart: stop, Jobs: inserter, EvalTrace: trace,
 				MetricsRefresh: jobs.MetricsRefreshOn()}
 			if socket := strings.TrimSpace(os.Getenv(webAdminSocketEnv)); socket != "" {
 				stopAdmin, err := serveWebAdmin(socket, api.OperatorHandler())
@@ -163,6 +164,7 @@ with exit code 0, so its supervisor starts it again.`,
 				api.StartWorkflowScheduler(ctx)
 				api.StartRunReconcile(ctx)
 				api.StartKnowledgeRefresh(ctx)
+				api.StartSubscriptionManager(ctx)
 			}
 			var node *exec.Cmd
 			nodeDone := make(chan error, 1)

@@ -45,7 +45,9 @@ var (
 type Gate struct {
 	WorkerURL  string
 	SecretsDir string
-	DB         *pgxpool.Pool
+	// PublicURL overrides OPENNEKO_PUBLIC_URL; tests set it.
+	PublicURL string
+	DB        *pgxpool.Pool
 	// SessionSecret returns the cookie signing secret; nil reads
 	// OPENNEKO_SESSION_SECRET or derives it from the secret-key file.
 	SessionSecret func() (string, error)

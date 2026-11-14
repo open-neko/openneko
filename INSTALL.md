@@ -42,7 +42,7 @@ Then run `openneko setup` (guided), or `openneko start` to bring the stack up wi
 
 Both paths drive the same web endpoints with the same validation (a live provider-key test, a data-source connectivity check), and each step persists independently — so you can start in the terminal and finish in the browser, or vice versa. For unattended installs (CI), pass `--admin-password`, `--provider`, `--provider-key`, etc. to run setup headless.
 
-Integrations come from **solution packs**, installed after setup from **Admin → Settings → Solution packs** or with `openneko pack install`. Slack, Telegram and the HUD are built-in channels that turn on when an admin saves their settings under **Admin → Settings → Channels**; sign-in (Scalekit SSO or email link) is configured under **Admin → Settings**. (`--skip-plugins` and `--plugins` are still accepted by `setup` but do nothing.)
+Integrations come from **solution packs**, installed after setup from **Admin → Settings → Solution packs** or with `openneko pack install`. Slack, Telegram and the HUD are built-in channels that turn on when an admin saves their settings under **Admin → Settings → Channels**; sign-in (Scalekit SSO or email link) is configured under **Admin → Settings**. Email-link sign-in requires `OPENNEKO_PUBLIC_URL` or a saved public URL (`localhost` works for a local install). (`--skip-plugins` and `--plugins` are still accepted by `setup` but do nothing.)
 
 The AdventureWorks seed pre-fills business onboarding (`AdventureWorks Cycles`, fiscal year `July`, seats `CEO`/`CFO`/`COO`, priorities `Defend wholesale margins` / `Grow DTC in Europe`). Otherwise fill it in at `/onboarding`.
 
@@ -1093,7 +1093,7 @@ Web and worker run on the host with hot reload. Everything else runs in Docker.
 - The customer GraphJin runs in sources mode from `db/graphjin/dev.sources.example.yml`. Its config lives in `.openneko/dev/graphjin`, and the worker manages it like the core stack.
 - OpenNeko state uses your XDG config home. Set `OPENNEKO_DEV_CONFIG_HOME=$PWD/.openneko/dev/config` to keep a worktree's stack separate, and a distinct `COMPOSE_PROJECT_NAME` with its ports when two stacks run at once.
 
-Without the `openneko-serve` container, subscription-chained workflows stay silent (`subscription manager ready (0 active)` in worker logs).
+Without the `openneko-serve` container, subscription-chained workflows stay silent. `openneko web` logs `graphjin subscription socket error` for each subscription and tries again.
 
 Install host-only CLIs the worker shells out to (Docker images already include them):
 
@@ -1135,7 +1135,7 @@ environment override.
 
 **GraphJin connection fails.** Prod and demo modes use `http://graphjin:8080` (pre-filled), the GraphJin inside `openneko-serve`. Dev mode (`pnpm dev`) on the host uses `http://localhost:8080`. Run `openneko status` and read the `graphjin` line: it says whether GraphJin runs or restarts, with the reason.
 
-**Workflow subscriptions don't fire.** Run `openneko status` and check the `subscriptions` line. The worker logs `subscription manager ready (N active)` on boot. If `N=0` while the database holds subscriptions, the subscriptions GraphJin in `openneko-serve` is unreachable. `openneko stop && openneko start` writes its login again.
+**Workflow subscriptions don't fire.** Run `openneko status` and check the `subscriptions` line. `openneko web` logs `[subscription-manager] ready (N active)` on start, where N is the number of enabled subscriptions. A `graphjin subscription socket error` line means the subscriptions GraphJin in `openneko-serve` is unreachable; `openneko web` tries again within a minute. `openneko stop && openneko start` writes its login again.
 
 **Web stops with "the database lacks N migration(s)".** `openneko web` starts
 only on a database that holds every migration of its release. Run

@@ -35,7 +35,10 @@ type API struct {
 	SecureCookies bool
 	// SecretsDir overrides the config folder that holds secrets.json.
 	SecretsDir string
-	inboundMu  sync.Mutex
+	// SignInClient overrides the HTTP client for outbound sign-in and SSO
+	// setup calls; tests set it.
+	SignInClient *http.Client
+	inboundMu    sync.Mutex
 	inbound    *channelLoops
 	settingsMu sync.Mutex
 	// Jobs adds River jobs in a route's transaction.
@@ -537,7 +540,20 @@ func (a *API) configuredPublicURL() string {
 	return strings.TrimRight(strings.TrimSpace(configured), "/")
 }
 
+func (a *API) publicURL(ctx context.Context) string {
+	if saved := storedPublicURL(ctx, a.DB); saved != "" {
+		return saved
+	}
+	if normalized, ok := normalizePublicURL(a.configuredPublicURL()); ok {
+		return normalized
+	}
+	return ""
+}
+
 func (a *API) publicBaseURL(r *http.Request) string {
+	if c := a.publicURL(r.Context()); c != "" {
+		return c
+	}
 	if c := a.configuredPublicURL(); c != "" {
 		return c
 	}
