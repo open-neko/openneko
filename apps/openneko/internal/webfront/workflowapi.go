@@ -28,8 +28,6 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 )
 
-// The public workflow API that a bearer token opens:
-// packages/llm/src/workflows/api-admission.ts and api-contract.ts.
 const (
 	wfAPIHardMaxBytes   = 1 << 20
 	wfAPIHardMaxRecords = 10_000
@@ -809,6 +807,9 @@ func (a *API) wfAdmit(ctx context.Context, workflowID, token, rawKey, mode strin
 		     ) values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10::jsonb, $11, $12, 'pending', $13, $14, $15, $15, $15, $16)`,
 			admissionID, access.orgID, access.workflowID, workflowRunID, idempotencyHash, v.hash, mode,
 			payload, inputPath, contract, v.bytes, accepted, tokens, cost, now, expiresAt); err != nil {
+			return err
+		}
+		if err := a.queueAPIAdmission(ctx, tx, admissionID); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `update workflow_api_access set last_used_at = $2, updated_at = $2 where workflow_id = $1`,

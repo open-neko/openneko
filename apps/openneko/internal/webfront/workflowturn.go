@@ -18,10 +18,8 @@ import (
 
 const workflowAPIInputFile = "trigger_input.json"
 
-// workflowTurnOptions is RunWorkflowTurnOptions in
-// packages/llm/src/workflows/run-workflow-turn.ts with the prepared run
-// spread out. TriggerPayload and TriggerInput are values as jsParse gives
-// them.
+// workflowTurnOptions holds the prepared run. TriggerPayload and
+// TriggerInput are values as jsParse gives them.
 type workflowTurnOptions struct {
 	Workflow                   workflowRecord
 	WorkflowRunID, TriggerKind string
@@ -38,9 +36,10 @@ type workflowTurnOptions struct {
 	MaxToolIterations          int
 	Emit                       func(ctx context.Context, event any) error
 
-	now     func() time.Time
-	resolve func(ctx context.Context, orgID string) (*llm.AxBackendConfig, map[string]string, error)
-	runCore func(ctx context.Context, in agentCoreInput) (axRunResult, error)
+	wrapEmit func(func(context.Context, any) error) func(context.Context, any) error
+	now      func() time.Time
+	resolve  func(ctx context.Context, orgID string) (*llm.AxBackendConfig, map[string]string, error)
+	runCore  func(ctx context.Context, in agentCoreInput) (axRunResult, error)
 }
 
 type workflowTurnResult struct {

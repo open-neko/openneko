@@ -51,8 +51,6 @@ export * from "./watchers";
 export * from "./audit-chain";
 export * from "./api-contract";
 export * from "./api-access";
-export * from "./api-admission";
-export * from "./api-batch";
 export {
   buildRuleBuilderServer,
   type RuleBuilderContext,
@@ -94,17 +92,6 @@ export {
   type ScheduleAdvance,
   type WorkflowCatchUpPolicy,
 } from "./durable-scheduler";
-export {
-  prepareWorkflowRun,
-  loadPreparedWorkflowRun,
-  runWorkflowTurn,
-  WorkflowNeedsInputError,
-  type PrepareWorkflowRunOptions,
-  type PreparedWorkflowRun,
-  type RunWorkflowTurnOptions,
-  type RunWorkflowTurnResult,
-  type WorkflowTriggerKind,
-} from "./run-workflow-turn";
 export {
   appendWorkflowRunSourceWrite,
   countSubscriptionsMatchingOutput,

@@ -22,7 +22,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// The webhook-compatibility routes: packages/llm/src/workflows/compat.
 const (
 	hookBodyMax        = 256 * 1024
 	hookMaxBatch       = 1_000
@@ -428,6 +427,9 @@ func (a *API) admit(ctx context.Context, h *compatWebhook, mode string, params *
 	     ) values ($1, $2, $3, $4, $5, $6, 'single', $7::jsonb, $8, 'pending', 0, 0, $9, $9, $9, $10)`,
 		admissionID, h.orgID, h.workflowID, workflowRunID, sha256Hex("reckon:"+h.reckonID+":"+key), fingerprint,
 		jsStringify(payload, false), size, now, expires); err != nil {
+		return nil, err
+	}
+	if err := a.queueAPIAdmission(ctx, tx, admissionID); err != nil {
 		return nil, err
 	}
 	if _, err := tx.Exec(ctx, `insert into compat_webhook_run (

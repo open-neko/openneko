@@ -1817,7 +1817,7 @@ export const workflow_api_admission = pgTable(
     ),
     payload_location_check: check(
       "workflow_api_admission_payload_location",
-      sql`(${t.execution_mode} = 'single' and ${t.request_payload} is not null and ${t.input_file_path} is null and ${t.batch_contract} is null and ${t.accepted_records} is null) or (${t.execution_mode} = 'batch' and ${t.request_payload} is null and ${t.input_file_path} is not null and ${t.batch_contract} is not null and ${t.accepted_records} between 1 and 10000)`,
+      sql`(${t.status} = 'expired' and ${t.request_payload} is null and ${t.input_file_path} is null and ${t.batch_contract} is null) or (${t.execution_mode} = 'single' and ${t.request_payload} is not null and ${t.input_file_path} is null and ${t.batch_contract} is null and ${t.accepted_records} is null) or (${t.execution_mode} = 'batch' and ${t.request_payload} is null and ${t.input_file_path} is not null and ${t.batch_contract} is not null and ${t.accepted_records} between 1 and 10000)`,
     ),
     request_bounds_check: check(
       "workflow_api_admission_request_bounds",

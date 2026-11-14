@@ -760,9 +760,7 @@ type workflowAPIError struct {
 
 func (e *workflowAPIError) Error() string { return e.message }
 
-// workflowAPIFile is resolveWorkflowApiPhysicalFile() in
-// packages/llm/src/workflows/api-admission.ts; "" means the file is not
-// inside the org workspace.
+// workflowAPIFile is "" when the file is not inside the org workspace.
 func workflowAPIFile(orgID, relativePath string) (string, error) {
 	root := filepath.Clean(orgAgentRoot(orgID))
 	candidate := filepath.Join(root, relativePath)

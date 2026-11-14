@@ -231,8 +231,6 @@ func (a *API) cancelRun(w http.ResponseWriter, r *http.Request) {
 	sendJSON(w, http.StatusOK, obj("ok", recovered || terminal, "recovered", recovered))
 }
 
-// preparedWorkflowRun is PreparedWorkflowRun in
-// packages/llm/src/workflows/run-workflow-turn.ts.
 type preparedWorkflowRun struct {
 	workflow                       workflowRecord
 	workflowRunID, threadID, runID string
@@ -385,6 +383,9 @@ func (a *API) beginWorkflowRun(base context.Context, cancel context.CancelCauseF
 	run := a.runs.register(o.RunID, orgID, o.ThreadID, cancel)
 	untrace := a.EvalTrace.register(o.RunID)
 	o.Emit = guarded
+	if o.wrapEmit != nil {
+		o.Emit = o.wrapEmit(guarded)
+	}
 	return func() (workflowTurnResult, error) {
 		defer a.runs.unregister(o.RunID, run)
 		defer untrace()

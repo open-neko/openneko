@@ -87,26 +87,26 @@ func TestWorkflowRunFireWorker(t *testing.T) {
 		return &river.Job[WorkflowRunFireArgs]{JobRow: &rivertype.JobRow{Attempt: 2},
 			Args: WorkflowRunFireArgs{OrgID: "org", WorkflowID: "wf", TriggerKind: kind}}
 	}
-	for _, kind := range []string{"cron", "subscription", "watcher", "manual"} {
+	for _, kind := range []string{"cron", "subscription", "watcher", "manual", "api"} {
 		if err := w.Work(context.Background(), job(kind)); err != nil {
 			t.Errorf("%s: %v", kind, err)
 		}
 	}
-	for _, kind := range []string{"api", ""} {
+	for _, kind := range []string{"", "chat"} {
 		var cancel *rivertype.JobCancelError
 		if err := w.Work(context.Background(), job(kind)); !errors.As(err, &cancel) {
 			t.Errorf("%q: %v, want a cancel", kind, err)
 		}
 	}
-	if len(got) != 4 {
+	if len(got) != 5 {
 		t.Errorf("ran %d jobs", len(got))
 	}
 	if w.Timeout(job("cron")) != -1 {
 		t.Error("the job has a River timeout")
 	}
-	cron, plain := time.Until(w.NextRetry(job("cron"))), time.Until(w.NextRetry(job("watcher")))
-	if cron < 55*time.Second || cron > 61*time.Second || plain < 25*time.Second || plain > 31*time.Second {
-		t.Errorf("retry in %v for cron, %v for a watcher", cron, plain)
+	cron, plain, api := time.Until(w.NextRetry(job("cron"))), time.Until(w.NextRetry(job("watcher"))), time.Until(w.NextRetry(job("api")))
+	if cron < 55*time.Second || cron > 61*time.Second || plain < 25*time.Second || plain > 31*time.Second || api < 25*time.Second || api > 31*time.Second {
+		t.Errorf("retry in %v for cron, %v for a watcher, %v for an API run", cron, plain, api)
 	}
 }
 

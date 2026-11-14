@@ -14,7 +14,6 @@ import { pool } from "./index";
 
 export const QUEUE = {
   WORK_RUN: "work_run",
-  WORKFLOW_RUN_FIRE: "workflow_run_fire",
   CHANNEL_DELIVER: "channel_deliver",
 } as const;
 
@@ -36,6 +35,8 @@ export const MOVED_QUEUES = [
   "industry_insights_build",
   "bootstrap_metrics_build",
   "metric_refresh",
+  "workflow_run_fire",
+  "workflow_api_sweep",
 ] as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
@@ -156,7 +157,8 @@ export async function enqueueMetricRefresh(payload: ProcessingJobPayload, maxAtt
 }
 
 /**
- * Queues one cron, subscription or watcher workflow run on River.
+ * Queues one cron, subscription or watcher workflow run on River. API runs
+ * are queued by `openneko web` when it admits them.
  * `jobs.WorkflowRunFireArgs` in apps/openneko/internal/jobs reads the row;
  * the queue, max_attempts and dedupe value match `Inserter.WorkflowRunFire`.
  * With a dedupe key, no job is added while one with the key exists in the
@@ -167,7 +169,7 @@ export async function enqueueWorkflowRunFire(
   opts: { dedupeKey?: string; dedupeSeconds?: number } = {},
 ): Promise<string | null> {
   if (payload.triggerKind === "api") {
-    throw new Error("API workflow runs go to the pg-boss workflow_run_fire queue");
+    throw new Error("API workflow runs are queued by openneko web when it admits them");
   }
   const client = await pool().connect();
   try {
@@ -292,7 +294,7 @@ export async function enqueue<T extends object>(
 ): Promise<string | null> {
   await ensureQueue(queue);
   const b = await boss();
-  return b.send(queue, (queue === QUEUE.WORK_RUN || queue === QUEUE.WORKFLOW_RUN_FIRE) ? { ...(data as object), queuedAt: Date.now() } : data as object, { ...DEFAULT_SEND_OPTS, ...(opts ?? {}) });
+  return b.send(queue, queue === QUEUE.WORK_RUN ? { ...(data as object), queuedAt: Date.now() } : data as object, { ...DEFAULT_SEND_OPTS, ...(opts ?? {}) });
 }
 
 export async function stopBoss(): Promise<void> {

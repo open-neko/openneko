@@ -15,10 +15,13 @@ const workflowFiringRunLease = 30 * time.Minute
 
 var errWorkflowRunInterrupted = errors.New("The workflow run stopped before it finished.")
 
-// WorkflowRunFire is the workflow_run_fire job for cron, subscription and
-// watcher runs. An error return lets River try again; a cron firing then
-// goes back to the scheduler, as it did on pg-boss.
+// WorkflowRunFire is the workflow_run_fire job. An error return lets River
+// try again; a cron firing then goes back to the scheduler, as it did on
+// pg-boss.
 func (a *API) WorkflowRunFire(ctx context.Context, job jobs.WorkflowRunFireArgs, attempt int) error {
+	if job.TriggerKind == "api" {
+		return a.workflowAPIRunFire(ctx, job)
+	}
 	firing := job.ScheduleFiringID
 	if firing != "" {
 		claimed, err := a.claimScheduleFiring(ctx, firing, job.OrgID, job.WorkflowID)

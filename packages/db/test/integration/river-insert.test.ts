@@ -66,6 +66,6 @@ describeIfDb("enqueueWorkflowRunFire", () => {
       queue: "workflow_run",
       state: "available",
     }]);
-    await expect(enqueueWorkflowRunFire({ ...payload, triggerKind: "api" })).rejects.toThrow(/pg-boss/);
+    await expect(enqueueWorkflowRunFire({ ...payload, triggerKind: "api" })).rejects.toThrow(/openneko web/);
   });
 });
