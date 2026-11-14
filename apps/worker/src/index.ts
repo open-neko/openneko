@@ -64,19 +64,7 @@ import { resolveDeclarativePackActionAdapter, registerPackConnectionPreflight } 
 import { ensureOrgWorkspace, getOrgAgentRoot, reportDeploymentProfile, setAgentSlotLimit } from "@neko/llm/work";
 import { removeRetiredQueue } from "./pg-boss-helpers.js";
 import { setCoreSecretsInstance } from "./secrets/instance.js";
-import {
-  ingestInboundWebhook,
-} from "./channels/delivery.js";
-import { startChannelInbound } from "./channels/inbound-poll.js";
-import {
-  channelSettings,
-  getChannelProviders,
-  migrateLegacyChannelSecrets,
-  notifyChannelsChanged,
-  setChannelSettings,
-  setChannelState,
-  setChannelsChangedHook,
-} from "./channels/runtime.js";
+import { getChannelProviders } from "./channels/runtime.js";
 import { runActionExecute } from "./jobs/action-execute.js";
 import { moveLibraryDocumentsToStore } from "./jobs/library-recovery.js";
 import { filesEnabled } from "@neko/llm/files";
@@ -283,20 +271,7 @@ const server = createServer(
       disconnect: (name, operatorId) => signIn().disconnect(name, operatorId),
     },
     ssoSetup: ssoSetupSurface(),
-    channels: {
-      getChannelProviders: () => getChannelProviders(),
-      ingestInbound: (channelId, headers, body) =>
-        ingestInboundWebhook(ADMIN_ORG_ID, channelId, headers, body),
-      settings: () => channelSettings(),
-      setSettings: async (channelId, values) => {
-        await setChannelSettings(channelId, values);
-        notifyChannelsChanged();
-      },
-      setState: async (channelId, state) => {
-        await setChannelState(channelId, state);
-        notifyChannelsChanged();
-      },
-    },
+    channels: { getChannelProviders: () => getChannelProviders() },
   }),
 );
 
@@ -360,13 +335,6 @@ signInService = new SignInService(coreSecrets);
 }
 ssoSetupService = new SsoSetupService(signInService);
 startSsoSetupPoller({ service: ssoSetupService, orgId: ADMIN_ORG_ID });
-{
-  const moved = await migrateLegacyChannelSecrets().catch((err) => {
-    console.warn(`[worker] channel secrets migration failed: ${err instanceof Error ? err.message : err}`);
-    return [];
-  });
-  if (moved.length > 0) console.log(`[worker] moved channel settings from ${moved.join(", ")}`);
-}
 {
   const sources = await db()
     .select({ mcp_url: data_source.mcp_url })
@@ -605,12 +573,6 @@ listenAdmin(server, adminSocketPath(), PORT, (where) => {
   console.log(`[worker] pg-boss running; /health on ${where}`);
 });
 
-const channelInbound = startChannelInbound(ADMIN_ORG_ID);
-setChannelsChangedHook(() => {
-  void channelInbound.refresh().catch((err) => {
-    console.warn(`[channel-inbound] refresh failed: ${err instanceof Error ? err.message : err}`);
-  });
-});
 
 const shutdown = async (signal: string) => {
   console.log(`[worker] received ${signal}; shutting down`);
@@ -618,7 +580,6 @@ const shutdown = async (signal: string) => {
   clearInterval(packOAuthRefreshTimer);
   clearInterval(knowledgeRefreshTimer);
   workflowScheduler.stop();
-  channelInbound.stop();
   coreSecrets?.stop();
   unregisterPackActionPreflight();
   unregisterPackConnectionPreflight();

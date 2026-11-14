@@ -24,10 +24,6 @@
  *   POST /admin/auth/complete → 200 + { identity }
  *                               Body: { code, redirectUri, state }
  *                               Finishes sign-in with the chosen provider.
- *   GET  /admin/channels/settings → each built-in channel's declared settings
- *                               (secrets report only whether they are set).
- *   POST /admin/channels/settings → { channel, values: { KEY: string | null } }
- *                               or { channel, state: "on" | "off" }.
  *   GET  /admin/directory/status → directory provider and last sync state.
  *   POST /admin/directory/sync  → run a full directory sync now.
  *   POST /admin/directory/users → create a user in the identity provider ({ email, name? }).
@@ -201,12 +197,7 @@ export interface SsoSetupHandlerSurface {
   }>;
 }
 
-/**
- * Channel (frontend) surface. The built-in channels (Slack, Telegram, HUD)
- * run in-process; each is on while its required settings are stored. `ingestInbound` hands webhooks
- * to the channel delivery module (verify → parse → dispatch to the existing
- * agent entry points).
- */
+/** The turned-on built-in channels. openneko web owns sends, inbound and settings. */
 export interface ChannelHandlerSurface {
   getChannelProviders(): Promise<Array<{
     id: string;
@@ -214,15 +205,6 @@ export interface ChannelHandlerSurface {
     directions: string[];
     ingress: string;
   }>>;
-  ingestInbound(
-    channelId: string,
-    headers: Record<string, string>,
-    body: string,
-  ): Promise<{ ok: boolean; dispatched: number }>;
-  /** Each channel's declared settings; secrets report only whether they are set. */
-  settings?(): Promise<unknown[]>;
-  setSettings?(channelId: string, values: Record<string, string | null>): Promise<void>;
-  setState?(channelId: string, state: "on" | "off"): Promise<void>;
 }
 
 /**
@@ -301,10 +283,7 @@ export type AdminHandlerOptions = {
    * tests, in which case /admin/sso/setup/* routes return 503.
    */
   ssoSetup?: SsoSetupHandlerSurface | null;
-  /**
-   * Channel surface — wired to the built-in channel runtime and delivery
-   * module. Absent in tests, in which case channel routes return 503 / empty.
-   */
+  /** Channel surface. Absent in tests, in which case the provider list is empty. */
   channels?: ChannelHandlerSurface | null;
   /**
    * Install-policy reader. When absent, /admin/install-policy returns the
@@ -644,17 +623,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       void handleChannelProviders(res, channels);
       return;
     }
-    if (req.url === "/admin/channels/settings") {
-      void handleChannelSettings(req, res, channels);
-      return;
-    }
-    if (req.method === "POST" && req.url?.startsWith("/channels/")) {
-      const m = /^\/channels\/([^/]+)\/inbound(?:[?#]|$)/.exec(req.url);
-      if (m) {
-        void handleChannelInbound(req, res, decodeURIComponent(m[1]!), channels);
-        return;
-      }
-    }
     res.writeHead(404).end();
   };
 }
@@ -874,8 +842,6 @@ async function handleInstallPolicy(
     json(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }
 }
-
-const MAX_SETTING_LENGTH = 8192;
 
 async function handleDirectory(
   req: IncomingMessage,
@@ -1564,89 +1530,6 @@ async function handleChannelProviders(
   } catch (err) {
     json(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }
-}
-
-const CHANNEL_ID = /^[a-z][a-z0-9-]{0,63}$/;
-
-async function handleChannelSettings(
-  req: IncomingMessage,
-  res: ServerResponse,
-  channels: ChannelHandlerSurface | null,
-) {
-  try {
-    if (req.method === "GET") {
-      if (!channels?.settings) return json(res, 503, { error: "channel subsystem disabled" });
-      return json(res, 200, { channels: await channels.settings() });
-    }
-    if (req.method === "POST") {
-      if (!channels?.setSettings) return json(res, 503, { error: "channel subsystem disabled" });
-      const body = (await readJson(req).catch(() => null)) as { channel?: unknown; values?: unknown; state?: unknown } | null;
-      const channel = typeof body?.channel === "string" ? body.channel : "";
-      const values = body?.values;
-      if (!CHANNEL_ID.test(channel)) return json(res, 400, { error: "channel must be a channel id" });
-      if (body?.state !== undefined) {
-        if (values !== undefined) return json(res, 400, { error: "send values or state, not both" });
-        if (body.state !== "on" && body.state !== "off") return json(res, 400, { error: "state must be on or off" });
-        if (!channels.setState) return json(res, 503, { error: "channel subsystem disabled" });
-        await channels.setState(channel, body.state);
-        return json(res, 200, { ok: true });
-      }
-      if (!values || typeof values !== "object" || Array.isArray(values) || Object.keys(values).length === 0) {
-        return json(res, 400, { error: "values must map at least one setting to a string or null" });
-      }
-      for (const value of Object.values(values)) {
-        if (value !== null && (typeof value !== "string" || value.length === 0 || value.length > MAX_SETTING_LENGTH)) {
-          return json(res, 400, { error: `each value must be null or a string of 1 to ${MAX_SETTING_LENGTH} characters` });
-        }
-      }
-      await channels.setSettings(channel, values as Record<string, string | null>);
-      return json(res, 200, { ok: true });
-    }
-    return json(res, 405, { error: "method not allowed" });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    const status = err instanceof Error && err.name === "ChannelSettingsError" ? 400 : 500;
-    return json(res, status, { error: message });
-  }
-}
-
-async function handleChannelInbound(
-  req: IncomingMessage,
-  res: ServerResponse,
-  pluginName: string,
-  channels: ChannelHandlerSurface | null,
-) {
-  if (!channels) {
-    json(res, 503, { error: "channel subsystem disabled" });
-    return;
-  }
-  const rawBody = await readText(req).catch(() => null);
-  if (rawBody == null) {
-    json(res, 400, { error: "could not read request body" });
-    return;
-  }
-  const headers: Record<string, string> = {};
-  for (const [k, v] of Object.entries(req.headers)) {
-    if (typeof v === "string") headers[k] = v;
-    else if (Array.isArray(v) && v.length > 0) headers[k] = v[0]!;
-  }
-  try {
-    const result = await channels.ingestInbound(pluginName, headers, rawBody);
-    json(res, 200, result);
-  } catch (err) {
-    json(res, 500, { error: err instanceof Error ? err.message : String(err) });
-  }
-}
-
-async function readText(req: IncomingMessage): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
-    if (Buffer.concat(chunks).length > 256 * 1024) {
-      throw new Error("body too large");
-    }
-  }
-  return Buffer.concat(chunks).toString("utf8");
 }
 
 function json(res: ServerResponse, status: number, body: unknown) {

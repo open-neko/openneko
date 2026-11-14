@@ -1221,10 +1221,6 @@ describe("worker channel routes", () => {
   ): NonNullable<Parameters<typeof createAdminHandler>[0]["channels"]> {
     return {
       getChannelProviders: overrides.getChannelProviders ?? (async () => []),
-      ingestInbound: overrides.ingestInbound ?? (async () => ({ ok: true, dispatched: 0 })),
-      ...(overrides.settings ? { settings: overrides.settings } : {}),
-      ...(overrides.setSettings ? { setSettings: overrides.setSettings } : {}),
-      ...(overrides.setState ? { setState: overrides.setState } : {}),
     };
   }
 
@@ -1277,114 +1273,13 @@ describe("worker channel routes", () => {
     }
   });
 
-  it("POST /channels/:p/inbound runs the surface's verify->parse->dispatch", async () => {
-    let captured: { plugin?: string; headers?: Record<string, string>; body?: string } = {};
-    const srv = await startServer(
-      createAdminHandler({
-        channels: fakeChannel({
-          ingestInbound: async (plugin, headers, body) => {
-            captured = { plugin, headers, body };
-            return { ok: true, dispatched: 1 };
-          },
-        }),
-      }),
-    );
+  it("the inbound webhook and the channel settings are gone: openneko web owns them", async () => {
+    const srv = await startServer(createAdminHandler({ channels: fakeChannel() }));
     try {
-      const res = await fetch(
-        `http://127.0.0.1:${srv.port}/channels/telegram/inbound`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Telegram-Bot-Api-Secret-Token": "s3cret",
-          },
-          body: JSON.stringify({ callback_query: { data: "approve:ar-1" } }),
-        },
-      );
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ ok: true, dispatched: 1 });
-      expect(captured.plugin).toBe("telegram");
-      expect(captured.headers?.["x-telegram-bot-api-secret-token"]).toBe("s3cret");
-      expect(captured.body).toContain("approve:ar-1");
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("GET and POST /admin/channels/settings read and write channel settings", async () => {
-    let written: { channel?: string; values?: Record<string, string | null> } = {};
-    const srv = await startServer(
-      createAdminHandler({
-        channels: fakeChannel({
-          settings: async () => [{ id: "slack", enabled: true, missing: ["SLACK_BOT_TOKEN"] }],
-          setSettings: async (channel, values) => {
-            written = { channel, values };
-          },
-        }),
-      }),
-    );
-    try {
-      const read = await fetch(`http://127.0.0.1:${srv.port}/admin/channels/settings`);
-      expect(read.status).toBe(200);
-      expect(((await read.json()) as { channels: Array<{ id: string }> }).channels[0]?.id).toBe("slack");
-
-      const save = await fetch(`http://127.0.0.1:${srv.port}/admin/channels/settings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channel: "slack", values: { SLACK_BOT_TOKEN: "xoxb-1", SLACK_APP_TOKEN: null } }),
-      });
-      expect(save.status).toBe(200);
-      expect(written).toEqual({ channel: "slack", values: { SLACK_BOT_TOKEN: "xoxb-1", SLACK_APP_TOKEN: null } });
-
-      const bad = await fetch(`http://127.0.0.1:${srv.port}/admin/channels/settings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channel: "@open-neko/plugin-slack", values: { SLACK_BOT_TOKEN: "x" } }),
-      });
-      expect(bad.status).toBe(400);
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("POST /admin/channels/settings turns a channel on or off", async () => {
-    const states: Array<[string, string]> = [];
-    const srv = await startServer(
-      createAdminHandler({
-        channels: fakeChannel({
-          setSettings: async () => {},
-          setState: async (channel, state) => {
-            states.push([channel, state]);
-          },
-        }),
-      }),
-    );
-    const post = (body: unknown) =>
-      fetch(`http://127.0.0.1:${srv.port}/admin/channels/settings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-    try {
-      expect((await post({ channel: "hud", state: "on" })).status).toBe(200);
-      expect((await post({ channel: "slack", state: "off" })).status).toBe(200);
-      expect((await post({ channel: "slack", state: "maybe" })).status).toBe(400);
-      expect((await post({ channel: "slack", state: "on", values: { SLACK_BOT_TOKEN: "x" } })).status).toBe(400);
-      expect(states).toEqual([["hud", "on"], ["slack", "off"]]);
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("POST /channels/:p/inbound returns 503 when surface absent", async () => {
-    const srv = await startServer(createAdminHandler());
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/channels/x/inbound`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-      expect(res.status).toBe(503);
+      for (const [method, path] of [["POST", "/channels/telegram/inbound"], ["GET", "/admin/channels/settings"], ["POST", "/admin/channels/settings"]]) {
+        const res = await fetch(`http://127.0.0.1:${srv.port}${path}`, { method, headers: { "Content-Type": "application/json" }, ...(method === "POST" ? { body: "{}" } : {}) });
+        expect(res.status).toBe(404);
+      }
     } finally {
       await srv.close();
     }
