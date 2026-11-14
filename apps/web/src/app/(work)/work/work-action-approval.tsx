@@ -4,6 +4,7 @@ import { Check, Loader2, ShieldCheck, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
+import { createApprovalPasskeyAssertion } from "@/lib/passkey";
 import { ToolDetail } from "./work-tool-detail";
 import type { ApprovalItem, ToolItem } from "./work-types";
 
@@ -180,7 +181,7 @@ export function ActionApprovalRow({
     tool.end?.result !== undefined ||
     tool.end?.error !== undefined;
 
-  async function decide(decision: "approve" | "reject") {
+  async function decide(decision: "approve" | "reject", withPasskey = false) {
     if (!runId) {
       setLocalError("Run not ready yet — try again in a moment.");
       return;
@@ -188,6 +189,10 @@ export function ActionApprovalRow({
     setBusy(true);
     setLocalError(null);
     try {
+      const passkey =
+        decision === "approve" && withPasskey
+          ? await createApprovalPasskeyAssertion(approval.actionRequestId)
+          : undefined;
       const res = await fetch(
         `/api/v1/work/threads/${threadId}/runs/${runId}/approve-action`,
         {
@@ -196,6 +201,7 @@ export function ActionApprovalRow({
           body: JSON.stringify({
             actionRequestId: approval.actionRequestId,
             decision,
+            ...(passkey ? { passkey } : {}),
             ...(decision === "reject" && rejectReason
               ? { rejectionReason: rejectReason }
               : {}),
@@ -272,10 +278,19 @@ export function ActionApprovalRow({
               size="sm"
               variant="primary"
               disabled={busy}
-              onClick={() => decide("approve")}
+              onClick={() => void decide("approve")}
               className="work-action-button is-primary"
             >
               {busy ? "Approving…" : "Approve"}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void decide("approve", true)}
+              className="work-action-button"
+            >
+              Approve with passkey
             </Button>
             <Button
               size="sm"

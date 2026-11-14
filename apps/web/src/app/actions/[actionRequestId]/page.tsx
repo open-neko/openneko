@@ -15,6 +15,7 @@ import {
   systemForActionKind,
 } from "@/lib/action-outcome";
 import { cn } from "@/lib/cn";
+import { createApprovalPasskeyAssertion } from "@/lib/passkey";
 import { Button } from "@/components/ui/button";
 import { SkeletonList } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
@@ -193,6 +194,34 @@ export default function ActionPage() {
     },
     [actionRequestId, load],
   );
+
+  const submitPasskeyApproval = useCallback(async () => {
+    if (!actionRequestId) return;
+    setBusy(true);
+    setDecisionError(null);
+    try {
+      const passkey = await createApprovalPasskeyAssertion(actionRequestId);
+      const response = await fetch(`/api/v1/action-requests/${actionRequestId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: "approve", passkey }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { error?: string };
+        setDecisionError(body.error ?? "Could not verify the passkey approval. Try again.");
+        return;
+      }
+      await load();
+    } catch (e) {
+      setDecisionError(
+        e instanceof Error && e.message
+          ? e.message
+          : "Could not verify the passkey approval. Try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [actionRequestId, load]);
 
   const submitReject = useCallback(async () => {
     const reason = rejectReason.trim() || undefined;
@@ -497,7 +526,7 @@ export default function ActionPage() {
                 </div>
               </div>
             ) : (
-              <div className="flex gap-2 mt-2.5">
+              <div className="flex flex-wrap gap-2 mt-2.5">
                 <Button
                   variant="primary"
                   size="sm"
@@ -505,6 +534,14 @@ export default function ActionPage() {
                   onClick={() => void submitDecision("approve")}
                 >
                   Approve
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void submitPasskeyApproval()}
+                >
+                  Approve with passkey
                 </Button>
                 <Button
                   variant="danger"

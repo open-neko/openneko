@@ -1154,6 +1154,11 @@ func (a *API) approveRunAction(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, "decision must be 'approve' or 'reject'")
 		return
 	}
+	rawPasskey, hasPasskey := field(body, "passkey")
+	if hasPasskey && rawPasskey != nil && decision != "approve" {
+		sendError(w, http.StatusBadRequest, "passkey assertion is only valid for approve")
+		return
+	}
 	act, err := a.currentActor(ctx, r)
 	if err != nil {
 		a.fail(w, r, err)
@@ -1207,6 +1212,7 @@ func (a *API) approveRunAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	next := map[bool]string{true: "approved", false: "rejected"}[decision == "approve"]
+	var pk *verifiedPasskey
 	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
 		var current string
 		var policyID *string
@@ -1219,6 +1225,13 @@ func (a *API) approveRunAction(w http.ResponseWriter, r *http.Request) {
 		}
 		if current != "draft" && current != "pending_approval" {
 			return transitionError(current, next)
+		}
+		if next == "approved" && rawPasskey != nil {
+			var err error
+			pk, err = verifyPasskeyApproval(ctx, tx, passkeyRPID(r), act, id, rawPasskey)
+			if err != nil {
+				return err
+			}
 		}
 		if _, err := tx.Exec(ctx, `update action_request set status = $3, approved_by_user_id = $4, approved_at = now(),
 			rejection_reason = case when $3 = 'rejected' then $5 else rejection_reason end, updated_at = now()
@@ -1251,7 +1264,14 @@ func (a *API) approveRunAction(w http.ResponseWriter, r *http.Request) {
 	}
 	event := auditEvent{OrgID: act.OrgID, EntityKind: "action_request", EntityID: id, Event: next}
 	if next == "approved" {
-		event.Payload = map[string]any{"approvedBy": nullable(act.UserID), "kind": kind, "soloOperator": false}
+		payload := map[string]any{"approvedBy": nullable(act.UserID), "kind": kind, "soloOperator": false}
+		if pk != nil {
+			payload["method"] = "passkey"
+			payload["passkeyCredentialId"] = pk.CredentialID
+			payload["passkeyName"] = pk.Name
+			payload["userVerified"] = pk.UserVerified
+		}
+		event.Payload = payload
 		a.recordAudit(ctx, event)
 		sendJSON(w, http.StatusOK, approveReply{OK: true, Decision: "approved", ID: id, Status: "queued_for_execution"})
 		return
