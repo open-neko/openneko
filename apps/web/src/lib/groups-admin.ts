@@ -152,9 +152,7 @@ export async function listItemOptions(orgId: string, type: ItemType): Promise<It
     case "integration":
       return (await listConnectProviders()).map((p) => ({ id: p.pluginName, label: p.providerLabel, detail: p.pluginName }));
     case "channel": {
-      const result = await requestWorker("/admin/channels/providers").catch(() => ({ status: 500, body: {} }));
-      const providers = (result.body as { providers?: Array<{ id: string; providerLabel: string }> }).providers ?? [];
-      const labels = new Map<string, string>(providers.map((provider) => [provider.id, provider.providerLabel]));
+      const labels = new Map<string, string>([["hud", "HUD surface"], ["slack", "Slack"], ["telegram", "Telegram"]]);
       for (const row of await db().selectDistinct({ plugin: channel_identity.channel_plugin }).from(channel_identity).where(eq(channel_identity.org_id, orgId))) {
         if (!labels.has(row.plugin)) labels.set(row.plugin, row.plugin);
       }
