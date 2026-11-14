@@ -428,7 +428,12 @@ the table prefix, the store codes, the database version), the store version, the
 GraphJin catalog, the smoke queries and the change-domain probes. `go test -run
 TestPackDoctorNodeFixture ./internal/webfront` checks it against the Node fixture.
 Set `OPENNEKO_TEST_MAGENTO_MYSQL` to a root DSN of a MySQL 8 or MariaDB 10.6+ server
-to run the live preflight test. `openneko web` also runs the OAuth routes: the
+to run the live preflight test. `openneko web` also uninstalls a pack. It revokes the
+pack's GraphJin sources and keeps them, removes its saved queries, files and skill
+folders, deletes its secrets, switches off its metrics, watchers, workflows, policies
+and actions, and retires each receipt. A drift conflict stops the uninstall and marks
+the changed artifacts as modified. A failure puts the files and secrets back. Install,
+configure and upgrade still run in the worker. `openneko web` also runs the OAuth routes: the
 client setup, the connect and callback, the status and the disconnect. Until the
 pack apply moves to Go, a deployment-scope connection on an installed pack with
 GraphJin sources asks the worker to apply the new token to those sources, and the

@@ -159,9 +159,12 @@ func TestAdminPackWrites(t *testing.T) {
 			t.Errorf("%s body %v", action, got)
 		}
 	}
-	call(f, "POST", "/api/v1/admin/packs/magento/uninstall", "", admin)
+	call(f, "POST", "/api/v1/admin/packs/magento/configure", "", admin)
 	if got := sent(); got["actorUserId"] != "admin" || got["idempotencyKey"] == nil {
 		t.Errorf("empty body %v", got)
+	}
+	if w := call(f, "POST", "/api/v1/admin/packs/magento/uninstall", "", admin); w.Code != 400 || !strings.Contains(w.Body.String(), "pack magento is not installed") || len(wk.take()) != 0 {
+		t.Errorf("uninstall goes to Go: %d %s", w.Code, w.Body.String())
 	}
 	call(f, "POST", "/api/v1/admin/packs/magento/store-management", `{"domain":"catalog","enabled":true,"actorUserId":"forged"}`, admin)
 	if got := sent(); got["actorUserId"] != "admin" || got["domain"] != "catalog" || got["idempotencyKey"] != nil {

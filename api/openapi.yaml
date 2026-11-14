@@ -3101,7 +3101,7 @@ paths:
                   type: string
       responses:
         '200':
-          description: The review from the Go server; the other actions pass through from the worker
+          description: The review, or after uninstall the pack status, from the Go server; install, configure and upgrade pass through from the worker
           content:
             application/json:
               schema:
@@ -3121,8 +3121,15 @@ paths:
                   plan: {}
                   secrets: {}
                   reviewHash: {}
+                  packId: {}
+                  version: {}
+                  status: {}
+                  readiness: {}
+                  installedAt: {}
+                  lastError: {}
+                  configuration: {}
         '400':
-          description: The body is not a valid JSON object, or the pack review failed
+          description: The body is not a valid JSON object, or the pack review or uninstall failed
           content:
             application/json:
               schema:
