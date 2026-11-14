@@ -83,6 +83,7 @@ and proposing actions, with brakes so it never runs away from you.
 | Code actions | The assistant can file issues and draft code patches as proposals — a human always reviews and applies them. | #96 |
 | Pause for today | Pause a noisy workflow for the rest of the day with one tap. Its watchers stop their queries while it is paused. It resumes on its own at midnight UTC. | #96 |
 | Safety brakes | Daily run budgets and fan-out caps mean a misbehaving workflow runs out of rope quickly instead of flooding you. | #11 |
+| Stop a workflow run | An admin stops a scheduled, triggered, watcher or API run from its run page. The run ends as cancelled and is not tried again, and the audit chain names the admin. A batch API run that is already running ends at its runtime limit. | Phase 3 |
 | "Seen 3× today" dedupe | Repeat findings collapse into one card with a counter, instead of stacking up as noise. | #96 |
 
 ## Meet your team where it works

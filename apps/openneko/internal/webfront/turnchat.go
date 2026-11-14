@@ -607,8 +607,11 @@ func (a *API) finishWorkRun(ctx context.Context, runID, status string, runErr *s
 	if runErr != nil {
 		payloadErr = *runErr
 	}
-	a.recordAudit(ctx, auditEvent{OrgID: orgID, EntityKind: "work_run", EntityID: runID, Event: "run:" + status,
-		Payload: map[string]any{"status": status, "error": payloadErr}})
+	payload := map[string]any{"status": status, "error": payloadErr}
+	if by := a.runStoppedBy(runID); status == "cancelled" && by != "" {
+		payload["stoppedBy"] = by
+	}
+	a.recordAudit(ctx, auditEvent{OrgID: orgID, EntityKind: "work_run", EntityID: runID, Event: "run:" + status, Payload: payload})
 	return nil
 }
 

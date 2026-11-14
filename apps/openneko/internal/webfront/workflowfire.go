@@ -112,7 +112,7 @@ func (a *API) fireWorkflowRun(ctx context.Context, job jobs.WorkflowRunFireArgs)
 	if err != nil {
 		return err
 	}
-	if res.Status == "cancelled" {
+	if res.Status == "cancelled" && !errors.Is(context.Cause(base), errRunStopped) {
 		return errWorkflowRunInterrupted
 	}
 	return nil

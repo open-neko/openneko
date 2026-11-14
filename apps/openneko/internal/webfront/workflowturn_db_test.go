@@ -31,6 +31,11 @@ func workflowTurnFront(t *testing.T, steps string) (*API, *pgxpool.Pool, workflo
 func workflowTurnFrontHTTP(t *testing.T, steps string) (*Front, *pgxpool.Pool, workflowRecord) {
 	t.Helper()
 	f, db, _ := chatTurnFront(t)
+	return f, db, seedWorkflowTurn(t, db, steps)
+}
+
+func seedWorkflowTurn(t *testing.T, db *pgxpool.Pool, steps string) workflowRecord {
+	t.Helper()
 	seed(t, db, `insert into bot (org_id, owner_user_id, name, coat, pattern, thread_id, instructions)
 		values ('org', 'member', 'Stock watcher', 'ink', 'solid', $1, '')`, threadMine)
 	seed(t, db, `insert into workflow_definition (id, org_id, name, description, goal, steps, network_hosts, created_by_thread_id)
@@ -43,7 +48,7 @@ func workflowTurnFrontHTTP(t *testing.T, steps string) (*Front, *pgxpool.Pool, w
 	if err != nil {
 		t.Fatal(err)
 	}
-	return f, db, wf
+	return wf
 }
 
 func workflowTurnOpts(wf workflowRecord, log *eventLog) workflowTurnOptions {
