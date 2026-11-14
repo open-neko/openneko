@@ -39,7 +39,7 @@ func TestFront(t *testing.T) {
 		{"GET", "/api/v1/work", "node /api/v1/work", ""},
 		{"GET", "/api/work", "node /api/work", ""},
 		{"GET", "/admin/settings/models", "node /admin/settings/models", ""},
-		{"GET", "/admin/rules/p1", "node /admin/rules/p1", ""},
+		{"GET", "/admin/users/groups/g1", "node /admin/users/groups/g1", ""},
 		{"GET", "/device", "node /device", ""},
 		{"POST", "/chat", "node /chat", ""},
 	}
