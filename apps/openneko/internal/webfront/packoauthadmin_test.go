@@ -135,8 +135,23 @@ func TestPackOAuthAdminFlow(t *testing.T) {
 		t.Errorf("start: %s, state %v", begun.AuthorizationURL, state)
 	}
 
+	gj := &fakePackGraphjin{}
+	gjSrv := gj.server(t, map[string]any{"name": "google_workspace_gmail", "kind": "api"}, "")
+	var sourceID string
+	if err := db.QueryRow(t.Context(), `insert into data_source (org_id, kind, name, graphql_url, enabled, is_default, auth_mode)
+		values ('org', 'graphjin', 'GJ', $1, true, true, 'jwt') returning id::text`, gjSrv.URL).Scan(&sourceID); err != nil {
+		t.Fatal(err)
+	}
+	runtime := `{"source":{"id":"` + sourceID + `","graphqlUrl":"` + gjSrv.URL + `","authMode":"jwt"},"bindings":{}}`
 	seed(t, db, `insert into pack_install (org_id, pack_id, version, status, manifest_hash, config) values
-		('org', 'google-workspace', '0.2.0', 'installed', 'h', '{"keep":1,"_oauth":{"other":{"key":"other"}}}')`)
+		('org', 'google-workspace', '0.2.0', 'installed', 'h', jsonb_build_object('keep', 1, '_oauth', '{"other":{"key":"other"}}'::jsonb, '_runtime', $1::jsonb))`, runtime)
+	seed(t, db, `insert into pack_action_definition (org_id, kind, definition, definition_hash, readiness) values
+		('org', 'google_workspace.gmail', '{}', 'h', 'blocked'), ('org', 'other.kind', '{}', 'h', 'blocked')`)
+	readiness := func() string {
+		var got string
+		_ = db.QueryRow(t.Context(), `select string_agg(kind || '=' || readiness || ':' || coalesce(readiness_reason, ''), ',' order by kind) from pack_action_definition`).Scan(&got)
+		return got
+	}
 	callback := func() *httptest.ResponseRecorder {
 		st := map[string]any{"packId": "google-workspace", "connectionKey": "workspace", "state": "st", "codeVerifier": "cv",
 			"returnPath": "/admin/settings/packs?tab=oauth", "userId": "admin", "orgId": "org",
@@ -153,23 +168,28 @@ func TestPackOAuthAdminFlow(t *testing.T) {
 		t.Errorf("missing scope: %d %s", w.Code, w.Body.String())
 	}
 	provider.token = `{"access_token":"at-secret-1","refresh_token":"rt-secret-1","expires_in":3600,"scope":"` + allScopes + `"}`
-	wk.fail = "graphjin is down"
-	if w := callback(); w.Code != 400 || !strings.Contains(w.Body.String(), `"error":"Worker returned HTTP 502"`) {
+	gj.failApply = true
+	if w := callback(); w.Code != 400 || !strings.Contains(w.Body.String(), "apply refused") {
 		t.Errorf("sync failure: %d %s", w.Code, w.Body.String())
 	}
 	store, _ = secrets.Read(f.API.SecretsDir)
 	if store["pack.google-workspace"]["OAUTH_WORKSPACE_SYNC_PENDING"] != "true" {
 		t.Errorf("pending mark after a failed sync: %v", store["pack.google-workspace"])
 	}
-	wk.fail = ""
-	wk.reply["/admin/packs/google-workspace/oauth/workspace/sync"] = `{"synced":true}`
-	wk.calls = nil
+	gj.failApply = false
+	gj.take()
 	w = callback()
 	if w.Code != 302 || w.Header().Get("Location") != "/admin/settings/packs?tab=oauth&pack=google-workspace&connected=workspace" {
 		t.Fatalf("complete: %d %s %q", w.Code, w.Body.String(), w.Header().Get("Location"))
 	}
-	if strings.Join(wk.calls, "\n") != `POST /admin/packs/google-workspace/oauth/workspace/sync {"enabled":true}` {
+	if len(wk.calls) != 0 {
 		t.Errorf("worker calls %v", wk.calls)
+	}
+	if m := gj.take(); len(m) != 2 || !strings.Contains(m[1], `name: \"google_workspace_gmail\"`) || !strings.Contains(m[1], `token: \"at-secret-1\"`) {
+		t.Errorf("connect mutations %v", m)
+	}
+	if got := readiness(); got != "google_workspace.gmail=ready:,other.kind=blocked:" {
+		t.Errorf("readiness after connect %s", got)
 	}
 	form := provider.forms[len(provider.forms)-1]
 	if form.Get("client_secret") != "s3cret-value" || form.Get("code_verifier") != "cv" || form.Get("code") != "c1" {
@@ -198,19 +218,22 @@ func TestPackOAuthAdminFlow(t *testing.T) {
 		t.Errorf("connected status %s", w.Body.String())
 	}
 
-	wk.calls = nil
 	if w := send("DELETE", workspaceRoute, "", admin); w.Code != 200 || w.Body.String() != `{"disconnected":true}` {
 		t.Errorf("disconnect: %d %q", w.Code, w.Body.String())
 	}
-	if strings.Join(wk.calls, "\n") != `POST /admin/packs/google-workspace/oauth/workspace/sync {"enabled":false}` {
-		t.Errorf("disconnect calls %v", wk.calls)
+	if m := gj.take(); len(m) != 2 || strings.Count(m[1], `read: \"blocked\", write: \"blocked\" }, name: \"google_workspace_`) != 6 ||
+		strings.Contains(m[1], "at-secret-1") || len(wk.calls) != 0 {
+		t.Errorf("disconnect mutations %v, worker %v", m, wk.calls)
+	}
+	if got := readiness(); got != "google_workspace.gmail=blocked:oauth_not_connected,other.kind=blocked:" {
+		t.Errorf("readiness after disconnect %s", got)
 	}
 	store, _ = secrets.Read(f.API.SecretsDir)
 	if s := store["pack.google-workspace"]; s["GOOGLE_WORKSPACE_ACCESS_TOKEN"] != "" || s["OAUTH_WORKSPACE_ACCOUNT_ID"] != "" || s["OAUTH_WORKSPACE_CLIENT_ID"] != "cid" {
 		t.Errorf("after disconnect %v", s)
 	}
 	_ = db.QueryRow(t.Context(), `select config::text from pack_install where pack_id = 'google-workspace'`).Scan(&config)
-	if config != `{"keep": 1, "_oauth": {"other": {"key": "other"}}}` {
+	if !strings.HasPrefix(config, `{"keep": 1, "_oauth": {"other": {"key": "other"}}, "_runtime": `) {
 		t.Errorf("binding after disconnect %s", config)
 	}
 	if w := send("DELETE", workspaceRoute, "", admin); w.Body.String() != `{"disconnected":false}` {
