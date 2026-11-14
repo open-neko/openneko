@@ -35,7 +35,7 @@ Then run `openneko setup` (guided), or `openneko start` to bring the stack up wi
 
 1. With the bundled database (`--mode demo` or `--mode dev`), choose an admin database password. In prod mode, setup asks for [OpenNeko's database](#opennekos-database) URL before it starts the stack.
 2. Confirm the pre-filled GraphJin URL, `http://graphjin:8080`. It names the GraphJin that runs inside `openneko-serve`. Change it only when you run a GraphJin of your own.
-3. Pick the model provider the agent should use (Anthropic / OpenAI / Google / Ollama / others). For any other server that speaks the OpenAI chat API, pick **OpenAI-compatible URL** and enter its Base URL, the model name and, when the server needs one, a key. Every model call, the agent's and the app's own, runs in `openneko serve`. The agent (Ax) runs there with the full tool set, including the chat-first management tools. It gets a terminal only when you connect a [sandbox](#sandbox-optional).
+3. Pick the model provider the agent should use (Anthropic / OpenAI / Google / Ollama / others). For any other server that speaks the OpenAI chat API, pick **OpenAI-compatible URL** and enter its Base URL, the model name and, when the server needs one, a key. For a model server on this host, give `127.0.0.1` or `localhost`. In a Docker install, OpenNeko then calls `host.docker.internal`. A [native install](#run-without-docker-native) calls `127.0.0.1`. Every model call, the agent's and the app's own, runs in `openneko serve`. The agent (Ax) runs there with the full tool set, including the chat-first management tools. It gets a terminal only when you connect a [sandbox](#sandbox-optional).
 4. Add your provider API key. To use other models for some tasks, or a fallback model when a provider is down, add them later at Admin, Settings, Models.
 5. Add an industry research provider, or skip.
 
@@ -292,10 +292,11 @@ openneko [--instance name] setup [--mode prod|dev|demo] [--port N] \
   [--bind-address IPv4] [--database-url postgres://...]
 openneko instances                 # configured host installations
 openneko start [--mode prod|dev|demo] [--detach]
+openneko start --native [--database-url URL] [--web-dir DIR] [--detach]  # no Docker; see "Run without Docker"
 openneko upgrade [--version vX.Y.Z] [--mode auto|prod|dev|demo]
-openneko status                    # docker compose ps proxy
-openneko logs [service…] [-f]
-openneko stop [--volumes]          # --volumes wipes data
+openneko status                    # serving, degraded or down
+openneko logs [service…] [-f] [--tail N]
+openneko stop [--volumes]          # --volumes wipes data (Docker only)
 openneko migrate                   # apply pending migrations to OpenNeko's database
 openneko migrate config-repo --dry-run   # list what moving an old config repository to plain folders writes
 openneko jobs run workflow_cron_sweep --org ID [--at TIME]  # run one sweep now and print the result as JSON
@@ -816,6 +817,46 @@ openneko upgrade
 2. **Compose up.** Runs `docker compose up` for web, worker and `openneko-serve`. Docker pulls the pinned image tags.
 
 `openneko stop` doesn't touch volumes. Use `--volumes` for a clean slate (wipes the metadata DB, demo state, agent workspaces).
+
+### Run without Docker (native)
+
+`openneko start --native` runs OpenNeko on this host as plain processes.
+It needs no Docker. It runs prod mode only, for the default installation.
+OpenNeko's database is yours, by URL.
+
+```bash
+openneko start --native -d \
+  --database-url 'postgres://USER:PASSWORD@HOST:5432/DATABASE?sslmode=verify-full'
+```
+
+1. **Start steps.** The command runs the database check, the migrations and
+   serve's credentials and GraphJin config, in that order. A failed step
+   stops the start.
+2. **Processes.** A supervisor starts `openneko serve` and `openneko web`.
+   When a process stops, the supervisor starts it again after a delay
+   (1 second, then up to 30 seconds). With `-d`, the supervisor runs in the
+   background and the command waits until web answers.
+
+The start writes `"runtime": "native"` to `installation.json`. After that,
+`openneko start`, `stop`, `status` and `logs` act on the native processes.
+`openneko logs` reads the `supervisor`, `serve` and `web` logs.
+
+| What | Where |
+|---|---|
+| Web app files | `--web-dir`, else `OPENNEKO_WEB_DIR`, else `share/openneko/web` beside the release's `bin` folder |
+| Files, file index, serve credentials, GraphJin config, agent runs | `$XDG_DATA_HOME/openneko` (default `~/.local/share/openneko`) |
+| Logs | `~/.local/share/openneko/logs` |
+| Supervisor state and the sockets | `~/.local/share/openneko/run` |
+| Web port | `OPENNEKO_PORT` and `OPENNEKO_WEB_BIND_ADDRESS` at the first start, then `installation.json` |
+
+`openneko serve` listens on `127.0.0.1:8090`, the customer GraphJin on
+`127.0.0.1:8080` and the subscriptions GraphJin on `127.0.0.1:8089`. Keep
+these ports free. The embedding service and the sandbox stay external: set
+`NEKO_EMBEDDING_URL` and `OPENNEKO_SANDBOX_URL` before the start.
+
+A native install has no Node worker. Password sign-in, chat and the routes
+that `openneko web` answers work. SSO sign-in and pack account connections
+need the worker today. Windows does not run the native runtime yet.
 
 ## Reset
 
