@@ -8,12 +8,6 @@ import { createAdminHandler } from "./admin-server.js";
 import { CoreSecrets } from "./secrets/core-secrets.js";
 import { SignInService } from "./signin/signin-service.js";
 import {
-  applyGroupGrants,
-  disableGroupGrants,
-  enableGroupGrants,
-  scheduleGroupGrantsApply,
-} from "./graphjin/group-grants-service.js";
-import {
   cancelAllAgents,
   provisionHostConfig,
   resolveAgentConcurrency,
@@ -21,7 +15,6 @@ import {
 } from "@neko/llm";
 import {
   createActionRequest,
-  dispatchExternalEvent,
   registerActionRequestCreatedHook,
   seedDefaultActionPolicies,
 } from "@neko/llm/workflows";
@@ -78,35 +71,6 @@ const server = createServer(
           input as Parameters<typeof createActionRequest>[0],
         );
         return { id: request.id, status: request.status };
-      },
-    },
-    events: {
-      dispatchExternal: async (input) => {
-        const result = await dispatchExternalEvent({
-          orgId: input.orgId,
-          event: {
-            name: input.name,
-            source: input.source,
-            payload: input.payload,
-            ...(input.dedupeKey ? { dedupeKey: input.dedupeKey } : {}),
-          },
-        });
-        return { matched: result.matched, enqueued: result.enqueued };
-      },
-    },
-    groupGrants: {
-      apply: async () => applyGroupGrants(await getOrgId()),
-      schedule: () => {
-        void getOrgId().then((orgId) => scheduleGroupGrantsApply(orgId));
-      },
-      enable: async (actorUserId) => enableGroupGrants(await getOrgId(), actorUserId),
-      disable: async (actorUserId) => disableGroupGrants(await getOrgId(), actorUserId),
-      apiOperations: async () => {
-        const configFile = process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim();
-        if (!configFile) return [];
-        const { readFile } = await import("node:fs/promises");
-        const { listConfigApiOperations } = await import("@neko/llm/graphjin");
-        return listConfigApiOperations(await readFile(configFile, "utf8"));
       },
     },
     connect: {

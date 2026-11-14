@@ -279,6 +279,8 @@ func TestWorkflowAPILimits(t *testing.T) {
 		w.Body.String() != wfErrBody("rolling_budget_exhausted", "The rolling workflow API usage budget has been exhausted.") || w.Header().Get("Retry-After") != "3600" {
 		t.Errorf("rolling: %d %s", w.Code, w.Body)
 	}
+	seed(t, db, `insert into subscription (id, org_id, workflow_id, source_kind, filter) values
+		('e2000000-0000-4000-8000-000000000001', 'org', $1, 'external_event', '{"event_names":["spend.budget_blocked"],"source":"spend-governance"}')`, wfHeld)
 	seed(t, db, `update workflow_api_access set rolling_cost_micros_budget = 1000000000 where workflow_id = $1`, wfHeld)
 	seed(t, db, `update spend_limit set workflow_daily_micros = 4000000 where org_id = 'org' and workflow_id is null`)
 	w := wfCall(f, "POST", runs, `{}`, map[string]string{"Idempotency-Key": "spend-key"})
@@ -289,10 +291,14 @@ func TestWorkflowAPILimits(t *testing.T) {
 		t.Errorf("alert: %s", n)
 	}
 	worker.mu.Lock()
-	calls := strings.Join(worker.calls, "\n")
+	calls := len(worker.calls)
 	worker.mu.Unlock()
-	if !strings.Contains(calls, `POST /admin/events/external`) {
-		t.Errorf("dispatch: %s", calls)
+	if calls != 0 {
+		t.Errorf("unexpected worker calls: %v", worker.calls)
+	}
+	obs := queryText(t, db, `select concat_ws(' | ', title, body) from observation where subscription_id = 'e2000000-0000-4000-8000-000000000001'`)
+	if !strings.HasPrefix(obs, `spend-governance: spend.budget_blocked | {"subject":"workflow:`+wfHeld+`","budget":"workflow_daily"`) {
+		t.Errorf("dispatch observation: %s", obs)
 	}
 	if n := queryText(t, db, `select count(*)::text from work_run where org_id = 'org' and actor_role = 'service' and status = 'queued'`); n != "2" {
 		t.Errorf("work runs: %s", n)

@@ -40,12 +40,20 @@ func TestProfileBehaviorThresholds(t *testing.T) {
 
 func TestBehaviorSweep(t *testing.T) {
 	f, db := memoryFront(t)
+	seedRiver(t, db, f)
 	ctx := context.Background()
-	worker := &setupWorker{status: `{"provider":null}`, reply: map[string]string{"/admin/events/external": `{"matched":0}`}}
+	worker := &setupWorker{status: `{"provider":null}`, reply: map[string]string{}}
 	srv := httptest.NewServer(worker)
 	t.Cleanup(srv.Close)
 	f.API.Gate.WorkerURL = srv.URL
-	const run = "f0000000-0000-4000-8000-000000000001"
+	const (
+		run = "f0000000-0000-4000-8000-000000000001"
+		wf  = "f0000000-0000-4000-8000-000000000002"
+		sub = "f0000000-0000-4000-8000-000000000003"
+	)
+	seed(t, db, `insert into workflow_definition (id, org_id, name, description) values ($1, 'org', 'Sec responder', 'x')`, wf)
+	seed(t, db, `insert into subscription (id, org_id, workflow_id, source_kind, filter) values
+		($1, 'org', $2, 'external_event', '{"event_names":["security.behavior_threshold"],"source":"behavior-monitor"}')`, sub, wf)
 	seed(t, db, `insert into control_plane_audit (org_id, run_id, path, actor_role, backend)
 		select 'org', $1, '/v1/memory/search', 'service', 'ax' from generate_series(1, 9)`, run)
 	seed(t, db, `insert into control_plane_audit (org_id, run_id, path, actor_role, backend, created_at)
@@ -74,14 +82,18 @@ func TestBehaviorSweep(t *testing.T) {
 		t.Errorf("%d behavior_alert rows, want 2", rows)
 	}
 	worker.mu.Lock()
-	calls := strings.Join(worker.calls, "\n")
+	calls := len(worker.calls)
 	worker.mu.Unlock()
-	bucket := now.UnixMilli() / 600_000
-	wantCall := `POST /admin/events/external {"dedupeKey":"control_plane_call_volume:` + run + `:` + itoa(bucket) +
-		`","name":"security.behavior_threshold","orgId":"org","payload":{"kind":"control_plane_call_volume","observed":9,"subject":"` + run +
-		`","threshold":5,"windowSeconds":600},"source":"behavior-monitor"}`
-	if !strings.Contains(calls, wantCall) || strings.Count(calls, "/admin/events/external") != 2 {
-		t.Errorf("worker calls:\n%s\nwant:\n%s", calls, wantCall)
+	if calls != 0 {
+		t.Errorf("unexpected worker calls: %v", worker.calls)
+	}
+	obs := queryText(t, db, `select concat_ws(' | ', title, body) from observation where subscription_id = $1 order by created_at asc limit 1`, sub)
+	wantObs := `behavior-monitor: security.behavior_threshold | {"kind":"control_plane_call_volume","subject":"` + run + `","observed":9,"threshold":5,"windowSeconds":600}`
+	if obs != wantObs {
+		t.Errorf("observation:\n%s\nwant:\n%s", obs, wantObs)
+	}
+	if queued := len(riverQueueJobs(t, db, "workflow_run_fire", "workflow_run")); queued != 2 {
+		t.Errorf("queued %d workflow_run_fire jobs, want 2", queued)
 	}
 }
 
