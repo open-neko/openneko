@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -864,8 +865,16 @@ func (a *API) packActionGraphjinQuery(
 
 type actionAdapter func(context.Context, *actionRequestRecord) (*actionExecutionOutcome, error)
 
+// workerActionKinds are the built-in and eval adapters that only the worker
+// runs. Every other kind, pack kinds included, runs in Go.
+var workerActionKinds = []string{
+	"channel_admin", "code_create_issue", "code_draft_patch", "data_source_admin",
+	"eval_send_notice", "group_admin", "openneko_eval_mutation", "openneko_eval_priority",
+	"send_webhook", "source_config_admin", "user_admin",
+}
+
 // goActionAdapter is the Go executor of an action request, or nil when the
-// worker still runs its kind.
+// worker runs its kind.
 func (a *API) goActionAdapter(ctx context.Context, orgID, actionRequestID string) (actionAdapter, error) {
 	if a.DB == nil {
 		return nil, nil
@@ -891,8 +900,12 @@ func (a *API) goActionAdapter(ctx context.Context, orgID, actionRequestID string
 		return a.executeMagentoChangeset, nil
 	case owned:
 		return a.executeDeclarativePackAction, nil
+	case slices.Contains(workerActionKinds, kind):
+		return nil, nil
 	}
-	return nil, nil
+	return func(context.Context, *actionRequestRecord) (*actionExecutionOutcome, error) {
+		return nil, fmt.Errorf("no adapter registered for kind %q", kind)
+	}, nil
 }
 
 // executeActionRequest matches runActionExecute() and

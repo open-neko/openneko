@@ -281,6 +281,8 @@ openneko install https://github.com/<owner>/<repo>#<path/to/skill>   # community
 
 Packs add sources, actions, workflows and skills, and can turn on the built-in Slack, Telegram and HUD channels. See **[PACKS.md](PACKS.md)**. `openneko doctor` checks your host can run the stack.
 
+`openneko pack` calls `openneko web` on its admin socket, so OpenNeko must be running. The socket has mode 600 and no other check: only the user that runs `openneko web`, or root, can use it. In a Docker install the command runs inside the `web` container (`/tmp/openneko-web-admin.sock`). A native install uses `web-admin.sock` in its data folder; on a server install, run `sudo openneko pack`.
+
 ---
 
 *Reference below — not needed to get started.*
