@@ -1,7 +1,7 @@
 # Secrets
 
 OpenNeko holds deployment secrets (channel and sign-in credentials, pack
-connector keys, the model-gateway key) and
+connector keys, the model-gateway key, the Web Push VAPID key pair) and
 per-operator OAuth credentials. OpenNeko encrypts all of them at rest with
 the local `enc:v1` cipher (AES-256-GCM, keyed from
 `~/.config/openneko/secret-key`).

@@ -3,63 +3,83 @@
 OpenNeko treats the agent loop as untrusted code: a prompt can steer it. Three
 pieces run it, and each holds only what its job needs:
 
-- **`openneko web`**, the trusted control plane. It stages each run, serves
-  the agent's MCP tools and holds the database, secrets, policy and
-  approvals. It runs every turn: chat, channel messages, scheduled,
-  subscription, watcher, manual and API workflows, and background jobs;
-- **`openneko serve`**, which runs each agent turn and every other model call:
-  the Ax harness, the inference and embedding gateways and the agent's file
-  tools;
+- **`openneko web`**, the Go server in the control plane that stages each run's
+  workspace, serves the agent's MCP tools in-process, and runs chat turns,
+  channel turns, manual and scheduled workflows, metric refreshes, and setup
+  builds;
+- **`openneko serve`**, which runs the Ax harness for each agent turn and every
+  other model call, the inference and embedding gateways, and the agent's file
+  tools (when `OPENNEKO_SERVE_SOCKET` is not set, `openneko web` runs the Ax
+  harness in-process);
 - the optional **sandbox service** ([recipes/sandbox](recipes/sandbox/README.md)),
   which runs terminal commands, script skills and workflow script steps.
 
-The agent reaches the database, secrets and policy only through the MCP tools
-that `openneko web` serves for the run.
+`openneko web` is the trusted control plane (with the Node `worker` in the
+Docker stack for Scalekit sign-in, SSO setup and directory sync, GraphJin group
+grants, and built-in action adapters). The
+database, secrets, policy and approvals live in the control plane. The agent
+reaches them only through the per-run tool bridge.
 
 ## How a run flows
 
 ```
- user ─▶ openneko web  (control plane: DB, secrets, policy, MCP tools)
-            │ stage the run's workspace in the shared runs folder
-            │ send each turn over the serve socket
-            ▼
-        openneko serve                         sandbox service
-        (model key only for the turn) ──────▶  (own network, per-run user,
-            │ terminal commands                 no secrets)
-            │ (only with a sandbox URL)
-            └── MCP tool calls back over the same socket to openneko web
+ user / job ─▶ openneko web  (control plane: DB, secrets, policy, tool handlers)
+                  │ stage the run's workspace in OPENNEKO_AGENT_RUNS_DIR
+                  ▼
+              openneko web ── one turn per connection ──▶ openneko serve
+              (in-process MCP tool handlers;              (openneko-serve container
+               model key for this turn only)               or native serve process;
+                  ▲                                        model key only for the turn)
+                  │ MCP tools over the serve socket             │ terminal commands
+                  └─────────────────────────────────────────────┤ (only with a sandbox URL)
+                                                                ▼
+                                                         sandbox service
+                                                         (own network, per-run user,
+                                                          no secrets)
 ```
 
-1. `openneko web` stages the run's workspace, skills and job file in a new
-   folder under `OPENNEKO_AGENT_RUNS_DIR` (`/var/lib/openneko/agent-runs` in
-   the images).
-2. It sends each turn to `openneko serve` over the Unix socket
-   `OPENNEKO_SERVE_SOCKET`. The turn carries the org's model key. Serve uses
-   the key for the model calls of that turn and keeps it nowhere else. The
-   agent's MCP tools (GraphJin, memory, files, actions) go back over the same
-   socket to `openneko web`, which checks the run's identity and policy.
-3. When `OPENNEKO_SANDBOX_URL` is set, serve sends terminal commands to the
+`openneko web` runs chat questions, channel messages, manual and scheduled
+workflows, metric refreshes, and setup builds in Go:
+
+1. `openneko web` stages the run's workspace and skills in a new folder under
+   `OPENNEKO_AGENT_RUNS_DIR` (`/var/lib/openneko/agent-runs` in the images).
+   It loads only the team skills that the person's groups hold and that
+   person's own skills.
+2. `openneko web` resolves the org's model route and fallback route, loads their
+   API keys for this turn, and sends the turn to `openneko serve` over the Unix
+   socket `OPENNEKO_SERVE_SOCKET` (or runs the Ax harness in-process when no
+   socket is set). Serve uses the key for the model calls of that turn and
+   keeps it nowhere else. The agent's MCP tools (GraphJin, memory, files,
+   skills, cards, user input, actions) go back over the same socket to
+   `openneko web`'s in-process tool bridge.
+3. For a workflow with script steps, `openneko web` runs the script steps
+   before the turn against the sandbox service, pre-fetching any declared
+   `<script>.queries.json` files and serving `neko_data` / `neko-query`
+   requests through the run's read-only GraphJin tools.
+4. When `OPENNEKO_SANDBOX_URL` is set, serve sends terminal commands to the
    sandbox service. Without it, the agent has no terminal and the script
    skills are off. An admin can also turn the terminal off for one
-   organization at Admin, Settings, Agent. The run then gets no sandbox URL
-   or key, the script skills are not staged, and the prompt and skill search
-   leave them out.
-4. When the run ends, `openneko web` copies artifacts and skill edits back
+   organization at Admin, Settings, Agent. `openneko web` then gives the turn
+   no sandbox URL or key, does not stage the script skills, and the prompt and
+   skill search leave them out.
+5. When the turn ends, `openneko web` copies artifacts and skill edits back
+   (saving a member's edit to a team skill as a private copy for that member)
    and deletes the run folder. The next start deletes folders that a restart
    left behind.
 
-`openneko web` builds the prompt before the turn and parses the action and
-workflow fences, persists and scrubs after it. Only the agent loop runs in
-serve.
+`openneko web` builds the prompt before the turn, and parses the action and
+workflow fences, persists and scrubs after it. Only the agent loop runs in the
+harness.
 
 ## What each piece holds
 
 | Piece | Runs as | Holds | Network |
 |---|---|---|---|
-| `openneko serve` | `neko`, 1001 | a turn's or a host call's model key while it runs; the files service; the `neko_files_<database>` login and the derived token key; the customer GraphJin and its config | the stack's network, for the model APIs and the customer's data sources |
+| `openneko web` | `neko`, 1001 (or `openneko` on a server install) | the `neko` database login, `secrets.json`, and the in-process tool handlers | the stack's network |
+| `openneko serve` | `neko`, 1001 (or `openneko-agent` on a server install) | a turn's or a host call's model key while it runs; the files service; the `neko_files_<database>` login and the derived token key; the customer GraphJin and its config | the stack's network, for the model APIs and the customer's data sources |
 | Sandbox service | root, to give each run its own user | **no secrets**; a command gets only `PATH`, `HOME`, `TMPDIR`, `LANG`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH` | only its own network |
 
-Model keys exist only in `openneko web` while it runs a turn, and in serve. Serve drops every
+Model keys exist only in `openneko web` while it starts a turn or host call, and in serve while the call runs. Serve drops every
 `OPENNEKO_SANDBOX_*` value that a turn sends, and the sandbox request carries
 no model key, so the terminal cannot read one.
 
@@ -83,7 +103,8 @@ The gateway takes every Ax provider and any OpenAI-compatible URL. Ollama,
 vLLM, LM Studio and other local servers use the OpenAI-compatible route with
 no key. Web and the worker hold no provider client of their own.
 
-The industry research step still calls Perplexity directly from the worker,
+The industry research step (`industry_insights_build`) runs in `openneko web`
+and calls Perplexity directly (`apps/openneko/internal/webfront/industrybuild.go`),
 because the gateway does not yet return Perplexity's citations.
 
 ### Models and task routes
@@ -100,19 +121,19 @@ as unset, so its tasks use the default model.
 `openneko web` answers the model routes (`/api/v1/admin/models/*` and
 `/api/v1/admin/model-routes`). The provider list, the default models, the
 form fields and the provider checks are in `apps/openneko/internal/llm`.
-`packages/llm` keeps a copy until the host model code moves to Go. Both
+`packages/llm` keeps a copy for shared fixtures and tests. Both
 copies must match `packages/llm/test/fixtures/model-catalog.json`; a Go test
 and a TypeScript test check this.
 
-`openneko web` also makes host model calls in Go. It answers the provider
-test (`/api/v1/settings/provider/test`), the external service checks
-(`/api/v1/admin/services`) and the onboarding submit
+`openneko web` makes all host model calls in Go: question classification,
+compaction, bot names and instructions, skill lessons, the research mission,
+the provider test (`/api/v1/settings/provider/test`), the external service
+checks (`/api/v1/admin/services`) and the onboarding submit
 (`/api/v1/onboarding/submit`). A Go host call reads the task route and its
 fallback, loads each key (a Vertex key is a token from Google Application
 Default Credentials), sends the `generate` frame to serve's socket and writes
 the `spend_ledger` row. With no `OPENNEKO_SERVE_SOCKET`, the call runs inside
-`openneko web`. The worker keeps the TypeScript host calls until its jobs
-move to Go. The Go and TypeScript code must give the same Ax route for each
+`openneko web`. The Go and TypeScript code must give the same Ax route for each
 provider and the same price for each case in
 `packages/llm/test/fixtures/host-calls.json`; a Go test and a TypeScript
 test check this.
@@ -152,19 +173,15 @@ search uses Postgres full-text search.
 ### The data access interface
 
 The agent's data tools (`neko_graphjin`: the tool list and each tool
-call) and the broker's read-query route reach the customer's data through
-one interface, `packages/llm/src/data-access`. The broker calls it with
-the run's org and run id. The interface checks the run's grants first: a
+call) and the read-query handler reach the customer's data through
+`apps/openneko/internal/webfront/turndata.go` (matching `packages/llm/src/data-access`).
+`openneko web` checks the run's grants first: a
 run whose user holds no data source gets an error, a saved query the user
 does not hold returns a refusal, and the read query accepts query
-operations only. Then it passes the call to the data backend.
-
-The backend today is GraphJin (`data-access/graphjin.ts`). It finds the
+operations only. Then it passes the call to GraphJin: it finds the
 org's data source, signs the run's GraphJin token with the user's group
 roles, refuses the internal GraphJin, applies the config's write guard
-and calls GraphJin's MCP or GraphQL route. Another backend implements
-`DataBackend` (`query`, `listTools`, `callTool`); the grant checks stay
-the same.
+and calls GraphJin's MCP or GraphQL route.
 
 ## Two zones
 
@@ -188,7 +205,7 @@ mount the config volume.
 
 Containers and credentials separate the zones. The network does not: serve
 shares the stack network with the database, web and the worker. The
-database grants and the per-run tokens stop serve from acting
+database grants and the broker's per-run tokens stop serve from acting
 outside its zone.
 
 Agent runs read customer data only through the direct GraphJin tools. No run
