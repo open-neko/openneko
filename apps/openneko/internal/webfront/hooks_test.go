@@ -225,6 +225,8 @@ func TestHookLimits(t *testing.T) {
 	}
 	t.Setenv("HEADLESS_QUEUE_MAX_PER_WORKFLOW", "")
 
+	seed(t, db, `insert into subscription (id, org_id, workflow_id, source_kind, filter) values
+		('e1000000-0000-4000-8000-000000000001', 'org', $1, 'external_event', '{"event_names":["spend.budget_blocked"],"source":"spend-governance"}')`, wfHeld)
 	seed(t, db, `update spend_limit set org_hourly_micros = 4000000 where org_id = 'org' and workflow_id is null`)
 	w := hookCall(f, "POST", "/api/hooks/"+hookID, `{}`, map[string]string{"Idempotency-Key": "budget"})
 	if w.Code != 429 || !regexp.MustCompile(`^\{"error":"global_hourly_budget","limitUsd":4,"committedUsd":\d+(\.\d+)?,"reservationUsd":5\}$`).MatchString(w.Body.String()) {
@@ -240,12 +242,14 @@ func TestHookLimits(t *testing.T) {
 		t.Errorf("alert: %s", alert)
 	}
 	worker.mu.Lock()
-	calls := strings.Join(worker.calls, "\n")
+	calls := len(worker.calls)
 	worker.mu.Unlock()
-	if !strings.Contains(calls, `POST /admin/events/external {"dedupeKey":"spend.budget_blocked:org:`) ||
-		!strings.Contains(calls, `"name":"spend.budget_blocked","orgId":"org","payload":{"budget":"org_hourly"`) ||
-		!strings.Contains(calls, `"source":"spend-governance"`) {
-		t.Errorf("dispatch: %s", calls)
+	if calls != 0 {
+		t.Errorf("unexpected worker calls: %v", worker.calls)
+	}
+	obs := queryText(t, db, `select concat_ws(' | ', title, body) from observation where subscription_id = 'e1000000-0000-4000-8000-000000000001'`)
+	if !strings.HasPrefix(obs, `spend-governance: spend.budget_blocked | {"subject":"org","budget":"org_hourly"`) {
+		t.Errorf("dispatch observation: %s", obs)
 	}
 	hookCall(f, "POST", "/api/hooks/"+hookID, `{}`, map[string]string{"Idempotency-Key": "budget2"})
 	if n := queryText(t, db, `select count(*)::text from behavior_alert where org_id = 'org'`); n != "1" {

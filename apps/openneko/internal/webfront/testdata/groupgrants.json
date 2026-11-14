@@ -1,0 +1,518 @@
+{
+  "apiOperations": [
+    {
+      "name": "base",
+      "raw": "identity:\n  role_mode: first\n  role_claims: [role]\nroles:\n  - name: reviewer\n    comment: Manual role\nsources:\n  - name: shop\n    kind: database\n    access:\n      read: authenticated\n      grants:\n        - role: reviewer\n          tables:\n            - name: public.audit\n              columns: [id]\n  - name: crm\n    kind: database\n  - name: payments\n    kind: api\n    specs:\n      stripe:\n        operations:\n          refund:\n            allowed_roles: [admin, og_stale]\n          list: {}\n",
+      "operations": [
+        "payments:stripe:list",
+        "payments:stripe:refund"
+      ]
+    },
+    {
+      "name": "scoped",
+      "raw": "sources:\n  - name: erp\n    kind: database\n    access:\n      read: account\n      namespace_column: tenant_id\n  - name: default_acct\n    kind: database\n    access:\n      read: account\n  - name: notes\n    kind: database\n    access:\n      read: owner\n      owner_column: author_id\n  - name: default_owner\n    kind: database\n    access:\n      read: owner\n  - name: files_src\n    kind: file\n",
+      "operations": []
+    },
+    {
+      "name": "no sources",
+      "raw": "database:\n  type: postgres\n",
+      "operations": []
+    }
+  ],
+  "readModes": [
+    {
+      "name": "base",
+      "raw": "identity:\n  role_mode: first\n  role_claims: [role]\nroles:\n  - name: reviewer\n    comment: Manual role\nsources:\n  - name: shop\n    kind: database\n    access:\n      read: authenticated\n      grants:\n        - role: reviewer\n          tables:\n            - name: public.audit\n              columns: [id]\n  - name: crm\n    kind: database\n  - name: payments\n    kind: api\n    specs:\n      stripe:\n        operations:\n          refund:\n            allowed_roles: [admin, og_stale]\n          list: {}\n",
+      "modes": {
+        "shop": "authenticated",
+        "crm": ""
+      }
+    },
+    {
+      "name": "scoped",
+      "raw": "sources:\n  - name: erp\n    kind: database\n    access:\n      read: account\n      namespace_column: tenant_id\n  - name: default_acct\n    kind: database\n    access:\n      read: account\n  - name: notes\n    kind: database\n    access:\n      read: owner\n      owner_column: author_id\n  - name: default_owner\n    kind: database\n    access:\n      read: owner\n  - name: files_src\n    kind: file\n",
+      "modes": {
+        "erp": "account",
+        "default_acct": "account",
+        "notes": "owner",
+        "default_owner": "owner"
+      }
+    },
+    {
+      "name": "after apply",
+      "raw": "identity:\n  role_mode: union\n  role_claims: [ role, roles ]\n  group_claims:\n    - groups\nroles:\n  - name: reviewer\n    comment: Manual role\n  - name: og_everyone\n    comment: OpenNeko group Everyone\n  - name: og_finance\n    comment: OpenNeko group Finance\n  - name: og_support\n    comment: OpenNeko group Support\nsources:\n  - name: shop\n    kind: database\n    access:\n      read: admin\n      grants:\n        - role: reviewer\n          tables:\n            - name: public.audit\n              columns: [ id ]\n        - role: og_everyone\n          tables:\n            - name: public.products\n              columns:\n                - id\n                - name\n                - price\n        - role: og_finance\n          tables:\n            - name: public.customers\n              columns:\n                - id\n                - email\n              filter: \"{ owner_id: { eq: $user_id } }\"\n            - name: public.orders\n              columns:\n                - id\n                - amount\n                - region\n              filter: \"{ and: [{ region: { in: $user_groups } }, { or: [{ amount: { gt: 100 }\n                }, { archived_at: { is_null: true } }] }] }\"\n  - name: crm\n    kind: database\n    access:\n      read: admin\n  - name: payments\n    kind: api\n    specs:\n      stripe:\n        operations:\n          refund:\n            allowed_roles:\n              - admin\n              - og_finance\n          list: { allowed_roles: [ og_everyone, og_support ] }\n",
+      "modes": {
+        "shop": "admin",
+        "crm": "admin"
+      }
+    },
+    {
+      "name": "no sources",
+      "raw": "database:\n  type: postgres\n",
+      "modes": {}
+    }
+  ],
+  "applies": [
+    {
+      "name": "main",
+      "raw": "identity:\n  role_mode: first\n  role_claims: [role]\nroles:\n  - name: reviewer\n    comment: Manual role\nsources:\n  - name: shop\n    kind: database\n    access:\n      read: authenticated\n      grants:\n        - role: reviewer\n          tables:\n            - name: public.audit\n              columns: [id]\n  - name: crm\n    kind: database\n  - name: payments\n    kind: api\n    specs:\n      stripe:\n        operations:\n          refund:\n            allowed_roles: [admin, og_stale]\n          list: {}\n",
+      "groups": [
+        {
+          "slug": "everyone",
+          "name": "Everyone"
+        },
+        {
+          "slug": "finance",
+          "name": "Finance"
+        },
+        {
+          "slug": "support",
+          "name": "Support"
+        }
+      ],
+      "rules": [
+        {
+          "groupSlug": "everyone",
+          "groupName": "Everyone",
+          "source": "shop",
+          "tableSchema": "public",
+          "tableName": "products",
+          "columns": [
+            "id",
+            "name",
+            "price"
+          ],
+          "rowFilter": null
+        },
+        {
+          "groupSlug": "finance",
+          "groupName": "Finance",
+          "source": "shop",
+          "tableSchema": "public",
+          "tableName": "orders",
+          "columns": [
+            "id",
+            "amount",
+            "region"
+          ],
+          "rowFilter": {
+            "and": [
+              {
+                "column": "region",
+                "op": "in",
+                "value": {
+                  "var": "user_groups"
+                }
+              },
+              {
+                "or": [
+                  {
+                    "column": "amount",
+                    "op": "gt",
+                    "value": 100
+                  },
+                  {
+                    "column": "archived_at",
+                    "op": "is_null",
+                    "value": true
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "groupSlug": "finance",
+          "groupName": "Finance",
+          "source": "shop",
+          "tableSchema": "public",
+          "tableName": "customers",
+          "columns": [
+            "id",
+            "email"
+          ],
+          "rowFilter": {
+            "column": "owner_id",
+            "op": "eq",
+            "value": {
+              "var": "user_id"
+            }
+          }
+        }
+      ],
+      "apiOperationHolders": {
+        "payments:stripe:refund": [
+          "finance"
+        ],
+        "payments:stripe:list": [
+          "everyone",
+          "support"
+        ]
+      },
+      "previousReadModes": {
+        "shop": "authenticated",
+        "crm": ""
+      },
+      "changed": true,
+      "content": "identity:\n  role_mode: union\n  role_claims: [ role, roles ]\n  group_claims:\n    - groups\nroles:\n  - name: reviewer\n    comment: Manual role\n  - name: og_everyone\n    comment: OpenNeko group Everyone\n  - name: og_finance\n    comment: OpenNeko group Finance\n  - name: og_support\n    comment: OpenNeko group Support\nsources:\n  - name: shop\n    kind: database\n    access:\n      read: admin\n      grants:\n        - role: reviewer\n          tables:\n            - name: public.audit\n              columns: [ id ]\n        - role: og_everyone\n          tables:\n            - name: public.products\n              columns:\n                - id\n                - name\n                - price\n        - role: og_finance\n          tables:\n            - name: public.customers\n              columns:\n                - id\n                - email\n              filter: \"{ owner_id: { eq: $user_id } }\"\n            - name: public.orders\n              columns:\n                - id\n                - amount\n                - region\n              filter: \"{ and: [{ region: { in: $user_groups } }, { or: [{ amount: { gt: 100 }\n                }, { archived_at: { is_null: true } }] }] }\"\n  - name: crm\n    kind: database\n    access:\n      read: admin\n  - name: payments\n    kind: api\n    specs:\n      stripe:\n        operations:\n          refund:\n            allowed_roles:\n              - admin\n              - og_finance\n          list: { allowed_roles: [ og_everyone, og_support ] }\n"
+    },
+    {
+      "name": "scoped",
+      "raw": "sources:\n  - name: erp\n    kind: database\n    access:\n      read: account\n      namespace_column: tenant_id\n  - name: default_acct\n    kind: database\n    access:\n      read: account\n  - name: notes\n    kind: database\n    access:\n      read: owner\n      owner_column: author_id\n  - name: default_owner\n    kind: database\n    access:\n      read: owner\n  - name: files_src\n    kind: file\n",
+      "groups": [
+        {
+          "slug": "everyone",
+          "name": "Everyone"
+        },
+        {
+          "slug": "finance",
+          "name": "Finance"
+        },
+        {
+          "slug": "support",
+          "name": "Support"
+        }
+      ],
+      "rules": [
+        {
+          "groupSlug": "everyone",
+          "groupName": "Everyone",
+          "source": "erp",
+          "tableSchema": "",
+          "tableName": "invoices",
+          "columns": [
+            "id",
+            "total"
+          ],
+          "rowFilter": null
+        },
+        {
+          "groupSlug": "finance",
+          "groupName": "Finance",
+          "source": "erp",
+          "tableSchema": "",
+          "tableName": "invoices",
+          "columns": [
+            "id",
+            "total",
+            "cost"
+          ],
+          "rowFilter": {
+            "column": "status",
+            "op": "neq",
+            "value": "draft"
+          }
+        },
+        {
+          "groupSlug": "everyone",
+          "groupName": "Everyone",
+          "source": "default_acct",
+          "tableSchema": "public",
+          "tableName": "items",
+          "columns": [
+            "id"
+          ],
+          "rowFilter": null
+        },
+        {
+          "groupSlug": "everyone",
+          "groupName": "Everyone",
+          "source": "notes",
+          "tableSchema": "",
+          "tableName": "memo",
+          "columns": [
+            "id",
+            "body"
+          ],
+          "rowFilter": {
+            "column": "pinned",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "groupSlug": "everyone",
+          "groupName": "Everyone",
+          "source": "default_owner",
+          "tableSchema": "",
+          "tableName": "tasks",
+          "columns": [
+            "id"
+          ],
+          "rowFilter": null
+        }
+      ],
+      "apiOperationHolders": {},
+      "previousReadModes": {
+        "erp": "account",
+        "default_acct": "account",
+        "notes": "owner",
+        "default_owner": "owner"
+      },
+      "changed": true,
+      "content": "sources:\n  - name: erp\n    kind: database\n    access:\n      read: admin\n      namespace_column: tenant_id\n      grants:\n        - role: og_everyone\n          tables:\n            - name: invoices\n              columns:\n                - id\n                - total\n              filter: \"{ tenant_id: { eq: $account_id } }\"\n        - role: og_finance\n          tables:\n            - name: invoices\n              columns:\n                - id\n                - total\n                - cost\n              filter: '{ and: [{ tenant_id: { eq: $account_id } }, { status: { neq: \"draft\" }\n                }] }'\n  - name: default_acct\n    kind: database\n    access:\n      read: admin\n      grants:\n        - role: og_everyone\n          tables:\n            - name: public.items\n              columns:\n                - id\n              filter: \"{ account_id: { eq: $account_id } }\"\n  - name: notes\n    kind: database\n    access:\n      read: admin\n      owner_column: author_id\n      grants:\n        - role: og_everyone\n          tables:\n            - name: memo\n              columns:\n                - id\n                - body\n              filter: \"{ and: [{ author_id: { eq: $user_id } }, { pinned: { eq: true } }] }\"\n  - name: default_owner\n    kind: database\n    access:\n      read: admin\n      grants:\n        - role: og_everyone\n          tables:\n            - name: tasks\n              columns:\n                - id\n              filter: \"{ user_id: { eq: $user_id } }\"\n  - name: files_src\n    kind: file\nidentity:\n  role_mode: union\n  role_claims:\n    - role\n    - roles\n  group_claims:\n    - groups\nroles:\n  - name: og_everyone\n    comment: OpenNeko group Everyone\n  - name: og_finance\n    comment: OpenNeko group Finance\n"
+    },
+    {
+      "name": "scoped reapply with stored modes",
+      "raw": "sources:\n  - name: erp\n    kind: database\n    access:\n      read: admin\n      namespace_column: tenant_id\n      grants:\n        - role: og_everyone\n          tables:\n            - name: invoices\n              columns:\n                - id\n                - total\n              filter: \"{ tenant_id: { eq: $account_id } }\"\n        - role: og_finance\n          tables:\n            - name: invoices\n              columns:\n                - id\n                - total\n                - cost\n              filter: '{ and: [{ tenant_id: { eq: $account_id } }, { status: { neq: \"draft\" }\n                }] }'\n  - name: default_acct\n    kind: database\n    access:\n      read: admin\n      grants:\n        - role: og_everyone\n          tables:\n            - name: public.items\n              columns:\n                - id\n              filter: \"{ account_id: { eq: $account_id } }\"\n  - name: notes\n    kind: database\n    access:\n      read: admin\n      owner_column: author_id\n      grants:\n        - role: og_everyone\n          tables:\n            - name: memo\n              columns:\n                - id\n                - body\n              filter: \"{ and: [{ author_id: { eq: $user_id } }, { pinned: { eq: true } }] }\"\n  - name: default_owner\n    kind: database\n    access:\n      read: admin\n      grants:\n        - role: og_everyone\n          tables:\n            - name: tasks\n              columns:\n                - id\n              filter: \"{ user_id: { eq: $user_id } }\"\n  - name: files_src\n    kind: file\nidentity:\n  role_mode: union\n  role_claims:\n    - role\n    - roles\n  group_claims:\n    - groups\nroles:\n  - name: og_everyone\n    comment: OpenNeko group Everyone\n  - name: og_finance\n    comment: OpenNeko group Finance\n",
+      "groups": [
+        {
+          "slug": "everyone",
+          "name": "Everyone"
+        },
+        {
+          "slug": "finance",
+          "name": "Finance"
+        },
+        {
+          "slug": "support",
+          "name": "Support"
+        }
+      ],
+      "rules": [
+        {
+          "groupSlug": "everyone",
+          "groupName": "Everyone",
+          "source": "erp",
+          "tableSchema": "",
+          "tableName": "invoices",
+          "columns": [
+            "id",
+            "total"
+          ],
+          "rowFilter": null
+        },
+        {
+          "groupSlug": "finance",
+          "groupName": "Finance",
+          "source": "erp",
+          "tableSchema": "",
+          "tableName": "invoices",
+          "columns": [
+            "id",
+            "total",
+            "cost"
+          ],
+          "rowFilter": {
+            "column": "status",
+            "op": "neq",
+            "value": "draft"
+          }
+        },
+        {
+          "groupSlug": "everyone",
+          "groupName": "Everyone",
+          "source": "default_acct",
+          "tableSchema": "public",
+          "tableName": "items",
+          "columns": [
+            "id"
+          ],
+          "rowFilter": null
+        },
+        {
+          "groupSlug": "everyone",
+          "groupName": "Everyone",
+          "source": "notes",
+          "tableSchema": "",
+          "tableName": "memo",
+          "columns": [
+            "id",
+            "body"
+          ],
+          "rowFilter": {
+            "column": "pinned",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "groupSlug": "everyone",
+          "groupName": "Everyone",
+          "source": "default_owner",
+          "tableSchema": "",
+          "tableName": "tasks",
+          "columns": [
+            "id"
+          ],
+          "rowFilter": null
+        }
+      ],
+      "apiOperationHolders": {},
+      "previousReadModes": {
+        "erp": "account",
+        "default_acct": "account",
+        "notes": "owner",
+        "default_owner": "owner"
+      },
+      "changed": false,
+      "content": "sources:\n  - name: erp\n    kind: database\n    access:\n      read: admin\n      namespace_column: tenant_id\n      grants:\n        - role: og_everyone\n          tables:\n            - name: invoices\n              columns:\n                - id\n                - total\n              filter: \"{ tenant_id: { eq: $account_id } }\"\n        - role: og_finance\n          tables:\n            - name: invoices\n              columns:\n                - id\n                - total\n                - cost\n              filter: '{ and: [{ tenant_id: { eq: $account_id } }, { status: { neq: \"draft\" }\n                }] }'\n  - name: default_acct\n    kind: database\n    access:\n      read: admin\n      grants:\n        - role: og_everyone\n          tables:\n            - name: public.items\n              columns:\n                - id\n              filter: \"{ account_id: { eq: $account_id } }\"\n  - name: notes\n    kind: database\n    access:\n      read: admin\n      owner_column: author_id\n      grants:\n        - role: og_everyone\n          tables:\n            - name: memo\n              columns:\n                - id\n                - body\n              filter: \"{ and: [{ author_id: { eq: $user_id } }, { pinned: { eq: true } }] }\"\n  - name: default_owner\n    kind: database\n    access:\n      read: admin\n      grants:\n        - role: og_everyone\n          tables:\n            - name: tasks\n              columns:\n                - id\n              filter: \"{ user_id: { eq: $user_id } }\"\n  - name: files_src\n    kind: file\nidentity:\n  role_mode: union\n  role_claims:\n    - role\n    - roles\n  group_claims:\n    - groups\nroles:\n  - name: og_everyone\n    comment: OpenNeko group Everyone\n  - name: og_finance\n    comment: OpenNeko group Finance\n"
+    },
+    {
+      "name": "clear og grants",
+      "raw": "identity:\n  role_mode: union\n  role_claims: [ role, roles ]\n  group_claims:\n    - groups\nroles:\n  - name: reviewer\n    comment: Manual role\n  - name: og_everyone\n    comment: OpenNeko group Everyone\n  - name: og_finance\n    comment: OpenNeko group Finance\n  - name: og_support\n    comment: OpenNeko group Support\nsources:\n  - name: shop\n    kind: database\n    access:\n      read: admin\n      grants:\n        - role: reviewer\n          tables:\n            - name: public.audit\n              columns: [ id ]\n        - role: og_everyone\n          tables:\n            - name: public.products\n              columns:\n                - id\n                - name\n                - price\n        - role: og_finance\n          tables:\n            - name: public.customers\n              columns:\n                - id\n                - email\n              filter: \"{ owner_id: { eq: $user_id } }\"\n            - name: public.orders\n              columns:\n                - id\n                - amount\n                - region\n              filter: \"{ and: [{ region: { in: $user_groups } }, { or: [{ amount: { gt: 100 }\n                }, { archived_at: { is_null: true } }] }] }\"\n  - name: crm\n    kind: database\n    access:\n      read: admin\n  - name: payments\n    kind: api\n    specs:\n      stripe:\n        operations:\n          refund:\n            allowed_roles:\n              - admin\n              - og_finance\n          list: { allowed_roles: [ og_everyone, og_support ] }\n",
+      "groups": [],
+      "rules": [],
+      "apiOperationHolders": {},
+      "previousReadModes": {
+        "shop": "authenticated",
+        "crm": ""
+      },
+      "changed": true,
+      "content": "identity:\n  role_mode: union\n  role_claims: [ role, roles ]\n  group_claims:\n    - groups\nroles:\n  - name: reviewer\n    comment: Manual role\nsources:\n  - name: shop\n    kind: database\n    access:\n      read: admin\n      grants:\n        - role: reviewer\n          tables:\n            - name: public.audit\n              columns: [ id ]\n  - name: crm\n    kind: database\n    access:\n      read: admin\n  - name: payments\n    kind: api\n    specs:\n      stripe:\n        operations:\n          refund:\n            allowed_roles:\n              - admin\n          list: { allowed_roles: [] }\n"
+    },
+    {
+      "name": "no sources",
+      "raw": "database:\n  type: postgres\n",
+      "groups": [
+        {
+          "slug": "everyone",
+          "name": "Everyone"
+        },
+        {
+          "slug": "finance",
+          "name": "Finance"
+        },
+        {
+          "slug": "support",
+          "name": "Support"
+        }
+      ],
+      "rules": [
+        {
+          "groupSlug": "everyone",
+          "groupName": "Everyone",
+          "source": "shop",
+          "tableSchema": "public",
+          "tableName": "products",
+          "columns": [
+            "id",
+            "name",
+            "price"
+          ],
+          "rowFilter": null
+        },
+        {
+          "groupSlug": "finance",
+          "groupName": "Finance",
+          "source": "shop",
+          "tableSchema": "public",
+          "tableName": "orders",
+          "columns": [
+            "id",
+            "amount",
+            "region"
+          ],
+          "rowFilter": {
+            "and": [
+              {
+                "column": "region",
+                "op": "in",
+                "value": {
+                  "var": "user_groups"
+                }
+              },
+              {
+                "or": [
+                  {
+                    "column": "amount",
+                    "op": "gt",
+                    "value": 100
+                  },
+                  {
+                    "column": "archived_at",
+                    "op": "is_null",
+                    "value": true
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "groupSlug": "finance",
+          "groupName": "Finance",
+          "source": "shop",
+          "tableSchema": "public",
+          "tableName": "customers",
+          "columns": [
+            "id",
+            "email"
+          ],
+          "rowFilter": {
+            "column": "owner_id",
+            "op": "eq",
+            "value": {
+              "var": "user_id"
+            }
+          }
+        }
+      ],
+      "apiOperationHolders": {
+        "payments:stripe:refund": [
+          "finance"
+        ],
+        "payments:stripe:list": [
+          "everyone",
+          "support"
+        ]
+      },
+      "previousReadModes": {},
+      "changed": false,
+      "content": "database:\n  type: postgres\n"
+    }
+  ],
+  "removes": [
+    {
+      "name": "main",
+      "raw": "identity:\n  role_mode: union\n  role_claims: [ role, roles ]\n  group_claims:\n    - groups\nroles:\n  - name: reviewer\n    comment: Manual role\n  - name: og_everyone\n    comment: OpenNeko group Everyone\n  - name: og_finance\n    comment: OpenNeko group Finance\n  - name: og_support\n    comment: OpenNeko group Support\nsources:\n  - name: shop\n    kind: database\n    access:\n      read: admin\n      grants:\n        - role: reviewer\n          tables:\n            - name: public.audit\n              columns: [ id ]\n        - role: og_everyone\n          tables:\n            - name: public.products\n              columns:\n                - id\n                - name\n                - price\n        - role: og_finance\n          tables:\n            - name: public.customers\n              columns:\n                - id\n                - email\n              filter: \"{ owner_id: { eq: $user_id } }\"\n            - name: public.orders\n              columns:\n                - id\n                - amount\n                - region\n              filter: \"{ and: [{ region: { in: $user_groups } }, { or: [{ amount: { gt: 100 }\n                }, { archived_at: { is_null: true } }] }] }\"\n  - name: crm\n    kind: database\n    access:\n      read: admin\n  - name: payments\n    kind: api\n    specs:\n      stripe:\n        operations:\n          refund:\n            allowed_roles:\n              - admin\n              - og_finance\n          list: { allowed_roles: [ og_everyone, og_support ] }\n",
+      "previousReadModes": {
+        "shop": "authenticated",
+        "crm": ""
+      },
+      "changed": true,
+      "content": "identity:\n  role_mode: first\n  role_claims: [ role, roles ]\nroles:\n  - name: reviewer\n    comment: Manual role\nsources:\n  - name: shop\n    kind: database\n    access:\n      read: authenticated\n      grants:\n        - role: reviewer\n          tables:\n            - name: public.audit\n              columns: [ id ]\n  - name: crm\n    kind: database\n  - name: payments\n    kind: api\n    specs:\n      stripe:\n        operations:\n          refund:\n            allowed_roles:\n              - admin\n          list: { allowed_roles: [] }\n"
+    },
+    {
+      "name": "scoped",
+      "raw": "sources:\n  - name: erp\n    kind: database\n    access:\n      read: admin\n      namespace_column: tenant_id\n      grants:\n        - role: og_everyone\n          tables:\n            - name: invoices\n              columns:\n                - id\n                - total\n              filter: \"{ tenant_id: { eq: $account_id } }\"\n        - role: og_finance\n          tables:\n            - name: invoices\n              columns:\n                - id\n                - total\n                - cost\n              filter: '{ and: [{ tenant_id: { eq: $account_id } }, { status: { neq: \"draft\" }\n                }] }'\n  - name: default_acct\n    kind: database\n    access:\n      read: admin\n      grants:\n        - role: og_everyone\n          tables:\n            - name: public.items\n              columns:\n                - id\n              filter: \"{ account_id: { eq: $account_id } }\"\n  - name: notes\n    kind: database\n    access:\n      read: admin\n      owner_column: author_id\n      grants:\n        - role: og_everyone\n          tables:\n            - name: memo\n              columns:\n                - id\n                - body\n              filter: \"{ and: [{ author_id: { eq: $user_id } }, { pinned: { eq: true } }] }\"\n  - name: default_owner\n    kind: database\n    access:\n      read: admin\n      grants:\n        - role: og_everyone\n          tables:\n            - name: tasks\n              columns:\n                - id\n              filter: \"{ user_id: { eq: $user_id } }\"\n  - name: files_src\n    kind: file\nidentity:\n  role_mode: union\n  role_claims:\n    - role\n    - roles\n  group_claims:\n    - groups\nroles:\n  - name: og_everyone\n    comment: OpenNeko group Everyone\n  - name: og_finance\n    comment: OpenNeko group Finance\n",
+      "previousReadModes": {
+        "erp": "account",
+        "default_acct": "account",
+        "notes": "owner",
+        "default_owner": "owner"
+      },
+      "changed": true,
+      "content": "sources:\n  - name: erp\n    kind: database\n    access:\n      read: account\n      namespace_column: tenant_id\n  - name: default_acct\n    kind: database\n    access:\n      read: account\n  - name: notes\n    kind: database\n    access:\n      read: owner\n      owner_column: author_id\n  - name: default_owner\n    kind: database\n    access:\n      read: owner\n  - name: files_src\n    kind: file\nidentity:\n  role_mode: first\n  role_claims:\n    - role\n    - roles\nroles: []\n"
+    },
+    {
+      "name": "no sources",
+      "raw": "database:\n  type: postgres\n",
+      "previousReadModes": {},
+      "changed": false,
+      "content": "database:\n  type: postgres\n"
+    }
+  ],
+  "errors": [
+    {
+      "name": "invalid yaml",
+      "raw": "sources: [\n",
+      "error": "GraphJin config is not valid YAML: Flow sequence in block collection must be sufficiently indented and end with a ] at line 2, column 1:\n\nsources: [\n\n^\n"
+    },
+    {
+      "name": "scalar root",
+      "raw": "just-a-string\n",
+      "error": "GraphJin config root must be a YAML object"
+    },
+    {
+      "name": "non-map identity",
+      "raw": "sources: []\nidentity: [1]\n",
+      "error": "GraphJin config identity must be a YAML object"
+    },
+    {
+      "name": "non-list roles",
+      "raw": "sources: []\nroles:\n  a: 1\n",
+      "error": "GraphJin config roles must be a YAML list"
+    }
+  ]
+}

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/open-neko/neko/apps/openneko/internal/jobs"
@@ -80,6 +81,13 @@ type API struct {
 
 	schedMu    sync.Mutex
 	schedState schedulerRuntimeState
+
+	GroupGrantsDelay     time.Duration
+	GroupGrantsRun       func(orgID string) error
+	GroupGrantsScheduled func(orgID string)
+	GroupGrantsDeps      func(orgID string) groupGrantsDeps
+	groupGrantsMu        sync.Mutex
+	groupGrantsTimers    map[string]*time.Timer
 }
 
 // GoRoutes lists the /api/v1 routes that Go answers, by method.
