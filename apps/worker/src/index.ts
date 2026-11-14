@@ -261,7 +261,6 @@ const server = createServer(
         signInService?.getDeploymentConnectStatus() ?? [],
       beginConnect: (name, params) => signIn().beginConnect(name, params),
       completeConnect: (name, params) => signIn().completeConnect(name, params),
-      refreshConnect: (name, operatorId) => signIn().refreshConnect(name, operatorId),
       disconnect: (name, operatorId) => signIn().disconnect(name, operatorId),
     },
     ssoSetup: ssoSetupSurface(),

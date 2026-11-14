@@ -8107,6 +8107,62 @@ paths:
                 properties:
                   error:
                     type: string
+  /settings/finish:
+    post:
+      operationId: postSettingsFinish
+      tags:
+      - settings
+      summary: Mark admin setup complete after the data source, the provider and openneko serve check out
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      responses:
+        '200':
+          description: Setup is complete
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  ok:
+                    type: boolean
+        '400':
+          description: The data source or the primary provider is not configured
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an admin, or SSO is live and no session is present
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '503':
+          description: openneko serve does not answer or the model key does not load
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
   /settings/data-sources:
     get:
       operationId: getSettingsDataSources

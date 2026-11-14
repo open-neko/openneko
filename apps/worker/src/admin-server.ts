@@ -139,10 +139,6 @@ export interface ConnectHandlerSurface {
     pluginName: string,
     params: CompleteConnectParams,
   ): Promise<ConnectorCredential>;
-  refreshConnect(
-    pluginName: string,
-    operatorId: string,
-  ): Promise<ConnectorCredential>;
   disconnect(pluginName: string, operatorId: string): Promise<boolean>;
 }
 
@@ -494,10 +490,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
     }
     if (req.method === "POST" && req.url === "/admin/connect/complete") {
       void handleConnectComplete(req, res, connect);
-      return;
-    }
-    if (req.method === "POST" && req.url === "/admin/connect/refresh") {
-      void handleConnectRefresh(req, res, connect);
       return;
     }
     if (req.method === "POST" && req.url === "/admin/connect/disconnect") {
@@ -1372,38 +1364,6 @@ async function handleConnectComplete(
       pluginName,
       params as CompleteConnectParams,
     );
-    json(res, 200, { credential });
-  } catch (err) {
-    json(res, 500, { error: err instanceof Error ? err.message : String(err) });
-  }
-}
-
-async function handleConnectRefresh(
-  req: IncomingMessage,
-  res: ServerResponse,
-  connect: ConnectHandlerSurface | null,
-) {
-  if (!connect) {
-    json(res, 503, { error: "connectors are unavailable" });
-    return;
-  }
-  const body = (await readJson(req).catch(() => null)) as Record<string, unknown> | null;
-  if (!body || typeof body !== "object") {
-    json(res, 400, { error: "request body must be JSON" });
-    return;
-  }
-  const pluginName = body.pluginName;
-  const operatorId = body.operatorId;
-  if (typeof pluginName !== "string" || !pluginName) {
-    json(res, 400, { error: "pluginName (string) is required" });
-    return;
-  }
-  if (typeof operatorId !== "string" || !operatorId) {
-    json(res, 400, { error: "operatorId (string) is required" });
-    return;
-  }
-  try {
-    const credential = await connect.refreshConnect(pluginName, operatorId);
     json(res, 200, { credential });
   } catch (err) {
     json(res, 500, { error: err instanceof Error ? err.message : String(err) });

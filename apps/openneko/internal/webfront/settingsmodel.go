@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"net/url"
@@ -651,4 +652,40 @@ func (a *API) saveProviderForm(ctx context.Context, orgID string, f providerForm
 			values ($1, $2, $3, $4, $5, $6, $7, $8)`, orgID, f.Scope, f.Provider, model, f.Label, f.Enabled, cfg, secrets)
 	}
 	return err
+}
+
+func (a *API) settingsFinish(w http.ResponseWriter, r *http.Request) {
+	act, ok := a.settingsAdmin(w, r)
+	if !ok {
+		return
+	}
+	ctx := r.Context()
+	source, err := a.loadDataSource(ctx, act.OrgID)
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	if source == nil || len(dataSourceDraft{graphqlURL: source.graphqlURL, mcpURL: source.mcpURL}.problems()) > 0 {
+		sendError(w, http.StatusBadRequest, "Data source not configured.")
+		return
+	}
+	primary, err := llm.SetupComplete(ctx, a.DB, a.SecretsDir, act.OrgID)
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	if !primary {
+		sendError(w, http.StatusBadRequest, "Primary model provider not configured.")
+		return
+	}
+	if err := a.agentRuntimeReady(ctx, act.OrgID); err != nil {
+		log.Printf("[agent-runtime-readiness] openneko serve check failed: %v", err)
+		sendJSON(w, http.StatusServiceUnavailable, map[string]string{"error": agentRuntimeUnavailable, "code": "agent_runtime_unavailable"})
+		return
+	}
+	if _, err := a.DB.Exec(ctx, `update organization set setup_complete_at = now(), updated_at = now() where id = $1`, act.OrgID); err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	sendJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
