@@ -68,7 +68,7 @@ export const settingsCases: Case[] = [
   {
     op: "POST /my/passkeys/challenge", name: "issues a registration challenge", status: 200,
     request: { body: { purpose: "register" } },
-    check: (r) => expect(body(r)).toMatchObject({ purpose: "register", rp: { name: "OpenNeko" } }),
+    check: (r) => expect(body(r)).toMatchObject({ purpose: "register", rp: { name: "OpenNeko" }, userVerification: "required" }),
   },
   {
     op: "POST /my/passkeys/challenge", name: "refuses an unknown purpose", status: 400,

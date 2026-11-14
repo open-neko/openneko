@@ -22,6 +22,10 @@ var packFailureNextStep = map[string]string{
 	"upload":           "Correct the archive layout or manifest, then upload the pack again.",
 	"inspection":       "Correct the reported manifest or artifact, then inspect the pack again.",
 	"review":           "Correct the reported configuration or artifact, then review the pack again.",
+	"install":          "Correct the reported configuration or artifact, then review and install the pack again.",
+	"configure":        "Correct the reported configuration or artifact, then review and apply the change again.",
+	"upgrade":          "Correct the reported configuration or artifact, then review and apply the upgrade again.",
+	"uninstall":        "Check the reported pack state, then try removing the pack again.",
 	"oauth":            "Check the OAuth client, redirect URI, and requested scopes, then connect the account again.",
 	"store_management": "Review the Magento store-management setting or rule limits and try again.",
 }

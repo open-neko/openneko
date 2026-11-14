@@ -42,12 +42,22 @@ type magentoPreflightInput struct {
 	customersEnabled                   bool
 }
 
-// magentoPreflightResult holds the fields of MagentoPreflightResult that the
-// doctor reads.
+type magentoScope struct {
+	StoreID   int64  `json:"storeId"`
+	Code      string `json:"code"`
+	WebsiteID int64  `json:"websiteId"`
+	GroupID   int64  `json:"groupId"`
+	Name      string `json:"name"`
+}
+
 type magentoPreflightResult struct {
 	databaseVersion, databaseType string
 	tablePrefix                   string
+	tableNames, availableTables   []string
+	blockedTables                 []string
 	storeIDs                      []int64
+	scopes                        []magentoScope
+	baseCurrency, timezone        any
 	magentoVersion                string
 	operatorReadiness             string
 	operatorDomains               map[string]string
@@ -325,7 +335,8 @@ func runMagentoPreflight(ctx context.Context, in magentoPreflightInput, client *
 	if err != nil {
 		return nil, err
 	}
-	if _, err := magentoColumn(ctx, conn, "SELECT path FROM "+configTable+" WHERE scope = 'default' AND scope_id = 0 AND path IN ('currency/options/base', 'general/locale/timezone')"); err != nil {
+	config, err := magentoCoreConfig(ctx, conn, configTable)
+	if err != nil {
 		return nil, err
 	}
 	storeTable, err := quoteMagentoIdentifier(prefix + "store")
@@ -349,6 +360,10 @@ func runMagentoPreflight(ctx context.Context, in magentoPreflightInput, client *
 	if len(storeIDs) == 0 {
 		return nil, fmt.Errorf("Magento store code %s is missing or inactive", jsStringify(in.storeCode, false))
 	}
+	scopes, err := magentoScopes(ctx, conn, storeTable, in.storeCode)
+	if err != nil {
+		return nil, err
+	}
 	overall, domains := magentoOperatorReadiness(ctx, in, client)
 	if !version.Valid {
 		return nil, errors.New("MariaDB/MySQL version preflight returned no row")
@@ -365,10 +380,74 @@ func runMagentoPreflight(ctx context.Context, in magentoPreflightInput, client *
 	if err != nil {
 		return nil, err
 	}
+	available, blocked := []string{}, []string{}
+	analytics := map[string]bool{}
+	for _, name := range magentoReadTables {
+		analytics[prefix+name] = true
+		if slices.Contains(tableNames, prefix+name) {
+			available = append(available, name)
+		}
+	}
+	for _, name := range tableNames {
+		if !analytics[name] {
+			blocked = append(blocked, name)
+		}
+	}
 	return &magentoPreflightResult{
-		databaseVersion: version.String, databaseType: databaseType, tablePrefix: prefix, storeIDs: storeIDs,
+		databaseVersion: version.String, databaseType: databaseType, tablePrefix: prefix, tableNames: tableNames,
+		availableTables: available, blockedTables: blocked, storeIDs: storeIDs, scopes: scopes,
+		baseCurrency: config["currency/options/base"], timezone: config["general/locale/timezone"],
 		magentoVersion: magentoVersion, operatorReadiness: overall, operatorDomains: domains, bulkConsumerReadiness: bulk,
 	}, nil
+}
+
+func magentoCoreConfig(ctx context.Context, conn *sql.Conn, table string) (map[string]any, error) {
+	rows, err := conn.QueryContext(ctx, "SELECT path, value FROM "+table+" WHERE scope = 'default' AND scope_id = 0 AND path IN ('currency/options/base', 'general/locale/timezone')")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]any{}
+	for rows.Next() {
+		var path string
+		var value sql.NullString
+		if err := rows.Scan(&path, &value); err != nil {
+			return nil, err
+		}
+		if value.Valid {
+			out[path] = value.String
+		} else {
+			out[path] = nil
+		}
+	}
+	return out, rows.Err()
+}
+
+func magentoScopes(ctx context.Context, conn *sql.Conn, table, storeCode string) ([]magentoScope, error) {
+	query, args := "SELECT store_id, code, website_id, group_id, name FROM "+table+" WHERE is_active = 1 AND code <> 'admin' ORDER BY store_id", []any(nil)
+	if code := strings.TrimSpace(storeCode); code != "all" {
+		query, args = "SELECT store_id, code, website_id, group_id, name FROM "+table+" WHERE is_active = 1 AND code = ? ORDER BY store_id", []any{code}
+	}
+	rows, err := conn.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []magentoScope{}
+	for rows.Next() {
+		var id int64
+		var code, name sql.NullString
+		var website, group sql.NullInt64
+		if err := rows.Scan(&id, &code, &website, &group, &name); err != nil {
+			return nil, err
+		}
+		scope := magentoScope{StoreID: id, Code: code.String, WebsiteID: website.Int64, GroupID: group.Int64, Name: name.String}
+		if !name.Valid {
+			scope.Name = code.String
+		}
+		out = append(out, scope)
+	}
+	return out, rows.Err()
 }
 
 func magentoBulkConsumerReadiness(ctx context.Context, conn *sql.Conn, prefix string, now time.Time) (string, error) {

@@ -512,12 +512,16 @@ func field(body any, name string) (any, bool) {
 	return v, ok
 }
 
-func (a *API) publicBaseURL(r *http.Request) string {
+func (a *API) configuredPublicURL() string {
 	configured := a.PublicURL
 	if configured == "" {
 		configured = os.Getenv("OPENNEKO_PUBLIC_URL")
 	}
-	if c := strings.TrimRight(strings.TrimSpace(configured), "/"); c != "" {
+	return strings.TrimRight(strings.TrimSpace(configured), "/")
+}
+
+func (a *API) publicBaseURL(r *http.Request) string {
+	if c := a.configuredPublicURL(); c != "" {
 		return c
 	}
 	scheme := "http"

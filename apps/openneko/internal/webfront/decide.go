@@ -72,7 +72,7 @@ func (a *API) actionRequestDecision(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, "passkey assertion is only valid for approve")
 		return
 	}
-	status, err := a.applyDecisionWithPasskey(ctx, passkeyRPID(r), act, id, decision.(string), reason, rawPasskey)
+	status, err := a.applyDecisionWithPasskey(ctx, a.passkeyRP(r), act, id, decision.(string), reason, rawPasskey)
 	var refused *decisionError
 	if errors.As(err, &refused) {
 		sendError(w, refused.status, refused.message)
@@ -88,10 +88,17 @@ func (a *API) actionRequestDecision(w http.ResponseWriter, r *http.Request) {
 // applyDecision approves, rejects or retries one action request for act in
 // one transaction, and queues the execution of an approved request.
 func (a *API) applyDecision(ctx context.Context, act actor, id, decision string, reason *string) (string, error) {
-	return a.applyDecisionWithPasskey(ctx, "", act, id, decision, reason, nil)
+	return a.applyDecisionWithPasskey(ctx, passkeyRP{}, act, id, decision, reason, nil)
 }
 
-func (a *API) applyDecisionWithPasskey(ctx context.Context, reqRPID string, act actor, id, decision string, reason *string, rawPasskey any) (string, error) {
+func (a *API) applyDecisionWithPasskey(ctx context.Context, rp passkeyRP, act actor, id, decision string, reason *string, rawPasskey any) (string, error) {
+	var assertion *passkeyAssertion
+	if decision == "approve" && rawPasskey != nil {
+		var err error
+		if assertion, err = a.takePasskeyAssertion(ctx, act, id, rawPasskey); err != nil {
+			return "", err
+		}
+	}
 	var status, kind string
 	var event auditEvent
 	err := pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
@@ -111,9 +118,9 @@ func (a *API) applyDecisionWithPasskey(ctx context.Context, reqRPID string, act 
 				return transitionError(current, status)
 			}
 			var pk *verifiedPasskey
-			if status == "approved" && rawPasskey != nil {
+			if assertion != nil {
 				var err error
-				pk, err = verifyPasskeyApproval(ctx, tx, reqRPID, act, id, rawPasskey)
+				pk, err = verifyPasskeyApproval(ctx, tx, rp, act, assertion)
 				if err != nil {
 					return err
 				}
