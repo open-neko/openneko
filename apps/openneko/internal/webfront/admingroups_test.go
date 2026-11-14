@@ -16,6 +16,7 @@ func groupsFront(t *testing.T) (*Front, *pgxpool.Pool, *setupWorker) {
 	db := testpg.Migrated(t)
 	seedOrg(t, db)
 	f, wk := newSetupFront(t, `{"provider":{"pluginName":"scalekit"}}`, db)
+	t.Cleanup(f.API.stopGroupGrantsTimers)
 	return f, db, wk
 }
 
@@ -182,11 +183,13 @@ func TestAdminGroups(t *testing.T) {
 		t.Errorf("delete builtin: %d %s", w.Code, w.Body.String())
 	}
 	wk.calls = nil
+	var scheduled []string
+	f.API.GroupGrantsScheduled = func(orgID string) { scheduled = append(scheduled, orgID) }
 	if w := call(f, "DELETE", "/api/v1/admin/groups/"+groupID, "", admin); w.Code != 200 || w.Body.String() != `{"ok":true}` {
 		t.Errorf("delete: %d %s", w.Code, w.Body.String())
 	}
-	if !slices.Equal(wk.calls, []string{"POST /admin/graphjin/group-grants {}"}) {
-		t.Errorf("worker calls: %v", wk.calls)
+	if !slices.Equal(scheduled, []string{"org"}) || len(wk.calls) != 0 {
+		t.Errorf("scheduled=%v worker=%v", scheduled, wk.calls)
 	}
 	if w := call(f, "DELETE", "/api/v1/admin/groups/"+groupID, "", admin); w.Code != 404 {
 		t.Errorf("delete again: %d %s", w.Code, w.Body.String())

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -245,12 +244,16 @@ func (a *API) raiseSpendAlert(ctx context.Context, orgID, kind, subject string, 
 	if tag.RowsAffected() == 0 {
 		return
 	}
-	payload := append([]byte(`{"subject":`+jsStringify(subject, false)+","), details[1:]...)
-	body := fmt.Sprintf(`{"orgId":%s,"name":%s,"source":"spend-governance","payload":%s,"dedupeKey":%s}`,
-		jsStringify(orgID, false), jsStringify(kind, false), payload, jsStringify(kind+":"+subject+":"+windowStart, false))
-	status, reply, err := a.workerDo(ctx, http.MethodPost, "/admin/events/external", 10*time.Second, []byte(body))
-	if err != nil || status != http.StatusOK {
-		log.Printf("[spend] alert dispatch failed: %d %v %s", status, err, reply)
+	payloadBytes := append([]byte(`{"subject":`+jsStringify(subject, false)+","), details[1:]...)
+	payloadVal, _ := jsParse(payloadBytes)
+	source := "spend-governance"
+	if _, err := a.dispatchExternalEvent(ctx, orgID, externalEventMatch{
+		Name:      kind,
+		Source:    &source,
+		Payload:   payloadVal,
+		DedupeKey: kind + ":" + subject + ":" + windowStart,
+	}); err != nil {
+		log.Printf("[spend] alert dispatch failed: %v", err)
 	}
 }
 
