@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:phone": "sh scripts/phone-local.sh",
+    "test:gate4": "sh scripts/phone-local.sh test/phone/gate4.spec.ts",
     "test:visual:design": "playwright test --config=playwright.design-system.config.ts",
     "design-system:check": "node ../../scripts/check-web-design-system.mjs",
     "test:watch": "vitest"
