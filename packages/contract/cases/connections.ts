@@ -1,5 +1,5 @@
 import { expect } from "vitest";
-import type { Case } from "../src/case";
+import { body, type Case } from "../src/case";
 
 const pack = { packId: "contract", connectionKey: "contract" };
 
@@ -42,6 +42,10 @@ export const connectionCases: Case[] = [
   { op: "GET /library/documents/{id}", name: "refuses an unknown document", status: 404, request: (c) => ({ params: { id: c.ids.unknownId } }) },
   { op: "DELETE /library/documents/{id}", name: "refuses an unknown document", status: 404, request: (c) => ({ params: { id: c.ids.unknownId } }) },
   { op: "POST /library/upload", name: "needs a multipart body", status: 400, request: { body: {} } },
+  {
+    op: "GET /my/pack-accounts", name: "lists the personal pack connections", status: 200,
+    check: (r) => expect(Array.isArray(body(r).connections)).toBe(true),
+  },
   {
     op: "POST /my/pack-accounts/{packId}/{connectionKey}", name: "refuses another site", status: 403,
     request: { params: pack, headers: { origin: "https://elsewhere.test" }, body: {} },
