@@ -150,6 +150,13 @@ export const adminCases: Case[] = [
     },
   },
   {
+    op: "GET /admin/packs/{packId}/{action}", name: "checks a pack that is not installed", status: 200,
+    request: { params: { packId: "slack", action: "doctor" } },
+    check: (r) => {
+      expect(body(r)).toEqual({ packId: "slack", status: "blocked", checks: [{ id: "installation", status: "blocked", detail: "pack is not installed" }] });
+    },
+  },
+  {
     op: "GET /admin/packs/{packId}/{action}", name: "fails on a pack that is not in the catalog", status: 400,
     request: { params: { packId: "no-such-pack", action: "inspect" } },
   },
