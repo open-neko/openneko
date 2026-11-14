@@ -155,6 +155,13 @@ func (c *Client) ExecIn(ctx context.Context, dir, command, skillDir string, env 
 		}
 		body.Env[name] = strings.Join(parts, ":")
 	}
+	reason, err := c.runDeclared(ctx, command, dir, skillDir, env)
+	if err != nil {
+		return localtool.ExecResult{}, fmt.Errorf("declared queries could not run: %w", err)
+	}
+	if reason != "" {
+		return refused(reason), nil
+	}
 	if c.data != nil {
 		return c.execWithData(ctx, body)
 	}

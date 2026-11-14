@@ -139,6 +139,43 @@ the query or time limit, OpenNeko stops and adds a line to the command's
 output. A script that runs again in the same run gets the same rows from
 the record.
 
+### Declared queries
+
+A skill script can name its queries in a file beside it. The file name is
+the script's name with `.queries.json` added: `report.py` reads its queries
+from `report.py.queries.json`.
+
+```json
+{
+  "queries": {
+    "orders": {
+      "query": "query ($since: String!, $limit: Int) { orders(where: {created_at: {gte: $since}}, limit: $limit) { id total } }",
+      "params": {
+        "since": {},
+        "limit": { "type": "integer", "default": 100 }
+      }
+    },
+    "stock": { "query": "query { stock { sku on_hand } }", "namespace": "shop" }
+  }
+}
+```
+
+- `queries` holds 1 to 20 queries. A query name uses lower-case letters,
+  digits and `_`.
+- `params` become the GraphQL variables. The type is `string` (the default),
+  `integer`, `number` or `boolean`. The script's command line gives a value
+  with `--since 2026-11-01` or `--since=2026-11-01`. A parameter with no
+  value takes its `default`; with no default, the script does not start.
+- `namespace` is optional. It picks the GraphJin namespace.
+
+When a command starts a script with this file, OpenNeko runs each query
+before the script starts. It uses the same tools, policy, audit, record and
+limits as `neko_data`. It writes each data object to
+`$RUN_DIR/.neko-data/queries/<name>.json`. If a query fails, for example
+because the run's policy refuses it, the script does not start, and the
+command's output names the query and the reason. One command may start one
+script with declared queries. A script with no such file runs as before.
+
 Outside OpenNeko, set `NEKO_DATA_GRAPHJIN_URL` to a GraphJin GraphQL URL
 (for example `http://localhost:8080/api/v1/graphql`), and `neko_data` sends
 each query there.

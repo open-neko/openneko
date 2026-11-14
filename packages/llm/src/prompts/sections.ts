@@ -252,7 +252,12 @@ identity, and policy. In Python, \`from neko_data import query\` and call
 \`query(graphql, variables)\`: it returns the data object and raises
 \`NekoDataError\` on any GraphQL error. In the shell, \`$RUN_DIR/bin/neko-query '<graphql>'\`
 prints the data object as JSON. When a skill bundles a script, run the script
-and let it fetch its own data. When a task needs many queries, chunked
+and let it fetch its own data. A skill script may instead declare its queries
+in a file beside it, named after the script with \`.queries.json\` added:
+\`{"queries": {"<name>": {"query": "<graphql>", "params": {"<var>": {"type": "string", "default": "<value>"}}}}}\`.
+OpenNeko runs them before the script starts and writes each data object to
+\`$RUN_DIR/.neko-data/queries/<name>.json\`; the script gives a parameter with
+\`--<var> <value>\`. When a task needs many queries, chunked
 \`in\` filters, or rows that belong in files, write a script that uses
 \`neko_data\` and run it once. Call \`${queryTool}\` directly for discovery
 and for small answers.`

@@ -65,8 +65,8 @@
       },
       "scriptData": true
     },
-    "bytes": 52004,
-    "sha256": "d915e9d81c8422d38d53c5867996047c0218fdb17a99006b825fa4a442440963"
+    "bytes": 52408,
+    "sha256": "c59163b3aeb4a5182b63066875ace0e5396cf95751cdc880268176052e3960da"
   },
   {
     "name": "telegram member",
@@ -113,8 +113,8 @@
       "bot": null,
       "scriptData": true
     },
-    "bytes": 26082,
-    "sha256": "b97a03862fefbd04948dd3839940aec5207822ac139f6e2c7091ef03e1601b91"
+    "bytes": 26486,
+    "sha256": "de8b2c3f9bb142e06497337fe18c5aa69bfdf9fb74f0599328d54f2297bab0f8"
   },
   {
     "name": "slack eval without cards",
@@ -164,8 +164,8 @@
       },
       "scriptData": true
     },
-    "bytes": 21759,
-    "sha256": "f01864b0ed5f396b4e2b9ad86c27f35cd4406a1a6a0d11a3c5e1ff9022641f54"
+    "bytes": 22163,
+    "sha256": "e00be09944599dc47b8274526ec02e1883e2030295d9ff18ee162a9c18504d89"
   },
   {
     "name": "no tools",
@@ -212,8 +212,8 @@
       "bot": null,
       "scriptData": true
     },
-    "bytes": 43326,
-    "sha256": "0cf1b4dee53bc9291158ceda2be82e80d7150c697020b663261bf5acf1041b32"
+    "bytes": 43730,
+    "sha256": "d56407e49a0b15ee2c59531c5c1ce8c9e236c1fdf238e5b56ee0ffd897c35ccb"
   },
   {
     "name": "skill list catalog",
@@ -269,8 +269,8 @@
       "bot": null,
       "scriptData": true
     },
-    "bytes": 32010,
-    "sha256": "a50df16c4ce58a628a4fde600ef1eb76065cdcaec683c10c6e7e904ca0f3c8d8"
+    "bytes": 32414,
+    "sha256": "8a6bf4da9e6f982d028cb43300d6ca9ae187e47fc47bf9775df1e11ac3b4a8a8"
   },
   {
     "name": "skill list catalog empty",
@@ -317,8 +317,8 @@
       "bot": null,
       "scriptData": true
     },
-    "bytes": 31770,
-    "sha256": "febd9510d153f3810cac65e0b595bd4e005c9b5f630ca768eaecd210b6e835b0"
+    "bytes": 32174,
+    "sha256": "8bca5eb352a2b1fa9667e266c4903c89bffa2c3b016cfeb68a9a649e1e76bf0d"
   },
   {
     "name": "no sandbox, so no script data",

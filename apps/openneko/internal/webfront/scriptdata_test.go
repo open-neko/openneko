@@ -360,3 +360,50 @@ func TestScriptDataInAWorkflowScriptStep(t *testing.T) {
 		t.Fatalf("a run with no data broker gets no client: %s %v", mustJSON(results), err)
 	}
 }
+
+func TestDeclaredQueriesInTheRealSandbox(t *testing.T) {
+	cfg := startRecipeSandbox(t, false)
+	ws := stepTestWorkspace(t, t.TempDir())
+	skill := filepath.Join(ws.SkillsRoot, "stock")
+	for name, content := range map[string]string{
+		"report.py": "import json, os, sys\nd = os.path.join(os.environ['RUN_DIR'], '.neko-data', 'queries')\n" +
+			"rows = json.load(open(os.path.join(d, 'stock.json')))['stock']\nprint(len(rows), sys.argv[1:])\n",
+		"report.py" + sandbox.DeclaredSuffix: `{"queries": {"stock": {"query": "query ($store: String!) { stock(where: {store: {eq: $store}}) { sku } }", "params": {"store": {}}}}}`,
+		"plain.py":                           "print('no data')\n",
+	} {
+		if err := os.MkdirAll(skill, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(skill, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tools := &fakeTools{reply: decodeJS(t, `{"content":[{"type":"text","text":"{\"data\":{\"stock\":[{\"sku\":\"A\"},{\"sku\":\"B\"}]}}"}]}`)}
+	broker, err := scriptDataBroker(turnBinding{OrgID: "org-1", RunID: "run-1", Kind: "workflow", GraphjinToolPolicy: "direct-governed"}, tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	steps := decodeJS(t, `[{"id":"s1","description":"Stock","script":{"skill":"stock","command":["python3","${SKILL_DIR}/report.py","--store","${input.store}"]}},`+
+		`{"id":"s2","description":"Plain","script":{"skill":"stock","command":["python3","${SKILL_DIR}/plain.py"]}}]`)
+	log := &eventLog{}
+	results, err := runScriptSteps(context.Background(), scriptStepsInput{Steps: jsArray(steps), Workspace: ws,
+		Input: decodeJS(t, `{"store":"north"}`), Allowed: []string{"stock"}, Sandbox: &cfg, Data: broker, Emit: log.emit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 || results[0].Status != "ok" || results[0].OutputTail != `2 ['--store', 'north']` ||
+		results[1].Status != "ok" || results[1].OutputTail != "no data" {
+		t.Fatalf("results: %s", mustJSON(results))
+	}
+	if got := string(mustJSON(tools.calls)); got != `[{"input":{"arguments":{"query":"query ($store: String!) { stock(where: {store: {eq: $store}}) { sku } }","variables":{"store":"north"}},"name":"execute_graphql","orgId":"org-1","runId":"run-1"},"method":"callGraphjinTool"}]` {
+		t.Fatalf("calls: %s", got)
+	}
+
+	tools.throws = "No data source is available to this run."
+	results, err = runScriptSteps(context.Background(), scriptStepsInput{Steps: jsArray(steps), Workspace: ws,
+		Input: decodeJS(t, `{"store":"south"}`), Allowed: []string{"stock"}, Sandbox: &cfg, Data: broker, Emit: log.emit})
+	if err != nil || len(results) != 2 || results[0].Status != "failed" ||
+		!strings.Contains(results[0].OutputTail, "did not start: its declared query stock failed: No data source is available to this run.") {
+		t.Fatalf("a refused declared query: %s %v", mustJSON(results), err)
+	}
+}
