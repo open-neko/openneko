@@ -1,4 +1,3 @@
-import { prepareSandboxCapacity, closeSandboxLauncher } from "@neko/llm/work/sandbox-launcher";
 import { withStartupTrace, startupPhase } from "@neko/telemetry/startup";
 import { keepProcessThroughDatabaseRestarts, readLocalConfig, secretsBackendError } from "@neko/db";
 import "dotenv/config";
@@ -73,10 +72,6 @@ import {
   initializeWorkerTelemetry,
   shutdownWorkerTelemetry,
 } from "./telemetry.js";
-import {
-  getWorkflowSchedulerHealth,
-  startDurableWorkflowScheduler,
-} from "./workflow-scheduler.js";
 import { PackService } from "./packs/service.js";
 import { registerPackActionPreflight } from "./packs/action-preflight.js";
 import { registerMagentoV2Runtime } from "./packs/magento-v2-runtime.js";
@@ -162,7 +157,6 @@ function ssoSetupSurface(): SsoSetupHandlerSurface {
 }
 const server = createServer(
   createAdminHandler({
-    scheduler: { getHealth: getWorkflowSchedulerHealth },
     actions: {
       ready: () => actionAdaptersReady,
       execute: (input) => runActionExecute(input),
@@ -192,12 +186,6 @@ const server = createServer(
         return { matched: result.matched, enqueued: result.enqueued };
       },
     },
-    installPolicy: {
-      getInstallPolicy: async () => {
-        const { getInstallPolicyForOrg } = await import("@neko/db");
-        return getInstallPolicyForOrg(ADMIN_ORG_ID);
-      },
-    },
     groupGrants: {
       apply: async () => applyGroupGrants(await getOrgId()),
       schedule: () => {
@@ -211,12 +199,6 @@ const server = createServer(
         const { readFile } = await import("node:fs/promises");
         const { listConfigApiOperations } = await import("@neko/llm/graphjin");
         return listConfigApiOperations(await readFile(configFile, "utf8"));
-      },
-    },
-    sources: {
-      check: async ({ answers, password }) => {
-        const { checkSourceForOrg } = await import("@neko/llm/graphjin/source-check");
-        return checkSourceForOrg({ orgId: await getOrgId(), answers, password });
       },
     },
     directory: {
@@ -382,8 +364,6 @@ const GRAPHJIN_URL = toGraphqlEndpoint(
 console.log(`[worker] subscriptions GraphJin client targeting ${GRAPHJIN_URL}`);
 
 if (process.env.OPENNEKO_SERVE_SOCKET) {
-  try { await prepareSandboxCapacity(); }
-  catch (error) { console.error("[sandbox] startup preparation failed", error); }
 }
 const b = await boss();
 
@@ -486,12 +466,6 @@ subscriptionManager.ready
   });
 
 
-// Cron workflow delivery owns its timer and persisted cursor. It deliberately
-// does not ride on pg-boss's in-process schedule polling: queue timers remain
-// useful for auxiliary maintenance, but cannot be the source of truth for a
-// business schedule that must catch up after downtime.
-const workflowScheduler = await startDurableWorkflowScheduler();
-
 const reconcileTimer = setInterval(() => {
   reconcileStaleRuns({ minAgeMs: RECONCILE_SWEEP_MIN_AGE_MS })
     .then((s) => {
@@ -524,7 +498,7 @@ if (filesEnabled()) {
 }
 
 listenAdmin(server, adminSocketPath(), PORT, (where) => {
-  console.log(`[worker] pg-boss running; /health on ${where}`);
+  console.log(`[worker] pg-boss running; admin socket on ${where}`);
 });
 
 
@@ -532,7 +506,6 @@ const shutdown = async (signal: string) => {
   console.log(`[worker] received ${signal}; shutting down`);
   clearInterval(reconcileTimer);
   clearInterval(knowledgeRefreshTimer);
-  workflowScheduler.stop();
   coreSecrets?.stop();
   unregisterPackActionPreflight();
   unregisterPackConnectionPreflight();
@@ -552,8 +525,6 @@ const shutdown = async (signal: string) => {
   } catch (e) {
     console.error("[worker] pg-boss stop error:", e);
   }
-  try { closeSandboxLauncher(); }
-  catch (error) { console.error("[worker] sandbox shutdown error:", error); }
   await shutdownWorkerTelemetry();
   process.exit(0);
 };

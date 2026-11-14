@@ -500,7 +500,6 @@ export class EvalEpisode {
 
     this.worker = createServer(
       createAdminHandler({
-        exit: () => {},
         actions: { ready: () => true, execute: (input) => runActionExecute(input) },
         actionRequests: {
           create: async (input) => {

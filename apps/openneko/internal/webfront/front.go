@@ -76,6 +76,9 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.Wake.ServeHTTP(w, r)
 		return
 	}
+	if f.ServeHealth(w, r) {
+		return
+	}
 	if !strings.HasPrefix(p, "/api/") && (strings.HasPrefix(p, "/_next/") || fileExtension.MatchString(p)) {
 		if !f.serveFile(w, r, p, true) {
 			f.node(w, r)

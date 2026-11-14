@@ -2,13 +2,11 @@ package skill
 
 import (
 	"context"
-	"encoding/json"
-	"net"
-	"net/http"
-	"net/http/httptest"
-	"os"
-	"path/filepath"
+	"net/url"
 	"testing"
+
+	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
 func TestDefaultPolicyIsSecureByDefault(t *testing.T) {
@@ -17,84 +15,58 @@ func TestDefaultPolicyIsSecureByDefault(t *testing.T) {
 	}
 }
 
-func TestFetchPolicyReturnsParsedPolicy(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/admin/install-policy" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"policy": map[string]any{"allowGitUrlInstalls": true},
-			"source": "org",
-		})
-	}))
-	defer srv.Close()
-
-	t.Setenv("WORKER_ADMIN_URL", srv.URL)
-
-	pol, source, err := FetchPolicy(context.Background())
+func TestFetchPolicyReadsFromDatabase(t *testing.T) {
+	pool := testpg.Pool(t, "0001_initial_schema.sql", "0016_llm_provider_config.sql")
+	ctx := context.Background()
+	var schema string
+	if err := pool.QueryRow(ctx, `select current_schema()`).Scan(&schema); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	u, err := url.Parse(testpg.URL(t))
 	if err != nil {
-		t.Fatalf("fetch failed: %v", err)
+		t.Fatal(err)
 	}
-	if source != "org" {
-		t.Errorf("expected source=org, got %q", source)
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+	if err := config.WriteLocalDatabaseURL("", u.String()); err != nil {
+		t.Fatal(err)
 	}
-	if !pol.AllowGitURLInstalls {
-		t.Errorf("expected allowGitUrlInstalls=true")
+
+	pol, source, err := FetchPolicy(ctx)
+	if err != nil || source != "default" || pol.AllowGitURLInstalls {
+		t.Fatalf("with no org row: got %+v %q %v", pol, source, err)
+	}
+
+	if _, err := pool.Exec(ctx, `insert into organization (id, slug, name) values ('org', 'org', 'Org')`); err != nil {
+		t.Fatal(err)
+	}
+	pol, source, err = FetchPolicy(ctx)
+	if err != nil || source != "org" || pol.AllowGitURLInstalls {
+		t.Fatalf("with org and no policy row: got %+v %q %v", pol, source, err)
+	}
+
+	if _, err := pool.Exec(ctx, `insert into llm_provider_config (org_id, scope, config) values ('org', 'install-policy', '{"allowGitUrlInstalls": true}')`); err != nil {
+		t.Fatal(err)
+	}
+	pol, source, err = FetchPolicy(ctx)
+	if err != nil || source != "org" || !pol.AllowGitURLInstalls {
+		t.Fatalf("with allowGitUrlInstalls=true: got %+v %q %v", pol, source, err)
 	}
 }
 
-func TestFetchPolicyReturnsDefaultsWhenWorkerUnreachable(t *testing.T) {
-	t.Setenv("WORKER_ADMIN_URL", "http://127.0.0.1:1") // closed port
+func TestFetchPolicyReturnsDefaultsWhenDatabaseUnreachable(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("NEKO_PG_HOST", "127.0.0.1")
+	t.Setenv("NEKO_PG_PORT", "1")
 	pol, source, _ := FetchPolicy(context.Background())
 	if source != "unreachable" {
 		t.Errorf("expected source=unreachable, got %q", source)
 	}
 	if pol.AllowGitURLInstalls {
-		t.Errorf("unreachable worker should not grant git-URL installs — got %+v", pol)
-	}
-}
-
-func TestFetchPolicyReturnsDefaultsOn500(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "boom", http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-	t.Setenv("WORKER_ADMIN_URL", srv.URL)
-	pol, source, err := FetchPolicy(context.Background())
-	if err == nil {
-		t.Fatalf("expected an error on 500")
-	}
-	if source != "unreachable" {
-		t.Errorf("expected source=unreachable, got %q", source)
-	}
-	if pol.AllowGitURLInstalls {
-		t.Errorf("expected fallback to default on 500")
-	}
-}
-
-func TestFetchPolicyOverWorkerSocket(t *testing.T) {
-	dir, err := os.MkdirTemp("", "policy")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	socket := filepath.Join(dir, "worker.sock")
-	ln, err := net.Listen("unix", socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"policy": map[string]any{"allowGitUrlInstalls": r.URL.Path == "/admin/install-policy"}, "source": "org"})
-	}))
-	srv.Listener = ln
-	srv.Start()
-	defer srv.Close()
-	t.Setenv("WORKER_ADMIN_URL", "unix://"+socket)
-
-	pol, source, err := FetchPolicy(context.Background())
-	if err != nil || source != "org" || !pol.AllowGitURLInstalls {
-		t.Fatalf("got %+v %q %v", pol, source, err)
+		t.Errorf("unreachable database should not grant git-URL installs — got %+v", pol)
 	}
 }

@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/open-neko/neko/apps/openneko/internal/sourcecheck"
 )
 
 var (
@@ -17,30 +20,8 @@ var (
 	errSourceUnsupported = errors.New("OpenNeko has no source check for this database type yet")
 )
 
-type sourceCheckFinding struct {
-	Step    string   `json:"step"`
-	Status  string   `json:"status"`
-	Message string   `json:"message"`
-	Field   string   `json:"field,omitempty"`
-	SQL     []string `json:"sql,omitempty"`
-}
-
-type sourceCheckResult struct {
-	OK            bool                 `json:"ok"`
-	Supported     bool                 `json:"supported"`
-	Type          string               `json:"type"`
-	Host          string               `json:"host"`
-	Port          int                  `json:"port"`
-	Database      string               `json:"database"`
-	User          string               `json:"user"`
-	ServerVersion string               `json:"serverVersion,omitempty"`
-	Findings      []sourceCheckFinding `json:"findings"`
-	Tables        []struct {
-		Name string `json:"name"`
-		Rows *int64 `json:"rows"`
-	} `json:"tables"`
-	MoreTables int `json:"moreTables"`
-}
+type sourceCheckFinding = sourcecheck.Finding
+type sourceCheckResult = sourcecheck.Result
 
 type sourceCheckOptions struct {
 	kind, host, database, user, secret, output string
@@ -60,6 +41,10 @@ func newSourceCmd() *cobra.Command {
 func newSourceCheckCmd() *cobra.Command {
 	var opts sourceCheckOptions
 	cmd := &cobra.Command{
+		Use:   "source",
+	}
+	_ = cmd
+	cmd = &cobra.Command{
 		Use:   "check",
 		Short: "Test one PostgreSQL, MySQL or MariaDB source: host, port, TLS, login, read rights and read-only rights",
 		Long: `Test one database source in order: the host resolves, the port answers,
@@ -73,6 +58,9 @@ Admin settings) or on standard input (--password-stdin).`,
   printf '%s' "$PW" | openneko source check --type mysql --host 10.0.0.5 --database magento --user openneko_ro --password-stdin`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if code, proxied := MaybeProxyToWeb(cmd); proxied {
+				return WithExit(code, nil)
+			}
 			if opts.output != "text" && opts.output != "json" {
 				return errors.New("--output must be text or json")
 			}
@@ -98,7 +86,7 @@ Admin settings) or on standard input (--password-stdin).`,
 			var response struct {
 				Check sourceCheckResult `json:"check"`
 			}
-			raw, err := requestWorkerAPI(cmd.Context(), "source check", http.MethodPost, "/admin/sources/check", body, &response)
+			raw, err := requestWebAdminAPI(cmd.Context(), "source check", http.MethodPost, "/admin/sources/check", body, &response)
 			if err != nil {
 				return err
 			}
@@ -146,7 +134,8 @@ func readPasswordLine(in io.Reader) (string, error) {
 }
 
 func writeSourceCheck(out io.Writer, check sourceCheckResult) {
-	fmt.Fprintf(out, "source: %s %s@%s:%d/%s\n", check.Type, check.User, check.Host, check.Port, check.Database)
+	port := strconv.FormatFloat(check.Port, 'f', -1, 64)
+	fmt.Fprintf(out, "source: %s %s@%s:%s/%s\n", check.Type, check.User, check.Host, port, check.Database)
 	for _, f := range check.Findings {
 		level := f.Status
 		if level == "fail" {

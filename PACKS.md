@@ -455,7 +455,10 @@ reached only through its API is refused. `go test -run TestMagentoGraphjinUpdate
 store-management settings and activity route. On a deployment-scope connection,
 `openneko web` applies the new token to the installed pack's GraphJin sources and
 sets the readiness of the actions that use them. Each minute it refreshes a
-deployment-scope token that ends within five minutes, then applies it again.
+deployment-scope token that ends within five minutes, then applies it again. On a
+user-scope connection, `openneko web` attaches the signed-in operator's OAuth
+header to each GraphJin request (`apps/openneko/internal/webfront/turnpackheaders.go`)
+and refreshes a personal token that ends within five minutes under a per-row lock.
 `openneko web` also runs pack actions. For a Magento change, it reads the current
 values, classifies and caps the change, and stores the preview. After approval, it
 writes each row through GraphJin and reads Magento again to confirm the result. A row

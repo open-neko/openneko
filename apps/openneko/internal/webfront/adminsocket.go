@@ -21,5 +21,6 @@ func (a *API) OperatorHandler() http.Handler {
 	mux.Handle("POST /admin/packs/upload", operator(a.packUpload))
 	mux.Handle("GET /admin/packs/{packId}/{action}", operator(a.packRead))
 	mux.Handle("POST /admin/packs/{packId}/{action}", operator(a.packWrite))
+	mux.Handle("POST /admin/sources/check", operator(a.serveSourceCheck))
 	return mux
 }

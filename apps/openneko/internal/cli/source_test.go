@@ -6,7 +6,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -21,7 +22,13 @@ const failedCheck = `{"check":{"ok":false,"supported":true,"type":"mysql","host"
 func runSourceCheck(t *testing.T, stdin string, reply string, args ...string) (map[string]any, string, error) {
 	t.Helper()
 	var body map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	dir, err := os.MkdirTemp("", "wa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	socket := filepath.Join(dir, "web-admin.sock")
+	stop, err := serveWebAdmin(socket, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/admin/sources/check" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -30,8 +37,13 @@ func runSourceCheck(t *testing.T, stdin string, reply string, args ...string) (m
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, reply)
 	}))
-	t.Cleanup(server.Close)
-	t.Setenv("WORKER_ADMIN_URL", server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(stop)
+	t.Setenv(webAdminSocketEnv, socket)
+	t.Setenv("OPENNEKO_PROXIED", "1")
+	t.Setenv("WORKER_ADMIN_URL", "unix:///nonexistent/worker.sock")
 	command := newSourceCmd()
 	var output bytes.Buffer
 	command.SetOut(&output)
@@ -40,7 +52,7 @@ func runSourceCheck(t *testing.T, stdin string, reply string, args ...string) (m
 	command.SilenceErrors = true
 	command.SetIn(strings.NewReader(stdin))
 	command.SetArgs(append([]string{"check"}, args...))
-	err := command.Execute()
+	err = command.Execute()
 	return body, output.String(), err
 }
 
