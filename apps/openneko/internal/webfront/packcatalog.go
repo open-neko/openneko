@@ -401,6 +401,16 @@ func (a *API) servePackRead(w http.ResponseWriter, r *http.Request, act actor, p
 			return
 		}
 		sendJSON(w, http.StatusOK, out)
+	case "plan":
+		bundle, err := packBundle(act.OrgID, packID, r.URL.Query().Get("version"))
+		if err == nil {
+			var plan *packs.Plan
+			if plan, err = a.packPlan(r.Context(), act.OrgID, bundle); err == nil {
+				sendJSON(w, http.StatusOK, plan)
+				return
+			}
+		}
+		sendPackFailure(w, http.StatusBadRequest, err, "inspection")
 	case "status":
 		out, err := a.packStatus(r.Context(), act.OrgID, packID)
 		if err != nil {

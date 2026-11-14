@@ -129,7 +129,7 @@ func (a *API) adminPackRead(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusNotFound, "unknown pack operation")
 		return
 	}
-	if action == "inspect" || action == "status" {
+	if action == "inspect" || action == "status" || action == "plan" {
 		a.servePackRead(w, r, act, packID, action)
 		return
 	}
