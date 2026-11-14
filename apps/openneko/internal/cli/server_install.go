@@ -121,6 +121,10 @@ func runServerInstall(cmd *cobra.Command, o serverInstallOptions) error {
 	}
 	if !o.start {
 		fmt.Fprintf(out, "Start OpenNeko: sudo systemctl start %s %s\n", native.WebUnit, native.ServeUnit)
+		return nil
+	}
+	if o.systemctl {
+		return waitServerWeb(cmd.Context(), out, s)
 	}
 	return nil
 }

@@ -93,8 +93,8 @@ func packObjectBody(w http.ResponseWriter, r *http.Request) (*jsObj, bool) {
 var jsonHeader = http.Header{"Content-Type": {"application/json"}}
 
 func (a *API) adminPacks(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.settingsAdmin(w, r); ok {
-		a.relayPackWorker(context.WithoutCancel(r.Context()), w, http.MethodGet, "/admin/packs", nil, nil)
+	if act, ok := a.settingsAdmin(w, r); ok {
+		a.servePackList(w, r, act)
 	}
 }
 
@@ -116,17 +116,21 @@ func (a *API) adminPackUpload(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	header := http.Header{"Content-Type": {"application/zip"}, "X-Openneko-Actor": {encodeURIComponent(act.UserID)}}
-	a.relayPackWorker(r.Context(), w, http.MethodPost, "/admin/packs/upload", header, bytes)
+	a.servePackUpload(w, r, act, bytes)
 }
 
 func (a *API) adminPackRead(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.settingsAdmin(w, r); !ok {
+	act, ok := a.settingsAdmin(w, r)
+	if !ok {
 		return
 	}
 	packID, action := r.PathValue("packId"), r.PathValue("action")
 	if !packIDPattern.MatchString(packID) || !slices.Contains(packReadActions, action) {
 		sendError(w, http.StatusNotFound, "unknown pack operation")
+		return
+	}
+	if action == "inspect" || action == "status" {
+		a.servePackRead(w, r, act, packID, action)
 		return
 	}
 	path := "/admin/packs/" + encodeURIComponent(packID) + "/" + action

@@ -134,7 +134,11 @@ func startServer(ctx context.Context, out io.Writer) error {
 	if err := systemctl(ctx, out, "start", native.WebUnit, native.ServeUnit); err != nil {
 		return err
 	}
-	probe, err := native.ProbeHost(activeServer.WebAddr)
+	return waitServerWeb(ctx, out, *activeServer)
+}
+
+func waitServerWeb(ctx context.Context, out io.Writer, s native.Server) error {
+	probe, err := native.ProbeHost(s.WebAddr)
 	if err != nil {
 		return err
 	}
@@ -142,7 +146,7 @@ func startServer(ctx context.Context, out io.Writer) error {
 		fmt.Fprintf(out, "OpenNeko started, but web did not answer in %s: %v\nRun `openneko status` and `sudo openneko logs web`.\n", nativeReadyWait, err)
 		return WithExit(1, nil)
 	}
-	fmt.Fprintf(out, "OpenNeko runs at %s.\n", activeServer.PublicURL)
+	fmt.Fprintf(out, "OpenNeko runs at %s.\n", s.PublicURL)
 	return nil
 }
 
@@ -153,6 +157,10 @@ func statusServer(ctx context.Context, out io.Writer) error {
 	inactive := 0
 	for _, unit := range []string{native.ServeUnit, native.WebUnit} {
 		st := unitState(ctx, unit)
+		if st == "unknown" {
+			lines = append(lines, fmt.Sprintf("  ·  %s: unknown (systemctl gave no state; the checks below decide)", unit))
+			continue
+		}
 		lines = append(lines, fmt.Sprintf("  ·  %s: %s", unit, st))
 		if st != "active" {
 			state = degraded
