@@ -160,6 +160,10 @@ func (a *API) adminPackWrite(w http.ResponseWriter, r *http.Request) {
 		a.servePackUninstall(w, r, act, packID, body)
 		return
 	}
+	if packID != "magento" || action == "install" && packTruthy(body.vals["deferConfiguration"]) {
+		a.servePackApply(w, r, act, packID, action, body)
+		return
+	}
 	a.relayPackWorker(context.WithoutCancel(r.Context()), w, http.MethodPost, "/admin/packs/"+encodeURIComponent(packID)+"/"+action,
 		jsonHeader, []byte(jsStringify(body, false)))
 }

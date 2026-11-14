@@ -96,6 +96,9 @@ var GoRoutes = map[string][]string{
 	"/api/v1/profile":                                             {"GET", "PATCH"},
 	"/api/v1/my/pack-accounts":                                    {"GET"},
 	"/api/v1/my/pack-accounts/{packId}/{connectionKey}":           {"POST", "DELETE"},
+	"/api/v1/my/passkeys":                                         {"GET", "POST"},
+	"/api/v1/my/passkeys/challenge":                               {"POST"},
+	"/api/v1/my/passkeys/{passkeyId}":                             {"DELETE"},
 	"/api/v1/observations":                                        {"GET"},
 	"/api/v1/approvals":                                           {"GET"},
 	"/api/v1/action-requests":                                     {"GET"},
@@ -247,6 +250,9 @@ func (a *API) table() map[string]map[string]http.HandlerFunc {
 			"/api/v1/profile":                                             {"GET": a.profileGet, "PATCH": a.profilePatch},
 			"/api/v1/my/pack-accounts":                                    {"GET": a.personalPackAccounts},
 			"/api/v1/my/pack-accounts/{packId}/{connectionKey}":           {"POST": a.personalPackAccount, "DELETE": a.personalPackAccount},
+			"/api/v1/my/passkeys":                                         {"GET": a.passkeysList, "POST": a.passkeyCreate},
+			"/api/v1/my/passkeys/challenge":                               {"POST": a.passkeyChallenge},
+			"/api/v1/my/passkeys/{passkeyId}":                             {"DELETE": a.passkeyDelete},
 			"/api/v1/observations":                                        {"GET": a.observations},
 			"/api/v1/approvals":                                           {"GET": a.approvals},
 			"/api/v1/action-requests":                                     {"GET": a.actionRequests},
@@ -502,12 +508,16 @@ func field(body any, name string) (any, bool) {
 	return v, ok
 }
 
-func (a *API) publicBaseURL(r *http.Request) string {
+func (a *API) configuredPublicURL() string {
 	configured := a.PublicURL
 	if configured == "" {
 		configured = os.Getenv("OPENNEKO_PUBLIC_URL")
 	}
-	if c := strings.TrimRight(strings.TrimSpace(configured), "/"); c != "" {
+	return strings.TrimRight(strings.TrimSpace(configured), "/")
+}
+
+func (a *API) publicBaseURL(r *http.Request) string {
+	if c := a.configuredPublicURL(); c != "" {
 		return c
 	}
 	scheme := "http"

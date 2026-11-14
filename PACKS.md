@@ -433,8 +433,16 @@ to run the live preflight test. `openneko web` also uninstalls a pack. It revoke
 pack's GraphJin sources and keeps them, removes its saved queries, files and skill
 folders, deletes its secrets, switches off its metrics, watchers, workflows, policies
 and actions, and retires each receipt. A drift conflict stops the uninstall and marks
-the changed artifacts as modified. A failure puts the files and secrets back. Install,
-configure and upgrade still run in the worker. `openneko web` also runs the OAuth routes
+the changed artifacts as modified. A failure puts the files and secrets back.
+`openneko web` also installs, configures and upgrades a declarative pack. It checks the
+review hash, writes the secrets, the GraphJin sources, specs and saved queries, the skill
+folders, and the workflows, metrics, watchers, policies and actions, then runs the query
+preflight and records a receipt for each artifact. An upgrade retires the artifacts that
+the new version drops. A failure puts the skills, GraphJin config, files and secrets
+back. `go test -run TestDeclarativeGraphjinUpdateMatchesNode ./internal/webfront` checks
+the GraphJin update against a Node fixture. The install of a built-in pack before its
+configuration also runs in Go. The configured Magento install, configure and upgrade
+still run in the worker. `openneko web` also runs the OAuth routes
 (client setup, connect and callback, status and disconnect) and the Magento
 store-management settings and activity route. Until the
 pack apply moves to Go, a deployment-scope connection on an installed pack with

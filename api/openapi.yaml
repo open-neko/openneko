@@ -493,6 +493,17 @@ paths:
                 reason:
                   type: string
                   description: Rejection reason
+                passkey:
+                  type: object
+                  properties:
+                    credentialId:
+                      type: string
+                    clientDataJSON:
+                      type: string
+                    authenticatorData:
+                      type: string
+                    signature:
+                      type: string
               required:
               - decision
       responses:
@@ -3131,7 +3142,7 @@ paths:
                   type: string
       responses:
         '200':
-          description: The review, or after uninstall the pack status, from the Go server; install, configure and upgrade pass through from the worker
+          description: The review, or the pack status after install, configure, upgrade or uninstall, from the Go server; the Magento pack's configured install, configure and upgrade pass through from the worker
           content:
             application/json:
               schema:
@@ -3159,7 +3170,7 @@ paths:
                   lastError: {}
                   configuration: {}
         '400':
-          description: The body is not a valid JSON object, or the pack review or uninstall failed
+          description: The body is not a valid JSON object, or the pack review, install, configure, upgrade or uninstall failed
           content:
             application/json:
               schema:
@@ -6491,6 +6502,264 @@ paths:
                 $ref: '#/components/schemas/Error'
         '404':
           description: Pack not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /my/passkeys:
+    get:
+      operationId: getMyPasskeys
+      tags:
+      - my
+      summary: List passkeys registered by the signed-in user
+      x-access: signed-in
+      security:
+      - session: []
+      - deviceToken: []
+      responses:
+        '200':
+          description: Registered passkeys
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - passkeys
+                additionalProperties: false
+                properties:
+                  passkeys:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - id
+                      - credentialId
+                      - name
+                      - createdAt
+                      - lastUsedAt
+                      properties:
+                        id:
+                          type: string
+                        credentialId:
+                          type: string
+                        name:
+                          type: string
+                        createdAt:
+                          type: string
+                        lastUsedAt:
+                          type:
+                          - string
+                          - 'null'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      operationId: postMyPasskeys
+      tags:
+      - my
+      summary: Register a WebAuthn passkey for the signed-in user
+      x-access: signed-in
+      security:
+      - session: []
+      - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                credentialId:
+                  type: string
+                clientDataJSON:
+                  type: string
+                attestationObject:
+                  type: string
+                name:
+                  type: string
+      responses:
+        '201':
+          description: Registered passkey
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - passkey
+                additionalProperties: false
+                properties:
+                  passkey:
+                    type: object
+                    required:
+                    - id
+                    - credentialId
+                    - name
+                    - createdAt
+                    - lastUsedAt
+                    properties:
+                      id:
+                        type: string
+                      credentialId:
+                        type: string
+                      name:
+                        type: string
+                      createdAt:
+                        type: string
+                      lastUsedAt:
+                        type:
+                        - string
+                        - 'null'
+        '400':
+          description: The passkey attestation or challenge is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The passkey credential belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /my/passkeys/challenge:
+    post:
+      operationId: postMyPasskeysChallenge
+      tags:
+      - my
+      summary: Create a WebAuthn challenge to register a passkey or approve an action
+      x-access: signed-in
+      security:
+      - session: []
+      - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                purpose:
+                  type: string
+                actionRequestId:
+                  type: string
+      responses:
+        '200':
+          description: WebAuthn public-key options for registration or approval
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - purpose
+                - challenge
+                - rp
+                - user
+                - pubKeyCredParams
+                - excludeCredentials
+                - allowCredentials
+                - userVerification
+                additionalProperties: false
+                properties:
+                  purpose:
+                    type: string
+                  challenge:
+                    type: string
+                  rp:
+                    type: object
+                  user:
+                    type: object
+                  pubKeyCredParams:
+                    type: array
+                    items:
+                      type: object
+                  excludeCredentials:
+                    type: array
+                    items:
+                      type: object
+                  allowCredentials:
+                    type: array
+                    items:
+                      type: object
+                  userVerification:
+                    type: string
+                    enum:
+                    - required
+        '400':
+          description: The purpose or actionRequestId is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The action's policy needs a member of its approver group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: The action request is not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The action request is not pending approval
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /my/passkeys/{passkeyId}:
+    delete:
+      operationId: deleteMyPasskeysByPasskeyId
+      tags:
+      - my
+      summary: Remove a passkey registered by the signed-in user
+      x-access: signed-in
+      security:
+      - session: []
+      - deviceToken: []
+      parameters:
+      - name: passkeyId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Passkey removed
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - ok
+                additionalProperties: false
+                properties:
+                  ok:
+                    type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Passkey not found
           content:
             application/json:
               schema:
@@ -10722,6 +10991,17 @@ paths:
                   description: approve or reject
                 rejectionReason:
                   type: string
+                passkey:
+                  type: object
+                  properties:
+                    credentialId:
+                      type: string
+                    clientDataJSON:
+                      type: string
+                    authenticatorData:
+                      type: string
+                    signature:
+                      type: string
               required:
               - actionRequestId
               - decision
