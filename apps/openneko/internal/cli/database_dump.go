@@ -28,19 +28,25 @@ func newDatabaseInfoCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			conn, err := pgx.Connect(cmd.Context(), target.DSN())
+			identity, err := databaseIdentityOf(cmd.Context(), target.DSN())
 			if err != nil {
-				return fmt.Errorf("connect to OpenNeko's database: %w", err)
-			}
-			defer conn.Close(context.Background())
-			var identity string
-			if err := conn.QueryRow(cmd.Context(), `select current_user || '|' || current_database() || '|' || current_setting('server_version')`).Scan(&identity); err != nil {
 				return err
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), identity)
 			return nil
 		},
 	}
+}
+
+func databaseIdentityOf(ctx context.Context, dsn string) (string, error) {
+	conn, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		return "", fmt.Errorf("connect to OpenNeko's database: %w", err)
+	}
+	defer conn.Close(context.Background())
+	var identity string
+	err = conn.QueryRow(ctx, `select current_user || '|' || current_database() || '|' || current_setting('server_version')`).Scan(&identity)
+	return identity, err
 }
 
 func newDatabaseDumpCmd() *cobra.Command {
@@ -54,23 +60,27 @@ func newDatabaseDumpCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			dsn, password, err := splitDatabasePassword(target.DSN())
-			if err != nil {
-				return err
-			}
-			conn, err := pgx.Connect(cmd.Context(), target.DSN())
-			if err != nil {
-				return fmt.Errorf("connect to OpenNeko's database: %w", err)
-			}
-			exclude, err := dumpExclusions(cmd.Context(), conn)
-			conn.Close(context.Background())
-			if err != nil {
-				return err
-			}
-			args := append([]string{"--format=custom", "--no-password", "--dbname=" + dsn}, exclude...)
-			return runPostgresTool(cmd.Context(), nil, cmd.OutOrStdout(), password, "pg_dump", args...)
+			return dumpDatabaseTo(cmd.Context(), target.DSN(), cmd.OutOrStdout())
 		},
 	}
+}
+
+func dumpDatabaseTo(ctx context.Context, target string, w io.Writer) error {
+	dsn, password, err := splitDatabasePassword(target)
+	if err != nil {
+		return err
+	}
+	conn, err := pgx.Connect(ctx, target)
+	if err != nil {
+		return fmt.Errorf("connect to OpenNeko's database: %w", err)
+	}
+	exclude, err := dumpExclusions(ctx, conn)
+	conn.Close(context.Background())
+	if err != nil {
+		return err
+	}
+	args := append([]string{"--format=custom", "--no-password", "--dbname=" + dsn}, exclude...)
+	return runPostgresTool(ctx, nil, w, password, "pg_dump", args...)
 }
 
 func newDatabaseRestoreCmd() *cobra.Command {

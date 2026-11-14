@@ -222,21 +222,7 @@ func newDatabaseForeignObjectsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			spool, err := spoolArchive(cmd.InOrStdin())
-			if err != nil {
-				return err
-			}
-			defer os.Remove(spool)
-			archived, _, err := archiveContents(cmd.Context(), spool)
-			if err != nil {
-				return err
-			}
-			conn, err := pgx.Connect(cmd.Context(), target.DSN())
-			if err != nil {
-				return fmt.Errorf("connect to OpenNeko's database: %w", err)
-			}
-			defer conn.Close(context.Background())
-			foreign, err := foreignObjects(cmd.Context(), conn, archived)
+			foreign, err := listForeignObjects(cmd.Context(), target.DSN(), cmd.InOrStdin())
 			if err != nil {
 				return err
 			}
@@ -246,6 +232,24 @@ func newDatabaseForeignObjectsCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func listForeignObjects(ctx context.Context, dsn string, archive io.Reader) ([]string, error) {
+	spool, err := spoolArchive(archive)
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(spool)
+	archived, _, err := archiveContents(ctx, spool)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		return nil, fmt.Errorf("connect to OpenNeko's database: %w", err)
+	}
+	defer conn.Close(context.Background())
+	return foreignObjects(ctx, conn, archived)
 }
 
 func spoolArchive(archive io.Reader) (string, error) {

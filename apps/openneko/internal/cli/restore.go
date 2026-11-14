@@ -41,6 +41,9 @@ This overwrites live data and configuration.`,
 			if err != nil {
 				return err
 			}
+			if _, ok := nativeInstall(); ok {
+				return runNativeRestore(cmd.Context(), cmd, path, keyFile, dropForeign)
+			}
 			return runRestore(cmd.Context(), cmd, path, keyFile, dropForeign)
 		},
 	}
@@ -150,6 +153,9 @@ func verifyBackupFile(path, key string) (*verifiedBackup, error) {
 }
 
 func isBackupVolume(name string) bool {
+	if isNativeBackupVolume(name) {
+		return true
+	}
 	for _, volume := range backupVolumes {
 		if volume.name == name {
 			return true

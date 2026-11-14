@@ -21,6 +21,9 @@ func newDoctorCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
+			if _, ok := nativeInstall(); ok {
+				return runNativeDoctor(cmd.Context(), out)
+			}
 			h := host.Check()
 			supportedTag := "supported"
 			if !h.Supported {

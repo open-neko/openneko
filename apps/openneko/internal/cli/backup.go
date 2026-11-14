@@ -76,6 +76,10 @@ backup key; keep a copy of the key elsewhere with ` + "`openneko backup key expo
 Restore with ` + "`openneko restore <file> --confirm RESTORE`" + `.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if _, ok := nativeInstall(); ok {
+				_, err := createNativeBackup(cmd.Context(), destination, cmd.OutOrStdout())
+				return err
+			}
 			sup, _, project, files, err := currentStackCompose(cmd.Context())
 			if err != nil {
 				return err
@@ -220,8 +224,7 @@ func resolveBackupDestination(destination, defaultDir, project string, now time.
 }
 
 // createBackup writes a complete encrypted backup of the running stack and
-// returns its path. The file appears under its final name only once every
-// byte has been written and synced.
+// returns its path.
 func createBackup(ctx context.Context, sup *compose.Supervisor, project string, files []string, destination string, out io.Writer) (string, error) {
 	stack := backupStack{sup: sup, project: project, files: files, external: !usesBundledDatabase(files)}
 	if !stack.external {
@@ -291,6 +294,25 @@ func createBackup(ctx context.Context, sup *compose.Supervisor, project string, 
 		return "", err
 	}
 
+	return writeBackupFile(target, key, keyPath, manifest, backupSource{
+		rolePassword: rolePassword,
+		volume: func(name string, w io.Writer) error {
+			return stack.archiveVolume(ctx, image, volumes[name], w)
+		},
+		dump: func(w io.Writer) error { return stack.dumpDatabase(ctx, w) },
+	}, out)
+}
+
+type backupSource struct {
+	rolePassword string
+	volume       func(name string, w io.Writer) error
+	dump         func(w io.Writer) error
+}
+
+// writeBackupFile writes the manifest, the volumes, the role password and the
+// dump in that order. The file appears under its final name only once every
+// byte has been written and synced.
+func writeBackupFile(target, key, keyPath string, manifest backupManifest, src backupSource, out io.Writer) (string, error) {
 	partial, err := os.CreateTemp(filepath.Dir(target), "."+filepath.Base(target)+".partial-*")
 	if err != nil {
 		return "", err
@@ -331,20 +353,20 @@ func createBackup(ctx context.Context, sup *compose.Supervisor, project string, 
 	for _, volume := range manifest.Volumes {
 		fmt.Fprintf(out, "Archiving volume %s...\n", volume)
 		if err := writeEntry(backupVolumeEntryPrefix+volume+backupVolumeEntrySuffix, func(w io.Writer) error {
-			return stack.archiveVolume(ctx, image, volumes[volume], w)
+			return src.volume(volume, w)
 		}); err != nil {
 			return "", fmt.Errorf("archive volume %s: %w", volume, err)
 		}
 	}
 	if err := writeEntry(backupRolePasswordEntry, func(w io.Writer) error {
-		_, err := io.WriteString(w, rolePassword)
+		_, err := io.WriteString(w, src.rolePassword)
 		return err
 	}); err != nil {
 		return "", err
 	}
 	fmt.Fprintf(out, "Dumping database %s...\n", manifest.Database.Name)
 	if err := writeEntry(backupDatabaseEntry, func(w io.Writer) error {
-		return stack.dumpDatabase(ctx, w)
+		return src.dump(w)
 	}); err != nil {
 		return "", fmt.Errorf("dump database %s: %w", manifest.Database.Name, err)
 	}
