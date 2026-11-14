@@ -69,10 +69,24 @@ func (a *API) adminPacks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) adminPackUpload(w http.ResponseWriter, r *http.Request) {
-	act, ok := a.settingsAdmin(w, r)
-	if !ok {
-		return
+	if act, ok := a.settingsAdmin(w, r); ok {
+		a.packUpload(w, r, act)
 	}
+}
+
+func (a *API) adminPackRead(w http.ResponseWriter, r *http.Request) {
+	if act, ok := a.settingsAdmin(w, r); ok {
+		a.packRead(w, r, act)
+	}
+}
+
+func (a *API) adminPackWrite(w http.ResponseWriter, r *http.Request) {
+	if act, ok := a.settingsAdmin(w, r); ok {
+		a.packWrite(w, r, act)
+	}
+}
+
+func (a *API) packUpload(w http.ResponseWriter, r *http.Request, act actor) {
 	if mediaType, _, _ := strings.Cut(r.Header.Get("Content-Type"), ";"); strings.TrimSpace(mediaType) != "application/zip" {
 		sendError(w, http.StatusUnsupportedMediaType, "Choose a ZIP pack archive.")
 		return
@@ -89,11 +103,7 @@ func (a *API) adminPackUpload(w http.ResponseWriter, r *http.Request) {
 	a.servePackUpload(w, r, act, bytes)
 }
 
-func (a *API) adminPackRead(w http.ResponseWriter, r *http.Request) {
-	act, ok := a.settingsAdmin(w, r)
-	if !ok {
-		return
-	}
+func (a *API) packRead(w http.ResponseWriter, r *http.Request, act actor) {
 	packID, action := r.PathValue("packId"), r.PathValue("action")
 	if !packIDPattern.MatchString(packID) || !slices.Contains(packReadActions, action) {
 		sendError(w, http.StatusNotFound, "unknown pack operation")
@@ -102,11 +112,7 @@ func (a *API) adminPackRead(w http.ResponseWriter, r *http.Request) {
 	a.servePackRead(w, r, act, packID, action)
 }
 
-func (a *API) adminPackWrite(w http.ResponseWriter, r *http.Request) {
-	act, ok := a.settingsAdmin(w, r)
-	if !ok {
-		return
-	}
+func (a *API) packWrite(w http.ResponseWriter, r *http.Request, act actor) {
 	packID, action := r.PathValue("packId"), r.PathValue("action")
 	if !packIDPattern.MatchString(packID) || !slices.Contains(packWriteActions, action) {
 		sendError(w, http.StatusNotFound, "unknown pack operation")
