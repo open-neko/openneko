@@ -154,6 +154,19 @@ export const adminCases: Case[] = [
     request: { params: { packId: "no-such-pack", action: "inspect" } },
   },
   {
+    op: "POST /admin/packs/{packId}/{action}", name: "refuses a review with an unknown input", status: 400,
+    request: { params: { packId: "slack", action: "review" }, body: { inputs: { nope: 1 } } },
+    check: (r) => {
+      expect(body(r).error).toBe("unknown pack input nope");
+      expect((body(r).diagnostic as { phase: string }).phase).toBe("review");
+    },
+  },
+  {
+    op: "POST /admin/packs/{packId}/{action}", name: "refuses to review a change to a pack that is not installed", status: 400,
+    request: { params: { packId: "slack", action: "review" }, body: { operation: "configure" } },
+    check: (r) => expect(body(r).error).toBe("pack must be installed before reviewing this operation"),
+  },
+  {
     op: "POST /admin/packs/upload", name: "refuses an archive that is not a ZIP", status: 400,
     request: { raw: { body: "not a zip", type: "application/zip" } },
   },

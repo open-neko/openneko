@@ -25,6 +25,7 @@ require (
 	github.com/spf13/cobra v1.8.1
 	github.com/testcontainers/testcontainers-go v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
+	github.com/vektah/gqlparser/v2 v2.5.64
 	github.com/xuri/excelize/v2 v2.10.1
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.43.0
 	go.opentelemetry.io/otel/sdk v1.43.0
