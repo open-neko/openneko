@@ -172,7 +172,7 @@ func TestTurnAdminDatabase(t *testing.T) {
 	if rpcErr != nil || !strings.Contains(out, `\"decision\":\"pending_approval\"`) {
 		t.Fatalf("invite: %s %v", out, rpcErr)
 	}
-	create := worker.lastCreate()
+	create := worker.lastCreate(t)
 	if create["kind"] != "user_admin" || create["scope"] != "internal" || create["status"] != "pending_approval" || create["riskLevel"] != "high" ||
 		create["workRunId"] != adminRun || create["intent"] != "New hire" || jsStringify(jsFromGo(create["payload"]), false) != `{"action":"invite","email":"new@example.com","role":"member"}` {
 		t.Errorf("invite request: %v", create)

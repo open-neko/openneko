@@ -158,6 +158,9 @@ with exit code 0, so its supervisor starts it again.`,
 			if err := api.EnsureVAPIDKeys(); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: VAPID keys not ready: %v\n", err)
 			}
+			if err := api.SeedDefaultActionPolicies(ctx); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: default action policies not seeded: %v\n", err)
+			}
 			if runner != nil {
 				api.StartChannelInbound(ctx)
 				api.StartPackOAuthRefresh(ctx)

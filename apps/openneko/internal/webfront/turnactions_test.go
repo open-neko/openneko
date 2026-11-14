@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -81,46 +80,48 @@ func TestPolicyEngineMatchesNode(t *testing.T) {
 }
 
 type fakeActionWorker struct {
-	mu      sync.Mutex
-	db      *pgxpool.Pool
-	creates []map[string]any
-	status  int
-	reply   string
+	mu    sync.Mutex
+	db    *pgxpool.Pool
+	calls []string
 }
 
 func (w *fakeActionWorker) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
-	body, _ := io.ReadAll(r.Body)
-	var in map[string]any
-	_ = json.Unmarshal(body, &in)
 	w.mu.Lock()
-	defer w.mu.Unlock()
-	switch r.URL.Path {
-	case "/admin/action-requests/create":
-		w.creates = append(w.creates, in)
-		if w.status != 0 {
-			rw.WriteHeader(w.status)
-			_, _ = rw.Write([]byte(w.reply))
-			return
-		}
-		var id string
-		err := w.db.QueryRow(r.Context(), `insert into action_request (org_id, scope, kind, target, payload, status, summary, intent, work_run_id, workflow_run_id)
-			values ($1, $2, $3, $4, $5, $6, $7, $8, $9::uuid, $10::uuid) returning id::text`, in["orgId"], in["scope"], in["kind"], in["target"],
-			mustJSON(in["payload"]), in["status"], in["summary"], in["intent"], in["workRunId"], in["workflowRunId"]).Scan(&id)
-		if err != nil {
-			rw.WriteHeader(500)
-			_, _ = rw.Write([]byte(`{"error":` + jsStringify(err.Error(), false) + `}`))
-			return
-		}
-		_, _ = rw.Write([]byte(`{"id":"` + id + `","status":"` + in["status"].(string) + `"}`))
-	default:
-		http.NotFound(rw, r)
-	}
+	w.calls = append(w.calls, r.URL.Path)
+	w.mu.Unlock()
+	http.NotFound(rw, r)
 }
 
-func (w *fakeActionWorker) lastCreate() map[string]any {
+func (w *fakeActionWorker) created(t *testing.T) []map[string]any {
+	t.Helper()
 	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.creates[len(w.creates)-1]
+	calls := slices.Clone(w.calls)
+	w.mu.Unlock()
+	if len(calls) > 0 {
+		t.Fatalf("Go called the worker: %v", calls)
+	}
+	var raw []byte
+	if err := w.db.QueryRow(context.Background(), `select coalesce(json_agg(json_build_object(
+			'kind', kind, 'scope', scope, 'status', status, 'riskLevel', risk_level, 'intent', intent, 'payload', payload,
+			'workRunId', work_run_id, 'workflowRunId', workflow_run_id, 'requestedByRunId', requested_by_run_id,
+			'minutesSaved', minutes_saved, 'policyId', policy_id, 'triggeredByObservationId', triggered_by_observation_id
+		) order by created_at, id), '[]') from action_request where org_id = 'org'`).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var rows []map[string]any
+	if err := json.Unmarshal(raw, &rows); err != nil {
+		t.Fatal(err)
+	}
+	return rows
+}
+
+func (w *fakeActionWorker) lastCreate(t *testing.T) map[string]any {
+	t.Helper()
+	rows := w.created(t)
+	if len(rows) == 0 {
+		t.Fatal("no action request was created")
+	}
+	return rows[len(rows)-1]
 }
 
 const (
@@ -237,7 +238,7 @@ func TestTurnActionsDatabase(t *testing.T) {
 	if rpcErr != nil || !strings.Contains(out, `\"decision\":\"auto_approved\",\"status\":\"queued_for_execution\"`) {
 		t.Fatalf("auto: %s %v", out, rpcErr)
 	}
-	if c := worker.lastCreate(); c["status"] != "approved" || c["workflowRunId"] != actionWfRun || c["requestedByRunId"] != actionWfRun ||
+	if c := worker.lastCreate(t); c["status"] != "approved" || c["workflowRunId"] != actionWfRun || c["requestedByRunId"] != actionWfRun ||
 		c["minutesSaved"] != 120.0 || c["policyId"] == nil || c["triggeredByObservationId"] != nil {
 		t.Fatalf("create body: %v", c)
 	}
@@ -294,31 +295,31 @@ func TestTurnActionsDatabase(t *testing.T) {
 		claimed.policyID == unknownUUID || claimed.approvedBy != "" || len(actionJobs(t, db)) != jobsBefore {
 		t.Fatalf("the model set a pack action outcome: %s %+v", out, claimed)
 	}
-	creates = len(worker.creates)
+	creates = len(worker.created(t))
 	seed(t, db, `insert into action_policy (org_id, name, applies_to_kinds, applies_to_scopes, mode, priority) values ('org', 'gj', '{source_config_admin}', '{}', 'approval_required', 70)`)
 	out, _ = callTool(t, s, "action_request", map[string]any{"scope": "internal", "kind": "source_config_admin", "summary": "Add a role"})
-	if !strings.Contains(out, `"text":"source_config_admin: GraphJin config`) || len(worker.creates) != creates {
+	if !strings.Contains(out, `"text":"source_config_admin: GraphJin config`) || len(worker.created(t)) != creates {
 		t.Fatalf("source config gate: %s", out)
 	}
 	seed(t, db, `insert into item_grant (org_id, group_id, item_type, item_id) select 'org', id, 'action', '*' from user_group where org_id = 'org' and slug = 'everyone'`)
-	for _, c := range []struct {
-		status      int
-		reply, want string
-	}{
-		{500, `{"error":"action preflight failed: store offline"}`, "action preflight failed: store offline"},
-		{502, ``, "worker action preflight failed with status 502"},
-		{200, `{"id":"","status":"approved"}`, "worker action preflight returned an invalid response"},
-	} {
-		worker.status, worker.reply = c.status, c.reply
-		out, _ = callTool(t, s, "action_request", map[string]any{"scope": "external", "kind": "slack_post", "summary": "Post it"})
-		if out != `{"content":[{"type":"text","text":`+jsStringify(c.want, false)+`}],"isError":true}` {
-			t.Errorf("worker %d: %s", c.status, out)
-		}
+	seed(t, db, `insert into pack_artifact (pack_install_id, org_id, artifact_kind, artifact_key, target_ref, desired_hash, last_applied_hash)
+		values ('90000000-0000-4000-8000-000000000002', 'org', 'action', 'blocked', 'shop.blocked', 'h', 'h')`)
+	seed(t, db, `update pack_action_definition set readiness_reason = 'store offline' where org_id = 'org' and kind = 'shop.blocked'`)
+	out, _ = callTool(t, s, "action_request", map[string]any{"scope": "external", "kind": "shop.blocked", "summary": "Blocked"})
+	if out != `{"content":[{"type":"text","text":"pack action shop.blocked is blocked: store offline"}],"isError":true}` {
+		t.Fatalf("preflight: %s", out)
 	}
-	worker.status = 0
-	creates = len(worker.creates)
+	var failed, preflightAudit string
+	if err := db.QueryRow(ctx, `select status || ':' || coalesce(failure_reason, '') from action_request where org_id = 'org' and kind = 'shop.blocked'`).Scan(&failed); err != nil ||
+		failed != "failed:action preflight failed: pack action shop.blocked is blocked: store offline" {
+		t.Fatalf("a failed preflight marks the request: %q %v", failed, err)
+	}
+	if err := db.QueryRow(ctx, `select a.payload->>'error' from audit_chain a join action_request r on r.id::text = a.entity_id
+		where r.kind = 'shop.blocked' and a.event = 'preflight_failed'`).Scan(&preflightAudit); err != nil || preflightAudit != "pack action shop.blocked is blocked: store offline" {
+		t.Fatalf("preflight audit: %q %v", preflightAudit, err)
+	}
 	out, _ = callTool(t, s, "action_request", map[string]any{"scope": "external", "kind": "shop.nodesc", "summary": "No artifact"})
-	if !strings.Contains(out, "no installed pack owns action shop.nodesc") || len(worker.creates) != creates {
+	if last := worker.lastCreate(t); !strings.Contains(out, "no installed pack owns action shop.nodesc") || last["kind"] != "shop.nodesc" || last["status"] != "failed" {
 		t.Fatalf("a pack kind with no installed artifact: %s", out)
 	}
 
@@ -339,14 +340,14 @@ func TestTurnActionsDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	seed(t, db, `delete from item_grant where org_id = 'org' and item_type in ('action', 'pack')`)
-	creates = len(worker.creates)
+	creates = len(worker.created(t))
 	jobsBefore = len(actionJobs(t, db))
 	out, _ = callTool(t, s, "action_request", map[string]any{"scope": "external", "kind": "slack_post", "target": "C1", "summary": "Post it"})
 	if out != `{"content":[{"type":"text","text":"action slack_post is not available to this run"}],"isError":true}` {
 		t.Fatalf("an auto-approved kind without the grant: %s", out)
 	}
 	out, _ = callTool(t, ps, "pack_actions_slack_post", map[string]any{"target": "C1"})
-	if !strings.Contains(out, "action slack_post is not available to this run") || len(worker.creates) != creates || len(actionJobs(t, db)) != jobsBefore {
+	if !strings.Contains(out, "action slack_post is not available to this run") || len(worker.created(t)) != creates || len(actionJobs(t, db)) != jobsBefore {
 		t.Fatalf("an auto pack action without the grant: %s", out)
 	}
 	seed(t, db, `insert into item_grant (org_id, group_id, item_type, item_id) select 'org', id, 'action', '*' from user_group where org_id = 'org' and slug = 'everyone'`)
