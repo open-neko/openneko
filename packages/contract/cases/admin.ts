@@ -186,6 +186,14 @@ export const adminCases: Case[] = [
   { op: "PUT /admin/workflow-api-limits", name: "refuses a budget out of range", status: 400, request: { body: { rollingTokenBudget: 1, rollingCostMicrosBudget: 1 } } },
   { op: "GET /admin/workflow-api-limits", name: "reports the limits", status: 200 },
   {
+    op: "GET /admin/users", name: "lists the users", status: 200,
+    check: (r) => {
+      const users = body(r).users as { id: string; role: string }[];
+      expect(users.map((u) => u.id)).toEqual(expect.arrayContaining(["contract-admin", "contract-member"]));
+    },
+  },
+  { op: "GET /admin/users", name: "is for administrators only", as: "member", status: 403 },
+  {
     op: "POST /admin/users", name: "adds a member", status: 201,
     request: { body: { email: "new.member@contract.test", name: "New Member", role: "member" } },
     check: (r, c) => {
