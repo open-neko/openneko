@@ -21,6 +21,7 @@ type ChallengeResponse = {
   pubKeyCredParams: Array<{ type: "public-key"; alg: number }>;
   excludeCredentials: Array<{ id: string; type: "public-key" }>;
   allowCredentials: Array<{ id: string; type: "public-key" }>;
+  userVerification: UserVerificationRequirement;
 };
 
 export function toBase64Url(buffer: ArrayBuffer | Uint8Array): string {
@@ -102,7 +103,7 @@ export async function registerPasskey(name = "This device"): Promise<PasskeySumm
         type: "public-key" as const,
       })),
       authenticatorSelection: {
-        userVerification: "preferred",
+        userVerification: challenge.userVerification,
         residentKey: "preferred",
       },
     },
@@ -158,7 +159,7 @@ export async function createApprovalPasskeyAssertion(
         id: fromBase64Url(d.id),
         type: "public-key" as const,
       })),
-      userVerification: "preferred",
+      userVerification: challenge.userVerification,
     },
   })) as PublicKeyCredential | null;
   if (!cred) {

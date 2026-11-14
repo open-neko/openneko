@@ -10,6 +10,8 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
@@ -65,11 +67,15 @@ func buildTestAttestation(t *testing.T, priv *ecdsa.PrivateKey, rpID string, cre
 }
 
 func buildTestAssertion(t *testing.T, priv *ecdsa.PrivateKey, rpID, credID, challenge string, signCount uint32, uv bool) map[string]any {
+	return buildTestAssertionFrom(t, priv, "https://"+rpID, rpID, credID, challenge, signCount, uv)
+}
+
+func buildTestAssertionFrom(t *testing.T, priv *ecdsa.PrivateKey, origin, rpID, credID, challenge string, signCount uint32, uv bool) map[string]any {
 	t.Helper()
 	clientJSON, err := json.Marshal(map[string]any{
 		"type":        "webauthn.get",
 		"challenge":   challenge,
-		"origin":      "http://localhost:3000",
+		"origin":      origin,
 		"crossOrigin": false,
 	})
 	if err != nil {
@@ -119,13 +125,14 @@ func TestPasskeyRegisterAndApproveAction(t *testing.T) {
 		t.Fatalf("register challenge: %d %s", cw.Code, cw.Body.String())
 	}
 	var chResp struct {
-		Challenge string            `json:"challenge"`
-		RP        map[string]string `json:"rp"`
+		Challenge        string            `json:"challenge"`
+		RP               map[string]string `json:"rp"`
+		UserVerification string            `json:"userVerification"`
 	}
 	if err := json.Unmarshal(cw.Body.Bytes(), &chResp); err != nil {
 		t.Fatal(err)
 	}
-	if chResp.Challenge == "" || chResp.RP["id"] == "" {
+	if chResp.Challenge == "" || chResp.RP["id"] != "neko.example" || chResp.UserVerification != "required" {
 		t.Fatalf("bad challenge response: %s", cw.Body.String())
 	}
 
@@ -139,7 +146,7 @@ func TestPasskeyRegisterAndApproveAction(t *testing.T) {
 	regClientJSON, _ := json.Marshal(map[string]any{
 		"type":      "webauthn.create",
 		"challenge": chResp.Challenge,
-		"origin":    "http://" + chResp.RP["id"],
+		"origin":    "https://" + chResp.RP["id"],
 	})
 	regBody, _ := json.Marshal(map[string]any{
 		"credentialId":      credID,
@@ -206,6 +213,10 @@ func TestPasskeyRegisterAndApproveAction(t *testing.T) {
 	if st := queryText(t, db, `select status from action_request where id = '`+arHeldRun+`'`); st != "pending_approval" {
 		t.Fatalf("status changed on bad sig: %s", st)
 	}
+	spentRetry, _ := json.Marshal(map[string]any{"decision": "approve", "passkey": buildTestAssertion(t, priv, appCh.RP["id"], credID, appCh.Challenge, 2, true)})
+	if w := call(f, "PATCH", "/api/v1/action-requests/"+arHeldRun, string(spentRetry), member); w.Code != 400 || !strings.Contains(w.Body.String(), "invalid or expired") {
+		t.Fatalf("challenge reused after a failed check: %d %s", w.Code, w.Body.String())
+	}
 
 	// Issue fresh challenge and approve arHeldRun with valid passkey assertion
 	acw = call(f, "POST", "/api/v1/my/passkeys/challenge", `{"purpose":"approve","actionRequestId":"`+arHeldRun+`"}`, member)
@@ -271,6 +282,66 @@ func TestPasskeyRegisterAndApproveAction(t *testing.T) {
 		t.Fatalf("chat audit mismatch: got=%s want=%s", got, wantChatAudit)
 	}
 
+	approveChallenge := func(actionID string, header map[string]string) string {
+		t.Helper()
+		w := call(f, "POST", "/api/v1/my/passkeys/challenge", `{"purpose":"approve","actionRequestId":"`+actionID+`"}`, header)
+		var ch struct {
+			Challenge string            `json:"challenge"`
+			RP        map[string]string `json:"rp"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &ch); err != nil || w.Code != 200 || ch.RP["id"] != "neko.example" {
+			t.Fatalf("approve challenge: %d %s", w.Code, w.Body.String())
+		}
+		return ch.Challenge
+	}
+	strictID := "30000000-0000-4000-8000-000000000093"
+	seed(t, db, `insert into action_request (id, org_id, workflow_run_id, scope, kind, status)
+		values ('`+strictID+`', 'org', '`+runHeld+`', 'org', 'note', 'pending_approval')`)
+	forwarded := map[string]string{"Cookie": member["Cookie"], "X-Forwarded-Host": "evil.example"}
+	for _, origin := range []string{"https://evil.example", "https://sub.neko.example", "http://neko.example", "https://neko.example:8443"} {
+		ch := approveChallenge(strictID, forwarded)
+		body, _ := json.Marshal(map[string]any{"decision": "approve", "passkey": buildTestAssertionFrom(t, priv, origin, "neko.example", credID, ch, 4, true)})
+		if w := call(f, "PATCH", "/api/v1/action-requests/"+strictID, string(body), member); w.Code != 400 || !strings.Contains(w.Body.String(), "origin") {
+			t.Fatalf("origin %s: %d %s", origin, w.Code, w.Body.String())
+		}
+	}
+	noUV, _ := json.Marshal(map[string]any{"decision": "approve", "passkey": buildTestAssertion(t, priv, "neko.example", credID, approveChallenge(strictID, member), 4, false)})
+	if w := call(f, "PATCH", "/api/v1/action-requests/"+strictID, string(noUV), member); w.Code != 400 || !strings.Contains(w.Body.String(), "user verification") {
+		t.Fatalf("approval without user verification: %d %s", w.Code, w.Body.String())
+	}
+	if st := queryText(t, db, `select status from action_request where id = '`+strictID+`'`); st != "pending_approval" {
+		t.Fatalf("status changed on refused passkey: %s", st)
+	}
+
+	chatID := "30000000-0000-4000-8000-000000000094"
+	seed(t, db, `insert into action_request (id, org_id, work_run_id, scope, kind, status) values ('`+chatID+`', 'org', '`+workRunID+`', 'org', 'note', 'pending_approval')`)
+	chatCh := approveChallenge(chatID, member)
+	chatBad := buildTestAssertion(t, priv, "neko.example", credID, chatCh, 4, true)
+	chatBad["signature"] = base64.RawURLEncoding.EncodeToString([]byte("not-a-valid-der-sig"))
+	for i, assertion := range []map[string]any{chatBad, buildTestAssertion(t, priv, "neko.example", credID, chatCh, 4, true)} {
+		body, _ := json.Marshal(map[string]any{"actionRequestId": chatID, "decision": "approve", "passkey": assertion})
+		w := call(f, "POST", "/api/v1/work/threads/"+threadID+"/runs/"+workRunID+"/approve-action", string(body), member)
+		if w.Code != 400 || (i == 1 && !strings.Contains(w.Body.String(), "invalid or expired")) {
+			t.Fatalf("chat approval attempt %d: %d %s", i, w.Code, w.Body.String())
+		}
+	}
+
+	regCh := call(f, "POST", "/api/v1/my/passkeys/challenge", `{"purpose":"register"}`, member)
+	_ = json.Unmarshal(regCh.Body.Bytes(), &chResp)
+	otherRaw := []byte("phone-passkey-credential-002")
+	evilReg, _ := json.Marshal(map[string]any{"type": "webauthn.create", "challenge": chResp.Challenge, "origin": "https://evil.example"})
+	evilBody, _ := json.Marshal(map[string]any{
+		"credentialId":      base64.RawURLEncoding.EncodeToString(otherRaw),
+		"clientDataJSON":    base64.RawURLEncoding.EncodeToString(evilReg),
+		"attestationObject": buildTestAttestation(t, priv, "neko.example", otherRaw, 1),
+	})
+	if w := call(f, "POST", "/api/v1/my/passkeys", string(evilBody), member); w.Code != 400 || !strings.Contains(w.Body.String(), "origin") {
+		t.Fatalf("register from another origin: %d %s", w.Code, w.Body.String())
+	}
+	if n := queryText(t, db, `select count(*)::text from app_passkey_challenge where challenge = '`+chResp.Challenge+`'`); n != "0" {
+		t.Fatalf("register challenge kept after a failed check: %s", n)
+	}
+
 	// Admin cannot delete member's passkey
 	if w := call(f, "DELETE", "/api/v1/my/passkeys/"+created.Passkey.ID, "", admin); w.Code != 404 {
 		t.Fatalf("other user delete: %d %s", w.Code, w.Body.String())
@@ -283,5 +354,80 @@ func TestPasskeyRegisterAndApproveAction(t *testing.T) {
 	_ = db.QueryRow(ctx, `select count(*) from app_passkey where id = $1`, created.Passkey.ID).Scan(&count)
 	if count != 0 {
 		t.Fatalf("passkey still exists: %d", count)
+	}
+}
+
+func TestPasskeyRPFromRequestHost(t *testing.T) {
+	t.Setenv("OPENNEKO_PUBLIC_URL", "")
+	a := &API{}
+	r := httptest.NewRequest("POST", "/api/v1/my/passkeys/challenge", nil)
+	r.Host = "LocalHost:3000"
+	r.Header.Set("X-Forwarded-Host", "evil.example")
+	rp := a.passkeyRP(r)
+	if rp.id != "localhost" || rp.origin != "" {
+		t.Fatalf("rp: %+v", rp)
+	}
+	for origin, ok := range map[string]bool{
+		"http://localhost:3000":     true,
+		"https://localhost":         true,
+		"http://evil.example":       false,
+		"http://sub.localhost:3000": false,
+		"ftp://localhost":           false,
+		"":                          false,
+	} {
+		if err := rp.checkOrigin(origin); (err == nil) != ok {
+			t.Errorf("%q: %v", origin, err)
+		}
+	}
+	r.Host = "neko.example"
+	if err := a.passkeyRP(r).checkOrigin("http://neko.example"); err == nil {
+		t.Error("http accepted for a host other than localhost")
+	}
+}
+
+func TestPasskeyRPFromPublicURL(t *testing.T) {
+	a := &API{PublicURL: "https://Neko.Example/app/"}
+	r := httptest.NewRequest("POST", "/", nil)
+	r.Host = "other.example"
+	r.Header.Set("X-Forwarded-Host", "evil.example")
+	rp := a.passkeyRP(r)
+	if rp.id != "neko.example" || rp.origin != "https://neko.example" {
+		t.Fatalf("rp: %+v", rp)
+	}
+	if err := rp.checkOrigin("https://neko.example"); err != nil {
+		t.Fatal(err)
+	}
+	if err := rp.checkOrigin("https://neko.example:8443"); err == nil {
+		t.Fatal("another port accepted")
+	}
+}
+
+func TestMatchesRPIDHash(t *testing.T) {
+	sum := sha256.Sum256([]byte("neko.example"))
+	if !matchesRPIDHash(sum[:], "neko.example") || matchesRPIDHash(sum[:], "evil.example") || matchesRPIDHash(sum[:], "") {
+		t.Fatal("rp id hash check")
+	}
+}
+
+func TestReadCBORItemDepthLimit(t *testing.T) {
+	nested := func(depth int) []byte {
+		b := bytes.Repeat([]byte{0x81}, depth)
+		return append(b, 0x00)
+	}
+	if _, _, err := readCBORItem(nested(maxCBORDepth), 0); err != nil {
+		t.Fatalf("depth %d: %v", maxCBORDepth, err)
+	}
+	if _, _, err := readCBORItem(nested(maxCBORDepth+1), 0); err == nil || !strings.Contains(err.Error(), "too deep") {
+		t.Fatalf("depth %d: %v", maxCBORDepth+1, err)
+	}
+	if _, _, err := readCBORItem(nested(100000), 0); err == nil {
+		t.Fatal("deep input accepted")
+	}
+}
+
+func TestParseAttestationObjectSizeLimit(t *testing.T) {
+	big := make([]byte, maxAttestationBytes+1)
+	if _, _, err := parseAttestationObject(big, "", "neko.example"); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("large attestation: %v", err)
 	}
 }
