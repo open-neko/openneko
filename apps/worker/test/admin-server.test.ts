@@ -1,18 +1,10 @@
 /**
- * Tests for the worker's /health + /admin/reconnect HTTP handler. The
- * /admin/reconnect signal is fired by the web app's change-password
- * handler after rotating the Postgres password; the worker must respond
- * 202 and exit cleanly so the supervisor (`tsx watch` / Cloud Run)
- * restarts it with fresh credentials.
+ * Tests for the worker's admin HTTP handler.
  */
 
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  reportAuditLoggingFailure,
-  resetAuditLoggingHealthForTesting,
-} from "@neko/llm/workflows";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAdminHandler } from "../src/admin-server";
 
 async function startServer(handler: ReturnType<typeof createAdminHandler>) {
@@ -28,157 +20,27 @@ async function startServer(handler: ReturnType<typeof createAdminHandler>) {
 }
 
 describe("worker admin HTTP handler", () => {
-  let exit: ReturnType<typeof vi.fn>;
-
-  beforeEach(() => {
-    exit = vi.fn();
-  });
-
   afterEach(() => {
     vi.useRealTimers();
-    resetAuditLoggingHealthForTesting();
     vi.restoreAllMocks();
   });
 
-  it("GET /health returns 200 ok", async () => {
-    const srv = await startServer(createAdminHandler({ exit }));
+  it("moved health, reconnect, source-check, and install-policy routes return 404", async () => {
+    const srv = await startServer(createAdminHandler());
     try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/health`);
-      expect(res.status).toBe(200);
-      expect(await res.text()).toBe("ok");
-      expect(exit).not.toHaveBeenCalled();
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("GET /health includes scheduler readiness", async () => {
-    const getHealth = vi.fn(() => ({
-      status: "ok" as const,
-      running: false,
-      stale: false,
-      startedAt: "2026-08-26T07:00:00.000Z",
-      lastAttemptAt: "2026-08-26T07:00:13.000Z",
-      lastSuccessAt: "2026-08-26T07:00:13.000Z",
-      lastErrorAt: null,
-      lastError: null,
-      consecutiveFailures: 0,
-      materialized: 1,
-      dispatched: 1,
-      recovered: 0,
-    }));
-    const srv = await startServer(
-      createAdminHandler({ scheduler: { getHealth } }),
-    );
-    try {
-      const health = await fetch(`http://127.0.0.1:${srv.port}/health`);
-      expect(health.status).toBe(200);
-      expect(await health.text()).toBe("ok");
-
-      const detail = await fetch(
-        `http://127.0.0.1:${srv.port}/health/scheduler`,
-      );
-      expect(detail.status).toBe(200);
-      expect(await detail.json()).toMatchObject({
-        status: "ok",
-        lastSuccessAt: "2026-08-26T07:00:13.000Z",
-        materialized: 1,
-        dispatched: 1,
-      });
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("GET /health fails when the scheduler stops making progress", async () => {
-    const getHealth = vi.fn(() => ({
-      status: "degraded" as const,
-      running: false,
-      stale: true,
-      startedAt: "2026-08-26T07:00:00.000Z",
-      lastAttemptAt: "2026-08-26T07:00:13.000Z",
-      lastSuccessAt: "2026-08-26T07:00:13.000Z",
-      lastErrorAt: null,
-      lastError: null,
-      consecutiveFailures: 0,
-      materialized: 0,
-      dispatched: 0,
-      recovered: 0,
-    }));
-    const srv = await startServer(
-      createAdminHandler({ scheduler: { getHealth } }),
-    );
-    try {
-      const health = await fetch(`http://127.0.0.1:${srv.port}/health`);
-      expect(health.status).toBe(503);
-      expect(await health.text()).toBe("degraded");
-
-      const detail = await fetch(
-        `http://127.0.0.1:${srv.port}/health/scheduler`,
-      );
-      expect(detail.status).toBe(503);
-      expect(await detail.json()).toMatchObject({
-        status: "degraded",
-        stale: true,
-      });
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("GET /health/security exposes degraded audit logging health", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    reportAuditLoggingFailure(
-      {
-        orgId: "org_test",
-        entityKind: "work_run",
-        entityId: "run_test",
-        event: "run:failed",
-      },
-      new Error("audit database unavailable"),
-    );
-    const srv = await startServer(createAdminHandler({ exit }));
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/health/security`);
-      expect(res.status).toBe(200);
-      expect(await res.json()).toMatchObject({
-        status: "degraded",
-        auditLogging: {
-          healthy: false,
-          failureCount: 1,
-          lastError: "audit database unavailable",
-        },
-      });
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("POST /admin/reconnect returns 202 and triggers process.exit(0)", async () => {
-    const srv = await startServer(
-      createAdminHandler({ exit, exitDelayMs: 0 }),
-    );
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/reconnect`, {
-        method: "POST",
-      });
-      expect(res.status).toBe(202);
-      expect(await res.text()).toBe("restarting");
-      // setTimeout(0) microtask — flush.
-      await new Promise((r) => setTimeout(r, 5));
-      expect(exit).toHaveBeenCalledTimes(1);
-      expect(exit).toHaveBeenCalledWith(0);
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("GET /admin/reconnect (wrong method) returns 404 and does not exit", async () => {
-    const srv = await startServer(createAdminHandler({ exit }));
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/reconnect`);
-      expect(res.status).toBe(404);
-      expect(exit).not.toHaveBeenCalled();
+      for (const [method, path] of [
+        ["GET", "/health"],
+        ["GET", "/health/scheduler"],
+        ["GET", "/health/security"],
+        ["POST", "/admin/reconnect"],
+        ["POST", "/admin/sources/check"],
+        ["GET", "/admin/install-policy"],
+      ] as const) {
+        const res = await fetch(`http://127.0.0.1:${srv.port}${path}`, {
+          method,
+        });
+        expect(res.status).toBe(404);
+      }
     } finally {
       await srv.close();
     }
@@ -213,33 +75,6 @@ describe("worker admin HTTP handler", () => {
     }
   });
 
-  it("POST /admin/sources/check passes only the source answers and the password", async () => {
-    const check = vi.fn(async () => ({ ok: true, findings: [] }));
-    const srv = await startServer(createAdminHandler({ sources: { check } }));
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/sources/check`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "mysql", host: "db", port: 3306, dbname: "shop", user: "r", password: "pw", orgId: "other-org" }),
-      });
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ check: { ok: true, findings: [] } });
-      expect(check).toHaveBeenCalledWith({
-        answers: { type: "mysql", host: "db", port: 3306, dbname: "shop", user: "r", secretRef: undefined },
-        password: "pw",
-      });
-      const closed = await startServer(createAdminHandler());
-      try {
-        const off = await fetch(`http://127.0.0.1:${closed.port}/admin/sources/check`, { method: "POST", body: "{}" });
-        expect(off.status).toBe(503);
-      } finally {
-        await closed.close();
-      }
-    } finally {
-      await srv.close();
-    }
-  });
-
   it("POST /admin/action-requests/create fails closed before preflight is ready", async () => {
     const srv = await startServer(createAdminHandler());
     try {
@@ -257,11 +92,10 @@ describe("worker admin HTTP handler", () => {
   });
 
   it("unknown path returns 404", async () => {
-    const srv = await startServer(createAdminHandler({ exit }));
+    const srv = await startServer(createAdminHandler());
     try {
       const res = await fetch(`http://127.0.0.1:${srv.port}/whatever`);
       expect(res.status).toBe(404);
-      expect(exit).not.toHaveBeenCalled();
     } finally {
       await srv.close();
     }
@@ -910,44 +744,6 @@ describe("worker admin /admin/auth/*", () => {
       expect(res.status).toBe(200);
       const body = (await res.json()) as { removed: boolean };
       expect(body.removed).toBe(true);
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("GET /admin/install-policy returns the configured policy", async () => {
-    const srv = await startServer(
-      createAdminHandler({
-        installPolicy: {
-          getInstallPolicy: async () => ({ allowGitUrlInstalls: true }),
-        },
-      }),
-    );
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/install-policy`);
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as {
-        policy: { allowGitUrlInstalls: boolean };
-        source: string;
-      };
-      expect(body.source).toBe("org");
-      expect(body.policy).toEqual({ allowGitUrlInstalls: true });
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("GET /admin/install-policy returns default policy when surface absent", async () => {
-    const srv = await startServer(createAdminHandler());
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/install-policy`);
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as {
-        policy: { allowGitUrlInstalls: boolean };
-        source: string;
-      };
-      expect(body.source).toBe("default");
-      expect(body.policy).toEqual({ allowGitUrlInstalls: false });
     } finally {
       await srv.close();
     }

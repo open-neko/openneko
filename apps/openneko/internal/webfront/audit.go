@@ -65,11 +65,74 @@ func (a *API) appendAudit(ctx context.Context, e auditEvent) error {
 	})
 }
 
+type auditFailure struct {
+	OccurredAt string `json:"occurredAt"`
+	OrgID      string `json:"orgId"`
+	EntityKind string `json:"entityKind"`
+	EntityID   string `json:"entityId"`
+	Event      string `json:"event"`
+	Error      string `json:"error"`
+}
+
+type AuditHealth struct {
+	Status       string        `json:"status"`
+	FailureCount int           `json:"failureCount"`
+	LastFailure  *auditFailure `json:"lastFailure"`
+}
+
+// AuditHealth returns the audit logging health state for /health and
+// /health/security.
+func (a *API) AuditHealth() AuditHealth {
+	if a == nil {
+		return AuditHealth{Status: "ok"}
+	}
+	a.auditMu.Lock()
+	defer a.auditMu.Unlock()
+	status := "ok"
+	var last *auditFailure
+	if a.auditFailures > 0 {
+		status = "degraded"
+		if a.lastAuditFailure != nil {
+			cp := *a.lastAuditFailure
+			last = &cp
+		}
+	}
+	return AuditHealth{
+		Status:       status,
+		FailureCount: a.auditFailures,
+		LastFailure:  last,
+	}
+}
+
+// ResetAuditHealth clears the recorded audit logging failure count.
+func (a *API) ResetAuditHealth() {
+	if a == nil {
+		return
+	}
+	a.auditMu.Lock()
+	a.auditFailures = 0
+	a.lastAuditFailure = nil
+	a.auditMu.Unlock()
+}
+
 func (a *API) reportAuditFailure(e auditEvent, err error) {
+	now := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+	a.auditMu.Lock()
+	a.auditFailures++
+	a.lastAuditFailure = &auditFailure{
+		OccurredAt: now,
+		OrgID:      e.OrgID,
+		EntityKind: e.EntityKind,
+		EntityID:   e.EntityID,
+		Event:      e.Event,
+		Error:      err.Error(),
+	}
+	a.auditMu.Unlock()
+
 	alert, _ := json.Marshal(map[string]any{
 		"type":       "security.audit_logging_failure",
 		"severity":   "critical",
-		"occurredAt": time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
+		"occurredAt": now,
 		"orgId":      e.OrgID,
 		"entityKind": e.EntityKind,
 		"entityId":   e.EntityID,
