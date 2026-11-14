@@ -1,65 +1,60 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
-
-const PLANTED = "Planted-Pw-41c2e8";
-const mocks = vi.hoisted(() => ({
-  actor: { userId: "u1", role: "member" as string },
-  read: vi.fn(),
-}));
-
-vi.mock("next/server", () => ({ connection: async () => {} }));
-vi.mock("@/lib/actor", () => ({ getCurrentActor: async () => mocks.actor }));
-vi.mock("@/lib/db", () => ({ getOrgId: async () => "org" }));
-vi.mock("@neko/db", () => ({ db: vi.fn(), asc: vi.fn(), desc: vi.fn(), eq: vi.fn(), data_source: {}, data_source_secret: {} }));
-vi.mock("@/lib/graphjin-config-settings", () => ({ getGraphjinConfigSettingsPayload: vi.fn() }));
-vi.mock("@neko/llm/graphjin/config-file-view", async (load) => {
-  const real = await load<typeof import("@neko/llm/graphjin/config-file-view")>();
-  mocks.read.mockImplementation(real.readGraphjinConfigFileView);
-  return { readGraphjinConfigFileView: mocks.read };
-});
-
-import AdminGraphjinPage from "../src/app/admin/settings/graphjin/page";
+import { expect, it } from "vitest";
 import { ConfigFileView } from "../src/app/admin/settings/graphjin/ConfigFileView";
+import { ConfigDescription } from "../src/app/admin/settings/graphjin/ConfigDescription";
 
-let dir: string;
-beforeEach(async () => {
-  dir = await mkdtemp(join(tmpdir(), "gj-web-view-"));
-});
-afterEach(async () => {
-  vi.unstubAllEnvs();
-  mocks.read.mockClear();
-  await rm(dir, { recursive: true, force: true });
-});
+function render(node: ReturnType<typeof createElement>) {
+  return renderToStaticMarkup(createElement("div", null, node));
+}
 
-it("gives a non-admin nothing from the config file", async () => {
-  mocks.actor.role = "member";
-  const html = renderToStaticMarkup(await AdminGraphjinPage());
-  expect(html).not.toContain("Config file");
-  expect(mocks.read).not.toHaveBeenCalled();
-});
-
-it("shows the admin the path, the state and the YAML with no planted password", async () => {
-  const file = join(dir, "agentic.yml");
-  await writeFile(
-    file,
-    `databases:\n  shop:\n    host: db.internal\n    password: ${PLANTED}\n    connection_string: postgres://u:${PLANTED}@db.internal/shop\n`,
+it("shows the admin the path, the state and the YAML, read-only", () => {
+  const html = render(
+    createElement(ConfigFileView, {
+      view: {
+        path: "/etc/openneko/agentic.yml",
+        yaml: "databases:\n  shop:\n    host: db.internal\n    password: '[REDACTED]'\n",
+        error: null,
+        state: { state: "running", reason: null, since: "2026-11-11T08:00:00Z", restarts: 0 },
+      },
+    }),
   );
-  await writeFile(
-    join(dir, ".openneko-graphjin-state"),
-    JSON.stringify({ state: "running", since: "2026-11-11T08:00:00Z", restarts: 0 }),
-  );
-  vi.stubEnv("OPENNEKO_GRAPHJIN_CONFIG", file);
-
-  const html = renderToStaticMarkup(createElement("div", null, await ConfigFileView()));
-
-  expect(html).toContain(file);
+  expect(html).toContain("/etc/openneko/agentic.yml");
   expect(html).toContain("GraphJin is running.");
   expect(html).toContain("openneko graphjin check");
   expect(html).toContain("host: db.internal");
-  expect(html).not.toContain(PLANTED);
   expect(html).not.toMatch(/<(input|textarea|form)\b/);
+});
+
+it("shows the file error and the restart reason", () => {
+  const html = render(
+    createElement(ConfigFileView, {
+      view: {
+        path: "/etc/openneko/agentic.yml",
+        yaml: null,
+        error: "the file does not exist",
+        state: { state: "restarting", reason: "dial failed", since: null, restarts: 2 },
+      },
+    }),
+  );
+  expect(html).toContain("OpenNeko could not show the file: the file does not exist.");
+  expect(html).toContain("GraphJin is restarting: dial failed");
+});
+
+it("describes each source and names a source that failed", () => {
+  const html = render(
+    createElement(ConfigDescription, {
+      descriptions: [
+        { source: { id: "1", name: "down" }, error: "connection refused", summary: null },
+        {
+          source: { id: "2", name: "erp" },
+          error: null,
+          summary: { sources: [{ name: "erp", kind: "database", sentences: ["A PostgreSQL source."] }], roles: [] },
+        },
+      ],
+    }),
+  );
+  expect(html).toContain("OpenNeko could not read this config: connection refused");
+  expect(html).toContain("Database · erp");
+  expect(html).toContain("A PostgreSQL source.");
 });

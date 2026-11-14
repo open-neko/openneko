@@ -1,57 +1,58 @@
-import { Suspense, type ReactNode } from "react";
+"use client";
+
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { connection } from "next/server";
-import { asc, data_source, data_source_secret, db, desc, eq } from "@neko/db";
-import { getCurrentActor } from "@/lib/actor";
-import { getOrgId } from "@/lib/db";
-import { getGraphjinConfigSettingsPayload } from "@/lib/graphjin-config-settings";
-import { AdminDenied, AdminShell } from "../../AdminShell";
+import AdminLoad from "@/app/admin/AdminLoad";
+import { AdminShell } from "../../AdminShell";
 import { Button, buttonClassName } from "@/components/ui/button";
 import { StatCard, StatGrid } from "@/components/ui/stat-card";
 import GraphjinConfigControls from "./GraphjinConfigControls";
 import SourceSecretsPanel from "./SourceSecretsPanel";
-import { ConfigDescription } from "./ConfigDescription";
-import { ConfigFileView } from "./ConfigFileView";
+import ConfigPanels from "./ConfigPanels";
 
-export default async function AdminGraphjinPage() {
-  await connection();
-  const actor = await getCurrentActor();
-  if (actor.role !== "admin") return <AdminDenied />;
+type Source = {
+  id: string;
+  name: string;
+  label: string | null;
+  kind: string;
+  graphqlUrl: string;
+  mcpUrl: string | null;
+  authMode: string;
+  isDefault: boolean;
+  enabled: boolean;
+  updatedAt: string | null;
+};
+type Secret = { name: string; description: string | null; updatedAt: string };
 
-  const orgId = await getOrgId();
-  const [sources, graphjinConfig, secrets] = await Promise.all([
-    db()
-      .select({
-        id: data_source.id,
-        name: data_source.name,
-        label: data_source.label,
-        kind: data_source.kind,
-        graphqlUrl: data_source.graphql_url,
-        mcpUrl: data_source.mcp_url,
-        subscriptionUrl: data_source.subscription_url,
-        authMode: data_source.auth_mode,
-        isDefault: data_source.is_default,
-        enabled: data_source.enabled,
-        updatedAt: data_source.updated_at,
-      })
-      .from(data_source)
-      .where(eq(data_source.org_id, orgId))
-      .orderBy(asc(data_source.name)),
-    getGraphjinConfigSettingsPayload(orgId),
-    db()
-      .select({
-        name: data_source_secret.name,
-        description: data_source_secret.description,
-        updatedAt: data_source_secret.updated_at,
-      })
-      .from(data_source_secret)
-      .where(eq(data_source_secret.org_id, orgId))
-      .orderBy(desc(data_source_secret.updated_at)),
-  ]);
+export default function AdminGraphjinPage() {
+  return (
+    <AdminLoad
+      title="GraphJin config"
+      paths={["/api/v1/settings/data-sources", "/api/v1/settings/graphjin-config", "/api/v1/settings/source-secrets"]}
+    >
+      {([sources, config, secrets]) => (
+        <GraphjinSettings
+          sources={[...(sources as { sources: Source[] }).sources].sort((a, b) => a.name.localeCompare(b.name))}
+          initialEnabled={(config as { settings: { sourceConfigEnabled: boolean } }).settings.sourceConfigEnabled}
+          secrets={(secrets as { secrets: Secret[] }).secrets}
+        />
+      )}
+    </AdminLoad>
+  );
+}
 
+function GraphjinSettings({
+  sources,
+  initialEnabled,
+  secrets,
+}: {
+  sources: Source[];
+  initialEnabled: boolean;
+  secrets: Secret[];
+}) {
+  const [sourceConfigEnabled, setSourceConfigEnabled] = useState(initialEnabled);
   const enabled = sources.filter((source) => source.enabled);
   const jwtCount = enabled.filter((source) => source.authMode === "jwt").length;
-  const sourceConfigEnabled = graphjinConfig.settings.sourceConfigEnabled;
 
   return (
     <AdminShell
@@ -74,34 +75,12 @@ export default async function AdminGraphjinPage() {
         />
       </StatGrid>
 
-      <GraphjinConfigControls initial={graphjinConfig.settings} />
+      <GraphjinConfigControls
+        initial={{ sourceConfigEnabled: initialEnabled }}
+        onChange={setSourceConfigEnabled}
+      />
 
-      <Suspense
-        fallback={
-          <section className="settings-card">
-            <p className="text-ui-body-sm text-text2">Reading the GraphJin config…</p>
-          </section>
-        }
-      >
-        <ConfigDescription
-          orgId={orgId}
-          userId={actor.userId}
-          sources={enabled
-            .filter((source) => source.kind === "graphjin")
-            .slice(0, 5)
-            .map((source) => ({ id: source.id, name: source.name }))}
-        />
-      </Suspense>
-
-      <Suspense
-        fallback={
-          <section className="settings-card">
-            <p className="text-ui-body-sm text-text2">Reading the config file…</p>
-          </section>
-        }
-      >
-        <ConfigFileView />
-      </Suspense>
+      <ConfigPanels />
 
       <section className="settings-card">
         <div className="settings-card-head">
@@ -151,13 +130,7 @@ export default async function AdminGraphjinPage() {
         </div>
       </section>
 
-      <SourceSecretsPanel
-        initialSecrets={secrets.map((secret) => ({
-          name: secret.name,
-          description: secret.description,
-          updatedAt: secret.updatedAt.toISOString(),
-        }))}
-      />
+      <SourceSecretsPanel initialSecrets={secrets} />
 
       <section className="settings-card">
         <div className="settings-card-head">
@@ -350,9 +323,9 @@ function Claim({ name, value }: { name: string; value: string }) {
   );
 }
 
-function formatDate(value: Date | null): string {
+function formatDate(value: string | null): string {
   if (!value) return "Never";
-  return value.toLocaleString("en-US", {
+  return new Date(value).toLocaleString("en-US", {
     year: "numeric",
     month: "short",
     day: "2-digit",
