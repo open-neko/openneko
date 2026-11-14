@@ -19,6 +19,13 @@ export const adminCases: Case[] = [
     },
   },
   { op: "GET /admin/overview", name: "is for administrators only", as: "member", status: 403 },
+  {
+    op: "GET /admin/graphjin/config", name: "reports the config descriptions and the file view", status: 200,
+    check: (r) => {
+      expect(Array.isArray(body(r).descriptions)).toBe(true);
+    },
+  },
+  { op: "GET /admin/graphjin/config", name: "is for administrators only", as: "member", status: 403 },
   { op: "GET /admin/change-password", name: "reports the password state", status: 200 },
   {
     op: "POST /admin/change-password", name: "refuses an install that connects by URL", status: 409,

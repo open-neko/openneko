@@ -29,7 +29,6 @@ var (
 // TestServerPagesMatchWeb compares them.
 var ServerPages = []string{
 	"/chat/connectors",
-	"/admin/settings/graphjin",
 	"/admin/settings/packs/magento/operations",
 	"/device",
 	"/integrations",
