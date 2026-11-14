@@ -92,12 +92,6 @@ export {
   type SkillOriginKind,
   type SkillUseSource,
 } from "./skill-usage";
-export { runSkillLearn, type SkillLearnResult } from "./skill-learn";
-export {
-  parseSkillLearnProposal,
-  proposeSkillLearn,
-  type SkillLearnLlm,
-} from "./skill-learn-propose";
 export {
   MAGENTO_LEARN_SKILLS,
   magentoScoreImproved,
@@ -105,8 +99,6 @@ export {
   type SkillLearnScore,
   type SkillLearnScoreSample,
 } from "./skill-learn-score";
-export { runSkillLearnForOrgSkill } from "./skill-learn-store";
-export { assertAdditiveLearnedBody, scanLearnedText } from "./skill-learn-scan";
 export {
   LEARNED_FILE,
   SKILL_OVERLAYS_DIR,
@@ -197,5 +189,4 @@ export { sandboxConfig } from "./sandbox-service";
 export { orgTerminalSetting, sandboxForOrg } from "./sandbox-org";
 
 export { BOT_INSTRUCTIONS_MAX, getThreadBot, updateThreadBotInstructions, type ThreadBot } from "./bot";
-export { nameBackfilledBots } from "./bot-names";
 export { searchSkillsForRun, syncSkillIndex, type SkillSearchResult } from "./skill-index";

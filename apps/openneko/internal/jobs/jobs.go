@@ -23,7 +23,7 @@ const (
 
 // Moved lists the queues that River runs. MOVED_QUEUES in
 // packages/db/src/jobs.ts must hold the same names.
-var Moved = []string{KindOutputSweep, KindMetricSweep, KindCronSweep, KindEmbeddingIndex, KindEmbeddingSweep, KindDirectorySync, KindActionExecute}
+var Moved = []string{KindOutputSweep, KindMetricSweep, KindCronSweep, KindEmbeddingIndex, KindEmbeddingSweep, KindDirectorySync, KindActionExecute, KindSkillLearn, KindBotNameSweep}
 
 type Queue struct {
 	Pool          *pgxpool.Pool
@@ -36,6 +36,8 @@ type Queue struct {
 	// ActionExecute asks the Node worker to run an approved action; the
 	// action adapters live in the worker until the packs runtime moves.
 	ActionExecute func(ctx context.Context, orgID, actionRequestID string) error
+	SkillLearn    func(ctx context.Context, orgID, skillName string) error
+	BotNameSweep  func(context.Context) error
 	Embedding     Embedding
 }
 
@@ -160,6 +162,8 @@ func (q *Queue) config() *river.Config {
 	river.AddWorker(workers, &embeddingIndex{q: q})
 	river.AddWorker(workers, &directorySync{run: q.DirectorySync})
 	river.AddWorker(workers, &actionExecute{run: q.ActionExecute})
+	river.AddWorker(workers, &skillLearn{run: q.SkillLearn})
+	river.AddWorker(workers, &botNameSweep{run: q.BotNameSweep})
 	return &river.Config{
 		Schema:  q.schema(),
 		Logger:  quietLogger(),
@@ -188,6 +192,7 @@ var cronJobs = []cronJob{
 	{schedule: EveryMinute{}, period: time.Minute, args: CronSweepArgs{}},
 	{schedule: EveryMinute{}, period: time.Minute, args: EmbeddingSweepArgs{}, runOnStart: true},
 	{schedule: SixHourly{}, period: 6 * time.Hour, args: DirectorySyncArgs{}},
+	{schedule: QuarterHourly{}, period: 15 * time.Minute, args: BotNameSweepArgs{}, runOnStart: true},
 }
 
 func periodicJobs() []*river.PeriodicJob {

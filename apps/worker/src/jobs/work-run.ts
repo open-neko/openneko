@@ -1,6 +1,6 @@
 import { bindStartupRun, startupEvent, startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import { ensureHostConfigProvisioned, type AgentEvent } from "@neko/llm";
-import { enqueue, QUEUE } from "@neko/db/jobs";
+import { enqueueSkillLearn } from "@neko/db/jobs";
 import { db, eq, skill_usage } from "@neko/db";
 import {
   agentRuntimeDepsFromConfig,
@@ -191,11 +191,7 @@ async function enqueueSkillLearnForRun(orgId: string, runId: string): Promise<vo
       .from(skill_usage)
       .where(eq(skill_usage.run_id, runId));
     for (const row of rows) {
-      await enqueue(
-        QUEUE.SKILL_LEARN,
-        { orgId, skillName: row.skillName },
-        { singletonKey: `skill-learn:${orgId}:${row.skillName}` },
-      );
+      await enqueueSkillLearn({ orgId, skillName: row.skillName });
     }
   } catch (error) {
     console.warn(
