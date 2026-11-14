@@ -16,7 +16,7 @@ func TestDefaultPolicyIsSecureByDefault(t *testing.T) {
 }
 
 func TestFetchPolicyReadsFromDatabase(t *testing.T) {
-	pool := testpg.Pool(t, "0001_initial_schema.sql", "0016_llm_provider_config.sql")
+	pool := testpg.Pool(t, "0001_init.sql")
 	ctx := context.Background()
 	var schema string
 	if err := pool.QueryRow(ctx, `select current_schema()`).Scan(&schema); err != nil {
@@ -40,7 +40,7 @@ func TestFetchPolicyReadsFromDatabase(t *testing.T) {
 		t.Fatalf("with no org row: got %+v %q %v", pol, source, err)
 	}
 
-	if _, err := pool.Exec(ctx, `insert into organization (id, slug, name) values ('org', 'org', 'Org')`); err != nil {
+	if _, err := pool.Exec(ctx, `insert into organization (id, name) values ('org', 'Org')`); err != nil {
 		t.Fatal(err)
 	}
 	pol, source, err = FetchPolicy(ctx)
@@ -48,7 +48,7 @@ func TestFetchPolicyReadsFromDatabase(t *testing.T) {
 		t.Fatalf("with org and no policy row: got %+v %q %v", pol, source, err)
 	}
 
-	if _, err := pool.Exec(ctx, `insert into llm_provider_config (org_id, scope, config) values ('org', 'install-policy', '{"allowGitUrlInstalls": true}')`); err != nil {
+	if _, err := pool.Exec(ctx, `insert into llm_provider_config (org_id, scope, provider, config) values ('org', 'install-policy', 'system', '{"allowGitUrlInstalls": true}')`); err != nil {
 		t.Fatal(err)
 	}
 	pol, source, err = FetchPolicy(ctx)

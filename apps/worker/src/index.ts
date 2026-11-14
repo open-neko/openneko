@@ -1,9 +1,7 @@
-import { withStartupTrace, startupPhase } from "@neko/telemetry/startup";
-import { keepProcessThroughDatabaseRestarts, readLocalConfig, secretsBackendError } from "@neko/db";
+import { getOrgId, keepProcessThroughDatabaseRestarts, readLocalConfig, secretsBackendError } from "@neko/db";
 import "dotenv/config";
 
 import { createServer } from "node:http";
-import { join } from "node:path";
 import { adminSocketPath, listenAdmin } from "./admin-listen.js";
 import { boss, MOVED_QUEUES, RETIRED_QUEUES } from "@neko/db/jobs";
 import { createAdminHandler } from "./admin-server.js";
@@ -21,18 +19,7 @@ import {
   runDirectorySync,
 } from "./directory/directory-service.js";
 import {
-  app_user,
-  data_source,
-  db,
-  desc,
-  eq,
-  getOrgId,
-  isNull,
-} from "@neko/db";
-import {
-  agentTurnTimeoutMs,
   cancelAllAgents,
-  prefetchKnowledgeForOrg,
   provisionHostConfig,
   resolveAgentConcurrency,
   verifyAiCredentials,
@@ -50,15 +37,12 @@ import {
   startSubscriptionManager,
   type DataSourceContext,
 } from "@neko/llm/workflows";
-import { ensureOrgWorkspace, getOrgAgentRoot, reportDeploymentProfile, setAgentSlotLimit } from "@neko/llm/work";
+import { reportDeploymentProfile, setAgentSlotLimit } from "@neko/llm/work";
 import { removeRetiredQueue } from "./pg-boss-helpers.js";
 import { setCoreSecretsInstance } from "./secrets/instance.js";
 import { runActionExecute } from "./jobs/action-execute.js";
 import { moveLibraryDocumentsToStore } from "./jobs/library-recovery.js";
 import { filesEnabled } from "@neko/llm/files";
-import {
-  reconcileStaleRuns,
-} from "./reconciler.js";
 import {
   initializeWorkerTelemetry,
   shutdownWorkerTelemetry,
@@ -76,14 +60,6 @@ keepProcessThroughDatabaseRestarts("worker");
 
 const PORT: number = 4100;
 
-const RECONCILE_SWEEP_INTERVAL_MS: number = 60_000;
-// Must exceed the agent turn budget (+ exec margin), or the sweep cancels
-// legitimately long runs as zombies — the run row's updated_at is not
-// touched while the turn streams.
-const RECONCILE_SWEEP_MIN_AGE_MS: number = Math.max(
-  660_000,
-  agentTurnTimeoutMs() + 240_000,
-);
 
 if (initializeWorkerTelemetry()) {
   console.log("[telemetry] OTLP trace export enabled");
@@ -212,57 +188,6 @@ coreSecrets = new CoreSecrets();
 await coreSecrets.start();
 setCoreSecretsInstance(coreSecrets);
 signInService = new SignInService(coreSecrets);
-{
-  const sources = await db()
-    .select({ mcp_url: data_source.mcp_url })
-    .from(data_source)
-    .where(eq(data_source.org_id, ADMIN_ORG_ID))
-    .orderBy(desc(data_source.is_default), data_source.created_at)
-    .limit(1);
-  const mcpUrl = sources[0]?.mcp_url;
-  if (mcpUrl) {
-    const workspace = await ensureOrgWorkspace(ADMIN_ORG_ID);
-    const refresh = await prefetchKnowledgeForOrg(
-      ADMIN_ORG_ID,
-      workspace.knowledgeRoot,
-    );
-    if (refresh.ok) {
-      const totalBytes = refresh.files.reduce((n, f) => n + f.bytes, 0);
-      console.log(
-        `[worker] knowledge pack prefetched at ${workspace.knowledgeRoot} (${refresh.files.length} files, ${totalBytes}B)`,
-      );
-    } else {
-      console.warn(
-        `[worker] knowledge pack prefetch failed (${refresh.error}); agents will refresh lazily on first run`,
-      );
-    }
-  } else {
-    console.warn(
-      "[worker] no data_source.mcp_url configured; skipping knowledge pack prefetch",
-    );
-  }
-}
-
-// Web and worker share the agent-home volume. Only this sweep checks revisions;
-// warm turns read the last complete snapshot without waiting on GraphJin.
-let knowledgeRefreshRunning = false;
-const refreshKnowledgeCaches = async () => {
-  if (knowledgeRefreshRunning) return;
-  knowledgeRefreshRunning = true;
-  try {
-    const sources = await db().selectDistinct({ orgId: data_source.org_id })
-      .from(data_source).where(eq(data_source.auth_mode, "jwt"));
-    for (const { orgId } of sources) {
-      const result = await withStartupTrace({ requestId: `knowledge-refresh:${orgId}:${Date.now()}` }, () => startupPhase("knowledge.background_refresh", () => prefetchKnowledgeForOrg(orgId, join(getOrgAgentRoot(orgId), "knowledge"), { refresh: true })));
-      if (!result.ok) console.warn(`[worker] knowledge cache refresh failed for ${orgId}: ${result.error}`);
-    }
-  } catch (error) {
-    console.warn("[worker] knowledge cache sweep failed:", error);
-  } finally { knowledgeRefreshRunning = false; }
-};
-const knowledgeRefreshTimer = setInterval(() => { void refreshKnowledgeCaches(); }, 60_000);
-knowledgeRefreshTimer.unref();
-
 const concurrency = await resolveAgentConcurrency(ADMIN_ORG_ID);
 // Every agent job on this host, from any queue, shares one cap.
 setAgentSlotLimit(concurrency.globalCap);
@@ -394,23 +319,6 @@ subscriptionManager.ready
   });
 
 
-const reconcileTimer = setInterval(() => {
-  reconcileStaleRuns({ minAgeMs: RECONCILE_SWEEP_MIN_AGE_MS })
-    .then((s) => {
-      if (s.cancelled > 0) {
-        console.log(
-          `[worker] reconcile sweep: cancelled ${s.cancelled} stale running run(s)`,
-        );
-      }
-    })
-    .catch((e) => {
-      console.warn(
-        `[worker] stale-run sweep failed: ${e instanceof Error ? e.message : e}`,
-      );
-    });
-}, RECONCILE_SWEEP_INTERVAL_MS);
-reconcileTimer.unref();
-
 if (filesEnabled()) {
   moveLibraryDocumentsToStore()
     .then(({ moved, missing }) => {
@@ -432,8 +340,6 @@ listenAdmin(server, adminSocketPath(), PORT, (where) => {
 
 const shutdown = async (signal: string) => {
   console.log(`[worker] received ${signal}; shutting down`);
-  clearInterval(reconcileTimer);
-  clearInterval(knowledgeRefreshTimer);
   coreSecrets?.stop();
   server.close();
   const cancelled = cancelAllAgents();

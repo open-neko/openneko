@@ -162,6 +162,8 @@ with exit code 0, so its supervisor starts it again.`,
 				api.StartChannelInbound(ctx)
 				api.StartPackOAuthRefresh(ctx)
 				api.StartWorkflowScheduler(ctx)
+				api.StartRunReconcile(ctx)
+				api.StartKnowledgeRefresh(ctx)
 			}
 			var node *exec.Cmd
 			nodeDone := make(chan error, 1)

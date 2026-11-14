@@ -114,7 +114,7 @@ func TestDurableWorkflowSchedulerAndHealthEndpoint(t *testing.T) {
 	}
 	var status, jobID string
 	var scheduledFor time.Time
-	if err := db.QueryRow(ctx, `select status, coalesce(pgboss_job_id, ''), scheduled_for from workflow_schedule_firing where workflow_id = $1`, wfID).Scan(&status, &jobID, &scheduledFor); err != nil {
+	if err := db.QueryRow(ctx, `select status, coalesce(queue_job_id, ''), scheduled_for from workflow_schedule_firing where workflow_id = $1`, wfID).Scan(&status, &jobID, &scheduledFor); err != nil {
 		t.Fatal(err)
 	}
 	if status != "enqueued" || jobID == "" || !scheduledFor.Equal(time.Date(2026, 8, 28, 7, 0, 0, 0, time.UTC)) {
