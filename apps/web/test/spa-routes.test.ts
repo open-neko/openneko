@@ -91,6 +91,9 @@ describe("static web app routes", () => {
       "/admin/settings/security",
       "/admin/settings/spend",
       "/admin/settings/sso",
+      "/admin",
+      "/admin/settings",
+      "/admin/settings/workflows",
     ];
     const wrong = ported.filter((page) => {
       const route = (matchRoutes(routes, concrete(page)) ?? []).at(-1)?.route;
