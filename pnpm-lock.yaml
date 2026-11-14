@@ -32,9 +32,6 @@ importers:
       '@neko/llm':
         specifier: workspace:*
         version: link:../../packages/llm
-      '@neko/packs':
-        specifier: workspace:*
-        version: link:../../packages/packs
       '@neko/secret-crypt':
         specifier: workspace:*
         version: link:../../packages/secret-crypt
@@ -147,9 +144,6 @@ importers:
       '@neko/llm':
         specifier: workspace:*
         version: link:../../packages/llm
-      '@neko/packs':
-        specifier: workspace:*
-        version: link:../../packages/packs
       '@neko/secrets':
         specifier: workspace:*
         version: link:../../packages/secrets
@@ -159,12 +153,6 @@ importers:
       dotenv:
         specifier: ^17.4.1
         version: 17.4.2
-      graphql:
-        specifier: ^16
-        version: 16.14.2
-      mysql2:
-        specifier: ^3.15.3
-        version: 3.23.4(@types/node@20.19.39)
       pg:
         specifier: ^8.20.0
         version: 8.20.0
@@ -307,9 +295,6 @@ importers:
       '@neko/interaction':
         specifier: workspace:*
         version: link:../interaction
-      '@neko/packs':
-        specifier: workspace:*
-        version: link:../packs
       '@neko/secret-crypt':
         specifier: workspace:*
         version: link:../secret-crypt
@@ -344,31 +329,6 @@ importers:
       '@types/pg':
         specifier: ^8.20.0
         version: 8.20.0
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
-
-  packages/packs:
-    dependencies:
-      yaml:
-        specifier: ^2.8.1
-        version: 2.9.0
-      yauzl:
-        specifier: ^3.4.0
-        version: 3.4.0
-      zod:
-        specifier: ^4.3.6
-        version: 4.3.6
-    devDependencies:
-      '@types/node':
-        specifier: ^20
-        version: 20.19.39
-      '@types/yauzl':
-        specifier: ^3.4.0
-        version: 3.4.0
-      typescript:
-        specifier: ^5
-        version: 5.9.3
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
@@ -2249,9 +2209,6 @@ packages:
   '@types/use-sync-external-store@0.0.6':
     resolution: {integrity: sha512-zFDAD+tlpf2r4asuHEj0XH6pY6i0g5NeAHPn+15wk3BV6JA69eERFXC1gyGThDkVa1zCyKr5jox1+2LbV/AMLg==}
 
-  '@types/yauzl@3.4.0':
-    resolution: {integrity: sha512-NRPn5w6h8dhcnmx3YIRQcqMywY/+nND/uOkJessedcrowO3C0AssHp3tMJpxKAwOhFOo0OV1y9VtsC5hbKKBAw==}
-
   '@typescript-eslint/eslint-plugin@8.59.0':
     resolution: {integrity: sha512-HyAZtpdkgZwpq8Sz3FSUvCR4c+ScbuWa9AksK2Jweub7w4M3yTz4O11AqVJzLYjy/B9ZWPyc81I+mOdJU/bDQw==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
@@ -3363,10 +3320,6 @@ packages:
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
 
-  graphql@16.14.2:
-    resolution: {integrity: sha512-Chq1s4CY7jmh8gO2qvLIJyfCDIN+EHLFW/9iShnp1z8FjBQMoodWP1kDC36VAMXXIvAjj4ARa7ntfAV2BrjsbA==}
-    engines: {node: ^12.22.0 || ^14.16.0 || ^16.0.0 || >=17.0.0}
-
   has-bigints@1.1.0:
     resolution: {integrity: sha512-R3pbpkcIqv2Pm3dUwgjclDRVmWpTJW2DcMzcIhEXEx1oh/CEMObMm3KLmRJOdvhM7o4uQBnwr8pzRK2sJWIqfg==}
     engines: {node: '>= 0.4'}
@@ -4124,9 +4077,6 @@ packages:
   pbf@5.1.2:
     resolution: {integrity: sha512-mnvGdvOrIvJOBGUEdGkrVXjN8E/VkIJCkf2eS1DH2yv82ORUlLttmDt0rWY38yYZmVwciZwBUvHM20qxBZf40w==}
     hasBin: true
-
-  pend@1.2.0:
-    resolution: {integrity: sha512-F3asv42UuXchdzt+xXqfW1OGlVBe+mxa2mqI0pg5yAHZPvFmY3Y6drSf/GQ1A86WgWEN9Kzh/WrgKa6iGcHXLg==}
 
   pg-boss@10.4.2:
     resolution: {integrity: sha512-AttEWOtSzn53av8OnCMWEanwRBvjkZCE1y5nLrZnwvkkMnlZ5XpWDpZ7sKI/BYjvi2OVieMX37arD2ACgJ750w==}
@@ -4954,10 +4904,6 @@ packages:
 
   yargs@17.7.2:
     resolution: {integrity: sha512-7dSzzRQ++CKnNI/krKnYRV7JKKPUXMEh61soaHKg9mrWEhzFWhFnxPxGl+69cD1Ou63C13NUPCnmIcrvqCuM6w==}
-    engines: {node: '>=12'}
-
-  yauzl@3.4.0:
-    resolution: {integrity: sha512-jIH9yLR9wqr0wOS0TpBvo/g/2UgZH5qePVbjgRliiF0BYvOZyaBknKsF+x9Iht0O6sqgnB93rCICdOZFecJuDw==}
     engines: {node: '>=12'}
 
   yocto-queue@0.1.0:
@@ -6639,10 +6585,6 @@ snapshots:
 
   '@types/use-sync-external-store@0.0.6': {}
 
-  '@types/yauzl@3.4.0':
-    dependencies:
-      '@types/node': 20.19.39
-
   '@typescript-eslint/eslint-plugin@8.59.0(@typescript-eslint/parser@8.59.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3)':
     dependencies:
       '@eslint-community/regexpp': 4.12.2
@@ -7886,8 +7828,6 @@ snapshots:
 
   graceful-fs@4.2.11: {}
 
-  graphql@16.14.2: {}
-
   has-bigints@1.1.0: {}
 
   has-flag@4.0.0: {}
@@ -8856,8 +8796,6 @@ snapshots:
   pbf@5.1.2:
     dependencies:
       resolve-protobuf-schema: 2.1.0
-
-  pend@1.2.0: {}
 
   pg-boss@10.4.2:
     dependencies:
@@ -9931,10 +9869,6 @@ snapshots:
       string-width: 4.2.3
       y18n: 5.0.8
       yargs-parser: 21.1.1
-
-  yauzl@3.4.0:
-    dependencies:
-      pend: 1.2.0
 
   yocto-queue@0.1.0: {}
 

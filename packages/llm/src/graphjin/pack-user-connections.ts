@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { pool } from "@neko/db";
 import { maybeDecryptSecret, maybeEncryptSecret } from "@neko/secret-crypt";
 import { readSecretsStore } from "@neko/secrets";
-import { buildPackAuthorizationUrl, exchangePackOAuthCode, fetchPackOAuthAccount, refreshPackOAuthToken, packConnectionHeader, type PackOAuthConnection, type PackOAuthTokens } from "@neko/packs/oauth-client";
+import { buildPackAuthorizationUrl, exchangePackOAuthCode, fetchPackOAuthAccount, refreshPackOAuthToken, packConnectionHeader, type PackOAuthConnection, type PackOAuthTokens } from "./pack-oauth-client";
 import { verifyGraphjinToken } from "./token";
 
 export type ConnectionActor = { orgId: string; userId: string };

@@ -50,8 +50,7 @@ type magentoClassification struct {
 	Rationale  string `json:"rationale"`
 }
 
-// magentoPackClassifications is DEFAULT_MAGENTO_ATTRIBUTE_CLASSIFICATIONS of
-// packages/packs; the table's check constraint accepts only its categories.
+// The table's check constraint accepts only these categories.
 var magentoPackClassifications = func() []magentoClassification {
 	var out []magentoClassification
 	add := func(domain, entity string, risk int, rationale string, category func(string) string, attributes ...string) {

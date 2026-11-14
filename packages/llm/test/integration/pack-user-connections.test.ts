@@ -7,14 +7,14 @@ import { buildPoolConfig } from "@neko/db";
 const state = vi.hoisted(() => ({ pool: null as pg.Pool | null, refreshes: 0 }));
 vi.mock("@neko/db", async original => ({ ...await original<typeof import("@neko/db")>(), pool: () => state.pool! }));
 vi.mock("@neko/secrets", () => ({ readSecretsStore: async () => ({ "pack.fixture": { OAUTH_ACCOUNT_CLIENT_ID: "client", CLIENT_SECRET: "secret" } }) }));
-vi.mock("@neko/packs/oauth-client", async original => ({
-  ...await original<typeof import("@neko/packs/oauth-client")>(),
+vi.mock("../../src/graphjin/pack-oauth-client", async original => ({
+  ...await original<typeof import("../../src/graphjin/pack-oauth-client")>(),
   exchangePackOAuthCode: vi.fn(async ({ code }: { code: string }) => ({ accessToken: `access-${code}`, refreshToken: `refresh-${code}`, scopes: ["read"], expiresAt: new Date(Date.now() + 3_600_000).toISOString() })),
   fetchPackOAuthAccount: vi.fn(async ({ accessToken }: { accessToken: string }) => ({ id: accessToken, label: `${accessToken}@example.test` })),
   refreshPackOAuthToken: vi.fn(async ({ refreshToken }: { refreshToken: string }) => { state.refreshes++; return { accessToken: `renewed-${refreshToken}`, refreshToken, scopes: ["read"], expiresAt: new Date(Date.now() + 3_600_000).toISOString() }; }),
 }));
 import { maybeEncryptSecret } from "@neko/secret-crypt";
-import { packConnectionHeader, exchangePackOAuthCode } from "@neko/packs/oauth-client";
+import { packConnectionHeader, exchangePackOAuthCode } from "../../src/graphjin/pack-oauth-client";
 import { beginPackUserConnection, completePackUserConnection, disconnectPackUserConnection, listPackUserConnections, packConnectionBindings, packUserConnectionHeaders } from "../../src/graphjin/pack-user-connections";
 import { mintGraphjinToken } from "../../src/graphjin/token";
 import { graphjinQuery } from "../../src/graphjin/client";

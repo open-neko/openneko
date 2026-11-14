@@ -8,14 +8,12 @@ import (
 	"slices"
 )
 
-// PackActionReadiness mirrors PackActionReadiness in apps/worker/src/packs/action-preflight.ts.
 type PackActionReadiness struct {
 	Enabled   bool    `json:"enabled"`
 	Readiness string  `json:"readiness"`
 	Reason    *string `json:"reason"`
 }
 
-// AssertPackActionReady matches assertPackActionReady() in apps/worker/src/packs/action-preflight.ts.
 func AssertPackActionReady(kind string, definition PackActionReadiness) error {
 	if definition.Enabled && definition.Readiness == "ready" {
 		return nil
@@ -29,7 +27,6 @@ func AssertPackActionReady(kind string, definition PackActionReadiness) error {
 	return fmt.Errorf("pack action %s is blocked: %s", kind, reason)
 }
 
-// AssertSafePackActionPayload matches assertSafePayload() in apps/worker/src/packs/declarative-action-runtime.ts.
 func AssertSafePackActionPayload(serializedLen int, value any) error {
 	if serializedLen > 1_000_000 {
 		return errors.New("pack action payload is too large")
@@ -67,8 +64,7 @@ func AssertSafePackActionPayloadJSON(value any) error {
 	return AssertSafePackActionPayload(len(raw), value)
 }
 
-// LockPackActionBody matches lockBody() in apps/worker/src/packs/declarative-action-runtime.ts.
-// When hasBody is false, body was undefined in the action payload.
+// When hasBody is false, the action payload has no body.
 func LockPackActionBody(
 	kind string,
 	body any,
