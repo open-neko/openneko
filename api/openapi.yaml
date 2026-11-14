@@ -2639,13 +2639,36 @@ paths:
       - deviceToken: []
       responses:
         '200':
-          description: Worker response, passed through with the worker status
+          description: The embedded packs, then the packs this organization uploaded
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: false
-                properties: {}
+                required: [packs]
+                properties:
+                  packs:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, source, name, version, installed, status, lastError]
+                      properties:
+                        id:
+                          type: string
+                        source:
+                          type: string
+                          enum: [embedded, uploaded]
+                        name:
+                          type: string
+                        version:
+                          type: string
+                        installed:
+                          type: boolean
+                        status:
+                          type: string
+                        lastError:
+                          type: string
+                          nullable: true
         '401':
           description: The session or device token is not valid
           content:
@@ -2661,8 +2684,8 @@ paths:
                 properties:
                   error:
                     type: string
-        '502':
-          description: The worker is not reachable
+        '500':
+          description: A pack in the catalog cannot be read
           content:
             application/json:
               schema:
@@ -2798,15 +2821,33 @@ paths:
               format: binary
       responses:
         '200':
-          description: Worker response, passed through with the worker status
+          description: The stored upload; the same archive again returns the first record
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: false
-                properties: {}
+                required: [orgId, packId, version, bundleHash, contentHash, archiveHash, uploadedAt, uploadedBy]
+                properties:
+                  orgId:
+                    type: string
+                  packId:
+                    type: string
+                  version:
+                    type: string
+                  bundleHash:
+                    type: string
+                  contentHash:
+                    type: string
+                  archiveHash:
+                    type: string
+                  uploadedAt:
+                    type: string
+                  uploadedBy:
+                    type: string
+                    nullable: true
         '400':
-          description: The body could not be read
+          description: The body could not be read, or the archive or its manifest is not valid
           content:
             application/json:
               schema:
@@ -2847,15 +2888,6 @@ paths:
                 properties:
                   error:
                     type: string
-        '502':
-          description: The worker is not reachable
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
   /admin/packs/{packId}/{action}:
     get:
       operationId: getAdminPacksByPackIdByAction
@@ -2885,13 +2917,39 @@ paths:
         description: Pack version
       responses:
         '200':
-          description: Worker response, passed through with the worker status
+          description: The inspection or the install status; plan and doctor pass through the worker
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: false
-                properties: {}
+                properties:
+                  source: {}
+                  upload: {}
+                  manifest: {}
+                  manifestHash: {}
+                  bundleHash: {}
+                  bindingRequirements: {}
+                  permissions: {}
+                  packId: {}
+                  version: {}
+                  status: {}
+                  readiness: {}
+                  installedAt: {}
+                  lastError: {}
+                  configuration: {}
+                  entries: {}
+                  hash: {}
+                  checks: {}
+        '400':
+          description: The pack cannot be read
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
         '401':
           description: The session or device token is not valid
           content:
@@ -2908,7 +2966,7 @@ paths:
                   error:
                     type: string
         '404':
-          description: The pack id or action is not known
+          description: The pack id or action is not known, or the pack is not installed
           content:
             application/json:
               schema:
