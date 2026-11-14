@@ -23,7 +23,6 @@
     "@neko/db": "workspace:*",
     "@neko/interaction": "workspace:*",
     "@neko/llm": "workspace:*",
-    "@neko/packs": "workspace:*",
     "@neko/secret-crypt": "workspace:*",
     "@neko/telemetry": "workspace:*",
     "class-variance-authority": "^0.7.1",
