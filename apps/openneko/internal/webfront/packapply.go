@@ -139,6 +139,7 @@ type packApplyRun struct {
 	skills, files, retirement *packMaterialized
 	graphjin                  func(context.Context) error
 	secrets                   func() error
+	magento                   *magentoPreflightResult
 }
 
 func (p *packApplyRun) actor() any { return p.request.vals["actorUserId"] }
@@ -241,9 +242,7 @@ func (p *packApplyRun) run(ctx context.Context) (*jsObj, error) {
 	if packTruthy(p.request.vals["deferConfiguration"]) {
 		return p.installDefinition(ctx, authored)
 	}
-	if packID == "magento" {
-		return nil, errors.New("the Magento pack applies through the worker")
-	}
+	magento := packID == "magento"
 
 	var priorRuntime *jsObj
 	priorConfig := &jsObj{vals: map[string]any{}}
@@ -259,12 +258,15 @@ func (p *packApplyRun) run(ctx context.Context) (*jsObj, error) {
 	for k, v := range jsObjOrEmpty(runtime.vals["bindings"]).vals {
 		bindings[k], _ = v.(string)
 	}
-	boundTables, boundQueries, err := bindPackQueries(authored, bindings)
-	if err != nil {
-		return nil, err
+	bundle, boundQueries := authored, map[string]string{}
+	if !magento {
+		var boundTables []map[string]string
+		if boundTables, boundQueries, err = bindPackQueries(authored, bindings); err != nil {
+			return nil, err
+		}
+		bundle = boundPackBundle(authored, boundQueries)
+		runtime.set("tables", mergePackTables(priorRuntime, boundTables))
 	}
-	bundle := boundPackBundle(authored, boundQueries)
-	runtime.set("tables", mergePackTables(priorRuntime, boundTables))
 
 	priorInputs := &jsObj{vals: map[string]any{}}
 	for _, k := range priorConfig.ordered() {
@@ -297,7 +299,18 @@ func (p *packApplyRun) run(ctx context.Context) (*jsObj, error) {
 	if given := p.request.vals["reviewHash"]; (authored.Upload != nil || packTruthy(given)) && given != reviewHash {
 		return nil, errors.New("pack review is missing or stale; review the exact bundle, configuration, and plan before installing")
 	}
-	if err := declarativePackChecks(bundle, plainInputs, secretValues, bindings); err != nil {
+	if magento {
+		preflight, err := runMagentoPreflight(ctx, magentoInputFrom(inputs, secretValues), magentoHTTPClient)
+		if err != nil {
+			return nil, err
+		}
+		p.magento = preflight
+		inputs.set("database.type", preflight.databaseType)
+		inputs.set("magento.table_prefix", preflight.tablePrefix)
+		inputs.set("magento.base_currency", nullishOr(inputs.vals["magento.base_currency"], preflight.baseCurrency))
+		inputs.set("magento.timezone", nullishOr(inputs.vals["magento.timezone"], preflight.timezone))
+		plainInputs, _ = plainJSON(inputs).(map[string]any)
+	} else if err := declarativePackChecks(bundle, plainInputs, secretValues, bindings); err != nil {
 		return nil, err
 	}
 	conflicts := 0
@@ -461,6 +474,9 @@ func (p *packApplyRun) run(ctx context.Context) (*jsObj, error) {
 			return nil, err
 		}
 	}
+	if graphjin != nil && graphjin.Mode == "api" && magento {
+		return nil, errors.New("The Magento pack needs the GraphJin whose config folder OpenNeko manages. Connect OpenNeko to that GraphJin, then install the pack again.")
+	}
 	configFile := ""
 	if graphjin != nil && graphjin.Mode == "files" {
 		configFile = graphjin.ConfigFile
@@ -566,7 +582,21 @@ func (p *packApplyRun) run(ctx context.Context) (*jsObj, error) {
 			ownedTables[jsValueString(jsObjOrEmpty(t).vals["name"])] = true
 		}
 	}
-	if usesGraphjin {
+	if usesGraphjin && magento {
+		update, err := magentoGraphjinUpdate(plainInputs, secretValues, p.magento, bundle, retiredSources)
+		if err != nil {
+			return nil, err
+		}
+		applied, err := a.applyPackGraphjinConfig(ctx, graphjinGraphQLEndpoint(graphqlURL), orgID, configFile,
+			packGraphjinUpdate{update: jsObjOrEmpty(jsValueOf(update)), ownedSources: ownedSources}, true)
+		if err != nil {
+			return nil, err
+		}
+		p.graphjin = applied.restore
+		if err := a.magentoAnalyticsSmoke(ctx, graphjinGraphQLEndpoint(graphqlURL), orgID); err != nil {
+			return nil, err
+		}
+	} else if usesGraphjin {
 		access := "authenticated"
 		if graphjin.Mode == "api" && graphjin.Anonymous {
 			access = "public"
@@ -667,6 +697,11 @@ func (p *packApplyRun) run(ctx context.Context) (*jsObj, error) {
 		if err := p.retireOnUpgrade(ctx, tx, retired, bundle, retiredHashes); err != nil {
 			return err
 		}
+		if p.magento != nil {
+			if err := p.writeMagentoControls(ctx, tx, plainInputs, p.magento); err != nil {
+				return err
+			}
+		}
 		if err := p.writeNative(ctx, tx, bundle, plainInputs, hashes); err != nil {
 			return err
 		}
@@ -675,15 +710,20 @@ func (p *packApplyRun) run(ctx context.Context) (*jsObj, error) {
 			if !ok {
 				return fmt.Errorf("pack artifact %s has no materialized state hash", art.Key)
 			}
+			readiness, reason := "ready", any(nil)
+			if magento {
+				readiness, reason = magentoArtifactReadiness(art, p.magento)
+			}
 			metadata := packJSON(map[string]any{"path": art.Path, "materializedTarget": materializedTarget(art),
 				"locator": boundPackLocator(bundle, art, bindings), "borrowedSource": bindings[art.Key] != "", "stateHashVersion": 1})
 			if _, err := tx.Exec(ctx, `insert into pack_artifact (pack_install_id, org_id, artifact_kind, artifact_key, target_ref, desired_hash,
 				last_applied_hash, ownership, readiness, readiness_reason, metadata)
-				values ($1, $2, $3, $4, $5, $6, $7, 'managed', 'ready', null, $8::jsonb)
+				values ($1, $2, $3, $4, $5, $6, $7, 'managed', $9, $10, $8::jsonb)
 				on conflict (org_id, artifact_kind, target_ref) do update set pack_install_id = excluded.pack_install_id,
 				artifact_key = excluded.artifact_key, desired_hash = excluded.desired_hash, last_applied_hash = excluded.last_applied_hash,
-				ownership = 'managed', readiness = 'ready', readiness_reason = null, metadata = excluded.metadata, updated_at = now()`,
-				p.installID, orgID, string(art.Kind), art.Key, art.TargetRef, art.Hash, hash, metadata); err != nil {
+				ownership = 'managed', readiness = excluded.readiness, readiness_reason = excluded.readiness_reason, metadata = excluded.metadata,
+				updated_at = now()`,
+				p.installID, orgID, string(art.Kind), art.Key, art.TargetRef, art.Hash, hash, metadata, readiness, reason); err != nil {
 				return err
 			}
 		}
@@ -703,6 +743,9 @@ func (p *packApplyRun) run(ctx context.Context) (*jsObj, error) {
 				}
 			}
 			final["_oauth"] = bound
+		}
+		if p.magento != nil {
+			final["magentoVersion"] = p.magento.magentoVersion
 		}
 		if _, err := tx.Exec(ctx, `update pack_install set status = 'installed', config = $1::jsonb, installed_at = now(), updated_at = now() where id = $2`,
 			packJSON(final), p.installID); err != nil {
@@ -908,11 +951,12 @@ func (p *packApplyRun) writeNative(ctx context.Context, tx pgx.Tx, bundle *packs
 		if err != nil {
 			return err
 		}
-		variables, err := packVariables(execution["variables"], inputs)
-		if err != nil {
+		execution["document"], execution["runtime"] = document, map[string]any{}
+		if p.magento != nil {
+			execution["runtime"] = magentoMetricRuntime(inputs, p.magento)
+		} else if execution["variables"], err = packVariables(execution["variables"], inputs); err != nil {
 			return err
 		}
-		execution["document"], execution["variables"], execution["runtime"] = document, variables, map[string]any{}
 		definition["execution"] = execution
 		definitionHash, err := packs.CanonicalHash(definition)
 		if err != nil {
@@ -948,8 +992,10 @@ func (p *packApplyRun) writeNative(ctx context.Context, tx pgx.Tx, bundle *packs
 		if err != nil {
 			return err
 		}
-		variables, err := packVariables(value["variables"], inputs)
-		if err != nil {
+		var variables any
+		if p.magento != nil {
+			variables = magentoWatcherVariables(p.magento)
+		} else if variables, err = packVariables(value["variables"], inputs); err != nil {
 			return err
 		}
 		threshold, hasThreshold := value["threshold"]
@@ -1015,10 +1061,9 @@ func (p *packApplyRun) writeNative(ctx context.Context, tx pgx.Tx, bundle *packs
 			continue
 		}
 		value := art.Record()
-		adapter, _ := value["adapter"].(map[string]any)
-		readiness, reason := "blocked", any("unsupported_adapter")
-		if k := adapter["kind"]; k == "graphjin_api_operation" || k == "magento_financial_handoff" {
-			readiness, reason = "ready", nil
+		readiness, reason := "ready", any(nil)
+		if text := magentoActionReason(value, p.magento); text != "ready" {
+			readiness, reason = "blocked", text
 		}
 		var raw string
 		if err := tx.QueryRow(ctx, `insert into pack_action_definition as t (org_id, kind, description, definition, definition_hash, readiness, readiness_reason, enabled)

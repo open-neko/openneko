@@ -19,9 +19,14 @@ func (a *API) enqueueActionExecute(ctx context.Context, tx pgx.Tx, orgID, id str
 	return a.Jobs.ActionExecute(ctx, tx, orgID, id)
 }
 
-// ActionExecute is the action_execute job. The worker runs the action's
-// adapter; any answer but 200 fails the attempt, and River tries again.
+// ActionExecute is the action_execute job. Declarative pack actions run in
+// Go; the worker runs the remaining adapters until they move.
 func (a *API) ActionExecute(ctx context.Context, orgID, actionRequestID string) error {
+	if ok, err := a.isDeclarativePackActionRequest(ctx, orgID, actionRequestID); err != nil {
+		return err
+	} else if ok {
+		return a.executeDeclarativeActionRequest(ctx, orgID, actionRequestID)
+	}
 	body, err := json.Marshal(map[string]string{"orgId": orgID, "actionRequestId": actionRequestID})
 	if err != nil {
 		return err

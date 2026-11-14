@@ -441,11 +441,19 @@ preflight and records a receipt for each artifact. An upgrade retires the artifa
 the new version drops. A failure puts the skills, GraphJin config, files and secrets
 back. `go test -run TestDeclarativeGraphjinUpdateMatchesNode ./internal/webfront` checks
 the GraphJin update against a Node fixture. The install of a built-in pack before its
-configuration also runs in Go. The configured Magento install, configure and upgrade
-still run in the worker. `openneko web` also runs the OAuth routes
+configuration also runs in Go. For the configured Magento pack, `openneko web` runs the
+Magento preflight first and saves the discovered database type, table prefix, currency
+and timezone. It then writes the read-only analytics source and the operator source to
+the GraphJin config file, runs the smoke queries, sets the store controls and the
+attribute classifications, and gives each Magento metric and watcher the store IDs.
+Operator artifacts stay blocked until the change-domain probe for their domain passes.
+The Magento pack needs the GraphJin whose config folder OpenNeko manages; a GraphJin
+reached only through its API is refused. `go test -run TestMagentoGraphjinUpdateMatchesNode
+./internal/webfront` checks the update and the classifications against a Node fixture.
+`openneko web` also runs the OAuth routes
 (client setup, connect and callback, status and disconnect) and the Magento
-store-management settings and activity route. Until the
-pack apply moves to Go, a deployment-scope connection on an installed pack with
+store-management settings and activity route. Until pack OAuth
+moves to Go, a deployment-scope connection on an installed pack with
 GraphJin sources asks the worker to apply the new token to those sources, and the
 worker still refreshes deployment-scope tokens. Integration tests need their documented test dependencies;
 a skipped test is not a live pass.
