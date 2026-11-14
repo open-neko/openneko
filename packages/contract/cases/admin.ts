@@ -24,10 +24,19 @@ export const adminCases: Case[] = [
     op: "POST /admin/change-password", name: "refuses an install that connects by URL", status: 409,
     request: { body: { password: "contract-password-0123" } },
   },
-  { op: "GET /admin/channels/settings", name: "needs the worker", status: 502 },
   {
-    op: "POST /admin/channels/settings", name: "needs the worker", status: 502,
+    op: "GET /admin/channels/settings", name: "lists the three channels", status: 200,
+    check: (r) => {
+      expect((body(r).channels as { id: string }[]).map((c) => c.id)).toEqual(["slack", "telegram", "hud"]);
+    },
+  },
+  {
+    op: "POST /admin/channels/settings", name: "needs at least one value", status: 400,
     request: { body: { channel: "slack", values: {} } },
+  },
+  {
+    op: "POST /admin/channels/settings", name: "refuses an unknown channel", status: 400,
+    request: { body: { channel: "fax", state: "on" } },
   },
   { op: "GET /admin/data-access", name: "lists the rules", status: 200 },
   { op: "GET /admin/data-access/settings", name: "reports the setting", status: 200 },

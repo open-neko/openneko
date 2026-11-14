@@ -67,9 +67,25 @@ func (a *API) actionRequestDecision(w http.ResponseWriter, r *http.Request) {
 			reason = &s
 		}
 	}
+	status, err := a.applyDecision(ctx, act, id, decision.(string), reason)
+	var refused *decisionError
+	if errors.As(err, &refused) {
+		sendError(w, refused.status, refused.message)
+		return
+	}
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	sendJSON(w, http.StatusOK, map[string]any{"actionRequest": map[string]string{"id": id, "status": status}})
+}
+
+// applyDecision approves, rejects or retries one action request for act in
+// one transaction, and queues the execution of an approved request.
+func (a *API) applyDecision(ctx context.Context, act actor, id, decision string, reason *string) (string, error) {
 	var status, kind string
 	var event auditEvent
-	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
+	err := pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
 		var current string
 		var policyID *string
 		if err := tx.QueryRow(ctx, `select status, kind, policy_id::text from action_request where org_id = $1 and id = $2 for update`,
@@ -81,7 +97,7 @@ func (a *API) actionRequestDecision(w http.ResponseWriter, r *http.Request) {
 			if err := mayDecide(ctx, tx, act, id, policyID); err != nil {
 				return err
 			}
-			status = map[string]string{"approve": "approved", "reject": "rejected"}[decision.(string)]
+			status = map[string]string{"approve": "approved", "reject": "rejected"}[decision]
 			if current != "draft" && current != "pending_approval" {
 				return transitionError(current, status)
 			}
@@ -117,18 +133,12 @@ func (a *API) actionRequestDecision(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	})
-	var refused *decisionError
-	if errors.As(err, &refused) {
-		sendError(w, refused.status, refused.message)
-		return
-	}
 	if err != nil {
-		a.fail(w, r, err)
-		return
+		return "", err
 	}
 	event.OrgID, event.EntityKind, event.EntityID = act.OrgID, "action_request", id
 	a.recordAudit(ctx, event)
-	sendJSON(w, http.StatusOK, map[string]any{"actionRequest": map[string]string{"id": id, "status": status}})
+	return status, nil
 }
 
 // mayDecide is assertMayDecide() in action-store.ts. Each decision passes no
