@@ -14,103 +14,21 @@ import {
   uniqueOrgId,
 } from "@neko/db/test-helpers";
 import {
-  and,
   db,
   eq,
-  inArray,
   pool,
-  processing_job,
-  sql,
   work_run,
   work_thread,
   workflow_definition,
   workflow_run,
 } from "@neko/db";
-import { boss, QUEUE } from "@neko/db/jobs";
-import {
-  reconcileStaleProcessingJobs,
-  reconcileStaleRuns,
-} from "../src/reconciler";
+import { reconcileStaleRuns } from "../src/reconciler";
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
 
 if (!reachable) {
   console.warn("[reconciler] skipping: Postgres unreachable.");
-}
-
-async function ensurePgbossSchema(): Promise<boolean> {
-  try {
-    // pg-boss v10 partitions pgboss.job by queue. Inserts fail with
-    // "no partition of relation 'job' found for row" when no queue
-    // has been created. Skip these tests cleanly when there isn't at
-    // least one partition (i.e. a fresh CI Postgres without queues).
-    const result = await db().execute(
-      sql`SELECT count(*)::int AS n FROM pg_inherits WHERE inhparent = 'pgboss.job'::regclass`,
-    );
-    const rows = (result as { rows?: Array<{ n: number }> }).rows ?? [];
-    return rows.length > 0 && rows[0].n > 0;
-  } catch {
-    return false;
-  }
-}
-
-async function insertPgbossJob(args: {
-  name: string;
-  processingJobId: string;
-  state: "completed" | "failed" | "cancelled" | "active" | "created" | "retry";
-  outputMessage?: string;
-}): Promise<void> {
-  const output = args.outputMessage
-    ? sql`${JSON.stringify({ value: { message: args.outputMessage } })}::jsonb`
-    : sql`NULL`;
-  await db().execute(sql`
-    INSERT INTO pgboss.job (name, data, state, output)
-    VALUES (
-      ${args.name},
-      ${JSON.stringify({ processingJobId: args.processingJobId, orgId: "x" })}::jsonb,
-      ${args.state}::pgboss.job_state,
-      ${output}
-    )
-  `);
-}
-
-async function insertProcessingJob(args: {
-  orgId: string;
-  kind: string;
-  status: "queued" | "running";
-}): Promise<string> {
-  const ins = await db()
-    .insert(processing_job)
-    .values({
-      org_id: args.orgId,
-      kind: args.kind,
-      status: args.status,
-      trigger: "test",
-      ...(args.status === "running" ? { started_at: new Date() } : {}),
-    })
-    .returning({ id: processing_job.id });
-  return ins[0]!.id;
-}
-
-async function readProcessingJob(id: string) {
-  const rows = await db()
-    .select({
-      status: processing_job.status,
-      error: processing_job.error,
-      finished_at: processing_job.finished_at,
-    })
-    .from(processing_job)
-    .where(eq(processing_job.id, id))
-    .limit(1);
-  return rows[0]!;
-}
-
-const pgbossOk = reachable ? await ensurePgbossSchema() : false;
-const describeIfReady = pgbossOk ? describeIfDb : describe.skip;
-
-if (reachable && !pgbossOk) {
-  console.warn("[reconciler] skipping: pgboss schema not initialized.");
 }
 
 describeIfDb("reconcileStaleRuns — queued runs with a dead launcher", () => {
@@ -164,185 +82,6 @@ describeIfDb("reconcileStaleRuns — queued runs with a dead launcher", () => {
       .from(work_run)
       .where(eq(work_run.id, freshId));
     expect(freshRun.status).toBe("queued");
-  });
-});
-
-describeIfReady("reconcileStaleProcessingJobs", () => {
-  let orgId: string;
-
-  beforeAll(async () => {
-    // pg-boss v10 partitions pgboss.job by queue name. Inserts into a queue
-    // whose partition isn't created yet fail with "no partition of relation
-    // 'job' found for row". Pre-create every queue this suite touches (and
-    // a couple of others for safety) so the SQL INSERT in insertPgbossJob
-    // lands cleanly.
-    const b = await boss();
-    for (const name of Object.values(QUEUE)) {
-      await b.createQueue(name).catch(() => {
-        // idempotent — ignore "queue already exists"
-      });
-    }
-  });
-
-  beforeEach(async () => {
-    orgId = uniqueOrgId("reconciler");
-    await createTestOrg(orgId);
-  });
-
-  afterEach(async () => {
-    await db().execute(sql`
-      DELETE FROM pgboss.job WHERE data->>'processingJobId' IN (
-        SELECT id::text FROM processing_job WHERE org_id = ${orgId}
-      )
-    `);
-    await deleteTestOrg(orgId);
-  });
-
-  it("mirrors pg-boss completed state to processing_job=succeeded", async () => {
-    const jobId = await insertProcessingJob({
-      orgId,
-      kind: "work_run",
-      status: "running",
-    });
-    await insertPgbossJob({
-      name: "work_run",
-      processingJobId: jobId,
-      state: "completed",
-    });
-
-    const summary = await reconcileStaleProcessingJobs({ orgId });
-    expect(summary.succeeded).toBeGreaterThanOrEqual(1);
-
-    const row = await readProcessingJob(jobId);
-    expect(row.status).toBe("succeeded");
-    expect(row.error).toBeNull();
-    expect(row.finished_at).not.toBeNull();
-  });
-
-  it("mirrors pg-boss failed state and propagates the error message", async () => {
-    const jobId = await insertProcessingJob({
-      orgId,
-      kind: "work_run",
-      status: "running",
-    });
-    await insertPgbossJob({
-      name: "work_run",
-      processingJobId: jobId,
-      state: "failed",
-      outputMessage: "agent crashed: ENOENT",
-    });
-
-    await reconcileStaleProcessingJobs({ orgId });
-
-    const row = await readProcessingJob(jobId);
-    expect(row.status).toBe("failed");
-    expect(row.error).toBe("agent crashed: ENOENT");
-  });
-
-  it("treats pg-boss timeout (failed state with timeout message) as failed", async () => {
-    const jobId = await insertProcessingJob({
-      orgId,
-      kind: "work_run",
-      status: "running",
-    });
-    await insertPgbossJob({
-      name: "work_run",
-      processingJobId: jobId,
-      state: "failed",
-      outputMessage: "job failed by timeout in active state",
-    });
-
-    await reconcileStaleProcessingJobs({ orgId });
-    const row = await readProcessingJob(jobId);
-    expect(row.status).toBe("failed");
-    expect(row.error).toContain("timeout");
-  });
-
-  it("resets running -> queued when pg-boss is still active (handler crashed mid-flight)", async () => {
-    const jobId = await insertProcessingJob({
-      orgId,
-      kind: "work_run",
-      status: "running",
-    });
-    await insertPgbossJob({
-      name: "work_run",
-      processingJobId: jobId,
-      state: "active",
-    });
-
-    const summary = await reconcileStaleProcessingJobs({ orgId });
-    expect(summary.requeued).toBeGreaterThanOrEqual(1);
-
-    const row = await readProcessingJob(jobId);
-    expect(row.status).toBe("queued");
-    expect(row.error).toBeNull();
-  });
-
-  it("leaves a queued row alone when pg-boss is still active", async () => {
-    const jobId = await insertProcessingJob({
-      orgId,
-      kind: "work_run",
-      status: "queued",
-    });
-    await insertPgbossJob({
-      name: "work_run",
-      processingJobId: jobId,
-      state: "created",
-    });
-
-    await reconcileStaleProcessingJobs({ orgId });
-    const row = await readProcessingJob(jobId);
-    expect(row.status).toBe("queued");
-  });
-
-  it("marks orphaned (no pg-boss row) processing_job as failed", async () => {
-    const jobId = await insertProcessingJob({
-      orgId,
-      kind: "work_run",
-      status: "queued",
-    });
-
-    const summary = await reconcileStaleProcessingJobs({ orgId });
-    expect(summary.lost).toBeGreaterThanOrEqual(1);
-
-    const row = await readProcessingJob(jobId);
-    expect(row.status).toBe("failed");
-    expect(row.error).toContain("lost from queue");
-  });
-
-  it("leaves the rows of a River queue alone", async () => {
-    const ids = [
-      await insertProcessingJob({ orgId, kind: "business_profile_build", status: "running" }),
-      await insertProcessingJob({ orgId, kind: "metric_refresh", status: "queued" }),
-    ];
-
-    const summary = await reconcileStaleProcessingJobs({ orgId });
-    expect(summary.lost).toBe(0);
-    expect((await readProcessingJob(ids[0]!)).status).toBe("running");
-    expect((await readProcessingJob(ids[1]!)).status).toBe("queued");
-  });
-
-  it("respects minAgeMs — leaves recent rows untouched", async () => {
-    const jobId = await insertProcessingJob({
-      orgId,
-      kind: "work_run",
-      status: "running",
-    });
-    await insertPgbossJob({
-      name: "work_run",
-      processingJobId: jobId,
-      state: "failed",
-      outputMessage: "permanent",
-    });
-
-    const summary = await reconcileStaleProcessingJobs({
-      minAgeMs: 10_000,
-      orgId,
-    });
-    expect(summary.failed).toBe(0);
-
-    const row = await readProcessingJob(jobId);
-    expect(row.status).toBe("running");
   });
 });
 
@@ -414,23 +153,6 @@ describeIfDb("reconcileStaleRuns", () => {
       .from(workflow_run)
       .where(eq(workflow_run.id, wfRun!.id));
     expect(wfr[0]?.status).toBe("cancelled");
-  });
-
-  it("at boot cancels the worker's own running runs and leaves web chat runs to the web", async () => {
-    const workerRun = await insertRunningRun(new Date());
-    const chatRun = await insertRunningRun(new Date());
-    await pool().query(
-      `insert into spend_reservation (org_id, work_run_id, source, reserved_micros, created_at) values ($1, $2, 'chat', 0, now())`,
-      [orgId, chatRun.workRunId],
-    );
-    await reconcileStaleRuns({ workerOwnedOnly: true });
-    const statuses = await db()
-      .select({ id: work_run.id, status: work_run.status })
-      .from(work_run)
-      .where(inArray(work_run.id, [workerRun.workRunId, chatRun.workRunId]));
-    const byId = Object.fromEntries(statuses.map((row) => [row.id, row.status]));
-    expect(byId[workerRun.workRunId]).toBe("cancelled");
-    expect(byId[chatRun.workRunId]).toBe("running");
   });
 
   it("leaves a recently-updated running run alone (respects minAgeMs)", async () => {

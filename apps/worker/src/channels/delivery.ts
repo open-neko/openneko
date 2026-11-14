@@ -5,11 +5,11 @@
 // points the web uses — approve/reject an action_request, or start a chat run.
 import { and, db, delivery_binding, eq, processing_job } from "@neko/db";
 import { audienceReceivesOutput } from "./audience.js";
-import { enqueue, enqueueActionExecute, QUEUE, type ChannelDeliverPayload } from "@neko/db/jobs";
+import { enqueueActionExecute, enqueueChannelDeliver, enqueueWorkRun } from "@neko/db/jobs";
 import { resolveAgentBackend } from "@neko/llm";
 import { SpendBudgetExceeded } from "@neko/llm/spend";
 import { outputRowToInteractionEvent, type OutputRow } from "@neko/llm/interaction";
-import type { InteractionEvent, SurfaceMessage } from "@neko/interaction";
+import type { InteractionEvent } from "@neko/interaction";
 import {
   approveActionRequest,
   getActionRequest,
@@ -27,11 +27,7 @@ import {
   type RunChannel,
 } from "@neko/llm/work";
 import { builtInChannel } from "@neko/channels";
-import {
-  deliverOnChannel,
-  parseChannelInbound,
-  verifyChannelInbound,
-} from "./runtime.js";
+import { parseChannelInbound, verifyChannelInbound } from "./runtime.js";
 import {
   beginInboundUpdate,
   inboundUpdateKey,
@@ -68,14 +64,11 @@ type IntentEvent =
 
 const MOODS = ["good", "watch", "act"] as const;
 
-// Outbound delivery retries: resilient to Telegram/Slack network blips and
-// worker restarts. The job is durable in pg-boss, so it survives a restart.
-const DELIVER_OPTS = { retryLimit: 8, retryDelay: 15, retryBackoff: true } as const;
-
 /**
- * Enqueue a durable, retryable outbound delivery instead of sending inline.
- * `idempotencyKey` is a pg-boss singletonKey — concurrent re-enqueues (e.g. a
- * retried run job) collapse to one in-flight delivery.
+ * Queue a durable, retryable outbound delivery on River instead of sending
+ * inline; `openneko web` runs the job and the worker's channel sends it.
+ * `idempotencyKey` collapses repeated queueing (e.g. a retried hook) to one
+ * delivery.
  */
 async function enqueueChannelDelivery(
   orgId: string,
@@ -84,29 +77,7 @@ async function enqueueChannelDelivery(
   events: unknown[],
   idempotencyKey: string,
 ): Promise<void> {
-  const payload: ChannelDeliverPayload = { orgId, channelPlugin, recipient, events };
-  await enqueue(QUEUE.CHANNEL_DELIVER, payload, {
-    ...DELIVER_OPTS,
-    singletonKey: idempotencyKey,
-  });
-}
-
-/**
- * The CHANNEL_DELIVER job body: perform the actual send. Throwing makes
- * pg-boss retry with backoff (network blips) and survives restarts.
- */
-export async function runChannelDelivery(payload: ChannelDeliverPayload): Promise<void> {
-  const res = await deliverOnChannel(
-    payload.channelPlugin,
-    payload.recipient,
-    payload.events,
-  );
-  if (!res.delivered) {
-    throw new Error(`channel-delivery: ${payload.channelPlugin} reported delivered=false`);
-  }
-  console.log(
-    `[channel-delivery] ${payload.channelPlugin} delivered=true${res.ref ? ` ref=${res.ref}` : ""}`,
-  );
+  await enqueueChannelDeliver({ orgId, channelPlugin, recipient, events }, idempotencyKey);
 }
 
 const onOutput: WorkflowOutputDeliveryHook = async (orgId, output) => {
@@ -143,76 +114,19 @@ export function registerChannelOutputDelivery(): void {
 }
 
 /**
- * Send a chat run's reply back to the channel that asked. Channel-initiated
- * runs (Telegram, …) have no other return path — the web UI streams its runs
- * over SSE, but a Telegram sender only hears back if we deliver here. Enqueued
- * as a durable job so the reply survives network blips and restarts.
+ * Send a plain text reply to the channel that asked, such as the spend
+ * limit notice. `openneko web` sends the answer of a channel run itself.
  */
 export async function deliverChatReply(
   orgId: string,
   channelPlugin: string,
   recipient: Record<string, unknown>,
-  runId: string,
+  replyId: string,
   body: string,
-  surfaces?: unknown[],
-  vitals?: { label: string; value: string; sub?: string }[],
 ): Promise<void> {
-  const agentSurfaces =
-    Array.isArray(surfaces) && surfaces.length > 0 ? (surfaces as SurfaceMessage[]) : undefined;
-  // When the agent emitted no a2ui surface (common on channel runs — it answers
-  // in prose plus the mandatory vitals fence), synthesize one from the answer +
-  // vitals so a rendering channel shows the metric *cards* web shows, not prose.
-  const enrichmentSurfaces =
-    agentSurfaces ??
-    (vitals && vitals.length > 0 ? buildReplySurface(body, vitals) : undefined);
-  // A rendering run (web/telegram) puts its answer in the a2ui surface, so the
-  // text body can be thin or empty — deliver as long as either is present.
-  if (!body.trim() && !enrichmentSurfaces) return;
-  // A chat reply is the assistant's message, not a workflow-output card — use
-  // `converse` so channels render the full text, not a summarized headline.
-  // The a2ui surface rides as enrichment; a channel that can render it (Telegram)
-  // shows the rich answer, a thin one falls back to the text.
-  const event: InteractionEvent = {
-    kind: "converse",
-    id: runId,
-    role: "assistant",
-    text: body,
-    ...(enrichmentSurfaces ? { enrichment: { surfaces: enrichmentSurfaces } } : {}),
-  };
-  await enqueueChannelDelivery(orgId, channelPlugin, recipient, [event], `reply-${runId}`);
-}
-
-/**
- * Synthesize a minimal a2ui surface — the answer prose as Markdown plus one
- * MetricCard per vital — so a channel that renders surfaces shows the vitals as
- * cards even when the agent produced no surface of its own. Web is unaffected
- * (it renders from the event stream, not this channel-reply path).
- */
-function buildReplySurface(
-  body: string,
-  vitals: { label: string; value: string; sub?: string }[],
-): SurfaceMessage[] {
-  const cards = vitals.map((v, i) => ({
-    id: `vital-${i}`,
-    component: "MetricCard",
-    metric: v.value,
-    label: v.label,
-    ...(v.sub ? { detail: v.sub } : {}),
-  }));
-  const hasBody = body.trim().length > 0;
-  const components: Record<string, unknown>[] = [
-    {
-      id: "root",
-      component: "Answer",
-      children: [...(hasBody ? ["answer-body"] : []), ...cards.map((c) => c.id)],
-    },
-    ...(hasBody ? [{ id: "answer-body", component: "Markdown", text: body }] : []),
-    ...cards,
-  ];
-  return [
-    { version: "v1.0", createSurface: { surfaceId: "reply", catalogId: "urn:app:catalog:answer:v1" } },
-    { version: "v1.0", updateComponents: { surfaceId: "reply", components } },
-  ];
+  if (!body.trim()) return;
+  const event: InteractionEvent = { kind: "converse", id: replyId, role: "assistant", text: body };
+  await enqueueChannelDelivery(orgId, channelPlugin, recipient, [event], `reply-${replyId}`);
 }
 
 /**
@@ -438,7 +352,7 @@ async function startChatRun(
     .returning({ id: processing_job.id });
   const processingJobId = inserted[0]?.id;
   if (!processingJobId) return;
-  await enqueue(QUEUE.WORK_RUN, {
+  await enqueueWorkRun({
     processingJobId,
     orgId,
     runId: run.id,

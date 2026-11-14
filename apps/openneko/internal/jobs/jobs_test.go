@@ -46,16 +46,18 @@ insert into `+b+`.job (name, data, state, retry_limit, start_after) values
   ('workflow_output_ttl_sweep', '{"a":1}', 'created', 1, now()),
   ('workflow_output_ttl_sweep', null, 'retry', 0, now() + interval '1 hour'),
   ('workflow_output_ttl_sweep', null, 'completed', 1, now()),
-  ('work_run', '{"b":2}', 'created', 2, now()),
+  ('records_import', '{"b":2}', 'created', 2, now()),
+  ('work_run', '{"runId":"r1"}', 'created', 2, now()),
+  ('channel_deliver', '{"channelPlugin":"telegram"}', 'retry', 8, now()),
   ('workflow_run_fire', '{"triggerKind":"cron"}', 'created', 2, now()),
   ('workflow_run_fire', '{"triggerKind":"api"}', 'created', 2, now());
-insert into `+b+`.schedule values ('workflow_output_ttl_sweep'), ('work_run'), ('workflow_run_fire');`); err != nil {
+insert into `+b+`.schedule values ('workflow_output_ttl_sweep'), ('records_import'), ('workflow_run_fire');`); err != nil {
 		t.Fatal(err)
 	}
 	if err := q.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := pool.Query(ctx, `select kind, args::text, max_attempts, state::text, queue from `+q.Schema+`.river_job order by state, kind, args::text`)
+	rows, err := pool.Query(ctx, `select kind, args::text, max_attempts, state::text, queue from `+q.Schema+`.river_job order by state, kind collate "C", args::text`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,6 +71,8 @@ insert into `+b+`.schedule values ('workflow_output_ttl_sweep'), ('work_run'), (
 		got = append(got, fmt.Sprintf("%s %s %s %d %s", kind, args, state, attempts, queue))
 	}
 	want := []string{
+		`channel_deliver {"channelPlugin": "telegram"} available 9 default`,
+		`work_run {"runId": "r1"} available 3 work_run`,
 		`workflow_output_ttl_sweep {"a": 1} available 2 default`,
 		`workflow_run_fire {"triggerKind": "api"} available 3 workflow_run`,
 		`workflow_run_fire {"triggerKind": "cron"} available 3 workflow_run`,
@@ -87,7 +91,7 @@ insert into `+b+`.schedule values ('workflow_output_ttl_sweep'), ('work_run'), (
 		_ = rows.Scan(&s)
 		left = append(left, s)
 	}
-	if want := []string{"schedule work_run", "work_run created", "workflow_output_ttl_sweep completed"}; !slices.Equal(left, want) {
+	if want := []string{"records_import created", "schedule records_import", "workflow_output_ttl_sweep completed"}; !slices.Equal(left, want) {
 		t.Fatalf("pg-boss rows left = %q, want %q", left, want)
 	}
 	if err := q.Migrate(ctx); err != nil {
@@ -95,8 +99,8 @@ insert into `+b+`.schedule values ('workflow_output_ttl_sweep'), ('work_run'), (
 	}
 	var n int
 	_ = pool.QueryRow(ctx, `select count(*) from `+q.Schema+`.river_job`).Scan(&n)
-	if n != 4 {
-		t.Fatalf("a second migrate left %d river jobs, want 4", n)
+	if n != 6 {
+		t.Fatalf("a second migrate left %d river jobs, want 6", n)
 	}
 }
 
@@ -190,11 +194,8 @@ func TestMovedMatchesTypeScript(t *testing.T) {
 	for _, q := range regexp.MustCompile(`"([a-z_]+)"`).FindAllSubmatch(m[1], -1) {
 		ts = append(ts, string(q[1]))
 	}
-	queue := regexp.MustCompile(`(?s)export const QUEUE = \{(.*?)\} as const`).FindSubmatch(raw)
-	for _, name := range Moved {
-		if strings.Contains(string(queue[1]), `"`+name+`"`) {
-			t.Errorf("%s is in QUEUE and in jobs.Moved", name)
-		}
+	if strings.Contains(string(raw), "export const QUEUE") {
+		t.Error("packages/db/src/jobs.ts still has a pg-boss QUEUE")
 	}
 	if !slices.Equal(ts, Moved) {
 		t.Fatalf("MOVED_QUEUES = %q, jobs.Moved = %q", ts, Moved)

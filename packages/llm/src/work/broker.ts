@@ -714,8 +714,7 @@ export async function startAgentBroker(
  * Lazily start the per-process agent broker, bound to the in-process control
  * plane. Every control-plane host runs a broker; each run's runner, a child
  * of this process, dials it on loopback.
- * Idempotent — one broker per process, shared by runWorkRun (channel runs)
- * and the web chat route.
+ * Idempotent — one broker per process.
  */
 export function ensureAgentBroker(): Promise<AgentBrokerHandle | undefined> {
   if (brokerState.singleton) return Promise.resolve(brokerState.singleton);

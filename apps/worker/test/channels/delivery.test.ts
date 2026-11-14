@@ -10,12 +10,9 @@ vi.mock("@neko/llm/workflows", () => ({
   setWorkflowOutputDeliveryHook: vi.fn(),
 }));
 vi.mock("@neko/db/jobs", () => ({
-  enqueue: vi.fn(async () => "job-1"),
   enqueueActionExecute: vi.fn(async () => "1"),
-  QUEUE: {
-    WORK_RUN: "work_run",
-    CHANNEL_DELIVER: "channel_deliver",
-  },
+  enqueueChannelDeliver: vi.fn(async () => "2"),
+  enqueueWorkRun: vi.fn(async () => "3"),
 }));
 const h = vi.hoisted(() => ({
   binds: [] as Array<Record<string, unknown>>,
@@ -71,7 +68,7 @@ vi.mock("../../src/channels/runtime.js", () => ({
   verifyChannelInbound: vi.fn(),
 }));
 
-import { enqueue, enqueueActionExecute } from "@neko/db/jobs";
+import { enqueueActionExecute, enqueueChannelDeliver, enqueueWorkRun } from "@neko/db/jobs";
 import {
   approveActionRequest,
   getActionRequest,
@@ -86,7 +83,6 @@ import {
   ensureInboundBinding,
   ingestInboundWebhook,
   registerChannelOutputDelivery,
-  runChannelDelivery,
 } from "../../src/channels/delivery";
 import {
   beginInboundUpdate,
@@ -94,7 +90,6 @@ import {
   recordInboundFailure,
 } from "../../src/channels/inbound-store.js";
 import {
-  deliverOnChannel,
   parseChannelInbound,
   verifyChannelInbound,
 } from "../../src/channels/runtime.js";
@@ -156,8 +151,7 @@ describe("dispatchInboundIntent — utterance", () => {
       { chatId: 7 },
     );
     expect(getOrCreateChannelThread).toHaveBeenCalled();
-    expect(enqueue).toHaveBeenCalledWith(
-      "work_run",
+    expect(enqueueWorkRun).toHaveBeenCalledWith(
       expect.objectContaining({
         orgId: "org-1",
         message: "how are sales?",
@@ -183,9 +177,8 @@ describe("dispatchInboundIntent — spend budget", () => {
       "telegram",
       { chatId: 7 },
     );
-    expect(enqueue).not.toHaveBeenCalledWith("work_run", expect.anything());
-    expect(enqueue).toHaveBeenCalledWith(
-      "channel_deliver",
+    expect(enqueueWorkRun).not.toHaveBeenCalled();
+    expect(enqueueChannelDeliver).toHaveBeenCalledWith(
       expect.objectContaining({
         channelPlugin: "telegram",
         recipient: { chatId: 7 },
@@ -210,8 +203,7 @@ describe("dispatchInboundIntent — select (continuation fallback)", () => {
       { chatId: 7 },
     );
     expect(getOrCreateChannelThread).toHaveBeenCalled();
-    expect(enqueue).toHaveBeenCalledWith(
-      "work_run",
+    expect(enqueueWorkRun).toHaveBeenCalledWith(
       expect.objectContaining({
         message: "Option B",
         channelPlugin: "telegram",
@@ -230,7 +222,7 @@ describe("dispatchInboundIntent — channel thread-reply gate (W3.2)", () => {
       { kind: "slack", channel: "C9", thread_ts: "171.5", requireThread: true },
     );
     expect(getOrCreateChannelThread).not.toHaveBeenCalled();
-    expect(enqueue).not.toHaveBeenCalled();
+    expect(enqueueWorkRun).not.toHaveBeenCalled();
   });
 
   it("continues a requireThread reply when the thread already exists", async () => {
@@ -242,8 +234,7 @@ describe("dispatchInboundIntent — channel thread-reply gate (W3.2)", () => {
       { kind: "slack", channel: "C9", thread_ts: "171.5", requireThread: true },
     );
     expect(getOrCreateChannelThread).toHaveBeenCalled();
-    expect(enqueue).toHaveBeenCalledWith(
-      "work_run",
+    expect(enqueueWorkRun).toHaveBeenCalledWith(
       expect.objectContaining({ message: "and last quarter?" }),
     );
   });
@@ -266,60 +257,23 @@ describe("conversationKeyFor", () => {
   });
 });
 
-describe("runChannelDelivery (durable CHANNEL_DELIVER job body)", () => {
-  it("delivers via the built-in channel and resolves on delivered=true", async () => {
-    vi.mocked(deliverOnChannel).mockResolvedValue({ delivered: true, ref: "299" });
-    await runChannelDelivery({
-      orgId: "org-1",
-      channelPlugin: "telegram",
-      recipient: { chatId: 7 },
-      events: [{ kind: "converse", text: "hi" }],
-    });
-    expect(deliverOnChannel).toHaveBeenCalledWith(
-      "telegram",
-      { chatId: 7 },
-      [{ kind: "converse", text: "hi" }],
-    );
-  });
-
-  it("THROWS when the channel reports delivered=false (so pg-boss retries)", async () => {
-    vi.mocked(deliverOnChannel).mockResolvedValue({ delivered: false });
-    await expect(
-      runChannelDelivery({ orgId: "o", channelPlugin: "p", recipient: {}, events: [] }),
-    ).rejects.toThrow(/delivered=false/);
-  });
-
-  it("THROWS when the channel is not turned on (retry rather than drop)", async () => {
-    vi.mocked(deliverOnChannel).mockRejectedValue(new Error("channel p is not turned on"));
-    await expect(
-      runChannelDelivery({ orgId: "o", channelPlugin: "p", recipient: {}, events: [] }),
-    ).rejects.toThrow(/not turned on/);
-  });
-});
-
 describe("deliverChatReply (channel reply path)", () => {
-  it("enqueues a durable converse delivery keyed by run id with backoff opts", async () => {
+  it("queues a durable converse delivery keyed by reply id", async () => {
     await deliverChatReply("org-1", "telegram", { chatId: 7 }, "run-9", "We have 290 employees.");
-    expect(enqueue).toHaveBeenCalledTimes(1);
-    const [queue, payload, opts] = vi.mocked(enqueue).mock.calls[0];
-    expect(queue).toBe("channel_deliver");
+    expect(enqueueChannelDeliver).toHaveBeenCalledTimes(1);
+    const [payload, key] = vi.mocked(enqueueChannelDeliver).mock.calls[0]!;
     expect(payload).toMatchObject({
       orgId: "org-1",
       channelPlugin: "telegram",
       recipient: { chatId: 7 },
       events: [{ kind: "converse", id: "run-9", role: "assistant", text: "We have 290 employees." }],
     });
-    expect(opts).toMatchObject({
-      singletonKey: "reply-run-9",
-      retryLimit: 8,
-      retryDelay: 15,
-      retryBackoff: true,
-    });
+    expect(key).toBe("reply-run-9");
   });
 
   it("does not enqueue an empty reply", async () => {
     await deliverChatReply("org-1", "p", {}, "run-9", "   ");
-    expect(enqueue).not.toHaveBeenCalled();
+    expect(enqueueChannelDeliver).not.toHaveBeenCalled();
   });
 });
 
@@ -334,13 +288,12 @@ describe("output → channel fan-out (registerChannelOutputDelivery)", () => {
     const hook = vi.mocked(setWorkflowOutputDeliveryHook).mock.calls[0][0];
     await hook("org-1", { id: "o1", workflowRunId: "wr-1", title: "Sales", body: "up 4%", mood: "good" } as never);
     expect(h.audience).toHaveBeenCalledWith("org-1", "finance", "wr-1");
-    expect(enqueue).toHaveBeenCalledTimes(2);
-    const keys = vi.mocked(enqueue).mock.calls.map((c) => (c[2] as { singletonKey: string }).singletonKey);
+    expect(enqueueChannelDeliver).toHaveBeenCalledTimes(2);
+    const keys = vi.mocked(enqueueChannelDeliver).mock.calls.map((c) => c[1]);
     expect(keys).toEqual([
       "output-o1-telegram",
       "output-o1-@open-neko/channel-slack",
     ]);
-    expect(vi.mocked(enqueue).mock.calls.every((c) => c[0] === "channel_deliver")).toBe(true);
   });
 
   it("no bindings → no deliveries", async () => {
@@ -348,7 +301,7 @@ describe("output → channel fan-out (registerChannelOutputDelivery)", () => {
     registerChannelOutputDelivery();
     const hook = vi.mocked(setWorkflowOutputDeliveryHook).mock.calls[0][0];
     await hook("org-1", { id: "o1", title: "t", body: "b" } as never);
-    expect(enqueue).not.toHaveBeenCalled();
+    expect(enqueueChannelDeliver).not.toHaveBeenCalled();
   });
 });
 
@@ -455,46 +408,5 @@ describe("ensureInboundBinding (auto-bind on first inbound)", () => {
     h.selectRows = [{ id: "b1" }];
     await ensureInboundBinding("org-1", "telegram", { kind: "telegram", chatId: 99 });
     expect(h.binds).toHaveLength(0);
-  });
-});
-
-describe("deliverChatReply threads the a2ui surface as converse.enrichment", () => {
-  const deliveredEvent = (): Record<string, unknown> => {
-    const call = vi.mocked(enqueue).mock.calls.find(([q]) => q === "channel_deliver");
-    expect(call).toBeDefined();
-    const payload = call![1] as { events: Array<Record<string, unknown>> };
-    return payload.events[0]!;
-  };
-
-  it("attaches the agent's surface so a rich channel can render it", async () => {
-    vi.mocked(enqueue).mockClear();
-    const surfaces = [{ version: "v0.9", createSurface: { surfaceId: "s1", catalogId: "x" } }];
-    await deliverChatReply("org-1", "telegram", { chatId: 1 }, "run-1", "hi", surfaces);
-    const ev = deliveredEvent();
-    expect(ev.kind).toBe("converse");
-    expect(ev.text).toBe("hi");
-    expect((ev.enrichment as { surfaces: unknown[] }).surfaces).toEqual(surfaces);
-  });
-
-  it("delivers plain text with no enrichment when there is no surface", async () => {
-    vi.mocked(enqueue).mockClear();
-    await deliverChatReply("org-1", "p", { chatId: 1 }, "run-2", "just text");
-    const ev = deliveredEvent();
-    expect(ev.kind).toBe("converse");
-    expect(ev.text).toBe("just text");
-    expect(ev.enrichment).toBeUndefined();
-  });
-
-  it("delivers a surface-only reply even when the text body is empty", async () => {
-    vi.mocked(enqueue).mockClear();
-    const surfaces = [{ version: "v0.9", updateComponents: { surfaceId: "s1", components: [] } }];
-    await deliverChatReply("org-1", "p", { chatId: 1 }, "run-3", "", surfaces);
-    expect(vi.mocked(enqueue).mock.calls.some(([q]) => q === "channel_deliver")).toBe(true);
-  });
-
-  it("drops an empty reply with no surface", async () => {
-    vi.mocked(enqueue).mockClear();
-    await deliverChatReply("org-1", "p", { chatId: 1 }, "run-4", "   ");
-    expect(vi.mocked(enqueue).mock.calls.some(([q]) => q === "channel_deliver")).toBe(false);
   });
 });

@@ -24,7 +24,7 @@ const (
 // Moved lists the queues that River runs. MOVED_QUEUES in
 // packages/db/src/jobs.ts must hold the same names.
 var Moved = []string{KindOutputSweep, KindMetricSweep, KindCronSweep, KindEmbeddingIndex, KindEmbeddingSweep, KindDirectorySync, KindActionExecute, KindSkillLearn, KindBotNameSweep,
-	KindBusinessProfileBuild, KindIndustryInsightsBuild, KindBootstrapMetricsBuild, KindMetricRefresh, KindWorkflowRunFire, KindWorkflowAPISweep}
+	KindBusinessProfileBuild, KindIndustryInsightsBuild, KindBootstrapMetricsBuild, KindMetricRefresh, KindWorkflowRunFire, KindWorkflowAPISweep, KindWorkRun, KindChannelDeliver}
 
 type Queue struct {
 	Pool          *pgxpool.Pool
@@ -42,7 +42,11 @@ type Queue struct {
 	Build            BuildFunc
 	WorkflowRunFire  WorkflowRunFireFunc
 	WorkflowAPISweep func(context.Context) error
-	Embedding        Embedding
+	WorkRun          func(ctx context.Context, args WorkRunArgs) error
+	// ChannelDeliver asks the Node worker to send on a channel; the channel
+	// adapters live in the worker until the channels move.
+	ChannelDeliver func(ctx context.Context, args ChannelDeliverArgs) error
+	Embedding      Embedding
 }
 
 func (q *Queue) schema() string {
@@ -138,6 +142,8 @@ func queueOf(kind string) string {
 		return QueueMetricRefresh
 	case KindWorkflowRunFire:
 		return QueueWorkflowRun
+	case KindWorkRun:
+		return QueueWorkRun
 	}
 	return river.QueueDefault
 }
@@ -176,11 +182,13 @@ func (q *Queue) config() *river.Config {
 	addBuildWorkers(workers, q.Build)
 	river.AddWorker(workers, &workflowRunFire{run: q.WorkflowRunFire})
 	river.AddWorker(workers, &workflowAPISweep{run: q.WorkflowAPISweep})
+	river.AddWorker(workers, &workRun{run: q.WorkRun})
+	river.AddWorker(workers, &channelDeliver{run: q.ChannelDeliver})
 	return &river.Config{
 		Schema: q.schema(),
 		Logger: quietLogger(),
 		Queues: map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 4}, QueueEmbedding: {MaxWorkers: 1},
-			QueueMetricRefresh: {MaxWorkers: MetricRefreshWorkers()}, QueueWorkflowRun: {MaxWorkers: 1}},
+			QueueMetricRefresh: {MaxWorkers: MetricRefreshWorkers()}, QueueWorkflowRun: {MaxWorkers: 1}, QueueWorkRun: {MaxWorkers: WorkRunWorkers}},
 		Workers: workers,
 	}
 }

@@ -485,7 +485,7 @@ func (a *API) startChatRun(ctx context.Context, o chatTurnOptions) (<-chan struc
 		defer untrace()
 		defer cancel(nil)
 		bg := context.WithoutCancel(runCtx)
-		_, err := a.runChatTurn(runCtx, o)
+		res, err := a.runChatTurn(runCtx, o)
 		a.storeRunTelemetry(bg, store, tel, "")
 		if err != nil {
 			log.Printf("[work-run/inproc] run %s threw: %v", o.RunID, err)
@@ -493,6 +493,9 @@ func (a *API) startChatRun(ctx context.Context, o chatTurnOptions) (<-chan struc
 		}
 		if err := store.finalize(bg); err != nil {
 			log.Printf("[work-run/inproc] finalize failed for %s: %v", o.RunID, err)
+		}
+		if o.finished != nil {
+			o.finished(res, err)
 		}
 	}()
 	return done, nil
