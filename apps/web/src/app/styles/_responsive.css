@@ -20,6 +20,8 @@ html body[data-scroll-locked] { overflow: visible !important; }
 .icard, .briefing-card, .act-card, .workflows-row,
 .work-bubble, .work-markdown, .builder-msg, .run-output-card,
 .settings-card { overflow-wrap: anywhere; }
+.work-markdown :is(td, th),
+.run-evt-message :is(td, th) { overflow-wrap: normal; }
 
 /* Intrinsic sizing is the most common source of mobile overflow: grid and
    flex children otherwise keep the min-content width of long identifiers. */

@@ -11,6 +11,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:phone": "sh scripts/phone-local.sh",
     "test:visual:design": "playwright test --config=playwright.design-system.config.ts",
     "design-system:check": "node ../../scripts/check-web-design-system.mjs",
     "test:watch": "vitest"
