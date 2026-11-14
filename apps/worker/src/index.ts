@@ -1,20 +1,11 @@
 import { prepareSandboxCapacity, closeSandboxLauncher } from "@neko/llm/work/sandbox-launcher";
-import { withStartupTrace, startupPhase, startupEvent } from "@neko/telemetry/startup";
+import { withStartupTrace, startupPhase } from "@neko/telemetry/startup";
 import { keepProcessThroughDatabaseRestarts, readLocalConfig, secretsBackendError, soloAdminNeedsEmail } from "@neko/db";
 import "dotenv/config";
 
 import { createServer } from "node:http";
 import { join } from "node:path";
-import type PgBoss from "pg-boss";
-import {
-  boss,
-  MOVED_QUEUES,
-  QUEUE,
-  RETIRED_QUEUES,
-  type ChannelDeliverPayload,
-  type ProcessingJobPayload,
-  type WorkRunPayload,
-} from "@neko/db/jobs";
+import { boss, MOVED_QUEUES, RETIRED_QUEUES } from "@neko/db/jobs";
 import {
   createAdminHandler,
   type SsoSetupHandlerSurface,
@@ -45,7 +36,6 @@ import {
   activeAdministratorIds,
   getOrgId,
   isNull,
-  processing_job,
 } from "@neko/db";
 import {
   agentTurnTimeoutMs,
@@ -53,7 +43,6 @@ import {
   prefetchKnowledgeForOrg,
   provisionHostConfig,
   resolveAgentConcurrency,
-  UpstreamProviderError,
   verifyAiCredentials,
 } from "@neko/llm";
 import {
@@ -73,12 +62,11 @@ import {
 } from "@neko/llm/workflows";
 import { resolveDeclarativePackActionAdapter, registerPackConnectionPreflight } from "./packs/declarative-action-runtime.js";
 import { ensureOrgWorkspace, getOrgAgentRoot, reportDeploymentProfile, setAgentSlotLimit } from "@neko/llm/work";
-import { ensureQueueExists, removeRetiredQueue } from "./pg-boss-helpers.js";
+import { removeRetiredQueue } from "./pg-boss-helpers.js";
 import { setCoreSecretsInstance } from "./secrets/instance.js";
 import {
   ingestInboundWebhook,
   registerChannelOutputDelivery,
-  runChannelDelivery,
 } from "./channels/delivery.js";
 import { startChannelInbound } from "./channels/inbound-poll.js";
 import {
@@ -91,13 +79,10 @@ import {
   setChannelState,
   setChannelsChangedHook,
 } from "./channels/runtime.js";
-import type PgBossLib from "pg-boss";
-import { runWorkRun } from "./jobs/work-run.js";
 import { runActionExecute } from "./jobs/action-execute.js";
 import { moveLibraryDocumentsToStore } from "./jobs/library-recovery.js";
 import { filesEnabled } from "@neko/llm/files";
 import {
-  reconcileStaleProcessingJobs,
   reconcileStaleRuns,
 } from "./reconciler.js";
 import {
@@ -142,77 +127,6 @@ const packService = new PackService(ADMIN_ORG_ID);
 // SEC8: state the security posture once at boot; hardened warns when
 // the model host is a public cloud API (on-prem LLM is client-provided).
 reportDeploymentProfile();
-
-async function markRunning(processingJobId: string) {
-  await db()
-    .update(processing_job)
-    .set({ status: "running", started_at: new Date(), updated_at: new Date() })
-    .where(eq(processing_job.id, processingJobId));
-}
-
-async function markSucceeded(processingJobId: string) {
-  await db()
-    .update(processing_job)
-    .set({
-      status: "succeeded",
-      finished_at: new Date(),
-      error: null,
-      updated_at: new Date(),
-    })
-    .where(eq(processing_job.id, processingJobId));
-}
-
-async function markFailed(processingJobId: string, error: string) {
-  await db()
-    .update(processing_job)
-    .set({
-      status: "failed",
-      finished_at: new Date(),
-      error,
-      updated_at: new Date(),
-    })
-    .where(eq(processing_job.id, processingJobId));
-}
-
-function makeHandler<P extends ProcessingJobPayload>(
-  fn: (processingJobId: string, orgId: string, payload: P) => Promise<void>,
-) {
-  return async (jobs: PgBoss.Job<P>[]) => {
-    const results = await Promise.allSettled(
-      jobs.map(job => withStartupTrace({ jobId: job.data.processingJobId, runId: job.data.processingJobId }, () => startupPhase("job.dispatch", async () => {
-        if (Number.isFinite(job.data.queuedAt)) startupEvent("queue.wait", { durationMs: Math.max(0, Date.now() - job.data.queuedAt!), basis: "since_enqueue_including_retries", jobKind: job.name });
-        const { processingJobId, orgId } = job.data;
-        console.log(
-          `[worker] running ${job.name} job=${processingJobId} org=${orgId}`,
-        );
-        await startupPhase("job.mark_running", () => markRunning(processingJobId));
-        try {
-          await fn(processingJobId, orgId, job.data);
-          await startupPhase("job.mark_succeeded", () => markSucceeded(processingJobId));
-          console.log(`[worker] job ${processingJobId} succeeded`);
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          await startupPhase("job.mark_failed", () => markFailed(processingJobId, msg));
-          if (e instanceof UpstreamProviderError) {
-            console.warn(
-              `[worker] job ${processingJobId} upstream provider unavailable; skipping pg-boss retry: ${msg}`,
-            );
-            return;
-          }
-          console.warn(
-            `[worker] job ${processingJobId} attempt failed; pg-boss may retry: ${msg}`,
-          );
-          if (e instanceof Error && e.stack) console.warn(e.stack);
-          throw e;
-        }
-      }))),
-    );
-    const firstFailure = results.find((r) => r.status === "rejected");
-    if (firstFailure && firstFailure.status === "rejected") {
-      throw firstFailure.reason;
-    }
-  };
-}
 
 // The secrets view and sign-in service are constructed below, after the
 // server starts taking requests; the admin handler reaches them through
@@ -547,30 +461,6 @@ if (process.env.OPENNEKO_SERVE_SOCKET) {
 }
 const b = await boss();
 
-{
-  const summary = await reconcileStaleProcessingJobs();
-  if (
-    summary.succeeded + summary.failed + summary.requeued + summary.lost >
-    0
-  ) {
-    console.log(
-      `[worker] reconciled processing_job rows on boot: succeeded=${summary.succeeded} failed=${summary.failed} requeued=${summary.requeued} lost=${summary.lost}`,
-    );
-  }
-  // At boot nothing this worker tracks is running yet, so any "running" run
-  // it owns is a zombie left by a hard restart. Web chat runs belong to the
-  // web process; the periodic sweep covers them if that process dies.
-  const runs = await reconcileStaleRuns({ workerOwnedOnly: true });
-  if (runs.cancelled > 0) {
-    console.log(
-      `[worker] cancelled ${runs.cancelled} stale running run(s) on boot`,
-    );
-  }
-}
-
-for (const name of Object.values(QUEUE)) {
-  await ensureQueueExists((qName, opts) => b.createQueue(qName, opts), name);
-}
 // Removing a retired or moved queue also drops its jobs and schedule.
 // `openneko migrate` has already copied a moved queue's pending jobs to River.
 for (const name of [...RETIRED_QUEUES, ...MOVED_QUEUES]) {
@@ -582,43 +472,6 @@ for (const name of [...RETIRED_QUEUES, ...MOVED_QUEUES]) {
     );
   }
 }
-
-const workRunHandler = makeHandler<WorkRunPayload>(
-  async (jobId, orgId, payload) => {
-    await runWorkRun(jobId, orgId, {
-      runId: payload.runId,
-      threadId: payload.threadId,
-      message: payload.message,
-      channel: payload.channel,
-      channelPlugin: payload.channelPlugin,
-      recipient: payload.recipient,
-    });
-  },
-);
-for (let i = 0; i < concurrency.globalCap; i++) {
-  await b.work(
-    QUEUE.WORK_RUN,
-    { batchSize: 1, pollingIntervalSeconds: 0.5 },
-    workRunHandler,
-  );
-}
-
-await b.work(
-  QUEUE.CHANNEL_DELIVER,
-  { batchSize: 1, pollingIntervalSeconds: 0.5 },
-  async (jobs: PgBossLib.Job<ChannelDeliverPayload>[]) => {
-    for (const job of jobs) {
-      try {
-        await runChannelDelivery(job.data);
-      } catch (e) {
-        console.warn(
-          `[channel-deliver] job ${job.id} failed; pg-boss may retry: ${e instanceof Error ? e.message : e}`,
-        );
-        throw e;
-      }
-    }
-  },
-);
 
 type CachedDataSource = { ctx: DataSourceContext; expiresAt: number };
 const DATA_SOURCE_CACHE_MS = 60_000;
@@ -714,20 +567,6 @@ subscriptionManager.ready
 const workflowScheduler = await startDurableWorkflowScheduler();
 
 const reconcileTimer = setInterval(() => {
-  reconcileStaleProcessingJobs({ minAgeMs: RECONCILE_SWEEP_MIN_AGE_MS })
-    .then((s) => {
-      const total = s.succeeded + s.failed + s.requeued + s.lost;
-      if (total > 0) {
-        console.log(
-          `[worker] reconcile sweep: succeeded=${s.succeeded} failed=${s.failed} requeued=${s.requeued} lost=${s.lost}`,
-        );
-      }
-    })
-    .catch((e) => {
-      console.warn(
-        `[worker] reconcile sweep failed: ${e instanceof Error ? e.message : e}`,
-      );
-    });
   reconcileStaleRuns({ minAgeMs: RECONCILE_SWEEP_MIN_AGE_MS })
     .then((s) => {
       if (s.cancelled > 0) {

@@ -124,9 +124,9 @@ with exit code 0, so its supervisor starts it again.`,
 			queue := &jobs.Queue{Pool: pool, MetricSweep: api.MetricSweep, CronSweep: api.CronSweep,
 				DirectorySync: api.DirectorySync, ActionExecute: api.ActionExecute,
 				SkillLearn: api.SkillLearn, BotNameSweep: api.BotNameSweep, Build: api.RunBuild, WorkflowRunFire: api.WorkflowRunFire,
-				WorkflowAPISweep: api.WorkflowAPISweep,
-				Embedding:        jobs.Embedding{Model: api.EmbeddingModel, Embed: api.EmbedText},
-				Logf:             func(format string, args ...any) { fmt.Fprintf(cmd.OutOrStdout(), format+"\n", args...) }}
+				WorkflowAPISweep: api.WorkflowAPISweep, WorkRun: api.WorkRun, ChannelDeliver: api.ChannelDeliver,
+				Embedding: jobs.Embedding{Model: api.EmbeddingModel, Embed: api.EmbedText},
+				Logf:      func(format string, args ...any) { fmt.Fprintf(cmd.OutOrStdout(), format+"\n", args...) }}
 			runner := startJobs(context.WithoutCancel(ctx), runJobs, queue, cmd.OutOrStdout(), cmd.ErrOrStderr())
 			webfront.SweepStagesEvery(ctx, 5*time.Minute)
 			var node *exec.Cmd

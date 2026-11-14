@@ -1,11 +1,9 @@
-// Integration tests for runChatTurn — the shared agent runtime that the
-// worker's runWorkRun adapter and the web's API route both delegate to.
+// Integration tests for runChatTurn in packages/llm. `openneko web` runs
+// chat turns in Go; the Go prompt fixtures still come from this turn.
 //
 // We exercise runChatTurn directly with mocked dependencies (DI) so the
 // tests don't have to deal with vitest module-mock indirection through
-// pnpm self-references. The worker adapter itself is a 25-line wrapper
-// around runChatTurn and is implicitly covered by virtue of using the
-// same emit shape these tests build.
+// pnpm self-references.
 
 import {
   afterAll,
@@ -78,9 +76,7 @@ const AX_CAPABILITIES = {
 
 type EmitFn = (event: AgentEvent) => Promise<void>;
 
-// Builds the DB-persist emit shape that both the worker's runWorkRun
-// and the web's API route use. Mirrors the production code without
-// coupling the test to either. Ordering is via the row's bigserial id;
+// Builds the DB-persist emit shape of a run. Ordering is via the row's bigserial id;
 // no client-side counter is needed.
 function buildEmit(args: {
   orgId: string;

@@ -29,6 +29,8 @@ type chatTurnOptions struct {
 	resolve func(ctx context.Context, orgID string) (*llm.AxBackendConfig, map[string]string, error)
 	runCore func(ctx context.Context, in agentCoreInput) (axRunResult, error)
 	keepBot func(ctx context.Context, in botKeepInput) error
+	// finished runs after the turn and its events are stored.
+	finished func(res chatTurnResult, err error)
 }
 
 type chatTurnResult struct {

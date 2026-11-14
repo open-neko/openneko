@@ -1,23 +1,4 @@
-import {
-  and,
-  db,
-  eq,
-  inArray,
-  lte,
-  notInArray,
-  processing_job,
-  sql,
-  work_run,
-  workflow_run,
-} from "@neko/db";
-import { MOVED_QUEUES } from "@neko/db/jobs";
-
-export type ReconcileSummary = {
-  succeeded: number;
-  failed: number;
-  requeued: number;
-  lost: number;
-};
+import { and, db, eq, inArray, lte, work_run, workflow_run } from "@neko/db";
 
 const STALE_RUN_REASON =
   "Interrupted — the worker stopped before the run finished.";
@@ -31,13 +12,10 @@ const STALE_QUEUED_MIN_AGE_MS = 120_000;
  * Cancel work_run / workflow_run rows stranded in "running" — a run that
  * outlived the process tracking it (worker SIGKILLed mid-run, before its own
  * finalizer could mark it cancelled). With minAgeMs past the agent's own timeout,
- * a still-"running" row is provably dead. The processing_job reconciler above
- * doesn't cover these tables.
+ * a still-"running" row is provably dead.
  */
 export async function reconcileStaleRuns(opts?: {
   minAgeMs?: number;
-  /** Leave web chat runs alone; the web process owns and finishes them. */
-  workerOwnedOnly?: boolean;
 }): Promise<{ cancelled: number }> {
   const cutoff = new Date(Date.now() - (opts?.minAgeMs ?? 0));
   const now = new Date();
@@ -53,9 +31,6 @@ export async function reconcileStaleRuns(opts?: {
     .where(and(
       eq(work_run.status, "running"),
       lte(work_run.updated_at, cutoff),
-      opts?.workerOwnedOnly
-        ? sql`not exists (select 1 from spend_reservation sr where sr.work_run_id = ${work_run.id} and sr.source = 'chat')`
-        : undefined,
     ))
     .returning({ id: work_run.id });
 
@@ -96,121 +71,4 @@ export async function reconcileStaleRuns(opts?: {
       ),
     );
   return { cancelled: stale.length };
-}
-
-type BossRow = {
-  state: string;
-  output: { value?: { message?: string } } | null;
-};
-
-const TERMINAL_BOSS_STATES = new Set(["completed", "failed", "cancelled"]);
-const ACTIVE_BOSS_STATES = new Set(["created", "active", "retry"]);
-
-export async function reconcileStaleProcessingJobs(opts?: {
-  minAgeMs?: number;
-  orgId?: string;
-}): Promise<ReconcileSummary> {
-  const minAgeMs = opts?.minAgeMs ?? 0;
-
-  // River runs the moved queues; their rows have no pg-boss job to check.
-  const onBoss = and(
-    inArray(processing_job.status, ["queued", "running"]),
-    notInArray(processing_job.kind, [...MOVED_QUEUES]),
-  );
-  const baseFilter = opts?.orgId
-    ? and(eq(processing_job.org_id, opts.orgId), onBoss)
-    : onBoss;
-  const filter = minAgeMs > 0
-    ? and(
-        baseFilter,
-        lte(processing_job.updated_at, new Date(Date.now() - minAgeMs)),
-      )
-    : baseFilter;
-
-  const candidates = await db()
-    .select({
-      id: processing_job.id,
-      kind: processing_job.kind,
-      status: processing_job.status,
-    })
-    .from(processing_job)
-    .where(filter);
-
-  const summary: ReconcileSummary = {
-    succeeded: 0,
-    failed: 0,
-    requeued: 0,
-    lost: 0,
-  };
-
-  for (const c of candidates) {
-    const bossRows = await db().execute<BossRow>(sql`
-      SELECT state, output
-      FROM pgboss.job
-      WHERE name = ${c.kind}
-        AND data->>'processingJobId' = ${c.id}
-      ORDER BY created_on DESC
-      LIMIT 1
-    `);
-    const boss = (bossRows.rows[0] as BossRow | undefined) ?? null;
-    const now = new Date();
-
-    if (!boss) {
-      const reason = "lost from queue (no pg-boss entry found)";
-      await db()
-        .update(processing_job)
-        .set({ status: "failed", error: reason, finished_at: now, updated_at: now })
-        .where(eq(processing_job.id, c.id));
-      summary.lost++;
-      continue;
-    }
-
-    if (boss.state === "completed") {
-      await db()
-        .update(processing_job)
-        .set({
-          status: "succeeded",
-          finished_at: now,
-          error: null,
-          updated_at: now,
-        })
-        .where(eq(processing_job.id, c.id));
-      summary.succeeded++;
-      continue;
-    }
-
-    if (TERMINAL_BOSS_STATES.has(boss.state)) {
-      const msg =
-        boss.output?.value?.message ?? `pg-boss state=${boss.state}`;
-      await db()
-        .update(processing_job)
-        .set({ status: "failed", error: msg, finished_at: now, updated_at: now })
-        .where(eq(processing_job.id, c.id));
-      summary.failed++;
-      continue;
-    }
-
-    if (ACTIVE_BOSS_STATES.has(boss.state)) {
-      if (c.status === "running") {
-        await db()
-          .update(processing_job)
-          .set({
-            status: "queued",
-            started_at: null,
-            finished_at: null,
-            error: null,
-            updated_at: now,
-          })
-          .where(eq(processing_job.id, c.id));
-        summary.requeued++;
-      }
-      continue;
-    }
-
-    console.warn(
-      `[reconciler] unknown pg-boss state="${boss.state}" for processing_job=${c.id}; leaving as-is`,
-    );
-  }
-
-  return summary;
 }

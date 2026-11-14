@@ -1,9 +1,7 @@
 /**
- * Shared pg-boss job queue.
- *
- * Both web (enqueue) and worker (consume) import from here so queue names
- * and the boss singleton are aligned. Backed by the same Postgres as the
- * Drizzle client; pg-boss auto-creates its `pgboss.*` schema on first start.
+ * The job queue. `openneko web` runs every queue on River; these functions
+ * insert River jobs. The pg-boss instance is left only to remove the old
+ * queues at worker boot.
  *
  * Connection comes from buildPoolConfig() (see ./connection.ts).
  */
@@ -11,11 +9,6 @@
 import PgBoss from "pg-boss";
 import { buildPoolConfig } from "./connection";
 import { pool } from "./index";
-
-export const QUEUE = {
-  WORK_RUN: "work_run",
-  CHANNEL_DELIVER: "channel_deliver",
-} as const;
 
 /**
  * Queues that `openneko` runs on River. `jobs.Moved` in
@@ -37,9 +30,9 @@ export const MOVED_QUEUES = [
   "metric_refresh",
   "workflow_run_fire",
   "workflow_api_sweep",
+  "work_run",
+  "channel_deliver",
 ] as const;
-
-export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
 
 /**
  * Queues of removed features. The worker deletes them at boot, which also
@@ -87,8 +80,8 @@ export type WorkRunPayload = ProcessingJobPayload & {
 
 /**
  * A durable, retryable outbound channel delivery. Enqueued (not delivered
- * inline) so a transient network failure or a worker restart can't drop the
- * message — pg-boss retries with backoff and the job survives restarts.
+ * inline) so a transient network failure or a restart can't drop the
+ * message.
  */
 export type ChannelDeliverPayload = {
   orgId: string;
@@ -97,6 +90,60 @@ export type ChannelDeliverPayload = {
   /** InteractionEvent[] to deliver (serialized JSON). */
   events: unknown[];
 };
+
+/**
+ * Queues one channel chat turn on River. `jobs.WorkRunArgs` in
+ * apps/openneko/internal/jobs reads the row; the queue and max_attempts
+ * match `jobs.QueueWorkRun` and `jobs.WorkRunAttempts`.
+ */
+export async function enqueueWorkRun(payload: WorkRunPayload): Promise<string> {
+  const { rows } = await pool().query<{ id: string }>(
+    `insert into river.river_job (kind, args, max_attempts, queue)
+     values ('work_run', $1::jsonb, 3, 'work_run') returning id::text`,
+    [JSON.stringify({ ...payload, queuedAt: Date.now() })],
+  );
+  return rows[0]!.id;
+}
+
+/**
+ * Queues one channel delivery on River. With a key, no job is added while a
+ * job with the key is waiting, running or done, as `Inserter.ChannelDeliver`
+ * in apps/openneko/internal/jobs does; max_attempts matches
+ * `jobs.ChannelDeliverAttempts`. Returns null for a duplicate.
+ */
+export async function enqueueChannelDeliver(
+  payload: ChannelDeliverPayload,
+  key?: string,
+): Promise<string | null> {
+  const client = await pool().connect();
+  try {
+    await client.query("begin");
+    if (key) {
+      await client.query(`select pg_advisory_xact_lock(hashtext('channel_deliver:' || $1))`, [key]);
+      const seen = await client.query(
+        `select 1 from river.river_job where kind = 'channel_deliver' and args->>'key' = $1
+           and state not in ('cancelled', 'discarded') limit 1`,
+        [key],
+      );
+      if (seen.rowCount) {
+        await client.query("commit");
+        return null;
+      }
+    }
+    const { rows } = await client.query<{ id: string }>(
+      `insert into river.river_job (kind, args, max_attempts, queue)
+       values ('channel_deliver', $1::jsonb, 9, 'default') returning id::text`,
+      [JSON.stringify({ ...payload, ...(key ? { key } : {}) })],
+    );
+    await client.query("commit");
+    return rows[0]!.id;
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
 export type WorkflowRunFirePayload = {
   queuedAt?: number;
@@ -262,46 +309,10 @@ export async function boss(): Promise<PgBoss> {
   return _starting;
 }
 
-// Retry policy is hardcoded; if we ever need it tunable, surface as a
-// scope='agent' / scope='worker' setting and read from DB at boot.
-const DEFAULT_SEND_OPTS: PgBoss.SendOptions = {
-  retryLimit: 2,
-  retryDelay: 30,
-};
-
-// pg-boss v10 stopped auto-creating queues on send() — silently returns null
-// if the queue doesn't exist yet. Track which queues we've created so the
-// first enqueue per queue name implicitly provisions it.
-const _ensuredQueues = new Set<string>();
-
-async function ensureQueue(name: string): Promise<void> {
-  if (_ensuredQueues.has(name)) return;
-  const b = await boss();
-  await b.createQueue(name);
-  _ensuredQueues.add(name);
-}
-
-/**
- * Enqueue a job by queue name. Web routes call this after writing the
- * processing_job row that backs the UI progress feed; worker handlers
- * call it to chain follow-up jobs. Default send options apply our
- * retry policy; callers can override per-call.
- */
-export async function enqueue<T extends object>(
-  queue: QueueName,
-  data: T,
-  opts?: PgBoss.SendOptions,
-): Promise<string | null> {
-  await ensureQueue(queue);
-  const b = await boss();
-  return b.send(queue, queue === QUEUE.WORK_RUN ? { ...(data as object), queuedAt: Date.now() } : data as object, { ...DEFAULT_SEND_OPTS, ...(opts ?? {}) });
-}
-
 export async function stopBoss(): Promise<void> {
   if (_boss) {
     await _boss.stop({ graceful: true });
     _boss = null;
     _starting = null;
-    _ensuredQueues.clear();
   }
 }

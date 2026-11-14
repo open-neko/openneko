@@ -36,8 +36,11 @@
  *                               before returning an approval-card-safe id.
  *   POST /admin/actions/execute → run an approved action ({ orgId, actionRequestId });
  *                               the action_execute job on River calls it.
- *   POST /admin/workflow-outputs/deliver → 202; sends a stored output
- *                               ({ orgId, output }) to the bound channels.
+ *   POST /admin/workflow-outputs/deliver → 202; queues a stored output
+ *                               ({ orgId, output }) for the bound channels.
+ *   POST /admin/channels/:id/deliver → send events on a channel
+ *                               ({ recipient, events }); the channel_deliver
+ *                               job on River calls it.
  *
  * Extracted from index.ts so the handler can be unit-tested without
  * booting pg-boss / the agent stack.
