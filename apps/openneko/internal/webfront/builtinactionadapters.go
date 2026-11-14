@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,9 +19,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 )
@@ -37,8 +40,6 @@ var (
 	webhookAllowedMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
 	codeRepoPattern       = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 	codePatchSlugInvalid  = regexp.MustCompile(`[^a-z0-9._-]+`)
-	unsafeSegmentChars    = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
-	dataSourceNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
 	openAPISourceClean    = regexp.MustCompile(`[^a-z0-9_-]+`)
 )
 
@@ -65,7 +66,7 @@ func (a *API) executeSendWebhook(ctx context.Context, req *actionRequestRecord) 
 	if !slices.Contains(webhookAllowedMethods, method) {
 		return nil, fmt.Errorf("webhook adapter does not support method %q (allowed: GET, POST, PUT, PATCH, DELETE)", method)
 	}
-	headers := map[string]string{}
+	headers := map[string]string{"User-Agent": "OpenNeko-webhook-adapter/1.0"}
 	if hObj, ok := payload.vals["headers"].(*jsObj); ok && hObj != nil {
 		for _, k := range hObj.ordered() {
 			if v, ok := hObj.vals[k].(string); ok {
@@ -96,25 +97,29 @@ func (a *API) executeSendWebhook(ctx context.Context, req *actionRequestRecord) 
 	defer cancel()
 	httpReq, err := http.NewRequestWithContext(reqCtx, method, rawURL, bodyReader)
 	if err != nil {
-		return nil, fmt.Errorf("webhook request to %s failed: %v", rawURL, err)
+		return nil, fmt.Errorf("webhook to %s failed before response: %v", rawURL, err)
 	}
 	for k, v := range headers {
 		httpReq.Header.Set(k, v)
 	}
-	resp, err := (&http.Client{}).Do(httpReq)
+	resp, err := webhookClient().Do(httpReq)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(reqCtx.Err(), context.DeadlineExceeded) {
-			return nil, fmt.Errorf("webhook request to %s timed out after %dms", rawURL, timeoutMs)
+			return nil, fmt.Errorf("webhook to %s timed out after %dms", rawURL, timeoutMs)
 		}
-		return nil, fmt.Errorf("webhook request to %s failed: %v", rawURL, err)
+		var blocked *webhookBlockedError
+		if errors.As(err, &blocked) {
+			return nil, fmt.Errorf("webhook to %s failed before response: %v", rawURL, blocked)
+		}
+		return nil, fmt.Errorf("webhook to %s failed before response: %v", rawURL, err)
 	}
 	defer resp.Body.Close()
 	rawBody, err := io.ReadAll(io.LimitReader(resp.Body, webhookMaxBodyCapture+1024))
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(reqCtx.Err(), context.DeadlineExceeded) {
-			return nil, fmt.Errorf("webhook request to %s timed out after %dms", rawURL, timeoutMs)
+			return nil, fmt.Errorf("webhook to %s timed out after %dms", rawURL, timeoutMs)
 		}
-		return nil, fmt.Errorf("webhook request to %s failed: %v", rawURL, err)
+		return nil, fmt.Errorf("webhook to %s failed before response: %v", rawURL, err)
 	}
 	capturedBody := string(rawBody)
 	if len(capturedBody) > webhookMaxBodyCapture {
@@ -133,7 +138,10 @@ func (a *API) executeSendWebhook(ctx context.Context, req *actionRequestRecord) 
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		statusText := strings.TrimSpace(strings.TrimPrefix(resp.Status, strconv.Itoa(resp.StatusCode)))
-		return nil, fmt.Errorf("webhook %s %s returned %d %s: %s", method, rawURL, resp.StatusCode, statusText, capturedBody)
+		if len(capturedBody) > 200 {
+			capturedBody = capturedBody[:200]
+		}
+		return nil, fmt.Errorf("webhook to %s returned %d %s: %s", rawURL, resp.StatusCode, statusText, capturedBody)
 	}
 	cmd := method + " " + rawURL
 	return &actionExecutionOutcome{
@@ -146,6 +154,47 @@ func (a *API) executeSendWebhook(ctx context.Context, req *actionRequestRecord) 
 			"body", capturedBody,
 		),
 	}, nil
+}
+
+type webhookBlockedError struct{ ip string }
+
+func (e *webhookBlockedError) Error() string {
+	return "OpenNeko does not send a webhook to the loopback, link-local, multicast or unspecified address " + e.ip
+}
+
+var webhookAddressBlocked = func(ip net.IP) bool {
+	if v4 := ip.To4(); v4 != nil && v4[0] == 0 {
+		return true
+	}
+	return ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsInterfaceLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified()
+}
+
+// webhookClient checks each address at dial time, after DNS, so a name that
+// resolves to a blocked address is refused too. Redirects come back as the
+// response: an approved URL must not lead to another target.
+func webhookClient() *http.Client {
+	dialer := &net.Dialer{
+		Timeout: 30 * time.Second,
+		Control: func(_, address string, _ syscall.RawConn) error {
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return err
+			}
+			if ip := net.ParseIP(host); ip == nil || webhookAddressBlocked(ip) {
+				return &webhookBlockedError{ip: host}
+			}
+			return nil
+		},
+	}
+	return &http.Client{
+		Transport: &http.Transport{
+			DialContext:         dialer.DialContext,
+			TLSHandshakeTimeout: 10 * time.Second,
+			ForceAttemptHTTP2:   true,
+		},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 }
 
 func hasHeaderFold(headers map[string]string, target string) bool {
@@ -265,7 +314,7 @@ func (a *API) executeCodeDraftPatch(_ context.Context, req *actionRequestRecord)
 	if slug == "" {
 		slug = "patch"
 	}
-	dir := filepath.Join(agentsRootDir(), "orgs", sanitizePathSegment(req.OrgID), "artifacts", "patches")
+	dir := filepath.Join(orgAgentRoot(req.OrgID), "artifacts", "patches")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
@@ -305,24 +354,31 @@ func (a *API) executeGroupAdmin(ctx context.Context, req *actionRequestRecord) (
 	if payload == nil {
 		payload = &jsObj{vals: map[string]any{}}
 	}
-	action := strings.TrimSpace(jsStr(payload.vals["action"]))
+	action := jsStr(payload.vals["action"])
 	text := func(key string) (string, error) {
 		v, ok := payload.vals[key].(string)
 		if !ok || strings.TrimSpace(v) == "" {
-			return "", fmt.Errorf("group_admin %s: %s required", action, key)
+			return "", fmt.Errorf("group_admin %s: %s required", jsTemplate(payload.vals["action"]), key)
 		}
 		return strings.TrimSpace(v), nil
 	}
+	texts := func(keys ...string) ([]string, error) {
+		out := make([]string, len(keys))
+		for i, key := range keys {
+			v, err := text(key)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = v
+		}
+		return out, nil
+	}
 	done := func(result *jsObj, graphjin bool) (*actionExecutionOutcome, error) {
 		if graphjin {
-			a.scheduleGroupGrantsApply(ctx)
+			a.scheduleGroupGrantsApply(ctx, req.OrgID)
 		}
 		cmd := action
-		return &actionExecutionOutcome{
-			Status:             "succeeded",
-			CommandOrOperation: &cmd,
-			Result:             result,
-		}, nil
+		return &actionExecutionOutcome{Status: "succeeded", CommandOrOperation: &cmd, Result: result}, nil
 	}
 
 	switch action {
@@ -339,8 +395,7 @@ func (a *API) executeGroupAdmin(ctx context.Context, req *actionRequestRecord) (
 		if err != nil {
 			return nil, err
 		}
-		groupVal, _ := jsFromGo(group).(*jsObj)
-		return done(jsObjOf("group", groupVal), true)
+		return done(jsObjOf("groupId", group.ID, "slug", group.Slug), false)
 
 	case "delete_group":
 		groupID, err := text("groupId")
@@ -360,46 +415,35 @@ func (a *API) executeGroupAdmin(ctx context.Context, req *actionRequestRecord) (
 		}); err != nil {
 			return nil, err
 		}
-		return done(jsObjOf("ok", true), true)
+		return done(jsObjOf("groupId", groupID), true)
 
 	case "add_member":
-		groupID, err := text("groupId")
+		ids, err := texts("groupId", "userId")
 		if err != nil {
 			return nil, err
 		}
-		userID, err := text("userId")
-		if err != nil {
+		if err := a.addLocalMemberAction(ctx, req.OrgID, ids[0], ids[1]); err != nil {
 			return nil, err
 		}
-		if err := a.addLocalMemberAction(ctx, req.OrgID, groupID, userID); err != nil {
-			return nil, err
-		}
-		return done(jsObjOf("ok", true), false)
+		return done(jsObjOf("groupId", ids[0], "userId", ids[1]), false)
 
 	case "remove_member":
-		groupID, err := text("groupId")
+		ids, err := texts("groupId", "userId")
 		if err != nil {
 			return nil, err
 		}
-		userID, err := text("userId")
+		stillMember, err := a.removeLocalMemberAction(ctx, req.OrgID, ids[0], ids[1])
 		if err != nil {
 			return nil, err
 		}
-		stillMember, err := a.removeLocalMemberAction(ctx, req.OrgID, groupID, userID)
-		if err != nil {
-			return nil, err
-		}
-		return done(jsObjOf("ok", true, "stillMember", stillMember), false)
+		return done(jsObjOf("stillMember", stillMember), false)
 
 	case "add_idp_rule":
-		ssoGroupID, err := text("ssoGroupId")
+		ids, err := texts("ssoGroupId", "groupId")
 		if err != nil {
 			return nil, err
 		}
-		userGroupID, err := text("userGroupId")
-		if err != nil {
-			return nil, err
-		}
+		ssoGroupID, userGroupID := ids[0], ids[1]
 		var ruleID string
 		if err := a.withAdministratorGuard(ctx, req.OrgID, func(tx pgx.Tx) error {
 			g, err := requireGroup(ctx, tx, req.OrgID, userGroupID)
@@ -420,7 +464,7 @@ func (a *API) executeGroupAdmin(ctx context.Context, req *actionRequestRecord) (
 				insert into idp_group_rule (org_id, sso_group_id, user_group_id, created_by_user_id)
 				values ($1, $2::uuid, $3::uuid, $4)
 				on conflict (org_id, sso_group_id, user_group_id) do update set created_at = idp_group_rule.created_at
-				returning id::text`, req.OrgID, ssoGroupID, userGroupID, nullableStringPtr(req.ApprovedBy)).Scan(&ruleID); err != nil {
+				returning id::text`, req.OrgID, ssoGroupID, userGroupID, nullableStringPtr(req.ActorUserID)).Scan(&ruleID); err != nil {
 				return err
 			}
 			return recomputeRuleMemberships(ctx, tx, req.OrgID, nil)
@@ -442,7 +486,7 @@ func (a *API) executeGroupAdmin(ctx context.Context, req *actionRequestRecord) (
 		}); err != nil {
 			return nil, err
 		}
-		return done(jsObjOf("ok", true), false)
+		return done(jsObjOf("ruleId", ruleID), false)
 
 	case "grant_item", "revoke_item":
 		itemType, err := text("itemType")
@@ -450,113 +494,84 @@ func (a *API) executeGroupAdmin(ctx context.Context, req *actionRequestRecord) (
 			return nil, err
 		}
 		if !isItemType(itemType) {
-			return nil, fmt.Errorf("group_admin: unknown itemType %s", itemType)
+			return nil, fmt.Errorf("group_admin: unknown item type %s", itemType)
 		}
-		groupID, err := text("groupId")
+		ids, err := texts("groupId", "itemId")
 		if err != nil {
 			return nil, err
 		}
-		itemID, err := text("itemId")
-		if err != nil {
-			return nil, err
-		}
-		if action == "grant_item" {
-			itemID = strings.TrimSpace(itemID)
-			if itemID == "" || len(itemID) > 500 {
-				return nil, groupErr("invalid", "item id must be 1 to 500 characters")
-			}
-			g, err := requireGrantableGroup(ctx, a.DB, req.OrgID, groupID)
-			if err != nil {
-				return nil, err
-			}
-			var created bool
-			err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
-				var inserted string
-				qerr := tx.QueryRow(ctx, `
-					insert into item_grant (org_id, group_id, item_type, item_id, created_by_user_id, action_request_id)
-					values ($1, $2::uuid, $3, $4, $5, $6::uuid)
-					on conflict do nothing returning item_id`,
-					req.OrgID, g.id, itemType, itemID, nullableStringPtr(req.ApprovedBy), req.ID).Scan(&inserted)
-				if qerr != nil && !errors.Is(qerr, pgx.ErrNoRows) {
-					return qerr
-				}
-				if qerr == nil {
-					created = true
-					_, err := tx.Exec(ctx, `
-						insert into item_grant_audit (org_id, actor_user_id, action, group_id, group_name, item_type, item_id, action_request_id)
-						values ($1, $2, 'grant', $3::uuid, $4, $5, $6, $7::uuid)`,
-						req.OrgID, nullableStringPtr(req.ApprovedBy), g.id, g.name, itemType, itemID, req.ID)
-					return err
-				}
-				return nil
-			})
-			if err != nil {
-				return nil, err
-			}
-			return done(jsObjOf("created", created), false)
+		groupID, itemID := ids[0], ids[1]
+		if len(itemID) > 500 {
+			return nil, groupErr("invalid", "item id must be 1 to 500 characters")
 		}
 		g, err := requireGrantableGroup(ctx, a.DB, req.OrgID, groupID)
 		if err != nil {
 			return nil, err
 		}
-		var removed bool
-		err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
-			var deleted string
-			qerr := tx.QueryRow(ctx, `
-				delete from item_grant
-				where org_id = $1 and group_id = $2::uuid and item_type = $3 and item_id = $4
-				returning item_id`, req.OrgID, g.id, itemType, itemID).Scan(&deleted)
-			if qerr != nil && !errors.Is(qerr, pgx.ErrNoRows) {
+		grant := action == "grant_item"
+		query := `delete from item_grant
+			where org_id = $1 and group_id = $2::uuid and item_type = $3 and item_id = $4
+			returning item_id`
+		args := []any{req.OrgID, g.id, itemType, itemID}
+		auditAction := "revoke"
+		if grant {
+			query = `insert into item_grant (org_id, group_id, item_type, item_id, created_by_user_id, action_request_id)
+				values ($1, $2::uuid, $3, $4, $5, $6::uuid)
+				on conflict do nothing returning item_id`
+			args = append(args, nullableStringPtr(req.ActorUserID), req.ID)
+			auditAction = "grant"
+		}
+		var changed bool
+		if err := pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
+			var touched string
+			qerr := tx.QueryRow(ctx, query, args...).Scan(&touched)
+			if errors.Is(qerr, pgx.ErrNoRows) {
+				return nil
+			}
+			if qerr != nil {
 				return qerr
 			}
-			if qerr == nil {
-				removed = true
-				_, err := tx.Exec(ctx, `
-					insert into item_grant_audit (org_id, actor_user_id, action, group_id, group_name, item_type, item_id, action_request_id)
-					values ($1, $2, 'revoke', $3::uuid, $4, $5, $6, $7::uuid)`,
-					req.OrgID, nullableStringPtr(req.ApprovedBy), g.id, g.name, itemType, itemID, req.ID)
-				return err
-			}
-			return nil
-		})
-		if err != nil {
+			changed = true
+			_, err := tx.Exec(ctx, `
+				insert into item_grant_audit (org_id, actor_user_id, action, group_id, group_name, item_type, item_id, action_request_id)
+				values ($1, $2, $3, $4::uuid, $5, $6, $7, $8::uuid)`,
+				req.OrgID, nullableStringPtr(req.ActorUserID), auditAction, g.id, g.name, itemType, itemID, req.ID)
+			return err
+		}); err != nil {
 			return nil, err
 		}
-		return done(jsObjOf("removed", removed), false)
+		key := "removed"
+		if grant {
+			key = "created"
+		}
+		return done(jsObjOf(key, changed), itemType == "data_source" || itemType == "api_operation")
 
-	case "upsert_data_access_rule":
-		groupID, err := text("groupId")
+	case "set_table_access":
+		ids, err := texts("table", "groupId", "source")
 		if err != nil {
 			return nil, err
 		}
-		source, err := text("source")
-		if err != nil {
-			return nil, err
-		}
-		tableName, err := text("tableName")
-		if err != nil {
-			return nil, err
-		}
-		tableSchema := ""
-		if s, ok := payload.vals["tableSchema"].(string); ok {
-			tableSchema = s
+		table, groupID, source := ids[0], ids[1], ids[2]
+		tableSchema, tableName := "", table
+		if i := strings.LastIndex(table, "."); i >= 0 {
+			tableSchema, tableName = table[:i], table[i+1:]
 		}
 		var cols []string
 		if rawCols, ok := payload.vals["columns"].([]any); ok {
 			seen := map[string]bool{}
 			for _, item := range rawCols {
-				if s, ok := item.(string); ok {
-					trimmed := strings.TrimSpace(s)
-					if trimmed != "" && !seen[trimmed] {
-						seen[trimmed] = true
-						cols = append(cols, trimmed)
-					}
+				c := strings.TrimSpace(jsTemplate(item))
+				if c != "" && !seen[c] {
+					seen[c] = true
+					cols = append(cols, c)
 				}
 			}
 		}
-		rowFilter, err := parseRowFilter(plainJSON(payload.vals["rowFilter"]))
-		if err != nil {
-			return nil, err
+		var rowFilter any
+		if raw := payload.vals["rowFilter"]; raw != nil {
+			if rowFilter, err = parseRowFilter(plainJSON(raw)); err != nil {
+				return nil, err
+			}
 		}
 		var slug string
 		if err := a.DB.QueryRow(ctx, `select slug from user_group where org_id = $1 and id = $2::uuid`, req.OrgID, groupID).Scan(&slug); err != nil {
@@ -585,23 +600,12 @@ func (a *API) executeGroupAdmin(ctx context.Context, req *actionRequestRecord) (
 			on conflict (org_id, group_id, source, table_schema, table_name)
 			do update set columns = excluded.columns, row_filter = excluded.row_filter, updated_at = now()
 			returning id::text`,
-			req.OrgID, groupID, source, tableSchema, tableName, cols, filterJSON, nullableStringPtr(req.ApprovedBy)).Scan(&ruleID); err != nil {
+			req.OrgID, groupID, source, tableSchema, tableName, cols, filterJSON, nullableStringPtr(req.ActorUserID)).Scan(&ruleID); err != nil {
 			return nil, err
 		}
-		rules, err := a.dataAccessRules(ctx, req.OrgID, &groupID)
-		if err != nil {
-			return nil, err
-		}
-		var matched any
-		for _, r := range rules {
-			if r.ID == ruleID {
-				matched = jsFromGo(r)
-				break
-			}
-		}
-		return done(jsObjOf("rule", matched), true)
+		return done(jsObjOf("ruleId", ruleID), true)
 
-	case "delete_data_access_rule":
+	case "remove_table_access":
 		ruleID, err := text("ruleId")
 		if err != nil {
 			return nil, err
@@ -610,10 +614,10 @@ func (a *API) executeGroupAdmin(ctx context.Context, req *actionRequestRecord) (
 		if err != nil {
 			return nil, err
 		}
-		return done(jsObjOf("deleted", tag.RowsAffected() > 0), true)
+		return done(jsObjOf("removed", tag.RowsAffected() > 0), true)
 
 	default:
-		return nil, fmt.Errorf("group_admin: unknown action %s", jsTemplate(payload.vals["action"]))
+		return nil, fmt.Errorf("group_admin: unknown action \"%s\"", action)
 	}
 }
 
@@ -741,92 +745,98 @@ func (a *API) executeUserAdmin(ctx context.Context, req *actionRequestRecord) (*
 		payload = &jsObj{vals: map[string]any{}}
 	}
 	action := jsStr(payload.vals["action"])
-	email := strings.ToLower(strings.TrimSpace(jsStr(payload.vals["email"])))
-	userID := strings.TrimSpace(jsStr(payload.vals["userId"]))
+	orgID := req.OrgID
+	role := "member"
+	if payload.vals["role"] == "admin" {
+		role = "admin"
+	}
+	outcome := func(cmd string, result *jsObj) (*actionExecutionOutcome, error) {
+		return &actionExecutionOutcome{Status: "succeeded", CommandOrOperation: &cmd, Result: result}, nil
+	}
 
-	var targetID, targetEmail string
-	var err error
-	if userID != "" {
-		err = a.DB.QueryRow(ctx, `select id, email from app_user where org_id = $1 and id = $2 limit 1`, req.OrgID, userID).Scan(&targetID, &targetEmail)
-	} else if email != "" {
-		err = a.DB.QueryRow(ctx, `select id, email from app_user where org_id = $1 and email = $2 limit 1`, req.OrgID, email).Scan(&targetID, &targetEmail)
-	} else {
-		err = pgx.ErrNoRows
+	if action == "invite" {
+		email := strings.ToLower(strings.TrimSpace(jsStr(payload.vals["email"])))
+		if email == "" {
+			return nil, errors.New("user_admin invite: email required")
+		}
+		var existing string
+		err := a.DB.QueryRow(ctx, `select id from app_user where org_id = $1 and email = $2 limit 1`, orgID, email).Scan(&existing)
+		if err == nil {
+			return outcome("invite "+email, jsObjOf("userId", existing, "alreadyExisted", true))
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
+		id := randomUUID()
+		if _, err := a.DB.Exec(ctx, `insert into app_user (id, email, org_id) values ($1, $2, $3)`, id, email, orgID); err != nil {
+			return nil, err
+		}
+		if role == "admin" {
+			if err := a.setLocalAdministratorAction(ctx, orgID, id, true); err != nil {
+				return nil, err
+			}
+		}
+		return outcome("invite "+email+" as "+role, jsObjOf("userId", id, "role", role))
 	}
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("user_admin: target user not found in org %s", req.OrgID)
-	}
-	if err != nil {
-		return nil, err
+
+	userID := jsStr(payload.vals["userId"])
+	if userID == "" {
+		return nil, fmt.Errorf("user_admin %s: userId required", action)
 	}
 
 	switch action {
 	case "set_role":
-		role := jsStr(payload.vals["role"])
-		if role != "admin" && role != "member" {
-			return nil, fmt.Errorf("user_admin: invalid role %q", jsTemplate(payload.vals["role"]))
-		}
-		var adminGroupID string
-		if err := a.DB.QueryRow(ctx, `select id::text from user_group where org_id = $1 and slug = 'administrators'`, req.OrgID).Scan(&adminGroupID); err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return nil, groupErr("not_found", "built-in group administrators is missing")
-			}
+		var found bool
+		if err := a.DB.QueryRow(ctx, `select exists (select 1 from app_user where org_id = $1 and id = $2)`, orgID, userID).Scan(&found); err != nil {
 			return nil, err
 		}
-		if role == "admin" {
-			if err := a.addLocalMemberAction(ctx, req.OrgID, adminGroupID, targetID); err != nil {
-				return nil, err
-			}
-		} else {
-			stillMember, err := a.removeLocalMemberAction(ctx, req.OrgID, adminGroupID, targetID)
-			if err != nil {
-				return nil, err
-			}
-			if stillMember {
-				return nil, groupErr("conflict", "this user is an administrator through an IdP rule; change the rule instead")
-			}
+		if !found {
+			return nil, fmt.Errorf("user %s not found", userID)
 		}
-		if _, err := a.DB.Exec(ctx, `update app_user set updated_at = now() where id = $1`, targetID); err != nil {
+		if err := a.setLocalAdministratorAction(ctx, orgID, userID, role == "admin"); err != nil {
 			return nil, err
 		}
-		cmd := fmt.Sprintf("set role of %s to %s", targetEmail, role)
-		return &actionExecutionOutcome{
-			Status:             "succeeded",
-			CommandOrOperation: &cmd,
-			ExternalRef:        &targetID,
-			Result:             jsObjOf("userId", targetID, "email", targetEmail, "role", role),
-		}, nil
+		return outcome("set_role "+userID+" "+role, jsObjOf("userId", userID, "role", role))
 
-	case "disable":
-		if err := a.withAdministratorGuard(ctx, req.OrgID, func(tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, `update app_user set disabled_at = now(), updated_at = now() where id = $1`, targetID)
+	case "deactivate", "reactivate":
+		disable := action == "deactivate"
+		var tag pgconn.CommandTag
+		if err := a.withAdministratorGuard(ctx, orgID, func(tx pgx.Tx) error {
+			var err error
+			tag, err = tx.Exec(ctx, `
+				update app_user set disabled_at = case when $3 then now() else null end, updated_at = now()
+				 where org_id = $1 and id = $2`, orgID, userID, disable)
 			return err
 		}); err != nil {
 			return nil, err
 		}
-		cmd := fmt.Sprintf("disabled %s", targetEmail)
-		return &actionExecutionOutcome{
-			Status:             "succeeded",
-			CommandOrOperation: &cmd,
-			ExternalRef:        &targetID,
-			Result:             jsObjOf("userId", targetID, "email", targetEmail, "disabled", true),
-		}, nil
-
-	case "enable":
-		if _, err := a.DB.Exec(ctx, `update app_user set disabled_at = null, updated_at = now() where id = $1`, targetID); err != nil {
-			return nil, err
+		if tag.RowsAffected() == 0 {
+			return nil, fmt.Errorf("user %s not found", userID)
 		}
-		cmd := fmt.Sprintf("enabled %s", targetEmail)
-		return &actionExecutionOutcome{
-			Status:             "succeeded",
-			CommandOrOperation: &cmd,
-			ExternalRef:        &targetID,
-			Result:             jsObjOf("userId", targetID, "email", targetEmail, "disabled", false),
-		}, nil
-
-	default:
-		return nil, fmt.Errorf("user_admin: unknown action %s", jsTemplate(payload.vals["action"]))
+		return outcome(action+" "+userID, jsObjOf("userId", userID, "disabled", disable))
 	}
+	return nil, fmt.Errorf("user_admin: unknown action \"%s\"", action)
+}
+
+func (a *API) setLocalAdministratorAction(ctx context.Context, orgID, userID string, administrator bool) error {
+	var groupID string
+	if err := a.DB.QueryRow(ctx, `select id::text from user_group where org_id = $1 and slug = 'administrators'`, orgID).Scan(&groupID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return groupErr("not_found", "built-in group administrators is missing")
+		}
+		return err
+	}
+	if administrator {
+		return a.addLocalMemberAction(ctx, orgID, groupID, userID)
+	}
+	stillMember, err := a.removeLocalMemberAction(ctx, orgID, groupID, userID)
+	if err != nil {
+		return err
+	}
+	if stillMember {
+		return groupErr("conflict", "this user is an administrator through an IdP rule; change the rule instead")
+	}
+	return nil
 }
 
 // executeChannelAdmin matches registerChannelAdminAdapter in
@@ -837,153 +847,56 @@ func (a *API) executeChannelAdmin(ctx context.Context, req *actionRequestRecord)
 		payload = &jsObj{vals: map[string]any{}}
 	}
 	action := jsStr(payload.vals["action"])
+	identityID := jsStr(payload.vals["identityId"])
+	orgID := req.OrgID
+	if identityID == "" {
+		return nil, fmt.Errorf("channel_admin %s: identityId required", action)
+	}
+	outcome := func(cmd string, result *jsObj) (*actionExecutionOutcome, error) {
+		return &actionExecutionOutcome{Status: "succeeded", CommandOrOperation: &cmd, Result: result}, nil
+	}
 
 	switch action {
-	case "upsert_workspace":
-		plugin := strings.TrimSpace(jsStr(payload.vals["channelPlugin"]))
-		workspaceID := strings.TrimSpace(jsStr(payload.vals["workspaceId"]))
-		if plugin == "" || workspaceID == "" {
-			return nil, errors.New("channel_admin upsert_workspace requires channelPlugin + workspaceId")
-		}
-		var existingOrg string
-		err := a.DB.QueryRow(ctx, `select org_id from channel_workspace where channel_plugin = $1 and workspace_id = $2 limit 1`, plugin, workspaceID).Scan(&existingOrg)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return nil, err
-		}
-		if err == nil && existingOrg != req.OrgID {
-			return nil, fmt.Errorf("workspace %s:%s is already bound to another org", plugin, workspaceID)
-		}
-		var id string
-		if err := a.DB.QueryRow(ctx, `
-			insert into channel_workspace (org_id, channel_plugin, workspace_id)
-			values ($1, $2, $3)
-			on conflict (channel_plugin, workspace_id)
-			do update set org_id = channel_workspace.org_id
-			returning id::text`, req.OrgID, plugin, workspaceID).Scan(&id); err != nil {
-			return nil, err
-		}
-		cmd := fmt.Sprintf("bound %s workspace %s", plugin, workspaceID)
-		return &actionExecutionOutcome{
-			Status:             "succeeded",
-			CommandOrOperation: &cmd,
-			ExternalRef:        &id,
-			Result:             jsObjOf("id", id, "channelPlugin", plugin, "workspaceId", workspaceID),
-		}, nil
-
-	case "remove_workspace":
-		id := strings.TrimSpace(jsStr(payload.vals["id"]))
-		if id == "" {
-			return nil, errors.New("channel_admin remove_workspace requires id")
-		}
-		if _, err := a.DB.Exec(ctx, `delete from channel_workspace where id = $1::uuid and org_id = $2`, id, req.OrgID); err != nil {
-			return nil, err
-		}
-		cmd := fmt.Sprintf("unbound workspace %s", id)
-		return &actionExecutionOutcome{
-			Status:             "succeeded",
-			CommandOrOperation: &cmd,
-			ExternalRef:        &id,
-			Result:             jsObjOf("id", id, "removed", true),
-		}, nil
-
-	case "link_identity":
-		identityID := strings.TrimSpace(jsStr(payload.vals["identityId"]))
-		userEmail := strings.ToLower(strings.TrimSpace(jsStr(payload.vals["userEmail"])))
-		userID := strings.TrimSpace(jsStr(payload.vals["userId"]))
-		if identityID == "" || (userEmail == "" && userID == "") {
-			return nil, errors.New("channel_admin link_identity requires identityId + userEmail or userId")
-		}
-		var foundID, foundEmail string
-		var err error
-		if userID != "" {
-			err = a.DB.QueryRow(ctx, `select id, email from app_user where org_id = $1 and id = $2 limit 1`, req.OrgID, userID).Scan(&foundID, &foundEmail)
-		} else {
-			err = a.DB.QueryRow(ctx, `select id, email from app_user where org_id = $1 and email = $2 limit 1`, req.OrgID, userEmail).Scan(&foundID, &foundEmail)
-		}
+	case "link":
+		appUserID := jsStr(payload.vals["appUserId"])
+		var userID string
+		err := a.DB.QueryRow(ctx, `select id from app_user where org_id = $1 and id = $2 and disabled_at is null limit 1`, orgID, appUserID).Scan(&userID)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, errors.New("channel_admin link_identity: target user not found in org")
+			return nil, fmt.Errorf("channel_admin link: unknown or disabled user %s", appUserID)
 		}
 		if err != nil {
 			return nil, err
 		}
-		if _, err := a.DB.Exec(ctx, `update channel_identity set app_user_id = $1, status = 'linked' where id = $2::uuid and org_id = $3`, foundID, identityID, req.OrgID); err != nil {
+		tag, err := a.DB.Exec(ctx, `
+			update channel_identity set app_user_id = $3, status = 'linked', verified_at = now(), updated_at = now()
+			 where org_id = $1 and id::text = $2`, orgID, identityID, userID)
+		if err != nil {
 			return nil, err
 		}
-		cmd := fmt.Sprintf("linked identity %s → %s", identityID, foundEmail)
-		return &actionExecutionOutcome{
-			Status:             "succeeded",
-			CommandOrOperation: &cmd,
-			ExternalRef:        &identityID,
-			Result:             jsObjOf("identityId", identityID, "userId", foundID, "email", foundEmail, "status", "linked"),
-		}, nil
-
-	case "block_identity":
-		identityID := strings.TrimSpace(jsStr(payload.vals["identityId"]))
-		if identityID == "" {
-			return nil, errors.New("channel_admin block_identity requires identityId")
+		if tag.RowsAffected() == 0 {
+			return nil, fmt.Errorf("channel identity %s not found", identityID)
 		}
-		if _, err := a.DB.Exec(ctx, `update channel_identity set app_user_id = null, status = 'blocked' where id = $1::uuid and org_id = $2`, identityID, req.OrgID); err != nil {
+		return outcome("link "+identityID+" → "+appUserID, jsObjOf("identityId", identityID, "appUserId", appUserID, "status", "linked"))
+
+	case "unlink", "block", "unblock":
+		set := `app_user_id = null, status = 'unverified', verified_at = null`
+		if action == "block" {
+			set = `status = 'blocked'`
+		}
+		var status string
+		err := a.DB.QueryRow(ctx, `
+			update channel_identity set `+set+`, updated_at = now()
+			 where org_id = $1 and id::text = $2
+			 returning status`, orgID, identityID).Scan(&status)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("channel identity %s not found", identityID)
+		}
+		if err != nil {
 			return nil, err
 		}
-		cmd := fmt.Sprintf("blocked identity %s", identityID)
-		return &actionExecutionOutcome{
-			Status:             "succeeded",
-			CommandOrOperation: &cmd,
-			ExternalRef:        &identityID,
-			Result:             jsObjOf("identityId", identityID, "status", "blocked"),
-		}, nil
-
-	case "reset_identity":
-		identityID := strings.TrimSpace(jsStr(payload.vals["identityId"]))
-		if identityID == "" {
-			return nil, errors.New("channel_admin reset_identity requires identityId")
-		}
-		if _, err := a.DB.Exec(ctx, `update channel_identity set app_user_id = null, status = 'pending' where id = $1::uuid and org_id = $2`, identityID, req.OrgID); err != nil {
-			return nil, err
-		}
-		cmd := fmt.Sprintf("reset identity %s to pending", identityID)
-		return &actionExecutionOutcome{
-			Status:             "succeeded",
-			CommandOrOperation: &cmd,
-			ExternalRef:        &identityID,
-			Result:             jsObjOf("identityId", identityID, "status", "pending"),
-		}, nil
-
-	default:
-		return nil, fmt.Errorf("channel_admin: unknown action %s", jsTemplate(payload.vals["action"]))
+		return outcome(action+" "+identityID, jsObjOf("identityId", identityID, "status", status))
 	}
-}
-
-type dataSourceActionTarget struct {
-	id         string
-	name       string
-	graphqlURL string
-	enabled    bool
-}
-
-func (a *API) resolveDataSourceActionTarget(ctx context.Context, orgID string, payload *jsObj) (*dataSourceActionTarget, error) {
-	id := strings.TrimSpace(jsStr(payload.vals["id"]))
-	name := strings.ToLower(strings.TrimSpace(jsStr(payload.vals["name"])))
-	var row dataSourceActionTarget
-	var graphqlURL *string
-	var err error
-	if id != "" {
-		err = a.DB.QueryRow(ctx, `select id::text, name, graphql_url, enabled from data_source where org_id = $1 and id = $2::uuid limit 1`, orgID, id).
-			Scan(&row.id, &row.name, &graphqlURL, &row.enabled)
-	} else if name != "" {
-		err = a.DB.QueryRow(ctx, `select id::text, name, graphql_url, enabled from data_source where org_id = $1 and name = $2 limit 1`, orgID, name).
-			Scan(&row.id, &row.name, &graphqlURL, &row.enabled)
-	} else {
-		return nil, nil
-	}
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	row.graphqlURL = deref(graphqlURL)
-	return &row, nil
+	return nil, fmt.Errorf("channel_admin: unknown action \"%s\"", action)
 }
 
 // executeDataSourceAdmin matches registerDataSourceAdminAdapter in
@@ -994,127 +907,87 @@ func (a *API) executeDataSourceAdmin(ctx context.Context, req *actionRequestReco
 		payload = &jsObj{vals: map[string]any{}}
 	}
 	action := jsStr(payload.vals["action"])
+	name := strings.TrimSpace(jsStr(payload.vals["name"]))
+	orgID := req.OrgID
+	if name == "" {
+		return nil, fmt.Errorf("data_source_admin %s: name required", action)
+	}
+	outcome := func(cmd string, result *jsObj) (*actionExecutionOutcome, error) {
+		return &actionExecutionOutcome{Status: "succeeded", CommandOrOperation: &cmd, Result: result}, nil
+	}
+	notFound := fmt.Errorf("data source %s not found", name)
 
 	switch action {
-	case "register_placeholder":
-		name := strings.ToLower(strings.TrimSpace(jsStr(payload.vals["name"])))
-		var label *string
-		if s, ok := payload.vals["label"].(string); ok && strings.TrimSpace(s) != "" {
-			trimmed := strings.TrimSpace(s)
-			label = &trimmed
-		}
-		kind := jsStr(payload.vals["kind"])
-		if kind == "" {
-			kind = "graphjin"
-		}
-		if !dataSourceNamePattern.MatchString(name) {
-			return nil, errors.New("data_source_admin register_placeholder: name must match /^[a-z][a-z0-9_-]{0,62}$/")
-		}
-		if kind != "graphjin" && kind != "rest" && kind != "graphql" {
-			return nil, fmt.Errorf("data_source_admin: unsupported kind %s", kind)
-		}
+	case "register":
 		var exists bool
-		if err := a.DB.QueryRow(ctx, `select exists (select 1 from data_source where org_id = $1 and name = $2)`, req.OrgID, name).Scan(&exists); err != nil {
+		if err := a.DB.QueryRow(ctx, `select exists (select 1 from data_source where org_id = $1 and name = $2)`, orgID, name).Scan(&exists); err != nil {
 			return nil, err
 		}
 		if exists {
-			return nil, fmt.Errorf("data_source_admin: source %q already exists in org", name)
+			return outcome("register "+name, jsObjOf("name", name, "alreadyExisted", true))
+		}
+		kind := "graphjin"
+		if k, ok := payload.vals["sourceKind"].(string); ok && slices.Contains(dataSourceKinds, k) {
+			kind = k
+		}
+		var label *string
+		if l, ok := payload.vals["label"].(string); ok {
+			label = &l
 		}
 		var id string
 		if err := a.DB.QueryRow(ctx, `
-			insert into data_source (org_id, name, label, kind, graphql_url, auth_mode, enabled, is_default)
-			values ($1, $2, $3, $4, '', 'none', false, false)
-			returning id::text`, req.OrgID, name, label, kind).Scan(&id); err != nil {
+			insert into data_source (org_id, kind, graphql_url, name, label, enabled)
+			values ($1, $2, '', $3, $4, false)
+			returning id::text`, orgID, kind, name, label).Scan(&id); err != nil {
 			return nil, err
 		}
-		cmd := fmt.Sprintf("registered disabled placeholder data source %s", name)
-		return &actionExecutionOutcome{
-			Status:             "succeeded",
-			CommandOrOperation: &cmd,
-			ExternalRef:        &id,
-			Result: jsObjOf(
-				"id", id,
-				"name", name,
-				"kind", kind,
-				"enabled", false,
-				"nextStep", "Fill in the GraphQL URL + auth on /admin/settings/data-sources and enable.",
-			),
-		}, nil
+		return outcome("register "+name+" (placeholder — complete in Settings)", jsObjOf("id", id, "name", name, "enabled", false))
 
-	case "set_enabled":
-		enabled, hasEnabled := payload.vals["enabled"].(bool)
-		target, err := a.resolveDataSourceActionTarget(ctx, req.OrgID, payload)
+	case "enable", "disable":
+		enable := action == "enable"
+		tag, err := a.DB.Exec(ctx, `update data_source set enabled = $3, updated_at = now() where org_id = $1 and name = $2`, orgID, name, enable)
 		if err != nil {
 			return nil, err
 		}
-		if target == nil || !hasEnabled {
-			return nil, errors.New("data_source_admin set_enabled: target source not found or enabled flag missing")
+		if tag.RowsAffected() == 0 {
+			return nil, notFound
 		}
-		if enabled && strings.TrimSpace(target.graphqlURL) == "" {
-			return nil, fmt.Errorf("data_source_admin: cannot enable %q until its GraphQL URL is configured in settings", target.name)
-		}
-		if _, err := a.DB.Exec(ctx, `update data_source set enabled = $1, updated_at = now() where id = $2::uuid and org_id = $3`, enabled, target.id, req.OrgID); err != nil {
-			return nil, err
-		}
-		verb := "disabled"
-		if enabled {
-			verb = "enabled"
-		}
-		cmd := fmt.Sprintf("%s data source %s", verb, target.name)
-		return &actionExecutionOutcome{
-			Status:             "succeeded",
-			CommandOrOperation: &cmd,
-			ExternalRef:        &target.id,
-			Result:             jsObjOf("id", target.id, "name", target.name, "enabled", enabled),
-		}, nil
+		return outcome(action+" "+name, jsObjOf("name", name, "enabled", enable))
 
 	case "set_default":
-		target, err := a.resolveDataSourceActionTarget(ctx, req.OrgID, payload)
-		if err != nil {
+		if err := pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
+			tag, err := tx.Exec(ctx, `update data_source set is_default = true, updated_at = now() where org_id = $1 and name = $2`, orgID, name)
+			if err != nil {
+				return err
+			}
+			if tag.RowsAffected() == 0 {
+				return notFound
+			}
+			_, err = tx.Exec(ctx, `update data_source set is_default = false, updated_at = now() where org_id = $1 and name <> $2`, orgID, name)
+			return err
+		}); err != nil {
 			return nil, err
 		}
-		if target == nil {
-			return nil, errors.New("data_source_admin set_default: target source not found")
-		}
-		if !target.enabled {
-			return nil, fmt.Errorf("data_source_admin: enable %q before marking it default", target.name)
-		}
-		if _, err := a.DB.Exec(ctx, `update data_source set is_default = false, updated_at = now() where org_id = $1`, req.OrgID); err != nil {
-			return nil, err
-		}
-		if _, err := a.DB.Exec(ctx, `update data_source set is_default = true, updated_at = now() where id = $1::uuid and org_id = $2`, target.id, req.OrgID); err != nil {
-			return nil, err
-		}
-		cmd := fmt.Sprintf("set %s as default data source", target.name)
-		return &actionExecutionOutcome{
-			Status:             "succeeded",
-			CommandOrOperation: &cmd,
-			ExternalRef:        &target.id,
-			Result:             jsObjOf("id", target.id, "name", target.name, "isDefault", true),
-		}, nil
+		return outcome("set_default "+name, jsObjOf("name", name))
 
 	case "remove":
-		target, err := a.resolveDataSourceActionTarget(ctx, req.OrgID, payload)
+		var isDefault bool
+		err := a.DB.QueryRow(ctx, `select is_default from data_source where org_id = $1 and name = $2 limit 1`, orgID, name).Scan(&isDefault)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, notFound
+		}
 		if err != nil {
 			return nil, err
 		}
-		if target == nil {
-			return nil, errors.New("data_source_admin remove: target source not found")
+		if isDefault {
+			return nil, errors.New("cannot remove the default data source — set another default first")
 		}
-		if _, err := a.DB.Exec(ctx, `delete from data_source where id = $1::uuid and org_id = $2`, target.id, req.OrgID); err != nil {
+		if _, err := a.DB.Exec(ctx, `delete from data_source where org_id = $1 and name = $2`, orgID, name); err != nil {
 			return nil, err
 		}
-		cmd := fmt.Sprintf("removed data source %s", target.name)
-		return &actionExecutionOutcome{
-			Status:             "succeeded",
-			CommandOrOperation: &cmd,
-			ExternalRef:        &target.id,
-			Result:             jsObjOf("id", target.id, "name", target.name, "removed", true),
-		}, nil
-
-	default:
-		return nil, fmt.Errorf("data_source_admin: unknown action %s", jsTemplate(payload.vals["action"]))
+		return outcome("remove "+name, jsObjOf("name", name, "removed", true))
 	}
+	return nil, fmt.Errorf("data_source_admin: unknown action \"%s\"", action)
 }
 
 // executeSourceConfigAdmin matches registerSourceConfigAdminAdapter /
@@ -1156,6 +1029,11 @@ func (a *API) runSourceConfigAdminAction(ctx context.Context, req *actionRequest
 		return nil, errors.New("source_config_admin requires payload.action")
 	}
 	orgID := req.OrgID
+	if on, err := a.sourceConfigEnabled(ctx, orgID); err != nil {
+		return nil, err
+	} else if !on {
+		return nil, errors.New("source_config_admin: GraphJin config capability is disabled")
+	}
 
 	explicitID := ""
 	if s, ok := payload.vals["dataSourceId"].(string); ok && strings.TrimSpace(s) != "" {
@@ -1171,7 +1049,7 @@ func (a *API) runSourceConfigAdminAction(ctx context.Context, req *actionRequest
 	if explicitID != "" {
 		rows, err = a.DB.Query(ctx, `select id::text, name, graphql_url from data_source where org_id = $1 and enabled = true and id = $2::uuid limit 1`, orgID, explicitID)
 	} else {
-		rows, err = a.DB.Query(ctx, `select id::text, name, graphql_url from data_source where org_id = $1 and enabled = true limit 3`, orgID)
+		rows, err = a.DB.Query(ctx, `select id::text, name, graphql_url from data_source where org_id = $1 and enabled = true order by is_default desc, created_at limit 3`, orgID)
 	}
 	if err != nil {
 		return nil, err
@@ -1589,7 +1467,9 @@ func (a *API) runSourceConfigAdminAction(ctx context.Context, req *actionRequest
 				if len(verifiedOperations) > 0 {
 					break
 				}
-				time.Sleep(50 * time.Millisecond)
+				if !sleepCtx(ctx, 500*time.Millisecond) {
+					return ctx.Err()
+				}
 			}
 			if len(verifiedOperations) == 0 {
 				return errors.New("source_config_admin: GraphJin applied the source but exposed no operations from its OpenAPI document")
@@ -1637,7 +1517,9 @@ func (a *API) runSourceConfigAdminAction(ctx context.Context, req *actionRequest
 				if verifiedFileSource {
 					break
 				}
-				time.Sleep(50 * time.Millisecond)
+				if !sleepCtx(ctx, 500*time.Millisecond) {
+					return ctx.Err()
+				}
 			}
 			if !verifiedFileSource {
 				return errors.New("source_config_admin: GraphJin applied the local file source but did not expose its virtual table")
@@ -1788,21 +1670,6 @@ func managedOpenAPISpecFilename(orgID, sourceName string) (string, error) {
 	sum := sha256.Sum256([]byte(orgID))
 	org := hex.EncodeToString(sum[:])[:12]
 	return fmt.Sprintf("org_%s_%s.yaml", org, strings.ReplaceAll(cleaned, "-", "_")), nil
-}
-
-func agentsRootDir() string {
-	return orDefault(strings.TrimSpace(os.Getenv("OPENNEKO_AGENTS_ROOT")), "/var/lib/openneko/agents")
-}
-
-func sanitizePathSegment(value string) string {
-	cleaned := strings.TrimLeft(unsafeSegmentChars.ReplaceAllString(value, "-"), ".")
-	if len(cleaned) > 64 {
-		cleaned = cleaned[:64]
-	}
-	if cleaned == "" {
-		return "default"
-	}
-	return cleaned
 }
 
 func persistGraphjinSourceConfigUpdate(configFile string, update *jsObj) error {
