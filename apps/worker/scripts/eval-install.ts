@@ -13,7 +13,6 @@ import { reconnectPool } from "@neko/db";
 import { _resetSecretKeyCacheForTesting } from "@neko/llm/secrets";
 import { createActionRequest } from "@neko/llm/workflows";
 import { createAdminHandler } from "../src/admin-server";
-import { runActionExecute } from "../src/jobs/action-execute";
 
 export const EVAL_TEMPLATE_DATABASE = "openneko_eval_template";
 export const EVAL_EPISODE_DATABASE_PREFIX = "openneko_eval_ep_";
@@ -500,7 +499,6 @@ export class EvalEpisode {
 
     this.worker = createServer(
       createAdminHandler({
-        actions: { ready: () => true, execute: (input) => runActionExecute(input) },
         actionRequests: {
           create: async (input) => {
             const request = await createActionRequest(input as Parameters<typeof createActionRequest>[0]);

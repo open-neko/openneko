@@ -164,6 +164,7 @@ with exit code 0, so its supervisor starts it again.`,
 				api.StartWorkflowScheduler(ctx)
 				api.StartRunReconcile(ctx)
 				api.StartKnowledgeRefresh(ctx)
+				api.StartSubscriptionManager(ctx)
 			}
 			var node *exec.Cmd
 			nodeDone := make(chan error, 1)

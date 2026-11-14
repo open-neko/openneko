@@ -5,8 +5,6 @@
  *   POST /admin/graphjin/group-grants → apply group grants now ({ immediate: true }) or in a batch.
  *   POST /admin/action-requests/create → persist + run worker-owned preflight
  *                               before returning an approval-card-safe id.
- *   POST /admin/actions/execute → run an approved action ({ orgId, actionRequestId });
- *                               the action_execute job on River calls it.
  *
  * Extracted from index.ts so the handler can be unit-tested without
  * booting pg-boss / the agent stack.
@@ -65,7 +63,6 @@ export type AdminHandlerOptions = {
   events?: ExternalEventHandlerSurface | null;
   /** Trusted web→worker action creation so worker-owned preflight hooks run. */
   actionRequests?: ActionRequestHandlerSurface | null;
-  actions?: ActionExecuteHandlerSurface | null;
   /** Writes group grants into the GraphJin config, now or batched. */
   groupGrants?: GroupGrantsHandlerSurface | null;
 };
@@ -82,11 +79,6 @@ export interface ActionRequestHandlerSurface {
   create(input: Record<string, unknown>): Promise<{ id: string; status: string }>;
 }
 
-export interface ActionExecuteHandlerSurface {
-  ready(): boolean;
-  execute(input: { orgId: string; actionRequestId: string }): Promise<void>;
-}
-
 export interface ExternalEventHandlerSurface {
   dispatchExternal(input: {
     orgId: string;
@@ -101,7 +93,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const connect = opts.connect ?? null;
   const events = opts.events ?? null;
   const actionRequests = opts.actionRequests ?? null;
-  const actions = opts.actions ?? null;
   const groupGrants = opts.groupGrants ?? null;
 
   return function handle(req: IncomingMessage, res: ServerResponse) {
@@ -170,10 +161,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       void handleActionRequestCreate(req, res, actionRequests);
       return;
     }
-    if (req.method === "POST" && req.url === "/admin/actions/execute") {
-      void handleActionExecute(req, res, actions);
-      return;
-    }
     res.writeHead(404).end();
   };
 }
@@ -198,30 +185,6 @@ async function handleActionRequestCreate(
       200,
       await actionRequests.create(body as Record<string, unknown>),
     );
-  } catch (err) {
-    json(res, 500, { error: err instanceof Error ? err.message : String(err) });
-  }
-}
-
-async function handleActionExecute(
-  req: IncomingMessage,
-  res: ServerResponse,
-  actions: ActionExecuteHandlerSurface | null,
-): Promise<void> {
-  if (!actions?.ready()) {
-    json(res, 503, { error: "action adapters are not ready" });
-    return;
-  }
-  try {
-    const body = (await readJson(req).catch(() => null)) as { orgId?: unknown; actionRequestId?: unknown } | null;
-    const orgId = typeof body?.orgId === "string" ? body.orgId : "";
-    const actionRequestId = typeof body?.actionRequestId === "string" ? body.actionRequestId : "";
-    if (!orgId || !actionRequestId) {
-      json(res, 400, { error: "orgId and actionRequestId are required" });
-      return;
-    }
-    await actions.execute({ orgId, actionRequestId });
-    json(res, 200, { ok: true });
   } catch (err) {
     json(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }
