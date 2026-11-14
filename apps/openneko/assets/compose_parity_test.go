@@ -555,25 +555,25 @@ func TestOpenShellIsGone(t *testing.T) {
 
 func TestPackagedDemoLoaderHasItsTools(t *testing.T) {
 	demo := loadComposeParityDocument(t, readEmbeddedCompose(t, "demo.yml"))
-	if image := demo.Services["adventureworks-init"].Image; !strings.Contains(image, "/neko-worker:") {
-		t.Fatalf("demo adventureworks-init image = %q, want the worker image", image)
+	for _, svc := range []string{"adventureworks-init", "neko-adventureworks-seed"} {
+		if image := demo.Services[svc].Image; !strings.Contains(image, "/neko-cli:") {
+			t.Fatalf("demo %s image = %q, want neko-cli", svc, image)
+		}
+	}
+	if want := []string{"seed", "adventureworks", "--load"}; !reflect.DeepEqual(demo.Services["adventureworks-init"].Command, want) {
+		t.Fatalf("demo adventureworks-init command = %v, want %v", demo.Services["adventureworks-init"].Command, want)
+	}
+	if want := []string{"seed", "adventureworks", "--org"}; !reflect.DeepEqual(demo.Services["neko-adventureworks-seed"].Command, want) {
+		t.Fatalf("demo neko-adventureworks-seed command = %v, want %v", demo.Services["neko-adventureworks-seed"].Command, want)
 	}
 	raw, err := os.ReadFile(filepath.Join(repoRootForTest(t), "Dockerfile"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	stage := string(raw)
-	start := strings.Index(stage, " AS worker\n")
-	if start < 0 {
-		t.Fatal("Dockerfile has no worker stage")
-	}
-	stage = stage[start:]
-	if end := strings.Index(stage, "\nFROM "); end >= 0 {
-		stage = stage[:end]
-	}
-	for _, tool := range []string{"unzip", "postgresql-client-16"} {
-		if !strings.Contains(stage, " "+tool+" ") {
-			t.Errorf("the worker image does not install %s, which the demo AdventureWorks loader and backup run", tool)
+	dockerfile := string(raw)
+	for _, removed := range []string{" AS init-tools", " AS adventureworks-loader"} {
+		if strings.Contains(dockerfile, removed) {
+			t.Errorf("Dockerfile still defines removed Node one-shot stage %q", strings.TrimSpace(removed))
 		}
 	}
 }

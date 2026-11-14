@@ -182,40 +182,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && chmod 0755 /usr/local/bin/duckdb \
     && /usr/local/bin/duckdb --version
 
-# Small Node one-shots. Bundling them prevents demo/config initialization from
-# reusing the full worker image and its production dependency closure.
-FROM source AS init-tools-deploy
-RUN mkdir -p /out/init-tools \
-    && cd apps/worker \
-    && pnpm exec esbuild ../../packages/db/src/seed-adventureworks.mjs \
-      --bundle --minify --platform=node --format=esm \
-      --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" \
-      --outfile=/out/init-tools/seed-adventureworks.js
-
-# Alpine one-shots likewise need only the Node executable, not npm/Yarn.
+# Alpine runtime for the backend eval's stateless API fixture.
 FROM node:24.22.1-alpine AS node-alpine-distribution
 
 FROM alpine:3.22 AS node-alpine-runtime
 RUN apk add --no-cache --upgrade libstdc++ ca-certificates-bundle
 COPY --from=node-alpine-distribution /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-alpine-distribution /usr/local/share/doc/node /usr/local/share/doc/node
-
-FROM node-alpine-runtime AS init-tools
-WORKDIR /app
-COPY --from=init-tools-deploy /out/init-tools /app
-CMD ["node", "--version"]
-
-FROM source AS adventureworks-loader-deploy
-RUN pnpm --dir apps/worker exec esbuild scripts/load-adventureworks.ts \
-      --bundle --minify --platform=node --format=esm \
-      --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" \
-      --outfile=/out/load-adventureworks.js
-
-FROM node-alpine-runtime AS adventureworks-loader
-RUN apk add --no-cache --upgrade ca-certificates ca-certificates-bundle curl postgresql-client unzip
-WORKDIR /app
-COPY --from=adventureworks-loader-deploy /out/load-adventureworks.js /app/load-adventureworks.js
-ENTRYPOINT ["node", "/app/load-adventureworks.js"]
 
 # Stateless upstream used only by the backend eval to prove that GraphJin
 # forwards an explicitly exposed API `call` mutation. It keeps no mutable
