@@ -417,7 +417,11 @@ with the Go loader in `apps/openneko/internal/packs`. The plan reads each instal
 artifact from its target: the database row, the skill folder, the GraphJin config
 file, or the live GraphJin. Run `go test ./internal/packs` in `apps/openneko`: it
 checks that the Go loader gives the same manifest, bundle, plan and target state
-hashes as the Node code. Integration tests need their documented test dependencies;
+hashes as the Node code. `openneko web` also runs the OAuth routes: the
+client setup, the connect and callback, the status and the disconnect. Until the
+pack apply moves to Go, a deployment-scope connection on an installed pack with
+GraphJin sources asks the worker to apply the new token to those sources, and the
+worker still refreshes deployment-scope tokens. Integration tests need their documented test dependencies;
 a skipped test is not a live pass.
 
 ## Save changes, submit a PR, and release

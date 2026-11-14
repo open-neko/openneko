@@ -778,6 +778,7 @@
   letter-spacing: -0.012em;
   color: var(--text);
   margin-top: 5px;
+  overflow-wrap: break-word;
 }
 .work-confirm-body {
   margin-top: 9px;
@@ -810,6 +811,7 @@
   letter-spacing: -0.025em;
   line-height: 1.18;
   color: var(--text);
+  overflow-wrap: break-word;
 }
 .work-surface-sub {
   font-size: var(--type-body-sm);
@@ -986,6 +988,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
+  overflow-wrap: anywhere;
 }
 .work-section-summary::-webkit-details-marker {
   display: none;
@@ -1169,6 +1172,7 @@
   color: var(--text2);
   font-size: var(--type-body-sm);
   line-height: var(--leading-body);
+  overflow-wrap: break-word;
 }
 .work-a2ui-text > * { margin: 0; }
 .work-a2ui-text.is-caption {

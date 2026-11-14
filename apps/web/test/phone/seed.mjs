@@ -24,8 +24,17 @@ const client = new pg.Client({ connectionString: process.argv[2] });
 await client.connect();
 const { rows } = await client.query("select id from organization limit 1");
 const org = rows[0].id;
+await client.query("update organization set setup_complete_at = now() where id = $1", [org]);
 await client.query(
   "insert into customer_profile (org_id, version, is_current, business_profile) values ($1, 1, true, 'A test store')",
+  [org],
+);
+await client.query(
+  "insert into user_group (id, org_id, slug, name, description, kind) values ('c0a7ac70-0000-4000-8000-000000000061', $1, 'finance', 'Finance', 'Finance and accounting', 'custom')",
+  [org],
+);
+await client.query(
+  "insert into pack_install (org_id, pack_id, version, status, manifest_hash, installed_at, config) values ($1, 'magento', '1.0.0', 'installed', 'h', now(), '{}'::jsonb)",
   [org],
 );
 await client.query(
