@@ -172,7 +172,7 @@ func TestWorkflowRunDetail(t *testing.T) {
 		`"type":"unknown","event":[1],`,
 		`"lineage":{"triggeredBySubscriptionId":"` + subHeld + `","triggeredByOutputId":"` + outputID + `","triggeredByObservationId":null,` +
 			`"upstream":{"output":{"id":"` + outputID + `","title":"Late order","scope":null,"mood":null,"createdAt":"`,
-		`"workflow":{"id":"` + wfOrg + `","name":"Org flow"},"workflowRunId":"` + runOrg + `"}}}`,
+		`"workflow":{"id":"` + wfOrg + `","name":"Org flow"},"workflowRunId":"` + runOrg + `"}},"canStop":false}`,
 	} {
 		if w.Code != 200 || !strings.Contains(body, part) {
 			t.Errorf("run lacks %s\n%s", part, body)
@@ -188,7 +188,7 @@ func TestWorkflowRunDetail(t *testing.T) {
 	run := call(f, "GET", "/api/v1/workflow-runs/"+runOrg, "", sessionCookie("admin")).Body.String()
 	if !strings.Contains(run, `"outputs":[{"id":"`+outputID+`","kind":"finding","title":"Late order","body":"","payload":{},"artifactPath":null,`+
 		`"scope":null,"topic":null,"mood":null,"timeWindowStart":null,"timeWindowEnd":null,"freshnessTtlSeconds":null,"createdAt":"`) ||
-		!strings.Contains(run, `"lineage":{"triggeredBySubscriptionId":null,"triggeredByOutputId":null,"triggeredByObservationId":null,"upstream":null}}`) {
+		!strings.Contains(run, `"lineage":{"triggeredBySubscriptionId":null,"triggeredByOutputId":null,"triggeredByObservationId":null,"upstream":null},"canStop":true}`) {
 		t.Errorf("org run: %s", run)
 	}
 	api := call(f, "GET", "/api/v1/workflow-runs/"+runAPI, "", member).Body.String()

@@ -89,7 +89,7 @@ export const workflowCases: Case[] = [
     op: "GET /workflow-runs", name: "lists the runs a member can see", as: "member", status: 200,
     check: (r, c) => expect((body(r).runs as { id: string }[]).map((x) => x.id)).toEqual([c.ids.memberWorkflowRunId]),
   },
-  { op: "GET /workflow-runs/{workflowRunId}", name: "reads a run", status: 200, request: (c) => ({ params: { workflowRunId: c.ids.adminWorkflowRunId } }) },
+  { op: "GET /workflow-runs/{workflowRunId}", name: "reads a run", status: 200, request: (c) => ({ params: { workflowRunId: c.ids.adminWorkflowRunId } }), check: (r) => expect(body(r).canStop).toBe(false) },
   { op: "GET /workflow-runs/{workflowRunId}", name: "hides another owner's run from a member", as: "member", status: 404, request: (c) => ({ params: { workflowRunId: c.ids.adminWorkflowRunId } }) },
   { op: "GET /workflow-runs/{workflowRunId}/artifact", name: "reports a run with no artifact", status: 404, request: (c) => ({ params: { workflowRunId: c.ids.adminWorkflowRunId } }) },
   { op: "POST /hooks/{workflowId}", name: "refuses a workflow without a webhook", as: "anonymous", status: 404, request: (c) => ({ params: workflowParams(c), body: {} }) },

@@ -51,9 +51,6 @@ func TestManualWorkflowRunEndsAtItsLimits(t *testing.T) {
 			front.API.turnResolve = fixedBackend(slowModel(t, loop, c.delay).URL)
 			w := call(front, "POST", "/api/v1/workflows/"+wf.ID+"/manual-runs", `{}`, sessionCookie("admin"))
 			runID, _ := decode(t, w)["workRunId"].(string)
-			if code, _ := cancelAs(front, runID, "admin"); code != 404 {
-				t.Fatalf("an admin cancelled a service run: %d", code)
-			}
 			status := waitRunFor(t, db, runID, 60*time.Second)
 			errText := rowText(t, db, `select coalesce(error, '') from work_run where id = $1`, runID)
 			if wfStatus := rowText(t, db, `select status from workflow_run where work_run_id = $1`, runID); wfStatus != status {
