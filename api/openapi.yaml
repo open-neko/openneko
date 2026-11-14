@@ -4583,6 +4583,34 @@ paths:
         '302':
           description: Redirect to the return path on success, or to /signin with an error
   /auth/device/approve:
+    get:
+      operationId: getAuthDeviceApprove
+      tags:
+      - auth
+      summary: Look up a pending device request by user code
+      x-access: public
+      security: []
+      parameters:
+      - name: code
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Pending device request or null when not found
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - request
+                additionalProperties: false
+                properties:
+                  request:
+                    type:
+                    - object
+                    - 'null'
     post:
       operationId: postAuthDeviceApprove
       tags:
@@ -6037,6 +6065,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /my/pack-accounts:
+    get:
+      operationId: getMyPackAccounts
+      tags:
+      - my
+      summary: List personal pack OAuth connections for the signed-in user
+      x-access: signed-in
+      security:
+      - session: []
+      - deviceToken: []
+      responses:
+        '200':
+          description: Personal pack connection statuses
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - connections
+                additionalProperties: false
+                properties:
+                  connections:
+                    type: array
+                    items:
+                      type: object
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /my/pack-accounts/{packId}/{connectionKey}:
     delete:
       operationId: deleteMyPackAccountsByPackIdByConnectionKey
@@ -6262,6 +6321,55 @@ paths:
                     type: string
                   message:
                     type: string
+  /onboarding/wizard:
+    get:
+      operationId: getOnboardingWizard
+      tags:
+      - onboarding
+      summary: Read the onboarding wizard state and initial values
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      responses:
+        '200':
+          description: Onboarding wizard state
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - kind
+                additionalProperties: false
+                properties:
+                  kind:
+                    type: string
+                    enum:
+                    - settings
+                    - persona
+                    - wizard
+                  initialRoleTemplate:
+                    type: string
+                  initialFocusAreas:
+                    type: array
+                    items:
+                      type: string
+                  initial:
+                    type: object
+                  teamMode:
+                    type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an administrator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /onboarding/submit:
     post:
       operationId: postOnboardingSubmit
