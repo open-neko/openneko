@@ -85,6 +85,7 @@ describe("passkey client helpers", () => {
             pubKeyCredParams: [{ type: "public-key", alg: -7 }],
             excludeCredentials: [],
             allowCredentials: registered ? [{ id: credIdB64, type: "public-key" }] : [],
+            userVerification: "required",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
@@ -134,6 +135,8 @@ describe("passkey client helpers", () => {
     expect(createMock).toHaveBeenCalledTimes(1);
     expect(getMock).toHaveBeenCalledTimes(1);
     expect(assertion.credentialId).toBe(credIdB64);
+    expect(createMock.mock.calls[0]![0].publicKey.authenticatorSelection.userVerification).toBe("required");
+    expect(getMock.mock.calls[0]![0].publicKey.userVerification).toBe("required");
 
     // Second approval uses the existing passkey without calling create() again
     const second = await createApprovalPasskeyAssertion("30000000-0000-4000-8000-000000000002");
