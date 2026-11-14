@@ -2,7 +2,6 @@
 // its TestServerPagesMatchWeb fails when the two differ.
 export const serverPages: string[] = [
   "/chat/connectors",
-  "/admin/settings/graphjin",
   "/admin/settings/packs/magento/operations",
   "/device",
   "/integrations",

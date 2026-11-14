@@ -3279,6 +3279,80 @@ paths:
                 properties:
                   error:
                     type: string
+  /admin/graphjin/config:
+    get:
+      operationId: getAdminGraphjinConfig
+      tags:
+      - admin
+      summary: What the GraphJin config allows, and the config file with secrets hidden
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      responses:
+        '200':
+          description: The config descriptions and the file view
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [descriptions, file]
+                additionalProperties: false
+                properties:
+                  descriptions:
+                    type: array
+                    items:
+                      type: object
+                      required: [source, error, summary]
+                      additionalProperties: false
+                      properties:
+                        source:
+                          type: object
+                          required: [id, name]
+                          additionalProperties: false
+                          properties:
+                            id: {type: string}
+                            name: {type: string}
+                        error:
+                          type: [string, 'null']
+                        summary:
+                          type: [object, 'null']
+                  file:
+                    type: object
+                    required: [path, yaml, error, state]
+                    additionalProperties: false
+                    properties:
+                      path:
+                        type: [string, 'null']
+                      yaml:
+                        type: [string, 'null']
+                      error:
+                        type: [string, 'null']
+                      state:
+                        oneOf:
+                        - type: 'null'
+                        - type: object
+                          required: [state, reason, since, restarts]
+                          additionalProperties: false
+                          properties:
+                            state: {type: string}
+                            reason:
+                              type: [string, 'null']
+                            since:
+                              type: [string, 'null']
+                            restarts: {type: number}
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an administrator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /admin/overview:
     get:
       operationId: getAdminOverview

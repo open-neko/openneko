@@ -294,7 +294,7 @@ openneko instances                 # configured host installations
 openneko start [--mode prod|dev|demo] [--detach]
 openneko start --native [--database-url URL] [--web-dir DIR] [--detach]  # no Docker; see "Run without Docker"
 openneko upgrade [--version vX.Y.Z] [--mode auto|prod|dev|demo]
-openneko upgrade --from <release folder> [--skip-backup]   # native install
+openneko upgrade [--version V | --from <release folder>] [--skip-backup]   # native install
 openneko status                    # serving, degraded or down
 openneko logs [service…] [-f] [--tail N]
 openneko stop [--volumes]          # --volumes wipes data (Docker only)
@@ -825,6 +825,21 @@ openneko upgrade
 It needs no Docker. It runs prod mode only, for the default installation.
 OpenNeko's database is yours, by URL.
 
+On Linux (amd64 or arm64), this script installs the native release for your
+user:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/open-neko/openneko/main/scripts/install-native.sh | sh
+```
+
+The script downloads `openneko-native_<version>_linux_<arch>.tar.gz` and
+`checksums-native.txt` from the release and checks the archive. It puts
+`bin/openneko` and `share/openneko/web` in `~/.local/opt/openneko` and links
+`~/.local/bin/openneko`. `OPENNEKO_VERSION` picks a release (default: the
+latest). `OPENNEKO_PREFIX` and `OPENNEKO_BIN_DIR` change the two folders.
+`OPENNEKO_RELEASE_URL` points at a mirror that holds `<tag>/<file>`, and
+then `OPENNEKO_VERSION` is needed. Then start OpenNeko:
+
 ```bash
 openneko start --native -d \
   --database-url 'postgres://USER:PASSWORD@HOST:5432/DATABASE?sslmode=verify-full'
@@ -855,10 +870,14 @@ and `upgrade` act on the native install. `openneko logs` reads the
   OpenNeko, replaces those folders and the objects that the login owns in
   the database, and keeps the database URL of this install. It starts
   OpenNeko again when it ran before. The start applies the migrations.
-- `openneko upgrade --from <folder>` takes a backup, stops OpenNeko, puts
-  the release's `bin/openneko` and `share/openneko/web` in place of the
-  current ones, and starts OpenNeko again when it ran before.
-  `--skip-backup` upgrades with no backup.
+- `openneko upgrade` downloads the release archive for this host and
+  checks it against `checksums-native.txt`. It takes a backup, stops
+  OpenNeko, puts the release's `bin/openneko` and `share/openneko/web` in
+  place of the current ones, and starts OpenNeko again when it ran before.
+  `--version` picks the release (default: the latest), and
+  `OPENNEKO_RELEASE_URL` points at a mirror. `--from <folder>` upgrades from
+  a release folder instead of a download. `--skip-backup` upgrades with no
+  backup.
 
 Backup and restore run `pg_dump` and `pg_restore` on this host. Install the
 PostgreSQL client tools of the server's major version or later (on Debian
