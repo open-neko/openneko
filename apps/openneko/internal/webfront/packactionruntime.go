@@ -62,6 +62,9 @@ type actionRequestRecord struct {
 	Payload     *jsObj
 	Status      string
 	WorkRunID   *string
+	Summary     *string
+	ApprovedBy  *string
+	ApprovedAt  *time.Time
 }
 
 type actionExecutionOutcome struct {
@@ -297,14 +300,7 @@ func (a *API) shouldCreateActionRequestInGo(ctx context.Context, orgID, kind str
 		return true, nil
 	}
 	if isMagentoV2ActionKind(kind) {
-		var enabled bool
-		var readiness string
-		err := a.DB.QueryRow(ctx, `select enabled, readiness from pack_action_definition where org_id = $1 and kind = $2 limit 1`,
-			orgID, kind).Scan(&enabled, &readiness)
-		if err == nil && (!enabled || readiness != "ready") {
-			return true, nil
-		}
-		return false, nil
+		return true, nil
 	}
 	var enabled, hasArtifact bool
 	var readiness string
@@ -477,6 +473,7 @@ func (a *API) createActionRequestInGo(ctx context.Context, in *jsObj) (*jsObj, e
 		ID:          id,
 		OrgID:       orgID,
 		ActorUserID: actorUserID,
+		Summary:     optString(in.vals["summary"]),
 		ActorRole:   actorRole,
 		ActorBack:   actorBackend,
 		Scope:       scope,
@@ -529,8 +526,10 @@ func (a *API) runActionRequestCreatedHooks(ctx context.Context, req *actionReque
 	if err := a.packActionPreflight(ctx, req.OrgID, req.Kind); err != nil {
 		return err
 	}
-	_, err := a.packConnectionPreflight(ctx, req)
-	return err
+	if _, err := a.packConnectionPreflight(ctx, req); err != nil {
+		return err
+	}
+	return a.magentoActionCreated(ctx, req)
 }
 
 func optString(v any) *string {
@@ -682,7 +681,7 @@ func (a *API) executeDeclarativePackAction(ctx context.Context, req *actionReque
 	}
 
 	gqlQuery := fmt.Sprintf("mutation ExecutePackAction($call: JSON!) { %s(call: $call) { ok status_code operation_id request_id response_json } }", op.MutationRoot)
-	data, messages, err := a.packActionGraphjinQuery(ctx, source.GraphqlURL, token, bindings, gqlQuery, jsObjOf("call", callObj))
+	data, messages, err := a.packActionGraphjinQuery(ctx, source.GraphqlURL, "pack_api_executor", token, bindings, gqlQuery, jsObjOf("call", callObj))
 	if err != nil {
 		return nil, err
 	}
@@ -795,15 +794,17 @@ func parseResponseJSON(v any) any {
 
 func (a *API) packActionGraphjinQuery(
 	ctx context.Context,
-	endpoint, token string,
+	endpoint, role, token string,
 	bindings []connectionBinding,
 	query string,
 	variables *jsObj,
 ) (any, []string, error) {
 	baseHeaders := map[string]string{
 		"Content-Type":  "application/json",
-		"X-Role":        "pack_api_executor",
 		"authorization": "Bearer " + token,
+	}
+	if role != "" {
+		baseHeaders["X-Role"] = role
 	}
 	resolvedHeaders, err := a.packUserConnectionHeaders(ctx, endpoint, baseHeaders, bindings)
 	if err != nil {
@@ -861,9 +862,13 @@ func (a *API) packActionGraphjinQuery(
 	return data, messages, nil
 }
 
-func (a *API) isDeclarativePackActionRequest(ctx context.Context, orgID, actionRequestID string) (bool, error) {
+type actionAdapter func(context.Context, *actionRequestRecord) (*actionExecutionOutcome, error)
+
+// goActionAdapter is the Go executor of an action request, or nil when the
+// worker still runs its kind.
+func (a *API) goActionAdapter(ctx context.Context, orgID, actionRequestID string) (actionAdapter, error) {
 	if a.DB == nil {
-		return false, nil
+		return nil, nil
 	}
 	var kind string
 	var owned bool
@@ -874,20 +879,25 @@ func (a *API) isDeclarativePackActionRequest(ctx context.Context, orgID, actionR
 		 where r.org_id = $1 and r.id::text = $2
 		 limit 1`, orgID, actionRequestID).Scan(&kind, &owned)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
+		return nil, nil
 	}
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	if !owned || isMagentoV2ActionKind(kind) {
-		return false, nil
+	switch {
+	case kind == "magento.financial_handoff":
+		return a.executeMagentoFinancialHandoff, nil
+	case isMagentoV2ActionKind(kind):
+		return a.executeMagentoChangeset, nil
+	case owned:
+		return a.executeDeclarativePackAction, nil
 	}
-	return true, nil
+	return nil, nil
 }
 
-// executeDeclarativeActionRequest matches runActionExecute() and
-// executeApprovedActionRequest() for declarative pack actions.
-func (a *API) executeDeclarativeActionRequest(ctx context.Context, orgID, actionRequestID string) error {
+// executeActionRequest matches runActionExecute() and
+// executeApprovedActionRequest() for the action kinds that run in Go.
+func (a *API) executeActionRequest(ctx context.Context, orgID, actionRequestID string, run actionAdapter) error {
 	req, err := a.loadActionRequestRecord(ctx, orgID, actionRequestID)
 	if err != nil {
 		return err
@@ -905,7 +915,7 @@ func (a *API) executeDeclarativeActionRequest(ctx context.Context, orgID, action
 		return err
 	}
 
-	outcome, execErr := a.executeDeclarativePackAction(ctx, req)
+	outcome, execErr := run(ctx, req)
 	var eventStatus string
 	var eventOutcome *jsObj
 	var eventErr string
@@ -1024,12 +1034,14 @@ func (a *API) loadActionRequestRecord(ctx context.Context, orgID, id string) (*a
 	var rawPayload []byte
 	err := a.DB.QueryRow(ctx, `
 		select id::text, org_id, actor_user_id, actor_role, actor_backend,
-		       scope, kind, target, payload, status, work_run_id::text
+		       scope, kind, target, payload, status, work_run_id::text,
+		       summary, approved_by_user_id, approved_at
 		  from action_request
 		 where org_id = $1 and id::text = $2
 		 limit 1`, orgID, id).Scan(
 		&rec.ID, &rec.OrgID, &rec.ActorUserID, &rec.ActorRole, &rec.ActorBack,
 		&rec.Scope, &rec.Kind, &rec.Target, &rawPayload, &rec.Status, &rec.WorkRunID,
+		&rec.Summary, &rec.ApprovedBy, &rec.ApprovedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("action_request %s not found", id)
