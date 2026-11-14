@@ -70,6 +70,12 @@ func (w *workRun) NextRetry(*river.Job[WorkRunArgs]) time.Time {
 	return time.Now().Add(WorkRunRetryDelay)
 }
 
+// WorkRun queues one channel turn in the caller's transaction.
+func (i *Inserter) WorkRun(ctx context.Context, tx pgx.Tx, args WorkRunArgs) error {
+	_, err := i.client.InsertTx(ctx, tx, args, nil)
+	return err
+}
+
 // ChannelDeliverArgs is ChannelDeliverPayload in packages/db/src/jobs.ts.
 // Key is the pg-boss singleton key.
 type ChannelDeliverArgs struct {

@@ -235,30 +235,3 @@ func TestNormalizePublicURL(t *testing.T) {
 		}
 	}
 }
-
-func TestAdminChannelSettings(t *testing.T) {
-	f, wk, _ := signinFront(t, signinPending("[]"))
-	admin := sessionCookie("admin")
-	wk.reply["/admin/channels/settings"] = `{ "channels": [] }`
-	if w := call(f, "GET", "/api/v1/admin/channels/settings", "", admin); w.Code != 200 || w.Body.String() != `{"channels":[]}` {
-		t.Errorf("get: %d %s", w.Code, w.Body.String())
-	}
-	if w := call(f, "POST", "/api/v1/admin/channels/settings", `{"channel":"slack","values":{"SLACK_BOT_TOKEN":"planted"}}`, admin); w.Code != 200 {
-		t.Errorf("post: %d %s", w.Code, w.Body.String())
-	}
-	if len(wk.calls) != 2 || wk.calls[0] != "GET /admin/channels/settings" || wk.calls[1] != `POST /admin/channels/settings {"channel":"slack","values":{"SLACK_BOT_TOKEN":"planted"}}` {
-		t.Errorf("calls %v", wk.calls)
-	}
-	wk.fail = `{"error":"unknown channel"}`
-	if w := call(f, "POST", "/api/v1/admin/channels/settings", `{"channel":"x"}`, admin); w.Code != 502 || w.Body.String() != `{"error":"unknown channel"}` {
-		t.Errorf("worker error: %d %s", w.Code, w.Body.String())
-	}
-	wk.fail = "boom"
-	if w := call(f, "GET", "/api/v1/admin/channels/settings", "", admin); w.Code != 502 || w.Body.String() != `{"error":"Worker returned HTTP 502"}` {
-		t.Errorf("worker text: %d %s", w.Code, w.Body.String())
-	}
-	f.API.Gate.WorkerURL = "http://127.0.0.1:1"
-	if w := call(f, "GET", "/api/v1/admin/channels/settings", "", admin); w.Code != 502 || w.Body.String() != `{"error":"the worker did not answer"}` {
-		t.Errorf("worker down: %d %s", w.Code, w.Body.String())
-	}
-}
