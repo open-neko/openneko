@@ -8,12 +8,16 @@ import (
 	"time"
 )
 
+// guardedResolver is nil (the system resolver) outside tests.
+var guardedResolver *net.Resolver
+
 // guardedClient checks each address at dial time, after DNS, so a name that
 // resolves to a refused address is refused too. A redirect comes back as the
 // response, so an allowed URL cannot lead to another target.
 func guardedClient(refuse func(net.IP) error) *http.Client {
 	dialer := &net.Dialer{
-		Timeout: 30 * time.Second,
+		Timeout:  30 * time.Second,
+		Resolver: guardedResolver,
 		Control: func(_, address string, _ syscall.RawConn) error {
 			host, _, err := net.SplitHostPort(address)
 			if err != nil {

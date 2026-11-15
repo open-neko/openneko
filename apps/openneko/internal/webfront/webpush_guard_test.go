@@ -87,6 +87,14 @@ func TestWebPushRefusesPrivateAddressesAndRedirects(t *testing.T) {
 		"https://100.64.0.1/push",
 		"https://[fd00::1]/push",
 		"https://0.0.0.0/push",
+		"https://[::1]/push",
+		"https://[::ffff:10.0.0.1]/push",
+		"https://[64:ff9b::a00:1]/push",
+		"https://[64:ff9b::808:808]/push",
+		"https://198.18.0.1/push",
+		"https://198.19.255.254/push",
+		"https://240.0.0.1/push",
+		"https://255.255.255.254/push",
 	} {
 		status, err := sendWebPush(ctx, pushClient(), keys, testPushSubscription(t, endpoint), []byte(`{}`))
 		var blocked *pushBlockedError
@@ -94,8 +102,9 @@ func TestWebPushRefusesPrivateAddressesAndRedirects(t *testing.T) {
 			t.Fatalf("%s: status %d, err %v; want a refused dial", endpoint, status, err)
 		}
 	}
-	if status, _ := sendWebPush(ctx, pushClient(), keys, testPushSubscription(t, srv.URL+"/plain"), []byte(`{}`)); status != http.StatusGone {
-		t.Fatalf("a stored http endpoint gave status %d, want it removed as gone", status)
+	var local *pushLocalError
+	if status, err := sendWebPush(ctx, pushClient(), keys, testPushSubscription(t, srv.URL+"/plain"), []byte(`{}`)); status != 0 || !errors.As(err, &local) {
+		t.Fatalf("a stored http endpoint gave status %d, err %v; want a local error and no reply status", status, err)
 	}
 	mu.Lock()
 	if len(hits) != 0 {

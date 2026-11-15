@@ -16,6 +16,8 @@ const (
 	WebPushTimeout    = time.Minute
 )
 
+var webPushTimeout = WebPushTimeout
+
 // WebPushArgs carries the event kind and recipient user IDs for a Web Push
 // notice. It holds no business data from the run.
 type WebPushArgs struct {
@@ -69,7 +71,9 @@ func (w *webPush) Work(ctx context.Context, job *river.Job[WebPushArgs]) error {
 		Subscriptions: failed.Subscriptions,
 		Retry:         job.Args.Retry + job.Attempt,
 	}
-	if _, ierr := client.Insert(ctx, next, &river.InsertOpts{
+	insertCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if _, ierr := client.Insert(insertCtx, next, &river.InsertOpts{
 		MaxAttempts: job.MaxAttempts - job.Attempt,
 		ScheduledAt: w.NextRetry(job),
 	}); ierr != nil {
@@ -79,7 +83,7 @@ func (w *webPush) Work(ctx context.Context, job *river.Job[WebPushArgs]) error {
 }
 
 func (w *webPush) Timeout(*river.Job[WebPushArgs]) time.Duration {
-	return WebPushTimeout
+	return webPushTimeout
 }
 
 func (w *webPush) NextRetry(job *river.Job[WebPushArgs]) time.Time {
