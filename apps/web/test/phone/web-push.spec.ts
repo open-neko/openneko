@@ -48,6 +48,26 @@ async function freePort(): Promise<number> {
   });
 }
 
+async function shownNotices(sw: Worker, tag: string) {
+  return sw.evaluate(async (t) => {
+    const reg = (globalThis as unknown as { registration: ServiceWorkerRegistration }).registration;
+    return (await reg.getNotifications({ tag: t })).map((n) => ({ title: n.title, body: n.body, data: n.data as unknown }));
+  }, tag);
+}
+
+async function clickNotice(sw: Worker, tag: string): Promise<void> {
+  await sw.evaluate(async (t) => {
+    const g = globalThis as unknown as {
+      registration: ServiceWorkerRegistration;
+      NotificationEvent: new (type: string, init: { notification: Notification }) => Event;
+      dispatchEvent: (event: Event) => boolean;
+    };
+    const [notice] = await g.registration.getNotifications({ tag: t });
+    if (!notice) throw new Error(`no notification with tag ${t}`);
+    g.dispatchEvent(new g.NotificationEvent("notificationclick", { notification: notice }));
+  }, tag);
+}
+
 async function waitForController(page: Page): Promise<void> {
   await page.evaluate(async () => {
     if (!("serviceWorker" in navigator)) {
@@ -132,6 +152,9 @@ type ReceivedPush = {
   rawJson: string;
   notice: PushNotice;
 };
+
+// The headless shell refuses notification permission inside a service worker.
+test.use({ channel: "chromium" });
 
 test.describe("4.4 Web Push for approval waiting, run finished, and workflow needs attention", () => {
   test.use({ viewport: { width: 400, height: 860 } });
@@ -521,6 +544,20 @@ test.describe("4.4 Web Push for approval waiting, run finished, and workflow nee
             url: expected.url,
             event: expected.event,
           });
+
+        await expect
+          .poll(() => shownNotices(swWorker!, expected.event), { timeout: 5_000 })
+          .toEqual([{ title: "OpenNeko", body: expected.body, data: { event: expected.event, url: expected.url } }]);
+      }
+
+      for (const expected of [
+        { event: "approval_waiting", url: "/actions" },
+        { event: "run_finished", url: "/runs" },
+        { event: "workflow_needs_attention", url: "/workflows" },
+      ]) {
+        await clickNotice(swWorker, expected.event);
+        await page.waitForURL(`${origin}${expected.url}`);
+        expect(await shownNotices(swWorker, expected.event)).toEqual([]);
       }
 
       // 5. Mark the push endpoint 410 Gone at the stub and verify the River job removes the subscription.
@@ -552,7 +589,7 @@ test.describe("4.4 Web Push for approval waiting, run finished, and workflow nee
 
       // 6. Reload /profile, re-enable, and then turn off from the profile UI.
       gonePaths.delete("/push/phone-1");
-      await page.reload({ waitUntil: "networkidle" });
+      await page.goto(`${origin}/profile`, { waitUntil: "networkidle" });
       await expect(page.getByTestId("push-status")).toHaveText("Notifications are off in this browser.");
 
       await page.getByRole("button", { name: "Turn on notifications" }).click();
