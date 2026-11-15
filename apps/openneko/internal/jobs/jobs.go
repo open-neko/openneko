@@ -4,9 +4,11 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,6 +28,11 @@ const (
 // packages/db/src/jobs.ts must hold the same names.
 var Moved = []string{KindOutputSweep, KindMetricSweep, KindCronSweep, KindEmbeddingIndex, KindEmbeddingSweep, KindDirectorySync, KindActionExecute, KindSkillLearn, KindBotNameSweep,
 	KindBusinessProfileBuild, KindIndustryInsightsBuild, KindBootstrapMetricsBuild, KindMetricRefresh, KindWorkflowRunFire, KindWorkflowAPISweep, KindWorkRun, KindChannelDeliver}
+
+// Retired lists the pg-boss queues of removed features.
+var Retired = []string{"records_import", "records_identity_link", "records_salesforce_export", "records_salesforce_sync",
+	"records_salesforce_sync_sweep", "records_salesforce_cutover", "records_backup_verify", "records_ops_watch",
+	"records_watch_evaluate", "records_watch_sweep"}
 
 type Queue struct {
 	Pool          *pgxpool.Pool
@@ -72,8 +79,9 @@ func (q *Queue) logf(format string, args ...any) {
 	}
 }
 
-// Migrate brings River's tables up to date and moves the pending pg-boss jobs
-// of each moved queue to River. The caller holds the migration lock.
+// Migrate brings River's tables up to date, moves the pending pg-boss jobs of
+// each moved queue to River, then removes the moved and retired pg-boss
+// queues. The caller holds the migration lock.
 func (q *Queue) Migrate(ctx context.Context) error {
 	if _, err := q.Pool.Exec(ctx, `create schema if not exists `+pgx.Identifier{q.schema()}.Sanitize()); err != nil {
 		return fmt.Errorf("create the %s schema: %w", q.schema(), err)
@@ -98,7 +106,62 @@ func (q *Queue) Migrate(ctx context.Context) error {
 			q.logf("[migrate] job queue: moved %d pending %s job(s) from pg-boss", n, name)
 		}
 	}
+	for _, name := range append(slices.Clone(Moved), Retired...) {
+		n, removed, err := q.removeBossQueue(ctx, name)
+		if err != nil {
+			q.logf("[migrate] job queue: could not remove the pg-boss queue %s: %v", name, err)
+		} else if removed || n > 0 {
+			q.logf("[migrate] job queue: removed the pg-boss queue %s and %d job(s)", name, n)
+		}
+	}
 	return nil
+}
+
+// removeBossQueue does what pg-boss 10's unschedule and delete_queue do. The
+// jobs go first: the partition's foreign key to the queue row is RESTRICT.
+func (q *Queue) removeBossQueue(ctx context.Context, name string) (int64, bool, error) {
+	boss := pgx.Identifier{q.bossSchema()}.Sanitize()
+	var job, schedule, queue *string
+	if err := q.Pool.QueryRow(ctx, `select to_regclass($1)::text, to_regclass($2)::text, to_regclass($3)::text`,
+		q.bossSchema()+".job", q.bossSchema()+".schedule", q.bossSchema()+".queue").Scan(&job, &schedule, &queue); err != nil {
+		return 0, false, err
+	}
+	tx, err := q.Pool.Begin(ctx)
+	if err != nil {
+		return 0, false, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	if schedule != nil {
+		if _, err := tx.Exec(ctx, `delete from `+boss+`.schedule where name = $1`, name); err != nil {
+			return 0, false, err
+		}
+	}
+	var n int64
+	if job != nil {
+		tag, err := tx.Exec(ctx, `delete from `+boss+`.job where name = $1`, name)
+		if err != nil {
+			return 0, false, err
+		}
+		n = tag.RowsAffected()
+	}
+	removed := false
+	if queue != nil {
+		var partition *string
+		err := tx.QueryRow(ctx, `delete from `+boss+`.queue where name = $1 returning partition_name`, name).Scan(&partition)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+		case err != nil:
+			return 0, false, err
+		default:
+			removed = true
+			if partition != nil && *partition != "" {
+				if _, err := tx.Exec(ctx, `drop table if exists `+boss+`.`+pgx.Identifier{*partition}.Sanitize()); err != nil {
+					return 0, false, err
+				}
+			}
+		}
+	}
+	return n, removed, tx.Commit(ctx)
 }
 
 func (q *Queue) drain(ctx context.Context, name string) (int64, error) {
