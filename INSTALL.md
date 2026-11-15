@@ -372,6 +372,10 @@ state in its process: `GET /health/security` gives `status: "degraded"` and
 `lastFailureAt` and `lastError`. Monitor that route for `status: "degraded"`.
 `GET /health` follows the workflow scheduler, not the audit log.
 
+On the public port, `/health/scheduler` and `/health/security` give only
+`status`. A signed-in admin gets the detail there. The web admin socket
+(`OPENNEKO_WEB_ADMIN_SOCKET`) always gives it.
+
 For immediate delivery independent of PostgreSQL, configure an HTTPS webhook
 on `web`:
 
