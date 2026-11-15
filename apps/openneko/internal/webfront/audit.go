@@ -74,34 +74,27 @@ type auditFailure struct {
 	Error      string `json:"error"`
 }
 
+// AuditHealth is getAuditLoggingHealth() of the Node audit chain.
 type AuditHealth struct {
-	Status       string        `json:"status"`
-	FailureCount int           `json:"failureCount"`
-	LastFailure  *auditFailure `json:"lastFailure"`
+	Healthy       bool    `json:"healthy"`
+	FailureCount  int     `json:"failureCount"`
+	LastFailureAt *string `json:"lastFailureAt"`
+	LastError     *string `json:"lastError"`
 }
 
-// AuditHealth returns the audit logging health state for /health and
-// /health/security.
+// AuditHealth returns the audit logging health state for /health/security.
 func (a *API) AuditHealth() AuditHealth {
 	if a == nil {
-		return AuditHealth{Status: "ok"}
+		return AuditHealth{Healthy: true}
 	}
 	a.auditMu.Lock()
 	defer a.auditMu.Unlock()
-	status := "ok"
-	var last *auditFailure
-	if a.auditFailures > 0 {
-		status = "degraded"
-		if a.lastAuditFailure != nil {
-			cp := *a.lastAuditFailure
-			last = &cp
-		}
+	h := AuditHealth{Healthy: a.auditFailures == 0, FailureCount: a.auditFailures}
+	if a.auditFailures > 0 && a.lastAuditFailure != nil {
+		at, msg := a.lastAuditFailure.OccurredAt, a.lastAuditFailure.Error
+		h.LastFailureAt, h.LastError = &at, &msg
 	}
-	return AuditHealth{
-		Status:       status,
-		FailureCount: a.auditFailures,
-		LastFailure:  last,
-	}
+	return h
 }
 
 // ResetAuditHealth clears the recorded audit logging failure count.
