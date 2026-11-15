@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,25 +17,33 @@ func TestHealthAndSecurityEndpoints(t *testing.T) {
 	db := testpg.Migrated(t)
 	seedOrg(t, db)
 	f, _ := newSetupFront(t, `{"provider":null}`, db)
+	op := f.API.OperatorHandler()
 
-	w := call(f, "GET", "/health", "", nil)
+	w := call(op, "GET", "/health", "", nil)
 	if w.Code != http.StatusOK || w.Body.String() != "ok" {
-		t.Fatalf("/health: %d %q", w.Code, w.Body.String())
+		t.Fatalf("/health with no scheduler: %d %q", w.Code, w.Body.String())
+	}
+	w = call(op, "GET", "/health/scheduler", "", nil)
+	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), `"status":"unavailable"`) {
+		t.Fatalf("/health/scheduler with no scheduler: %d %s", w.Code, w.Body.String())
 	}
 
-	w = call(f, "GET", "/health/security", "", nil)
+	w = call(op, "GET", "/health/security", "", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("/health/security: %d %s", w.Code, w.Body.String())
 	}
-	var sec map[string]any
+	var sec struct {
+		Status       string         `json:"status"`
+		AuditLogging map[string]any `json:"auditLogging"`
+	}
 	if err := json.Unmarshal(w.Body.Bytes(), &sec); err != nil {
 		t.Fatal(err)
 	}
-	if sec["status"] != "ok" {
-		t.Fatalf("status = %v", sec["status"])
+	want := map[string]any{"healthy": true, "failureCount": float64(0), "lastFailureAt": nil, "lastError": nil}
+	if sec.Status != "ok" || !reflect.DeepEqual(sec.AuditLogging, want) {
+		t.Fatalf("/health/security body = %s", w.Body.String())
 	}
 
-	// Simulate an audit logging failure (unsupported payload type).
 	f.API.recordAudit(context.Background(), auditEvent{
 		OrgID:      "org",
 		EntityKind: "workflow",
@@ -42,27 +52,32 @@ func TestHealthAndSecurityEndpoints(t *testing.T) {
 		Payload:    map[string]any{"bad": struct{}{}},
 	})
 
-	w = call(f, "GET", "/health", "", nil)
-	if w.Code != http.StatusServiceUnavailable || w.Body.String() != "degraded" {
-		t.Fatalf("/health degraded: %d %q", w.Code, w.Body.String())
-	}
-
-	w = call(f, "GET", "/health/security", "", nil)
-	if w.Code != http.StatusServiceUnavailable {
+	w = call(op, "GET", "/health/security", "", nil)
+	if w.Code != http.StatusOK {
 		t.Fatalf("/health/security degraded: %d %s", w.Code, w.Body.String())
 	}
+	sec.AuditLogging = nil
 	if err := json.Unmarshal(w.Body.Bytes(), &sec); err != nil {
 		t.Fatal(err)
 	}
-	auditMap, _ := sec["auditLogging"].(map[string]any)
-	if sec["status"] != "degraded" || auditMap["status"] != "degraded" || auditMap["failureCount"] != float64(1) {
-		t.Fatalf("/health/security body = %s", w.Body.String())
+	a := sec.AuditLogging
+	if sec.Status != "degraded" || a["healthy"] != false || a["failureCount"] != float64(1) || a["lastFailureAt"] == nil || a["lastError"] == nil || len(a) != 4 {
+		t.Fatalf("/health/security degraded body = %s", w.Body.String())
 	}
-
-	f.API.ResetAuditHealth()
 	w = call(f, "GET", "/health", "", nil)
 	if w.Code != http.StatusOK || w.Body.String() != "ok" {
-		t.Fatalf("/health after reset: %d %q", w.Code, w.Body.String())
+		t.Fatalf("/health follows the scheduler, not the audit log: %d %q", w.Code, w.Body.String())
+	}
+
+	f.API.ResetWorkflowSchedulerHealth(time.Now().UTC().Add(-5 * time.Minute))
+	w = call(f, "GET", "/health", "", nil)
+	if w.Code != http.StatusServiceUnavailable || w.Body.String() != "degraded" {
+		t.Fatalf("/health with a stale scheduler: %d %q", w.Code, w.Body.String())
+	}
+	f.API.ResetWorkflowSchedulerHealth(time.Now().UTC())
+	w = call(f, "GET", "/health", "", nil)
+	if w.Code != http.StatusOK || w.Body.String() != "ok" {
+		t.Fatalf("/health with a fresh scheduler: %d %q", w.Code, w.Body.String())
 	}
 }
 
@@ -131,5 +146,44 @@ func TestDurableWorkflowSchedulerAndHealthEndpoint(t *testing.T) {
 	w = call(f, "GET", "/health/scheduler", "", nil)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("/health/scheduler stale: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHealthDetailOnlyOnTheAdminSocketAndForSignedInAdmins(t *testing.T) {
+	db := testpg.Migrated(t)
+	seedOrg(t, db)
+	for _, signIn := range []string{`{"provider":null}`, `{"provider":{"pluginName":"scalekit"}}`} {
+		f, _ := newSetupFront(t, signIn, db)
+		f.API.recordAudit(context.Background(), auditEvent{OrgID: "org", EntityKind: "workflow", EntityID: "wf-secret-id",
+			Event: "workflow.updated", Payload: map[string]any{"bad": struct{}{}}})
+		f.API.ResetWorkflowSchedulerHealth(time.Now().UTC())
+		bare := map[string]string{"/health/security": `{"status":"degraded"}`, "/health/scheduler": `{"status":"ok"}`}
+		callers := map[string]map[string]string{"no session": nil, "member": sessionCookie("member")}
+		if signIn == `{"provider":null}` {
+			callers["solo admin"] = nil
+		}
+		for who, header := range callers {
+			for path, want := range bare {
+				if w := call(f, "GET", path, "", header); strings.TrimSpace(w.Body.String()) != want {
+					t.Errorf("%s, %s on the public port: %d %s", signIn, who, w.Code, w.Body.String())
+				}
+			}
+		}
+		for _, h := range []struct {
+			who     string
+			handler http.Handler
+			header  map[string]string
+			detail  bool
+		}{
+			{"admin socket", f.API.OperatorHandler(), nil, true},
+			{"admin session", f, sessionCookie("admin"), signIn != `{"provider":null}`},
+		} {
+			sec := call(h.handler, "GET", "/health/security", "", h.header).Body.String()
+			sched := call(h.handler, "GET", "/health/scheduler", "", h.header).Body.String()
+			got := strings.Contains(sec, `"lastError"`) && strings.Contains(sched, `"startedAt"`)
+			if got != h.detail {
+				t.Errorf("%s, %s: detail = %v, want %v: %s %s", signIn, h.who, got, h.detail, sec, sched)
+			}
+		}
 	}
 }

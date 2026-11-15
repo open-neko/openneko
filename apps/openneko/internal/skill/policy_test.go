@@ -55,6 +55,16 @@ func TestFetchPolicyReadsFromDatabase(t *testing.T) {
 	if err != nil || source != "org" || !pol.AllowGitURLInstalls {
 		t.Fatalf("with allowGitUrlInstalls=true: got %+v %q %v", pol, source, err)
 	}
+
+	for _, value := range []string{`"yes"`, `"true"`, `1`, `"on"`, `"t"`, `"maybe"`, `null`, `false`, `{}`} {
+		if _, err := pool.Exec(ctx, `update llm_provider_config set config = jsonb_build_object('allowGitUrlInstalls', $1::jsonb) where org_id = 'org' and scope = 'install-policy'`, value); err != nil {
+			t.Fatal(err)
+		}
+		pol, source, err = FetchPolicy(ctx)
+		if err != nil || source != "org" || pol.AllowGitURLInstalls {
+			t.Errorf("with allowGitUrlInstalls=%s: got %+v %q %v", value, pol, source, err)
+		}
+	}
 }
 
 func TestFetchPolicyReturnsDefaultsWhenDatabaseUnreachable(t *testing.T) {

@@ -366,9 +366,17 @@ server, then run `openneko graphjin check`.
 ### Audit logging failure alerts
 
 Every failed tamper-evident audit append emits a structured
-`security.audit_logging_failure` event to stderr. `openneko web` also exposes
-process-local state at `GET /health` and `GET /health/security`; monitor for
-HTTP 503 or `status: "degraded"`.
+`security.audit_logging_failure` event to stderr. `openneko web` also keeps the
+state in its process: `GET /health/security` gives `status: "degraded"` and
+`auditLogging.healthy: false` after a failure, with `auditLogging.failureCount`,
+`lastFailureAt` and `lastError`. Monitor that route for `status: "degraded"`.
+`GET /health` follows the workflow scheduler, not the audit log.
+
+On the public port, `/health/scheduler` and `/health/security` give only
+`status`. A signed-in admin gets the detail there. The web admin socket
+(`OPENNEKO_WEB_ADMIN_SOCKET`) always gives it. `openneko release-check
+--scheduler`, run in the web container, uses that socket and fails until the
+scheduler has finished a database tick.
 
 For immediate delivery independent of PostgreSQL, configure an HTTPS webhook
 on `web`:
@@ -836,7 +844,8 @@ curl -fsSL https://raw.githubusercontent.com/open-neko/openneko/main/scripts/ins
 
 The script downloads `openneko-native_<version>_linux_<arch>.tar.gz` and
 `checksums-native.txt` from the release and checks the archive. It puts
-`bin/openneko` and `share/openneko/web` in `~/.local/opt/openneko` and links
+`bin/openneko`, `share/openneko/web` and the built-in packs
+(`share/openneko/packs`) in `~/.local/opt/openneko` and links
 `~/.local/bin/openneko`. `OPENNEKO_VERSION` picks a release (default: the
 latest). `OPENNEKO_PREFIX` and `OPENNEKO_BIN_DIR` change the two folders.
 `OPENNEKO_RELEASE_URL` points at a mirror that holds `<tag>/<file>`, and
@@ -874,8 +883,8 @@ and `upgrade` act on the native install. `openneko logs` reads the
   OpenNeko again when it ran before. The start applies the migrations.
 - `openneko upgrade` downloads the release archive for this host and
   checks it against `checksums-native.txt`. It takes a backup, stops
-  OpenNeko, puts the release's `bin/openneko` and `share/openneko/web` in
-  place of the current ones, and starts OpenNeko again when it ran before.
+  OpenNeko, puts the release's `bin/openneko`, `share/openneko/web` and
+  `share/openneko/packs` in place of the current ones, and starts OpenNeko again when it ran before.
   `--version` picks the release (default: the latest), and
   `OPENNEKO_RELEASE_URL` points at a mirror. `--from <folder>` upgrades from
   a release folder instead of a download. `--skip-backup` upgrades with no
@@ -889,6 +898,7 @@ serve roles; the database check prints the SQL when it does not have it.
 | What | Where |
 |---|---|
 | Web app files | `--web-dir`, else `OPENNEKO_WEB_DIR`, else `share/openneko/web` beside the release's `bin` folder |
+| Built-in packs | `OPENNEKO_PACKS_DIR`, else `share/openneko/packs` beside the release's `bin` folder (a Docker install: `/usr/local/share/openneko/packs` in the web image) |
 | Files, file index, serve credentials, GraphJin config, agent runs | `$XDG_DATA_HOME/openneko` (default `~/.local/share/openneko`) |
 | Logs | `~/.local/share/openneko/logs` |
 | Supervisor state and the sockets | `~/.local/share/openneko/run` |

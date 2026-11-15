@@ -182,6 +182,7 @@ RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-
     && chown -R neko:neko /config /tmp/openneko-home /tmp/openneko-tmp
 COPY --from=build --chown=neko:neko /app/apps/web/dist ./apps/web/dist
 COPY --chown=neko:neko db/seeds ./db/seeds
+COPY packs /usr/local/share/openneko/packs
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 COPY --from=go-build --chown=neko:neko /out/openneko /usr/local/bin/openneko
