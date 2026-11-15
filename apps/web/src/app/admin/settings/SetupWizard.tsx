@@ -565,7 +565,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
           <Field
             label="Concurrent jobs"
             htmlFor="setup-concurrent-jobs"
-            hint="How many agent turns run at the same time. The change applies when you save."
+            hint="How many agent turns run at the same time. Slack and Telegram messages run at most 3 turns at once. The change applies when you save."
           >
             <Input
               id="setup-concurrent-jobs"

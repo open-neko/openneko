@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/open-neko/neko/apps/openneko/internal/llm"
 )
 
@@ -33,7 +35,11 @@ func (a *API) ProviderCredentialWarning(ctx context.Context) string {
 	if err := rows.Err(); err != nil {
 		return fmt.Sprintf("openneko web: warning: the model provider settings cannot be read: %v", err)
 	}
-	if len(set) == 0 {
+	routed, err := a.turnRoutedOrgs(ctx)
+	if err != nil {
+		return fmt.Sprintf("openneko web: warning: the model routes cannot be read: %v", err)
+	}
+	if len(set) == 0 && len(routed) == 0 {
 		return "openneko web: warning: no model provider is set; an admin sets one in Admin > Settings"
 	}
 	var failed []string
@@ -42,8 +48,27 @@ func (a *API) ProviderCredentialWarning(ctx context.Context) string {
 			failed = append(failed, fmt.Sprintf("org %s (%s): %v", s.org, s.provider, err))
 		}
 	}
+	for _, org := range routed {
+		_, rec, _, err := llm.TaskRouteRecords(ctx, a.DB, org, "turn")
+		if err == nil && rec != nil {
+			_, err = llm.DecryptSecrets(a.SecretsDir, rec.Sealed)
+		}
+		if err != nil {
+			failed = append(failed, fmt.Sprintf("org %s (turn model): %v", org, err))
+		}
+	}
 	if len(failed) == 0 {
 		return ""
 	}
 	return "openneko web: warning: the model provider credential cannot be read for " + strings.Join(failed, "; ")
+}
+
+func (a *API) turnRoutedOrgs(ctx context.Context) ([]string, error) {
+	rows, err := a.DB.Query(ctx, `select r.org_id from llm_task_route r
+		join llm_model m on m.org_id = r.org_id and m.id = r.model_id
+		where r.task = 'turn' and m.enabled order by r.org_id`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
