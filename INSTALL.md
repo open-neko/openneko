@@ -401,6 +401,10 @@ events.
 `openneko web` runs at the same time. The default is 3. A save applies at once,
 with no restart. `OPENNEKO_AGENT_CONCURRENCY` overrides the setting.
 
+At start, `openneko web` logs one warning line when no model provider is set,
+or when it cannot read or check the stored credential of a provider. It still
+starts, so an admin can fix the setting.
+
 `openneko web` runs chat, channel and workflow agent turns in Go. It stages each
 run's files in a private folder under `OPENNEKO_AGENT_RUNS_DIR` and sends the
 turn to `openneko serve` over a Unix socket (`OPENNEKO_SERVE_SOCKET`), or runs
