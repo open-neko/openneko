@@ -97,7 +97,8 @@ func TestTheWebImageRunsInProductionWithSecureCookies(t *testing.T) {
 			if Development() {
 				t.Fatalf("openneko web runs in development mode with the env of %s", name)
 			}
-			api := &API{Gate: &Gate{SessionSecret: func() (string, error) { return strings.Repeat("s", 32), nil }}, SecureCookies: !Development()}
+			secure, _ := CookiePolicy()
+			api := &API{Gate: &Gate{SessionSecret: func() (string, error) { return strings.Repeat("s", 32), nil }}, SecureCookies: secure}
 			rec := httptest.NewRecorder()
 			if err := api.writeSession(rec, "admin"); err != nil {
 				t.Fatal(err)
