@@ -11263,6 +11263,8 @@ paths:
       tags:
       - work
       summary: Start an agent run with a new message
+      description: A request that repeats the clientRequestId of an earlier request in the
+        same thread returns the run of that request and starts no new run.
       x-access: signed-in
       security:
       - session: []
@@ -11282,6 +11284,9 @@ paths:
               properties:
                 message:
                   type: string
+                clientRequestId:
+                  type: string
+                  pattern: ^[A-Za-z0-9._-]{1,128}$
               required:
               - message
       responses:

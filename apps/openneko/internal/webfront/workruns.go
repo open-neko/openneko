@@ -63,11 +63,25 @@ func (a *API) ensureHostConfigProvisioned(ctx context.Context, orgID string) err
 // createWorkRun is createWorkRun() in packages/llm/src/work/store.ts: the run
 // row and its spend reservation commit together.
 func (a *API) createWorkRun(ctx context.Context, orgID, threadID, actorUserID, actorRole, source, workflowID string) (string, error) {
-	var runID string
-	err := pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `insert into work_run (org_id, thread_id, backend, status, actor_user_id, actor_role)
-			values ($1, $2, $3, 'queued', $4, $5) returning id::text`,
-			orgID, threadID, agentBackendID, nullable(actorUserID), nullable(actorRole)).Scan(&runID); err != nil {
+	runID, _, err := a.createWorkRunOnce(ctx, orgID, threadID, actorUserID, actorRole, source, workflowID, "")
+	return runID, err
+}
+
+// createWorkRunOnce returns the run that an earlier request with the same
+// clientRequestID made in the thread, with existing set, and makes no new one.
+func (a *API) createWorkRunOnce(ctx context.Context, orgID, threadID, actorUserID, actorRole, source, workflowID, clientRequestID string) (runID string, existing bool, err error) {
+	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
+		err := tx.QueryRow(ctx, `insert into work_run (org_id, thread_id, backend, status, actor_user_id, actor_role, client_request_id)
+			values ($1, $2, $3, 'queued', $4, $5, $6)
+			on conflict (thread_id, client_request_id) where client_request_id is not null do nothing
+			returning id::text`,
+			orgID, threadID, agentBackendID, nullable(actorUserID), nullable(actorRole), nullable(clientRequestID)).Scan(&runID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			existing = true
+			return tx.QueryRow(ctx, `select id::text from work_run where thread_id = $1 and client_request_id = $2`,
+				threadID, clientRequestID).Scan(&runID)
+		}
+		if err != nil {
 			return err
 		}
 		return admitRunSpend(ctx, tx, orgID, workflowID, runID, source, time.Now())
@@ -77,11 +91,14 @@ func (a *API) createWorkRun(ctx context.Context, orgID, threadID, actorUserID, a
 		if errors.As(err, &over) {
 			a.recordBudgetBlocked(context.WithoutCancel(ctx), over)
 		}
-		return "", err
+		return "", false, err
+	}
+	if existing {
+		return runID, true, nil
 	}
 	a.recordAudit(ctx, auditEvent{OrgID: orgID, EntityKind: "work_run", EntityID: runID, Event: "run:created",
 		Payload: map[string]any{"backend": agentBackendID, "actorUserId": nullable(actorUserID), "actorRole": nullable(actorRole)}})
-	return runID, nil
+	return runID, false, nil
 }
 
 // suggestThreadTitle is suggestWorkThreadTitle().
@@ -105,6 +122,11 @@ func (a *API) startRun(w http.ResponseWriter, r *http.Request) {
 	message := jsTrim(raw)
 	if message == "" {
 		sendError(w, http.StatusBadRequest, "message is required")
+		return
+	}
+	clientRequestID, _ := fieldString(body, "clientRequestId")
+	if !validClientRequestID(clientRequestID) {
+		sendError(w, http.StatusBadRequest, "clientRequestId must be 1 to 128 letters, digits, '-', '_' or '.'")
 		return
 	}
 	act, err := a.currentActor(ctx, r)
@@ -139,7 +161,7 @@ func (a *API) startRun(w http.ResponseWriter, r *http.Request) {
 	if act.Admin {
 		role = "admin"
 	}
-	runID, err := a.createWorkRun(ctx, act.OrgID, threadID, act.UserID, role, "chat", "")
+	runID, existing, err := a.createWorkRunOnce(ctx, act.OrgID, threadID, act.UserID, role, "chat", "", clientRequestID)
 	if err != nil {
 		var over *spendExceeded
 		if errors.As(err, &over) {
@@ -150,6 +172,10 @@ func (a *API) startRun(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.fail(w, r, err)
+		return
+	}
+	if existing {
+		sendJSON(w, http.StatusOK, obj("runId", runID, "threadId", threadID, "backend", agentBackendID, "actorRole", role))
 		return
 	}
 	if title == "" {
@@ -170,6 +196,21 @@ func (a *API) startRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sendJSON(w, http.StatusOK, obj("runId", runID, "threadId", threadID, "backend", agentBackendID, "actorRole", role))
+}
+
+func validClientRequestID(id string) bool {
+	if id == "" {
+		return true
+	}
+	if len(id) > 128 {
+		return false
+	}
+	for _, c := range id {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_' || c == '.') {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *API) saveUserMessage(ctx context.Context, orgID, threadID, runID, content string) error {

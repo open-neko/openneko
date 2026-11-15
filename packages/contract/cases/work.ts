@@ -41,6 +41,7 @@ export const workCases: Case[] = [
   { op: "GET /work/threads/{threadId}", name: "reads the thread", status: 200, request: (c) => ({ params: { threadId: c.ids.threadId } }) },
   { op: "GET /work/threads/{threadId}", name: "hides another user's thread", as: "member", status: 404, request: (c) => ({ params: { threadId: c.ids.threadId } }) },
   { op: "POST /work/threads/{threadId}/runs", name: "needs a message", status: 400, request: (c) => ({ params: { threadId: c.ids.threadId }, body: {} }) },
+  { op: "POST /work/threads/{threadId}/runs", name: "refuses a bad client request id", status: 400, request: (c) => ({ params: { threadId: c.ids.threadId }, body: { message: "Hello", clientRequestId: "has space" } }) },
   { op: "POST /work/threads/{threadId}/runs", name: "refuses an unknown thread", status: 404, request: (c) => ({ params: { threadId: c.ids.unknownId }, body: { message: "Hello" } }) },
   { op: "POST /work/threads/{threadId}/truncate", name: "refuses an unknown message", status: 404, request: (c) => ({ params: { threadId: c.ids.threadId }, body: { messageId: c.ids.unknownId } }) },
   { op: "POST /work/upload", name: "needs a multipart body", status: 400, request: { body: {} } },
