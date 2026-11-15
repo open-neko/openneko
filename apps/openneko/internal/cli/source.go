@@ -41,10 +41,6 @@ func newSourceCmd() *cobra.Command {
 func newSourceCheckCmd() *cobra.Command {
 	var opts sourceCheckOptions
 	cmd := &cobra.Command{
-		Use:   "source",
-	}
-	_ = cmd
-	cmd = &cobra.Command{
 		Use:   "check",
 		Short: "Test one PostgreSQL, MySQL or MariaDB source: host, port, TLS, login, read rights and read-only rights",
 		Long: `Test one database source in order: the host resolves, the port answers,
