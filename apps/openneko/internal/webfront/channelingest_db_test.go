@@ -574,6 +574,7 @@ func TestInboundLoopsFollowSettings(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	l := &channelLoops{ctx: ctx, running: map[string]*inboundLoop{}, noted: map[string]string{}, wake: make(chan struct{}, 1)}
+	defer stopInboundLoops(l)
 	running := func() string {
 		l.mu.Lock()
 		defer l.mu.Unlock()
@@ -780,7 +781,16 @@ func TestInboundLoopsCreateNoOrg(t *testing.T) {
 	if len(l.running) != 1 {
 		t.Errorf("loops after the org exists: %d", len(l.running))
 	}
-	l.running["telegram"].cancel()
+	stopInboundLoops(l)
+}
+
+func stopInboundLoops(l *channelLoops) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, loop := range l.running {
+		loop.cancel()
+		<-loop.done
+	}
 }
 
 func TestInboundTwoInstancesOneDatabase(t *testing.T) {

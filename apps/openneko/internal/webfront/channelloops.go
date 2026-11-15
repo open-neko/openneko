@@ -60,6 +60,7 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 type inboundLoop struct {
 	cancel context.CancelFunc
 	sig    string
+	done   chan struct{}
 }
 
 type channelLoops struct {
@@ -279,12 +280,16 @@ func (a *API) refreshInbound(l *channelLoops) {
 			continue
 		}
 		ctx, cancel := context.WithCancel(l.ctx)
-		l.running[ch.ID] = &inboundLoop{cancel: cancel, sig: sig}
+		loop := &inboundLoop{cancel: cancel, sig: sig, done: make(chan struct{})}
+		l.running[ch.ID] = loop
+		run := a.telegramPollLoop
 		if ingress[ch.ID] == "socket" {
-			go a.slackSocketLoop(ctx, orgID, ch.ID)
-		} else {
-			go a.telegramPollLoop(ctx, orgID, ch.ID)
+			run = a.slackSocketLoop
 		}
+		go func(id string) {
+			defer close(loop.done)
+			run(ctx, orgID, id)
+		}(ch.ID)
 	}
 }
 
