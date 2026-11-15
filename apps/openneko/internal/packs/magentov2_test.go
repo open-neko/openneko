@@ -27,22 +27,29 @@ func TestMagentoV2ClassificationAndCaps(t *testing.T) {
 		}
 	})
 
-	t.Run("escalates product price and visibility updates to Class 1", func(t *testing.T) {
-		result := ClassifyMagentoChange(ClassifyMagentoInput{
+	t.Run("keeps reviewed price and CMS content as Class 2, as Node does", func(t *testing.T) {
+		price := ClassifyMagentoChange(ClassifyMagentoInput{
 			Domain:       MagentoCatalog,
 			EntityType:   "product",
 			OperationID:  "magentoUpdateProduct",
 			DefaultClass: 2,
-			Body: map[string]any{
-				"product": map[string]any{
-					"name":       "Trail Runner Jacket",
-					"price":      129.99,
-					"visibility": 4,
-				},
-			},
+			Body:         map[string]any{"product": map[string]any{"price": 129.99, "visibility": 4}},
 		})
-		if result.RiskClass != 1 || result.ExecutionMode != MagentoApprovalRequired {
-			t.Fatalf("got %+v", result)
+		cms := ClassifyMagentoChange(ClassifyMagentoInput{
+			Domain:       MagentoContent,
+			EntityType:   "cms",
+			OperationID:  "magentoUpdateCmsPage",
+			DefaultClass: 2,
+			Body:         map[string]any{"page": map[string]any{"title": "Shipping", "content": "Updated content", "is_active": true}},
+		})
+		if price.RiskClass != 2 || cms.RiskClass != 2 || slices.ContainsFunc(cms.Attributes, func(a MagentoClassifiedAttr) bool { return !a.Matched }) {
+			t.Fatalf("price %+v cms %+v", price, cms)
+		}
+		if cost := ClassifyMagentoChange(ClassifyMagentoInput{
+			Domain: MagentoCatalog, EntityType: "product", OperationID: "magentoUpdateProduct", DefaultClass: 2,
+			Body: map[string]any{"product": map[string]any{"cost": 10}},
+		}); cost.RiskClass != 1 || cost.Attributes[0].Category != MagentoCatFinancial {
+			t.Fatalf("cost %+v", cost)
 		}
 	})
 
@@ -70,7 +77,7 @@ func TestMagentoV2ClassificationAndCaps(t *testing.T) {
 	t.Run("treats customer-notifying order comments as Class 1 and internal comments as Class 2", func(t *testing.T) {
 		internalComment := ClassifyMagentoChange(ClassifyMagentoInput{
 			Domain:       MagentoOrders,
-			EntityType:   "order_comment",
+			EntityType:   "order",
 			OperationID:  "magentoAddOrderComment",
 			DefaultClass: 2,
 			Body: map[string]any{
@@ -82,7 +89,7 @@ func TestMagentoV2ClassificationAndCaps(t *testing.T) {
 		})
 		customerComment := ClassifyMagentoChange(ClassifyMagentoInput{
 			Domain:       MagentoOrders,
-			EntityType:   "order_comment",
+			EntityType:   "order",
 			OperationID:  "magentoAddOrderComment",
 			DefaultClass: 2,
 			Body: map[string]any{
