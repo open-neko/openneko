@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -133,25 +134,23 @@ func (a *API) reportAuditFailure(e auditEvent, err error) {
 		"event":      e.Event,
 		"error":      err.Error(),
 	})
-	fmt.Fprintln(os.Stderr, string(alert))
-	hook := a.AuditWebhook
-	if hook == "" {
-		hook = strings.TrimSpace(os.Getenv("OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL"))
-	}
+	fmt.Fprintln(auditStderr, string(alert))
+	hook := a.auditWebhookURL()
 	if hook == "" {
 		return
 	}
+	host := auditWebhookHost(hook)
 	if err := auditWebhookAllowed(hook); err != nil {
-		a.reportAuditDeliveryFailure(e, err)
+		a.reportAuditDeliveryFailure(e, host, err)
 		return
 	}
 	token := strings.TrimSpace(os.Getenv("OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN"))
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), auditWebhookTimeout)
 		defer cancel()
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, hook, bytes.NewReader(alert))
 		if err != nil {
-			a.reportAuditDeliveryFailure(e, err)
+			a.reportAuditDeliveryFailure(e, host, errors.New("the request could not be made"))
 			return
 		}
 		req.Header.Set("Content-Type", "application/json")
@@ -160,22 +159,57 @@ func (a *API) reportAuditFailure(e auditEvent, err error) {
 		}
 		res, err := auditWebhookClient.Do(req)
 		if err != nil {
-			a.reportAuditDeliveryFailure(e, err)
+			a.reportAuditDeliveryFailure(e, host, auditTransportError(err))
 			return
 		}
 		res.Body.Close()
 		if res.StatusCode < 200 || res.StatusCode > 299 {
-			a.reportAuditDeliveryFailure(e, fmt.Errorf("HTTP %d", res.StatusCode))
+			a.reportAuditDeliveryFailure(e, host, fmt.Errorf("HTTP %d", res.StatusCode))
 		}
 	}()
 }
 
-var auditWebhookClient = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+var (
+	auditWebhookClient            = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	auditWebhookTimeout           = 2 * time.Second
+	auditStderr         io.Writer = os.Stderr
+)
+
+func (a *API) auditWebhookURL() string {
+	if a == nil {
+		return ""
+	}
+	if a.AuditWebhook != "" {
+		return a.AuditWebhook
+	}
+	return strings.TrimSpace(os.Getenv("OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL"))
+}
+
+// auditWebhookHost is the only part of the URL that OpenNeko logs: the path
+// or the query may hold a token.
+func auditWebhookHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "an unreadable URL"
+	}
+	return u.Host
+}
+
+func auditTransportError(err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("no reply in %s", auditWebhookTimeout)
+	}
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return ue.Err
+	}
+	return err
+}
 
 func auditWebhookAllowed(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return err
+		return errors.New("the URL does not parse")
 	}
 	if u.Host == "" || (u.Scheme != "https" && (u.Scheme != "http" || !isLoopbackHostname(u.Hostname()))) {
 		return errors.New("the URL must be https, or http on localhost")
@@ -183,8 +217,37 @@ func auditWebhookAllowed(raw string) error {
 	return nil
 }
 
-func (a *API) reportAuditDeliveryFailure(e auditEvent, err error) {
-	msg := "audit failure webhook: " + err.Error()
+// AuditWebhookState is the audit failure webhook as /health/security shows
+// it to an admin. State is "off", "ok" or "refused".
+type AuditWebhookState struct {
+	State string  `json:"state"`
+	Host  *string `json:"host"`
+	Error *string `json:"error"`
+}
+
+func (a *API) AuditWebhookState() AuditWebhookState {
+	hook := a.auditWebhookURL()
+	if hook == "" {
+		return AuditWebhookState{State: "off"}
+	}
+	host := auditWebhookHost(hook)
+	if err := auditWebhookAllowed(hook); err != nil {
+		msg := err.Error()
+		return AuditWebhookState{State: "refused", Host: &host, Error: &msg}
+	}
+	return AuditWebhookState{State: "ok", Host: &host}
+}
+
+// CheckAuditWebhook writes one warning when the rule refuses the audit
+// failure webhook URL.
+func (a *API) CheckAuditWebhook(w io.Writer) {
+	if s := a.AuditWebhookState(); s.State == "refused" {
+		fmt.Fprintf(w, "openneko web: warning: OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL (%s) is refused: %s. Audit failure alerts go to stderr only.\n", *s.Host, *s.Error)
+	}
+}
+
+func (a *API) reportAuditDeliveryFailure(e auditEvent, host string, err error) {
+	msg := "audit failure webhook (" + host + "): " + err.Error()
 	a.auditMu.Lock()
 	a.auditFailures++
 	a.lastAuditFailure = &auditFailure{
@@ -196,7 +259,7 @@ func (a *API) reportAuditDeliveryFailure(e auditEvent, err error) {
 		Error:      msg,
 	}
 	a.auditMu.Unlock()
-	fmt.Fprintf(os.Stderr, `{"type":"security.audit_logging_failure_webhook_error","severity":"critical","error":%q}`+"\n", msg)
+	fmt.Fprintf(auditStderr, `{"type":"security.audit_logging_failure_webhook_error","severity":"critical","error":%q}`+"\n", msg)
 }
 
 func sha256Hex(s string) string {

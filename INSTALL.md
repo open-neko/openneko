@@ -399,7 +399,13 @@ operation. A refused URL, a network error and a reply other than 2xx are
 delivery failures. Each one writes a critical
 `security.audit_logging_failure_webhook_error` event to stderr and counts in
 `auditLogging.failureCount` on `GET /health/security`, with `lastError`
-starting `audit failure webhook:`.
+starting `audit failure webhook (<host>):`. OpenNeko logs only the host of the
+URL, because the path or the query can hold a token.
+
+At start, `openneko web` writes one warning when the rule refuses the URL.
+For an admin, `GET /health/security` also gives `auditWebhook`: `state` is
+`off`, `ok` or `refused`, with `host` and `error`. A refused URL sets
+`status: "degraded"`.
 
 ### Agent runtime
 
