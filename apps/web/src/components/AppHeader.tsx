@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import DensityToggle from "@/components/DensityToggle";
 import { Button } from "@/components/ui/button";
+import { signOut as handleSignOut } from "@/lib/sign-out";
 
 const MARKETING_URL = "https://openneko.app";
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
@@ -63,14 +64,6 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
       cancelled = true;
     };
   }, []);
-
-  async function handleSignOut() {
-    try {
-      await fetch("/api/v1/auth/logout", { method: "POST" });
-    } finally {
-      window.location.href = "/signin";
-    }
-  }
 
   const updateAvailable =
     latestVersion !== null && latestVersion !== APP_VERSION;
