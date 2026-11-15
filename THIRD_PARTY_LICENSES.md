@@ -63,12 +63,8 @@ OpenNeko's runtime dependencies are listed in the `package.json` and `go.mod` fi
 
 | Package | License | Notes |
 |---|---|---|
-| `pg`, `pg-boss` | MIT | Postgres client + job queue |
-| `mysql2` | MIT | MySQL and MariaDB client for the Magento pack and the source check |
-| `next` | MIT | Web app framework |
 | `react-router` (with `cookie`, `set-cookie-parser`) | MIT | Client router of the static web app build |
 | `zod` | MIT | Schema validation |
-| `drizzle-orm` | Apache-2.0 | DB schema + queries |
 | DuckDB CLI | MIT | Shipped in the `neko-serve` image; runs SQL over sheet tables |
 | `github.com/xuri/excelize/v2` | BSD-3-Clause | Reads Excel files in `openneko serve` |
 | `github.com/vektah/gqlparser/v2` | MIT | Parses the saved queries of a pack in `openneko web` |
@@ -77,10 +73,10 @@ OpenNeko's runtime dependencies are listed in the `package.json` and `go.mod` fi
 | `github.com/aws/aws-sdk-go-v2` (`config`, `credentials`, `service/s3`) | Apache-2.0 | Reads and writes the files bucket in `openneko serve` when `OPENNEKO_FILES_BUCKET` is set; GraphJin already links it |
 | `github.com/cenkalti/backoff/v5` | MIT | Retries in the OTLP trace exporter of `openneko serve` |
 | `github.com/grpc-ecosystem/grpc-gateway/v2` | BSD-3-Clause | Linked by the OTLP trace exporter of `openneko serve` |
-| `github.com/go-sql-driver/mysql` | MPL-2.0 | MySQL and MariaDB client of the source check in `openneko web`; GraphJin already links it. MPL-2.0 covers its own files only; OpenNeko ships them unchanged |
+| `github.com/go-sql-driver/mysql` | MPL-2.0 | MySQL and MariaDB client of the source check and the Magento pack in `openneko web`; GraphJin already links it. MPL-2.0 covers its own files only; OpenNeko ships them unchanged |
 | `github.com/riverqueue/river` (with `riverdriver`, `riverpgxv5`, `rivershared`, `rivertype`) | MPL-2.0 | Job queue of `openneko web`, in the `river` schema. MPL-2.0 covers River's own files only; OpenNeko ships them unchanged. Source: https://github.com/riverqueue/river |
 | `github.com/tidwall/gjson`, `sjson`, `match`, `pretty` | MIT | Linked by River |
-| `golang.org/x/text` | BSD-3-Clause | Sorts skill names in `openneko web` in the same order as the Node server; GraphJin already links it |
+| `golang.org/x/text` | BSD-3-Clause | Sorts skill names in `openneko web`; GraphJin already links it |
 | `github.com/go-webauthn/webauthn` v0.18.2, `github.com/go-webauthn/x` | BSD-3-Clause | Checks passkey registration and approval in `openneko web` |
 | `github.com/fxamacker/cbor/v2`, `github.com/x448/float16` | MIT | Reads the CBOR of a passkey; linked by `go-webauthn` |
 | `github.com/tinylib/msgp`, `github.com/philhofer/fwd` | MIT | Linked by `go-webauthn` |

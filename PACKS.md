@@ -109,8 +109,8 @@ collisions with other packs or operator-created artifacts.
 | Relationships | Declare GraphJin relationships in the manifest's relationship file; use the example's empty declaration when none are needed. |
 | OpenAPI specs | Describe the provider's actual paths, HTTP methods, parameters, bodies, and responses. Use local references. |
 | Saved queries | Give queries stable filenames. Metric execution refers to the query name without its extension. |
-| Metrics | Define presentation, cadence, source, saved query, result extraction, and freshness. See the [example metric](apps/worker/test/fixtures/service-health/metrics/health.yaml). |
-| Workflows | Define a goal, output contract, and optional schedule with a timezone input. A workflow may declare `networkHosts` for read-only external requests; the agent's web tool in that workflow reaches only those hosts. See the [example workflow](apps/worker/test/fixtures/service-health/workflows/health.yaml). |
+| Metrics | Define presentation, cadence, source, saved query, result extraction, and freshness. See the [example metric](apps/openneko/internal/packs/testdata/service-health/metrics/health.yaml). |
+| Workflows | Define a goal, output contract, and optional schedule with a timezone input. A workflow may declare `networkHosts` for read-only external requests; the agent's web tool in that workflow reaches only those hosts. See the [example workflow](apps/openneko/internal/packs/testdata/service-health/workflows/health.yaml). |
 | Watchers | Reference a workflow artifact key and define a query, value path, threshold, cadence, debounce, cooldown, and severity. |
 | Skills | Write Markdown instructions with `name` and `description` frontmatter. Explain data sources, expected outputs, and permitted actions. |
 | Actions and policies | Use `graphjin_api_operation` for reviewed REST writes. Group named operations by action kind and add a matching policy. Write policies install disabled. See [Action safety fields](#action-safety-fields). |
@@ -386,7 +386,7 @@ Put the pack folder in a ZIP archive, then upload it. The upload checks the
 archive and stores the pack for review. It does not install the pack:
 
 ```sh
-cd apps/worker/test/fixtures && zip -r /tmp/service-health.zip service-health
+cd apps/openneko/internal/packs/testdata && zip -r /tmp/service-health.zip service-health
 openneko pack upload /tmp/service-health.zip
 ```
 
@@ -395,8 +395,8 @@ Use your own pack folder in place of `service-health`.
 Bundle validation checks structure and references. It does not prove provider
 compatibility or successful end-user execution. Before submitting a change:
 
-1. Add focused regression coverage for changed behavior, using the existing pack
-   and worker test suites.
+1. Add focused regression coverage for changed behavior, using the pack test
+   suites in `apps/openneko/internal/packs` and `apps/openneko/internal/webfront`.
 2. Install in an isolated stack: use one-click installation for built-ins or upload
    a custom archive. Review configuration, the plan, and readiness results.
 3. Run affected saved queries, metrics, workflows, and watchers against the actual

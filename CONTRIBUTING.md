@@ -13,7 +13,7 @@ File an issue at [github.com/open-neko/openneko/issues](https://github.com/open-
 
 ## Setting up your dev environment
 
-Setup commands — Node deps, migrations, `pnpm dev`, the two GraphJin services (sample-data and metadata), the AdventureWorks dev variant, and the external CLI installer (`./scripts/install-clis.sh`) — live in [INSTALL.md → Developer Setup](INSTALL.md#developer-setup). Update / reset / troubleshooting are in the same file.
+Setup commands — workspace dependencies, migrations, `pnpm dev`, `openneko-serve` (customer and subscriptions GraphJin), the AdventureWorks dev variant, and the external CLI installer (`./scripts/install-clis.sh`) — live in [INSTALL.md → Developer Setup](INSTALL.md#developer-setup). Update / reset / troubleshooting are in the same file.
 
 ## Repository layout
 
@@ -22,17 +22,13 @@ apps/
   openneko/            `openneko` CLI, stack supervisor, `openneko web` HTTP/River/pack/turn server, and `openneko serve` (Go)
   ax-harness/          Ax agent harness, inference gateway, embedding gateway, and sandbox client (Go)
   web/                 React UI (built as a static SPA in `apps/web/dist` and served by `openneko web`)
-  worker/              Node worker for Scalekit sign-in/SSO/directory sync, GraphJin group grants, and built-in action adapters
 packages/
   avatars/             Animated cat avatars (`@neko/avatars`)
-  channels/            Shared Slack, Telegram and HUD formatting (`@neko/channels`)
   contract/            Contract tests for every route in api/openapi.yaml; they run against any server
   db/                  Drizzle ORM client, schema, migrations, job payloads
   evals/               Agent harness evaluation core and result verifier (`@neko/evals`)
-  interaction/         Modality-free interaction types (`@neko/interaction`)
   llm/                 Shared model catalog fixtures, GraphJin helpers, A2UI contract, bundled skills (assets/)
   secret-crypt/        AES-256-GCM `enc:v1` cipher (`@neko/secret-crypt`)
-  secrets/             Deployment secrets store (`@neko/secrets`)
   telemetry/           OpenTelemetry and startup timing helpers (`@neko/telemetry`)
 db/
   migrations/          Metadata database migrations (mirrored into apps/openneko/assets/migrations/ for embedding)

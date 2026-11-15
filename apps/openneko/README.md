@@ -60,7 +60,7 @@ openneko reset [--all]
 Modes:
 
 - `prod` — core services only (default)
-- `dev` — developer defaults; from a source checkout use repo-root `pnpm dev:setup` + `pnpm dev` for demo data and hot-reloaded web/worker
+- `dev` — developer defaults; from a source checkout use repo-root `pnpm dev:setup` + `pnpm dev` for demo data and host `openneko web` and `openneko serve`
 - `demo` — core + AdventureWorks trial bundle
 
 The unnamed backward-compatible installation materializes its embedded Compose
@@ -112,7 +112,7 @@ database, and stores the URL only after the stack starts on it.
 ### Backups
 
 `openneko backup` writes one encrypted file containing a `pg_dump` of OpenNeko's database
-(the bundled neko-db, or the database that the URL names, dumped from a worker
+(the bundled neko-db, or the database that the URL names, dumped from a web
 container) and archives of the volumes `openneko-config`, `openneko-graphjin-cli` (the
 customer GraphJin config), `openneko-files` (each user's files) and, in the
 demo, `graphjin-config`. With `OPENNEKO_FILES_BUCKET` set, the user files are
@@ -174,8 +174,8 @@ The binary manages two things on the operator's host:
 - `~/.config/openneko/secrets.json` (mode 0600) — deployment secrets by
   section (for example `channel.slack`, `signin.scalekit`), plus
   `_operators[opId][connector]` slots for per-operator OAuth credentials.
-- `~/.openneko/skills/` — community skill folders the worker loads at
-  agent-turn time. `pnpm skills:check` validates declared deps.
+- `~/.openneko/skills/` — community skill folders that
+  `openneko install <git-url>` writes. `pnpm skills:check` validates declared deps.
 
 See the repo-root [README](../../README.md) for the full operator-side
 docs including `/integrations` (per-operator OAuth) and `/settings/security`
