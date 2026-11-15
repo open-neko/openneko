@@ -47,4 +47,8 @@ export const authCases: Case[] = [
     request: { body: { deviceCode: "not-a-real-code" } },
   },
   { op: "POST /auth/logout", name: "ends a session that does not exist", as: "anonymous", status: 200 },
+  {
+    op: "POST /auth/logout", name: "takes the push endpoint of a session that does not exist", as: "anonymous", status: 200,
+    request: { body: { pushEndpoint: "https://push.example.com/contract" } },
+  },
 ];

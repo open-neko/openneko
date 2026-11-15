@@ -5269,8 +5269,20 @@ paths:
       tags:
       - auth
       summary: Clear the session cookie, or revoke the calling device token
+      description: When the body names pushEndpoint, the server also deletes the caller's
+        push subscription for that endpoint.
       x-access: public
       security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pushEndpoint:
+                  type: string
+                  description: The push endpoint of the browser that signs out
       responses:
         '200':
           description: Session cleared

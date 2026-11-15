@@ -142,3 +142,67 @@ func TestWebPushRetriesOnlyFailedSubscriptions(t *testing.T) {
 		t.Fatalf("retry of the follow-up waits %v, want ~30s", wait)
 	}
 }
+
+func TestWebPushFollowUpOutlivesTheJobDeadline(t *testing.T) {
+	ctx := context.Background()
+	pool := testpg.Pool(t)
+	q := testQueue(t, pool)
+	if err := q.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ins, err := NewInserter(pool, q.Schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	webPushTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { webPushTimeout = WebPushTimeout })
+	q.WebPush = func(ctx context.Context, args WebPushArgs) error {
+		if len(args.Subscriptions) > 0 {
+			return nil
+		}
+		<-ctx.Done()
+		return &WebPushRetryError{Subscriptions: []string{"sub-slow"}, Err: ctx.Err()}
+	}
+	runner, err := q.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runner.Stop(ctx)
+	if err := ins.WebPush(ctx, "org-1", "run_finished", []string{"u-1", "u-2"}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		var states []string
+		var follow WebPushArgs
+		rs, err := pool.Query(ctx, `select state, args from `+q.Schema+`.river_job where kind = $1 order by id`, KindWebPush)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for rs.Next() {
+			var st string
+			var a WebPushArgs
+			if err := rs.Scan(&st, &a); err != nil {
+				t.Fatal(err)
+			}
+			states = append(states, st)
+			if len(a.Subscriptions) > 0 {
+				follow = a
+			}
+		}
+		rs.Close()
+		if len(states) == 2 && states[0] == "completed" {
+			if len(follow.Users) != 0 || len(follow.Subscriptions) != 1 || follow.Subscriptions[0] != "sub-slow" {
+				t.Fatalf("follow-up args = %+v", follow)
+			}
+			return
+		}
+		if len(states) == 1 && states[0] == "retryable" {
+			t.Fatal("the job deadline dropped the follow-up; River retries the job for every user")
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("jobs after 20 s: %v", states)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}

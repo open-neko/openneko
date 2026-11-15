@@ -85,6 +85,10 @@ func (a *API) authSession(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) logout(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	if err := a.removeLogoutPushSubscription(r); err != nil {
+		a.fail(w, r, err)
+		return
+	}
 	deviceID, userID, _ := a.Gate.Device(ctx, r.Header.Get("Authorization"))
 	if deviceID != "" {
 		orgID, err := a.OrgID(ctx)
@@ -403,4 +407,23 @@ func jsSpace(r rune) bool {
 		return true
 	}
 	return r >= 0x2000 && r <= 0x200A
+}
+
+// removeLogoutPushSubscription deletes the push subscription of the browser
+// that signs out, when the body names its endpoint, so the next user of the
+// browser gets no notice of the user who left.
+func (a *API) removeLogoutPushSubscription(r *http.Request) error {
+	body, _ := readBody(r)
+	endpoint, _ := fieldString(body, "pushEndpoint")
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" || a.DB == nil {
+		return nil
+	}
+	act, err := a.currentActor(r.Context(), r)
+	if err != nil || act.UserID == "" {
+		return nil
+	}
+	_, err = a.DB.Exec(r.Context(), `delete from app_push_subscription where org_id = $1 and user_id = $2 and endpoint = $3`,
+		act.OrgID, act.UserID, endpoint)
+	return err
 }

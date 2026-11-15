@@ -2,6 +2,7 @@ package webfront
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -24,6 +25,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -42,7 +44,15 @@ const (
 	WebPushEventApprovalWaiting        = "approval_waiting"
 	WebPushEventRunFinished            = "run_finished"
 	WebPushEventWorkflowNeedsAttention = "workflow_needs_attention"
+
+	pushSubscriptionsPerUser = 10
+	pushSendsAtOnce          = 4
+	pushSendTimeout          = 15 * time.Second
 )
+
+// webPushBatchLimit stays below the job timeout, so the job can still queue
+// the retry of the sends that did not finish.
+var webPushBatchLimit = 45 * time.Second
 
 type webPushNotice struct {
 	Event string `json:"event"`
@@ -103,10 +113,12 @@ func (a *API) vapidKeyPair() (vapidKeys, error) {
 	if err != nil {
 		return vapidKeys{}, err
 	}
-	if sec := store[WebPushSecretsSection]; sec != nil {
-		if keys, err := parseVAPIDKeyPair(sec[vapidPrivateKeyName], sec[vapidPublicKeyName]); err == nil {
-			return keys, nil
+	if sec := store[WebPushSecretsSection]; sec[vapidPrivateKeyName] != "" || sec[vapidPublicKeyName] != "" {
+		keys, err := parseVAPIDKeyPair(sec[vapidPrivateKeyName], sec[vapidPublicKeyName])
+		if err != nil {
+			return vapidKeys{}, fmt.Errorf("the stored Web Push key pair (secrets section %q) is not valid: %w; repair or remove it", WebPushSecretsSection, err)
 		}
+		return keys, nil
 	}
 
 	ecdhKey, err := ecdh.P256().GenerateKey(rand.Reader)
@@ -300,6 +312,16 @@ func (a *API) pushSubscriptionCreate(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
+	if _, err := a.DB.Exec(ctx, `
+		delete from app_push_subscription
+		where org_id = $1 and user_id = $2 and id not in (
+		  select id from app_push_subscription
+		  where org_id = $1 and user_id = $2
+		  order by updated_at desc, created_at desc, id
+		  limit $3)`, act.OrgID, act.UserID, pushSubscriptionsPerUser); err != nil {
+		a.fail(w, r, err)
+		return
+	}
 	out.CreatedAt = jsTime(created)
 	out.UpdatedAt = jsTime(updated)
 	sendJSON(w, http.StatusOK, struct {
@@ -409,22 +431,47 @@ func (a *API) WebPushDeliver(ctx context.Context, args jobs.WebPushArgs) error {
 	}
 
 	client := pushClient()
-	client.Timeout = 15 * time.Second
+	client.Timeout = pushSendTimeout
+	batchCtx, cancel := context.WithTimeout(ctx, webPushBatchLimit)
+	defer cancel()
+	var mu sync.Mutex
+	var wg sync.WaitGroup
 	var failed []string
 	var firstErr error
+	slots := make(chan struct{}, pushSendsAtOnce)
 	for _, sub := range subs {
-		status, sendErr := sendWebPush(ctx, client, keys, sub, payload)
-		if status == http.StatusGone || status == http.StatusNotFound {
-			_, _ = a.DB.Exec(ctx, `delete from app_push_subscription where id = $1`, sub.ID)
-			continue
-		}
-		if sendErr != nil {
-			failed = append(failed, sub.ID)
-			if firstErr == nil {
-				firstErr = sendErr
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case slots <- struct{}{}:
+				defer func() { <-slots }()
+			case <-batchCtx.Done():
+				mu.Lock()
+				failed = append(failed, sub.ID)
+				firstErr = cmp.Or(firstErr, batchCtx.Err())
+				mu.Unlock()
+				return
 			}
-		}
+			status, sendErr := sendWebPush(batchCtx, client, keys, sub, payload)
+			var local *pushLocalError
+			switch {
+			case errors.As(sendErr, &local):
+				log.Printf("[web-push] subscription %s skipped: %v", sub.ID, sendErr)
+			case sendErr == nil && (status == http.StatusGone || status == http.StatusNotFound):
+				if _, err := a.DB.Exec(context.WithoutCancel(ctx), `delete from app_push_subscription
+					where id = $1 and org_id = $2 and endpoint = $3`, sub.ID, args.OrgID, sub.Endpoint); err != nil {
+					log.Printf("[web-push] remove gone subscription %s: %v", sub.ID, err)
+				}
+			case sendErr != nil:
+				mu.Lock()
+				failed = append(failed, sub.ID)
+				firstErr = cmp.Or(firstErr, sendErr)
+				mu.Unlock()
+			}
+		}()
 	}
+	wg.Wait()
 	if firstErr != nil {
 		return &jobs.WebPushRetryError{Subscriptions: failed, Err: firstErr}
 	}
@@ -437,7 +484,32 @@ func (e *pushBlockedError) Error() string {
 	return "OpenNeko sends Web Push only to a public address, not to " + e.ip
 }
 
+// pushLocalError is a fault on this side (a stored endpoint or key that this
+// server cannot use). It is not a reply of the push service, so the
+// subscription stays and the job does not retry it.
+type pushLocalError struct{ err error }
+
+func (e *pushLocalError) Error() string {
+	return "web push subscription unusable here: " + e.err.Error()
+}
+func (e *pushLocalError) Unwrap() error { return e.err }
+
 var cgnatNet = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
+
+var pushRefusedNets = []*net.IPNet{
+	cgnatNet,
+	mustCIDR("198.18.0.0/15"),
+	mustCIDR("240.0.0.0/4"),
+	mustCIDR("64:ff9b::/96"),
+}
+
+func mustCIDR(s string) *net.IPNet {
+	_, n, err := net.ParseCIDR(s)
+	if err != nil {
+		panic(err)
+	}
+	return n
+}
 
 // OPENNEKO_WEB_PUSH_ALLOW_LOOPBACK lets the local checks run a push service
 // stub on this host. A browser's push service is never on a private address.
@@ -459,8 +531,13 @@ func pushAddressRefused(ip net.IP) error {
 	if ip.IsLoopback() && pushLoopbackAllowed() {
 		return nil
 	}
-	if webhookAddressBlocked(ip) || ip.IsPrivate() || cgnatNet.Contains(ip) {
+	if webhookAddressBlocked(ip) || ip.IsPrivate() {
 		return &pushBlockedError{ip: ip.String()}
+	}
+	for _, n := range pushRefusedNets {
+		if n.Contains(ip) {
+			return &pushBlockedError{ip: ip.String()}
+		}
 	}
 	return nil
 }
@@ -472,19 +549,19 @@ func pushClient() *http.Client {
 func sendWebPush(ctx context.Context, client *http.Client, keys vapidKeys, sub storedPushSubscription, plaintext []byte) (int, error) {
 	u, err := url.Parse(sub.Endpoint)
 	if err != nil || !pushEndpointAllowed(u) {
-		return http.StatusGone, nil
+		return 0, &pushLocalError{errors.New("the endpoint is not an allowed https URL")}
 	}
 	uaPub, err := decodeB64URL(sub.P256dh)
 	if err != nil {
-		return http.StatusGone, nil
+		return 0, &pushLocalError{err}
 	}
 	authSecret, err := decodeB64URL(sub.Auth)
 	if err != nil {
-		return http.StatusGone, nil
+		return 0, &pushLocalError{err}
 	}
 	body, err := encryptWebPushAES128GCM(plaintext, uaPub, authSecret)
 	if err != nil {
-		return http.StatusGone, nil
+		return 0, &pushLocalError{err}
 	}
 	authHeader, err := signVAPIDAuthorization(u.Scheme+"://"+u.Host, vapidSubject, keys, time.Now().Add(12*time.Hour))
 	if err != nil {
