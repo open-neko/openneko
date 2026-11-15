@@ -21,6 +21,7 @@ import (
 
 const (
 	inboundMaxAttempts = 30
+	inboundLease       = 5 * time.Minute
 	inboundDedupTTL    = 7 * 24 * time.Hour
 	maxInboundBody     = 256 << 10
 )
@@ -57,38 +58,46 @@ func inboundUpdateKey(raw any) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// beginInbound claims an update. A new or pending update proceeds; a done or
-// dead one does not.
-func (a *API) beginInbound(ctx context.Context, orgID, channel, key string) (proceed, dead bool, err error) {
+// beginInbound claims an update for one dispatch. A new update, or a pending
+// one whose lease ended, proceeds under a new claim; a pending update that
+// another dispatch holds is busy; a done or dead one does not proceed.
+func (a *API) beginInbound(ctx context.Context, orgID, channel, key string) (claim string, busy, dead bool, err error) {
+	claim = uuid.NewString()
+	lease := fmt.Sprintf("%d milliseconds", inboundLease.Milliseconds())
+	tag, err := a.DB.Exec(ctx, `insert into inbound_dedup (org_id, channel_plugin, update_key, status, attempts, claimed_by, claimed_until)
+		values ($1, $2, $3, 'pending', 0, $4, now() + $5::interval) on conflict do nothing`, orgID, channel, key, claim, lease)
+	if err != nil || tag.RowsAffected() == 1 {
+		return claim, false, false, err
+	}
+	tag, err = a.DB.Exec(ctx, `update inbound_dedup set claimed_by = $4, claimed_until = now() + $5::interval
+		where org_id = $1 and channel_plugin = $2 and update_key = $3 and status = 'pending'
+		  and (claimed_until is null or claimed_until < now())`, orgID, channel, key, claim, lease)
+	if err != nil || tag.RowsAffected() == 1 {
+		return claim, false, false, err
+	}
 	var status string
-	err = a.DB.QueryRow(ctx, `with claimed as (
-		  insert into inbound_dedup (org_id, channel_plugin, update_key, status, attempts)
-		  values ($1, $2, $3, 'pending', 0) on conflict do nothing returning status)
-		select status from claimed
-		union all select status from inbound_dedup where org_id = $1 and channel_plugin = $2 and update_key = $3
-		limit 1`, orgID, channel, key).Scan(&status)
+	err = a.DB.QueryRow(ctx, `select status from inbound_dedup where org_id = $1 and channel_plugin = $2 and update_key = $3`,
+		orgID, channel, key).Scan(&status)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return true, false, nil
+		return "", true, false, nil
 	}
-	if err != nil {
-		return false, false, err
-	}
-	return status == "pending", status == "dead", nil
+	return "", status == "pending", status == "dead", err
 }
 
-func (a *API) markInboundDone(ctx context.Context, orgID, channel, key string) error {
-	_, err := a.DB.Exec(ctx, `update inbound_dedup set status = 'done', updated_at = now()
-		where org_id = $1 and channel_plugin = $2 and update_key = $3`, orgID, channel, key)
+func (a *API) markInboundDone(ctx context.Context, orgID, channel, key, claim string) error {
+	_, err := a.DB.Exec(ctx, `update inbound_dedup set status = 'done', claimed_by = null, claimed_until = null, updated_at = now()
+		where org_id = $1 and channel_plugin = $2 and update_key = $3 and claimed_by = $4`, orgID, channel, key, claim)
 	return err
 }
 
-func (a *API) recordInboundFailure(ctx context.Context, orgID, channel, key string, raw any, failure string) (dead bool, attempts int, err error) {
+func (a *API) recordInboundFailure(ctx context.Context, orgID, channel, key, claim string, raw any, failure string) (dead bool, attempts int, err error) {
 	attempts = inboundMaxAttempts
 	err = a.DB.QueryRow(ctx, `update inbound_dedup set attempts = attempts + 1, last_error = $4, updated_at = now(),
+		  claimed_by = null, claimed_until = null,
 		  status = case when attempts + 1 >= $5 then 'dead' else status end,
 		  payload = case when attempts + 1 >= $5 then $6::jsonb else payload end
-		where org_id = $1 and channel_plugin = $2 and update_key = $3 returning attempts`,
-		orgID, channel, key, failure, inboundMaxAttempts, jsStringify(raw, false)).Scan(&attempts)
+		where org_id = $1 and channel_plugin = $2 and update_key = $3 and claimed_by = $7 returning attempts`,
+		orgID, channel, key, failure, inboundMaxAttempts, jsStringify(raw, false), claim).Scan(&attempts)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = nil
 	}
@@ -117,16 +126,20 @@ func (a *API) pruneInboundDedup(ctx context.Context, now time.Time) (int64, erro
 }
 
 // processInbound parses and dispatches one update once. It returns false
-// only while a failed update still has attempts left, so the caller holds
-// its poll cursor.
+// while a failed update still has attempts left, or while another dispatch
+// holds it, so the caller holds its poll cursor.
 func (a *API) processInbound(ctx context.Context, orgID, channel string, raw any) bool {
 	key := inboundUpdateKey(raw)
-	proceed, dead, err := a.beginInbound(ctx, orgID, channel, key)
+	claim, busy, dead, err := a.beginInbound(ctx, orgID, channel, key)
 	if err != nil {
 		log.Printf("[channel-inbound] %s: could not claim the update: %v", channel, err)
 		return false
 	}
-	if !proceed {
+	if busy {
+		log.Printf("[channel-inbound] %s: another dispatch holds this update", channel)
+		return false
+	}
+	if claim == "" {
 		kind := "duplicate"
 		if dead {
 			kind = "dead-lettered"
@@ -135,11 +148,11 @@ func (a *API) processInbound(ctx context.Context, orgID, channel string, raw any
 		return true
 	}
 	if err = a.dispatchInbound(ctx, orgID, channel, raw); err == nil {
-		if err = a.markInboundDone(ctx, orgID, channel, key); err == nil {
+		if err = a.markInboundDone(ctx, orgID, channel, key, claim); err == nil {
 			return true
 		}
 	}
-	dead, attempts, ferr := a.recordInboundFailure(context.WithoutCancel(ctx), orgID, channel, key, raw, err.Error())
+	dead, attempts, ferr := a.recordInboundFailure(context.WithoutCancel(ctx), orgID, channel, key, claim, raw, err.Error())
 	if ferr != nil {
 		log.Printf("[channel-inbound] %s: could not record the failure: %v", channel, ferr)
 	}
