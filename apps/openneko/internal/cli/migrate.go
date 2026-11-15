@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/open-neko/neko/apps/openneko/assets"
+	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
@@ -61,8 +62,36 @@ func newMigrateCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&skipSchema, "skip-schema", false, "Skip schema migrations")
-	cmd.AddCommand(newMigrateConfigRepoCmd())
+	cmd.AddCommand(newMigrateConfigRepoCmd(), newMigrateLibraryCmd())
 	return cmd
+}
+
+// The library move needs openneko serve, which starts after migrate, so
+// openneko web also runs it at start.
+func newMigrateLibraryCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "library",
+		Short: "Move the Library documents of an older release into openneko serve",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if strings.TrimSpace(os.Getenv("OPENNEKO_SERVE_URL")) == "" {
+				return fmt.Errorf("set OPENNEKO_SERVE_URL: the move stores each document in openneko serve")
+			}
+			target, err := defaultConn()
+			if err != nil {
+				return err
+			}
+			pool, err := db.Open(cmd.Context(), target, "openneko migrate library", nil)
+			if err != nil {
+				return err
+			}
+			defer pool.Close()
+			api := &webfront.API{DB: pool, SecretsDir: config.Dir("")}
+			moved, missing, err := api.MoveLibraryDocuments(cmd.Context())
+			fmt.Fprintf(cmd.OutOrStdout(), "library: moved %d document(s); %d failed\n", moved, missing)
+			return err
+		},
+	}
 }
 
 func newMigrateConfigRepoCmd() *cobra.Command {
