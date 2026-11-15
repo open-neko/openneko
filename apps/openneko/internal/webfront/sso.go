@@ -92,7 +92,7 @@ func (a *API) authBegin(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
-	a.setCookie(w, StateCookie, value, stateTTLSeconds)
+	a.setCookie(w, r, StateCookie, value, stateTTLSeconds)
 	authURL, err := a.beginSignIn(ctx, a.redirectURI(r), state, loginHint)
 	if err != nil {
 		if manual {
@@ -134,7 +134,7 @@ func (a *API) authCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	userID, err := a.completeSignIn(ctx, r, code, state)
 	if err == nil {
-		err = a.writeSession(w, userID)
+		err = a.writeSession(w, r, userID)
 	}
 	if err != nil {
 		appRedirect(w, "/signin?error="+encodeURIComponent(err.Error()))
@@ -173,11 +173,11 @@ func (a *API) redirectURI(r *http.Request) string {
 	return a.publicBaseURL(r) + "/api/auth/callback"
 }
 
-func (a *API) setCookie(w http.ResponseWriter, name, value string, maxAge int) {
+func (a *API) setCookie(w http.ResponseWriter, r *http.Request, name, value string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{
 		Name: name, Value: value, Path: "/", MaxAge: maxAge,
 		Expires:  time.Now().Add(time.Duration(maxAge) * time.Second),
-		HttpOnly: true, Secure: a.SecureCookies, SameSite: http.SameSiteLaxMode,
+		HttpOnly: true, Secure: a.secureCookie(r), SameSite: http.SameSiteLaxMode,
 	})
 }
 
@@ -196,13 +196,13 @@ func macOf(secret, payload string) string {
 }
 
 // writeSession matches writeSessionCookie() in apps/web/src/lib/auth.ts.
-func (a *API) writeSession(w http.ResponseWriter, userID string) error {
+func (a *API) writeSession(w http.ResponseWriter, r *http.Request, userID string) error {
 	secret, err := a.signingSecret()
 	if err != nil {
 		return err
 	}
 	body := userID + "." + strconv.FormatInt(time.Now().Unix()+sessionTTLSeconds, 10)
-	a.setCookie(w, SessionCookie, body+"."+macOf(secret, body), sessionTTLSeconds)
+	a.setCookie(w, r, SessionCookie, body+"."+macOf(secret, body), sessionTTLSeconds)
 	return nil
 }
 

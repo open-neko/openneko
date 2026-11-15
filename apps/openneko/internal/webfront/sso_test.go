@@ -111,7 +111,7 @@ func newSSOFront(t *testing.T, status string, db *pgxpool.Pool) (*Front, *ssoWor
 	return &Front{
 		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
 		Gate: g,
-		API:  &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecureCookies: true, SecretsDir: g.SecretsDir, SignInClient: &http.Client{Transport: wk}},
+		API:  &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecretsDir: g.SecretsDir, SignInClient: &http.Client{Transport: wk}},
 	}, wk
 }
 

@@ -31,8 +31,8 @@ type API struct {
 	PublicURL string
 	// AuditWebhook overrides OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL.
 	AuditWebhook string
-	// SecureCookies marks the session and sign-in state cookies Secure.
-	SecureCookies bool
+	// Development drops the request scheme from the Secure cookie rule.
+	Development bool
 	// SecretsDir overrides the config folder that holds secrets.json.
 	SecretsDir string
 	// SignInClient overrides the HTTP client for outbound sign-in and SSO
