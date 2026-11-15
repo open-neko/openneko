@@ -18,7 +18,7 @@ import (
 )
 
 func newReleaseCheckCmd() *cobra.Command {
-	var scheduler, serveSocket bool
+	var scheduler, serveSocket, packsCheck bool
 	var datasourceOrg, mcpURL, query string
 	cmd := &cobra.Command{
 		Use:    "release-check",
@@ -26,8 +26,8 @@ func newReleaseCheckCmd() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if !scheduler && !serveSocket && datasourceOrg == "" {
-				return errors.New("name a check: --scheduler, --datasource ORG or --serve-socket")
+			if !scheduler && !serveSocket && !packsCheck && datasourceOrg == "" {
+				return errors.New("name a check: --scheduler, --datasource ORG, --serve-socket or --packs")
 			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 			defer cancel()
@@ -44,6 +44,13 @@ func newReleaseCheckCmd() *cobra.Command {
 				}
 				fmt.Fprintln(out, "authenticated_datasource_query=ok")
 			}
+			if packsCheck {
+				n, err := checkBuiltinPacks(ctx, webAdminSocket())
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(out, "builtin_packs=%d\n", n)
+			}
 			if serveSocket {
 				if err := checkServeSocket(ctx, os.Getenv("OPENNEKO_SERVE_SOCKET")); err != nil {
 					return err
@@ -59,7 +66,42 @@ func newReleaseCheckCmd() *cobra.Command {
 	f.StringVar(&mcpURL, "mcp-url", "http://graphjin:8080/api/v1/mcp", "GraphJin MCP endpoint for --datasource")
 	f.StringVar(&query, "query", "query { soh(limit: 1, order_by: { id: desc }) { id } }", "GraphQL query for --datasource")
 	f.BoolVar(&serveSocket, "serve-socket", false, "Connect to the agent socket of openneko serve (OPENNEKO_SERVE_SOCKET)")
+	f.BoolVar(&packsCheck, "packs", false, "The pack catalog on the web admin socket lists one or more built-in packs")
 	return cmd
+}
+
+func checkBuiltinPacks(ctx context.Context, socket string) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://web/admin/packs", nil)
+	if err != nil {
+		return 0, err
+	}
+	res, err := webAdminClient(socket).Do(req)
+	if err != nil {
+		return 0, webAdminUnreachable(socket, err)
+	}
+	defer res.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if err != nil {
+		return 0, err
+	}
+	var list struct {
+		Packs []struct {
+			Source string `json:"source"`
+		} `json:"packs"`
+	}
+	if err := json.Unmarshal(raw, &list); err != nil || res.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("the pack catalog did not answer (HTTP %d): %s", res.StatusCode, raw)
+	}
+	n := 0
+	for _, p := range list.Packs {
+		if p.Source == "embedded" {
+			n++
+		}
+	}
+	if n == 0 {
+		return 0, fmt.Errorf("the pack catalog lists no built-in pack: %s", raw)
+	}
+	return n, nil
 }
 
 func checkServeSocket(ctx context.Context, socket string) error {

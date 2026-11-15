@@ -39,11 +39,14 @@ func DatasourceQueryCheck(ctx context.Context, secretsDir, mcpURL, orgID, query 
 	if err := json.Unmarshal([]byte(text), &payload); err != nil {
 		return fmt.Errorf("execute_graphql gave no JSON data: %s", jsSlice(text, 300))
 	}
-	for _, field := range payload.Data {
+	if len(payload.Data) == 0 {
+		return fmt.Errorf("execute_graphql gave no rows: %s", jsSlice(text, 300))
+	}
+	for name, field := range payload.Data {
 		var rows []json.RawMessage
-		if json.Unmarshal(field, &rows) == nil && len(rows) > 0 {
-			return nil
+		if err := json.Unmarshal(field, &rows); err != nil || len(rows) == 0 {
+			return fmt.Errorf("execute_graphql gave no rows for %s: %s", name, jsSlice(text, 300))
 		}
 	}
-	return fmt.Errorf("execute_graphql gave no rows: %s", jsSlice(text, 300))
+	return nil
 }

@@ -36,6 +36,11 @@ for arch in "${arches[@]}"; do
   cp -R "$OPENNEKO_WEB_DIST" "$tree/share/openneko/web"
   cp -R "$root/packs" "$tree/share/openneko/packs"
   tar -C "$tree" --owner=0 --group=0 --numeric-owner --sort=name -czf "$out/$name" bin share
+  if ! tar -tzf "$out/$name" | grep -E '^share/openneko/packs/[^/]+/pack\.yaml$' >/dev/null; then
+    echo "build-native-release: $name holds no share/openneko/packs/*/pack.yaml" >&2
+    rm -f "$out/$name"
+    exit 1
+  fi
   (cd "$out" && sha256sum "$name" >> checksums-native.txt)
 done
 cat "$out/checksums-native.txt"
