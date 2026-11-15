@@ -55,7 +55,11 @@ import {
   cancelOfflineQuestion,
   claimNextOfflineQuestion,
   completeOfflineQuestion,
+  deferOfflineQuestion,
   enqueueOfflineQuestion,
+  failOfflineQuestion,
+  offlineRetryDelayMs,
+  offlineSendOutcome,
   newClientRequestId,
   requeueOfflineQuestion,
   setOfflineQueueUser,
@@ -159,16 +163,30 @@ export default function WorkScreen() {
     setOfflineQueueUser(sessionUserId);
   }, [sessionUserId]);
   const currentThreadKey = activeThreadId ?? routeThreadId ?? null;
-  const waitingQuestions = useMemo(
+  const queuedQuestions = useMemo(
     () =>
       offlineQueue.filter(
         (item) =>
-          item.status === "waiting" &&
+          item.status !== "sending" &&
           item.threadBase === threadBase &&
           item.threadId === currentThreadKey,
       ),
     [offlineQueue, threadBase, currentThreadKey],
   );
+  const waitingQuestions = useMemo(
+    () => queuedQuestions.filter((item) => item.status === "waiting"),
+    [queuedQuestions],
+  );
+  const [retryTick, setRetryTick] = useState(0);
+  useEffect(() => {
+    const now = Date.now();
+    const next = Math.min(
+      ...waitingQuestions.map((item) => item.retryAt ?? 0).filter((at) => at > now),
+    );
+    if (!Number.isFinite(next)) return;
+    const timer = window.setTimeout(() => setRetryTick((n) => n + 1), next - now + 50);
+    return () => window.clearTimeout(timer);
+  }, [waitingQuestions]);
 
   const updateActiveRunId = (next: string | null) => {
     setActiveRunIdState(next);
@@ -542,11 +560,11 @@ export default function WorkScreen() {
     }
   }
 
-  async function createThread(): Promise<string> {
+  async function createThread(clientRequestId?: string): Promise<string> {
     const res = await fetch("/api/v1/work/threads", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify(clientRequestId ? { clientRequestId } : {}),
     });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
@@ -746,7 +764,7 @@ export default function WorkScreen() {
         await loadThread(threadId);
       }
       if (!threadId) {
-        threadId = await createThread();
+        threadId = await createThread(claimed.id);
       }
       tempMessageId = `temp-${Date.now()}`;
       const now = new Date().toISOString();
@@ -833,6 +851,7 @@ export default function WorkScreen() {
     if (
       !gateChecked ||
       gateError ||
+      !sessionUserId ||
       !isOnline ||
       sending ||
       flushingOfflineRef.current ||
@@ -863,9 +882,11 @@ export default function WorkScreen() {
   }, [
     gateChecked,
     gateError,
+    sessionUserId,
     isOnline,
     sending,
     waitingQuestions.length,
+    retryTick,
     currentThreadKey,
     threadBase,
   ]);
@@ -963,17 +984,34 @@ export default function WorkScreen() {
       return false;
     }
     reportNetworkOnline();
+    if (!res.ok) {
+      const errBody = (await res.json().catch(() => ({}))) as { error?: string };
+      const error = errBody.error ?? `HTTP ${res.status}`;
+      if (request?.claimed) {
+        if (offlineSendOutcome(res.status) === "retry") {
+          deferOfflineQuestion(
+            request.clientRequestId,
+            Date.now() + offlineRetryDelayMs(res),
+            threadId,
+          );
+        } else {
+          failOfflineQuestion(
+            request.clientRequestId,
+            `The server refused this question (HTTP ${res.status}): ${error}`,
+            threadId,
+          );
+        }
+      }
+      request?.onPosted?.();
+      setSending(false);
+      setStreamError(error);
+      await loadThread(threadId);
+      return true;
+    }
     if (request?.claimed) {
       completeOfflineQuestion(request.clientRequestId);
     }
     request?.onPosted?.();
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}));
-      setSending(false);
-      setStreamError(errBody.error ?? `HTTP ${res.status}`);
-      await loadThread(threadId);
-      return true;
-    }
     const { runId, actorRole } = (await res.json()) as {
       runId: string;
       actorRole?: RunRecord["actorRole"];
@@ -1644,7 +1682,7 @@ export default function WorkScreen() {
           })
         ) : null}
 
-        {waitingQuestions.map((item) => (
+        {queuedQuestions.map((item) => (
           <div
             key={item.id}
             data-testid="offline-queued-question"
@@ -1659,23 +1697,45 @@ export default function WorkScreen() {
                 createdAt: item.createdAt,
               }}
             />
-            <div
-              role="status"
-              aria-live="polite"
-              data-testid="offline-waiting-status"
-              className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2.5 rounded-xl border border-border bg-warn-soft px-3 py-1.5 text-ui-caption font-medium text-warn-ink"
-            >
-              <Clock className="size-3.5 shrink-0" aria-hidden="true" strokeWidth={2} />
-              <span>Waiting for network — will send once online</span>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => cancelOfflineQuestion(item.id)}
-                aria-label="Cancel waiting question"
+            {item.status === "failed" ? (
+              <div
+                role="alert"
+                data-testid="offline-failed-status"
+                className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2.5 rounded-xl border border-border bg-warn-soft px-3 py-1.5 text-ui-caption font-medium text-warn-ink"
               >
-                Cancel
-              </Button>
-            </div>
+                <span>{item.error ?? "The server refused this question."}</span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => cancelOfflineQuestion(item.id)}
+                  aria-label="Remove refused question"
+                >
+                  Remove
+                </Button>
+              </div>
+            ) : (
+              <div
+                role="status"
+                aria-live="polite"
+                data-testid="offline-waiting-status"
+                className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2.5 rounded-xl border border-border bg-warn-soft px-3 py-1.5 text-ui-caption font-medium text-warn-ink"
+              >
+                <Clock className="size-3.5 shrink-0" aria-hidden="true" strokeWidth={2} />
+                <span>
+                  {item.retryAt
+                    ? "Server busy, will send again shortly"
+                    : "Waiting for network — will send once online"}
+                </span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => cancelOfflineQuestion(item.id)}
+                  aria-label="Cancel waiting question"
+                >
+                  Cancel
+                </Button>
+              </div>
+            )}
           </div>
         ))}
 

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -477,5 +478,43 @@ func TestApproveRunAction(t *testing.T) {
 	_ = db.QueryRow(ctx, `select kind || ' ' || payload::text from work_run_event where run_id = $1 and kind = 'action_request_result'`, ru1).Scan(&event)
 	if want := `action_request_result {"kind": "note", "type": "action_request_result", "status": "rejected", "rejection_reason": "Not now", "action_request_id": "` + arChat2 + `"}`; event != want {
 		t.Errorf("event: %s", event)
+	}
+}
+
+func TestCreateThreadClientRequestIDMakesOneThread(t *testing.T) {
+	f, _ := memoryFront(t)
+	create := func(body, who string) (int, string) {
+		w := call(f, "POST", "/api/v1/work/threads", body, sessionCookie(who))
+		var v struct{ Thread struct{ ID string } }
+		_ = json.Unmarshal(w.Body.Bytes(), &v)
+		return w.Code, v.Thread.ID
+	}
+	if code, _ := create(`{"clientRequestId":"has space"}`, "member"); code != 400 {
+		t.Fatalf("a bad client request id gave %d", code)
+	}
+	body := `{"clientRequestId":"offline-new-thread"}`
+	ids := make([]string, 3)
+	var wg sync.WaitGroup
+	for i := range ids {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if code, id := create(body, "member"); code == 200 {
+				ids[i] = id
+			}
+		}(i)
+	}
+	wg.Wait()
+	if ids[0] == "" || ids[0] != ids[1] || ids[1] != ids[2] {
+		t.Fatalf("one client request id gave threads %v", ids)
+	}
+	if _, other := create(body, "other"); other == "" || other == ids[0] {
+		t.Fatalf("another user's same id gave thread %q", other)
+	}
+	if _, next := create(`{"clientRequestId":"offline-next"}`, "member"); next == "" || next == ids[0] {
+		t.Fatalf("a new id gave thread %q", next)
+	}
+	if _, plain := create(`{}`, "member"); plain == "" || plain == ids[0] {
+		t.Fatalf("no id gave thread %q", plain)
 	}
 }

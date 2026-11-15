@@ -38,6 +38,18 @@ export const workCases: Case[] = [
       c.ids.threadId = String((body(r).thread as { id: string }).id);
     },
   },
+  {
+    op: "POST /work/threads", name: "starts a thread for a client request id", status: 200,
+    request: { body: { clientRequestId: "contract-offline-thread" } },
+    check: (r, c) => {
+      c.ids.offlineThreadId = String((body(r).thread as { id: string }).id);
+    },
+  },
+  {
+    op: "POST /work/threads", name: "returns the same thread for a repeated client request id", status: 200,
+    request: { body: { clientRequestId: "contract-offline-thread" } },
+    check: (r, c) => expect(String((body(r).thread as { id: string }).id)).toBe(c.ids.offlineThreadId),
+  },
   { op: "GET /work/threads/{threadId}", name: "reads the thread", status: 200, request: (c) => ({ params: { threadId: c.ids.threadId } }) },
   { op: "GET /work/threads/{threadId}", name: "hides another user's thread", as: "member", status: 404, request: (c) => ({ params: { threadId: c.ids.threadId } }) },
   { op: "POST /work/threads/{threadId}/runs", name: "needs a message", status: 400, request: (c) => ({ params: { threadId: c.ids.threadId }, body: {} }) },
