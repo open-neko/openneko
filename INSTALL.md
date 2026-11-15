@@ -412,8 +412,12 @@ For an admin, `GET /health/security` also gives `auditWebhook`: `state` is
 ### Agent runtime
 
 **Admin → Settings → Agent → Concurrent jobs** sets how many agent turns one
-`openneko web` runs at the same time. The default is 3. A save applies at once,
-with no restart. `OPENNEKO_AGENT_CONCURRENCY` overrides the setting.
+`openneko web` runs at the same time. The default is 3, and a value must be a
+number from 1 to 1000. A save applies at once in the `openneko web` that took
+it, with no restart. Every other `openneko web` on the same database reads the
+setting again within 30 seconds. `OPENNEKO_AGENT_CONCURRENCY` overrides the
+setting. Slack and Telegram messages run as `work_run` jobs, at most 3 at once
+in each `openneko web`, so a setting above 3 does not run more channel turns.
 
 At start, `openneko web` logs one warning line when no model provider is set,
 or when it cannot read or check the stored credential of a provider. It still
