@@ -523,18 +523,27 @@ func (a *API) recordDBSchedulerFailure(ctx context.Context, now time.Time, msg s
 	return err
 }
 
-// ServeHealth answers GET /health, /health/scheduler and /health/security as
-// the worker's admin server did.
+// ServeHealth answers GET /health, /health/scheduler and /health/security on
+// the public port. Only a signed-in admin gets the detail there; the admin
+// socket always gives it.
 func (f *Front) ServeHealth(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodGet {
 		return false
 	}
 	switch r.URL.Path {
 	case "/health", "/health/scheduler", "/health/security":
-		f.API.serveHealth(w, r.URL.Path)
+		f.API.serveHealth(w, r.URL.Path, f.API.signedInAdmin(r))
 		return true
 	}
 	return false
+}
+
+func (a *API) signedInAdmin(r *http.Request) bool {
+	if a == nil || a.Gate == nil || a.DB == nil || !a.Gate.Status(r.Context()).Live() {
+		return false
+	}
+	act, err := a.currentActor(r.Context(), r)
+	return err == nil && act.UserID != "" && act.Admin
 }
 
 func (a *API) schedulerHealth(now time.Time) (SchedulerHealth, bool) {
@@ -550,7 +559,7 @@ func (a *API) schedulerHealth(now time.Time) (SchedulerHealth, bool) {
 	return a.WorkflowSchedulerHealth(now), true
 }
 
-func (a *API) serveHealth(w http.ResponseWriter, path string) {
+func (a *API) serveHealth(w http.ResponseWriter, path string, detail bool) {
 	switch path {
 	case "/health":
 		health, ok := a.schedulerHealth(time.Now())
@@ -563,21 +572,33 @@ func (a *API) serveHealth(w http.ResponseWriter, path string) {
 		_, _ = w.Write([]byte(health.Status))
 	case "/health/scheduler":
 		health, ok := a.schedulerHealth(time.Now())
-		if !ok {
+		switch {
+		case !ok && detail:
 			sendJSON(w, http.StatusServiceUnavailable, map[string]any{"status": "unavailable", "error": "scheduler health is not configured"})
-			return
+		case !ok:
+			sendJSON(w, http.StatusServiceUnavailable, map[string]any{"status": "unavailable"})
+		case detail:
+			sendJSON(w, healthCode(health.Status), health)
+		default:
+			sendJSON(w, healthCode(health.Status), map[string]any{"status": health.Status})
 		}
-		code := http.StatusOK
-		if health.Status != "ok" {
-			code = http.StatusServiceUnavailable
-		}
-		sendJSON(w, code, health)
 	case "/health/security":
 		audit := a.AuditHealth()
 		status := "ok"
 		if !audit.Healthy {
 			status = "degraded"
 		}
+		if !detail {
+			sendJSON(w, http.StatusOK, map[string]any{"status": status})
+			return
+		}
 		sendJSON(w, http.StatusOK, map[string]any{"status": status, "auditLogging": audit})
 	}
+}
+
+func healthCode(status string) int {
+	if status == "ok" {
+		return http.StatusOK
+	}
+	return http.StatusServiceUnavailable
 }
