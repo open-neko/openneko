@@ -84,6 +84,11 @@ func (a *API) StartChannelInbound(ctx context.Context) {
 		prune := time.NewTicker(dedupPruneEvery)
 		defer refresh.Stop()
 		defer prune.Stop()
+		go func() {
+			for sleepCtx(ctx, inboundRetryEvery) {
+				a.retryPendingInbound(ctx)
+			}
+		}()
 		for {
 			a.refreshInbound(l)
 			select {

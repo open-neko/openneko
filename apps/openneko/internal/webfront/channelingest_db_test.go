@@ -3,6 +3,7 @@ package webfront
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -65,7 +66,7 @@ func TestInboundLedger(t *testing.T) {
 	a, ctx := f.API, t.Context()
 	held := map[string]string{}
 	claim := func(key string) string {
-		c, busy, dead, err := a.beginInbound(ctx, "org", "telegram", key)
+		c, busy, dead, err := a.beginInbound(ctx, "org", "telegram", key, parse(t, `{"u":1}`))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -79,7 +80,7 @@ func TestInboundLedger(t *testing.T) {
 	if got := claim("k1"); got != "false true false" {
 		t.Errorf("a held update: %s", got)
 	}
-	if err := a.markInboundDone(ctx, "org", "telegram", "k1", "not-the-claim"); err != nil || count(t, db, `select count(*) from inbound_dedup where status = 'done'`) != 0 {
+	if err := a.markInboundDone(ctx, "org", "telegram", "k1", "not-the-claim"); !errors.Is(err, errInboundClaimLost) || count(t, db, `select count(*) from inbound_dedup where status = 'done'`) != 0 {
 		t.Errorf("another claim marked the update done: %v", err)
 	}
 	if err := a.markInboundDone(ctx, "org", "telegram", "k1", first); err != nil {
@@ -332,8 +333,8 @@ func TestInboundFailureHoldsThenDeadLetters(t *testing.T) {
 		t.Error("the last attempt did not settle")
 	}
 	a.Jobs = jobsOn
-	if !a.processInbound(ctx, "org", "telegram", update) || count(t, db, `select count(*) from work_message where content = 'hi'`) != 2 {
-		t.Error("a dead update ran again, or the failed runs left no message")
+	if !a.processInbound(ctx, "org", "telegram", update) || count(t, db, `select count(*) from work_message where content = 'hi'`) != 0 {
+		t.Error("a dead update ran again, or a failed attempt left a message")
 	}
 }
 
@@ -407,8 +408,8 @@ func TestChannelWebhook(t *testing.T) {
 	if got := post("/api/v1/channels/telegram/inbound", strings.Repeat(" ", maxInboundBody+1), good); got != `400 {"error":"could not read request body"}` {
 		t.Errorf("too large: %s", got)
 	}
-	if runs() != before+4 {
-		t.Error("a refused webhook started a run")
+	if runs() != before+3 {
+		t.Errorf("three handled updates made %d runs; a refused or failed update must leave none", runs()-before)
 	}
 }
 
