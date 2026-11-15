@@ -103,6 +103,19 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
         pendingText += event.content;
         break;
       }
+      case "answer_reset": {
+        pendingText = "";
+        for (let i = items.length - 1; i >= 0; i--) {
+          if (items[i].kind === "text" || items[i].kind === "card_pending") items.splice(i, 1);
+          else if (items[i].kind !== "progress") break;
+        }
+        break;
+      }
+      case "card_pending": {
+        flushTextSegment();
+        items.push({ kind: "card_pending" });
+        break;
+      }
       case "interim": {
         flushTextSegment();
         items.push({ kind: "interim", id: event.id, content: event.content });
@@ -185,6 +198,9 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
       }
       case "surface": {
         flushTextSegment();
+        for (let i = items.length - 1; i >= 0; i--) {
+          if (items[i].kind === "card_pending") items.splice(i, 1);
+        }
         if (!surfaceItem) {
           surfaceItem = { kind: "surface", messages: [] };
           items.push(surfaceItem);

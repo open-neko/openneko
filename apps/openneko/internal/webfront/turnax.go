@@ -802,6 +802,7 @@ type axEventMapper struct {
 	text           string
 	textVersion    any
 	emittedOutside string
+	openedCards    int
 	thought        string
 	thoughtCount   int
 	observed       *jsObj
@@ -851,6 +852,9 @@ func (m *axEventMapper) handle(ev axEvent) {
 		}
 		m.text += text
 		m.emitOutside(outsideFenceText(m.text))
+		for n := hiddenFenceCount(m.text); m.openedCards < n; m.openedCards++ {
+			m.emit(jsObjOf("type", "card_pending"))
+		}
 	case "thought.delta":
 		if m.summaryProvider() != "" && isText {
 			m.thought = utf16Head(m.thought+text, 6_000)
@@ -971,7 +975,8 @@ func (m *axEventMapper) usage(usage any) {
 
 func (m *axEventMapper) emitOutside(outside string) {
 	if !strings.HasPrefix(outside, m.emittedOutside) {
-		return
+		m.emittedOutside, m.openedCards = "", 0
+		m.emit(jsObjOf("type", "answer_reset"))
 	}
 	delta := outside[len(m.emittedOutside):]
 	if delta == "" {

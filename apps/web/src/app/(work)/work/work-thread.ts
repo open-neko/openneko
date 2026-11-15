@@ -44,13 +44,7 @@ export function withAssistantTimelinePlaceholders(bundle: ThreadBundle): ThreadB
     if (!needsAssistantTimelinePlaceholder(run, runEvents)) {
       continue;
     }
-    const streamedContent = (runEvents ?? [])
-      .filter(
-        (event): event is Extract<WorkEvent, { type: "message" }> =>
-          event.type === "message" && event.role === "assistant",
-      )
-      .map((event) => event.content)
-      .join("");
+    const streamedContent = streamedAnswerText(runEvents ?? []);
     placeholders.push({
       id: `assistant-${run.id}`,
       runId: run.id,
@@ -76,16 +70,25 @@ export function withAssistantTimelinePlaceholders(bundle: ThreadBundle): ThreadB
   return { ...bundle, messages };
 }
 
+export function streamedAnswerText(events: WorkEvent[]): string {
+  let text = "";
+  for (const event of events) {
+    if (event.type === "answer_reset") text = "";
+    else if (event.type === "message" && event.role === "assistant") text += event.content;
+  }
+  return text;
+}
+
 export function applyStreamEventToBundle(
   bundle: ThreadBundle,
   runId: string,
   event: WorkEvent,
 ): ThreadBundle {
   const messages =
-    event.type === "message" && event.role === "assistant"
+    (event.type === "message" && event.role === "assistant") || event.type === "answer_reset"
       ? bundle.messages.map((message) =>
           message.runId === runId && message.role === "assistant"
-            ? { ...message, content: message.content + event.content }
+            ? { ...message, content: event.type === "message" ? message.content + event.content : "" }
             : message,
         )
       : bundle.messages;

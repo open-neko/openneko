@@ -36,6 +36,8 @@ export type WorkEvent =
   // reconstructs the full assistant text. Mirrors `AgentEvent.message` in
   // packages/llm/src/agent-backend.ts.
   | { type: "message"; role: "user" | "assistant"; content: string }
+  | { type: "answer_reset" }
+  | { type: "card_pending" }
   | { type: "interim"; id: string; content: string; source: "hermes_interim_assistant" }
   | { type: "tool_start"; id: string; name: string; input?: unknown }
   | { type: "tool_delta"; id: string; delta: unknown }
@@ -161,6 +163,7 @@ export type ApprovalItem = {
 
 export type TimelineItem =
   | { kind: "text"; content: string }
+  | { kind: "card_pending" }
   | { kind: "interim"; id: string; content: string }
   | { kind: "progress"; id: string; content: string }
   | { kind: "tools"; tools: ToolItem[] }
