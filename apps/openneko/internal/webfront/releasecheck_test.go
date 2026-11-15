@@ -60,10 +60,14 @@ func TestDatasourceQueryCheckSignsAsTheOrgService(t *testing.T) {
 		reply   string
 		isError bool
 	}{
-		"no rows":  {`{"data":{"soh":[]}}`, false},
-		"not JSON": {`denied`, false},
-		"error":    {`{"data":{"soh":[{"id":7}]}}`, true},
-		"no data":  {`{"errors":[{"message":"x"}]}`, false},
+		"no rows":         {`{"data":{"soh":[]}}`, false},
+		"not JSON":        {`denied`, false},
+		"error":           {`{"data":{"soh":[{"id":7}]}}`, true},
+		"no data":         {`{"errors":[{"message":"x"}]}`, false},
+		"one field empty": {`{"data":{"soh":[{"id":7}],"customer":[]}}`, false},
+		"one field null":  {`{"data":{"soh":[{"id":7}],"customer":null}}`, false},
+		"object field":    {`{"data":{"soh":[{"id":7}],"customer":{"id":1}}}`, false},
+		"empty data":      {`{"data":{}}`, false},
 	} {
 		reply, isError = c.reply, c.isError
 		if err := DatasourceQueryCheck(ctx, secrets, srv.URL, "adventureworks", query); err == nil {
