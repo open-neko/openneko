@@ -225,7 +225,7 @@ func TestHookLimits(t *testing.T) {
 	t.Setenv("HEADLESS_QUEUE_MAX_PER_WORKFLOW", "")
 
 	seed(t, db, `insert into subscription (id, org_id, workflow_id, source_kind, filter) values
-		('e1000000-0000-4000-8000-000000000001', 'org', $1, 'external_event', '{"event_names":["spend.budget_blocked"],"source":"spend-governance"}')`, wfHeld)
+		('e1000000-0000-4000-8000-000000000001', 'org', $1, 'external_event', '{"name":"spend.budget_blocked","source":"spend-governance"}')`, wfHeld)
 	seed(t, db, `update spend_limit set org_hourly_micros = 4000000 where org_id = 'org' and workflow_id is null`)
 	w := hookCall(f, "POST", "/api/hooks/"+hookID, `{}`, map[string]string{"Idempotency-Key": "budget"})
 	if w.Code != 429 || !regexp.MustCompile(`^\{"error":"global_hourly_budget","limitUsd":4,"committedUsd":\d+(\.\d+)?,"reservationUsd":5\}$`).MatchString(w.Body.String()) {
