@@ -96,14 +96,14 @@ func TestExtractNativeArchiveTakesTheReleaseFiles(t *testing.T) {
 
 func TestExtractNativeArchiveRefusesUnsafeEntries(t *testing.T) {
 	cases := map[string]tarEntry{
-		"parent":     {name: "../evil", body: "x"},
-		"absolute":   {name: "/etc/evil", body: "x"},
-		"inner dots": {name: "share/openneko/web/../../../evil", body: "x"},
-		"other path": {name: "etc/openneko.conf", body: "x"},
+		"parent":      {name: "../evil", body: "x"},
+		"absolute":    {name: "/etc/evil", body: "x"},
+		"inner dots":  {name: "share/openneko/web/../../../evil", body: "x"},
+		"other path":  {name: "etc/openneko.conf", body: "x"},
 		"other share": {name: "share/openneko/packsx/a", body: "x"},
-		"symlink":    {name: "share/openneko/web/link", kind: tar.TypeSymlink},
-		"hard link":  {name: "share/openneko/web/link", kind: tar.TypeLink},
-		"twice":      {name: "bin/openneko", body: "again"},
+		"symlink":     {name: "share/openneko/web/link", kind: tar.TypeSymlink},
+		"hard link":   {name: "share/openneko/web/link", kind: tar.TypeLink},
+		"twice":       {name: "bin/openneko", body: "again"},
 	}
 	for name, bad := range cases {
 		t.Run(name, func(t *testing.T) {

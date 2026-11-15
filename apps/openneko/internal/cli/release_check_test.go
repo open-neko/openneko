@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -38,5 +39,24 @@ func TestReleaseCheckSchedulerReadsTheAdminSocket(t *testing.T) {
 	}
 	if err := checkScheduler(ctx, filepath.Join(t.TempDir(), "none.sock")); err == nil || !strings.Contains(err.Error(), "unreachable") {
 		t.Fatalf("no socket: err = %v", err)
+	}
+}
+
+func TestReleaseCheckServeSocket(t *testing.T) {
+	ctx := context.Background()
+	if err := checkServeSocket(ctx, ""); err == nil {
+		t.Fatal("an unset socket passed")
+	}
+	socket := filepath.Join(t.TempDir(), "serve.sock")
+	if err := checkServeSocket(ctx, socket); err == nil {
+		t.Fatal("a missing socket passed")
+	}
+	ln, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	if err := checkServeSocket(ctx, socket); err != nil {
+		t.Fatal(err)
 	}
 }

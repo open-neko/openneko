@@ -115,6 +115,14 @@ jobs:
               --filter label=com.docker.compose.service=web | head -1)
             test -n "$WEB"
 
+            # Container health is not enough for a data source deployment:
+            # the signed web -> GraphJin -> AdventureWorks path must return a
+            # real row, and web must reach the agent socket of openneko serve.
+            checks=$(docker exec "$WEB" openneko release-check --datasource adventureworks --serve-socket)
+            echo "$checks"
+            grep -qx authenticated_datasource_query=ok <<<"$checks"
+            grep -qx serve_socket=ok <<<"$checks"
+
             # Process liveness used to pass while schedule polling had
             # silently stopped. Require a successful durable scheduler DB
             # transaction after this web boot before accepting the deploy.
