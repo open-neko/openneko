@@ -144,26 +144,20 @@ briefing routes went; the adapter still calls it in Node.
 
 ### Production OpenTelemetry
 
-The worker and Node.js web execution paths export metadata-only traces when an
-OTLP endpoint is configured.
-Export remains off by default and never carries prompts, queries, tool
-arguments/results, model output, database content, or exporter credentials.
+Only `openneko serve` exports traces: the metadata-only spans of its GraphJin
+servers (default service name `openneko-graphjin`), when an OTLP endpoint is
+set. `openneko web` runs the agent turns and exports no traces, so a run's
+GraphJin calls do not join a run trace. INSTALL.md, "Traces", says what each
+span holds.
 
 ```sh
 export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://collector:4318/v1/traces
-export OTEL_SERVICE_NAME=openneko-worker # use openneko-web for the web service
 # Optional standard OTel exporter setting; keep it in the environment only.
 export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer ...'
 ```
 
 `OPENNEKO_OTEL_ENABLED=true` enables the SDK when endpoint configuration comes
 from another supported OTel mechanism. `OTEL_SDK_DISABLED=true` always wins.
-
-`openneko serve` follows the same rule for its GraphJin engines (default
-service name `openneko-graphjin`). The worker sends W3C trace context on each
-GraphJin GraphQL and MCP call that a run makes, so GraphJin's spans join the
-run's trace. Serve removes error text, exception events and URL query
-strings from these spans before export.
 Current production export is traces. Normalized per-run usage, cost, latency,
 tool, delegation, retry, and validation summaries are also persisted in the
 existing work-run event and processing-job client surfaces, and emitted as
