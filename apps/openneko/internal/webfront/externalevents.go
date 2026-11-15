@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -49,33 +48,24 @@ type externalEventDispatchResult struct {
 // externalEventFilterMatches is externalEventFilterMatches() in
 // packages/llm/src/workflows/external-events.ts.
 func externalEventFilterMatches(filter any, event externalEventMatch) bool {
-	var rawNames any
-	var rawSource any
+	var name, source any
 	switch f := filter.(type) {
 	case *jsObj:
 		if f != nil {
-			rawNames = f.vals["event_names"]
-			rawSource = f.vals["source"]
+			name, source = f.vals["name"], f.vals["source"]
 		}
 	case map[string]any:
-		rawNames = f["event_names"]
-		rawSource = f["source"]
+		name, source = f["name"], f["source"]
 	}
-	var names []string
-	if list, ok := rawNames.([]any); ok {
-		for _, item := range list {
-			if s, ok := item.(string); ok {
-				names = append(names, s)
-			}
-		}
-	} else if list, ok := rawNames.([]string); ok {
-		names = list
-	}
-	if len(names) > 0 && !slices.Contains(names, "*") && !slices.Contains(names, event.Name) {
+	if want, ok := name.(string); ok && want != event.Name {
 		return false
 	}
-	if wantSource, ok := rawSource.(string); ok && len(wantSource) > 0 {
-		if event.Source == nil || *event.Source != wantSource {
+	if want, ok := source.(string); ok {
+		got := ""
+		if event.Source != nil {
+			got = *event.Source
+		}
+		if want != got {
 			return false
 		}
 	}
