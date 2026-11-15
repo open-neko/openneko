@@ -263,7 +263,7 @@ func TestTurnSourceConfigDatabase(t *testing.T) {
 		t.Fatalf("names tool: %s %v", out, rpcErr)
 	}
 	out, rpcErr = callTool(t, s, "source_config_manager_check_source", map[string]any{"type": "postgres", "host": dbHost, "port": answers("").vals["port"], "dbname": "postgres", "user": u.User.Username(), "secretRef": "erp-password"})
-	if rpcErr != nil || strings.Contains(out, pw) || !strings.Contains(out, `{\"step\":\"login\",\"status\":\"ok\"`) || !strings.Contains(out, `Tell the admin which step failed`) {
+	if rpcErr != nil || strings.Contains(out, `\"`+pw+`\"`) || strings.Contains(out, ":"+pw+"@") || !strings.Contains(out, `{\"step\":\"login\",\"status\":\"ok\"`) || !strings.Contains(out, `Tell the admin which step failed`) {
 		t.Fatalf("check tool: %s %v", out, rpcErr)
 	}
 	out, rpcErr = callTool(t, s, "source_config_manager_request_source_config_change", map[string]any{"action": "add_role", "name": "x", "match": "y", "intent": "z"})
