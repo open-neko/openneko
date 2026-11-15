@@ -11124,6 +11124,8 @@ paths:
       tags:
       - work
       summary: Create a thread, optionally seeded with context
+      description: A request that repeats the clientRequestId of an earlier request of the
+        same user returns the thread of that request and creates no new thread.
       x-access: signed-in
       security:
       - session: []
@@ -11146,6 +11148,9 @@ paths:
                 seedActionRequestId:
                   type: string
                   description: Seed with an action request
+                clientRequestId:
+                  type: string
+                  pattern: ^[A-Za-z0-9._-]{1,128}$
       responses:
         '200':
           description: The new thread

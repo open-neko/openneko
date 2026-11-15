@@ -123,6 +123,7 @@ describe("offline question queue storage (FIX6b)", () => {
     expect(tab.claimNextOfflineQuestion("thread-1", "/chat/t")?.id).toBe(queued.id);
 
     const reloaded = await openTab();
+    reloaded.setOfflineQueueUser("user-a");
     expect(reloaded.getOfflineQueueSnapshot().map((q) => q.content)).toEqual(["Send me after reload"]);
     const again = await reloaded.withOfflineQueueLock(async () =>
       reloaded.claimNextOfflineQuestion("thread-1", "/chat/t"),
@@ -135,6 +136,7 @@ describe("offline question queue storage (FIX6b)", () => {
     tabA.setOfflineQueueUser("user-a");
     tabA.enqueueOfflineQuestion(question("Only once"));
     const tabB = await openTab();
+    tabB.setOfflineQueueUser("user-a");
     expect(tabB.getOfflineQueueSnapshot()).toHaveLength(1);
 
     const sent: string[] = [];
@@ -155,6 +157,122 @@ describe("offline question queue storage (FIX6b)", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatch(/^A:/);
     expect(tabB.getOfflineQueueSnapshot()).toEqual([]);
+  });
+
+  it("shows and sends nothing of the last user before the session names the user (FIX12)", async () => {
+    const tabA = await openTab();
+    tabA.setOfflineQueueUser("user-a");
+    tabA.enqueueOfflineQuestion(question("Private question of user A"));
+
+    const afterExpiry = await openTab();
+    expect(afterExpiry.getOfflineQueueSnapshot()).toEqual([]);
+    expect(afterExpiry.claimNextOfflineQuestion("thread-1", "/chat/t")).toBeNull();
+    afterExpiry.setOfflineQueueUser("user-b");
+    expect(afterExpiry.getOfflineQueueSnapshot()).toEqual([]);
+    expect(afterExpiry.claimNextOfflineQuestion("thread-1", "/chat/t")).toBeNull();
+    expect(storage.getItem("openneko.work.offlineQueue.user.user-a")).toContain("Private question of user A");
+
+    tabA.setOfflineQueueUser(null);
+    expect(tabA.getOfflineQueueSnapshot()).toEqual([]);
+    expect(tabA.claimNextOfflineQuestion("thread-1", "/chat/t")).toBeNull();
+  });
+
+  it("sends a question from one tab only when the browser has no Web Locks (FIX12)", async () => {
+    vi.stubGlobal("navigator", {});
+    const tabA = await openTab();
+    tabA.setOfflineQueueUser("user-a");
+    const queued = tabA.enqueueOfflineQuestion(question("Only once without locks"));
+    const tabB = await openTab();
+    tabB.setOfflineQueueUser("user-a");
+
+    const sent: string[] = [];
+    let postA = () => {};
+    const flush = (tab: QueueModule, name: string, hold: boolean) =>
+      tab.withOfflineQueueLock(async () => {
+        const claimed = tab.claimNextOfflineQuestion("thread-1", "/chat/t");
+        if (!claimed) return;
+        sent.push(`${name}:${claimed.id}`);
+        if (hold) await new Promise<void>((resolve) => (postA = resolve));
+        tab.completeOfflineQuestion(claimed.id);
+      });
+    const a = flush(tabA, "A", true);
+    const b = flush(tabB, "B", false);
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    await b;
+    expect(sent).toEqual([`A:${queued.id}`]);
+    const stored = JSON.parse(storage.getItem("openneko.work.offlineQueue.user.user-a")!);
+    expect(stored[0]).toMatchObject({ status: "sending", claimedBy: expect.any(String), claimedAt: expect.any(Number) });
+    postA();
+    await a;
+    expect(tabB.getOfflineQueueSnapshot()).toEqual([]);
+  });
+
+  it("takes over the claim of a closed tab after the lease, with no Web Locks (FIX12)", async () => {
+    vi.stubGlobal("navigator", {});
+    const closed = await openTab();
+    closed.setOfflineQueueUser("user-a");
+    const queued = closed.enqueueOfflineQuestion(question("Claimed by a closed tab"));
+    expect(closed.claimNextOfflineQuestion("thread-1", "/chat/t")?.id).toBe(queued.id);
+
+    const next = await openTab();
+    next.setOfflineQueueUser("user-a");
+    expect(next.claimNextOfflineQuestion("thread-1", "/chat/t")).toBeNull();
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + next.OFFLINE_CLAIM_LEASE_MS + 1);
+    try {
+      expect(next.claimNextOfflineQuestion("thread-1", "/chat/t")?.id).toBe(queued.id);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("completes a question on 2xx only; keeps it on 429 and 5xx; marks other refusals failed (FIX12)", async () => {
+    const tab = await openTab();
+    expect([200, 201, 429, 500, 503, 400, 403, 404, 413].map(tab.offlineSendOutcome)).toEqual([
+      "done", "done", "retry", "retry", "retry", "refused", "refused", "refused", "refused",
+    ]);
+    const res = (status: number, retryAfter?: string) => ({
+      status,
+      headers: new Headers(retryAfter ? { "Retry-After": retryAfter } : {}),
+    });
+    expect(tab.offlineRetryDelayMs(res(429, "12"))).toBe(12_000);
+    expect(tab.offlineRetryDelayMs(res(429))).toBe(30_000);
+    expect(tab.offlineRetryDelayMs(res(503))).toBe(15_000);
+    expect(tab.offlineRetryDelayMs(res(503, "100000"))).toBe(300_000);
+
+    tab.setOfflineQueueUser("user-a");
+    const busy = tab.enqueueOfflineQuestion(question("Busy server"));
+    const now = Date.now();
+    tab.deferOfflineQuestion(tab.claimNextOfflineQuestion("thread-1", "/chat/t")!.id, now + 30_000);
+    expect(tab.getOfflineQueueSnapshot()).toMatchObject([{ id: busy.id, status: "waiting", retryAt: now + 30_000 }]);
+    expect(tab.claimNextOfflineQuestion("thread-1", "/chat/t")).toBeNull();
+    vi.spyOn(Date, "now").mockReturnValue(now + 30_001);
+    try {
+      expect(tab.claimNextOfflineQuestion("thread-1", "/chat/t")?.id).toBe(busy.id);
+    } finally {
+      vi.restoreAllMocks();
+    }
+    tab.failOfflineQuestion(busy.id, "The server refused this question (HTTP 400): message is required");
+    expect(tab.getOfflineQueueSnapshot()).toMatchObject([
+      { id: busy.id, status: "failed", error: "The server refused this question (HTTP 400): message is required" },
+    ]);
+    expect(tab.claimNextOfflineQuestion("thread-1", "/chat/t")).toBeNull();
+    expect(tab.cancelOfflineQuestion(busy.id)).toBe(true);
+    expect(tab.getOfflineQueueSnapshot()).toEqual([]);
+  });
+
+  it("names this browser's push endpoint in the logout request (FIX12)", async () => {
+    storage.setItem("openneko.push.endpoint", "https://push.example.com/this-browser");
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+    (window as unknown as { location: { href: string } }).location = { href: "/" };
+    const { signOut } = await import("../src/lib/sign-out");
+    await signOut();
+    const logout = fetchMock.mock.calls.find((call) => String(call[0]) === "/api/v1/auth/logout");
+    expect(logout).toBeDefined();
+    expect(JSON.parse(String(logout![1]?.body))).toEqual({
+      pushEndpoint: "https://push.example.com/this-browser",
+    });
   });
 
   it("puts a failed send back with its id, so the server can match it", async () => {

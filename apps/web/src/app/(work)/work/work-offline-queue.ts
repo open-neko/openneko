@@ -3,8 +3,11 @@
 import { useSyncExternalStore } from "react";
 
 export const OFFLINE_QUEUE_STORAGE_PREFIX = "openneko.work.offlineQueue";
-export const OFFLINE_QUEUE_USER_KEY = "openneko.work.offlineQueueUser";
+const LEGACY_USER_KEY = "openneko.work.offlineQueueUser";
 const OFFLINE_QUEUE_LOCK = "openneko.work.offlineQueue.flush";
+// A claim of another tab blocks a claim for this long when the browser has
+// no Web Locks; the server matches a repeat by its client request id.
+export const OFFLINE_CLAIM_LEASE_MS = 60_000;
 
 export type QueuedQuestion = {
   id: string;
@@ -12,7 +15,11 @@ export type QueuedQuestion = {
   threadBase: "/work" | "/chat/t";
   content: string;
   createdAt: string;
-  status: "waiting" | "sending";
+  status: "waiting" | "sending" | "failed";
+  claimedBy?: string;
+  claimedAt?: number;
+  retryAt?: number;
+  error?: string;
 };
 
 const EMPTY_QUEUE: readonly QueuedQuestion[] = [];
@@ -23,6 +30,7 @@ let userId: string | null = null;
 let memoryQueue: QueuedQuestion[] = [];
 let queue: readonly QueuedQuestion[] = EMPTY_QUEUE;
 let nextCounter = 1;
+let lockDepth = 0;
 
 function storage(): Storage | null {
   if (typeof window === "undefined") return null;
@@ -60,7 +68,14 @@ function parseQueue(raw: string | null): QueuedQuestion[] {
           threadBase: candidate.threadBase,
           content: candidate.content,
           createdAt: candidate.createdAt,
-          status: candidate.status === "sending" ? "sending" : "waiting",
+          status:
+            candidate.status === "sending" || candidate.status === "failed"
+              ? candidate.status
+              : "waiting",
+          ...(typeof candidate.claimedBy === "string" ? { claimedBy: candidate.claimedBy } : {}),
+          ...(typeof candidate.claimedAt === "number" ? { claimedAt: candidate.claimedAt } : {}),
+          ...(typeof candidate.retryAt === "number" ? { retryAt: candidate.retryAt } : {}),
+          ...(typeof candidate.error === "string" ? { error: candidate.error } : {}),
         });
       }
     }
@@ -99,7 +114,11 @@ function writeItems(items: QueuedQuestion[]) {
 function refresh(items = readItems()) {
   const next = items.map((item) => ({
     ...item,
-    status: ownSending.has(item.id) ? ("sending" as const) : ("waiting" as const),
+    status: ownSending.has(item.id)
+      ? ("sending" as const)
+      : item.status === "failed"
+        ? ("failed" as const)
+        : ("waiting" as const),
   }));
   const same =
     next.length === queue.length &&
@@ -107,7 +126,9 @@ function refresh(items = readItems()) {
       (item, i) =>
         item.id === queue[i].id &&
         item.status === queue[i].status &&
-        item.threadId === queue[i].threadId,
+        item.threadId === queue[i].threadId &&
+        item.retryAt === queue[i].retryAt &&
+        item.error === queue[i].error,
     );
   if (same) return;
   queue = next.length === 0 ? EMPTY_QUEUE : next;
@@ -124,25 +145,30 @@ function ensureInitialized() {
   const store = storage();
   try {
     store?.removeItem(OFFLINE_QUEUE_STORAGE_PREFIX);
-    userId = store?.getItem(OFFLINE_QUEUE_USER_KEY) ?? null;
+    store?.removeItem(LEGACY_USER_KEY);
   } catch {
-    userId = null;
+    // Storage is optional.
   }
   window.addEventListener?.("storage", onStorage);
   refresh();
 }
 
-/** Selects the queue of the signed-in user; each user has a storage key of their own. */
+/**
+ * Selects the queue of the signed-in user. Until the session names the user,
+ * the queue holds only what this page typed, and nothing sends.
+ */
 export function setOfflineQueueUser(id: string | null): void {
   ensureInitialized();
-  if (!id || id === userId) return;
-  const pending = storageKey() ? [] : memoryQueue;
-  userId = id;
-  try {
-    storage()?.setItem(OFFLINE_QUEUE_USER_KEY, id);
-  } catch {
-    // Storage is optional.
+  if (id === userId) return;
+  ownSending.clear();
+  if (!id) {
+    userId = null;
+    memoryQueue = [];
+    refresh([]);
+    return;
   }
+  const pending = userId ? [] : memoryQueue;
+  userId = id;
   memoryQueue = [];
   writeItems([...readItems(), ...pending]);
 }
@@ -168,18 +194,43 @@ export function clearOfflineQueues(): void {
   refresh([]);
 }
 
-/** Runs fn while no other tab of this browser flushes the queue. */
+/**
+ * Runs fn while no other tab of this browser flushes the queue. With no Web
+ * Locks, fn runs at once and the claim stored on each question guards it.
+ */
 export async function withOfflineQueueLock<T>(fn: () => Promise<T>): Promise<T> {
   const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
   if (!locks) return fn();
-  return locks.request(OFFLINE_QUEUE_LOCK, fn) as Promise<T>;
+  return locks.request(OFFLINE_QUEUE_LOCK, async () => {
+    lockDepth++;
+    try {
+      return await fn();
+    } finally {
+      lockDepth--;
+    }
+  }) as Promise<T>;
 }
+
+const TAB_ID = newClientRequestId();
 
 export function newClientRequestId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
   return `offline-${Date.now()}-${Math.random().toString(36).slice(2)}-${nextCounter++}`;
+}
+
+/** A queued question completes on 2xx only; 429 and 5xx send it again later. */
+export function offlineSendOutcome(status: number): "done" | "retry" | "refused" {
+  if (status >= 200 && status < 300) return "done";
+  if (status === 429 || status >= 500) return "retry";
+  return "refused";
+}
+
+export function offlineRetryDelayMs(res: { status: number; headers: Headers }): number {
+  const seconds = Number(res.headers.get("Retry-After"));
+  if (Number.isFinite(seconds) && seconds > 0) return Math.min(Math.max(seconds, 5), 300) * 1000;
+  return res.status === 429 ? 30_000 : 15_000;
 }
 
 export function getOfflineQueueSnapshot(): readonly QueuedQuestion[] {
@@ -216,8 +267,9 @@ export function enqueueOfflineQuestion(input: {
   ownSending.delete(id);
   const existing = items.find((item) => item.id === id);
   if (existing) {
-    writeItems(items.map((item) => (item.id === id ? { ...item, status: "waiting" } : item)));
-    return { ...existing, status: "waiting" };
+    const waiting: QueuedQuestion = { ...released(existing), status: "waiting" };
+    writeItems(items.map((item) => (item.id === id ? waiting : item)));
+    return waiting;
   }
   const item: QueuedQuestion = {
     id,
@@ -241,27 +293,88 @@ export function cancelOfflineQuestion(id: string): boolean {
 }
 
 /**
- * Marks the next question of the thread as sending, in storage too, so a
- * reload keeps it. Call it inside withOfflineQueueLock: the lock is what
- * makes a stored "sending" item of a closed tab safe to claim again.
+ * Marks the next question of the thread as sending by this tab, in storage
+ * too, so a reload keeps it. Inside withOfflineQueueLock the lock makes the
+ * claim of a closed tab safe to take; with no lock, a claim of another tab
+ * holds until it is OFFLINE_CLAIM_LEASE_MS old.
  */
 export function claimNextOfflineQuestion(
   threadId: string | null,
   threadBase: "/work" | "/chat/t",
 ): QueuedQuestion | null {
   ensureInitialized();
+  if (!userId) return null;
+  const now = Date.now();
   const items = readItems();
   const index = items.findIndex(
     (item) =>
       !ownSending.has(item.id) &&
+      item.status !== "failed" &&
       item.threadBase === threadBase &&
-      item.threadId === threadId,
+      item.threadId === threadId &&
+      !(item.retryAt && item.retryAt > now) &&
+      (lockDepth > 0 ||
+        item.status !== "sending" ||
+        !item.claimedBy ||
+        item.claimedBy === TAB_ID ||
+        now - (item.claimedAt ?? 0) > OFFLINE_CLAIM_LEASE_MS),
   );
   if (index === -1) return null;
-  const claimed: QueuedQuestion = { ...items[index], status: "sending" };
+  const claimed: QueuedQuestion = {
+    ...items[index],
+    status: "sending",
+    claimedBy: TAB_ID,
+    claimedAt: now,
+  };
+  delete claimed.retryAt;
   ownSending.add(claimed.id);
   writeItems(items.map((item, i) => (i === index ? claimed : item)));
+  if (readItems().find((item) => item.id === claimed.id)?.claimedBy !== TAB_ID) {
+    ownSending.delete(claimed.id);
+    refresh();
+    return null;
+  }
   return claimed;
+}
+
+function updateOfflineQuestion(id: string, change: (item: QueuedQuestion) => QueuedQuestion) {
+  ensureInitialized();
+  ownSending.delete(id);
+  const items = readItems();
+  if (!items.some((item) => item.id === id)) {
+    refresh(items);
+    return;
+  }
+  writeItems(items.map((item) => (item.id === id ? change(item) : item)));
+}
+
+function released(item: QueuedQuestion): QueuedQuestion {
+  const next = { ...item };
+  delete next.claimedBy;
+  delete next.claimedAt;
+  delete next.retryAt;
+  delete next.error;
+  return next;
+}
+
+/** Keeps the question to send again at retryAt, for a busy or failing server. */
+export function deferOfflineQuestion(id: string, retryAt: number, threadId?: string): void {
+  updateOfflineQuestion(id, (item) => ({
+    ...released(item),
+    status: "waiting",
+    retryAt,
+    ...(threadId ? { threadId } : {}),
+  }));
+}
+
+/** Keeps the question with the server's refusal; it does not send again. */
+export function failOfflineQuestion(id: string, error: string, threadId?: string): void {
+  updateOfflineQuestion(id, (item) => ({
+    ...released(item),
+    status: "failed",
+    error,
+    ...(threadId ? { threadId } : {}),
+  }));
 }
 
 export function completeOfflineQuestion(id: string): void {
@@ -278,7 +391,7 @@ export function completeOfflineQuestion(id: string): void {
 export function requeueOfflineQuestion(item: QueuedQuestion): void {
   ensureInitialized();
   ownSending.delete(item.id);
-  const waitingItem: QueuedQuestion = { ...item, status: "waiting" };
+  const waitingItem: QueuedQuestion = { ...released(item), status: "waiting" };
   const items = readItems();
   const index = items.findIndex((existing) => existing.id === item.id);
   writeItems(
@@ -295,6 +408,7 @@ export function resetOfflineQueueForTests(): void {
   initialized = false;
   userId = null;
   memoryQueue = [];
+  lockDepth = 0;
   ownSending.clear();
   queue = EMPTY_QUEUE;
   listeners.clear();

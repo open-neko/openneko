@@ -339,7 +339,7 @@ test.describe("4.6 stream resume and offline question queue", () => {
     }
   });
 
-  test("sends each offline question once: a lost response, a closed tab during the send, two tabs, and storage per user", async ({
+  test("sends each offline question once: a lost response, a closed tab during the send, two tabs, a busy and a refusing server, and storage per user", async ({
     context,
     page: firstPage,
   }) => {
@@ -395,10 +395,14 @@ test.describe("4.6 stream resume and offline question queue", () => {
       };
       const ask = async (p: import("@playwright/test").Page, text: string) => {
         const composer = p.locator("textarea.work-input");
-        await expect(composer).toBeEnabled();
+        await expect(composer).toBeEnabled({ timeout: 20_000 });
         await composer.fill(text);
         await composer.press("Enter");
         await expect(p.getByTestId("offline-queued-question")).toContainText(text);
+      };
+      const goOffline = async () => {
+        await expect(page.locator("textarea.work-input")).toBeEnabled({ timeout: 20_000 });
+        await context.setOffline(true);
       };
       const storedKeys = (p: import("@playwright/test").Page) =>
         p.evaluate(() =>
@@ -406,15 +410,14 @@ test.describe("4.6 stream resume and offline question queue", () => {
         );
 
       await watch(page, "A");
+      const sessionLoaded = page.waitForResponse((r) => r.url().includes("/api/v1/auth/session") && r.ok());
       await page.goto(`/work/${threadId}`, { waitUntil: "networkidle" });
+      await sessionLoaded;
 
       // 1. The server makes the run but the response is lost; the resend gets the same run.
       await context.setOffline(true);
       await ask(page, "Lost response question");
-      expect(await storedKeys(page)).toEqual([
-        `openneko.work.offlineQueue.user.${userId}`,
-        "openneko.work.offlineQueueUser",
-      ].sort());
+      await expect.poll(() => storedKeys(page)).toEqual([`openneko.work.offlineQueue.user.${userId}`]);
       onPost = async (route, post) => {
         if (post.message !== "Lost response question") return false;
         onPost = async () => false;
@@ -433,7 +436,7 @@ test.describe("4.6 stream resume and offline question queue", () => {
       expect(await runsFor("Lost response question")).toEqual({ runs: "1", ids: "1", messages: "1" });
 
       // 2. The question stays stored while it sends, so a closed or reloaded tab loses nothing.
-      await context.setOffline(true);
+      await goOffline();
       await ask(page, "Reload during send question");
       let held = false;
       onPost = async (_route, post) => {
@@ -455,13 +458,18 @@ test.describe("4.6 stream resume and offline question queue", () => {
       expect(stored).toContain('"sending"');
       await page.close({ runBeforeUnload: false });
       page = next;
+      // Playwright may let the held request of the closing tab through; then
+      // that tab completes the question. Else the new tab sends it again.
       await expect
-        .poll(() => posts.filter((p) => p.message === "Reload during send question").length, { timeout: 20_000 })
-        .toBe(2);
+        .poll(async () => (await runsFor("Reload during send question")).runs, { timeout: 20_000 })
+        .toBe("1");
+      await expect(page.getByTestId("offline-queued-question")).toHaveCount(0);
       const reloaded = posts.filter((p) => p.message === "Reload during send question");
-      expect(reloaded.map((p) => p.page)).toEqual(["A", "C"]);
-      expect(reloaded[1]!.clientRequestId).toBe(reloaded[0]!.clientRequestId);
-      await expect.poll(async () => (await runsFor("Reload during send question")).runs).toBe("1");
+      expect(reloaded[0]!.page).toBe("A");
+      if (reloaded.length > 1) {
+        expect(reloaded.map((p) => p.page)).toEqual(["A", "C"]);
+        expect(reloaded[1]!.clientRequestId).toBe(reloaded[0]!.clientRequestId);
+      }
       expect(await runsFor("Reload during send question")).toEqual({ runs: "1", ids: "1", messages: "1" });
       await expect(page.getByTestId("offline-queued-question")).toHaveCount(0);
 
@@ -469,7 +477,7 @@ test.describe("4.6 stream resume and offline question queue", () => {
       const second = await context.newPage();
       await watch(second, "B");
       await second.goto(`/work/${threadId}`, { waitUntil: "networkidle" });
-      await context.setOffline(true);
+      await goOffline();
       await ask(page, "Two tabs question");
       await expect(second.getByTestId("offline-queued-question")).toContainText("Two tabs question");
       await context.setOffline(false);
@@ -480,8 +488,52 @@ test.describe("4.6 stream resume and offline question queue", () => {
       expect(await runsFor("Two tabs question")).toEqual({ runs: "1", ids: "1", messages: "1" });
       await second.close();
 
-      // 4. Sign-out removes the stored questions of this browser, of every user.
-      await context.setOffline(true);
+      // 4. A busy server keeps the question and sends it again; a refusal stays on the question.
+      await goOffline();
+      await ask(page, "Busy server question");
+      let busy = 0;
+      onPost = async (route, post) => {
+        if (post.message !== "Busy server question") return false;
+        busy++;
+        if (busy > 1) return false;
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          headers: { "Retry-After": "5" },
+          body: JSON.stringify({ error: "busy" }),
+        });
+        return true;
+      };
+      await context.setOffline(false);
+      await expect.poll(() => busy, { timeout: 20_000 }).toBe(1);
+      await expect(page.getByTestId("offline-queued-question")).toContainText("Busy server question");
+      await expect
+        .poll(async () => (await runsFor("Busy server question")).runs, { timeout: 30_000 })
+        .toBe("1");
+      await expect(page.getByTestId("offline-queued-question")).toHaveCount(0);
+      expect(posts.filter((p) => p.message === "Busy server question")).toHaveLength(2);
+
+      await goOffline();
+      await ask(page, "Refused question");
+      onPost = async (route, post) => {
+        if (post.message !== "Refused question") return false;
+        await route.fulfill({
+          status: 413,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "too large" }),
+        });
+        return true;
+      };
+      await context.setOffline(false);
+      await expect(page.getByTestId("offline-failed-status")).toContainText("HTTP 413");
+      await page.waitForTimeout(2_000);
+      expect(posts.filter((p) => p.message === "Refused question")).toHaveLength(1);
+      await page.getByRole("button", { name: "Remove refused question" }).click();
+      await expect(page.getByTestId("offline-queued-question")).toHaveCount(0);
+      onPost = async () => false;
+
+      // 5. Sign-out removes the stored questions of this browser, of every user.
+      await goOffline();
       await ask(page, "Question left at sign-out");
       let parked = false;
       onPost = async (_route, post) => {

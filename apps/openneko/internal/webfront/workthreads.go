@@ -82,6 +82,11 @@ func (a *API) createThread(w http.ResponseWriter, r *http.Request) {
 	title, _ := fieldString(body, "title")
 	title = strings.TrimFunc(title, isJSSpace)
 	metricID, runID, actionID := seedID(body, "seedMetricId"), seedID(body, "seedWorkflowRunId"), seedID(body, "seedActionRequestId")
+	clientRequestID, _ := fieldString(body, "clientRequestId")
+	if !validClientRequestID(clientRequestID) {
+		sendError(w, http.StatusBadRequest, "clientRequestId must be 1 to 128 letters, digits, '-', '_' or '.'")
+		return
+	}
 	act, err := a.currentActor(ctx, r)
 	if err != nil {
 		a.fail(w, r, err)
@@ -128,14 +133,32 @@ func (a *API) createThread(w http.ResponseWriter, r *http.Request) {
 	if card != "" {
 		seeds = append([]string{card}, seeds...)
 	}
+	if act.UserID == "" {
+		clientRequestID = ""
+	}
 	var out threadSummary
 	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
-		row, err := tx.Query(ctx, `insert into work_thread (org_id, title, channel, created_by_user_id, backend_state)
-			values ($1, $2, 'web', $3, '{}') returning id::text, title, created_at, updated_at, last_message_at`, act.OrgID, title, nullable(act.UserID))
+		row, err := tx.Query(ctx, `insert into work_thread (org_id, title, channel, created_by_user_id, backend_state, client_request_id)
+			values ($1, $2, 'web', $3, '{}', $4)
+			on conflict (org_id, created_by_user_id, client_request_id) where client_request_id is not null do nothing
+			returning id::text, title, created_at, updated_at, last_message_at`, act.OrgID, title, nullable(act.UserID), nullable(clientRequestID))
 		if err != nil {
 			return err
 		}
-		if out, err = pgx.CollectExactlyOneRow(row, scanThreadSummary); err != nil {
+		out, err = pgx.CollectExactlyOneRow(row, scanThreadSummary)
+		if errors.Is(err, pgx.ErrNoRows) {
+			row, err = tx.Query(ctx, `select id::text, title, created_at, updated_at, last_message_at from work_thread
+				where org_id = $1 and created_by_user_id = $2 and client_request_id = $3`, act.OrgID, act.UserID, clientRequestID)
+			if err != nil {
+				return err
+			}
+			out, err = pgx.CollectExactlyOneRow(row, scanThreadSummary)
+			if err != nil {
+				return err
+			}
+			seeds = nil
+		}
+		if err != nil {
 			return err
 		}
 		for _, m := range seeds {

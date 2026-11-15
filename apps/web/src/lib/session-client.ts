@@ -22,16 +22,27 @@ export function loadSession(): Promise<ClientSession | null> {
   return pending;
 }
 
+/**
+ * Loads the session now and again each time the browser comes back online,
+ * so a page that loaded offline learns its user once the network returns.
+ */
+export function watchSession(onSession: (session: ClientSession | null) => void): () => void {
+  let cancelled = false;
+  const load = () => {
+    void loadSession().then((value) => {
+      if (!cancelled) onSession(value);
+    });
+  };
+  load();
+  window.addEventListener("online", load);
+  return () => {
+    cancelled = true;
+    window.removeEventListener("online", load);
+  };
+}
+
 export function useSession(): ClientSession | null | undefined {
   const [session, setSession] = useState<ClientSession | null | undefined>(undefined);
-  useEffect(() => {
-    let cancelled = false;
-    void loadSession().then((value) => {
-      if (!cancelled) setSession(value);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  useEffect(() => watchSession(setSession), []);
   return session;
 }

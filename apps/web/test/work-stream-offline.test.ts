@@ -7,6 +7,7 @@ import {
   enqueueOfflineQuestion,
   getOfflineQueueSnapshot,
   requeueOfflineQuestion,
+  setOfflineQueueUser,
 } from "../src/app/(work)/work/work-offline-queue";
 import {
   applyStreamEventToBundle,
@@ -17,6 +18,7 @@ import type { ThreadBundle } from "../src/app/(work)/work/work-types";
 describe("stream resume and offline question queue (4.6)", () => {
   beforeEach(() => {
     clearOfflineQueueForTests();
+    setOfflineQueueUser("user-1");
   });
 
   it("preserves partial streamed assistant text when resuming an in-flight run on reload", () => {
