@@ -3,11 +3,14 @@
 import { useSyncExternalStore } from "react";
 
 export const OFFLINE_QUEUE_STORAGE_PREFIX = "openneko.work.offlineQueue";
+const USER_KEY_PREFIX = `${OFFLINE_QUEUE_STORAGE_PREFIX}.user.`;
+const PENDING_KEY = `${OFFLINE_QUEUE_STORAGE_PREFIX}.pending`;
 const LEGACY_USER_KEY = "openneko.work.offlineQueueUser";
 const OFFLINE_QUEUE_LOCK = "openneko.work.offlineQueue.flush";
-// A claim of another tab blocks a claim for this long when the browser has
-// no Web Locks; the server matches a repeat by its client request id.
-export const OFFLINE_CLAIM_LEASE_MS = 60_000;
+export const OFFLINE_QUESTION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+export const OFFLINE_RETRY_MAX_MS = 300_000;
+export const OFFLINE_NETWORK_RETRY_MAX_MS = 30_000;
+export const OFFLINE_SEND_TIMEOUT_MS = 30_000;
 
 export type QueuedQuestion = {
   id: string;
@@ -16,8 +19,7 @@ export type QueuedQuestion = {
   content: string;
   createdAt: string;
   status: "waiting" | "sending" | "failed";
-  claimedBy?: string;
-  claimedAt?: number;
+  attempts?: number;
   retryAt?: number;
   error?: string;
 };
@@ -28,67 +30,77 @@ const ownSending = new Set<string>();
 let initialized = false;
 let userId: string | null = null;
 let memoryQueue: QueuedQuestion[] = [];
+let storageBroken = false;
+let signedOutHere = false;
 let queue: readonly QueuedQuestion[] = EMPTY_QUEUE;
 let nextCounter = 1;
-let lockDepth = 0;
 
-function storage(): Storage | null {
+function webStorage(kind: "localStorage" | "sessionStorage"): Storage | null {
   if (typeof window === "undefined") return null;
   try {
-    return window.localStorage ?? null;
+    return window[kind] ?? null;
   } catch {
     return null;
   }
 }
 
-function storageKey(): string | null {
-  return userId ? `${OFFLINE_QUEUE_STORAGE_PREFIX}.user.${userId}` : null;
+// Before the session names the user, a question goes to this tab's session
+// storage, so only the first user confirmed in this tab can take it.
+function currentStore(): { store: Storage | null; key: string; memoryOnly?: boolean } {
+  if (userId) return { store: webStorage("localStorage"), key: `${USER_KEY_PREFIX}${userId}` };
+  if (signedOutHere) return { store: null, key: PENDING_KEY, memoryOnly: true };
+  return { store: webStorage("sessionStorage"), key: PENDING_KEY };
 }
 
 function parseQueue(raw: string | null): QueuedQuestion[] {
   if (!raw) return [];
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    const items: QueuedQuestion[] = [];
-    for (const entry of parsed) {
-      if (!entry || typeof entry !== "object") continue;
-      const candidate = entry as Partial<QueuedQuestion>;
-      if (
-        typeof candidate.id === "string" &&
-        typeof candidate.content === "string" &&
-        candidate.content.trim().length > 0 &&
-        (candidate.threadBase === "/work" || candidate.threadBase === "/chat/t") &&
-        (candidate.threadId === null || typeof candidate.threadId === "string") &&
-        typeof candidate.createdAt === "string"
-      ) {
-        items.push({
-          id: candidate.id,
-          threadId: candidate.threadId,
-          threadBase: candidate.threadBase,
-          content: candidate.content,
-          createdAt: candidate.createdAt,
-          status:
-            candidate.status === "sending" || candidate.status === "failed"
-              ? candidate.status
-              : "waiting",
-          ...(typeof candidate.claimedBy === "string" ? { claimedBy: candidate.claimedBy } : {}),
-          ...(typeof candidate.claimedAt === "number" ? { claimedAt: candidate.claimedAt } : {}),
-          ...(typeof candidate.retryAt === "number" ? { retryAt: candidate.retryAt } : {}),
-          ...(typeof candidate.error === "string" ? { error: candidate.error } : {}),
-        });
-      }
-    }
-    return items;
+    parsed = JSON.parse(raw);
   } catch {
     return [];
   }
+  if (!Array.isArray(parsed)) return [];
+  const now = Date.now();
+  const items: QueuedQuestion[] = [];
+  for (const entry of parsed) {
+    if (!entry || typeof entry !== "object") continue;
+    const candidate = entry as Partial<QueuedQuestion>;
+    if (
+      typeof candidate.id !== "string" ||
+      typeof candidate.content !== "string" ||
+      candidate.content.trim().length === 0 ||
+      (candidate.threadBase !== "/work" && candidate.threadBase !== "/chat/t") ||
+      (candidate.threadId !== null && typeof candidate.threadId !== "string") ||
+      typeof candidate.createdAt !== "string"
+    ) {
+      continue;
+    }
+    const created = Date.parse(candidate.createdAt);
+    if (!Number.isFinite(created) || now - created > OFFLINE_QUESTION_MAX_AGE_MS) continue;
+    items.push({
+      id: candidate.id,
+      threadId: candidate.threadId,
+      threadBase: candidate.threadBase,
+      content: candidate.content,
+      createdAt: candidate.createdAt,
+      status: candidate.status === "failed" ? "failed" : "waiting",
+      ...(typeof candidate.attempts === "number" && candidate.attempts > 0
+        ? { attempts: Math.min(Math.floor(candidate.attempts), 30) }
+        : {}),
+      ...(typeof candidate.retryAt === "number"
+        ? { retryAt: Math.min(candidate.retryAt, now + OFFLINE_RETRY_MAX_MS) }
+        : {}),
+      ...(typeof candidate.error === "string" ? { error: candidate.error } : {}),
+    });
+  }
+  return items;
 }
 
 function readItems(): QueuedQuestion[] {
-  const store = storage();
-  const key = storageKey();
-  if (!store || !key) return memoryQueue;
+  if (storageBroken) return memoryQueue;
+  const { store, key, memoryOnly } = currentStore();
+  if (!store || memoryOnly) return memoryQueue;
   try {
     return parseQueue(store.getItem(key));
   } catch {
@@ -98,17 +110,25 @@ function readItems(): QueuedQuestion[] {
 
 function writeItems(items: QueuedQuestion[]) {
   memoryQueue = items;
-  const store = storage();
-  const key = storageKey();
-  if (store && key) {
+  const { store, key, memoryOnly } = currentStore();
+  let saved = memoryOnly === true;
+  if (store) {
     try {
       if (items.length === 0) store.removeItem(key);
       else store.setItem(key, JSON.stringify(items));
+      saved = true;
     } catch {
-      // The in-memory queue still works when storage is full or blocked.
+      saved = false;
     }
   }
+  setStorageBroken(!saved && items.length > 0);
   refresh(items);
+}
+
+function setStorageBroken(next: boolean) {
+  if (storageBroken === next) return;
+  storageBroken = next;
+  for (const listener of listeners) listener();
 }
 
 function refresh(items = readItems()) {
@@ -136,13 +156,13 @@ function refresh(items = readItems()) {
 }
 
 function onStorage(event: StorageEvent) {
-  if (event.key === null || event.key === storageKey()) refresh();
+  if (event.key === null || event.key === currentStore().key) refresh();
 }
 
 function ensureInitialized() {
   if (initialized || typeof window === "undefined") return;
   initialized = true;
-  const store = storage();
+  const store = webStorage("localStorage");
   try {
     store?.removeItem(OFFLINE_QUEUE_STORAGE_PREFIX);
     store?.removeItem(LEGACY_USER_KEY);
@@ -153,65 +173,70 @@ function ensureInitialized() {
   refresh();
 }
 
+function removeKeys(store: Storage | null, match: (key: string) => boolean) {
+  if (!store) return;
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < store.length; i++) {
+      const key = store.key(i);
+      if (key && match(key)) keys.push(key);
+    }
+    for (const key of keys) store.removeItem(key);
+  } catch {
+    // Storage is optional.
+  }
+}
+
 /**
- * Selects the queue of the signed-in user. Until the session names the user,
- * the queue holds only what this page typed, and nothing sends.
+ * Selects the queue of the confirmed user and deletes the stored queues of
+ * every other user of this browser. A question typed in this tab before the
+ * session named a user goes to that user. Null means signed out.
  */
 export function setOfflineQueueUser(id: string | null): void {
   ensureInitialized();
   if (id === userId) return;
+  const pending = userId || !id ? [] : readItems();
   ownSending.clear();
+  storageBroken = false;
   if (!id) {
     userId = null;
     memoryQueue = [];
-    refresh([]);
+    refresh();
     return;
   }
-  const pending = userId ? [] : memoryQueue;
   userId = id;
+  signedOutHere = false;
   memoryQueue = [];
-  writeItems([...readItems(), ...pending]);
+  const mine = `${USER_KEY_PREFIX}${id}`;
+  removeKeys(webStorage("localStorage"), (key) => key.startsWith(USER_KEY_PREFIX) && key !== mine);
+  const own = readItems();
+  const ids = new Set(own.map((item) => item.id));
+  writeItems([...own, ...pending.filter((item) => !ids.has(item.id))]);
+  if (pending.length > 0) removeKeys(webStorage("sessionStorage"), (key) => key === PENDING_KEY);
 }
 
 /** Removes every stored queue and the remembered user. Sign-out calls it. */
 export function clearOfflineQueues(): void {
-  const store = storage();
-  if (store) {
-    try {
-      const keys: string[] = [];
-      for (let i = 0; i < store.length; i++) {
-        const key = store.key(i);
-        if (key?.startsWith(OFFLINE_QUEUE_STORAGE_PREFIX)) keys.push(key);
-      }
-      for (const key of keys) store.removeItem(key);
-    } catch {
-      // Storage is optional.
-    }
-  }
+  removeKeys(webStorage("localStorage"), (key) => key.startsWith(OFFLINE_QUEUE_STORAGE_PREFIX));
+  removeKeys(webStorage("sessionStorage"), (key) => key.startsWith(OFFLINE_QUEUE_STORAGE_PREFIX));
   userId = null;
+  signedOutHere = true;
   memoryQueue = [];
+  storageBroken = false;
   ownSending.clear();
   refresh([]);
 }
 
 /**
- * Runs fn while no other tab of this browser flushes the queue. With no Web
- * Locks, fn runs at once and the claim stored on each question guards it.
+ * Runs fn while no other tab of this browser sends from the queue or cancels
+ * a question. With no Web Locks, fn runs at once; the server then matches a
+ * question sent twice by its client request id.
  */
 export async function withOfflineQueueLock<T>(fn: () => Promise<T>): Promise<T> {
   const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
   if (!locks) return fn();
-  return locks.request(OFFLINE_QUEUE_LOCK, async () => {
-    lockDepth++;
-    try {
-      return await fn();
-    } finally {
-      lockDepth--;
-    }
-  }) as Promise<T>;
+  return locks.request(OFFLINE_QUEUE_LOCK, fn) as Promise<T>;
 }
-
-const TAB_ID = newClientRequestId();
 
 export function newClientRequestId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -221,30 +246,49 @@ export function newClientRequestId(): string {
 }
 
 /**
- * A queued question completes on 2xx only; 429, 5xx and a 409 for a run still
- * in flight send it again later. A 401 or a 409 for another signed-in user
- * keeps it for its user to send after the next sign-in.
+ * A queued question completes on 2xx only. 408, 409, 425, 429 and 5xx send it
+ * again later. A 401 or a 409 for another signed-in user keeps it for its
+ * user to send after the next sign-in.
  */
 export function offlineSendOutcome(
   status: number,
   code?: string,
 ): "done" | "retry" | "signin" | "refused" {
   if (status >= 200 && status < 300) return "done";
-  if (status === 429 || status >= 500) return "retry";
   if (status === 401 || (status === 409 && code === "user_mismatch")) return "signin";
-  if (status === 409 && code === "run_in_flight") return "retry";
+  if (status === 408 || status === 409 || status === 425 || status === 429 || status >= 500) {
+    return "retry";
+  }
   return "refused";
 }
 
-export function offlineRetryDelayMs(res: { status: number; headers: Headers }): number {
+/** The wait after a refusal: Retry-After or a default, doubled per earlier try. */
+export function offlineRetryDelayMs(
+  res: { status: number; headers: Headers },
+  attempts = 0,
+): number {
   const seconds = Number(res.headers.get("Retry-After"));
-  if (Number.isFinite(seconds) && seconds > 0) return Math.min(Math.max(seconds, 5), 300) * 1000;
-  return res.status === 429 ? 30_000 : 15_000;
+  const first =
+    Number.isFinite(seconds) && seconds > 0
+      ? Math.min(Math.max(seconds, 5), 300) * 1000
+      : res.status === 429
+        ? 30_000
+        : 15_000;
+  return Math.min(first * 2 ** Math.min(attempts, 10), OFFLINE_RETRY_MAX_MS);
+}
+
+/** The wait after a send that did not reach the server. */
+export function offlineNetworkDelayMs(attempts = 0): number {
+  return Math.min(1000 * 2 ** Math.min(attempts, 10), OFFLINE_NETWORK_RETRY_MAX_MS);
+}
+
+function attemptsOf(id: string): number {
+  return readItems().find((item) => item.id === id)?.attempts ?? 0;
 }
 
 /**
- * Applies a non-2xx answer to a claimed question: it waits for a later send,
- * or it keeps the server's refusal and does not send again.
+ * Applies a non-2xx answer to a question in flight: it waits for a later
+ * send, or it keeps the server's refusal and does not send again.
  */
 export function settleOfflineRefusal(
   id: string,
@@ -257,9 +301,14 @@ export function settleOfflineRefusal(
   if (outcome === "refused") {
     failOfflineQuestion(id, `The server refused this question (HTTP ${res.status}): ${error}`, threadId);
   } else {
-    deferOfflineQuestion(id, Date.now() + offlineRetryDelayMs(res), threadId);
+    deferOfflineQuestion(id, Date.now() + offlineRetryDelayMs(res, attemptsOf(id)), threadId);
   }
   return outcome;
+}
+
+/** Keeps the question to send again after a send that did not reach the server. */
+export function deferAfterNetworkFailure(id: string, threadId?: string | null): void {
+  deferOfflineQuestion(id, Date.now() + offlineNetworkDelayMs(attemptsOf(id)), threadId ?? undefined);
 }
 
 export function offlineQueueUser(): string | null {
@@ -269,6 +318,10 @@ export function offlineQueueUser(): string | null {
 export function getOfflineQueueSnapshot(): readonly QueuedQuestion[] {
   ensureInitialized();
   return queue;
+}
+
+export function isOfflineStorageBroken(): boolean {
+  return storageBroken;
 }
 
 export function subscribeOfflineQueue(listener: () => void): () => void {
@@ -285,6 +338,10 @@ export function useOfflineQueue(): readonly QueuedQuestion[] {
     getOfflineQueueSnapshot,
     () => EMPTY_QUEUE,
   );
+}
+
+export function useOfflineStorageBroken(): boolean {
+  return useSyncExternalStore(subscribeOfflineQueue, isOfflineStorageBroken, () => false);
 }
 
 export function enqueueOfflineQuestion(input: {
@@ -316,58 +373,70 @@ export function enqueueOfflineQuestion(input: {
   return item;
 }
 
-export function cancelOfflineQuestion(id: string): boolean {
+/**
+ * Removes a waiting or refused question. It waits for a send of another tab
+ * to end, so a question that is being posted cannot be cancelled.
+ */
+export async function cancelOfflineQuestion(id: string): Promise<boolean> {
   ensureInitialized();
   if (ownSending.has(id)) return false;
-  const items = readItems();
-  if (!items.some((item) => item.id === id)) return false;
-  writeItems(items.filter((item) => item.id !== id));
-  return true;
+  return withOfflineQueueLock(async () => {
+    if (ownSending.has(id)) return false;
+    const items = readItems();
+    if (!items.some((item) => item.id === id)) {
+      refresh(items);
+      return false;
+    }
+    writeItems(items.filter((item) => item.id !== id));
+    return true;
+  });
+}
+
+function threadKey(item: QueuedQuestion): string {
+  return `${item.threadBase} ${item.threadId ?? ""}`;
 }
 
 /**
- * Marks the next question of the thread as sending by this tab, in storage
- * too, so a reload keeps it. Inside withOfflineQueueLock the lock makes the
- * claim of a closed tab safe to take; with no lock, a claim of another tab
- * holds until it is OFFLINE_CLAIM_LEASE_MS old.
+ * Takes the first question of a thread to send, in the order typed. A thread
+ * whose first question waits, failed or is in flight sends nothing else.
+ * Call it inside withOfflineQueueLock.
  */
 export function claimNextOfflineQuestion(
-  threadId: string | null,
-  threadBase: "/work" | "/chat/t",
+  accept: (item: QueuedQuestion) => boolean = () => true,
 ): QueuedQuestion | null {
   ensureInitialized();
   if (!userId) return null;
   const now = Date.now();
-  const items = readItems();
-  const index = items.findIndex(
-    (item) =>
-      !ownSending.has(item.id) &&
-      item.status !== "failed" &&
-      item.threadBase === threadBase &&
-      item.threadId === threadId &&
-      !(item.retryAt && item.retryAt > now) &&
-      (lockDepth > 0 ||
-        item.status !== "sending" ||
-        !item.claimedBy ||
-        item.claimedBy === TAB_ID ||
-        now - (item.claimedAt ?? 0) > OFFLINE_CLAIM_LEASE_MS),
-  );
-  if (index === -1) return null;
-  const claimed: QueuedQuestion = {
-    ...items[index],
-    status: "sending",
-    claimedBy: TAB_ID,
-    claimedAt: now,
-  };
-  delete claimed.retryAt;
-  ownSending.add(claimed.id);
-  writeItems(items.map((item, i) => (i === index ? claimed : item)));
-  if (readItems().find((item) => item.id === claimed.id)?.claimedBy !== TAB_ID) {
-    ownSending.delete(claimed.id);
+  const seen = new Set<string>();
+  for (const item of readItems()) {
+    const key = threadKey(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (
+      item.status === "failed" ||
+      ownSending.has(item.id) ||
+      (item.retryAt && item.retryAt > now) ||
+      !accept(item)
+    ) {
+      continue;
+    }
+    ownSending.add(item.id);
     refresh();
-    return null;
+    return { ...item, status: "sending" };
   }
-  return claimed;
+  return null;
+}
+
+/** Gives the thread that the first new-chat question created to the rest. */
+export function moveNewChatQuestions(threadBase: "/work" | "/chat/t", threadId: string): void {
+  ensureInitialized();
+  const items = readItems();
+  if (!items.some((item) => item.threadId === null && item.threadBase === threadBase)) return;
+  writeItems(
+    items.map((item) =>
+      item.threadId === null && item.threadBase === threadBase ? { ...item, threadId } : item,
+    ),
+  );
 }
 
 function updateOfflineQuestion(id: string, change: (item: QueuedQuestion) => QueuedQuestion) {
@@ -383,19 +452,18 @@ function updateOfflineQuestion(id: string, change: (item: QueuedQuestion) => Que
 
 function released(item: QueuedQuestion): QueuedQuestion {
   const next = { ...item };
-  delete next.claimedBy;
-  delete next.claimedAt;
   delete next.retryAt;
   delete next.error;
   return next;
 }
 
-/** Keeps the question to send again at retryAt, for a busy or failing server. */
+/** Keeps the question to send again at retryAt, one try more. */
 export function deferOfflineQuestion(id: string, retryAt: number, threadId?: string): void {
   updateOfflineQuestion(id, (item) => ({
     ...released(item),
     status: "waiting",
-    retryAt,
+    attempts: (item.attempts ?? 0) + 1,
+    retryAt: Math.min(retryAt, Date.now() + OFFLINE_RETRY_MAX_MS),
     ...(threadId ? { threadId } : {}),
   }));
 }
@@ -410,6 +478,15 @@ export function failOfflineQuestion(id: string, error: string, threadId?: string
   }));
 }
 
+/** Sends a refused question again, at once. */
+export function retryOfflineQuestion(id: string): void {
+  updateOfflineQuestion(id, (item) => {
+    const next: QueuedQuestion = { ...released(item), status: "waiting" };
+    delete next.attempts;
+    return next;
+  });
+}
+
 export function completeOfflineQuestion(id: string): void {
   ensureInitialized();
   ownSending.delete(id);
@@ -421,17 +498,13 @@ export function completeOfflineQuestion(id: string): void {
   writeItems(items.filter((item) => item.id !== id));
 }
 
+/** Gives a question in flight back to the queue, if it still exists. */
 export function requeueOfflineQuestion(item: QueuedQuestion): void {
-  ensureInitialized();
-  ownSending.delete(item.id);
-  const waitingItem: QueuedQuestion = { ...released(item), status: "waiting" };
-  const items = readItems();
-  const index = items.findIndex((existing) => existing.id === item.id);
-  writeItems(
-    index >= 0
-      ? items.map((existing, i) => (i === index ? waitingItem : existing))
-      : [waitingItem, ...items],
-  );
+  updateOfflineQuestion(item.id, (existing) => ({
+    ...existing,
+    status: existing.status === "failed" ? "failed" : "waiting",
+    ...(item.threadId ? { threadId: item.threadId } : {}),
+  }));
 }
 
 export function resetOfflineQueueForTests(): void {
@@ -440,8 +513,9 @@ export function resetOfflineQueueForTests(): void {
   }
   initialized = false;
   userId = null;
+  signedOutHere = false;
   memoryQueue = [];
-  lockDepth = 0;
+  storageBroken = false;
   ownSending.clear();
   queue = EMPTY_QUEUE;
   listeners.clear();

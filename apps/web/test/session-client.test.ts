@@ -25,11 +25,12 @@ describe("session loading (FIX12)", () => {
     const { watchSession } = await import("../src/lib/session-client");
     const seen: Array<string | null> = [];
     const stop = watchSession((session) => seen.push(session?.user?.id ?? null));
-    await vi.waitFor(() => expect(seen).toEqual([null]));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(seen).toEqual([]);
 
     online = true;
     listeners.get("online")!();
-    await vi.waitFor(() => expect(seen).toEqual([null, "user-a"]));
+    await vi.waitFor(() => expect(seen).toEqual(["user-a"]));
     stop();
     expect(listeners.has("online")).toBe(false);
   });
@@ -67,6 +68,61 @@ describe("session loading (FIX12)", () => {
     expect(await confirmSessionUser()).toBeUndefined();
     expect(seen.at(-1)).toBeNull();
     stop();
+  });
+});
+
+describe("session unknown and signed out (FIX18b)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("asks again after a growing delay while the server cannot answer, and tells nothing until it can", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", { addEventListener: () => {}, removeEventListener: () => {} });
+    let reply: () => Response | Promise<never> = () => Promise.reject(new TypeError("Failed to fetch"));
+    const fetchMock = vi.fn(async () => reply());
+    vi.stubGlobal("fetch", fetchMock);
+    const { watchSession, loadSession } = await import("../src/lib/session-client");
+    const seen: Array<string | null> = [];
+    const stop = watchSession((session) => seen.push(session?.user?.id ?? null));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    reply = () => new Response("{}", { status: 503 });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(3999);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(120_000);
+    const before = fetchMock.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(fetchMock.mock.calls.length - before).toBe(4);
+    expect(seen).toEqual([]);
+    expect(await loadSession()).toBeUndefined();
+
+    reply = () => sessionOf("user-a");
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(seen).toEqual(["user-a"]);
+    const settled = fetchMock.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(fetchMock.mock.calls.length).toBe(settled);
+    stop();
+  });
+
+  it("reads a session with no user and a 401 as signed out", async () => {
+    vi.stubGlobal("window", { addEventListener: () => {}, removeEventListener: () => {} });
+    let reply = () => new Response(JSON.stringify({ user: null, role: null, authEnabled: true, signedIn: false }));
+    vi.stubGlobal("fetch", vi.fn(async () => reply()));
+    const { loadSession, forgetSession } = await import("../src/lib/session-client");
+    expect((await loadSession())?.user).toBeNull();
+    forgetSession();
+    reply = () => new Response("{}", { status: 401 });
+    expect(await loadSession()).toBeNull();
   });
 });
 
