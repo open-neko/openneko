@@ -2,48 +2,50 @@ import { expect, test, type Page } from "@playwright/test";
 import { FIXTURE as F } from "../../../../packages/contract/src/fixtures";
 import { cardThreads } from "./cards";
 
-const screens = [
-  "/chat",
-  `/chat/t/${F.adminThreadId}`,
-  "/chat/bots/new",
-  "/work",
-  `/work/${F.adminThreadId}`,
-  "/workflows",
-  `/workflows?id=${F.adminWorkflowId}`,
-  "/library",
-  "/memory",
-  "/skills",
-  "/profile",
-  "/actions",
-  `/actions/${F.adminActionRequestId}`,
-  "/business-profile",
-  "/runs",
-  `/runs/${F.adminWorkflowRunId}`,
-  "/admin",
-  "/admin/rules",
-  "/admin/settings",
-  "/admin/settings/channels",
-  "/admin/settings/packs",
-  "/admin/settings/signin",
-  "/admin/settings/agent",
-  "/admin/settings/data",
-  "/admin/settings/models",
-  "/admin/settings/research",
-  "/admin/settings/security",
-  "/admin/settings/spend",
-  "/admin/settings/sso",
-  "/admin/settings/workflows",
-  "/admin/settings/graphjin",
-  "/admin/users",
-  "/admin/users/groups/c0a7ac70-0000-4000-8000-000000000061",
-  `/admin/access?type=workflow&id=${F.adminWorkflowId}`,
-  "/device",
-  "/integrations",
-  "/chat/connectors",
-  "/onboarding",
-  "/admin/settings/packs/magento/operations",
-  ...cardThreads.map((card) => `/work/${card.threadId}`),
+const screens: Array<[path: string, heading: string, wideText?: string]> = [
+  ["/chat", "Bots", "Hi, I'm Neko."],
+  [`/chat/t/${F.adminThreadId}`, "Stock by warehouse"],
+  ["/chat/bots/new", "New bot"],
+  ["/work", "Ask"],
+  [`/work/${F.adminThreadId}`, "Contract thread"],
+  ["/workflows", "Workflows"],
+  [`/workflows?id=${F.adminWorkflowId}`, "Contract workflow of contract-admin"],
+  ["/library", "Library"],
+  ["/memory", "Memory"],
+  ["/skills", "Skills"],
+  ["/profile", "Your account"],
+  ["/actions", "Approvals"],
+  [`/actions/${F.adminActionRequestId}`, "Write a note"],
+  ["/business-profile", "Business profile"],
+  ["/runs", "Run history"],
+  [`/runs/${F.adminWorkflowRunId}`, "Contract workflow of contract-admin"],
+  ["/admin", "Administration"],
+  ["/admin/rules", "Rules"],
+  ["/admin/settings", "Workspace settings"],
+  ["/admin/settings/channels", "Channels"],
+  ["/admin/settings/packs", "Packs"],
+  ["/admin/settings/signin", "Email-link sign-in"],
+  ["/admin/settings/agent", "Agent"],
+  ["/admin/settings/data", "Data source"],
+  ["/admin/settings/models", "Models and task routes"],
+  ["/admin/settings/research", "Industry research"],
+  ["/admin/settings/security", "Security"],
+  ["/admin/settings/spend", "Spending limits"],
+  ["/admin/settings/sso", "Single sign-on"],
+  ["/admin/settings/workflows", "Workflow API"],
+  ["/admin/settings/graphjin", "GraphJin config"],
+  ["/admin/users", "User administration"],
+  ["/admin/users/groups/c0a7ac70-0000-4000-8000-000000000061", "Finance"],
+  [`/admin/access?type=workflow&id=${F.adminWorkflowId}`, `Workflow: ${F.adminWorkflowId}`],
+  ["/device", "Sign in on a device."],
+  ["/integrations", "Integrations"],
+  ["/chat/connectors", "Connectors"],
+  ["/onboarding", "Map the business"],
+  ["/admin/settings/packs/magento/operations", "Store operations"],
+  ...cardThreads.map((card): [string, string] => [`/work/${card.threadId}`, `Card ${card.key}`]),
 ];
+
+const cardTables: Record<string, number> = { report: 2, compare: 1, wide: 3 };
 
 async function contentPastEdge(page: Page): Promise<string[]> {
   return page.evaluate(() => {
@@ -106,12 +108,21 @@ async function clippedText(page: Page): Promise<string[]> {
 for (const width of [400, 360, 1280]) {
   test.describe(`${width} px`, () => {
     test.use({ viewport: { width, height: 860 } });
-    for (const path of screens) {
+    for (const [path, heading, wideText] of screens) {
       test(path, async ({ page }) => {
         await page.goto(path, { waitUntil: "networkidle" });
         await page.waitForTimeout(400);
         expect(new URL(page.url()).pathname.startsWith(path.split("?")[0])).toBe(true);
         await expect(page.getByText("Page not found")).toHaveCount(0);
+        await expect(page.getByText("Something went wrong")).toHaveCount(0);
+        if (width > 400 && wideText) {
+          await expect(page.getByText(wideText, { exact: true }).first()).toBeVisible();
+        } else {
+          await expect(page.getByRole("heading", { name: heading, exact: true }).first()).toBeVisible();
+        }
+        if (path.startsWith("/work/c0a7ac70-0000-4000-8000-0000000c")) {
+          await expect(page.locator(".work-surface")).toHaveCount(1);
+        }
         await page.evaluate(() => window.scrollTo(10_000, window.scrollY));
         expect(await page.evaluate(() => window.scrollX)).toBe(0);
         expect(await contentPastEdge(page)).toEqual([]);
@@ -127,6 +138,8 @@ test.describe("answer cards at 400 px", () => {
     test(`${card.key}: tables scroll inside the card and words stay whole`, async ({ page }) => {
       await page.goto(`/work/${card.threadId}`, { waitUntil: "networkidle" });
       await page.waitForTimeout(400);
+      await expect(page.locator(".work-surface")).toHaveCount(1);
+      await expect(page.locator(".work-surface").locator("table, .answer-compare")).toHaveCount(cardTables[card.key] ?? 0);
       const problems = await page.evaluate(() => {
         const found: string[] = [];
         for (const surface of document.querySelectorAll(".work-surface")) {
