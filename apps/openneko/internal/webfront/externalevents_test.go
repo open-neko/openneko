@@ -15,9 +15,12 @@ func TestExternalEventsDispatch(t *testing.T) {
 		want   bool
 	}{
 		{"empty filter", map[string]any{}, externalEventMatch{Name: "invoice.paid", Source: &srcStripe}, true},
-		{"wildcard", map[string]any{"event_names": []any{"*"}}, externalEventMatch{Name: "anything"}, true},
-		{"listed name", map[string]any{"event_names": []any{"invoice.paid", "invoice.void"}}, externalEventMatch{Name: "invoice.paid"}, true},
-		{"unlisted name", map[string]any{"event_names": []any{"invoice.paid"}}, externalEventMatch{Name: "customer.created"}, false},
+		{"matching name", map[string]any{"name": "invoice.paid"}, externalEventMatch{Name: "invoice.paid"}, true},
+		{"other name", map[string]any{"name": "invoice.paid"}, externalEventMatch{Name: "customer.created"}, false},
+		{"name and source", map[string]any{"name": "invoice.paid", "source": "stripe"}, externalEventMatch{Name: "invoice.paid", Source: &srcOther}, false},
+		{"empty source wants no source", map[string]any{"source": ""}, externalEventMatch{Name: "invoice.paid", Source: &srcStripe}, false},
+		{"empty source and no source", map[string]any{"source": ""}, externalEventMatch{Name: "invoice.paid"}, true},
+		{"non-string name ignored", map[string]any{"name": 3}, externalEventMatch{Name: "invoice.paid"}, true},
 		{"matching source", map[string]any{"source": "stripe"}, externalEventMatch{Name: "invoice.paid", Source: &srcStripe}, true},
 		{"mismatching source", map[string]any{"source": "stripe"}, externalEventMatch{Name: "invoice.paid", Source: &srcOther}, false},
 		{"nil source vs filter", map[string]any{"source": "stripe"}, externalEventMatch{Name: "invoice.paid", Source: nil}, false},
@@ -42,9 +45,9 @@ func TestExternalEventsDispatch(t *testing.T) {
 		($1, 'org', 'Billing responder', 'x', 2),
 		($2, 'org', 'Budgeted responder', 'x', 1)`, wf1, wf2)
 	seed(t, db, `insert into subscription (id, org_id, workflow_id, source_kind, filter, max_concurrent_runs, idempotency_key_template) values
-		($1, 'org', $4, 'external_event', '{"event_names":["invoice.paid"],"source":"stripe"}', 1, 'custom:{subscription_id}:{source_record_id}:{source_version}'),
-		($2, 'org', $5, 'external_event', '{"event_names":["*"]}', 2, null),
-		($3, 'org', $4, 'external_event', '{"event_names":["customer.deleted"]}', 1, null)`, sub1, sub2, sub3, wf1, wf2)
+		($1, 'org', $4, 'external_event', '{"name":"invoice.paid","source":"stripe"}', 1, 'custom:{subscription_id}:{source_record_id}:{source_version}'),
+		($2, 'org', $5, 'external_event', '{}', 2, null),
+		($3, 'org', $4, 'external_event', '{"name":"customer.deleted"}', 1, null)`, sub1, sub2, sub3, wf1, wf2)
 
 	res, err := f.API.dispatchExternalEvent(ctx, "org", externalEventMatch{
 		Name:   "invoice.paid",
