@@ -36,7 +36,7 @@ import {
 } from "@/lib/workflow-mention";
 import { SkeletonList } from "@/components/ui/skeleton";
 import { printThread } from "@/lib/print-thread";
-import { useSession } from "@/lib/session-client";
+import { confirmSessionUser, useSession } from "@/lib/session-client";
 import { Button } from "@/components/ui/button";
 import { LocalDateTime } from "@/components/ui/local-date-time";
 import { parseClarificationReply } from "@/a2ui/action";
@@ -55,13 +55,11 @@ import {
   cancelOfflineQuestion,
   claimNextOfflineQuestion,
   completeOfflineQuestion,
-  deferOfflineQuestion,
   enqueueOfflineQuestion,
-  failOfflineQuestion,
-  offlineRetryDelayMs,
-  offlineSendOutcome,
+  offlineQueueUser,
   newClientRequestId,
   requeueOfflineQuestion,
+  settleOfflineRefusal,
   setOfflineQueueUser,
   useOfflineQueue,
   withOfflineQueueLock,
@@ -89,6 +87,15 @@ import type {
 import { copyText } from "@/lib/copy-text";
 
 const REASONING_STORAGE_KEY = "openneko.work.reasoning";
+
+class ThreadCreateRefused extends Error {
+  constructor(
+    readonly res: Response,
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 export default function WorkScreen() {
   const router = useRouter();
@@ -567,7 +574,8 @@ export default function WorkScreen() {
       body: JSON.stringify(clientRequestId ? { clientRequestId } : {}),
     });
     if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
+      const errBody = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new ThreadCreateRefused(res, errBody.error ?? `HTTP ${res.status}`);
     }
     const data = (await res.json()) as {
       thread: {
@@ -764,7 +772,18 @@ export default function WorkScreen() {
         await loadThread(threadId);
       }
       if (!threadId) {
-        threadId = await createThread(claimed.id);
+        try {
+          threadId = await createThread(claimed.id);
+        } catch (err) {
+          if (!(err instanceof ThreadCreateRefused)) throw err;
+          reportNetworkOnline();
+          if (settleOfflineRefusal(claimed.id, err.res, err.message) === "signin") {
+            void confirmSessionUser();
+          }
+          setSending(false);
+          setStreamError(err.message);
+          return;
+        }
       }
       tempMessageId = `temp-${Date.now()}`;
       const now = new Date().toISOString();
@@ -864,6 +883,17 @@ export default function WorkScreen() {
 
     void withOfflineQueueLock(async () => {
       if (!mountedRef.current) return;
+      const queueUser = offlineQueueUser();
+      const confirmedUser = await confirmSessionUser();
+      if (!mountedRef.current) return;
+      if (confirmedUser === undefined) {
+        reportNetworkOffline();
+        return;
+      }
+      if (!queueUser || confirmedUser !== queueUser) {
+        setOfflineQueueUser(confirmedUser);
+        return;
+      }
       const claimed: QueuedQuestion | null = claimNextOfflineQuestion(
         flushThreadKey,
         threadBase,
@@ -987,20 +1017,11 @@ export default function WorkScreen() {
     if (!res.ok) {
       const errBody = (await res.json().catch(() => ({}))) as { error?: string };
       const error = errBody.error ?? `HTTP ${res.status}`;
-      if (request?.claimed) {
-        if (offlineSendOutcome(res.status) === "retry") {
-          deferOfflineQuestion(
-            request.clientRequestId,
-            Date.now() + offlineRetryDelayMs(res),
-            threadId,
-          );
-        } else {
-          failOfflineQuestion(
-            request.clientRequestId,
-            `The server refused this question (HTTP ${res.status}): ${error}`,
-            threadId,
-          );
-        }
+      if (
+        request?.claimed &&
+        settleOfflineRefusal(request.clientRequestId, res, error, threadId) === "signin"
+      ) {
+        void confirmSessionUser();
       }
       request?.onPosted?.();
       setSending(false);
