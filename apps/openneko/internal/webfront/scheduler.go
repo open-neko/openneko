@@ -531,7 +531,10 @@ func (f *Front) ServeHealth(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	switch r.URL.Path {
-	case "/health", "/health/scheduler", "/health/security":
+	case "/health":
+		f.API.serveHealth(w, r.URL.Path, false)
+		return true
+	case "/health/scheduler", "/health/security":
 		f.API.serveHealth(w, r.URL.Path, f.API.signedInAdmin(r))
 		return true
 	}

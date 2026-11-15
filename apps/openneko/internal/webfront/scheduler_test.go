@@ -187,3 +187,28 @@ func TestHealthDetailOnlyOnTheAdminSocketAndForSignedInAdmins(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicHealthProbeDoesNoAuthWork(t *testing.T) {
+	db := testpg.Migrated(t)
+	seedOrg(t, db)
+	f, _ := newSetupFront(t, `{"provider":{"pluginName":"scalekit"}}`, db)
+	f.API.ResetWorkflowSchedulerHealth(time.Now().UTC())
+	probed := func() bool {
+		f.API.Gate.mu.Lock()
+		defer f.API.Gate.mu.Unlock()
+		return f.API.Gate.provider != nil
+	}
+	if probed() {
+		t.Fatal("the gate read the sign-in status before any request")
+	}
+	if w := call(f, "GET", "/health", "", sessionCookie("admin")); w.Code != http.StatusOK || w.Body.String() != "ok" {
+		t.Fatalf("/health: %d %q", w.Code, w.Body.String())
+	}
+	if probed() {
+		t.Fatal("/health read the sign-in status")
+	}
+	call(f, "GET", "/health/scheduler", "", sessionCookie("admin"))
+	if !probed() {
+		t.Fatal("/health/scheduler did not check for a signed-in admin")
+	}
+}
