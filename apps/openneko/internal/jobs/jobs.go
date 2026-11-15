@@ -35,17 +35,17 @@ var Retired = []string{"records_import", "records_identity_link", "records_sales
 	"records_watch_evaluate", "records_watch_sweep"}
 
 type Queue struct {
-	Pool          *pgxpool.Pool
-	Schema        string
-	BossSchema    string
-	Logf          func(string, ...any)
-	MetricsOn     bool
-	MetricSweep   func(context.Context) error
-	MemorySweep   func(context.Context) error
-	CronSweep     func(context.Context) error
-	DirectorySync func(context.Context) error
-	ActionExecute func(ctx context.Context, orgID, actionRequestID string) error
-	SkillLearn    func(ctx context.Context, orgID, skillName string) error
+	Pool             *pgxpool.Pool
+	Schema           string
+	BossSchema       string
+	Logf             func(string, ...any)
+	MetricsOn        bool
+	MetricSweep      func(context.Context) error
+	MemorySweep      func(context.Context) error
+	CronSweep        func(context.Context) error
+	DirectorySync    func(context.Context) error
+	ActionExecute    func(ctx context.Context, orgID, actionRequestID string) error
+	SkillLearn       func(ctx context.Context, orgID, skillName string) error
 	BotNameSweep     func(context.Context) error
 	Build            BuildFunc
 	WorkflowRunFire  WorkflowRunFireFunc
