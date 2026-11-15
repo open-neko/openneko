@@ -1,7 +1,9 @@
 package webfront
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -17,26 +19,27 @@ func Development() bool {
 	return strings.TrimSpace(os.Getenv("NODE_ENV")) == "development"
 }
 
-// CookiePolicy takes Secure from the scheme of OPENNEKO_PUBLIC_URL, because a
-// browser drops a Secure cookie on plain HTTP. With no public URL, production
-// mode gives Secure.
-func CookiePolicy() (secure bool, warning string) {
-	raw := strings.TrimSpace(os.Getenv("OPENNEKO_PUBLIC_URL"))
-	if raw == "" {
-		return !Development(), ""
+// secureCookie gives Secure unless a plain-http request meets a public URL that
+// is not https, because a browser drops a Secure cookie on plain http.
+func (a *API) secureCookie(r *http.Request) bool {
+	if strings.HasPrefix(a.publicURL(r.Context()), "https://") {
+		return true
 	}
-	u, err := url.Parse(raw)
-	if err != nil || u.Host == "" {
-		return !Development(), ""
+	if a.Development {
+		return false
 	}
-	switch strings.ToLower(u.Scheme) {
-	case "https":
-		return true, ""
-	case "http":
-		if isLoopbackHostname(u.Hostname()) {
-			return false, ""
-		}
-		return false, fmt.Sprintf("openneko web: warning: OPENNEKO_PUBLIC_URL is http (%s), so the session cookie is not Secure and can be read on the network; use https", u.Host)
+	if r.TLS != nil {
+		return true
 	}
-	return !Development(), ""
+	proto := strings.TrimSpace(strings.SplitN(r.Header.Get("X-Forwarded-Proto"), ",", 2)[0])
+	return strings.EqualFold(proto, "https")
+}
+
+// CookieWarning names a public URL that is http on a host other than loopback.
+func (a *API) CookieWarning(ctx context.Context) string {
+	u, err := url.Parse(a.publicURL(ctx))
+	if err != nil || u.Scheme != "http" || isLoopbackHostname(u.Hostname()) {
+		return ""
+	}
+	return fmt.Sprintf("openneko web: warning: the public URL is http (%s), so cookies on plain-http requests are not Secure and can be read on the network; use https", u.Host)
 }

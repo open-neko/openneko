@@ -449,7 +449,7 @@ func TestSignInOutboundClient(t *testing.T) {
 	g.SecretsDir = dir
 	g.PublicURL = "https://neko.example"
 	g.DB = db
-	a := &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecureCookies: true, SecretsDir: dir}
+	a := &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecretsDir: dir}
 	f := &Front{
 		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
 		Gate: g,
@@ -539,7 +539,7 @@ func TestMagicLinkRequiresPublicURL(t *testing.T) {
 		}
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"id":"1"}`))}, nil
 	})}
-	a := &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "", SecureCookies: true, SecretsDir: dir, SignInClient: signInClient}
+	a := &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "", SecretsDir: dir, SignInClient: signInClient}
 	f := &Front{
 		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
 		Gate: g,

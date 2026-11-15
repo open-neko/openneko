@@ -191,7 +191,7 @@ func (a *API) integrationConnectStart(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	a.setCookie(w, ConnectStateCookie, cookie, connectStateTTLSeconds)
+	a.setCookie(w, r, ConnectStateCookie, cookie, connectStateTTLSeconds)
 	w.Header().Set("Location", authURL)
 	w.WriteHeader(http.StatusFound)
 }
