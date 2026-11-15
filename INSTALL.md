@@ -374,7 +374,9 @@ state in its process: `GET /health/security` gives `status: "degraded"` and
 
 On the public port, `/health/scheduler` and `/health/security` give only
 `status`. A signed-in admin gets the detail there. The web admin socket
-(`OPENNEKO_WEB_ADMIN_SOCKET`) always gives it.
+(`OPENNEKO_WEB_ADMIN_SOCKET`) always gives it. `openneko release-check
+--scheduler`, run in the web container, uses that socket and fails until the
+scheduler has finished a database tick.
 
 For immediate delivery independent of PostgreSQL, configure an HTTPS webhook
 on `web`:

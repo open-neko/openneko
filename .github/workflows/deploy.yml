@@ -110,15 +110,18 @@ jobs:
               openneko upgrade --mode demo --version "$DEPLOY_IMAGE_TAG" --no-prune
             OPENNEKO_PORT=80 openneko status
 
+            WEB=$(docker ps -q \
+              --filter label=com.docker.compose.project=openneko-demo \
+              --filter label=com.docker.compose.service=web | head -1)
+            test -n "$WEB"
+
             # Process liveness used to pass while schedule polling had
             # silently stopped. Require a successful durable scheduler DB
             # transaction after this web boot before accepting the deploy.
+            # The detail is on the web admin socket, not the public port.
             scheduler_ok=false
             for attempt in 1 2 3 4 5 6 7 8 9 10; do
-              if body=$(curl -sf http://127.0.0.1:3000/health/scheduler) &&
-                 echo "$body" | grep -q '"status":"ok"' &&
-                 echo "$body" | grep -vq '"lastSuccessAt":null'; then
-                echo "[deploy] scheduler healthy: $body"
+              if docker exec "$WEB" openneko release-check --scheduler; then
                 scheduler_ok=true
                 break
               fi

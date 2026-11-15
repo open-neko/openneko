@@ -269,11 +269,15 @@ func TestProductionDeployRequiresAuthenticatedDatasourceQuery(t *testing.T) {
 	for _, required := range []string{
 		"openneko upgrade --mode demo",
 		"OPENNEKO_PORT=80 openneko status",
-		"/health/scheduler",
+		"--filter label=com.docker.compose.service=web",
+		`docker exec "$WEB" openneko release-check --scheduler`,
 	} {
 		if !strings.Contains(workflow, required) {
 			t.Fatalf("production deploy no longer verifies the upgrade: missing %q", required)
 		}
+	}
+	if strings.Contains(workflow, "127.0.0.1:3000") {
+		t.Fatal("production deploy calls port 3000; the stack listens on OPENNEKO_PORT=80 and the detail is on the admin socket")
 	}
 	if strings.Contains(workflow, "OPENNEKO_PORT=80 openneko status || true") {
 		t.Fatal("production deploy ignores an unhealthy upgraded stack")
