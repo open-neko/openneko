@@ -121,7 +121,7 @@ func downloadToFile(ctx context.Context, url, dst string, want []byte) error {
 }
 
 // extractNativeArchive takes only bin/openneko and the files under
-// share/openneko/web from the archive.
+// share/openneko/web and share/openneko/packs from the archive.
 func extractNativeArchive(archive, dst string) error {
 	f, err := os.Open(archive)
 	if err != nil {
@@ -148,7 +148,7 @@ func extractNativeArchive(archive, dst string) error {
 			return fmt.Errorf("the release archive holds the unsafe path %q", hdr.Name)
 		}
 		exe := name == "bin/openneko"
-		if !exe && name != "bin" && name != "share" && name != "share/openneko" && name != "share/openneko/web" && !strings.HasPrefix(name, "share/openneko/web/") {
+		if !exe && !nativeReleasePath(name) {
 			return fmt.Errorf("the release archive holds the unexpected path %q", hdr.Name)
 		}
 		target := filepath.Join(dst, filepath.FromSlash(name))
@@ -197,4 +197,12 @@ func writeArchiveEntry(target string, r io.Reader, size int64, mode os.FileMode)
 		err = fmt.Errorf("%s is truncated", target)
 	}
 	return err
+}
+
+func nativeReleasePath(name string) bool {
+	switch name {
+	case "bin", "share", "share/openneko", "share/openneko/web", "share/openneko/packs":
+		return true
+	}
+	return strings.HasPrefix(name, "share/openneko/web/") || strings.HasPrefix(name, "share/openneko/packs/")
 }

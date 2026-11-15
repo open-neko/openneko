@@ -260,3 +260,19 @@ func TestPackStatus(t *testing.T) {
 		t.Errorf("definition only:\n got %d %s\nwant %s", w.Code, w.Body.String(), want)
 	}
 }
+
+func TestBuiltinPacksRootFindsTheReleasePacks(t *testing.T) {
+	release := t.TempDir()
+	exe := filepath.Join(release, "bin", "openneko")
+	wd := t.TempDir()
+	if got := builtinPacksRoot(exe, wd); got != filepath.Join(wd, "packs") {
+		t.Fatalf("no release packs: got %s", got)
+	}
+	packsDir := filepath.Join(release, "share", "openneko", "packs")
+	if err := os.MkdirAll(packsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := builtinPacksRoot(exe, wd); got != packsDir {
+		t.Fatalf("release packs: got %s, want %s", got, packsDir)
+	}
+}
