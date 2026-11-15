@@ -3,7 +3,7 @@ import "dotenv/config";
 
 import { createServer } from "node:http";
 import { adminSocketPath, listenAdmin } from "./admin-listen.js";
-import { boss, MOVED_QUEUES, RETIRED_QUEUES } from "@neko/db/jobs";
+import { boss } from "@neko/db/jobs";
 import { createAdminHandler } from "./admin-server.js";
 import { CoreSecrets } from "./secrets/core-secrets.js";
 import {
@@ -13,10 +13,7 @@ import {
   verifyAiCredentials,
 } from "@neko/llm";
 import { reportDeploymentProfile, setAgentSlotLimit } from "@neko/llm/work";
-import { removeRetiredQueue } from "./pg-boss-helpers.js";
 import { setCoreSecretsInstance } from "./secrets/instance.js";
-import { moveLibraryDocumentsToStore } from "./jobs/library-recovery.js";
-import { filesEnabled } from "@neko/llm/files";
 import {
   initializeWorkerTelemetry,
   shutdownWorkerTelemetry,
@@ -75,32 +72,6 @@ console.log(
 if (process.env.OPENNEKO_SERVE_SOCKET) {
 }
 const b = await boss();
-
-// Removing a retired or moved queue also drops its jobs and schedule.
-// `openneko migrate` has already copied a moved queue's pending jobs to River.
-for (const name of [...RETIRED_QUEUES, ...MOVED_QUEUES]) {
-  try {
-    await removeRetiredQueue(b, name);
-  } catch (e) {
-    console.warn(
-      `[worker] could not remove retired queue ${name}: ${e instanceof Error ? e.message : e}`,
-    );
-  }
-}
-
-if (filesEnabled()) {
-  moveLibraryDocumentsToStore()
-    .then(({ moved, missing }) => {
-      if (moved > 0 || missing > 0) {
-        console.log(`[library-move] moved ${moved} document(s) into openneko serve; ${missing} failed`);
-      }
-    })
-    .catch((error) => {
-      console.warn(
-        `[library-move] failed: ${error instanceof Error ? error.message : error}`,
-      );
-    });
-}
 
 listenAdmin(server, adminSocketPath(), PORT, (where) => {
   console.log(`[worker] pg-boss running; admin socket on ${where}`);
