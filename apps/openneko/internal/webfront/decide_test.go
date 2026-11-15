@@ -240,6 +240,7 @@ func TestEnsureInsights(t *testing.T) {
 		return s
 	}
 
+	seed(t, db, `insert into llm_provider_config (org_id, scope, provider, enabled) values ('org', 'research', 'perplexity', true)`)
 	got := ensure("")
 	id, _ := got["jobId"].(string)
 	if got["state"] != "queued" || job(id) != "queued processing_next_ensure" {
@@ -273,7 +274,7 @@ func TestEnsureInsights(t *testing.T) {
 		t.Errorf("jobs after force: %d", len(j))
 	}
 
-	seed(t, db, `insert into llm_provider_config (org_id, scope, provider, enabled) values ('org', 'research', 'disabled', true)`)
+	seed(t, db, `update llm_provider_config set provider = 'disabled' where org_id = 'org'`)
 	if w := call(f, "POST", "/api/v1/insights/ensure", "", member); w.Body.String() != `{"state":"disabled"}` {
 		t.Errorf("disabled: %s", w.Body.String())
 	}

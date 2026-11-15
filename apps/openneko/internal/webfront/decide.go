@@ -265,8 +265,8 @@ func (a *API) ensureInsights(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
-	var off bool
-	if err := a.DB.QueryRow(ctx, `select `+researchOff, orgID).Scan(&off); err != nil {
+	off, err := a.researchOff(ctx, orgID)
+	if err != nil {
 		a.fail(w, r, err)
 		return
 	}
