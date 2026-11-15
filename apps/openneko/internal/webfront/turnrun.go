@@ -24,6 +24,7 @@ var runStopPoll = 5 * time.Second
 // agentSlots is acquireAgentSlot() in packages/llm/src/work/agent-slots.ts:
 // a process-wide limit on running turns, first come first served.
 type agentSlots struct {
+	applyMu sync.Mutex
 	mu      sync.Mutex
 	limit   int
 	active  int
