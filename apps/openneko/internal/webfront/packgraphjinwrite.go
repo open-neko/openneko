@@ -376,12 +376,14 @@ func (a *API) applyPackGraphjinConfigLive(ctx context.Context, endpoint, orgID s
 	}}, nil
 }
 
+var errGraphjinConfigBusy = errors.New("GraphJin config has another approved change in progress")
+
 // acquireGraphjinConfigLock is acquireGraphjinConfigLock(): a lock file next
 // to the config that a stale holder loses after ten minutes.
 func acquireGraphjinConfigLock(configFile string) (func(), error) {
 	path := filepath.Join(filepath.Dir(configFile), "."+filepath.Base(configFile)+".openneko.lock")
 	token := rand.Text()
-	busy := errors.New("GraphJin config has another approved change in progress")
+	busy := errGraphjinConfigBusy
 	if err := writeNew(path, []byte(token), 0o600); err != nil {
 		if !errors.Is(err, fs.ErrExist) {
 			return nil, err
