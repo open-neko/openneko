@@ -199,7 +199,7 @@ func (a *API) startRun(w http.ResponseWriter, r *http.Request) {
 	}
 	o := chatTurnOptions{OrgID: act.OrgID, ThreadID: threadID, RunID: runID, Message: message, Channel: "web",
 		IncludeUxMetadata: true, PackActions: packActions, resolve: a.turnResolve, runCore: a.turnCore}
-	if _, err := a.startChatRun(ctx, o); err != nil {
+	if _, err := a.startChatRun(ctx, o); err != nil && !errors.Is(err, errRunStarted) {
 		a.fail(w, r, err)
 		return
 	}

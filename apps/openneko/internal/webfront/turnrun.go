@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 var (
@@ -508,12 +510,19 @@ func (g *runSpendGuard) emit(ctx context.Context, event any) error {
 // events, guards its spend and runs the turn in the background. The channel
 // closes when the run is over and its events are stored.
 func (a *API) startChatRun(ctx context.Context, o chatTurnOptions) (<-chan struct{}, error) {
+	if err := a.claimQueuedRun(ctx, o.RunID); err != nil {
+		return nil, err
+	}
 	base, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	store := a.newRunEventStore(o.OrgID, o.ThreadID, o.RunID)
 	tel := &runTelemetry{}
 	runCtx, guarded, err := a.newRunSpendGuard(base, o.RunID, tel.wrap(store.emit))
 	if err != nil {
 		cancel(nil)
+		msg := err.Error()
+		if ferr := a.finishWorkRun(context.WithoutCancel(ctx), o.RunID, "failed", &msg); ferr != nil {
+			log.Printf("[work-run/inproc] could not fail run %s: %v", o.RunID, ferr)
+		}
 		return nil, err
 	}
 	run := a.registerRun(o.RunID, o.OrgID, o.ThreadID, cancel)
@@ -554,6 +563,20 @@ func (a *API) startChatRun(ctx context.Context, o chatTurnOptions) (<-chan struc
 		}
 	}()
 	return done, nil
+}
+
+var errRunStarted = errors.New("another request already started this run")
+
+// claimQueuedRun moves a queued run to running. Only one caller wins, so two
+// web processes cannot start two turns for one run.
+func (a *API) claimQueuedRun(ctx context.Context, runID string) error {
+	var id string
+	err := a.DB.QueryRow(ctx, `update work_run set status = 'running', updated_at = now()
+		where id::text = $1 and status = 'queued' returning id::text`, runID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errRunStarted
+	}
+	return err
 }
 
 func (a *API) failThrownRun(ctx context.Context, o chatTurnOptions, store *runEventStore, cause error) {

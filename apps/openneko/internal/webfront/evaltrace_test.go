@@ -227,7 +227,7 @@ func TestEvalTraceChatRun(t *testing.T) {
 	}
 	newRun := func() string {
 		var id string
-		if err := db.QueryRow(ctx, `insert into work_run (org_id, thread_id, backend, actor_user_id, actor_role) values ('org', $1, 'ax', 'admin', 'admin') returning id::text`,
+		if err := db.QueryRow(ctx, `insert into work_run (org_id, thread_id, backend, status, actor_user_id, actor_role) values ('org', $1, 'ax', 'queued', 'admin', 'admin') returning id::text`,
 			threadMine).Scan(&id); err != nil {
 			t.Fatal(err)
 		}

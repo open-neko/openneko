@@ -149,9 +149,6 @@ func doneEvent(status string) *jsObj {
 // and serve runs the model loop. An error return is a failure the caller
 // reports; the run is already finished then.
 func (a *API) runChatTurn(ctx context.Context, o chatTurnOptions) (chatTurnResult, error) {
-	if _, err := a.DB.Exec(ctx, `update work_run set status = 'running', updated_at = now() where id = $1`, o.RunID); err != nil {
-		return chatTurnResult{}, err
-	}
 	var exists bool
 	if err := a.DB.QueryRow(ctx, `select exists (select 1 from work_thread where org_id = $1 and id::text = $2)`, o.OrgID, o.ThreadID).Scan(&exists); err != nil {
 		return chatTurnResult{}, err
