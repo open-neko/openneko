@@ -55,13 +55,19 @@ import {
   cancelOfflineQuestion,
   claimNextOfflineQuestion,
   completeOfflineQuestion,
+  deferAfterNetworkFailure,
   enqueueOfflineQuestion,
+  moveNewChatQuestions,
   offlineQueueUser,
+  offlineSendOutcome,
   newClientRequestId,
+  OFFLINE_SEND_TIMEOUT_MS,
   requeueOfflineQuestion,
+  retryOfflineQuestion,
   settleOfflineRefusal,
   setOfflineQueueUser,
   useOfflineQueue,
+  useOfflineStorageBroken,
   withOfflineQueueLock,
   type QueuedQuestion,
 } from "./work-offline-queue";
@@ -97,6 +103,15 @@ class ThreadCreateRefused extends Error {
   ) {
     super(message);
   }
+}
+
+const ONLINE_RETRY_MAX_MS = 30_000;
+const VERSION_POLL_MAX_MS = 30_000;
+
+function sendTimeout(): AbortSignal | undefined {
+  return typeof AbortSignal !== "undefined" && "timeout" in AbortSignal
+    ? AbortSignal.timeout(OFFLINE_SEND_TIMEOUT_MS)
+    : undefined;
 }
 
 async function refusalBody(res: Response): Promise<{ error?: string; code?: string }> {
@@ -170,11 +185,15 @@ export default function WorkScreen() {
   const sendingClaimedRef = useRef(false);
   const isOnline = useOnlineStatus();
   const offlineQueue = useOfflineQueue();
+  const storageBroken = useOfflineStorageBroken();
   const session = useSession();
+  const sessionKnown = session !== undefined;
   const sessionUserId = session?.user?.id ?? null;
   useEffect(() => {
-    setOfflineQueueUser(sessionUserId);
-  }, [sessionUserId]);
+    if (sessionKnown) setOfflineQueueUser(sessionUserId);
+  }, [sessionKnown, sessionUserId]);
+  const sendingRef = useRef(false);
+  sendingRef.current = sending;
   const currentThreadKey = activeThreadId ?? routeThreadId ?? null;
   const queuedQuestions = useMemo(
     () =>
@@ -190,16 +209,20 @@ export default function WorkScreen() {
     () => queuedQuestions.filter((item) => item.status === "waiting"),
     [queuedQuestions],
   );
+  const allWaiting = useMemo(
+    () => offlineQueue.filter((item) => item.status === "waiting"),
+    [offlineQueue],
+  );
   const [retryTick, setRetryTick] = useState(0);
   useEffect(() => {
     const now = Date.now();
     const next = Math.min(
-      ...waitingQuestions.map((item) => item.retryAt ?? 0).filter((at) => at > now),
+      ...allWaiting.map((item) => item.retryAt ?? 0).filter((at) => at > now),
     );
     if (!Number.isFinite(next)) return;
     const timer = window.setTimeout(() => setRetryTick((n) => n + 1), next - now + 50);
     return () => window.clearTimeout(timer);
-  }, [waitingQuestions]);
+  }, [allWaiting]);
 
   const updateActiveRunId = (next: string | null) => {
     setActiveRunIdState(next);
@@ -576,10 +599,12 @@ export default function WorkScreen() {
   async function createThread(
     clientRequestId?: string,
     expectedUserId: string | null = sessionUserId,
+    signal?: AbortSignal,
   ): Promise<string> {
     const res = await fetch("/api/v1/work/threads", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      ...(signal ? { signal } : {}),
       body: JSON.stringify({
         ...(clientRequestId ? { clientRequestId } : {}),
         ...(expectedUserId ? { expectedUserId } : {}),
@@ -645,6 +670,7 @@ export default function WorkScreen() {
 
     const selectedMentions = activeWorkMentions(draft, draftMentions);
     const initialThreadId = activeThreadId ?? routeThreadId ?? null;
+    if (sending && (isBrowserOnline() || files.length > 0)) return;
 
     if (!isBrowserOnline() && files.length === 0) {
       const offlineMessage = appendWorkMentionBlock(trimmed, selectedMentions);
@@ -792,7 +818,8 @@ export default function WorkScreen() {
       }
       if (!threadId) {
         try {
-          threadId = await createThread(claimed.id, queueUser);
+          threadId = await createThread(claimed.id, queueUser, sendTimeout());
+          moveNewChatQuestions(claimed.threadBase, threadId);
         } catch (err) {
           if (!(err instanceof ThreadCreateRefused)) throw err;
           reportNetworkOnline();
@@ -838,7 +865,7 @@ export default function WorkScreen() {
         { clientRequestId: claimed.id, claimed: true, onPosted: releaseLock, expectedUserId: queueUser },
       );
       if (!dispatched) {
-        requeueOfflineQuestion({ ...claimed, threadId });
+        deferAfterNetworkFailure(claimed.id, threadId);
       }
     } catch {
       if (tempMessageId) {
@@ -854,7 +881,7 @@ export default function WorkScreen() {
       }
       setSending(false);
       reportNetworkOffline();
-      requeueOfflineQuestion({ ...claimed, threadId });
+      deferAfterNetworkFailure(claimed.id, threadId);
     } finally {
       releaseLock();
       sendingClaimedRef.current = false;
@@ -862,20 +889,93 @@ export default function WorkScreen() {
     }
   }
 
-  // When network connectivity returns, reload the thread if it was opened
-  // while offline and send any waiting question once.
+  async function sendQueuedInBackground(claimed: QueuedQuestion, queueUser: string): Promise<boolean> {
+    let threadId = claimed.threadId;
+    try {
+      if (!threadId) {
+        const res = await fetch("/api/v1/work/threads", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: sendTimeout(),
+          body: JSON.stringify({ clientRequestId: claimed.id, expectedUserId: queueUser }),
+        });
+        reportNetworkOnline();
+        if (!res.ok) {
+          const refusal = await refusalBody(res);
+          const outcome = settleOfflineRefusal(
+            claimed.id,
+            { status: res.status, headers: res.headers, code: refusal.code },
+            refusal.error ?? `HTTP ${res.status}`,
+          );
+          if (outcome === "signin") void confirmSessionUser();
+          return true;
+        }
+        const data = (await res.json()) as { thread: { id: string } };
+        threadId = data.thread.id;
+        moveNewChatQuestions(claimed.threadBase, threadId);
+      }
+      const res = await fetch(`/api/v1/work/threads/${threadId}/runs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: sendTimeout(),
+        body: JSON.stringify({
+          message: claimed.content,
+          clientRequestId: claimed.id,
+          expectedUserId: queueUser,
+        }),
+      });
+      reportNetworkOnline();
+      if (res.ok) {
+        completeOfflineQuestion(claimed.id);
+        return true;
+      }
+      const refusal = await refusalBody(res);
+      const outcome = settleOfflineRefusal(
+        claimed.id,
+        { status: res.status, headers: res.headers, code: refusal.code },
+        refusal.error ?? `HTTP ${res.status}`,
+        threadId,
+      );
+      if (outcome === "signin") void confirmSessionUser();
+      return true;
+    } catch {
+      deferAfterNetworkFailure(claimed.id, threadId);
+      reportNetworkOffline();
+      return false;
+    }
+  }
+
+  // While offline with questions waiting, ask the server with a growing delay
+  // whether the network is back.
   useEffect(() => {
-    if (waitingQuestions.length === 0 || isOnline) return;
-    const timer = window.setInterval(() => {
-      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
-      void fetch("/api/v1/version", { cache: "no-store" })
-        .then((res) => {
-          if (res.ok) reportNetworkOnline();
-        })
-        .catch(() => {});
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [waitingQuestions.length, isOnline]);
+    if (allWaiting.length === 0 || isOnline) return;
+    let stopped = false;
+    let delay = 1000;
+    let timer = 0;
+    const poll = () => {
+      timer = window.setTimeout(async () => {
+        if (typeof navigator === "undefined" || navigator.onLine !== false) {
+          try {
+            const res = await fetch("/api/v1/version", { cache: "no-store" });
+            if (res.ok) {
+              reportNetworkOnline();
+              return;
+            }
+          } catch {
+            // Still offline.
+          }
+        }
+        if (stopped) return;
+        delay = Math.min(delay * 2, VERSION_POLL_MAX_MS);
+        poll();
+      }, delay);
+    };
+    poll();
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
+  }, [allWaiting.length, isOnline]);
 
   useEffect(() => {
     if (!gateChecked || gateError || !isOnline) return;
@@ -885,20 +985,23 @@ export default function WorkScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gateChecked, gateError, isOnline, routeThreadId, bundle, loadingThread, waitingQuestions.length]);
 
+  // One loop sends the first question of each thread. A question of the open
+  // thread streams here and waits while a run of this view streams; a
+  // question of another thread posts in the background.
   useEffect(() => {
     if (
       !gateChecked ||
       gateError ||
       !sessionUserId ||
       !isOnline ||
-      sending ||
       flushingOfflineRef.current ||
-      waitingQuestions.length === 0
+      allWaiting.length === 0
     ) {
       return;
     }
     flushingOfflineRef.current = true;
-    const flushThreadKey = currentThreadKey;
+    const here = (item: QueuedQuestion) =>
+      item.threadBase === threadBase && item.threadId === currentThreadKey;
 
     void withOfflineQueueLock(async () => {
       if (!mountedRef.current) return;
@@ -913,17 +1016,22 @@ export default function WorkScreen() {
         setOfflineQueueUser(confirmedUser);
         return;
       }
-      const claimed: QueuedQuestion | null = claimNextOfflineQuestion(
-        flushThreadKey,
-        threadBase,
-      );
-      if (!claimed) return;
-      let releaseLock = () => {};
-      const posted = new Promise<void>((resolve) => {
-        releaseLock = resolve;
-      });
-      void sendClaimedQuestion(claimed, releaseLock, queueUser);
-      await posted;
+      while (mountedRef.current) {
+        const claimed = claimNextOfflineQuestion(
+          (item) => !here(item) || !sendingRef.current,
+        );
+        if (!claimed) return;
+        if (here(claimed)) {
+          let releaseLock = () => {};
+          const posted = new Promise<void>((resolve) => {
+            releaseLock = resolve;
+          });
+          void sendClaimedQuestion(claimed, releaseLock, queueUser);
+          await posted;
+          return;
+        }
+        if (!(await sendQueuedInBackground(claimed, queueUser))) return;
+      }
     }).finally(() => {
       if (!sendingClaimedRef.current) flushingOfflineRef.current = false;
     });
@@ -934,7 +1042,7 @@ export default function WorkScreen() {
     sessionUserId,
     isOnline,
     sending,
-    waitingQuestions.length,
+    allWaiting.length,
     retryTick,
     currentThreadKey,
     threadBase,
@@ -1021,10 +1129,12 @@ export default function WorkScreen() {
     let refusal: { error?: string; code?: string } | null = null;
     try {
       for (let attempt = 0; ; attempt++) {
+        const signal = request?.claimed ? sendTimeout() : undefined;
         res = await fetch(`/api/v1/work/threads/${threadId}/runs`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           ...(body.length < 60_000 ? { keepalive: true } : {}),
+          ...(signal ? { signal } : {}),
           body,
         });
         if (res.ok) break;
@@ -1038,8 +1148,9 @@ export default function WorkScreen() {
           break;
         }
         const wait = Number(res.headers.get("Retry-After"));
+        const first = (Number.isFinite(wait) && wait > 0 ? wait : 2) * 1000;
         await new Promise((resolve) =>
-          window.setTimeout(resolve, (Number.isFinite(wait) && wait > 0 ? wait : 2) * 1000),
+          window.setTimeout(resolve, Math.min(first * 2 ** attempt, ONLINE_RETRY_MAX_MS)),
         );
       }
     } catch {
@@ -1061,6 +1172,23 @@ export default function WorkScreen() {
     if (!res.ok) {
       const error = refusal?.error ?? `HTTP ${res.status}`;
       const code = refusal?.code;
+      if (request && !request.claimed && offlineSendOutcome(res.status, code) === "retry") {
+        enqueueOfflineQuestion({
+          id: request.clientRequestId,
+          threadId,
+          threadBase,
+          content: message,
+        });
+        settleOfflineRefusal(
+          request.clientRequestId,
+          { status: res.status, headers: res.headers, code },
+          error,
+          threadId,
+        );
+        setSending(false);
+        await loadThread(threadId);
+        return true;
+      }
       if (
         request?.claimed
           ? settleOfflineRefusal(
@@ -1753,6 +1881,16 @@ export default function WorkScreen() {
           })
         ) : null}
 
+        {storageBroken && queuedQuestions.length > 0 ? (
+          <div
+            role="alert"
+            data-testid="offline-storage-broken"
+            className="ml-auto max-w-full rounded-xl border border-border bg-warn-soft px-3 py-1.5 text-ui-caption font-medium text-warn-ink"
+          >
+            This browser cannot save questions that wait for the network. If you reload or close
+            this page, they are lost.
+          </div>
+        ) : null}
         {queuedQuestions.map((item) => (
           <div
             key={item.id}
@@ -1778,7 +1916,15 @@ export default function WorkScreen() {
                 <Button
                   size="sm"
                   variant="secondary"
-                  onClick={() => cancelOfflineQuestion(item.id)}
+                  onClick={() => retryOfflineQuestion(item.id)}
+                  aria-label="Send refused question again"
+                >
+                  Retry
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void cancelOfflineQuestion(item.id)}
                   aria-label="Remove refused question"
                 >
                   Remove
@@ -1800,7 +1946,7 @@ export default function WorkScreen() {
                 <Button
                   size="sm"
                   variant="secondary"
-                  onClick={() => cancelOfflineQuestion(item.id)}
+                  onClick={() => void cancelOfflineQuestion(item.id)}
                   aria-label="Cancel waiting question"
                 >
                   Cancel
@@ -1832,6 +1978,7 @@ export default function WorkScreen() {
           files={files}
           setFiles={setFiles}
           sending={sending}
+          offline={!isOnline}
           mentions={mentions}
           placeholder={
             sending

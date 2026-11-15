@@ -214,6 +214,7 @@ export function WorkComposer({
   files,
   setFiles,
   sending,
+  offline = false,
   mentions,
   placeholder,
   assistantName,
@@ -226,6 +227,7 @@ export function WorkComposer({
   files: File[];
   setFiles: Dispatch<SetStateAction<File[]>>;
   sending: boolean;
+  offline?: boolean;
   mentions: ReturnType<typeof useWorkMentions>;
   placeholder: string;
   assistantName: string;
@@ -247,6 +249,7 @@ export function WorkComposer({
     insertMention,
   } = mentions;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const busy = sending && !offline;
 
   return (
     <>
@@ -431,7 +434,7 @@ export function WorkComposer({
                 return;
               }
             }
-            if (event.key === "Enter" && !event.shiftKey && !sending) {
+            if (event.key === "Enter" && !event.shiftKey && !busy) {
               event.preventDefault();
               onSend();
             }
@@ -440,7 +443,7 @@ export function WorkComposer({
             // Delay so a click on a dropdown option still registers.
             window.setTimeout(() => setMention(null), 120);
           }}
-          disabled={sending}
+          disabled={busy}
           rows={1}
           autoComplete="off"
           autoCorrect="on"
@@ -461,7 +464,7 @@ export function WorkComposer({
               <Paperclip size={15} strokeWidth={2} />
             </IconButton>
             <span className="work-composer-hint" aria-live="polite">
-              {sending ? (
+              {busy ? (
                 <span className="work-composer-pulse">OpenNeko is working</span>
               ) : files.length > 0 ? (
                 <>{files.length} of {MAX_ATTACHMENTS} attached</>
@@ -470,7 +473,7 @@ export function WorkComposer({
               )}
             </span>
           </div>
-          {sending ? (
+          {busy ? (
             <Button
               size="sm"
               variant="danger"
