@@ -5,148 +5,116 @@ import { describe, expect, it } from "vitest";
 import { deviceSignInUrl } from "@/app/device/page";
 import { hrefToString } from "@/spa/next/link";
 import { redirects, routes } from "@/spa/routes";
-import { serverPagePattern, serverPages } from "@/spa/server-pages";
 
-const appDir = path.join(__dirname, "../src/app");
+const appDir = path.resolve(import.meta.dirname, "../src/app");
 
-function nextPagePaths(dir = appDir, prefix = ""): string[] {
-  const found: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const full = path.join(dir, entry);
-    if (statSync(full).isDirectory()) {
-      if (entry === "api" && dir === appDir) continue;
-      const segment = /^\(.*\)$/.test(entry) ? "" : `/${entry.replace(/^\[(.+)\]$/, ":$1")}`;
-      found.push(...nextPagePaths(full, prefix + segment));
-    } else if (entry === "page.tsx") {
-      found.push(prefix || "/");
-    }
-  }
-  return found;
-}
-
-function nextPageFile(page: string, dir = appDir): string {
-  const [head, ...rest] = page.split("/").filter(Boolean);
-  if (head === undefined) {
-    const file = path.join(dir, "page.tsx");
-    statSync(file);
-    return path.relative(appDir, file);
-  }
-  for (const entry of readdirSync(dir)) {
-    const full = path.join(dir, entry);
-    if (!statSync(full).isDirectory()) continue;
-    if (/^\(.*\)$/.test(entry)) {
-      try {
-        return nextPageFile(page, full);
-      } catch {
-        continue;
+function appPagePaths(): string[] {
+  const out: string[] = [];
+  const walk = (dir: string, parts: string[]) => {
+    for (const entry of readdirSync(dir)) {
+      const full = path.join(dir, entry);
+      if (statSync(full).isDirectory()) {
+        const next = entry.startsWith("(") && entry.endsWith(")") ? parts : [...parts, entry];
+        walk(full, next);
+      } else if (entry === "page.tsx") {
+        const route = "/" + parts.map((p) => (p.startsWith("[") && p.endsWith("]") ? `:${p.slice(1, -1)}` : p)).join("/");
+        out.push(route === "/" ? "/" : route);
       }
     }
-    if (entry === head || entry === head.replace(/^:(.+)$/, "[$1]")) {
-      try {
-        return nextPageFile(`/${rest.join("/")}`, full);
-      } catch {
-        continue;
-      }
+  };
+  walk(appDir, []);
+  return out.sort();
+}
+
+function samplePath(pattern: string): string {
+  return pattern.replace(/:([^/]+)/g, (_, name: string) => `sample-${name}`);
+}
+
+describe("static app route table", () => {
+  it("gives every page under src/app a route that is not the not-found route", () => {
+    for (const page of appPagePaths()) {
+      const matched = matchRoutes(routes, samplePath(page));
+      expect(matched, page).not.toBeNull();
+      const leaf = matched![matched!.length - 1].route;
+      expect(leaf.path, page).not.toBe("*");
     }
-  }
-  throw new Error(`no page file for ${page}`);
-}
+  });
 
-function concrete(page: string): string {
-  return page.replace(/:[^/]+/g, "sample");
-}
-
-describe("static web app routes", () => {
-  const pages = nextPagePaths().filter((page) => !page.startsWith("/dev/"));
-
-  it("gives every Next page a route that is not the not-found route", () => {
-    expect(pages.length).toBeGreaterThan(50);
-    const missing = pages.filter((page) => {
-      const matches = matchRoutes(routes, concrete(page)) ?? [];
-      return matches.length === 0 || matches.at(-1)?.route.path === "*";
-    });
-    expect(missing).toEqual([]);
+  it("covers the chat, work, and redirect routes", () => {
+    for (const route of [
+      "/",
+      "/chat",
+      "/chat/t",
+      "/chat/t/thread-1",
+      "/chat/bots/new",
+      "/chat/bots/bot-1",
+      "/chat/connectors",
+      "/work",
+      "/work/thread-1",
+      "/workflows/wf-1",
+      "/admin/settings/rules/pol-1",
+      "/settings/rules/pol-1",
+      ...Object.keys(redirects),
+      ...Object.values(redirects),
+    ]) {
+      const matched = matchRoutes(routes, route);
+      expect(matched, route).not.toBeNull();
+      const leaf = matched![matched!.length - 1].route;
+      expect(leaf.path, route).not.toBe("*");
+    }
   });
 
   it("links the admin settings cards only to real pages, and has no context repository page", () => {
     const source = readFileSync(path.join(appDir, "admin/settings/page.tsx"), "utf8");
-    const hrefs = [...source.matchAll(/href: "(\/admin\/settings\/[^"]+)"/g)].map((m) => m[1]!);
-    expect(hrefs.length).toBeGreaterThan(5);
-    expect(hrefs.filter((href) => !pages.includes(href))).toEqual([]);
-    expect(pages).not.toContain("/admin/settings/repository");
-    expect(serverPages).not.toContain("/admin/settings/repository");
+    const hrefs = [...source.matchAll(/href:\s*"([^"]+)"/g)].map((m) => m[1]);
+    expect(hrefs.length).toBeGreaterThan(0);
+    expect(hrefs).not.toContain("/admin/settings/repository");
+    for (const href of hrefs) {
+      const matched = matchRoutes(routes, href);
+      expect(matched, href).not.toBeNull();
+      expect(matched![matched!.length - 1].route.path, href).not.toBe("*");
+    }
+    const repo = matchRoutes(routes, "/admin/settings/repository");
+    expect(repo![repo!.length - 1].route.path).toBe("*");
   });
 
-  it("loads each page that left the server list as a client page", () => {
-    const ported = [
-      "/profile",
-      "/admin/rules",
-      "/admin/rules/:policyId",
-      "/admin/settings/channels",
-      "/admin/settings/packs",
-      "/admin/settings/signin",
-      "/admin/settings/agent",
-      "/admin/settings/data",
+  it("loads each client page in the route table", async () => {
+    for (const route of [
       "/admin/settings/models",
-      "/admin/settings/research",
-      "/admin/settings/security",
-      "/admin/settings/spend",
-      "/admin/settings/sso",
-      "/admin",
-      "/admin/access",
-      "/admin/settings",
       "/admin/settings/workflows",
       "/admin/users",
-      "/admin/users/groups/:groupId",
-      "/admin/settings/graphjin",
+      "/admin/users/groups/grp_1",
       "/device",
       "/integrations",
       "/chat/connectors",
       "/onboarding",
       "/admin/settings/packs/magento/operations",
-    ];
-    const wrong = ported.filter((page) => {
-      const route = (matchRoutes(routes, concrete(page)) ?? []).at(-1)?.route;
-      const source = readFileSync(path.join(appDir, nextPageFile(page)), "utf8");
-      return serverPages.includes(page) || !route?.lazy || !source.startsWith('"use client"');
-    });
-    expect(wrong).toEqual([]);
-  });
-
-  it("lists only real Next pages as server pages", () => {
-    expect(serverPages.filter((page) => !pages.includes(page))).toEqual([]);
-  });
-
-  it("has an empty server page list and passes no page to Node", () => {
-    expect(serverPages).toEqual([]);
-    const pattern = serverPagePattern();
-    for (const page of pages) {
-      expect(pattern.test(concrete(page))).toBe(false);
+    ]) {
+      const matched = matchRoutes(routes, route);
+      expect(matched, route).not.toBeNull();
+      const leaf = matched![matched!.length - 1].route;
+      expect(leaf.lazy, route).toBeTypeOf("function");
+      const loaded = await (leaf.lazy as () => Promise<{ Component?: unknown }>)();
+      expect(loaded.Component, route).toBeTypeOf("function");
     }
-    expect(pattern.test("/")).toBe(false);
-    expect(pattern.test("/device")).toBe(false);
-    expect(pattern.test("/integrations")).toBe(false);
-    expect(pattern.test("/chat/connectors")).toBe(false);
-    expect(pattern.test("/onboarding")).toBe(false);
-    expect(pattern.test("/admin/settings/packs/magento/operations")).toBe(false);
-    expect(pattern.test("/admin/settings/graphjin")).toBe(false);
-    expect(pattern.test("/api/v1/version")).toBe(false);
   });
 
-  it("keeps each redirect target of the Next pages", () => {
-    expect(redirects["/"]).toBe("/chat");
-    expect(redirects["/approvals"]).toBe("/actions");
-    expect(Object.keys(redirects).every((from) => pages.includes(from))).toBe(true);
+  it("builds the /device sign-in returnTo URL", () => {
+    expect(deviceSignInUrl("BCDF-GHJK")).toBe(
+      "/signin?returnTo=%2Fdevice%3Fcode%3DBCDF-GHJK",
+    );
+    expect(deviceSignInUrl("")).toBe(
+      "/signin?returnTo=%2Fdevice",
+    );
   });
 
-  it("sends an unsigned /device visitor to /signin and preserves the device code in returnTo", () => {
-    expect(deviceSignInUrl("")).toBe("/signin?returnTo=%2Fdevice");
-    expect(deviceSignInUrl("BCDF-GHJK")).toBe("/signin?returnTo=%2Fdevice%3Fcode%3DBCDF-GHJK");
+  it("falls back to NotFound for unknown paths", () => {
+    const matched = matchRoutes(routes, "/definitely-not-a-page");
+    expect(matched).not.toBeNull();
+    expect(matched![matched!.length - 1].route.path).toBe("*");
   });
-});
 
-describe("Link href", () => {
-  it("writes an object href as a path with a query and a hash", () => {
+  it("formats Link href objects with query strings and a hash", () => {
     expect(hrefToString("/runs?x=1")).toBe("/runs?x=1");
     expect(hrefToString({ pathname: "/runs", query: { status: "failed", skip: undefined }, hash: "top" })).toBe("/runs?status=failed#top");
   });

@@ -18,7 +18,6 @@ func TestClassifyStack(t *testing.T) {
 		{"empty is down", nil, down},
 		{"all up + one-shot migrate done", []composeService{
 			{Service: "web", State: "running", Health: "healthy"},
-			{Service: "worker", State: "running", Health: "healthy"},
 			{Service: "openneko-serve", State: "running", Health: ""},
 			{Service: "neko-db", State: "running", Health: "healthy"},
 			{Service: "storage-reconcile", State: "exited", ExitCode: 0},
@@ -27,37 +26,36 @@ func TestClassifyStack(t *testing.T) {
 		}, serving},
 		{"running without a healthcheck counts as serving", []composeService{
 			{Service: "web", State: "running", Health: ""},
-			{Service: "worker", State: "running", Health: ""},
+			{Service: "openneko-serve", State: "running", Health: ""},
 		}, serving},
-		{"a stack whose web and worker were never created is down", []composeService{
+		{"a stack whose web and openneko-serve were never created is down", []composeService{
 			{Service: "neko-db", State: "running", Health: "healthy"},
 			{Service: "adventureworks-db", State: "running", Health: "healthy"},
 		}, down},
 		{"unhealthy is degraded, not down", []composeService{
 			{Service: "web", State: "running", Health: "healthy"},
-			{Service: "worker", State: "running", Health: "unhealthy"},
+			{Service: "openneko-serve", State: "running", Health: "unhealthy"},
 		}, degraded},
 		{"starting is degraded", []composeService{
 			{Service: "web", State: "running", Health: "healthy"},
-			{Service: "worker", State: "running", Health: "starting"},
+			{Service: "openneko-serve", State: "running", Health: "starting"},
 		}, degraded},
 		{"a long-running service exited non-zero is down", []composeService{
-			{Service: "worker", State: "exited", ExitCode: 1},
+			{Service: "openneko-serve", State: "exited", ExitCode: 1},
 		}, down},
 		{"down outranks degraded", []composeService{
 			{Service: "web", State: "running", Health: "starting"},
-			{Service: "worker", State: "exited", ExitCode: 1},
+			{Service: "openneko-serve", State: "exited", ExitCode: 1},
 		}, down},
 		{"a failed one-shot setup job is degraded, not down", []composeService{
 			{Service: "web", State: "running", Health: "healthy"},
-			{Service: "worker", State: "running", Health: "healthy"},
 			{Service: "openneko-serve", State: "running", Health: ""},
 			{Service: "neko-db", State: "running", Health: "healthy"},
 			{Service: "neko-adventureworks-seed", State: "exited", ExitCode: 1},
 		}, degraded},
 		{"a downed long-running service still outranks a failed one-shot job", []composeService{
 			{Service: "neko-adventureworks-seed", State: "exited", ExitCode: 1},
-			{Service: "worker", State: "exited", ExitCode: 1},
+			{Service: "openneko-serve", State: "exited", ExitCode: 1},
 		}, down},
 	}
 	for _, tc := range tests {

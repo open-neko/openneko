@@ -1,9 +1,8 @@
-import { Suspense, useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
+import { Suspense, useMemo, type ComponentType, type ReactNode } from "react";
 import { Navigate, Outlet, useLocation, useParams, type RouteObject } from "react-router";
 import RootLayout, { useIdentity } from "./RootLayout";
 import RouteError, { NotFound } from "./RouteError";
 import { loadIdentity } from "./identity";
-import { serverPages } from "./server-pages";
 
 function page(load: () => Promise<{ default: ComponentType }>): Pick<RouteObject, "lazy"> {
   return { lazy: async () => ({ Component: (await load()).default }) };
@@ -50,23 +49,6 @@ function WorkflowRedirect() {
 function PolicyRedirect() {
   const { policyId = "" } = useParams();
   return <Navigate to={`/admin/rules/${encodeURIComponent(policyId)}`} replace />;
-}
-
-const HARD_LOAD_KEY = "openneko-hard-load";
-
-function ServerPage() {
-  const location = useLocation();
-  const target = `${location.pathname}${location.search}`;
-  const [loop] = useState(() => sessionStorage.getItem(HARD_LOAD_KEY) === target);
-  useEffect(() => {
-    if (loop) {
-      sessionStorage.removeItem(HARD_LOAD_KEY);
-      return;
-    }
-    sessionStorage.setItem(HARD_LOAD_KEY, target);
-    window.location.assign(`${target}${location.hash}`);
-  }, [loop, target, location.hash]);
-  return loop ? <NotFound /> : null;
 }
 
 export const redirects: Record<string, string> = {
@@ -183,7 +165,6 @@ export const routes: RouteObject[] = [
               return { Component: () => <SkillDetailRoute Detail={Detail} /> };
             },
           },
-          ...serverPages.map((path) => ({ path: path.slice(1), Component: ServerPage })),
           ...(import.meta.env.DEV
             ? [{
                 path: "dev/answer-preview",

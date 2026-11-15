@@ -23,18 +23,10 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/version"
 )
 
-// MaybeProxyToWorker is used by worker-backed commands; if a worker container is
-// running and --local wasn't passed, the command re-executes inside the
-// worker via docker exec. Defined here so subcommand files can call it
-// consistently. Returns (exitCode, true) when proxied, (0, false) when the
-// caller should fall through to the local implementation. An optional handler
-// lets host-file uploads stream to that same selected worker without copying.
-func MaybeProxyToWorker(cmd *cobra.Command, run ...func(container string) int) (int, bool) {
-	return maybeProxy(cmd, "worker", run...)
-}
-
-// MaybeProxyToWeb is MaybeProxyToWorker for commands that the web container
-// answers.
+// MaybeProxyToWeb is used by web-backed commands; if a web container is
+// running and --local wasn't passed, the command re-executes inside the web
+// container via docker exec. Returns (exitCode, true) when proxied, (0, false)
+// when the caller should fall through to the local implementation.
 func MaybeProxyToWeb(cmd *cobra.Command, run ...func(container string) int) (int, bool) {
 	return maybeProxy(cmd, "web", run...)
 }
@@ -197,6 +189,7 @@ Developer ops: eval.`,
 		newResetCmd(),
 		newEvalCmd(),
 		newJobsCmd(),
+		newContainerInitCmd(),
 	)
 	return cmd
 }

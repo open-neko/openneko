@@ -34,7 +34,6 @@ func TestTurnAdminDatabase(t *testing.T) {
 	worker := &fakeActionWorker{db: db}
 	srv := httptest.NewServer(worker)
 	defer srv.Close()
-	a.Gate.WorkerURL = srv.URL
 	seed(t, db, `insert into work_run (id, org_id, thread_id, backend, actor_user_id, actor_role) values ($1, 'org', $2, 'test', 'admin', 'admin')`, adminRun, threadMine)
 	seed(t, db, `update app_user set disabled_at = '2026-11-02T03:04:05.678Z', last_login_at = '2026-11-01T00:00:00Z' where id = 'other'`)
 	seed(t, db, `insert into sso_group (id, org_id, provider, tenant_id, external_id, display_name) values ($1, 'org', 'okta', 't1', 'g-fin', 'Finance IdP')`, adminSSO)

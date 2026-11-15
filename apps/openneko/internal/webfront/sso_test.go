@@ -104,7 +104,7 @@ func extractCallbackParam(text, key string) string {
 
 func newSSOFront(t *testing.T, status string, db *pgxpool.Pool) (*Front, *ssoWorker) {
 	wk := &ssoWorker{}
-	g := newGate(t, "")
+	g := newGate(t)
 	g.PublicURL = "https://neko.example"
 	seedSignInSecrets(t, g.SecretsDir, status)
 	g.DB = db
@@ -112,7 +112,6 @@ func newSSOFront(t *testing.T, status string, db *pgxpool.Pool) (*Front, *ssoWor
 		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
 		Gate: g,
 		API:  &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecureCookies: true, SecretsDir: g.SecretsDir, SignInClient: &http.Client{Transport: wk}},
-		Node: &recorder{},
 	}, wk
 }
 
@@ -204,7 +203,7 @@ func TestAuthBeginManual(t *testing.T) {
 }
 
 func TestStateCookieFromNode(t *testing.T) {
-	a := &API{Gate: newGate(t, "")}
+	a := &API{Gate: newGate(t)}
 	w := httptest.NewRecorder()
 	state, path, ok := a.readAndClearState(w, &http.Request{Header: http.Header{"Cookie": {StateCookie + "=" + nodeStateCookie}}})
 	if !ok || state != "abcState" || path != "/chat?x=1" {

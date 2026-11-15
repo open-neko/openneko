@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -19,7 +18,6 @@ import (
 
 	"github.com/open-neko/neko/apps/openneko/internal/secrets"
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
-	"github.com/open-neko/neko/apps/openneko/internal/workeradmin"
 )
 
 const (
@@ -116,10 +114,10 @@ func TestMagicLinkEmailProviders(t *testing.T) {
 	}
 
 	for in, want := range map[string]signInFromAddress{
-		"signin@company.com":                     {Email: "signin@company.com"},
-		"OpenNeko <signin@company.com>":          {Email: "signin@company.com", Name: "OpenNeko"},
+		"signin@company.com":                      {Email: "signin@company.com"},
+		"OpenNeko <signin@company.com>":           {Email: "signin@company.com", Name: "OpenNeko"},
 		`"OpenNeko Sign-In" <signin@company.com>`: {Email: "signin@company.com", Name: "OpenNeko Sign-In"},
-		"<signin@company.com>":                   {Email: "signin@company.com"},
+		"<signin@company.com>":                    {Email: "signin@company.com"},
 	} {
 		if got := parseSignInFrom(in); got != want {
 			t.Errorf("parseSignInFrom(%q) = %+v, want %+v", in, got, want)
@@ -272,7 +270,7 @@ func TestMigrateLegacySignInSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := &API{SecretsDir: dir, Gate: newGate(t, "")}
+	a := &API{SecretsDir: dir, Gate: newGate(t)}
 	a.Gate.SecretsDir = dir
 	moved, err := a.MigrateLegacySignInSecrets()
 	if err != nil {
@@ -346,7 +344,7 @@ func TestMagicLinkEndToEndAndSoloGate(t *testing.T) {
 		select 'org', id, 'admin', 'local' from user_group where org_id = 'org' and slug = 'administrators'`)
 
 	dir := t.TempDir()
-	g := newGate(t, "")
+	g := newGate(t)
 	g.SecretsDir = dir
 	g.PublicURL = "https://neko.example"
 	g.DB = db
@@ -404,13 +402,9 @@ func TestMagicLinkEndToEndAndSoloGate(t *testing.T) {
 	}
 }
 
-func TestSignInWithUnixWorkerEndpoint(t *testing.T) {
+func TestSignInOutboundClient(t *testing.T) {
 	db := testpg.Migrated(t)
 	seedOrg(t, db)
-	workerBase, workerClient, err := workeradmin.Endpoint("unix://" + filepath.Join(t.TempDir(), "worker.sock"))
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	var sentLink string
 	providerSrv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -451,20 +445,18 @@ func TestSignInWithUnixWorkerEndpoint(t *testing.T) {
 	t.Cleanup(func() { defaultSignInClient = savedDefault })
 
 	dir := t.TempDir()
-	g := newGate(t, workerBase)
+	g := newGate(t)
 	g.SecretsDir = dir
 	g.PublicURL = "https://neko.example"
-	g.Client = workerClient
 	g.DB = db
 	a := &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecureCookies: true, SecretsDir: dir}
 	f := &Front{
 		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
 		Gate: g,
 		API:  a,
-		Node: &recorder{},
 	}
 
-	// 1. Scalekit begin and complete with SignInClient nil (uses defaultSignInClient on TCP, never Gate.Client on unix:).
+	// 1. Scalekit begin and complete with SignInClient nil use defaultSignInClient.
 	if err := secrets.Write(secrets.Store{
 		"signin": {"PROVIDER": "scalekit"},
 		"signin.scalekit": {
@@ -493,7 +485,7 @@ func TestSignInWithUnixWorkerEndpoint(t *testing.T) {
 		t.Fatalf("scalekit callback = %d %q %s", w.Code, w.Header().Get("Location"), w.Body.String())
 	}
 
-	// 2. Magic-link begin and complete with SignInClient set to the TCP client while Gate.Client is on unix:.
+	// 2. Magic-link begin and complete use SignInClient when it is set.
 	a.SignInClient = tcpClient
 	if err := secrets.Write(secrets.Store{
 		"signin": {"PROVIDER": "magic-link"},
@@ -528,7 +520,7 @@ func TestMagicLinkRequiresPublicURL(t *testing.T) {
 	db := testpg.Migrated(t)
 	seedOrg(t, db)
 	dir := t.TempDir()
-	g := newGate(t, "")
+	g := newGate(t)
 	g.SecretsDir = dir
 	g.PublicURL = ""
 	g.DB = db
@@ -552,7 +544,6 @@ func TestMagicLinkRequiresPublicURL(t *testing.T) {
 		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
 		Gate: g,
 		API:  a,
-		Node: &recorder{},
 	}
 
 	if err := secrets.Write(secrets.Store{
@@ -649,4 +640,3 @@ func TestGateSecretsDirSetAtConstruction(t *testing.T) {
 		t.Fatalf("emptyGate.SecretsDir lazily mutated to %q", emptyGate.SecretsDir)
 	}
 }
-

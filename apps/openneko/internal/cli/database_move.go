@@ -125,8 +125,8 @@ func runDatabaseMove(ctx context.Context, cmd *cobra.Command, target string) err
 		return fmt.Errorf("nothing was changed: %w", err)
 	}
 
-	fmt.Fprintln(out, "Stopping web, worker and openneko-serve...")
-	if err := oldStack.compose(ctx, nil, os.Stdout, "stop", "web", "worker", "openneko-serve"); err != nil {
+	fmt.Fprintln(out, "Stopping web and openneko-serve...")
+	if err := oldStack.compose(ctx, nil, os.Stdout, "stop", "web", "openneko-serve"); err != nil {
 		return unchanged("stopping the stack", err)
 	}
 	fmt.Fprintln(out, "Preparing the new database...")

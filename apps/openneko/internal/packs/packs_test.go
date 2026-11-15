@@ -209,7 +209,7 @@ func buildZip(t *testing.T, entries []zipEntry, deflate bool) []byte {
 
 func serviceHealthEntries(t *testing.T) []zipEntry {
 	t.Helper()
-	src := repoPath("apps", "worker", "test", "fixtures", "service-health")
+	src := filepath.Join("testdata", "service-health")
 	var entries []zipEntry
 	var walk func(dir, prefix string)
 	walk = func(dir, prefix string) {

@@ -198,8 +198,8 @@ func TestStartStepsStayOutOfTheUpGraph(t *testing.T) {
 		files []string
 		want  []string
 	}{
-		"prod":        {[]string{"core.yml"}, []string{"openneko-serve", "web", "worker"}},
-		"legacy prod": {[]string{"core.yml", "bundled-db.yml"}, []string{"neko-db", "openneko-serve", "web", "worker"}},
+		"prod":        {[]string{"core.yml"}, []string{"openneko-serve", "web"}},
+		"legacy prod": {[]string{"core.yml", "bundled-db.yml"}, []string{"neko-db", "openneko-serve", "web"}},
 	} {
 		var raws [][]byte
 		for _, file := range tc.files {

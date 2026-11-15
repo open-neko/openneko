@@ -66,13 +66,8 @@ func newScalekitStub(t *testing.T) *scalekitStub {
 func connectFront(t *testing.T) (*Front, *scalekitStub) {
 	db := testpg.Migrated(t)
 	seedOrg(t, db)
-	worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Errorf("worker called: %s %s", r.Method, r.URL.Path)
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	t.Cleanup(worker.Close)
 	stub := newScalekitStub(t)
-	g := newGate(t, worker.URL)
+	g := newGate(t)
 	seedSignInSecrets(t, g.SecretsDir, liveScalekit)
 	store, err := secrets.Read(g.SecretsDir)
 	if err != nil {
@@ -91,7 +86,6 @@ func connectFront(t *testing.T) (*Front, *scalekitStub) {
 		Gate: g,
 		API: &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecretsDir: g.SecretsDir,
 			SignInClient: stub.srv.Client()},
-		Node: &recorder{},
 	}, stub
 }
 

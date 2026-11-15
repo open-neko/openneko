@@ -1,6 +1,5 @@
 {
   "neko-web": 225,
-  "neko-worker": 270,
   "neko-cli": 10,
   "neko-serve": 50,
   "neko-db": 165,

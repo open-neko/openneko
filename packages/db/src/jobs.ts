@@ -34,23 +34,6 @@ export const MOVED_QUEUES = [
   "channel_deliver",
 ] as const;
 
-/**
- * Queues of removed features. The worker deletes them at boot, which also
- * drops their pending jobs and recurring schedules on upgraded installs.
- */
-export const RETIRED_QUEUES = [
-  "records_import",
-  "records_identity_link",
-  "records_salesforce_export",
-  "records_salesforce_sync",
-  "records_salesforce_sync_sweep",
-  "records_salesforce_cutover",
-  "records_backup_verify",
-  "records_ops_watch",
-  "records_watch_evaluate",
-  "records_watch_sweep",
-] as const;
-
 export type ProcessingJobPayload = {
   queuedAt?: number;
   processingJobId: string;

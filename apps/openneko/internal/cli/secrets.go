@@ -25,7 +25,7 @@ func newSecretsListCmd() *cobra.Command {
 		Short: "Show env keys stored for a section (or all sections); values never echoed",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+			if code, proxied := MaybeProxyToWeb(cmd); proxied {
 				return WithExit(code, nil)
 			}
 			store, err := secrets.Read("")
@@ -91,7 +91,7 @@ func newSecretsSetCmd() *cobra.Command {
 		Short: "Set an env value in a section (for example channel.slack)",
 		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+			if code, proxied := MaybeProxyToWeb(cmd); proxied {
 				return WithExit(code, nil)
 			}
 			section := args[0]
@@ -146,7 +146,7 @@ func newSecretsUnsetCmd() *cobra.Command {
 		Short: "Remove an env value",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+			if code, proxied := MaybeProxyToWeb(cmd); proxied {
 				return WithExit(code, nil)
 			}
 			section := args[0]

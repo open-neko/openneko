@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
@@ -104,9 +105,8 @@ func corruptSignInSecrets(t *testing.T, dir string) {
 	}
 }
 
-func newGate(t *testing.T, workerURL string) *Gate {
+func newGate(t *testing.T) *Gate {
 	return &Gate{
-		WorkerURL:     workerURL,
 		SecretsDir:    t.TempDir(),
 		SessionSecret: func() (string, error) { return testSecret, nil },
 		MarkerPath:    filepath.Join(t.TempDir(), "auth-gate.json"),
@@ -123,7 +123,7 @@ func run(g *Gate, method, target string, header map[string]string) (*httptest.Re
 }
 
 func TestSessionCookieFromNode(t *testing.T) {
-	g := newGate(t, "")
+	g := newGate(t)
 	if got := g.SessionUserID(nodeCookie); got != "user-1" {
 		t.Fatalf("got %q", got)
 	}
@@ -163,7 +163,7 @@ func TestDefaultSessionSecretMatchesNode(t *testing.T) {
 }
 
 func TestGateOpenWithoutSignIn(t *testing.T) {
-	g := newGate(t, "")
+	g := newGate(t)
 	for _, p := range []string{"/chat", "/admin/settings", "/api/v1/settings/models"} {
 		if _, ok := run(g, "GET", p, nil); !ok {
 			t.Errorf("%s refused on an install with no sign-in", p)
@@ -180,7 +180,7 @@ func TestGateOpenWithoutSignIn(t *testing.T) {
 }
 
 func TestGateWithSignIn(t *testing.T) {
-	g := newGate(t, "")
+	g := newGate(t)
 	seedSignInSecrets(t, g.SecretsDir, liveScalekit)
 
 	w, ok := run(g, "GET", "/chat/a%20b?x=1&y=%C3%A9!*()", nil)
@@ -223,7 +223,7 @@ func TestGateWithSignIn(t *testing.T) {
 }
 
 func TestGateMarker(t *testing.T) {
-	g := newGate(t, "")
+	g := newGate(t)
 	seedSignInSecrets(t, g.SecretsDir, liveScalekit)
 	if _, ok := run(g, "GET", "/chat", nil); ok {
 		t.Fatal("gate open with a live provider")
@@ -233,14 +233,14 @@ func TestGateMarker(t *testing.T) {
 		t.Fatalf("marker %q %v", raw, err)
 	}
 
-	down := newGate(t, "")
+	down := newGate(t)
 	corruptSignInSecrets(t, down.SecretsDir)
 	down.MarkerPath = g.MarkerPath
 	if _, ok := run(down, "GET", "/chat", nil); ok {
 		t.Error("secrets unreadable after sign-in was live: the gate must stay closed")
 	}
 
-	fresh := newGate(t, "")
+	fresh := newGate(t)
 	corruptSignInSecrets(t, fresh.SecretsDir)
 	if _, ok := run(fresh, "GET", "/chat", nil); !ok {
 		t.Error("secrets unreadable on an install that never had sign-in: the gate must stay open")
@@ -257,7 +257,7 @@ func TestGateMarker(t *testing.T) {
 }
 
 func TestGateReadsNodeMarker(t *testing.T) {
-	g := newGate(t, "")
+	g := newGate(t)
 	corruptSignInSecrets(t, g.SecretsDir)
 	if err := os.WriteFile(g.MarkerPath, []byte(`{"provider":{"pluginName":"entra","tenant":"t"}}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -305,7 +305,7 @@ func TestGateDatabase(t *testing.T) {
 	device("d5", "org2", "member", "eeeeeeeeeeee", "")
 	device("d6", "org", "admin", "ffffffffffff", "")
 
-	g := newGate(t, "")
+	g := newGate(t)
 	seedSignInSecrets(t, g.SecretsDir, liveScalekit)
 	g.DB = pool
 	if got := g.deviceUserID(ctx, "Bearer "+token("aaaaaaaaaaaa")); got != "member" {
@@ -348,4 +348,52 @@ func writeKeepingSignIn(store secrets.Store, dir string) error {
 		}
 	}
 	return secrets.Write(store, dir)
+}
+
+func TestGateKeepsMembersOutOnARealInstall(t *testing.T) {
+	db := testpg.Migrated(t)
+	seedOrg(t, db)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "secret-key"), []byte("install-key\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	g := &Gate{SecretsDir: dir, DB: db, PublicURL: "https://neko.example",
+		SessionSecret: func() (string, error) { return testSecret, nil },
+		MarkerPath:    filepath.Join(t.TempDir(), "auth-gate.json")}
+	a := &API{Gate: g, DB: db, Version: "5.0.0", SecretsDir: dir, PublicURL: "https://neko.example"}
+	f := &Front{App: fstest.MapFS{"index.html": {Data: []byte("app")}}, Gate: g, API: a}
+
+	if err := a.selectSignInProvider(magicLinkPlugin); err != nil {
+		t.Fatal(err)
+	}
+	from, key := "OpenNeko <signin@acme.com>", "re_live_123"
+	if err := a.setSignInProviderValues(magicLinkPlugin, map[string]*string{"MAGIC_LINK_FROM": &from, "RESEND_API_KEY": &key}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(secrets.Path(dir))
+	if err != nil || !strings.Contains(string(raw), `"PROVIDER": "enc:v1:`) {
+		t.Fatalf("the sign-in section is not encrypted: %s %v", raw, err)
+	}
+
+	member, admin := sessionCookie("member"), sessionCookie("admin")
+	check := func(stage string) {
+		t.Helper()
+		g.Reset()
+		if !g.Status(context.Background()).Live() {
+			t.Fatalf("%s: sign-in is not live", stage)
+		}
+		for _, path := range []string{"/api/v1/admin/packs", "/api/v1/admin/channels/settings", "/api/v1/settings/models"} {
+			if w := call(f, "GET", path, "", member); w.Code != 403 {
+				t.Errorf("%s: member GET %s: %d", stage, path, w.Code)
+			}
+			if w := call(f, "GET", path, "", nil); w.Code != 302 {
+				t.Errorf("%s: anonymous GET %s: %d", stage, path, w.Code)
+			}
+		}
+	}
+	check("after sign-in setup")
+	if w := call(f, "POST", "/api/v1/admin/channels/settings", `{"channel":"telegram","values":{"TELEGRAM_BOT_TOKEN":"123:abc"}}`, admin); w.Code != 200 {
+		t.Fatalf("admin channel save: %d %s", w.Code, w.Body.String())
+	}
+	check("after a channel save")
 }

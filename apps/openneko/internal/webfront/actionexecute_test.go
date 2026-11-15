@@ -18,16 +18,9 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
-func TestActionExecuteRunsAllKindsInGoWithoutWorker(t *testing.T) {
+func TestActionExecuteRunsAllKindsInGo(t *testing.T) {
 	db := testpg.Migrated(t)
 	seedOrg(t, db)
-	var workerCalls int
-	worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		workerCalls++
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer worker.Close()
-
 	var webhookBody, webhookHeader string
 	hookSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
@@ -40,7 +33,7 @@ func TestActionExecuteRunsAllKindsInGoWithoutWorker(t *testing.T) {
 	defer hookSrv.Close()
 	allowLoopbackWebhooks(t)
 
-	a := &API{Gate: &Gate{WorkerURL: worker.URL}, DB: db}
+	a := &API{Gate: &Gate{}, DB: db}
 	seed(t, db, `insert into action_request (id, org_id, scope, kind, status, payload) values
 		('aaaaaaaa-0000-4000-8000-000000000001', 'org', 'external', 'send_webhook', 'approved', $1),
 		('aaaaaaaa-0000-4000-8000-000000000002', 'org', 'external', 'shop.refund', 'approved', '{}')`,
@@ -48,9 +41,6 @@ func TestActionExecuteRunsAllKindsInGoWithoutWorker(t *testing.T) {
 
 	if err := a.ActionExecute(t.Context(), "org", "aaaaaaaa-0000-4000-8000-000000000001"); err != nil {
 		t.Fatal(err)
-	}
-	if workerCalls != 0 {
-		t.Fatalf("worker received %d calls, expected 0", workerCalls)
 	}
 	if webhookBody != `{"hello":"world"}` || webhookHeader != "yes" {
 		t.Fatalf("webhook got body=%q header=%q", webhookBody, webhookHeader)
@@ -68,11 +58,8 @@ func TestActionExecuteRunsAllKindsInGoWithoutWorker(t *testing.T) {
 		t.Fatalf("unsupported webhook method: %s", got)
 	}
 
-	// Unknown pack kind and eval-only kinds fail in Go in release mode without calling the worker.
+	// Unknown pack kind and eval-only kinds fail in Go in release mode.
 	_ = a.ActionExecute(t.Context(), "org", "aaaaaaaa-0000-4000-8000-000000000002")
-	if workerCalls != 0 {
-		t.Fatalf("a pack kind went to the worker: %d", workerCalls)
-	}
 	if got := rowText(t, db, `select r.status || '|' || e.status || '|' || coalesce(e.error, '') from action_request r join action_execution e on e.action_request_id = r.id where r.id = 'aaaaaaaa-0000-4000-8000-000000000002'`); got != `failed|failed|no adapter registered for kind "shop.refund"` {
 		t.Fatalf("pack kind without a definition: %s", got)
 	}

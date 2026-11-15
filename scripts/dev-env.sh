@@ -1,4 +1,4 @@
-# Environment for host web and worker processes against `pnpm dev:up`.
+# Environment for host web and serve processes against `pnpm dev:up`.
 # Source from the repository root: `. scripts/dev-env.sh`.
 #
 # OPENNEKO_DEV_CONFIG_HOME: config home for OpenNeko state
@@ -39,4 +39,3 @@ export OPENNEKO_SERVE_SOCKET="${OPENNEKO_SERVE_SOCKET:-$OPENNEKO_DEV_STATE/run/s
 export OPENNEKO_AGENT_RUNS_DIR="${OPENNEKO_AGENT_RUNS_DIR:-$OPENNEKO_DEV_STATE/agent-runs}"
 
 export OPENNEKO_PUBLIC_URL="${OPENNEKO_PUBLIC_URL:-http://localhost:${OPENNEKO_PORT:-3000}}"
-export WORKER_ADMIN_URL="${WORKER_ADMIN_URL:-http://127.0.0.1:4100}"

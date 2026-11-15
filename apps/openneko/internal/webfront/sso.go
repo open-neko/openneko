@@ -1,7 +1,6 @@
 package webfront
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -10,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -25,8 +23,6 @@ const (
 	sessionTTLSeconds = 12 * 60 * 60
 	stateTTLSeconds   = 10 * 60
 	beginTimeout      = 45 * time.Second
-	completeTimeout   = 30 * time.Second
-	workerReplyLimit  = 1 << 20
 )
 
 type providerInfo struct {
@@ -252,71 +248,6 @@ func (a *API) readAndClearState(w http.ResponseWriter, r *http.Request) (state, 
 		returnPath = string(decoded)
 	}
 	return payload[:pipe], returnPath, true
-}
-
-func (a *API) workerCall(ctx context.Context, path string, timeout time.Duration, what string, body, out any) error {
-	raw, err := json.Marshal(body)
-	if err != nil {
-		return err
-	}
-	status, reply, err := a.workerDo(ctx, http.MethodPost, path, timeout, raw)
-	if err != nil {
-		log.Printf("%s: %v", what, err)
-		return fmt.Errorf("%s failed: the worker did not answer", what)
-	}
-	if status < 200 || status > 299 {
-		text := string(reply)
-		if text == "" {
-			text = http.StatusText(status)
-		}
-		return fmt.Errorf("%s failed (%d): %s", what, status, text)
-	}
-	if err := json.Unmarshal(reply, out); err != nil {
-		return fmt.Errorf("%s failed: %w", what, err)
-	}
-	return nil
-}
-
-func (a *API) workerDo(ctx context.Context, method, path string, timeout time.Duration, body []byte) (int, []byte, error) {
-	var header http.Header
-	if body != nil {
-		header = http.Header{"Content-Type": {"application/json"}}
-	}
-	return a.workerSend(ctx, method, path, timeout, header, body)
-}
-
-func (a *API) workerSend(ctx context.Context, method, path string, timeout time.Duration, header http.Header, body []byte) (int, []byte, error) {
-	base := strings.TrimRight(a.Gate.WorkerURL, "/")
-	if base == "" {
-		base = "http://127.0.0.1:4100"
-	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	var reader io.Reader
-	if body != nil {
-		reader = bytes.NewReader(body)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, base+path, reader)
-	if err != nil {
-		return 0, nil, err
-	}
-	for k, v := range header {
-		req.Header[k] = v
-	}
-	client := a.Gate.Client
-	if client == nil {
-		client = http.DefaultClient
-	}
-	res, err := client.Do(req)
-	if err != nil {
-		return 0, nil, err
-	}
-	defer res.Body.Close()
-	reply, err := io.ReadAll(io.LimitReader(res.Body, workerReplyLimit))
-	if err != nil {
-		return 0, nil, err
-	}
-	return res.StatusCode, reply, nil
 }
 
 func parseIdentity(raw json.RawMessage) (identity, error) {

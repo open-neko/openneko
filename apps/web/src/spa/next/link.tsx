@@ -1,5 +1,5 @@
 import { forwardRef, type AnchorHTMLAttributes, type MouseEvent } from "react";
-import { Link as RouterLink } from "react-router";
+import { Link as RouterLink, useInRouterContext } from "react-router";
 
 type Href = string | { pathname?: string | null; query?: Record<string, string | number | boolean | undefined>; hash?: string | null };
 
@@ -28,8 +28,9 @@ const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link(
   { href, replace, scroll, prefetch, onNavigate, onClick, ...rest },
   ref,
 ) {
+  const inRouter = useInRouterContext();
   const to = hrefToString(href);
-  if (isDocumentHref(to)) return <a ref={ref} href={to} onClick={onClick} {...rest} />;
+  if (!inRouter || isDocumentHref(to)) return <a ref={ref} href={to} onClick={onClick} {...rest} />;
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(event);
     if (event.defaultPrevented || !onNavigate) return;

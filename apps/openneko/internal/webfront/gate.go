@@ -43,7 +43,6 @@ var (
 // server: it reads the signed session cookie or a device token and the
 // Administrators membership.
 type Gate struct {
-	WorkerURL  string
 	SecretsDir string
 	// PublicURL overrides OPENNEKO_PUBLIC_URL; tests set it.
 	PublicURL string
@@ -52,7 +51,6 @@ type Gate struct {
 	// OPENNEKO_SESSION_SECRET or derives it from the secret-key file.
 	SessionSecret func() (string, error)
 	MarkerPath    string
-	Client        *http.Client
 	Now           func() time.Time
 
 	mu       sync.Mutex
@@ -67,8 +65,8 @@ type providerProbe struct {
 	at     time.Time
 }
 
-// AuthStatus is the worker's sign-in answer. Provider holds the provider
-// object as the worker sent it, or nil when sign-in is off.
+// AuthStatus is the sign-in answer. Provider holds the provider object, or
+// nil when sign-in is off.
 type AuthStatus struct {
 	Provider json.RawMessage
 	Pending  json.RawMessage
@@ -301,9 +299,9 @@ func (g *Gate) signInLive(ctx context.Context) bool {
 	return g.Status(ctx).Live()
 }
 
-// Status asks the worker which sign-in provider is live, at most once a
-// second. When the worker does not answer, the last answer in the marker
-// file decides, as in apps/web/src/lib/auth.ts.
+// Status reads which sign-in provider is live, at most once a second. When
+// the secrets file cannot be read, the last answer in the marker file
+// decides, as in apps/web/src/lib/auth.ts.
 func (g *Gate) Status(ctx context.Context) AuthStatus {
 	now := g.now()
 	g.mu.Lock()

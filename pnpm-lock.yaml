@@ -26,18 +26,9 @@ importers:
       '@neko/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@neko/interaction':
-        specifier: workspace:*
-        version: link:../../packages/interaction
       '@neko/llm':
         specifier: workspace:*
         version: link:../../packages/llm
-      '@neko/secret-crypt':
-        specifier: workspace:*
-        version: link:../../packages/secret-crypt
-      '@neko/telemetry':
-        specifier: workspace:*
-        version: link:../../packages/telemetry
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -127,61 +118,6 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
 
-  apps/worker:
-    dependencies:
-      '@modelcontextprotocol/sdk':
-        specifier: 1.29.0
-        version: 1.29.0(zod@4.3.6)
-      '@neko/db':
-        specifier: workspace:*
-        version: link:../../packages/db
-      '@neko/evals':
-        specifier: workspace:*
-        version: link:../../packages/evals
-      '@neko/interaction':
-        specifier: workspace:*
-        version: link:../../packages/interaction
-      '@neko/llm':
-        specifier: workspace:*
-        version: link:../../packages/llm
-      '@neko/secrets':
-        specifier: workspace:*
-        version: link:../../packages/secrets
-      '@neko/telemetry':
-        specifier: workspace:*
-        version: link:../../packages/telemetry
-      dotenv:
-        specifier: ^17.4.1
-        version: 17.4.2
-      pg:
-        specifier: ^8.20.0
-        version: 8.20.0
-      pg-boss:
-        specifier: ^10.1.5
-        version: 10.4.2
-      tsx:
-        specifier: ^4.19.2
-        version: 4.21.0
-      yaml:
-        specifier: ^2.8.1
-        version: 2.9.0
-    devDependencies:
-      '@types/node':
-        specifier: ^20
-        version: 20.19.39
-      '@types/pg':
-        specifier: ^8.20.0
-        version: 8.20.0
-      esbuild:
-        specifier: 0.27.7
-        version: 0.27.7
-      typescript:
-        specifier: ^5
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
-
   packages/avatars:
     devDependencies:
       '@types/react':
@@ -249,9 +185,21 @@ importers:
 
   packages/evals:
     dependencies:
+      '@neko/db':
+        specifier: workspace:*
+        version: link:../db
+      '@neko/llm':
+        specifier: workspace:*
+        version: link:../llm
       '@neko/telemetry':
         specifier: workspace:*
         version: link:../telemetry
+      pg:
+        specifier: ^8.20.0
+        version: 8.20.0
+      pg-boss:
+        specifier: ^10.1.5
+        version: 10.4.2
       yaml:
         specifier: ^2.8.1
         version: 2.9.0
@@ -262,21 +210,12 @@ importers:
       '@types/node':
         specifier: ^20
         version: 20.19.39
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
       tsx:
         specifier: ^4.19.2
         version: 4.21.0
-      typescript:
-        specifier: ^5
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
-
-  packages/interaction:
-    devDependencies:
-      '@types/node':
-        specifier: ^20
-        version: 20.19.39
       typescript:
         specifier: ^5
         version: 5.9.3
@@ -292,15 +231,9 @@ importers:
       '@neko/db':
         specifier: workspace:*
         version: link:../db
-      '@neko/interaction':
-        specifier: workspace:*
-        version: link:../interaction
       '@neko/secret-crypt':
         specifier: workspace:*
         version: link:../secret-crypt
-      '@neko/secrets':
-        specifier: workspace:*
-        version: link:../secrets
       '@neko/telemetry':
         specifier: workspace:*
         version: link:../telemetry
@@ -334,22 +267,6 @@ importers:
         version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
 
   packages/secret-crypt:
-    devDependencies:
-      '@types/node':
-        specifier: ^20
-        version: 20.19.39
-      typescript:
-        specifier: ^5
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
-
-  packages/secrets:
-    dependencies:
-      '@neko/secret-crypt':
-        specifier: workspace:*
-        version: link:../secret-crypt
     devDependencies:
       '@types/node':
         specifier: ^20
@@ -2800,10 +2717,6 @@ packages:
   doctrine@2.1.0:
     resolution: {integrity: sha512-35mSku4ZXK0vfCuHEDAwt55dg2jNajHZ1odvF+8SSr82EsZY4QmXfuWso8oEd8zRhVObSN18aM0CjSdoBX7zIw==}
     engines: {node: '>=0.10.0'}
-
-  dotenv@17.4.2:
-    resolution: {integrity: sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==}
-    engines: {node: '>=12'}
 
   drizzle-orm@0.36.4:
     resolution: {integrity: sha512-1OZY3PXD7BR00Gl61UUOFihslDldfH4NFRH2MbP54Yxi0G/PKn4HfO65JYZ7c16DeP3SpM3Aw+VXVG9j6CRSXA==}
@@ -7175,8 +7088,6 @@ snapshots:
   doctrine@2.1.0:
     dependencies:
       esutils: 2.0.3
-
-  dotenv@17.4.2: {}
 
   drizzle-orm@0.36.4(@opentelemetry/api@1.9.1)(@types/pg@8.20.0)(@types/react@19.2.14)(mysql2@3.23.4(@types/node@20.19.39))(pg@8.20.0)(react@19.2.4):
     optionalDependencies:
