@@ -11,22 +11,71 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/secrets"
 )
 
+type fakeRunClock struct {
+	mu     sync.Mutex
+	now    time.Duration
+	timers []*fakeRunTimer
+}
+
+type fakeRunTimer struct {
+	c       *fakeRunClock
+	at      time.Duration
+	f       func()
+	stopped bool
+}
+
+func (t *fakeRunTimer) Stop() bool {
+	t.c.mu.Lock()
+	defer t.c.mu.Unlock()
+	was := !t.stopped
+	t.stopped = true
+	return was
+}
+
+func (c *fakeRunClock) afterFunc(d time.Duration, f func()) runEventTimer {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t := &fakeRunTimer{c: c, at: c.now + d, f: f}
+	c.timers = append(c.timers, t)
+	return t
+}
+
+func (c *fakeRunClock) advance(d time.Duration) {
+	c.mu.Lock()
+	c.now += d
+	var due []*fakeRunTimer
+	kept := c.timers[:0]
+	for _, t := range c.timers {
+		switch {
+		case t.stopped:
+		case t.at <= c.now:
+			t.stopped = true
+			due = append(due, t)
+		default:
+			kept = append(kept, t)
+		}
+	}
+	c.timers = kept
+	c.mu.Unlock()
+	for _, t := range due {
+		t.f()
+	}
+}
+
 func TestRunEventStoreFlushesDuringASteadyStream(t *testing.T) {
 	f, _, _ := chatTurnFront(t)
 	a := f.API
 	ctx := context.Background()
 	cancelRun := a.runs.register(runAdmin, "org", threadMine, func(error) {})
 	t.Cleanup(func() { a.runs.unregister(runAdmin, cancelRun) })
-	var mu sync.Mutex
-	var arrivals []time.Time
+	clock := &fakeRunClock{}
+	var arrivals []time.Duration
 	var text strings.Builder
 	unsubscribe, ok := a.subscribeRun(runAdmin, func(event any, _ int64) {
 		if jsGet(event, "type") != "message" {
 			return
 		}
-		mu.Lock()
-		defer mu.Unlock()
-		arrivals = append(arrivals, time.Now())
+		arrivals = append(arrivals, clock.now)
 		text.WriteString(jsGet(event, "content").(string))
 	})
 	if !ok {
@@ -35,7 +84,7 @@ func TestRunEventStoreFlushesDuringASteadyStream(t *testing.T) {
 	defer unsubscribe()
 
 	s := a.newRunEventStore("org", threadMine, runAdmin)
-	start := time.Now()
+	s.afterFunc = clock.afterFunc
 	var want strings.Builder
 	for i := 0; i < 100; i++ {
 		word := "word" + string(rune('a'+i%26)) + " "
@@ -43,27 +92,123 @@ func TestRunEventStoreFlushesDuringASteadyStream(t *testing.T) {
 		if err := s.emit(ctx, jsObjOf("type", "message", "role", "assistant", "content", word)); err != nil {
 			t.Fatal(err)
 		}
-		time.Sleep(20 * time.Millisecond)
+		clock.advance(20 * time.Millisecond)
 	}
-	end := time.Now()
-	mu.Lock()
 	before := len(arrivals)
-	var first time.Duration
-	if before > 0 {
-		first = arrivals[0].Sub(start)
-	}
-	mu.Unlock()
 	if err := s.finalize(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if before < 10 {
-		t.Fatalf("the text grew %d times in %s of steady deltas", before, end.Sub(start).Round(time.Millisecond))
-	}
-	if first > 500*time.Millisecond {
-		t.Fatalf("the first text arrived after %s", first)
+	if before != 20 || arrivals[0] != 100*time.Millisecond {
+		t.Fatalf("the text grew %d times in 2s of steady deltas, first at %v", before, arrivals)
 	}
 	if text.String() != want.String() {
 		t.Fatalf("text %q", text.String())
+	}
+}
+
+func plantRunSecret(t *testing.T, a *API, key string) {
+	t.Helper()
+	a.SecretsDir = t.TempDir()
+	if err := secrets.Write(secrets.Store{"pack.shop": {"API_KEY": key}}, a.SecretsDir); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunEventStoreHoldsASecretTailAcrossOtherEvents(t *testing.T) {
+	const key = "sk-planted-0123456789abcdef"
+	f, db, _ := chatTurnFront(t)
+	a := f.API
+	ctx := context.Background()
+	plantRunSecret(t, a, key)
+	s := a.newRunEventStore("org", threadMine, runAdmin)
+	s.afterFunc = (&fakeRunClock{}).afterFunc
+	note := func(content string) *jsObj {
+		return jsObjOf("type", "progress", "id", "ax-summary-1", "content", content, "source", "provider_summary")
+	}
+	answer := func(content string) *jsObj {
+		return jsObjOf("type", "message", "role", "assistant", "content", content)
+	}
+	for _, e := range []*jsObj{
+		note("I see " + key[:6]),
+		jsObjOf("type", "usage", "usage", jsObjOf()),
+		note(key[6:] + " in the config."),
+		answer("The key is " + key[:9]),
+		jsObjOf("type", "status", "message", "Checking"),
+		answer(key[9:14]),
+		jsObjOf("type", "usage", "usage", jsObjOf()),
+		answer(key[14:20]),
+		jsObjOf("type", "card_pending"),
+		answer(key[20:] + " here."),
+	} {
+		if err := s.emit(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.finalize(ctx); err != nil {
+		t.Fatal(err)
+	}
+	rows := rowText(t, db, `select string_agg(coalesce(payload->>'content', ''), '|' order by id) from work_run_event where run_id = $1`, runAdmin)
+	for _, part := range strings.Split(rows, "|") {
+		for i := 0; i+4 <= len(key); i++ {
+			if strings.Contains(part, key[i:i+4]) {
+				t.Fatalf("a row holds %q of the key: %q", key[i:i+4], rows)
+			}
+		}
+	}
+	notes := rowText(t, db, `select string_agg(payload->>'content', '' order by id) from work_run_event where run_id = $1 and kind = 'progress'`, runAdmin)
+	text := rowText(t, db, `select string_agg(payload->>'content', '' order by id) from work_run_event where run_id = $1 and kind = 'message'`, runAdmin)
+	if notes != "I see [REDACTED] in the config." || text != "The key is [REDACTED] here." {
+		t.Fatalf("notes %q, text %q", notes, text)
+	}
+}
+
+func TestRunEventStoreDropsTheHeldTailOnAReset(t *testing.T) {
+	const key = "sk-planted-0123456789abcdef"
+	f, db, _ := chatTurnFront(t)
+	a := f.API
+	ctx := context.Background()
+	plantRunSecret(t, a, key)
+	s := a.newRunEventStore("org", threadMine, runAdmin)
+	s.afterFunc = (&fakeRunClock{}).afterFunc
+	for _, e := range []*jsObj{
+		jsObjOf("type", "message", "role", "assistant", "content", "Old answer sk-pl"),
+		jsObjOf("type", "status", "message", "Again"),
+		jsObjOf("type", "answer_reset"),
+		jsObjOf("type", "message", "role", "assistant", "content", "New answer."),
+	} {
+		if err := s.emit(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.finalize(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got := rowText(t, db, `select string_agg(kind || ' ' || coalesce(payload->>'content', payload->>'message', ''), '|' order by id) from work_run_event where run_id = $1`, runAdmin)
+	if got != "message Old answer |status Again|answer_reset |message New answer." {
+		t.Fatalf("stored %q", got)
+	}
+}
+
+func TestRunEventStoreKeepsTextWhenATimedStoreFails(t *testing.T) {
+	f, db, _ := chatTurnFront(t)
+	a := f.API
+	ctx := context.Background()
+	clock := &fakeRunClock{}
+	s := a.newRunEventStore("org", threadMine, "not-a-uuid")
+	s.afterFunc = clock.afterFunc
+	if err := s.emit(ctx, jsObjOf("type", "message", "role", "assistant", "content", "Revenue rose ")); err != nil {
+		t.Fatal(err)
+	}
+	clock.advance(time.Second)
+	s.runID = runAdmin
+	if err := s.emit(ctx, jsObjOf("type", "message", "role", "assistant", "content", "by 2%.")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.finalize(ctx); err == nil {
+		t.Fatal("the failed store was not reported")
+	}
+	if got := rowText(t, db, `select string_agg(payload->>'content', '|' order by id) from work_run_event where run_id = $1`, runAdmin); got != "Revenue rose by 2%." {
+		t.Fatalf("stored %q", got)
 	}
 }
 
