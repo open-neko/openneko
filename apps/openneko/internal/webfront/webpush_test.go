@@ -276,7 +276,6 @@ func TestWebPushSubscriptionsVAPIDAndThreeEvents(t *testing.T) {
 	}
 
 	// 1. Event: an approval waits ("approval_waiting"), created via r.createActionRequest on the Go path.
-	f.Gate.WorkerURL = ""
 	rt := f.API.runTools(turnBinding{OrgID: "org", Kind: "work"})
 	createdGoAR, err := rt.createActionRequest(ctx, jsObjOf(
 		"orgId", "org",

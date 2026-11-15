@@ -32,7 +32,7 @@ if [ -n "${OPENNEKO_DEV_STACK:-}" ]; then
 else
   running_projects="$(
     docker ps \
-      --filter label=com.docker.compose.service=worker \
+      --filter label=com.docker.compose.service=openneko-serve \
       --format '{{.Label "com.docker.compose.project"}}' |
       sed '/^$/d' |
       sort -u
@@ -86,12 +86,10 @@ resolve_endpoint() {
   fi
 }
 
-worker_container="${container_prefix}-worker-1"
 metadata_db_container="${container_prefix}-neko-db-1"
 subscriptions_container="${container_prefix}-openneko-serve-1"
 
 for required_container in \
-  "$worker_container" \
   "$metadata_db_container" \
   "$subscriptions_container"
 do
@@ -139,19 +137,6 @@ export NEKO_PG_PORT="$endpoint_port"
 
 export OPENNEKO_PG_ENV_OVERRIDE=1
 
-relay_port_file="$state_root/tmp/worker-relay.port"
-rm -f "$relay_port_file"
-node scripts/worker-socket-relay.mjs "$worker_container" >"$relay_port_file" &
-relay_tries=0
-until [ -s "$relay_port_file" ]; do
-  relay_tries=$((relay_tries + 1))
-  if [ "$relay_tries" -gt 50 ]; then
-    echo "The worker socket relay did not start." >&2
-    exit 1
-  fi
-  sleep 0.1
-done
-export WORKER_ADMIN_URL="http://127.0.0.1:$(cat "$relay_port_file")"
 resolve_endpoint "$subscriptions_container" 8089
 export OPENNEKO_GRAPHJIN_URL="http://${endpoint_host}:${endpoint_port}"
 export OPENNEKO_GRAPHJIN_CONFIG="$state_root/config/graphjin/agentic.yml"

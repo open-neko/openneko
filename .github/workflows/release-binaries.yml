@@ -42,14 +42,6 @@ jobs:
             target: web
             platform: linux/arm64
             runner: ubuntu-24.04-arm
-          - image: neko-worker
-            target: worker
-            platform: linux/amd64
-            runner: ubuntu-22.04
-          - image: neko-worker
-            target: worker
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
           - image: neko-cli
             target: neko-cli
             platform: linux/amd64
@@ -158,7 +150,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [neko-web, neko-worker, neko-cli, neko-serve, neko-db]
+        image: [neko-web, neko-cli, neko-serve, neko-db]
     steps:
       - name: Resolve release tag
         id: tag
@@ -240,7 +232,7 @@ jobs:
             "${{ steps.tag.outputs.value }}" \
             "${{ matrix.arch }}" \
             "$MAX_MIB" \
-            neko-web neko-worker neko-cli neko-serve \
+            neko-web neko-cli neko-serve \
             neko-db postgres:16-alpine
 
   goreleaser:

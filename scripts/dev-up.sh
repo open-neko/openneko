@@ -1,5 +1,5 @@
 #!/bin/sh
-# Starts the development backing services in Docker. Web and worker run on
+# Starts the development backing services in Docker. Web and serve run on
 # the host with hot reload: `pnpm dev`.
 set -eu
 
@@ -40,4 +40,4 @@ compose up -d \
   openneko-serve \
   adventureworks-simulator adventureworks-scenario-injector
 
-echo "Backing services are up. Start web and worker with: pnpm dev"
+echo "Backing services are up. Start web and serve with: pnpm dev"

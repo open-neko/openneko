@@ -21,7 +21,7 @@ var runEvalProcess = func(
 	if err != nil {
 		return 1, errors.New("eval requires pnpm on PATH (run from an OpenNeko source checkout)")
 	}
-	child := exec.CommandContext(ctx, path, append([]string{"--filter", "@neko/worker", "eval"}, args...)...)
+	child := exec.CommandContext(ctx, path, append([]string{"--filter", "@neko/evals", "eval"}, args...)...)
 	workspaceRoot := os.Getenv("OPENNEKO_WORKSPACE_ROOT")
 	if workspaceRoot == "" {
 		workspaceRoot, err = os.Getwd()

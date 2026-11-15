@@ -81,7 +81,7 @@ func parsedObj(t *testing.T, raw []byte) *jsObj {
 func serviceHealthBundle(t *testing.T) *packs.Bundle {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "service-health")
-	if err := os.CopyFS(root, os.DirFS(filepath.Join("..", "..", "..", "worker", "test", "fixtures", "service-health"))); err != nil {
+	if err := os.CopyFS(root, os.DirFS(filepath.Join("..", "packs", "testdata", "service-health"))); err != nil {
 		t.Fatal(err)
 	}
 	for _, dir := range []string{"actions", "policies"} {

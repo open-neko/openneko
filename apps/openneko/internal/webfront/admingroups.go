@@ -15,8 +15,6 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-const workerAdminTimeout = 120 * time.Second
-
 type groupError struct{ code, message string }
 
 func (e *groupError) Error() string { return e.message }
@@ -54,28 +52,6 @@ func readObject(r *http.Request) map[string]any {
 	body, _ := readBody(r)
 	m, _ := body.(map[string]any)
 	return m
-}
-
-// relayWorker is requestWorker() with the route's catch: any failure gives
-// 503 "worker is unavailable".
-func (a *API) relayWorker(w http.ResponseWriter, r *http.Request, path string, body []byte) {
-	method := http.MethodGet
-	if body != nil {
-		method = http.MethodPost
-	}
-	status, reply, err := a.workerDo(r.Context(), method, path, workerAdminTimeout, body)
-	if err != nil {
-		sendError(w, http.StatusServiceUnavailable, "worker is unavailable")
-		return
-	}
-	parsed, err := jsParse(reply)
-	if err != nil {
-		sendError(w, status, fmt.Sprintf("Worker returned HTTP %d", status))
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_, _ = w.Write([]byte(jsStringify(parsed, false)))
 }
 
 func (a *API) directoryStatus(w http.ResponseWriter, r *http.Request) {

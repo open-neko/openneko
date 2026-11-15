@@ -14,7 +14,7 @@ import (
 
 func servicePackZip(t *testing.T, mutate func(name string, data []byte) []byte) string {
 	t.Helper()
-	src := filepath.Join("..", "..", "..", "..", "apps", "worker", "test", "fixtures", "service-health")
+	src := filepath.Join("..", "packs", "testdata", "service-health")
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
 	add := func(name string, data []byte) {

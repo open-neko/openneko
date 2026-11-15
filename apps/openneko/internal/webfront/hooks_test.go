@@ -35,10 +35,9 @@ func hooksFront(t *testing.T) (*Front, *pgxpool.Pool, *setupWorker) {
 		($2, 'org', $4, $5, null, 3, true),
 		($3, 'org', $4, $5, null, 1000, false)`, hookID, hookOpen, hookOff, wfHeld, hex.EncodeToString(digest[:]))
 	seed(t, db, `delete from workflow_api_rate_bucket`)
-	worker := &setupWorker{status: `{"provider":{"pluginName":"scalekit"}}`, reply: map[string]string{"/admin/events/external": `{"matched":0}`}}
+	worker := &setupWorker{status: `{"provider":{"pluginName":"scalekit"}}`, reply: map[string]string{}}
 	srv := httptest.NewServer(worker)
 	t.Cleanup(srv.Close)
-	f.Gate.WorkerURL = srv.URL
 	return f, db, worker
 }
 

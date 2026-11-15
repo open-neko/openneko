@@ -347,7 +347,6 @@ func TestWebAdminSocketIsOwnerOnly(t *testing.T) {
 }
 
 func TestPackCommandsNeedNoWorker(t *testing.T) {
-	t.Setenv("WORKER_ADMIN_URL", "unix:///nonexistent/worker.sock")
 	output, err := runPackCommand(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/admin/packs/magento/inspect" || r.URL.Query().Get("version") != "" {
 			t.Fatalf("inspect path %s", r.URL)

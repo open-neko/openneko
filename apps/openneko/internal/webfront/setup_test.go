@@ -56,7 +56,7 @@ func newSetupFront(t *testing.T, status string, db *pgxpool.Pool) (*Front, *setu
 	wk := &setupWorker{status: status, reply: map[string]string{}}
 	srv := httptest.NewServer(wk)
 	t.Cleanup(srv.Close)
-	g := newGate(t, srv.URL)
+	g := newGate(t)
 	g.PublicURL = "https://neko.example"
 	seedSignInSecrets(t, g.SecretsDir, status)
 	g.DB = db
@@ -64,7 +64,6 @@ func newSetupFront(t *testing.T, status string, db *pgxpool.Pool) (*Front, *setu
 		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
 		Gate: g,
 		API:  &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecretsDir: g.SecretsDir},
-		Node: &recorder{},
 	}, wk
 }
 
@@ -358,7 +357,7 @@ func TestOriginOf(t *testing.T) {
 const goPackState = "eyJjb2RlVmVyaWZpZXIiOiJjdiIsImNvbm5lY3Rpb25LZXkiOiJhY2NvdW50IiwiZXhwaXJlc0F0Ijo0MTAyNDQ0ODAwMDAwLCJvcmdJZCI6Im9yZyIsInBhY2tJZCI6ImRyaXZlIiwicGVyc29uYWwiOnRydWUsInJldHVyblBhdGgiOiIvaW50ZWdyYXRpb25zIiwic3RhdGUiOiJzdCIsInVzZXJJZCI6InUxIn0.yI0caLBmra1sp8q3_hh_YfWHoSNoq6t7V4o_xCev_d8"
 
 func TestPackStateCookieForNode(t *testing.T) {
-	a := &API{Gate: newGate(t, "")}
+	a := &API{Gate: newGate(t)}
 	got, err := a.packStateCookie(map[string]any{"packId": "drive", "connectionKey": "account", "state": "st", "codeVerifier": "cv",
 		"returnPath": "/integrations", "orgId": "org", "userId": "u1", "personal": true, "expiresAt": int64(4102444800000)})
 	if err != nil || got != goPackState {

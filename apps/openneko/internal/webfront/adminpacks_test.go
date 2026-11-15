@@ -47,14 +47,13 @@ func packFront(t *testing.T) (*Front, *packWorker) {
 	wk := &packWorker{status: 200, reply: `{"ok":true}`}
 	srv := httptest.NewServer(wk)
 	t.Cleanup(srv.Close)
-	g := newGate(t, srv.URL)
+	g := newGate(t)
 	seedSignInSecrets(t, g.SecretsDir, liveScalekit)
 	g.DB = db
 	return &Front{
 		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
 		Gate: g,
 		API:  &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecretsDir: g.SecretsDir},
-		Node: &recorder{},
 	}, wk
 }
 
@@ -164,7 +163,6 @@ func TestMagentoStoreManagement(t *testing.T) {
 	admin := sessionCookie("admin")
 	ctx := context.Background()
 	db := f.API.DB
-	f.API.Gate.WorkerURL = "http://127.0.0.1:1"
 
 	seed(t, db, `insert into magento_store_control (org_id, domain, risk_class, enabled, auto_execute, caps, scope) values
 		('org', 'catalog', 2, true, false, '{"maxRowsPerChangeset":50,"maxDailyAutoActions":10,"skuCooldownSeconds":3600}'::jsonb, '{"storeCode":"all"}'::jsonb),

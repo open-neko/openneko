@@ -99,10 +99,10 @@ services:
     # Trickles realistic sales orders into the AdventureWorks DB on a
     # schedule so the workspace reacts during a trial (briefing numbers
     # drift, cron workflows fire, runs accumulate). Set AW_SIM_ENABLED=0
-    # to disable. Uses the worker image because psql + the tick script
+    # to disable. Uses the web image because psql + the tick script
     # are already baked in at /app/db/seeds/dev/aw-sim-tick.sql; no
     # bind-mount of repo files needed for the packaged install.
-    image: ghcr.io/open-neko/neko-worker:${OPENNEKO_VERSION:-latest}
+    image: ghcr.io/open-neko/neko-web:${OPENNEKO_VERSION:-latest}
     restart: unless-stopped
     depends_on:
       adventureworks-init:
@@ -139,10 +139,10 @@ services:
     # schema, then runs advance-dates.sql so demo dates land on or after
     # CURRENT_DATE (idempotent — gated to once per 12 hours via
     # trial_sim.state.advance_dates_at). Then loops the scenario
-    # scheduler. Set TRIAL_SIM_ENABLED=0 to disable. Uses the worker
+    # scheduler. Set TRIAL_SIM_ENABLED=0 to disable. Uses the web
     # image because all scripts + scenarios + psql are baked at
     # /app/db/seeds/dev/.
-    image: ghcr.io/open-neko/neko-worker:${OPENNEKO_VERSION:-latest}
+    image: ghcr.io/open-neko/neko-web:${OPENNEKO_VERSION:-latest}
     restart: unless-stopped
     depends_on:
       adventureworks-init:
@@ -167,11 +167,6 @@ services:
         exec /bin/sh /app/db/seeds/dev/scenario-injector.sh loop
 
   web:
-    depends_on:
-      # The worker patches GraphJin's per-org JWT secret during startup. Wait
-      # for its first provisioning pass before serving the demo UI.
-      worker:
-        condition: service_healthy
     environment:
       # The packaged demo overrides core's neutral config with its
       # AdventureWorks source-mode config in a dedicated volume.
@@ -181,15 +176,6 @@ services:
       # the mock adapter so bundled workflows can propose Slack alerts
       # without hitting real endpoints. Flip to "false" once you're past
       # trial and have wired real webhooks.
-    volumes:
-      - graphjin-config:/graphjin-config
-
-  worker:
-    environment:
-      # Sources mode: the worker substitutes the per-org JWT secret into
-      # the seeded GraphJin config at boot (host-provision).
-      OPENNEKO_STACK_MODE: demo
-      OPENNEKO_GRAPHJIN_CONFIG: /graphjin-config/agentic.yml
     volumes:
       - graphjin-config:/graphjin-config
 

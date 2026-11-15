@@ -30,66 +30,9 @@ mkdir -p \
   "${XDG_STATE_HOME:-$HOME/.local/state}" \
   "${TMPDIR:-/tmp}"
 
-OPENNEKO_CONFIG_DIR="$CONFIG_DIR" node <<'JS'
-const crypto = require("node:crypto");
-const fs = require("node:fs");
-const path = require("node:path");
-
-const configDir = process.env.OPENNEKO_CONFIG_DIR;
-const force = process.env.OPENNEKO_FORCE_CONFIG === "1";
-const configPath = path.join(configDir, "config.json");
-const secretPath = path.join(configDir, "secret-key");
-
-function readJson(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch {
-    return {};
-  }
-}
-
-function writePrivate(file, value, flag = "w") {
-  fs.writeFileSync(file, value, { encoding: "utf8", flag });
-  fs.chmodSync(file, 0o600);
-}
-
-const envPg = {};
-if (process.env.NEKO_PG_HOST) envPg.host = process.env.NEKO_PG_HOST;
-if (process.env.NEKO_PG_PORT) envPg.port = Number(process.env.NEKO_PG_PORT);
-if (process.env.NEKO_PG_USER) envPg.user = process.env.NEKO_PG_USER;
-if (process.env.NEKO_PG_PASSWORD !== undefined) envPg.password = process.env.NEKO_PG_PASSWORD;
-if (process.env.NEKO_PG_DATABASE) envPg.database = process.env.NEKO_PG_DATABASE;
-if (process.env.NEKO_PG_SSLMODE) envPg.sslmode = process.env.NEKO_PG_SSLMODE;
-
-if (Object.keys(envPg).length > 0) {
-  const current = readJson(configPath);
-  const next = {
-    ...current,
-    pg: { ...(current.pg && typeof current.pg === "object" ? current.pg : {}) },
-  };
-
-  for (const [key, value] of Object.entries(envPg)) {
-    if (force || next.pg[key] === undefined || next.pg[key] === null || next.pg[key] === "") {
-      next.pg[key] = value;
-    }
-  }
-
-  if (JSON.stringify(current) !== JSON.stringify(next)) {
-    writePrivate(configPath, `${JSON.stringify(next, null, 2)}\n`);
-  }
-}
-
-if (force || !fs.existsSync(secretPath)) {
-  const value = process.env.NEKO_SECRET_KEY || crypto.randomBytes(32).toString("base64");
-  try {
-    writePrivate(secretPath, value, force ? "w" : "wx");
-  } catch (e) {
-    if (e.code !== "EEXIST") throw e;
-  }
-}
-JS
+openneko container-init --config-dir "$CONFIG_DIR"
 
 # Migrations: `openneko start` runs the `neko-migrate` start step before it
-# starts web and the worker. Bare-Docker users run `openneko migrate` first.
+# starts web. Bare-Docker users run `openneko migrate` first.
 
 exec "$@"

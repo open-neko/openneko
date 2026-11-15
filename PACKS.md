@@ -11,7 +11,7 @@ For contributing code, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Start from an example
 
-- [Service health](apps/worker/test/fixtures/service-health/pack.yaml) is a small
+- [Service health](apps/openneko/internal/packs/testdata/service-health/pack.yaml) is a small
   custom pack with an API connector, query, metric, workflow, watcher, and skill.
 - [Magento](packs/magento/pack.yaml) is the first-party commerce pack. Its
   [README](packs/magento/README.md) explains application-specific prerequisites.
