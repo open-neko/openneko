@@ -19,10 +19,22 @@ const (
 // WebPushArgs carries the event kind and recipient user IDs for a Web Push
 // notice. It holds no business data from the run.
 type WebPushArgs struct {
-	OrgID string   `json:"orgId"`
-	Event string   `json:"event"`
-	Users []string `json:"users,omitempty"`
+	OrgID         string   `json:"orgId"`
+	Event         string   `json:"event"`
+	Users         []string `json:"users,omitempty"`
+	Subscriptions []string `json:"subscriptions,omitempty"`
+	Retry         int      `json:"retry,omitempty"`
 }
+
+// WebPushRetryError names the subscriptions that failed. The worker retries
+// only those, so a device that took the notice does not get it again.
+type WebPushRetryError struct {
+	Subscriptions []string
+	Err           error
+}
+
+func (e *WebPushRetryError) Error() string { return e.Err.Error() }
+func (e *WebPushRetryError) Unwrap() error { return e.Err }
 
 func (WebPushArgs) Kind() string { return KindWebPush }
 
@@ -42,7 +54,28 @@ func (w *webPush) Work(ctx context.Context, job *river.Job[WebPushArgs]) error {
 	if job.Args.OrgID == "" || job.Args.Event == "" {
 		return river.JobCancel(errors.New("web_push job missing orgId or event"))
 	}
-	return w.run(ctx, job.Args)
+	err := w.run(ctx, job.Args)
+	var failed *WebPushRetryError
+	if !errors.As(err, &failed) || len(failed.Subscriptions) == 0 || job.Attempt >= job.MaxAttempts {
+		return err
+	}
+	client, cerr := river.ClientFromContextSafely[pgx.Tx](ctx)
+	if cerr != nil {
+		return err
+	}
+	next := WebPushArgs{
+		OrgID:         job.Args.OrgID,
+		Event:         job.Args.Event,
+		Subscriptions: failed.Subscriptions,
+		Retry:         job.Args.Retry + job.Attempt,
+	}
+	if _, ierr := client.Insert(ctx, next, &river.InsertOpts{
+		MaxAttempts: job.MaxAttempts - job.Attempt,
+		ScheduledAt: w.NextRetry(job),
+	}); ierr != nil {
+		return err
+	}
+	return nil
 }
 
 func (w *webPush) Timeout(*river.Job[WebPushArgs]) time.Duration {
@@ -50,7 +83,7 @@ func (w *webPush) Timeout(*river.Job[WebPushArgs]) time.Duration {
 }
 
 func (w *webPush) NextRetry(job *river.Job[WebPushArgs]) time.Time {
-	return time.Now().Add(WebPushRetryDelay << min(max(job.Attempt-1, 0), 8))
+	return time.Now().Add(WebPushRetryDelay << min(max(job.Args.Retry+job.Attempt-1, 0), 8))
 }
 
 // WebPush queues one Web Push delivery job on River.
