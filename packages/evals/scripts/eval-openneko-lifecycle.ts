@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { networkInterfaces } from "node:os";
 import { app_user, builtinGroupId, data_source, db, pool, setLocalAdministrator } from "@neko/db";
 import { dbReachable, ensureTestOrg, seedProvider } from "@neko/db/test-helpers";
 import {
@@ -587,6 +588,16 @@ async function policyMatrix(context: ScenarioContext): Promise<Record<string, un
   return policyMatrixFrom(results, decisions);
 }
 
+// openneko web refuses a webhook to a loopback address.
+export function webhookHostAddress(interfaces = networkInterfaces()): string {
+  for (const entries of Object.values(interfaces)) {
+    for (const entry of entries ?? []) {
+      if (entry.family === "IPv4" && !entry.internal && !entry.address.startsWith("169.254.")) return entry.address;
+    }
+  }
+  throw new EvalEnvironmentError("the action lifecycle case needs an IPv4 address that is not loopback or link-local");
+}
+
 async function actionLifecycle(context: ScenarioContext): Promise<Record<string, unknown>> {
   const { episode, orgId } = context;
   const org = await provisionOrg({ ...context, grants: ["send_webhook"] });
@@ -606,7 +617,8 @@ async function actionLifecycle(context: ScenarioContext): Promise<Record<string,
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ updated: true }));
   });
-  await new Promise<void>((resolve) => webhookServer.listen(0, "127.0.0.1", () => resolve()));
+  const webhookHost = webhookHostAddress();
+  await new Promise<void>((resolve) => webhookServer.listen(0, webhookHost, () => resolve()));
   const webhookPort = (webhookServer.address() as { port: number }).port;
   try {
     const policyRecord = await createActionPolicy({
@@ -617,7 +629,7 @@ async function actionLifecycle(context: ScenarioContext): Promise<Record<string,
       appliesToScopes: ["external"],
       mode: "approval_required",
       riskThresholdAutoApprove: null,
-      allowedTargets: { patterns: [`http://127.0.0.1:${webhookPort}/account-*`] },
+      allowedTargets: { patterns: [`http://${webhookHost}:${webhookPort}/account-*`] },
       deniedTargets: null,
       limits: {},
       approverRole: "admin",
@@ -635,8 +647,8 @@ async function actionLifecycle(context: ScenarioContext): Promise<Record<string,
           await model.call("neko_action", "request", {
             scope: "external",
             kind: "send_webhook",
-            target: `http://127.0.0.1:${webhookPort}/${target}`,
-            payload: { url: `http://127.0.0.1:${webhookPort}/${target}`, body: { target, status } },
+            target: `http://${webhookHost}:${webhookPort}/${target}`,
+            payload: { url: `http://${webhookHost}:${webhookPort}/${target}`, body: { target, status } },
             risk_level: "medium",
             summary: `Set ${target} to ${status}`,
           }),
@@ -815,11 +827,7 @@ export function createOpenNekoLifecycleDriver(
       }
       source.clear();
       const orgId = `eval-lifecycle-${shortDigest(`${runId}/${slot.key}`).slice(0, 16)}`;
-      const episode = await host.startEpisode({
-        label: slot.caseId,
-        org: { id: orgId, name: LIFECYCLE_ORG_NAME },
-        env: { NEKO_ALLOW_LOCAL_WEBHOOKS: "1" },
-      });
+      const episode = await host.startEpisode({ label: slot.caseId, org: { id: orgId, name: LIFECYCLE_ORG_NAME } });
       const turns = { count: 0, requests: 0 };
       try {
         episode.activate();

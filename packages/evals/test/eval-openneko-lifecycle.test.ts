@@ -10,9 +10,25 @@ import {
   createOpenNekoLifecycleDriver,
   parseSweep,
   policyMatrixFrom,
+  webhookHostAddress,
 } from "../scripts/eval-openneko-lifecycle";
 
 const CONFIG = fileURLToPath(new URL("../../../evals/configs/openneko-lifecycle-smoke.yaml", import.meta.url));
+
+describe("lifecycle eval webhook address", () => {
+  const entry = (address: string, internal = false) =>
+    ({ address, internal, family: "IPv4", netmask: "", mac: "", cidr: null }) as const;
+
+  it("takes the first IPv4 address that web may send a webhook to", () => {
+    expect(
+      webhookHostAddress({ lo: [entry("127.0.0.1", true)], eth0: [entry("169.254.1.2"), entry("10.10.0.2")] }),
+    ).toBe("10.10.0.2");
+  });
+
+  it("stops with an environment error when only loopback is up", () => {
+    expect(() => webhookHostAddress({ lo: [entry("127.0.0.1", true)] })).toThrow(/not loopback or link-local/);
+  });
+});
 
 describe("lifecycle eval GraphQL source", () => {
   it("answers data, an error and an unknown field the way GraphJin does", async () => {
