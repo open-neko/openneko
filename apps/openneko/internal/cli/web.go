@@ -161,6 +161,17 @@ with exit code 0, so its supervisor starts it again.`,
 			if err := api.SeedDefaultActionPolicies(ctx); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: default action policies not seeded: %v\n", err)
 			}
+			if strings.TrimSpace(os.Getenv("OPENNEKO_SERVE_URL")) != "" {
+				go func() {
+					moved, missing, err := api.MoveLibraryDocuments(context.WithoutCancel(ctx))
+					if err != nil {
+						fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: library move stopped: %v\n", err)
+					}
+					if moved > 0 || missing > 0 {
+						fmt.Fprintf(cmd.OutOrStdout(), "openneko web: moved %d library document(s) into openneko serve; %d failed\n", moved, missing)
+					}
+				}()
+			}
 			if runner != nil {
 				api.StartChannelInbound(ctx)
 				api.StartPackOAuthRefresh(ctx)
