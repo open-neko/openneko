@@ -376,7 +376,9 @@ On the public port, `/health/scheduler` and `/health/security` give only
 `status`. A signed-in admin gets the detail there. The web admin socket
 (`OPENNEKO_WEB_ADMIN_SOCKET`) always gives it. `openneko release-check
 --scheduler`, run in the web container, uses that socket and fails until the
-scheduler has finished a database tick.
+scheduler has finished a database tick. `openneko release-check --packs`
+reads the pack catalog on that socket and fails when it lists no built-in
+pack.
 
 For immediate delivery independent of PostgreSQL, configure an HTTPS webhook
 on `web`:
@@ -903,7 +905,8 @@ and `upgrade` act on the native install. `openneko logs` reads the
   `--version` picks the release (default: the latest), and
   `OPENNEKO_RELEASE_URL` points at a mirror. `--from <folder>` upgrades from
   a release folder instead of a download. `--skip-backup` upgrades with no
-  backup.
+  backup. The upgrade stops before any change when the release has no web
+  app or no built-in pack (`share/openneko/packs/<id>/pack.yaml`).
 
 Backup and restore run `pg_dump` and `pg_restore` on this host. Install the
 PostgreSQL client tools of the server's major version or later (on Debian

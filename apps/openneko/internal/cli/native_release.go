@@ -134,7 +134,7 @@ func extractNativeArchive(archive, dst string) error {
 	}
 	defer gz.Close()
 	tr := tar.NewReader(gz)
-	sawExe := false
+	sawExe, sawPack := false, false
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -168,6 +168,9 @@ func extractNativeArchive(archive, dst string) error {
 			if exe {
 				mode, sawExe = 0o755, true
 			}
+			if m, _ := path.Match("share/openneko/packs/*/pack.yaml", name); m {
+				sawPack = true
+			}
 			if err := writeArchiveEntry(target, tr, hdr.Size, mode); err != nil {
 				return err
 			}
@@ -177,6 +180,9 @@ func extractNativeArchive(archive, dst string) error {
 	}
 	if !sawExe {
 		return errors.New("the release archive holds no bin/openneko")
+	}
+	if !sawPack {
+		return errors.New("the release archive holds no built-in pack (share/openneko/packs/*/pack.yaml)")
 	}
 	return nil
 }

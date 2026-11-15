@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -142,6 +144,70 @@ func TestStartRunRoute(t *testing.T) {
 	if g := rowText(t, db, `select count(*)::text from behavior_alert where org_id = 'org' and kind = 'spend.budget_blocked'`); g != "1" {
 		t.Errorf("budget alerts %s", g)
 	}
+}
+
+func TestStartRunClientRequestIDMakesOneRun(t *testing.T) {
+	f, db := signedInChatFront(t)
+	a := f.API
+	member := sessionCookie("member")
+	a.turnResolve = fixedBackend("http://unused")
+	var turns atomic.Int32
+	a.turnCore = func(ctx context.Context, in agentCoreInput) (axRunResult, error) {
+		turns.Add(1)
+		return axRunResult{Status: "completed", FinalText: "ok"}, nil
+	}
+	count := func(sql string, args ...any) string { return rowText(t, db, sql, args...) }
+	before := count(`select count(*)::text from work_run where org_id = 'org'`)
+
+	for _, id := range []string{strings.Repeat("a", 129), "has space", "x/y"} {
+		if w := call(f, "POST", "/api/v1/work/threads/"+threadMine+"/runs", `{"message":"Hi","clientRequestId":"`+id+`"}`, member); w.Code != 400 {
+			t.Errorf("%q: %d %s", id, w.Code, w.Body)
+		}
+	}
+
+	body := `{"message":"Stock cover?","clientRequestId":"offline-7f3c"}`
+	var wg sync.WaitGroup
+	ids := make([]string, 3)
+	for i := range ids {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			w := call(f, "POST", "/api/v1/work/threads/"+threadMine+"/runs", body, member)
+			if w.Code != 200 {
+				t.Errorf("%d %s", w.Code, w.Body)
+				return
+			}
+			ids[i], _ = decode(t, w)["runId"].(string)
+		}(i)
+	}
+	wg.Wait()
+	if ids[0] == "" || ids[0] != ids[1] || ids[1] != ids[2] {
+		t.Fatalf("one client request id gave runs %v", ids)
+	}
+	waitRun(t, db, ids[0])
+	w := call(f, "POST", "/api/v1/work/threads/"+threadMine+"/runs", body, member)
+	if got, _ := decode(t, w)["runId"].(string); w.Code != 200 || got != ids[0] {
+		t.Fatalf("a send after the run ended: %d %s", w.Code, w.Body)
+	}
+	for sql, want := range map[string]string{
+		`select (count(*) - ` + before + `)::text from work_run where org_id = 'org'`:                         "1",
+		`select count(*)::text from work_message where role = 'user' and content = 'Stock cover?'`:            "1",
+		`select count(*)::text from spend_reservation where work_run_id = '` + ids[0] + `'`:                    "1",
+		`select count(*)::text from audit_chain where event = 'run:created' and entity_id = '` + ids[0] + `'`: "1",
+	} {
+		if g := count(sql); g != want {
+			t.Errorf("%s\n got %s want %s", sql, g, want)
+		}
+	}
+	if n := turns.Load(); n != 1 {
+		t.Errorf("turns %d", n)
+	}
+
+	w = call(f, "POST", "/api/v1/work/threads/"+threadMine+"/runs", `{"message":"Stock cover?","clientRequestId":"offline-other"}`, member)
+	if got, _ := decode(t, w)["runId"].(string); w.Code != 200 || got == ids[0] {
+		t.Fatalf("another client request id: %d %s", w.Code, w.Body)
+	}
+	waitRun(t, db, decode(t, w)["runId"].(string))
 }
 
 func TestHostConfigProvisionedOnce(t *testing.T) {

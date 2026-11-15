@@ -1,8 +1,10 @@
+import { clearOfflineQueues } from "@/app/(work)/work/work-offline-queue";
 import { unsubscribeThisBrowserFromWebPush } from "./web-push";
 
 const PUSH_CLEANUP_LIMIT_MS = 3000;
 
 export async function signOut(): Promise<void> {
+  clearOfflineQueues();
   try {
     await Promise.race([
       unsubscribeThisBrowserFromWebPush().catch(() => undefined),

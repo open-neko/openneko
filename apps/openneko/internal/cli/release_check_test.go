@@ -60,3 +60,42 @@ func TestReleaseCheckServeSocket(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestReleaseCheckPacksNeedsABuiltinPack(t *testing.T) {
+	socket := filepath.Join(t.TempDir(), "admin.sock")
+	body := `{"packs":[{"id":"magento","source":"embedded"},{"id":"mine","source":"uploaded"}]}`
+	code := http.StatusOK
+	stop, err := serveWebAdmin(socket, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/admin/packs" {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(code)
+		_, _ = w.Write([]byte(body))
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	ctx := context.Background()
+	if n, err := checkBuiltinPacks(ctx, socket); err != nil || n != 1 {
+		t.Fatalf("one built-in pack: n = %d, err = %v", n, err)
+	}
+	for name, c := range map[string]struct {
+		code int
+		body string
+	}{
+		"empty":         {http.StatusOK, `{"packs":[]}`},
+		"uploaded only": {http.StatusOK, `{"packs":[{"id":"mine","source":"uploaded"}]}`},
+		"error":         {http.StatusInternalServerError, `{"error":"no database"}`},
+		"not JSON":      {http.StatusOK, `ok`},
+	} {
+		code, body = c.code, c.body
+		if _, err := checkBuiltinPacks(ctx, socket); err == nil {
+			t.Errorf("%s: the check passed", name)
+		}
+	}
+	if _, err := checkBuiltinPacks(ctx, filepath.Join(t.TempDir(), "none.sock")); err == nil {
+		t.Fatal("no socket: the check passed")
+	}
+}
