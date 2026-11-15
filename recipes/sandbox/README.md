@@ -18,7 +18,7 @@ The `run` line runs the start steps (storage check, migrations, config
 volume, serve credentials) before `up`.
 
 The overlay adds the `openneko-sandbox` service and sets
-`OPENNEKO_SANDBOX_URL=unix:///run/openneko/sandbox.sock` for web, worker and
+`OPENNEKO_SANDBOX_URL=unix:///run/openneko/sandbox.sock` for web and
 `openneko-serve`. Set `OPENNEKO_SANDBOX_KEY` in the shell or in `.env` to
 require a key on the socket as well.
 
