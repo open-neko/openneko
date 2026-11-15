@@ -61,6 +61,8 @@ func goodNativeEntries() []tarEntry {
 		{name: "share/openneko/web/", kind: tar.TypeDir},
 		{name: "share/openneko/web/index.html", body: "<html></html>"},
 		{name: "share/openneko/web/assets/app.js", body: "1"},
+		{name: "share/openneko/packs/", kind: tar.TypeDir},
+		{name: "share/openneko/packs/slack/pack.yaml", body: "id: slack"},
 	}
 }
 
@@ -87,6 +89,9 @@ func TestExtractNativeArchiveTakesTheReleaseFiles(t *testing.T) {
 	if b, err := os.ReadFile(filepath.Join(dst, "share", "openneko", "web", "assets", "app.js")); err != nil || string(b) != "1" {
 		t.Fatalf("web file: %q %v", b, err)
 	}
+	if b, err := os.ReadFile(filepath.Join(dst, "share", "openneko", "packs", "slack", "pack.yaml")); err != nil || string(b) != "id: slack" {
+		t.Fatalf("pack file: %q %v", b, err)
+	}
 }
 
 func TestExtractNativeArchiveRefusesUnsafeEntries(t *testing.T) {
@@ -95,6 +100,7 @@ func TestExtractNativeArchiveRefusesUnsafeEntries(t *testing.T) {
 		"absolute":   {name: "/etc/evil", body: "x"},
 		"inner dots": {name: "share/openneko/web/../../../evil", body: "x"},
 		"other path": {name: "etc/openneko.conf", body: "x"},
+		"other share": {name: "share/openneko/packsx/a", body: "x"},
 		"symlink":    {name: "share/openneko/web/link", kind: tar.TypeSymlink},
 		"hard link":  {name: "share/openneko/web/link", kind: tar.TypeLink},
 		"twice":      {name: "bin/openneko", body: "again"},
@@ -157,5 +163,30 @@ func TestDownloadNativeReleaseChecksTheChecksum(t *testing.T) {
 	left, _ := filepath.Glob(filepath.Join(parent, ".openneko-release-*"))
 	if len(left) != 1 {
 		t.Fatalf("a failed download left folders behind: %v", left)
+	}
+}
+
+func TestNativeUpgradeReplacesTheReleasePacks(t *testing.T) {
+	installed := t.TempDir()
+	exe := filepath.Join(installed, "bin", "openneko")
+	from := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(from, "share", "openneko", "packs", "slack"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(from, "share", "openneko", "packs", "slack", "pack.yaml"), []byte("version: 2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := filepath.Join(installed, "share", "openneko", "packs", "gone")
+	if err := os.MkdirAll(old, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := replaceReleasePacks(from, exe); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(installed, "share", "openneko", "packs", "slack", "pack.yaml")); err != nil || string(b) != "version: 2" {
+		t.Fatalf("pack file: %q %v", b, err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatalf("the old pack stayed: %v", err)
 	}
 }

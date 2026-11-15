@@ -52,7 +52,24 @@ func packsEmbeddedRoot() string {
 		abs, _ := filepath.Abs(dir)
 		return abs
 	}
+	exe, _ := os.Executable()
 	wd, _ := os.Getwd()
+	return builtinPacksRoot(exe, wd)
+}
+
+// builtinPacksRoot is share/openneko/packs beside the bin folder of the
+// executable when it exists (a release), else the packs folder of a source
+// checkout.
+func builtinPacksRoot(exe, wd string) string {
+	if exe != "" {
+		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = resolved
+		}
+		dir := filepath.Join(filepath.Dir(filepath.Dir(exe)), "share", "openneko", "packs")
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return dir
+		}
+	}
 	return filepath.Join(wd, "packs")
 }
 

@@ -52,7 +52,7 @@ grep -E "^[0-9a-f]{64}  \*?$name\$" "$tmp/checksums-native.txt" | sed 's/  \*/  
 (cd "$tmp" && sha256sum -c --quiet want.txt) || fail "checksum mismatch for $name"
 
 mkdir -p "$prefix" "$bindir"
-tar -xzf "$tmp/$name" -C "$prefix" --no-same-owner bin/openneko share/openneko/web
+tar -xzf "$tmp/$name" -C "$prefix" --no-same-owner bin/openneko share/openneko/web share/openneko/packs
 ln -sf "$prefix/bin/openneko" "$bindir/openneko"
 "$bindir/openneko" version --short >/dev/null || fail "the installed executable does not run"
 
