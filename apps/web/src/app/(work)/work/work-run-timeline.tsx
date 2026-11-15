@@ -30,7 +30,7 @@ import {
   WorkFailureNotice,
 } from "./work-notices";
 import { holdOpenBlock } from "./work-streaming-text";
-import { ProviderProgress, WorkTrail, progressPreview, useElapsed } from "./work-progress";
+import { ProviderProgress, WorkTrail, liveStep, useElapsed } from "./work-progress";
 import { SurfaceBlock } from "./work-surface";
 import { buildRunTimeline } from "./work-timeline-model";
 import { ToolGroup } from "./work-tool-rows";
@@ -283,7 +283,7 @@ export function RunTimeline({
       {pending && !hasSurface ? (
         <AnswerInProgress
           since={run?.createdAt}
-          step={lastProgress >= 0 ? progressPreview((presentation.items[lastProgress] as Extract<TimelineItem, { kind: "progress" }>).content) : null}
+          step={liveStep(presentation.items, presentation.lastStatus)}
           sources={presentation.sources}
         />
       ) : null}

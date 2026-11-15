@@ -1,0 +1,33 @@
+{
+ "name": "openai-compatible",
+ "provider": "openai-compatible",
+ "model": "fixture",
+ "docs": "https://docs.vllm.ai/en/latest/features/reasoning_outputs.html (delta.reasoning_content; Ax reads no reasoning field for a generic URL)",
+ "stream": [
+  "data: {\"id\": \"c\", \"object\": \"chat.completion.chunk\", \"choices\": [{\"index\": 0, \"delta\": {\"role\": \"assistant\", \"reasoning_content\": \"The user wants the total.\"}}]}",
+  "",
+  "data: {\"id\": \"c\", \"object\": \"chat.completion.chunk\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Answer: done\"}}]}",
+  "",
+  "data: {\"id\": \"c\", \"object\": \"chat.completion.chunk\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 3, \"completion_tokens\": 4, \"total_tokens\": 7}}",
+  "",
+  "data: [DONE]",
+  ""
+ ],
+ "thought": "",
+ "events": [
+  {
+   "type": "actor.step",
+   "data": {
+    "text": "Check the data"
+   }
+  },
+  {
+   "type": "answer.delta",
+   "data": {
+    "version": 0,
+    "index": 0,
+    "text": "done"
+   }
+  }
+ ]
+}

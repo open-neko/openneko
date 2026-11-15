@@ -1,0 +1,81 @@
+{
+ "name": "anthropic",
+ "provider": "anthropic",
+ "model": "claude-x",
+ "docs": "https://docs.anthropic.com/en/docs/build-with-claude/streaming (thinking_delta, signature_delta, redacted_thinking)",
+ "stream": [
+  "event: message_start",
+  "data: {\"type\": \"message_start\", \"message\": {\"id\": \"m\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"claude-served\", \"content\": [], \"usage\": {\"input_tokens\": 3, \"output_tokens\": 0}}}",
+  "",
+  "event: content_block_start",
+  "data: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"thinking\", \"thinking\": \"\"}}",
+  "",
+  "event: content_block_delta",
+  "data: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"The user wants the total. \"}}",
+  "",
+  "event: content_block_delta",
+  "data: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"The query returned one row.\"}}",
+  "",
+  "event: content_block_delta",
+  "data: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"signature_delta\", \"signature\": \"EqQBCkYIBxgCKkDsignature\"}}",
+  "",
+  "event: content_block_stop",
+  "data: {\"type\": \"content_block_stop\", \"index\": 0}",
+  "",
+  "event: content_block_start",
+  "data: {\"type\": \"content_block_start\", \"index\": 1, \"content_block\": {\"type\": \"redacted_thinking\", \"data\": \"EmwKAhgBEgy3va3pzix/LafPsn4aDFIT2Xlxh0L5L8rLVyIwxtE3rAFBa8cr3qpPkNRj2YfWXGmKDxH4mPnZ5sQ7vB5URj\"}}",
+  "",
+  "event: content_block_stop",
+  "data: {\"type\": \"content_block_stop\", \"index\": 1}",
+  "",
+  "event: content_block_start",
+  "data: {\"type\": \"content_block_start\", \"index\": 2, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}",
+  "",
+  "event: content_block_delta",
+  "data: {\"type\": \"content_block_delta\", \"index\": 2, \"delta\": {\"type\": \"text_delta\", \"text\": \"Answer: done\"}}",
+  "",
+  "event: content_block_stop",
+  "data: {\"type\": \"content_block_stop\", \"index\": 2}",
+  "",
+  "event: message_delta",
+  "data: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\"}, \"usage\": {\"output_tokens\": 4}}",
+  "",
+  "event: message_stop",
+  "data: {\"type\": \"message_stop\"}",
+  ""
+ ],
+ "thought": "The user wants the total. The query returned one row.",
+ "request": "\"thinking\":{\"type\":\"enabled\"",
+ "events": [
+  {
+   "type": "actor.step",
+   "data": {
+    "text": "Check the data"
+   }
+  },
+  {
+   "type": "thought.delta",
+   "data": {
+    "version": 0,
+    "index": 0,
+    "text": "The user wants the total. "
+   }
+  },
+  {
+   "type": "thought.delta",
+   "data": {
+    "version": 0,
+    "index": 0,
+    "text": "The query returned one row."
+   }
+  },
+  {
+   "type": "answer.delta",
+   "data": {
+    "version": 0,
+    "index": 0,
+    "text": "done"
+   }
+  }
+ ]
+}

@@ -298,10 +298,11 @@ func (a *API) StopTurns(ctx context.Context) int {
 	return n
 }
 
-// runEventStore joins assistant and user text into one row at most
-// flushAfter after the first buffered delta; every other event flushes the
-// text first, and each stored event goes to the live subscribers in order.
-// A timed flush holds back the tail that could start a secret.
+// runEventStore joins assistant and user text, and the deltas of one
+// thinking note, into one row at most flushAfter after the first buffered
+// delta; every other event flushes the text first, and each stored event goes
+// to the live subscribers in order. A timed flush holds back the tail that
+// could start a secret.
 type runEventStore struct {
 	api                          *API
 	orgID, threadID, runID, kind string
@@ -309,7 +310,8 @@ type runEventStore struct {
 	skills                       skillTrace
 
 	mu      sync.Mutex
-	role    string
+	key     string
+	head    *jsObj
 	buf     strings.Builder
 	pending bool
 	timer   *time.Timer
@@ -325,28 +327,22 @@ func (s *runEventStore) emit(ctx context.Context, event any) error {
 	ctx = context.WithoutCancel(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if jsGet(event, "type") != "message" {
+	key := bufferedEventKey(event)
+	if key == "" {
 		if err := s.flushLocked(ctx); err != nil {
 			return err
 		}
 		s.skills.observe(traceBinding{RunID: s.runID, OrgID: s.orgID, Kind: s.kind}, event)
 		return s.persistLocked(ctx, event)
 	}
-	role, _ := jsGet(event, "role").(string)
-	if role != "assistant" && role != "user" {
-		if err := s.flushLocked(ctx); err != nil {
-			return err
-		}
-		return s.persistLocked(ctx, event)
-	}
-	if s.pending && s.role != role {
+	if s.pending && s.key != key {
 		if err := s.flushLocked(ctx); err != nil {
 			return err
 		}
 	}
 	content, _ := jsGet(event, "content").(string)
 	if !s.pending {
-		s.pending, s.role = true, role
+		s.pending, s.key, s.head = true, key, event.(*jsObj)
 		s.buf.Reset()
 	}
 	s.buf.WriteString(content)
@@ -361,6 +357,38 @@ func (s *runEventStore) emit(ctx context.Context, event any) error {
 		})
 	}
 	return nil
+}
+
+// bufferedEventKey names the stream a text delta joins: assistant or user
+// text, or one thinking note. Other events are stored as they come.
+func bufferedEventKey(event any) string {
+	e, ok := event.(*jsObj)
+	if !ok {
+		return ""
+	}
+	if _, ok := e.vals["content"].(string); !ok {
+		return ""
+	}
+	switch e.vals["type"] {
+	case "message":
+		if role, _ := e.vals["role"].(string); role == "assistant" || role == "user" {
+			return "message " + role
+		}
+	case "progress":
+		if id, _ := e.vals["id"].(string); id != "" {
+			return "progress " + id
+		}
+	}
+	return ""
+}
+
+func (s *runEventStore) bufferedEvent(content string) *jsObj {
+	out := &jsObj{}
+	for _, k := range s.head.keys {
+		out.set(k, s.head.vals[k])
+	}
+	out.set("content", content)
+	return out
 }
 
 func (s *runEventStore) stopTimerLocked() {
@@ -382,7 +410,7 @@ func (s *runEventStore) flushLocked(ctx context.Context) error {
 	if content == "" {
 		return nil
 	}
-	return s.persistLocked(ctx, jsObjOf("type", "message", "role", s.role, "content", content))
+	return s.persistLocked(ctx, s.bufferedEvent(content))
 }
 
 // flushHeadLocked stores the buffered text up to the point where a secret
@@ -398,7 +426,7 @@ func (s *runEventStore) flushHeadLocked(ctx context.Context) error {
 	}
 	s.buf.Reset()
 	s.buf.WriteString(content[cut:])
-	return s.persistLocked(ctx, jsObjOf("type", "message", "role", s.role, "content", content[:cut]))
+	return s.persistLocked(ctx, s.bufferedEvent(content[:cut]))
 }
 
 // secretSafeCut returns the length of the head of text that a scrub can store

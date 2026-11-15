@@ -31,10 +31,11 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const PROSE = Array.from({ length: 12 }, (_, i) => `Week ${i + 1} sales held steady at the usual level. `).join("");
 const TABLE = ["| Region | Sales |", "| --- | ---: |", "| East | 12,400 |", "| West | 9,100 |"];
 const AFTER = "East led the quarter.";
+const THOUGHTS = ["**Reading the weeks**\n\nThe query returned twelve weeks. ", "Sales stay level ", "in every week."];
 const CARD_OPEN = '```neko_cards\n{"cards":[{"title":"Hidden payload"}';
 
 test.describe("STREAM1c steady answer stream at phone width", () => {
-  test("text grows while the model streams, and a table shows only when complete", async ({ browser }) => {
+  test("thinking shows while the model works, text grows while it streams, and a table shows only when complete", async ({ browser }) => {
     test.setTimeout(120_000);
     const dbUrl = resolveDatabaseUrl();
     const client = new pg.Client({ connectionString: dbUrl });
@@ -56,6 +57,10 @@ test.describe("STREAM1c steady answer stream at phone width", () => {
     }
 
     let proseEndedAt = 0;
+    let thoughtsSent!: () => void;
+    const thoughtsDone = new Promise<void>((r) => (thoughtsSent = r));
+    let releaseAnswer!: () => void;
+    const answerReleased = new Promise<void>((r) => (releaseAnswer = r));
     let releaseTable!: () => void;
     const tableReleased = new Promise<void>((r) => (releaseTable = r));
     let tablePartSent!: () => void;
@@ -86,6 +91,13 @@ test.describe("STREAM1c steady answer stream at phone width", () => {
         };
         const delta = (text: string) => send({ type: "answer.delta", data: { text, version: 1 } });
         void (async () => {
+          send({ type: "actor.step", data: { text: "Check the data" } });
+          for (const text of THOUGHTS) {
+            await sleep(150);
+            send({ type: "thought.delta", data: { text, version: 1, index: 0 } });
+          }
+          thoughtsSent();
+          await answerReleased;
           for (const word of PROSE.split(/(?<= )/)) {
             delta(word);
             await sleep(20);
@@ -185,6 +197,16 @@ test.describe("STREAM1c steady answer stream at phone width", () => {
       await composer.fill("How did weekly sales move?");
       await composer.press("Enter");
 
+      await thoughtsDone;
+      const note = page.locator(".work-progress-summary");
+      await expect(note).toBeVisible();
+      await expect(note).toContainText("Reading the weeks");
+      await expect(note).toContainText("The query returned twelve weeks. Sales stay level in every week.");
+      await expect(page.locator(".work-progress-summary")).toHaveCount(1);
+      await expect(page.locator(".work-transcript")).not.toContainText("Week 1 sales");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
+      releaseAnswer();
+
       await tablePart;
       await expect(page.locator(".work-transcript")).toContainText("Week 12 sales held steady");
       const samples = await page.evaluate(
@@ -222,6 +244,7 @@ test.describe("STREAM1c steady answer stream at phone width", () => {
       console.error(logs.slice(-4000));
       throw err;
     } finally {
+      releaseAnswer();
       releaseTable();
       releaseCard();
       srv.kill("SIGTERM");
