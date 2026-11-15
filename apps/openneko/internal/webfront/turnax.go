@@ -804,17 +804,12 @@ type axEventMapper struct {
 	emittedOutside string
 	openedCards    int
 	thought        string
+	thoughtOpen    bool
+	thoughtVersion any
 	thoughtCount   int
 	observed       *jsObj
 	renderCalls    map[string]bool
 	wroteState     bool
-}
-
-func (m *axEventMapper) summaryProvider() string {
-	if m.route.Provider == "anthropic" || m.route.Provider == "google-gemini" {
-		return m.route.Provider
-	}
-	return ""
 }
 
 func (m *axEventMapper) handle(ev axEvent) {
@@ -841,7 +836,7 @@ func (m *axEventMapper) handle(ev axEvent) {
 		if !isText {
 			return
 		}
-		m.flushThought()
+		m.closeThought()
 		v, present := data.vals["version"]
 		if !present || v == nil {
 			m.textVersion = 0.0
@@ -856,16 +851,16 @@ func (m *axEventMapper) handle(ev axEvent) {
 			m.emit(jsObjOf("type", "card_pending"))
 		}
 	case "thought.delta":
-		if m.summaryProvider() != "" && isText {
-			m.thought = utf16Head(m.thought+text, 6_000)
+		if isText {
+			m.thoughtDelta(data.vals["version"], text)
 		}
 	case "actor.step":
-		m.flushThought()
+		m.closeThought()
 		if isText && jsTrim(text) != "" {
 			m.emit(jsObjOf("type", "status", "message", jsTrim(text)))
 		}
 	case "tool.started":
-		m.flushThought()
+		m.closeThought()
 		if ev.Effect == "durable" {
 			m.wroteState = true
 		}
@@ -950,7 +945,7 @@ func jsStrictEqual(x, y any) bool {
 }
 
 func (m *axEventMapper) finish(answer string) {
-	m.flushThought()
+	m.closeThought()
 	outside := outsideFenceText(answer + "\n")
 	if !strings.HasSuffix(answer, "\n") {
 		outside = strings.TrimSuffix(outside, "\n")
@@ -986,16 +981,34 @@ func (m *axEventMapper) emitOutside(outside string) {
 	m.emit(jsObjOf("type", "message", "role", "assistant", "content", delta))
 }
 
-func (m *axEventMapper) flushThought() {
-	content := jsTrim(m.thought)
-	m.thought = ""
-	provider := m.summaryProvider()
-	if content == "" || provider == "" {
+func (m *axEventMapper) closeThought() {
+	m.thoughtOpen, m.thought = false, ""
+}
+
+// thoughtDelta sends each provider's thinking text as it arrives. The deltas
+// of one note share an id; a note ends at the next step, tool call, answer
+// text or answer version.
+func (m *axEventMapper) thoughtDelta(version any, text string) {
+	if m.thoughtOpen && !jsStrictEqual(version, m.thoughtVersion) && (version != nil || m.thoughtVersion != nil) {
+		m.closeThought()
+	}
+	if !m.thoughtOpen {
+		m.thoughtOpen, m.thoughtVersion = true, version
+	}
+	if m.thought == "" {
+		text = jsTrimStart(text)
+	}
+	grown := utf16Head(m.thought+text, 6_000)
+	delta := grown[len(m.thought):]
+	if delta == "" {
 		return
 	}
-	m.thoughtCount++
-	m.emit(jsObjOf("type", "progress", "id", "ax-summary-"+strconv.Itoa(m.thoughtCount), "content", content,
-		"source", "provider_summary", "provider", provider))
+	if m.thought == "" {
+		m.thoughtCount++
+	}
+	m.thought = grown
+	m.emit(jsObjOf("type", "progress", "id", "ax-summary-"+strconv.Itoa(m.thoughtCount), "content", delta,
+		"source", "provider_summary", "provider", m.route.Provider))
 }
 
 func usageNumber(u *jsObj, key string) (float64, bool) {
