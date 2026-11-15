@@ -413,7 +413,14 @@
     {
      "type": "progress",
      "id": "ax-summary-1",
-     "content": "Thinking about sales.",
+     "content": "Thinking about ",
+     "source": "provider_summary",
+     "provider": "anthropic"
+    },
+    {
+     "type": "progress",
+     "id": "ax-summary-1",
+     "content": "sales.",
      "source": "provider_summary",
      "provider": "anthropic"
     },
@@ -822,6 +829,13 @@
     {
      "type": "status",
      "message": "actor code failed (SyntaxError):\nfinal()"
+    },
+    {
+     "type": "progress",
+     "id": "ax-summary-1",
+     "content": "hidden for azure",
+     "source": "provider_summary",
+     "provider": "azure-openai"
     },
     {
      "type": "message",

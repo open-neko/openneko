@@ -146,6 +146,18 @@ export function progressPreview(content: string): string {
   return line.length > 140 ? `${line.slice(0, 139)}…` : line;
 }
 
+/**
+ * The line that says what the run does now: the newest thinking note, or the
+ * step status when the provider sends no thinking text.
+ */
+export function liveStep(items: TimelineItem[], lastStatus: string | null): string | null {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item.kind === "progress") return progressPreview(item.content);
+  }
+  return lastStatus;
+}
+
 /** Elapsed time such as "45 s", "3 min 12 s" or "1 h 5 min". */
 export function formatElapsed(ms: number): string {
   const seconds = Math.max(0, Math.round(ms / 1000));

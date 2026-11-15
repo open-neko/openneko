@@ -50,7 +50,7 @@ export type WorkEvent =
       id: string;
       content: string;
       source: "provider_summary";
-      provider: "google-gemini" | "anthropic";
+      provider: string;
     }
   | { type: "error"; message: string }
   | {

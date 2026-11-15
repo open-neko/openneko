@@ -167,3 +167,42 @@ func TestSecretSafeCutMatchesAWholeScrub(t *testing.T) {
 		}
 	}
 }
+
+func TestRunEventStoreJoinsAndScrubsThinkingDeltas(t *testing.T) {
+	const key = "sk-planted-0123456789abcdef"
+	f, db, _ := chatTurnFront(t)
+	a := f.API
+	ctx := context.Background()
+	a.SecretsDir = t.TempDir()
+	if err := secrets.Write(secrets.Store{"pack.shop": {"API_KEY": key}}, a.SecretsDir); err != nil {
+		t.Fatal(err)
+	}
+	old := runEventFlushAfter
+	t.Cleanup(func() { runEventFlushAfter = old })
+	runEventFlushAfter = time.Hour
+	s := a.newRunEventStore("org", threadMine, runAdmin)
+	note := func(id, content string) *jsObj {
+		return jsObjOf("type", "progress", "id", id, "content", content, "source", "provider_summary", "provider", "anthropic")
+	}
+	for _, e := range []*jsObj{
+		note("ax-summary-1", "The shop key is "+key[:12]),
+		note("ax-summary-1", key[12:]+", so I "),
+		note("ax-summary-1", "leave it out."),
+		jsObjOf("type", "status", "message", "Read the orders"),
+		note("ax-summary-2", "Second note."),
+		note("ax-summary-3", "Third note."),
+		jsObjOf("type", "message", "role", "assistant", "content", "Done."),
+	} {
+		if err := s.emit(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.finalize(ctx); err != nil {
+		t.Fatal(err)
+	}
+	stored := rowText(t, db, `select string_agg(kind || ' ' || coalesce(payload->>'id', '') || ' ' || coalesce(payload->>'content', payload->>'message') || ' ' || coalesce(payload->>'provider', ''), '|' order by id) from work_run_event where run_id = $1`, runAdmin)
+	want := "progress ax-summary-1 The shop key is [REDACTED], so I leave it out. anthropic|status  Read the orders |progress ax-summary-2 Second note. anthropic|progress ax-summary-3 Third note. anthropic|message  Done. "
+	if stored != want {
+		t.Fatalf("stored %q", stored)
+	}
+}
