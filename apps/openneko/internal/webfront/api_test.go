@@ -111,7 +111,6 @@ func newAPIFront(t *testing.T, workerBody string, db *pgxpool.Pool) (*Front, *re
 		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
 		Gate: g,
 		API:  &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example/", SecretsDir: g.SecretsDir},
-		Node: node,
 	}, node
 }
 
@@ -135,7 +134,7 @@ func decode(t *testing.T, w *httptest.ResponseRecorder) map[string]any {
 }
 
 func TestAPIRouting(t *testing.T) {
-	f, node := newAPIFront(t, `{"provider":null}`, nil)
+	f, _ := newAPIFront(t, `{"provider":null}`, nil)
 	for _, p := range []string{"/api/v1/version", "/api/version"} {
 		w := call(f, "GET", p, "", nil)
 		if w.Code != 200 || w.Body.String() != `{"version":"5.0.0"}` || w.Header().Get("Cache-Control") != "no-store" {
@@ -149,10 +148,9 @@ func TestAPIRouting(t *testing.T) {
 		t.Errorf("POST: %d %q", w.Code, w.Header().Get("Allow"))
 	}
 	for _, p := range []string{"/api/v1/auth/sso", "/api/v1/version/", "/api/v1/work"} {
-		call(f, "GET", p, "", nil)
-	}
-	if strings.Join(node.hits, ",") != "GET /api/v1/auth/sso,GET /api/v1/version/,GET /api/v1/work" {
-		t.Errorf("Node got %v", node.hits)
+		if w := call(f, "GET", p, "", nil); w.Code != http.StatusNotFound {
+			t.Errorf("GET %s: %d, want 404", p, w.Code)
+		}
 	}
 }
 

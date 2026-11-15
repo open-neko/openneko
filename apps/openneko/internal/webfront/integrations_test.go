@@ -86,7 +86,6 @@ func connectFront(t *testing.T) (*Front, *scalekitStub) {
 		Gate: g,
 		API: &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecretsDir: g.SecretsDir,
 			SignInClient: stub.srv.Client()},
-		Node: &recorder{},
 	}, stub
 }
 

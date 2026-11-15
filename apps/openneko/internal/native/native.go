@@ -73,7 +73,6 @@ const (
 	ServeAddr         = "127.0.0.1:8090"
 	GraphJinAddr      = "127.0.0.1:8080"
 	SubscriptionsAddr = "127.0.0.1:8089"
-	nodeAddr          = "127.0.0.1:3001"
 )
 
 type Options struct {
@@ -144,7 +143,6 @@ func WebEnv(l Layout, o Options) map[string]string {
 	web["NODE_ENV"] = "production"
 	web["OPENNEKO_WEB_ADDR"] = o.WebAddr
 	web["OPENNEKO_WEB_DIR"] = o.WebDir
-	web["OPENNEKO_WEB_NODE_ADDR"] = nodeAddr
 	web["OPENNEKO_PUBLIC_URL"] = o.PublicURL
 	web["OPENNEKO_SERVE_URL"] = "http://" + ServeAddr
 	web["OPENNEKO_GRAPHJIN_URL"] = "http://" + SubscriptionsAddr

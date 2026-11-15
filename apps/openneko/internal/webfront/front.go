@@ -1,6 +1,5 @@
-// Package webfront serves the static web app and applies the request gate
-// from apps/web/src/proxy.ts. Requests for the API and the pages that still
-// render on the server go to Node.
+// Package webfront serves the static web app, applies the request gate, and
+// answers the /api/v1 HTTP API.
 package webfront
 
 import (
@@ -14,31 +13,12 @@ import (
 	"strings"
 )
 
-var (
-	fileExtension = regexp.MustCompile(`\.[a-zA-Z0-9]+$`)
-	serverPage    = func() *regexp.Regexp {
-		if len(ServerPages) == 0 {
-			return nil
-		}
-		alternatives := make([]string, len(ServerPages))
-		for i, page := range ServerPages {
-			alternatives[i] = regexp.MustCompile(`:[^/]+`).ReplaceAllString(regexp.QuoteMeta(page), `[^/]+`)
-		}
-		return regexp.MustCompile(`^(?:` + strings.Join(alternatives, "|") + `)/?$`)
-	}()
-)
-
-// ServerPages must equal serverPages in apps/web/src/spa/server-pages.ts;
-// TestServerPagesMatchWeb compares them.
-var ServerPages = []string{}
+var fileExtension = regexp.MustCompile(`\.[a-zA-Z0-9]+$`)
 
 type Front struct {
 	App  fs.FS
 	Gate *Gate
-	// API answers the routes that moved to Go; nil passes them to Node.
-	API *API
-	// Node answers the API and the server pages; nil answers 502.
-	Node http.Handler
+	API  *API
 	// Wake answers WakePath; nil leaves it to the gate, which answers 404.
 	Wake http.Handler
 }
@@ -81,7 +61,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if !strings.HasPrefix(p, "/api/") && (strings.HasPrefix(p, "/_next/") || fileExtension.MatchString(p)) {
 		if !f.serveFile(w, r, p, true) {
-			f.node(w, r)
+			http.NotFound(w, r)
 		}
 		return
 	}
@@ -96,9 +76,8 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h(w, r)
 		return
 	}
-	if p == "/api" || strings.HasPrefix(p, "/api/") || (serverPage != nil && serverPage.MatchString(p)) ||
-		(r.Method != http.MethodGet && r.Method != http.MethodHead) {
-		f.node(w, r)
+	if p == "/api" || strings.HasPrefix(p, "/api/") || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
+		http.NotFound(w, r)
 		return
 	}
 	w.Header().Set("Content-Security-Policy", "frame-src 'self'")
@@ -134,16 +113,4 @@ func (f *Front) serveFile(w http.ResponseWriter, r *http.Request, p string, asse
 	}
 	http.ServeFileFS(w, r, f.App, name)
 	return true
-}
-
-func (f *Front) node(w http.ResponseWriter, r *http.Request) {
-	if f.Node != nil {
-		f.Node.ServeHTTP(w, r)
-		return
-	}
-	if strings.HasPrefix(r.URL.Path, "/api/") {
-		writeJSON(w, http.StatusBadGateway, "the Node server is not connected")
-		return
-	}
-	http.Error(w, "the Node server is not connected", http.StatusBadGateway)
 }

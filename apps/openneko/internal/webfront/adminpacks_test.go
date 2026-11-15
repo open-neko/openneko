@@ -54,7 +54,6 @@ func packFront(t *testing.T) (*Front, *packWorker) {
 		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
 		Gate: g,
 		API:  &API{Gate: g, DB: db, Version: "5.0.0", PublicURL: "https://neko.example", SecretsDir: g.SecretsDir},
-		Node: &recorder{},
 	}, wk
 }
 

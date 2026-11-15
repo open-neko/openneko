@@ -130,15 +130,7 @@ RUN mkdir -p packages/llm/assets/sandbox-skills \
        done
 
 FROM source AS build
-ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm --filter @neko/web build && pnpm --filter @neko/web build:spa
-
-# Next's standalone tree and its manually copied native dependency use the same
-# server-only pruning contract as the worker deployment.
-FROM build AS web-deploy
-ARG TARGETARCH
-RUN sh scripts/prune-node-runtime.sh /app/apps/web/.next/standalone "$TARGETARCH" \
-    && sh scripts/prune-node-runtime.sh /app "$TARGETARCH"
+RUN pnpm --filter @neko/web build:spa
 
 # ─── 4b. openneko go binary ────────────────────────────────────────────
 # Built from apps/openneko (Go 1.24 module) and baked into the worker
@@ -212,23 +204,13 @@ ENV NODE_ENV=production \
     OPENNEKO_IN_CONTAINER=1 \
     PORT=8080 \
     OPENNEKO_WEB_DIR=/app/apps/web/dist \
-    OPENNEKO_WEB_NODE_ADDR=127.0.0.1:3001 \
     HOME=/tmp/openneko-home \
-    XDG_CONFIG_HOME=/tmp/openneko-config \
-    NEXT_TELEMETRY_DISABLED=1
+    XDG_CONFIG_HOME=/tmp/openneko-config
 RUN useradd --system --create-home --uid 1001 neko
 RUN install -d -o 1001 -m 0770 /var/lib/openneko/agent-runs /run/openneko
 RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-tmp \
     && chown -R neko:neko /config /tmp/openneko-home /tmp/openneko-tmp
-# Standalone output is self-contained (server.js + traced node_modules).
-# Static + public are served by server.js but not auto-copied — we copy
-# them in alongside, matching the layout server.js expects.
-COPY --from=web-deploy --chown=neko:neko /app/apps/web/.next/standalone ./
-COPY --from=web-deploy --chown=neko:neko /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=web-deploy --chown=neko:neko /app/apps/web/public ./apps/web/public
 COPY --from=build --chown=neko:neko /app/apps/web/dist ./apps/web/dist
-# Next.js standalone tracing misses static asset dirs — copy explicitly.
-COPY --from=web-deploy --chown=neko:neko /app/packages/llm/assets ./packages/llm/assets
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 # Vendor the openneko Go binary so the entrypoint can run `openneko migrate`
@@ -239,7 +221,7 @@ RUN chmod +x /usr/local/bin/openneko
 USER neko
 EXPOSE 8080
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
-CMD ["openneko", "web", "--", "node", "apps/web/server.js"]
+CMD ["openneko", "web"]
 
 # ─── 5b. worker runtime ────────────────────────────────────────────────
 # Trimmed prod closure of @neko/worker: drops devDeps + other apps' sources +
