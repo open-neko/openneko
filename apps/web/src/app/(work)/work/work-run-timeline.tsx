@@ -144,7 +144,9 @@ export function RunTimeline({
     Boolean(persistedText) ||
     persistedVitals.length > 0;
 
-  const lastProgress = presentation.items.map((item) => item.kind).lastIndexOf("progress");
+  const kinds = presentation.items.map((item) => item.kind);
+  const lastProgress = kinds.lastIndexOf("progress");
+  const lastTools = kinds.lastIndexOf("tools");
   const elapsed = useElapsed(run?.createdAt, pending);
   const renderItem = (item: TimelineItem, index: number) => {
     if (item.kind === "text") {
@@ -157,7 +159,7 @@ export function RunTimeline({
           />
         );
       }
-      if (pending && index === presentation.items.length - 1) {
+      if (pending && index > lastTools) {
         const { shown, held } = holdOpenBlock(item.content);
         return (
           <Fragment key={`text-${index}`}>

@@ -1,4 +1,7 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { RunTimeline } from "../src/app/(work)/work/work-run-timeline";
 import { holdOpenBlock } from "../src/app/(work)/work/work-streaming-text";
 import { buildRunTimeline } from "../src/app/(work)/work/work-timeline-model";
 import { applyStreamEventToBundle, streamedAnswerText } from "../src/app/(work)/work/work-thread";
@@ -42,6 +45,49 @@ describe("holdOpenBlock", () => {
     const text = "```\n| a |\n```\nAfter.";
     expect(holdOpenBlock(text)).toEqual({ shown: text, held: null });
   });
+
+  it("gives the same result at each growth step as a parse of the whole text", () => {
+    const text = [
+      "Sales rose by 4% in March. See [the report](https://openneko.app/r).",
+      "- East led\n- West fell\n\n    ```sql\n    select 1\n    ```",
+      "> | Region | Sales |\n> | --- | --- |\n> | East | 12 |",
+      "Region | Sales\n--- | ---\nEast | 12",
+      "~~~\nraw\n~~~",
+      "```neko_value\n{\"value\": 1}\n```",
+      "Done.",
+    ].join("\n\n");
+    const prefixes = Array.from({ length: text.length }, (_, i) => text.slice(0, i + 1));
+    const whole = [...prefixes].reverse().map(holdOpenBlock).reverse();
+    expect(prefixes.map(holdOpenBlock)).toEqual(whole);
+  });
+
+  it.each([
+    ["a fence indented four spaces in a nested list", "- Step one\n\n    ```sql\n    select 1\n", "- Step one\n\n", "code"],
+    ["a fence in a blockquote", "Note:\n\n> ```sql\n> select 1\n", "Note:\n\n", "code"],
+    ["a tilde fence", "Run this:\n~~~sql\nselect 1\n", "Run this:\n", "code"],
+    ["a table in a blockquote", "Sales:\n\n> | Region | Sales |\n> | --- | --- |\n> | East | 12 |\n", "Sales:\n\n", "table"],
+    ["a table with no leading pipe", "Sales:\n\nRegion | Sales\n--- | ---\nEast | 12", "Sales:\n\n", "table"],
+    ["a header with no leading pipe", "Sales:\n\nRegion | Sales", "Sales:\n\n", "table"],
+    ["a header over a part delimiter", "Sales:\n\nRegion | Sales\n---", "Sales:\n\n", "table"],
+    ["a half-written link", "See [the sales report](https://openneko.app/re", "See ", null],
+    ["a half-written image", "Chart:\n\n![Sales by region](https://openn", "Chart:\n\n", null],
+    ["a link with no target yet", "See [the sales report", "See ", null],
+  ] as const)("holds %s", (_name, text, shown, held) => {
+    expect(holdOpenBlock(text)).toEqual({ shown, held });
+  });
+
+  it.each([
+    ["a closed tilde fence", "Run this:\n~~~sql\nselect 1\n~~~\nDone."],
+    ["a closed fence in a blockquote", "> ```sql\n> select 1\n> ```\n\nDone."],
+    ["a table in a blockquote with a blank line after it", "> | Region | Sales |\n> | --- | --- |\n> | East | 12 |\n>\n"],
+    ["a table with no leading pipe and a blank line after it", "Region | Sales\n--- | ---\nEast | 12\n\n"],
+    ["a line that starts with inline code of three backticks", "```npm ci``` installs the packages.\nThen run the tests and read the result."],
+    ["a complete link", "See [the sales report](https://openneko.app/report)"],
+    ["a link mark inside inline code", "Write `[x` to open a list."],
+    ["a heading over a rule with no pipe", "Summary\n---\nSales rose."],
+  ] as const)("shows %s", (_name, text) => {
+    expect(holdOpenBlock(text)).toEqual({ shown: text, held: null });
+  });
 });
 
 function message(content: string): WorkEvent {
@@ -63,6 +109,22 @@ describe("the streamed answer timeline", () => {
     expect(streamedAnswerText(events)).toBe("Revenue rose by 2%.");
   });
 
+  it("removes every answer text of the run on a reset after a tool call", () => {
+    const events: WorkEvent[] = [
+      message("Revenue fell by 4%."),
+      { type: "card_pending" },
+      { type: "tool_start", id: "t1", name: "query" },
+      { type: "tool_end", id: "t1", result: { ok: true } },
+      message("Checking again."),
+      { type: "answer_reset" },
+      message("Revenue rose by 2%."),
+      { type: "done" },
+    ];
+    const items = buildRunTimeline(events, "run-1").items;
+    expect(items.map((item) => item.kind)).toEqual(["tools", "text"]);
+    expect(items.filter((item) => item.kind === "text")).toEqual([{ kind: "text", content: "Revenue rose by 2%." }]);
+  });
+
   it("places a card placeholder after the prose and removes it when the card arrives", () => {
     const events: WorkEvent[] = [message("Sales rose."), { type: "card_pending" }, message("East led.")];
     expect(buildRunTimeline(events, "run-1").items.map((item) => item.kind)).toEqual(["text", "card_pending", "text"]);
@@ -80,5 +142,39 @@ describe("the streamed answer timeline", () => {
     const reset = applyStreamEventToBundle(bundle, "run-1", { type: "answer_reset" });
     const next = applyStreamEventToBundle(reset, "run-1", message("New"));
     expect(next.messages[0].content).toBe("New");
+  });
+});
+
+describe("the streamed answer render", () => {
+  const run = { id: "run-1", backend: "ax" as const, status: "running", error: null, createdAt: "2026-11-15T09:00:00Z", finishedAt: null };
+  const render = (events: WorkEvent[], pending: boolean) =>
+    renderToStaticMarkup(createElement(RunTimeline, {
+      threadId: "t",
+      run,
+      events,
+      pending,
+      fallbackContent: "",
+      reasoningExpanded: false,
+    }));
+
+  it("holds a half table when a thinking note follows it", () => {
+    const events: WorkEvent[] = [
+      message("Sales by region:\n\n| Region | Sales |\n| --- | --- |\n| East | 12 |\n"),
+      { type: "progress", id: "p1", content: "Checking the west.", source: "provider_summary", provider: "google-gemini" },
+    ];
+    const live = render(events, true);
+    expect(live).toContain("Sales by region:");
+    expect(live).not.toContain("<table");
+    expect(live).not.toContain("| Region");
+    expect(render(events, false)).toContain("<table");
+  });
+
+  it("shows a table that a tool call ended", () => {
+    const events: WorkEvent[] = [
+      message("| Region | Sales |\n| --- | --- |\n| East | 12 |"),
+      { type: "tool_start", id: "t1", name: "query" },
+      message("Checking the west."),
+    ];
+    expect(render(events, true)).toContain("<table");
   });
 });
