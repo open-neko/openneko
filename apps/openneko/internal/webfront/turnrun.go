@@ -4,14 +4,10 @@ import (
 	"context"
 	"errors"
 	"log"
-	"math"
-	"os"
 	"strings"
 	"sync"
 	"time"
 )
-
-const askDefaultConcurrency = 2
 
 var (
 	agentSlotHeartbeat = 60 * time.Second
@@ -35,13 +31,10 @@ type agentSlots struct {
 }
 
 func defaultAgentSlotLimit() int {
-	if n, ok := jsNumber(os.Getenv("OPENNEKO_AGENT_CONCURRENCY")); ok && n >= 1 && n == math.Trunc(n) && n <= math.MaxInt32 {
-		return int(n)
+	if n, ok := agentConcurrencyOverride(); ok {
+		return n
 	}
-	if strings.Contains(os.Getenv("OPENNEKO_SANDBOX_OWNER"), "worker") {
-		return agentDefaultGlobalCap
-	}
-	return askDefaultConcurrency
+	return agentDefaultGlobalCap
 }
 
 func (s *agentSlots) admitNextLocked() {

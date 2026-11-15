@@ -142,6 +142,11 @@ with exit code 0, so its supervisor starts it again.`,
 			if err := api.EnsureVAPIDKeys(); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: VAPID keys not ready: %v\n", err)
 			}
+			if n, err := api.ApplyAgentConcurrency(ctx); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: the Concurrent jobs setting was not read: %v\n", err)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "openneko web: %d agent turns run at once\n", n)
+			}
 			if err := api.SeedDefaultActionPolicies(ctx); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: default action policies not seeded: %v\n", err)
 			}

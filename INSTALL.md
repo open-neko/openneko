@@ -397,6 +397,10 @@ events.
 
 ### Agent runtime
 
+**Admin → Settings → Agent → Concurrent jobs** sets how many agent turns one
+`openneko web` runs at the same time. The default is 3. A save applies at once,
+with no restart. `OPENNEKO_AGENT_CONCURRENCY` overrides the setting.
+
 `openneko web` runs chat, channel and workflow agent turns in Go. It stages each
 run's files in a private folder under `OPENNEKO_AGENT_RUNS_DIR` and sends the
 turn to `openneko serve` over a Unix socket (`OPENNEKO_SERVE_SOCKET`), or runs
