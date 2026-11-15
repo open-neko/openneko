@@ -4,10 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pg from "pg";
 import { afterAll, describe, expect, it } from "vitest";
-import { app_user, db } from "@neko/db";
+import { app_user, data_source, db } from "@neko/db";
 import { dbReachable, seedProvider } from "@neko/db/test-helpers";
 import { maybeEncryptSecret } from "@neko/llm/secrets";
 import { ensureOrgWorkspace, rememberWorkMemory, writeWorkSkill } from "@neko/llm/work";
+import { listWatchers, saveWorkflow, upsertWatcher } from "@neko/llm";
+import { observeWatcherFire, WATCHER_SWEEP_EPOCH } from "../scripts/eval-openneko-backend";
+import { EvalGraphqlSource } from "../scripts/eval-openneko-lifecycle";
 import {
   EVAL_EPISODE_DATABASE_PREFIX,
   evalEpisodeFolderPrefix,
@@ -351,6 +354,85 @@ describe.skipIf(!reachable)("eval install episode", () => {
       expect(existsSync(root)).toBe(false);
       expect(existsSync(join(root, "serve.sock"))).toBe(false);
       expect(await databases()).not.toContain(database);
+    },
+    600_000,
+  );
+
+  it(
+    "counts a watcher fire by the job loop that sweeps before the driver",
+    async () => {
+      host ??= await EvalInstallHost.prepare({ login, lockWaitMs: 600_000 });
+      const source = await EvalGraphqlSource.start();
+      const orgId = "eval-watcher-race";
+      const episode = await host.startEpisode({ label: "watcher-race", org: { id: orgId, name: "Eval watcher race" } });
+      try {
+        episode.activate();
+        await db().insert(data_source).values({
+          org_id: orgId,
+          kind: "graphjin",
+          graphql_url: source.url,
+          mcp_url: null,
+          label: "watcher race source",
+          enabled: true,
+          is_default: true,
+          auth_mode: "development",
+        });
+        source.set("orders", { count: 31465 });
+        const watch = async (name: string) => {
+          const { workflow } = await saveWorkflow({ orgId, name, steps: [{ id: "report", description: "Report the count" }] });
+          return upsertWatcher({
+            orgId,
+            workflowId: workflow.id,
+            name,
+            query: "{ orders { count } }",
+            valuePath: "orders.count",
+            op: "gt",
+            threshold: 30000,
+            cadenceSeconds: 3600,
+            debounceSeconds: 7200,
+            severity: "high",
+          });
+        };
+        const sweep = async (at: Date) => {
+          const result = await episode.jobsRun("workflow_cron_sweep", orgId, at);
+          return {
+            checked: Number(result.checked ?? 0),
+            fired: (result.fired as Array<{ watcherId: string }>).map((entry) => ({ watcherId: entry.watcherId })),
+          };
+        };
+        const read = (id: string) => async () => (await listWatchers(orgId)).find((watcher) => watcher.id === id);
+
+        const first = await watch("Driver first");
+        expect(await observeWatcherFire({ watcherId: first.id, sweep, read: read(first.id) })).toEqual({
+          fired: true,
+          debounced: true,
+          fireCount: 1,
+          firedBy: "driver",
+        });
+        expect((await read(first.id)())?.lastFiredAt).toEqual(WATCHER_SWEEP_EPOCH);
+
+        const raced = await watch("Job loop first");
+        const minute = await sweep(new Date());
+        expect(minute.fired).toEqual([{ watcherId: raced.id }]);
+        expect(await observeWatcherFire({ watcherId: raced.id, sweep, read: read(raced.id) })).toEqual({
+          fired: true,
+          debounced: true,
+          fireCount: 1,
+          firedBy: "job-loop",
+        });
+
+        source.set("orders", { count: 100 });
+        const quiet = await watch("Below the threshold");
+        expect(await observeWatcherFire({ watcherId: quiet.id, sweep, read: read(quiet.id) })).toEqual({
+          fired: false,
+          debounced: false,
+          fireCount: 0,
+          firedBy: null,
+        });
+      } finally {
+        await episode.stop();
+        await source.close();
+      }
     },
     600_000,
   );
