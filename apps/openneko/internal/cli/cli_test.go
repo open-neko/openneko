@@ -16,6 +16,12 @@ func TestExitCodeFor(t *testing.T) {
 	if code := ExitCodeFor(errors.New("plain")); code != 0 {
 		t.Fatalf("expected 0 for non-wrapped err, got %d", code)
 	}
+	if err := WithExit(0, nil); err != nil {
+		t.Fatalf("a proxied command that exits 0 returns %v; main then exits 1", err)
+	}
+	if code := ExitCodeFor(WithExit(2, nil)); code != 2 {
+		t.Fatalf("expected 2, got %d", code)
+	}
 }
 
 func TestRootHasAllCommands(t *testing.T) {

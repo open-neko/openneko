@@ -110,6 +110,9 @@ func (e *exitErr) Error() string {
 func (e *exitErr) Unwrap() error { return e.err }
 
 func WithExit(code int, err error) error {
+	if code == 0 && err == nil {
+		return nil
+	}
 	return &exitErr{code: code, err: err}
 }
 
