@@ -27,7 +27,7 @@ type setupHostOptions struct {
 // continues to honor explicit environment overrides.
 func activateInstallation(selected string) error {
 	if os.Getenv("OPENNEKO_PROXIED") == "1" {
-		// The target worker container is already isolated by its Compose project
+		// The target web container is already isolated by its Compose project
 		// and mounts its instance config at /config/openneko directly.
 		return nil
 	}

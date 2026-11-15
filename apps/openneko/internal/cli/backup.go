@@ -67,7 +67,7 @@ func newBackupCmd() *cobra.Command {
 		Short: "Write an encrypted backup of the database and config volumes to a file",
 		Long: `Write one encrypted file holding a pg_dump of OpenNeko's database plus the
 OpenNeko and GraphJin volumes. With an external database, pg_dump runs in a
-worker container and connects by the database URL. With the bundled neko-db,
+new web container and connects by the database URL. With the bundled neko-db,
 the stack must be running.
 
 By default the file goes to $XDG_DATA_HOME/openneko/backups/<installation>/<project>
