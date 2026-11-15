@@ -100,8 +100,16 @@ func TestAgentSettings(t *testing.T) {
 	if code, got := put(`{"globalCap":null,"backend":"ax"}`); code != 200 || got != `{"source":"org","backend":"ax","globalCap":4,"terminal":false}` {
 		t.Errorf("a null cap keeps the stored cap: %d %s", code, got)
 	}
-	if code, got := put(`{"globalCap":"invalid","terminal":true}`); code != 200 || got != `{"source":"org","backend":"ax","globalCap":3,"terminal":true}` {
-		t.Errorf("an invalid cap falls back: %d %s", code, got)
+	for _, bad := range []string{`"invalid"`, `""`, `0`, `-2`, `0.5`, `1001`, `false`, `{}`, `[]`} {
+		if code, got := put(`{"globalCap":` + bad + `,"terminal":true}`); code != 400 || got != `{"error":"Concurrent jobs must be a number from 1 to 1000"}` {
+			t.Errorf("cap %s: %d %s", bad, code, got)
+		}
+	}
+	if code, got := put(`{}`); code != 200 || got != `{"source":"org","backend":"ax","globalCap":4,"terminal":false}` {
+		t.Errorf("a refused cap changed the stored settings: %d %s", code, got)
+	}
+	if code, got := put(`{"terminal":true}`); code != 200 || got != `{"source":"org","backend":"ax","globalCap":4,"terminal":true}` {
+		t.Errorf("terminal on: %d %s", code, got)
 	}
 	if code, got := put(`{"globalCap":12.7}`); code != 200 || got != `{"source":"org","backend":"ax","globalCap":12,"terminal":true}` {
 		t.Errorf("a fractional cap: %d %s", code, got)

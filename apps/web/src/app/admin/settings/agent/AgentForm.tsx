@@ -161,7 +161,7 @@ export default function AgentForm({
           <Field
             label="Concurrent jobs"
             htmlFor="agent-concurrent-jobs"
-            hint="How many agent turns run at the same time. The change applies when you save."
+            hint="How many agent turns run at the same time. Slack and Telegram messages run at most 3 turns at once. The change applies when you save."
           >
             <Input
               id="agent-concurrent-jobs"

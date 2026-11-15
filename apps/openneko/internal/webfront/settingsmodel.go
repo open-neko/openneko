@@ -167,6 +167,10 @@ func (a *API) settingsAgentPut(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, "terminal must be true or false")
 		return
 	}
+	if raw, set := body.vals["globalCap"]; set && raw != nil && positiveCap(raw, 0) == 0 {
+		sendError(w, http.StatusBadRequest, "Concurrent jobs must be a number from 1 to 1000")
+		return
+	}
 	ctx := r.Context()
 	id, existing, found, err := a.loadAgentRow(ctx, act.OrgID)
 	if err != nil {

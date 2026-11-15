@@ -5,6 +5,7 @@ export const settingsCases: Case[] = [
   { op: "GET /settings/agent", name: "reports the agent settings", status: 200 },
   { op: "PUT /settings/agent", name: "saves the agent settings", status: 200, request: { body: { backend: "ax", globalCap: 3, terminal: true } } },
   { op: "PUT /settings/agent", name: "refuses an unknown backend", status: 400, request: { body: { backend: "nothing" } } },
+  { op: "PUT /settings/agent", name: "refuses a Concurrent jobs value out of range", status: 400, request: { body: { globalCap: 0 } } },
   { op: "GET /settings/channel-identities", name: "lists the channel identities", status: 200 },
   { op: "PATCH /settings/channel-identities/{id}", name: "refuses an unknown identity", status: 404, request: (c) => ({ params: { id: c.ids.unknownId }, body: { action: "block" } }) },
   { op: "GET /settings/data-source", name: "reports the data source", status: 200 },
