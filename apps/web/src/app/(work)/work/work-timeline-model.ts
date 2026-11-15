@@ -107,7 +107,6 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
         pendingText = "";
         for (let i = items.length - 1; i >= 0; i--) {
           if (items[i].kind === "text" || items[i].kind === "card_pending") items.splice(i, 1);
-          else if (items[i].kind !== "progress") break;
         }
         break;
       }
