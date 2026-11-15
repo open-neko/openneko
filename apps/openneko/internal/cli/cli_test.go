@@ -81,17 +81,17 @@ func TestPersistentInstanceFlagWorksAfterSubcommand(t *testing.T) {
 	}
 }
 
-func TestNamedInstanceFromWorkerContainer(t *testing.T) {
-	name, ok := namedInstanceFromWorkerContainer("openneko-acme-west-prod-worker-1")
+func TestNamedInstanceFromWebContainer(t *testing.T) {
+	name, ok := namedInstanceFromContainer("openneko-acme-west-prod-web-1", "web")
 	if !ok || name != "acme-west" {
-		t.Fatalf("named worker = %q, ok=%v", name, ok)
+		t.Fatalf("named web = %q, ok=%v", name, ok)
 	}
 	for _, container := range []string{
-		"openneko-prod-worker-1",
-		"openneko-acme-prod-web-1",
-		"unrelated-worker-1",
+		"openneko-prod-web-1",
+		"openneko-acme-prod-openneko-serve-1",
+		"unrelated-web-1",
 	} {
-		if name, ok := namedInstanceFromWorkerContainer(container); ok || name != "" {
+		if name, ok := namedInstanceFromContainer(container, "web"); ok || name != "" {
 			t.Fatalf("%q parsed as named instance %q", container, name)
 		}
 	}
