@@ -298,8 +298,11 @@ func TestRunEventStore(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if err := idle.finalize(ctx); err != nil || len(stored(runAdmin)) != 7 || len(live) != 6 {
-		t.Fatalf("%v %d %d", err, len(stored(runAdmin)), len(live))
+	if err := idle.finalize(ctx); err != nil || len(live) != 6 {
+		t.Fatalf("%v %d", err, len(live))
+	}
+	if got := stored(runAdmin); len(got) != 6 || got[5] != `message {"role": "assistant", "type": "message", "content": "TailIdle"}` {
+		t.Fatalf("the two last text rows were not joined:\n%s", strings.Join(got, "\n"))
 	}
 	a.runs.unregister(runAdmin, cancelRun)
 

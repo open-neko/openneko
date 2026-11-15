@@ -16,6 +16,7 @@ import (
 var (
 	agentSlotHeartbeat = 60 * time.Second
 	runEventFlushAfter = 100 * time.Millisecond
+	runEventFlushEvery = 300 * time.Millisecond
 	TurnStopGrace      = 5 * time.Second
 )
 
@@ -307,17 +308,18 @@ func (a *API) StopTurns(ctx context.Context) int {
 type runEventStore struct {
 	api                          *API
 	orgID, threadID, runID, kind string
-	flushAfter                   time.Duration
+	flushAfter, flushEvery       time.Duration
 	afterFunc                    func(time.Duration, func()) runEventTimer
 	skills                       skillTrace
 
-	mu    sync.Mutex
-	cur   string
-	pend  map[string]*pendingRunText
-	order []string
-	timer runEventTimer
-	gen   int
-	err   error
+	mu         sync.Mutex
+	cur        string
+	pend       map[string]*pendingRunText
+	order      []string
+	timer      runEventTimer
+	gen        int
+	err        error
+	textStored bool
 }
 
 type runEventTimer interface{ Stop() bool }
@@ -328,7 +330,7 @@ type pendingRunText struct {
 }
 
 func (a *API) newRunEventStore(orgID, threadID, runID string) *runEventStore {
-	return &runEventStore{api: a, orgID: orgID, threadID: threadID, runID: runID, kind: "work", flushAfter: runEventFlushAfter,
+	return &runEventStore{api: a, orgID: orgID, threadID: threadID, runID: runID, kind: "work", flushAfter: runEventFlushAfter, flushEvery: runEventFlushEvery,
 		afterFunc: func(d time.Duration, f func()) runEventTimer { return time.AfterFunc(d, f) }}
 }
 
@@ -366,8 +368,11 @@ func (s *runEventStore) emit(ctx context.Context, event any) error {
 	}
 	p.buf.WriteString(content)
 	if s.timer == nil && content != "" {
-		gen := s.gen
-		s.timer = s.afterFunc(s.flushAfter, func() {
+		gen, wait := s.gen, s.flushAfter
+		if s.textStored {
+			wait = s.flushEvery
+		}
+		s.timer = s.afterFunc(wait, func() {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			if s.gen == gen {
@@ -458,6 +463,7 @@ func (s *runEventStore) flushKeyLocked(ctx context.Context, key string, whole bo
 		if err := s.persistLocked(ctx, bufferedRunEvent(p.head, content[:cut])); err != nil {
 			return err
 		}
+		s.textStored = true
 	}
 	if cut == len(content) {
 		s.dropLocked(key)
@@ -505,12 +511,20 @@ func (s *runEventStore) persistLocked(ctx context.Context, event any) error {
 	return nil
 }
 
-// finalize stores the text still held and returns the first store error.
+// finalize stores the text still held, joins the run's text rows and
+// returns the first store error.
 func (s *runEventStore) finalize(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.flushAllLocked(context.WithoutCancel(ctx), true)
-	return s.err
+	ctx = context.WithoutCancel(ctx)
+	_ = s.flushAllLocked(ctx, true)
+	if s.err != nil {
+		return s.err
+	}
+	if err := s.api.joinRunText(ctx, s.orgID, s.runID); err != nil {
+		log.Printf("[work-run] could not join the text rows of %s: %v", s.runID, err)
+	}
+	return nil
 }
 
 func (a *API) insertRunEvent(ctx context.Context, orgID, threadID, runID string, event any) (int64, error) {
