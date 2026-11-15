@@ -452,7 +452,7 @@ func defaultProviderForm(scope string) providerForm {
 	if scope == "primary" {
 		f.Provider, f.Model = "google-gemini", llm.DefaultModel("google-gemini")
 	} else {
-		f.Provider, f.Model = "perplexity", llm.DefaultResearchModel("perplexity")
+		f.Provider, f.Model, f.Enabled = "disabled", llm.DefaultResearchModel("disabled"), false
 	}
 	return f
 }

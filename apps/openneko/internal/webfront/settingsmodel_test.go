@@ -255,8 +255,18 @@ func TestProviderSettings(t *testing.T) {
 
 	got := decode(t, call(f, "GET", "/api/v1/settings/provider", "", admin))
 	primary, research := got["primary"].(map[string]any), got["research"].(map[string]any)
-	if primary["source"] != "default" || primary["provider"] != "google-gemini" || research["source"] != "default" || research["model"] != "sonar-deep-research" {
+	if primary["source"] != "default" || primary["provider"] != "google-gemini" || research["source"] != "default" ||
+		research["provider"] != "disabled" || research["enabled"] != false || research["model"] != "" {
 		t.Errorf("defaults: %v", got)
+	}
+	if _, err := db.Exec(t.Context(), `insert into llm_provider_config (org_id, scope, provider, enabled) values ('org', 'research', 'openai', true)`); err != nil {
+		t.Fatal(err)
+	}
+	if r := decode(t, call(f, "GET", "/api/v1/settings/provider", "", admin))["research"].(map[string]any); r["provider"] != "disabled" || r["enabled"] != false {
+		t.Errorf("an unknown research provider reads as off: %v", r)
+	}
+	if _, err := db.Exec(t.Context(), `delete from llm_provider_config where org_id = 'org' and scope = 'research'`); err != nil {
+		t.Fatal(err)
 	}
 	options := got["options"].(map[string]any)
 	defaults := got["defaults"].(map[string]any)
