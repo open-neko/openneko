@@ -98,9 +98,6 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
       pnpm install --frozen-lockfile --side-effects-cache=false
 
 # ─── 4. source + web build ─────────────────────────────────────────────
-# Keep source assembly separate from the expensive Next.js build. Worker,
-# agent, and one-shot targets only need the installed workspace plus sources;
-# forcing them through `next build` added several minutes to every image build.
 FROM deps AS source
 WORKDIR /app
 COPY . .
