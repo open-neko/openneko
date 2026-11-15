@@ -682,7 +682,7 @@ func (a *API) graphjinMCPAccess(ctx context.Context, orgID string, runID *string
 		}
 		headers["authorization"] = "Bearer " + token
 	case "development":
-		if os.Getenv("NODE_ENV") == "production" {
+		if !Development() {
 			return graphjinEndpoint{}, errors.New("GraphJin development header auth is forbidden in production")
 		}
 		p, err := a.graphjinCallerPrincipal(ctx, orgID, runID)

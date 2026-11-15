@@ -37,10 +37,11 @@ func newWebCmd() *cobra.Command {
 		Long: `Serves the static web app, applies the request gate, and answers /api/v1
 and its /api aliases.
 
-Web marks its cookies Secure when NODE_ENV is production. It reads and writes
-users, sessions, devices, groups, the business profile, personal pack
-connections and the audit chain with the main database login, and reads
-secrets.json for pack OAuth client IDs and sign-in settings.
+Web runs in production mode and marks its cookies Secure, unless OPENNEKO_ENV
+is development. It reads and writes users, sessions, devices, groups, the
+business profile, personal pack connections and the audit chain with the main
+database login, and reads secrets.json for pack OAuth client IDs and sign-in
+settings.
 
 Web runs the background jobs on the River queue in the river schema. With
 --jobs=false (OPENNEKO_WEB_JOBS=false) web runs no job; it still queues jobs
@@ -109,7 +110,7 @@ with exit code 0, so its supervisor starts it again.`,
 			secretsDir := config.Dir("")
 			gate := &webfront.Gate{SecretsDir: secretsDir, DB: pool}
 			api := &webfront.API{Gate: gate, DB: pool, Version: webfront.AppVersion(dir, version.Version),
-				SecureCookies: os.Getenv("NODE_ENV") == "production", SecretsDir: secretsDir, Restart: stop, Jobs: inserter, EvalTrace: trace,
+				SecureCookies: !webfront.Development(), SecretsDir: secretsDir, Restart: stop, Jobs: inserter, EvalTrace: trace,
 				MetricsRefresh: jobs.MetricsRefreshOn()}
 			if socket := strings.TrimSpace(os.Getenv(webAdminSocketEnv)); socket != "" {
 				stopAdmin, err := serveWebAdmin(socket, api.OperatorHandler())
@@ -140,6 +141,14 @@ with exit code 0, so its supervisor starts it again.`,
 			}
 			if err := api.EnsureVAPIDKeys(); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: VAPID keys not ready: %v\n", err)
+			}
+			if warning := api.ProviderCredentialWarning(ctx); warning != "" {
+				fmt.Fprintln(cmd.ErrOrStderr(), warning)
+			}
+			if n, err := api.ApplyAgentConcurrency(ctx); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: the Concurrent jobs setting was not read: %v\n", err)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "openneko web: %d agent turns run at once\n", n)
 			}
 			if err := api.SeedDefaultActionPolicies(ctx); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: default action policies not seeded: %v\n", err)

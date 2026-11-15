@@ -140,7 +140,7 @@ func ServeEnv(l Layout) map[string]string {
 
 func WebEnv(l Layout, o Options) map[string]string {
 	web := sharedEnv(l)
-	web["NODE_ENV"] = "production"
+	web["OPENNEKO_ENV"] = "production"
 	web["OPENNEKO_WEB_ADDR"] = o.WebAddr
 	web["OPENNEKO_WEB_DIR"] = o.WebDir
 	web["OPENNEKO_PUBLIC_URL"] = o.PublicURL

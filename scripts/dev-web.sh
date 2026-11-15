@@ -11,6 +11,8 @@ if [ ! -f apps/web/dist/index.html ] || [ -n "$(find apps/web/src -newer apps/we
   pnpm --filter @neko/web build:spa
 fi
 
+export OPENNEKO_ENV=development
+
 (cd apps/openneko && go build -o "../../$bin_dir/openneko-web" ./cmd/openneko)
 
 watch_pid=""
