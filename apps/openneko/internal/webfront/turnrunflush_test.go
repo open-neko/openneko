@@ -98,7 +98,7 @@ func TestRunEventStoreFlushesDuringASteadyStream(t *testing.T) {
 	if err := s.finalize(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if before != 20 || arrivals[0] != 100*time.Millisecond {
+	if before != 7 || arrivals[0] != 100*time.Millisecond || arrivals[1] != 400*time.Millisecond {
 		t.Fatalf("the text grew %d times in 2s of steady deltas, first at %v", before, arrivals)
 	}
 	if text.String() != want.String() {
@@ -221,9 +221,9 @@ func TestRunEventStoreScrubsASecretSplitAcrossFlushes(t *testing.T) {
 	if err := secrets.Write(secrets.Store{"pack.shop": {"API_KEY": key}}, a.SecretsDir); err != nil {
 		t.Fatal(err)
 	}
-	old := runEventFlushAfter
-	t.Cleanup(func() { runEventFlushAfter = old })
-	runEventFlushAfter = 10 * time.Millisecond
+	old, oldEvery := runEventFlushAfter, runEventFlushEvery
+	t.Cleanup(func() { runEventFlushAfter, runEventFlushEvery = old, oldEvery })
+	runEventFlushAfter, runEventFlushEvery = 10*time.Millisecond, 10*time.Millisecond
 	count := func() int {
 		n := 0
 		if err := db.QueryRow(ctx, `select count(*) from work_run_event where run_id = $1`, runAdmin).Scan(&n); err != nil {
@@ -249,13 +249,15 @@ func TestRunEventStoreScrubsASecretSplitAcrossFlushes(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+	if n := count(); n < 2 {
+		t.Fatalf("the text was stored in %d rows before the end", n)
+	}
 	if err := s.finalize(ctx); err != nil {
 		t.Fatal(err)
 	}
 	stored := rowText(t, db, `select string_agg(payload->>'content', '|' order by id) from work_run_event where run_id = $1`, runAdmin)
 	if strings.Contains(stored, key[:9]) || strings.Contains(stored, key[9:20]) || strings.Contains(stored, key[20:]) ||
-		strings.ReplaceAll(stored, "|", "") != "Here is the configuration that the shop pack uses, and the key is [REDACTED] in the file." ||
-		strings.Count(stored, "|") < 1 {
+		stored != "Here is the configuration that the shop pack uses, and the key is [REDACTED] in the file." {
 		t.Fatalf("stored %q", stored)
 	}
 }
