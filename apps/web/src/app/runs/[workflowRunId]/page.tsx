@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { SkeletonList } from "@/components/ui/skeleton";
 import { withRunEventFormat } from "@/lib/run-event-format";
+import { coalesceRunEvents, type RunEventRow } from "@/lib/run-event-items";
 import { useParams, useRouter } from "next/navigation";
 import { Download, MessageCircle, Square, TriangleAlert } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -107,12 +108,7 @@ type RunDetailPayload = {
     rejectionReason: string | null;
     createdAt: string;
   }>;
-  events: Array<{
-    seq: number;
-    type: string;
-    event: Record<string, unknown> | null;
-    createdAt: string;
-  }>;
+  events: RunEventRow[];
   lineage: {
     triggeredBySubscriptionId: string | null;
     triggeredByOutputId: string | null;
@@ -928,46 +924,8 @@ function JsonPanel({
 
 type EventRow = RunDetailPayload["events"][number];
 
-type RenderedItem =
-  | { type: "message-block"; seq: number; content: string }
-  | { type: "single"; seq: number; ev: EventRow };
-
-function coalesceEvents(events: EventRow[]): RenderedItem[] {
-  // Streaming chunks each become their own `message` event row. Rendering each
-  // independently through ReactMarkdown breaks any inline syntax that spans a
-  // chunk boundary (e.g. `**Daily Revenue Health Check**` split between two
-  // events leaves both halves un-bolded). Coalesce consecutive message events
-  // into a single block so the markdown parser sees a complete string.
-  const items: RenderedItem[] = [];
-  let current: { seq: number; content: string } | null = null;
-  for (const ev of events) {
-    if (ev.type === "answer_reset") {
-      current = null;
-      continue;
-    }
-    if (ev.type === "message") {
-      const content = (ev.event as { content?: string } | null)?.content ?? "";
-      if (current) {
-        current.content += content;
-      } else {
-        current = { seq: ev.seq, content };
-      }
-      continue;
-    }
-    if (current) {
-      items.push({ type: "message-block", seq: current.seq, content: current.content });
-      current = null;
-    }
-    items.push({ type: "single", seq: ev.seq, ev });
-  }
-  if (current) {
-    items.push({ type: "message-block", seq: current.seq, content: current.content });
-  }
-  return items;
-}
-
 function EventStream({ events }: { events: EventRow[] }) {
-  const items = coalesceEvents(events);
+  const items = coalesceRunEvents(events);
   return (
     <ul className="list-none p-0 m-0 flex flex-col gap-1.5 text-ui-body border-l-2 border-border pl-3">
       {items.map((item) => {
