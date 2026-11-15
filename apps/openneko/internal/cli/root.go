@@ -190,6 +190,7 @@ Developer ops: eval.`,
 		newEvalCmd(),
 		newJobsCmd(),
 		newContainerInitCmd(),
+		newReleaseCheckCmd(),
 	)
 	return cmd
 }
