@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	neturl "net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -21,15 +22,20 @@ func testDatabase(t *testing.T) (ConnConfig, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	schema := fmt.Sprintf("lock_%d", time.Now().UnixNano())
-	if _, err := admin.Exec(ctx, "create schema "+schema); err != nil {
+	name := fmt.Sprintf("dblock_%d", time.Now().UnixNano())
+	if _, err := admin.Exec(ctx, "create database "+name); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		admin.Exec(context.Background(), "drop schema "+schema+" cascade") //nolint:errcheck
+		admin.Exec(context.Background(), "drop database "+name+" with (force)") //nolint:errcheck
 		admin.Close(context.Background())
 	})
-	return ConnConfig{URL: url}, schema
+	u, err := neturl.Parse(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.Path = "/" + name
+	return ConnConfig{URL: u.String()}, "public"
 }
 
 type lines struct {

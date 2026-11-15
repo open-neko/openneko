@@ -92,7 +92,7 @@ describe("stream resume and offline question queue (4.6)", () => {
     expect(completed.runs[0]?.status).toBe("completed");
   });
 
-  it("queues offline questions, allows cancelling, and claims each remaining question once", () => {
+  it("queues offline questions, allows cancelling, and claims each remaining question once", async () => {
     const q1 = enqueueOfflineQuestion({
       id: "offline-1",
       threadId: "thread-1",
@@ -111,22 +111,22 @@ describe("stream resume and offline question queue (4.6)", () => {
       q2.id,
     ]);
 
-    expect(cancelOfflineQuestion(q1.id)).toBe(true);
-    expect(cancelOfflineQuestion(q1.id)).toBe(false);
+    expect(await cancelOfflineQuestion(q1.id)).toBe(true);
+    expect(await cancelOfflineQuestion(q1.id)).toBe(false);
     expect(getOfflineQueueSnapshot().map((item) => item.id)).toEqual([q2.id]);
 
-    const claimed = claimNextOfflineQuestion("thread-1", "/chat/t");
+    const claimed = claimNextOfflineQuestion();
     expect(claimed?.id).toBe(q2.id);
     expect(claimed?.status).toBe("sending");
 
     // A second claim while the first is in flight returns null so the question sends only once.
-    expect(claimNextOfflineQuestion("thread-1", "/chat/t")).toBeNull();
+    expect(claimNextOfflineQuestion()).toBeNull();
 
     // If the network drops again before the POST succeeds, requeue restores waiting status.
     requeueOfflineQuestion(claimed!);
     expect(getOfflineQueueSnapshot()[0]?.status).toBe("waiting");
 
-    const claimedAgain = claimNextOfflineQuestion("thread-1", "/chat/t");
+    const claimedAgain = claimNextOfflineQuestion();
     expect(claimedAgain?.id).toBe(q2.id);
     completeOfflineQuestion(q2.id);
     expect(getOfflineQueueSnapshot()).toEqual([]);
