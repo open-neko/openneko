@@ -177,7 +177,7 @@ func TestNativeUpgradeReplacesTheReleasePacks(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(from, "share", "openneko", "packs", "slack"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(from, "share", "openneko", "packs", "slack", "pack.yaml"), []byte("version: 2"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(from, "share", "openneko", "packs", "slack", "pack.yaml"), []byte("metadata:\n  id: slack\n  name: Slack\n  version: 2\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	old := filepath.Join(installed, "share", "openneko", "packs", "gone")
@@ -187,7 +187,7 @@ func TestNativeUpgradeReplacesTheReleasePacks(t *testing.T) {
 	if err := replaceReleasePacks(from, exe); err != nil {
 		t.Fatal(err)
 	}
-	if b, err := os.ReadFile(filepath.Join(installed, "share", "openneko", "packs", "slack", "pack.yaml")); err != nil || string(b) != "version: 2" {
+	if b, err := os.ReadFile(filepath.Join(installed, "share", "openneko", "packs", "slack", "pack.yaml")); err != nil || !strings.Contains(string(b), "version: 2") {
 		t.Fatalf("pack file: %q %v", b, err)
 	}
 	if _, err := os.Stat(old); !os.IsNotExist(err) {
@@ -222,6 +222,10 @@ func TestNativeUpgradeRefusesAReleaseWithNoPacks(t *testing.T) {
 	for name, setup := range map[string]func(){
 		"no packs folder": func() {},
 		"empty packs":     func() { _ = os.MkdirAll(filepath.Join(from, "share", "openneko", "packs", "slack"), 0o755) },
+		"empty pack.yaml": func() { writePackYAML(t, from, "") },
+		"not YAML":        func() { writePackYAML(t, from, "metadata: [name: x\n") },
+		"no name":         func() { writePackYAML(t, from, "metadata:\n  id: slack\n  version: 1\n") },
+		"blank name":      func() { writePackYAML(t, from, "metadata:\n  name: \"  \"\n") },
 	} {
 		setup()
 		err := upgrade()
@@ -253,5 +257,22 @@ func TestExtractNativeArchiveRefusesAnArchiveWithNoPacks(t *testing.T) {
 		if _, err := extractEntries(t, entries); err == nil || !strings.Contains(err.Error(), "no built-in pack") {
 			t.Errorf("%s: err = %v", name, err)
 		}
+	}
+}
+
+func writePackYAML(t *testing.T, release, body string) {
+	t.Helper()
+	dir := filepath.Join(release, "share", "openneko", "packs", "slack")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pack.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTheRepositoryPacksPassTheReleaseCheck(t *testing.T) {
+	if err := checkReleasePacks(filepath.Join("..", "..", "..", "..", "packs")); err != nil {
+		t.Fatal(err)
 	}
 }
