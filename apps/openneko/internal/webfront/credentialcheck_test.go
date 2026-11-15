@@ -52,3 +52,43 @@ func TestProviderCredentialWarningAtStart(t *testing.T) {
 		t.Fatalf("no credential: %q", got)
 	}
 }
+
+func TestProviderCredentialWarningCountsATurnModelRoute(t *testing.T) {
+	f, db := modelSettingsFront(t)
+	a := f.API
+	ctx := context.Background()
+	if err := config.EnsureSecretKey(a.SecretsDir); err != nil {
+		t.Fatal(err)
+	}
+	good, err := config.EncryptValue(a.SecretsDir, "sk-good-0003")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("OPENAI_API_KEY", "sk-env-only-0004")
+	t.Setenv("GEMINI_API_KEY", "sk-env-only-0005")
+	if got := a.ProviderCredentialWarning(ctx); !strings.Contains(got, "no model provider is set") {
+		t.Fatalf("a key in the environment only, which no turn uses: %q", got)
+	}
+
+	seed(t, db, `insert into llm_model (org_id, name, provider, model, secrets)
+		values ('org', 'fast', 'openai', 'gpt-5', jsonb_build_object('apiKey', '`+good+`'))`)
+	seed(t, db, `insert into llm_task_route (org_id, task, model_id) select 'org', 'turn', id from llm_model where name = 'fast'`)
+	if got := a.ProviderCredentialWarning(ctx); got != "" {
+		t.Fatalf("a turn route to a model with a readable key: %q", got)
+	}
+
+	foreign, err := config.EncryptValue(t.TempDir(), "sk-other-key-0006")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed(t, db, `update llm_model set secrets = jsonb_build_object('apiKey', '`+foreign+`') where name = 'fast'`)
+	if got := a.ProviderCredentialWarning(ctx); !strings.Contains(got, "credential cannot be read for org org (turn model)") || strings.Contains(got, "sk-other") {
+		t.Fatalf("a turn model sealed with another key: %q", got)
+	}
+
+	seed(t, db, `update llm_model set enabled = false where name = 'fast'`)
+	if got := a.ProviderCredentialWarning(ctx); !strings.Contains(got, "no model provider is set") {
+		t.Fatalf("a route to a disabled model only: %q", got)
+	}
+}
