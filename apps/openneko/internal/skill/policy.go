@@ -53,7 +53,7 @@ func ReadPolicy(ctx context.Context, target db.ConnConfig) (Policy, string, erro
 	}
 
 	var allow bool
-	err = conn.QueryRow(ctx, `select coalesce((config->>'allowGitUrlInstalls')::boolean, false)
+	err = conn.QueryRow(ctx, `select coalesce(config->'allowGitUrlInstalls' = 'true'::jsonb, false)
 		from llm_provider_config where org_id = $1 and scope = 'install-policy' limit 1`, orgID).Scan(&allow)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DefaultPolicy, "org", nil
