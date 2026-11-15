@@ -3,6 +3,7 @@ import { mkdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pg from "pg";
+import { contentDigest } from "@neko/evals";
 import { afterAll, describe, expect, it } from "vitest";
 import { app_user, data_source, db } from "@neko/db";
 import { dbReachable, seedProvider } from "@neko/db/test-helpers";
@@ -354,6 +355,61 @@ describe.skipIf(!reachable)("eval install episode", () => {
       expect(existsSync(root)).toBe(false);
       expect(existsSync(join(root, "serve.sock"))).toBe(false);
       expect(await databases()).not.toContain(database);
+    },
+    600_000,
+  );
+
+  it(
+    "lets the episode's web use the GraphJin development header auth of the eval sources",
+    async () => {
+      host ??= await EvalInstallHost.prepare({ login, lockWaitMs: 600_000 });
+      model ??= await ScriptedModelServer.start();
+      const source = await EvalGraphqlSource.start();
+      const orgId = "eval-run-mode";
+      const userId = "eval-run-mode-member";
+      const episode = await host.startEpisode({ label: "run-mode", org: { id: orgId, name: "Eval run mode" } });
+      try {
+        episode.activate();
+        await db().insert(app_user).values({ id: userId, email: "run-mode@eval.invalid", name: "Eval Member", org_id: orgId });
+        await seedProvider(orgId, {
+          scope: "primary",
+          provider: "openai-compatible",
+          model: "scripted-deterministic",
+          enabled: true,
+          config: { url: model.url },
+          secrets: { apiKey: maybeEncryptSecret(episode.modelKey) },
+        });
+        await seedProvider(orgId, { scope: "agent", provider: "ax", enabled: true, config: { backend: "ax" } });
+        await db().insert(data_source).values({
+          org_id: orgId,
+          kind: "graphjin",
+          graphql_url: source.url,
+          mcp_url: source.url.replace(/graphql$/u, "mcp"),
+          label: "run mode source",
+          enabled: true,
+          is_default: true,
+          auth_mode: "development",
+        });
+        const feed = new RunEventFeed();
+        model.arm(async () => "done", feed);
+        const thread = (await (await episode.api(userId, "/api/v1/work/threads", { method: "POST", body: "{}" })).json()) as {
+          thread: { id: string };
+        };
+        const started = await episode.api(userId, `/api/v1/work/threads/${thread.thread.id}/runs`, {
+          method: "POST",
+          body: JSON.stringify({ message: "List the data tools." }),
+        });
+        expect(started.status).toBe(200);
+        const run = (await started.json()) as { runId: string };
+        await episode.followRun(userId, thread.thread.id, run.runId, (event) => feed.push(event));
+        const listed = (await episode.readTrace(run.runId)).events.filter((event) => event.operation === "graphjin.tools_list");
+        expect(listed.length).toBeGreaterThan(0);
+        const refusal = contentDigest("GraphJin development header auth is forbidden in production");
+        expect(listed.map((event) => (event as { errorDigest?: string }).errorDigest)).not.toContain(refusal);
+      } finally {
+        await episode.stop();
+        await source.close();
+      }
     },
     600_000,
   );

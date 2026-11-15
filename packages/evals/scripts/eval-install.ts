@@ -270,6 +270,7 @@ export class EvalEpisode {
       OPENNEKO_FILES_DIR: this.filesRoot,
       OPENNEKO_FILES_INDEX_DIR: join(this.root, "file-index"),
       OPENNEKO_SESSION_SECRET: this.sessionSecret,
+      OPENNEKO_ENV: "development",
     };
   }
 
