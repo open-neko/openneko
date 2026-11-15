@@ -217,6 +217,10 @@ func TestWorkflowAPIRunFireBatch(t *testing.T) {
 		execution_mode, input_file_path, batch_contract, accepted_records, request_bytes, status, expires_at)
 		values ($1, 'org', $2, $3, repeat('a', 64), repeat('b', 64), 'batch', $4, '{"columns":[{"name":"Order","path":"order.id","default":1.5},{"name":"Note","path":"note"}]}',
 		3, 90, 'enqueued', now() + interval '1 hour')`, wfAPIAdmissionID, job.WorkflowID, wfTurnRun, rel)
+	seedRiver(t, db, &Front{API: a})
+	sub := testPushSubscription(t, "https://push.example.com/admin")
+	seed(t, db, `insert into app_push_subscription (org_id, user_id, endpoint, p256dh, auth) values ('org', 'admin', $1, $2, $3)`,
+		sub.Endpoint, sub.P256dh, sub.Auth)
 	a.turnCore = func(context.Context, agentCoreInput) (axRunResult, error) {
 		t.Fatal("a batch called the model")
 		return axRunResult{}, nil
@@ -245,6 +249,9 @@ func TestWorkflowAPIRunFireBatch(t *testing.T) {
 	if g := rowText(t, db, `select string_agg(payload->>'type', ',' order by id) from work_run_event where run_id = $1`, wfTurnWorkRun); g !=
 		"status,artifact,message,done,telemetry" {
 		t.Errorf("events %s", g)
+	}
+	if queued := riverJobs(t, db, jobs.KindWebPush); len(queued) != 1 || !strings.Contains(queued[0].Args, `"event": "run_finished"`) {
+		t.Errorf("web_push jobs after a batch: %+v", queued)
 	}
 }
 
@@ -400,5 +407,31 @@ func TestWorkflowAPIResultShapes(t *testing.T) {
 		if g := wfAPICSVCell(in); g != want {
 			t.Errorf("cell %q = %q, want %q", in, g, want)
 		}
+	}
+}
+
+func TestWorkflowAPIRunFireQueuesPush(t *testing.T) {
+	for _, c := range []struct{ status, event string }{
+		{"completed", "run_finished"},
+		{"failed", "workflow_needs_attention"},
+	} {
+		t.Run(c.status, func(t *testing.T) {
+			a, db, job := apiRunFront(t, "single")
+			seedRiver(t, db, &Front{API: a})
+			sub := testPushSubscription(t, "https://push.example.com/admin")
+			seed(t, db, `insert into app_push_subscription (org_id, user_id, endpoint, p256dh, auth) values ('org', 'admin', $1, $2, $3)`,
+				sub.Endpoint, sub.P256dh, sub.Auth)
+			a.turnResolve = fixedBackend("http://unused")
+			a.turnCore = func(ctx context.Context, in agentCoreInput) (axRunResult, error) {
+				return axRunResult{Status: c.status, FinalText: "Done."}, nil
+			}
+			if err := a.WorkflowRunFire(context.Background(), job, 1); err != nil {
+				t.Fatal(err)
+			}
+			queued := riverJobs(t, db, jobs.KindWebPush)
+			if len(queued) != 1 || !strings.Contains(queued[0].Args, `"event": "`+c.event+`"`) || !strings.Contains(queued[0].Args, `"users": ["admin"]`) {
+				t.Fatalf("web_push jobs after a %s API run: %+v", c.status, queued)
+			}
+		})
 	}
 }
