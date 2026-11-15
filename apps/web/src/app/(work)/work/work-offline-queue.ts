@@ -220,10 +220,14 @@ export function newClientRequestId(): string {
   return `offline-${Date.now()}-${Math.random().toString(36).slice(2)}-${nextCounter++}`;
 }
 
-/** A queued question completes on 2xx only; 429 and 5xx send it again later. */
-export function offlineSendOutcome(status: number): "done" | "retry" | "refused" {
+/**
+ * A queued question completes on 2xx only; 429 and 5xx send it again later.
+ * A 401 keeps it for its user to send after the next sign-in.
+ */
+export function offlineSendOutcome(status: number): "done" | "retry" | "signin" | "refused" {
   if (status >= 200 && status < 300) return "done";
   if (status === 429 || status >= 500) return "retry";
+  if (status === 401) return "signin";
   return "refused";
 }
 
@@ -231,6 +235,30 @@ export function offlineRetryDelayMs(res: { status: number; headers: Headers }): 
   const seconds = Number(res.headers.get("Retry-After"));
   if (Number.isFinite(seconds) && seconds > 0) return Math.min(Math.max(seconds, 5), 300) * 1000;
   return res.status === 429 ? 30_000 : 15_000;
+}
+
+/**
+ * Applies a non-2xx answer to a claimed question: it waits for a later send,
+ * or it keeps the server's refusal and does not send again.
+ */
+export function settleOfflineRefusal(
+  id: string,
+  res: { status: number; headers: Headers },
+  error: string,
+  threadId?: string,
+): "retry" | "signin" | "refused" {
+  const outcome = offlineSendOutcome(res.status);
+  if (outcome === "done") throw new Error(`HTTP ${res.status} is not a refusal`);
+  if (outcome === "refused") {
+    failOfflineQuestion(id, `The server refused this question (HTTP ${res.status}): ${error}`, threadId);
+  } else {
+    deferOfflineQuestion(id, Date.now() + offlineRetryDelayMs(res), threadId);
+  }
+  return outcome;
+}
+
+export function offlineQueueUser(): string | null {
+  return userId;
 }
 
 export function getOfflineQueueSnapshot(): readonly QueuedQuestion[] {

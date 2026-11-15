@@ -284,4 +284,37 @@ describe("offline question queue storage (FIX6b)", () => {
     expect(tab.getOfflineQueueSnapshot()).toEqual([{ ...queued, status: "waiting" }]);
     expect(queued.id).toMatch(/^[A-Za-z0-9._-]{1,128}$/);
   });
+
+  it("keeps a question on 429, 5xx and 401 with a retry time; fails it on other refusals (FIX15)", async () => {
+    const tab = await openTab();
+    expect(tab.offlineSendOutcome(401)).toBe("signin");
+    tab.setOfflineQueueUser("user-a");
+    const res = (status: number) => ({ status, headers: new Headers() });
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    try {
+      for (const [status, outcome] of [[503, "retry"], [429, "retry"], [401, "signin"]] as const) {
+        const queued = tab.enqueueOfflineQuestion({ ...question(`Status ${status}`), threadId: null });
+        const claimed = tab.claimNextOfflineQuestion(null, "/chat/t")!;
+        expect(claimed.id).toBe(queued.id);
+        expect(tab.settleOfflineRefusal(claimed.id, res(status), "no")).toBe(outcome);
+        expect(tab.getOfflineQueueSnapshot().find((item) => item.id === queued.id)).toMatchObject({
+          status: "waiting",
+          retryAt: now + tab.offlineRetryDelayMs(res(status)),
+        });
+        expect(tab.claimNextOfflineQuestion(null, "/chat/t")).toBeNull();
+        tab.cancelOfflineQuestion(queued.id);
+      }
+      const refused = tab.enqueueOfflineQuestion({ ...question("Not allowed"), threadId: null });
+      tab.claimNextOfflineQuestion(null, "/chat/t");
+      expect(tab.settleOfflineRefusal(refused.id, res(403), "forbidden")).toBe("refused");
+      expect(tab.getOfflineQueueSnapshot()).toMatchObject([
+        { id: refused.id, status: "failed", error: "The server refused this question (HTTP 403): forbidden" },
+      ]);
+      expect(() => tab.settleOfflineRefusal(refused.id, res(201), "")).toThrow();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
 });
+

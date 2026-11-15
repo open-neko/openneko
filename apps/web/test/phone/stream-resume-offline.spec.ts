@@ -559,4 +559,133 @@ test.describe("4.6 stream resume and offline question queue", () => {
       await client.end();
     }
   });
+
+  test("sends nothing of user A from a stale tab after user B signs in, backs off on a refused new thread, and flushes in solo mode (FIX15)", async ({
+    context,
+    page,
+  }) => {
+    const client = new pg.Client({ connectionString: resolveDatabaseUrl() });
+    await client.connect();
+    try {
+      const { rows: orgRows } = await client.query<{ id: string }>(
+        "select id from organization limit 1",
+      );
+      const orgId = orgRows[0]!.id;
+      const session = (await (
+        await page.request.get("/api/v1/auth/session")
+      ).json()) as { user: { id: string } | null; authEnabled: boolean };
+      expect(session.authEnabled).toBe(false);
+      const userA = session.user!.id;
+      const threadId = randomUUID();
+      await client.query(
+        `insert into work_thread (id, org_id, title, created_by_user_id)
+         values ($1, $2, 'Stale tab check', $3)`,
+        [threadId, orgId, userA],
+      );
+      const runsFor = async (message: string) => {
+        const { rows } = await client.query<{ runs: string }>(
+          `select count(distinct m.run_id)::text as runs from work_message m
+            where m.thread_id = $1 and m.role = 'user' and m.content = $2`,
+          [threadId, message],
+        );
+        return rows[0]!.runs;
+      };
+      const posted: string[] = [];
+      await context.route(`**/api/v1/work/threads/${threadId}/runs`, async (route) => {
+        if (route.request().method() === "POST") {
+          posted.push((JSON.parse(route.request().postData() ?? "{}") as { message?: string }).message ?? "");
+        }
+        await route.continue();
+      });
+      const ask = async (p: import("@playwright/test").Page, text: string) => {
+        const composer = p.locator("textarea.work-input");
+        await expect(composer).toBeEnabled({ timeout: 20_000 });
+        await composer.fill(text);
+        await composer.press("Enter");
+        await expect(p.getByTestId("offline-queued-question")).toContainText(text);
+      };
+      const goOffline = async (p: import("@playwright/test").Page) => {
+        await expect(p.locator("textarea.work-input")).toBeEnabled({ timeout: 20_000 });
+        await context.setOffline(true);
+      };
+      const keyA = `openneko.work.offlineQueue.user.${userA}`;
+
+      await page.goto(`/work/${threadId}`, { waitUntil: "networkidle" });
+
+      // Solo mode: the session names the solo admin, and a queued question sends once.
+      await goOffline(page);
+      await ask(page, "Solo mode question");
+      await context.setOffline(false);
+      await expect.poll(() => runsFor("Solo mode question"), { timeout: 20_000 }).toBe("1");
+      await expect(page.getByTestId("offline-queued-question")).toHaveCount(0);
+
+      // User A's session ends and user B signs in from another tab.
+      await goOffline(page);
+      await ask(page, "Private question of user A");
+      await context.route("**/api/v1/auth/session", (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            user: { id: "user-b", email: "b@example.com", name: null },
+            role: "member",
+            authEnabled: true,
+            signedIn: true,
+          }),
+        }),
+      );
+      await context.setOffline(false);
+      const tabB = await context.newPage();
+      await tabB.goto(`/work/${threadId}`, { waitUntil: "networkidle" });
+      await expect(page.getByTestId("offline-queued-question")).toHaveCount(0, { timeout: 20_000 });
+      await page.waitForTimeout(3_000);
+      await expect(tabB.getByTestId("offline-queued-question")).toHaveCount(0);
+      expect(posted.filter((m) => m === "Private question of user A")).toEqual([]);
+      expect(await runsFor("Private question of user A")).toBe("0");
+      expect(await page.evaluate((key) => localStorage.getItem(key) ?? "", keyA)).toContain(
+        "Private question of user A",
+      );
+      await tabB.close();
+
+      // User A signs in again: the question shows and sends once.
+      await context.unroute("**/api/v1/auth/session");
+      await page.reload({ waitUntil: "networkidle" });
+      await expect.poll(() => runsFor("Private question of user A"), { timeout: 20_000 }).toBe("1");
+      await expect(page.getByTestId("offline-queued-question")).toHaveCount(0);
+
+      // A refused new thread waits for its retry time and then fails; it does not resend each second.
+      let creates = 0;
+      await context.route("**/api/v1/work/threads", async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        creates++;
+        await route.fulfill(
+          creates === 1
+            ? {
+                status: 503,
+                contentType: "application/json",
+                headers: { "Retry-After": "5" },
+                body: JSON.stringify({ error: "busy" }),
+              }
+            : { status: 403, contentType: "application/json", body: JSON.stringify({ error: "not allowed" }) },
+        );
+      });
+      await page.goto("/work", { waitUntil: "networkidle" });
+      await goOffline(page);
+      await ask(page, "New thread question");
+      await context.setOffline(false);
+      await expect.poll(() => creates, { timeout: 20_000 }).toBe(1);
+      await page.waitForTimeout(3_000);
+      expect(creates).toBe(1);
+      await expect(page.getByTestId("offline-waiting-status")).toBeVisible();
+      await expect(page.getByTestId("offline-failed-status")).toContainText("HTTP 403", { timeout: 20_000 });
+      await page.waitForTimeout(3_000);
+      expect(creates).toBe(2);
+      await page.getByRole("button", { name: "Remove refused question" }).click();
+      await expect(page.getByTestId("offline-queued-question")).toHaveCount(0);
+    } finally {
+      await context.setOffline(false).catch(() => {});
+      await client.end();
+    }
+  });
 });
+
