@@ -112,6 +112,7 @@ with exit code 0, so its supervisor starts it again.`,
 			api := &webfront.API{Gate: gate, DB: pool, Version: webfront.AppVersion(dir, version.Version),
 				SecureCookies: !webfront.Development(), SecretsDir: secretsDir, Restart: stop, Jobs: inserter, EvalTrace: trace,
 				MetricsRefresh: jobs.MetricsRefreshOn()}
+			api.CheckAuditWebhook(cmd.ErrOrStderr())
 			if socket := strings.TrimSpace(os.Getenv(webAdminSocketEnv)); socket != "" {
 				stopAdmin, err := serveWebAdmin(socket, api.OperatorHandler())
 				if err != nil {
