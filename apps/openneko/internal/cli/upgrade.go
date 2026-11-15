@@ -214,7 +214,7 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 
 func restartUpgradedStack(ctx context.Context, sup *compose.Supervisor, project string, files []string, mode compose.Mode) error {
 	// Enter a real maintenance boundary before replacing the database image.
-	// Without this, old worker/GraphJin containers can reconnect in the window
+	// Without this, old web/GraphJin containers can reconnect in the window
 	// between Postgres becoming healthy and the storage-reconcile step
 	// acquiring its locks. Stopping the whole project is intentionally simple:
 	// no database consumer can be omitted as the service graph evolves.

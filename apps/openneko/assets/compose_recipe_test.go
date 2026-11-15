@@ -2,6 +2,8 @@ package assets
 
 import (
 	"os/exec"
+	"regexp"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -56,5 +58,23 @@ func TestRootComposeSetsPassComposeConfig(t *testing.T) {
 				t.Errorf("docker compose config: %v\n%s", err, out)
 			}
 		})
+	}
+}
+
+func TestShippedComposeAndDockerfileNameNoWorker(t *testing.T) {
+	word := regexp.MustCompile(`(?i)\bworkers?\b`)
+	for _, name := range []string{"core.yml", "dev.yml", "demo.yml", "bundled-db.yml"} {
+		for i, line := range strings.Split(string(readEmbeddedCompose(t, name)), "\n") {
+			if word.MatchString(line) {
+				t.Errorf("compose/%s:%d: %s", name, i+1, line)
+			}
+		}
+	}
+	for _, name := range []string{"compose.yml", "compose.db.yml", "compose.dev.yml", "Dockerfile"} {
+		for i, line := range strings.Split(string(readRootCompose(t, name)), "\n") {
+			if word.MatchString(line) {
+				t.Errorf("%s:%d: %s", name, i+1, line)
+			}
+		}
 	}
 }

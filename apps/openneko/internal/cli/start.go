@@ -152,7 +152,7 @@ func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, op
 // config.json (written by /setup after the operator rotates the bootstrap
 // password) wins over env vars, which win over hardcoded defaults. This
 // matches the TS reader in packages/db/src/local-config.ts so every consumer
-// — Go migrate, web, worker, graphjin — converges on the rotated password.
+// — Go migrate, web, serve, graphjin — converges on the rotated password.
 func defaultConn() (db.ConnConfig, error) {
 	conn := db.ConnConfig{
 		Host:     envOr("NEKO_PG_HOST", "127.0.0.1"),

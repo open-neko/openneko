@@ -131,7 +131,7 @@ services:
   # OpenNeko's database, SQL over sheet tables, agent turns, the customer GraphJin on
   # 8080 and the subscriptions GraphJin on 8089 (workflow outputs, read as
   # the subscriptions role).
-  # Web and worker call it with short-lived tokens signed with a key derived
+  # Web calls it with short-lived tokens signed with a key derived
   # from the secret-key. GraphJin does not reload auth keys, so the start
   # steps write the per-org JWT secret before serve starts.
   openneko-serve:
