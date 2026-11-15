@@ -11,7 +11,6 @@ import pg from "pg";
 import PgBoss from "pg-boss";
 import { reconnectPool } from "@neko/db";
 import { _resetSecretKeyCacheForTesting } from "@neko/llm/secrets";
-import { createActionRequest } from "@neko/llm/workflows";
 import { createAdminHandler } from "../src/admin-server";
 
 export const EVAL_TEMPLATE_DATABASE = "openneko_eval_template";
@@ -497,16 +496,7 @@ export class EvalEpisode {
     );
     await writeFile(join(this.root, "app", "index.html"), "<!doctype html><title>OpenNeko eval</title>\n");
 
-    this.worker = createServer(
-      createAdminHandler({
-        actionRequests: {
-          create: async (input) => {
-            const request = await createActionRequest(input as Parameters<typeof createActionRequest>[0]);
-            return { id: request.id, status: request.status };
-          },
-        },
-      }),
-    );
+    this.worker = createServer(createAdminHandler());
     this.workerUrl = `http://127.0.0.1:${await listen(this.worker, "127.0.0.1")}`;
     const servePort = await freePort();
     const webPort = await freePort();

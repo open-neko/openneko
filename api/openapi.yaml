@@ -6264,15 +6264,6 @@ paths:
                 properties:
                   error:
                     type: string
-        '502':
-          description: The worker failed to remove the credential
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
   /integrations/list:
     get:
       operationId: getIntegrationsList

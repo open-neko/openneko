@@ -170,16 +170,7 @@ func (a *API) listItemOptions(ctx context.Context, orgID, typ string) ([]itemOpt
 		slices.SortStableFunc(out, func(x, y itemOption) int { return localeCompare(x.Label, y.Label) })
 		return out, err
 	case "integration":
-		var body struct {
-			Providers []struct {
-				PluginName    string `json:"pluginName"`
-				ProviderLabel string `json:"providerLabel"`
-			} `json:"providers"`
-		}
-		if status, reply, err := a.workerDo(ctx, http.MethodGet, "/admin/connect/providers", 2*time.Second, nil); err == nil && status >= 200 && status < 300 {
-			_ = json.Unmarshal(reply, &body)
-		}
-		for _, p := range body.Providers {
+		for _, p := range a.connectProviders() {
 			out = append(out, option(p.PluginName, p.ProviderLabel, p.PluginName))
 		}
 		return out, nil

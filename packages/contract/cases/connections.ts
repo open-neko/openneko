@@ -37,7 +37,7 @@ export const connectionCases: Case[] = [
   { op: "GET /integrations/list", name: "lists the integrations", status: 200 },
   { op: "GET /integrations/connect/{plugin}/start", name: "refuses an unknown plugin", status: 404, request: { params: { plugin: "contract" } } },
   { op: "GET /integrations/connect/{plugin}/callback", name: "sends a callback without state back", status: 302, request: { params: { plugin: "contract" } } },
-  { op: "POST /integrations/disconnect/{plugin}", name: "needs the worker", status: 502, request: { params: { plugin: "contract" } } },
+  { op: "POST /integrations/disconnect/{plugin}", name: "removes nothing for an unknown connector", status: 200, request: { params: { plugin: "contract" } } },
   { op: "GET /library", name: "lists the documents", status: 200 },
   { op: "GET /library/documents/{id}", name: "refuses an unknown document", status: 404, request: (c) => ({ params: { id: c.ids.unknownId } }) },
   { op: "DELETE /library/documents/{id}", name: "refuses an unknown document", status: 404, request: (c) => ({ params: { id: c.ids.unknownId } }) },
