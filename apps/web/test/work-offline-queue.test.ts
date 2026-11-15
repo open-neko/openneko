@@ -228,7 +228,7 @@ describe("offline question queue storage (FIX6b)", () => {
 
   it("completes a question on 2xx only; keeps it on 429 and 5xx; marks other refusals failed (FIX12)", async () => {
     const tab = await openTab();
-    expect([200, 201, 429, 500, 503, 400, 403, 404, 413].map(tab.offlineSendOutcome)).toEqual([
+    expect([200, 201, 429, 500, 503, 400, 403, 404, 413].map((status) => tab.offlineSendOutcome(status))).toEqual([
       "done", "done", "retry", "retry", "retry", "refused", "refused", "refused", "refused",
     ]);
     const res = (status: number, retryAfter?: string) => ({
@@ -312,6 +312,30 @@ describe("offline question queue storage (FIX6b)", () => {
         { id: refused.id, status: "failed", error: "The server refused this question (HTTP 403): forbidden" },
       ]);
       expect(() => tab.settleOfflineRefusal(refused.id, res(201), "")).toThrow();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+  it("waits on a run in flight and checks the session on another user (FIX18)", async () => {
+    const tab = await openTab();
+    expect(tab.offlineSendOutcome(409, "run_in_flight")).toBe("retry");
+    expect(tab.offlineSendOutcome(409, "user_mismatch")).toBe("signin");
+    expect(tab.offlineSendOutcome(409)).toBe("refused");
+    tab.setOfflineQueueUser("user-a");
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    try {
+      for (const [code, outcome] of [["run_in_flight", "retry"], ["user_mismatch", "signin"]] as const) {
+        const queued = tab.enqueueOfflineQuestion({ ...question(`Code ${code}`), threadId: null });
+        const claimed = tab.claimNextOfflineQuestion(null, "/chat/t")!;
+        const res = { status: 409, headers: new Headers({ "Retry-After": "2" }), code };
+        expect(tab.settleOfflineRefusal(claimed.id, res, "busy")).toBe(outcome);
+        expect(tab.getOfflineQueueSnapshot().find((item) => item.id === queued.id)).toMatchObject({
+          status: "waiting",
+          retryAt: now + 5_000,
+        });
+        tab.cancelOfflineQuestion(queued.id);
+      }
     } finally {
       vi.restoreAllMocks();
     }

@@ -11145,7 +11145,8 @@ paths:
       - work
       summary: Create a thread, optionally seeded with context
       description: A request that repeats the clientRequestId of an earlier request of the
-        same user returns the thread of that request and creates no new thread.
+        same user returns the thread of that request and creates no new thread. A request
+        whose expectedUserId is not the signed-in user gets 409 with code user_mismatch.
       x-access: signed-in
       security:
       - session: []
@@ -11171,6 +11172,9 @@ paths:
                 clientRequestId:
                   type: string
                   pattern: ^[A-Za-z0-9._-]{1,128}$
+                expectedUserId:
+                  type: string
+                  description: The user that the client sends for
       responses:
         '200':
           description: The new thread
@@ -11186,6 +11190,12 @@ paths:
                     type: object
         '401':
           description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: expectedUserId is not the signed-in user (code user_mismatch)
           content:
             application/json:
               schema:
@@ -11301,7 +11311,10 @@ paths:
       - work
       summary: Start an agent run with a new message
       description: A request that repeats the clientRequestId of an earlier request in the
-        same thread returns the run of that request and starts no new run.
+        same thread returns the run of that request and starts no new run. While another
+        run of the thread is queued or running, a new request gets 409 with code
+        run_in_flight and a Retry-After header. A request whose expectedUserId is not the
+        signed-in user gets 409 with code user_mismatch.
       x-access: signed-in
       security:
       - session: []
@@ -11324,6 +11337,9 @@ paths:
                 clientRequestId:
                   type: string
                   pattern: ^[A-Za-z0-9._-]{1,128}$
+                expectedUserId:
+                  type: string
+                  description: The user that the client sends for
               required:
               - message
       responses:
@@ -11361,6 +11377,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '409':
+          description: Another run of the thread is in flight (code run_in_flight, Retry-After
+            header set), or expectedUserId is not the signed-in user (code user_mismatch)
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - error
+                - code
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - run_in_flight
+                    - user_mismatch
+                  runId:
+                    type: string
+                  retryAfterSeconds:
+                    type: number
         '429':
           description: Spend budget exceeded; Retry-After header set
           content:

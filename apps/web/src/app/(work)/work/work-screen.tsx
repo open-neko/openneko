@@ -88,13 +88,19 @@ import { copyText } from "@/lib/copy-text";
 
 const REASONING_STORAGE_KEY = "openneko.work.reasoning";
 
+const RUN_IN_FLIGHT_RETRIES = 5;
+
 class ThreadCreateRefused extends Error {
   constructor(
-    readonly res: Response,
+    readonly res: { status: number; headers: Headers; code?: string },
     message: string,
   ) {
     super(message);
   }
+}
+
+async function refusalBody(res: Response): Promise<{ error?: string; code?: string }> {
+  return (await res.json().catch(() => ({}))) as { error?: string; code?: string };
 }
 
 export default function WorkScreen() {
@@ -567,15 +573,24 @@ export default function WorkScreen() {
     }
   }
 
-  async function createThread(clientRequestId?: string): Promise<string> {
+  async function createThread(
+    clientRequestId?: string,
+    expectedUserId: string | null = sessionUserId,
+  ): Promise<string> {
     const res = await fetch("/api/v1/work/threads", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(clientRequestId ? { clientRequestId } : {}),
+      body: JSON.stringify({
+        ...(clientRequestId ? { clientRequestId } : {}),
+        ...(expectedUserId ? { expectedUserId } : {}),
+      }),
     });
     if (!res.ok) {
-      const errBody = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new ThreadCreateRefused(res, errBody.error ?? `HTTP ${res.status}`);
+      const errBody = await refusalBody(res);
+      throw new ThreadCreateRefused(
+        { status: res.status, headers: res.headers, code: errBody.code },
+        errBody.error ?? `HTTP ${res.status}`,
+      );
     }
     const data = (await res.json()) as {
       thread: {
@@ -755,7 +770,11 @@ export default function WorkScreen() {
     }
   }
 
-  async function sendClaimedQuestion(claimed: QueuedQuestion, releaseLock: () => void) {
+  async function sendClaimedQuestion(
+    claimed: QueuedQuestion,
+    releaseLock: () => void,
+    queueUser: string,
+  ) {
     sendingClaimedRef.current = true;
     let threadId = claimed.threadId;
     let tempMessageId: string | null = null;
@@ -773,7 +792,7 @@ export default function WorkScreen() {
       }
       if (!threadId) {
         try {
-          threadId = await createThread(claimed.id);
+          threadId = await createThread(claimed.id, queueUser);
         } catch (err) {
           if (!(err instanceof ThreadCreateRefused)) throw err;
           reportNetworkOnline();
@@ -816,7 +835,7 @@ export default function WorkScreen() {
         claimed.content,
         performance.now(),
         tempMessageId,
-        { clientRequestId: claimed.id, claimed: true, onPosted: releaseLock },
+        { clientRequestId: claimed.id, claimed: true, onPosted: releaseLock, expectedUserId: queueUser },
       );
       if (!dispatched) {
         requeueOfflineQuestion({ ...claimed, threadId });
@@ -903,7 +922,7 @@ export default function WorkScreen() {
       const posted = new Promise<void>((resolve) => {
         releaseLock = resolve;
       });
-      void sendClaimedQuestion(claimed, releaseLock);
+      void sendClaimedQuestion(claimed, releaseLock, queueUser);
       await posted;
     }).finally(() => {
       if (!sendingClaimedRef.current) flushingOfflineRef.current = false;
@@ -981,23 +1000,48 @@ export default function WorkScreen() {
     message: string,
     submittedAt = performance.now(),
     tempMessageId?: string,
-    request?: { clientRequestId: string; claimed?: boolean; onPosted?: () => void },
+    request?: {
+      clientRequestId: string;
+      claimed?: boolean;
+      onPosted?: () => void;
+      expectedUserId?: string;
+    },
   ): Promise<boolean> {
     // Every entry point must expose the live-run controls. Retry/edit reloads
     // the truncated thread first, and that reload clears `sending` when no
     // earlier run remains in flight.
     setSending(true);
-    const body = JSON.stringify(
-      request ? { message, clientRequestId: request.clientRequestId } : { message },
-    );
+    const expectedUserId = request?.expectedUserId ?? sessionUserId;
+    const body = JSON.stringify({
+      message,
+      ...(request ? { clientRequestId: request.clientRequestId } : {}),
+      ...(expectedUserId ? { expectedUserId } : {}),
+    });
     let res: Response;
+    let refusal: { error?: string; code?: string } | null = null;
     try {
-      res = await fetch(`/api/v1/work/threads/${threadId}/runs`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        ...(body.length < 60_000 ? { keepalive: true } : {}),
-        body,
-      });
+      for (let attempt = 0; ; attempt++) {
+        res = await fetch(`/api/v1/work/threads/${threadId}/runs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          ...(body.length < 60_000 ? { keepalive: true } : {}),
+          body,
+        });
+        if (res.ok) break;
+        refusal = await refusalBody(res);
+        if (
+          request?.claimed ||
+          refusal.code !== "run_in_flight" ||
+          attempt >= RUN_IN_FLIGHT_RETRIES ||
+          !mountedRef.current
+        ) {
+          break;
+        }
+        const wait = Number(res.headers.get("Retry-After"));
+        await new Promise((resolve) =>
+          window.setTimeout(resolve, (Number.isFinite(wait) && wait > 0 ? wait : 2) * 1000),
+        );
+      }
     } catch {
       if (tempMessageId) {
         setBundle((prev) =>
@@ -1015,11 +1059,17 @@ export default function WorkScreen() {
     }
     reportNetworkOnline();
     if (!res.ok) {
-      const errBody = (await res.json().catch(() => ({}))) as { error?: string };
-      const error = errBody.error ?? `HTTP ${res.status}`;
+      const error = refusal?.error ?? `HTTP ${res.status}`;
+      const code = refusal?.code;
       if (
-        request?.claimed &&
-        settleOfflineRefusal(request.clientRequestId, res, error, threadId) === "signin"
+        request?.claimed
+          ? settleOfflineRefusal(
+              request.clientRequestId,
+              { status: res.status, headers: res.headers, code },
+              error,
+              threadId,
+            ) === "signin"
+          : code === "user_mismatch"
       ) {
         void confirmSessionUser();
       }
