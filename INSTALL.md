@@ -420,8 +420,11 @@ setting. Slack and Telegram messages run as `work_run` jobs, at most 3 at once
 in each `openneko web`, so a setting above 3 does not run more channel turns.
 
 At start, `openneko web` logs one warning line when no model provider is set,
-or when it cannot read or check the stored credential of a provider. It still
-starts, so an admin can fix the setting.
+or when it cannot read or check the stored credential of a provider. A turn
+route to an enabled model under **Admin → Settings → Models** counts as a
+provider. A model key in the environment only does not count, because each
+turn uses the stored key. `openneko web` still starts, so an admin can fix the
+setting.
 
 `openneko web` runs chat, channel and workflow agent turns in Go. It stages each
 run's files in a private folder under `OPENNEKO_AGENT_RUNS_DIR` and sends the
