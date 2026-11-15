@@ -506,27 +506,30 @@ every row. To run a model on your own machine, see
 
 ### Traces (optional)
 
-OpenNeko sends no traces until you give it an OTLP/HTTP collector. Give `web`
-and `openneko-serve` the endpoint, then run `openneko stop` and
-`openneko start`:
+OpenNeko sends no traces until you give it an OTLP/HTTP collector. Only
+`openneko serve` exports traces. Give `openneko-serve` the endpoint, then run
+`openneko stop` and `openneko start`:
 
 ```yaml
 # ~/.config/openneko/compose.override.yml
-x-traces: &traces
-  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
 services:
-  web:
-    environment: *traces
   openneko-serve:
-    environment: *traces
+    environment:
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
 ```
 
-Each agent run is one trace. A GraphJin query or tool call that the run
-makes appears inside that trace, under the run. The spans hold names, times,
-roles and status codes. They hold no prompt, query text, query variables or
-model output. GraphJin's spans also drop error text. `OTEL_SDK_DISABLED=true`
-turns traces off in each service. For the full list of settings, see
-`evals/README.md`.
+What each process exports:
+
+- `openneko serve` exports the spans of its GraphJin servers, with the
+  service name `openneko-graphjin` (`OTEL_SERVICE_NAME` changes it). Each
+  GraphJin query or tool call is its own trace. The spans hold names, times,
+  roles and status codes. Serve removes error text, exception events, SQL
+  text and URL query strings before export.
+- `openneko web` exports no traces in this release. It runs the agent turns,
+  so an agent run is not a trace, and its GraphJin calls do not join one.
+  The run's usage, cost and tool steps stay in the run's events in the app.
+
+`OTEL_SDK_DISABLED=true` turns traces off in serve.
 
 ### Wake the jobs by HTTP (optional)
 
