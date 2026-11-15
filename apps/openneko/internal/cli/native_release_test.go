@@ -14,6 +14,10 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
+
+	"github.com/open-neko/neko/apps/openneko/internal/installation"
 )
 
 type tarEntry struct {
@@ -188,5 +192,66 @@ func TestNativeUpgradeReplacesTheReleasePacks(t *testing.T) {
 	}
 	if _, err := os.Stat(old); !os.IsNotExist(err) {
 		t.Fatalf("the old pack stayed: %v", err)
+	}
+}
+
+func TestNativeUpgradeRefusesAReleaseWithNoPacks(t *testing.T) {
+	from := t.TempDir()
+	web := filepath.Join(from, "share", "openneko", "web")
+	if err := os.MkdirAll(web, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(web, "index.html"), []byte("<html></html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ran := filepath.Join(t.TempDir(), "ran")
+	if err := os.MkdirAll(filepath.Join(from, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(from, "bin", "openneko"), []byte("#!/bin/sh\ntouch "+ran+"\necho 9.9.9\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	installedWeb := t.TempDir()
+	upgrade := func() error {
+		cmd := &cobra.Command{}
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		return runNativeUpgrade(context.Background(), cmd, installation.Settings{WebDir: installedWeb}, from, true)
+	}
+	for name, setup := range map[string]func(){
+		"no packs folder": func() {},
+		"empty packs":     func() { _ = os.MkdirAll(filepath.Join(from, "share", "openneko", "packs", "slack"), 0o755) },
+	} {
+		setup()
+		err := upgrade()
+		if err == nil || !strings.Contains(err.Error(), "nothing was changed") || !strings.Contains(err.Error(), "packs") {
+			t.Fatalf("%s: err = %v", name, err)
+		}
+		if _, err := os.Stat(ran); !os.IsNotExist(err) {
+			t.Fatalf("%s: the upgrade ran the new executable before the packs check", name)
+		}
+	}
+	if err := replaceReleasePacks(from, filepath.Join(t.TempDir(), "bin", "openneko")); err == nil {
+		t.Fatal("replaceReleasePacks took a release with no packs")
+	}
+}
+
+func TestExtractNativeArchiveRefusesAnArchiveWithNoPacks(t *testing.T) {
+	var noPacks []tarEntry
+	for _, e := range goodNativeEntries() {
+		if !strings.HasPrefix(e.name, "share/openneko/packs/") {
+			noPacks = append(noPacks, e)
+		}
+	}
+	for name, entries := range map[string][]tarEntry{
+		"no packs":     noPacks,
+		"packs folder": append(append([]tarEntry{}, noPacks...), tarEntry{name: "share/openneko/packs/", kind: tar.TypeDir}),
+		"no pack.yaml": append(append([]tarEntry{}, noPacks...), tarEntry{name: "share/openneko/packs/slack/README.md", body: "x"}),
+		"too deep":     append(append([]tarEntry{}, noPacks...), tarEntry{name: "share/openneko/packs/a/b/pack.yaml", body: "x"}),
+	} {
+		if _, err := extractEntries(t, entries); err == nil || !strings.Contains(err.Error(), "no built-in pack") {
+			t.Errorf("%s: err = %v", name, err)
+		}
 	}
 }
