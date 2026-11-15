@@ -24,4 +24,3 @@ var GraphJinSeed []byte
 
 //go:embed adventureworks/install.sql
 var AdventureWorksInstallSQL []byte
-

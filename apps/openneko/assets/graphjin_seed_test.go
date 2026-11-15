@@ -25,4 +25,3 @@ func TestAdventureWorksInstallSQLMatchesTheRepoTemplate(t *testing.T) {
 		t.Fatal("assets/adventureworks/install.sql differs from db/seeds/dev/adventureworks-install.sql; copy it again")
 	}
 }
-

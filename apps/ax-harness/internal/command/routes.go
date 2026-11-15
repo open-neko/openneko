@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	ax "github.com/ax-llm/ax/packages/go"
+	"github.com/open-neko/openneko/apps/ax-harness/catalog"
 	"github.com/open-neko/openneko/apps/ax-harness/inference"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
-	"github.com/open-neko/openneko/apps/ax-harness/catalog"
 )
 
 type modelRoute struct {

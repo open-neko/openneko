@@ -3,27 +3,42 @@ package cli
 import (
 	"bytes"
 	"go/format"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestCLISourcesAreGofmt(t *testing.T) {
-	files, err := filepath.Glob("*.go")
-	if err != nil || len(files) == 0 {
-		t.Fatalf("Go files: %v %v", files, err)
-	}
-	for _, name := range files {
-		src, err := os.ReadFile(name)
+func TestModuleSourcesAreGofmt(t *testing.T) {
+	checked := 0
+	err := filepath.WalkDir("../..", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			t.Fatal(err)
+			return err
+		}
+		if d.IsDir() {
+			if n := d.Name(); path != "../.." && (n == "testdata" || n == "node_modules" || strings.HasPrefix(n, ".")) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
 		}
 		formatted, err := format.Source(src)
 		if err != nil {
-			t.Fatalf("%s: %v", name, err)
+			t.Errorf("%s: %v", path, err)
+		} else if !bytes.Equal(src, formatted) {
+			t.Errorf("%s is not gofmt; run gofmt -w on it", path)
 		}
-		if !bytes.Equal(src, formatted) {
-			t.Errorf("%s is not gofmt; run gofmt -w on it", name)
-		}
+		checked++
+		return nil
+	})
+	if err != nil || checked < 100 {
+		t.Fatalf("walked %d Go files: %v", checked, err)
 	}
 }
