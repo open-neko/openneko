@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 const agentBackendID = "ax"
@@ -63,13 +64,14 @@ func (a *API) ensureHostConfigProvisioned(ctx context.Context, orgID string) err
 // createWorkRun is createWorkRun() in packages/llm/src/work/store.ts: the run
 // row and its spend reservation commit together.
 func (a *API) createWorkRun(ctx context.Context, orgID, threadID, actorUserID, actorRole, source, workflowID string) (string, error) {
-	runID, _, err := a.createWorkRunOnce(ctx, orgID, threadID, actorUserID, actorRole, source, workflowID, "")
+	runID, _, err := a.createWorkRunOnce(ctx, orgID, threadID, actorUserID, actorRole, source, workflowID, "", "")
 	return runID, err
 }
 
 // createWorkRunOnce returns the run that an earlier request with the same
 // clientRequestID made in the thread, with existing set, and makes no new one.
-func (a *API) createWorkRunOnce(ctx context.Context, orgID, threadID, actorUserID, actorRole, source, workflowID, clientRequestID string) (runID string, existing bool, err error) {
+// A non-empty message is saved in the same transaction as the run.
+func (a *API) createWorkRunOnce(ctx context.Context, orgID, threadID, actorUserID, actorRole, source, workflowID, clientRequestID, message string) (runID string, existing bool, err error) {
 	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
 		err := tx.QueryRow(ctx, `insert into work_run (org_id, thread_id, backend, status, actor_user_id, actor_role, client_request_id)
 			values ($1, $2, $3, 'queued', $4, $5, $6)
@@ -84,7 +86,13 @@ func (a *API) createWorkRunOnce(ctx context.Context, orgID, threadID, actorUserI
 		if err != nil {
 			return err
 		}
-		return admitRunSpend(ctx, tx, orgID, workflowID, runID, source, time.Now())
+		if err := admitRunSpend(ctx, tx, orgID, workflowID, runID, source, time.Now()); err != nil {
+			return err
+		}
+		if message == "" {
+			return nil
+		}
+		return saveUserMessage(ctx, tx, orgID, threadID, runID, message, true)
 	})
 	if err != nil {
 		var over *spendExceeded
@@ -143,11 +151,6 @@ func (a *API) startRun(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	var title string
-	if err := a.DB.QueryRow(ctx, `select title from work_thread where id = $1`, threadID).Scan(&title); err != nil {
-		a.fail(w, r, err)
-		return
-	}
 	if err := a.ensureHostConfigProvisioned(ctx, act.OrgID); err != nil {
 		a.fail(w, r, err)
 		return
@@ -161,7 +164,10 @@ func (a *API) startRun(w http.ResponseWriter, r *http.Request) {
 	if act.Admin {
 		role = "admin"
 	}
-	runID, existing, err := a.createWorkRunOnce(ctx, act.OrgID, threadID, act.UserID, role, "chat", "", clientRequestID)
+	if clientRequestID != "" {
+		defer a.runStarts.lock(threadID + "\x00" + clientRequestID)()
+	}
+	runID, existing, err := a.createWorkRunOnce(ctx, act.OrgID, threadID, act.UserID, role, "chat", "", clientRequestID, message)
 	if err != nil {
 		var over *spendExceeded
 		if errors.As(err, &over) {
@@ -175,19 +181,21 @@ func (a *API) startRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if existing {
-		sendJSON(w, http.StatusOK, obj("runId", runID, "threadId", threadID, "backend", agentBackendID, "actorRole", role))
-		return
-	}
-	if title == "" {
-		if _, err := a.DB.Exec(ctx, `update work_thread set title = $2, updated_at = now(), last_message_at = now() where id = $1`,
-			threadID, suggestThreadTitle(message)); err != nil {
+		stored, resume, err := a.unstartedRun(ctx, runID)
+		if err != nil {
 			a.fail(w, r, err)
 			return
 		}
-	}
-	if err := a.saveUserMessage(ctx, act.OrgID, threadID, runID, message); err != nil {
-		a.fail(w, r, err)
-		return
+		if !resume {
+			sendJSON(w, http.StatusOK, obj("runId", runID, "threadId", threadID, "backend", agentBackendID, "actorRole", role))
+			return
+		}
+		if stored != "" {
+			message = stored
+		} else if err := saveUserMessage(ctx, a.DB, act.OrgID, threadID, runID, message, true); err != nil {
+			a.fail(w, r, err)
+			return
+		}
 	}
 	o := chatTurnOptions{OrgID: act.OrgID, ThreadID: threadID, RunID: runID, Message: message, Channel: "web",
 		IncludeUxMetadata: true, PackActions: packActions, resolve: a.turnResolve, runCore: a.turnCore}
@@ -214,12 +222,69 @@ func validClientRequestID(id string) bool {
 }
 
 func (a *API) saveUserMessage(ctx context.Context, orgID, threadID, runID, content string) error {
-	if _, err := a.DB.Exec(ctx, `insert into work_message (org_id, thread_id, run_id, role, content) values ($1, $2, $3, 'user', $4)`,
+	return saveUserMessage(ctx, a.DB, orgID, threadID, runID, content, false)
+}
+
+type execer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+// saveUserMessage with nameThread also gives an untitled thread its title.
+func saveUserMessage(ctx context.Context, db execer, orgID, threadID, runID, content string, nameThread bool) error {
+	if _, err := db.Exec(ctx, `insert into work_message (org_id, thread_id, run_id, role, content) values ($1, $2, $3, 'user', $4)`,
 		orgID, threadID, runID, content); err != nil {
 		return err
 	}
-	_, err := a.DB.Exec(ctx, `update work_thread set updated_at = now(), last_message_at = now() where id = $1`, threadID)
+	_, err := db.Exec(ctx, `update work_thread set title = case when $2 and title = '' then $3 else title end,
+		updated_at = now(), last_message_at = now() where id = $1`, threadID, nameThread, suggestThreadTitle(content))
 	return err
+}
+
+// unstartedRun reports a queued run that no turn in this process holds: the
+// process that made it stopped before the turn started. It returns the saved
+// question of the run, if any.
+func (a *API) unstartedRun(ctx context.Context, runID string) (message string, resume bool, err error) {
+	var status string
+	if err := a.DB.QueryRow(ctx, `select status, coalesce((select content from work_message
+		where run_id = r.id and role = 'user' order by created_at, id limit 1), '')
+		from work_run r where id = $1`, runID).Scan(&status, &message); err != nil {
+		return "", false, err
+	}
+	return message, status == "queued" && a.runs.get(runID) == nil, nil
+}
+
+// keyedMutex serialises the requests that share a key.
+type keyedMutex struct {
+	mu   sync.Mutex
+	held map[string]*keyedEntry
+}
+
+type keyedEntry struct {
+	mu    sync.Mutex
+	users int
+}
+
+func (k *keyedMutex) lock(key string) (unlock func()) {
+	k.mu.Lock()
+	if k.held == nil {
+		k.held = map[string]*keyedEntry{}
+	}
+	e := k.held[key]
+	if e == nil {
+		e = &keyedEntry{}
+		k.held[key] = e
+	}
+	e.users++
+	k.mu.Unlock()
+	e.mu.Lock()
+	return func() {
+		e.mu.Unlock()
+		k.mu.Lock()
+		if e.users--; e.users == 0 {
+			delete(k.held, key)
+		}
+		k.mu.Unlock()
+	}
 }
 
 // stopTarget is a run that act may stop: a run of the actor's own thread, or

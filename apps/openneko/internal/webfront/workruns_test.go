@@ -192,7 +192,7 @@ func TestStartRunClientRequestIDMakesOneRun(t *testing.T) {
 	for sql, want := range map[string]string{
 		`select (count(*) - ` + before + `)::text from work_run where org_id = 'org'`:                         "1",
 		`select count(*)::text from work_message where role = 'user' and content = 'Stock cover?'`:            "1",
-		`select count(*)::text from spend_reservation where work_run_id = '` + ids[0] + `'`:                    "1",
+		`select count(*)::text from spend_reservation where work_run_id = '` + ids[0] + `'`:                   "1",
 		`select count(*)::text from audit_chain where event = 'run:created' and entity_id = '` + ids[0] + `'`: "1",
 	} {
 		if g := count(sql); g != want {
@@ -208,6 +208,65 @@ func TestStartRunClientRequestIDMakesOneRun(t *testing.T) {
 		t.Fatalf("another client request id: %d %s", w.Code, w.Body)
 	}
 	waitRun(t, db, decode(t, w)["runId"].(string))
+
+	other := sessionCookie("other")
+	if w := call(f, "POST", "/api/v1/work/threads/"+threadMine+"/runs", body, other); w.Code != 404 || strings.Contains(w.Body.String(), ids[0]) {
+		t.Fatalf("another user sent the same id to the member's thread: %d %s", w.Code, w.Body)
+	}
+	w = call(f, "POST", "/api/v1/work/threads/"+threadOther+"/runs", body, other)
+	otherRun, _ := decode(t, w)["runId"].(string)
+	if w.Code != 200 || otherRun == "" || otherRun == ids[0] {
+		t.Fatalf("another user's same client request id: %d %s", w.Code, w.Body)
+	}
+	waitRun(t, db, otherRun)
+	if g := count(`select actor_user_id from work_run where id = $1`, otherRun); g != "other" {
+		t.Errorf("the other user's run belongs to %q", g)
+	}
+}
+
+func TestStartRunRetryFinishesAnUnstartedRun(t *testing.T) {
+	f, db := signedInChatFront(t)
+	a := f.API
+	member := sessionCookie("member")
+	a.turnResolve = fixedBackend("http://unused")
+	var mu sync.Mutex
+	var asked []string
+	a.turnCore = func(ctx context.Context, in agentCoreInput) (axRunResult, error) {
+		mu.Lock()
+		asked = append(asked, in.UserMessage)
+		mu.Unlock()
+		return axRunResult{Status: "completed", FinalText: "ok"}, nil
+	}
+	ctx := context.Background()
+	for _, c := range []struct{ id, saved, sent string }{
+		{"crash-before-message", "", "Lost question"},
+		{"crash-before-turn", "Saved question", "Saved question"},
+	} {
+		crashed, _, err := a.createWorkRunOnce(ctx, "org", threadMine, "member", "member", "chat", "", c.id, c.saved)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := call(f, "POST", "/api/v1/work/threads/"+threadMine+"/runs", `{"message":"`+c.sent+`","clientRequestId":"`+c.id+`"}`, member)
+		if got, _ := decode(t, w)["runId"].(string); w.Code != 200 || got != crashed {
+			t.Fatalf("%s: retry gave %d %s; want run %s", c.id, w.Code, w.Body, crashed)
+		}
+		if status := waitRun(t, db, crashed); status != "completed" {
+			t.Fatalf("%s: status %s", c.id, status)
+		}
+		if g := rowText(t, db, `select count(*)::text from work_message where run_id = $1 and role = 'user' and content = $2`, crashed, c.sent); g != "1" {
+			t.Errorf("%s: %s saved questions", c.id, g)
+		}
+		w = call(f, "POST", "/api/v1/work/threads/"+threadMine+"/runs", `{"message":"`+c.sent+`","clientRequestId":"`+c.id+`"}`, member)
+		if got, _ := decode(t, w)["runId"].(string); w.Code != 200 || got != crashed {
+			t.Fatalf("%s: second retry gave %d %s", c.id, w.Code, w.Body)
+		}
+	}
+	time.Sleep(100 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	if strings.Join(asked, "|") != "Lost question|Saved question" {
+		t.Fatalf("turns asked %q; want one turn per crashed run", asked)
+	}
 }
 
 func TestHostConfigProvisionedOnce(t *testing.T) {
