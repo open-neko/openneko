@@ -38,6 +38,10 @@ export async function createTestOrg(orgId: string, name = "Vitest Org"): Promise
   await db().insert(organization).values({ id: orgId, name });
 }
 
+export async function ensureTestOrg(orgId: string, name = "Vitest Org"): Promise<void> {
+  await db().insert(organization).values({ id: orgId, name }).onConflictDoNothing();
+}
+
 export async function deleteTestOrg(orgId: string): Promise<void> {
   // Cascade FKs clean up child rows.
   await db().delete(organization).where(eq(organization.id, orgId));

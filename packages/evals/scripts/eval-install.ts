@@ -198,6 +198,7 @@ async function stopChild(child: ChildProcess | undefined): Promise<void> {
 
 export type EvalEpisodeOptions = {
   label: string;
+  org?: { id: string; name: string };
   graphjinConfig?: string;
   env?: Record<string, string>;
 };
@@ -697,11 +698,23 @@ export class EvalInstallHost {
       await this.pool().query(
         `create database ${quoteIdent(database)} template ${quoteIdent(EVAL_TEMPLATE_DATABASE)}`,
       );
+      if (options.org) await this.createOrg(database, options.org);
       await episode.start(options);
       return episode;
     } catch (cause) {
       await episode.stop().catch(() => {});
       throw cause;
+    }
+  }
+
+  // openneko web takes the oldest org as the install's org when it starts.
+  private async createOrg(database: string, org: { id: string; name: string }): Promise<void> {
+    const client = new pg.Client({ ...this.login, database, ssl: false });
+    await client.connect();
+    try {
+      await client.query(`insert into organization (id, name) values ($1, $2)`, [org.id, org.name]);
+    } finally {
+      await client.end();
     }
   }
 

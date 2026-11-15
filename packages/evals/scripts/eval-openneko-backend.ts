@@ -52,6 +52,8 @@ import pg from "pg";
 import {
   buildWorkBackendFixtureSpec,
   provisionWorkBackendFixture,
+  workBackendFixtureIdentity,
+  workBackendFixtureOrg,
   type ProvisionedWorkBackendFixture,
   type WorkBackendFixtureSpec,
 } from "./eval-openneko-backend-fixture";
@@ -2683,6 +2685,14 @@ export function createOpenNekoBackendDriver(
       const episode = await host.startEpisode(
         {
           label: slot.caseId,
+          org: workBackendFixtureOrg(
+            workBackendFixtureIdentity({
+              evalRunId: runId,
+              variantId: slot.variantId,
+              caseId: spec.caseId,
+              repetition: spec.repetition,
+            }),
+          ),
           env: {
             OPENNEKO_GRAPHJIN_CONFIG: EVAL_GRAPHJIN_CONFIG_PATH,
             ...(workflowExecutionScenario
