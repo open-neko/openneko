@@ -91,8 +91,8 @@ insert into `+b+`.schedule values ('workflow_output_ttl_sweep'), ('records_impor
 		_ = rows.Scan(&s)
 		left = append(left, s)
 	}
-	if want := []string{"records_import created", "schedule records_import", "workflow_output_ttl_sweep completed"}; !slices.Equal(left, want) {
-		t.Fatalf("pg-boss rows left = %q, want %q", left, want)
+	if len(left) != 0 {
+		t.Fatalf("pg-boss rows left = %q, want none", left)
 	}
 	if err := q.Migrate(ctx); err != nil {
 		t.Fatal(err)
@@ -101,6 +101,77 @@ insert into `+b+`.schedule values ('workflow_output_ttl_sweep'), ('records_impor
 	_ = pool.QueryRow(ctx, `select count(*) from `+q.Schema+`.river_job`).Scan(&n)
 	if n != 6 {
 		t.Fatalf("a second migrate left %d river jobs, want 6", n)
+	}
+}
+
+func TestMigrateRemovesBossQueuesOfPgBoss10(t *testing.T) {
+	ctx := context.Background()
+	pool := testpg.Pool(t)
+	q := testQueue(t, pool)
+	b := q.BossSchema
+	ddl, err := os.ReadFile(filepath.Join("testdata", "pgboss-v24.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, strings.ReplaceAll(string(ddl), "BOSS_SCHEMA", b)); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"work_run", "records_import", "records_watch_sweep", "user_queue"} {
+		if _, err := pool.Exec(ctx, `select `+b+`.create_queue($1, '{"policy":"standard","retryLimit":2}')`, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `
+insert into `+b+`.job (name, data, state) values
+  ('work_run', '{"runId":"r1"}', 'created'),
+  ('work_run', '{"runId":"r0"}', 'completed'),
+  ('work_run', '{"runId":"r2"}', 'active'),
+  ('records_import', '{"b":2}', 'created'),
+  ('records_import', '{"b":3}', 'failed'),
+  ('user_queue', '{}', 'created');
+insert into `+b+`.schedule (name, cron, timezone) values ('records_watch_sweep', '*/5 * * * *', 'UTC'), ('user_queue', '0 * * * *', 'UTC');`); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := q.Migrate(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var args []string
+	rows, err := pool.Query(ctx, `select kind || ' ' || args::text from `+q.Schema+`.river_job order by 1`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var s string
+		_ = rows.Scan(&s)
+		args = append(args, s)
+	}
+	if want := []string{`work_run {"runId": "r1"}`}; !slices.Equal(args, want) {
+		t.Fatalf("river jobs = %q, want %q", args, want)
+	}
+	var left []string
+	rows, err = pool.Query(ctx, `select s from (
+select 'queue ' || name as s from `+b+`.queue
+union all select 'job ' || name || ' ' || state from `+b+`.job
+union all select 'schedule ' || name from `+b+`.schedule
+union all select 'table ' || tablename from pg_tables where schemaname = $1 and tablename ~ '^j[0-9a-f]{56}$') x
+order by s collate "C"`, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var s string
+		_ = rows.Scan(&s)
+		left = append(left, s)
+	}
+	var partition string
+	if err := pool.QueryRow(ctx, `select 'table j' || encode(sha224('user_queue'::bytea), 'hex')`).Scan(&partition); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"job user_queue created", "queue user_queue", "schedule user_queue", partition}
+	if !slices.Equal(left, want) {
+		t.Fatalf("pg-boss left = %q, want %q", left, want)
 	}
 }
 
