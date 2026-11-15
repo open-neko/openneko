@@ -5,6 +5,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
@@ -58,5 +59,22 @@ func TestWebAppliesTheTurnLimitBeforeTheJobsStart(t *testing.T) {
 	})
 	if seen != 5 {
 		t.Fatalf("the jobs started with a turn limit of %d, want 5; output %q", seen, out.String())
+	}
+}
+
+func TestWebReadsTheTurnLimitAgainAfterTheJobsStart(t *testing.T) {
+	t.Setenv("OPENNEKO_AGENT_CONCURRENCY", "5")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	api := &webfront.API{AgentConcurrencyRefresh: 20 * time.Millisecond}
+	var out bytes.Buffer
+	startWebJobs(ctx, api, &out, &out, func() *jobs.Runner { return nil })
+	t.Setenv("OPENNEKO_AGENT_CONCURRENCY", "8")
+	deadline := time.Now().Add(5 * time.Second)
+	for api.AgentTurnLimit() != 8 {
+		if time.Now().After(deadline) {
+			t.Fatalf("the turn limit stayed %d after the setting changed to 8", api.AgentTurnLimit())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

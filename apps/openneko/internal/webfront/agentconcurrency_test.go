@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 )
 
@@ -123,10 +125,7 @@ func TestAConcurrentJobsReadDoesNotOverwriteANewerOne(t *testing.T) {
 func TestAConcurrentJobsSaveReachesAnotherWebProcess(t *testing.T) {
 	f, db := modelSettingsFront(t)
 	t.Setenv("OPENNEKO_AGENT_CONCURRENCY", "")
-	old := agentConcurrencyRefresh
-	agentConcurrencyRefresh = 20 * time.Millisecond
-	t.Cleanup(func() { agentConcurrencyRefresh = old })
-	other := &API{Gate: f.API.Gate, DB: db, SecretsDir: f.API.SecretsDir}
+	other := &API{Gate: f.API.Gate, DB: db, SecretsDir: f.API.SecretsDir, AgentConcurrencyRefresh: 20 * time.Millisecond}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if n, err := other.ApplyAgentConcurrency(ctx); err != nil || n != 3 {
@@ -162,5 +161,54 @@ func TestTheChannelTurnLimitIsStatedWhereTheSettingIs(t *testing.T) {
 		if !strings.Contains(string(b), "Slack and Telegram messages run "+limit) && !strings.Contains(string(b), "Slack and Telegram messages run as `work_run` jobs, "+limit) {
 			t.Errorf("%s does not say that Slack and Telegram messages run %s turns at once", name, limit)
 		}
+	}
+}
+
+func TestTheTurnLimitRefreshGivesUpOnAStalledPool(t *testing.T) {
+	_, db := modelSettingsFront(t)
+	t.Setenv("OPENNEKO_AGENT_CONCURRENCY", "")
+	cfg := db.Config()
+	cfg.MaxConns = 1
+	stalled, err := pgxpool.NewWithConfig(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(stalled.Close)
+	held, err := stalled.Acquire(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(held.Release)
+	old := agentConcurrencyReadTimeout
+	agentConcurrencyReadTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { agentConcurrencyReadTimeout = old })
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	a := &API{DB: stalled, AgentConcurrencyRefresh: 20 * time.Millisecond}
+	logged := make(chan string, 10)
+	a.StartAgentConcurrencyRefresh(ctx, func(format string, args ...any) {
+		select {
+		case logged <- fmt.Sprintf(format, args...):
+		default:
+		}
+	})
+	select {
+	case line := <-logged:
+		if !strings.Contains(line, "deadline exceeded") {
+			t.Fatalf("log %q", line)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the refresh still waits on a stalled pool after 3 s")
+	}
+	locked := make(chan struct{})
+	go func() {
+		a.slots.applyMu.Lock()
+		a.slots.applyMu.Unlock()
+		close(locked)
+	}()
+	select {
+	case <-locked:
+	case <-time.After(time.Second):
+		t.Fatal("the refresh holds the apply lock on a stalled pool")
 	}
 }
