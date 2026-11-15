@@ -239,3 +239,47 @@ func TestLogoutRemovesThisBrowsersPushSubscription(t *testing.T) {
 		t.Fatal("the logout left this browser's push subscription")
 	}
 }
+
+func TestWebPushRetrySendsUntriedEndpointsFirst(t *testing.T) {
+	f, _ := pushFront(t)
+	release := make(chan struct{})
+	var mu sync.Mutex
+	hits := map[string]int{}
+	stub := newPushStub(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hits[r.URL.Path]++
+		mu.Unlock()
+		if strings.HasPrefix(r.URL.Path, "/push/hang") {
+			select {
+			case <-release:
+			case <-r.Context().Done():
+			}
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	t.Cleanup(func() { close(release) })
+	webPushBatchLimit = 400 * time.Millisecond
+	t.Cleanup(func() { webPushBatchLimit = 45 * time.Second })
+	var subs []string
+	for i := range pushSendsAtOnce {
+		subs = append(subs, pushSubscribe(t, f, "member", stub.URL+"/push/hang-"+string(rune('a'+i))))
+	}
+	late := pushSubscribe(t, f, "member", stub.URL+"/push/late")
+	subs = append(subs, late)
+
+	err := f.API.WebPushDeliver(context.Background(), jobs.WebPushArgs{OrgID: "org", Event: WebPushEventRunFinished, Subscriptions: subs})
+	var retry *jobs.WebPushRetryError
+	if !errors.As(err, &retry) || len(retry.Subscriptions) != len(subs) || retry.Subscriptions[0] != late {
+		t.Fatalf("deliver error = %v (%+v); want a retry of all five with the untried endpoint first", err, retry)
+	}
+	err = f.API.WebPushDeliver(context.Background(), jobs.WebPushArgs{OrgID: "org", Event: WebPushEventRunFinished, Subscriptions: retry.Subscriptions})
+	if !errors.As(err, &retry) || len(retry.Subscriptions) != pushSendsAtOnce || retry.Subscriptions[0] == late {
+		t.Fatalf("retry error = %v (%+v); want the hung endpoints only", err, retry)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if hits["/push/late"] != 1 {
+		t.Fatalf("the endpoint behind the hung ones got %d sends in two batches; want 1", hits["/push/late"])
+	}
+}
