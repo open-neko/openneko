@@ -87,6 +87,15 @@ func TestProviderCredentialWarningCountsATurnModelRoute(t *testing.T) {
 		t.Fatalf("a turn model sealed with another key: %q", got)
 	}
 
+	seed(t, db, `update llm_model set secrets = '{}' where name = 'fast'`)
+	if got := a.ProviderCredentialWarning(ctx); !strings.Contains(got, "org org (turn model): openai requires an API key") {
+		t.Fatalf("a turn model with no key: %q", got)
+	}
+
+	if _, err := db.Exec(ctx, `insert into llm_task_route (org_id, task, model_id) select 'org', 'default', id from llm_model where name = 'fast'`); err == nil {
+		t.Fatal("a default route took a model; the check counts turn routes only")
+	}
+
 	seed(t, db, `update llm_model set enabled = false where name = 'fast'`)
 	if got := a.ProviderCredentialWarning(ctx); !strings.Contains(got, "no model provider is set") {
 		t.Fatalf("a route to a disabled model only: %q", got)

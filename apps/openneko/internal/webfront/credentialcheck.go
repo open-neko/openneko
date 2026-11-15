@@ -49,11 +49,7 @@ func (a *API) ProviderCredentialWarning(ctx context.Context) string {
 		}
 	}
 	for _, org := range routed {
-		_, rec, _, err := llm.TaskRouteRecords(ctx, a.DB, org, "turn")
-		if err == nil && rec != nil {
-			_, err = llm.DecryptSecrets(a.SecretsDir, rec.Sealed)
-		}
-		if err != nil {
+		if _, err := llm.ResolveTaskRoute(ctx, a.DB, a.SecretsDir, org, "turn"); err != nil {
 			failed = append(failed, fmt.Sprintf("org %s (turn model): %v", org, err))
 		}
 	}
