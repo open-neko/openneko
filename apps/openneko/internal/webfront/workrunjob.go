@@ -38,6 +38,10 @@ func (a *API) WorkRun(ctx context.Context, job jobs.WorkRunArgs) error {
 	}
 	a.markProcessingJob(ctx, job.ProcessingJobID, "running", "")
 	res, runErr, err := a.runQueuedChatTurn(ctx, job)
+	if errors.Is(err, errRunStarted) {
+		log.Printf("[work-run] run %s: another process started it; skipping repeated job", job.RunID)
+		return nil
+	}
 	if err != nil {
 		a.markProcessingJob(context.WithoutCancel(ctx), job.ProcessingJobID, "failed", err.Error())
 		log.Printf("[work-run] run %s not started; River may retry: %v", job.RunID, err)

@@ -479,7 +479,7 @@ func TestStartChatRun(t *testing.T) {
 	newRun := func() string {
 		t.Helper()
 		var id string
-		if err := db.QueryRow(ctx, `insert into work_run (org_id, thread_id, backend, actor_user_id, actor_role) values ('org', $1, 'ax', 'admin', 'admin') returning id::text`,
+		if err := db.QueryRow(ctx, `insert into work_run (org_id, thread_id, backend, status, actor_user_id, actor_role) values ('org', $1, 'ax', 'queued', 'admin', 'admin') returning id::text`,
 			threadMine).Scan(&id); err != nil {
 			t.Fatal(err)
 		}
@@ -615,5 +615,58 @@ func TestStartChatRun(t *testing.T) {
 	}
 	if status(fourth) != "failed:late" || !strings.HasSuffix(kinds(fourth), "error,done,telemetry,error,done") {
 		t.Fatalf("cleanup %s %s", status(fourth), kinds(fourth))
+	}
+}
+
+func TestStartChatRunStartsOneTurnPerRun(t *testing.T) {
+	f, db, _ := chatTurnFront(t)
+	a := f.API
+	ctx := context.Background()
+	var runID string
+	if err := db.QueryRow(ctx, `insert into work_run (org_id, thread_id, backend, status, actor_user_id, actor_role) values ('org', $1, 'ax', 'queued', 'admin', 'admin') returning id::text`,
+		threadMine).Scan(&runID); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	turns := 0
+	release := make(chan struct{})
+	o := chatTurnOptions{OrgID: "org", ThreadID: threadMine, RunID: runID, Message: "Question", Channel: "web",
+		Summarize: noSummary(t), resolve: fixedBackend("http://unused"), keepBot: func(context.Context, botKeepInput) error { return nil },
+		runCore: func(ctx context.Context, in agentCoreInput) (axRunResult, error) {
+			mu.Lock()
+			turns++
+			mu.Unlock()
+			<-release
+			return axRunResult{Status: "completed", FinalText: "Done."}, nil
+		}}
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	dones := make([]<-chan struct{}, 2)
+	for i := range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			dones[i], errs[i] = a.startChatRun(ctx, o)
+		}()
+	}
+	wg.Wait()
+	close(release)
+	started := 0
+	for i := range 2 {
+		switch {
+		case errs[i] == nil:
+			started++
+			<-dones[i]
+		case !errors.Is(errs[i], errRunStarted):
+			t.Fatalf("start %d: %v", i, errs[i])
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if started != 1 || turns != 1 {
+		t.Fatalf("two starts of one queued run began %d runs and %d turns; want 1 and 1", started, turns)
+	}
+	if got := rowText(t, db, `select status from work_run where id = $1`, runID); got != "completed" {
+		t.Fatalf("run status %q", got)
 	}
 }
