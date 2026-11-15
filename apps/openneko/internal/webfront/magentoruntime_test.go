@@ -323,9 +323,9 @@ func TestMagentoChangesetRuntime(t *testing.T) {
 	}
 
 	if _, _, err := create("magento.manage_catalog", "approved",
-		`{"operation":"product_update","scope":{"store":"default"},"idempotency_key":"price-sku-1","rows":[{"entity_ref":"SKU-1","path":{"sku":"SKU-1"},"body":{"product":{"price":10.5}}}]}`); err == nil ||
+		`{"operation":"product_update","scope":{"store":"default"},"idempotency_key":"cost-sku-1","rows":[{"entity_ref":"SKU-1","path":{"sku":"SKU-1"},"body":{"product":{"cost":4}}}]}`); err == nil ||
 		err.Error() != "This Magento change requires approval from a human administrator" {
-		t.Fatalf("price change without a person: %v", err)
+		t.Fatalf("cost change without a person: %v", err)
 	}
 
 	seed(t, db, `insert into magento_auto_rule (id, org_id, name, instruction, domain, action_kind, daily_cap, enabled)
@@ -368,14 +368,14 @@ func TestMagentoChangesetRuntime(t *testing.T) {
 	if got := text(`select e.status || '|' || c.status || '|' || c.risk_class || '|' || c.bulk_uuid || '|' || cr.status || '|' || (e.result->>'bulk_status_recorded') from action_request r
 		join action_execution e on e.action_request_id = r.id
 		join action_changeset c on c.id = (r.payload->>'changeset_id')::uuid
-		join action_changeset_row cr on cr.changeset_id = c.id where r.id = $1::uuid`, bulkID); got != "succeeded|applied|1|bulk-0001-uuid|applied|true" {
+		join action_changeset_row cr on cr.changeset_id = c.id where r.id = $1::uuid`, bulkID); got != "succeeded|applied|2|bulk-0001-uuid|applied|true" {
 		t.Fatalf("bulk execution: %s", got)
 	}
 	shop.mu.Lock()
 	bulkCall, _ := json.Marshal(shop.calls[len(shop.calls)-1])
 	bulkRole := shop.roles[len(shop.roles)-1]
 	shop.mu.Unlock()
-	if string(bulkCall) != `{"body":[{"product":{"name":"Two D","sku":"SKU-2"}}],"path":{"storeCode":"default"}}` || bulkRole != "magento_sensitive_executor" {
+	if string(bulkCall) != `{"body":[{"product":{"name":"Two D","sku":"SKU-2"}}],"path":{"storeCode":"default"}}` || bulkRole != "magento_ops_executor" {
 		t.Fatalf("bulk call: %s %s", bulkCall, bulkRole)
 	}
 

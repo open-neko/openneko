@@ -43,14 +43,10 @@ const (
 type MagentoAttributeCategory string
 
 const (
-	MagentoCatMerchandising        MagentoAttributeCategory = "merchandising_metadata"
-	MagentoCatPricingTaxVisibility MagentoAttributeCategory = "pricing_tax_visibility"
-	MagentoCatInventoryGovernance  MagentoAttributeCategory = "inventory_governance"
-	MagentoCatContentBody          MagentoAttributeCategory = "content_body"
-	MagentoCatCustomerIdentity     MagentoAttributeCategory = "customer_identity"
-	MagentoCatPromotionEconomics   MagentoAttributeCategory = "promotion_economics"
-	MagentoCatOrderState           MagentoAttributeCategory = "order_state"
-	MagentoCatFinancialHandoff     MagentoAttributeCategory = "financial_handoff"
+	MagentoCatFinancial   MagentoAttributeCategory = "financial"
+	MagentoCatPII         MagentoAttributeCategory = "pii"
+	MagentoCatContent     MagentoAttributeCategory = "content"
+	MagentoCatOperational MagentoAttributeCategory = "operational"
 )
 
 type MagentoAttributeClassification struct {
@@ -85,64 +81,53 @@ func IsMagentoHandoffOnlyOperation(operationID string) bool {
 	return slices.Contains(MagentoHandoffOnlyOperations, operationID)
 }
 
-var DefaultMagentoAttributeClassifications = []MagentoAttributeClassification{
-	{MagentoCatalog, "product", "name", 2, MagentoCatMerchandising, "Display title is routine merchandising metadata"},
-	{MagentoCatalog, "product", "description", 2, MagentoCatMerchandising, "Product copy is reversible merchandising metadata"},
-	{MagentoCatalog, "product", "short_description", 2, MagentoCatMerchandising, "Summary copy is reversible merchandising metadata"},
-	{MagentoCatalog, "product", "meta_title", 2, MagentoCatMerchandising, "SEO title is non-financial merchandising metadata"},
-	{MagentoCatalog, "product", "meta_keyword", 2, MagentoCatMerchandising, "SEO keywords are non-financial merchandising metadata"},
-	{MagentoCatalog, "product", "meta_description", 2, MagentoCatMerchandising, "SEO description is non-financial merchandising metadata"},
-	{MagentoCatalog, "product", "price", 1, MagentoCatPricingTaxVisibility, "Base price directly changes customer-facing revenue"},
-	{MagentoCatalog, "product", "special_price", 1, MagentoCatPricingTaxVisibility, "Promotional price directly changes customer-facing revenue"},
-	{MagentoCatalog, "product", "cost", 1, MagentoCatPricingTaxVisibility, "Cost affects margin reporting"},
-	{MagentoCatalog, "product", "msrp", 1, MagentoCatPricingTaxVisibility, "MAP/MSRP affects pricing compliance"},
-	{MagentoCatalog, "product", "tier_prices", 1, MagentoCatPricingTaxVisibility, "Tier prices change quantity discounting"},
-	{MagentoCatalog, "product", "tax_class_id", 1, MagentoCatPricingTaxVisibility, "Tax class changes tax calculation"},
-	{MagentoCatalog, "product", "status", 1, MagentoCatPricingTaxVisibility, "Enable/disable controls sellability"},
-	{MagentoCatalog, "product", "visibility", 1, MagentoCatPricingTaxVisibility, "Visibility controls catalog and search exposure"},
-	{MagentoCatalog, "product", "url_key", 1, MagentoCatPricingTaxVisibility, "URL key changes storefront routing"},
-	{MagentoCatalog, "product", "website_ids", 1, MagentoCatPricingTaxVisibility, "Website assignment changes where the product is sold"},
-	{MagentoCatalog, "category", "name", 2, MagentoCatMerchandising, "Category label is merchandising metadata"},
-	{MagentoCatalog, "category", "description", 2, MagentoCatMerchandising, "Category copy is merchandising metadata"},
-	{MagentoCatalog, "category", "is_active", 1, MagentoCatPricingTaxVisibility, "Category activation changes storefront navigation"},
-	{MagentoCatalog, "category", "parent_id", 1, MagentoCatPricingTaxVisibility, "Category parent changes storefront hierarchy"},
-	{MagentoCatalog, "category", "position", 2, MagentoCatMerchandising, "Category sort order is merchandising metadata"},
-	{MagentoInventory, "source_item", "quantity", 2, MagentoCatInventoryGovernance, "Bounded stock quantity updates are eligible for guarded automation"},
-	{MagentoInventory, "source_item", "status", 2, MagentoCatInventoryGovernance, "Stock status is governed by quantity and stock caps"},
-	{MagentoInventory, "stock_item", "backorders", 1, MagentoCatInventoryGovernance, "Backorder policy changes oversell behavior"},
-	{MagentoInventory, "stock_item", "manage_stock", 1, MagentoCatInventoryGovernance, "Disabling stock management can allow unbounded orders"},
-	{MagentoInventory, "stock_item", "min_sale_qty", 1, MagentoCatInventoryGovernance, "Minimum sale quantity changes checkout eligibility"},
-	{MagentoInventory, "stock_item", "max_sale_qty", 1, MagentoCatInventoryGovernance, "Maximum sale quantity changes checkout caps"},
-	{MagentoOrders, "order_comment", "comment", 2, MagentoCatOrderState, "Internal order comments do not notify customers or move money"},
-	{MagentoOrders, "order_comment", "is_customer_notified", 1, MagentoCatOrderState, "Customer-notifying order comments are external communications"},
-	{MagentoOrders, "order", "hold", 1, MagentoCatOrderState, "Order hold changes fulfillment state"},
-	{MagentoOrders, "order", "unhold", 1, MagentoCatOrderState, "Order unhold resumes fulfillment"},
-	{MagentoOrders, "order", "cancel", 1, MagentoCatOrderState, "Order cancellation is an irreversible customer-visible state transition"},
-	{MagentoOrders, "invoice", "capture", 1, MagentoCatOrderState, "Invoice creation records financial fulfillment"},
-	{MagentoOrders, "shipment", "tracks", 1, MagentoCatOrderState, "Shipment creation marks goods as dispatched"},
-	{MagentoOrders, "creditmemo", "online_refund", 0, MagentoCatFinancialHandoff, "Money-out refunds are handoff-only in V2"},
-	{MagentoPromotions, "sales_rule", "is_active", 1, MagentoCatPromotionEconomics, " Enabling or disabling promotions changes discount exposure"},
-	{MagentoPromotions, "sales_rule", "discount_amount", 1, MagentoCatPromotionEconomics, "Discount amount changes order revenue"},
-	{MagentoPromotions, "sales_rule", "simple_action", 1, MagentoCatPromotionEconomics, "Discount type changes promotion economics"},
-	{MagentoPromotions, "sales_rule", "to_date", 1, MagentoCatPromotionEconomics, "Promotion expiry bounds discount exposure"},
-	{MagentoPromotions, "sales_rule", "uses_per_customer", 1, MagentoCatPromotionEconomics, "Usage limits bound discount exposure"},
-	{MagentoPromotions, "sales_rule", "uses_per_coupon", 1, MagentoCatPromotionEconomics, "Coupon usage limits bound discount exposure"},
-	{MagentoPromotions, "coupon", "code", 1, MagentoCatPromotionEconomics, "Coupon codes create redeemable discounts"},
-	{MagentoContent, "cms_block", "title", 2, MagentoCatContentBody, "CMS block title is reversible content metadata"},
-	{MagentoContent, "cms_block", "content", 1, MagentoCatContentBody, "CMS HTML content can affect storefront rendering"},
-	{MagentoContent, "cms_block", "is_active", 1, MagentoCatContentBody, "CMS block activation changes storefront rendering"},
-	{MagentoContent, "cms_page", "title", 2, MagentoCatContentBody, "CMS page title is reversible content metadata"},
-	{MagentoContent, "cms_page", "content", 1, MagentoCatContentBody, "CMS page body can affect storefront rendering"},
-	{MagentoContent, "cms_page", "identifier", 1, MagentoCatContentBody, "CMS page identifier changes storefront routing"},
-	{MagentoContent, "cms_page", "is_active", 1, MagentoCatContentBody, "CMS page activation changes storefront availability"},
-	{MagentoCustomers, "customer", "group_id", 1, MagentoCatCustomerIdentity, "Customer group affects pricing and tax rules"},
-	{MagentoCustomers, "customer", "email", 1, MagentoCatCustomerIdentity, "Customer email is account identity"},
-	{MagentoCustomers, "customer", "firstname", 1, MagentoCatCustomerIdentity, "Customer PII requires human approval"},
-	{MagentoCustomers, "customer", "lastname", 1, MagentoCatCustomerIdentity, "Customer PII requires human approval"},
-	{MagentoCustomers, "customer_address", "street", 1, MagentoCatCustomerIdentity, "Shipping/billing address requires human approval"},
-	{MagentoCustomers, "customer_address", "postcode", 1, MagentoCatCustomerIdentity, "Shipping/billing address requires human approval"},
-	{MagentoCustomers, "customer_address", "country_id", 1, MagentoCatCustomerIdentity, "Address country affects tax and fulfillment"},
-}
+// The table's check constraint accepts only these categories.
+var DefaultMagentoAttributeClassifications = func() []MagentoAttributeClassification {
+	var out []MagentoAttributeClassification
+	add := func(domain MagentoDomain, entity string, risk MagentoRiskClass, rationale string, category func(string) MagentoAttributeCategory, attributes ...string) {
+		for _, a := range attributes {
+			out = append(out, MagentoAttributeClassification{domain, entity, a, risk, category(a), rationale})
+		}
+	}
+	fixed := func(c MagentoAttributeCategory) func(string) MagentoAttributeCategory {
+		return func(string) MagentoAttributeCategory { return c }
+	}
+	copyText := func(a string) MagentoAttributeCategory {
+		if strings.Contains(a, "description") || strings.HasPrefix(a, "meta_") {
+			return "content"
+		}
+		return "operational"
+	}
+	add("catalog", "product", 2, "Reversible catalog metadata", copyText, "name", "sku", "attribute_set_id", "type_id", "status", "visibility",
+		"weight", "description", "short_description", "meta_title", "meta_keyword", "meta_description", "url_key", "website_ids",
+		"category_links", "product_links", "media_gallery_entries")
+	add("catalog", "product", 2, "Price changes can run automatically only within the configured delta limit", fixed("financial"),
+		"price", "special_price", "tier_price", "value")
+	add("catalog", "product", 1, "Changes margin-sensitive cost data", fixed("financial"), "cost")
+	add("catalog", "category", 2, "Reversible category configuration", copyText, "name", "is_active", "include_in_menu", "parent_id", "position",
+		"available_sort_by", "default_sort_by", "description", "meta_title", "meta_keywords", "meta_description")
+	add("inventory", "source_item", 2, "Reversible inventory operation with reservation-aware preview", fixed("operational"),
+		"source_code", "sku", "quantity", "status", "notify_stock_qty", "use_config_notify_stock_qty")
+	add("orders", "order", 2, "Routine order operations", fixed("operational"),
+		"comment", "is_customer_notified", "is_visible_on_front", "hold_before_state", "hold_before_status")
+	add("orders", "order", 1, "Customer address or identity data", fixed("pii"),
+		"firstname", "lastname", "street", "city", "region", "postcode", "country_id", "telephone", "email")
+	add("orders", "fulfillment", 1, "Customer-visible fulfillment state", fixed("operational"),
+		"carrier_code", "title", "track_number", "items", "capture", "notify", "append_comment")
+	add("promotions", "sales_rule", 1, "Promotion configuration changes financial exposure", func(a string) MagentoAttributeCategory {
+		if a == "description" {
+			return "content"
+		}
+		return "financial"
+	}, "name", "description", "from_date", "to_date", "is_active", "uses_per_customer", "stop_rules_processing", "sort_order")
+	add("promotions", "sales_rule", 1, "Promotion or coupon exposure", fixed("financial"),
+		"discount_amount", "discount_qty", "discount_step", "times_used", "uses_per_coupon", "usage_limit", "qty")
+	add("content", "cms", 2, "Versioned CMS content", fixed("content"),
+		"identifier", "title", "content", "page_layout", "meta_title", "meta_keywords", "meta_description", "is_active", "store_id", "stores")
+	add("customers", "customer", 1, "Customer personal data; domain is off by default", fixed("pii"),
+		"firstname", "lastname", "email", "group_id", "dob", "taxvat", "gender", "addresses", "default_billing", "default_shipping")
+	return out
+}()
 
 type MagentoDomainCaps struct {
 	MaxRowsPerChangeset float64 `json:"maxRowsPerChangeset"`
@@ -299,7 +284,7 @@ func ClassifyMagentoChange(input ClassifyMagentoInput) MagentoChangeClassificati
 			attributes = append(attributes, MagentoClassifiedAttr{
 				Attribute: attr,
 				RiskClass: 1,
-				Category:  MagentoCatMerchandising,
+				Category:  MagentoCatOperational,
 				Rationale: reason,
 				Matched:   false,
 			})
