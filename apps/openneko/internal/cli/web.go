@@ -222,12 +222,14 @@ func startWebJobs(ctx context.Context, api *webfront.API, out, errOut io.Writer,
 }
 
 func newWebAPI(gate *webfront.Gate, pool *pgxpool.Pool, appVersion, secretsDir string, stop func(), inserter *jobs.Inserter, trace *webfront.EvalTrace, errOut io.Writer) *webfront.API {
-	secure, warning := webfront.CookiePolicy()
-	if warning != "" {
+	api := &webfront.API{Gate: gate, DB: pool, Version: appVersion, Development: webfront.Development(), SecretsDir: secretsDir,
+		Restart: stop, Jobs: inserter, EvalTrace: trace, MetricsRefresh: jobs.MetricsRefreshOn()}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if warning := api.CookieWarning(ctx); warning != "" {
 		fmt.Fprintln(errOut, warning)
 	}
-	return &webfront.API{Gate: gate, DB: pool, Version: appVersion, SecureCookies: secure, SecretsDir: secretsDir,
-		Restart: stop, Jobs: inserter, EvalTrace: trace, MetricsRefresh: jobs.MetricsRefreshOn()}
+	return api
 }
 
 const schemaCheckTimeout = 10 * time.Second
