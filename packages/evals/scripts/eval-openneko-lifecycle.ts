@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { app_user, builtinGroupId, data_source, db, pool, setLocalAdministrator } from "@neko/db";
-import { createTestOrg, dbReachable, seedProvider } from "@neko/db/test-helpers";
+import { dbReachable, ensureTestOrg, seedProvider } from "@neko/db/test-helpers";
 import {
   EvalEnvironmentError,
   createScore,
@@ -193,6 +193,8 @@ export function toolJson(result: ScriptedToolResult): Record<string, unknown> {
   return { isError: result.isError, text };
 }
 
+const LIFECYCLE_ORG_NAME = "OpenNeko lifecycle eval";
+
 type LifecycleOrg = { orgId: string; memberId: string; adminId: string };
 
 async function provisionOrg(input: {
@@ -205,7 +207,7 @@ async function provisionOrg(input: {
   const { orgId } = input;
   const memberId = `member-${orgId}`;
   const adminId = `admin-${orgId}`;
-  await createTestOrg(orgId, "OpenNeko lifecycle eval");
+  await ensureTestOrg(orgId, LIFECYCLE_ORG_NAME);
   await ensureOrgWorkspace(orgId);
   for (const [id, name] of [
     [memberId, "Eval Member"],
@@ -812,7 +814,12 @@ export function createOpenNekoLifecycleDriver(
         });
       }
       source.clear();
-      const episode = await host.startEpisode({ label: slot.caseId, env: { NEKO_ALLOW_LOCAL_WEBHOOKS: "1" } });
+      const orgId = `eval-lifecycle-${shortDigest(`${runId}/${slot.key}`).slice(0, 16)}`;
+      const episode = await host.startEpisode({
+        label: slot.caseId,
+        org: { id: orgId, name: LIFECYCLE_ORG_NAME },
+        env: { NEKO_ALLOW_LOCAL_WEBHOOKS: "1" },
+      });
       const turns = { count: 0, requests: 0 };
       try {
         episode.activate();
@@ -820,7 +827,7 @@ export function createOpenNekoLifecycleDriver(
           episode,
           model,
           source,
-          orgId: `eval-lifecycle-${shortDigest(`${runId}/${slot.key}`).slice(0, 16)}`,
+          orgId,
           turns,
         });
         if (stage === "stage") {
