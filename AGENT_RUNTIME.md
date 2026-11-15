@@ -14,11 +14,9 @@ pieces run it, and each holds only what its job needs:
 - the optional **sandbox service** ([recipes/sandbox](recipes/sandbox/README.md)),
   which runs terminal commands, script skills and workflow script steps.
 
-`openneko web` is the trusted control plane (with the Node `worker` in the
-Docker stack for Scalekit sign-in, SSO setup and directory sync, GraphJin group
-grants, and built-in action adapters). The
-database, secrets, policy and approvals live in the control plane. The agent
-reaches them only through the per-run tool bridge.
+`openneko web` is the trusted control plane. The database, secrets, policy and
+approvals live in the control plane. The agent reaches them only through the
+per-run tool bridge.
 
 ## How a run flows
 
@@ -91,17 +89,16 @@ classification, the briefing summary, transcript compaction, bot names and
 job descriptions, skill lessons, the research mission and the provider test
 in Admin, Settings.
 
-A host call is an Ax signature program. Web or the worker resolves the
+A host call is an Ax signature program. `openneko web` resolves the
 org's model route and loads its key, then sends one `generate` frame over
 the serve socket. The key travels in its own field, as it does for a turn.
 Serve runs the program, returns the output fields and the token counts, and
-keeps the key for that call only. Error text never carries the key. Where no
-serve socket exists, as in a test, the host runs `ax-harness generate` for
-the call.
+keeps the key for that call only. Error text never carries the key. With no
+serve socket, `openneko web` runs the call in-process.
 
 The gateway takes every Ax provider and any OpenAI-compatible URL. Ollama,
 vLLM, LM Studio and other local servers use the OpenAI-compatible route with
-no key. Web and the worker hold no provider client of their own.
+no key. `openneko web` holds no provider client of its own.
 
 The industry research step (`industry_insights_build`) runs in `openneko web`
 and calls Perplexity directly (`apps/openneko/internal/webfront/industrybuild.go`),
@@ -160,14 +157,13 @@ model. Each change to a model or a route goes in the audit chain.
 
 Every embedding call goes through one Go package,
 `apps/ax-harness/embedding`. It calls an OpenAI-compatible `/embeddings`
-route at `NEKO_EMBEDDING_URL`. Web and the worker read the URL, the model
-and the dimensions, and decide whether embedding is on. They send one
+route at `NEKO_EMBEDDING_URL`. `openneko web` reads the URL, the model
+and the dimensions, and decides whether embedding is on. It sends one
 `embed` frame over the serve socket with up to 64 texts and the key in
 `model_key`. Serve returns one vector per text, in order. It refuses a
 redirect, a URL with credentials or a query, and a vector of the wrong
-size, and keeps the key out of error text. Where no serve socket exists,
-the host runs `ax-harness embed`, with the key in
-`HARNESS_EMBEDDING_API_KEY`. When embedding is off, nothing calls out and
+size, and keeps the key out of error text. With no serve socket,
+`openneko web` runs the call in-process. When embedding is off, nothing calls out and
 search uses Postgres full-text search.
 
 ### The data access interface
@@ -185,7 +181,7 @@ and calls GraphJin's MCP or GraphQL route.
 
 ## Two zones
 
-The stack has two zones. The control zone is web and the worker. It holds
+The stack has two zones. The control zone is `openneko web`. It holds
 the secret key, the `neko` database login and the provider keys. The agent
 zone is serve and its turns. Serve holds only these:
 
@@ -195,7 +191,7 @@ zone is serve and its turns. Serve holds only these:
 - the `neko_subscriptions_<database>` login. The role can read
   `workflow_output` and nothing else, and comes from the same step.
 - the token key, `HMAC(secret key, "openneko-serve:v1")`. It checks the
-  tokens that web and the worker sign. It cannot decrypt a stored value.
+  tokens that `openneko web` signs. It cannot decrypt a stored value.
 - a turn's or a host call's model key, while it runs.
 
 The `openneko-serve-init` start step writes the first three into the
@@ -204,7 +200,7 @@ start, so a new secret key reaches serve on the next start. Serve does not
 mount the config volume.
 
 Containers and credentials separate the zones. The network does not: serve
-shares the stack network with the database, web and the worker. The
+shares the stack network with the database and `openneko web`. The
 database grants and the broker's per-run tokens stop serve from acting
 outside its zone.
 
@@ -215,7 +211,7 @@ config changes with OpenNeko's own model: the `graphjin-config` skill reads
 the redacted config through `describe_source_config`, and the seed configs
 set `agent.enabled: false`. The model fills a typed proposal
 (`request_source_config_change`) and never writes YAML. After an admin
-approves, the worker applies the change to the running GraphJin and writes it
+approves, `openneko web` applies the change to the running GraphJin and writes it
 to `OPENNEKO_GRAPHJIN_CONFIG`: sources, access, table lists and roles.
 
 Before a proposal reaches an admin, the control plane checks it three times:
@@ -233,20 +229,20 @@ source form shows it beside that field. API and local-file sources skip the
 file check, because their files exist only after approval.
 
 An admin uploads the files of a local-file source in the source form
-(`POST /api/v1/settings/file-sources`; the Go web front answers it). Go
+(`POST /api/v1/settings/file-sources`; `openneko web` answers it). Go
 writes them to a folder per org and source under `files/` beside the
 GraphJin config, or under `OPENNEKO_GRAPHJIN_FILES_LOCAL_DIR`. It refuses
 new files for a source that GraphJin already serves or that an admin
-approved. The upload and the approval worker take the same lock file.
+approved. The upload and the approval job take the same lock file.
 
 An admin adds an API source from an OpenAPI 3 document in the source form
-(`GET` and `POST /api/v1/settings/openapi-specs`; the Go web front answers
+(`GET` and `POST /api/v1/settings/openapi-specs`; `openneko web` answers
 them). The admin uploads a YAML or JSON file of up to 2 MB, or gives an
 HTTPS URL. Go fetches a URL only when every address of its host is public,
 connects to the address it checked, and follows at most three redirects.
 It refuses a document with an external `$ref`, sets the one base URL in
 `servers`, counts the read and mutating operations, and stores the
-document as YAML with its SHA-256 checksum. The approval worker checks
+document as YAML with its SHA-256 checksum. The approval job checks
 that checksum before it writes the file for GraphJin.
 
 OpenNeko says what a config does in plain sentences
@@ -269,11 +265,11 @@ server and run `openneko graphjin check`.
 A database source needs a login with a password. OpenNeko refuses a
 proposal with no saved password, or with a saved password that is empty, at
 the answer check and again at apply. The password goes to GraphJin only. The
-control plane and the approval worker replace it with `[REDACTED]` in every
+control plane replaces it with `[REDACTED]` in every
 error text, so GraphJin's errors cannot carry it to the model, a log line or
 the thread.
 
-The source check (`packages/llm/src/graphjin/source-check.ts`) tests one
+The source check (`apps/openneko/internal/sourcecheck` and `packages/llm/src/graphjin/source-check.ts`) tests one
 PostgreSQL, MySQL or MariaDB source in order: the host resolves, the port
 answers, TLS, the login, the rights to read the schema, and read-only rights.
 It stops at the first failed step. Each failure names the answer at fault and,
@@ -282,8 +278,8 @@ check lists the tables the login can read, with the planner's row estimates.
 The check runs in the control zone, because it needs the stored password.
 Three callers use it: the `check_source` tool (through the broker, admin runs
 only), the "Check connection" part of the source form
-(`POST /api/v1/settings/source-check`, admins only; the Go web front answers it with a Go copy of the check in `apps/openneko/internal/sourcecheck`), and `openneko source check`
-(the worker's `POST /admin/sources/check`). The form shows the tables with all
+(`POST /api/v1/settings/source-check`, admins only), and `openneko source check`
+(`POST /admin/sources/check` on the admin socket of `openneko web`). The form shows the tables with all
 selected; the tables the admin clears become `blockedTables` in the proposal.
 TLS: the check reports whether the server offers TLS and whether its
 certificate verifies against the system's trusted certificates. It then signs
@@ -330,7 +326,7 @@ Then `docker compose up` starts the services. `openneko upgrade` and
 From a source checkout, `docker compose run --rm openneko-serve-init` runs
 steps 2, 3, 4 and 6 in order.
 
-In prod mode, steps 1, 2, 3 and 6, web and the worker read OpenNeko's database
+In prod mode, steps 1, 2, 3 and 6 and `web` read OpenNeko's database
 URL from the Compose secret `database-url`. Serve does not get it. When the
 URL names TLS files, start writes `database-tls.yml`, which gives the same
 services and serve a copy of each file as a Compose secret. Dev, demo
@@ -351,9 +347,9 @@ own container.
   when the file is missing, with a new keystore key. It then finds or creates
   the organization row and writes the per-org JWT secret, the write policy and
   the `system` block into the file. GraphJin reads auth keys only when it
-  starts, so `openneko start` runs this step before it starts serve, web
-  and the worker.
-- When the worker changes the config, it writes a new token to
+  starts, so `openneko start` runs this step before it starts serve and
+  `web`.
+- When `openneko web` changes the config, it writes a new token to
   `.openneko-graphjin-restart`. Serve then starts a new child with the file
   and writes the token to `.openneko-graphjin-restart-ack` when the child
   answers or exits. Serve answers `.openneko-graphjin-supervisor-ping` the
@@ -376,8 +372,8 @@ own container.
 
 ## The subscriptions GraphJin
 
-Serve also runs the GraphJin that serves the worker's workflow output
-subscriptions, on port 8089. It is a second child process of the same kind,
+Serve also runs the GraphJin that serves the workflow output
+subscriptions of `openneko web`, on port 8089. It is a second child process of the same kind,
 with the same restarts, 503 answer and state file.
 
 - It connects as `neko_subscriptions_<database>`. Serve reads the role's URL from
@@ -434,7 +430,7 @@ Put an egress proxy or firewall on the sandbox network if you need that.
 ## Shared folders
 
 - `openneko-agent-runs` → `/var/lib/openneko/agent-runs`, owned by
-  `1001:1001`. Web, the worker and serve share it. The sandbox does not
+  `1001:1001`. `web` and serve share it. The sandbox does not
   mount it.
 - `openneko-run` → `/run/openneko`, `1001:1001`, mode `0770`. It holds
   `serve.sock` and, with the overlay, `sandbox.sock`.
@@ -445,25 +441,25 @@ Compose sets all of these. They matter only for custom deployments.
 
 | Variable | Where | Meaning |
 |---|---|---|
-| `OPENNEKO_SERVE_SOCKET` | web, worker, serve | the agent socket of serve (`/run/openneko/serve.sock`) |
+| `OPENNEKO_SERVE_SOCKET` | web, serve | the agent socket of serve (`/run/openneko/serve.sock`) |
 | `OPENNEKO_SERVE_MAX_TURNS` | serve | turns that run at once (default 32) |
-| `OPENNEKO_AGENT_RUNS_DIR` | web, worker | where runs are staged |
-| `OPENNEKO_SANDBOX_URL` | web, worker, serve | the sandbox service (`unix:///path`, `http://` or `https://`); empty turns the terminal off |
-| `OPENNEKO_SANDBOX_KEY` | web, worker, serve, sandbox | the bearer key of the sandbox service |
-| `OPENNEKO_GRAPHJIN_CONFIG` | web, worker, serve, serve-init | the customer GraphJin config (`/config/graphjin/agentic.yml`); empty runs no GraphJin in serve |
+| `OPENNEKO_AGENT_RUNS_DIR` | web | where runs are staged |
+| `OPENNEKO_SANDBOX_URL` | web, serve | the sandbox service (`unix:///path`, `http://` or `https://`); empty turns the terminal off |
+| `OPENNEKO_SANDBOX_KEY` | web, serve, sandbox | the bearer key of the sandbox service |
+| `OPENNEKO_GRAPHJIN_CONFIG` | web, serve, serve-init | the customer GraphJin config (`/config/graphjin/agentic.yml`); empty runs no GraphJin in serve |
 | `OPENNEKO_GRAPHJIN_ADDR` | serve | where the customer GraphJin listens (default `127.0.0.1:8080`; Compose sets `0.0.0.0:8080`) |
 | `OPENNEKO_GRAPHJIN_SEED` | serve-init | the template for a new config; the serve image sets it |
 | `OPENNEKO_SUBSCRIPTIONS_ADDR` | serve | where the subscriptions GraphJin listens (default `127.0.0.1:8089`; Compose sets `0.0.0.0:8089`); empty runs none |
 | `OPENNEKO_SUBSCRIPTIONS_DIR` | serve | the private folder for its config and state |
-| `OPENNEKO_GRAPHJIN_URL` | web, worker | the subscriptions GraphJin (`http://openneko-serve:8089`) |
+| `OPENNEKO_GRAPHJIN_URL` | web | the subscriptions GraphJin (`http://openneko-serve:8089`) |
 
-Web and the worker check that serve answers on its socket before setup
-completes and before onboarding work starts. When serve does not answer, they
-report that the agent runtime (openneko serve) is unavailable.
+`openneko web` checks that serve answers on its socket before setup
+completes and before onboarding work starts. When serve does not answer, it
+reports that the agent runtime (`openneko serve`) is unavailable.
 
 ## Development
 
-`pnpm dev` runs `openneko serve` on the host next to web and the worker
+`pnpm dev` runs `openneko serve` on the host next to `openneko web`
 (`scripts/dev-agent.sh`). That serve runs no GraphJin. The customer GraphJin
 runs in the `openneko-serve` container that `pnpm dev:up` starts, on
 `localhost:8080`. To try the terminal, run the sandbox recipe and set

@@ -1,7 +1,7 @@
 # OpenNeko agent MCP runtime
 
 This package owns the runtime contract between the Ax agent, OpenNeko's sandbox
-bridge, the trusted worker control plane, GraphJin, and the A2UI renderer.
+bridge, the trusted control plane (`openneko web`), GraphJin, and the A2UI renderer.
 
 ## GraphJin MCP
 
@@ -37,7 +37,7 @@ config at `OPENNEKO_GRAPHJIN_CONFIG` proves every database source is
 API sources can take governed writes. The shipped config sets
 `mcp.allow_mutations: true` and `system.capabilities.raw_graphql.mutate: true`
 (in sources mode the capability overwrites the MCP flag at startup) and lists
-the `member` and `service` roles the worker mints. GraphJin generates a
+the `member` and `service` roles that `openneko web` mints. GraphJin generates a
 source's `access.write` block only for listed roles; an unlisted JWT role gets
 no block. A write against an API source still needs, per source, `read_only`
 unset, `capabilities.api.write: true`, `access.write` set to `authenticated` or
@@ -45,8 +45,8 @@ unset, `capabilities.api.write: true`, `access.write` set to `authenticated` or
 
 ### Governed API writes through the config workflow
 
-Nobody edits the GraphJin file by hand. `openneko serve-init` (Go) and the
-worker's boot pass (`reconcileGraphjinWritePolicy`) bring an
+Nobody edits the GraphJin file by hand. `openneko serve-init` and
+`reconcileGraphjinWritePolicy` in `openneko web` bring an
 existing sources-mode config up to the shipped policy (`mcp.allow_mutations`,
 `raw_graphql.mutate`, the `member` and `service` roles) before GraphJin starts.
 
@@ -92,7 +92,7 @@ database block:
 
 ```sh
 export XDG_CONFIG_HOME=/tmp/neko-live-xdg   # fresh install key for the tests
-SECRET=$(apps/worker/node_modules/.bin/tsx -e 'import("./packages/llm/src/graphjin/token.ts").then(m => process.stdout.write(m.graphjinSigningSecretB64("org-gj4-live")))')
+SECRET=$(packages/contract/node_modules/.bin/tsx -e 'import("./packages/llm/src/graphjin/token.ts").then(m => process.stdout.write(m.graphjinSigningSecretB64("org-gj4-live")))')
 docker network create neko-live
 docker run -d --name neko-live-pg --network neko-live -e POSTGRES_PASSWORD=pg -e POSTGRES_DB=app postgres:16-alpine
 sleep 5 && docker exec neko-live-pg psql -U postgres -d app -c "create table orders(id serial primary key, note text); insert into orders(note) values ('seed');"
@@ -107,7 +107,7 @@ pnpm --filter @neko/llm exec vitest run test/integration/graphjin-mcp-live.test.
 docker rm -f neko-gj-live neko-live-pg && docker network rm neko-live
 ```
 
-A database source needs `access.read: authenticated` for the worker's roles to
+A database source needs `access.read: authenticated` for the roles that `openneko web` mints to
 read it; OpenNeko sets that on every source it registers. `query_catalog` is
 absent from the tool list until a source is configured.
 

@@ -14,7 +14,7 @@ OpenNeko keeps every secret in one place: the local secrets file
 
 An older release could read deployment secrets from an Infisical vault. This
 release removes that backend. When `config.json` still sets
-`secrets.backend` to `"infisical"`, the worker and `openneko web` do not
+`secrets.backend` to `"infisical"`, `openneko web` and the `openneko` CLI do not
 start and print one message. To upgrade, copy each secret into the local file
 with `openneko secrets set <section> <key>`, remove the `secrets` block from
 `config.json`, then start again.

@@ -156,8 +156,8 @@ name.
 
 - `sslmode=verify-full` checks the server certificate and its host name.
   `verify-ca` checks only the certificate, and `require` encrypts without
-  checking it. Use one of these three. With `prefer` or `allow`, web and the
-  worker connect without TLS.
+  checking it. Use one of these three. With `prefer` or `allow`, `openneko web`
+  connects without TLS.
 - `sslrootcert` names the CA file. Without it, OpenNeko uses its default CA
   list. `sslcert` and `sslkey` name a client certificate and its key, for a
   server that asks for one. Give paths on the host where you run `openneko`.
@@ -257,7 +257,7 @@ The command does these steps in order:
 
 1. It checks the new database. It stops when the URL's login already owns
    tables there.
-2. It stops web, worker and `openneko-serve`, and runs the start steps on the
+2. It stops `web` and `openneko-serve`, and runs the start steps on the
    new database.
 3. It takes a backup of `neko-db` into the usual backup folder.
 4. It removes the `neko-db` container and restores the backup into the new
@@ -321,12 +321,12 @@ Modes:
 
 - **`prod`** (default) — the production control, customer-data, file, and
   agent runtime services. `openneko start` runs five start steps in order,
-  then starts three containers: `openneko-serve`, `web` and `worker`.
-  OpenNeko's database is yours, by URL. Web and the `openneko` CLI reach the
-  worker admin endpoint on the Unix socket `/run/openneko/worker.sock`
-  (`WORKER_ADMIN_URL=unix:///run/openneko/worker.sock`). The worker has no
+  then starts two containers: `openneko-serve` and `web`.
+  OpenNeko's database is yours, by URL. The `openneko` CLI reaches
+  `openneko web` on its admin Unix socket (`/tmp/openneko-web-admin.sock` in
+  the `web` container, `OPENNEKO_WEB_ADMIN_SOCKET`). The socket has no
   network port.
-- **`dev`** — source-checkout workflow: use `pnpm dev:setup` for Docker-only dependencies plus AdventureWorks demo data, then `pnpm dev` for hot-reloaded web/worker from source.
+- **`dev`** — source-checkout workflow: use `pnpm dev:setup` for the Docker backing services plus AdventureWorks demo data, then `pnpm dev` to run `openneko web` and `openneko serve` on the host from source.
 - **`demo`** — core + `neko-db` + AdventureWorks: `adventureworks-db`, `adventureworks-init`, `neko-adventureworks-seed`. The full live-trial flow (continuous order trickle + scenario injector) lives in `compose.adventureworks.yml` and needs the [Build from source](#build-from-source-advanced) path.
 
 `~/.config/openneko/compose.override.yml` is auto-applied if present (last `-f` to docker compose).
@@ -342,8 +342,8 @@ the schema, and read-only rights. A failed step gives one sentence and, where
 SQL fixes it, the SQL for the database administrator, for example how to create
 a read-only login. A passed check lists the tables the login can read, with
 row estimates. `--secret` names a password saved in Admin settings, GraphJin
-config; `--password-stdin` reads it from standard input. The check runs in the
-worker, so the stack must be running. It exits 1 when a step fails. It checks
+config; `--password-stdin` reads it from standard input. The check runs in
+`openneko web` on its admin socket, so OpenNeko must be running. It exits 1 when a step fails. It checks
 PostgreSQL, MySQL and MariaDB, and says so for any other type.
 
 `graphjin check` loads a GraphJin config file with the GraphJin version built
@@ -371,16 +371,12 @@ process-local state at `GET /health` and `GET /health/security`; monitor for
 HTTP 503 or `status: "degraded"`.
 
 For immediate delivery independent of PostgreSQL, configure an HTTPS webhook
-on both processes that can write audit events:
+on `web`:
 
 ```yaml
 # ~/.config/openneko/compose.override.yml
 services:
   web:
-    environment:
-      OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL: https://alerts.example/audit-failure
-      OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN: ${OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN}
-  worker:
     environment:
       OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL: https://alerts.example/audit-failure
       OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN: ${OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN}
@@ -425,7 +421,7 @@ OpenNeko runs no command for the agent. To give the agent a terminal, and to
 turn on workflow script steps and the bundled skills that run scripts
 (`xlsx`, `docx`, `pptx`, `pdf` and `skill-creator`), connect
 a sandbox service.
-Give web, worker and `openneko-serve` its URL and key, then run
+Give `web` and `openneko-serve` its URL and key, then run
 `openneko stop` and `openneko start`:
 
 ```yaml
@@ -437,8 +433,6 @@ services:
   openneko-serve:
     environment: *sandbox
   web:
-    environment: *sandbox
-  worker:
     environment: *sandbox
 ```
 
@@ -470,7 +464,7 @@ new skill, delete the changed copy in Skills.
 
 OpenNeko finds memories and skills with Postgres full-text search. To find
 them by meaning as well, connect an OpenAI-compatible embedding service. Give
-web and worker the same values, then run `openneko stop` and `openneko start`:
+`web` these values, then run `openneko stop` and `openneko start`:
 
 ```yaml
 # ~/.config/openneko/compose.override.yml
@@ -482,13 +476,11 @@ x-embedding: &embedding
 services:
   web:
     environment: *embedding
-  worker:
-    environment: *embedding
 ```
 
 Semantic search is off until both the URL and the model are set. When it is
-on, openneko-serve sends memory and skill text, and each search query, to that
-service for web and worker. The service must answer on the stack's network.
+on, `openneko-serve` sends memory and skill text, and each search query, to that
+service for `openneko web`. The service must answer on the stack's network.
 Each minute, `openneko web` queues the stored rows that have no vector from
 the current model, at most 128 at a time, and embeds them one at a time.
 Until it reaches a row, and whenever the service fails, search uses
@@ -498,8 +490,8 @@ every row. To run a model on your own machine, see
 
 ### Traces (optional)
 
-OpenNeko sends no traces until you give it an OTLP/HTTP collector. Give web,
-worker and openneko-serve the endpoint, then run `openneko stop` and
+OpenNeko sends no traces until you give it an OTLP/HTTP collector. Give `web`
+and `openneko-serve` the endpoint, then run `openneko stop` and
 `openneko start`:
 
 ```yaml
@@ -508,8 +500,6 @@ x-traces: &traces
   OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
 services:
   web:
-    environment: *traces
-  worker:
     environment: *traces
   openneko-serve:
     environment: *traces
@@ -559,16 +549,13 @@ Each metric refresh is a paid model call, so the refresh is off by default.
 With it off, `openneko web` does not schedule the hourly metric sweep, and a
 pack install queues no refresh. A refresh that is already in the queue ends
 as cancelled, with one log line and no model call. The metric cards keep
-their last values. To turn the refresh on, set the variable for web and
-worker, then run `openneko stop` and `openneko start`:
+their last values. To turn the refresh on, set the variable on `web`,
+then run `openneko stop` and `openneko start`:
 
 ```yaml
 # ~/.config/openneko/compose.override.yml
 services:
   web:
-    environment:
-      OPENNEKO_METRICS_REFRESH: "on"
-  worker:
     environment:
       OPENNEKO_METRICS_REFRESH: "on"
 ```
@@ -591,7 +578,7 @@ of the user who owns the run:
 The keyword index is in OpenNeko's database. The sheet tables are Parquet files on the
 same volume. OpenNeko rebuilds both from the files, so you can delete them.
 DuckDB runs with external access off and reads only the tables of that user.
-Web and worker reach the service at `OPENNEKO_SERVE_URL` with a token that
+`openneko web` reaches the service at `OPENNEKO_SERVE_URL` with a token that
 expires after one minute. When `OPENNEKO_SERVE_URL` is not set, the assistant
 does not get the file tools.
 
@@ -602,8 +589,9 @@ derived from the secret key, and gives the service a key that checks the
 tokens. The service never gets the secret key or the `neko` password.
 
 Files a user adds to the Library go into that folder. When `OPENNEKO_SERVE_URL`
-is not set, the Library refuses uploads. After an upgrade, the worker moves
-Library files from older releases into the folder once, at start. It marks a
+is not set, the Library refuses uploads. After an upgrade, `openneko web` moves
+Library files from older releases into the folder once, at start
+(`openneko migrate library` runs the same step by hand). It marks a
 document as failed when its original file is gone.
 
 ### Files in a bucket (optional)
@@ -659,7 +647,7 @@ copy the files back with your bucket tool.
 `openneko backup` writes one encrypted file while the stack runs. The file
 holds a `pg_dump` of OpenNeko's database and the config and file volumes
 (`openneko-config`, `openneko-graphjin-cli` and `openneko-files`). With a
-database URL, `pg_dump` runs in a worker container and connects by the URL and
+database URL, `pg_dump` runs in a `web` container and connects by the URL and
 its TLS files, so the host needs no Postgres tools. The dump holds the objects
 that the URL's login owns. It leaves out the schemas and tables of other roles.
 With `OPENNEKO_FILES_BUCKET` set, the backup does not hold the files in the
@@ -714,7 +702,7 @@ chunks, so a wrong key, a cut file or any edit fails the check.
 `openneko upgrade` is the normal stack upgrade path. It:
 
 1. Takes an `openneko backup` of the running stack and stops if the backup fails. Pass `--skip-backup` to upgrade without one.
-2. Pulls the new OpenNeko images: `neko-cli`, `neko-serve`, `neko-web`, `neko-worker`, and `neko-db` when the install uses the bundled database.
+2. Pulls the new OpenNeko images: `neko-cli`, `neko-serve`, `neko-web`, and `neko-db` when the install uses the bundled database.
 3. Detects the mode recorded by your last `setup` or `start` (`prod`, `dev`, or `demo`) and recreates that stack detached.
 4. Re-runs every idempotent initializer against the existing volumes, including runtime-artifact repair and pending migrations.
 5. Waits for every declared service health check; a crash loop or unreachable data plane fails the upgrade instead of being reported as success.
@@ -760,7 +748,7 @@ This release has fewer parts. The upgrade migrates your data in place:
   you ([PACKS.md](PACKS.md#channels)). Resend, Slack, Shopify and Parallel web
   search actions are packs now; install them from **Admin → Settings →
   Packs**.
-- **The Library** keeps your files. At start, the worker moves each uploaded
+- **The Library** keeps your files. At start, `openneko web` moves each uploaded
   file into its owner's private folder for [file search](#file-search).
   Concepts and distillation are gone.
 - **The OpenShell runtime, the embedding container and the separate GraphJin
@@ -829,7 +817,7 @@ openneko upgrade
 ### What `openneko start` does
 
 1. **Start steps.** Writes the embedded compose files to `.openneko/runtime/`, then runs the start steps in order, each in its own container: the database check (prod mode), the storage check, the migrations under a Postgres advisory lock, the config volume, and serve's credentials and GraphJin config. Demo mode also loads the sample data. A failed step stops the start. [AGENT_RUNTIME.md](AGENT_RUNTIME.md#start-steps) lists each step.
-2. **Compose up.** Runs `docker compose up` for web, worker and `openneko-serve`. Docker pulls the pinned image tags.
+2. **Compose up.** Runs `docker compose up` for `web` and `openneko-serve`. Docker pulls the pinned image tags.
 
 `openneko stop` doesn't touch volumes. Use `--volumes` for a clean slate (wipes the metadata DB, demo state, agent workspaces).
 
@@ -1087,20 +1075,20 @@ pnpm dev:setup
 pnpm dev
 ```
 
-Web and worker run on the host with hot reload. Everything else runs in Docker.
+`openneko web` and `openneko serve` run on the host. Everything else runs in Docker.
 
 - `pnpm dev:up` starts the backing services with `compose.db.yml` and `compose.dev.yml`: `neko-db`, the `openneko-serve` container with the customer GraphJin and the subscriptions GraphJin, and AdventureWorks with its simulator. It installs the pinned GraphJin CLI into `.openneko/dev/bin`, builds the serve image, runs migrations from source, and writes the GraphJin JWT secret.
 - `pnpm dev:seed` seeds demo workflows. `pnpm dev:setup` runs both steps.
-- `pnpm dev` runs `openneko serve`, `openneko web` on port 3000 with Vite watching `apps/web/src` to rebuild `apps/web/dist` on edits, and `tsx watch` for the worker.
+- `pnpm dev` runs `openneko serve` (`pnpm dev:agent`) and `openneko web` on port 3000 with Vite watching `apps/web/src` to rebuild `apps/web/dist` on edits (`pnpm dev:web`).
 - `pnpm --filter @neko/web build:spa` builds the web app as static files in `apps/web/dist`, with a client router. `pnpm dev:web` builds the static app first when `apps/web/src` changed since the last build, runs `openneko web` on port 3000 serving `apps/web/dist`, and runs `vite build --watch` alongside it so edits to `apps/web/src` rebuild `apps/web/dist` in place (set `OPENNEKO_WEB_WATCH=0` to skip the watcher). For Vite hot module replacement in the browser, run `pnpm --filter @neko/web dev` (`dev:spa`) alongside `openneko web`: Vite serves the static app on port 5173 and passes `/api` to `openneko web` on port 3000 (set `OPENNEKO_SPA_API` for another address). `openneko web` applies the sign-in and admin checks of `src/lib/access-policy.ts` to each request and sets the `Content-Security-Policy` header (`frame-src 'self'`) on the app. It reads sessions, devices and groups, and writes users and their IdP groups at sign-in, with the main database login, and reads `secrets.json` for whether sign-in is on. After an admin changes the database password, `openneko web` opens each new database connection with the password in `config.json`. Go answers `/api/v1/version`, `/api/v1/auth/*`, `/api/v1/sso/setup/*`, `/api/v1/profile`, `/api/v1/my/pack-accounts/*`, `/api/v1/observations`, `/api/v1/approvals`, `/api/v1/action-requests/*`, `/api/v1/insights/ensure`, `/api/v1/work/memories/*`, `/api/v1/work/skills/*`, `/api/v1/work/assets`, `/api/v1/work/audit/export`, `/api/v1/work/files/*`, `/api/v1/work/upload`, the Library routes (`/api/v1/library/*`), the work thread and run routes, the bot routes (`/api/v1/bots/*`), the connector routes (`/api/v1/integrations/*`), the pack OAuth routes (`/api/v1/pack-accounts/*`), the workflow, subscription, workflow run and hooks routes, the channel webhook (`/api/v1/channels/*/inbound`), `/api/v1/policies/*`, `/api/v1/onboarding/status`, `/api/v1/onboarding/submit`, `/api/v1/settings/provider/test`, `/api/v1/admin/services`, the admin group, IdP rule, directory, item grant, data access, user, password, device, sign-in, public address, channel, spend, model, workflow API limit, pack and webhook-compatibility routes (`/api/v1/admin/groups/*`, `/api/v1/admin/idp-rules/*`, `/api/v1/admin/directory`, `/api/v1/admin/items`, `/api/v1/admin/item-grants`, `/api/v1/admin/data-access/*`, `/api/v1/admin/users/*`, `/api/v1/admin/change-password`, `/api/v1/admin/devices/*`, `/api/v1/admin/signin/*`, `/api/v1/admin/public-url`, `/api/v1/admin/channels/settings`, `/api/v1/admin/spend/*`, `/api/v1/admin/models/*`, `/api/v1/admin/model-routes`, `/api/v1/admin/workflow-api-limits`, `/api/v1/admin/packs/*`, `/api/v1/admin/reckon-webhooks/*`), and the fifteen settings routes: `/api/v1/settings/channel-identities/*`, `data-sources`, `source-secrets`, `install-policy`, `skill-learn`, `graphjin-config`, `persona`, `source-check`, `file-sources`, `openapi-specs`, `agent`, `data-source`, `data-source/test`, `provider` and `finish`. When an admin saves the agent, data source or primary provider settings, `openneko web` writes the GraphJin client file, brings the GraphJin config file (`OPENNEKO_GRAPHJIN_CONFIG`) up to date, and turns on actor tokens for a data source that answers with one. Background jobs run on a River queue in the `river` schema. `openneko migrate` creates and updates the `river` schema under the migration lock, moves the pending jobs of an older install from pg-boss, and removes the old pg-boss queues. `openneko web` runs the jobs: two hourly sweeps, two sweeps each minute, the embedding jobs, the directory sync, the bot name sweep, skill learning, the three setup builds, the metric refreshes, the workflow runs, the workflow API sweep, the channel chat turns and the channel deliveries. The first hourly sweep deletes expired workflow outputs. The second queues the due metric refreshes, archives expired memories and declines memory proposals that nobody reviewed in 14 days. The sweep each minute checks the behavior thresholds (`OPENNEKO_BEHAVIOR_MAX_CP_CALLS_PER_RUN_10M`, `OPENNEKO_BEHAVIOR_MAX_ACTIONS_PER_HOUR`, `OPENNEKO_BEHAVIOR_MAX_MEMORY_WRITES_PER_HOUR`, scaled by `OPENNEKO_PROFILE`) and records the `security.behavior_threshold` event. It then runs each due condition watcher and queues its workflow as a `workflow_run_fire` job, once in each quiet period of the watcher. The second sweep each minute, which also runs when `openneko web` starts, queues one `embedding_index` job for each memory and skill that has no vector from the current embedding model; `openneko web` runs these jobs one at a time, with up to 9 attempts. At 00:00, 06:00, 12:00 and 18:00 UTC, `openneko web` syncs the Scalekit directory: its users, groups and memberships. With no directory provider the job does nothing. A failed sync waits for the next run. Every 15 minutes, and once when `openneko web` starts, the bot name sweep asks the model for a short name for up to 20 bots that still carry their chat title (task `bot_names`); each bot gets one try. After a run from a channel uses a skill, `openneko web` queues a `skill_learn` job for that skill, unless one already waits. `openneko web` runs it: when skill learning is on for the org and the skill, and five runs that ended at least two hours ago used one version of it, the model proposes one lesson (task `skill_lessons`), and a lesson that passes the checks goes to the skill's `LEARNED.md` overlay. A failed attempt tries again after 30 seconds, with up to 3 attempts. The setup builds are `business_profile_build`, `industry_insights_build` and `bootstrap_metrics_build`. The onboarding submit queues the business profile build with one attempt. The profiler agent reads the data source through read-only GraphJin tools in an empty workspace and writes a new profile version. A reply that is not a usable profile goes back to the agent with the reason, up to 3 turns. When the org has industry research on, the build then queues `industry_insights_build`; `/api/v1/insights/ensure` queues it too. That job asks the model for a research mission (task `research_mission`) and sends it to Perplexity once, with one more try on a 5xx, a 429 or a network fault. `bootstrap_metrics_build` asks the model for four starter cards for each onboarding seat that has no metric yet, and queues one metric refresh for each new card; no step queues this build today. Each build keeps its `processing_job` row up to date for the onboarding and profile pages. A failed attempt tries again after 30 seconds, with up to 3 attempts; a model provider that is down or refuses the key ends the build with no retry. A `metric_refresh` job updates one card and writes a new snapshot. The hourly sweep, the bootstrap build and a pack install queue it. A card with a reviewed saved query runs that query on the card's pack source, or else on the default enabled data source, with no model. Any other card runs the metric agent: the read-only GraphJin tools, a search of the saved memories, and up to 3 turns for a reply that fails the card checks. The agent reserves the per-run spend cap before it starts, records its token cost, and releases the reservation at the end; an org over its spend limit gets a failed card and a `spend.budget_blocked` alert. The refreshes have their own queue: `OPENNEKO_METRIC_REFRESH_CONCURRENCY` (default 2) sets how many run at once in each `openneko web`. A failed attempt tries again after 30 seconds, with up to 3 attempts. A `workflow_run_fire` job runs one workflow headless: a schedule firing from the scheduler, a match of a workflow subscription, a watcher that fired, or a call to the workflow API. It runs one at a time in each `openneko web`. A schedule firing runs once, however often its job comes. When the org is over its spend limit, the run does not start and the firing is cancelled. A run that fails, or that a stop of `openneko web` cuts short, tries again after 30 seconds (60 and 120 seconds for a schedule firing), with up to 3 attempts, and its schedule firing goes back to the scheduler. The workflow API route queues its run in the same transaction as the admission. The run starts when fewer API runs are running than the workflow's concurrency cap, `OPENNEKO_WORKFLOW_API_ORG_CONCURRENCY_CAP` for the org and `OPENNEKO_WORKFLOW_API_GLOBAL_CONCURRENCY_CAP` for the install (default 3 each); otherwise it waits 5 seconds and tries again. An API run with a batch contract writes its CSV file with no model call. Any other API run stops at the first tool call, model call, token count, cost or second past the ceilings of its workflow, and fails with the code of that ceiling. A claimed API run never runs a second time: a failure ends the run as failed, and the caller reads the reason. The workflow API sweep runs each minute and when `openneko web` starts. It fails each API run whose time ran out while it ran (`worker_interrupted`), deletes the results, inputs and files of runs past their retention, and queues each admitted run that has no job. An approved action goes on River as an `action_execute` job. When a person approves it in the app (including with a verified passkey assertion once the user registers a passkey), Go writes the job in the same transaction as the approval, so an approval that fails queues nothing. `openneko web` runs the job in Go for every pack action (`graphjin_api_operation` REST mutations and Magento store changes, undo and financial handoffs) and the eight built-in adapters (`channel_admin`, `code_create_issue`, `code_draft_patch`, `data_source_admin`, `group_admin`, `send_webhook`, `source_config_admin`, and `user_admin`). A failed attempt tries again after 30 seconds, with up to 3 attempts. `openneko web` also runs the durable cron workflow scheduler (claiming due schedules every 15 seconds) and the GraphJin workflow-output subscription listener, and queues `web_push` jobs to notify opted-in browsers when an approval waits, a chat run finishes, or a workflow needs attention. The `openneko web` that runs the jobs receives channel messages: it polls Telegram every 3 seconds and holds a Slack Socket Mode connection. When `OPENNEKO_PUBLIC_URL` is set, Telegram and the HUD bridge post to `/api/v1/channels/<id>/inbound` in place of the poll, and the route checks the channel's signature. OpenNeko handles each update once; an update that fails 30 times is set aside in `inbound_dedup`. A message from Slack or Telegram goes on River as a `work_run` job. `openneko web` runs its chat turn as it runs a question from the app, up to 3 jobs at a time, then queues the reply as a `channel_deliver` job. When a workflow writes an output, `openneko web` queues one `channel_deliver` job for each enabled delivery binding whose audience holds the workflow, and the watcher when a watcher fired the run. `openneko web` sends each delivery itself to Slack, Telegram or the HUD bridge, with the channel settings in the secrets store. A failed send tries again after 15 seconds, twice as long each time, with up to 9 attempts. A chat turn that started never runs a second time, and each run sends its reply once. When the `river` schema is missing, `openneko web` still starts and says that background jobs are off. `openneko web --jobs=false` (or `OPENNEKO_WEB_JOBS=false`) runs no job; another `openneko web` with jobs on must run them, or an outside scheduler calls the wake endpoint (see "Wake the jobs by HTTP").
-- `pnpm dev:web:stack` reaches the worker socket of the Compose stack through a loopback relay (`scripts/worker-socket-relay.mjs`).
-- `scripts/dev-env.sh` holds the host settings. Each service a host process calls has a loopback port; `pnpm dev:web` and `pnpm dev:worker` source the file.
-- The customer GraphJin runs in sources mode from `db/graphjin/dev.sources.example.yml`. Its config lives in `.openneko/dev/graphjin`, and the worker manages it like the core stack.
+- `pnpm dev:web:stack` runs a host `openneko web` on port 3200 against a running Compose stack (`scripts/dev-web-stack.sh`).
+- `scripts/dev-env.sh` holds the host settings. Each service a host process calls has a loopback port; `pnpm dev:web` and `pnpm dev:agent` source the file.
+- The customer GraphJin runs in sources mode from `db/graphjin/dev.sources.example.yml`. Its config lives in `.openneko/dev/graphjin`, and `openneko web` manages it like the core stack.
 - OpenNeko state uses your XDG config home. Set `OPENNEKO_DEV_CONFIG_HOME=$PWD/.openneko/dev/config` to keep a worktree's stack separate, and a distinct `COMPOSE_PROJECT_NAME` with its ports when two stacks run at once.
 
 Without the `openneko-serve` container, subscription-chained workflows stay silent. `openneko web` logs `graphjin subscription socket error` for each subscription and tries again.
 
-Install host-only CLIs the worker shells out to (Docker images already include them):
+Install the pinned GraphJin CLI on the host when you need `graphjin` on your `PATH` (`pnpm dev:up` also installs a copy into `.openneko/dev/bin`):
 
 ```bash
 ./scripts/install-clis.sh
@@ -1136,8 +1124,6 @@ environment override.
 
 **Image pull `unauthorized`.** Confirm packages are public at https://github.com/orgs/open-neko/packages.
 
-**Worker crashes on boot.** Check `openneko logs worker`. `ERR_MODULE_NOT_FOUND` for a workspace dep means an old binary — `brew upgrade openneko` (≥ 1.7.3).
-
 **GraphJin connection fails.** Prod and demo modes use `http://graphjin:8080` (pre-filled), the GraphJin inside `openneko-serve`. Dev mode (`pnpm dev`) on the host uses `http://localhost:8080`. Run `openneko status` and read the `graphjin` line: it says whether GraphJin runs or restarts, with the reason.
 
 **Workflow subscriptions don't fire.** Run `openneko status` and check the `subscriptions` line. `openneko web` logs `[subscription-manager] ready (N active)` on start, where N is the number of enabled subscriptions. A `graphjin subscription socket error` line means the subscriptions GraphJin in `openneko-serve` is unreachable; `openneko web` tries again within a minute. `openneko stop && openneko start` writes its login again.
@@ -1153,11 +1139,10 @@ migrator ends.
 
 **Provider key fails.** Confirm it's active, has billing/quota, and matches the provider in `/settings`.
 
-**Stale `pnpm dev` processes hammering port 5432.** `tsx watch` processes survive `openneko stop` and reconnect with a stale password (`password authentication failed for user "neko"` in logs):
+**Stale `pnpm dev` processes hammering port 5432.** Host `pnpm dev` processes survive `openneko stop` and reconnect with a stale password (`password authentication failed for user "neko"` in logs):
 
 ```bash
-pkill -f "tsx.*apps/worker/src/index"
-pkill -f "tsx.*apps/web"
+pkill -f "\.openneko/dev/bin/openneko"
 openneko stop --volumes && openneko start --mode demo --detach
 ```
 
@@ -1166,5 +1151,5 @@ openneko stop --volumes && openneko start --mode demo --detach
 ```bash
 openneko reset --all
 brew uninstall openneko && brew untap open-neko/tap   # if also reinstalling
-pkill -f "tsx.*apps/(worker|web)"                     # if you ever ran pnpm dev
+pkill -f "\.openneko/dev/bin/openneko"                # if you ever ran pnpm dev
 ```

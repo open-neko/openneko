@@ -26,4 +26,4 @@ overwrites an earlier one. Removing a document deletes its row and its file.
 The agent reads the Library with the `neko_files` tools: `search`,
 `read_text` and `query_tables`. The broker takes the user from the run owner,
 so a run sees only its owner's folder. Nothing is extracted, chunked or
-summarised on the Node side.
+summarised outside `openneko serve`.

@@ -33,6 +33,3 @@ development are in [docs/AX-DEVELOPMENT.md](docs/AX-DEVELOPMENT.md).
 go vet ./...
 go test -race -count=1 -timeout 10m ./...
 ```
-
-`internal/mcp` has opt-in tests against the real OpenNeko bridge. Install the
-`apps/worker` dependencies, then set `OPENNEKO_BRIDGE_TEST=1`.
