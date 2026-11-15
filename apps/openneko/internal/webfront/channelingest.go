@@ -477,7 +477,9 @@ func (a *API) startChannelRun(ctx context.Context, orgID, channel, message, thre
 }
 
 // channelWebhook is POST /api/v1/channels/{channelId}/inbound: a provider
-// webhook, checked by the channel's own signature rule. Telegram retries
+// webhook, checked by the channel's own signature rule before the route says
+// whether the channel is off. An unknown channel gets the same 401 as a bad
+// signature. Telegram retries
 // only a non-2xx reply, so a failed update that has attempts left gets 500.
 func (a *API) channelWebhook(w http.ResponseWriter, r *http.Request) {
 	ch := findBuiltInChannel(r.PathValue("channelId"))
@@ -487,7 +489,7 @@ func (a *API) channelWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ch == nil {
-		sendError(w, http.StatusNotFound, "unknown channel")
+		sendError(w, http.StatusUnauthorized, "the signature does not match")
 		return
 	}
 	env, err := a.channelEnv(ch.ID)
@@ -495,12 +497,12 @@ func (a *API) channelWebhook(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
-	if !channelEnabled(ch, env) {
-		sendError(w, http.StatusNotFound, "the channel is off")
-		return
-	}
 	if !channelInbound[ch.ID].verify(r.Header, body, env) {
 		sendError(w, http.StatusUnauthorized, "the signature does not match")
+		return
+	}
+	if !channelEnabled(ch, env) {
+		sendError(w, http.StatusNotFound, "the channel is off")
 		return
 	}
 	raw, err := jsParse(body)
