@@ -10,7 +10,7 @@
 
 > The intelligence is rented; the findings, rules, and decisions are yours. Models keep changing — the memory of how your business actually runs (promises, exceptions, baselines, decisions) shouldn't live inside the vendor that rents you the model. OpenNeko keeps the agent **and** that memory on your infrastructure.
 
-![OpenNeko on mobile — Briefing, Ask, Workflows](cfo-briefing.png)
+![OpenNeko on mobile](cfo-briefing.png)
 
 ## Quickstart
 
@@ -24,7 +24,7 @@ openneko setup --mode demo
 
 The installer detects your OS/arch (Homebrew on macOS, a checksum-verified release binary on Linux) and checks for Docker. `openneko setup` then runs preflight checks, brings up the stack, and walks you through configuration **right in the terminal** — admin password, data source, model provider + key. Prefer a browser? Choose **browser** at the first prompt (or pass `--skip-onboarding`) to finish the wizard at [http://localhost:3000](http://localhost:3000). On Linux without Docker, run `scripts/install-native.sh` and `openneko start --native` against your Postgres database (see [INSTALL.md](INSTALL.md#run-without-docker-native)).
 
-The demo seeds three watchers against sample data — kick off **Slow-Ship Operations** from `/workflows` and watch an *"orders stuck in pending > 5 days"* finding land on your Briefing.
+The demo seeds four workflows against sample data. Run **Slow-Ship Operations** from `/workflows`, and an *"orders stuck in pending > 5 days"* finding shows on its run page under `/runs`.
 
 Full propose-and-approve walkthrough, the live trial (order simulator + scenario injector), and connecting your own data → **[INSTALL.md](INSTALL.md)**.
 
@@ -36,7 +36,7 @@ Docker network. See [Multiple customer instances](INSTALL.md#multiple-customer-i
 
 The full feature catalog, in plain language, lives in **[FEATURES.md](FEATURES.md)** — ask-anything answers, chat-first administration, watchers, channels (Slack / Telegram), personal-vs-team knowledge, and the verifiable security model. The highlights:
 
-- **Operational findings on the Briefing.** A SKU below reorder, orders stuck in *pending* for days, payment retries piling up — checked on a schedule and posted as findings.
+- **Operational findings.** A SKU below reorder, orders stuck in *pending* for days, payment retries piling up — checked on a schedule and posted as findings.
 - **Watchers you describe in plain English.** *"Alert me when any SKU's on-hand stock drops below its reorder point."* OpenNeko schedules it, runs it, and writes up what it found.
 - **Actions drafted, not auto-fired.** Slack alerts, Gmail follow-ups, Sheets updates, Shopify writes — proposed with the finding that triggered them, queued for your approval. Write a rule when you want a specific class of safe action to auto-fire.
 - **Follow-up questions about your data, in chat.** *"Which territories drove this week's revenue drop?"* — drill in on a finding without leaving the app or writing SQL.
@@ -58,13 +58,13 @@ OpenNeko separates the *intelligence* (the model) from the *memory* (your busine
 
 The memory layer runs on your own Postgres, on your own infrastructure:
 
-- **Findings & briefings** — every watcher run and result, kept against the watcher that produced it.
+- **Findings** — every watcher run and result, kept against the watcher that produced it.
 - **Pinned facts & learned rules** — what the agent figured out and you confirmed, kept separate from what the agent proposed and you haven't decided on yet.
 - **Document library** — documents and spreadsheets you upload, private to you. The assistant searches them, reads them whole, and answers questions over spreadsheet data with SQL, citing the file and page or sheet it used.
 - **Action policies** — your rules for what auto-fires, what queues, what's blocked.
 - **Decision history** — every approval, rejection, and execution receipt.
 
-Apache-2.0 core, self-hosted, single Postgres. Take a backup, take it with you — your memories, workflows and skills are plain-Markdown [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf) files any OKF-aware tool can read, and your library is the files you uploaded.
+Apache-2.0 core, self-hosted, single Postgres. Take a backup, take it with you: `openneko backup` writes one encrypted file with the database and config. Your skills are plain-Markdown `SKILL.md` files, and your library is the files you uploaded.
 
 ## Integrations, channels and sign-in
 
@@ -123,7 +123,6 @@ to the customer GraphJin config at runtime.
 
 - [ROADMAP.md](ROADMAP.md) — implementation follow-ups, including per-request access checks
 - [PACKS.md](PACKS.md) — authoring solution packs, directory layout, connectors, validation, and contributions
-- [CONTEXT_REPOSITORY.md](CONTEXT_REPOSITORY.md) — version history of skills and workflows
 - [INSTALL.md](INSTALL.md) — install, [upgrade](INSTALL.md#upgrade), requirements, troubleshooting, connecting your data, full demo trial
 - [AGENT_RUNTIME.md](AGENT_RUNTIME.md) — how the agent runs: `openneko web`, `openneko serve` and the optional sandbox service, and what each holds
 - [SECRETS.md](SECRETS.md) — secrets at rest in the local secrets file
