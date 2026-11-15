@@ -555,6 +555,10 @@ func runNativeUpgrade(ctx context.Context, cmd *cobra.Command, settings installa
 	if err := webfront.Check(newWeb); err != nil {
 		return fmt.Errorf("the release web app in %s: %w (nothing was changed)", newWeb, err)
 	}
+	newPacks := filepath.Join(from, "share", "openneko", "packs")
+	if err := checkReleasePacks(newPacks); err != nil {
+		return fmt.Errorf("the release packs in %s: %w (nothing was changed)", newPacks, err)
+	}
 	raw, err := exec.CommandContext(ctx, newExe, "version").Output()
 	if err != nil {
 		return fmt.Errorf("run %s version: %w (nothing was changed)", newExe, err)
@@ -670,12 +674,26 @@ func replaceFolder(src, dst string) error {
 	return os.RemoveAll(old)
 }
 
+// checkReleasePacks requires one or more <id>/pack.yaml files in dir.
+func checkReleasePacks(dir string) error {
+	found, err := filepath.Glob(filepath.Join(dir, "*", "pack.yaml"))
+	if err != nil {
+		return err
+	}
+	for _, f := range found {
+		if info, err := os.Stat(f); err == nil && info.Mode().IsRegular() {
+			return nil
+		}
+	}
+	return errors.New("no built-in pack (no <id>/pack.yaml)")
+}
+
 // replaceReleasePacks puts the built-in packs of the new release beside the
 // executable, where openneko web reads them.
 func replaceReleasePacks(from, exe string) error {
 	newPacks := filepath.Join(from, "share", "openneko", "packs")
-	if info, err := os.Stat(newPacks); err != nil || !info.IsDir() {
-		return nil
+	if err := checkReleasePacks(newPacks); err != nil {
+		return fmt.Errorf("the release packs in %s: %w", newPacks, err)
 	}
 	packs := filepath.Join(filepath.Dir(filepath.Dir(exe)), "share", "openneko", "packs")
 	if sameFile(newPacks, packs) {
