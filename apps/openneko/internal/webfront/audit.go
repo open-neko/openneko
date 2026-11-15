@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"slices"
 	"sort"
@@ -133,32 +134,69 @@ func (a *API) reportAuditFailure(e auditEvent, err error) {
 		"error":      err.Error(),
 	})
 	fmt.Fprintln(os.Stderr, string(alert))
-	url := a.AuditWebhook
-	if url == "" {
-		url = strings.TrimSpace(os.Getenv("OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL"))
+	hook := a.AuditWebhook
+	if hook == "" {
+		hook = strings.TrimSpace(os.Getenv("OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL"))
 	}
-	if url == "" {
+	if hook == "" {
+		return
+	}
+	if err := auditWebhookAllowed(hook); err != nil {
+		a.reportAuditDeliveryFailure(e, err)
 		return
 	}
 	token := strings.TrimSpace(os.Getenv("OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN"))
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(alert))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, hook, bytes.NewReader(alert))
 		if err != nil {
+			a.reportAuditDeliveryFailure(e, err)
 			return
 		}
 		req.Header.Set("Content-Type", "application/json")
 		if token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
-		res, err := http.DefaultClient.Do(req)
+		res, err := auditWebhookClient.Do(req)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, `{"type":"security.audit_logging_failure_webhook_error","severity":"critical","error":%q}`+"\n", err.Error())
+			a.reportAuditDeliveryFailure(e, err)
 			return
 		}
 		res.Body.Close()
+		if res.StatusCode < 200 || res.StatusCode > 299 {
+			a.reportAuditDeliveryFailure(e, fmt.Errorf("HTTP %d", res.StatusCode))
+		}
 	}()
+}
+
+var auditWebhookClient = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+
+func auditWebhookAllowed(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return err
+	}
+	if u.Host == "" || (u.Scheme != "https" && (u.Scheme != "http" || !isLoopbackHostname(u.Hostname()))) {
+		return errors.New("the URL must be https, or http on localhost")
+	}
+	return nil
+}
+
+func (a *API) reportAuditDeliveryFailure(e auditEvent, err error) {
+	msg := "audit failure webhook: " + err.Error()
+	a.auditMu.Lock()
+	a.auditFailures++
+	a.lastAuditFailure = &auditFailure{
+		OccurredAt: time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
+		OrgID:      e.OrgID,
+		EntityKind: e.EntityKind,
+		EntityID:   e.EntityID,
+		Event:      e.Event,
+		Error:      msg,
+	}
+	a.auditMu.Unlock()
+	fmt.Fprintf(os.Stderr, `{"type":"security.audit_logging_failure_webhook_error","severity":"critical","error":%q}`+"\n", msg)
 }
 
 func sha256Hex(s string) string {

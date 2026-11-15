@@ -390,10 +390,14 @@ services:
       OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN: ${OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN}
 ```
 
-The token is optional and is sent as a bearer token. Webhook delivery has a
-two-second timeout, is fire-and-forget, and never blocks the governed operation.
-Alert delivery failures are themselves emitted as structured critical stderr
-events.
+The URL must be `https`; `http` works only for `localhost`, `127.0.0.1` and
+`::1`. The token is optional and is sent as a bearer token. Webhook delivery has
+a two-second timeout, does not follow a redirect, and never blocks the governed
+operation. A refused URL, a network error and a reply other than 2xx are
+delivery failures. Each one writes a critical
+`security.audit_logging_failure_webhook_error` event to stderr and counts in
+`auditLogging.failureCount` on `GET /health/security`, with `lastError`
+starting `audit failure webhook:`.
 
 ### Agent runtime
 
