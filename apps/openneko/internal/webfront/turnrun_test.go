@@ -211,9 +211,9 @@ func TestRunEventStore(t *testing.T) {
 	f, db, _ := chatTurnFront(t)
 	a := f.API
 	ctx := context.Background()
-	old := runEventFlushIdle
-	t.Cleanup(func() { runEventFlushIdle = old })
-	runEventFlushIdle = time.Hour
+	old := runEventFlushAfter
+	t.Cleanup(func() { runEventFlushAfter = old })
+	runEventFlushAfter = time.Hour
 	stored := func(runID string) []string {
 		t.Helper()
 		rows, err := db.Query(ctx, `select kind || ' ' || payload::text from work_run_event where run_id = $1 order by id`, runID)
@@ -286,7 +286,7 @@ func TestRunEventStore(t *testing.T) {
 		}
 	}
 	unsubscribe()
-	runEventFlushIdle = 20 * time.Millisecond
+	runEventFlushAfter = 20 * time.Millisecond
 	idle := a.newRunEventStore("org", threadMine, runAdmin)
 	if err := idle.emit(ctx, jsObjOf("type", "message", "role", "assistant", "content", "Idle")); err != nil {
 		t.Fatal(err)
@@ -472,9 +472,9 @@ func TestStartChatRun(t *testing.T) {
 	f, db, _ := chatTurnFront(t)
 	a := f.API
 	ctx := context.Background()
-	old := runEventFlushIdle
-	t.Cleanup(func() { runEventFlushIdle = old })
-	runEventFlushIdle = time.Hour
+	old := runEventFlushAfter
+	t.Cleanup(func() { runEventFlushAfter = old })
+	runEventFlushAfter = time.Hour
 	a.slots.limit = 1
 	newRun := func() string {
 		t.Helper()

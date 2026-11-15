@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -11,7 +12,7 @@ import (
 
 var (
 	agentSlotHeartbeat = 60 * time.Second
-	runEventFlushIdle  = 250 * time.Millisecond
+	runEventFlushAfter = 100 * time.Millisecond
 	TurnStopGrace      = 5 * time.Second
 )
 
@@ -295,14 +296,14 @@ func (a *API) StopTurns(ctx context.Context) int {
 	return n
 }
 
-// runEventStore is createCoalescingEmit() in apps/web/src/lib/coalescing-emit.ts
-// over appendWorkRunEvent(): assistant and user text joins into one row per
-// idle window, every other event flushes the text first, and each stored
-// event goes to the live subscribers in order.
+// runEventStore joins assistant and user text into one row at most
+// flushAfter after the first buffered delta; every other event flushes the
+// text first, and each stored event goes to the live subscribers in order.
+// A timed flush holds back the tail that could start a secret.
 type runEventStore struct {
 	api                          *API
 	orgID, threadID, runID, kind string
-	idle                         time.Duration
+	flushAfter                   time.Duration
 	skills                       skillTrace
 
 	mu      sync.Mutex
@@ -315,7 +316,7 @@ type runEventStore struct {
 }
 
 func (a *API) newRunEventStore(orgID, threadID, runID string) *runEventStore {
-	return &runEventStore{api: a, orgID: orgID, threadID: threadID, runID: runID, kind: "work", idle: runEventFlushIdle}
+	return &runEventStore{api: a, orgID: orgID, threadID: threadID, runID: runID, kind: "work", flushAfter: runEventFlushAfter}
 }
 
 func (s *runEventStore) emit(ctx context.Context, event any) error {
@@ -347,16 +348,16 @@ func (s *runEventStore) emit(ctx context.Context, event any) error {
 		s.buf.Reset()
 	}
 	s.buf.WriteString(content)
-	s.stopTimerLocked()
-	s.gen++
-	gen := s.gen
-	s.timer = time.AfterFunc(s.idle, func() {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		if s.gen == gen {
-			_ = s.flushLocked(ctx)
-		}
-	})
+	if s.timer == nil && content != "" {
+		gen := s.gen
+		s.timer = time.AfterFunc(s.flushAfter, func() {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			if s.gen == gen {
+				_ = s.flushHeadLocked(ctx)
+			}
+		})
+	}
 	return nil
 }
 
@@ -380,6 +381,46 @@ func (s *runEventStore) flushLocked(ctx context.Context) error {
 		return nil
 	}
 	return s.persistLocked(ctx, jsObjOf("type", "message", "role", s.role, "content", content))
+}
+
+// flushHeadLocked stores the buffered text up to the point where a secret
+// could still start or cross, and keeps the rest buffered.
+func (s *runEventStore) flushHeadLocked(ctx context.Context) error {
+	s.timer = nil
+	s.gen++
+	content := s.buf.String()
+	_, pattern, values := s.api.runEventSecrets()
+	cut := secretSafeCut(content, pattern, values)
+	if cut == 0 {
+		return nil
+	}
+	s.buf.Reset()
+	s.buf.WriteString(content[cut:])
+	return s.persistLocked(ctx, jsObjOf("type", "message", "role", s.role, "content", content[:cut]))
+}
+
+// secretSafeCut returns the length of the head of text that a scrub can store
+// now: no match crosses the cut, and no secret can start before it and end
+// in text still to come.
+func secretSafeCut(text string, pattern *regexp.Regexp, values []string) int {
+	cut := len(text)
+	for _, v := range values {
+		for k := min(len(v)-1, len(text)); k > 0 && len(text)-k < cut; k-- {
+			if strings.HasSuffix(text, v[:k]) {
+				cut = len(text) - k
+				break
+			}
+		}
+	}
+	if pattern == nil {
+		return cut
+	}
+	for _, m := range pattern.FindAllStringIndex(text, -1) {
+		if m[0] < cut && m[1] > cut {
+			cut = m[0]
+		}
+	}
+	return cut
 }
 
 func (s *runEventStore) persistLocked(ctx context.Context, event any) error {
