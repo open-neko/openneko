@@ -1,0 +1,32 @@
+{
+ "name": "openai",
+ "provider": "openai",
+ "model": "gpt-5-mini",
+ "docs": "https://platform.openai.com/docs/guides/reasoning (Chat Completions returns no reasoning text, only reasoning_tokens)",
+ "stream": [
+  "data: {\"id\": \"c\", \"object\": \"chat.completion.chunk\", \"choices\": [{\"index\": 0, \"delta\": {\"role\": \"assistant\", \"content\": \"Answer: done\"}}]}",
+  "",
+  "data: {\"id\": \"c\", \"object\": \"chat.completion.chunk\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 3, \"completion_tokens\": 4, \"total_tokens\": 7}}",
+  "",
+  "data: [DONE]",
+  ""
+ ],
+ "thought": "",
+ "request": "\"reasoning_effort\":\"low\"",
+ "events": [
+  {
+   "type": "actor.step",
+   "data": {
+    "text": "Check the data"
+   }
+  },
+  {
+   "type": "answer.delta",
+   "data": {
+    "version": 0,
+    "index": 0,
+    "text": "done"
+   }
+  }
+ ]
+}

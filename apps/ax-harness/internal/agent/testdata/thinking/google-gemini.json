@@ -1,0 +1,48 @@
+{
+ "name": "google-gemini",
+ "provider": "google-gemini",
+ "model": "gemini-3.8-flash",
+ "docs": "https://ai.google.dev/gemini-api/docs/thinking (parts with thought: true, thoughtSignature)",
+ "stream": [
+  "data: {\"candidates\": [{\"content\": {\"role\": \"model\", \"parts\": [{\"text\": \"**Counting the orders**\\n\\nThe query returned one row.\", \"thought\": true}]}}], \"modelVersion\": \"gemini-3.8-flash\"}",
+  "",
+  "data: {\"candidates\": [{\"content\": {\"role\": \"model\", \"parts\": [{\"text\": \"\\n\\n**Writing the answer**\\n\\nOne sentence is enough.\", \"thought\": true}]}}], \"modelVersion\": \"gemini-3.8-flash\"}",
+  "",
+  "data: {\"candidates\": [{\"content\": {\"role\": \"model\", \"parts\": [{\"text\": \"Answer: done\", \"thoughtSignature\": \"CiQBVKhc7signature\"}]}, \"finishReason\": \"STOP\"}], \"modelVersion\": \"gemini-3.8-flash\", \"usageMetadata\": {\"promptTokenCount\": 3, \"candidatesTokenCount\": 4, \"thoughtsTokenCount\": 20, \"totalTokenCount\": 27}}",
+  ""
+ ],
+ "thought": "**Counting the orders**\n\nThe query returned one row.\n\n**Writing the answer**\n\nOne sentence is enough.",
+ "request": "\"includeThoughts\":true",
+ "events": [
+  {
+   "type": "actor.step",
+   "data": {
+    "text": "Check the data"
+   }
+  },
+  {
+   "type": "thought.delta",
+   "data": {
+    "version": 0,
+    "index": 0,
+    "text": "**Counting the orders**\n\nThe query returned one row."
+   }
+  },
+  {
+   "type": "thought.delta",
+   "data": {
+    "version": 0,
+    "index": 0,
+    "text": "\n\n**Writing the answer**\n\nOne sentence is enough."
+   }
+  },
+  {
+   "type": "answer.delta",
+   "data": {
+    "version": 0,
+    "index": 0,
+    "text": "done"
+   }
+  }
+ ]
+}

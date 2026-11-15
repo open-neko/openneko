@@ -95,7 +95,7 @@ them as provisional; only `run.finished` holds the answer.
 | Type | `data` |
 | --- | --- |
 | `answer.delta` | `{version, index, text}` from the responder. A new `version` replaces the earlier text. |
-| `thought.delta` | `{version, index, text}`. Provider thought summaries, from Anthropic and Gemini routes with `reasoning_effort` set. |
+| `thought.delta` | `{version, index, text}`. The responder's thinking text, from routes with `reasoning_effort` set: thought summaries from Anthropic and Gemini, raw reasoning from DeepSeek, OpenRouter and Together. Other providers send none through the pinned Ax. |
 | `actor.step` | `{text}`. The short request the actor writes when it hands work to the executor. |
 
 ## Result
