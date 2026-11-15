@@ -63,6 +63,8 @@ func (s *workflowTurnState) wrapped(ctx context.Context, event any) error {
 		if content, ok := jsGet(event, "content").(string); ok && jsGet(event, "role") == "assistant" {
 			s.assistantText.WriteString(content)
 		}
+	case "answer_reset":
+		s.assistantText.Reset()
 	case "needs_input":
 		s.needsInput = true
 	case "tool_start":
@@ -352,6 +354,8 @@ func (t *actionTrail) record(event any) {
 		if content, ok := jsGet(event, "content").(string); ok && jsGet(event, "role") == "assistant" {
 			t.text = utf16Tail(t.text+content, 1_000)
 		}
+	case "answer_reset":
+		t.text = ""
 	}
 }
 

@@ -2,7 +2,7 @@
 
 import { Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import {
   WORKSPACE_MARKDOWN_COMPONENTS as MARKDOWN_COMPONENTS,
   linkifyWorkspacePaths,
@@ -26,8 +26,10 @@ import {
   AnswerInProgress,
   CapabilityDeniedNotice,
   NeedsInputNotice,
+  StreamingBlockPlaceholder,
   WorkFailureNotice,
 } from "./work-notices";
+import { holdOpenBlock } from "./work-streaming-text";
 import { ProviderProgress, WorkTrail, progressPreview, useElapsed } from "./work-progress";
 import { SurfaceBlock } from "./work-surface";
 import { buildRunTimeline } from "./work-timeline-model";
@@ -155,6 +157,15 @@ export function RunTimeline({
           />
         );
       }
+      if (pending && index === presentation.items.length - 1) {
+        const { shown, held } = holdOpenBlock(item.content);
+        return (
+          <Fragment key={`text-${index}`}>
+            <FenceAwareBubble keyPrefix={`text-${index}`} raw={shown} />
+            {held ? <StreamingBlockPlaceholder block={held} /> : null}
+          </Fragment>
+        );
+      }
       return (
         <FenceAwareBubble
           key={`text-${index}`}
@@ -162,6 +173,9 @@ export function RunTimeline({
           raw={item.content}
         />
       );
+    }
+    if (item.kind === "card_pending") {
+      return pending ? <StreamingBlockPlaceholder key={`card-pending-${index}`} block="card" /> : null;
     }
     if (item.kind === "interim") {
       return (

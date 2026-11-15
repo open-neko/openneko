@@ -2891,10 +2891,15 @@ export function createOpenNekoBackendDriver(
           .filter((event): event is Extract<AgentEvent, { type: "error" }> => event.type === "error")
           .map((event) => event.message)
           .at(-1);
-        const finalText = events
-          .filter((event): event is Extract<AgentEvent, { type: "message" }> => event.type === "message" && event.role === "assistant")
-          .map((event) => event.content)
-          .join("");
+        const finalText = events.reduce(
+          (text, event) =>
+            (event as { type: string }).type === "answer_reset"
+              ? ""
+              : event.type === "message" && event.role === "assistant"
+                ? text + event.content
+                : text,
+          "",
+        );
         if (toolCallLimitReached) {
           throw new EvalTaskError(
             `agent exceeded max_tool_calls=${maxToolCalls}; tool_sequence=${toolCallSequence(events)}`,

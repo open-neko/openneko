@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Skeleton } from "@/components/ui/skeleton";
 import { presentWorkFailure } from "@/lib/work-failure";
+import type { HeldBlock } from "./work-streaming-text";
 import type { WorkEvent } from "./work-types";
 
 const ANSWER_CARD_PLACEHOLDER_MS = 60_000;
@@ -44,6 +45,25 @@ export function AnswerInProgress({ since, step, sources }: { since?: string; ste
         </div>
         <Skeleton className="mt-3 h-28" />
       </div>
+    </div>
+  );
+}
+
+const HELD_BLOCK_LABEL: Record<HeldBlock, string> = {
+  table: "Writing a table",
+  code: "Writing a code block",
+  card: "Preparing a card",
+};
+
+/** Stands in for a table, code block or card until the agent completes it. */
+export function StreamingBlockPlaceholder({ block }: { block: HeldBlock }) {
+  return (
+    <div className="work-block-pending" role="status" aria-live="polite" data-block={block}>
+      <div className="answer-draft-note">
+        <span className="answer-draft-pulse" aria-hidden="true" />
+        {HELD_BLOCK_LABEL[block]}
+      </div>
+      <Skeleton className="h-10" />
     </div>
   );
 }

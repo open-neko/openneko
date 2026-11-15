@@ -512,6 +512,9 @@
      "content": "\nMore"
     },
     {
+     "type": "card_pending"
+    },
+    {
      "type": "usage",
      "source": "outer",
      "provider": "anthropic",
@@ -826,6 +829,14 @@
      "content": "Old text"
     },
     {
+     "type": "answer_reset"
+    },
+    {
+     "type": "message",
+     "role": "assistant",
+     "content": "New"
+    },
+    {
      "type": "usage",
      "source": "outer",
      "modelIdentity": {
@@ -845,6 +856,14 @@
       "costSource": "model_record",
       "pricingCatalogVersion": "model_record"
      }
+    },
+    {
+     "type": "answer_reset"
+    },
+    {
+     "type": "message",
+     "role": "assistant",
+     "content": "Intro.\n"
     }
    ],
    "result": {
@@ -991,7 +1010,7 @@
       "totalTokens": 15,
       "coverage": "complete",
       "costStatus": "estimated",
-      "estimatedCostUsd": 0.000012,
+      "estimatedCostUsd": 1.2e-05,
       "currency": "USD",
       "costSource": "ax_harness_catalog",
       "pricingCatalogVersion": "ax-go@v9"
@@ -2815,7 +2834,7 @@
     "totalTokens": 110,
     "coverage": "partial",
     "costStatus": "estimated",
-    "estimatedCostUsd": 0.00006,
+    "estimatedCostUsd": 6e-05,
     "currency": "USD",
     "costSource": "ax_model_catalog",
     "pricingCatalogVersion": "ax-go@v0.0.0-20261029090635-42fceae3d6cd+overrides-2026-10",
@@ -2915,7 +2934,7 @@
     "inputTokens": 100,
     "coverage": "complete",
     "costStatus": "estimated",
-    "estimatedCostUsd": 0.00001,
+    "estimatedCostUsd": 1e-05,
     "currency": "USD",
     "costSource": "ax_model_catalog",
     "pricingCatalogVersion": "ax-go@v0.0.0-20261029090635-42fceae3d6cd+overrides-2026-10"
