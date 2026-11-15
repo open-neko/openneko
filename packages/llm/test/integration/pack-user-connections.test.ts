@@ -1,12 +1,19 @@
 import { randomUUID } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import pg from "pg";
 import { buildPoolConfig } from "@neko/db";
 
+const configHome = mkdtempSync(join(tmpdir(), "neko-pack-oauth-test-"));
+mkdirSync(join(configHome, "openneko"), { recursive: true });
+writeFileSync(join(configHome, "openneko", "secrets.json"), JSON.stringify({ "pack.fixture": { OAUTH_ACCOUNT_CLIENT_ID: "client", CLIENT_SECRET: "secret" } }));
+process.env.XDG_CONFIG_HOME = configHome;
+
 const state = vi.hoisted(() => ({ pool: null as pg.Pool | null, refreshes: 0 }));
 vi.mock("@neko/db", async original => ({ ...await original<typeof import("@neko/db")>(), pool: () => state.pool! }));
-vi.mock("@neko/secrets", () => ({ readSecretsStore: async () => ({ "pack.fixture": { OAUTH_ACCOUNT_CLIENT_ID: "client", CLIENT_SECRET: "secret" } }) }));
 vi.mock("../../src/graphjin/pack-oauth-client", async original => ({
   ...await original<typeof import("../../src/graphjin/pack-oauth-client")>(),
   exchangePackOAuthCode: vi.fn(async ({ code }: { code: string }) => ({ accessToken: `access-${code}`, refreshToken: `refresh-${code}`, scopes: ["read"], expiresAt: new Date(Date.now() + 3_600_000).toISOString() })),
@@ -53,7 +60,7 @@ describe.skipIf(!reachable)("personal pack credentials against PostgreSQL", () =
     vi.clearAllMocks(); state.refreshes = 0;
     await state.pool!.query("delete from pack_user_connection; update app_user set disabled_at=null; update pack_install set status='installed'; update data_source set enabled=true");
   });
-  afterAll(async () => { await state.pool?.end(); await admin.query(`drop schema ${schema} cascade`); await admin.end(); });
+  afterAll(async () => { await state.pool?.end(); await admin.query(`drop schema ${schema} cascade`); await admin.end(); rmSync(configHome, { recursive: true, force: true }); });
 
   it("isolates simultaneous users and never serializes credentials in status", async () => {
     await Promise.all([connect(alice, "alice"), connect(bob, "bob")]);
@@ -122,4 +129,4 @@ describe.skipIf(!reachable)("personal pack credentials against PostgreSQL", () =
     spy.mockRestore();
   });
 });
-if (!reachable) await admin.end();
+if (!reachable) { await admin.end(); rmSync(configHome, { recursive: true, force: true }); }

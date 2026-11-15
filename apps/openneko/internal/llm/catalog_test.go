@@ -8,7 +8,7 @@ import (
 )
 
 func TestCatalogMatchesTypeScriptFixture(t *testing.T) {
-	raw, err := os.ReadFile("../../../../packages/llm/test/fixtures/model-catalog.json")
+	raw, err := os.ReadFile("testdata/model-catalog.json")
 	if err != nil {
 		t.Fatal(err)
 	}

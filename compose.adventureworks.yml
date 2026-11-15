@@ -166,8 +166,8 @@ services:
       # Source checkout intentionally uses the legacy anonymous GraphJin
       # config above; keep the persisted mode aligned with that server.
       ADVENTUREWORKS_AUTH_MODE: none
-      NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,graphjin,adventureworks-db,host.docker.internal,host.internal
-      no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,graphjin,adventureworks-db,host.docker.internal,host.internal
+      NO_PROXY: localhost,127.0.0.1,::1,neko-db,web,graphjin,adventureworks-db,host.docker.internal,host.internal
+      no_proxy: localhost,127.0.0.1,::1,neko-db,web,graphjin,adventureworks-db,host.docker.internal,host.internal
     volumes:
       - openneko-config:/config/openneko
     command: ["seed", "adventureworks", "--org"]
@@ -181,10 +181,6 @@ services:
       # the mock adapter so bundled workflows can propose Slack alerts
       # without hitting real endpoints. Flip to "false" once you're past
       # trial and have wired real webhooks.
-
-  worker:
-    environment:
-      OPENNEKO_GRAPHJIN_CONFIG: ""
 
 volumes:
   adventureworks-db-data:

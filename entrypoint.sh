@@ -90,6 +90,6 @@ if (force || !fs.existsSync(secretPath)) {
 JS
 
 # Migrations: `openneko start` runs the `neko-migrate` start step before it
-# starts web and the worker. Bare-Docker users run `openneko migrate` first.
+# starts web. Bare-Docker users run `openneko migrate` first.
 
 exec "$@"

@@ -183,7 +183,7 @@ func classifyStack(services []composeService) (health, []string) {
 			worst = down
 		}
 	}
-	for _, name := range []string{"web", "worker"} {
+	for _, name := range []string{"web", "openneko-serve"} {
 		if !slices.ContainsFunc(services, func(s composeService) bool { return s.Service == name }) {
 			lines = append(lines, fmt.Sprintf("  ❌ %s — not created", name))
 			worst = down

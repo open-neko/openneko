@@ -43,7 +43,7 @@ sh -n "$repo_root/evals/environment/adventureworks/seed.sh"
 assert_source_hash /workspace/db/seeds/dev/adventureworks-install.sql \
   db/seeds/dev/adventureworks-install.sql
 assert_source_hash /workspace/apps/worker/scripts/load-adventureworks.ts \
-  apps/worker/scripts/load-adventureworks.ts
+  packages/evals/scripts/load-adventureworks.ts
 assert_source_hash /eval/seed.sh \
   evals/environment/adventureworks/seed.sh
 
@@ -101,7 +101,7 @@ done
 for forbidden_seed_mutator in advance-dates.sql aw-sim-tick.sql scenario-injector.sh; do
   if grep -F "$forbidden_seed_mutator" \
       "$repo_root/evals/environment/adventureworks/seed.sh" \
-      "$repo_root/apps/worker/scripts/load-adventureworks.ts" \
+      "$repo_root/packages/evals/scripts/load-adventureworks.ts" \
       "$repo_root/db/seeds/dev/adventureworks-install.sql" >/dev/null; then
     echo "forbidden backfill reference present in eval seed path: $forbidden_seed_mutator" >&2
     exit 1

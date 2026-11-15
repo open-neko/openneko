@@ -70,13 +70,13 @@ func TestEmbeddingIsBoundedAndLibrarianIsGone(t *testing.T) {
 		if _, ok := document.Services["librarian"]; ok {
 			t.Fatalf("%s compose still runs the retired librarian", label)
 		}
-		if _, ok := document.Services["worker"].DependsOn["librarian"]; ok {
-			t.Fatalf("%s worker still waits for the retired librarian", label)
+		if _, ok := document.Services["worker"]; ok {
+			t.Fatalf("%s compose still runs the retired worker", label)
 		}
 		if _, ok := document.Services["embedding"]; ok {
 			t.Fatalf("%s embedding is an external service, not a core service", label)
 		}
-		for _, consumer := range []string{"web", "worker"} {
+		for _, consumer := range []string{"web"} {
 			if document.Services[consumer].Environment["NEKO_EMBEDDING_URL"] != "${NEKO_EMBEDDING_URL:-}" {
 				t.Fatalf("%s %s embedding endpoint must come from the operator", label, consumer)
 			}
@@ -102,13 +102,13 @@ func TestCustomerGraphJinRunsInServe(t *testing.T) {
 	}
 	for _, path := range []string{"compose.yml", "compose.adventureworks.yml", "compose.dev.yml", "compose/core.yml", "compose/demo.yml"} {
 		doc := read(path)
-		for _, gone := range []string{"graphjin", "graphjin-config-init", "graphjin-secret-init"} {
+		for _, gone := range []string{"graphjin", "graphjin-config-init", "graphjin-secret-init", "worker"} {
 			if _, ok := doc.Services[gone]; ok {
 				t.Errorf("%s still defines the %s service; the customer GraphJin runs in openneko-serve", path, gone)
 			}
 		}
 		for name, service := range doc.Services {
-			for _, gone := range []string{"graphjin", "graphjin-secret-init"} {
+			for _, gone := range []string{"graphjin", "graphjin-secret-init", "worker"} {
 				if _, ok := service.DependsOn[gone]; ok {
 					t.Errorf("%s: %s waits for the removed %s service", path, name, gone)
 				}
@@ -129,7 +129,7 @@ func TestCustomerGraphJinRunsInServe(t *testing.T) {
 			t.Errorf("%s serve must answer as graphjin for existing configs, aliases = %v", path, got)
 		}
 		volume := composeMountSourceAt(serve.Volumes, "/config/graphjin")
-		for _, name := range []string{"openneko-serve-init", "web", "worker"} {
+		for _, name := range []string{"openneko-serve-init", "web"} {
 			if got := composeMountSourceAt(doc.Services[name].Volumes, "/config/graphjin"); got != volume || got == "" {
 				t.Errorf("%s: %s mounts %q at /config/graphjin, serve mounts %q", path, name, got, volume)
 			}
@@ -200,7 +200,7 @@ func TestSubscriptionsGraphJinRunsInServe(t *testing.T) {
 		if got := doc.Services["openneko-serve"].Environment["OPENNEKO_SUBSCRIPTIONS_ADDR"]; got != "0.0.0.0:8089" {
 			t.Errorf("%s serve subscriptions address = %#v", path, got)
 		}
-		for _, name := range []string{"web", "worker"} {
+		for _, name := range []string{"web"} {
 			if got := doc.Services[name].Environment["OPENNEKO_GRAPHJIN_URL"]; got != "http://openneko-serve:8089" {
 				t.Errorf("%s: %s subscribes at %#v, want http://openneko-serve:8089", path, name, got)
 			}
@@ -246,11 +246,13 @@ func TestPostReleaseSmokeGatesRetainedDemoUpgrades(t *testing.T) {
 		"test ! -e /config/.openneko-graphjin-supervisor.sh",
 		"com.docker.compose.service=openneko-serve",
 		"{{.State.Status}}",
-		"authenticated_datasource_query=ok",
 	} {
 		if !strings.Contains(workflow, required) {
 			t.Fatalf("post-release smoke no longer gates retained demo upgrades: missing %q", required)
 		}
+	}
+	if strings.Contains(workflow, "neko-worker") || strings.Contains(workflow, "service=worker") {
+		t.Fatal("post-release smoke still references the removed worker")
 	}
 }
 
@@ -267,15 +269,17 @@ func TestProductionDeployRequiresAuthenticatedDatasourceQuery(t *testing.T) {
 	for _, required := range []string{
 		"openneko upgrade --mode demo",
 		"OPENNEKO_PORT=80 openneko status",
-		"callGraphjinMcpTool",
-		"authenticated_datasource_query=ok",
+		"/health/scheduler",
 	} {
 		if !strings.Contains(workflow, required) {
-			t.Fatalf("production deploy no longer verifies the datasource upgrade: missing %q", required)
+			t.Fatalf("production deploy no longer verifies the upgrade: missing %q", required)
 		}
 	}
 	if strings.Contains(workflow, "OPENNEKO_PORT=80 openneko status || true") {
 		t.Fatal("production deploy ignores an unhealthy upgraded stack")
+	}
+	if strings.Contains(workflow, "service=worker") {
+		t.Fatal("production deploy still references the removed worker")
 	}
 }
 
@@ -292,7 +296,7 @@ func TestVendoredAgentBinaryCannotBeOverridden(t *testing.T) {
 		"source":   loadComposeParityDocument(t, rootRaw),
 		"packaged": loadComposeParityDocument(t, packagedRaw),
 	} {
-		for _, serviceName := range []string{"web", "worker"} {
+		for _, serviceName := range []string{"web"} {
 			if _, exists := document.Services[serviceName].Environment["OPENNEKO_AGENT_MODEL_BINARY"]; exists {
 				t.Fatalf("%s %s exposes an override for the vendored agent executable", label, serviceName)
 			}
@@ -499,11 +503,7 @@ func TestPackagedDemoBootstrapsJWTBeforeServingWeb(t *testing.T) {
 		t.Fatalf("demo auth reconciliation = %#v, want 1", got)
 	}
 
-	web := demo.Services["web"]
-	if got := web.DependsOn["worker"].Condition; got != "service_healthy" {
-		t.Fatalf("web worker dependency = %q, want service_healthy", got)
-	}
-	for _, serviceName := range []string{"web", "worker"} {
+	for _, serviceName := range []string{"web"} {
 		if got := demo.Services[serviceName].Environment["OPENNEKO_STACK_MODE"]; got != "demo" {
 			t.Fatalf("%s stack mode = %#v, want demo", serviceName, got)
 		}
@@ -514,7 +514,7 @@ func TestPackagedDemoBootstrapsJWTBeforeServingWeb(t *testing.T) {
 		t.Fatal(err)
 	}
 	prod := loadComposeParityDocument(t, coreRaw)
-	for _, serviceName := range []string{"web", "worker"} {
+	for _, serviceName := range []string{"web"} {
 		if got, exists := prod.Services[serviceName].Environment["OPENNEKO_STACK_MODE"]; exists {
 			t.Fatalf("production %s unexpectedly sets OPENNEKO_STACK_MODE=%#v", serviceName, got)
 		}

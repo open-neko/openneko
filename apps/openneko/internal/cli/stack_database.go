@@ -97,7 +97,7 @@ func stackFiles(ctx context.Context, sup *compose.Supervisor, mode compose.Mode,
 
 // openneko-serve gets no URL secret, but its role URLs keep the main URL's
 // TLS parameters, so it needs the files.
-var databaseServices = []string{"database-check", "storage-reconcile", "neko-migrate", "openneko-serve-init", "openneko-serve", "web", "worker"}
+var databaseServices = []string{"database-check", "storage-reconcile", "neko-migrate", "openneko-serve-init", "openneko-serve", "web"}
 
 var databaseTLSFiles = []struct{ param, secret, env string }{
 	{"sslrootcert", "database-ca", "OPENNEKO_DATABASE_CA"},
