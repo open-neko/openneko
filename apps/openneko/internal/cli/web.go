@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 
 	"github.com/open-neko/neko/apps/openneko/assets"
@@ -37,8 +38,9 @@ func newWebCmd() *cobra.Command {
 		Long: `Serves the static web app, applies the request gate, and answers /api/v1
 and its /api aliases.
 
-Web runs in production mode and marks its cookies Secure, unless OPENNEKO_ENV
-is development. It reads and writes users, sessions, devices, groups, the
+Web runs in production mode unless OPENNEKO_ENV is development. Its cookies
+are Secure when OPENNEKO_PUBLIC_URL is https, or when no public URL is set in
+production mode; an http public URL gives plain cookies. It reads and writes users, sessions, devices, groups, the
 business profile, personal pack connections and the audit chain with the main
 database login, and reads secrets.json for pack OAuth client IDs and sign-in
 settings.
@@ -109,9 +111,7 @@ with exit code 0, so its supervisor starts it again.`,
 			}
 			secretsDir := config.Dir("")
 			gate := &webfront.Gate{SecretsDir: secretsDir, DB: pool}
-			api := &webfront.API{Gate: gate, DB: pool, Version: webfront.AppVersion(dir, version.Version),
-				SecureCookies: !webfront.Development(), SecretsDir: secretsDir, Restart: stop, Jobs: inserter, EvalTrace: trace,
-				MetricsRefresh: jobs.MetricsRefreshOn()}
+			api := newWebAPI(gate, pool, webfront.AppVersion(dir, version.Version), secretsDir, stop, inserter, trace, cmd.ErrOrStderr())
 			api.CheckAuditWebhook(cmd.ErrOrStderr())
 			if socket := strings.TrimSpace(os.Getenv(webAdminSocketEnv)); socket != "" {
 				stopAdmin, err := serveWebAdmin(socket, api.OperatorHandler())
@@ -210,6 +210,15 @@ with exit code 0, so its supervisor starts it again.`,
 	cmd.Flags().StringVar(&dir, "dir", envOr("OPENNEKO_WEB_DIR", "apps/web/dist"), "Folder of the built web app, from pnpm --filter @neko/web build:spa")
 	cmd.Flags().BoolVar(&runJobs, "jobs", envBool("OPENNEKO_WEB_JOBS", true), "Run the background jobs; false leaves them to another web")
 	return cmd
+}
+
+func newWebAPI(gate *webfront.Gate, pool *pgxpool.Pool, appVersion, secretsDir string, stop func(), inserter *jobs.Inserter, trace *webfront.EvalTrace, errOut io.Writer) *webfront.API {
+	secure, warning := webfront.CookiePolicy()
+	if warning != "" {
+		fmt.Fprintln(errOut, warning)
+	}
+	return &webfront.API{Gate: gate, DB: pool, Version: appVersion, SecureCookies: secure, SecretsDir: secretsDir,
+		Restart: stop, Jobs: inserter, EvalTrace: trace, MetricsRefresh: jobs.MetricsRefreshOn()}
 }
 
 const schemaCheckTimeout = 10 * time.Second
