@@ -150,7 +150,7 @@ func reachablePublicURL(raw string) bool {
 	if err != nil || u.Scheme != "https" {
 		return false
 	}
-	host := strings.ToLower(u.Hostname())
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
 	if ip := net.ParseIP(host); ip != nil {
 		return !webhookAddressBlocked(ip) && !ip.IsPrivate() && !cgnatNet.Contains(ip)
 	}
