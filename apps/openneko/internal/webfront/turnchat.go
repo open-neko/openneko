@@ -71,7 +71,7 @@ type chatTurnState struct {
 	toolCalls     []skillToolCall
 }
 
-var afterQuestion = map[string]bool{"message": true, "surface": true, "vitals": true, "followups": true, "needs_input": true}
+var afterQuestion = map[string]bool{"message": true, "answer_reset": true, "card_pending": true, "surface": true, "vitals": true, "followups": true, "needs_input": true}
 
 func (s *chatTurnState) wrapped(ctx context.Context, event any) error {
 	typ, _ := jsGet(event, "type").(string)
@@ -94,6 +94,8 @@ func (s *chatTurnState) wrapped(ctx context.Context, event any) error {
 		if content, ok := jsGet(event, "content").(string); ok && jsGet(event, "role") == "assistant" {
 			s.assistantText.WriteString(content)
 		}
+	case "answer_reset":
+		s.assistantText.Reset()
 	case "surface":
 		s.surfaces = append(s.surfaces, jsArray(jsGet(event, "messages"))...)
 	case "usage":
@@ -407,6 +409,8 @@ func (t *chatTurn) finish(ctx context.Context, res axRunResult) (chatTurnResult,
 				if s, ok := jsGet(e, "content").(string); ok && jsGet(e, "role") == "assistant" {
 					answer.WriteString(s)
 				}
+			case "answer_reset":
+				answer.Reset()
 			case "interim":
 				s, _ := jsGet(e, "content").(string)
 				notes = append(notes, stripDanglingToolCalls(s))

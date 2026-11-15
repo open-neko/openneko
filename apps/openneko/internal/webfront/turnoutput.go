@@ -57,6 +57,14 @@ func outsideFenceText(raw string) string {
 	return out.String()
 }
 
+func hiddenFenceCount(raw string) int {
+	n := 0
+	for _, o := range hiddenFenceOpeners {
+		n += strings.Count(raw, o)
+	}
+	return n
+}
+
 func extractMarkdownText(messages any) string {
 	var out []string
 	var visit func(node any)
