@@ -455,7 +455,7 @@ test.describe("4.6 stream resume and offline question queue", () => {
         `openneko.work.offlineQueue.user.${userId}`,
       );
       expect(stored).toContain("Reload during send question");
-      expect(stored).toContain('"sending"');
+      expect(stored).not.toContain("claimedBy");
       await page.close({ runBeforeUnload: false });
       page = next;
       // Playwright may let the held request of the closing tab through; then
@@ -528,6 +528,9 @@ test.describe("4.6 stream resume and offline question queue", () => {
       await expect(page.getByTestId("offline-failed-status")).toContainText("HTTP 413");
       await page.waitForTimeout(2_000);
       expect(posts.filter((p) => p.message === "Refused question")).toHaveLength(1);
+      await page.getByRole("button", { name: "Send refused question again" }).click();
+      await expect.poll(() => posts.filter((p) => p.message === "Refused question").length, { timeout: 20_000 }).toBe(2);
+      await expect(page.getByTestId("offline-failed-status")).toContainText("HTTP 413");
       await page.getByRole("button", { name: "Remove refused question" }).click();
       await expect(page.getByTestId("offline-queued-question")).toHaveCount(0);
       onPost = async () => false;
@@ -642,15 +645,14 @@ test.describe("4.6 stream resume and offline question queue", () => {
       await expect(tabB.getByTestId("offline-queued-question")).toHaveCount(0);
       expect(posted.filter((m) => m === "Private question of user A")).toEqual([]);
       expect(await runsFor("Private question of user A")).toBe("0");
-      expect(await page.evaluate((key) => localStorage.getItem(key) ?? "", keyA)).toContain(
-        "Private question of user A",
-      );
+      expect(await page.evaluate((key) => localStorage.getItem(key), keyA)).toBeNull();
       await tabB.close();
 
-      // User A signs in again: the question shows and sends once.
+      // User A signs in again: the question of user A left the browser when user B was confirmed.
       await context.unroute("**/api/v1/auth/session");
       await page.reload({ waitUntil: "networkidle" });
-      await expect.poll(() => runsFor("Private question of user A"), { timeout: 20_000 }).toBe("1");
+      await page.waitForTimeout(3_000);
+      expect(await runsFor("Private question of user A")).toBe("0");
       await expect(page.getByTestId("offline-queued-question")).toHaveCount(0);
 
       // A refused new thread waits for its retry time and then fails; it does not resend each second.
@@ -757,6 +759,110 @@ test.describe("4.6 stream resume and offline question queue", () => {
 
       expect(posts.length).toBe(4);
       expect(posts.every((p) => p.expectedUserId === userA)).toBe(true);
+    } finally {
+      await context.setOffline(false).catch(() => {});
+      await client.end();
+    }
+  });
+
+  test("queues a question typed offline while a run streams and sends new-chat questions from another thread in order (FIX18b)", async ({
+    context,
+    page,
+  }) => {
+    const client = new pg.Client({ connectionString: resolveDatabaseUrl() });
+    await client.connect();
+    try {
+      const { rows: orgRows } = await client.query<{ id: string }>(
+        "select id from organization limit 1",
+      );
+      const orgId = orgRows[0]!.id;
+      const session = (await (
+        await page.request.get("/api/v1/auth/session")
+      ).json()) as { user: { id: string } | null };
+      const userA = session.user!.id;
+      const threadId = randomUUID();
+      await client.query(
+        `insert into work_thread (id, org_id, title, created_by_user_id)
+         values ($1, $2, 'Offline while streaming', $3)`,
+        [threadId, orgId, userA],
+      );
+      const liveRun = async (thread: string) => {
+        const { rows } = await client.query<{ id: string }>(
+          `select id::text from work_run where thread_id = $1 and status in ('queued', 'running')`,
+          [thread],
+        );
+        return rows[0]?.id ?? null;
+      };
+      const userMessages = async (content: string[]) => {
+        const { rows } = await client.query<{ thread_id: string; content: string }>(
+          `select thread_id::text, content from work_message
+            where role = 'user' and content = any($1) order by created_at, id`,
+          [content],
+        );
+        return rows;
+      };
+      const composer = page.locator("textarea.work-input");
+
+      // A run streams; the network goes; the composer still takes a question and queues it.
+      const runId = randomUUID();
+      await client.query(
+        `insert into work_run (id, org_id, thread_id, backend, status, actor_user_id, actor_role)
+         values ($1, $2, $3, 'ax', 'running', $4, 'admin')`,
+        [runId, orgId, threadId, userA],
+      );
+      await client.query(
+        `insert into work_message (org_id, thread_id, run_id, role, content)
+         values ($1, $2, $3, 'user', 'Question that started a run')`,
+        [orgId, threadId, runId],
+      );
+      await page.goto(`/work/${threadId}`, { waitUntil: "domcontentloaded" });
+      await expect(page.getByRole("button", { name: "Stop" })).toBeVisible({ timeout: 20_000 });
+      await expect(composer).toBeDisabled();
+      await context.setOffline(true);
+      await expect(composer).toBeEnabled({ timeout: 20_000 });
+      await composer.fill("Typed offline while the run streams");
+      await composer.press("Enter");
+      await expect(page.getByTestId("offline-queued-question")).toContainText("Typed offline while the run streams");
+      await context.setOffline(false);
+      await page.waitForTimeout(4_000);
+      expect(await liveRun(threadId)).toBe(runId);
+      expect(await userMessages(["Typed offline while the run streams"])).toEqual([]);
+      await expect(page.getByTestId("offline-queued-question")).toContainText("Typed offline while the run streams");
+      await completeRunInDb(client, orgId, threadId, runId, "The first run is done.");
+      await expect
+        .poll(async () => (await userMessages(["Typed offline while the run streams"])).length, { timeout: 30_000 })
+        .toBe(1);
+      await expect(page.getByTestId("offline-queued-question")).toHaveCount(0);
+      const second = await liveRun(threadId);
+      if (second) await completeRunInDb(client, orgId, threadId, second, "Done.");
+
+      // Two questions typed in a new chat wait while the user opens another thread.
+      const now = new Date().toISOString();
+      await page.evaluate(
+        ({ key, items }) => localStorage.setItem(key, JSON.stringify(items)),
+        {
+          key: `openneko.work.offlineQueue.user.${userA}`,
+          items: [
+            { id: randomUUID(), threadId: null, threadBase: "/work", content: "First new-chat question", createdAt: now, status: "waiting" },
+            { id: randomUUID(), threadId: null, threadBase: "/work", content: "Second new-chat question", createdAt: now, status: "waiting" },
+          ],
+        },
+      );
+      await page.reload({ waitUntil: "networkidle" });
+      await expect.poll(async () => (await userMessages(["First new-chat question"])).length, { timeout: 20_000 }).toBe(1);
+      const [{ thread_id: newThread }] = await userMessages(["First new-chat question"]);
+      expect(newThread).not.toBe(threadId);
+      await expect
+        .poll(async () => (await userMessages(["Second new-chat question"])).length, { timeout: 30_000 })
+        .toBe(1);
+      expect(await userMessages(["First new-chat question", "Second new-chat question"])).toEqual([
+        { thread_id: newThread, content: "First new-chat question" },
+        { thread_id: newThread, content: "Second new-chat question" },
+      ]);
+      expect(page.url()).toContain(`/work/${threadId}`);
+      await expect
+        .poll(() => page.evaluate((key) => localStorage.getItem(key), `openneko.work.offlineQueue.user.${userA}`))
+        .toBeNull();
     } finally {
       await context.setOffline(false).catch(() => {});
       await client.end();

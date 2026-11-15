@@ -9,19 +9,28 @@ export type ClientSession = {
   signedIn: boolean;
 };
 
-let pending: Promise<ClientSession | null> | null = null;
+let pending: Promise<ClientSession | null | undefined> | null = null;
 const watchers = new Set<(session: ClientSession | null) => void>();
+export const SESSION_RETRY_MAX_MS = 30_000;
 
 export function forgetSession(): void {
   pending = null;
 }
 
-export function loadSession(): Promise<ClientSession | null> {
+/**
+ * Resolves to the session, to null when no user is signed in, or to
+ * undefined when the server could not answer.
+ */
+export function loadSession(): Promise<ClientSession | null | undefined> {
   pending ??= fetch("/api/v1/auth/session", { cache: "no-store" })
-    .then((res) => (res.ok ? (res.json() as Promise<ClientSession>) : null))
-    .catch(() => null)
+    .then(async (res): Promise<ClientSession | null | undefined> => {
+      if (res.status === 401) return null;
+      if (!res.ok) return undefined;
+      return ((await res.json().catch(() => undefined)) as ClientSession | undefined) ?? undefined;
+    })
+    .catch(() => undefined)
     .then((session) => {
-      if (!session) pending = null;
+      if (session === undefined) pending = null;
       return session;
     });
   return pending;
@@ -53,19 +62,36 @@ export async function confirmSessionUser(): Promise<string | null | undefined> {
 }
 
 /**
- * Loads the session now and again each time the browser comes back online,
- * so a page that loaded offline learns its user once the network returns.
+ * Loads the session now and again each time the browser comes back online.
+ * While the server cannot answer, it asks again after a growing delay and
+ * tells the watcher nothing, so "unknown" never reads as "signed out".
  */
 export function watchSession(onSession: (session: ClientSession | null) => void): () => void {
   let cancelled = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let delay = 1000;
   const notify = (value: ClientSession | null) => {
     if (!cancelled) onSession(value);
   };
   const load = () => {
-    void loadSession().then(notify);
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    void loadSession().then((session) => {
+      if (cancelled) return;
+      if (session === undefined) {
+        if (timer === null) {
+          timer = setTimeout(load, delay);
+          delay = Math.min(delay * 2, SESSION_RETRY_MAX_MS);
+        }
+        return;
+      }
+      delay = 1000;
+      notify(session);
+    });
   };
   const reload = () => {
     forgetSession();
+    delay = 1000;
     load();
   };
   watchers.add(notify);
@@ -73,11 +99,13 @@ export function watchSession(onSession: (session: ClientSession | null) => void)
   window.addEventListener("online", reload);
   return () => {
     cancelled = true;
+    if (timer !== null) clearTimeout(timer);
     watchers.delete(notify);
     window.removeEventListener("online", reload);
   };
 }
 
+/** The session; undefined while it is not known yet. */
 export function useSession(): ClientSession | null | undefined {
   const [session, setSession] = useState<ClientSession | null | undefined>(undefined);
   useEffect(() => watchSession(setSession), []);
