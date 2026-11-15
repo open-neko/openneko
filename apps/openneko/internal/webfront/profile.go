@@ -1,21 +1,28 @@
 package webfront
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"unicode/utf16"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/open-neko/neko/apps/openneko/internal/llm"
 )
 
 // maxProfileField counts UTF-16 code units, as JavaScript's String.length does.
 const maxProfileField = 200_000
 
-// researchOff is resolveResearchStatus() in apps/web/src/lib/provider-settings.ts
-// for org $1: a stored row with a known provider decides, and with none
-// research is on.
-const researchOff = `coalesce((select not c.enabled or c.provider = 'disabled' from llm_provider_config c
-	where c.org_id = $1 and c.scope = 'research' and c.provider in ('disabled', 'perplexity') limit 1), false)`
+// researchOff matches the job's resolver: a missing research row means off.
+// A row with no API key still counts as on, so the build job reports the fault.
+func (a *API) researchOff(ctx context.Context, orgID string) (bool, error) {
+	research, err := llm.ResearchFor(ctx, a.DB, a.SecretsDir, orgID)
+	if err != nil && !errors.Is(err, llm.ErrResearchKey) {
+		return false, err
+	}
+	return research.Off(), nil
+}
 
 type profileAnswer struct {
 	BusinessProfile        string `json:"businessProfile"`
@@ -32,14 +39,18 @@ func (a *API) profileGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var business, insights, note *string
-	var off, building bool
+	off, err := a.researchOff(ctx, orgID)
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	var building bool
 	err = a.DB.QueryRow(ctx, `
 		select p.business_profile, p.industry_insights, p.company_note,
-		  `+researchOff+`,
 		  exists (select 1 from processing_job j where j.org_id = $1 and j.kind = 'industry_insights_build'
 		    and j.status in ('queued', 'running'))
 		from customer_profile p where p.org_id = $1 and p.is_current limit 1`, orgID).
-		Scan(&business, &insights, &note, &off, &building)
+		Scan(&business, &insights, &note, &building)
 	if errors.Is(err, pgx.ErrNoRows) {
 		sendError(w, http.StatusNotFound, "no profile")
 		return

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -122,6 +123,8 @@ type ResearchSettings struct {
 	Secrets  map[string]string
 }
 
+var ErrResearchKey = errors.New("Perplexity research provider requires an API key")
+
 func (r ResearchSettings) Off() bool { return !r.Enabled || r.Provider == "disabled" }
 
 func DefaultResearchModel(provider string) string {
@@ -153,7 +156,7 @@ func ResearchFromDraft(ctx context.Context, db Querier, secretsDir, orgID string
 		r.Model = DefaultResearchModel(d.Provider)
 	}
 	if !r.Off() && r.Provider == "perplexity" && r.Secrets["apiKey"] == "" {
-		return r, fmt.Errorf("Perplexity research provider requires an API key")
+		return r, ErrResearchKey
 	}
 	return r, nil
 }
@@ -215,7 +218,7 @@ func ResearchFor(ctx context.Context, db Querier, secretsDir, orgID string) (Res
 		r.Model = DefaultResearchModel(row.Provider)
 	}
 	if !r.Off() && r.Provider == "perplexity" && r.Secrets["apiKey"] == "" {
-		return r, fmt.Errorf("Perplexity research provider requires an API key")
+		return r, ErrResearchKey
 	}
 	return r, nil
 }

@@ -180,6 +180,26 @@ func TestProfileRoute(t *testing.T) {
 		got := decode(t, call(f, "GET", "/api/v1/profile", "", member))
 		return got["industryInsightsStatus"].(string)
 	}
+	insightJobs := func() int {
+		t.Helper()
+		var n int
+		if err := db.QueryRow(ctx, `select count(*)::int from processing_job where kind = 'industry_insights_build'`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	for range 2 {
+		if s := status(); s != "disabled" {
+			t.Errorf("no research row: %s", s)
+		}
+		if w := call(f, "POST", "/api/v1/insights/ensure", "", member); w.Body.String() != `{"state":"disabled"}` {
+			t.Errorf("ensure with no research row: %s", w.Body.String())
+		}
+	}
+	if n := insightJobs(); n != 0 {
+		t.Errorf("no research row queued %d insight jobs", n)
+	}
+	seed(t, db, `insert into llm_provider_config (org_id, scope, provider, enabled) values ('org', 'research', 'perplexity', true)`)
 	if w := call(f, "GET", "/api/profile", "", member); w.Body.String() != `{"businessProfile":"We sell tea.","industryInsights":"","companyNote":"Note","industryInsightsStatus":"pending"}` {
 		t.Errorf("pending: %s", w.Body.String())
 	}
@@ -191,13 +211,13 @@ func TestProfileRoute(t *testing.T) {
 	if s := status(); s != "processing" {
 		t.Errorf("running job: %s", s)
 	}
-	seed(t, db, `insert into llm_provider_config (org_id, scope, provider, enabled) values ('org', 'research', 'perplexity', false)`)
+	seed(t, db, `update llm_provider_config set enabled = false where org_id = 'org'`)
 	if s := status(); s != "disabled" {
 		t.Errorf("research off: %s", s)
 	}
-	seed(t, db, `update llm_provider_config set provider = 'other' where org_id = 'org'`)
-	if s := status(); s != "processing" {
-		t.Errorf("unknown research provider falls back to the default: %s", s)
+	seed(t, db, `update llm_provider_config set provider = 'other', enabled = true where org_id = 'org'`)
+	if s := status(); s != "disabled" {
+		t.Errorf("unknown research provider falls back to the default, off: %s", s)
 	}
 
 	for _, c := range []struct{ body, code, want string }{
