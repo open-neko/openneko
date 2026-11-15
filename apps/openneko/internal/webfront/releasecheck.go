@@ -3,7 +3,6 @@ package webfront
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 )
@@ -38,7 +37,7 @@ func DatasourceQueryCheck(ctx context.Context, secretsDir, mcpURL, orgID, query 
 		Data map[string]json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal([]byte(text), &payload); err != nil {
-		return errors.New("execute_graphql gave no JSON data")
+		return fmt.Errorf("execute_graphql gave no JSON data: %s", jsSlice(text, 300))
 	}
 	for _, field := range payload.Data {
 		var rows []json.RawMessage
@@ -46,5 +45,5 @@ func DatasourceQueryCheck(ctx context.Context, secretsDir, mcpURL, orgID, query 
 			return nil
 		}
 	}
-	return errors.New("execute_graphql gave no rows")
+	return fmt.Errorf("execute_graphql gave no rows: %s", jsSlice(text, 300))
 }
