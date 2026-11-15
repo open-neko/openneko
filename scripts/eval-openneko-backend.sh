@@ -181,7 +181,7 @@ docker info >/dev/null 2>&1 || {
 
 run_eval_cli() {
   (
-    cd "$repo_root/apps/worker"
+    cd "$repo_root/packages/evals"
     pnpm eval "$@"
   )
 }

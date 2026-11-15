@@ -444,12 +444,12 @@ func (s backupStack) serviceRunning(ctx context.Context, service string) (bool, 
 }
 
 // helperImage is the image of the project's neko-db container, or of its
-// worker with an external database. Both carry tar and run as root, so they
+// web container with an external database. Both carry tar and run as root, so they
 // archive and restore any volume without pulling another image.
 func (s backupStack) helperImage(ctx context.Context) (string, error) {
 	service := "neko-db"
 	if s.external {
-		service = "worker"
+		service = "web"
 	}
 	ids, err := s.composeOutput(ctx, "ps", "-a", "-q", service)
 	if err != nil {
@@ -469,10 +469,10 @@ func (s backupStack) helperImage(ctx context.Context) (string, error) {
 	return image, nil
 }
 
-// databaseTool runs `openneko database <args>` in a new worker container,
+// databaseTool runs `openneko database <args>` in a new web container,
 // which holds the database URL secret, its TLS files and pg_dump.
 func (s backupStack) databaseTool(ctx context.Context, stdin io.Reader, stdout io.Writer, args ...string) error {
-	run := []string{"run", "--rm", "-T", "--no-deps", "-e", "TMPDIR=/tmp", "--entrypoint", "/usr/local/bin/openneko", "worker", "database"}
+	run := []string{"run", "--rm", "-T", "--no-deps", "-e", "TMPDIR=/tmp", "--entrypoint", "/usr/local/bin/openneko", "web", "database"}
 	return s.compose(ctx, stdin, stdout, append(run, args...)...)
 }
 

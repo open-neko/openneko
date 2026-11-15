@@ -16,7 +16,6 @@
     "./work": "./src/work/index.ts",
     "./work/answer-expression": "./src/work/answer-expression.ts",
     "./work/answer-tool-check": "./src/work/answer-tool-check.ts",
-    "./interaction": "./src/interaction/index.ts",
     "./workflows": "./src/workflows/index.ts",
     "./workflows/fences": "./src/workflows/fence-parsers.ts",
     "./workflows/fence-schemas": "./src/workflows/fence-schemas.ts",
@@ -33,8 +32,7 @@
     "./spend": "./src/spend/index.ts",
     "./model-tasks": "./src/model-tasks.ts",
     "./model-routes": "./src/model-routes.ts",
-    "./files": "./src/files/client.ts",
-    "./worker-admin": "./src/worker-admin.ts"
+    "./files": "./src/files/client.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -44,9 +42,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
     "@neko/db": "workspace:*",
-    "@neko/interaction": "workspace:*",
     "@neko/secret-crypt": "workspace:*",
-    "@neko/secrets": "workspace:*",
     "@neko/telemetry": "workspace:*",
     "cron-parser": "^4.9.0",
     "google-auth-library": "^10.6.2",

@@ -12,10 +12,8 @@
       "package-name": "openneko",
       "extra-files": [
         { "type": "json", "path": "apps/web/package.json", "jsonpath": "$.version" },
-        { "type": "json", "path": "apps/worker/package.json", "jsonpath": "$.version" },
         { "type": "json", "path": "packages/db/package.json", "jsonpath": "$.version" },
         { "type": "json", "path": "packages/llm/package.json", "jsonpath": "$.version" },
-        { "type": "json", "path": "packages/secrets/package.json", "jsonpath": "$.version" },
         { "type": "generic", "path": "apps/openneko/internal/version/version.go" }
       ]
     }

@@ -164,8 +164,8 @@ func TestPackagedComposeKeepsRuntimeTrafficOnDockerNetwork(t *testing.T) {
 	if migrate.Environment["NEKO_PG_HOST"] != "neko-db" {
 		t.Fatalf("bundled migration host = %q, want Docker service neko-db", migrate.Environment["NEKO_PG_HOST"])
 	}
-	if core.Services["web"].DependsOn["worker"].Condition != "service_healthy" {
-		t.Fatal("web must start after the worker control plane is healthy")
+	if core.Services["web"].DependsOn["openneko-serve"].Condition != "service_started" {
+		t.Fatal("web must start after openneko-serve is started")
 	}
 }
 

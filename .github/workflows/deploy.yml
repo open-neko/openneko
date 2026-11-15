@@ -2,7 +2,7 @@ name: Deploy to VM
 
 # Deploy only after the release images and post-release smoke pass. A main
 # supervisor can include Compose commands missing from the previous release's
-# images, which once left web and worker stopped after a service was added.
+# images, which once left web stopped after a stale CLI started.
 on:
   workflow_run:
     workflows: ["post-release smoke"]
@@ -109,50 +109,6 @@ jobs:
             OPENNEKO_VERSION="$DEPLOY_IMAGE_TAG" OPENNEKO_PORT=80 \
               openneko upgrade --mode demo --version "$DEPLOY_IMAGE_TAG" --no-prune
             OPENNEKO_PORT=80 openneko status
-
-            WORKER=$(docker ps -q \
-              --filter label=com.docker.compose.project=openneko-demo \
-              --filter label=com.docker.compose.service=worker | head -1)
-            test -n "$WORKER"
-
-            # Container health is insufficient for a datasource deployment:
-            # require the authenticated worker -> GraphJin -> AdventureWorks
-            # path to return a real row before accepting the rollout.
-            docker exec "$WORKER" node --import tsx/esm --input-type=module --eval '
-              import { mintGraphjinToken, callGraphjinMcpTool } from "@neko/llm";
-              const token = mintGraphjinToken({
-                orgId: "adventureworks",
-                userId: null,
-                role: "service",
-              });
-              const response = await callGraphjinMcpTool({
-                baseUrl: "http://graphjin:8080/api/v1/mcp",
-                headers: { authorization: "Bearer " + token },
-                signal: AbortSignal.timeout(10_000),
-              }, {
-                name: "execute_graphql",
-                arguments: {
-                  query: "query { soh(limit: 1, order_by: { id: desc }) { id } }",
-                },
-              });
-              const text = response.content
-                .map((item) => item.type === "text" ? item.text : "")
-                .join("");
-              const payload = JSON.parse(text);
-              if (response.isError ||
-                  !Array.isArray(payload.data?.soh) ||
-                  payload.data.soh.length !== 1) {
-                throw new Error("authenticated datasource query failed");
-              }
-              console.log("authenticated_datasource_query=ok");
-            '
-
-            # The worker must reach the agent socket of openneko serve.
-            docker exec "$WORKER" node -e '
-              require("node:net").connect(process.env.OPENNEKO_SERVE_SOCKET)
-                .on("connect", () => { console.log("serve_socket=ok"); process.exit(0); })
-                .on("error", (error) => { console.error(error.message); process.exit(1); });
-            '
 
             # Process liveness used to pass while schedule polling had
             # silently stopped. Require a successful durable scheduler DB

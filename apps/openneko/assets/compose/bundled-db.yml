@@ -86,16 +86,6 @@ services:
         condition: service_healthy
 
   web:
-    environment:
-      OPENNEKO_DATABASE_URL_FILE: !reset null
-      NEKO_PG_HOST: neko-db
-      NEKO_PG_PORT: "5432"
-      NEKO_PG_USER: neko
-      NEKO_PG_PASSWORD: secret
-      NEKO_PG_DATABASE: neko
-    secrets: !reset []
-
-  worker:
     depends_on:
       neko-db:
         condition: service_healthy

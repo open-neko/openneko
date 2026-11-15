@@ -2,7 +2,6 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { createWriteStream, existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { createServer, type Server } from "node:http";
 import { createConnection, createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -11,7 +10,6 @@ import pg from "pg";
 import PgBoss from "pg-boss";
 import { reconnectPool } from "@neko/db";
 import { _resetSecretKeyCacheForTesting } from "@neko/llm/secrets";
-import { createAdminHandler } from "../src/admin-server";
 
 export const EVAL_TEMPLATE_DATABASE = "openneko_eval_template";
 export const EVAL_EPISODE_DATABASE_PREFIX = "openneko_eval_ep_";
@@ -147,17 +145,6 @@ async function freePort(host = "127.0.0.1"): Promise<number> {
   });
 }
 
-async function listen(server: Server, host: string): Promise<number> {
-  return new Promise((resolvePort, reject) => {
-    server.once("error", reject);
-    server.listen(0, host, () => {
-      const address = server.address();
-      if (address && typeof address === "object") resolvePort(address.port);
-      else reject(new Error("no listen address"));
-    });
-  });
-}
-
 function tcpOpen(host: string, port: number): Promise<boolean> {
   return new Promise((done) => {
     const socket = createConnection({ host, port });
@@ -231,10 +218,8 @@ export class EvalEpisode {
   readonly modelKey = `eval-${randomBytes(12).toString("hex")}`;
   webUrl = "";
   serveUrl = "";
-  workerUrl = "";
   private web?: ChildProcess;
   private serve?: ChildProcess;
-  private worker?: Server;
   private events?: pg.Pool;
   private savedEnv?: Map<string, string | undefined>;
   private stopped = false;
@@ -284,7 +269,6 @@ export class EvalEpisode {
       OPENNEKO_FILES_DIR: this.filesRoot,
       OPENNEKO_FILES_INDEX_DIR: join(this.root, "file-index"),
       OPENNEKO_SESSION_SECRET: this.sessionSecret,
-      WORKER_ADMIN_URL: this.workerUrl,
     };
   }
 
@@ -496,8 +480,6 @@ export class EvalEpisode {
     );
     await writeFile(join(this.root, "app", "index.html"), "<!doctype html><title>OpenNeko eval</title>\n");
 
-    this.worker = createServer(createAdminHandler());
-    this.workerUrl = `http://127.0.0.1:${await listen(this.worker, "127.0.0.1")}`;
     const servePort = await freePort();
     const webPort = await freePort();
     this.serveUrl = `http://127.0.0.1:${servePort}`;
@@ -549,7 +531,6 @@ export class EvalEpisode {
     if (this.stopped) return;
     this.stopped = true;
     await Promise.allSettled([stopChild(this.web), stopChild(this.serve)]);
-    if (this.worker) await new Promise<void>((done) => this.worker!.close(() => done()));
     await this.events?.end();
     await this.deactivate();
     await this.host.dropDatabase(this.database);

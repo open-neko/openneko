@@ -192,7 +192,7 @@ jobs:
           OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
         run: |
           set -euo pipefail
-          worker_image="ghcr.io/open-neko/neko-worker:$OPENNEKO_VERSION"
+          web_image="ghcr.io/open-neko/neko-web:$OPENNEKO_VERSION"
           config_volume="openneko-demo_graphjin-config"
 
           # Keep a sentinel proving the upgrade reused rather than replaced the
@@ -201,7 +201,7 @@ jobs:
           docker run --rm --user 0:0 \
             --entrypoint /bin/sh \
             -v "$config_volume:/config" \
-            "$worker_image" -ceu '
+            "$web_image" -ceu '
               test -s /config/agentic.yml
               printf "%s\n" retained-state > /config/.upgrade-smoke-sentinel
               printf "#!/bin/sh\n" > /config/.openneko-graphjin-supervisor.sh
@@ -213,7 +213,7 @@ jobs:
           docker run --rm --user 0:0 \
             --entrypoint /bin/sh \
             -v "$config_volume:/config" \
-            "$worker_image" -ceu '
+            "$web_image" -ceu '
               test "$(cat /config/.upgrade-smoke-sentinel)" = retained-state
               test ! -e /config/.openneko-graphjin-supervisor.sh
             '
@@ -223,42 +223,9 @@ jobs:
             --filter label=com.docker.compose.service=openneko-serve | head -1)
           test -n "$serve"
           test "$(docker inspect --format '{{.State.Status}}' "$serve")" = running
-
-          worker=$(docker ps -q \
-            --filter label=com.docker.compose.project=openneko-demo \
-            --filter label=com.docker.compose.service=worker | head -1)
-          test -n "$worker"
-          docker exec "$worker" node --import tsx/esm --input-type=module --eval '
-            import { mintGraphjinToken, callGraphjinMcpTool } from "@neko/llm";
-            const token = mintGraphjinToken({
-              orgId: "adventureworks",
-              userId: null,
-              role: "service",
-            });
-            const response = await callGraphjinMcpTool({
-              baseUrl: "http://graphjin:8080/api/v1/mcp",
-              headers: { authorization: "Bearer " + token },
-              signal: AbortSignal.timeout(10_000),
-            }, {
-              name: "execute_graphql",
-              arguments: {
-                query: "query { soh(limit: 1, order_by: { id: desc }) { id } }",
-              },
-            });
-            const text = response.content
-              .map((item) => item.type === "text" ? item.text : "")
-              .join("");
-            const payload = JSON.parse(text);
-            if (response.isError ||
-                !Array.isArray(payload.data?.soh) ||
-                payload.data.soh.length !== 1) {
-              throw new Error("authenticated datasource query failed");
-            }
-            console.log("authenticated_datasource_query=ok");
-          '
           openneko status
 
-      - name: Verify reconciled database volumes and pg-boss equality
+      - name: Verify reconciled database volumes
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         run: |
           set -euo pipefail
@@ -268,9 +235,7 @@ jobs:
               --filter "label=com.docker.compose.service=$1" | head -1
           }
           neko_db=$(container_for neko-db)
-          worker=$(container_for worker)
           test -n "$neko_db"
-          test -n "$worker"
 
           verify_contract() {
             container=$1
@@ -284,30 +249,6 @@ jobs:
             test "$collation" = "t"
           }
           verify_contract "$neko_db" neko neko
-
-          # Match the production failure exactly: the parent row must be found
-          # through indexed equality, or pg-boss's send-it FK insert fails.
-          test "$(docker exec "$neko_db" psql -v ON_ERROR_STOP=1 -U neko -d neko -Atc \
-            "select exists(select 1 from pgboss.queue where name = '__pgboss__send-it');")" = "t"
-          if docker logs --since 5m "$worker" 2>&1 | grep -F \
-            'violates foreign key constraint "q_fkey"'; then
-            echo "::error::pg-boss send-it FK failure survived storage reconciliation"
-            exit 1
-          fi
-
-      - name: Serve socket smoke
-        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
-        run: |
-          set -euo pipefail
-          worker=$(docker ps -q \
-            --filter label=com.docker.compose.project=openneko-demo \
-            --filter label=com.docker.compose.service=worker | head -1)
-          test -n "$worker"
-          docker exec "$worker" node -e '
-            require("node:net").connect(process.env.OPENNEKO_SERVE_SOCKET)
-              .on("connect", () => process.exit(0))
-              .on("error", (error) => { console.error(error.message); process.exit(1); });
-          '
 
       # Failed releases are demoted to prerelease by the failure path below.
       # A manual recovery must reverse that state before this workflow ends:
