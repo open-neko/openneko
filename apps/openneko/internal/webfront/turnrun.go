@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -300,27 +301,35 @@ func (a *API) StopTurns(ctx context.Context) int {
 
 // runEventStore joins assistant and user text, and the deltas of one
 // thinking note, into one row at most flushAfter after the first buffered
-// delta; every other event flushes the text first, and each stored event goes
-// to the live subscribers in order. A timed flush holds back the tail that
-// could start a secret.
+// delta; every other event stores the text first, and each stored event goes
+// to the live subscribers in order. Text that can still continue holds back
+// the tail that could start a secret until its next delta or the end.
 type runEventStore struct {
 	api                          *API
 	orgID, threadID, runID, kind string
 	flushAfter                   time.Duration
+	afterFunc                    func(time.Duration, func()) runEventTimer
 	skills                       skillTrace
 
-	mu      sync.Mutex
-	key     string
-	head    *jsObj
-	buf     strings.Builder
-	pending bool
-	timer   *time.Timer
-	gen     int
-	err     error
+	mu    sync.Mutex
+	cur   string
+	pend  map[string]*pendingRunText
+	order []string
+	timer runEventTimer
+	gen   int
+	err   error
+}
+
+type runEventTimer interface{ Stop() bool }
+
+type pendingRunText struct {
+	head *jsObj
+	buf  strings.Builder
 }
 
 func (a *API) newRunEventStore(orgID, threadID, runID string) *runEventStore {
-	return &runEventStore{api: a, orgID: orgID, threadID: threadID, runID: runID, kind: "work", flushAfter: runEventFlushAfter}
+	return &runEventStore{api: a, orgID: orgID, threadID: threadID, runID: runID, kind: "work", flushAfter: runEventFlushAfter,
+		afterFunc: func(d time.Duration, f func()) runEventTimer { return time.AfterFunc(d, f) }}
 }
 
 func (s *runEventStore) emit(ctx context.Context, event any) error {
@@ -329,35 +338,48 @@ func (s *runEventStore) emit(ctx context.Context, event any) error {
 	defer s.mu.Unlock()
 	key := bufferedEventKey(event)
 	if key == "" {
-		if err := s.flushLocked(ctx); err != nil {
+		if jsGet(event, "type") == "answer_reset" {
+			s.dropLocked(answerTextKey)
+		}
+		if err := s.flushAllLocked(ctx, false); err != nil {
 			return err
 		}
 		s.skills.observe(traceBinding{RunID: s.runID, OrgID: s.orgID, Kind: s.kind}, event)
 		return s.persistLocked(ctx, event)
 	}
-	if s.pending && s.key != key {
-		if err := s.flushLocked(ctx); err != nil {
+	if s.cur != "" && s.cur != key {
+		// A thinking note id never comes back once another stream starts.
+		if err := s.flushKeyLocked(ctx, s.cur, strings.HasPrefix(s.cur, "progress ")); err != nil {
 			return err
 		}
 	}
+	s.cur = key
 	content, _ := jsGet(event, "content").(string)
-	if !s.pending {
-		s.pending, s.key, s.head = true, key, event.(*jsObj)
-		s.buf.Reset()
+	p := s.pend[key]
+	if p == nil {
+		if s.pend == nil {
+			s.pend = map[string]*pendingRunText{}
+		}
+		p = &pendingRunText{head: event.(*jsObj)}
+		s.pend[key] = p
+		s.order = append(s.order, key)
 	}
-	s.buf.WriteString(content)
+	p.buf.WriteString(content)
 	if s.timer == nil && content != "" {
 		gen := s.gen
-		s.timer = time.AfterFunc(s.flushAfter, func() {
+		s.timer = s.afterFunc(s.flushAfter, func() {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			if s.gen == gen {
-				_ = s.flushHeadLocked(ctx)
+				s.timer = nil
+				_ = s.flushAllLocked(ctx, false)
 			}
 		})
 	}
 	return nil
 }
+
+const answerTextKey = "message assistant"
 
 // bufferedEventKey names the stream a text delta joins: assistant or user
 // text, or one thinking note. Other events are stored as they come.
@@ -382,51 +404,68 @@ func bufferedEventKey(event any) string {
 	return ""
 }
 
-func (s *runEventStore) bufferedEvent(content string) *jsObj {
+func bufferedRunEvent(head *jsObj, content string) *jsObj {
 	out := &jsObj{}
-	for _, k := range s.head.keys {
-		out.set(k, s.head.vals[k])
+	for _, k := range head.keys {
+		out.set(k, head.vals[k])
 	}
 	out.set("content", content)
 	return out
 }
 
-func (s *runEventStore) stopTimerLocked() {
+func (s *runEventStore) dropLocked(key string) {
+	if _, ok := s.pend[key]; !ok {
+		return
+	}
+	delete(s.pend, key)
+	s.order = slices.DeleteFunc(s.order, func(k string) bool { return k == key })
+	if s.cur == key {
+		s.cur = ""
+	}
+}
+
+// flushAllLocked stores the held text of every stream in the order the
+// streams began; whole is false while a stream can still continue.
+func (s *runEventStore) flushAllLocked(ctx context.Context, whole bool) error {
 	if s.timer != nil {
 		s.timer.Stop()
 		s.timer = nil
 	}
+	s.gen++
+	for _, key := range slices.Clone(s.order) {
+		if err := s.flushKeyLocked(ctx, key, whole); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func (s *runEventStore) flushLocked(ctx context.Context) error {
-	s.stopTimerLocked()
-	s.gen++
-	if !s.pending {
+// flushKeyLocked stores one stream's held text, or with whole false its head
+// up to the point where a secret could still start or cross. The text stays
+// held when the store fails.
+func (s *runEventStore) flushKeyLocked(ctx context.Context, key string, whole bool) error {
+	p := s.pend[key]
+	if p == nil {
 		return nil
 	}
-	s.pending = false
-	content := s.buf.String()
-	s.buf.Reset()
-	if content == "" {
+	content := p.buf.String()
+	cut := len(content)
+	if !whole {
+		_, pattern, values := s.api.runEventSecrets()
+		cut = secretSafeCut(content, pattern, values)
+	}
+	if cut > 0 {
+		if err := s.persistLocked(ctx, bufferedRunEvent(p.head, content[:cut])); err != nil {
+			return err
+		}
+	}
+	if cut == len(content) {
+		s.dropLocked(key)
 		return nil
 	}
-	return s.persistLocked(ctx, s.bufferedEvent(content))
-}
-
-// flushHeadLocked stores the buffered text up to the point where a secret
-// could still start or cross, and keeps the rest buffered.
-func (s *runEventStore) flushHeadLocked(ctx context.Context) error {
-	s.timer = nil
-	s.gen++
-	content := s.buf.String()
-	_, pattern, values := s.api.runEventSecrets()
-	cut := secretSafeCut(content, pattern, values)
-	if cut == 0 {
-		return nil
-	}
-	s.buf.Reset()
-	s.buf.WriteString(content[cut:])
-	return s.persistLocked(ctx, s.bufferedEvent(content[:cut]))
+	p.buf.Reset()
+	p.buf.WriteString(content[cut:])
+	return nil
 }
 
 // secretSafeCut returns the length of the head of text that a scrub can store
@@ -470,7 +509,7 @@ func (s *runEventStore) persistLocked(ctx context.Context, event any) error {
 func (s *runEventStore) finalize(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.flushLocked(context.WithoutCancel(ctx))
+	_ = s.flushAllLocked(context.WithoutCancel(ctx), true)
 	return s.err
 }
 

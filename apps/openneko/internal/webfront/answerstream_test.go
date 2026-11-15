@@ -82,3 +82,15 @@ func TestMapperMarksAnOpenCardOnceAndHidesItsPayload(t *testing.T) {
 		t.Fatalf("events:\n%s\nwant:\n%s", strings.Join(events, "\n"), strings.Join(want, "\n"))
 	}
 }
+
+func TestMapperKeepsAnAnswerThatDiffersOnlyInTrailingSpace(t *testing.T) {
+	var events []string
+	m := &axEventMapper{textVersion: -1.0, renderCalls: map[string]bool{},
+		emit: func(e *jsObj) { events = append(events, jsStringify(e, false)) }}
+	data, _ := json.Marshal(map[string]any{"version": 1, "index": 0, "text": "Revenue rose by 2%.\n\n"})
+	m.handle(axEvent{Type: "answer.delta", Data: data})
+	m.finish("Revenue rose by 2%.")
+	if strings.Join(events, "\n") != `{"type":"message","role":"assistant","content":"Revenue rose by 2%.\n\n"}` {
+		t.Fatalf("events:\n%s", strings.Join(events, "\n"))
+	}
+}
