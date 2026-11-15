@@ -13,9 +13,9 @@ import (
 // eventScrubber is the worker's CoreSecrets scrubber: every value in the
 // secrets file, read again when the file changes.
 type eventScrubber struct {
-	mu    sync.Mutex
-	mtime time.Time
-	size  int64
+	mu      sync.Mutex
+	mtime   time.Time
+	size    int64
 	read    bool
 	scrub   func(string) string
 	pattern *regexp.Regexp
