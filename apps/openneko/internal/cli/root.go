@@ -58,9 +58,9 @@ func maybeProxy(cmd *cobra.Command, service string, run ...func(container string
 	}
 	container, resolveErr := dockerproxy.ResolveRunningService(project, service)
 	if resolveErr != nil {
-		if project == "" && !errors.Is(resolveErr, dockerproxy.ErrAmbiguousWorkers) {
-			// No packaged installation was selected. Preserve the source-dev
-			// workflow, where worker-backed commands intentionally execute locally.
+		if project == "" && !errors.Is(resolveErr, dockerproxy.ErrAmbiguousServices) {
+			// No packaged installation was selected: a source checkout runs
+			// the command locally.
 			return 0, false
 		}
 		fmt.Fprintf(cmd.ErrOrStderr(), "openneko: cannot locate instance %s: %v\n", service, resolveErr)
@@ -82,11 +82,7 @@ func maybeProxy(cmd *cobra.Command, service string, run ...func(container string
 	if len(run) > 0 {
 		return run[0](container), true
 	}
-	return dockerproxy.ProxyToWorker(container, os.Args[1:]), true
-}
-
-func namedInstanceFromWorkerContainer(container string) (string, bool) {
-	return namedInstanceFromContainer(container, "worker")
+	return dockerproxy.ProxyTo(container, os.Args[1:]), true
 }
 
 func namedInstanceFromContainer(container, service string) (string, bool) {
@@ -150,13 +146,9 @@ Developer ops: eval.`,
 		},
 	}
 	cmd.SetVersionTemplate("{{.Version}}\n")
-	// Persistent flag: worker-backed commands (install, secrets, pack, ...)
-	// auto-proxy into a running openneko-*-worker-1 container so the
-	// brew-installed binary on the host acts on an operator-side docker
-	// compose stack. --local forces host-side execution (use this for
-	// source-build dev workflows that happen to have a compose stack
-	// running alongside `pnpm dev`).
-	cmd.PersistentFlags().Bool("local", false, "Force local execution; don't auto-proxy into a running worker container")
+	// Commands such as pack and graphjin run inside the web container of a
+	// Docker install; --local runs them on the host.
+	cmd.PersistentFlags().Bool("local", false, "Force local execution; don't run the command in a running web container")
 	cmd.PersistentFlags().StringVar(&selectedInstance, "instance", "", "Target a named OpenNeko installation")
 	cmd.AddCommand(
 		newSetupCmd(),
