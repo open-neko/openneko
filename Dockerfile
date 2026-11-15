@@ -10,17 +10,10 @@
 # entrypoint.sh materializes those files from env vars before exec'ing
 # the app. See entrypoint.sh for the env var contract.
 
-# ─── 1. base: node + system tooling ────────────────────────────────────
-# The official Node image also carries npm, Corepack, Yarn, C/C++ headers, and
-# documentation. Copy only the executable into the shared runtime lineage;
-# the worker adds a pruned npm payload below because it offers runtime package
-# installation. Web does not pay that tax.
+# ─── 1. base: system tooling; node only in the build lineage ───────────
 FROM node:24.22.1-bookworm-slim AS node-distribution
 
-FROM debian:bookworm-slim AS node-runtime
-COPY --from=node-distribution /usr/local/bin/node /usr/local/bin/node
-COPY --from=node-distribution /usr/local/share/doc/node /usr/local/share/doc/node
-RUN ln -s node /usr/local/bin/nodejs
+FROM debian:bookworm-slim AS os-runtime
 # Retry transient apt mirror hiccups instead of hard-failing the image build.
 RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80-retries
 # ca-certificates >= 20250419~deb12u2 (DLA-4845-1) drops the emSign ECC Root
@@ -29,6 +22,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl tini \
     && rm -rf /var/lib/apt/lists/* \
     && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2
+
+FROM os-runtime AS node-runtime
+COPY --from=node-distribution /usr/local/bin/node /usr/local/bin/node
+RUN ln -s node /usr/local/bin/nodejs
 
 # Build stages additionally need Corepack/pnpm. Keeping it in this build-only
 # lineage prevents package-manager shims and downloads from shipping.
@@ -56,7 +53,7 @@ RUN test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.36" \
     && test "$(id -u postgres):$(id -g postgres)" = "999:999"
 
 # ─── 2. control-plane runtime ─────────────────────────────────────────
-FROM node-runtime AS runtime-base
+FROM os-runtime AS runtime-base
 # pg_dump must be at least the server's major version; Debian's client is 15.
 COPY --from=neko-db /usr/local/share/keyrings/postgres.gpg.asc /usr/local/share/keyrings/postgres.gpg.asc
 COPY --from=neko-db /etc/apt/sources.list.d/pgdg.list /etc/apt/sources.list.d/pgdg.list
@@ -65,7 +62,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       git openssh-client postgresql-client-16 \
     && rm -rf /var/lib/apt/lists/*
 
-# Pinned GraphJin binary for the worker's config checks and the backend eval. The customer GraphJin runs inside openneko serve, linked from
+# Pinned GraphJin binary for the backend eval. The customer GraphJin runs inside openneko serve, linked from
 # serv/v3 v3.21.18 (upstream commit 6f14910d5e64, the replace lines in
 # apps/openneko/go.mod); bump both together.
 FROM debian:bookworm-slim AS graphjin-bin
@@ -111,10 +108,6 @@ FROM source AS build
 RUN pnpm --filter @neko/web build:spa
 
 # ─── 4b. openneko go binary ────────────────────────────────────────────
-# Built from apps/openneko (Go 1.24 module) and baked into the worker
-# image so the agent's Bash tool can run `openneko install/secrets/...`
-# from inside the worker container. The same binary operators install via
-# Homebrew / GitHub Releases on their host.
 FROM golang:1.26.10-bookworm AS go-build
 WORKDIR /src
 COPY apps/openneko/go.mod apps/openneko/go.sum apps/openneko/
@@ -178,8 +171,7 @@ WORKDIR /app
 # Writable HOME under /tmp so the entrypoint can materialize config on
 # read-only container filesystems. PORT=8080 matches the common PaaS
 # convention (Cloud Run, Heroku, Fly, Railway).
-ENV NODE_ENV=production \
-    OPENNEKO_IN_CONTAINER=1 \
+ENV OPENNEKO_IN_CONTAINER=1 \
     PORT=8080 \
     OPENNEKO_WEB_DIR=/app/apps/web/dist \
     HOME=/tmp/openneko-home \
@@ -192,9 +184,6 @@ COPY --from=build --chown=neko:neko /app/apps/web/dist ./apps/web/dist
 COPY --chown=neko:neko db/seeds ./db/seeds
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
-# Vendor the openneko Go binary so the entrypoint can run `openneko migrate`
-# at boot (replaces the legacy neko-db-init container). Same binary as the
-# worker image and the host install.
 COPY --from=go-build --chown=neko:neko /out/openneko /usr/local/bin/openneko
 RUN chmod +x /usr/local/bin/openneko
 USER neko

@@ -189,6 +189,7 @@ Developer ops: eval.`,
 		newResetCmd(),
 		newEvalCmd(),
 		newJobsCmd(),
+		newContainerInitCmd(),
 	)
 	return cmd
 }
