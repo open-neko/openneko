@@ -10,6 +10,7 @@ import {
 import {
   createTestOrg,
   deleteTestOrg,
+  ensureTestOrg,
 } from "@neko/db/test-helpers";
 import { runEmbeddingIndexJob } from "@neko/llm";
 import {
@@ -96,6 +97,10 @@ export function workBackendFixtureIdentity(input: {
   return shortDigest(
     `${input.evalRunId}/${input.variantId}/${input.caseId}/${input.repetition}`,
   ).slice(0, 18);
+}
+
+export function workBackendFixtureOrg(identity: string): { id: string; name: string } {
+  return { id: `eval-backend-${identity}`, name: `OpenNeko backend eval ${identity}` };
 }
 
 function sentinel(kind: ContextKind, caseId: string, repetition: number, decoy = false) {
@@ -219,7 +224,8 @@ export async function provisionWorkBackendFixture(input: {
     caseId: input.spec.caseId,
     repetition: input.spec.repetition,
   });
-  const orgId = `eval-backend-${identity}`;
+  const org = workBackendFixtureOrg(identity);
+  const orgId = org.id;
   const crossTenantOrgId = `${orgId}-other`;
   const userId = `member-${identity}`;
   const targetResourceIds: Partial<Record<ContextKind, string>> = {};
@@ -243,7 +249,7 @@ export async function provisionWorkBackendFixture(input: {
   };
 
   try {
-    await createTestOrg(orgId, `OpenNeko backend eval ${identity}`);
+    await ensureTestOrg(orgId, org.name);
     await createTestOrg(crossTenantOrgId, `OpenNeko backend eval isolation ${identity}`);
     const workspace = await ensureOrgWorkspace(orgId);
     await db().insert(app_user).values({

@@ -2,7 +2,10 @@ package packs
 
 import (
 	"fmt"
+	"maps"
 	"math"
+	"math/big"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -68,17 +71,20 @@ func MagentoExecutionModeFor(riskClass MagentoRiskClass) MagentoExecutionMode {
 	return MagentoHandoffOnly
 }
 
-var MagentoHandoffOnlyOperations = []string{
-	"magentoIssueOnlineCreditmemo",
-	"magentoApproveReturn",
-	"magentoUpdatePaymentConfiguration",
-	"magentoUpdateTaxConfiguration",
-	"magentoUpdateCurrencyConfiguration",
-	"magentoIssueStoreCreditOverCap",
+var magentoHandoffOnlyPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)refund`),
+	regexp.MustCompile(`(?i)return.*approve|approve.*return|rma.*approve`),
+	regexp.MustCompile(`(?i)payment.*config|tax.*config|currency.*rate`),
+	regexp.MustCompile(`(?i)integration|admin.*user|authorization.*role`),
 }
 
 func IsMagentoHandoffOnlyOperation(operationID string) bool {
-	return slices.Contains(MagentoHandoffOnlyOperations, operationID)
+	for _, pattern := range magentoHandoffOnlyPatterns {
+		if pattern.MatchString(operationID) {
+			return true
+		}
+	}
+	return false
 }
 
 // The table's check constraint accepts only these categories.
@@ -129,122 +135,91 @@ var DefaultMagentoAttributeClassifications = func() []MagentoAttributeClassifica
 	return out
 }()
 
-type MagentoDomainCaps struct {
-	MaxRowsPerChangeset float64 `json:"maxRowsPerChangeset"`
-	MaxPriceDeltaPct    float64 `json:"maxPriceDeltaPercent"`
-	MaxDiscountPct      float64 `json:"maxDiscountPercent"`
-	MaxCouponCount      float64 `json:"maxCouponCount"`
-	MaxProjectedExp     float64 `json:"maxProjectedExposure"`
-	MaxDailyAutoActions float64 `json:"maxDailyAutoActions"`
-	MaxStoreCredit      float64 `json:"maxStoreCredit"`
-	MinPromotionDays    float64 `json:"minPromotionDays"`
-	SkuCooldownSeconds  float64 `json:"skuCooldownSeconds"`
+// OrderedObject is a JSON object that keeps JavaScript key order. The price
+// check pairs before and after values by position, so plain maps sort keys.
+type OrderedObject interface {
+	ObjectKeys() []string
+	ObjectValue(key string) any
 }
 
-var DefaultMagentoCaps = map[MagentoDomain]MagentoDomainCaps{
-	MagentoCatalog:    {50, 10, 0, 0, 5000, 10, 0, 0, 3600},
-	MagentoInventory:  {100, 0, 0, 0, 10000, 20, 0, 0, 1800},
-	MagentoOrders:     {10, 0, 0, 0, 2500, 20, 0, 0, 300},
-	MagentoPromotions: {10, 0, 25, 100, 5000, 0, 0, 1, 3600},
-	MagentoContent:    {10, 0, 0, 0, 0, 5, 0, 0, 1800},
-	MagentoCustomers:  {10, 0, 0, 0, 500, 0, 50, 0, 3600},
-}
-
-var wrapperKeys = map[string]bool{
-	"product": true, "category": true, "block": true, "page": true,
-	"rule": true, "customer": true, "address": true, "entity": true,
-	"sourceItem": true, "source_item": true, "stockItem": true, "stock_item": true,
-	"statusHistory": true, "status_history": true, "extension_attributes": true,
-}
-
-func collectModifiedAttributes(value any, out map[string]any, order *[]string) {
-	add := func(k string, v any) {
-		if _, exists := out[k]; !exists {
-			*order = append(*order, k)
+func magentoEntries(v any) ([]string, func(string) any, bool) {
+	switch t := v.(type) {
+	case OrderedObject:
+		if t == nil || reflect.ValueOf(t).IsNil() {
+			return nil, nil, false
 		}
-		out[k] = v
-	}
-	if list, ok := value.([]any); ok {
-		for _, item := range list {
-			collectModifiedAttributes(item, out, order)
+		return t.ObjectKeys(), t.ObjectValue, true
+	case map[string]any:
+		if t == nil {
+			return nil, nil, false
 		}
-		return
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		slices.SortFunc(keys, utf16Less)
+		return keys, func(k string) any { return t[k] }, true
 	}
-	rec, ok := asStringMap(value)
-	if !ok {
-		return
-	}
-	for _, key := range mapKeys(value) {
-		entry := rec[key]
-		if key == "custom_attributes" {
-			if attrs, ok := entry.([]any); ok {
-				for _, attr := range attrs {
-					if m, ok := asStringMap(attr); ok {
-						if code, ok := m["attribute_code"].(string); ok && strings.TrimSpace(code) != "" {
-							add(strings.TrimSpace(code), m["value"])
-						}
-					}
-				}
-				continue
+	return nil, nil, false
+}
+
+var magentoStructuralKeys = map[string]bool{
+	"product": true, "category": true, "sourceitems": true, "source_items": true,
+	"statushistory": true, "salesrule": true, "rule": true, "coupon": true,
+	"page": true, "block": true, "customer": true, "entity": true,
+	"extension_attributes": true, "custom_attributes": true, "items": true,
+}
+
+func MagentoLeafAttributes(value any) []string {
+	seen := map[string]bool{}
+	var visit func(item any, key string, hasKey bool)
+	visit = func(item any, key string, hasKey bool) {
+		if list, ok := item.([]any); ok {
+			for _, child := range list {
+				visit(child, key, hasKey)
 			}
+			return
 		}
-		if wrapperKeys[key] {
-			collectModifiedAttributes(entry, out, order)
-			continue
+		if keys, get, ok := magentoEntries(item); ok {
+			if code, ok := get("attribute_code").(string); ok && slices.Contains(keys, "value") {
+				seen[strings.ToLower(code)] = true
+			}
+			for _, k := range keys {
+				visit(get(k), k, true)
+			}
+			return
 		}
-		if (key == "items" || key == "sourceItems") && isSlice(entry) {
-			collectModifiedAttributes(entry, out, order)
-			continue
+		if hasKey && key != "" && !magentoStructuralKeys[strings.ToLower(key)] {
+			seen[strings.ToLower(key)] = true
 		}
-		add(key, entry)
 	}
-}
-
-func asStringMap(v any) (map[string]any, bool) {
-	if m, ok := v.(map[string]any); ok {
-		return m, true
+	visit(value, "", false)
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
 	}
-	return nil, false
-}
-
-func mapKeys(v any) []string {
-	m, ok := v.(map[string]any)
-	if !ok {
-		return nil
-	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	slices.SortFunc(keys, utf16Less)
-	return keys
-}
-
-func isSlice(v any) bool {
-	_, ok := v.([]any)
-	return ok
+	slices.SortFunc(out, utf16Less)
+	return out
 }
 
 type MagentoClassifiedAttr struct {
 	Attribute string                   `json:"attribute"`
 	RiskClass MagentoRiskClass         `json:"riskClass"`
 	Category  MagentoAttributeCategory `json:"category"`
-	Rationale string                   `json:"rationale"`
-	Matched   bool                     `json:"matched"`
+	Reviewed  bool                     `json:"reviewed"`
 }
 
 type MagentoChangeClassification struct {
-	RiskClass     MagentoRiskClass        `json:"riskClass"`
-	ExecutionMode MagentoExecutionMode    `json:"executionMode"`
-	Attributes    []MagentoClassifiedAttr `json:"attributes"`
-	Reasons       []string                `json:"reasons"`
+	RiskClass  MagentoRiskClass        `json:"riskClass"`
+	Attributes []MagentoClassifiedAttr `json:"attributes"`
+	Reasons    []string                `json:"reasons"`
 }
 
 type ClassifyMagentoInput struct {
 	Domain          MagentoDomain
 	EntityType      string
 	OperationID     string
-	DefaultClass    MagentoRiskClass // 1 or 2
+	DefaultClass    MagentoRiskClass
 	Body            any
 	Classifications []MagentoAttributeClassification
 }
@@ -252,124 +227,111 @@ type ClassifyMagentoInput struct {
 func ClassifyMagentoChange(input ClassifyMagentoInput) MagentoChangeClassification {
 	if IsMagentoHandoffOnlyOperation(input.OperationID) {
 		return MagentoChangeClassification{
-			RiskClass:     0,
-			ExecutionMode: MagentoHandoffOnly,
-			Attributes:    []MagentoClassifiedAttr{},
-			Reasons:       []string{fmt.Sprintf("%s is handoff-only in Magento V2", input.OperationID)},
+			RiskClass:  0,
+			Attributes: []MagentoClassifiedAttr{},
+			Reasons:    []string{"This operation must be completed by a human in Magento Admin"},
 		}
 	}
 	table := input.Classifications
-	if len(table) == 0 {
+	if table == nil {
 		table = DefaultMagentoAttributeClassifications
 	}
-	attrs := map[string]any{}
-	var order []string
-	collectModifiedAttributes(input.Body, attrs, &order)
-	attributes := make([]MagentoClassifiedAttr, 0, len(order))
-	var reasons []string
+	byAttribute := map[string]MagentoAttributeClassification{}
+	for _, entry := range table {
+		if entry.Domain == input.Domain && (entry.EntityType == input.EntityType || entry.EntityType == "*") {
+			byAttribute[strings.ToLower(entry.Attribute)] = entry
+		}
+	}
 	riskClass := input.DefaultClass
-
-	for _, attr := range order {
-		rawValue := attrs[attr]
-		var found *MagentoAttributeClassification
-		for i := range table {
-			row := &table[i]
-			if row.Domain == input.Domain && row.EntityType == input.EntityType && row.Attribute == attr {
-				found = row
-				break
-			}
+	attributes := []MagentoClassifiedAttr{}
+	reasons := []string{}
+	for _, attr := range MagentoLeafAttributes(input.Body) {
+		entry, ok := byAttribute[attr]
+		classified := MagentoClassifiedAttr{Attribute: attr, RiskClass: 1, Category: MagentoCatOperational}
+		if ok {
+			classified = MagentoClassifiedAttr{Attribute: attr, RiskClass: entry.RiskClass, Category: entry.Category, Reviewed: true}
+		} else {
+			reasons = append(reasons, fmt.Sprintf("Unreviewed attribute %s requires administrator approval", attr))
 		}
-		if found == nil {
-			reason := fmt.Sprintf("Unclassified %s.%s attribute %q escalates to Class 1 human approval", input.Domain, input.EntityType, attr)
-			attributes = append(attributes, MagentoClassifiedAttr{
-				Attribute: attr,
-				RiskClass: 1,
-				Category:  MagentoCatOperational,
-				Rationale: reason,
-				Matched:   false,
-			})
-			reasons = append(reasons, reason)
-			riskClass = min(riskClass, 1)
-			continue
-		}
-		effectiveRisk := found.RiskClass
-		if input.Domain == MagentoOrders && attr == "is_customer_notified" {
-			notified := rawValue == true || rawValue == float64(1) || rawValue == 1 || rawValue == "1" || rawValue == "true"
-			if notified {
-				effectiveRisk = 1
-			} else {
-				effectiveRisk = 2
-			}
-		}
-		attributes = append(attributes, MagentoClassifiedAttr{
-			Attribute: attr,
-			RiskClass: effectiveRisk,
-			Category:  found.Category,
-			Rationale: found.Rationale,
-			Matched:   true,
-		})
-		if effectiveRisk == 0 {
-			riskClass = 0
-			reasons = append(reasons, found.Rationale)
-		} else if effectiveRisk < riskClass {
-			riskClass = effectiveRisk
-			reasons = append(reasons, found.Rationale)
-		}
+		riskClass = min(riskClass, classified.RiskClass)
+		attributes = append(attributes, classified)
 	}
-
-	return MagentoChangeClassification{
-		RiskClass:     riskClass,
-		ExecutionMode: MagentoExecutionModeFor(riskClass),
-		Attributes:    attributes,
-		Reasons:       reasons,
-	}
+	return MagentoChangeClassification{RiskClass: riskClass, Attributes: attributes, Reasons: reasons}
 }
 
-func numberAt(value any, key string) (float64, bool) {
-	if list, ok := value.([]any); ok {
-		for _, item := range list {
-			if found, ok := numberAt(item, key); ok {
-				return found, true
-			}
-		}
-		return 0, false
-	}
-	rec, ok := asStringMap(value)
-	if !ok {
-		return 0, false
-	}
-	if direct, exists := rec[key]; exists && direct != nil && direct != "" {
-		if parsed, ok := toFiniteFloat(direct); ok {
-			return parsed, true
-		}
-	}
-	if attrs, ok := rec["custom_attributes"].([]any); ok {
-		for _, attr := range attrs {
-			if m, ok := asStringMap(attr); ok && m["attribute_code"] == key {
-				if parsed, ok := toFiniteFloat(m["value"]); ok {
-					return parsed, true
-				}
-			}
-		}
-	}
-	for _, k := range mapKeys(value) {
-		child := rec[k]
-		if wrapperKeys[k] || k == "items" || k == "sourceItems" {
-			if found, ok := numberAt(child, key); ok {
-				return found, true
-			}
-		}
-	}
-	return 0, false
+var magentoCapKeys = []string{
+	"maxRowsPerChangeset", "maxPriceDeltaPercent", "maxDiscountPercent", "maxCouponCount",
+	"maxProjectedExposure", "maxDailyAutoActions", "maxStoreCredit", "minPromotionDays", "skuCooldownSeconds",
 }
 
-func toFiniteFloat(v any) (float64, bool) {
-	switch t := v.(type) {
+var DefaultMagentoCaps = map[string]float64{
+	"maxRowsPerChangeset":  500,
+	"maxPriceDeltaPercent": 10,
+	"maxDiscountPercent":   30,
+	"maxCouponCount":       500,
+	"maxProjectedExposure": 5000,
+	"maxDailyAutoActions":  25,
+	"maxStoreCredit":       50,
+	"minPromotionDays":     1,
+	"skuCooldownSeconds":   3600,
+}
+
+var jsDecimalRe = regexp.MustCompile(`^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$`)
+
+func jsStringNumber(s string) (float64, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, true
+	}
+	if len(s) > 2 && s[0] == '0' {
+		base := map[byte]int{'x': 16, 'X': 16, 'o': 8, 'O': 8, 'b': 2, 'B': 2}[s[1]]
+		if base != 0 {
+			n, ok := new(big.Int).SetString(s[2:], base)
+			if !ok {
+				return 0, false
+			}
+			f, _ := new(big.Float).SetInt(n).Float64()
+			return f, !math.IsInf(f, 0)
+		}
+	}
+	if !jsDecimalRe.MatchString(s) {
+		return 0, false
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	return f, err == nil && !math.IsInf(f, 0)
+}
+
+func jsArrayString(list []any) (string, bool) {
+	parts := make([]string, len(list))
+	for i, item := range list {
+		switch t := item.(type) {
+		case nil:
+		case string:
+			parts[i] = t
+		case float64:
+			parts[i] = numberText(t)
+		case bool:
+			parts[i] = strconv.FormatBool(t)
+		case []any:
+			s, ok := jsArrayString(t)
+			if !ok {
+				return "", false
+			}
+			parts[i] = s
+		default:
+			return "", false
+		}
+	}
+	return strings.Join(parts, ","), true
+}
+
+func magentoFiniteNumber(value any) (float64, bool) {
+	switch t := value.(type) {
+	case nil:
+		return 0, false
 	case float64:
 		return t, !math.IsNaN(t) && !math.IsInf(t, 0)
 	case int:
-		return float64(t), true
-	case int64:
 		return float64(t), true
 	case bool:
 		if t {
@@ -377,74 +339,123 @@ func toFiniteFloat(v any) (float64, bool) {
 		}
 		return 0, true
 	case string:
-		s := strings.TrimSpace(t)
-		if s == "" {
+		if t == "" {
 			return 0, false
 		}
-		f, err := strconv.ParseFloat(s, 64)
-		return f, err == nil && !math.IsNaN(f) && !math.IsInf(f, 0)
+		return jsStringNumber(t)
+	case []any:
+		s, ok := jsArrayString(t)
+		if !ok {
+			return 0, false
+		}
+		return jsStringNumber(s)
 	}
 	return 0, false
 }
 
-func stringAt(value any, key string) (string, bool) {
-	rec, ok := asStringMap(value)
-	if !ok {
-		return "", false
-	}
-	if s, ok := rec[key].(string); ok {
-		return s, true
-	}
-	for k, child := range rec {
-		if wrapperKeys[k] {
-			if found, ok := stringAt(child, key); ok {
-				return found, true
+func magentoValuesForKeys(value any, keys ...string) []float64 {
+	values := []float64{}
+	var visit func(item any)
+	visit = func(item any) {
+		if list, ok := item.([]any); ok {
+			for _, child := range list {
+				visit(child)
 			}
+			return
+		}
+		names, get, ok := magentoEntries(item)
+		if !ok {
+			return
+		}
+		for _, k := range names {
+			child := get(k)
+			if slices.Contains(keys, strings.ToLower(k)) {
+				if n, ok := magentoFiniteNumber(child); ok {
+					values = append(values, n)
+				}
+			}
+			visit(child)
 		}
 	}
-	return "", false
+	visit(value)
+	return values
 }
 
-func boolAt(value any, key string) (bool, bool) {
-	rec, ok := asStringMap(value)
+func magentoStringForKeys(value any, keys ...string) string {
+	if list, ok := value.([]any); ok {
+		for _, child := range list {
+			if found := magentoStringForKeys(child, keys...); found != "" {
+				return found
+			}
+		}
+		return ""
+	}
+	names, get, ok := magentoEntries(value)
 	if !ok {
-		return false, false
+		return ""
 	}
-	if direct, exists := rec[key]; exists {
-		switch t := direct.(type) {
-		case bool:
-			return t, true
-		case float64:
-			if t == 1 {
-				return true, true
-			}
-			if t == 0 {
-				return false, true
-			}
-		case int:
-			if t == 1 {
-				return true, true
-			}
-			if t == 0 {
-				return false, true
-			}
-		case string:
-			if t == "1" || t == "true" {
-				return true, true
-			}
-			if t == "0" || t == "false" {
-				return false, true
-			}
+	for _, k := range names {
+		child := get(k)
+		if s, isString := child.(string); isString && slices.Contains(keys, strings.ToLower(k)) && strings.TrimSpace(s) != "" {
+			return strings.TrimSpace(s)
+		}
+		if found := magentoStringForKeys(child, keys...); found != "" {
+			return found
 		}
 	}
-	for k, child := range rec {
-		if wrapperKeys[k] {
-			if found, ok := boolAt(child, key); ok {
-				return found, true
-			}
+	return ""
+}
+
+type magentoSpread struct {
+	keys []string
+	vals map[string]any
+}
+
+func (o *magentoSpread) ObjectKeys() []string       { return o.keys }
+func (o *magentoSpread) ObjectValue(key string) any { return o.vals[key] }
+
+func (o *magentoSpread) add(v any) {
+	if list, ok := v.([]any); ok {
+		for i, item := range list {
+			o.set(strconv.Itoa(i), item)
+		}
+		return
+	}
+	if keys, get, ok := magentoEntries(v); ok {
+		for _, k := range keys {
+			o.set(k, get(k))
 		}
 	}
-	return false, false
+}
+
+func (o *magentoSpread) set(k string, v any) {
+	if _, ok := o.vals[k]; !ok {
+		o.keys = append(o.keys, k)
+	}
+	o.vals[k] = v
+}
+
+func magentoEffectiveRule(before, after any) *magentoSpread {
+	rule := &magentoSpread{vals: map[string]any{}}
+	rule.add(before)
+	if keys, get, ok := magentoEntries(after); ok && slices.Contains(keys, "rule") {
+		rule.add(get("rule"))
+	} else {
+		rule.add(after)
+	}
+	return rule
+}
+
+func jsToFixed2(f float64) string {
+	r := new(big.Rat).SetFloat64(f)
+	r.Mul(r, big.NewRat(100, 1))
+	r.Add(r, big.NewRat(1, 2))
+	n := new(big.Int).Div(r.Num(), r.Denom())
+	s := n.String()
+	for len(s) < 3 {
+		s = "0" + s
+	}
+	return s[:len(s)-2] + "." + s[len(s)-2:]
 }
 
 type MagentoChangeRow struct {
@@ -466,224 +477,120 @@ type EvaluateMagentoCapsInput struct {
 }
 
 type MagentoCapEvaluation struct {
-	Allowed           bool                 `json:"allowed"`
-	RiskClass         MagentoRiskClass     `json:"riskClass"`
-	ExecutionMode     MagentoExecutionMode `json:"executionMode"`
-	Violations        []string             `json:"violations"`
-	Escalations       []string             `json:"escalations"`
-	ProjectedExposure *float64             `json:"projectedExposure"`
-	Snapshot          map[string]any       `json:"snapshot"`
-}
-
-func (c MagentoDomainCaps) withOverrides(overrides map[string]float64) MagentoDomainCaps {
-	out := c
-	if v, ok := overrides["maxRowsPerChangeset"]; ok {
-		out.MaxRowsPerChangeset = v
-	}
-	if v, ok := overrides["maxPriceDeltaPercent"]; ok {
-		out.MaxPriceDeltaPct = v
-	}
-	if v, ok := overrides["maxDiscountPercent"]; ok {
-		out.MaxDiscountPct = v
-	}
-	if v, ok := overrides["maxCouponCount"]; ok {
-		out.MaxCouponCount = v
-	}
-	if v, ok := overrides["maxProjectedExposure"]; ok {
-		out.MaxProjectedExp = v
-	}
-	if v, ok := overrides["maxDailyAutoActions"]; ok {
-		out.MaxDailyAutoActions = v
-	}
-	if v, ok := overrides["maxStoreCredit"]; ok {
-		out.MaxStoreCredit = v
-	}
-	if v, ok := overrides["minPromotionDays"]; ok {
-		out.MinPromotionDays = v
-	}
-	if v, ok := overrides["skuCooldownSeconds"]; ok {
-		out.SkuCooldownSeconds = v
-	}
-	return out
-}
-
-func (c MagentoDomainCaps) toMap() map[string]any {
-	return map[string]any{
-		"maxRowsPerChangeset":  c.MaxRowsPerChangeset,
-		"maxPriceDeltaPercent": c.MaxPriceDeltaPct,
-		"maxDiscountPercent":   c.MaxDiscountPct,
-		"maxCouponCount":       c.MaxCouponCount,
-		"maxProjectedExposure": c.MaxProjectedExp,
-		"maxDailyAutoActions":  c.MaxDailyAutoActions,
-		"maxStoreCredit":       c.MaxStoreCredit,
-		"minPromotionDays":     c.MinPromotionDays,
-		"skuCooldownSeconds":   c.SkuCooldownSeconds,
-	}
+	Allowed           bool             `json:"allowed"`
+	RiskClass         MagentoRiskClass `json:"riskClass"`
+	Violations        []string         `json:"violations"`
+	Escalations       []string         `json:"escalations"`
+	ProjectedExposure *float64         `json:"projectedExposure"`
+	Snapshot          map[string]any   `json:"snapshot"`
 }
 
 func EvaluateMagentoCaps(input EvaluateMagentoCapsInput) MagentoCapEvaluation {
-	caps := DefaultMagentoCaps[input.Domain].withOverrides(input.Caps)
+	caps := maps.Clone(DefaultMagentoCaps)
+	maps.Copy(caps, input.Caps)
 	violations := []string{}
 	escalations := []string{}
 	riskClass := input.RiskClass
-	now := input.Now
-	if now.IsZero() {
-		now = time.Now()
+	if float64(len(input.Rows)) > caps["maxRowsPerChangeset"] {
+		violations = append(violations, fmt.Sprintf("Change-set has %d rows; maximum is %s", len(input.Rows), numberText(caps["maxRowsPerChangeset"])))
 	}
 
-	if float64(len(input.Rows)) > caps.MaxRowsPerChangeset {
-		violations = append(violations, fmt.Sprintf("Change-set has %d rows; domain cap is %s", len(input.Rows), formatFloat(caps.MaxRowsPerChangeset)))
-	}
-
-	var computedExposure float64
 	for _, row := range input.Rows {
-		beforePrice, hasBeforePrice := numberAt(row.BeforeImage, "price")
-		afterPrice, hasAfterPrice := numberAt(row.AfterImage, "price")
-		if hasAfterPrice && afterPrice <= 0 {
-			violations = append(violations, "Product price must be greater than zero")
-		}
-		if hasBeforePrice && hasAfterPrice && beforePrice > 0 {
-			deltaPct := (math.Abs(afterPrice-beforePrice) / beforePrice) * 100
-			computedExposure += math.Abs(afterPrice - beforePrice)
-			if caps.MaxPriceDeltaPct > 0 && deltaPct > caps.MaxPriceDeltaPct {
-				violations = append(violations, fmt.Sprintf("Price delta %.2f%% exceeds cap of %s%%", deltaPct, formatFloat(caps.MaxPriceDeltaPct)))
+		before := magentoValuesForKeys(row.BeforeImage, "price", "special_price", "value")
+		after := magentoValuesForKeys(row.AfterImage, "price", "special_price", "value")
+		for i := 0; i < min(len(before), len(after)); i++ {
+			prior, next := before[i], after[i]
+			if prior <= 0 {
+				continue
+			}
+			delta := math.Abs((next - prior) / prior * 100)
+			if delta > caps["maxPriceDeltaPercent"] {
+				riskClass = min(riskClass, 1)
+				escalations = append(escalations, fmt.Sprintf(
+					"Price delta %s%% exceeds the %s%% automatic-execution limit and requires administrator approval",
+					jsToFixed2(delta), numberText(caps["maxPriceDeltaPercent"])))
 			}
 		}
-		specialPrice, hasSpecialPrice := numberAt(row.AfterImage, "special_price")
-		var refPrice float64
-		hasRefPrice := false
-		if hasAfterPrice {
-			refPrice, hasRefPrice = afterPrice, true
-		} else if hasBeforePrice {
-			refPrice, hasRefPrice = beforePrice, true
+	}
+
+	if input.Domain == MagentoPromotions {
+		var discounts, couponCounts []float64
+		for _, row := range input.Rows {
+			discounts = append(discounts, magentoValuesForKeys(row.AfterImage, "discount_amount")...)
+			couponCounts = append(couponCounts, magentoValuesForKeys(row.AfterImage, "quantity", "qty", "coupon_count")...)
 		}
-		if hasSpecialPrice {
-			if specialPrice <= 0 {
-				violations = append(violations, "Special price must be greater than zero")
+		if slices.ContainsFunc(discounts, func(v float64) bool { return v >= 90 }) {
+			violations = append(violations, "A promotion that can create a free or near-free cart is not executable")
+			riskClass = 0
+		} else if slices.ContainsFunc(discounts, func(v float64) bool { return v > caps["maxDiscountPercent"] }) {
+			violations = append(violations, fmt.Sprintf("Promotion discount exceeds the %s%% ceiling", numberText(caps["maxDiscountPercent"])))
+		}
+		if slices.ContainsFunc(couponCounts, func(v float64) bool { return v > caps["maxCouponCount"] }) {
+			violations = append(violations, fmt.Sprintf("Coupon count exceeds the %s ceiling", numberText(caps["maxCouponCount"])))
+		}
+		for _, row := range input.Rows {
+			if input.OperationID == "magentoDeleteSalesRule" || input.OperationID == "magentoGenerateCoupons" {
+				continue
 			}
-			if hasRefPrice && refPrice > 0 {
-				discountPct := ((refPrice - specialPrice) / refPrice) * 100
-				computedExposure += math.Max(0, refPrice-specialPrice)
-				if caps.MaxPriceDeltaPct > 0 && discountPct > caps.MaxPriceDeltaPct {
-					violations = append(violations, fmt.Sprintf("Special-price discount %.2f%% exceeds cap of %s%%", discountPct, formatFloat(caps.MaxPriceDeltaPct)))
+			rule := magentoEffectiveRule(row.BeforeImage, row.AfterImage)
+			start := magentoStringForKeys(rule, "from_date")
+			end := magentoStringForKeys(rule, "to_date")
+			if end == "" {
+				violations = append(violations, "Promotion expiry is required")
+			}
+			if start != "" && end != "" {
+				from, okFrom := parseJSDate(start)
+				to, okTo := parseJSDate(end)
+				if okFrom && okTo && to.Sub(from).Hours()/24 < caps["minPromotionDays"] {
+					violations = append(violations, fmt.Sprintf("Promotion duration must be at least %s day(s)", numberText(caps["minPromotionDays"])))
 				}
-			}
-		}
-
-		afterQty, hasAfterQty := numberAt(row.AfterImage, "quantity")
-		beforeQty, hasBeforeQty := numberAt(row.BeforeImage, "quantity")
-		if hasAfterQty && afterQty < 0 {
-			violations = append(violations, "Inventory quantity cannot be negative")
-		}
-		if hasBeforeQty && beforeQty > 0 && hasAfterQty && afterQty == 0 && riskClass == 2 {
-			riskClass = 1
-			escalations = append(escalations, "Zeroing in-stock inventory requires human approval")
-		}
-
-		discountAmount, hasDiscount := numberAt(row.AfterImage, "discount_amount")
-		if hasDiscount {
-			var simpleAction string
-			if s, ok := stringAt(row.AfterImage, "simple_action"); ok {
-				simpleAction = s
-			} else if s, ok := stringAt(row.BeforeImage, "simple_action"); ok {
-				simpleAction = s
-			} else {
-				simpleAction = "by_percent"
-			}
-			if discountAmount <= 0 {
-				violations = append(violations, "Promotion discount must be greater than zero")
-			}
-			if simpleAction == "by_percent" && caps.MaxDiscountPct > 0 && discountAmount > caps.MaxDiscountPct {
-				violations = append(violations, fmt.Sprintf("Promotion discount %s%% exceeds cap of %s%%", formatFloat(discountAmount), formatFloat(caps.MaxDiscountPct)))
-			}
-			computedExposure += discountAmount
-		}
-
-		couponQty, hasCouponQty := numberAt(row.AfterImage, "qty")
-		if hasCouponQty && caps.MaxCouponCount > 0 && couponQty > caps.MaxCouponCount {
-			violations = append(violations, fmt.Sprintf("Coupon generation count %s exceeds cap of %s", formatFloat(couponQty), formatFloat(caps.MaxCouponCount)))
-		}
-
-		if input.Domain == MagentoPromotions && (strings.Contains(input.OperationID, "Rule") || strings.Contains(input.OperationID, "rule")) {
-			activeAfter, hasActiveAfter := boolAt(row.AfterImage, "is_active")
-			activeBefore, hasActiveBefore := boolAt(row.BeforeImage, "is_active")
-			var active bool
-			if hasActiveAfter {
-				active = activeAfter
-			} else if hasActiveBefore {
-				active = activeBefore
-			} else {
-				active = true
-			}
-			var toDate string
-			hasToDate := false
-			if s, ok := stringAt(row.AfterImage, "to_date"); ok {
-				toDate, hasToDate = s, true
-			} else if s, ok := stringAt(row.BeforeImage, "to_date"); ok {
-				toDate, hasToDate = s, true
-			}
-			if active && caps.MinPromotionDays > 0 {
-				if !hasToDate || strings.TrimSpace(toDate) == "" {
-					violations = append(violations, "Promotion expiry is required")
-				} else if expiry, ok := parseJSDate(toDate); !ok || expiry.Sub(now) < time.Duration(caps.MinPromotionDays*float64(24*time.Hour)) {
-					violations = append(violations, fmt.Sprintf("Promotion expiry must be at least %s day(s) in the future", formatFloat(caps.MinPromotionDays)))
-				}
-			}
-		}
-
-		storeCredit, hasStoreCredit := numberAt(row.AfterImage, "store_credit_amount")
-		if hasStoreCredit {
-			computedExposure += storeCredit
-			if storeCredit > caps.MaxStoreCredit {
-				riskClass = 0
-				violations = append(violations, fmt.Sprintf("Store credit %s exceeds cap of %s and is handoff-only", formatFloat(storeCredit), formatFloat(caps.MaxStoreCredit)))
 			}
 		}
 	}
 
 	var projectedExposure *float64
-	if input.ProjectedExposure != nil {
+	if input.ProjectedExposure != nil && !math.IsNaN(*input.ProjectedExposure) && !math.IsInf(*input.ProjectedExposure, 0) {
 		v := *input.ProjectedExposure
 		projectedExposure = &v
-	} else if computedExposure > 0 {
-		v := computedExposure
-		projectedExposure = &v
-	}
-	if projectedExposure != nil && caps.MaxProjectedExp > 0 && *projectedExposure > caps.MaxProjectedExp {
-		violations = append(violations, fmt.Sprintf("Projected financial exposure %.2f exceeds cap of %s", *projectedExposure, formatFloat(caps.MaxProjectedExp)))
+		if v > caps["maxProjectedExposure"] {
+			violations = append(violations, fmt.Sprintf("Projected exposure %s exceeds the %s ceiling", numberText(v), numberText(caps["maxProjectedExposure"])))
+		}
 	}
 
 	if input.AutoExecution {
 		if riskClass != 2 {
-			violations = append(violations, "Only Class 2 changes can execute automatically")
+			violations = append(violations, "This change requires administrator approval and cannot execute automatically")
 		}
-		if float64(input.AutoActionsToday) >= caps.MaxDailyAutoActions {
-			violations = append(violations, fmt.Sprintf("Daily automatic action cap of %s has been reached", formatFloat(caps.MaxDailyAutoActions)))
+		if float64(input.AutoActionsToday) >= caps["maxDailyAutoActions"] {
+			violations = append(violations, fmt.Sprintf("Daily automatic-action cap of %s is exhausted", numberText(caps["maxDailyAutoActions"])))
 		}
-		if len(input.CooldownBreaches) > 0 {
-			violations = append(violations, fmt.Sprintf("Cooldown active for: %s", strings.Join(input.CooldownBreaches, ", ")))
+		for _, entity := range input.CooldownBreaches {
+			violations = append(violations, "Cooldown is still active for "+entity)
 		}
 	}
 
+	now := input.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+	snapshotCaps := map[string]any{}
+	for k, v := range caps {
+		snapshotCaps[k] = v
+	}
 	return MagentoCapEvaluation{
 		Allowed:           len(violations) == 0 && riskClass != 0,
 		RiskClass:         riskClass,
-		ExecutionMode:     MagentoExecutionModeFor(riskClass),
 		Violations:        violations,
 		Escalations:       escalations,
 		ProjectedExposure: projectedExposure,
 		Snapshot: map[string]any{
-			"caps":             caps.toMap(),
+			"caps":             snapshotCaps,
 			"evaluatedAt":      now.UTC().Format("2006-01-02T15:04:05.000Z"),
 			"rowCount":         len(input.Rows),
 			"autoExecution":    input.AutoExecution,
 			"autoActionsToday": input.AutoActionsToday,
 		},
 	}
-}
-
-func formatFloat(f float64) string {
-	return strconv.FormatFloat(f, 'f', -1, 64)
 }
 
 var dateOnlyRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
@@ -694,10 +601,17 @@ func parseJSDate(s string) (time.Time, bool) {
 		t, err := time.Parse("2006-01-02", s)
 		return t, err == nil
 	}
-	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05"} {
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T15:04:05.999999999", "2006-01-02T15:04", "2006-01-02 15:04:05", "2006-01-02 15:04"} {
 		if t, err := time.Parse(layout, s); err == nil {
 			return t, true
 		}
 	}
 	return time.Time{}, false
+}
+
+func asStringMap(v any) (map[string]any, bool) {
+	if m, ok := v.(map[string]any); ok {
+		return m, true
+	}
+	return nil, false
 }

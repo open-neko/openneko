@@ -393,6 +393,32 @@ func TestMagentoChangesetRuntime(t *testing.T) {
 		t.Fatalf("handoff: %s", got)
 	}
 
+	seed(t, db, `create function refuse_applied_row() returns trigger language plpgsql as $$
+		begin if new.status = 'applied' then raise exception 'row store down'; end if; return new; end $$`)
+	seed(t, db, `create trigger refuse_applied_row before update on action_changeset_row for each row execute function refuse_applied_row()`)
+	lostID, _, err := create("magento.manage_catalog", "pending_approval",
+		`{"operation":"product_update","scope":{"store":"default"},"idempotency_key":"lost-row-sku-2","rows":[{"entity_ref":"SKU-2","path":{"sku":"SKU-2"},"body":{"product":{"name":"Two E"}}}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approve(lostID)
+	_ = a.ActionExecute(ctx, "org", lostID)
+	if got := text(`select c.status || '|' || cr.status from action_request r
+		join action_changeset c on c.id = (r.payload->>'changeset_id')::uuid
+		join action_changeset_row cr on cr.changeset_id = c.id where r.id = $1::uuid`, lostID); got != "reconcile_required|reconcile_required" {
+		t.Fatalf("a row whose status write failed: %s", got)
+	}
+	seed(t, db, `drop trigger refuse_applied_row on action_changeset_row`)
+
+	seed(t, db, `update action_request set status = 'rejected' where id = $1::uuid`, bulkID)
+	stale := &actionRequestRecord{ID: bulkID, OrgID: "org", Kind: "magento.manage_catalog", Status: "pending_approval"}
+	if err := a.autoApprovePreparedActionRequest(ctx, stale, "test"); err == nil {
+		t.Fatal("automatic approval overwrote a rejected request")
+	}
+	if got := text(`select status from action_request where id = $1::uuid`, bulkID); got != "rejected" {
+		t.Fatalf("rejected request became %s", got)
+	}
+
 	if got := text(`select count(*)::text from audit_chain where org_id = 'org' and payload::text like '%magento-secret-token%'`); got != "0" {
 		t.Fatalf("the integration token reached the audit chain")
 	}

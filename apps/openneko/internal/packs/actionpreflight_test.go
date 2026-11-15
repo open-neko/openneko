@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -16,17 +15,6 @@ type preflightParityFixture struct {
 		Definition    PackActionReadiness `json:"definition"`
 		ExpectedError *string             `json:"expectedError"`
 	} `json:"readinessCases"`
-	LockBodyCases []struct {
-		Name            string                       `json:"name"`
-		Kind            string                       `json:"kind"`
-		HasBody         bool                         `json:"hasBody"`
-		Body            any                          `json:"body"`
-		Locked          map[string]map[string]string `json:"locked"`
-		Config          map[string]any               `json:"config"`
-		ExpectedHasBody bool                         `json:"expectedHasBody"`
-		ExpectedBody    any                          `json:"expectedBody"`
-		ExpectedError   *string                      `json:"expectedError"`
-	} `json:"lockBodyCases"`
 }
 
 func TestPackActionPreflightParity(t *testing.T) {
@@ -48,29 +36,6 @@ func TestPackActionPreflightParity(t *testing.T) {
 		}
 		if err == nil || err.Error() != *tc.ExpectedError {
 			t.Errorf("%s: got %v, want %q", tc.Name, err, *tc.ExpectedError)
-		}
-	}
-	for _, tc := range fx.LockBodyCases {
-		locked := map[string]string{}
-		for field, spec := range tc.Locked {
-			locked[field] = spec["input"]
-		}
-		got, hasBody, err := LockPackActionBody(tc.Kind, tc.Body, tc.HasBody, locked, nil, tc.Config)
-		if tc.ExpectedError != nil {
-			if err == nil || err.Error() != *tc.ExpectedError {
-				t.Errorf("%s: got %v, want %q", tc.Name, err, *tc.ExpectedError)
-			}
-			continue
-		}
-		if err != nil {
-			t.Errorf("%s: unexpected error %v", tc.Name, err)
-			continue
-		}
-		if hasBody != tc.ExpectedHasBody {
-			t.Errorf("%s: hasBody=%v, want %v", tc.Name, hasBody, tc.ExpectedHasBody)
-		}
-		if !reflect.DeepEqual(got, tc.ExpectedBody) {
-			t.Errorf("%s: body=%#v, want %#v", tc.Name, got, tc.ExpectedBody)
 		}
 	}
 }
