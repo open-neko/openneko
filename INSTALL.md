@@ -968,17 +968,14 @@ The agent-zone user cannot read `server.json`, so each command refuses it.
 A backup of a one-user native install restores into a server install, and
 the reverse: the backup names each data folder, not its path.
 
-A native install has no Node worker. `openneko web` serves the static web app,
+A native install runs no Node.js. `openneko web` serves the static web app,
 answers every `/api/v1/*` and `/api/*` route (including `POST /api/v1/settings/finish`),
 serves `openneko pack` on its local admin socket (`web-admin.sock`), and runs
 sign-in (device sign-in, session and token checks), passkeys, Web Push
 notifications, pack install/doctor/OAuth/actions, channels, GraphJin group
 grants, external-event subscription dispatch, the Scalekit workspace
-connection, and River background jobs in Go.
-A few paths still call the Node worker that runs in the Docker stack or a
-source checkout: the built-in action adapters (`channel_admin`, `code_create_issue`,
-`code_draft_patch`, `data_source_admin`, `group_admin`, `send_webhook`,
-`source_config_admin`, and `user_admin`). Windows does not run the native
+connection, the built-in action adapters, and River background jobs in Go.
+The Docker images hold no Node.js either. Windows does not run the native
 runtime yet.
 
 ## Reset
@@ -1013,7 +1010,7 @@ solution packs (`/api/v1/admin/packs/*`), reckon webhooks, and the fifteen
 `/api/v1/settings/*` routes (including `POST /api/v1/settings/finish`). All UI
 pages render in the static app, and `openneko web` serves `apps/web/dist` and
 every API route directly, with no Node web server. The bundled Postgres,
-GraphJin, the worker, the file service, the agent runtime and the demo data
+GraphJin, the file service, the agent runtime and the demo data
 services stay on the private Docker network.
 
 Configure and persist the port during guided installation:

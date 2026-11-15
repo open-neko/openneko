@@ -160,6 +160,15 @@ jobs:
             test "$runtime" = "glibc 2.36 / PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) / $image_owner"
           done
 
+      - name: Images hold no node executable
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
+        env:
+          OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint sh "ghcr.io/open-neko/neko-web:$OPENNEKO_VERSION" \
+            -c '! command -v node && ! command -v nodejs'
+
       - name: openneko demo start (detached) against pre-pulled images
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         env:
