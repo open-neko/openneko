@@ -137,7 +137,6 @@ func TestTurnActionsDatabase(t *testing.T) {
 	worker := &fakeActionWorker{db: db}
 	srv := httptest.NewServer(worker)
 	defer srv.Close()
-	a.Gate.WorkerURL = srv.URL
 	seed(t, db, `delete from action_policy where org_id = 'org'`)
 	seed(t, db, `insert into action_policy (org_id, name, applies_to_kinds, applies_to_scopes, mode, priority, enabled, allowed_targets, denied_targets) values
 		('org', 'external_default', '{}', '{external}', 'approval_required', 950, true, null, null),

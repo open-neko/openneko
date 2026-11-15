@@ -105,9 +105,8 @@ func corruptSignInSecrets(t *testing.T, dir string) {
 	}
 }
 
-func newGate(t *testing.T, workerURL string) *Gate {
+func newGate(t *testing.T) *Gate {
 	return &Gate{
-		WorkerURL:     workerURL,
 		SecretsDir:    t.TempDir(),
 		SessionSecret: func() (string, error) { return testSecret, nil },
 		MarkerPath:    filepath.Join(t.TempDir(), "auth-gate.json"),
@@ -124,7 +123,7 @@ func run(g *Gate, method, target string, header map[string]string) (*httptest.Re
 }
 
 func TestSessionCookieFromNode(t *testing.T) {
-	g := newGate(t, "")
+	g := newGate(t)
 	if got := g.SessionUserID(nodeCookie); got != "user-1" {
 		t.Fatalf("got %q", got)
 	}
@@ -164,7 +163,7 @@ func TestDefaultSessionSecretMatchesNode(t *testing.T) {
 }
 
 func TestGateOpenWithoutSignIn(t *testing.T) {
-	g := newGate(t, "")
+	g := newGate(t)
 	for _, p := range []string{"/chat", "/admin/settings", "/api/v1/settings/models"} {
 		if _, ok := run(g, "GET", p, nil); !ok {
 			t.Errorf("%s refused on an install with no sign-in", p)
@@ -181,7 +180,7 @@ func TestGateOpenWithoutSignIn(t *testing.T) {
 }
 
 func TestGateWithSignIn(t *testing.T) {
-	g := newGate(t, "")
+	g := newGate(t)
 	seedSignInSecrets(t, g.SecretsDir, liveScalekit)
 
 	w, ok := run(g, "GET", "/chat/a%20b?x=1&y=%C3%A9!*()", nil)
@@ -224,7 +223,7 @@ func TestGateWithSignIn(t *testing.T) {
 }
 
 func TestGateMarker(t *testing.T) {
-	g := newGate(t, "")
+	g := newGate(t)
 	seedSignInSecrets(t, g.SecretsDir, liveScalekit)
 	if _, ok := run(g, "GET", "/chat", nil); ok {
 		t.Fatal("gate open with a live provider")
@@ -234,14 +233,14 @@ func TestGateMarker(t *testing.T) {
 		t.Fatalf("marker %q %v", raw, err)
 	}
 
-	down := newGate(t, "")
+	down := newGate(t)
 	corruptSignInSecrets(t, down.SecretsDir)
 	down.MarkerPath = g.MarkerPath
 	if _, ok := run(down, "GET", "/chat", nil); ok {
 		t.Error("secrets unreadable after sign-in was live: the gate must stay closed")
 	}
 
-	fresh := newGate(t, "")
+	fresh := newGate(t)
 	corruptSignInSecrets(t, fresh.SecretsDir)
 	if _, ok := run(fresh, "GET", "/chat", nil); !ok {
 		t.Error("secrets unreadable on an install that never had sign-in: the gate must stay open")
@@ -258,7 +257,7 @@ func TestGateMarker(t *testing.T) {
 }
 
 func TestGateReadsNodeMarker(t *testing.T) {
-	g := newGate(t, "")
+	g := newGate(t)
 	corruptSignInSecrets(t, g.SecretsDir)
 	if err := os.WriteFile(g.MarkerPath, []byte(`{"provider":{"pluginName":"entra","tenant":"t"}}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -306,7 +305,7 @@ func TestGateDatabase(t *testing.T) {
 	device("d5", "org2", "member", "eeeeeeeeeeee", "")
 	device("d6", "org", "admin", "ffffffffffff", "")
 
-	g := newGate(t, "")
+	g := newGate(t)
 	seedSignInSecrets(t, g.SecretsDir, liveScalekit)
 	g.DB = pool
 	if got := g.deviceUserID(ctx, "Bearer "+token("aaaaaaaaaaaa")); got != "member" {

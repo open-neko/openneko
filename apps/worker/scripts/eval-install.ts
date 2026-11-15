@@ -523,7 +523,6 @@ export class EvalEpisode {
       "--dir", join(this.root, "app"),
       "--node-addr", `127.0.0.1:${await freePort()}`,
       "--jobs=true",
-      "--worker-admin-url", this.workerUrl,
     ], { ...env, OPENNEKO_EVAL_TRACE_FILE: this.tracePath });
     await waitFor(async () => {
       try {

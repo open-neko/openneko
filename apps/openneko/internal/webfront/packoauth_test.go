@@ -164,7 +164,7 @@ func TestPackOAuthPersonalCallback(t *testing.T) {
 }
 
 func TestReadPackStateFromNode(t *testing.T) {
-	a := &API{Gate: newGate(t, "")}
+	a := &API{Gate: newGate(t)}
 	r := httptest.NewRequest("GET", "/api/pack-accounts/drive/account/callback", nil)
 	r.Header.Set("Cookie", PackOAuthCookie+"="+goPackState)
 	got := a.readAndClearPackState(httptest.NewRecorder(), r)

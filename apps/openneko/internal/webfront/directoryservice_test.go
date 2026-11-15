@@ -92,7 +92,6 @@ func scalekitDirectoryFront(t *testing.T, orgID string) (*Front, *fakeScalekitDi
 	srv := httptest.NewTLSServer(fake)
 	t.Cleanup(srv.Close)
 	f.API.SignInClient = srv.Client()
-	f.API.Gate.WorkerURL = "http://127.0.0.1:1"
 	sec := map[string]string{
 		"SCALEKIT_ENVIRONMENT_URL": srv.URL,
 		"SCALEKIT_CLIENT_ID":       "cid",

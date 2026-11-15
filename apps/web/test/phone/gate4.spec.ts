@@ -15,6 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import http from "node:http";
+import https from "node:https";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -230,58 +231,90 @@ test.describe("Phase 4 gate check (G4)", () => {
     );
     const orgId = orgRes.rows[0]!.id;
 
-    // Stub server for OIDC sign-in (/admin/auth/*), Web Push delivery (/push/*),
-    // and OpenAI-compatible host calls (/v1/chat/completions).
+    const certPath = path.join(work, "scalekit-cert.pem");
+    const keyPath = path.join(work, "scalekit-key.pem");
+    execFileSync(
+      "openssl",
+      [
+        "req",
+        "-x509",
+        "-newkey",
+        "rsa:2048",
+        "-nodes",
+        "-keyout",
+        keyPath,
+        "-out",
+        certPath,
+        "-days",
+        "1",
+        "-subj",
+        "/CN=127.0.0.1",
+        "-addext",
+        "subjectAltName=IP:127.0.0.1",
+      ],
+      { stdio: "ignore" },
+    );
+
+    const scalekitStub = https.createServer(
+      {
+        key: readFileSync(keyPath),
+        cert: readFileSync(certPath),
+      },
+      (req, res) => {
+        const reqUrl = new URL(req.url ?? "/", "https://127.0.0.1");
+        if (req.method === "GET" && reqUrl.pathname === "/oauth/authorize") {
+          const redirectUri = reqUrl.searchParams.get("redirect_uri") ?? "";
+          const state = reqUrl.searchParams.get("state") ?? "";
+          const sep = redirectUri.includes("?") ? "&" : "?";
+          res.writeHead(302, {
+            Location: `${redirectUri}${sep}code=gate4-oidc-code&state=${encodeURIComponent(state)}`,
+          });
+          res.end();
+          return;
+        }
+        if (req.method === "POST" && reqUrl.pathname === "/oauth/token") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ access_token: "gate4-access-token" }));
+          return;
+        }
+        if (req.method === "GET" && reqUrl.pathname === "/userinfo") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              sub: "gate4-oidc-sub-alex",
+              email: "alex.rivera@acme.test",
+              name: "Alex Rivera",
+              organization_id: orgId,
+              groups: ["idp-admins"],
+            }),
+          );
+          return;
+        }
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "not found" }));
+      },
+    );
+
+    const scalekitPort = await new Promise<number>((resolve, reject) => {
+      scalekitStub.on("error", reject);
+      scalekitStub.listen(0, "127.0.0.1", () => {
+        const addr = scalekitStub.address();
+        if (!addr || typeof addr === "string") {
+          reject(new Error("no scalekit port"));
+          return;
+        }
+        resolve(addr.port);
+      });
+    });
+
+    // Stub server for Web Push delivery (/push/*) and OpenAI-compatible host
+    // calls (/v1/chat/completions).
     const httpStub = http.createServer((req, res) => {
       const chunks: Buffer[] = [];
       req.on("data", (c: Buffer) => chunks.push(c));
       req.on("end", () => {
         const rawBody = Buffer.concat(chunks);
         const urlPath = req.url ?? "/";
-
-        if (req.method === "GET" && urlPath === "/admin/auth/status") {
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              provider: {
-                pluginName: "oidc",
-                providerLabel: "Acme SSO",
-                provisioning: "automatic",
-                loginHintRequired: false,
-              },
-              pending: null,
-            }),
-          );
-          return;
-        }
-
-        if (req.method === "POST" && urlPath === "/admin/auth/begin") {
-          const parsed = JSON.parse(rawBody.toString("utf8")) as {
-            redirectUri: string;
-            state: string;
-          };
-          const sep = parsed.redirectUri.includes("?") ? "&" : "?";
-          const authorizationUrl = `${parsed.redirectUri}${sep}code=gate4-oidc-code&state=${encodeURIComponent(parsed.state)}`;
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ authorizationUrl }));
-          return;
-        }
-
-        if (req.method === "POST" && urlPath === "/admin/auth/complete") {
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              identity: {
-                sub: "gate4-oidc-sub-alex",
-                email: "alex.rivera@acme.test",
-                name: "Alex Rivera",
-                orgId,
-                groups: [{ id: "idp-admins", name: "Administrators" }],
-              },
-            }),
-          );
-          return;
-        }
 
         if (req.method === "POST" && urlPath.startsWith("/push/")) {
           try {
@@ -564,20 +597,23 @@ test.describe("Phase 4 gate check (G4)", () => {
       serveSocketServer.listen(serveSocketPath, () => resolve());
     });
 
-    // Configure auth-gate.json so `/signin` and SSO are active.
+    // Configure secrets.json so `/signin` and Scalekit SSO are active in Go.
     const configHome = path.join(work, "config");
     const opennekoConfigDir = path.join(configHome, "openneko");
     mkdirSync(opennekoConfigDir, { recursive: true });
     writeFileSync(
-      path.join(opennekoConfigDir, "auth-gate.json"),
+      path.join(opennekoConfigDir, "secrets.json"),
       JSON.stringify({
-        provider: {
-          pluginName: "oidc",
-          providerLabel: "Acme SSO",
-          provisioning: "automatic",
-          loginHintRequired: false,
+        signin: {
+          PROVIDER: "scalekit",
+        },
+        "signin.scalekit": {
+          SCALEKIT_ENVIRONMENT_URL: `https://127.0.0.1:${scalekitPort}`,
+          SCALEKIT_CLIENT_ID: "gate4-client-id",
+          SCALEKIT_CLIENT_SECRET: "gate4-client-secret",
         },
       }),
+      { mode: 0o600 },
     );
 
     // Seed LLM provider config, default data source, IdP admin group rule,
@@ -601,7 +637,7 @@ test.describe("Phase 4 gate check (G4)", () => {
 
     await client.query(
       `insert into sso_group (id, org_id, provider, tenant_id, external_id, display_name, active)
-       values ($1, $2, 'oidc', $2, 'idp-admins', 'Administrators', true)
+       values ($1, $2, 'scalekit', $2, 'idp-admins', 'Administrators', true)
        on conflict (id) do nothing`,
       [SSO_GROUP_ID, orgId],
     );
@@ -697,8 +733,6 @@ test.describe("Phase 4 gate check (G4)", () => {
         `127.0.0.1:${port}`,
         "--dir",
         distDir,
-        "--worker-admin-url",
-        `http://127.0.0.1:${stubPort}`,
         "--jobs=false",
       ],
       {
@@ -711,6 +745,7 @@ test.describe("Phase 4 gate check (G4)", () => {
           OPENNEKO_WEB_PUSH_ALLOW_LOOPBACK: "1",
           OPENNEKO_JOBS_WAKE_TOKEN: wakeToken,
           OPENNEKO_SESSION_SECRET: sessionSecret,
+          SSL_CERT_FILE: certPath,
         },
         stdio: ["ignore", "pipe", "pipe"],
       },
@@ -740,6 +775,7 @@ test.describe("Phase 4 gate check (G4)", () => {
         baseURL: origin,
         viewport: { width: 400, height: 860 },
         permissions: ["notifications"],
+        ignoreHTTPSErrors: true,
       });
 
       const endpoint = `http://127.0.0.1:${stubPort}/push/gate4-phone`;
@@ -859,7 +895,7 @@ test.describe("Phase 4 gate check (G4)", () => {
       await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
       await assertNoHorizontalOverflow(page, "/signin");
 
-      await page.getByRole("button", { name: "Sign in with Acme SSO" }).click();
+      await page.getByRole("button", { name: "Sign in with Scalekit" }).click();
       await expect(page).toHaveURL(/\/chat$/);
 
       const sessionInfo = await page.evaluate(async () => {
@@ -1333,6 +1369,7 @@ test.describe("Phase 4 gate check (G4)", () => {
       srv.kill("SIGTERM");
       serveSocketServer.close();
       httpStub.close();
+      scalekitStub.close();
       await client
         .query(`delete from customer_profile where org_id = $1 and version > 1`, [
           orgId,

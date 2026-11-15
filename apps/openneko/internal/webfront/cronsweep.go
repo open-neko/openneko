@@ -150,7 +150,7 @@ const (
 )
 
 // behaviorSweep raises a behavior_alert, once per kind and subject in each
-// window, and sends the security.behavior_threshold event to the worker.
+// window, and dispatches the security.behavior_threshold event.
 func (a *API) behaviorSweep(ctx context.Context, orgID string, limits behaviorThresholds, now time.Time) ([]behaviorAlert, error) {
 	var raised []behaviorAlert
 	rows, err := a.DB.Query(ctx, `select coalesce(run_id::text, ''), count(*)::int from control_plane_audit

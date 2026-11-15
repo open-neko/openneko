@@ -29,10 +29,9 @@ func wfAPIFront(t *testing.T) (*Front, *pgxpool.Pool, *setupWorker) {
 		wfHeld, hex.EncodeToString(digest[:]))
 	seed(t, db, `update workflow_definition set daily_run_budget = null where id = $1`, wfHeld)
 	seed(t, db, `delete from workflow_api_rate_bucket`)
-	worker := &setupWorker{status: `{"provider":{"pluginName":"scalekit"}}`, reply: map[string]string{"/admin/events/external": `{"matched":0}`}}
+	worker := &setupWorker{status: `{"provider":{"pluginName":"scalekit"}}`, reply: map[string]string{}}
 	srv := httptest.NewServer(worker)
 	t.Cleanup(srv.Close)
-	f.Gate.WorkerURL = srv.URL
 	return f, db, worker
 }
 

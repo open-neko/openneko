@@ -3,8 +3,10 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -17,6 +19,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/open-neko/neko/apps/openneko/internal/compose"
+	"github.com/open-neko/neko/apps/openneko/internal/dockerproxy"
 	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
 )
 
@@ -116,24 +119,6 @@ func describeGraphjinState(st gjhost.State) string {
 	return line
 }
 
-// The worker already owns GraphJin preview/apply, credential sealing, the
-// shared config lock, persistence, and restart. Use that path from the host.
-const graphjinImportScript = `
-import { getOrgId } from "@neko/db";
-import { applyPackGraphjinConfig } from "./src/packs/graphjin-config.ts";
-let raw = "";
-for await (const chunk of process.stdin) raw += chunk;
-const update = JSON.parse(raw);
-await applyPackGraphjinConfig({
-  endpoint: "http://graphjin:8080/api/v1/graphql",
-  orgId: await getOrgId(),
-  configFile: process.env.OPENNEKO_GRAPHJIN_CONFIG,
-  update,
-  restartAfterPersist: true,
-});
-console.log("GraphJin configuration imported");
-`
-
 func newGraphjinCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "graphjin", Short: "Manage the customer GraphJin configuration"}
 	cmd.AddCommand(newGraphjinServeCmd(), newGraphjinStatusCmd(), &cobra.Command{
@@ -163,31 +148,41 @@ func newGraphjinCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			settings, installed, err := loadCurrentInstallation()
-			if err != nil {
+			if os.Getenv(dockerproxy.EnvMarker) != "1" {
+				settings, installed, err := loadCurrentInstallation()
+				if err != nil {
+					return err
+				}
+				if !installed || compose.Mode(settings.Mode) != compose.ModeProd {
+					return fmt.Errorf("graphjin import requires a selected production installation")
+				}
+				code, proxied := MaybeProxyToWeb(cmd, func(container string) int {
+					process := exec.CommandContext(cmd.Context(), "docker", "exec", "-i", "-e", dockerproxy.EnvMarker+"=1",
+						container, "openneko", "graphjin", "import", "-")
+					process.Stdin = bytes.NewReader(input)
+					process.Stdout = cmd.OutOrStdout()
+					process.Stderr = cmd.ErrOrStderr()
+					if err := process.Run(); err != nil {
+						var exit *exec.ExitError
+						if errors.As(err, &exit) {
+							return exit.ExitCode()
+						}
+						fmt.Fprintf(cmd.ErrOrStderr(), "openneko: graphjin import: %v\n", err)
+						return 1
+					}
+					return 0
+				})
+				if proxied {
+					if code != 0 {
+						return WithExit(code, nil)
+					}
+					return nil
+				}
+			}
+			if _, err := requestWebAdminAPI(cmd.Context(), "graphjin import", http.MethodPost, "/admin/graphjin/import", json.RawMessage(update), nil); err != nil {
 				return err
 			}
-			if !installed || compose.Mode(settings.Mode) != compose.ModeProd {
-				return fmt.Errorf("graphjin import requires a selected production installation")
-			}
-			var worker string
-			if code, proxied := MaybeProxyToWorker(cmd, func(container string) int {
-				worker = container
-				return 0
-			}); proxied && code != 0 {
-				return WithExit(code, nil)
-			}
-			if worker == "" {
-				return fmt.Errorf("graphjin import requires a running instance worker")
-			}
-			process := exec.CommandContext(cmd.Context(), "docker", "exec", "-i", worker,
-				"node", "--import", "tsx/esm", "--input-type=module", "--eval", graphjinImportScript)
-			process.Stdin = bytes.NewReader(update)
-			process.Stdout = cmd.OutOrStdout()
-			process.Stderr = cmd.ErrOrStderr()
-			if err := process.Run(); err != nil {
-				return fmt.Errorf("graphjin import: %w", err)
-			}
+			fmt.Fprintln(cmd.OutOrStdout(), "GraphJin configuration imported")
 			return nil
 		},
 	})

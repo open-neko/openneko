@@ -43,7 +43,6 @@ func runSourceCheck(t *testing.T, stdin string, reply string, args ...string) (m
 	t.Cleanup(stop)
 	t.Setenv(webAdminSocketEnv, socket)
 	t.Setenv("OPENNEKO_PROXIED", "1")
-	t.Setenv("WORKER_ADMIN_URL", "unix:///nonexistent/worker.sock")
 	command := newSourceCmd()
 	var output bytes.Buffer
 	command.SetOut(&output)

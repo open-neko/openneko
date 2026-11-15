@@ -45,7 +45,6 @@ func TestBehaviorSweep(t *testing.T) {
 	worker := &setupWorker{status: `{"provider":null}`, reply: map[string]string{}}
 	srv := httptest.NewServer(worker)
 	t.Cleanup(srv.Close)
-	f.API.Gate.WorkerURL = srv.URL
 	const (
 		run = "f0000000-0000-4000-8000-000000000001"
 		wf  = "f0000000-0000-4000-8000-000000000002"

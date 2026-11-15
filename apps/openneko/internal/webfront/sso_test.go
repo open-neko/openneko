@@ -104,7 +104,7 @@ func extractCallbackParam(text, key string) string {
 
 func newSSOFront(t *testing.T, status string, db *pgxpool.Pool) (*Front, *ssoWorker) {
 	wk := &ssoWorker{}
-	g := newGate(t, "")
+	g := newGate(t)
 	g.PublicURL = "https://neko.example"
 	seedSignInSecrets(t, g.SecretsDir, status)
 	g.DB = db
@@ -204,7 +204,7 @@ func TestAuthBeginManual(t *testing.T) {
 }
 
 func TestStateCookieFromNode(t *testing.T) {
-	a := &API{Gate: newGate(t, "")}
+	a := &API{Gate: newGate(t)}
 	w := httptest.NewRecorder()
 	state, path, ok := a.readAndClearState(w, &http.Request{Header: http.Header{"Cookie": {StateCookie + "=" + nodeStateCookie}}})
 	if !ok || state != "abcState" || path != "/chat?x=1" {

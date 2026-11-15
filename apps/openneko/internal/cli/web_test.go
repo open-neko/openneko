@@ -61,7 +61,7 @@ func runWeb(t *testing.T, ctx context.Context, fake string) (string, <-chan erro
 	cmd := newWebCmd()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--addr", addr, "--dir", app, "--node-addr", freeAddr(t), "--worker-admin-url", "http://127.0.0.1:1", "--", os.Args[0]})
+	cmd.SetArgs([]string{"--addr", addr, "--dir", app, "--node-addr", freeAddr(t), "--", os.Args[0]})
 	done := make(chan error, 1)
 	go func() { done <- cmd.ExecuteContext(ctx) }()
 	return "http://" + addr, done
