@@ -641,6 +641,9 @@ func (a *API) workThread(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusNotFound, "Thread not found")
 		return
 	}
+	if legacyRunEventClient(r) {
+		legacyBundleEvents(bundle.EventsByRun.byRun)
+	}
 	sendJSON(w, http.StatusOK, bundle)
 }
 

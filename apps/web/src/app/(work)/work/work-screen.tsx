@@ -85,6 +85,7 @@ import type {
   WorkEvent,
 } from "./work-types";
 import { copyText } from "@/lib/copy-text";
+import { withRunEventFormat } from "@/lib/run-event-format";
 
 const REASONING_STORAGE_KEY = "openneko.work.reasoning";
 
@@ -497,7 +498,7 @@ export default function WorkScreen() {
     try {
       const data = inBotChat
         ? await fetchThreadPage<ThreadBundle>(threadId)
-        : await fetch(`/api/v1/work/threads/${threadId}`, {
+        : await fetch(withRunEventFormat(`/api/v1/work/threads/${threadId}`), {
             cache: "no-store",
           })
             .then((res) => (res.ok ? (res.json() as Promise<ThreadBundle>) : null))
@@ -534,7 +535,7 @@ export default function WorkScreen() {
     setLoadingOlder(true);
     try {
       const res = await fetch(
-        `/api/v1/work/threads/${threadId}?limit=${CHAT_PAGE_RUNS}&before=${encodeURIComponent(before)}`,
+        withRunEventFormat(`/api/v1/work/threads/${threadId}?limit=${CHAT_PAGE_RUNS}&before=${encodeURIComponent(before)}`),
         { cache: "no-store" },
       );
       if (!res.ok || activeThreadIdRef.current !== threadId) return false;
@@ -550,7 +551,7 @@ export default function WorkScreen() {
   async function loadAllOlder() {
     const threadId = activeThreadIdRef.current;
     if (!threadId || !bundle?.hasOlder) return;
-    const res = await fetch(`/api/v1/work/threads/${threadId}`, {
+    const res = await fetch(withRunEventFormat(`/api/v1/work/threads/${threadId}`), {
       cache: "no-store",
     });
     if (!res.ok || activeThreadIdRef.current !== threadId) return;
@@ -1254,7 +1255,7 @@ export default function WorkScreen() {
       const checkRunStillInFlight = async () => {
         if (settled || !isBrowserOnline()) return;
         try {
-          const res = await fetch(`/api/v1/work/threads/${threadId}`, {
+          const res = await fetch(withRunEventFormat(`/api/v1/work/threads/${threadId}`), {
             cache: "no-store",
           });
           if (!res.ok || settled) return;
@@ -1296,7 +1297,7 @@ export default function WorkScreen() {
 
         const params = cursor > 0 ? `?afterId=${cursor}` : "";
         const source = new EventSource(
-          `/api/v1/work/threads/${threadId}/runs/${runId}/events${params}`,
+          withRunEventFormat(`/api/v1/work/threads/${threadId}/runs/${runId}/events${params}`),
         );
         es = source;
         let openedThisAttempt = false;

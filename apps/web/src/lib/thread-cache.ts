@@ -1,5 +1,7 @@
 "use client";
 
+import { withRunEventFormat } from "@/lib/run-event-format";
+
 /** Bot chats the reader opened or showed intent to open, kept for an instant reopen. */
 const MAX_THREADS = 12;
 const cache = new Map<string, unknown>();
@@ -21,7 +23,7 @@ export function rememberThread(threadId: string, bundle: unknown) {
 export function fetchThreadPage<T>(threadId: string): Promise<T | null> {
   const inFlight = pending.get(threadId);
   if (inFlight) return inFlight as Promise<T | null>;
-  const request = fetch(`/api/v1/work/threads/${threadId}?limit=${CHAT_PAGE_RUNS}`, {
+  const request = fetch(withRunEventFormat(`/api/v1/work/threads/${threadId}?limit=${CHAT_PAGE_RUNS}`), {
     cache: "no-store",
   })
     .then((res) => (res.ok ? (res.json() as Promise<T>) : null))
