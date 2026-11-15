@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -874,5 +876,94 @@ func TestInboundTwoInstancesOneDatabase(t *testing.T) {
 		t.Errorf("the lock stayed after the loop ended: %v", err)
 	} else {
 		_ = after.Close(ctx)
+	}
+}
+
+type freezableConn struct {
+	net.Conn
+	frozen    *atomic.Bool
+	mu        sync.Mutex
+	interrupt chan struct{}
+}
+
+func (c *freezableConn) Read(p []byte) (int, error) {
+	for c.frozen.Load() {
+		c.mu.Lock()
+		ch := c.interrupt
+		c.mu.Unlock()
+		select {
+		case <-ch:
+			return 0, os.ErrDeadlineExceeded
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	return c.Conn.Read(p)
+}
+
+func (c *freezableConn) SetReadDeadline(t time.Time) error {
+	c.wake(t)
+	return c.Conn.SetReadDeadline(t)
+}
+func (c *freezableConn) SetDeadline(t time.Time) error { c.wake(t); return c.Conn.SetDeadline(t) }
+
+func (c *freezableConn) wake(t time.Time) {
+	if t.IsZero() || t.After(time.Now()) {
+		return
+	}
+	c.mu.Lock()
+	close(c.interrupt)
+	c.interrupt = make(chan struct{})
+	c.mu.Unlock()
+}
+
+func TestTelegramPollLoopDropsAHungLockConnection(t *testing.T) {
+	f, db := inboundFront(t)
+	a := f.API
+	var frozen atomic.Bool
+	cfg := db.Config()
+	dial := cfg.ConnConfig.DialFunc
+	cfg.ConnConfig.DialFunc = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		c, err := dial(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		return &freezableConn{Conn: c, frozen: &frozen, interrupt: make(chan struct{})}, nil
+	}
+	pool, err := pgxpool.NewWithConfig(t.Context(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	b := &API{Gate: a.Gate, DB: pool, Version: a.Version, PublicURL: a.PublicURL, SecretsDir: a.SecretsDir, Jobs: a.Jobs}
+
+	var polls atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		polls.Add(1)
+		_, _ = w.Write([]byte(`{"ok":true,"result":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	oldBase, oldPing := telegramAPIBase, pollLockPingLimit
+	telegramAPIBase, pollLockPingLimit = srv.URL, 300*time.Millisecond
+	t.Cleanup(func() { telegramAPIBase, pollLockPingLimit = oldBase, oldPing })
+	logs := captureLog(t)
+
+	loopCtx, stop := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { b.telegramPollLoop(loopCtx, "org", "telegram"); close(done) }()
+	t.Cleanup(func() { frozen.Store(false); stop(); <-done })
+	deadline := time.Now().Add(10 * time.Second)
+	for polls.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if polls.Load() == 0 {
+		t.Fatal("the loop did not poll")
+	}
+	frozen.Store(true)
+	deadline = time.Now().Add(5 * time.Second)
+	for !strings.Contains(logs.String(), "lost the poll lock connection") && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !strings.Contains(logs.String(), "lost the poll lock connection") {
+		t.Fatalf("a lock connection that stopped answering held the loop for 5 s with no log line; logs:\n%s", logs.String())
 	}
 }

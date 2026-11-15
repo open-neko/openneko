@@ -339,7 +339,10 @@ func pollTelegram(ctx context.Context, cursor string, env map[string]string) ([]
 	return updates, cursor, nil
 }
 
-var pollLockRetry = 15 * time.Second
+var (
+	pollLockRetry     = 15 * time.Second
+	pollLockPingLimit = 5 * time.Second
+)
 
 func pollLockKey(id string, env map[string]string) string {
 	sum := sha256.Sum256([]byte(env["TELEGRAM_BOT_TOKEN"]))
@@ -377,10 +380,17 @@ func (a *API) telegramPollLoop(ctx context.Context, orgID, id string) {
 	cursor, waiting := "", false
 	failures, lastError := 0, ""
 	for ctx.Err() == nil {
-		if lock != nil && lock.Ping(ctx) != nil {
-			_ = lock.Close(context.WithoutCancel(ctx))
-			lock = nil
-			log.Printf("[channel-inbound] %s: lost the poll lock", id)
+		if lock != nil {
+			pingCtx, cancel := context.WithTimeout(ctx, pollLockPingLimit)
+			err := lock.Ping(pingCtx)
+			cancel()
+			if err != nil && ctx.Err() == nil {
+				closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pollLockPingLimit)
+				_ = lock.Close(closeCtx)
+				cancel()
+				lock = nil
+				log.Printf("[channel-inbound] %s: lost the poll lock connection (%v); polling stops until this process takes the lock again", id, err)
+			}
 		}
 		if lock == nil {
 			conn, err := a.tryPollLock(ctx, key)
