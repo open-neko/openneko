@@ -978,6 +978,15 @@ connection, the built-in action adapters, and River background jobs in Go.
 The Docker images hold no Node.js either. Windows does not run the native
 runtime yet.
 
+After a change to group grants or data access rules, `openneko web` writes
+the GraphJin config 30 seconds after the last change and restarts GraphJin.
+When another change holds the config, it tries again 30 seconds later. When
+GraphJin does not answer after the restart, `openneko web` puts the previous
+config file back, restarts GraphJin again, and undoes a change that turned
+group grants on or off. An external-event subscription fires when the event
+name equals the filter's `name` and the event source equals its `source`. A
+filter with neither key fires on every external event of the org.
+
 ## Reset
 
 ```bash

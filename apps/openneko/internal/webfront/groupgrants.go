@@ -1041,6 +1041,9 @@ func (a *API) enableGroupGrants(ctx context.Context, orgID string, actorUserID *
 	}
 	applied, err := a.applyGroupGrants(ctx, orgID, &d)
 	if err != nil {
+		if undo := a.setGroupGrantsEnabled(context.WithoutCancel(ctx), orgID, false, actorUserID, nil); undo != nil {
+			return groupGrantsEnableResult{}, fmt.Errorf("%w; group grants stay on: %v", err, undo)
+		}
 		return groupGrantsEnableResult{}, err
 	}
 	return groupGrantsEnableResult{groupGrantsApplyResult: applied, SeededRules: seededRules}, nil
@@ -1051,20 +1054,35 @@ func (a *API) disableGroupGrants(ctx context.Context, orgID string, actorUserID 
 	if strings.TrimSpace(d.ConfigFile) == "" {
 		return groupGrantsDisableResult{}, errors.New("GraphJin configuration is unavailable")
 	}
+	wasEnabled, err := a.groupGrantsEnabled(ctx, orgID)
+	if err != nil {
+		return groupGrantsDisableResult{}, err
+	}
 	if err := a.setGroupGrantsEnabled(ctx, orgID, false, actorUserID, nil); err != nil {
+		return groupGrantsDisableResult{}, err
+	}
+	fail := func(err error) (groupGrantsDisableResult, error) {
+		if wasEnabled {
+			if undo := a.setGroupGrantsEnabled(context.WithoutCancel(ctx), orgID, true, actorUserID, nil); undo != nil {
+				return groupGrantsDisableResult{}, fmt.Errorf("%w; group grants stay off: %v", err, undo)
+			}
+		}
 		return groupGrantsDisableResult{}, err
 	}
 	release, err := acquireGraphjinConfigLock(d.ConfigFile)
 	if err != nil {
-		return groupGrantsDisableResult{}, err
+		return fail(err)
 	}
 	changed := false
+	var previous []byte
+	var mode os.FileMode
 	err = func() error {
 		defer release()
 		raw, err := os.ReadFile(d.ConfigFile)
 		if err != nil {
 			return err
 		}
+		previous = raw
 		modes, err := a.getPreviousReadModes(ctx, orgID)
 		if err != nil {
 			return err
@@ -1078,7 +1096,8 @@ func (a *API) disableGroupGrants(ctx context.Context, orgID string, actorUserID 
 			if err != nil {
 				return err
 			}
-			if err := writeFileAtomic(d.ConfigFile, []byte(restored.Content), info.Mode().Perm(), ".group-grants"); err != nil {
+			mode = info.Mode().Perm()
+			if err := writeFileAtomic(d.ConfigFile, []byte(restored.Content), mode, ".group-grants"); err != nil {
 				return err
 			}
 			changed = true
@@ -1086,11 +1105,11 @@ func (a *API) disableGroupGrants(ctx context.Context, orgID string, actorUserID 
 		return nil
 	}()
 	if err != nil {
-		return groupGrantsDisableResult{}, err
+		return fail(err)
 	}
-	if changed && d.Restart != nil {
-		if err := d.Restart(ctx, d.ConfigFile); err != nil {
-			return groupGrantsDisableResult{}, err
+	if changed {
+		if err := restartGraphjinOrRestore(ctx, d, previous, mode); err != nil {
+			return fail(err)
 		}
 	}
 	return groupGrantsDisableResult{Changed: changed}, nil
@@ -1113,12 +1132,15 @@ func (a *API) applyGroupGrants(ctx context.Context, orgID string, deps *groupGra
 		return groupGrantsApplyResult{}, err
 	}
 	var result groupGrantsApplyResult
+	var previous []byte
+	var mode os.FileMode
 	err = func() error {
 		defer release()
 		rawBytes, err := os.ReadFile(d.ConfigFile)
 		if err != nil {
 			return err
 		}
+		previous = rawBytes
 		raw := string(rawBytes)
 		groups, rules, apiHolders, err := a.loadGroupGrantInputs(ctx, orgID, listConfigAPIOperations(raw))
 		if err != nil {
@@ -1159,7 +1181,8 @@ func (a *API) applyGroupGrants(ctx context.Context, orgID string, deps *groupGra
 			if err != nil {
 				return err
 			}
-			if err := writeFileAtomic(d.ConfigFile, []byte(patched.Content), info.Mode().Perm(), ".group-grants"); err != nil {
+			mode = info.Mode().Perm()
+			if err := writeFileAtomic(d.ConfigFile, []byte(patched.Content), mode, ".group-grants"); err != nil {
 				return err
 			}
 		}
@@ -1177,12 +1200,36 @@ func (a *API) applyGroupGrants(ctx context.Context, orgID string, deps *groupGra
 	if err != nil {
 		return groupGrantsApplyResult{}, err
 	}
-	if result.Changed && d.Restart != nil {
-		if err := d.Restart(ctx, d.ConfigFile); err != nil {
+	if result.Changed {
+		if err := restartGraphjinOrRestore(ctx, d, previous, mode); err != nil {
 			return groupGrantsApplyResult{}, err
 		}
 	}
 	return result, nil
+}
+
+func restartGraphjinOrRestore(ctx context.Context, d groupGrantsDeps, previous []byte, mode os.FileMode) error {
+	if d.Restart == nil {
+		return nil
+	}
+	err := d.Restart(ctx, d.ConfigFile)
+	if err == nil {
+		return nil
+	}
+	ctx = context.WithoutCancel(ctx)
+	release, lockErr := acquireGraphjinConfigLock(d.ConfigFile)
+	if lockErr != nil {
+		return fmt.Errorf("%w; the previous GraphJin config was not restored: %v", err, lockErr)
+	}
+	restoreErr := writeFileAtomic(d.ConfigFile, previous, mode, ".group-grants-rollback")
+	release()
+	if restoreErr == nil {
+		restoreErr = d.Restart(ctx, d.ConfigFile)
+	}
+	if restoreErr != nil {
+		return fmt.Errorf("%w; the previous GraphJin config was not restored: %v", err, restoreErr)
+	}
+	return err
 }
 
 func (a *API) scheduleGroupGrantsApply(ctx context.Context, orgIDs ...string) {
@@ -1224,7 +1271,9 @@ func (a *API) scheduleGroupGrantsApply(ctx context.Context, orgIDs ...string) {
 		a.groupGrantsMu.Lock()
 		delete(a.groupGrantsTimers, orgID)
 		a.groupGrantsMu.Unlock()
-		if err := run(orgID); err != nil {
+		if err := run(orgID); errors.Is(err, errGraphjinConfigBusy) {
+			a.scheduleGroupGrantsApply(context.Background(), orgID)
+		} else if err != nil {
 			log.Printf("[group-grants] apply failed for %s: %v", orgID, err)
 		}
 	})

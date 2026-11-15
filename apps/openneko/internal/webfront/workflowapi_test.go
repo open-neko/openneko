@@ -279,7 +279,7 @@ func TestWorkflowAPILimits(t *testing.T) {
 		t.Errorf("rolling: %d %s", w.Code, w.Body)
 	}
 	seed(t, db, `insert into subscription (id, org_id, workflow_id, source_kind, filter) values
-		('e2000000-0000-4000-8000-000000000001', 'org', $1, 'external_event', '{"event_names":["spend.budget_blocked"],"source":"spend-governance"}')`, wfHeld)
+		('e2000000-0000-4000-8000-000000000001', 'org', $1, 'external_event', '{"name":"spend.budget_blocked","source":"spend-governance"}')`, wfHeld)
 	seed(t, db, `update workflow_api_access set rolling_cost_micros_budget = 1000000000 where workflow_id = $1`, wfHeld)
 	seed(t, db, `update spend_limit set workflow_daily_micros = 4000000 where org_id = 'org' and workflow_id is null`)
 	w := wfCall(f, "POST", runs, `{}`, map[string]string{"Idempotency-Key": "spend-key"})

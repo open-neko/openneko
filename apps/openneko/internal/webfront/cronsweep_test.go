@@ -52,7 +52,7 @@ func TestBehaviorSweep(t *testing.T) {
 	)
 	seed(t, db, `insert into workflow_definition (id, org_id, name, description) values ($1, 'org', 'Sec responder', 'x')`, wf)
 	seed(t, db, `insert into subscription (id, org_id, workflow_id, source_kind, filter) values
-		($1, 'org', $2, 'external_event', '{"event_names":["security.behavior_threshold"],"source":"behavior-monitor"}')`, sub, wf)
+		($1, 'org', $2, 'external_event', '{"name":"security.behavior_threshold","source":"behavior-monitor"}')`, sub, wf)
 	seed(t, db, `insert into control_plane_audit (org_id, run_id, path, actor_role, backend)
 		select 'org', $1, '/v1/memory/search', 'service', 'ax' from generate_series(1, 9)`, run)
 	seed(t, db, `insert into control_plane_audit (org_id, run_id, path, actor_role, backend, created_at)
