@@ -109,3 +109,31 @@ func TestPollBackoff(t *testing.T) {
 		t.Errorf("thread ids %q %q", a, b)
 	}
 }
+
+func TestTelegramWebhookOn(t *testing.T) {
+	secret := map[string]string{"TELEGRAM_WEBHOOK_SECRET": "s"}
+	for public, want := range map[string]bool{
+		"https://neko.example.com":   true,
+		"https://203.0.113.9:8443":   true,
+		"http://neko.example.com":    false,
+		"http://localhost:3000":      false,
+		"https://localhost":          false,
+		"https://neko.localhost":     false,
+		"https://neko.corp.internal": false,
+		"https://web":                false,
+		"https://127.0.0.1":          false,
+		"https://10.0.0.5":           false,
+		"https://192.168.1.20":       false,
+		"https://100.64.1.1":         false,
+		"https://[::1]":              false,
+		"https://[fd00::1]":          false,
+		"":                           false,
+	} {
+		if got := telegramWebhookOn(public, secret); got != want {
+			t.Errorf("%q: got %v", public, got)
+		}
+	}
+	if telegramWebhookOn("https://neko.example.com", map[string]string{}) {
+		t.Error("the webhook is on with no secret")
+	}
+}

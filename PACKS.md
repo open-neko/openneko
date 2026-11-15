@@ -269,11 +269,22 @@ under `channel.<id>`. Slack needs `SLACK_BOT_TOKEN`; Telegram needs
 signing secret. **Turn off** removes the channel's stored settings.
 
 `openneko web` receives channel messages. It polls Telegram every 3 seconds.
-Slack needs `SLACK_APP_TOKEN` for its Socket Mode connection. When
-`OPENNEKO_PUBLIC_URL` is set, Telegram and the HUD bridge post to
-`<OPENNEKO_PUBLIC_URL>/api/v1/channels/<id>/inbound` in place of the poll.
-Telegram's webhook needs `TELEGRAM_WEBHOOK_SECRET`; the HUD bridge signs each
+Slack needs `SLACK_APP_TOKEN` for its Socket Mode connection. The HUD bridge
+posts to `<OPENNEKO_PUBLIC_URL>/api/v1/channels/hud/inbound` and signs each
 post with its generated secret.
+
+Telegram uses its webhook in place of the poll when two things are true:
+
+- The admin stored `TELEGRAM_WEBHOOK_SECRET`, the `secret_token` of the
+  admin's `setWebhook` call.
+- `OPENNEKO_PUBLIC_URL` is `https` on a host that Telegram can reach. A
+  `localhost` URL, a name with no dot, a `.local`, `.internal`, `.lan` or
+  `.home.arpa` name, and a loopback, private or link-local address do not
+  count.
+
+Point the webhook at `<OPENNEKO_PUBLIC_URL>/api/v1/channels/telegram/inbound`.
+In all other cases `openneko web` polls Telegram. Telegram refuses a poll
+while a webhook is set, so delete the webhook to go back to the poll.
 
 Channel tokens are not pack secrets. A manifest may still list channels:
 

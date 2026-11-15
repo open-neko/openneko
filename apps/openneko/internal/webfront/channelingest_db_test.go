@@ -567,8 +567,24 @@ func TestInboundLoopsFollowSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.refreshInbound(l)
+	if got := running(); got != "telegram" {
+		t.Errorf("a public URL with no webhook secret stopped the poll: %q", got)
+	}
+	a.PublicURL = "http://localhost:3000"
+	if err := a.setChannelSettings("telegram", map[string]any{"TELEGRAM_WEBHOOK_SECRET": "s"}); err != nil {
+		t.Fatal(err)
+	}
+	a.refreshInbound(l)
+	if got := running(); got != "telegram" {
+		t.Errorf("a local public URL stopped the poll: %q", got)
+	}
+	a.PublicURL = "https://neko.example"
+	if err := a.setChannelSettings("telegram", map[string]any{"TELEGRAM_WEBHOOK_SECRET": "s2"}); err != nil {
+		t.Fatal(err)
+	}
+	a.refreshInbound(l)
 	if got := running(); got != "" {
-		t.Errorf("a public URL still polls: %q", got)
+		t.Errorf("the webhook is on and the poll still runs: %q", got)
 	}
 }
 
