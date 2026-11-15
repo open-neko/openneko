@@ -595,6 +595,9 @@ func runNativeUpgrade(ctx context.Context, cmd *cobra.Command, settings installa
 			return fmt.Errorf("replace %s: %w", settings.WebDir, err)
 		}
 	}
+	if err := replaceReleasePacks(from, exe); err != nil {
+		return err
+	}
 	if !wasRunning {
 		fmt.Fprintln(out, "Upgrade complete. `openneko start` starts OpenNeko and applies the migrations.")
 		return nil
@@ -665,4 +668,24 @@ func replaceFolder(src, dst string) error {
 		return err
 	}
 	return os.RemoveAll(old)
+}
+
+// replaceReleasePacks puts the built-in packs of the new release beside the
+// executable, where openneko web reads them.
+func replaceReleasePacks(from, exe string) error {
+	newPacks := filepath.Join(from, "share", "openneko", "packs")
+	if info, err := os.Stat(newPacks); err != nil || !info.IsDir() {
+		return nil
+	}
+	packs := filepath.Join(filepath.Dir(filepath.Dir(exe)), "share", "openneko", "packs")
+	if sameFile(newPacks, packs) {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(packs), 0o755); err != nil {
+		return err
+	}
+	if err := replaceFolder(newPacks, packs); err != nil {
+		return fmt.Errorf("replace %s: %w", packs, err)
+	}
+	return nil
 }

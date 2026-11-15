@@ -16,6 +16,12 @@ func TestExitCodeFor(t *testing.T) {
 	if code := ExitCodeFor(errors.New("plain")); code != 0 {
 		t.Fatalf("expected 0 for non-wrapped err, got %d", code)
 	}
+	if err := WithExit(0, nil); err != nil {
+		t.Fatalf("a proxied command that exits 0 returns %v; main then exits 1", err)
+	}
+	if code := ExitCodeFor(WithExit(2, nil)); code != 2 {
+		t.Fatalf("expected 2, got %d", code)
+	}
 }
 
 func TestRootHasAllCommands(t *testing.T) {
@@ -81,17 +87,17 @@ func TestPersistentInstanceFlagWorksAfterSubcommand(t *testing.T) {
 	}
 }
 
-func TestNamedInstanceFromWorkerContainer(t *testing.T) {
-	name, ok := namedInstanceFromWorkerContainer("openneko-acme-west-prod-worker-1")
+func TestNamedInstanceFromWebContainer(t *testing.T) {
+	name, ok := namedInstanceFromContainer("openneko-acme-west-prod-web-1", "web")
 	if !ok || name != "acme-west" {
-		t.Fatalf("named worker = %q, ok=%v", name, ok)
+		t.Fatalf("named web = %q, ok=%v", name, ok)
 	}
 	for _, container := range []string{
-		"openneko-prod-worker-1",
-		"openneko-acme-prod-web-1",
-		"unrelated-worker-1",
+		"openneko-prod-web-1",
+		"openneko-acme-prod-openneko-serve-1",
+		"unrelated-web-1",
 	} {
-		if name, ok := namedInstanceFromWorkerContainer(container); ok || name != "" {
+		if name, ok := namedInstanceFromContainer(container, "web"); ok || name != "" {
 			t.Fatalf("%q parsed as named instance %q", container, name)
 		}
 	}

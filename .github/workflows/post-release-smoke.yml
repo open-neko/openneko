@@ -232,6 +232,16 @@ jobs:
             --filter label=com.docker.compose.service=openneko-serve | head -1)
           test -n "$serve"
           test "$(docker inspect --format '{{.State.Status}}' "$serve")" = running
+          web=$(docker ps -q \
+            --filter label=com.docker.compose.project=openneko-demo \
+            --filter label=com.docker.compose.service=web | head -1)
+          test -n "$web"
+          # The signed web -> GraphJin -> AdventureWorks path must return a real
+          # row, and web must reach the agent socket of openneko serve.
+          checks=$(docker exec "$web" openneko release-check --datasource adventureworks --serve-socket)
+          echo "$checks"
+          grep -qx authenticated_datasource_query=ok <<<"$checks"
+          grep -qx serve_socket=ok <<<"$checks"
           openneko status
 
       - name: Verify reconciled database volumes

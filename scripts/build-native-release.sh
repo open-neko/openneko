@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/build-native-release.sh <tag> <out-dir> [arch ...]
-# Writes openneko-native_<version>_linux_<arch>.tar.gz and checksums-native.txt.
+# Writes openneko-native_<version>_linux_<arch>.tar.gz (bin/openneko, share/openneko/web
+# and share/openneko/packs) and checksums-native.txt.
 set -euo pipefail
 
 tag="${1:?release tag, for example v5.1.0}"
@@ -33,6 +34,7 @@ for arch in "${arches[@]}"; do
     -ldflags "-s -w -X $pkg.Version=$version -X $pkg.Commit=$commit -X $pkg.CommitTimestamp=$date" \
     -o "$tree/bin/openneko" ./cmd/openneko)
   cp -R "$OPENNEKO_WEB_DIST" "$tree/share/openneko/web"
+  cp -R "$root/packs" "$tree/share/openneko/packs"
   tar -C "$tree" --owner=0 --group=0 --numeric-owner --sort=name -czf "$out/$name" bin share
   (cd "$out" && sha256sum "$name" >> checksums-native.txt)
 done

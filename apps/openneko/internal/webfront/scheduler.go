@@ -18,18 +18,19 @@ import (
 )
 
 const (
-	workflowSchedulerHealthID         = "cron"
-	workflowSchedulerLockKey          = "openneko.workflow-scheduler.materialize"
-	workflowSchedulerDispatchLease    = 90 * time.Second
-	defaultWorkflowSchedulerEvery     = 30 * time.Second
-	defaultWorkflowSchedulerStale     = 90 * time.Second
-	defaultWorkflowSchedulerLeaseMax  = 25
-	maxCoalescedScanSteps             = 10000
-	workflowSchedulerDedupeWindow     = 30 * 24 * time.Hour
+	workflowSchedulerHealthID        = "cron"
+	workflowSchedulerLockKey         = "openneko.workflow-scheduler.materialize"
+	workflowSchedulerDispatchLease   = 90 * time.Second
+	defaultWorkflowSchedulerEvery    = 30 * time.Second
+	defaultWorkflowSchedulerStale    = 90 * time.Second
+	defaultWorkflowSchedulerLeaseMax = 25
+	maxCoalescedScanSteps            = 10000
+	workflowSchedulerDedupeWindow    = 30 * 24 * time.Hour
 )
 
 type schedulerRuntimeState struct {
 	initialized         bool
+	configured          bool
 	startedAt           time.Time
 	lastAttemptAt       *time.Time
 	lastSuccessAt       *time.Time
@@ -125,6 +126,7 @@ func (a *API) ResetWorkflowSchedulerHealth(now time.Time) {
 	a.schedMu.Lock()
 	a.schedState = schedulerRuntimeState{
 		initialized: true,
+		configured:  true,
 		startedAt:   now.UTC(),
 	}
 	a.schedMu.Unlock()
@@ -521,46 +523,82 @@ func (a *API) recordDBSchedulerFailure(ctx context.Context, now time.Time, msg s
 	return err
 }
 
-// ServeHealth handles GET /health, GET /health/scheduler, and GET /health/security.
+// ServeHealth answers GET /health, /health/scheduler and /health/security on
+// the public port. Only a signed-in admin gets the detail there; the admin
+// socket always gives it.
 func (f *Front) ServeHealth(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodGet {
 		return false
 	}
 	switch r.URL.Path {
-	case "/health":
-		audit := f.API.AuditHealth()
-		if audit.Status != "ok" {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte(audit.Status))
-			return true
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
+	case "/health", "/health/scheduler", "/health/security":
+		f.API.serveHealth(w, r.URL.Path, f.API.signedInAdmin(r))
 		return true
-	case "/health/scheduler":
-		if f.API == nil {
-			sendJSON(w, http.StatusServiceUnavailable, map[string]any{"status": "unavailable"})
-			return true
-		}
-		snapshot := f.API.WorkflowSchedulerHealth(time.Now())
-		code := http.StatusOK
-		if snapshot.Status != "ok" {
-			code = http.StatusServiceUnavailable
-		}
-		sendJSON(w, code, snapshot)
-		return true
-	case "/health/security":
-		audit := f.API.AuditHealth()
-		code := http.StatusOK
-		if audit.Status != "ok" {
-			code = http.StatusServiceUnavailable
-		}
-		sendJSON(w, code, map[string]any{
-			"status":       audit.Status,
-			"auditLogging": audit,
-		})
-		return true
-	default:
+	}
+	return false
+}
+
+func (a *API) signedInAdmin(r *http.Request) bool {
+	if a == nil || a.Gate == nil || a.DB == nil || !a.Gate.Status(r.Context()).Live() {
 		return false
 	}
+	act, err := a.currentActor(r.Context(), r)
+	return err == nil && act.UserID != "" && act.Admin
+}
+
+func (a *API) schedulerHealth(now time.Time) (SchedulerHealth, bool) {
+	if a == nil {
+		return SchedulerHealth{}, false
+	}
+	a.schedMu.Lock()
+	configured := a.schedState.configured
+	a.schedMu.Unlock()
+	if !configured {
+		return SchedulerHealth{}, false
+	}
+	return a.WorkflowSchedulerHealth(now), true
+}
+
+func (a *API) serveHealth(w http.ResponseWriter, path string, detail bool) {
+	switch path {
+	case "/health":
+		health, ok := a.schedulerHealth(time.Now())
+		if !ok || health.Status == "ok" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(health.Status))
+	case "/health/scheduler":
+		health, ok := a.schedulerHealth(time.Now())
+		switch {
+		case !ok && detail:
+			sendJSON(w, http.StatusServiceUnavailable, map[string]any{"status": "unavailable", "error": "scheduler health is not configured"})
+		case !ok:
+			sendJSON(w, http.StatusServiceUnavailable, map[string]any{"status": "unavailable"})
+		case detail:
+			sendJSON(w, healthCode(health.Status), health)
+		default:
+			sendJSON(w, healthCode(health.Status), map[string]any{"status": health.Status})
+		}
+	case "/health/security":
+		audit := a.AuditHealth()
+		status := "ok"
+		if !audit.Healthy {
+			status = "degraded"
+		}
+		if !detail {
+			sendJSON(w, http.StatusOK, map[string]any{"status": status})
+			return
+		}
+		sendJSON(w, http.StatusOK, map[string]any{"status": status, "auditLogging": audit})
+	}
+}
+
+func healthCode(status string) int {
+	if status == "ok" {
+		return http.StatusOK
+	}
+	return http.StatusServiceUnavailable
 }

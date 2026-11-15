@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// OperatorHandler serves the pack, source check and GraphJin import routes on
-// the web's admin socket. The socket's file mode is the only check, so the
+// OperatorHandler serves the pack, source check, GraphJin import and health
+// routes on the web's admin socket. The socket's file mode is the only check, so the
 // caller acts as an admin with no user.
 func (a *API) OperatorHandler() http.Handler {
 	operator := func(serve func(http.ResponseWriter, *http.Request, actor)) http.HandlerFunc {
@@ -28,6 +28,9 @@ func (a *API) OperatorHandler() http.Handler {
 	mux.Handle("POST /admin/packs/{packId}/{action}", operator(a.packWrite))
 	mux.Handle("POST /admin/sources/check", operator(a.serveSourceCheck))
 	mux.Handle("POST /admin/graphjin/import", operator(a.serveGraphjinImport))
+	for _, path := range []string{"/health", "/health/scheduler", "/health/security"} {
+		mux.HandleFunc("GET "+path, func(w http.ResponseWriter, r *http.Request) { a.serveHealth(w, path, true) })
+	}
 	return mux
 }
 
