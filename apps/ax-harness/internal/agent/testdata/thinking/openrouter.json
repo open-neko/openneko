@@ -1,0 +1,51 @@
+{
+ "name": "openrouter",
+ "provider": "openrouter",
+ "model": "deepseek/deepseek-v4",
+ "docs": "https://openrouter.ai/docs/use-cases/reasoning-tokens (delta.reasoning, delta.reasoning_details)",
+ "stream": [
+  "data: {\"id\": \"c\", \"object\": \"chat.completion.chunk\", \"choices\": [{\"index\": 0, \"delta\": {\"role\": \"assistant\", \"reasoning\": \"The user wants the total. \", \"reasoning_details\": [{\"type\": \"reasoning.text\", \"text\": \"The user wants the total. \", \"format\": \"unknown\", \"index\": 0}]}}]}",
+  "",
+  "data: {\"id\": \"c\", \"object\": \"chat.completion.chunk\", \"choices\": [{\"index\": 0, \"delta\": {\"reasoning\": \"The query returned one row.\", \"reasoning_details\": [{\"type\": \"reasoning.text\", \"text\": \"The query returned one row.\", \"format\": \"unknown\", \"index\": 0}]}}]}",
+  "",
+  "data: {\"id\": \"c\", \"object\": \"chat.completion.chunk\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Answer: done\"}}]}",
+  "",
+  "data: {\"id\": \"c\", \"object\": \"chat.completion.chunk\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 3, \"completion_tokens\": 4, \"total_tokens\": 7}}",
+  "",
+  "data: [DONE]",
+  ""
+ ],
+ "thought": "The user wants the total. The query returned one row.",
+ "events": [
+  {
+   "type": "actor.step",
+   "data": {
+    "text": "Check the data"
+   }
+  },
+  {
+   "type": "thought.delta",
+   "data": {
+    "version": 0,
+    "index": 0,
+    "text": "The user wants the total. "
+   }
+  },
+  {
+   "type": "thought.delta",
+   "data": {
+    "version": 0,
+    "index": 0,
+    "text": "The query returned one row."
+   }
+  },
+  {
+   "type": "answer.delta",
+   "data": {
+    "version": 0,
+    "index": 0,
+    "text": "done"
+   }
+  }
+ ]
+}
