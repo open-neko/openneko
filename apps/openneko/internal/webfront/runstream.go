@@ -5,13 +5,17 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 )
 
-var runStreamSubscribed = func(runID string) {}
+var (
+	runStreamSubscribed = func(runID string) {}
+	runStreamRead       = func(runID string) {}
+)
 
 // runNotices is createNotifyClient("work_run_event") for one stream: a wake
 // for each stored event of the run. It owns a connection outside the pool,
@@ -21,6 +25,20 @@ type runNotices struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 	conn   *pgx.Conn
+
+	mu      sync.Mutex
+	ids     []int64
+	unnamed bool
+}
+
+// take returns the event ids that the notices since the last take named;
+// unnamed is true when a notice named no id.
+func (n *runNotices) take() (ids []int64, unnamed bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	ids, unnamed = n.ids, n.unnamed
+	n.ids, n.unnamed = nil, false
+	return ids, unnamed
 }
 
 func (a *API) listenRun(ctx context.Context, runID string) (*runNotices, error) {
@@ -41,11 +59,24 @@ func (a *API) listenRun(ctx context.Context, runID string) (*runNotices, error) 
 			if err != nil {
 				return
 			}
-			if note.Channel == "work_run_event" && note.Payload == runID {
-				select {
-				case n.wake <- struct{}{}:
-				default:
-				}
+			if note.Channel != "work_run_event" {
+				continue
+			}
+			rest, ok := strings.CutPrefix(note.Payload, runID)
+			if !ok || (rest != "" && rest[0] != ':') {
+				continue
+			}
+			id, err := strconv.ParseInt(strings.TrimPrefix(rest, ":"), 10, 64)
+			n.mu.Lock()
+			if err == nil {
+				n.ids = append(n.ids, id)
+			} else {
+				n.unnamed = true
+			}
+			n.mu.Unlock()
+			select {
+			case n.wake <- struct{}{}:
+			default:
 			}
 		}
 	}()
@@ -189,10 +220,28 @@ func (a *API) runEventStream(w http.ResponseWriter, r *http.Request) {
 		}
 		write("id: " + strconv.FormatInt(id, 10) + "\ndata: " + payload + "\n\n")
 	}
+	doneSent := false
 	sendLive := func() {
 		for _, e := range live.take() {
+			if jsGet(e.event, "type") == "done" {
+				doneSent = true
+			}
 			send(jsStringify(e.event, false), e.id, func(f *legacyAnswerFilter) bool { return f.keepEvent(e.event) })
 		}
+	}
+	// A wake for events that the live channel already sent needs no read,
+	// until the run's done event: then the status decides the end.
+	wakeNeedsRead := func() bool {
+		ids, unnamed := notices.take()
+		if unnamed || doneSent {
+			return true
+		}
+		for _, id := range ids {
+			if !sent[id] && float64(id) > afterID {
+				return true
+			}
+		}
+		return false
 	}
 
 	runStreamSubscribed(runID)
@@ -205,18 +254,20 @@ func (a *API) runEventStream(w http.ResponseWriter, r *http.Request) {
 		cursor = int64(afterID)
 	}
 	readStored := func() error {
-		rows, err := a.DB.Query(ctx, `select id, payload::text from work_run_event where org_id = $1 and run_id = $2 and id > $3 order by id`,
-			act.OrgID, runID, cursor)
+		runStreamRead(runID)
+		rows, err := a.DB.Query(ctx, `select id, payload::text, joined_ids, joined_ends from work_run_event
+			where org_id = $1 and run_id = $2 and id > $3 order by id`, act.OrgID, runID, cursor)
 		if err != nil {
 			return err
 		}
 		type stored struct {
 			id      int64
 			payload string
+			parts   joinedParts
 		}
 		list, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (stored, error) {
 			var s stored
-			return s, row.Scan(&s.id, &s.payload)
+			return s, row.Scan(&s.id, &s.payload, &s.parts.ids, &s.parts.ends)
 		})
 		if err != nil {
 			return err
@@ -226,7 +277,17 @@ func (a *API) runEventStream(w http.ResponseWriter, r *http.Request) {
 			if sent[s.id] || float64(s.id) <= afterID {
 				continue
 			}
-			payload, err := jsJSON([]byte(s.payload))
+			raw := []byte(s.payload)
+			if len(s.parts.ids) > 0 {
+				var ok bool
+				if raw, ok, err = s.parts.rest(raw, func(id int64) bool { return sent[id] || float64(id) <= afterID }); err != nil {
+					return err
+				} else if !ok {
+					sent[s.id] = true
+					continue
+				}
+			}
+			payload, err := jsJSON(raw)
 			if err != nil {
 				return err
 			}
@@ -281,7 +342,9 @@ func (a *API) runEventStream(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			case <-wake:
-				break wait
+				if wakeNeedsRead() {
+					break wait
+				}
 			case <-timer.C:
 				break wait
 			case <-ctx.Done():
