@@ -1362,6 +1362,39 @@ export function backendAgentFailureType(
     : `agent_${status}`;
 }
 
+export const WATCHER_SWEEP_EPOCH = new Date("2030-01-01T00:00:00.000Z");
+
+export type WatcherSweep = { checked: number; fired: Array<{ watcherId: string }> };
+
+// The episode's web runs the minute workflow_cron_sweep on the real clock. When
+// it checks a new watcher before the driver does, it fires the watcher, and the
+// driver's sweep then sees an unchanged value. That fire counts as the first.
+export async function observeWatcherFire(input: {
+  watcherId: string | undefined;
+  sweep: (at: Date) => Promise<WatcherSweep>;
+  read: () => Promise<{ lastFiredAt: Date | null } | undefined>;
+}): Promise<{ fired: boolean; debounced: boolean; fireCount: number; firedBy: "driver" | "job-loop" | null }> {
+  const first = await input.sweep(WATCHER_SWEEP_EPOCH);
+  const second = await input.sweep(new Date(WATCHER_SWEEP_EPOCH.getTime() + 3_600_000));
+  const lastFiredAt = (await input.read())?.lastFiredAt ?? null;
+  const byJobLoop =
+    input.watcherId !== undefined &&
+    lastFiredAt !== null &&
+    lastFiredAt.getTime() < WATCHER_SWEEP_EPOCH.getTime();
+  const firstFires = first.fired.length + (byJobLoop ? 1 : 0);
+  const fired =
+    input.watcherId !== undefined &&
+    firstFires === 1 &&
+    (byJobLoop || first.fired[0]?.watcherId === input.watcherId);
+  const fireCount = firstFires + second.fired.length;
+  return {
+    fired,
+    debounced: fired && second.checked === 1 && second.fired.length === 0 && fireCount === 1,
+    fireCount,
+    firedBy: fired ? (byJobLoop ? "job-loop" : "driver") : null,
+  };
+}
+
 async function observeStateMachine(input: {
   scenario: string;
   fixture: ProvisionedWorkBackendFixture;
@@ -1432,29 +1465,22 @@ async function observeStateMachine(input: {
     if (watcher) sequence.push("watcher.saved");
     sequence.push("model.completed");
 
-    const sweep = async (at: Date) => {
-      const result = await input.episode.jobsRun("workflow_cron_sweep", input.fixture.orgId, at);
-      return {
-        checked: Number(result.checked ?? 0),
-        fired: (Array.isArray(result.fired) ? result.fired : []).map((entry) => ({
-          watcherId: String(record(entry)?.watcherId ?? ""),
-        })),
-      };
-    };
-    const firstNow = new Date("2030-01-01T00:00:00.000Z");
-    const first = await sweep(firstNow);
-    if (first.fired.some((entry) => entry.watcherId === watcher?.id)) {
-      sequence.push("watcher.fired");
-    }
-    const second = await sweep(new Date(firstNow.getTime() + 3_600_000));
-    const fireCount = first.fired.length + second.fired.length;
-    const debounced =
-      Boolean(watcher) &&
-      first.fired.length === 1 &&
-      second.checked === 1 &&
-      second.fired.length === 0 &&
-      fireCount === 1;
-    if (debounced) sequence.push("watcher.debounced");
+    const observed = await observeWatcherFire({
+      watcherId: watcher?.id,
+      sweep: async (at) => {
+        const result = await input.episode.jobsRun("workflow_cron_sweep", input.fixture.orgId, at);
+        return {
+          checked: Number(result.checked ?? 0),
+          fired: (Array.isArray(result.fired) ? result.fired : []).map((entry) => ({
+            watcherId: String(record(entry)?.watcherId ?? ""),
+          })),
+        };
+      },
+      read: async () =>
+        (await listWatchers(input.fixture.orgId)).find((candidate) => candidate.id === watcher?.id),
+    });
+    if (observed.fired) sequence.push("watcher.fired");
+    if (observed.debounced) sequence.push("watcher.debounced");
     const refreshed = (await listWatchers(input.fixture.orgId)).find(
       (candidate) => candidate.id === watcher?.id,
     );
@@ -1469,9 +1495,9 @@ async function observeStateMachine(input: {
       "watcher.cadence_seconds": watcher?.cadenceSeconds ?? null,
       "watcher.debounce_seconds": watcher?.debounceSeconds ?? null,
       "watcher.severity": watcher?.severity ?? null,
-      "watcher.fired": first.fired.length === 1,
-      "watcher.debounced": debounced,
-      "watcher.fire_count": fireCount,
+      "watcher.fired": observed.fired,
+      "watcher.debounced": observed.debounced,
+      "watcher.fire_count": observed.fireCount,
       "watcher.last_error": refreshed?.lastError ?? null,
     });
   } else if (

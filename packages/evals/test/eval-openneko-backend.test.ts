@@ -29,6 +29,8 @@ import {
   selectionApiOperationFromCatalogPayload,
   stateMachineOracleFromParams,
   type StateMachineObservation,
+  observeWatcherFire,
+  WATCHER_SWEEP_EPOCH,
 } from "../scripts/eval-openneko-backend";
 import { buildWorkBackendFixtureSpec } from "../scripts/eval-openneko-backend-fixture";
 
@@ -1318,6 +1320,50 @@ describe("OpenNeko backend scorer", () => {
     expect(
       score.checks.find((check) => check.assertionId === "tool-call-efficiency"),
     ).toMatchObject({ passed: true, gate: false, score: 0 });
+  });
+});
+
+describe("watcher fire observation", () => {
+  const sweeps = (results: Array<Array<string>>) => {
+    const at: Date[] = [];
+    const sweep = async (when: Date) => {
+      at.push(when);
+      return { checked: 1, fired: (results.shift() ?? []).map((watcherId) => ({ watcherId })) };
+    };
+    return { at, sweep };
+  };
+
+  it("sweeps at the epoch, then one hour later", async () => {
+    const { at, sweep } = sweeps([["w1"], []]);
+    const result = await observeWatcherFire({ watcherId: "w1", sweep, read: async () => ({ lastFiredAt: WATCHER_SWEEP_EPOCH }) });
+    expect(result).toEqual({ fired: true, debounced: true, fireCount: 1, firedBy: "driver" });
+    expect(at.map((date) => date.toISOString())).toEqual(["2030-01-01T00:00:00.000Z", "2030-01-01T01:00:00.000Z"]);
+  });
+
+  it("counts a second fire when the job loop and the driver both fire", async () => {
+    const { sweep } = sweeps([["w1"], []]);
+    const result = await observeWatcherFire({
+      watcherId: "w1",
+      sweep,
+      read: async () => ({ lastFiredAt: new Date("2026-11-15T10:00:00.000Z") }),
+    });
+    expect(result).toEqual({ fired: false, debounced: false, fireCount: 2, firedBy: null });
+  });
+
+  it("does not credit another watcher's fire", async () => {
+    const { sweep } = sweeps([["other"], []]);
+    expect(await observeWatcherFire({ watcherId: "w1", sweep, read: async () => ({ lastFiredAt: null }) })).toEqual({
+      fired: false,
+      debounced: false,
+      fireCount: 1,
+      firedBy: null,
+    });
+    expect(await observeWatcherFire({ watcherId: undefined, sweep: sweeps([[], []]).sweep, read: async () => undefined })).toEqual({
+      fired: false,
+      debounced: false,
+      fireCount: 0,
+      firedBy: null,
+    });
   });
 });
 
