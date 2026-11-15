@@ -565,7 +565,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
           <Field
             label="Concurrent jobs"
             htmlFor="setup-concurrent-jobs"
-            hint="How many metric jobs the worker runs in parallel. Worker restart applies changes."
+            hint="How many agent turns run at the same time. The change applies when you save."
           >
             <Input
               id="setup-concurrent-jobs"

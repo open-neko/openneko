@@ -161,7 +161,7 @@ export default function AgentForm({
           <Field
             label="Concurrent jobs"
             htmlFor="agent-concurrent-jobs"
-            hint="How many metric jobs the worker runs in parallel. Worker restart applies changes."
+            hint="How many agent turns run at the same time. The change applies when you save."
           >
             <Input
               id="agent-concurrent-jobs"
