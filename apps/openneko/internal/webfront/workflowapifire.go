@@ -328,8 +328,13 @@ func (a *API) finishAPIRun(ctx context.Context, c *wfAPIClaim, f wfAPIFinish) er
 	if f.errCode != nil {
 		errCode = jsSlice(*f.errCode, wfAPIErrorCodeUnits)
 	}
+	open := false
 	err := a.wfSerializable(ctx, func(tx pgx.Tx) error {
 		now := time.Now()
+		if err := tx.QueryRow(ctx, `select status in ('queued', 'running') from workflow_run where id = $1 for update`,
+			c.workflowRunID).Scan(&open); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx, `update workflow_api_admission
 		     set status = $2, completed_at = $3, lease_until = null, last_error_code = $4, updated_at = $3
 		   where id = $1`, c.id, admission, now, errCode); err != nil {
@@ -348,7 +353,7 @@ func (a *API) finishAPIRun(ctx context.Context, c *wfAPIClaim, f wfAPIFinish) er
 		   where id = $1`, c.workRunID, f.status, errText, now)
 		return err
 	})
-	if err == nil {
+	if err == nil && open {
 		a.queueWorkflowRunPush(ctx, c.workflowRunID, f.status)
 	}
 	return err
