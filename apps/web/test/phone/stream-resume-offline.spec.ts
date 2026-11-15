@@ -338,4 +338,173 @@ test.describe("4.6 stream resume and offline question queue", () => {
       await client.end();
     }
   });
+
+  test("sends each offline question once: a lost response, a closed tab during the send, two tabs, and storage per user", async ({
+    context,
+    page: firstPage,
+  }) => {
+    let page = firstPage;
+    const client = new pg.Client({ connectionString: resolveDatabaseUrl() });
+    await client.connect();
+    try {
+      const { rows: orgRows } = await client.query<{ id: string }>(
+        "select id from organization limit 1",
+      );
+      const orgId = orgRows[0]!.id;
+      const session = (await (
+        await page.request.get("/api/v1/auth/session")
+      ).json()) as { user: { id: string } | null };
+      const userId = session.user!.id;
+      const threadId = randomUUID();
+      await client.query(
+        `insert into work_thread (id, org_id, title, created_by_user_id)
+         values ($1, $2, 'Offline send once check', $3)`,
+        [threadId, orgId, userId],
+      );
+
+      type Post = { page: string; message: string; clientRequestId: string };
+      const posts: Post[] = [];
+      let onPost: (route: import("@playwright/test").Route, post: Post) => Promise<boolean> =
+        async () => false;
+      const watch = async (p: import("@playwright/test").Page, name: string) => {
+        await p.route(`**/api/v1/work/threads/${threadId}/runs`, async (route) => {
+          if (route.request().method() !== "POST") return route.continue();
+          const body = JSON.parse(route.request().postData() ?? "{}") as {
+            message?: string;
+            clientRequestId?: string;
+          };
+          const post = {
+            page: name,
+            message: body.message ?? "",
+            clientRequestId: body.clientRequestId ?? "",
+          };
+          posts.push(post);
+          if (!(await onPost(route, post))) await route.continue();
+        });
+      };
+      const runsFor = async (message: string) => {
+        const { rows } = await client.query<{ runs: string; ids: string; messages: string }>(
+          `select count(distinct r.id)::text as runs,
+                  count(distinct r.client_request_id)::text as ids,
+                  count(m.id)::text as messages
+             from work_message m join work_run r on r.id = m.run_id
+            where m.thread_id = $1 and m.role = 'user' and m.content = $2`,
+          [threadId, message],
+        );
+        return rows[0]!;
+      };
+      const ask = async (p: import("@playwright/test").Page, text: string) => {
+        const composer = p.locator("textarea.work-input");
+        await expect(composer).toBeEnabled();
+        await composer.fill(text);
+        await composer.press("Enter");
+        await expect(p.getByTestId("offline-queued-question")).toContainText(text);
+      };
+      const storedKeys = (p: import("@playwright/test").Page) =>
+        p.evaluate(() =>
+          Object.keys(localStorage).filter((k) => k.startsWith("openneko.work.offlineQueue")),
+        );
+
+      await watch(page, "A");
+      await page.goto(`/work/${threadId}`, { waitUntil: "networkidle" });
+
+      // 1. The server makes the run but the response is lost; the resend gets the same run.
+      await context.setOffline(true);
+      await ask(page, "Lost response question");
+      expect(await storedKeys(page)).toEqual([
+        `openneko.work.offlineQueue.user.${userId}`,
+        "openneko.work.offlineQueueUser",
+      ].sort());
+      onPost = async (route, post) => {
+        if (post.message !== "Lost response question") return false;
+        onPost = async () => false;
+        await route.fetch();
+        await route.abort("connectionreset");
+        return true;
+      };
+      await context.setOffline(false);
+      await expect
+        .poll(() => posts.filter((p) => p.message === "Lost response question").length, { timeout: 20_000 })
+        .toBe(2);
+      const lost = posts.filter((p) => p.message === "Lost response question");
+      expect(lost[0]!.clientRequestId).toMatch(/^[A-Za-z0-9._-]{1,128}$/);
+      expect(lost[1]!.clientRequestId).toBe(lost[0]!.clientRequestId);
+      await expect(page.getByTestId("offline-queued-question")).toHaveCount(0);
+      expect(await runsFor("Lost response question")).toEqual({ runs: "1", ids: "1", messages: "1" });
+
+      // 2. The question stays stored while it sends, so a closed or reloaded tab loses nothing.
+      await context.setOffline(true);
+      await ask(page, "Reload during send question");
+      let held = false;
+      onPost = async (_route, post) => {
+        if (post.message !== "Reload during send question") return false;
+        onPost = async () => false;
+        held = true;
+        return true;
+      };
+      await context.setOffline(false);
+      await expect.poll(() => held, { timeout: 20_000 }).toBe(true);
+      const next = await context.newPage();
+      await watch(next, "C");
+      await next.goto(`/work/${threadId}`, { waitUntil: "domcontentloaded" });
+      const stored = await next.evaluate(
+        (key) => localStorage.getItem(key) ?? "",
+        `openneko.work.offlineQueue.user.${userId}`,
+      );
+      expect(stored).toContain("Reload during send question");
+      expect(stored).toContain('"sending"');
+      await page.close({ runBeforeUnload: false });
+      page = next;
+      await expect
+        .poll(() => posts.filter((p) => p.message === "Reload during send question").length, { timeout: 20_000 })
+        .toBe(2);
+      const reloaded = posts.filter((p) => p.message === "Reload during send question");
+      expect(reloaded.map((p) => p.page)).toEqual(["A", "C"]);
+      expect(reloaded[1]!.clientRequestId).toBe(reloaded[0]!.clientRequestId);
+      await expect.poll(async () => (await runsFor("Reload during send question")).runs).toBe("1");
+      expect(await runsFor("Reload during send question")).toEqual({ runs: "1", ids: "1", messages: "1" });
+      await expect(page.getByTestId("offline-queued-question")).toHaveCount(0);
+
+      // 3. Two tabs on one thread: one tab sends the question, once.
+      const second = await context.newPage();
+      await watch(second, "B");
+      await second.goto(`/work/${threadId}`, { waitUntil: "networkidle" });
+      await context.setOffline(true);
+      await ask(page, "Two tabs question");
+      await expect(second.getByTestId("offline-queued-question")).toContainText("Two tabs question");
+      await context.setOffline(false);
+      await expect.poll(async () => (await runsFor("Two tabs question")).runs, { timeout: 20_000 }).toBe("1");
+      await expect(page.getByTestId("offline-queued-question")).toHaveCount(0);
+      await expect(second.getByTestId("offline-queued-question")).toHaveCount(0);
+      expect(posts.filter((p) => p.message === "Two tabs question")).toHaveLength(1);
+      expect(await runsFor("Two tabs question")).toEqual({ runs: "1", ids: "1", messages: "1" });
+      await second.close();
+
+      // 4. Sign-out removes the stored questions of this browser, of every user.
+      await context.setOffline(true);
+      await ask(page, "Question left at sign-out");
+      let parked = false;
+      onPost = async (_route, post) => {
+        if (post.message !== "Question left at sign-out") return false;
+        parked = true;
+        return true;
+      };
+      await page.evaluate(() => {
+        localStorage.setItem("openneko.work.offlineQueue.user.someone-else", "[]");
+      });
+      await context.setOffline(false);
+      await expect.poll(() => parked, { timeout: 20_000 }).toBe(true);
+      await page.route("**/api/v1/auth/logout", (route) =>
+        route.fulfill({ status: 200, contentType: "application/json", body: "{}" }),
+      );
+      expect(await storedKeys(page)).toContain(`openneko.work.offlineQueue.user.${userId}`);
+      await page.getByRole("navigation", { name: "Primary navigation" }).getByRole("button", { name: "More" }).click();
+      await page.getByRole("button", { name: /sign out/i }).click();
+      await page.waitForURL(/\/signin/);
+      expect(await storedKeys(page)).toEqual([]);
+    } finally {
+      await context.setOffline(false).catch(() => {});
+      await client.end();
+    }
+  });
 });
