@@ -58,7 +58,7 @@ var builtInChannels = []builtInChannel{
 		{Key: "SLACK_SIGNING_SECRET", Secret: true, Description: "Slack app signing secret. Verifies inbound webhook requests; only needed for webhook ingress, not Socket Mode."}}},
 	{ID: "telegram", Label: "Telegram", Profile: telegramProfile, Deliver: deliverTelegram, Settings: []channelSetting{
 		{Key: "TELEGRAM_BOT_TOKEN", Required: true, Secret: true, Description: "Bot token from @BotFather (e.g. 123456789:AAH…). Without it, delivery runs dry and sends nothing."},
-		{Key: "TELEGRAM_WEBHOOK_SECRET", Secret: true, Description: "The secret_token you set with setWebhook. Webhook requests must carry it. Not needed for long polling."}}},
+		{Key: "TELEGRAM_WEBHOOK_SECRET", Secret: true, Description: "The secret_token you set with setWebhook. Webhook requests must carry it. With it, and an https public URL that Telegram can reach, OpenNeko takes the webhook in place of the poll."}}},
 	{ID: "hud", Label: "HUD surface", Profile: hudProfile, Deliver: deliverHUD, Settings: []channelSetting{
 		{Key: "HUD_CHANNEL_SECRET", Required: true, Secret: true, Autogenerate: true, Description: "HMAC secret shared with the HUD bridge. OpenNeko generates it when the channel turns on."},
 		{Key: "HUD_CHANNEL_WORKSPACE", Description: "Stable identifier that scopes inbound senders and recipients, for example the HUD's pack id. Default: demo."}}},

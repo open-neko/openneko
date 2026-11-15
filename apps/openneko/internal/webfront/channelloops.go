@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -134,6 +136,33 @@ func (a *API) inboundPublicURL() string {
 
 // existingOrgID is the org that OrgID would return, without the side effect
 // of creating one on an empty install.
+// telegramWebhookOn is true when Telegram can deliver to the webhook route:
+// the admin stored the secret_token of setWebhook, and the public URL is
+// https on a host that Telegram can reach. Else OpenNeko polls.
+func telegramWebhookOn(public string, env map[string]string) bool {
+	return env["TELEGRAM_WEBHOOK_SECRET"] != "" && reachablePublicURL(public)
+}
+
+func reachablePublicURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if ip := net.ParseIP(host); ip != nil {
+		return !webhookAddressBlocked(ip) && !ip.IsPrivate() && !cgnatNet.Contains(ip)
+	}
+	if !strings.Contains(host, ".") || host == "localhost" {
+		return false
+	}
+	for _, suffix := range []string{".localhost", ".local", ".internal", ".lan", ".home.arpa"} {
+		if strings.HasSuffix(host, suffix) {
+			return false
+		}
+	}
+	return true
+}
+
 func (a *API) existingOrgID(ctx context.Context) (string, error) {
 	a.orgMu.Lock()
 	cached := a.orgID
@@ -184,14 +213,10 @@ func (a *API) refreshInbound(l *channelLoops) {
 			continue
 		}
 		ingress := channelInbound[ch.ID].ingress
-		if ingress == "webhook" && (public != "" || ch.ID == "hud") {
+		if ch.ID == "hud" || (ingress == "webhook" && telegramWebhookOn(public, store["channel."+ch.ID])) {
 			if !l.noted[ch.ID] {
 				l.noted[ch.ID] = true
-				if public != "" {
-					log.Printf("[channel-inbound] %s: webhook ingress at %s/api/v1/channels/%s/inbound", ch.ID, public, ch.ID)
-				} else {
-					log.Printf("[channel-inbound] %s: no poll transport and no public webhook URL — inbound disabled. Set OPENNEKO_PUBLIC_URL to use webhook ingress.", ch.ID)
-				}
+				log.Printf("[channel-inbound] %s: webhook ingress at %s/api/v1/channels/%s/inbound", ch.ID, public, ch.ID)
 			}
 			continue
 		}
@@ -259,7 +284,7 @@ func (a *API) telegramPollLoop(ctx context.Context, orgID, id string) {
 	if cursor != "" {
 		resumed = " — resumed from saved cursor"
 	}
-	log.Printf("[channel-inbound] %s: polling for inbound (no public webhook URL)%s", id, resumed)
+	log.Printf("[channel-inbound] %s: polling for inbound (webhook off)%s", id, resumed)
 	failures, lastError := 0, ""
 	for ctx.Err() == nil {
 		held, err := a.pollOnce(ctx, orgID, id, &cursor)
