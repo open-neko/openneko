@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
-	"slices"
 )
 
 type PackActionReadiness struct {
@@ -62,42 +60,4 @@ func AssertSafePackActionPayloadJSON(value any) error {
 		return err
 	}
 	return AssertSafePackActionPayload(len(raw), value)
-}
-
-// When hasBody is false, the action payload has no body.
-func LockPackActionBody(
-	kind string,
-	body any,
-	hasBody bool,
-	locked map[string]string,
-	lockedOrder []string,
-	config map[string]any,
-) (any, bool, error) {
-	if len(locked) == 0 {
-		return body, hasBody, nil
-	}
-	out := map[string]any{}
-	if hasBody {
-		m, ok := body.(map[string]any)
-		if !ok || m == nil {
-			return nil, false, errors.New("pack action body must be an object")
-		}
-		maps.Copy(out, m)
-	}
-	keys := lockedOrder
-	if len(keys) == 0 {
-		keys = slices.Sorted(maps.Keys(locked))
-	}
-	for _, field := range keys {
-		input, ok := locked[field]
-		if !ok {
-			continue
-		}
-		val, exists := config[input]
-		if !exists || val == nil || val == "" {
-			return nil, false, fmt.Errorf("pack action %s needs the pack input %s for body field %s", kind, input, field)
-		}
-		out[field] = val
-	}
-	return out, true, nil
 }

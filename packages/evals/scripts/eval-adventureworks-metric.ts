@@ -15,7 +15,7 @@ import {
   type PricingCatalog,
   type EvalVariant,
 } from "@neko/evals";
-import { createTestOrg, seedDataSource, seedProvider, uniqueOrgId } from "@neko/db/test-helpers";
+import { ensureTestOrg, seedDataSource, seedProvider, uniqueOrgId } from "@neko/db/test-helpers";
 import { db, pool as metadataPool, processing_job } from "@neko/db";
 import { enqueueMetricRefresh } from "@neko/db/jobs";
 import {
@@ -317,9 +317,8 @@ export function createAdventureWorksMetricDriver(
     return pool;
   }
 
-  async function seedOrg(variant: EvalVariant, episode: EvalEpisode): Promise<string> {
-    const orgId = uniqueOrgId(`eval-${variant.id}`);
-    await createTestOrg(orgId, `Eval ${variant.id}`);
+  async function seedOrg(variant: EvalVariant, episode: EvalEpisode, orgId: string): Promise<string> {
+    await ensureTestOrg(orgId, `Eval ${variant.id}`);
     await seedDataSource(orgId, {
       graphqlUrl: datasetSetting(context.loaded, datasetId, "agent_graphql_ref", "agent_graphql_url"),
       mcpUrl: datasetSetting(context.loaded, datasetId, "agent_mcp_ref", "agent_mcp_url"),
@@ -506,10 +505,15 @@ export function createAdventureWorksMetricDriver(
       host ??= await EvalInstallHost.prepare(options.host);
       const started = Date.now();
       const operationId = `metric:${runId}-${slot.caseId}-${slot.repetition}`;
-      const episode = await host.startEpisode({ label: slot.caseId, env: { OPENNEKO_METRICS_REFRESH: "on" } });
+      const metricOrgId = uniqueOrgId(`eval-${slot.variant.id}`);
+      const episode = await host.startEpisode({
+        label: slot.caseId,
+        org: { id: metricOrgId, name: `Eval ${slot.variant.id}` },
+        env: { OPENNEKO_METRICS_REFRESH: "on" },
+      });
       try {
         episode.activate();
-        const orgId = await seedOrg(slot.variant, episode);
+        const orgId = await seedOrg(slot.variant, episode, metricOrgId);
         let classificationDiagnostics: QuestionClassificationDiagnostics | undefined;
         const classified = await classify(question, role, orgId, {
           observer,

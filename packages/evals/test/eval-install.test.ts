@@ -5,7 +5,7 @@ import { join } from "node:path";
 import pg from "pg";
 import { afterAll, describe, expect, it } from "vitest";
 import { app_user, db } from "@neko/db";
-import { createTestOrg, dbReachable, seedProvider } from "@neko/db/test-helpers";
+import { dbReachable, seedProvider } from "@neko/db/test-helpers";
 import { maybeEncryptSecret } from "@neko/llm/secrets";
 import { ensureOrgWorkspace, rememberWorkMemory, writeWorkSkill } from "@neko/llm/work";
 import {
@@ -255,22 +255,20 @@ describe.skipIf(!reachable)("eval install episode", () => {
       expect(existsSync(leftoverFolder)).toBe(false);
 
       model = await ScriptedModelServer.start();
-      const episode = await host.startEpisode(
-        { label: "install-test" },
-      );
+      const orgId = "eval-install";
+      const episode = await host.startEpisode({ label: "install-test", org: { id: orgId, name: "Eval install" } });
       const { root, database } = episode;
       try {
         expect(await databases()).toContain(database);
         const episodeDb = new pg.Pool({ ...login, database, ssl: false, max: 1 });
         try {
           expect((await episodeDb.query(`select 1 from pg_namespace where nspname = 'pgboss'`)).rowCount).toBe(1);
+          expect((await episodeDb.query(`select id from organization`)).rows).toEqual([{ id: orgId }]);
         } finally {
           await episodeDb.end();
         }
         episode.activate();
-        const orgId = "eval-install";
         const userId = "eval-member";
-        await createTestOrg(orgId, "Eval install");
         await db().insert(app_user).values({ id: userId, email: "member@eval.invalid", name: "Eval Member", org_id: orgId });
         await seedProvider(orgId, {
           scope: "primary",
