@@ -54,12 +54,16 @@ workflows, metric refreshes, and setup builds in Go:
    before the turn against the sandbox service, pre-fetching any declared
    `<script>.queries.json` files and serving `neko_data` / `neko-query`
    requests through the run's read-only GraphJin tools.
-4. When `OPENNEKO_SANDBOX_URL` is set, serve sends terminal commands to the
-   sandbox service. Without it, the agent has no terminal and the script
-   skills are off. An admin can also turn the terminal off for one
-   organization at Admin, Settings, Agent. `openneko web` then gives the turn
-   no sandbox URL or key, does not stage the script skills, and the prompt and
-   skill search leave them out.
+4. Serve reads the sandbox service from its own `OPENNEKO_SANDBOX_URL` and
+   `OPENNEKO_SANDBOX_KEY` (`apps/openneko/internal/cli/serve.go`). The agent
+   gets a terminal only when `openneko web` sends the turn
+   `OPENNEKO_HARNESS_SHELL=1` and serve has a sandbox URL
+   (`apps/ax-harness/harness/harness.go`). Web sends it when its own
+   `OPENNEKO_SANDBOX_URL` is set and the organization's terminal is on
+   (`orgTerminal` in `apps/openneko/internal/webfront/turncontext.go`). An
+   admin turns the terminal off for one organization at Admin, Settings,
+   Agent. Without the terminal, `openneko web` does not stage the script
+   skills, and the prompt and skill search leave them out.
 5. When the turn ends, `openneko web` copies artifacts and skill edits back
    (saving a member's edit to a team skill as a private copy for that member)
    and deletes the run folder. The next start deletes folders that a restart
@@ -75,7 +79,7 @@ harness.
 |---|---|---|---|
 | `openneko web` | `neko`, 1001 (or `openneko` on a server install) | the `neko` database login, `secrets.json`, and the in-process tool handlers | the stack's network |
 | `openneko serve` | `neko`, 1001 (or `openneko-agent` on a server install) | a turn's or a host call's model key while it runs; the files service; the `neko_files_<database>` login and the derived token key; the customer GraphJin and its config | the stack's network, for the model APIs and the customer's data sources |
-| Sandbox service | root, to give each run its own user | **no secrets**; a command gets only `PATH`, `HOME`, `TMPDIR`, `LANG`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH` | only its own network |
+| Sandbox service | root, to give each run its own user | **no secrets**; a command gets only `PATH`, `HOME`, `TMPDIR`, `LANG`, `NODE_PATH`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH` (`recipes/sandbox/sandbox.go`) | only its own network; it shares the `openneko-run` socket folder with web and serve to publish its socket |
 
 Model keys exist only in `openneko web` while it starts a turn or host call, and in serve while the call runs. Serve drops every
 `OPENNEKO_SANDBOX_*` value that a turn sends, and the sandbox request carries
@@ -246,7 +250,7 @@ document as YAML with its SHA-256 checksum. The approval job checks
 that checksum before it writes the file for GraphJin.
 
 OpenNeko says what a config does in plain sentences
-(`packages/llm/src/graphjin/config-describe.ts`): for each source, its kind,
+(`apps/openneko/internal/webfront/configdescribe.go`): for each source, its kind,
 host and database, whether GraphJin blocks changes, who may read, change and
 delete, and which tables are hidden, admin-only or open. `describe_source_config`
 returns them as `summary`, and Admin settings, GraphJin config shows them.
@@ -255,7 +259,7 @@ before and after the change, and their redacted YAML. The approval card shows
 the sentences side by side and keeps the YAML diff behind a disclosure.
 
 Admin settings, GraphJin config also shows the config file as read-only YAML
-(`packages/llm/src/graphjin/config-file-view.ts`). The page names the file's
+(`readGraphjinFileView` in `apps/openneko/internal/webfront/admingraphjin.go`). The page names the file's
 path on the server and GraphJin's state from `.openneko-graphjin-state`:
 running, or restarting with the reason. The same redaction code as
 `describe_source_config` hides the secrets, and the view drops comments. The
@@ -269,7 +273,7 @@ control plane replaces it with `[REDACTED]` in every
 error text, so GraphJin's errors cannot carry it to the model, a log line or
 the thread.
 
-The source check (`apps/openneko/internal/sourcecheck` and `packages/llm/src/graphjin/source-check.ts`) tests one
+The source check (`apps/openneko/internal/sourcecheck` and `apps/openneko/internal/webfront/sourcecheck.go`) tests one
 PostgreSQL, MySQL or MariaDB source in order: the host resolves, the port
 answers, TLS, the login, the rights to read the schema, and read-only rights.
 It stops at the first failed step. Each failure names the answer at fault and,
@@ -364,8 +368,11 @@ own container.
   config. `openneko graphjin status` prints it, and `openneko status` shows
   it as the `graphjin` line.
 - The child gets the config path, the socket and a short list of variables:
-  `GJ_*`, `GO_ENV`, `PATH`, `HOME`, `TZ`, the locale, the CA file paths and
-  the Go runtime settings. It gets no serve credentials path, no agent
+  `GJ_*`, `OTEL_*` and `OPENNEKO_OTEL_ENABLED` for its trace exporter,
+  `GO_ENV`, `PATH`, `HOME`, `TZ`, the locale, the CA file paths and the Go
+  runtime settings (`ChildEnv` in `apps/openneko/internal/gjhost/supervisor.go`).
+  An OTLP header variable such as `OTEL_EXPORTER_OTLP_HEADERS` reaches the
+  child too. It gets no serve credentials path, no agent
   socket and no sandbox key. It runs as the same user in the same
   container, so it can still read files that serve can read. Those files
   hold agent-zone secrets only, so this crosses no zone line.
