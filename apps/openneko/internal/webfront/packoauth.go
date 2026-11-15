@@ -195,7 +195,7 @@ func (a *API) packOAuthStart(w http.ResponseWriter, r *http.Request) {
 	if a.packFailed(w, r, err) {
 		return
 	}
-	a.setCookie(w, PackOAuthCookie, cookie, packOAuthTTLSeconds)
+	a.setCookie(w, r, PackOAuthCookie, cookie, packOAuthTTLSeconds)
 	sendJSON(w, http.StatusOK, map[string]string{"authorizationUrl": authorizationURL})
 }
 

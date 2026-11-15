@@ -93,19 +93,19 @@ func TestTheWebImageRunsInProductionWithSecureCookies(t *testing.T) {
 			for k, v := range composeEnv {
 				t.Setenv(k, v)
 			}
-			t.Setenv("OPENNEKO_PUBLIC_URL", "https://openneko.example.com")
 			if Development() {
 				t.Fatalf("openneko web runs in development mode with the env of %s", name)
 			}
-			secure, _ := CookiePolicy()
-			api := &API{Gate: &Gate{SessionSecret: func() (string, error) { return strings.Repeat("s", 32), nil }}, SecureCookies: secure}
+			api := &API{Gate: &Gate{SessionSecret: func() (string, error) { return strings.Repeat("s", 32), nil }}, Development: Development()}
+			r := httptest.NewRequest("GET", "http://openneko.example.com/api/auth/callback", nil)
+			r.Header.Set("X-Forwarded-Proto", "https")
 			rec := httptest.NewRecorder()
-			if err := api.writeSession(rec, "admin"); err != nil {
+			if err := api.writeSession(rec, r, "admin"); err != nil {
 				t.Fatal(err)
 			}
 			cookies := rec.Result().Cookies()
 			if len(cookies) != 1 || cookies[0].Name != SessionCookie || !cookies[0].Secure {
-				t.Fatalf("session cookie is not Secure: %v", rec.Header().Values("Set-Cookie"))
+				t.Fatalf("session cookie behind a TLS proxy is not Secure: %v", rec.Header().Values("Set-Cookie"))
 			}
 		})
 	}
