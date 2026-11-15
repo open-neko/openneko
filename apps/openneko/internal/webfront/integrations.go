@@ -1,7 +1,6 @@
 package webfront
 
 import (
-	"context"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
@@ -15,9 +14,6 @@ const (
 	ConnectStateCookie     = "openneko_connect_state"
 	connectStateTTLSeconds = 10 * 60
 	deploymentOperatorID   = "deployment"
-	connectStatusTimeout   = 2 * time.Second
-	connectFlowTimeout     = 60 * time.Second
-	connectRemoveTimeout   = 5 * time.Second
 )
 
 type connectProvider struct {
@@ -55,25 +51,8 @@ type connectState struct {
 	OAuthState   string `json:"oauthState,omitempty"`
 }
 
-func (a *API) workerList(ctx context.Context, path, field string, out any) {
-	status, reply, err := a.workerDo(ctx, http.MethodGet, path, connectStatusTimeout, nil)
-	if err != nil || status < 200 || status > 299 {
-		return
-	}
-	var body map[string]json.RawMessage
-	if json.Unmarshal(reply, &body) == nil && body[field] != nil {
-		_ = json.Unmarshal(body[field], out)
-	}
-}
-
-func (a *API) connectProviders(ctx context.Context) []connectProvider {
-	var providers []connectProvider
-	a.workerList(ctx, "/admin/connect/providers", "providers", &providers)
-	return providers
-}
-
-func (a *API) connectProvider(ctx context.Context, name string) *connectProvider {
-	for _, p := range a.connectProviders(ctx) {
+func (a *API) connectProvider(name string) *connectProvider {
+	for _, p := range a.connectProviders() {
 		if p.PluginName == name {
 			return &p
 		}
@@ -100,16 +79,13 @@ func (a *API) integrationsList(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusUnauthorized, "not signed in")
 		return
 	}
-	var operator, deployment []connectStatus
-	providers := a.connectProviders(ctx)
-	a.workerList(ctx, "/admin/connect/status/"+encodeURIComponent(act.UserID), "connected", &operator)
-	a.workerList(ctx, "/admin/connect/deployment/status", "connected", &deployment)
+	providers, deployment := a.connectProviders(), a.deploymentConnectStatus()
 	held, err := a.heldItems(ctx, act, "integration")
 	if err != nil {
 		a.fail(w, r, err)
 		return
 	}
-	byOperator, byDeployment := connectedMap(operator), connectedMap(deployment)
+	byOperator, byDeployment := map[string]string{}, connectedMap(deployment)
 	workspace, connectors := []connectView{}, []connectView{}
 	for _, p := range providers {
 		if !held.has(p.PluginName) {
@@ -165,24 +141,14 @@ func (a *API) connectOperator(w http.ResponseWriter, r *http.Request, p *connect
 
 func (a *API) integrationDisconnect(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("plugin")
-	operatorID, ok := a.connectOperator(w, r, a.connectProvider(r.Context(), name), name, false)
-	if !ok {
+	if _, ok := a.connectOperator(w, r, a.connectProvider(name), name, false); !ok {
 		return
 	}
-	body, _ := json.Marshal(map[string]string{"pluginName": name, "operatorId": operatorID})
-	status, reply, err := a.workerDo(r.Context(), http.MethodPost, "/admin/connect/disconnect", connectRemoveTimeout, body)
+	removed, err := a.disconnectConnector(name)
 	if err != nil {
 		log.Printf("connect disconnect: %v", err)
-		sendError(w, http.StatusBadGateway, "worker is unavailable")
-		return
 	}
-	var out struct {
-		Removed bool `json:"removed"`
-	}
-	if status >= 200 && status <= 299 {
-		_ = json.Unmarshal(reply, &out)
-	}
-	sendJSON(w, http.StatusOK, out)
+	sendJSON(w, http.StatusOK, map[string]bool{"removed": removed})
 }
 
 func (a *API) connectCallbackURI(r *http.Request, name string) string {
@@ -192,7 +158,7 @@ func (a *API) connectCallbackURI(r *http.Request, name string) string {
 func (a *API) integrationConnectStart(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	name := r.PathValue("plugin")
-	p := a.connectProvider(ctx, name)
+	p := a.connectProvider(name)
 	if p == nil {
 		sendError(w, http.StatusNotFound, `connect plugin "`+name+`" not installed`)
 		return
@@ -215,30 +181,18 @@ func (a *API) integrationConnectStart(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
-	scopes := p.Scopes
-	if scopes == nil {
-		scopes = []string{}
-	}
-	var begun struct {
-		AuthorizationURL string `json:"authorizationUrl"`
-		OAuthState       string `json:"oauthState"`
-	}
-	err = a.workerCall(ctx, "/admin/connect/begin", connectFlowTimeout, "connect begin", map[string]any{
-		"pluginName": name,
-		"params": map[string]any{"operatorId": operatorID, "redirectUri": a.connectCallbackURI(r, name),
-			"state": state, "scopes": scopes, "codeVerifier": verifier},
-	}, &begun)
+	authURL, oauthState, err := a.beginConnect(ctx, name, connectBegin{a.connectCallbackURI(r, name), state, verifier})
 	if err != nil {
-		sendError(w, http.StatusBadGateway, err.Error())
+		sendError(w, http.StatusBadGateway, "connect begin failed: "+err.Error())
 		return
 	}
-	cookie, err := a.connectStateCookie(connectState{name, operatorID, state, verifier, returnPath, begun.OAuthState})
+	cookie, err := a.connectStateCookie(connectState{name, operatorID, state, verifier, returnPath, oauthState})
 	if err != nil {
 		sendError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	a.setCookie(w, ConnectStateCookie, cookie, connectStateTTLSeconds)
-	w.Header().Set("Location", begun.AuthorizationURL)
+	w.Header().Set("Location", authURL)
 	w.WriteHeader(http.StatusFound)
 }
 
@@ -270,24 +224,13 @@ func (a *API) integrationConnectCallback(w http.ResponseWriter, r *http.Request)
 		appRedirect(w, "/integrations?error=state+mismatch")
 		return
 	}
-	p := a.connectProvider(r.Context(), name)
-	if p == nil {
+	if a.connectProvider(name) == nil {
 		appRedirect(w, "/integrations?error=plugin+removed")
 		return
 	}
-	scopes := p.Scopes
-	if scopes == nil {
-		scopes = []string{}
-	}
-	params := map[string]any{"operatorId": stored.OperatorID, "code": code, "redirectUri": a.connectCallbackURI(r, name),
-		"state": state, "codeVerifier": stored.CodeVerifier, "scopes": scopes}
-	if stored.OAuthState != "" {
-		params["oauthState"] = stored.OAuthState
-	}
-	var done json.RawMessage
-	if err := a.workerCall(r.Context(), "/admin/connect/complete", connectFlowTimeout, "connect complete",
-		map[string]any{"pluginName": name, "params": params}, &done); err != nil {
-		appRedirect(w, stored.ReturnPath+"?error="+encodeURIComponent(err.Error()))
+	err := a.completeConnect(r.Context(), name, connectComplete{code, a.connectCallbackURI(r, name), stored.CodeVerifier, stored.OAuthState})
+	if err != nil {
+		appRedirect(w, stored.ReturnPath+"?error="+encodeURIComponent("connect complete failed: "+err.Error()))
 		return
 	}
 	appRedirect(w, stored.ReturnPath+"?connected="+encodeURIComponent(name))

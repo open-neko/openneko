@@ -2,16 +2,13 @@
 
 `openneko web` (in `apps/openneko/internal/webfront` and `internal/jobs`) now
 runs the River background jobs, workflow execution, channel polling and
-delivery, solution pack install/doctor/OAuth/actions, GraphJin group grants,
-external-event subscription dispatch, and the durable cron and subscription
+delivery, solution pack install/doctor/OAuth/actions, action requests,
+GraphJin group grants, external-event subscription dispatch, directory sync,
+the Scalekit workspace connection, and the durable cron and subscription
 loops in Go.
 
-The Node worker (`apps/worker`) remains in the Docker stack for the admin
-surfaces that `openneko web` still calls over `--worker-admin-url`:
-
-- **Scalekit workspace connectors** (`/admin/connect/*`).
-- **Directory sync and provisioning** (`/admin/directory/status`,
-  `/admin/directory/sync`, and `/admin/directory/users`).
+`openneko web` calls no worker admin route. The worker admin server answers
+404 on every path.
 
 ## Durable workflow scheduler
 
