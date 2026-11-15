@@ -2,6 +2,7 @@ package webfront
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -188,6 +189,23 @@ func TestAuditWebhookStateAtStartAndOnHealth(t *testing.T) {
 		a.serveHealth(w, "/health/security", false)
 		if strings.Contains(w.Body.String(), "auditWebhook") {
 			t.Errorf("%q: the public health shows the webhook: %s", raw, w.Body.String())
+		}
+	}
+}
+
+func TestAuditWebhookStateOnlyForAnAdminThroughTheRouter(t *testing.T) {
+	t.Setenv("OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL", "http://alerts.example/hooks/s3cret")
+	f, _ := pushFront(t)
+	f.API.CheckAuditWebhook(io.Discard)
+	for who, header := range map[string]map[string]string{
+		"admin":      sessionCookie("admin"),
+		"member":     sessionCookie("member"),
+		"signed out": nil,
+	} {
+		res := call(f, "GET", "/health/security", "", header)
+		shows := strings.Contains(res.Body.String(), "auditWebhook")
+		if res.Code != 200 || shows != (who == "admin") || strings.Contains(res.Body.String(), "s3cret") {
+			t.Errorf("%s: %d %s", who, res.Code, res.Body.String())
 		}
 	}
 }
