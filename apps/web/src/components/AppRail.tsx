@@ -14,6 +14,7 @@ import {
   useApprovalsCount,
   type NavDestination,
 } from "@/lib/nav";
+import { signOut as handleSignOut } from "@/lib/sign-out";
 
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
 const VERSION_POLL_MS = 60_000;
@@ -181,14 +182,6 @@ export default function AppRail({ initial }: { initial?: RailIdentity }) {
       clearInterval(id);
     };
   }, [hidden]);
-
-  async function handleSignOut() {
-    try {
-      await fetch("/api/v1/auth/logout", { method: "POST" });
-    } finally {
-      window.location.href = "/signin";
-    }
-  }
 
   if (hidden) return null;
 

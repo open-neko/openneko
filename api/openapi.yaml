@@ -6975,8 +6975,12 @@ paths:
                 type: object
                 required:
                 - subscriptions
+                - vapidPublicKey
                 additionalProperties: false
                 properties:
+                  vapidPublicKey:
+                    type: string
+                    description: The server's VAPID public key, base64url. The browser subscribes with it as applicationServerKey.
                   subscriptions:
                     type: array
                     items:
@@ -7065,6 +7069,12 @@ paths:
                         type: string
         '400':
           description: The subscription payload is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Another user owns this endpoint. The browser subscribes again for a new endpoint.
           content:
             application/json:
               schema:

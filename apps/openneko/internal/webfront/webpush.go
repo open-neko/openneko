@@ -19,8 +19,10 @@ import (
 	"io"
 	"log"
 	"math/big"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -87,7 +89,7 @@ type vapidKeys struct {
 }
 
 // EnsureVAPIDKeys generates the VAPID P-256 key pair on first start and keeps
-// it in the secrets store. It never writes the keys to a response or a log.
+// it in the secrets store. It never writes the private key to a response or a log.
 func (a *API) EnsureVAPIDKeys() error {
 	_, err := a.vapidKeyPair()
 	return err
@@ -172,6 +174,11 @@ func (a *API) pushSubscriptionsList(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusUnauthorized, "Authentication required.")
 		return
 	}
+	keys, err := a.vapidKeyPair()
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
 	rows, err := a.DB.Query(ctx, `
 		select id::text, endpoint, device_id::text, created_at, updated_at
 		from app_push_subscription
@@ -197,8 +204,9 @@ func (a *API) pushSubscriptionsList(w http.ResponseWriter, r *http.Request) {
 		list = []pushSubscriptionSummary{}
 	}
 	sendJSON(w, http.StatusOK, struct {
-		Subscriptions []pushSubscriptionSummary `json:"subscriptions"`
-	}{Subscriptions: list})
+		Subscriptions  []pushSubscriptionSummary `json:"subscriptions"`
+		VAPIDPublicKey string                    `json:"vapidPublicKey"`
+	}{Subscriptions: list, VAPIDPublicKey: keys.pubB64URL})
 }
 
 func validatePushSubscriptionInput(body any) (endpoint, p256dhB64, authB64 string, err error) {
@@ -208,8 +216,8 @@ func validatePushSubscriptionInput(body any) (endpoint, p256dhB64, authB64 strin
 		return "", "", "", errors.New("a valid push endpoint URL is required")
 	}
 	u, err := url.Parse(rawEndpoint)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-		return "", "", "", errors.New("a valid push endpoint URL is required")
+	if err != nil || !pushEndpointAllowed(u) {
+		return "", "", "", errors.New("a valid https push endpoint URL is required")
 	}
 	keysObj, ok := field(body, "keys")
 	if !ok || keysObj == nil {
@@ -273,14 +281,21 @@ func (a *API) pushSubscriptionCreate(w http.ResponseWriter, r *http.Request) {
 		insert into app_push_subscription (org_id, user_id, device_id, endpoint, p256dh, auth)
 		values ($1, $2, $3, $4, $5, $6)
 		on conflict (org_id, endpoint) do update
-		  set user_id = excluded.user_id,
-		      device_id = coalesce(excluded.device_id, app_push_subscription.device_id),
+		  set device_id = coalesce(excluded.device_id, app_push_subscription.device_id),
 		      p256dh = excluded.p256dh,
 		      auth = excluded.auth,
 		      updated_at = now()
+		  where app_push_subscription.user_id = excluded.user_id
 		returning id::text, endpoint, device_id::text, created_at, updated_at`,
 		act.OrgID, act.UserID, deviceID, endpoint, p256dh, auth).Scan(
 		&out.ID, &out.Endpoint, &out.DeviceID, &created, &updated)
+	if errors.Is(err, pgx.ErrNoRows) {
+		sendJSON(w, http.StatusConflict, map[string]string{
+			"error": "This browser's push subscription belongs to another user. Subscribe again from this browser.",
+			"code":  "push_endpoint_taken",
+		})
+		return
+	}
 	if err != nil {
 		a.fail(w, r, err)
 		return
@@ -345,7 +360,16 @@ func (a *API) WebPushDeliver(ctx context.Context, args jobs.WebPushArgs) error {
 	}
 
 	var rows pgx.Rows
-	if len(args.Users) > 0 {
+	if len(args.Subscriptions) > 0 {
+		rows, err = a.DB.Query(ctx, `
+			select s.id::text, s.endpoint, s.p256dh, s.auth
+			from app_push_subscription s
+			join app_user u on u.id = s.user_id and u.org_id = s.org_id and u.disabled_at is null
+			left join app_device d on d.id = s.device_id
+			where s.org_id = $1 and s.id::text = any($2::text[])
+			  and (s.device_id is null or d.revoked_at is null)
+			order by s.created_at asc`, args.OrgID, args.Subscriptions)
+	} else if len(args.Users) > 0 {
 		rows, err = a.DB.Query(ctx, `
 			select s.id::text, s.endpoint, s.p256dh, s.auth
 			from app_push_subscription s
@@ -384,7 +408,9 @@ func (a *API) WebPushDeliver(ctx context.Context, args jobs.WebPushArgs) error {
 		return err
 	}
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := pushClient()
+	client.Timeout = 15 * time.Second
+	var failed []string
 	var firstErr error
 	for _, sub := range subs {
 		status, sendErr := sendWebPush(ctx, client, keys, sub, payload)
@@ -392,16 +418,60 @@ func (a *API) WebPushDeliver(ctx context.Context, args jobs.WebPushArgs) error {
 			_, _ = a.DB.Exec(ctx, `delete from app_push_subscription where id = $1`, sub.ID)
 			continue
 		}
-		if sendErr != nil && firstErr == nil {
-			firstErr = sendErr
+		if sendErr != nil {
+			failed = append(failed, sub.ID)
+			if firstErr == nil {
+				firstErr = sendErr
+			}
 		}
 	}
-	return firstErr
+	if firstErr != nil {
+		return &jobs.WebPushRetryError{Subscriptions: failed, Err: firstErr}
+	}
+	return nil
+}
+
+type pushBlockedError struct{ ip string }
+
+func (e *pushBlockedError) Error() string {
+	return "OpenNeko sends Web Push only to a public address, not to " + e.ip
+}
+
+var cgnatNet = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
+
+// OPENNEKO_WEB_PUSH_ALLOW_LOOPBACK lets the local checks run a push service
+// stub on this host. A browser's push service is never on a private address.
+func pushLoopbackAllowed() bool {
+	return os.Getenv("OPENNEKO_WEB_PUSH_ALLOW_LOOPBACK") == "1"
+}
+
+func pushEndpointAllowed(u *url.URL) bool {
+	if u.Host == "" || u.User != nil {
+		return false
+	}
+	if u.Scheme == "https" {
+		return true
+	}
+	return u.Scheme == "http" && pushLoopbackAllowed() && isLoopbackHostname(u.Hostname())
+}
+
+func pushAddressRefused(ip net.IP) error {
+	if ip.IsLoopback() && pushLoopbackAllowed() {
+		return nil
+	}
+	if webhookAddressBlocked(ip) || ip.IsPrivate() || cgnatNet.Contains(ip) {
+		return &pushBlockedError{ip: ip.String()}
+	}
+	return nil
+}
+
+func pushClient() *http.Client {
+	return guardedClient(pushAddressRefused)
 }
 
 func sendWebPush(ctx context.Context, client *http.Client, keys vapidKeys, sub storedPushSubscription, plaintext []byte) (int, error) {
 	u, err := url.Parse(sub.Endpoint)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+	if err != nil || !pushEndpointAllowed(u) {
 		return http.StatusGone, nil
 	}
 	uaPub, err := decodeB64URL(sub.P256dh)
@@ -631,7 +701,7 @@ func (a *API) queueWorkRunFinishedPush(ctx context.Context, orgID, runID string)
 	var ownerUserID *string
 	err = a.DB.QueryRow(ctx, `
 		select exists (select 1 from workflow_run where work_run_id = r.id),
-		       coalesce(r.requested_by_user_id, t.created_by_user_id)
+		       coalesce(r.actor_user_id, t.created_by_user_id)
 		from work_run r
 		join work_thread t on t.id = r.thread_id
 		where r.org_id = $1 and r.id = $2`, orgID, runID).Scan(&isWorkflowRun, &ownerUserID)
@@ -647,7 +717,15 @@ func (a *API) queueWorkRunFinishedPush(ctx context.Context, orgID, runID string)
 		}
 		return
 	}
-	a.insertWebPushJob(ctx, orgID, WebPushEventRunFinished, candidates)
+	var admins []string
+	for _, uid := range candidates {
+		if role, err := a.role(ctx, orgID, uid); err == nil && role == "admin" {
+			admins = append(admins, uid)
+		}
+	}
+	if len(admins) > 0 {
+		a.insertWebPushJob(ctx, orgID, WebPushEventRunFinished, admins)
+	}
 }
 
 func (a *API) queueWorkflowRunPush(ctx context.Context, workflowRunID, status string) {

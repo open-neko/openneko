@@ -19,7 +19,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -170,31 +169,13 @@ var webhookAddressBlocked = func(ip net.IP) bool {
 		ip.IsInterfaceLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified()
 }
 
-// webhookClient checks each address at dial time, after DNS, so a name that
-// resolves to a blocked address is refused too. Redirects come back as the
-// response: an approved URL must not lead to another target.
 func webhookClient() *http.Client {
-	dialer := &net.Dialer{
-		Timeout: 30 * time.Second,
-		Control: func(_, address string, _ syscall.RawConn) error {
-			host, _, err := net.SplitHostPort(address)
-			if err != nil {
-				return err
-			}
-			if ip := net.ParseIP(host); ip == nil || webhookAddressBlocked(ip) {
-				return &webhookBlockedError{ip: host}
-			}
-			return nil
-		},
-	}
-	return &http.Client{
-		Transport: &http.Transport{
-			DialContext:         dialer.DialContext,
-			TLSHandshakeTimeout: 10 * time.Second,
-			ForceAttemptHTTP2:   true,
-		},
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}
+	return guardedClient(func(ip net.IP) error {
+		if webhookAddressBlocked(ip) {
+			return &webhookBlockedError{ip: ip.String()}
+		}
+		return nil
+	})
 }
 
 func hasHeaderFold(headers map[string]string, target string) bool {
