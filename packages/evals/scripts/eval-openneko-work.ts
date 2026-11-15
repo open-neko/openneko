@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { app_user, db, pool, setLocalAdministrator } from "@neko/db";
-import { createTestOrg, dbReachable, seedProvider } from "@neko/db/test-helpers";
+import { dbReachable, ensureTestOrg, seedProvider } from "@neko/db/test-helpers";
 import {
   EvalEnvironmentError,
   assertionsForPhase,
@@ -72,9 +72,11 @@ type WorkContext = {
   turns: { count: number; requests: number };
 };
 
+const WORK_ORG_NAME = "OpenNeko work-memory eval";
+
 async function provisionOrg(context: WorkContext, orgId: string): Promise<WorkOrg> {
   const adminId = `admin-${orgId}`;
-  await createTestOrg(orgId, "OpenNeko work-memory eval");
+  await ensureTestOrg(orgId, WORK_ORG_NAME);
   await ensureOrgWorkspace(orgId);
   await db().insert(app_user).values({ id: adminId, email: `${adminId}@eval.invalid`, name: "Eval Admin", org_id: orgId });
   await setLocalAdministrator(orgId, adminId, true);
@@ -424,14 +426,15 @@ export function createOpenNekoWorkDriver(
         },
       });
       const memoryStage = scenario === "memory-retrieval" && slot.phase === "search";
-      const episode = await host.startEpisode({ label: `${slot.caseId}-${slot.phase}` });
+      const orgId = `eval-work-${shortDigest(`${runId}/${slot.variantId}/${slot.caseId}/${slot.repetition}`).slice(0, 16)}`;
+      const episode = await host.startEpisode({ label: `${slot.caseId}-${slot.phase}`, org: { id: orgId, name: WORK_ORG_NAME } });
       const turns = { count: 0, requests: 0 };
       try {
         episode.activate();
         const context: WorkContext = {
           episode,
           model,
-          orgId: `eval-work-${shortDigest(`${runId}/${slot.variantId}/${slot.caseId}/${slot.repetition}`).slice(0, 16)}`,
+          orgId,
           turns,
         };
         const org = await provisionOrg(context, context.orgId);
