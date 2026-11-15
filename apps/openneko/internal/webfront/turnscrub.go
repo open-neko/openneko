@@ -3,6 +3,7 @@ package webfront
 import (
 	"log"
 	"os"
+	"regexp"
 	"sync"
 	"time"
 
@@ -15,11 +16,20 @@ type eventScrubber struct {
 	mu    sync.Mutex
 	mtime time.Time
 	size  int64
-	read  bool
-	scrub func(string) string
+	read    bool
+	scrub   func(string) string
+	pattern *regexp.Regexp
+	values  []string
 }
 
 func (a *API) runEventScrubber() func(string) string {
+	scrub, _, _ := a.runEventSecrets()
+	return scrub
+}
+
+// runEventSecrets returns the scrubber, its pattern and the values it
+// matches; all are nil when no secret is long enough to scrub.
+func (a *API) runEventSecrets() (func(string) string, *regexp.Regexp, []string) {
 	e := &a.eventScrub
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -29,23 +39,22 @@ func (a *API) runEventScrubber() func(string) string {
 		mtime, size = info.ModTime(), info.Size()
 	}
 	if e.read && mtime.Equal(e.mtime) && size == e.size {
-		return e.scrub
+		return e.scrub, e.pattern, e.values
 	}
 	values, err := secrets.AllValuesFull(a.SecretsDir)
 	if err != nil {
 		log.Printf("[secrets] reload failed: %v", err)
 		if e.read {
-			return e.scrub
+			return e.scrub, e.pattern, e.values
 		}
 	}
 	e.mtime, e.size, e.read, e.scrub = mtime, size, true, nil
-	for _, v := range values {
-		if utf16Len(v) >= 8 {
-			e.scrub = secretScrubber(values)
-			break
-		}
+	e.pattern, e.values = secretPattern(values)
+	if e.pattern != nil {
+		rx := e.pattern
+		e.scrub = func(s string) string { return rx.ReplaceAllLiteralString(s, "[REDACTED]") }
 	}
-	return e.scrub
+	return e.scrub, e.pattern, e.values
 }
 
 // scrubRunEvent is scrubAgentEvent() in packages/llm/src/work/secret-scrubber.ts.
