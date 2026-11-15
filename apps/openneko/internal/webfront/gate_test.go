@@ -361,7 +361,7 @@ func TestGateKeepsMembersOutOnARealInstall(t *testing.T) {
 		SessionSecret: func() (string, error) { return testSecret, nil },
 		MarkerPath:    filepath.Join(t.TempDir(), "auth-gate.json")}
 	a := &API{Gate: g, DB: db, Version: "5.0.0", SecretsDir: dir, PublicURL: "https://neko.example"}
-	f := &Front{App: fstest.MapFS{"index.html": {Data: []byte("app")}}, Gate: g, API: a, Node: &recorder{}}
+	f := &Front{App: fstest.MapFS{"index.html": {Data: []byte("app")}}, Gate: g, API: a}
 
 	if err := a.selectSignInProvider(magicLinkPlugin); err != nil {
 		t.Fatal(err)

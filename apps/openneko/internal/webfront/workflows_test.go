@@ -102,12 +102,8 @@ func TestWorkflowDetail(t *testing.T) {
 	if w := call(f, "GET", "/api/v1/workflows/"+wfOther, "", sessionCookie("admin")); w.Code != 200 {
 		t.Errorf("admin on another member's workflow: %d", w.Code)
 	}
-	node := f.Node.(*recorder)
 	if w := call(f, "POST", "/api/v1/workflows/"+wfOrg+"/manual-runs", `{}`, member); w.Code != 404 || w.Body.String() != `{"error":"Workflow not found"}` {
 		t.Errorf("manual run of a hidden workflow: %d %s", w.Code, w.Body)
-	}
-	if len(node.hits) != 0 {
-		t.Errorf("Node got %v", node.hits)
 	}
 }
 

@@ -3,50 +3,57 @@ import { copyFileSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
-import pkg from "./package.json" with { type: "json" };
+import pkg from "./package.json";
 import { THEME_COLOR } from "./src/lib/theme-color";
-import { serverPagePattern } from "./src/spa/server-pages";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const src = path.join(root, "src");
 const outDir = path.join(root, "dist");
-const apiTarget = process.env.OPENNEKO_SPA_API ?? "http://127.0.0.1:3000";
-const nodeProxy = { "/api": apiTarget, "/_next": apiTarget, [serverPagePattern().source]: apiTarget };
-
-const ROOT_SHELL_ASSETS = [
-  "/index.html",
-  "/manifest.webmanifest",
-  "/version.json",
-  "/favicon.ico",
-  "/icon.png",
-  "/icon-192.png",
-  "/icon-512.png",
-  "/cat.png",
-  "/connectors/atlassian.svg",
-  "/connectors/google-workspace.svg",
-  "/connectors/microsoft-teams.svg",
-];
 
 function appIcons(): Plugin {
+  const icon = readFileSync(path.join(root, "src/app/icon.png"));
   return {
     name: "openneko-app-icons",
-    apply: "build",
+    transformIndexHtml(html) {
+      return html.replace("__OPENNEKO_THEME_COLOR__", THEME_COLOR);
+    },
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url === "/icon.png" || req.url === "/apple-icon.png") {
+          res.setHeader("Content-Type", "image/png");
+          res.end(icon);
+          return;
+        }
+        next();
+      });
+    },
     writeBundle() {
-      for (const file of ["favicon.ico", "icon.png"]) copyFileSync(path.join(src, "app", file), path.join(outDir, file));
-      writeFileSync(path.join(outDir, "version.json"), JSON.stringify({ version: pkg.version }));
-      const assetFiles = readdirSync(path.join(outDir, "assets"))
-        .filter((file) => !file.startsWith("maplibre-gl") && /\.(?:js|css|woff2)$/.test(file))
+      copyFileSync(path.join(root, "src/app/icon.png"), path.join(outDir, "icon.png"));
+      copyFileSync(path.join(root, "src/app/icon.png"), path.join(outDir, "apple-icon.png"));
+      writeFileSync(path.join(outDir, "version.json"), JSON.stringify({ version: pkg.version }) + "\n");
+
+      const assetsDir = path.join(outDir, "assets");
+      const assetFiles = readdirSync(assetsDir)
+        .filter((file) => /\.(?:js|css|woff2?)$/i.test(file))
         .sort()
         .map((file) => `/assets/${file}`);
-      const shellAssets = [...ROOT_SHELL_ASSETS, ...assetFiles];
+      const shellAssets = [
+        "/",
+        "/index.html",
+        "/manifest.webmanifest",
+        "/icon.png",
+        "/apple-icon.png",
+        "/cat.png",
+        ...assetFiles,
+      ];
       const hash = createHash("sha256")
         .update(pkg.version)
         .update(readFileSync(path.join(outDir, "index.html")))
-        .update(shellAssets.join("\n"))
+        .update(assetFiles.join("\n"))
         .digest("hex")
         .slice(0, 12);
+      const swTemplate = path.join(root, "public", "sw.js");
       const swPath = path.join(outDir, "sw.js");
-      const swSource = readFileSync(swPath, "utf8")
+      const swSource = readFileSync(swTemplate, "utf8")
         .replace("__OPENNEKO_SHELL_VERSION__", `${pkg.version}-${hash}`)
         .replace(/const SHELL_ASSETS = \[[\s\S]*?\];/, `const SHELL_ASSETS = ${JSON.stringify(shellAssets, null, 2)};`);
       writeFileSync(swPath, swSource);
@@ -54,37 +61,33 @@ function appIcons(): Plugin {
   };
 }
 
+const apiTarget = process.env.OPENNEKO_SPA_API ?? "http://127.0.0.1:3000";
+const apiProxy = { "/api": apiTarget };
+
 export default defineConfig(({ mode }) => ({
-  root: path.join(src, "spa"),
+  root: path.join(root, "src/spa"),
   publicDir: path.join(root, "public"),
-  envPrefix: "NEXT_PUBLIC_",
+  appType: "spa",
+  plugins: [appIcons()],
+  esbuild: { jsx: "automatic" },
   define: {
     "process.env.NODE_ENV": JSON.stringify(mode === "production" ? "production" : "development"),
     "process.env.NEXT_PUBLIC_APP_VERSION": JSON.stringify(pkg.version),
     "process.env.NEXT_PUBLIC_VISUAL_TEST": JSON.stringify(process.env.NEXT_PUBLIC_VISUAL_TEST ?? ""),
-    "process.env.OPENNEKO_VISUAL_TEST": JSON.stringify(""),
-    "process.env.OPENNEKO_MAGENTO_VISUAL_TEST": JSON.stringify(""),
+    "process.env.OPENNEKO_VISUAL_TEST": JSON.stringify(process.env.OPENNEKO_VISUAL_TEST ?? ""),
+    "process.env.OPENNEKO_MAGENTO_VISUAL_TEST": JSON.stringify(process.env.OPENNEKO_MAGENTO_VISUAL_TEST ?? ""),
   },
-  esbuild: { jsx: "automatic" },
   resolve: {
     alias: [
-      { find: /^next\/link$/, replacement: path.join(src, "spa/next/link.tsx") },
-      { find: /^next\/image$/, replacement: path.join(src, "spa/next/image.tsx") },
-      { find: /^next\/navigation$/, replacement: path.join(src, "spa/next/navigation.ts") },
-      { find: /^@\//, replacement: `${src}/` },
+      { find: /^next\/link$/, replacement: path.join(root, "src/spa/next/link.tsx") },
+      { find: /^next\/image$/, replacement: path.join(root, "src/spa/next/image.tsx") },
+      { find: /^next\/navigation$/, replacement: path.join(root, "src/spa/next/navigation.ts") },
+      { find: /^@\//, replacement: `${path.join(root, "src")}/` },
     ],
   },
-  plugins: [
-    appIcons(),
-    {
-      name: "openneko-theme-color",
-      transformIndexHtml: (html: string) => html.replace("%OPENNEKO_THEME_COLOR%", THEME_COLOR),
-    },
-  ],
   build: {
     outDir,
     emptyOutDir: true,
-    sourcemap: false,
     rollupOptions: {
       onwarn(warning, warn) {
         if (warning.code === "MODULE_LEVEL_DIRECTIVE" || warning.code === "SOURCEMAP_ERROR") return;
@@ -92,6 +95,6 @@ export default defineConfig(({ mode }) => ({
       },
     },
   },
-  server: { proxy: nodeProxy },
-  preview: { proxy: nodeProxy },
+  server: { proxy: apiProxy },
+  preview: { proxy: apiProxy },
 }));

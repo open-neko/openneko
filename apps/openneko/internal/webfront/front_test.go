@@ -8,7 +8,7 @@ import (
 	"testing/fstest"
 )
 
-func newFront(t *testing.T, node http.Handler) *Front {
+func newFront(t *testing.T) *Front {
 	app := fstest.MapFS{
 		"index.html":           {Data: []byte("<html>app</html>")},
 		"manifest.webmanifest": {Data: []byte(`{"name":"OpenNeko"}`)},
@@ -18,7 +18,7 @@ func newFront(t *testing.T, node http.Handler) *Front {
 		"icon.png":             {Data: []byte("png")},
 		"connectors/x.md":      {Data: []byte("md")},
 	}
-	return &Front{App: app, Gate: newGate(t), Node: node}
+	return &Front{App: app, Gate: newGate(t)}
 }
 
 func get(f *Front, method, target string) *httptest.ResponseRecorder {
@@ -28,8 +28,7 @@ func get(f *Front, method, target string) *httptest.ResponseRecorder {
 }
 
 func TestFront(t *testing.T) {
-	node := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("node " + r.URL.Path)) })
-	f := newFront(t, node)
+	f := newFront(t)
 	cases := []struct{ method, path, body, cache string }{
 		{"GET", "/chat", "<html>app</html>", "no-cache"},
 		{"GET", "/workflows/wf1", "<html>app</html>", "no-cache"},
@@ -40,10 +39,6 @@ func TestFront(t *testing.T) {
 		{"GET", "/assets/main.js", "js", "public, max-age=31536000, immutable"},
 		{"GET", "/icon.png", "png", ""},
 		{"GET", "/connectors/x.md", "md", ""},
-		{"GET", "/assets/gone.js", "node /assets/gone.js", ""},
-		{"GET", "/_next/static/x", "node /_next/static/x", ""},
-		{"GET", "/api/v1/work", "node /api/v1/work", ""},
-		{"GET", "/api/work", "node /api/work", ""},
 		{"GET", "/admin/settings/models", "<html>app</html>", "no-cache"},
 		{"GET", "/admin/settings/workflows", "<html>app</html>", "no-cache"},
 		{"GET", "/admin/users", "<html>app</html>", "no-cache"},
@@ -53,7 +48,6 @@ func TestFront(t *testing.T) {
 		{"GET", "/chat/connectors", "<html>app</html>", "no-cache"},
 		{"GET", "/onboarding", "<html>app</html>", "no-cache"},
 		{"GET", "/admin/settings/packs/magento/operations", "<html>app</html>", "no-cache"},
-		{"POST", "/chat", "node /chat", ""},
 	}
 	for _, c := range cases {
 		w := get(f, c.method, c.path)
@@ -73,16 +67,23 @@ func TestFront(t *testing.T) {
 	if w := get(f, "GET", "/"); w.Code != 302 || w.Header().Get("Location") != "/chat" {
 		t.Errorf("/: %d %q", w.Code, w.Header().Get("Location"))
 	}
-	for _, p := range []string{"/nope", "/assets/../../etc/passwd"} {
-		if w := get(f, "GET", p); w.Code != 404 {
-			t.Errorf("%s: %d", p, w.Code)
+	for _, c := range [][2]string{
+		{"GET", "/nope"},
+		{"GET", "/assets/../../etc/passwd"},
+		{"GET", "/assets/gone.js"},
+		{"GET", "/_next/static/x"},
+		{"GET", "/api/v1/work"},
+		{"GET", "/api/work"},
+		{"POST", "/chat"},
+	} {
+		if w := get(f, c[0], c[1]); w.Code != http.StatusNotFound {
+			t.Errorf("%s %s: %d, want 404", c[0], c[1], w.Code)
 		}
 	}
 }
 
-func TestFrontGatesPagesBeforeNode(t *testing.T) {
-	reached := false
-	f := newFront(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
+func TestFrontGatesPages(t *testing.T) {
+	f := newFront(t)
 	f.Gate = newGate(t)
 	seedSignInSecrets(t, f.Gate.SecretsDir, liveScalekit)
 	for _, p := range []string{"/admin/settings", "/api/v1/work", "/chat"} {
@@ -90,23 +91,8 @@ func TestFrontGatesPagesBeforeNode(t *testing.T) {
 			t.Errorf("%s: %d %q", p, w.Code, w.Header().Get("Location"))
 		}
 	}
-	if reached {
-		t.Error("a request with no session reached Node")
-	}
 	if w := get(f, "GET", "/signin"); w.Code != 200 || w.Body.String() != "<html>app</html>" {
 		t.Errorf("/signin: %d %q", w.Code, w.Body.String())
-	}
-}
-
-func TestFrontWithoutNode(t *testing.T) {
-	f := newFront(t, nil)
-	if w := get(f, "GET", "/api/v1/work"); w.Code != 502 || !strings.Contains(w.Body.String(), `"error"`) {
-		t.Errorf("API: %d %q", w.Code, w.Body.String())
-	}
-	for _, p := range []string{"/chat", "/device", "/integrations", "/chat/connectors", "/onboarding", "/admin/settings/packs/magento/operations", "/admin/settings/graphjin"} {
-		if w := get(f, "GET", p); w.Code != 200 || w.Body.String() != "<html>app</html>" {
-			t.Errorf("static page %s: %d %q", p, w.Code, w.Body.String())
-		}
 	}
 }
 

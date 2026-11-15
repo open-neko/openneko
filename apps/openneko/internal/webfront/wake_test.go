@@ -44,7 +44,7 @@ func TestWake(t *testing.T) {
 		t.Fatal(err)
 	}
 	wake := &Wake{Token: "wake-secret", Queue: q}
-	f := newFront(t, nil)
+	f := newFront(t)
 	f.Wake = wake
 	call := func(method, target, auth string) (int, jobs.WakeResult) {
 		t.Helper()

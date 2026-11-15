@@ -454,7 +454,6 @@ func TestSignInOutboundClient(t *testing.T) {
 		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
 		Gate: g,
 		API:  a,
-		Node: &recorder{},
 	}
 
 	// 1. Scalekit begin and complete with SignInClient nil use defaultSignInClient.
@@ -545,7 +544,6 @@ func TestMagicLinkRequiresPublicURL(t *testing.T) {
 		App:  fstest.MapFS{"index.html": {Data: []byte("app")}},
 		Gate: g,
 		API:  a,
-		Node: &recorder{},
 	}
 
 	if err := secrets.Write(secrets.Store{

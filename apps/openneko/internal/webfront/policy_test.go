@@ -27,18 +27,6 @@ func TestPoliciesMatchWeb(t *testing.T) {
 	}
 }
 
-func TestServerPagesMatchWeb(t *testing.T) {
-	entries := regexp.MustCompile(`(?m)^\s+"(/[^"]*)",$`).FindAllStringSubmatch(readWeb(t, "spa/server-pages.ts"), -1)
-	if len(entries) != len(ServerPages) {
-		t.Fatalf("server-pages.ts has %d pages, Go has %d", len(entries), len(ServerPages))
-	}
-	for i, e := range entries {
-		if ServerPages[i] != e[1] {
-			t.Errorf("page %d: web %s, Go %s", i, e[1], ServerPages[i])
-		}
-	}
-}
-
 func TestPolicyFor(t *testing.T) {
 	cases := map[string]Rule{
 		"/":                              SignedIn,
@@ -67,11 +55,5 @@ func TestPolicyFor(t *testing.T) {
 		if p, ok := PolicyFor(path); ok {
 			t.Errorf("%s: got %v, want no entry", path, p)
 		}
-	}
-}
-
-func TestServerPagePattern(t *testing.T) {
-	if len(ServerPages) != 0 || serverPage != nil {
-		t.Fatalf("expected no server pages, got %v (pattern %v)", ServerPages, serverPage)
 	}
 }

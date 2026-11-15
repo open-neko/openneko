@@ -7,9 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -27,32 +25,26 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 )
 
-const (
-	nodeStopGrace = 10 * time.Second
-	jobsStopGrace = 5 * time.Second
-)
+const jobsStopGrace = 5 * time.Second
 
 func newWebCmd() *cobra.Command {
-	var addr, dir, nodeAddr string
+	var addr, dir string
 	var runJobs bool
 	cmd := &cobra.Command{
-		Use:   "web [-- node command]",
-		Short: "Serve the web app with its request gate and pass the API and server pages to Node",
-		Long: `Serves the static web app, applies the request gate and passes /api and
-the server pages to the Node server on --node-addr. With a command after
---, web starts that command as Node with PORT and HOSTNAME set from
---node-addr, and stops when it stops, with its exit code.
+		Use:   "web",
+		Args:  cobra.NoArgs,
+		Short: "Serve the web app, its request gate, and the /api/v1 HTTP API",
+		Long: `Serves the static web app, applies the request gate, and answers /api/v1
+and its /api aliases.
 
-Web answers the version, sign-in, session, sign-out, device sign-in and
-SSO setup routes, the business profile route and the personal pack
-connection route itself. It marks its cookies Secure when NODE_ENV is
-production. It reads and writes users, sessions, devices, groups, the
-business profile, personal pack connections and the audit chain with the
-main database login, and reads secrets.json for pack OAuth client IDs.
+Web marks its cookies Secure when NODE_ENV is production. It reads and writes
+users, sessions, devices, groups, the business profile, personal pack
+connections and the audit chain with the main database login, and reads
+secrets.json for pack OAuth client IDs and sign-in settings.
 
-Web runs the background jobs that have moved from the Node worker to the
-River queue in the river schema. With --jobs=false (OPENNEKO_WEB_JOBS=false)
-web runs no job; it still queues jobs for a web that runs them.
+Web runs the background jobs on the River queue in the river schema. With
+--jobs=false (OPENNEKO_WEB_JOBS=false) web runs no job; it still queues jobs
+for a web that runs them.
 
 POST /internal/jobs/wake with "Authorization: Bearer $OPENNEKO_JOBS_WAKE_TOKEN"
 inserts the due cron jobs. On a web with its jobs off, the call then runs the
@@ -82,10 +74,6 @@ with exit code 0, so its supervisor starts it again.`,
 			}
 			if err := webfront.Check(dir); err != nil {
 				return err
-			}
-			host, port, err := net.SplitHostPort(nodeAddr)
-			if err != nil {
-				return fmt.Errorf("--node-addr: %w", err)
 			}
 			conn, err := defaultConn()
 			if err != nil {
@@ -175,37 +163,23 @@ with exit code 0, so its supervisor starts it again.`,
 				api.StartKnowledgeRefresh(ctx)
 				api.StartSubscriptionManager(ctx)
 			}
-			var node *exec.Cmd
-			nodeDone := make(chan error, 1)
-			if len(args) > 0 {
-				node = exec.Command(args[0], args[1:]...)
-				node.Env = append(os.Environ(), "PORT="+port, "HOSTNAME="+host)
-				node.Stdout, node.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
-				if err := node.Start(); err != nil {
-					_ = ln.Close()
-					return fmt.Errorf("start Node: %w", err)
-				}
-				go func() { nodeDone <- node.Wait() }()
-			}
 			front := &webfront.Front{
 				App:  os.DirFS(dir),
 				Gate: gate,
 				API:  api,
-				Node: webfront.NodeProxy(&url.URL{Scheme: "http", Host: nodeAddr}),
 				Wake: &webfront.Wake{Token: strings.TrimSpace(os.Getenv("OPENNEKO_JOBS_WAKE_TOKEN")), Queue: queue, JobsOn: runner != nil},
 			}
 			srv := &http.Server{Handler: front, ReadHeaderTimeout: 10 * time.Second}
-			fmt.Fprintf(cmd.OutOrStdout(), "openneko web listening on %s, app from %s, Node on %s\n", ln.Addr(), dir, nodeAddr)
+			fmt.Fprintf(cmd.OutOrStdout(), "openneko web listening on %s, app from %s\n", ln.Addr(), dir)
 			errc := make(chan error, 1)
 			go func() { errc <- srv.Serve(ln) }()
 
 			var result error
 			select {
 			case err := <-errc:
-				result = err
-			case err := <-nodeDone:
-				node = nil
-				result = nodeExit(err)
+				if !errors.Is(err, http.ErrServerClosed) {
+					result = err
+				}
 			case <-ctx.Done():
 			}
 			shut, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -219,24 +193,11 @@ with exit code 0, so its supervisor starts it again.`,
 				runner.Stop(stopJobs)
 				cancelJobs()
 			}
-			if node != nil {
-				_ = node.Process.Signal(syscall.SIGTERM)
-				select {
-				case err := <-nodeDone:
-					if result == nil && ctx.Err() == nil {
-						result = nodeExit(err)
-					}
-				case <-time.After(nodeStopGrace):
-					_ = node.Process.Kill()
-					<-nodeDone
-				}
-			}
 			return result
 		},
 	}
 	cmd.Flags().StringVar(&addr, "addr", envOr("OPENNEKO_WEB_ADDR", webPortAddr()), "Listen address; without OPENNEKO_WEB_ADDR, PORT sets the port on all interfaces")
 	cmd.Flags().StringVar(&dir, "dir", envOr("OPENNEKO_WEB_DIR", "apps/web/dist"), "Folder of the built web app, from pnpm --filter @neko/web build:spa")
-	cmd.Flags().StringVar(&nodeAddr, "node-addr", envOr("OPENNEKO_WEB_NODE_ADDR", "127.0.0.1:3001"), "Address of the Node server")
 	cmd.Flags().BoolVar(&runJobs, "jobs", envBool("OPENNEKO_WEB_JOBS", true), "Run the background jobs; false leaves them to another web")
 	return cmd
 }
@@ -286,17 +247,6 @@ func checkSchema(ctx context.Context, w io.Writer, q db.Querier) error {
 		return nil
 	}
 	return fmt.Errorf("the database lacks %d migration(s) of this release, the first %s: run `openneko migrate`, then start web again", len(st.Pending), st.Pending[0])
-}
-
-func nodeExit(err error) error {
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		return WithExit(max(exit.ExitCode(), 1), fmt.Errorf("Node stopped: %w", err))
-	}
-	if err != nil {
-		return fmt.Errorf("Node stopped: %w", err)
-	}
-	return nil
 }
 
 func webPortAddr() string {
