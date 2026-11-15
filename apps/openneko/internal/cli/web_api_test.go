@@ -2,9 +2,11 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
+	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 )
 
@@ -38,5 +40,21 @@ func TestWebAPICookiesFollowThePublicURLScheme(t *testing.T) {
 		if strings.Count(errOut.String(), "\n") > 1 {
 			t.Errorf("public URL %q: more than one warning line: %q", c.publicURL, errOut.String())
 		}
+	}
+}
+
+func TestWebAppliesTheTurnLimitBeforeTheJobsStart(t *testing.T) {
+	t.Setenv("OPENNEKO_AGENT_CONCURRENCY", "5")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	api := &webfront.API{}
+	seen := -1
+	var out bytes.Buffer
+	startWebJobs(ctx, api, &out, &out, func() *jobs.Runner {
+		seen = api.AgentTurnLimit()
+		return nil
+	})
+	if seen != 5 {
+		t.Fatalf("the jobs started with a turn limit of %d, want 5; output %q", seen, out.String())
 	}
 }

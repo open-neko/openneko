@@ -132,7 +132,9 @@ with exit code 0, so its supervisor starts it again.`,
 				WorkflowAPISweep: api.WorkflowAPISweep, SSOSetupPoll: api.SSOSetupPoll, WorkRun: api.WorkRun, ChannelDeliver: api.ChannelDeliver, WebPush: api.WebPushDeliver,
 				Embedding: jobs.Embedding{Model: api.EmbeddingModel, Embed: api.EmbedText},
 				Logf:      func(format string, args ...any) { fmt.Fprintf(cmd.OutOrStdout(), format+"\n", args...) }}
-			runner := startJobs(context.WithoutCancel(ctx), runJobs, queue, cmd.OutOrStdout(), cmd.ErrOrStderr())
+			runner := startWebJobs(ctx, api, cmd.OutOrStdout(), cmd.ErrOrStderr(), func() *jobs.Runner {
+				return startJobs(context.WithoutCancel(ctx), runJobs, queue, cmd.OutOrStdout(), cmd.ErrOrStderr())
+			})
 			webfront.SweepStagesEvery(ctx, 5*time.Minute)
 			if _, err := api.MigrateLegacyChannelSecrets(); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: channel settings not moved: %v\n", err)
@@ -145,11 +147,6 @@ with exit code 0, so its supervisor starts it again.`,
 			}
 			if warning := api.ProviderCredentialWarning(ctx); warning != "" {
 				fmt.Fprintln(cmd.ErrOrStderr(), warning)
-			}
-			if n, err := api.ApplyAgentConcurrency(ctx); err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: the Concurrent jobs setting was not read: %v\n", err)
-			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "openneko web: %d agent turns run at once\n", n)
 			}
 			if err := api.SeedDefaultActionPolicies(ctx); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "openneko web: default action policies not seeded: %v\n", err)
@@ -210,6 +207,18 @@ with exit code 0, so its supervisor starts it again.`,
 	cmd.Flags().StringVar(&dir, "dir", envOr("OPENNEKO_WEB_DIR", "apps/web/dist"), "Folder of the built web app, from pnpm --filter @neko/web build:spa")
 	cmd.Flags().BoolVar(&runJobs, "jobs", envBool("OPENNEKO_WEB_JOBS", true), "Run the background jobs; false leaves them to another web")
 	return cmd
+}
+
+// startWebJobs applies the Concurrent jobs setting before the first job can
+// take an agent slot.
+func startWebJobs(ctx context.Context, api *webfront.API, out, errOut io.Writer, start func() *jobs.Runner) *jobs.Runner {
+	if n, err := api.ApplyAgentConcurrency(ctx); err != nil {
+		fmt.Fprintf(errOut, "openneko web: the Concurrent jobs setting was not read: %v\n", err)
+	} else {
+		fmt.Fprintf(out, "openneko web: %d agent turns run at once\n", n)
+	}
+	api.StartAgentConcurrencyRefresh(ctx, func(format string, args ...any) { fmt.Fprintf(errOut, format+"\n", args...) })
+	return start()
 }
 
 func newWebAPI(gate *webfront.Gate, pool *pgxpool.Pool, appVersion, secretsDir string, stop func(), inserter *jobs.Inserter, trace *webfront.EvalTrace, errOut io.Writer) *webfront.API {
