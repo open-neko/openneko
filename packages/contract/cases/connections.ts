@@ -5,11 +5,8 @@ const pack = { packId: "contract", connectionKey: "contract" };
 
 export const connectionCases: Case[] = [
   {
-    op: "POST /channels/{channelId}/inbound", name: "refuses an update with no signature", as: "anonymous", status: 200,
-    request: { params: { channelId: "telegram" }, body: { update_id: 1 } },
-    check: (r) => {
-      expect(r.body).toEqual({ ok: false, dispatched: 0 });
-    },
+    op: "POST /channels/{channelId}/inbound", name: "refuses an unknown channel", as: "anonymous", status: 404,
+    request: { params: { channelId: "fax" }, body: { update_id: 1 } },
   },
   { op: "GET /bots", name: "lists the bots", status: 200 },
   {

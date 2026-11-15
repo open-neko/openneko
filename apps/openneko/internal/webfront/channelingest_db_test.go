@@ -344,24 +344,34 @@ func TestChannelWebhook(t *testing.T) {
 	if got := post("/api/v1/channels/"+url.PathEscape("@open-neko/channel-telegram")+"/inbound", `{"update_id":6,"message":{"chat":{"id":7},"text":"again"}}`, good); got != `200 {"dispatched":1,"ok":true}` {
 		t.Errorf("a package name: %s", got)
 	}
-	for name, c := range map[string]struct{ path, body string }{
-		"wrong secret":  {"/api/v1/channels/telegram/inbound", update},
-		"unknown":       {"/api/v1/channels/fax/inbound", update},
-		"not JSON":      {"/api/v1/channels/telegram/inbound", "{"},
-		"a channel off": {"/api/v1/channels/hud/inbound", `{"kind":"utterance","text":"hi"}`},
+	for name, c := range map[string]struct{ path, body, want string }{
+		"wrong secret":  {"/api/v1/channels/telegram/inbound", update, `401 {"error":"the signature does not match"}`},
+		"unknown":       {"/api/v1/channels/fax/inbound", update, `404 {"error":"unknown channel"}`},
+		"not JSON":      {"/api/v1/channels/telegram/inbound", "{", `400 {"error":"the body is not JSON"}`},
+		"a channel off": {"/api/v1/channels/hud/inbound", `{"kind":"utterance","text":"hi"}`, `404 {"error":"the channel is off"}`},
 	} {
 		h := good
 		if name == "wrong secret" {
 			h = map[string]string{"X-Telegram-Bot-Api-Secret-Token": "nope"}
 		}
-		if got := post(c.path, c.body, h); got != `200 {"dispatched":0,"ok":false}` {
+		if got := post(c.path, c.body, h); got != c.want {
 			t.Errorf("%s: %s", name, got)
 		}
+	}
+	jobsOn := f.API.Jobs
+	f.API.Jobs = nil
+	failing := `{"update_id":7,"message":{"chat":{"id":7},"text":"later"}}`
+	if got := post("/api/v1/channels/telegram/inbound", failing, good); got != `500 {"dispatched":0,"ok":false}` {
+		t.Errorf("a failed dispatch with attempts left: %s", got)
+	}
+	f.API.Jobs = jobsOn
+	if got := post("/api/v1/channels/telegram/inbound", failing, good); got != `200 {"dispatched":1,"ok":true}` {
+		t.Errorf("the provider's retry: %s", got)
 	}
 	if got := post("/api/v1/channels/telegram/inbound", strings.Repeat(" ", maxInboundBody+1), good); got != `400 {"error":"could not read request body"}` {
 		t.Errorf("too large: %s", got)
 	}
-	if runs() != before+2 {
+	if runs() != before+4 {
 		t.Error("a refused webhook started a run")
 	}
 }

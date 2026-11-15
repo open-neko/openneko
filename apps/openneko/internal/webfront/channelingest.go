@@ -464,7 +464,8 @@ func (a *API) startChannelRun(ctx context.Context, orgID, channel, message, thre
 }
 
 // channelWebhook is POST /api/v1/channels/{channelId}/inbound: a provider
-// webhook, checked by the channel's own signature rule.
+// webhook, checked by the channel's own signature rule. Telegram retries
+// only a non-2xx reply, so a failed update that has attempts left gets 500.
 func (a *API) channelWebhook(w http.ResponseWriter, r *http.Request) {
 	ch := findBuiltInChannel(r.PathValue("channelId"))
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxInboundBody+1))
@@ -472,9 +473,8 @@ func (a *API) channelWebhook(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, "could not read request body")
 		return
 	}
-	refuse := func() { sendJSON(w, http.StatusOK, map[string]any{"ok": false, "dispatched": 0}) }
 	if ch == nil {
-		refuse()
+		sendError(w, http.StatusNotFound, "unknown channel")
 		return
 	}
 	env, err := a.channelEnv(ch.ID)
@@ -482,13 +482,17 @@ func (a *API) channelWebhook(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
-	if !channelEnabled(ch, env) || !channelInbound[ch.ID].verify(r.Header, body, env) {
-		refuse()
+	if !channelEnabled(ch, env) {
+		sendError(w, http.StatusNotFound, "the channel is off")
+		return
+	}
+	if !channelInbound[ch.ID].verify(r.Header, body, env) {
+		sendError(w, http.StatusUnauthorized, "the signature does not match")
 		return
 	}
 	raw, err := jsParse(body)
 	if err != nil {
-		refuse()
+		sendError(w, http.StatusBadRequest, "the body is not JSON")
 		return
 	}
 	orgID, err := a.OrgID(r.Context())
@@ -496,10 +500,9 @@ func (a *API) channelWebhook(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
-	ok := a.processInbound(context.WithoutCancel(r.Context()), orgID, ch.ID, raw)
-	dispatched := 0
-	if ok {
-		dispatched = 1
+	if !a.processInbound(context.WithoutCancel(r.Context()), orgID, ch.ID, raw) {
+		sendJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "dispatched": 0})
+		return
 	}
-	sendJSON(w, http.StatusOK, map[string]any{"ok": ok, "dispatched": dispatched})
+	sendJSON(w, http.StatusOK, map[string]any{"ok": true, "dispatched": 1})
 }

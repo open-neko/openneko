@@ -220,6 +220,17 @@ components:
           - 'null'
         signInConfigured:
           type: boolean
+    ChannelInboundResult:
+      type: object
+      additionalProperties: false
+      required:
+      - ok
+      - dispatched
+      properties:
+        ok:
+          type: boolean
+        dispatched:
+          type: integer
     Error:
       type: object
       required:
@@ -5790,8 +5801,8 @@ paths:
       - channels
       summary: Receive a message from a channel provider
       description: Telegram and the HUD bridge post here when OPENNEKO_PUBLIC_URL is set. The route checks the
-        channel's own signature (the Telegram secret token, the Slack request signature or the HUD HMAC) and
-        answers ok false when the channel is off, unknown or the signature does not match.
+        channel's own signature (the Telegram secret token, the Slack request signature or the HUD HMAC).
+        A failed update that will be tried again gets 500, so that the provider sends it again.
       x-access: token
       security: []
       parameters:
@@ -5809,26 +5820,35 @@ paths:
               type: object
       responses:
         '200':
-          description: Whether the update was handled. A failed update that will be tried again gives ok false
+          description: The update was handled, or it was handled before
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: false
-                required:
-                - ok
-                - dispatched
-                properties:
-                  ok:
-                    type: boolean
-                  dispatched:
-                    type: integer
+                $ref: '#/components/schemas/ChannelInboundResult'
         '400':
-          description: The body is larger than 256 KB
+          description: The body is larger than 256 KB or is not JSON
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '401':
+          description: The signature does not match
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: The channel is unknown or off
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: The update failed and will be tried again when the provider sends it again
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelInboundResult'
   /hooks/{workflowId}:
     post:
       operationId: postHooksByWorkflowId
