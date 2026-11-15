@@ -24,7 +24,7 @@ var unsafeSegment = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
 // orgAgentRoot is getOrgAgentRoot() in packages/llm/src/work/workspace.ts.
 func orgAgentRoot(orgID string) string {
 	home := ""
-	if os.Getenv("OPENNEKO_HOST_WEB_DEV") == "1" && os.Getenv("NODE_ENV") == "development" &&
+	if os.Getenv("OPENNEKO_HOST_WEB_DEV") == "1" && Development() &&
 		os.Getenv("OPENNEKO_STACK_MODE") != "demo" && os.Getenv("NEXT_PUBLIC_DEMO") != "true" && os.Getenv("DEMO") != "true" {
 		home = strings.TrimSpace(os.Getenv("OPENNEKO_AGENT_HOME"))
 	}

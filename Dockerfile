@@ -172,6 +172,7 @@ WORKDIR /app
 # read-only container filesystems. PORT=8080 matches the common PaaS
 # convention (Cloud Run, Heroku, Fly, Railway).
 ENV OPENNEKO_IN_CONTAINER=1 \
+    OPENNEKO_ENV=production \
     PORT=8080 \
     OPENNEKO_WEB_DIR=/app/apps/web/dist \
     HOME=/tmp/openneko-home \
