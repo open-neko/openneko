@@ -586,16 +586,16 @@ func (a *API) serveHealth(w http.ResponseWriter, path string, detail bool) {
 			sendJSON(w, healthCode(health.Status), map[string]any{"status": health.Status})
 		}
 	case "/health/security":
-		audit := a.AuditHealth()
+		audit, hook := a.AuditHealth(), a.AuditWebhookState()
 		status := "ok"
-		if !audit.Healthy {
+		if !audit.Healthy || hook.State == "refused" {
 			status = "degraded"
 		}
 		if !detail {
 			sendJSON(w, http.StatusOK, map[string]any{"status": status})
 			return
 		}
-		sendJSON(w, http.StatusOK, map[string]any{"status": status, "auditLogging": audit})
+		sendJSON(w, http.StatusOK, map[string]any{"status": status, "auditLogging": audit, "auditWebhook": hook})
 	}
 }
 
