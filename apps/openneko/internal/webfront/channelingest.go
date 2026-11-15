@@ -21,10 +21,17 @@ import (
 
 const (
 	inboundMaxAttempts = 30
-	inboundLease       = 5 * time.Minute
 	inboundDedupTTL    = 7 * 24 * time.Hour
 	maxInboundBody     = 256 << 10
+	inboundRetryBatch  = 50
 )
+
+var (
+	inboundLease      = 5 * time.Minute
+	inboundRetryEvery = time.Minute
+)
+
+var errInboundClaimLost = errors.New("another dispatch took over this update")
 
 var channelThreadNS = uuid.MustParse("8b9d2e7a-1c34-4f56-9a78-b0c1d2e3f405")
 
@@ -60,12 +67,14 @@ func inboundUpdateKey(raw any) string {
 
 // beginInbound claims an update for one dispatch. A new update, or a pending
 // one whose lease ended, proceeds under a new claim; a pending update that
-// another dispatch holds is busy; a done or dead one does not proceed.
-func (a *API) beginInbound(ctx context.Context, orgID, channel, key string) (claim string, busy, dead bool, err error) {
+// another dispatch holds is busy; a done or dead one does not proceed. The
+// row keeps the update so that the retry sweep can send it again.
+func (a *API) beginInbound(ctx context.Context, orgID, channel, key string, raw any) (claim string, busy, dead bool, err error) {
 	claim = uuid.NewString()
 	lease := fmt.Sprintf("%d milliseconds", inboundLease.Milliseconds())
-	tag, err := a.DB.Exec(ctx, `insert into inbound_dedup (org_id, channel_plugin, update_key, status, attempts, claimed_by, claimed_until)
-		values ($1, $2, $3, 'pending', 0, $4, now() + $5::interval) on conflict do nothing`, orgID, channel, key, claim, lease)
+	tag, err := a.DB.Exec(ctx, `insert into inbound_dedup (org_id, channel_plugin, update_key, status, attempts, claimed_by, claimed_until, payload)
+		values ($1, $2, $3, 'pending', 0, $4, now() + $5::interval, $6::jsonb) on conflict do nothing`,
+		orgID, channel, key, claim, lease, jsStringify(raw, false))
 	if err != nil || tag.RowsAffected() == 1 {
 		return claim, false, false, err
 	}
@@ -85,13 +94,42 @@ func (a *API) beginInbound(ctx context.Context, orgID, channel, key string) (cla
 }
 
 func (a *API) markInboundDone(ctx context.Context, orgID, channel, key, claim string) error {
-	_, err := a.DB.Exec(ctx, `update inbound_dedup set status = 'done', claimed_by = null, claimed_until = null, updated_at = now()
+	tag, err := a.DB.Exec(ctx, `update inbound_dedup set status = 'done', claimed_by = null, claimed_until = null, updated_at = now()
 		where org_id = $1 and channel_plugin = $2 and update_key = $3 and claimed_by = $4`, orgID, channel, key, claim)
+	if err == nil && tag.RowsAffected() == 0 {
+		err = errInboundClaimLost
+	}
 	return err
 }
 
+// holdInboundLease renews the claim while a dispatch runs, so a slow
+// dispatch keeps its update. The returned func stops the renewal.
+func (a *API) holdInboundLease(ctx context.Context, orgID, channel, key, claim string) (stop func()) {
+	done, ended := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(ended)
+		tick := time.NewTicker(inboundLease / 3)
+		defer tick.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-tick.C:
+				lease := fmt.Sprintf("%d milliseconds", inboundLease.Milliseconds())
+				if _, err := a.DB.Exec(context.WithoutCancel(ctx), `update inbound_dedup set claimed_until = now() + $5::interval
+					where org_id = $1 and channel_plugin = $2 and update_key = $3 and claimed_by = $4 and status = 'pending'`,
+					orgID, channel, key, claim, lease); err != nil {
+					log.Printf("[channel-inbound] %s: could not renew the claim on an update: %v", channel, err)
+				}
+			}
+		}
+	}()
+	return func() { close(done); <-ended }
+}
+
+// recordInboundFailure counts a failed attempt. When the claim is gone, the
+// update is not dead: the dispatch that holds it now decides.
 func (a *API) recordInboundFailure(ctx context.Context, orgID, channel, key, claim string, raw any, failure string) (dead bool, attempts int, err error) {
-	attempts = inboundMaxAttempts
 	err = a.DB.QueryRow(ctx, `update inbound_dedup set attempts = attempts + 1, last_error = $4, updated_at = now(),
 		  claimed_by = null, claimed_until = null,
 		  status = case when attempts + 1 >= $5 then 'dead' else status end,
@@ -99,9 +137,12 @@ func (a *API) recordInboundFailure(ctx context.Context, orgID, channel, key, cla
 		where org_id = $1 and channel_plugin = $2 and update_key = $3 and claimed_by = $7 returning attempts`,
 		orgID, channel, key, failure, inboundMaxAttempts, jsStringify(raw, false), claim).Scan(&attempts)
 	if errors.Is(err, pgx.ErrNoRows) {
-		err = nil
+		return false, 0, nil
 	}
-	return attempts >= inboundMaxAttempts, attempts, err
+	if err != nil {
+		return false, 0, err
+	}
+	return attempts >= inboundMaxAttempts, attempts, nil
 }
 
 func (a *API) loadPollCursor(ctx context.Context, orgID, channel string) (string, error) {
@@ -129,8 +170,11 @@ func (a *API) pruneInboundDedup(ctx context.Context, now time.Time) (int64, erro
 // while a failed update still has attempts left, or while another dispatch
 // holds it, so the caller holds its poll cursor.
 func (a *API) processInbound(ctx context.Context, orgID, channel string, raw any) bool {
-	key := inboundUpdateKey(raw)
-	claim, busy, dead, err := a.beginInbound(ctx, orgID, channel, key)
+	return a.processInboundKey(ctx, orgID, channel, inboundUpdateKey(raw), raw)
+}
+
+func (a *API) processInboundKey(ctx context.Context, orgID, channel, key string, raw any) bool {
+	claim, busy, dead, err := a.beginInbound(ctx, orgID, channel, key, raw)
 	if err != nil {
 		log.Printf("[channel-inbound] %s: could not claim the update: %v", channel, err)
 		return false
@@ -147,7 +191,10 @@ func (a *API) processInbound(ctx context.Context, orgID, channel string, raw any
 		log.Printf("[channel-inbound] %s: skipping %s inbound update", channel, kind)
 		return true
 	}
-	if err = a.dispatchInbound(ctx, orgID, channel, raw); err == nil {
+	stop := a.holdInboundLease(ctx, orgID, channel, key, claim)
+	err = a.dispatchInbound(ctx, orgID, channel, key, raw)
+	stop()
+	if err == nil {
 		if err = a.markInboundDone(ctx, orgID, channel, key, claim); err == nil {
 			return true
 		}
@@ -164,7 +211,40 @@ func (a *API) processInbound(ctx context.Context, orgID, channel string, raw any
 	return false
 }
 
-func (a *API) dispatchInbound(ctx context.Context, orgID, channel string, raw any) error {
+// retryPendingInbound sends again each pending update that no dispatch
+// holds: an update whose dispatch failed after the provider had its answer
+// (Slack Socket Mode acknowledges first), or whose process stopped.
+func (a *API) retryPendingInbound(ctx context.Context) {
+	rows, err := a.DB.Query(ctx, `select org_id, channel_plugin, update_key, payload::text from inbound_dedup
+		where status = 'pending' and payload is not null and (claimed_until is null or claimed_until < now())
+		order by updated_at limit $1`, inboundRetryBatch)
+	if err != nil {
+		log.Printf("[channel-inbound] retry sweep: %v", err)
+		return
+	}
+	type pending struct{ org, channel, key, payload string }
+	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (pending, error) {
+		var p pending
+		return p, r.Scan(&p.org, &p.channel, &p.key, &p.payload)
+	})
+	if err != nil {
+		log.Printf("[channel-inbound] retry sweep: %v", err)
+		return
+	}
+	for _, p := range list {
+		if ctx.Err() != nil {
+			return
+		}
+		raw, err := jsParse([]byte(p.payload))
+		if err != nil {
+			log.Printf("[channel-inbound] retry sweep: a stored %s update is not JSON: %v", p.channel, err)
+			continue
+		}
+		a.processInboundKey(ctx, p.org, p.channel, p.key, raw)
+	}
+}
+
+func (a *API) dispatchInbound(ctx context.Context, orgID, channel, key string, raw any) error {
 	in, ok := channelInbound[channel]
 	if !ok {
 		return fmt.Errorf("unknown channel %s", channel)
@@ -187,8 +267,8 @@ func (a *API) dispatchInbound(ctx context.Context, orgID, channel string, raw an
 			return err
 		}
 	}
-	for _, intent := range parsed.Intents {
-		if err := a.dispatchIntent(ctx, org, channel, intent, parsed.Recipient, parsed.Sender); err != nil {
+	for i, intent := range parsed.Intents {
+		if err := a.dispatchIntent(ctx, org, channel, fmt.Sprintf("%s-%d", key, i), intent, parsed.Recipient, parsed.Sender); err != nil {
 			return err
 		}
 	}
@@ -323,7 +403,7 @@ func (a *API) linkedChannelActor(ctx context.Context, orgID, channel, userID str
 	return channelActor{UserID: userID, Admin: role == "admin"}, nil
 }
 
-func (a *API) dispatchIntent(ctx context.Context, orgID, channel string, intent, recipient, sender *jsObj) error {
+func (a *API) dispatchIntent(ctx context.Context, orgID, channel, requestID string, intent, recipient, sender *jsObj) error {
 	who, err := a.resolveChannelActor(ctx, orgID, channel, sender)
 	if err != nil {
 		return err
@@ -337,15 +417,15 @@ func (a *API) dispatchIntent(ctx context.Context, orgID, channel string, intent,
 	case "decision":
 		return a.channelDecision(ctx, orgID, channel, who, text("decisionRef"), text("choice"), jsGet(intent, "reason"))
 	case "utterance":
-		return a.startChannelRun(ctx, orgID, channel, text("text"), text("threadRef"), recipient, sender, who)
+		return a.startChannelRun(ctx, orgID, channel, requestID, text("text"), text("threadRef"), recipient, sender, who)
 	case "invoke":
 		message := "/" + text("command")
 		if args := jsGet(intent, "args"); jsTruthy(jsMember(args, "text")) {
 			message += " " + jsStr(jsGet(args, "text"))
 		}
-		return a.startChannelRun(ctx, orgID, channel, message, "", recipient, sender, who)
+		return a.startChannelRun(ctx, orgID, channel, requestID, message, "", recipient, sender, who)
 	}
-	return a.startChannelRun(ctx, orgID, channel, text("optionId"), "", recipient, sender, who)
+	return a.startChannelRun(ctx, orgID, channel, requestID, text("optionId"), "", recipient, sender, who)
 }
 
 // channelDecision approves or rejects a pending request. A refused decision
@@ -404,8 +484,10 @@ func channelThreadID(orgID, channel, key string) string {
 }
 
 // startChannelRun is startChatRun() in the worker: the channel thread, the
-// run with its spend check, the user message and the work_run job.
-func (a *API) startChannelRun(ctx context.Context, orgID, channel, message, threadRef string, recipient, sender *jsObj, who channelActor) error {
+// run with its spend check, the user message and the work_run job commit
+// together. requestID names the update and its intent, so a repeated
+// dispatch of one update finds its run and starts no second one.
+func (a *API) startChannelRun(ctx context.Context, orgID, channel, requestID, message, threadRef string, recipient, sender *jsObj, who channelActor) error {
 	title := strings.ToUpper(channel[:1]) + channel[1:]
 	if threadRef != "" {
 		title += " " + threadRef
@@ -414,7 +496,6 @@ func (a *API) startChannelRun(ctx context.Context, orgID, channel, message, thre
 	if recipient != nil {
 		key = conversationKey(recipient, threadRef)
 	}
-	var threadID string
 	if jsTruthy(jsMember(recipient, "requireThread")) {
 		if key == "" {
 			return nil
@@ -425,31 +506,15 @@ func (a *API) startChannelRun(ctx context.Context, orgID, channel, message, thre
 			return err
 		}
 	}
-	if key != "" {
-		threadID = channelThreadID(orgID, channel, key)
-		if _, err := a.DB.Exec(ctx, `insert into work_thread (id, org_id, title, channel, created_by_user_id)
-			values ($1, $2, $3, $4, $5) on conflict do nothing`, threadID, orgID, title, channel, nullable(who.UserID)); err != nil {
-			return err
-		}
-	} else if err := a.DB.QueryRow(ctx, `insert into work_thread (org_id, title, channel, created_by_user_id) values ($1, $2, $3, $4) returning id::text`,
-		orgID, title, channel, nullable(who.UserID)).Scan(&threadID); err != nil {
-		return err
+	if key == "" {
+		key = "update:" + requestID
 	}
-	runID, err := a.createWorkRun(ctx, orgID, threadID, who.UserID, who.role(), "channel", "")
-	var over *spendExceeded
-	if errors.As(err, &over) && recipient != nil {
-		reply := fmt.Sprintf("spend-%s-%d", threadID, time.Now().UnixMilli())
-		return a.queueChannelDelivery(ctx, orgID, channel, []byte(jsStringify(recipient, false)),
-			[]any{jsObjOf("kind", "converse", "id", reply, "role", "assistant", "text", over.Error())}, "reply-"+reply)
-	}
-	if err != nil {
-		return err
-	}
-	if err := a.saveUserMessage(ctx, orgID, threadID, runID, message); err != nil {
-		return err
+	threadID := channelThreadID(orgID, channel, key)
+	if a.Jobs == nil {
+		return errors.New("the job queue is not ready")
 	}
 	payload := jsObjOf("message", message)
-	args := jobs.WorkRunArgs{OrgID: orgID, RunID: runID, ThreadID: threadID, Message: message, Channel: channel, ChannelPlugin: channel}
+	args := jobs.WorkRunArgs{OrgID: orgID, ThreadID: threadID, Message: message, Channel: channel, ChannelPlugin: channel}
 	if recipient != nil {
 		args.Recipient = []byte(jsStringify(recipient, false))
 	}
@@ -457,23 +522,44 @@ func (a *API) startChannelRun(ctx context.Context, orgID, channel, message, thre
 		payload.set("sender", sender)
 		args.Sender = []byte(jsStringify(sender, false))
 	}
-	queued := float64(time.Now().UnixMilli())
-	args.QueuedAt = &queued
-	if a.Jobs == nil {
-		return errors.New("the job queue is not ready")
-	}
-	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
+	var runID string
+	var existing bool
+	err := pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `insert into work_thread (id, org_id, title, channel, created_by_user_id)
+			values ($1, $2, $3, $4, $5) on conflict do nothing`, threadID, orgID, title, channel, nullable(who.UserID)); err != nil {
+			return err
+		}
+		var err error
+		runID, existing, err = insertWorkRun(ctx, tx, orgID, threadID, who.UserID, who.role(), "channel", "", requestID, message)
+		if err != nil || existing {
+			return err
+		}
 		if err := tx.QueryRow(ctx, `insert into processing_job (org_id, kind, status, trigger, trigger_payload)
 			values ($1, 'work_run', 'queued', 'channel_inbound', $2::jsonb) returning id::text`,
 			orgID, jsStringify(payload, false)).Scan(&args.ProcessingJobID); err != nil {
 			return err
 		}
+		args.RunID = runID
+		queued := float64(time.Now().UnixMilli())
+		args.QueuedAt = &queued
 		return a.Jobs.WorkRun(ctx, tx, args)
 	})
-	if err == nil {
-		log.Printf("[channel-inbound] started chat run %s for %q", runID, jsSlice(message, 40))
+	runID, existing, err = a.workRunCreated(ctx, orgID, runID, existing, who.UserID, who.role(), err)
+	var over *spendExceeded
+	if errors.As(err, &over) && recipient != nil {
+		reply := "spend-" + threadID + "-" + requestID
+		return a.queueChannelDelivery(ctx, orgID, channel, []byte(jsStringify(recipient, false)),
+			[]any{jsObjOf("kind", "converse", "id", reply, "role", "assistant", "text", over.Error())}, "reply-"+reply)
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	if existing {
+		log.Printf("[channel-inbound] chat run %s already exists for this update", runID)
+		return nil
+	}
+	log.Printf("[channel-inbound] started chat run %s for %q", runID, jsSlice(message, 40))
+	return nil
 }
 
 // channelWebhook is POST /api/v1/channels/{channelId}/inbound: a provider

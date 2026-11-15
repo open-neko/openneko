@@ -73,27 +73,38 @@ func (a *API) createWorkRun(ctx context.Context, orgID, threadID, actorUserID, a
 // A non-empty message is saved in the same transaction as the run.
 func (a *API) createWorkRunOnce(ctx context.Context, orgID, threadID, actorUserID, actorRole, source, workflowID, clientRequestID, message string) (runID string, existing bool, err error) {
 	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
-		err := tx.QueryRow(ctx, `insert into work_run (org_id, thread_id, backend, status, actor_user_id, actor_role, client_request_id)
-			values ($1, $2, $3, 'queued', $4, $5, $6)
-			on conflict (thread_id, client_request_id) where client_request_id is not null do nothing
-			returning id::text`,
-			orgID, threadID, agentBackendID, nullable(actorUserID), nullable(actorRole), nullable(clientRequestID)).Scan(&runID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			existing = true
-			return tx.QueryRow(ctx, `select id::text from work_run where thread_id = $1 and client_request_id = $2`,
-				threadID, clientRequestID).Scan(&runID)
-		}
-		if err != nil {
-			return err
-		}
-		if err := admitRunSpend(ctx, tx, orgID, workflowID, runID, source, time.Now()); err != nil {
-			return err
-		}
-		if message == "" {
-			return nil
-		}
-		return saveUserMessage(ctx, tx, orgID, threadID, runID, message, true)
+		runID, existing, err = insertWorkRun(ctx, tx, orgID, threadID, actorUserID, actorRole, source, workflowID, clientRequestID, message)
+		return err
 	})
+	return a.workRunCreated(ctx, orgID, runID, existing, actorUserID, actorRole, err)
+}
+
+func insertWorkRun(ctx context.Context, tx pgx.Tx, orgID, threadID, actorUserID, actorRole, source, workflowID, clientRequestID, message string) (runID string, existing bool, err error) {
+	err = tx.QueryRow(ctx, `insert into work_run (org_id, thread_id, backend, status, actor_user_id, actor_role, client_request_id)
+		values ($1, $2, $3, 'queued', $4, $5, $6)
+		on conflict (thread_id, client_request_id) where client_request_id is not null do nothing
+		returning id::text`,
+		orgID, threadID, agentBackendID, nullable(actorUserID), nullable(actorRole), nullable(clientRequestID)).Scan(&runID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = tx.QueryRow(ctx, `select id::text from work_run where thread_id = $1 and client_request_id = $2`,
+			threadID, clientRequestID).Scan(&runID)
+		return runID, true, err
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if err := admitRunSpend(ctx, tx, orgID, workflowID, runID, source, time.Now()); err != nil {
+		return "", false, err
+	}
+	if message == "" {
+		return runID, false, nil
+	}
+	return runID, false, saveUserMessage(ctx, tx, orgID, threadID, runID, message, true)
+}
+
+// workRunCreated records what follows the commit of insertWorkRun: the
+// budget alert of a refused run, or the audit event of a new one.
+func (a *API) workRunCreated(ctx context.Context, orgID, runID string, existing bool, actorUserID, actorRole string, err error) (string, bool, error) {
 	if err != nil {
 		var over *spendExceeded
 		if errors.As(err, &over) {
