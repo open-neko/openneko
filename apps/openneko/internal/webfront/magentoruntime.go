@@ -1086,8 +1086,11 @@ func (a *API) autoApprovePreparedActionRequest(ctx context.Context, req *actionR
 	if err := a.DB.QueryRow(ctx, `
 		update action_request
 		   set status = 'approved', approved_by_user_id = null, approved_at = now(), updated_at = now()
-		 where org_id = $1 and id::text = $2
+		 where org_id = $1 and id::text = $2 and status in ('draft', 'pending_approval')
 		 returning approved_at`, req.OrgID, req.ID).Scan(&approvedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errors.New("invalid action_request transition: request is no longer draft or pending approval")
+		}
 		return err
 	}
 	req.Status, req.ApprovedBy, req.ApprovedAt = "approved", nil, &approvedAt
@@ -1154,7 +1157,7 @@ func (a *API) prepareMagentoChangeset(ctx context.Context, req *actionRequestRec
 			EntityType:      op.EntityType,
 			OperationID:     op.OperationID,
 			DefaultClass:    packs.MagentoRiskClass(op.DefaultClass),
-			Body:            plainJSON(row.body),
+			Body:            row.body,
 			Classifications: classifications,
 		})
 		if classification.RiskClass == 0 {
@@ -1172,7 +1175,7 @@ func (a *API) prepareMagentoChangeset(ctx context.Context, req *actionRequestRec
 	}
 	capRows := make([]packs.MagentoChangeRow, len(prepared))
 	for i, row := range prepared {
-		capRows[i] = packs.MagentoChangeRow{BeforeImage: plainJSON(row.before), AfterImage: plainJSON(row.input.body)}
+		capRows[i] = packs.MagentoChangeRow{BeforeImage: row.before, AfterImage: row.input.body}
 	}
 	caps := packs.EvaluateMagentoCaps(packs.EvaluateMagentoCapsInput{
 		Domain:            packs.MagentoDomain(def.Domain),
@@ -1306,8 +1309,7 @@ func (a *API) prepareMagentoChangeset(ctx context.Context, req *actionRequestRec
 			requirements[j] = jsObjOf(
 				"attribute", attr.Attribute,
 				"category", string(attr.Category),
-				"rationale", attr.Rationale,
-				"matched", attr.Matched,
+				"reviewed", attr.Reviewed,
 				"execution_mode", string(packs.MagentoExecutionModeFor(attr.RiskClass)),
 			)
 		}
@@ -1693,9 +1695,12 @@ func (a *API) executeMagentoChangeset(ctx context.Context, req *actionRequestRec
 				seen = emptyJSObj()
 			}
 			if !bulk && op.ReadPath != "" && len(row.expected.vals) > 0 && !magentoCompareCanonical(seen, row.expected) {
+				if err := a.setMagentoRow(ctx, row.id, `status = 'drifted', reconciled_image = $2::jsonb,
+					error = 'Magento value changed after preview', finished_at = now()`, jsonbArg(current)); err != nil {
+					return err
+				}
 				reconcileRequired++
-				return a.setMagentoRow(ctx, row.id, `status = 'drifted', reconciled_image = $2::jsonb,
-					error = 'Magento value changed after preview', finished_at = now()`, jsonbArg(current))
+				return nil
 			}
 			var response *magentoMutationResult
 			if !bulk {
@@ -1768,14 +1773,19 @@ func (a *API) executeMagentoChangeset(ctx context.Context, req *actionRequestRec
 				externalRef = response.requestID
 			}
 			rowStatus, rowError := "applied", any(nil)
+			if !confirmed {
+				rowStatus, rowError = "reconcile_required", "Magento write succeeded but reconciliation did not confirm the requested values"
+			}
+			if err := a.setMagentoRow(ctx, row.id, `status = $2, external_ref = $3, reconciled_image = $4::jsonb, error = $5, finished_at = now()`,
+				rowStatus, nullableStringPtr(&externalRef), jsonbArg(reconciled), rowError); err != nil {
+				return err
+			}
 			if confirmed {
 				applied++
 			} else {
 				reconcileRequired++
-				rowStatus, rowError = "reconcile_required", "Magento write succeeded but reconciliation did not confirm the requested values"
 			}
-			return a.setMagentoRow(ctx, row.id, `status = $2, external_ref = $3, reconciled_image = $4::jsonb, error = $5, finished_at = now()`,
-				rowStatus, nullableStringPtr(&externalRef), jsonbArg(reconciled), rowError)
+			return nil
 		}()
 		if rowErr == nil {
 			continue

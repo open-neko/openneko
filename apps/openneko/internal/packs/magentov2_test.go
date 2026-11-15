@@ -1,230 +1,186 @@
 package packs
 
 import (
-	"slices"
+	"bytes"
+	"encoding/json"
+	"os"
+	"reflect"
+	"strconv"
 	"testing"
 	"time"
 )
 
-func TestMagentoV2ClassificationAndCaps(t *testing.T) {
-	t.Run("classifies merchandising product updates as Class 2", func(t *testing.T) {
-		result := ClassifyMagentoChange(ClassifyMagentoInput{
-			Domain:       MagentoCatalog,
-			EntityType:   "product",
-			OperationID:  "magentoUpdateProduct",
-			DefaultClass: 2,
-			Body: map[string]any{
-				"product": map[string]any{
-					"name": "Trail Runner Jacket",
-					"custom_attributes": []any{
-						map[string]any{"attribute_code": "short_description", "value": "Updated waterproof shell."},
-					},
-				},
-			},
-		})
-		if result.RiskClass != 2 || result.ExecutionMode != MagentoControlledAutomation {
-			t.Fatalf("got %+v", result)
-		}
-	})
+type orderedTestObject struct {
+	keys []string
+	vals map[string]any
+}
 
-	t.Run("keeps reviewed price and CMS content as Class 2, as Node does", func(t *testing.T) {
-		price := ClassifyMagentoChange(ClassifyMagentoInput{
-			Domain:       MagentoCatalog,
-			EntityType:   "product",
-			OperationID:  "magentoUpdateProduct",
-			DefaultClass: 2,
-			Body:         map[string]any{"product": map[string]any{"price": 129.99, "visibility": 4}},
-		})
-		cms := ClassifyMagentoChange(ClassifyMagentoInput{
-			Domain:       MagentoContent,
-			EntityType:   "cms",
-			OperationID:  "magentoUpdateCmsPage",
-			DefaultClass: 2,
-			Body:         map[string]any{"page": map[string]any{"title": "Shipping", "content": "Updated content", "is_active": true}},
-		})
-		if price.RiskClass != 2 || cms.RiskClass != 2 || slices.ContainsFunc(cms.Attributes, func(a MagentoClassifiedAttr) bool { return !a.Matched }) {
-			t.Fatalf("price %+v cms %+v", price, cms)
-		}
-		if cost := ClassifyMagentoChange(ClassifyMagentoInput{
-			Domain: MagentoCatalog, EntityType: "product", OperationID: "magentoUpdateProduct", DefaultClass: 2,
-			Body: map[string]any{"product": map[string]any{"cost": 10}},
-		}); cost.RiskClass != 1 || cost.Attributes[0].Category != MagentoCatFinancial {
-			t.Fatalf("cost %+v", cost)
-		}
-	})
+func (o *orderedTestObject) ObjectKeys() []string       { return o.keys }
+func (o *orderedTestObject) ObjectValue(key string) any { return o.vals[key] }
 
-	t.Run("escalates unclassified custom attributes to Class 1", func(t *testing.T) {
-		result := ClassifyMagentoChange(ClassifyMagentoInput{
-			Domain:       MagentoCatalog,
-			EntityType:   "product",
-			OperationID:  "magentoUpdateProduct",
-			DefaultClass: 2,
-			Body: map[string]any{
-				"product": map[string]any{
-					"custom_attributes": []any{
-						map[string]any{"attribute_code": "unreviewed_erp_flag", "value": "1"},
-					},
-				},
-			},
-		})
-		if result.RiskClass != 1 || len(result.Attributes) != 1 ||
-			result.Attributes[0].Attribute != "unreviewed_erp_flag" ||
-			result.Attributes[0].RiskClass != 1 || result.Attributes[0].Matched {
-			t.Fatalf("got %+v", result)
-		}
-	})
-
-	t.Run("treats customer-notifying order comments as Class 1 and internal comments as Class 2", func(t *testing.T) {
-		internalComment := ClassifyMagentoChange(ClassifyMagentoInput{
-			Domain:       MagentoOrders,
-			EntityType:   "order",
-			OperationID:  "magentoAddOrderComment",
-			DefaultClass: 2,
-			Body: map[string]any{
-				"statusHistory": map[string]any{
-					"comment":              "Warehouse confirmed pallet count.",
-					"is_customer_notified": 0,
-				},
-			},
-		})
-		customerComment := ClassifyMagentoChange(ClassifyMagentoInput{
-			Domain:       MagentoOrders,
-			EntityType:   "order",
-			OperationID:  "magentoAddOrderComment",
-			DefaultClass: 2,
-			Body: map[string]any{
-				"statusHistory": map[string]any{
-					"comment":              "Your order is delayed.",
-					"is_customer_notified": 1,
-				},
-			},
-		})
-		if internalComment.RiskClass != 2 || customerComment.RiskClass != 1 {
-			t.Fatalf("internal=%d customer=%d", internalComment.RiskClass, customerComment.RiskClass)
-		}
-	})
-
-	t.Run("marks online refunds and financial configuration as handoff-only", func(t *testing.T) {
-		if !IsMagentoHandoffOnlyOperation("magentoIssueOnlineCreditmemo") {
-			t.Fatal("expected handoff-only")
-		}
-		result := ClassifyMagentoChange(ClassifyMagentoInput{
-			Domain:       MagentoOrders,
-			EntityType:   "creditmemo",
-			OperationID:  "magentoIssueOnlineCreditmemo",
-			DefaultClass: 1,
-			Body:         map[string]any{"creditmemo": map[string]any{"online_refund": true}},
-		})
-		if result.RiskClass != 0 || result.ExecutionMode != MagentoHandoffOnly {
-			t.Fatalf("got %+v", result)
-		}
-	})
-
-	t.Run("enforces price delta, non-zero price, and zero-stock escalation caps", func(t *testing.T) {
-		priceBlocked := EvaluateMagentoCaps(EvaluateMagentoCapsInput{
-			Domain:      MagentoCatalog,
-			OperationID: "magentoUpdateProduct",
-			RiskClass:   1,
-			Rows: []MagentoChangeRow{
-				{BeforeImage: map[string]any{"price": 100.0}, AfterImage: map[string]any{"product": map[string]any{"price": 75.0}}},
-			},
-		})
-		if priceBlocked.Allowed || !slices.Contains(priceBlocked.Violations, "Price delta 25.00% exceeds cap of 10%") {
-			t.Fatalf("got %+v", priceBlocked)
-		}
-
-		zeroEscalated := EvaluateMagentoCaps(EvaluateMagentoCapsInput{
-			Domain:      MagentoInventory,
-			OperationID: "magentoSaveSourceItems",
-			RiskClass:   2,
-			Rows: []MagentoChangeRow{
-				{BeforeImage: map[string]any{"quantity": 8.0}, AfterImage: map[string]any{"sourceItems": []any{map[string]any{"quantity": 0.0}}}},
-			},
-		})
-		if !zeroEscalated.Allowed || zeroEscalated.RiskClass != 1 ||
-			!slices.Contains(zeroEscalated.Escalations, "Zeroing in-stock inventory requires human approval") {
-			t.Fatalf("got %+v", zeroEscalated)
-		}
-	})
-
-	t.Run("enforces promotion expiry, discount, coupon count, and auto-rule caps", func(t *testing.T) {
-		now := time.Date(2026, 9, 12, 12, 0, 0, 0, time.UTC)
-		result := EvaluateMagentoCaps(EvaluateMagentoCapsInput{
-			Domain:      MagentoPromotions,
-			OperationID: "magentoCreateSalesRule",
-			RiskClass:   1,
-			Now:         now,
-			Rows: []MagentoChangeRow{
-				{
-					BeforeImage: map[string]any{},
-					AfterImage: map[string]any{
-						"rule": map[string]any{
-							"is_active":       true,
-							"simple_action":   "by_percent",
-							"discount_amount": 40.0,
-						},
-						"qty": 500.0,
-					},
-				},
-			},
-			AutoExecution:    true,
-			AutoActionsToday: 10,
-			CooldownBreaches: []string{"SKU-1"},
-		})
-		for _, want := range []string{
-			"Promotion discount 40% exceeds cap of 25%",
-			"Coupon generation count 500 exceeds cap of 100",
-			"Promotion expiry is required",
-			"Only Class 2 changes can execute automatically",
-			"Daily automatic action cap of 0 has been reached",
-			"Cooldown active for: SKU-1",
-		} {
-			if !slices.Contains(result.Violations, want) {
-				t.Errorf("missing %q in %v", want, result.Violations)
+func decodeOrdered(t *testing.T, dec *json.Decoder) any {
+	t.Helper()
+	tok, err := dec.Token()
+	if err != nil {
+		t.Fatal(err)
+	}
+	switch v := tok.(type) {
+	case json.Delim:
+		if v == '[' {
+			list := []any{}
+			for dec.More() {
+				list = append(list, decodeOrdered(t, dec))
 			}
+			dec.Token()
+			return list
 		}
-	})
+		obj := &orderedTestObject{vals: map[string]any{}}
+		for dec.More() {
+			k, _ := dec.Token()
+			obj.keys = append(obj.keys, k.(string))
+			obj.vals[k.(string)] = decodeOrdered(t, dec)
+		}
+		dec.Token()
+		return obj
+	case json.Number:
+		f, _ := strconv.ParseFloat(string(v), 64)
+		return f
+	}
+	return tok
+}
 
-	t.Run("uses before-image promotion fields when partial updates omit them", func(t *testing.T) {
-		now := time.Date(2026, 9, 12, 12, 0, 0, 0, time.UTC)
-		fixedFailed := EvaluateMagentoCaps(EvaluateMagentoCapsInput{
-			Domain:      MagentoPromotions,
-			OperationID: "magentoUpdateSalesRule",
-			RiskClass:   1,
-			Now:         now,
-			Rows: []MagentoChangeRow{{
-				BeforeImage: map[string]any{"simple_action": "by_percent", "is_active": false, "to_date": "2026-10-01"},
-				AfterImage:  map[string]any{"rule": map[string]any{"discount_amount": 40.0}},
-			}},
+func orderedField(v any, key string) any {
+	if o, ok := v.(*orderedTestObject); ok {
+		return o.vals[key]
+	}
+	return nil
+}
+
+func roundTrip(t *testing.T, v any) any {
+	t.Helper()
+	raw, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+type magentoParityFixture struct {
+	Now  string `json:"now"`
+	Caps []struct {
+		Name   string          `json:"name"`
+		Input  json.RawMessage `json:"input"`
+		Output map[string]any  `json:"output"`
+	} `json:"caps"`
+	Classify []struct {
+		Name   string          `json:"name"`
+		Input  json.RawMessage `json:"input"`
+		Output map[string]any  `json:"output"`
+	} `json:"classify"`
+	Handoff []struct {
+		OperationID string `json:"operationId"`
+		HandoffOnly bool   `json:"handoffOnly"`
+	} `json:"handoff"`
+}
+
+func TestMagentoV2MatchesNode(t *testing.T) {
+	raw, err := os.ReadFile("testdata/magento_v2_caps_parity.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture magentoParityFixture
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	now, _ := time.Parse(time.RFC3339, fixture.Now)
+	parse := func(raw json.RawMessage) any {
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.UseNumber()
+		return decodeOrdered(t, dec)
+	}
+
+	for _, c := range fixture.Caps {
+		t.Run("caps/"+c.Name, func(t *testing.T) {
+			in := parse(c.Input)
+			input := EvaluateMagentoCapsInput{Now: now}
+			input.Domain = MagentoDomain(orderedField(in, "domain").(string))
+			input.OperationID, _ = orderedField(in, "operationId").(string)
+			input.RiskClass = MagentoRiskClass(orderedField(in, "riskClass").(float64))
+			for _, row := range orderedField(in, "rows").([]any) {
+				input.Rows = append(input.Rows, MagentoChangeRow{BeforeImage: orderedField(row, "beforeImage"), AfterImage: orderedField(row, "afterImage")})
+			}
+			if caps, ok := orderedField(in, "caps").(*orderedTestObject); ok {
+				input.Caps = map[string]float64{}
+				for _, k := range caps.keys {
+					input.Caps[k] = caps.vals[k].(float64)
+				}
+			}
+			if v, ok := orderedField(in, "projectedExposure").(float64); ok {
+				input.ProjectedExposure = &v
+			}
+			input.AutoExecution, _ = orderedField(in, "autoExecution").(bool)
+			if v, ok := orderedField(in, "autoActionsToday").(float64); ok {
+				input.AutoActionsToday = int(v)
+			}
+			if list, ok := orderedField(in, "cooldownBreaches").([]any); ok {
+				for _, item := range list {
+					input.CooldownBreaches = append(input.CooldownBreaches, item.(string))
+				}
+			}
+			got := roundTrip(t, EvaluateMagentoCaps(input))
+			if !reflect.DeepEqual(got, roundTrip(t, c.Output)) {
+				t.Fatalf("Go result differs from Node\n got: %v\nwant: %v", got, c.Output)
+			}
 		})
-		if fixedFailed.Allowed {
-			t.Fatal("expected disallowed")
-		}
-		fixedAllowed := EvaluateMagentoCaps(EvaluateMagentoCapsInput{
-			Domain:      MagentoPromotions,
-			OperationID: "magentoUpdateSalesRule",
-			RiskClass:   1,
-			Now:         now,
-			Rows: []MagentoChangeRow{{
-				BeforeImage: map[string]any{"simple_action": "by_fixed", "is_active": true, "to_date": "2026-10-01"},
-				AfterImage:  map[string]any{"rule": map[string]any{"discount_amount": 40.0}},
-			}},
+	}
+
+	for _, c := range fixture.Classify {
+		t.Run("classify/"+c.Name, func(t *testing.T) {
+			in := parse(c.Input)
+			var stored []MagentoAttributeClassification
+			if list, ok := orderedField(in, "classifications").([]any); ok {
+				stored = []MagentoAttributeClassification{}
+				for _, item := range list {
+					raw, _ := json.Marshal(roundTrip(t, item.(*orderedTestObject).vals))
+					var entry MagentoAttributeClassification
+					if err := json.Unmarshal(raw, &entry); err != nil {
+						t.Fatal(err)
+					}
+					stored = append(stored, entry)
+				}
+			}
+			got := roundTrip(t, ClassifyMagentoChange(ClassifyMagentoInput{
+				Domain:          MagentoDomain(orderedField(in, "domain").(string)),
+				EntityType:      orderedField(in, "entityType").(string),
+				OperationID:     orderedField(in, "operationId").(string),
+				DefaultClass:    MagentoRiskClass(orderedField(in, "defaultClass").(float64)),
+				Body:            orderedField(in, "body"),
+				Classifications: stored,
+			}))
+			if !reflect.DeepEqual(got, roundTrip(t, c.Output)) {
+				t.Fatalf("Go result differs from Node\n got: %v\nwant: %v", got, c.Output)
+			}
 		})
-		if !fixedAllowed.Allowed {
-			t.Fatalf("expected allowed: %v", fixedAllowed.Violations)
+	}
+
+	for _, c := range fixture.Handoff {
+		if got := IsMagentoHandoffOnlyOperation(c.OperationID); got != c.HandoffOnly {
+			t.Errorf("%s: handoff-only %v, Node %v", c.OperationID, got, c.HandoffOnly)
 		}
-		expiryCleared := EvaluateMagentoCaps(EvaluateMagentoCapsInput{
-			Domain:      MagentoPromotions,
-			OperationID: "magentoUpdateSalesRule",
-			RiskClass:   1,
-			Now:         now,
-			Rows: []MagentoChangeRow{{
-				BeforeImage: map[string]any{"simple_action": "by_fixed", "is_active": true, "to_date": "2026-10-01"},
-				AfterImage:  map[string]any{"rule": map[string]any{"to_date": ""}},
-			}},
-		})
-		if !slices.Contains(expiryCleared.Violations, "Promotion expiry is required") {
-			t.Fatalf("got %v", expiryCleared.Violations)
-		}
+	}
+}
+
+func TestMagentoCapsReadPlainMaps(t *testing.T) {
+	result := EvaluateMagentoCaps(EvaluateMagentoCapsInput{
+		Domain:    MagentoCatalog,
+		RiskClass: 2,
+		Rows:      []MagentoChangeRow{{BeforeImage: map[string]any{"price": 100.0}, AfterImage: map[string]any{"product": map[string]any{"price": 125.0}}}},
 	})
+	if !result.Allowed || result.RiskClass != 1 || len(result.Escalations) != 1 {
+		t.Fatalf("got %+v", result)
+	}
 }

@@ -553,7 +553,9 @@ func (a *API) approvedPackConnections(ctx context.Context, req *actionRequestRec
 func (a *API) executeDeclarativePackAction(ctx context.Context, req *actionRequestRecord) (*actionExecutionOutcome, error) {
 	serializedPayload := jsStringify(req.Payload, false)
 	var plainPayload any
-	_ = json.Unmarshal([]byte(serializedPayload), &plainPayload)
+	if err := json.Unmarshal([]byte(serializedPayload), &plainPayload); err != nil {
+		return nil, err
+	}
 	if err := packs.AssertSafePackActionPayload(len(serializedPayload), plainPayload); err != nil {
 		return nil, err
 	}
@@ -851,8 +853,6 @@ func (a *API) goActionAdapter(ctx context.Context, orgID, actionRequestID string
 		return a.executeMagentoFinancialHandoff, nil
 	case isMagentoV2ActionKind(kind):
 		return a.executeMagentoChangeset, nil
-	case owned:
-		return a.executeDeclarativePackAction, nil
 	case kind == "send_webhook":
 		return a.executeSendWebhook, nil
 	case kind == "code_create_issue":
@@ -878,6 +878,8 @@ func (a *API) goActionAdapter(ctx context.Context, orgID, actionRequestID string
 				Result:             jsObjOf("mocked", true),
 			}, nil
 		}, nil
+	case owned:
+		return a.executeDeclarativePackAction, nil
 	}
 	return func(context.Context, *actionRequestRecord) (*actionExecutionOutcome, error) {
 		return nil, fmt.Errorf("no adapter registered for kind %q", kind)
