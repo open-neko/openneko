@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 
 	"github.com/open-neko/neko/apps/openneko/assets"
 	"github.com/open-neko/neko/apps/openneko/internal/compose"
@@ -674,18 +675,39 @@ func replaceFolder(src, dst string) error {
 	return os.RemoveAll(old)
 }
 
-// checkReleasePacks requires one or more <id>/pack.yaml files in dir.
+// checkReleasePacks requires one or more <id>/pack.yaml files in dir, each
+// YAML with a metadata name.
 func checkReleasePacks(dir string) error {
 	found, err := filepath.Glob(filepath.Join(dir, "*", "pack.yaml"))
 	if err != nil {
 		return err
 	}
+	packs := 0
 	for _, f := range found {
-		if info, err := os.Stat(f); err == nil && info.Mode().IsRegular() {
-			return nil
+		if info, err := os.Stat(f); err != nil || !info.Mode().IsRegular() {
+			continue
 		}
+		raw, err := os.ReadFile(f)
+		if err != nil {
+			return err
+		}
+		var manifest struct {
+			Metadata struct {
+				Name string `yaml:"name"`
+			} `yaml:"metadata"`
+		}
+		if err := yaml.Unmarshal(raw, &manifest); err != nil {
+			return fmt.Errorf("%s does not parse: %w", f, err)
+		}
+		if strings.TrimSpace(manifest.Metadata.Name) == "" {
+			return fmt.Errorf("%s has no metadata name", f)
+		}
+		packs++
 	}
-	return errors.New("no built-in pack (no <id>/pack.yaml)")
+	if packs == 0 {
+		return errors.New("no built-in pack (no <id>/pack.yaml)")
+	}
+	return nil
 }
 
 // replaceReleasePacks puts the built-in packs of the new release beside the
