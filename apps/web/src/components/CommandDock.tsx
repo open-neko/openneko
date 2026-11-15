@@ -23,6 +23,7 @@ import {
   useApprovalsCount,
   type NavDestination,
 } from "@/lib/nav";
+import { signOut as handleSignOut } from "@/lib/sign-out";
 
 type OpenSheet = "more" | null;
 
@@ -107,14 +108,6 @@ export default function CommandDock() {
       cancelled = true;
     };
   }, [hidden]);
-
-  async function handleSignOut() {
-    try {
-      await fetch("/api/v1/auth/logout", { method: "POST" });
-    } finally {
-      window.location.href = "/signin";
-    }
-  }
 
   function closeSheet() {
     setOpenSheet(null);

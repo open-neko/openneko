@@ -85,7 +85,10 @@ export const settingsCases: Case[] = [
   },
   {
     op: "GET /my/push-subscriptions", name: "lists the signed-in user's push subscriptions", status: 200,
-    check: (r) => expect(body(r)).toEqual({ subscriptions: [] }),
+    check: (r) => {
+      expect(body(r)).toMatchObject({ subscriptions: [] });
+      expect((body(r) as { vapidPublicKey: string }).vapidPublicKey).toMatch(/^B[A-Za-z0-9_-]{86}$/);
+    },
   },
   {
     op: "POST /my/push-subscriptions", name: "needs a valid push subscription payload", status: 400,

@@ -20,6 +20,7 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import pg from "pg";
+import { verifyVapidForSubscription } from "./vapid";
 import { expect, test, type Page } from "@playwright/test";
 
 function resolveDatabaseUrl(): string {
@@ -850,6 +851,15 @@ test.describe("Phase 4 gate check (G4)", () => {
                   ) as ArrayBuffer;
                 }
               }
+              localStorage.setItem(
+                "gate4.pushServerKey",
+                appKey
+                  ? btoa(String.fromCharCode(...new Uint8Array(appKey)))
+                      .replace(/\+/g, "-")
+                      .replace(/\//g, "_")
+                      .replace(/=+$/, "")
+                  : "",
+              );
               currentSub = makeSub(appKey);
               return currentSub;
             },
@@ -1157,8 +1167,19 @@ test.describe("Phase 4 gate check (G4)", () => {
         (p) => p.notice.event === "approval_waiting",
       )!;
       expect(approvalPush.headers["content-encoding"]).toBe("aes128gcm");
-      expect(String(approvalPush.headers["authorization"] ?? "")).toMatch(
-        /^vapid t=[^,]+, k=/,
+      const subscribedKey = await page.evaluate(
+        () => localStorage.getItem("gate4.pushServerKey") ?? "",
+      );
+      const serverKey = await page.evaluate(async () => {
+        const r = await fetch("/api/v1/my/push-subscriptions");
+        return ((await r.json()) as { vapidPublicKey?: string }).vapidPublicKey ?? "";
+      });
+      expect(serverKey).toMatch(/^B[A-Za-z0-9_-]{86}$/);
+      expect(subscribedKey).toBe(serverKey);
+      verifyVapidForSubscription(
+        String(approvalPush.headers["authorization"] ?? ""),
+        subscribedKey,
+        `http://127.0.0.1:${stubPort}`,
       );
       expect(approvalPush.notice).toEqual({
         title: "OpenNeko",
