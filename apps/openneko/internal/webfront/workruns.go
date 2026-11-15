@@ -79,6 +79,56 @@ func (a *API) createWorkRunOnce(ctx context.Context, orgID, threadID, actorUserI
 	return a.workRunCreated(ctx, orgID, runID, existing, actorUserID, actorRole, err)
 }
 
+const runInFlightRetrySeconds = 2
+
+type runInFlight struct{ runID string }
+
+func (e *runInFlight) Error() string { return "a question is still running in this thread" }
+
+// createChatRunOnce is createWorkRunOnce for a question from the web: it
+// refuses a new run while another run of the thread is queued or running.
+func (a *API) createChatRunOnce(ctx context.Context, orgID, threadID, actorUserID, actorRole, clientRequestID, message string) (runID string, existing bool, err error) {
+	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `select 1 from work_thread where id = $1 for no key update`, threadID); err != nil {
+			return err
+		}
+		if clientRequestID != "" {
+			err := tx.QueryRow(ctx, `select id::text from work_run where thread_id = $1 and client_request_id = $2`,
+				threadID, clientRequestID).Scan(&runID)
+			if err == nil {
+				existing = true
+				return nil
+			}
+			if !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+		}
+		var live string
+		err := tx.QueryRow(ctx, `select id::text from work_run where thread_id = $1 and status in ('queued', 'running')
+			order by created_at desc limit 1`, threadID).Scan(&live)
+		if err == nil {
+			return &runInFlight{runID: live}
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		runID, existing, err = insertWorkRun(ctx, tx, orgID, threadID, actorUserID, actorRole, "chat", "", clientRequestID, message)
+		return err
+	})
+	return a.workRunCreated(ctx, orgID, runID, existing, actorUserID, actorRole, err)
+}
+
+// expectedUserMismatch answers 409 when the body names a user other than the
+// signed-in one, so a tab of an ended session cannot post as the next user.
+func expectedUserMismatch(w http.ResponseWriter, body any, act actor) bool {
+	expected, ok := fieldString(body, "expectedUserId")
+	if !ok || expected == act.UserID {
+		return false
+	}
+	sendJSON(w, http.StatusConflict, obj("error", "You are signed in as another user. Reload the page.", "code", "user_mismatch"))
+	return true
+}
+
 func insertWorkRun(ctx context.Context, tx pgx.Tx, orgID, threadID, actorUserID, actorRole, source, workflowID, clientRequestID, message string) (runID string, existing bool, err error) {
 	err = tx.QueryRow(ctx, `insert into work_run (org_id, thread_id, backend, status, actor_user_id, actor_role, client_request_id)
 		values ($1, $2, $3, 'queued', $4, $5, $6)
@@ -153,6 +203,9 @@ func (a *API) startRun(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
+	if expectedUserMismatch(w, body, act) {
+		return
+	}
 	threadID := r.PathValue("threadId")
 	if ok, err := a.workThreadOwned(ctx, act, threadID); err != nil || !ok {
 		if err != nil {
@@ -178,8 +231,15 @@ func (a *API) startRun(w http.ResponseWriter, r *http.Request) {
 	if clientRequestID != "" {
 		defer a.runStarts.lock(threadID + "\x00" + clientRequestID)()
 	}
-	runID, existing, err := a.createWorkRunOnce(ctx, act.OrgID, threadID, act.UserID, role, "chat", "", clientRequestID, message)
+	runID, existing, err := a.createChatRunOnce(ctx, act.OrgID, threadID, act.UserID, role, clientRequestID, message)
 	if err != nil {
+		var live *runInFlight
+		if errors.As(err, &live) {
+			w.Header().Set("Retry-After", strconv.Itoa(runInFlightRetrySeconds))
+			sendJSON(w, http.StatusConflict, obj("error", "A question is still running in this thread. Wait for its answer.",
+				"code", "run_in_flight", "runId", live.runID, "retryAfterSeconds", float64(runInFlightRetrySeconds)))
+			return
+		}
 		var over *spendExceeded
 		if errors.As(err, &over) {
 			w.Header().Set("Retry-After", strconv.FormatInt(over.retryAfter, 10))

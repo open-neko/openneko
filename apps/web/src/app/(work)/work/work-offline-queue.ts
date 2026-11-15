@@ -221,13 +221,18 @@ export function newClientRequestId(): string {
 }
 
 /**
- * A queued question completes on 2xx only; 429 and 5xx send it again later.
- * A 401 keeps it for its user to send after the next sign-in.
+ * A queued question completes on 2xx only; 429, 5xx and a 409 for a run still
+ * in flight send it again later. A 401 or a 409 for another signed-in user
+ * keeps it for its user to send after the next sign-in.
  */
-export function offlineSendOutcome(status: number): "done" | "retry" | "signin" | "refused" {
+export function offlineSendOutcome(
+  status: number,
+  code?: string,
+): "done" | "retry" | "signin" | "refused" {
   if (status >= 200 && status < 300) return "done";
   if (status === 429 || status >= 500) return "retry";
-  if (status === 401) return "signin";
+  if (status === 401 || (status === 409 && code === "user_mismatch")) return "signin";
+  if (status === 409 && code === "run_in_flight") return "retry";
   return "refused";
 }
 
@@ -243,11 +248,11 @@ export function offlineRetryDelayMs(res: { status: number; headers: Headers }): 
  */
 export function settleOfflineRefusal(
   id: string,
-  res: { status: number; headers: Headers },
+  res: { status: number; headers: Headers; code?: string },
   error: string,
   threadId?: string,
 ): "retry" | "signin" | "refused" {
-  const outcome = offlineSendOutcome(res.status);
+  const outcome = offlineSendOutcome(res.status, res.code);
   if (outcome === "done") throw new Error(`HTTP ${res.status} is not a refusal`);
   if (outcome === "refused") {
     failOfflineQuestion(id, `The server refused this question (HTTP ${res.status}): ${error}`, threadId);

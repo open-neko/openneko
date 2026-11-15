@@ -687,5 +687,79 @@ test.describe("4.6 stream resume and offline question queue", () => {
       await client.end();
     }
   });
-});
 
+  test("sends for the signed-in user and waits out a run in flight, online and from the queue (FIX18)", async ({
+    context,
+    page,
+  }) => {
+    const client = new pg.Client({ connectionString: resolveDatabaseUrl() });
+    await client.connect();
+    try {
+      const { rows: orgRows } = await client.query<{ id: string }>(
+        "select id from organization limit 1",
+      );
+      const orgId = orgRows[0]!.id;
+      const session = (await (
+        await page.request.get("/api/v1/auth/session")
+      ).json()) as { user: { id: string } | null };
+      const userA = session.user!.id;
+      const threadId = randomUUID();
+      await client.query(
+        `insert into work_thread (id, org_id, title, created_by_user_id)
+         values ($1, $2, 'Run in flight check', $3)`,
+        [threadId, orgId, userA],
+      );
+      const runsFor = async (message: string) => {
+        const { rows } = await client.query<{ runs: string }>(
+          `select count(distinct m.run_id)::text as runs from work_message m
+            where m.thread_id = $1 and m.role = 'user' and m.content = $2`,
+          [threadId, message],
+        );
+        return rows[0]!.runs;
+      };
+      const posts: { message?: string; expectedUserId?: string }[] = [];
+      const busyOnce = new Set<string>();
+      await context.route(`**/api/v1/work/threads/${threadId}/runs`, async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        const body = JSON.parse(route.request().postData() ?? "{}") as { message?: string; expectedUserId?: string };
+        posts.push(body);
+        if (body.message && !busyOnce.has(body.message)) {
+          busyOnce.add(body.message);
+          return route.fulfill({
+            status: 409,
+            contentType: "application/json",
+            headers: { "Retry-After": "1" },
+            body: JSON.stringify({ error: "A question is still running in this thread.", code: "run_in_flight", runId: randomUUID() }),
+          });
+        }
+        return route.continue();
+      });
+      const composer = page.locator("textarea.work-input");
+
+      await page.goto(`/work/${threadId}`, { waitUntil: "networkidle" });
+      await expect(composer).toBeEnabled({ timeout: 20_000 });
+      await composer.fill("Online while a run ends");
+      await composer.press("Enter");
+      await expect.poll(() => runsFor("Online while a run ends"), { timeout: 20_000 }).toBe("1");
+      expect(posts.filter((p) => p.message === "Online while a run ends")).toHaveLength(2);
+
+      await expect(composer).toBeEnabled({ timeout: 20_000 });
+      await context.setOffline(true);
+      await composer.fill("Queued while a run ends");
+      await composer.press("Enter");
+      await expect(page.getByTestId("offline-queued-question")).toContainText("Queued while a run ends");
+      await context.setOffline(false);
+      await expect.poll(() => posts.filter((p) => p.message === "Queued while a run ends").length, { timeout: 20_000 }).toBe(1);
+      await expect(page.getByTestId("offline-waiting-status")).toBeVisible();
+      await expect(page.getByTestId("offline-failed-status")).toHaveCount(0);
+      await expect.poll(() => runsFor("Queued while a run ends"), { timeout: 30_000 }).toBe("1");
+      await expect(page.getByTestId("offline-queued-question")).toHaveCount(0);
+
+      expect(posts.length).toBe(4);
+      expect(posts.every((p) => p.expectedUserId === userA)).toBe(true);
+    } finally {
+      await context.setOffline(false).catch(() => {});
+      await client.end();
+    }
+  });
+});

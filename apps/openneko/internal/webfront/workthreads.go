@@ -92,6 +92,9 @@ func (a *API) createThread(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
+	if expectedUserMismatch(w, body, act) {
+		return
+	}
 	var seeds []string
 	var card string
 	if runID != "" {

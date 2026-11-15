@@ -41,6 +41,7 @@ func signedInChatFront(t *testing.T) (*Front, *pgxpool.Pool) {
 	t.Helper()
 	f, db, _ := chatTurnFront(t)
 	seedSignInSecrets(t, f.API.SecretsDir, `{"provider":{"pluginName":"scalekit"}}`)
+	seed(t, db, `update work_run set status = 'completed', finished_at = now() where status in ('queued', 'running')`)
 	return f, db
 }
 
@@ -222,6 +223,123 @@ func TestStartRunClientRequestIDMakesOneRun(t *testing.T) {
 	if g := count(`select actor_user_id from work_run where id = $1`, otherRun); g != "other" {
 		t.Errorf("the other user's run belongs to %q", g)
 	}
+}
+
+func TestStartRunRefusesASecondRunInFlight(t *testing.T) {
+	f, db := signedInChatFront(t)
+	a := f.API
+	member := sessionCookie("member")
+	a.turnResolve = fixedBackend("http://unused")
+	release := make(chan struct{})
+	var turns atomic.Int32
+	a.turnCore = func(ctx context.Context, in agentCoreInput) (axRunResult, error) {
+		turns.Add(1)
+		<-release
+		return axRunResult{Status: "completed", FinalText: "ok"}, nil
+	}
+	runs := "/api/v1/work/threads/" + threadMine + "/runs"
+	runCount := func() string {
+		return rowText(t, db, `select count(*)::text from work_run where thread_id = $1`, threadMine)
+	}
+	before := runCount()
+
+	codes := make([]int, 2)
+	bodies := make([]map[string]any, 2)
+	var wg sync.WaitGroup
+	for i, id := range []string{"q1", "q2"} {
+		wg.Add(1)
+		go func(i int, id string) {
+			defer wg.Done()
+			w := call(f, "POST", runs, `{"message":"Question `+id+`","clientRequestId":"`+id+`"}`, member)
+			codes[i], bodies[i] = w.Code, decode(t, w)
+		}(i, id)
+	}
+	wg.Wait()
+	won := 0
+	if codes[1] == 200 {
+		won = 1
+	}
+	lost := 1 - won
+	first, _ := bodies[won]["runId"].(string)
+	if codes[won] != 200 || codes[lost] != 409 || first == "" {
+		t.Fatalf("two questions at once: %v %v", codes, bodies)
+	}
+	if bodies[lost]["code"] != "run_in_flight" || bodies[lost]["runId"] != first {
+		t.Fatalf("refusal body %v; want run_in_flight for %s", bodies[lost], first)
+	}
+	if n, _ := strconv.Atoi(before); runCount() != strconv.Itoa(n+1) {
+		g := runCount()
+		t.Fatalf("runs in the thread %s; want one more than %s", g, before)
+	}
+
+	w := call(f, "POST", runs, `{"message":"Third","clientRequestId":"q3"}`, member)
+	if w.Code != 409 || w.Header().Get("Retry-After") != "2" || decode(t, w)["code"] != "run_in_flight" {
+		t.Fatalf("a question while a run streams: %d %q %s", w.Code, w.Header().Get("Retry-After"), w.Body)
+	}
+	firstID := []string{"q1", "q2"}[won]
+	w = call(f, "POST", runs, `{"message":"Question `+firstID+`","clientRequestId":"`+firstID+`"}`, member)
+	if got, _ := decode(t, w)["runId"].(string); w.Code != 200 || got != first {
+		t.Fatalf("a repeat of the running request: %d %s", w.Code, w.Body)
+	}
+	if g := rowText(t, db, `select count(*)::text from work_message where thread_id = $1 and content = 'Third'`, threadMine); g != "0" {
+		t.Fatalf("the refused question was saved %s times", g)
+	}
+
+	close(release)
+	if status := waitRun(t, db, first); status != "completed" {
+		t.Fatalf("first run %s", status)
+	}
+	w = call(f, "POST", runs, `{"message":"Third","clientRequestId":"q3"}`, member)
+	if next, _ := decode(t, w)["runId"].(string); w.Code != 200 || next == "" || next == first {
+		t.Fatalf("a question after the run ended: %d %s", w.Code, w.Body)
+	} else {
+		waitRun(t, db, next)
+	}
+	if n := turns.Load(); n != 2 {
+		t.Fatalf("turns %d; want 2", n)
+	}
+}
+
+func TestStartRunAndCreateThreadCheckTheExpectedUser(t *testing.T) {
+	f, db := signedInChatFront(t)
+	a := f.API
+	member := sessionCookie("member")
+	a.turnResolve = fixedBackend("http://unused")
+	a.turnCore = func(ctx context.Context, in agentCoreInput) (axRunResult, error) {
+		return axRunResult{Status: "completed", FinalText: "ok"}, nil
+	}
+	count := func(sql string) string { return rowText(t, db, sql) }
+	runs := `select count(*)::text from work_run where org_id = 'org'`
+	threads := `select count(*)::text from work_thread where org_id = 'org'`
+	beforeRuns, beforeThreads := count(runs), count(threads)
+
+	w := call(f, "POST", "/api/v1/work/threads/"+threadMine+"/runs",
+		`{"message":"Queued by A","clientRequestId":"from-a","expectedUserId":"other"}`, member)
+	if w.Code != 409 || decode(t, w)["code"] != "user_mismatch" {
+		t.Fatalf("run post for another user: %d %s", w.Code, w.Body)
+	}
+	w = call(f, "POST", "/api/v1/work/threads", `{"clientRequestId":"from-a","expectedUserId":"other"}`, member)
+	if w.Code != 409 || decode(t, w)["code"] != "user_mismatch" {
+		t.Fatalf("thread post for another user: %d %s", w.Code, w.Body)
+	}
+	if g, h := count(runs), count(threads); g != beforeRuns || h != beforeThreads {
+		t.Fatalf("a refused post wrote: runs %s->%s, threads %s->%s", beforeRuns, g, beforeThreads, h)
+	}
+	if g := count(`select count(*)::text from work_message where content = 'Queued by A'`); g != "0" {
+		t.Fatalf("the refused question was saved %s times", g)
+	}
+
+	w = call(f, "POST", "/api/v1/work/threads", `{"clientRequestId":"from-me","expectedUserId":"member"}`, member)
+	if w.Code != 200 {
+		t.Fatalf("thread post for the signed-in user: %d %s", w.Code, w.Body)
+	}
+	w = call(f, "POST", "/api/v1/work/threads/"+threadMine+"/runs",
+		`{"message":"Mine","clientRequestId":"from-me","expectedUserId":"member"}`, member)
+	runID, _ := decode(t, w)["runId"].(string)
+	if w.Code != 200 || runID == "" {
+		t.Fatalf("run post for the signed-in user: %d %s", w.Code, w.Body)
+	}
+	waitRun(t, db, runID)
 }
 
 func TestStartRunRetryFinishesAnUnstartedRun(t *testing.T) {
