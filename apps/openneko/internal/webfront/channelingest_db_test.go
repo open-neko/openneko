@@ -364,9 +364,9 @@ func TestChannelWebhook(t *testing.T) {
 	}
 	for name, c := range map[string]struct{ path, body, want string }{
 		"wrong secret":  {"/api/v1/channels/telegram/inbound", update, `401 {"error":"the signature does not match"}`},
-		"unknown":       {"/api/v1/channels/fax/inbound", update, `404 {"error":"unknown channel"}`},
+		"unknown":       {"/api/v1/channels/fax/inbound", update, `401 {"error":"the signature does not match"}`},
 		"not JSON":      {"/api/v1/channels/telegram/inbound", "{", `400 {"error":"the body is not JSON"}`},
-		"a channel off": {"/api/v1/channels/hud/inbound", `{"kind":"utterance","text":"hi"}`, `404 {"error":"the channel is off"}`},
+		"a channel off": {"/api/v1/channels/hud/inbound", `{"kind":"utterance","text":"hi"}`, `401 {"error":"the signature does not match"}`},
 	} {
 		h := good
 		if name == "wrong secret" {
@@ -375,6 +375,24 @@ func TestChannelWebhook(t *testing.T) {
 		if got := post(c.path, c.body, h); got != c.want {
 			t.Errorf("%s: %s", name, got)
 		}
+	}
+	if err := writeKeepingSignIn(secrets.Store{
+		"channel.telegram": {"TELEGRAM_WEBHOOK_SECRET": "tg-secret"},
+		"channel.slack":    {"SLACK_BOT_TOKEN": "xoxb-1", "SLACK_APP_TOKEN": "xapp-1"},
+	}, f.API.SecretsDir); err != nil {
+		t.Fatal(err)
+	}
+	if got := post("/api/v1/channels/telegram/inbound", update, map[string]string{"X-Telegram-Bot-Api-Secret-Token": "nope"}); got != `401 {"error":"the signature does not match"}` {
+		t.Errorf("a wrong secret on a channel that is off: %s", got)
+	}
+	if got := post("/api/v1/channels/telegram/inbound", update, good); got != `404 {"error":"the channel is off"}` {
+		t.Errorf("the right secret on a channel that is off: %s", got)
+	}
+	if err := writeKeepingSignIn(secrets.Store{
+		"channel.telegram": {"TELEGRAM_BOT_TOKEN": "123:abc", "TELEGRAM_WEBHOOK_SECRET": "tg-secret"},
+		"channel.slack":    {"SLACK_BOT_TOKEN": "xoxb-1", "SLACK_APP_TOKEN": "xapp-1"},
+	}, f.API.SecretsDir); err != nil {
+		t.Fatal(err)
 	}
 	jobsOn := f.API.Jobs
 	f.API.Jobs = nil

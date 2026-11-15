@@ -5,7 +5,7 @@ const pack = { packId: "contract", connectionKey: "contract" };
 
 export const connectionCases: Case[] = [
   {
-    op: "POST /channels/{channelId}/inbound", name: "refuses an unknown channel", as: "anonymous", status: 404,
+    op: "POST /channels/{channelId}/inbound", name: "refuses an unknown channel", as: "anonymous", status: 401,
     request: { params: { channelId: "fax" }, body: { update_id: 1 } },
   },
   { op: "GET /bots", name: "lists the bots", status: 200 },
