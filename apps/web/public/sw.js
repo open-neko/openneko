@@ -55,6 +55,17 @@ function resolvePushNotice(rawData) {
   };
 }
 
+// A browser refuses a redirected response for a page load, and the server
+// redirects /index.html.
+async function withoutRedirect(response) {
+  if (!response.redirected) return response;
+  return new Response(await response.blob(), {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
 async function handlePushPayload(rawData) {
   const notice = resolvePushNotice(rawData);
   if (!notice) return null;
@@ -96,7 +107,7 @@ self.addEventListener("install", (event) => {
           if (!response.ok) {
             throw new Error(`Failed to cache ${url}: ${response.status}`);
           }
-          await cache.put(url, response);
+          await cache.put(url, await withoutRedirect(response));
         }),
       );
       await self.skipWaiting();
@@ -186,7 +197,7 @@ self.addEventListener("fetch", (event) => {
         } catch {
           const cache = await caches.open(CACHE_NAME);
           const cached = (await cache.match("/index.html")) ?? (await caches.match("/index.html"));
-          if (cached) return cached;
+          if (cached) return withoutRedirect(cached);
           return new Response("Offline", {
             status: 503,
             headers: { "Content-Type": "text/plain; charset=utf-8" },
