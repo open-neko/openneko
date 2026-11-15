@@ -94,3 +94,16 @@ func TestMapperKeepsAnAnswerThatDiffersOnlyInTrailingSpace(t *testing.T) {
 		t.Fatalf("events:\n%s", strings.Join(events, "\n"))
 	}
 }
+
+func TestMapperMarksOnlyFencesThatBecomeACard(t *testing.T) {
+	for _, opener := range []string{"neko_workflow_save", "neko_workflow_output", "neko_action_request", "neko_rule_save"} {
+		var events []string
+		m := &axEventMapper{textVersion: -1.0, renderCalls: map[string]bool{},
+			emit: func(e *jsObj) { events = append(events, jsStringify(e, false)) }}
+		data, _ := json.Marshal(map[string]any{"version": 1, "index": 0, "text": "Saved.\n```" + opener + "\n{}\n```\nDone."})
+		m.handle(axEvent{Type: "answer.delta", Data: data})
+		if got := strings.Join(events, "\n"); strings.Contains(got, "card_pending") {
+			t.Errorf("%s: %s", opener, got)
+		}
+	}
+}

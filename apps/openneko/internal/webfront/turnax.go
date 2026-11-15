@@ -848,7 +848,7 @@ func (m *axEventMapper) handle(ev axEvent) {
 		}
 		m.text += text
 		m.emitOutside(outsideFenceText(m.text))
-		for n := hiddenFenceCount(m.text); m.openedCards < n; m.openedCards++ {
+		for n := surfaceFenceCount(m.text); m.openedCards < n; m.openedCards++ {
 			m.emit(jsObjOf("type", "card_pending"))
 		}
 	case "thought.delta":

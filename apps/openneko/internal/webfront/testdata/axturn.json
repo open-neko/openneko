@@ -519,9 +519,6 @@
      "content": "\nMore"
     },
     {
-     "type": "card_pending"
-    },
-    {
      "type": "usage",
      "source": "outer",
      "provider": "anthropic",

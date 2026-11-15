@@ -57,9 +57,11 @@ func outsideFenceText(raw string) string {
 	return out.String()
 }
 
-func hiddenFenceCount(raw string) int {
+var surfaceFenceOpeners = []string{"```neko_a2ui", "```neko_cards"}
+
+func surfaceFenceCount(raw string) int {
 	n := 0
-	for _, o := range hiddenFenceOpeners {
+	for _, o := range surfaceFenceOpeners {
 		n += strings.Count(raw, o)
 	}
 	return n
