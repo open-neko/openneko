@@ -11268,6 +11268,14 @@ paths:
         schema:
           type: string
         description: Run ID; return runs older than this run
+      - name: events
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '2'
+        description: Set to 2 to get answer_reset and card_pending; without it a restarted answer keeps its first attempt only
       responses:
         '200':
           description: The thread bundle
@@ -11549,6 +11557,14 @@ paths:
         schema:
           type: integer
         description: Older name for afterId
+      - name: events
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '2'
+        description: Set to 2 to get answer_reset and card_pending; without it a restarted answer keeps its first attempt only
       responses:
         '200':
           description: Server-sent events; frames carry event IDs
@@ -11815,6 +11831,14 @@ paths:
         schema:
           type: string
         description: Set to tools to include tool events
+      - name: events
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '2'
+        description: Set to 2 to get answer_reset and card_pending; without it a restarted answer keeps its first attempt only
       responses:
         '200':
           description: The run, its workflow, outputs, actions, events, and lineage

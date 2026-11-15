@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { SkeletonList } from "@/components/ui/skeleton";
+import { withRunEventFormat } from "@/lib/run-event-format";
 import { useParams, useRouter } from "next/navigation";
 import { Download, MessageCircle, Square, TriangleAlert } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -288,7 +289,7 @@ export default function RunPage() {
   const load = useCallback(async () => {
     if (!workflowRunId) return;
     try {
-      const res = await fetch(`/api/v1/workflow-runs/${workflowRunId}`, {
+      const res = await fetch(withRunEventFormat(`/api/v1/workflow-runs/${workflowRunId}`), {
         cache: "no-store",
       });
       if (!res.ok) {

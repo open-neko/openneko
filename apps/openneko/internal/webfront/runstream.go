@@ -136,6 +136,13 @@ func (a *API) runEventStream(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
+	var legacy *legacyAnswerFilter
+	if legacyRunEventClient(r) {
+		if legacy, err = a.legacyAnswerFilterAt(ctx, act.OrgID, runID, int64(afterID)); err != nil {
+			a.fail(w, r, err)
+			return
+		}
+	}
 
 	live := &liveQueue{signal: make(chan struct{}, 1)}
 	if unsubscribe, ok := a.subscribeRun(runID, live.push); ok {
@@ -172,16 +179,19 @@ func (a *API) runEventStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	sent := map[int64]bool{}
-	send := func(payload string, id int64) {
+	send := func(payload string, id int64, keep func(*legacyAnswerFilter) bool) {
 		if float64(id) <= afterID || sent[id] {
 			return
 		}
 		sent[id] = true
+		if legacy != nil && !keep(legacy) {
+			return
+		}
 		write("id: " + strconv.FormatInt(id, 10) + "\ndata: " + payload + "\n\n")
 	}
 	sendLive := func() {
 		for _, e := range live.take() {
-			send(jsStringify(e.event, false), e.id)
+			send(jsStringify(e.event, false), e.id, func(f *legacyAnswerFilter) bool { return f.keepEvent(e.event) })
 		}
 	}
 
@@ -220,7 +230,7 @@ func (a *API) runEventStream(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return err
 			}
-			send(string(payload), s.id)
+			send(string(payload), s.id, func(f *legacyAnswerFilter) bool { return f.keepPayload(payload) })
 		}
 		return nil
 	}

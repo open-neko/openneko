@@ -686,12 +686,16 @@ func (a *API) workflowRunDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	events := []runEvent{}
+	var legacy *legacyAnswerFilter
+	if legacyRunEventClient(r) {
+		legacy = &legacyAnswerFilter{}
+	}
 	var evID int64
 	var evPayload []byte
 	var evCreated time.Time
 	if _, err := pgx.ForEachRow(evRows, []any{&evID, &evPayload, &evCreated}, func() error {
 		typ, name, err := eventType(evPayload)
-		if err != nil || (!includeTools && toolEventKinds[name]) {
+		if err != nil || (legacy != nil && !legacy.keepPayload(evPayload)) || (!includeTools && toolEventKinds[name]) {
 			return err
 		}
 		events = append(events, runEvent{evID, evID, typ, storedJSON(append([]byte(nil), evPayload...)), jsTime(evCreated)})
