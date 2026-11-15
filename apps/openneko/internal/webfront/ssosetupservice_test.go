@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -284,5 +285,78 @@ func TestSSOSetupFullFlowAndPoll(t *testing.T) {
 	}
 	if len(mcp.toolCalls) != beforeCalls {
 		t.Fatalf("expected no tool calls when connected, got %d -> %d", beforeCalls, len(mcp.toolCalls))
+	}
+}
+
+type rotatingScalekitTokens struct {
+	mcp       *fakeScalekitMCP
+	mu        sync.Mutex
+	valid     string
+	refreshes int
+}
+
+func (s *rotatingScalekitTokens) RoundTrip(r *http.Request) (*http.Response, error) {
+	if r.URL.Path != "/token" {
+		return s.mcp.RoundTrip(r)
+	}
+	raw, _ := io.ReadAll(r.Body)
+	vals, _ := url.ParseQuery(string(raw))
+	time.Sleep(100 * time.Millisecond)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	body := `{"error":"invalid_grant"}`
+	code := http.StatusBadRequest
+	if vals.Get("refresh_token") == s.valid {
+		s.refreshes++
+		s.valid = "rt-" + strconv.Itoa(s.refreshes)
+		code = http.StatusOK
+		body = `{"access_token":"at-` + strconv.Itoa(s.refreshes) + `","refresh_token":"` + s.valid + `","expires_in":3600}`
+	}
+	return &http.Response{StatusCode: code, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
+}
+
+func TestScalekitConcurrentCallsRefreshOnce(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	tokens := &rotatingScalekitTokens{mcp: &fakeScalekitMCP{}, valid: "rt-0"}
+	api := &API{Gate: &Gate{SecretsDir: dir}, SecretsDir: dir, SignInClient: &http.Client{Transport: tokens}}
+	if err := writeScalekitOperatorCredential(dir, &scalekitOperatorCredential{
+		Tokens: map[string]any{
+			"access_token": "at-old", "refresh_token": "rt-0", "expires_at": "0",
+			"token_endpoint": "https://as.scalekit.com/token", "client_id": "dcr-client-1",
+		},
+		ConnectedAt: "2026-01-01T00:00:00.000Z",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 4)
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := api.callScalekitWorkspaceTool(ctx, "list_environments", nil)
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if tokens.refreshes != 1 {
+		t.Fatalf("refreshes = %d, want 1", tokens.refreshes)
+	}
+	for _, seen := range tokens.mcp.seenTokens {
+		if seen != "at-1" {
+			t.Fatalf("tool calls used %v, want at-1 each time", tokens.mcp.seenTokens)
+		}
+	}
+	stored, err := readScalekitOperatorCredential(dir)
+	if err != nil || stored == nil || stored.Tokens["refresh_token"] != "rt-1" {
+		t.Fatalf("stored credential = %+v (%v)", stored, err)
 	}
 }

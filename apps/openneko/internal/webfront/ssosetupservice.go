@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -95,18 +96,18 @@ type scalekitOperatorCredential struct {
 }
 
 var (
-	rxEnvURL        = regexp.MustCompile(`SCALEKIT_ENVIRONMENT_URL=(https://\S+)`)
-	rxClientID      = regexp.MustCompile(`SCALEKIT_CLIENT_ID=(\S+)`)
-	rxEnvRowID      = regexp.MustCompile(`ID:\s*(\S+)`)
-	rxEnvRowName    = regexp.MustCompile(`Name:\s*([^|]+?)\s*\|`)
-	rxEnvRowTier    = regexp.MustCompile(`Type:\s*(\w+)`)
-	rxEnvRowDomain  = regexp.MustCompile(`Domain:\s*([^|]+?)\s*\|`)
-	rxOrgSplit      = regexp.MustCompile(`Organization \d+:`)
-	rxOrgRowName    = regexp.MustCompile(`Name:\s*([^
+	rxEnvURL       = regexp.MustCompile(`SCALEKIT_ENVIRONMENT_URL=(https://\S+)`)
+	rxClientID     = regexp.MustCompile(`SCALEKIT_CLIENT_ID=(\S+)`)
+	rxEnvRowID     = regexp.MustCompile(`ID:\s*(\S+)`)
+	rxEnvRowName   = regexp.MustCompile(`Name:\s*([^|]+?)\s*\|`)
+	rxEnvRowTier   = regexp.MustCompile(`Type:\s*(\w+)`)
+	rxEnvRowDomain = regexp.MustCompile(`Domain:\s*([^|]+?)\s*\|`)
+	rxOrgSplit     = regexp.MustCompile(`Organization \d+:`)
+	rxOrgRowName   = regexp.MustCompile(`Name:\s*([^
 ]+)`)
-	rxPortalLink    = regexp.MustCompile(`Link:\s*(https?://[^\s]+)`)
-	rxConnStatus    = regexp.MustCompile(`status:\s*(\w+)`)
-	rxConnProvider  = regexp.MustCompile(`provider:\s*(\w+)`)
+	rxPortalLink   = regexp.MustCompile(`Link:\s*(https?://[^\s]+)`)
+	rxConnStatus   = regexp.MustCompile(`status:\s*(\w+)`)
+	rxConnProvider = regexp.MustCompile(`provider:\s*(\w+)`)
 )
 
 func formatJSISO(t *time.Time) *string {
@@ -680,7 +681,13 @@ func resolveScalekitMCPURL(values map[string]string) string {
 	return strings.TrimRight(raw, "/")
 }
 
-func (a *API) callScalekitWorkspaceTool(ctx context.Context, tool string, args map[string]any) (string, error) {
+// scalekitCredentialMu covers each read-change-write of the deployment
+// credential: a refresh token that the server rotates works only once.
+var scalekitCredentialMu sync.Mutex
+
+func (a *API) scalekitAccessToken(ctx context.Context) (string, error) {
+	scalekitCredentialMu.Lock()
+	defer scalekitCredentialMu.Unlock()
 	dir := a.secretsDir()
 	cred, err := readScalekitOperatorCredential(dir)
 	if err != nil {
@@ -689,7 +696,9 @@ func (a *API) callScalekitWorkspaceTool(ctx context.Context, tool string, args m
 	if cred != nil && scalekitCredentialNearExpiry(cred, time.Now()) {
 		if refreshed, err := a.refreshScalekitCredential(ctx, cred); err == nil {
 			cred = refreshed
-			_ = writeScalekitOperatorCredential(dir, cred)
+			if err := writeScalekitOperatorCredential(dir, cred); err != nil {
+				log.Printf("[signin] Scalekit workspace token not saved: %v", err)
+			}
 		} else {
 			log.Printf("[signin] Scalekit workspace token refresh failed: %v", err)
 		}
@@ -698,9 +707,18 @@ func (a *API) callScalekitWorkspaceTool(ctx context.Context, tool string, args m
 	if cred != nil && cred.Tokens != nil {
 		accessToken, _ = cred.Tokens["access_token"].(string)
 	}
+	return accessToken, nil
+}
+
+func (a *API) callScalekitWorkspaceTool(ctx context.Context, tool string, args map[string]any) (string, error) {
+	accessToken, err := a.scalekitAccessToken(ctx)
+	if err != nil {
+		return "", err
+	}
 	if accessToken == "" {
 		return "", errors.New("Scalekit workspace is not connected — authorize it on the Single sign-on settings page first")
 	}
+	dir := a.secretsDir()
 	store := secrets.ReadSoft(dir, nil)
 	mcpURL := resolveScalekitMCPURL(store[signInProviderSection(scalekitPlugin)])
 	return a.invokeScalekitMCPTool(ctx, mcpURL, accessToken, tool, args)
