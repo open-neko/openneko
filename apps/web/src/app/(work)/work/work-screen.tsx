@@ -36,6 +36,7 @@ import {
 } from "@/lib/workflow-mention";
 import { SkeletonList } from "@/components/ui/skeleton";
 import { printThread } from "@/lib/print-thread";
+import { useSession } from "@/lib/session-client";
 import { Button } from "@/components/ui/button";
 import { LocalDateTime } from "@/components/ui/local-date-time";
 import { parseClarificationReply } from "@/a2ui/action";
@@ -55,8 +56,11 @@ import {
   claimNextOfflineQuestion,
   completeOfflineQuestion,
   enqueueOfflineQuestion,
+  newClientRequestId,
   requeueOfflineQuestion,
+  setOfflineQueueUser,
   useOfflineQueue,
+  withOfflineQueueLock,
   type QueuedQuestion,
 } from "./work-offline-queue";
 import { RunTimeline } from "./work-run-timeline";
@@ -146,8 +150,14 @@ export default function WorkScreen() {
   const activeThreadIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
   const flushingOfflineRef = useRef(false);
+  const sendingClaimedRef = useRef(false);
   const isOnline = useOnlineStatus();
   const offlineQueue = useOfflineQueue();
+  const session = useSession();
+  const sessionUserId = session?.user?.id ?? null;
+  useEffect(() => {
+    setOfflineQueueUser(sessionUserId);
+  }, [sessionUserId]);
   const currentThreadKey = activeThreadId ?? routeThreadId ?? null;
   const waitingQuestions = useMemo(
     () =>
@@ -564,9 +574,14 @@ export default function WorkScreen() {
     return nextId;
   }
 
-  function queueQuestionOffline(content: string, targetThreadId: string | null) {
+  function queueQuestionOffline(
+    content: string,
+    targetThreadId: string | null,
+    clientRequestId?: string,
+  ) {
     reportNetworkOffline();
     enqueueOfflineQuestion({
+      id: clientRequestId,
       threadId: targetThreadId,
       threadBase,
       content,
@@ -651,14 +666,16 @@ export default function WorkScreen() {
     setDraftMentions([]);
     setMention(null);
 
+    const clientRequestId = newClientRequestId();
     const dispatched = await postAndStreamRun(
       threadId,
       message,
       submittedAt,
       tempMessageId,
+      { clientRequestId },
     );
     if (!dispatched) {
-      queueQuestionOffline(message, threadId);
+      queueQuestionOffline(message, threadId, clientRequestId);
     }
   }
 
@@ -699,14 +716,93 @@ export default function WorkScreen() {
     setBundle((prev) =>
       prev ? { ...prev, messages: [...prev.messages, tempMessage] } : prev,
     );
+    const clientRequestId = newClientRequestId();
     const dispatched = await postAndStreamRun(
       threadId,
       trimmed,
       performance.now(),
       tempMessageId,
+      { clientRequestId },
     );
     if (!dispatched) {
-      queueQuestionOffline(trimmed, threadId);
+      queueQuestionOffline(trimmed, threadId, clientRequestId);
+    }
+  }
+
+  async function sendClaimedQuestion(claimed: QueuedQuestion, releaseLock: () => void) {
+    sendingClaimedRef.current = true;
+    let threadId = claimed.threadId;
+    let tempMessageId: string | null = null;
+    try {
+      await Promise.resolve();
+      if (!mountedRef.current) {
+        requeueOfflineQuestion(claimed);
+        return;
+      }
+      setSending(true);
+      setStreamError(null);
+      threadId = threadId ?? activeThreadIdRef.current ?? routeThreadIdRef.current;
+      if (threadId && !bundle) {
+        await loadThread(threadId);
+      }
+      if (!threadId) {
+        threadId = await createThread();
+      }
+      tempMessageId = `temp-${Date.now()}`;
+      const now = new Date().toISOString();
+      const tempMessage: MessageRecord = {
+        id: tempMessageId,
+        runId: null,
+        role: "user",
+        content: claimed.content,
+        createdAt: claimed.createdAt || now,
+      };
+      const bundleThreadId = threadId;
+      setBundle((prev) =>
+        prev
+          ? { ...prev, messages: [...prev.messages, tempMessage] }
+          : {
+              thread: {
+                id: bundleThreadId,
+                title: "",
+                createdAt: now,
+                updatedAt: now,
+                lastMessageAt: now,
+              },
+              runs: [],
+              messages: [tempMessage],
+              eventsByRun: {},
+            },
+      );
+      const dispatched = await postAndStreamRun(
+        threadId,
+        claimed.content,
+        performance.now(),
+        tempMessageId,
+        { clientRequestId: claimed.id, claimed: true, onPosted: releaseLock },
+      );
+      if (!dispatched) {
+        requeueOfflineQuestion({ ...claimed, threadId });
+      }
+    } catch {
+      if (tempMessageId) {
+        const removeId = tempMessageId;
+        setBundle((prev) =>
+          prev
+            ? {
+                ...prev,
+                messages: prev.messages.filter((m) => m.id !== removeId),
+              }
+            : prev,
+        );
+      }
+      setSending(false);
+      reportNetworkOffline();
+      requeueOfflineQuestion({ ...claimed, threadId });
+    } finally {
+      releaseLock();
+      sendingClaimedRef.current = false;
+      flushingOfflineRef.current = false;
     }
   }
 
@@ -744,82 +840,25 @@ export default function WorkScreen() {
     ) {
       return;
     }
-    const claimed: QueuedQuestion | null = claimNextOfflineQuestion(
-      currentThreadKey,
-      threadBase,
-    );
-    if (!claimed) return;
     flushingOfflineRef.current = true;
+    const flushThreadKey = currentThreadKey;
 
-    void (async () => {
-      await Promise.resolve();
+    void withOfflineQueueLock(async () => {
       if (!mountedRef.current) return;
-      setSending(true);
-      setStreamError(null);
-      let tempMessageId: string | null = null;
-      try {
-        let threadId =
-          claimed.threadId ?? activeThreadIdRef.current ?? routeThreadIdRef.current;
-        if (threadId && !bundle) {
-          await loadThread(threadId);
-        }
-        if (!threadId) {
-          threadId = await createThread();
-        }
-        tempMessageId = `temp-${Date.now()}`;
-        const now = new Date().toISOString();
-        const tempMessage: MessageRecord = {
-          id: tempMessageId,
-          runId: null,
-          role: "user",
-          content: claimed.content,
-          createdAt: claimed.createdAt || now,
-        };
-        setBundle((prev) =>
-          prev
-            ? { ...prev, messages: [...prev.messages, tempMessage] }
-            : {
-                thread: {
-                  id: threadId,
-                  title: "",
-                  createdAt: now,
-                  updatedAt: now,
-                  lastMessageAt: now,
-                },
-                runs: [],
-                messages: [tempMessage],
-                eventsByRun: {},
-              },
-        );
-        const dispatched = await postAndStreamRun(
-          threadId,
-          claimed.content,
-          performance.now(),
-          tempMessageId,
-          claimed.id,
-        );
-        if (!dispatched) {
-          requeueOfflineQuestion(claimed);
-        }
-      } catch {
-        if (tempMessageId) {
-          const removeId = tempMessageId;
-          setBundle((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  messages: prev.messages.filter((m) => m.id !== removeId),
-                }
-              : prev,
-          );
-        }
-        setSending(false);
-        reportNetworkOffline();
-        requeueOfflineQuestion(claimed);
-      } finally {
-        flushingOfflineRef.current = false;
-      }
-    })();
+      const claimed: QueuedQuestion | null = claimNextOfflineQuestion(
+        flushThreadKey,
+        threadBase,
+      );
+      if (!claimed) return;
+      let releaseLock = () => {};
+      const posted = new Promise<void>((resolve) => {
+        releaseLock = resolve;
+      });
+      void sendClaimedQuestion(claimed, releaseLock);
+      await posted;
+    }).finally(() => {
+      if (!sendingClaimedRef.current) flushingOfflineRef.current = false;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     gateChecked,
@@ -891,13 +930,15 @@ export default function WorkScreen() {
     message: string,
     submittedAt = performance.now(),
     tempMessageId?: string,
-    claimedOfflineId?: string,
+    request?: { clientRequestId: string; claimed?: boolean; onPosted?: () => void },
   ): Promise<boolean> {
     // Every entry point must expose the live-run controls. Retry/edit reloads
     // the truncated thread first, and that reload clears `sending` when no
     // earlier run remains in flight.
     setSending(true);
-    const body = JSON.stringify({ message });
+    const body = JSON.stringify(
+      request ? { message, clientRequestId: request.clientRequestId } : { message },
+    );
     let res: Response;
     try {
       res = await fetch(`/api/v1/work/threads/${threadId}/runs`, {
@@ -922,9 +963,10 @@ export default function WorkScreen() {
       return false;
     }
     reportNetworkOnline();
-    if (claimedOfflineId) {
-      completeOfflineQuestion(claimedOfflineId);
+    if (request?.claimed) {
+      completeOfflineQuestion(request.clientRequestId);
     }
+    request?.onPosted?.();
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
       setSending(false);
