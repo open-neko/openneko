@@ -7,7 +7,7 @@ refuse_non_development_mode() {
   exit 1
 }
 
-case "${NODE_ENV:-development}" in
+case "${OPENNEKO_ENV:-${NODE_ENV:-development}}" in
   development) ;;
   *) refuse_non_development_mode ;;
 esac
@@ -124,7 +124,7 @@ mkdir -p "$state_root/tmp"
 
 export OPENNEKO_AGENT_HOME="$state_root/home"
 export OPENNEKO_HOST_WEB_DEV=1
-export NODE_ENV=development
+export OPENNEKO_ENV=development
 export TMPDIR="$state_root/tmp"
 export XDG_CONFIG_HOME="$state_root/config"
 export XDG_CACHE_HOME="$state_root/home/.cache"

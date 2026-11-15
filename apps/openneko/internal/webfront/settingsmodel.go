@@ -194,6 +194,9 @@ func (a *API) settingsAgentPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.provisionHostConfig(ctx, act.OrgID)
+	if _, err := a.ApplyAgentConcurrency(ctx); err != nil {
+		log.Printf("agent concurrency not applied: %v", err)
+	}
 	sendJSON(w, http.StatusOK, agentSettings{"org", "ax", globalCap, terminal})
 }
 

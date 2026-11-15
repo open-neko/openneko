@@ -93,6 +93,7 @@ func TestTurnDataDatabase(t *testing.T) {
 	defer srv.Close()
 	t.Setenv("OPENNEKO_GRAPHJIN_URL", "http://127.0.0.1:8089")
 	t.Setenv("OPENNEKO_GRAPHJIN_CONFIG", "")
+	t.Setenv("OPENNEKO_ENV", "development")
 	t.Setenv("NODE_ENV", "")
 
 	member := turnBinding{OrgID: "org", ThreadID: threadMine, RunID: runMine, Kind: "work"}
@@ -244,7 +245,7 @@ func TestTurnDataDatabase(t *testing.T) {
 	if _, h = gj.last(); h.Get("Authorization") != "" || h.Get("X-User-ID") != "member" || h.Get("X-User-Role") != "member" {
 		t.Fatalf("development headers: %v", h)
 	}
-	t.Setenv("NODE_ENV", "production")
+	t.Setenv("OPENNEKO_ENV", "")
 	if _, rpcErr = execute(map[string]any{"query": "{ orders { id } }"}); rpcErr == nil || !strings.Contains(rpcErr.Message, "forbidden in production") {
 		t.Fatalf("development auth in production: %v", rpcErr)
 	}
