@@ -390,7 +390,7 @@ func (a *API) WebPushDeliver(ctx context.Context, args jobs.WebPushArgs) error {
 			left join app_device d on d.id = s.device_id
 			where s.org_id = $1 and s.id::text = any($2::text[])
 			  and (s.device_id is null or d.revoked_at is null)
-			order by s.created_at asc`, args.OrgID, args.Subscriptions)
+			order by array_position($2::text[], s.id::text)`, args.OrgID, args.Subscriptions)
 	} else if len(args.Users) > 0 {
 		rows, err = a.DB.Query(ctx, `
 			select s.id::text, s.endpoint, s.p256dh, s.auth
@@ -436,23 +436,24 @@ func (a *API) WebPushDeliver(ctx context.Context, args jobs.WebPushArgs) error {
 	defer cancel()
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	var failed []string
+	var untried, failed []string
 	var firstErr error
 	slots := make(chan struct{}, pushSendsAtOnce)
-	for _, sub := range subs {
+	for i, sub := range subs {
+		select {
+		case slots <- struct{}{}:
+		case <-batchCtx.Done():
+			for _, rest := range subs[i:] {
+				untried = append(untried, rest.ID)
+			}
+		}
+		if untried != nil {
+			break
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			select {
-			case slots <- struct{}{}:
-				defer func() { <-slots }()
-			case <-batchCtx.Done():
-				mu.Lock()
-				failed = append(failed, sub.ID)
-				firstErr = cmp.Or(firstErr, batchCtx.Err())
-				mu.Unlock()
-				return
-			}
+			defer func() { <-slots }()
 			status, sendErr := sendWebPush(batchCtx, client, keys, sub, payload)
 			var local *pushLocalError
 			switch {
@@ -472,8 +473,11 @@ func (a *API) WebPushDeliver(ctx context.Context, args jobs.WebPushArgs) error {
 		}()
 	}
 	wg.Wait()
+	if untried != nil {
+		firstErr = cmp.Or(firstErr, batchCtx.Err())
+	}
 	if firstErr != nil {
-		return &jobs.WebPushRetryError{Subscriptions: failed, Err: firstErr}
+		return &jobs.WebPushRetryError{Subscriptions: append(untried, failed...), Err: firstErr}
 	}
 	return nil
 }
