@@ -102,7 +102,6 @@ func chatTurnFront(t *testing.T) (*Front, *pgxpool.Pool, *fakeActionWorker) {
 	worker := &fakeActionWorker{db: db}
 	srv := httptest.NewServer(worker)
 	t.Cleanup(srv.Close)
-	f.API.Gate.WorkerURL = srv.URL
 	seed(t, db, `delete from action_policy where org_id = 'org'`)
 	seed(t, db, `insert into action_policy (org_id, name, applies_to_kinds, applies_to_scopes, mode, priority, enabled) values
 		('org', 'external_default', '{}', '{external}', 'approval_required', 950, true),

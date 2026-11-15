@@ -37,17 +37,8 @@ func TestSuggestThreadTitle(t *testing.T) {
 // as its own user.
 func signedInChatFront(t *testing.T) (*Front, *pgxpool.Pool) {
 	t.Helper()
-	f, db, actions := chatTurnFront(t)
-	signin := &setupWorker{status: `{"provider":{"pluginName":"scalekit"}}`, reply: map[string]string{}}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/admin/auth/status" {
-			signin.ServeHTTP(w, r)
-			return
-		}
-		actions.ServeHTTP(w, r)
-	}))
-	t.Cleanup(srv.Close)
-	f.API.Gate.WorkerURL = srv.URL
+	f, db, _ := chatTurnFront(t)
+	seedSignInSecrets(t, f.API.SecretsDir, `{"provider":{"pluginName":"scalekit"}}`)
 	return f, db
 }
 

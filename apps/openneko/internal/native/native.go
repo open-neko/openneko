@@ -148,7 +148,6 @@ func WebEnv(l Layout, o Options) map[string]string {
 	web["OPENNEKO_PUBLIC_URL"] = o.PublicURL
 	web["OPENNEKO_SERVE_URL"] = "http://" + ServeAddr
 	web["OPENNEKO_GRAPHJIN_URL"] = "http://" + SubscriptionsAddr
-	web["WORKER_ADMIN_URL"] = "unix://" + filepath.Join(l.Run(), "worker.sock")
 	web["OPENNEKO_WEB_ADMIN_SOCKET"] = l.WebAdmin()
 	if !hasEnv(o.Env, "OPENNEKO_METRICS_REFRESH") {
 		web["OPENNEKO_METRICS_REFRESH"] = "off"

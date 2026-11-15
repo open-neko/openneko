@@ -102,7 +102,7 @@ func (n *recorder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func newAPIFront(t *testing.T, workerBody string, db *pgxpool.Pool) (*Front, *recorder) {
-	g := newGate(t, "")
+	g := newGate(t)
 	g.PublicURL = "https://neko.example/"
 	seedSignInSecrets(t, g.SecretsDir, workerBody)
 	g.DB = db
@@ -203,7 +203,7 @@ func TestAuthStatusRoute(t *testing.T) {
 		t.Errorf("pending: %q", w.Body.String())
 	}
 
-	down := newGate(t, "")
+	down := newGate(t)
 	corruptSignInSecrets(t, down.SecretsDir)
 	if err := os.WriteFile(down.MarkerPath, []byte(`{"provider":{"pluginName":"magic-link"}}`), 0o600); err != nil {
 		t.Fatal(err)

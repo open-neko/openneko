@@ -48,12 +48,15 @@ func TestProcsEnvironment(t *testing.T) {
 	for k, want := range map[string]string{
 		"NODE_ENV": "production", "OPENNEKO_WEB_ADDR": "0.0.0.0:3000", "OPENNEKO_WEB_DIR": o.WebDir,
 		"OPENNEKO_SERVE_URL": "http://" + ServeAddr, "OPENNEKO_GRAPHJIN_URL": "http://" + SubscriptionsAddr,
-		"WORKER_ADMIN_URL": "unix:///srv/on/run/worker.sock", "OPENNEKO_METRICS_REFRESH": "on", "OPENNEKO_IN_CONTAINER": "false",
+		"OPENNEKO_METRICS_REFRESH": "on", "OPENNEKO_IN_CONTAINER": "false",
 		"OPENNEKO_AGENT_RUNS_DIR": "/srv/on/agent-runs", "OPENNEKO_WEB_ADMIN_SOCKET": "/srv/on/web-admin.sock",
 	} {
 		if web[k] != want {
 			t.Errorf("web %s=%q, want %q", k, web[k], want)
 		}
+	}
+	if v, ok := web["WORKER_ADMIN_URL"]; ok {
+		t.Errorf("web WORKER_ADMIN_URL=%q, want unset", v)
 	}
 	if _, ok := envMap(Procs(l, Options{Exe: "x"})[1].Env)["OPENNEKO_METRICS_REFRESH"]; !ok {
 		t.Error("the metric refresh must default to off")

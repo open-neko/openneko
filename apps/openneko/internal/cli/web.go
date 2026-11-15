@@ -25,7 +25,6 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 	"github.com/open-neko/neko/apps/openneko/internal/version"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
-	"github.com/open-neko/neko/apps/openneko/internal/workeradmin"
 )
 
 const (
@@ -34,7 +33,7 @@ const (
 )
 
 func newWebCmd() *cobra.Command {
-	var addr, dir, nodeAddr, workerURL string
+	var addr, dir, nodeAddr string
 	var runJobs bool
 	cmd := &cobra.Command{
 		Use:   "web [-- node command]",
@@ -100,6 +99,7 @@ with exit code 0, so its supervisor starts it again.`,
 			if err := checkSchema(ctx, cmd.ErrOrStderr(), pool); err != nil {
 				return err
 			}
+			webfront.ReportDeploymentProfile(func(format string, args ...any) { fmt.Fprintf(cmd.OutOrStdout(), format+"\n", args...) })
 			tracePath := os.Getenv(webfront.EvalTraceEnv)
 			trace, err := webfront.OpenEvalTrace(tracePath, webfront.EvalTraceRefused(envOr("OPENNEKO_FILES_DIR", filepath.Join(dataHome(), "openneko", "files"))), os.Environ())
 			if err != nil {
@@ -118,13 +118,8 @@ with exit code 0, so its supervisor starts it again.`,
 				_ = ln.Close()
 				return err
 			}
-			workerBase, workerClient, err := workeradmin.Endpoint(workerURL)
-			if err != nil {
-				_ = ln.Close()
-				return err
-			}
 			secretsDir := config.Dir("")
-			gate := &webfront.Gate{WorkerURL: workerBase, SecretsDir: secretsDir, Client: workerClient, DB: pool}
+			gate := &webfront.Gate{SecretsDir: secretsDir, DB: pool}
 			api := &webfront.API{Gate: gate, DB: pool, Version: webfront.AppVersion(dir, version.Version),
 				SecureCookies: os.Getenv("NODE_ENV") == "production", SecretsDir: secretsDir, Restart: stop, Jobs: inserter, EvalTrace: trace,
 				MetricsRefresh: jobs.MetricsRefreshOn()}
@@ -243,7 +238,6 @@ with exit code 0, so its supervisor starts it again.`,
 	cmd.Flags().StringVar(&dir, "dir", envOr("OPENNEKO_WEB_DIR", "apps/web/dist"), "Folder of the built web app, from pnpm --filter @neko/web build:spa")
 	cmd.Flags().StringVar(&nodeAddr, "node-addr", envOr("OPENNEKO_WEB_NODE_ADDR", "127.0.0.1:3001"), "Address of the Node server")
 	cmd.Flags().BoolVar(&runJobs, "jobs", envBool("OPENNEKO_WEB_JOBS", true), "Run the background jobs; false leaves them to another web")
-	cmd.Flags().StringVar(&workerURL, "worker-admin-url", workeradmin.URL(), "Worker admin address (http://host:port or unix:///path/to/worker.sock)")
 	return cmd
 }
 
