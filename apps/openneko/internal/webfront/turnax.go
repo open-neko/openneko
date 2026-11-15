@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf16"
 
 	"github.com/open-neko/neko/apps/openneko/internal/llm"
@@ -949,6 +950,9 @@ func (m *axEventMapper) finish(answer string) {
 	outside := outsideFenceText(answer + "\n")
 	if !strings.HasSuffix(answer, "\n") {
 		outside = strings.TrimSuffix(outside, "\n")
+	}
+	if strings.TrimRightFunc(outside, unicode.IsSpace) == strings.TrimRightFunc(m.emittedOutside, unicode.IsSpace) {
+		return
 	}
 	m.emitOutside(outside)
 }
