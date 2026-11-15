@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -60,40 +61,55 @@ func parse(t *testing.T, raw string) any {
 func TestInboundLedger(t *testing.T) {
 	f, db := inboundFront(t)
 	a, ctx := f.API, t.Context()
+	held := map[string]string{}
 	claim := func(key string) string {
-		proceed, dead, err := a.beginInbound(ctx, "org", "telegram", key)
+		c, busy, dead, err := a.beginInbound(ctx, "org", "telegram", key)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return fmt.Sprint(proceed, dead)
+		held[key] = c
+		return fmt.Sprint(c != "", busy, dead)
 	}
-	if got := claim("k1"); got != "true false" {
+	if got := claim("k1"); got != "true false false" {
 		t.Errorf("first claim %s", got)
 	}
-	if got := claim("k1"); got != "true false" {
-		t.Errorf("a pending update proceeds again: %s", got)
+	first := held["k1"]
+	if got := claim("k1"); got != "false true false" {
+		t.Errorf("a held update: %s", got)
 	}
-	if err := a.markInboundDone(ctx, "org", "telegram", "k1"); err != nil {
+	if err := a.markInboundDone(ctx, "org", "telegram", "k1", "not-the-claim"); err != nil || count(t, db, `select count(*) from inbound_dedup where status = 'done'`) != 0 {
+		t.Errorf("another claim marked the update done: %v", err)
+	}
+	if err := a.markInboundDone(ctx, "org", "telegram", "k1", first); err != nil {
 		t.Fatal(err)
 	}
-	if got := claim("k1"); got != "false false" {
+	if got := claim("k1"); got != "false false false" {
 		t.Errorf("a done update: %s", got)
 	}
-	claim("k2")
+	claim("k4")
+	seed(t, db, `update inbound_dedup set claimed_until = now() - interval '1 second' where update_key = 'k4'`)
+	if got := claim("k4"); got != "true false false" {
+		t.Errorf("a pending update whose lease ended: %s", got)
+	}
 	for i := 1; i < inboundMaxAttempts; i++ {
-		if dead, n, err := a.recordInboundFailure(ctx, "org", "telegram", "k2", parse(t, `{"u":1}`), "boom"); err != nil || dead || n != i {
+		if got := claim("k2"); got != "true false false" {
+			t.Fatalf("claim %d after a failure: %s", i, got)
+		}
+		if dead, n, err := a.recordInboundFailure(ctx, "org", "telegram", "k2", held["k2"], parse(t, `{"u":1}`), "boom"); err != nil || dead || n != i {
 			t.Fatalf("failure %d: %v %d %v", i, dead, n, err)
 		}
 	}
-	if dead, n, err := a.recordInboundFailure(ctx, "org", "telegram", "k2", parse(t, `{"u":1}`), "last"); err != nil || !dead || n != inboundMaxAttempts {
+	claim("k2")
+	if dead, n, err := a.recordInboundFailure(ctx, "org", "telegram", "k2", held["k2"], parse(t, `{"u":1}`), "last"); err != nil || !dead || n != inboundMaxAttempts {
 		t.Fatalf("the cap: %v %d %v", dead, n, err)
 	}
 	if got := rowText(t, db, `select status || ' ' || last_error || ' ' || payload::text from inbound_dedup where update_key = 'k2'`); got != `dead last {"u": 1}` {
 		t.Errorf("dead row %q", got)
 	}
-	if got := claim("k2"); got != "false true" {
+	if got := claim("k2"); got != "false false true" {
 		t.Errorf("a dead update: %s", got)
 	}
+	seed(t, db, `delete from inbound_dedup where update_key = 'k4'`)
 	seed(t, db, `update inbound_dedup set created_at = now() - interval '8 days'`)
 	claim("k3")
 	if n, err := a.pruneInboundDedup(ctx, time.Now()); err != nil || n != 1 {
@@ -705,4 +721,88 @@ func TestInboundLoopsCreateNoOrg(t *testing.T) {
 		t.Errorf("loops after the org exists: %d", len(l.running))
 	}
 	l.running["telegram"].cancel()
+}
+
+func TestInboundTwoInstancesOneDatabase(t *testing.T) {
+	f, db := inboundFront(t)
+	a := f.API
+	b := &API{Gate: a.Gate, DB: a.DB, Version: a.Version, PublicURL: a.PublicURL, SecretsDir: a.SecretsDir, Jobs: a.Jobs}
+	ctx := t.Context()
+	runs := func() int { return count(t, db, `select count(*) from work_run`) }
+
+	held := parse(t, `{"update_id":20,"message":{"chat":{"id":7},"text":"held"}}`)
+	seed(t, db, `insert into inbound_dedup (org_id, channel_plugin, update_key, status, attempts, claimed_by, claimed_until)
+		values ('org', 'telegram', $1, 'pending', 0, 'instance-a', now() + interval '1 minute')`, inboundUpdateKey(held))
+	before := runs()
+	if b.processInbound(ctx, "org", "telegram", held) || runs() != before {
+		t.Error("a second instance dispatched an update that the first one holds")
+	}
+	seed(t, db, `update inbound_dedup set claimed_until = now() - interval '1 second'`)
+	if !b.processInbound(ctx, "org", "telegram", held) || runs() != before+1 {
+		t.Error("the second instance did not take an update whose lease ended")
+	}
+
+	update := parse(t, `{"update_id":21,"message":{"chat":{"id":7},"text":"race"}}`)
+	before = runs()
+	var wg sync.WaitGroup
+	for i := range 8 {
+		api := a
+		if i%2 == 1 {
+			api = b
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			api.processInbound(ctx, "org", "telegram", update)
+		}()
+	}
+	wg.Wait()
+	if got := runs(); got != before+1 {
+		t.Errorf("eight dispatches of one update on two instances made %d runs", got-before)
+	}
+
+	var polls atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		polls.Add(1)
+		_, _ = w.Write([]byte(`{"ok":true,"result":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	oldBase, oldRetry := telegramAPIBase, pollLockRetry
+	telegramAPIBase, pollLockRetry = srv.URL, 50*time.Millisecond
+	t.Cleanup(func() { telegramAPIBase, pollLockRetry = oldBase, oldRetry })
+
+	env, _ := a.channelEnv("telegram")
+	key := pollLockKey("telegram", env)
+	first, err := a.tryPollLock(ctx, key)
+	if err != nil || first == nil {
+		t.Fatalf("first lock: %v", err)
+	}
+	if again, err := b.tryPollLock(ctx, key); err != nil || again != nil {
+		t.Fatalf("the second instance took a held poll lock: %v", err)
+	}
+	loopCtx, stop := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() { b.telegramPollLoop(loopCtx, "org", "telegram"); close(done) }()
+	time.Sleep(500 * time.Millisecond)
+	if n := polls.Load(); n != 0 {
+		t.Errorf("the second instance polled %d time(s) while the first held the bot", n)
+	}
+	_ = first.Close(ctx)
+	deadline := time.Now().Add(10 * time.Second)
+	for polls.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if polls.Load() == 0 {
+		t.Error("the second instance did not take over when the first let go")
+	}
+	if again, err := a.tryPollLock(ctx, key); err != nil || again != nil {
+		t.Errorf("the first instance took the lock while the second polls: %v", err)
+	}
+	stop()
+	<-done
+	if after, err := a.tryPollLock(ctx, key); err != nil || after == nil {
+		t.Errorf("the lock stayed after the loop ended: %v", err)
+	} else {
+		_ = after.Close(ctx)
+	}
 }

@@ -2,6 +2,8 @@ package webfront
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -273,20 +275,73 @@ func pollTelegram(ctx context.Context, cursor string, env map[string]string) ([]
 	return updates, cursor, nil
 }
 
-// telegramPollLoop is the worker's pollLoop(): the cursor moves only when
-// the whole batch settled.
-func (a *API) telegramPollLoop(ctx context.Context, orgID, id string) {
-	cursor, err := a.loadPollCursor(ctx, orgID, id)
+var pollLockRetry = 15 * time.Second
+
+func pollLockKey(id string, env map[string]string) string {
+	sum := sha256.Sum256([]byte(env["TELEGRAM_BOT_TOKEN"]))
+	return "openneko:channel-poll:" + id + ":" + hex.EncodeToString(sum[:16])
+}
+
+// tryPollLock takes the bot's session advisory lock on a connection of its
+// own. The lock lasts while that connection is open, so a process that dies
+// lets another one take over.
+func (a *API) tryPollLock(ctx context.Context, key string) (*pgx.Conn, error) {
+	c, err := a.DB.Acquire(ctx)
 	if err != nil {
-		log.Printf("[channel-inbound] %s: could not read the poll cursor: %v", id, err)
+		return nil, err
 	}
-	resumed := ""
-	if cursor != "" {
-		resumed = " — resumed from saved cursor"
+	conn := c.Hijack()
+	var ok bool
+	if err := conn.QueryRow(ctx, `select pg_try_advisory_lock(hashtextextended($1, 0))`, key).Scan(&ok); err != nil || !ok {
+		_ = conn.Close(context.WithoutCancel(ctx))
+		return nil, err
 	}
-	log.Printf("[channel-inbound] %s: polling for inbound (webhook off)%s", id, resumed)
+	return conn, nil
+}
+
+// telegramPollLoop is the worker's pollLoop(): the cursor moves only when
+// the whole batch settled. One process on the database polls one bot.
+func (a *API) telegramPollLoop(ctx context.Context, orgID, id string) {
+	env, _ := a.channelEnv(id)
+	key := pollLockKey(id, env)
+	var lock *pgx.Conn
+	defer func() {
+		if lock != nil {
+			_ = lock.Close(context.Background())
+		}
+	}()
+	cursor, waiting := "", false
 	failures, lastError := 0, ""
 	for ctx.Err() == nil {
+		if lock != nil && lock.Ping(ctx) != nil {
+			_ = lock.Close(context.WithoutCancel(ctx))
+			lock = nil
+			log.Printf("[channel-inbound] %s: lost the poll lock", id)
+		}
+		if lock == nil {
+			conn, err := a.tryPollLock(ctx, key)
+			if conn == nil {
+				if err != nil && ctx.Err() == nil {
+					log.Printf("[channel-inbound] %s: could not take the poll lock: %v", id, err)
+				} else if err == nil && !waiting {
+					log.Printf("[channel-inbound] %s: another OpenNeko process polls this bot; this one waits", id)
+				}
+				waiting = err == nil
+				if !sleepCtx(ctx, pollLockRetry) {
+					return
+				}
+				continue
+			}
+			lock, waiting = conn, false
+			if cursor, err = a.loadPollCursor(ctx, orgID, id); err != nil {
+				log.Printf("[channel-inbound] %s: could not read the poll cursor: %v", id, err)
+			}
+			resumed := ""
+			if cursor != "" {
+				resumed = " — resumed from saved cursor"
+			}
+			log.Printf("[channel-inbound] %s: polling for inbound (webhook off)%s", id, resumed)
+		}
 		held, err := a.pollOnce(ctx, orgID, id, &cursor)
 		switch {
 		case err != nil && ctx.Err() == nil:
