@@ -23,8 +23,8 @@ func (s *agentSlots) setLimit(n int) {
 }
 
 var (
-	agentConcurrencyRefresh   = 30 * time.Second
-	afterAgentConcurrencyRead = func() {}
+	agentConcurrencyReadTimeout = 5 * time.Second
+	afterAgentConcurrencyRead   = func() {}
 )
 
 // ApplyAgentConcurrency sets the number of agent turns that run at once from
@@ -56,15 +56,25 @@ func (a *API) ApplyAgentConcurrency(ctx context.Context) (int, error) {
 // StartAgentConcurrencyRefresh reads the setting again on a timer, so a save
 // in one openneko web reaches every other process on the same database.
 func (a *API) StartAgentConcurrencyRefresh(ctx context.Context, logf func(string, ...any)) {
+	every := a.AgentConcurrencyRefresh
+	if every <= 0 {
+		every = 30 * time.Second
+	}
+	apply := func() error {
+		readCtx, cancel := context.WithTimeout(ctx, agentConcurrencyReadTimeout)
+		defer cancel()
+		_, err := a.ApplyAgentConcurrency(readCtx)
+		return err
+	}
 	go func() {
-		tick := time.NewTicker(agentConcurrencyRefresh)
+		tick := time.NewTicker(every)
 		defer tick.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-tick.C:
-				if _, err := a.ApplyAgentConcurrency(ctx); err != nil && ctx.Err() == nil {
+				if err := apply(); err != nil && ctx.Err() == nil {
 					logf("openneko web: the Concurrent jobs setting was not read: %v", err)
 				}
 			}

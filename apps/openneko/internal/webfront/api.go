@@ -33,6 +33,9 @@ type API struct {
 	AuditWebhook string
 	// Development drops the request scheme from the Secure cookie rule.
 	Development bool
+	// AgentConcurrencyRefresh is how often the Concurrent jobs setting is read
+	// again; zero means 30 seconds.
+	AgentConcurrencyRefresh time.Duration
 	// SecretsDir overrides the config folder that holds secrets.json.
 	SecretsDir string
 	// SignInClient overrides the HTTP client for outbound sign-in and SSO
