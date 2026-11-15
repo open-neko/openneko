@@ -17,6 +17,7 @@ import {
   subscribeDeviceToWebPush,
   unsubscribeDeviceFromWebPush,
 } from "@/lib/web-push";
+import { signOut } from "@/lib/sign-out";
 
 type Profile = {
   displayName: string | null;
@@ -177,14 +178,6 @@ export function ProfileClient({ email, signInEnabled }: { email: string; signInE
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setState("ready");
-    }
-  }
-
-  async function signOut() {
-    try {
-      await fetch("/api/v1/auth/logout", { method: "POST" });
-    } finally {
-      window.location.href = "/signin";
     }
   }
 

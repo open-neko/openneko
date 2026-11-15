@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test, type Page, type Worker } from "@playwright/test";
 import pg from "pg";
+import { verifyVapidForSubscription } from "./vapid";
 
 function resolveDatabaseUrl(): string {
   const file = process.env.OPENNEKO_DATABASE_URL_FILE;
@@ -156,6 +157,8 @@ test.describe("4.4 Web Push for approval waiting, run finished, and workflow nee
     const received: ReceivedPush[] = [];
     const stubErrors: string[] = [];
     const gonePaths = new Set<string>();
+    let subscribedKey = "";
+    let pushOrigin = "";
 
     const pushStub = createHttpServer((req: IncomingMessage, res: ServerResponse) => {
       const reqPath = req.url ?? "/";
@@ -165,6 +168,14 @@ test.describe("4.4 Web Push for approval waiting, run finished, and workflow nee
         if (gonePaths.has(reqPath)) {
           res.writeHead(410, { "Content-Type": "text/plain" });
           res.end("Gone");
+          return;
+        }
+        try {
+          verifyVapidForSubscription(String(req.headers.authorization ?? ""), subscribedKey, pushOrigin);
+        } catch (err) {
+          stubErrors.push(err instanceof Error ? err.message : "vapid error");
+          res.writeHead(403, { "Content-Type": "text/plain" });
+          res.end("vapid");
           return;
         }
         try {
@@ -203,7 +214,8 @@ test.describe("4.4 Web Push for approval waiting, run finished, and workflow nee
       pushStub.on("error", reject);
     });
 
-    const endpoint = `http://127.0.0.1:${pushPort}/push/phone-1`;
+    pushOrigin = `http://127.0.0.1:${pushPort}`;
+    const endpoint = `${pushOrigin}/push/phone-1`;
     const webPort = await freePort();
     const binPath = path.join(work, "openneko");
     execFileSync("go", ["build", "-o", binPath, "./cmd/openneko"], {
@@ -227,6 +239,7 @@ test.describe("4.4 Web Push for approval waiting, run finished, and workflow nee
           ...process.env,
           XDG_CONFIG_HOME: configHome,
           OPENNEKO_JOBS_WAKE_TOKEN: wakeToken,
+          OPENNEKO_WEB_PUSH_ALLOW_LOOPBACK: "1",
         },
         stdio: ["ignore", "pipe", "pipe"],
       },
@@ -288,7 +301,7 @@ test.describe("4.4 Web Push for approval waiting, run finished, and workflow nee
           let activeSub: {
             endpoint: string;
             expirationTime: null;
-            options: { userVisibleOnly: boolean };
+            options: { userVisibleOnly: boolean; applicationServerKey: ArrayBuffer | null };
             getKey: (name: string) => ArrayBuffer | null;
             toJSON: () => { endpoint: string; expirationTime: null; keys: { p256dh: string; auth: string } };
             unsubscribe: () => Promise<boolean>;
@@ -302,10 +315,10 @@ test.describe("4.4 Web Push for approval waiting, run finished, and workflow nee
             return out.buffer;
           };
 
-          const makeSub = () => ({
+          const makeSub = (applicationServerKey: ArrayBuffer | null) => ({
             endpoint: stubEndpoint,
             expirationTime: null,
-            options: { userVisibleOnly: true },
+            options: { userVisibleOnly: true, applicationServerKey },
             getKey(name: string) {
               if (name === "p256dh") return decodeB64Url(p256dh);
               if (name === "auth") return decodeB64Url(auth);
@@ -328,8 +341,13 @@ test.describe("4.4 Web Push for approval waiting, run finished, and workflow nee
             async getSubscription() {
               return activeSub;
             },
-            async subscribe() {
-              activeSub = makeSub();
+            async subscribe(opts?: { applicationServerKey?: BufferSource }) {
+              const raw = opts?.applicationServerKey;
+              const bytes = raw ? new Uint8Array(ArrayBuffer.isView(raw) ? raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength) : raw) : null;
+              (window as unknown as { __pushServerKey: string }).__pushServerKey = bytes
+                ? btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+                : "";
+              activeSub = makeSub(bytes ? bytes.slice().buffer : null);
               return activeSub;
             },
             async permissionState() {
@@ -370,14 +388,16 @@ test.describe("4.4 Web Push for approval waiting, run finished, and workflow nee
         const r = await fetch("/api/v1/my/push-subscriptions");
         return await r.text();
       });
-      expect(listBeforeRes).toBe('{"subscriptions":[]}');
-      expect(listBeforeRes).not.toContain(vapidPub);
-      expect(listBeforeRes).not.toContain(vapidPriv);
+      const serverKey = (JSON.parse(listBeforeRes) as { vapidPublicKey: string }).vapidPublicKey;
+      expect(JSON.parse(listBeforeRes)).toEqual({ subscriptions: [], vapidPublicKey: serverKey });
+      expect(serverKey).toMatch(/^B[A-Za-z0-9_-]{86}$/);
 
       await page.getByRole("button", { name: "Turn on notifications" }).click();
       await expect(page.getByTestId("push-status")).toHaveText("Notifications are on in this browser.");
       await expect(page.getByRole("button", { name: "Turn off notifications" })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= 400)).toBe(true);
+      subscribedKey = await page.evaluate(() => (window as unknown as { __pushServerKey?: string }).__pushServerKey ?? "");
+      expect(subscribedKey).toBe(serverKey);
 
       const subRows = await client.query<{ id: string; endpoint: string; user_id: string }>(
         `select id::text as id, endpoint, user_id from app_push_subscription where org_id = $1 and user_id = $2`,
@@ -438,7 +458,7 @@ test.describe("4.4 Web Push for approval waiting, run finished, and workflow nee
         const kMatch = p.authorization.match(/^vapid t=[^,]+, k=([A-Za-z0-9_-]{80,90})$/);
         expect(kMatch?.[1]).toBeTruthy();
         expect(serverLogs).not.toContain(kMatch![1]!);
-        expect(listBeforeRes).not.toContain(kMatch![1]!);
+        expect(kMatch![1]).toBe(subscribedKey);
         expect(Object.keys(JSON.parse(p.rawJson) as Record<string, unknown>).sort()).toEqual([
           "body",
           "event",

@@ -1,4 +1,4 @@
-import { toBase64Url } from "./passkey";
+import { fromBase64Url, toBase64Url } from "./passkey";
 
 export type PushSubscriptionSummary = {
   id: string;
@@ -69,14 +69,24 @@ export async function getLocalPushEndpoint(): Promise<string | null> {
   return readStoredEndpoint();
 }
 
-export async function listPushSubscriptions(): Promise<PushSubscriptionSummary[]> {
+async function loadPushState(): Promise<{
+  subscriptions: PushSubscriptionSummary[];
+  vapidPublicKey: string;
+}> {
   const res = await fetch("/api/v1/my/push-subscriptions", { cache: "no-store" });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
     throw new Error(body?.error ?? `Could not load push subscriptions (${res.status}).`);
   }
-  const body = (await res.json()) as { subscriptions?: PushSubscriptionSummary[] };
-  return body.subscriptions ?? [];
+  const body = (await res.json()) as {
+    subscriptions?: PushSubscriptionSummary[];
+    vapidPublicKey?: string;
+  };
+  return { subscriptions: body.subscriptions ?? [], vapidPublicKey: body.vapidPublicKey ?? "" };
+}
+
+export async function listPushSubscriptions(): Promise<PushSubscriptionSummary[]> {
+  return (await loadPushState()).subscriptions;
 }
 
 function extractSubscriptionKeys(sub: PushSubscription): {
@@ -102,10 +112,36 @@ function extractSubscriptionKeys(sub: PushSubscription): {
   };
 }
 
-// Uncompressed P-256 public point fallback for browsers that require an
-// applicationServerKey argument on PushManager.subscribe.
-const FALLBACK_APPLICATION_SERVER_KEY =
-  "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U";
+function sameKey(a: ArrayBuffer | null | undefined, b: Uint8Array): boolean {
+  if (!a) return false;
+  const left = new Uint8Array(a);
+  return left.length === b.length && left.every((v, i) => v === b[i]);
+}
+
+async function browserSubscription(
+  registration: ServiceWorkerRegistration,
+  serverKey: Uint8Array<ArrayBuffer>,
+  fresh: boolean,
+): Promise<PushSubscription> {
+  const existing = await registration.pushManager.getSubscription();
+  if (existing && !fresh && sameKey(existing.options?.applicationServerKey, serverKey)) {
+    return existing;
+  }
+  if (existing) await existing.unsubscribe();
+  return await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: serverKey,
+  });
+}
+
+async function postSubscription(sub: PushSubscription): Promise<Response> {
+  const { endpoint, p256dh, auth } = extractSubscriptionKeys(sub);
+  return await fetch("/api/v1/my/push-subscriptions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ endpoint, keys: { p256dh, auth } }),
+  });
+}
 
 export async function subscribeDeviceToWebPush(): Promise<PushSubscriptionSummary> {
   if (!isWebPushSupported()) {
@@ -122,29 +158,15 @@ export async function subscribeDeviceToWebPush(): Promise<PushSubscriptionSummar
   if (!registration.pushManager) {
     throw new Error("Push notifications are not available on this device.");
   }
-  let browserSub = await registration.pushManager.getSubscription();
-  if (!browserSub) {
-    try {
-      browserSub = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-      });
-    } catch {
-      const { fromBase64Url } = await import("./passkey");
-      browserSub = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: fromBase64Url(FALLBACK_APPLICATION_SERVER_KEY),
-      });
-    }
+  const { vapidPublicKey } = await loadPushState();
+  if (!vapidPublicKey) {
+    throw new Error("The server did not give its push key.");
   }
-  const { endpoint, p256dh, auth } = extractSubscriptionKeys(browserSub);
-  const res = await fetch("/api/v1/my/push-subscriptions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      endpoint,
-      keys: { p256dh, auth },
-    }),
-  });
+  const serverKey = fromBase64Url(vapidPublicKey);
+  let res = await postSubscription(await browserSubscription(registration, serverKey, false));
+  if (res.status === 409) {
+    res = await postSubscription(await browserSubscription(registration, serverKey, true));
+  }
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
     throw new Error(body?.error ?? `Could not save push subscription (${res.status}).`);
@@ -152,6 +174,29 @@ export async function subscribeDeviceToWebPush(): Promise<PushSubscriptionSummar
   const body = (await res.json()) as { subscription: PushSubscriptionSummary };
   writeStoredEndpoint(body.subscription.endpoint);
   return body.subscription;
+}
+
+// Sign-out calls this before the session ends, so the next user of this
+// browser gets no notice meant for the user who left.
+export async function unsubscribeThisBrowserFromWebPush(): Promise<void> {
+  const endpoint = await getLocalPushEndpoint();
+  if (!endpoint) return;
+  try {
+    const { subscriptions } = await loadPushState();
+    const mine = subscriptions.find((s) => s.endpoint === endpoint);
+    if (mine) {
+      await fetch(`/api/v1/my/push-subscriptions/${encodeURIComponent(mine.id)}`, {
+        method: "DELETE",
+      });
+    }
+  } finally {
+    writeStoredEndpoint(null);
+    if (isWebPushSupported()) {
+      const reg = await navigator.serviceWorker.getRegistration("/").catch(() => undefined);
+      const sub = await reg?.pushManager?.getSubscription().catch(() => null);
+      await sub?.unsubscribe().catch(() => false);
+    }
+  }
 }
 
 export async function unsubscribeDeviceFromWebPush(

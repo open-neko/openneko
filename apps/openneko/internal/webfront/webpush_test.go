@@ -16,7 +16,6 @@ import (
 	"io"
 	"math/big"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -184,7 +183,7 @@ func TestWebPushSubscriptionsVAPIDAndThreeEvents(t *testing.T) {
 	var received []receivedPush
 	gonePaths := map[string]bool{}
 
-	pushStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	pushStub := newPushStub(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		isGone := gonePaths[r.URL.Path]
 		mu.Unlock()
@@ -221,9 +220,13 @@ func TestWebPushSubscriptionsVAPIDAndThreeEvents(t *testing.T) {
 	defer pushStub.Close()
 
 	// Empty list at start; neither VAPID key is ever in a response.
+	emptyList := `{"subscriptions":[],"vapidPublicKey":"` + pubKey1 + `"}`
 	listResp := call(f, "GET", "/api/v1/my/push-subscriptions", "", member)
-	if listResp.Code != 200 || listResp.Body.String() != `{"subscriptions":[]}` {
+	if listResp.Code != 200 || listResp.Body.String() != emptyList {
 		t.Fatalf("empty list: %d %s", listResp.Code, listResp.Body.String())
+	}
+	if strings.Contains(listResp.Body.String(), privKey1) {
+		t.Fatal("list leaked the VAPID private key")
 	}
 
 	// Subscribe member's device.
@@ -239,8 +242,8 @@ func TestWebPushSubscriptionsVAPIDAndThreeEvents(t *testing.T) {
 	if createResp.Code != 200 {
 		t.Fatalf("create subscription: %d %s", createResp.Code, createResp.Body.String())
 	}
-	if strings.Contains(createResp.Body.String(), privKey1) || strings.Contains(createResp.Body.String(), pubKey1) {
-		t.Fatal("response leaked a VAPID key from the secrets store")
+	if strings.Contains(createResp.Body.String(), privKey1) {
+		t.Fatal("response leaked the VAPID private key")
 	}
 	var created struct {
 		Subscription pushSubscriptionSummary `json:"subscription"`
@@ -254,7 +257,7 @@ func TestWebPushSubscriptionsVAPIDAndThreeEvents(t *testing.T) {
 
 	// Admin cannot see or delete member's subscription.
 	adminList := call(f, "GET", "/api/v1/my/push-subscriptions", "", admin)
-	if adminList.Code != 200 || adminList.Body.String() != `{"subscriptions":[]}` {
+	if adminList.Code != 200 || adminList.Body.String() != emptyList {
 		t.Fatalf("admin list: %d %s", adminList.Code, adminList.Body.String())
 	}
 	if del := call(f, "DELETE", "/api/v1/my/push-subscriptions/"+created.Subscription.ID, "", admin); del.Code != 404 {
@@ -363,7 +366,7 @@ func TestWebPushSubscriptionsVAPIDAndThreeEvents(t *testing.T) {
 		t.Fatalf("WebPushDeliver on 410 Gone: %v", err)
 	}
 	afterGone := call(f, "GET", "/api/v1/my/push-subscriptions", "", member)
-	if afterGone.Code != 200 || afterGone.Body.String() != `{"subscriptions":[]}` {
+	if afterGone.Code != 200 || afterGone.Body.String() != emptyList {
 		t.Fatalf("member subscriptions after 410 Gone: %d %s", afterGone.Code, afterGone.Body.String())
 	}
 
@@ -377,7 +380,7 @@ func TestWebPushSubscriptionsVAPIDAndThreeEvents(t *testing.T) {
 		t.Fatalf("admin delete: %d %s", delAdmin.Code, delAdmin.Body.String())
 	}
 	afterAdminDel := call(f, "GET", "/api/v1/my/push-subscriptions", "", admin)
-	if afterAdminDel.Code != 200 || afterAdminDel.Body.String() != `{"subscriptions":[]}` {
+	if afterAdminDel.Code != 200 || afterAdminDel.Body.String() != emptyList {
 		t.Fatalf("admin subscriptions after delete: %d %s", afterAdminDel.Code, afterAdminDel.Body.String())
 	}
 }
