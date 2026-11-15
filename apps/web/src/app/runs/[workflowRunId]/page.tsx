@@ -940,6 +940,10 @@ function coalesceEvents(events: EventRow[]): RenderedItem[] {
   const items: RenderedItem[] = [];
   let current: { seq: number; content: string } | null = null;
   for (const ev of events) {
+    if (ev.type === "answer_reset") {
+      current = null;
+      continue;
+    }
     if (ev.type === "message") {
       const content = (ev.event as { content?: string } | null)?.content ?? "";
       if (current) {

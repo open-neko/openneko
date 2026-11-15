@@ -354,7 +354,7 @@ func TestRunEventStreamStored(t *testing.T) {
 		{"?afterId=abc", member, all},
 	} {
 		w := call(f, "GET", path+c.query, "", c.header)
-		if w.Code != 200 || w.Header().Get("Content-Type") != "text/event-stream; charset=utf-8" || w.Body.String() != helloFrames(runID, threadMine)+c.want {
+		if w.Code != 200 || w.Header().Get("Content-Type") != "text/event-stream; charset=utf-8" || w.Header().Get("X-Accel-Buffering") != "no" || w.Body.String() != helloFrames(runID, threadMine)+c.want {
 			t.Errorf("%s: %d %q", c.query, w.Code, w.Body)
 		}
 	}
@@ -418,9 +418,9 @@ func TestRunEventStreamLive(t *testing.T) {
 	a := f.API
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
-	oldPoll, oldIdle := runStreamPoll, runEventFlushIdle
-	t.Cleanup(func() { runStreamPoll, runEventFlushIdle = oldPoll, oldIdle })
-	runStreamPoll, runEventFlushIdle = time.Hour, time.Millisecond
+	oldPoll, oldIdle := runStreamPoll, runEventFlushAfter
+	t.Cleanup(func() { runStreamPoll, runEventFlushAfter = oldPoll, oldIdle })
+	runStreamPoll, runEventFlushAfter = time.Hour, time.Millisecond
 
 	t.Run("a turn in this process", func(t *testing.T) {
 		a.turnResolve = fixedBackend("http://unused")

@@ -363,6 +363,16 @@ func traceWorkflowList(binding traceBinding, limit *int, execute func() (any, er
 // secretScrubber is createScrubber() in packages/llm/src/work/secret-scrubber.ts:
 // each value of 8 or more characters becomes [REDACTED], the longest first.
 func secretScrubber(values []string) func(string) string {
+	rx, _ := secretPattern(values)
+	if rx == nil {
+		return func(s string) string { return s }
+	}
+	return func(s string) string { return rx.ReplaceAllLiteralString(s, "[REDACTED]") }
+}
+
+// secretPattern returns the scrub pattern and the values it matches, or nil
+// when no value is long enough to scrub.
+func secretPattern(values []string) (*regexp.Regexp, []string) {
 	var usable []string
 	seen := map[string]bool{}
 	for _, v := range values {
@@ -372,15 +382,14 @@ func secretScrubber(values []string) func(string) string {
 		}
 	}
 	if len(usable) == 0 {
-		return func(s string) string { return s }
+		return nil, nil
 	}
 	slices.SortStableFunc(usable, func(x, y string) int { return utf16Len(y) - utf16Len(x) })
 	quoted := make([]string, len(usable))
 	for i, v := range usable {
 		quoted[i] = regexp.QuoteMeta(v)
 	}
-	rx := regexp.MustCompile(strings.Join(quoted, "|"))
-	return func(s string) string { return rx.ReplaceAllLiteralString(s, "[REDACTED]") }
+	return regexp.MustCompile(strings.Join(quoted, "|")), usable
 }
 
 func scrubJS(scrub func(string) string, v any) any {
