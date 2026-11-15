@@ -66,7 +66,7 @@ type channelLoops struct {
 	mu      sync.Mutex
 	ctx     context.Context
 	running map[string]*inboundLoop
-	noted   map[string]bool
+	noted   map[string]string
 	wake    chan struct{}
 }
 
@@ -74,7 +74,7 @@ type channelLoops struct {
 // ctx ends. It follows the channel settings: a channel turned on starts, a
 // channel turned off stops, and a changed setting restarts its loop.
 func (a *API) StartChannelInbound(ctx context.Context) {
-	l := &channelLoops{ctx: ctx, running: map[string]*inboundLoop{}, noted: map[string]bool{}, wake: make(chan struct{}, 1)}
+	l := &channelLoops{ctx: ctx, running: map[string]*inboundLoop{}, noted: map[string]string{}, wake: make(chan struct{}, 1)}
 	a.inboundMu.Lock()
 	a.inbound = l
 	a.inboundMu.Unlock()
@@ -180,12 +180,60 @@ func (a *API) existingOrgID(ctx context.Context) (string, error) {
 	return id, err
 }
 
+func telegramInboundURL(public string) string {
+	return public + "/api/v1/channels/telegram/inbound"
+}
+
+// telegramWebhookURL is the URL that getWebhookInfo reports for the bot; ""
+// means that the bot has no webhook.
+func telegramWebhookURL(ctx context.Context, env map[string]string) (string, error) {
+	token := env["TELEGRAM_BOT_TOKEN"]
+	if token == "" {
+		return "", errors.New("no TELEGRAM_BOT_TOKEN")
+	}
+	raw, status, err := postChannelBody(ctx, telegramAPIBase+"/bot"+token+"/getWebhookInfo", nil, []byte("{}"), telegramPollTimeout)
+	if err != nil {
+		return "", fmt.Errorf("Telegram getWebhookInfo network error: %s", strings.ReplaceAll(err.Error(), token, "<token>"))
+	}
+	envelope, _ := jsParse(raw)
+	if jsGet(envelope, "ok") != true {
+		return "", fmt.Errorf("Telegram getWebhookInfo failed (HTTP %d)", status)
+	}
+	u, _ := jsGet(jsGet(envelope, "result"), "url").(string)
+	return u, nil
+}
+
+// telegramIngress is "webhook" only when the settings allow the webhook and
+// Telegram reports this install's inbound URL for the bot. Else it is
+// "poll", with the reason to log.
+func (a *API) telegramIngress(ctx context.Context, public string, env map[string]string) (string, string) {
+	if !telegramWebhookOn(public, env) {
+		return "poll", ""
+	}
+	want := telegramInboundURL(public)
+	got, err := telegramWebhookURL(ctx, env)
+	switch {
+	case err != nil:
+		return "poll", fmt.Sprintf("could not check the Telegram webhook (%v); polling", err)
+	case got == "":
+		return "poll", "TELEGRAM_WEBHOOK_SECRET is set, but the bot has no webhook; polling. To use the webhook, call setWebhook with url " + want + " and the secret_token"
+	case got != want:
+		return "poll", "the bot's webhook points at another URL, not " + want + "; polling. Call setWebhook with this URL, or deleteWebhook"
+	}
+	return "webhook", ""
+}
+
 func (a *API) refreshInbound(l *channelLoops) {
 	store := secrets.ReadSoft(a.SecretsDir, func(msg string) { log.Printf("channels: %s", msg) })
 	public := a.inboundPublicURL()
-	wanted := map[string]string{}
+	wanted, ingress, reason := map[string]string{}, map[string]string{}, map[string]string{}
 	for _, ch := range a.enabledChannels() {
-		wanted[ch.ID] = envSignature(store["channel."+ch.ID])
+		mode := channelInbound[ch.ID].ingress
+		if ch.ID == "telegram" {
+			mode, reason[ch.ID] = a.telegramIngress(l.ctx, public, store["channel."+ch.ID])
+		}
+		ingress[ch.ID] = mode
+		wanted[ch.ID] = envSignature(store["channel."+ch.ID]) + "ingress=" + mode
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -205,8 +253,12 @@ func (a *API) refreshInbound(l *channelLoops) {
 		loop.cancel()
 		delete(l.running, id)
 		if _, ok := wanted[id]; !ok {
-			delete(l.noted, id)
 			log.Printf("[channel-inbound] %s: turned off — inbound stopped", id)
+		}
+	}
+	for id := range l.noted {
+		if _, ok := wanted[id]; !ok {
+			delete(l.noted, id)
 		}
 	}
 	for _, ch := range builtInChannels {
@@ -214,20 +266,21 @@ func (a *API) refreshInbound(l *channelLoops) {
 		if !ok || l.running[ch.ID] != nil {
 			continue
 		}
-		ingress := channelInbound[ch.ID].ingress
-		if ch.ID == "hud" || (ingress == "webhook" && telegramWebhookOn(public, store["channel."+ch.ID])) {
-			if !l.noted[ch.ID] {
-				l.noted[ch.ID] = true
+		note := sig + "\x00" + reason[ch.ID]
+		if l.noted[ch.ID] != note {
+			l.noted[ch.ID] = note
+			if ingress[ch.ID] == "webhook" {
 				log.Printf("[channel-inbound] %s: webhook ingress at %s/api/v1/channels/%s/inbound", ch.ID, public, ch.ID)
+			} else if reason[ch.ID] != "" {
+				log.Printf("[channel-inbound] %s: %s", ch.ID, reason[ch.ID])
 			}
-			continue
 		}
-		if orgID == "" {
+		if ingress[ch.ID] == "webhook" || orgID == "" {
 			continue
 		}
 		ctx, cancel := context.WithCancel(l.ctx)
 		l.running[ch.ID] = &inboundLoop{cancel: cancel, sig: sig}
-		if ingress == "socket" {
+		if ingress[ch.ID] == "socket" {
 			go a.slackSocketLoop(ctx, orgID, ch.ID)
 		} else {
 			go a.telegramPollLoop(ctx, orgID, ch.ID)
@@ -259,6 +312,12 @@ func pollTelegram(ctx context.Context, cursor string, env map[string]string) ([]
 		desc, _ := jsGet(envelope, "description").(string)
 		if desc == "" {
 			desc = "no description"
+		}
+		if status == http.StatusConflict && strings.Contains(desc, "webhook") {
+			return nil, cursor, fmt.Errorf("Telegram refuses the poll because the bot has a webhook (%s). Call deleteWebhook for the bot, or store TELEGRAM_WEBHOOK_SECRET and set OPENNEKO_PUBLIC_URL to the public https address of this install and call setWebhook with its /api/v1/channels/telegram/inbound URL", desc)
+		}
+		if status == http.StatusConflict {
+			return nil, cursor, fmt.Errorf("Telegram refuses the poll because another program polls this bot (%s). Stop the other program or give this install its own bot", desc)
 		}
 		return nil, cursor, fmt.Errorf("Telegram getUpdates returned ok=false (%s)", desc)
 	}

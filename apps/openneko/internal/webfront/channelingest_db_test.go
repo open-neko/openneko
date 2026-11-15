@@ -540,7 +540,30 @@ func TestSlackSocketMode(t *testing.T) {
 
 func TestInboundLoopsFollowSettings(t *testing.T) {
 	srv := newFakeChannelServer(t)
-	srv.reply = func(string, int) string { return `{"ok":true,"result":[]}` }
+	var mu sync.Mutex
+	registered, checks := "", 0
+	setRegistered := func(u string) {
+		mu.Lock()
+		registered = u
+		mu.Unlock()
+	}
+	srv.reply = func(path string, _ int) string {
+		if path != "/bot9:z/getWebhookInfo" {
+			return `{"ok":true,"result":[]}`
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		checks++
+		if registered == "fail" {
+			return `{"ok":false}`
+		}
+		return `{"ok":true,"result":{"url":"` + registered + `","pending_update_count":0}}`
+	}
+	webhookChecks := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return checks
+	}
 	f, _ := inboundFront(t)
 	a := f.API
 	a.PublicURL = ""
@@ -550,7 +573,7 @@ func TestInboundLoopsFollowSettings(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	l := &channelLoops{ctx: ctx, running: map[string]*inboundLoop{}, noted: map[string]bool{}, wake: make(chan struct{}, 1)}
+	l := &channelLoops{ctx: ctx, running: map[string]*inboundLoop{}, noted: map[string]string{}, wake: make(chan struct{}, 1)}
 	running := func() string {
 		l.mu.Lock()
 		defer l.mu.Unlock()
@@ -582,35 +605,72 @@ func TestInboundLoopsFollowSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.refreshInbound(l)
-	if got := running(); got != "telegram" || !l.noted["hud"] {
+	if got := running(); got != "telegram" || l.noted["hud"] == "" {
 		t.Errorf("the HUD takes webhooks only: %q", got)
 	}
 	a.PublicURL = "https://neko.example"
 	if err := a.setChannelState("telegram", "off"); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.setChannelSettings("telegram", map[string]any{"TELEGRAM_BOT_TOKEN": "9:z"}); err != nil {
+	if err := writeKeepingSignIn(secrets.Store{"channel.telegram": {"TELEGRAM_BOT_TOKEN": "9:z"}}, a.SecretsDir); err != nil {
 		t.Fatal(err)
 	}
 	a.refreshInbound(l)
 	if got := running(); got != "telegram" {
 		t.Errorf("a public URL with no webhook secret stopped the poll: %q", got)
 	}
+	setRegistered("https://neko.example/api/v1/channels/telegram/inbound")
 	a.PublicURL = "http://localhost:3000"
 	if err := a.setChannelSettings("telegram", map[string]any{"TELEGRAM_WEBHOOK_SECRET": "s"}); err != nil {
 		t.Fatal(err)
 	}
 	a.refreshInbound(l)
-	if got := running(); got != "telegram" {
-		t.Errorf("a local public URL stopped the poll: %q", got)
+	if got, n := running(), webhookChecks(); got != "telegram" || n != 0 {
+		t.Errorf("a local public URL stopped the poll: %q, %d webhook checks", got, n)
 	}
 	a.PublicURL = "https://neko.example"
-	if err := a.setChannelSettings("telegram", map[string]any{"TELEGRAM_WEBHOOK_SECRET": "s2"}); err != nil {
-		t.Fatal(err)
+	a.refreshInbound(l)
+	if got, n := running(), webhookChecks(); got != "" || n != 1 {
+		t.Errorf("only the public URL changed, to one that Telegram reaches, and the poll still runs: %q, %d webhook checks", got, n)
 	}
+	setRegistered("")
+	a.refreshInbound(l)
+	if got := running(); got != "telegram" {
+		t.Errorf("the bot has no webhook and OpenNeko does not poll: %q", got)
+	}
+	setRegistered("https://old.example/api/v1/channels/telegram/inbound")
+	a.refreshInbound(l)
+	if got := running(); got != "telegram" {
+		t.Errorf("the webhook points at another install and OpenNeko does not poll: %q", got)
+	}
+	setRegistered("https://neko.example/api/v1/channels/telegram/inbound")
 	a.refreshInbound(l)
 	if got := running(); got != "" {
-		t.Errorf("the webhook is on and the poll still runs: %q", got)
+		t.Errorf("the webhook is back and the poll still runs: %q", got)
+	}
+	setRegistered("fail")
+	a.refreshInbound(l)
+	if got := running(); got != "telegram" {
+		t.Errorf("the webhook check failed and OpenNeko does not poll: %q", got)
+	}
+}
+
+func TestTelegramPollNamesTheWebhookConflict(t *testing.T) {
+	srv := newFakeChannelServer(t)
+	srv.status = 409
+	srv.reply = func(string, int) string {
+		return `{"ok":false,"error_code":409,"description":"Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first"}`
+	}
+	env := map[string]string{"TELEGRAM_BOT_TOKEN": "9:z"}
+	if _, _, err := pollTelegram(t.Context(), "", env); err == nil || !strings.Contains(err.Error(), "the bot has a webhook") ||
+		!strings.Contains(err.Error(), "deleteWebhook") || !strings.Contains(err.Error(), "TELEGRAM_WEBHOOK_SECRET") {
+		t.Errorf("webhook conflict: %v", err)
+	}
+	srv.reply = func(string, int) string {
+		return `{"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}`
+	}
+	if _, _, err := pollTelegram(t.Context(), "", env); err == nil || !strings.Contains(err.Error(), "another program polls this bot") {
+		t.Errorf("poll conflict: %v", err)
 	}
 }
 
@@ -710,7 +770,7 @@ func TestInboundLoopsCreateNoOrg(t *testing.T) {
 	if err := writeKeepingSignIn(secrets.Store{"channel.telegram": {"TELEGRAM_BOT_TOKEN": "123:abc"}}, a.SecretsDir); err != nil {
 		t.Fatal(err)
 	}
-	l := &channelLoops{ctx: t.Context(), running: map[string]*inboundLoop{}, noted: map[string]bool{}, wake: make(chan struct{}, 1)}
+	l := &channelLoops{ctx: t.Context(), running: map[string]*inboundLoop{}, noted: map[string]string{}, wake: make(chan struct{}, 1)}
 	a.refreshInbound(l)
 	if n := count(t, db, `select count(*) from organization`); n != 0 || len(l.running) != 0 {
 		t.Errorf("an empty install: %d orgs, %d loops", n, len(l.running))
