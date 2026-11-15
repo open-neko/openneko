@@ -93,16 +93,10 @@ func TestRunStoreHelpersMatchNode(t *testing.T) {
 }
 
 func TestAgentSlotDefaultLimit(t *testing.T) {
-	for _, c := range []struct {
-		concurrency, owner string
-		want               int
-	}{
-		{"", "", 2}, {"4", "", 4}, {"1.5", "", 2}, {"0", "", 2}, {"x", "worker", 3}, {"", "web-worker", 3}, {"6", "worker", 6},
-	} {
-		t.Setenv("OPENNEKO_AGENT_CONCURRENCY", c.concurrency)
-		t.Setenv("OPENNEKO_SANDBOX_OWNER", c.owner)
-		if got := defaultAgentSlotLimit(); got != c.want {
-			t.Errorf("%q %q: %d, want %d", c.concurrency, c.owner, got, c.want)
+	for concurrency, want := range map[string]int{"": 3, "4": 4, "1.5": 3, "0": 3, "x": 3, "6": 6} {
+		t.Setenv("OPENNEKO_AGENT_CONCURRENCY", concurrency)
+		if got := defaultAgentSlotLimit(); got != want {
+			t.Errorf("%q: %d, want %d", concurrency, got, want)
 		}
 	}
 }
