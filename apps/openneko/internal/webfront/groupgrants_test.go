@@ -3,6 +3,7 @@ package webfront
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -277,5 +278,93 @@ sources:
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for scheduled group grants apply")
+	}
+}
+
+func TestGroupGrantsFailureKeepsOldConfig(t *testing.T) {
+	f, _, _ := groupsFront(t)
+	ctx := t.Context()
+	const configYAML = "sources:\n  - name: shop\n    kind: database\n    access:\n      read: authenticated\n"
+	configFile := filepath.Join(t.TempDir(), "dev.yml")
+	if err := os.WriteFile(configFile, []byte(configYAML), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	var restarts []string
+	failFirst := true
+	deps := &groupGrantsDeps{
+		ConfigFile: configFile,
+		Restart: func(ctx context.Context, path string) error {
+			raw, _ := os.ReadFile(path)
+			restarts = append(restarts, string(raw))
+			if failFirst && len(restarts) == 1 {
+				return errors.New("graphjin_restart_required: GraphJin did not answer")
+			}
+			return nil
+		},
+		Catalog: func(ctx context.Context, sources []string) (map[string][]catalogTableColumns, error) {
+			return map[string][]catalogTableColumns{"shop": {{Schema: "public", Table: "orders", Columns: []string{"id"}}}}, nil
+		},
+	}
+	readConfig := func() string {
+		raw, err := os.ReadFile(configFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+
+	if _, err := f.API.enableGroupGrants(ctx, "org", nil, deps); err == nil || !strings.Contains(err.Error(), "graphjin_restart_required") {
+		t.Fatalf("enable with a failed restart: err=%v", err)
+	}
+	if got := readConfig(); got != configYAML {
+		t.Errorf("config after the failed enable:\n%s", got)
+	}
+	if len(restarts) != 2 || restarts[1] != configYAML {
+		t.Errorf("restarts after the failed enable: %q", restarts)
+	}
+	if on, err := f.API.groupGrantsEnabled(ctx, "org"); err != nil || on {
+		t.Errorf("group grants on after a failed enable: %v %v", on, err)
+	}
+
+	failFirst = false
+	restarts = nil
+	if _, err := f.API.enableGroupGrants(ctx, "org", nil, deps); err != nil {
+		t.Fatal(err)
+	}
+	enabledConfig := readConfig()
+	if !strings.Contains(enabledConfig, "og_everyone") {
+		t.Fatalf("enabled config: %s", enabledConfig)
+	}
+
+	failFirst = true
+	restarts = nil
+	if _, err := f.API.disableGroupGrants(ctx, "org", nil, deps); err == nil {
+		t.Fatal("disable with a failed restart succeeded")
+	}
+	if got := readConfig(); got != enabledConfig {
+		t.Errorf("config after the failed disable:\n%s", got)
+	}
+	if on, err := f.API.groupGrantsEnabled(ctx, "org"); err != nil || !on {
+		t.Errorf("group grants off after a failed disable: %v %v", on, err)
+	}
+}
+
+func TestScheduledGroupGrantsApplyRetriesWhenTheConfigIsBusy(t *testing.T) {
+	f, _, _ := groupsFront(t)
+	f.API.GroupGrantsDelay = 10 * time.Millisecond
+	var runs atomic.Int32
+	done := make(chan struct{})
+	f.API.GroupGrantsRun = func(string) error {
+		if runs.Add(1) == 1 {
+			return errGraphjinConfigBusy
+		}
+		close(done)
+		return nil
+	}
+	f.API.scheduleGroupGrantsApply(t.Context(), "org")
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("no retry after a busy config lock; runs=%d", runs.Load())
 	}
 }

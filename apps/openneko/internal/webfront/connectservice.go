@@ -193,6 +193,8 @@ func (a *API) completeConnect(ctx context.Context, name string, p connectComplet
 	if len(state.Scopes) > 0 {
 		cred.Scopes = state.Scopes
 	}
+	scalekitCredentialMu.Lock()
+	defer scalekitCredentialMu.Unlock()
 	return writeScalekitOperatorCredential(a.secretsDir(), cred)
 }
 
@@ -200,6 +202,8 @@ func (a *API) disconnectConnector(name string) (bool, error) {
 	if name != scalekitPlugin {
 		return false, nil
 	}
+	scalekitCredentialMu.Lock()
+	defer scalekitCredentialMu.Unlock()
 	return removeDeploymentCredential(a.secretsDir(), scalekitPlugin)
 }
 
