@@ -137,7 +137,71 @@ func (t *EvalTrace) register(runID string) func() {
 	if t == nil {
 		return func() {}
 	}
-	return registerTraceSink(runID, t.write, t.scrub)
+	unregister := registerTraceSink(runID, t.write, t.scrub)
+	traceSinks.Lock()
+	if reg := traceSinks.runs[runID]; reg != nil {
+		reg.model = t.writeModelRequest
+	}
+	traceSinks.Unlock()
+	return unregister
+}
+
+// writeModelRequest writes a line that holds no "event", so a reader of the
+// semantic trace skips it.
+func (t *EvalTrace) writeModelRequest(record *jsObj) {
+	line := jsObjOf("modelRequest", record)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if _, err := t.f.WriteString(jsStringify(line, false) + "\n"); err != nil {
+		log.Printf("[eval-trace] write failed: %v", err)
+	}
+}
+
+const evalResponderEffortEnv = "OPENNEKO_EVAL_RESPONDER_REASONING_EFFORT"
+
+// evalResponderEffort is the responder effort of an eval trial. It applies
+// only to a run that an eval trace records.
+func evalResponderEffort(runID string) string {
+	effort := strings.TrimSpace(os.Getenv(evalResponderEffortEnv))
+	if effort == "" || runID == "" || !traceActive(runID) {
+		return ""
+	}
+	switch effort {
+	case "minimal", "low", "medium", "high":
+		return effort
+	}
+	log.Printf("[eval-trace] %s=%q is not minimal, low, medium or high; ignored", evalResponderEffortEnv, effort)
+	return ""
+}
+
+// traceModelRequest records one finished model request of an eval run: its
+// time, its usage and whether it streamed.
+func traceModelRequest(b traceBinding, responderEffort string, ev axEvent) {
+	traceSinks.Lock()
+	reg := traceSinks.runs[b.RunID]
+	traceSinks.Unlock()
+	if reg == nil || reg.model == nil {
+		return
+	}
+	record := jsObjOf("runId", b.RunID, "runKind", b.Kind, "callId", ev.CallID, "streamed", ev.Streaming, "durationMs", ev.DurationMS)
+	if ev.Name != nil {
+		record.set("model", *ev.Name)
+	}
+	if ev.Observed != "" {
+		record.set("observedModel", ev.Observed)
+	}
+	if ev.Error != "" {
+		record.set("error", ev.Error)
+	}
+	if responderEffort != "" {
+		record.set("responderReasoningEffort", responderEffort)
+	}
+	if len(ev.Usage) > 0 {
+		if usage, err := jsParse(ev.Usage); err == nil {
+			record.set("usage", usage)
+		}
+	}
+	reg.model(record)
 }
 
 func traceActive(runID string) bool {

@@ -173,6 +173,7 @@ func fallbackRouteProfile(primary, fallback llm.AxModelRoute) string {
 // from its own environment set by the caller.
 type axTurnOptions struct {
 	Prompt, UserMessage, OrgID, ThreadID, Tag string
+	RunID, RunKind                            string
 	Workspace                                 *agentWorkspace
 	BackendState                              any
 	WantsCards, RichCards                     bool
@@ -372,6 +373,10 @@ type axEvent struct {
 	Effect      string          `json:"effect"`
 	Observed    string          `json:"observed_model"`
 	Provider    *string         `json:"provider"`
+	CallID      float64         `json:"call_id"`
+	Streaming   bool            `json:"streaming"`
+	DurationMS  float64         `json:"duration_ms"`
+	Usage       json.RawMessage `json:"usage"`
 	Error       string          `json:"error"`
 	Data        json.RawMessage `json:"data"`
 	Result      json.RawMessage `json:"result"`
@@ -414,6 +419,10 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions) (
 	}
 	runLimits.ReasoningEffort = orDefault(o.ReasoningEffort, cfg.ReasoningEffort)
 	runLimits.axSpec(spec)
+	responderEffort := evalResponderEffort(o.RunID)
+	if responderEffort != "" {
+		spec.set("responder_reasoning_effort", responderEffort)
+	}
 	if cfg.ContextWindowTokens > 0 {
 		spec.set("context_window_tokens", float64(cfg.ContextWindowTokens))
 	}
@@ -472,7 +481,8 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions) (
 	if o.Workspace != nil {
 		skillsRoot = o.Workspace.SkillsRoot
 	}
-	mapper := &axEventMapper{emit: emit, route: cfg.Route, skillsRoot: skillsRoot, debug: o.Debug, textVersion: -1.0, renderCalls: map[string]bool{}}
+	mapper := &axEventMapper{emit: emit, route: cfg.Route, skillsRoot: skillsRoot, debug: o.Debug, textVersion: -1.0, renderCalls: map[string]bool{},
+		trace: traceBinding{OrgID: o.OrgID, RunID: o.RunID, Kind: o.RunKind}, responderEffort: responderEffort}
 	var result *jsObj
 	protocolError := ""
 	last := 0.0
@@ -796,21 +806,23 @@ func (t *axServeTurn) diagnostics() string {
 
 // axEventMapper is AxEventMapper: harness events to AgentEvents.
 type axEventMapper struct {
-	emit           func(*jsObj)
-	route          llm.AxModelRoute
-	skillsRoot     string
-	debug          bool
-	text           string
-	textVersion    any
-	emittedOutside string
-	openedCards    int
-	thought        string
-	thoughtOpen    bool
-	thoughtVersion any
-	thoughtCount   int
-	observed       *jsObj
-	renderCalls    map[string]bool
-	wroteState     bool
+	emit            func(*jsObj)
+	route           llm.AxModelRoute
+	skillsRoot      string
+	debug           bool
+	text            string
+	textVersion     any
+	emittedOutside  string
+	openedCards     int
+	thought         string
+	thoughtOpen     bool
+	thoughtVersion  any
+	thoughtCount    int
+	observed        *jsObj
+	trace           traceBinding
+	responderEffort string
+	renderCalls     map[string]bool
+	wroteState      bool
 }
 
 func (m *axEventMapper) handle(ev axEvent) {
@@ -927,6 +939,7 @@ func (m *axEventMapper) handle(ev axEvent) {
 	case "executor.step.failed":
 		m.emit(jsObjOf("type", "retry", "reason", "executor_step_failed"))
 	case "model.request.finished":
+		traceModelRequest(m.trace, m.responderEffort, ev)
 		if ev.Observed != "" {
 			provider := m.route.Provider
 			if ev.Provider != nil {

@@ -132,13 +132,13 @@ func (a *API) runAgentCore(ctx context.Context, in agentCoreInput) (axRunResult,
 	}
 	ws := in.Workspace
 	o := axTurnOptions{
-		Prompt: in.Prompt, UserMessage: in.UserMessage, OrgID: in.OrgID, ThreadID: in.ThreadID, Tag: "work " + in.RunID,
+		Prompt: in.Prompt, UserMessage: in.UserMessage, OrgID: in.OrgID, ThreadID: in.ThreadID, Tag: "work " + in.RunID, RunID: in.RunID, RunKind: "work",
 		Workspace: &ws, BackendState: in.BackendState, WantsCards: !in.CardsOff, RichCards: !in.CoreCards,
 		Servers: servers, Tools: tools, NativeDelegationOff: in.NativeDelegationOff, Shell: in.Shell,
 		PythonPath: pythonPath, Keys: in.Keys, Socket: in.Socket, Emit: in.Emit,
 	}
 	if w := in.Workflow; w != nil {
-		o.Tag, o.NetworkHosts = "workflow "+in.RunID, w.NetworkHosts
+		o.Tag, o.RunKind, o.NetworkHosts = "workflow "+in.RunID, "workflow", w.NetworkHosts
 		o.TimeoutMs, o.MaxToolIterations, o.ReasoningEffort = w.TimeoutMs, w.MaxToolIterations, w.ReasoningEffort
 	}
 	return runAx(ctx, in.Backend, o)
