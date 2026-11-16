@@ -182,6 +182,7 @@ type axTurnOptions struct {
 	Keys                                      map[string]string
 	Socket                                    string
 	Emit                                      func(ctx context.Context, event any) error
+	RepairCards                               cardRepair
 }
 
 type axRunResult struct {
@@ -558,7 +559,7 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions) (
 	mapper.finish(answer)
 	finalText := answer
 	if o.Emit != nil && o.WantsCards {
-		text, messages, issues := extractCardFences(answer, o.RichCards)
+		text, messages, issues := extractCardFences(ctx, answer, o.RichCards, o.RepairCards)
 		if len(messages) > 0 {
 			emit(jsObjOf("type", "surface", "messages", messages))
 		}
@@ -567,7 +568,7 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions) (
 		}
 		finalText = text
 	} else {
-		finalText, _, _ = extractCardFences(answer, false)
+		finalText, _, _ = extractCardFences(ctx, answer, false, nil)
 	}
 	if err := drained(); err != nil {
 		return axTurnOutcome{}, emitError{err}
