@@ -37,7 +37,8 @@ one complete set of card fields as JSON, with the same fields as the examples
 above. No tool shows cards. Use one fence for each set of cards. OpenNeko checks
 each fence, shows the cards and removes the fence, so keep your plain sentences
 outside it and do not repeat the table in markdown. A fence that fails the
-check shows nothing, so use the field names and formats of the examples.
+check shows nothing, so its JSON must match this schema:
+${schema}
 </cards>
 @@ rich_card_choices
 - Two to six items compared on the same measures for one period: the table
