@@ -3,8 +3,11 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"strings"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // AxModelRoute is AxModelRoute in packages/llm/src/provider-runtime.ts.
@@ -24,6 +27,17 @@ type AxBackendConfig struct {
 	ContextWindowTokens int
 	MaxOutputTokens     int
 	ReasoningEffort     string
+	// ResponderEffort comes from the org's agent settings, not from the model record.
+	ResponderEffort string
+}
+
+const DefaultResponderEffort = "low"
+
+func ResponderEffort(agent map[string]any) string {
+	if IsReasoningEffort(agent["responderEffort"]) {
+		return agent["responderEffort"].(string)
+	}
+	return DefaultResponderEffort
 }
 
 // ResolveAxModelRoute is resolveAxModelRoute().
@@ -104,6 +118,14 @@ func ResolveAgentBackend(ctx context.Context, db DB, orgID string) (*AxBackendCo
 	if err != nil || ax == nil {
 		return nil, err
 	}
+	var agentRaw []byte
+	err = db.QueryRow(ctx, `select config from llm_provider_config where org_id = $1 and scope = 'agent' limit 1`, orgID).Scan(&agentRaw)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+	var agent map[string]any
+	_ = json.Unmarshal(agentRaw, &agent)
+	ax.ResponderEffort = ResponderEffort(agent)
 	if primary != nil && primary.Price != nil {
 		price := *primary.Price
 		ax.Route.Price = &price

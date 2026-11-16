@@ -40,11 +40,19 @@ type AgentSettingsPayload = {
     backend: string;
     globalCap: number;
     terminal: boolean;
+    responderEffort: ResponderEffort;
   };
   options: readonly ProviderOption[];
   terminalAvailable: boolean;
-  defaults: { globalCap: number; terminal: boolean };
+  defaults: { globalCap: number; terminal: boolean; responderEffort: ResponderEffort };
 };
+type ResponderEffort = "low" | "medium" | "high";
+
+const responderEffortOptions: readonly { value: ResponderEffort; label: string; description: string }[] = [
+  { value: "low", label: "Low", description: "Fastest answer. The model writes up what the agent found with little extra thought." },
+  { value: "medium", label: "Medium", description: "The model thinks before it writes the answer, so the answer starts later." },
+  { value: "high", label: "High", description: "The model thinks longest before it writes the answer." },
+];
 
 export default function AgentForm({
   initial,
@@ -53,6 +61,9 @@ export default function AgentForm({
 }) {
   const [concurrentJobs, setConcurrentJobs] = useState(String(initial.agent.agent.globalCap));
   const [terminal, setTerminal] = useState(initial.agent.agent.terminal);
+  const [responderEffort, setResponderEffort] = useState<ResponderEffort>(
+    initial.agent.agent.responderEffort ?? initial.agent.defaults.responderEffort ?? "low",
+  );
   const terminalAvailable = initial.agent.terminalAvailable;
   const [primary, setPrimary] = useState({
     provider: initial.providers.primary.provider,
@@ -116,7 +127,9 @@ export default function AgentForm({
       const agentRes = await fetch("/api/v1/settings/agent", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(terminalAvailable ? { globalCap: cap, terminal } : { globalCap: cap }),
+        body: JSON.stringify(
+          terminalAvailable ? { globalCap: cap, terminal, responderEffort } : { globalCap: cap, responderEffort },
+        ),
       });
       const agentBody = await agentRes.json();
       if (!agentRes.ok) throw new Error(agentBody.error ?? "Agent settings save failed");
@@ -170,6 +183,20 @@ export default function AgentForm({
               max={1000}
               value={concurrentJobs}
               onChange={(e) => setConcurrentJobs(e.target.value)}
+            />
+          </Field>
+
+          <Field
+            label="Answer effort"
+            htmlFor="agent-responder-effort"
+            hint="How much the model thinks before it writes the answer from what the agent found. The agent's own steps keep the model's effort. Applies from the next run."
+          >
+            <Select
+              id="agent-responder-effort"
+              value={responderEffort}
+              onChange={(next) => setResponderEffort(next as ResponderEffort)}
+              options={responderEffortOptions}
+              ariaLabel="Answer effort"
             />
           </Field>
 

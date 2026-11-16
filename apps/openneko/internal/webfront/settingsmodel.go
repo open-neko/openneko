@@ -24,10 +24,11 @@ import (
 const agentDefaultGlobalCap = 3
 
 type agentSettings struct {
-	Source    string `json:"source"`
-	Backend   string `json:"backend"`
-	GlobalCap int    `json:"globalCap"`
-	Terminal  bool   `json:"terminal"`
+	Source          string `json:"source"`
+	Backend         string `json:"backend"`
+	GlobalCap       int    `json:"globalCap"`
+	Terminal        bool   `json:"terminal"`
+	ResponderEffort string `json:"responderEffort"`
 }
 
 var agentBackendOptions = []llm.ProviderOption{
@@ -93,10 +94,10 @@ func (a *API) settingsAgentGet(w http.ResponseWriter, r *http.Request) {
 		source = "org"
 	}
 	sendJSON(w, http.StatusOK, map[string]any{
-		"agent":             agentSettings{source, "ax", positiveCap(cfg["globalCap"], agentDefaultGlobalCap), cfg["terminal"] != false},
+		"agent":             agentSettings{source, "ax", positiveCap(cfg["globalCap"], agentDefaultGlobalCap), cfg["terminal"] != false, llm.ResponderEffort(cfg)},
 		"options":           agentBackendOptions,
 		"terminalAvailable": strings.TrimSpace(os.Getenv("OPENNEKO_SANDBOX_URL")) != "",
-		"defaults":          map[string]any{"globalCap": agentDefaultGlobalCap, "terminal": true},
+		"defaults":          map[string]any{"globalCap": agentDefaultGlobalCap, "terminal": true, "responderEffort": llm.DefaultResponderEffort},
 	})
 }
 
@@ -150,7 +151,7 @@ func (a *API) settingsAgentPut(w http.ResponseWriter, r *http.Request) {
 	}
 	var unsupported []string
 	for _, k := range body.ordered() {
-		if k != "backend" && k != "globalCap" && k != "terminal" {
+		if k != "backend" && k != "globalCap" && k != "terminal" && k != "responderEffort" {
 			unsupported = append(unsupported, k)
 		}
 	}
@@ -165,6 +166,11 @@ func (a *API) settingsAgentPut(w http.ResponseWriter, r *http.Request) {
 	terminalRaw, terminalSet := body.vals["terminal"]
 	if _, isBool := terminalRaw.(bool); terminalSet && !isBool {
 		sendError(w, http.StatusBadRequest, "terminal must be true or false")
+		return
+	}
+	effortRaw, effortSet := body.vals["responderEffort"]
+	if effortSet && !llm.IsReasoningEffort(effortRaw) {
+		sendError(w, http.StatusBadRequest, "responderEffort must be low, medium or high")
 		return
 	}
 	if raw, set := body.vals["globalCap"]; set && raw != nil && positiveCap(raw, 0) == 0 {
@@ -186,7 +192,11 @@ func (a *API) settingsAgentPut(w http.ResponseWriter, r *http.Request) {
 	if terminalSet {
 		terminal = terminalRaw.(bool)
 	}
-	cfg, _ := json.Marshal(map[string]any{"backend": "ax", "globalCap": globalCap, "terminal": terminal})
+	responderEffort := llm.ResponderEffort(existing)
+	if effortSet {
+		responderEffort = effortRaw.(string)
+	}
+	cfg, _ := json.Marshal(map[string]any{"backend": "ax", "globalCap": globalCap, "terminal": terminal, "responderEffort": responderEffort})
 	if found {
 		_, err = a.DB.Exec(ctx, `update llm_provider_config set provider = 'ax', config = $2, updated_at = now() where id = $1`, id, cfg)
 	} else {
@@ -201,7 +211,7 @@ func (a *API) settingsAgentPut(w http.ResponseWriter, r *http.Request) {
 	if _, err := a.ApplyAgentConcurrency(ctx); err != nil {
 		log.Printf("agent concurrency not applied: %v", err)
 	}
-	sendJSON(w, http.StatusOK, agentSettings{"org", "ax", globalCap, terminal})
+	sendJSON(w, http.StatusOK, agentSettings{"org", "ax", globalCap, terminal, responderEffort})
 }
 
 type publicDataSource struct {

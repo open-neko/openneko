@@ -8005,6 +8005,12 @@ paths:
                   type: number
                 terminal:
                   type: boolean
+                responderEffort:
+                  type: string
+                  enum:
+                  - low
+                  - medium
+                  - high
       responses:
         '200':
           description: Saved agent settings
@@ -8017,6 +8023,7 @@ paths:
                 - backend
                 - globalCap
                 - terminal
+                - responderEffort
                 additionalProperties: false
                 properties:
                   source:
@@ -8027,6 +8034,12 @@ paths:
                     type: number
                   terminal:
                     type: boolean
+                  responderEffort:
+                    type: string
+                    enum:
+                    - low
+                    - medium
+                    - high
         '400':
           description: Invalid or unsupported setting
           content:

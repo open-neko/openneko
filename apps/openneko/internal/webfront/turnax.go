@@ -419,6 +419,9 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions) (
 	runLimits.ReasoningEffort = orDefault(o.ReasoningEffort, cfg.ReasoningEffort)
 	runLimits.axSpec(spec)
 	responderEffort := evalResponderEffort(o.RunID)
+	if responderEffort == "" {
+		responderEffort = cfg.ResponderEffort
+	}
 	if responderEffort != "" {
 		spec.set("responder_reasoning_effort", responderEffort)
 	}

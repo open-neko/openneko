@@ -264,9 +264,9 @@ prints these per run, with the `answer.*` gates and the named safety and
 approval cases.
 
 `OPENNEKO_EVAL_RESPONDER_REASONING_EFFORT` (`minimal`, `low`, `medium` or
-`high`) sets the responder stage's reasoning effort for a trial. It applies
-only to a run that an eval trace records, so it has no effect on a product
-install. `responderReasoningEffort` in the measurements shows the value that
+`high`) sets the responder stage's reasoning effort for a trial. It replaces
+the org's answer effort (Admin → Settings → Agent; `low` by default) only in
+a run that an eval trace records, so it has no effect on a product install. `responderReasoningEffort` in the measurements shows the value that
 the run used.
 
 The v2 suite keeps all thirteen cases and adds forty read-only AdventureWorks
