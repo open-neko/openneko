@@ -24,7 +24,10 @@ export type QueuedQuestion = {
   error?: string;
 };
 
+export type OfflineQueueLosses = { expired: number; otherUser: number };
+
 const EMPTY_QUEUE: readonly QueuedQuestion[] = [];
+const NO_LOSSES: OfflineQueueLosses = { expired: 0, otherUser: 0 };
 const listeners = new Set<() => void>();
 const ownSending = new Set<string>();
 let initialized = false;
@@ -34,6 +37,7 @@ let storageBroken = false;
 let signedOutHere = false;
 let queue: readonly QueuedQuestion[] = EMPTY_QUEUE;
 let nextCounter = 1;
+let losses: OfflineQueueLosses = NO_LOSSES;
 
 function webStorage(kind: "localStorage" | "sessionStorage"): Storage | null {
   if (typeof window === "undefined") return null;
@@ -52,17 +56,18 @@ function currentStore(): { store: Storage | null; key: string; memoryOnly?: bool
   return { store: webStorage("sessionStorage"), key: PENDING_KEY };
 }
 
-function parseQueue(raw: string | null): QueuedQuestion[] {
-  if (!raw) return [];
+function parseQueue(raw: string | null): { items: QueuedQuestion[]; expired: number } {
+  const items: QueuedQuestion[] = [];
+  let expired = 0;
+  if (!raw) return { items, expired };
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return [];
+    return { items, expired };
   }
-  if (!Array.isArray(parsed)) return [];
+  if (!Array.isArray(parsed)) return { items, expired };
   const now = Date.now();
-  const items: QueuedQuestion[] = [];
   for (const entry of parsed) {
     if (!entry || typeof entry !== "object") continue;
     const candidate = entry as Partial<QueuedQuestion>;
@@ -77,7 +82,11 @@ function parseQueue(raw: string | null): QueuedQuestion[] {
       continue;
     }
     const created = Date.parse(candidate.createdAt);
-    if (!Number.isFinite(created) || now - created > OFFLINE_QUESTION_MAX_AGE_MS) continue;
+    if (!Number.isFinite(created)) continue;
+    if (now - created > OFFLINE_QUESTION_MAX_AGE_MS) {
+      expired += 1;
+      continue;
+    }
     items.push({
       id: candidate.id,
       threadId: candidate.threadId,
@@ -94,7 +103,13 @@ function parseQueue(raw: string | null): QueuedQuestion[] {
       ...(typeof candidate.error === "string" ? { error: candidate.error } : {}),
     });
   }
-  return items;
+  return { items, expired };
+}
+
+function noteLoss(kind: keyof OfflineQueueLosses, count: number) {
+  if (count <= 0) return;
+  losses = { ...losses, [kind]: losses[kind] + count };
+  for (const listener of listeners) listener();
 }
 
 function readItems(): QueuedQuestion[] {
@@ -102,7 +117,13 @@ function readItems(): QueuedQuestion[] {
   const { store, key, memoryOnly } = currentStore();
   if (!store || memoryOnly) return memoryQueue;
   try {
-    return parseQueue(store.getItem(key));
+    const { items, expired } = parseQueue(store.getItem(key));
+    if (expired > 0) {
+      if (items.length === 0) store.removeItem(key);
+      else store.setItem(key, JSON.stringify(items));
+      noteLoss("expired", expired);
+    }
+    return items;
   } catch {
     return memoryQueue;
   }
@@ -187,6 +208,20 @@ function removeKeys(store: Storage | null, match: (key: string) => boolean) {
   }
 }
 
+function countStored(store: Storage | null, match: (key: string) => boolean): number {
+  if (!store) return 0;
+  let count = 0;
+  try {
+    for (let i = 0; i < store.length; i++) {
+      const key = store.key(i);
+      if (key && match(key)) count += parseQueue(store.getItem(key)).items.length;
+    }
+  } catch {
+    // Storage is optional.
+  }
+  return count;
+}
+
 /**
  * Selects the queue of the confirmed user and deletes the stored queues of
  * every other user of this browser. A question typed in this tab before the
@@ -208,7 +243,10 @@ export function setOfflineQueueUser(id: string | null): void {
   signedOutHere = false;
   memoryQueue = [];
   const mine = `${USER_KEY_PREFIX}${id}`;
-  removeKeys(webStorage("localStorage"), (key) => key.startsWith(USER_KEY_PREFIX) && key !== mine);
+  const local = webStorage("localStorage");
+  const others = (key: string) => key.startsWith(USER_KEY_PREFIX) && key !== mine;
+  noteLoss("otherUser", countStored(local, others));
+  removeKeys(local, others);
   const own = readItems();
   const ids = new Set(own.map((item) => item.id));
   writeItems([...own, ...pending.filter((item) => !ids.has(item.id))]);
@@ -340,6 +378,21 @@ export function useOfflineQueue(): readonly QueuedQuestion[] {
   );
 }
 
+export function getOfflineQueueLosses(): OfflineQueueLosses {
+  return losses;
+}
+
+/** Questions this tab removed unsent since the last dismiss: too old, or of another user. */
+export function useOfflineQueueLosses(): OfflineQueueLosses {
+  return useSyncExternalStore(subscribeOfflineQueue, getOfflineQueueLosses, () => NO_LOSSES);
+}
+
+export function dismissOfflineQueueLosses(): void {
+  if (losses === NO_LOSSES) return;
+  losses = NO_LOSSES;
+  for (const listener of listeners) listener();
+}
+
 export function useOfflineStorageBroken(): boolean {
   return useSyncExternalStore(subscribeOfflineQueue, isOfflineStorageBroken, () => false);
 }
@@ -404,6 +457,21 @@ function threadKey(item: QueuedQuestion): string {
 export function claimNextOfflineQuestion(
   accept: (item: QueuedQuestion) => boolean = () => true,
 ): QueuedQuestion | null {
+  const item = nextSendable(accept);
+  if (!item) return null;
+  ownSending.add(item.id);
+  refresh();
+  return { ...item, status: "sending" };
+}
+
+/** True when claimNextOfflineQuestion with the same filter would take a question. */
+export function hasSendableOfflineQuestion(
+  accept: (item: QueuedQuestion) => boolean = () => true,
+): boolean {
+  return nextSendable(accept) !== null;
+}
+
+function nextSendable(accept: (item: QueuedQuestion) => boolean): QueuedQuestion | null {
   ensureInitialized();
   if (!userId) return null;
   const now = Date.now();
@@ -420,9 +488,7 @@ export function claimNextOfflineQuestion(
     ) {
       continue;
     }
-    ownSending.add(item.id);
-    refresh();
-    return { ...item, status: "sending" };
+    return item;
   }
   return null;
 }
@@ -518,6 +584,7 @@ export function resetOfflineQueueForTests(): void {
   storageBroken = false;
   ownSending.clear();
   queue = EMPTY_QUEUE;
+  losses = NO_LOSSES;
   listeners.clear();
 }
 
