@@ -248,62 +248,76 @@ func (a *API) refreshPackOAuth(ctx context.Context, orgID, packID string) (int, 
 			continue
 		}
 		p := &packOAuth{a: a, orgID: orgID, packID: packID, conn: c, installed: true, graphjin: bundle.Manifest.Artifacts.GraphJin != nil}
-		store, err := secrets.Read(a.SecretsDir)
+		done, err := a.refreshPackOAuthConnection(ctx, row, p)
+		if done {
+			refreshed++
+		}
 		if err != nil {
 			return refreshed, err
 		}
-		section := p.section(store)
-		pendingKey := oauthStateKey(c.Key, "SYNC_PENDING")
-		pending := section[pendingKey] == "true"
-		expiresAt, err := time.Parse(time.RFC3339Nano, section[oauthStateKey(c.Key, "EXPIRES_AT")])
-		fresh := err == nil && expiresAt.After(time.Now().Add(packOAuthRefreshMargin))
-		if !pending && fresh {
-			continue
-		}
-		clientID := packString(row.Config.vals[c.ClientIDInput])
-		if row.Config.vals[c.ClientIDInput] == nil {
-			clientID = section[p.clientIDKey()]
-		}
-		clientSecret, refreshToken := section[p.clientSecretKey()], section[envKey(c.RefreshToken)]
-		if clientID == "" || clientSecret == "" || refreshToken == "" {
-			continue
-		}
-		if !fresh {
-			scopes := c.Scopes
-			if s, ok := section[oauthStateKey(c.Key, "SCOPES")]; ok {
-				scopes = strings.Fields(s)
-			}
-			tokens, err := refreshPackToken(ctx, p.connection(), clientID, clientSecret, refreshToken, scopes)
-			if err != nil {
-				return refreshed, err
-			}
-			disconnected := false
-			if _, err := p.updateSection(func(s map[string]string) {
-				if s[envKey(c.RefreshToken)] != refreshToken {
-					disconnected = true
-					return
-				}
-				s[envKey(c.AccessToken)] = tokens.AccessToken
-				s[envKey(c.RefreshToken)] = tokens.RefreshToken
-				s[oauthStateKey(c.Key, "EXPIRES_AT")] = tokens.ExpiresAt
-				s[oauthStateKey(c.Key, "SCOPES")] = strings.Join(tokens.Scopes, " ")
-				s[pendingKey] = "true"
-			}); err != nil {
-				return refreshed, err
-			}
-			if disconnected {
-				continue
-			}
-		}
-		if err := a.syncPackOAuth(ctx, orgID, packID, c.Key, true); err != nil {
-			return refreshed, err
-		}
-		if _, err := p.updateSection(func(s map[string]string) { delete(s, pendingKey) }); err != nil {
-			return refreshed, err
-		}
-		if !fresh {
-			refreshed++
-		}
 	}
 	return refreshed, nil
+}
+
+func (a *API) refreshPackOAuthConnection(ctx context.Context, row *packInstallRow, p *packOAuth) (bool, error) {
+	unlock, err := a.lockPackOAuth(ctx, p.orgID, p.packID, p.conn.Key)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+	c := p.conn
+	store, err := secrets.Read(a.SecretsDir)
+	if err != nil {
+		return false, err
+	}
+	section := p.section(store)
+	pendingKey := oauthStateKey(c.Key, "SYNC_PENDING")
+	pending := section[pendingKey] == "true"
+	expiresAt, err := time.Parse(time.RFC3339Nano, section[oauthStateKey(c.Key, "EXPIRES_AT")])
+	fresh := err == nil && expiresAt.After(time.Now().Add(packOAuthRefreshMargin))
+	if !pending && fresh {
+		return false, nil
+	}
+	clientID := packString(row.Config.vals[c.ClientIDInput])
+	if row.Config.vals[c.ClientIDInput] == nil {
+		clientID = section[p.clientIDKey()]
+	}
+	clientSecret, refreshToken := section[p.clientSecretKey()], section[envKey(c.RefreshToken)]
+	if clientID == "" || clientSecret == "" || refreshToken == "" {
+		return false, nil
+	}
+	if !fresh {
+		scopes := c.Scopes
+		if s, ok := section[oauthStateKey(c.Key, "SCOPES")]; ok {
+			scopes = strings.Fields(s)
+		}
+		tokens, err := refreshPackToken(ctx, p.connection(), clientID, clientSecret, refreshToken, scopes)
+		if err != nil {
+			return false, err
+		}
+		disconnected := false
+		if _, err := p.updateSection(func(s map[string]string) {
+			if s[envKey(c.RefreshToken)] != refreshToken {
+				disconnected = true
+				return
+			}
+			s[envKey(c.AccessToken)] = tokens.AccessToken
+			s[envKey(c.RefreshToken)] = tokens.RefreshToken
+			s[oauthStateKey(c.Key, "EXPIRES_AT")] = tokens.ExpiresAt
+			s[oauthStateKey(c.Key, "SCOPES")] = strings.Join(tokens.Scopes, " ")
+			s[pendingKey] = "true"
+		}); err != nil {
+			return false, err
+		}
+		if disconnected {
+			return false, nil
+		}
+	}
+	if err := a.syncPackOAuth(ctx, p.orgID, p.packID, c.Key, true); err != nil {
+		return false, err
+	}
+	if _, err := p.updateSection(func(s map[string]string) { delete(s, pendingKey) }); err != nil {
+		return false, err
+	}
+	return !fresh, nil
 }

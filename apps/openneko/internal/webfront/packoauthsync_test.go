@@ -2,10 +2,12 @@ package webfront
 
 import (
 	"bytes"
+	"context"
 	"log"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -126,6 +128,49 @@ func TestRefreshPackOAuth(t *testing.T) {
 	}
 	if s := stored(); s["GOOGLE_WORKSPACE_ACCESS_TOKEN"] != "" || s["GOOGLE_WORKSPACE_REFRESH_TOKEN"] != "" || s["OAUTH_WORKSPACE_SYNC_PENDING"] != "" {
 		t.Errorf("tokens written back after a disconnect %v", s)
+	}
+
+	section(time.Now().Add(-time.Minute), false)
+	provider.forms = nil
+	p, err := a.packOAuthFor(t.Context(), "org", "google-workspace", "workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	refreshDone := make(chan error, 1)
+	var crossed sync.Once
+	gj.onApply = func(mutation string) {
+		if !strings.Contains(mutation, `read: \"blocked\"`) {
+			return
+		}
+		crossed.Do(func() {
+			go func() {
+				_, err := a.RefreshPackOAuth(context.WithoutCancel(t.Context()))
+				refreshDone <- err
+			}()
+			select {
+			case err := <-refreshDone:
+				refreshDone <- err
+			case <-time.After(2 * time.Second):
+			}
+		})
+	}
+	if removed, err := p.disconnect(t.Context()); !removed || err != nil {
+		t.Fatalf("disconnect during a refresh: %v %v", removed, err)
+	}
+	if err := <-refreshDone; err != nil {
+		t.Fatalf("refresh during a disconnect: %v", err)
+	}
+	gj.mu.Lock()
+	gj.onApply = nil
+	gj.mu.Unlock()
+	if m := gj.take(); len(m) == 0 || !strings.Contains(m[len(m)-1], `read: \"blocked\"`) {
+		t.Errorf("a refresh synced the sources on after the disconnect blocked them: %v", m)
+	}
+	if s := stored(); s["GOOGLE_WORKSPACE_ACCESS_TOKEN"] != "" || s["GOOGLE_WORKSPACE_REFRESH_TOKEN"] != "" || s["OAUTH_WORKSPACE_SYNC_PENDING"] != "" {
+		t.Errorf("tokens after a disconnect that a refresh crossed %v", s)
+	}
+	if len(provider.forms) != 0 {
+		t.Errorf("the refresh asked the provider for a token after the disconnect: %v", provider.forms)
 	}
 
 	section(time.Now().Add(-time.Minute), false)
