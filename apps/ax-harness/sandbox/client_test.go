@@ -301,3 +301,20 @@ func TestClientRefusesBadURLs(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigSharesFolder(t *testing.T) {
+	for _, tc := range []struct {
+		url  string
+		want bool
+	}{
+		{"unix:///run/openneko/sandbox.sock", true},
+		{"unix:///run/openneko/../openneko/sandbox.sock", true},
+		{"unix:///run/openneko-sandbox/sandbox.sock", false},
+		{"https://run/openneko/sandbox.sock", false},
+		{"", false},
+	} {
+		if got := (Config{URL: tc.url}).SharesFolder("/run/openneko/serve.sock", ""); got != tc.want {
+			t.Errorf("%q: SharesFolder = %v, want %v", tc.url, got, tc.want)
+		}
+	}
+}

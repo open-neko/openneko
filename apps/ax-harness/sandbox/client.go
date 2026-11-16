@@ -44,6 +44,22 @@ func (c Config) Check() error {
 	return err
 }
 
+// SharesFolder reports whether a unix:// URL puts the sandbox socket in the
+// folder of one of the given sockets.
+func (c Config) SharesFolder(sockets ...string) bool {
+	path, ok := strings.CutPrefix(c.URL, "unix://")
+	if !ok {
+		return false
+	}
+	dir := filepath.Dir(filepath.Clean(path))
+	for _, socket := range sockets {
+		if socket != "" && filepath.Dir(filepath.Clean(socket)) == dir {
+			return true
+		}
+	}
+	return false
+}
+
 // Client sends one run's terminal commands to the sandbox. The sandbox keeps
 // its own copy of the workspace: each command carries the files that changed
 // here, and its answer carries the files that changed there.
