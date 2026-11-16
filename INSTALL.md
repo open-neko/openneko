@@ -464,14 +464,24 @@ Give `web` and `openneko-serve` its URL and key, then run
 ```yaml
 # ~/.config/openneko/compose.override.yml
 x-sandbox: &sandbox
-  OPENNEKO_SANDBOX_URL: unix:///run/openneko/sandbox.sock   # or http(s)://host:port
+  OPENNEKO_SANDBOX_URL: unix:///run/openneko-sandbox/sandbox.sock   # or http(s)://host:port
   OPENNEKO_SANDBOX_KEY: <a long random string>
 services:
   openneko-serve:
     environment: *sandbox
+    volumes: [openneko-sandbox-socket:/run/openneko-sandbox]
   web:
     environment: *sandbox
+    group_add: ["1001"]
+    volumes: [openneko-sandbox-socket:/run/openneko-sandbox]
+volumes:
+  openneko-sandbox-socket:
 ```
+
+Run the sandbox in the same file with the `openneko-sandbox` service of
+`recipes/sandbox/compose.yml`: it mounts `openneko-sandbox-socket` at
+`/run/openneko-sandbox` and gives its socket to group 1001. With an
+`https://` URL, leave out the `volumes` and `group_add` lines.
 
 Without a URL the agent has no terminal, the script skills are hidden from
 every run, and a workflow script step fails with a message. Each command
@@ -479,12 +489,21 @@ carries the files of the run that changed since the last command, and the
 sandbox returns the files that the command changed. The sandbox keeps its
 own copy of each run and needs no file folder of the stack, so it can run on
 another host: use an `https://` URL and a key. The compose recipe
-(`recipes/sandbox/compose.yml`) runs it beside the stack and mounts the
-`openneko-run` volume, the socket folder that also holds the sockets of
-`openneko-serve` (`serve.sock`, `config-check.sock`), to publish
-`sandbox.sock` there. It never gets a model key,
+(`recipes/sandbox/compose.yml`) runs it beside the stack. The sandbox shares
+one volume with web and serve, `openneko-sandbox-socket`, which holds only
+`sandbox.sock`. It does not mount `openneko-run`, the folder of serve's
+sockets (`serve.sock`, `config-check.sock`). It never gets a model key,
 the broker token, the run's job file or a database password. The first
 sandbox service is `recipes/sandbox`; see `recipes/sandbox/README.md`.
+
+Earlier releases put `sandbox.sock` in `openneko-run`, beside serve's
+sockets. To move an existing install, take the new recipe or the override
+above and run `docker compose up -d` (or `openneko stop` and
+`openneko start`). Compose creates the `openneko-sandbox-socket` volume and
+starts the sandbox, web and serve again with it. The old socket file stays
+in `openneko-run` with nothing listening on it. An install that keeps the
+old URL still works. `openneko serve` then logs a warning at each start:
+the sandbox socket is in the folder of serve's socket.
 
 With a sandbox connected, each organization has a **Terminal** setting at
 Admin, Settings, Agent. It is on by default. An admin who turns it off
@@ -951,6 +970,12 @@ these ports free. The embedding service and the sandbox stay external. Set
 and `OPENNEKO_SANDBOX_URL` and `OPENNEKO_SANDBOX_KEY`, in the shell before
 `openneko start --native`. Both processes get the environment of that shell.
 
+Give the sandbox a socket folder of its own. Keep it out of
+`~/.local/share/openneko/run`, which holds serve's sockets. For example, run
+the sandbox image with `-v ~/.local/share/openneko-sandbox:/run/openneko-sandbox`
+and `OPENNEKO_SANDBOX_GID` set to your group (`id -g`), and set
+`OPENNEKO_SANDBOX_URL=unix://$HOME/.local/share/openneko-sandbox/sandbox.sock`.
+
 #### Server install (systemd, two users)
 
 On a Linux server, run the install script once as root with `--server`:
@@ -992,6 +1017,12 @@ files as root.
   when the URL is set (`apps/openneko/internal/webfront/workflowturn.go`,
   `workspace.go`). The logs are `/var/lib/openneko/control/logs/web.log` and
 `/var/lib/openneko/agent/logs/serve.log`.
+- Give the sandbox a socket folder of its own, for example
+  `/run/openneko-sandbox`, mode 0755. Keep it out of
+  `/var/lib/openneko/shared/run`, which holds serve's sockets, and out of
+  `/home` and `/tmp`, which the units hide. Start the sandbox with
+  `OPENNEKO_SANDBOX_GID` set to the group ID of `openneko-shared` (with
+  `--one-user`, of `openneko`), so that both services can connect.
 
 `server-install` options: `--database-url`, `--port` (3000), `--bind`
 (0.0.0.0), `--public-url`, `--start` (start both services and wait until web

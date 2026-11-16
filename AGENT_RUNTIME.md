@@ -79,7 +79,7 @@ harness.
 |---|---|---|---|
 | `openneko web` | `neko`, 1001 (or `openneko` on a server install) | the `neko` database login, `secrets.json`, and the in-process tool handlers | the stack's network |
 | `openneko serve` | `neko`, 1001 (or `openneko-agent` on a server install) | a turn's or a host call's model key while it runs; the files service; the `neko_files_<database>` login and the derived token key; the customer GraphJin and its config | the stack's network, for the model APIs and the customer's data sources |
-| Sandbox service | root, to give each run its own user | **no secrets**; a command gets only `PATH`, `HOME`, `TMPDIR`, `LANG`, `NODE_PATH`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH` (`recipes/sandbox/sandbox.go`) | only its own network; it shares the `openneko-run` socket folder with web and serve to publish its socket |
+| Sandbox service | root, to give each run its own user | **no secrets**; a command gets only `PATH`, `HOME`, `TMPDIR`, `LANG`, `NODE_PATH`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH` (`recipes/sandbox/sandbox.go`) | only its own network; it shares one volume with web and serve, `openneko-sandbox-socket`, which holds only its socket |
 
 Model keys exist only in `openneko web` while it starts a turn or host call, and in serve while the call runs. Serve drops every
 `OPENNEKO_SANDBOX_*` value that a turn sends, and the sandbox request carries
@@ -440,7 +440,10 @@ Put an egress proxy or firewall on the sandbox network if you need that.
   `1001:1001`. `web` and serve share it. The sandbox does not
   mount it.
 - `openneko-run` → `/run/openneko`, `1001:1001`, mode `0770`. It holds
-  `serve.sock` and, with the overlay, `sandbox.sock`.
+  `serve.sock` and `config-check.sock`. The sandbox does not mount it.
+- `openneko-sandbox-socket` → `/run/openneko-sandbox`, with the sandbox
+  overlay only. It holds `sandbox.sock` (`root:1001`, mode `0660`). The
+  sandbox, `web` and serve mount it; `web` joins group `1001` for it.
 
 ## Configuration
 

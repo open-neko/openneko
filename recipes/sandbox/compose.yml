@@ -1,17 +1,17 @@
 # Adds the sandbox to the stack in compose.yml:
 #   docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml run --rm openneko-serve-init
 #   docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml up -d
-# The sandbox keeps each run's files in its own volume and reaches web and
-# serve only through the socket in openneko-run.
+# The sandbox keeps each run's files in its own volume and shares one volume
+# with web and serve: openneko-sandbox-socket, which holds only its socket.
 x-sandbox-env: &sandbox-env
-  OPENNEKO_SANDBOX_URL: unix:///run/openneko/sandbox.sock
+  OPENNEKO_SANDBOX_URL: unix:///run/openneko-sandbox/sandbox.sock
   OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
 
 services:
   openneko-sandbox:
     build:
       context: recipes/sandbox
-    command: ["--listen", "unix:///run/openneko/sandbox.sock"]
+    command: ["--listen", "unix:///run/openneko-sandbox/sandbox.sock"]
     restart: unless-stopped
     environment:
       OPENNEKO_SANDBOX_WORKSPACES: /var/lib/openneko/sandbox-runs
@@ -19,7 +19,7 @@ services:
       OPENNEKO_SANDBOX_GID: "1001"
       OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
     volumes:
-      - openneko-run:/run/openneko
+      - openneko-sandbox-socket:/run/openneko-sandbox
       - openneko-sandbox-runs:/var/lib/openneko/sandbox-runs
       - openneko-sandbox-homes:/var/lib/openneko/sandbox-homes
     networks:
@@ -39,13 +39,21 @@ services:
 
   openneko-serve:
     environment: *sandbox-env
+    volumes:
+      - openneko-sandbox-socket:/run/openneko-sandbox
     depends_on:
       openneko-sandbox:
         condition: service_started
   web:
     environment: *sandbox-env
+    # The web image's group is 999; the sandbox gives its socket to group 1001.
+    group_add:
+      - "1001"
+    volumes:
+      - openneko-sandbox-socket:/run/openneko-sandbox
 
 volumes:
+  openneko-sandbox-socket:
   openneko-sandbox-runs:
   openneko-sandbox-homes:
 

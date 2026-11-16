@@ -11,7 +11,7 @@ import (
 
 func main() {
 	flags := flag.NewFlagSet("openneko-sandbox", flag.ExitOnError)
-	listen := flags.String("listen", envOr("OPENNEKO_SANDBOX_LISTEN", "unix:///run/openneko/sandbox.sock"), "unix:///path or host:port")
+	listen := flags.String("listen", envOr("OPENNEKO_SANDBOX_LISTEN", "unix:///run/openneko-sandbox/sandbox.sock"), "unix:///path or host:port")
 	_ = flags.Parse(os.Args[1:])
 	server := &Server{
 		Workspaces:  envOr("OPENNEKO_SANDBOX_WORKSPACES", "/var/lib/openneko/sandbox-runs"),
