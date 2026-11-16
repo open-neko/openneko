@@ -232,9 +232,14 @@ and `passed`:
 The eval install also records each model request in its trace file, on
 lines that hold no semantic trace event. Only the responder streams, so the
 streamed requests give `responderLatencyMs`, `responderCalls` and the
-responder tokens. With Gemini the streamed call reports no usage
-(`responderUsageReported` false), so the responder token fields are left
-out and the run's usage is partial. `firstOutputMs` is the time to the first answer text.
+responder tokens. The harness reads a stream's usage from its last chunk
+and records the request when the stream ends, so `responderLatencyMs`
+covers the whole responder call. When a responder stream stopped early or
+sent no usage, `responderUsageReported` is false and the responder token
+fields are left out. Results made before this fix (STREAM3 chain, head
+db5b619b8) have no responder usage, and their `responderLatencyMs` is the
+time to the first stream chunk. `firstOutputMs` is the time to the first
+answer text.
 `pnpm tsx scripts/eval-responder-report.ts --json <result folder>...`
 prints these per run, with the `answer.*` gates and the named safety and
 approval cases.

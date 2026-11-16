@@ -90,7 +90,9 @@ export function responderMeasurements(requests: readonly EvalModelRequest[]) {
   const responder = requests.filter((request) => request.streamed);
   const sum = (pick: (request: EvalModelRequest) => number | undefined) =>
     responder.reduce((total, request) => total + (pick(request) ?? 0), 0);
-  const reported = responder.every((request) => request.usage !== undefined);
+  const reported = responder.every(
+    (request) => request.usage !== undefined && request.usage.coverage !== "partial",
+  );
   const efforts = [
     ...new Set(requests.map((request) => request.responderReasoningEffort).filter(Boolean)),
   ];
