@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -91,15 +92,27 @@ func orgWorkspace(orgID string) (orgRoots, error) {
 	return r, nil
 }
 
-func assetsRoot(env, sub string) string {
+func assetsRoot(env, sub, release string) string {
 	if v := strings.TrimSpace(os.Getenv(env)); v != "" {
 		abs, _ := filepath.Abs(v)
 		return abs
 	}
-	dir, err := os.Getwd()
-	if err != nil {
+	exe, _ := os.Executable()
+	wd, _ := os.Getwd()
+	return assetsRootFrom(exe, wd, sub, release)
+}
+
+// assetsRootFrom is the release folder share/openneko/<release> beside the
+// bin folder of exe when it exists, else assets/<sub> of a source checkout
+// above wd.
+func assetsRootFrom(exe, wd, sub, release string) string {
+	if dir := releaseShareDir(exe, release); dir != "" {
+		return dir
+	}
+	if wd == "" {
 		return ""
 	}
+	dir := wd
 	for {
 		for _, candidate := range []string{filepath.Join(dir, "packages", "llm", "assets", sub), filepath.Join(dir, "assets", sub)} {
 			if st, err := os.Stat(candidate); err == nil && st.IsDir() {
@@ -114,8 +127,70 @@ func assetsRoot(env, sub string) string {
 	}
 }
 
-func builtinSkillsRoot() string { return assetsRoot("OPENNEKO_BUILTIN_SKILLS_ROOT", "builtin-skills") }
-func sandboxSkillsRoot() string { return assetsRoot("OPENNEKO_SANDBOX_SKILLS_ROOT", "sandbox-skills") }
+func releaseShareDir(exe, rel string) string {
+	if exe == "" {
+		return ""
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	dir := filepath.Join(filepath.Dir(filepath.Dir(exe)), "share", "openneko", filepath.FromSlash(rel))
+	if info, err := os.Stat(dir); err == nil && info.IsDir() {
+		return dir
+	}
+	return ""
+}
+
+func builtinSkillsRoot() string {
+	return assetsRoot("OPENNEKO_BUILTIN_SKILLS_ROOT", "builtin-skills", "skills/builtin")
+}
+
+func sandboxSkillsRoot() string {
+	return assetsRoot("OPENNEKO_SANDBOX_SKILLS_ROOT", "sandbox-skills", "skills/sandbox")
+}
+
+// BundledSkillsCheck lists the bundled skills this process finds and
+// requires every sandbox skill and one or more built-in skills.
+func BundledSkillsCheck() ([]string, error) {
+	return CheckSkillFolders(builtinSkillsRoot(), sandboxSkillsRoot())
+}
+
+// CheckSkillFolders requires one or more <name>/SKILL.md in builtin and
+// every sandbox skill in sandbox, and returns the skill names.
+func CheckSkillFolders(builtin, sandbox string) ([]string, error) {
+	builtinNames := skillFolderNames(builtin)
+	if len(builtinNames) == 0 {
+		return nil, fmt.Errorf("no built-in skill with a SKILL.md in %q", builtin)
+	}
+	sandboxNames := skillFolderNames(sandbox)
+	var missing []string
+	for name := range sandboxSkills {
+		if !slices.Contains(sandboxNames, name) {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		slices.Sort(missing)
+		return nil, fmt.Errorf("the sandbox skills %s are not in %q", strings.Join(missing, ", "), sandbox)
+	}
+	names := append(builtinNames, sandboxNames...)
+	slices.Sort(names)
+	return slices.Compact(names), nil
+}
+
+func skillFolderNames(root string) []string {
+	if root == "" {
+		return nil
+	}
+	entries, _ := os.ReadDir(root)
+	var names []string
+	for _, e := range entries {
+		if info, err := os.Stat(filepath.Join(root, e.Name(), "SKILL.md")); e.IsDir() && err == nil && info.Mode().IsRegular() {
+			names = append(names, e.Name())
+		}
+	}
+	return names
+}
 
 func bundledSkillDir(name string) string {
 	if root := sandboxSkillsRoot(); root != "" {
