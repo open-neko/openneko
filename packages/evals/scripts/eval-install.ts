@@ -97,6 +97,25 @@ export function parallelEpisodeCap(available: number | undefined, reserve = EVAL
   return Math.max(0, Math.floor((available - reserve) / EVAL_EPISODE_MEMORY));
 }
 
+export type EvalModelRequest = {
+  runId: string;
+  runKind?: string;
+  callId: number;
+  streamed: boolean;
+  durationMs: number;
+  model?: string;
+  observedModel?: string;
+  error?: string;
+  responderReasoningEffort?: string;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    reasoning_tokens?: number;
+    cache_read_tokens?: number;
+    total_tokens?: number;
+  };
+};
+
 export type EpisodeMemoryWait = {
   readMeminfo: () => Promise<string>;
   reserve: number;
@@ -449,6 +468,17 @@ export class EvalEpisode {
       if (entry.content) steps.push(entry.content);
     }
     return { events, steps };
+  }
+
+  async readModelRequests(runId: string): Promise<EvalModelRequest[]> {
+    const text = await readFile(this.tracePath, "utf8").catch(() => "");
+    const requests: EvalModelRequest[] = [];
+    for (const line of text.split("\n")) {
+      if (!line.trim()) continue;
+      const entry = JSON.parse(line) as { modelRequest?: EvalModelRequest };
+      if (entry.modelRequest?.runId === runId) requests.push(entry.modelRequest);
+    }
+    return requests;
   }
 
   async logs(): Promise<string> {

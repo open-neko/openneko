@@ -206,12 +206,40 @@ sentinels, resource references, terminal state, and host-observed method. An
 LLM rubric may be emitted as a non-gating diagnostic but cannot decide v1
 qualification.
 
-Efficacy evals use the production work prompt with only its UX closing
-instructions disabled: no `neko_value`, `neko_vitals`, or `neko_followups`
-blocks are requested. Production work runs retain all three; production
-workflow runs retain their time-saved block, which workflow evals disable.
+Efficacy evals use the production work prompt, closing instructions
+included. A work run asks for the `neko_value`, `neko_vitals` and
+`neko_followups` blocks; a workflow run asks for the `neko_value` block only.
 Tool-call, token, cost, and other required report metrics come
 from execution telemetry and remain mandatory.
+
+The responder graders record, per episode, what the responder adds. They do
+not gate a case and do not change the score, so verdicts stay comparable
+with earlier runs. Each one is in `measurements.responderGrades` with `due`
+and `passed`:
+
+- `closingBlocks`: the closing blocks that the run asks for parsed. The host
+  stores the time-saved value and sends the `vitals` and `followups` events
+  only for a block that parsed. Not due after a clarification question.
+- `cards`: a card surface arrived. Due only when the variant has cards on
+  and the question asks for a chart, graph, plot or table. The v4 configs
+  turn cards off, so this grader is not due there.
+- `noLeak`: the answer holds no executor code (`final(`, `await` calls,
+  `javascriptCode`), no JavaScript fence, no machine block name and no
+  unclosed fence.
+
+The eval install also records each model request in its trace file, on
+lines that hold no semantic trace event. Only the responder streams, so the
+streamed requests give `responderLatencyMs`, `responderCalls` and the
+responder tokens. `firstOutputMs` is the time to the first answer text.
+`pnpm tsx scripts/eval-responder-report.ts --json <result folder>...`
+prints these per run, with the `answer.*` gates and the named safety and
+approval cases.
+
+`OPENNEKO_EVAL_RESPONDER_REASONING_EFFORT` (`minimal`, `low`, `medium` or
+`high`) sets the responder stage's reasoning effort for a trial. It applies
+only to a run that an eval trace records, so it has no effect on a product
+install. `responderReasoningEffort` in the measurements shows the value that
+the run used.
 
 The v2 suite keeps all thirteen cases and adds forty read-only AdventureWorks
 questions through the same Work turn → candidate backend → direct GraphJin

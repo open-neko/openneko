@@ -15,7 +15,7 @@
     "schemas:generate": "tsx scripts/generate-json-schemas.ts",
     "semantics:generate": "tsx scripts/generate-semantics.ts",
     "repo:check": "tsx scripts/check-repository.ts",
-    "test": "vitest run test/canonical.test.ts test/load.test.ts test/pricing.test.ts test/runner.test.ts test/scoring.test.ts test/eval-openneko-backend-fixture.test.ts test/eval-scripted-model.test.ts",
+    "test": "vitest run test/canonical.test.ts test/load.test.ts test/pricing.test.ts test/runner.test.ts test/scoring.test.ts test/eval-openneko-backend-fixture.test.ts test/eval-scripted-model.test.ts test/eval-responder-grades.test.ts",
     "test:drivers": "vitest run test/eval-install.test.ts test/eval-openneko-backend.test.ts test/eval-openneko-lifecycle.test.ts test/eval-openneko-work.test.ts test/eval-adventureworks-metric.test.ts test/eval-trace-parity.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"

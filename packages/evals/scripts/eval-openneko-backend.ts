@@ -58,6 +58,7 @@ import {
   type WorkBackendFixtureSpec,
 } from "./eval-openneko-backend-fixture";
 import { EvalInstallHost, type EvalEpisode, type EvalInstallHostOptions } from "./eval-install";
+import { gradeResponder, responderMeasurements } from "./eval-responder-grades";
 import {
   RunEventFeed,
   ScriptedModelServer,
@@ -2946,6 +2947,17 @@ export function createOpenNekoBackendDriver(
           });
         }
 
+        const modelRequests = await episode.readModelRequests(run.runId);
+        const workRun = await getWorkRun(fixture.orgId, run.runId);
+        const responderGrades = gradeResponder({
+          events: events as unknown as Record<string, unknown>[],
+          finalText,
+          question,
+          workflowRun: Boolean(run.workflowRunId),
+          cardsEnabled: slot.variant.settings?.cards !== "disabled",
+          analysisMinutesSaved: workRun?.analysis_minutes_saved,
+        });
+
         const usageEvents = events.filter(
           (event): event is Extract<AgentEvent, { type: "usage" }> =>
             event.type === "usage" && event.source === "outer",
@@ -3017,6 +3029,8 @@ export function createOpenNekoBackendDriver(
                 }
               : {}),
             ...backendUsageMeasurements(events, slot.variant, context.loaded.pricing),
+            ...responderMeasurements(modelRequests),
+            responderGrades,
           },
         };
       } finally {

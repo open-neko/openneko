@@ -232,6 +232,10 @@ describe.skipIf(!stackUp)("eval trace parity on the eval install", () => {
         const sources = new Set(go.events.filter((event) => !HOST_OPERATIONS.has(event.operation)).map((event) => event.source));
         expect([...sources]).toEqual(["trusted-broker"]);
         expect(execution.measurements?.totalTokens).toBeGreaterThan(0);
+        expect(execution.measurements?.modelRequests).toBeGreaterThan(0);
+        expect(execution.measurements?.responderCalls).toBe(1);
+        expect(execution.measurements?.responderLatencyMs).toBeGreaterThan(0);
+        expect(execution.measurements?.responderGrades).toMatchObject({ noLeak: { due: true, passed: true } });
       } finally {
         await driver.close?.();
       }
