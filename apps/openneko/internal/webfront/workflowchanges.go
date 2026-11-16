@@ -55,9 +55,7 @@ func (a *API) workflowPatch(w http.ResponseWriter, r *http.Request) {
 	values := map[string]any{}
 	if v, ok := fieldBool(body, "enabled"); ok {
 		values["enabled"] = v
-		if v {
-			values["paused_until"] = nil
-		}
+		values["paused_until"] = nil
 	}
 	if v, ok := fieldBool(body, "cronEnabled"); ok {
 		values["cron_enabled"] = v
