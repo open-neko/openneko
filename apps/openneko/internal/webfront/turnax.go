@@ -373,6 +373,7 @@ type axEvent struct {
 	Provider    *string         `json:"provider"`
 	CallID      float64         `json:"call_id"`
 	Streaming   bool            `json:"streaming"`
+	Stage       string          `json:"stage"`
 	DurationMS  float64         `json:"duration_ms"`
 	Usage       json.RawMessage `json:"usage"`
 	Error       string          `json:"error"`

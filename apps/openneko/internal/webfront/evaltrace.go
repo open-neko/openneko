@@ -175,7 +175,7 @@ func evalResponderEffort(runID string) string {
 }
 
 // traceModelRequest records one finished model request of an eval run: its
-// time, its usage and whether it streamed.
+// time, its usage, its Ax stage and whether it streamed.
 func traceModelRequest(b traceBinding, responderEffort string, ev axEvent) {
 	traceSinks.Lock()
 	reg := traceSinks.runs[b.RunID]
@@ -184,6 +184,9 @@ func traceModelRequest(b traceBinding, responderEffort string, ev axEvent) {
 		return
 	}
 	record := jsObjOf("runId", b.RunID, "runKind", b.Kind, "callId", ev.CallID, "streamed", ev.Streaming, "durationMs", ev.DurationMS)
+	if ev.Stage != "" {
+		record.set("stage", ev.Stage)
+	}
 	if ev.Name != nil {
 		record.set("model", *ev.Name)
 	}
