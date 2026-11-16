@@ -322,10 +322,15 @@
    },
    "vitals": {
     "text": "",
-    "payload": null,
-    "errors": [
-     "[\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 28,\n    \"inclusive\": true,\n    \"path\": [\n      \"vitals\",\n      0,\n      \"label\"\n    ],\n    \"message\": \"Too big: expected string to have <=28 characters\"\n  }\n]"
-    ]
+    "payload": {
+     "vitals": [
+      {
+       "label": "A label that is far too…",
+       "value": "1"
+      }
+     ]
+    },
+    "errors": []
    },
    "memory": {
     "text": "```neko_vitals\n{\"vitals\": [{\"label\": \"A label that is far too long to fit\", \"value\": \"1\"}]}\n```",
