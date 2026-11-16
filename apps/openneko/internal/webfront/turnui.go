@@ -1,17 +1,11 @@
 package webfront
 
 import (
-	"context"
 	"math"
 	"slices"
 	"strconv"
 	"strings"
-
-	"github.com/google/uuid"
 )
-
-// render_cards takes raw arguments, as createDynamicMcpServer() does in
-// Node, so the bridge-shaped calls can be recovered before validation.
 
 func describedText(max float64, desc string) *zStr {
 	s := zText(1, max)
@@ -68,48 +62,6 @@ var (
 	richCardShape = cardShape(true)
 	coreCardShape = cardShape(false)
 )
-
-func cardTools(b turnBinding, be toolBackend) *dynamicTools {
-	rich := b.CardSchema == "rich"
-	shape := coreCardShape
-	if rich {
-		shape = richCardShape
-	}
-	return &dynamicTools{server: "neko_ui",
-		list: func(context.Context) ([]any, error) {
-			schema := shape.jsonSchema()
-			schema.set("$schema", "https://json-schema.org/draft/2020-12/schema")
-			schema.set("additionalProperties", false)
-			return []any{jsObjOf("name", "render_cards", "description", joinWords(
-				"Show the evidence for an answer as cards. Every field is text: a title, a pipe table,",
-				"an optional chart of one table column, keyFigures, a callout and followUps."), "inputSchema", schema)}, nil
-		},
-		call: func(ctx context.Context, name string, args *jsObj) (any, error) {
-			if name != "render_cards" {
-				return cardResult("Unknown tool: "+name, true), nil
-			}
-			var input any = jsUndefined{}
-			if args != nil {
-				input = args
-			}
-			messages, problems := renderCards(input, rich, "answer-"+uuid.NewString())
-			if len(problems) > 0 {
-				return cardResult("Cards not shown. Fix and call again:\n- "+strings.Join(problems, "\n- "), true), nil
-			}
-			if err := be.emitEvent(ctx, jsObjOf("type", "surface", "messages", messages)); err != nil {
-				return nil, err
-			}
-			return cardResult("Cards shown.", false), nil
-		}}
-}
-
-func cardResult(text string, isError bool) *jsObj {
-	out := jsObjOf("content", []any{jsObjOf("type", "text", "text", text)})
-	if isError {
-		out.set("isError", true)
-	}
-	return out
-}
 
 var cardListFields = []string{"keyFigures", "followUps", "controls", "values", "computed", "map", "diagram"}
 

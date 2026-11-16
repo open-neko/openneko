@@ -60,7 +60,7 @@ func writtenReply(value ax.Value) (writtenAnswer, error) {
 	var fences strings.Builder
 	for _, card := range cards {
 		if _, ok := card.(map[string]ax.Value); !ok {
-			return writtenAnswer{}, errors.New("each card must be an object of render_cards arguments")
+			return writtenAnswer{}, errors.New("each card must be an object of card fields")
 		}
 		data, err := json.Marshal(plainValue(card))
 		if err != nil {

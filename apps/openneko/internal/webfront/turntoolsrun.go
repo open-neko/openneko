@@ -163,8 +163,6 @@ func turnTools(b turnBinding, be toolBackend, servers []string) (*toolServer, er
 			groups = append(groups, graphjinTools(b, be))
 		case "neko_interaction":
 			groups = append(groups, toolGroup{static: interactionTools(b, be)})
-		case "neko_ui":
-			groups = append(groups, toolGroup{dynamic: cardTools(b, be)})
 		case "neko_skills":
 			groups = append(groups, toolGroup{static: skillTools(b)})
 		case "neko_action", "neko_workflow_output":
