@@ -131,3 +131,30 @@ func TestThinkingNotesSplitAtEachStepAndVersion(t *testing.T) {
 		t.Fatalf("got %s", strings.Join(got, "|"))
 	}
 }
+
+func TestExecutorNotesAreThinkingNotes(t *testing.T) {
+	var events []*jsObj
+	m := thinkingMapper("google-gemini", &events)
+	feed := func(typ, data string) { m.handle(axEvent{Type: typ, Data: json.RawMessage(data)}) }
+	feed("executor.thought.delta", `{"version":1,"index":1,"text":"Analyzing Sales Data"}`)
+	feed("executor.thought.delta", `{"version":1,"index":2,"text":"Clarifying sk-live-0123456789abcdef Ranges"}`)
+	feed("actor.step", `{"text":"Read the orders"}`)
+	feed("executor.thought.delta", `{"version":2,"index":3,"text":"Analyzing Sales Growth"}`)
+	feed("thought.delta", `{"version":0,"text":"Writing the answer."}`)
+	scrub := func(s string) string { return strings.ReplaceAll(s, "sk-live-0123456789abcdef", "[REDACTED]") }
+	var got []string
+	for _, e := range events {
+		if e.vals["type"] != "progress" {
+			continue
+		}
+		e = scrubRunEvent(scrub, e).(*jsObj)
+		if e.vals["source"] != "provider_summary" || e.vals["provider"] != "google-gemini" {
+			t.Fatalf("progress %s", jsStringify(e, false))
+		}
+		got = append(got, e.vals["id"].(string)+":"+e.vals["content"].(string))
+	}
+	want := "ax-summary-1:Analyzing Sales Data|ax-summary-2:Clarifying [REDACTED] Ranges|ax-summary-3:Analyzing Sales Growth|ax-summary-4:Writing the answer."
+	if strings.Join(got, "|") != want {
+		t.Fatalf("got %s", strings.Join(got, "|"))
+	}
+}

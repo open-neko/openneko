@@ -51,7 +51,33 @@ type streamingModeClient struct {
 	// lastStatus is the HTTP status of the last failed model call, or 0.
 	// Ax 25's agent StreamingForward drops the provider error from its
 	// generate failure, so the harness reads the status here instead.
-	lastStatus atomic.Int32
+	lastStatus    atomic.Int32
+	executorNotes *executorNotes
+	executorCalls atomic.Int64
+}
+
+func executorStage(options map[string]ax.Value) bool {
+	path, _ := options["executionPath"].(string)
+	return path == "executor" || strings.HasSuffix(path, "/executor")
+}
+
+type thoughtTap struct {
+	ax.AxChatStream
+	notes *executorNoteStream
+}
+
+func (s *thoughtTap) Next() bool {
+	if !s.AxChatStream.Next() {
+		return false
+	}
+	chunk, _ := s.AxChatStream.Value().(map[string]ax.Value)
+	for _, item := range items(chunk["results"]) {
+		result, _ := item.(map[string]ax.Value)
+		if text, _ := result["thought"].(string); text != "" {
+			s.notes.add(text)
+		}
+	}
+	return true
 }
 
 func (c *streamingModeClient) record(err error) error {
@@ -110,6 +136,17 @@ func (c *streamingModeClient) StreamEvents(ctx context.Context, request, options
 		return &valueStream{values: []ax.Value{response}}, nil
 	}
 	open := func() (ax.AxChatStream, error) { return streamEvents(ctx, c.AIClient, request, options) }
+	if c.executorNotes != nil && executorStage(options) {
+		plain := open
+		open = func() (ax.AxChatStream, error) {
+			stream, err := plain()
+			if err != nil {
+				return nil, err
+			}
+			call := c.executorCalls.Add(1)
+			return &thoughtTap{AxChatStream: stream, notes: c.executorNotes.stream(call)}, nil
+		}
+	}
 	if request["response_format"] != nil {
 		// Structured stage output is never shown live, so read it whole and
 		// sample again when it fails, even after partial content.
