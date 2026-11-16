@@ -190,7 +190,12 @@ func formatTranscript(messages []promptMessage) string {
 
 func cardsSection(rich bool) string {
 	richPart := func(name string) string { return pick(rich, section(name), "") }
-	return section("cards", "choices", richPart("rich_card_choices"), "examples", richPart("rich_card_examples"))
+	shape := coreCardShape
+	if rich {
+		shape = richCardShape
+	}
+	return section("cards", "choices", richPart("rich_card_choices"), "examples", richPart("rich_card_examples"),
+		"schema", jsStringify(shape.jsonSchema(), false))
 }
 
 func skillsSection(skillTool bool, ws agentWorkspace, skills []installedSkill, catalog string) string {

@@ -180,3 +180,17 @@ func TestWebTurnWritesTheCardsOnce(t *testing.T) {
 		})
 	}
 }
+
+func TestCardsPromptCarriesTheCardFieldContract(t *testing.T) {
+	for _, rich := range []bool{true, false} {
+		text := cardsSection(rich)
+		for _, want := range []string{`"mood":{`, `"enum":["good","watch","act"]`, `"enum":["line","bar","area","donut"]`, `"keyFigures":{`, `"maxItems":4`} {
+			if !strings.Contains(text, want) {
+				t.Errorf("rich=%v: the cards prompt lacks %s", rich, want)
+			}
+		}
+		if strings.Contains(text, `"mapValue":{`) != rich {
+			t.Errorf("rich=%v: the map fields belong only to rich cards", rich)
+		}
+	}
+}
