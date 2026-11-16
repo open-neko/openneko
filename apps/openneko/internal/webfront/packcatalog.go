@@ -61,14 +61,8 @@ func packsEmbeddedRoot() string {
 // executable when it exists (a release), else the packs folder of a source
 // checkout.
 func builtinPacksRoot(exe, wd string) string {
-	if exe != "" {
-		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-			exe = resolved
-		}
-		dir := filepath.Join(filepath.Dir(filepath.Dir(exe)), "share", "openneko", "packs")
-		if info, err := os.Stat(dir); err == nil && info.IsDir() {
-			return dir
-		}
+	if dir := releaseShareDir(exe, "packs"); dir != "" {
+		return dir
 	}
 	return filepath.Join(wd, "packs")
 }
