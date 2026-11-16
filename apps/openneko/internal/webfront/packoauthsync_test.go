@@ -110,6 +110,24 @@ func TestRefreshPackOAuth(t *testing.T) {
 		t.Errorf("stored after refresh %v", s)
 	}
 
+	section(time.Now().Add(time.Minute), false)
+	provider.onToken = func() {
+		if err := secrets.Write(secrets.Store{"pack.google-workspace": {"OAUTH_WORKSPACE_CLIENT_ID": "cid",
+			"GOOGLE_WORKSPACE_OAUTH_CLIENT_SECRET": "cs-secret"}, "other": {"KEY": "v"}}, a.SecretsDir); err != nil {
+			t.Error(err)
+		}
+	}
+	if n, err := a.RefreshPackOAuth(t.Context()); n != 0 || err != nil {
+		t.Errorf("refresh across a disconnect: %d %v", n, err)
+	}
+	provider.onToken = nil
+	if m := gj.take(); len(m) != 0 {
+		t.Errorf("the sync ran after a disconnect: %v", m)
+	}
+	if s := stored(); s["GOOGLE_WORKSPACE_ACCESS_TOKEN"] != "" || s["GOOGLE_WORKSPACE_REFRESH_TOKEN"] != "" || s["OAUTH_WORKSPACE_SYNC_PENDING"] != "" {
+		t.Errorf("tokens written back after a disconnect %v", s)
+	}
+
 	section(time.Now().Add(-time.Minute), false)
 	provider.token = `{"error":"invalid_grant"}`
 	if n, err := a.RefreshPackOAuth(t.Context()); n != 0 || err == nil || !strings.Contains(err.Error(), "1 pack OAuth refresh operation(s) failed") {
