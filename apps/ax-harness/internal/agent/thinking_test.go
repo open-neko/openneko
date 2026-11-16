@@ -39,8 +39,13 @@ func thinkingServer(t *testing.T, fixture thinkingFixture, streamed *[]string) *
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		if strings.Contains(r.URL.Path, "streamGenerateContent") || strings.Contains(string(body), `"stream":true`) {
-			*streamed = append(*streamed, string(body))
 			w.Header().Set("Content-Type", "text/event-stream")
+			if strings.Contains(string(body), "(`executor`)") {
+				lines, _ := executorThoughtStream(fixture.Provider)
+				_, _ = io.WriteString(w, strings.Join(lines, "\n"))
+				return
+			}
+			*streamed = append(*streamed, string(body))
 			_, _ = io.WriteString(w, strings.Join(fixture.Stream, "\n"))
 			return
 		}

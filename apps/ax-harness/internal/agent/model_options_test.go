@@ -8,7 +8,7 @@ import (
 
 func TestGeminiStagesUseNativeStructuredOutput(t *testing.T) {
 	options := ax.Object()
-	modelOptions(options, &RoutedClient{DefaultProvider: "google-gemini"}, "medium", "")
+	modelOptions(options, &RoutedClient{DefaultProvider: "google-gemini"}, "medium", "", false)
 	for _, key := range stageKeys {
 		stage, _ := options[key].(map[string]ax.Value)
 		if stage["structuredOutputMode"] != "native" {
@@ -24,7 +24,7 @@ func TestGeminiStagesUseNativeStructuredOutput(t *testing.T) {
 func TestResponderEffortReplacesTheMainEffortForTheResponderOnly(t *testing.T) {
 	for _, tc := range []struct{ provider, field string }{{"openai", "reasoning_effort"}, {"google-gemini", "thinkingTokenBudget"}} {
 		options := ax.Object()
-		modelOptions(options, &RoutedClient{DefaultProvider: tc.provider}, "medium", "minimal")
+		modelOptions(options, &RoutedClient{DefaultProvider: tc.provider}, "medium", "minimal", false)
 		for _, key := range stageKeys {
 			stage, _ := options[key].(map[string]ax.Value)
 			want := "medium"
@@ -43,7 +43,7 @@ func TestResponderEffortReplacesTheMainEffortForTheResponderOnly(t *testing.T) {
 		}
 	}
 	options := ax.Object()
-	modelOptions(options, &RoutedClient{DefaultProvider: "openai"}, "medium", "")
+	modelOptions(options, &RoutedClient{DefaultProvider: "openai"}, "medium", "", false)
 	responder, _ := options["responderOptions"].(map[string]ax.Value)
 	if responder["reasoning_effort"] != "medium" {
 		t.Fatalf("responder effort without an override = %v, want medium", responder["reasoning_effort"])
@@ -60,6 +60,29 @@ func TestSpecAcceptsMinimalForTheResponderOnly(t *testing.T) {
 		spec.ReasoningEffort, spec.ResponderReasoningEffort = tc.main, tc.responder
 		if spec.valid() != tc.valid {
 			t.Fatalf("effort %q responder %q valid = %v, want %v", tc.main, tc.responder, spec.valid(), tc.valid)
+		}
+	}
+}
+
+func TestExecutorThoughtsOnlyForStreamedSummaryProviders(t *testing.T) {
+	for _, tc := range []struct {
+		provider string
+		streamed bool
+		want     bool
+	}{{"google-gemini", true, true}, {"anthropic", true, true}, {"google-gemini", false, false}, {"anthropic", false, false},
+		{"openai", true, false}, {"deepseek", true, false}} {
+		options := ax.Object()
+		modelOptions(options, &RoutedClient{DefaultProvider: tc.provider}, "low", "", tc.streamed)
+		executor, _ := options["executorOptions"].(map[string]ax.Value)
+		context, _ := options["contextOptions"].(map[string]ax.Value)
+		if got := executor["showThoughts"] == true && executor["stream"] == true; got != tc.want {
+			t.Errorf("%s streamed=%v: executor %v, want thoughts %v", tc.provider, tc.streamed, executor, tc.want)
+		}
+		if context["showThoughts"] != nil {
+			t.Errorf("%s: the context stage asks for thoughts", tc.provider)
+		}
+		if got := executorSummaries(&RoutedClient{DefaultProvider: tc.provider}, "low"); got != (tc.want || !tc.streamed && thoughtSummaries(tc.provider)) {
+			t.Errorf("%s: executorSummaries %v", tc.provider, got)
 		}
 	}
 }
