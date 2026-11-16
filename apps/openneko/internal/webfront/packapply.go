@@ -928,7 +928,7 @@ func (p *packApplyRun) writeNative(ctx context.Context, tx pgx.Tx, bundle *packs
 				values ($1, '', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, now()) returning t.id::text, to_jsonb(t)::text`, args...).Scan(&id, &raw)
 		case err == nil:
 			err = tx.QueryRow(ctx, `update workflow_definition t set description = $3, enabled = $4, status = $5, goal = $6, cron = $7, cron_timezone = $8,
-				cron_enabled = $9, network_hosts = $10, output_contract = case when $11::jsonb is null and not $13 then output_contract else $11::jsonb end,
+				cron_enabled = $9, network_hosts = $10, paused_until = null, output_contract = case when $11::jsonb is null and not $13 then output_contract else $11::jsonb end,
 				updated_at = now() where t.id = $12::uuid and t.org_id = $1 and t.name = $2 returning t.id::text, to_jsonb(t)::text`,
 				append(args, id, hasContract)...).Scan(&id, &raw)
 		}
