@@ -6,9 +6,9 @@
 [![openneko.app](https://img.shields.io/badge/openneko.app-website-111111)](https://openneko.app)
 [![Stars](https://img.shields.io/github/stars/open-neko/openneko?style=social)](https://github.com/open-neko/openneko/stargazers)
 
-**OpenNeko watches your business data, flags what's worth a look, and drafts the next action — for you to approve.** Self-hosted, on your infrastructure, with whichever LLM you prefer.
+**OpenNeko is open-source AI for running day to day company operations. It can connect to every data system within the company. OpenNeko runs on your servers and under your control.**
 
-> The intelligence is rented; the findings, rules, and decisions are yours. Models keep changing — the memory of how your business actually runs (promises, exceptions, baselines, decisions) shouldn't live inside the vendor that rents you the model. OpenNeko keeps the agent **and** that memory on your infrastructure.
+[See the live demo](https://fujairah.openneko.app) · [Book 30 minutes](https://calendly.com/amit-openneko/30min) · [openneko.app](https://openneko.app)
 
 ![OpenNeko on mobile — Briefing, Ask, Workflows](cfo-briefing.png)
 
