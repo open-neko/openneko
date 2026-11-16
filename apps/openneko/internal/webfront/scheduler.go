@@ -358,6 +358,11 @@ func (a *API) materializeDueWorkflowFirings(ctx context.Context, now time.Time) 
 				}
 				row.nextFireAt = nil
 			}
+			if row.nextFireAt == nil {
+				if seed, serr := NextWorkflowFireAt(row.cron, row.timezone, row.definitionUpdatedAt); serr == nil {
+					row.nextFireAt = &seed
+				}
+			}
 			plan, err := advanceWorkflowSchedule(row.cron, row.timezone, row.nextFireAt, now)
 			if err != nil {
 				if _, uerr := tx.Exec(ctx, `
@@ -528,10 +533,7 @@ func (a *API) dispatchPendingWorkflowFirings(ctx context.Context, now time.Time)
 			return qerr
 		})
 		if err != nil {
-			_, _ = a.DB.Exec(ctx, `
-				update workflow_schedule_firing
-				set status = 'pending', lease_until = null, last_error = $2, updated_at = now()
-				where id = $1`, firing.id, err.Error())
+			a.releaseFailedWorkflowDispatch(ctx, firing.id, err)
 			log.Printf("[workflow-scheduler] dispatch failed firing=%s: %v", firing.id, err)
 			continue
 		}
@@ -553,6 +555,13 @@ func (a *API) dispatchPendingWorkflowFirings(ctx context.Context, now time.Time)
 		dispatched++
 	}
 	return dispatched, nil
+}
+
+func (a *API) releaseFailedWorkflowDispatch(ctx context.Context, firingID string, cause error) {
+	_, _ = a.DB.Exec(ctx, `
+		update workflow_schedule_firing
+		set lease_until = null, last_error = $2, updated_at = now()
+		where id = $1 and status = 'pending'`, firingID, cause.Error())
 }
 
 func (a *API) recordDBSchedulerSuccess(ctx context.Context, now time.Time, materialized, dispatched int) error {
