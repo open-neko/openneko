@@ -259,6 +259,11 @@ func (p *packOAuth) complete(ctx context.Context, code, verifier, redirectURI st
 	if err != nil {
 		return err
 	}
+	unlock, err := p.a.lockPackOAuth(ctx, p.orgID, p.packID, p.conn.Key)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	pending := oauthStateKey(p.conn.Key, "SYNC_PENDING")
 	final, err := p.updateSection(func(s map[string]string) {
 		s[envKey(p.conn.AccessToken)] = tokens.AccessToken
@@ -301,6 +306,11 @@ func (p *packOAuth) disconnect(ctx context.Context) (bool, error) {
 	if p.conn.Scope == "user" {
 		return false, packError("Connect your personal account on Integrations")
 	}
+	unlock, err := p.a.lockPackOAuth(ctx, p.orgID, p.packID, p.conn.Key)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
 	store, err := secrets.Read(p.a.SecretsDir)
 	if err != nil {
 		return false, err
@@ -332,6 +342,24 @@ func (p *packOAuth) disconnect(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	return removed, p.bindInstallation(ctx, next)
+}
+
+// lockPackOAuth keeps connect, refresh and disconnect of one connection apart,
+// also across processes.
+func (a *API) lockPackOAuth(ctx context.Context, orgID, packID, key string) (func(), error) {
+	conn, err := a.DB.Acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	lockKey := "pack-oauth:" + orgID + ":" + packID + ":" + key
+	if _, err := conn.Exec(ctx, `select pg_advisory_lock(hashtextextended($1, 0))`, lockKey); err != nil {
+		conn.Release()
+		return nil, err
+	}
+	return func() {
+		_, _ = conn.Exec(context.WithoutCancel(ctx), `select pg_advisory_unlock(hashtextextended($1, 0))`, lockKey)
+		conn.Release()
+	}, nil
 }
 
 func (p *packOAuth) sync(ctx context.Context, enabled bool) error {

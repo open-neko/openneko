@@ -23,6 +23,7 @@ type fakePackGraphjin struct {
 	failApply bool
 	dropLater bool
 	dropped   bool
+	onApply   func(mutation string)
 }
 
 func (g *fakePackGraphjin) take() []string {
@@ -67,7 +68,11 @@ func (g *fakePackGraphjin) server(t *testing.T, liveSource map[string]any, query
 			} else {
 				g.mu.Lock()
 				g.dropped = g.dropLater
+				onApply := g.onApply
 				g.mu.Unlock()
+				if onApply != nil {
+					onApply(string(raw))
+				}
 				reply(map[string]any{"applied": true, "catalog_revision": "r2"})
 			}
 		case strings.Contains(body.Query, "channels"):
