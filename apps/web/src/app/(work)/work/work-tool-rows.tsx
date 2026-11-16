@@ -4,6 +4,7 @@ import { Check, Loader2, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ActionApprovalRow } from "./work-action-approval";
+import { currentTool, stepLabel, toolFailed } from "./work-step-label";
 import { ToolDetail } from "./work-tool-detail";
 import type { ToolItem } from "./work-types";
 
@@ -16,13 +17,11 @@ export function ToolGroup({
   threadId: string;
   runId: string;
 }) {
-  const inflight = tools.filter((t) => !t.end).length;
-  const failed = tools.filter((t) => t.end?.error).length;
+  const current = currentTool(tools);
+  const currentStatus = !current?.end ? "running" : toolFailed(current) ? "failed" : "done";
   const showHeader = tools.length > 1;
-  // Collapsed by default and left alone — the running/failed badges on the
-  // header carry live progress, so the body never expands on its own. An
-  // auto-open while in flight grew the transcript on every tool call and
-  // yanked the viewport down; the operator opens it only if they want detail.
+  // The body never opens on its own: an auto-open grew the transcript on
+  // every call and pulled the viewport down.
   const [open, setOpen] = useState(false);
 
   if (!showHeader) {
@@ -43,19 +42,13 @@ export function ToolGroup({
         aria-expanded={open}
       >
         <span className="work-tool-group-toggle">{open ? "▾" : "▸"}</span>
-        <span className="work-tool-group-count">
-          {tools.length} tool {tools.length === 1 ? "call" : "calls"}
+        {currentStatus === "running" ? (
+          <Loader2 className="work-status-spin work-tool-group-spin" size={11} aria-hidden="true" />
+        ) : null}
+        <span className={`work-tool-group-step work-tool-group-step-${currentStatus}`}>
+          {current ? stepLabel(current) : ""}
         </span>
-        {inflight > 0 ? (
-          <span className="work-tool-group-badge running">
-            <Loader2 className="work-status-spin" size={11} /> running
-          </span>
-        ) : null}
-        {failed > 0 ? (
-          <span className="work-tool-group-badge failed">
-            {failed} failed
-          </span>
-        ) : null}
+        <span className="work-tool-group-count">{tools.length} steps</span>
       </Button>
       {open ? (
         <div className="work-tool-group-body">
@@ -92,7 +85,7 @@ function ToolRow({
 
 function RegularToolRow({ tool }: { tool: ToolItem }) {
   const [open, setOpen] = useState(false);
-  const status: "running" | "done" | "failed" = tool.end?.error
+  const status: "running" | "done" | "failed" = toolFailed(tool)
     ? "failed"
     : tool.end
       ? "done"
@@ -123,7 +116,7 @@ function RegularToolRow({ tool }: { tool: ToolItem }) {
             <Check size={12} />
           )}
         </span>
-        <span className="work-tool-row-name">{tool.name}</span>
+        <span className="work-tool-row-name">{stepLabel(tool)}</span>
         {subtitle ? <span className="work-tool-row-subtitle">{subtitle}</span> : null}
       </Button>
       {open ? <ToolDetail tool={tool} /> : null}

@@ -808,6 +808,7 @@ type axEventMapper struct {
 	thoughtCount   int
 	observed       *jsObj
 	wroteState     bool
+	toolNames      map[string]string
 }
 
 func (m *axEventMapper) handle(ev axEvent) {
@@ -866,6 +867,11 @@ func (m *axEventMapper) handle(ev axEvent) {
 		if hasData {
 			e.set("input", dataValue)
 		}
+		e.set("label", toolStepLabel(name, dataValue))
+		if m.toolNames == nil {
+			m.toolNames = map[string]string{}
+		}
+		m.toolNames[opID] = name
 		m.emit(e)
 	case "tool.finished":
 		e := jsObjOf("type", "tool_end", "id", "ax-op-"+opID)
@@ -874,6 +880,14 @@ func (m *axEventMapper) handle(ev axEvent) {
 		}
 		if ev.Error != "" {
 			e.set("error", ev.Error)
+		}
+		if ev.Error != "" || isToolResultError(dataValue) {
+			started := m.toolNames[opID]
+			if started == "" {
+				started = name
+			}
+			e.set("failed", true)
+			e.set("label", toolFailLabel(started))
 		}
 		m.emit(e)
 	case "skill.shortlist":
@@ -898,7 +912,8 @@ func (m *axEventMapper) handle(ev axEvent) {
 		if ev.Type == "skill.used" {
 			id, tool = "ax-skill-"+*ev.Name, "skill_used"
 		}
-		m.emit(jsObjOf("type", "tool_start", "id", id, "name", tool, "input", jsObjOf("path", filepath.Join(m.skillsRoot, *ev.Name, "SKILL.md"))))
+		input := jsObjOf("path", filepath.Join(m.skillsRoot, *ev.Name, "SKILL.md"))
+		m.emit(jsObjOf("type", "tool_start", "id", id, "name", tool, "input", input, "label", toolStepLabel(tool, input)))
 		m.emit(jsObjOf("type", "tool_end", "id", id))
 	case "actor.code":
 		if code, ok := data.vals["code"].(string); m.debug && ok {

@@ -39,9 +39,9 @@ export type WorkEvent =
   | { type: "answer_reset" }
   | { type: "card_pending" }
   | { type: "interim"; id: string; content: string; source: "hermes_interim_assistant" }
-  | { type: "tool_start"; id: string; name: string; input?: unknown }
+  | { type: "tool_start"; id: string; name: string; input?: unknown; label?: string }
   | { type: "tool_delta"; id: string; delta: unknown }
-  | { type: "tool_end"; id: string; result?: unknown; error?: string }
+  | { type: "tool_end"; id: string; result?: unknown; error?: string; failed?: boolean; label?: string }
   | { type: "surface"; messages: A2UIMessage[] }
   | { type: "artifact"; artifact: { path: string; label: string; mimeType?: string } }
   | { type: "status"; message: string }
@@ -144,6 +144,8 @@ export type PendingMemory = {
 export type ToolItem = {
   id: string;
   name: string;
+  /** What the call does, in plain words, from the server. */
+  label?: string;
   input?: unknown;
   deltas: unknown[];
   end?: Extract<WorkEvent, { type: "tool_end" }>;

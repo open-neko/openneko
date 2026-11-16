@@ -61,7 +61,7 @@ describe("work reasoning", () => {
       ],
     }, createElement("p", null, "trail")));
     expect(html).toContain("Worked for 3 min 12 s");
-    expect(html).toContain("2 notes, 3 tool calls");
+    expect(html).toContain("2 notes, 3 steps");
   });
 
   it("renders the same thinking text the same way for every provider", () => {
