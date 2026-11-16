@@ -2951,7 +2951,7 @@ export function createOpenNekoBackendDriver(
           });
         }
 
-        const modelRequests = await episode.readModelRequests(run.runId);
+        const { requests: modelRequests, replies: writtenReplies } = await episode.readTraceRecords(run.runId);
         const workRun = await getWorkRun(fixture.orgId, run.runId);
         const responderGrades = gradeResponder({
           events: events as unknown as Record<string, unknown>[],
@@ -3033,7 +3033,7 @@ export function createOpenNekoBackendDriver(
                 }
               : {}),
             ...backendUsageMeasurements(events, slot.variant, context.loaded.pricing),
-            ...responderMeasurements(modelRequests),
+            ...responderMeasurements(modelRequests, writtenReplies),
             responderGrades,
           },
         };

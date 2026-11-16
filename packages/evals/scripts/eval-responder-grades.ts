@@ -1,4 +1,4 @@
-import type { EvalModelRequest } from "./eval-install";
+import type { EvalModelRequest, EvalReplyWritten } from "./eval-install";
 
 export type ResponderGrade = { due: boolean; passed: boolean; findings: string[] };
 
@@ -87,7 +87,10 @@ export function gradeResponder(input: ResponderGradeInput): ResponderGrades {
 
 // The executor also streams on thought-summary providers, so the stage names
 // the responder; a trace written before stages has only the streamed mark.
-export function responderMeasurements(requests: readonly EvalModelRequest[]) {
+export function responderMeasurements(
+  requests: readonly EvalModelRequest[],
+  replies: readonly EvalReplyWritten[] = [],
+) {
   const staged = requests.some((request) => request.stage !== undefined);
   const responder = requests.filter((request) =>
     staged ? request.stage === "root/responder" : request.streamed,
@@ -118,5 +121,7 @@ export function responderMeasurements(requests: readonly EvalModelRequest[]) {
         }
       : {}),
     ...(efforts.length ? { responderReasoningEffort: efforts.join(",") } : {}),
+    writtenReplies: replies.length,
+    writtenRepliesWithResponderText: replies.filter((reply) => reply.responderText).length,
   };
 }

@@ -33,6 +33,39 @@ export type EvalDatabaseLogin = {
 
 // Each Postgres server has its own folders: the leftover drop of one eval
 // run must not delete the live episodes of a run on another server.
+export type StoredRunEventRow = {
+  id: string;
+  payload: Record<string, unknown>;
+  joined_ids: string[] | null;
+  joined_ends: number[] | null;
+};
+
+// The run's end joins its text rows into the last one; a reader that has
+// some parts gets only the text after them, as the product's run stream does.
+// joined_ends are UTF-8 byte offsets.
+export function unreadStoredRunEvent(
+  row: StoredRunEventRow,
+  after: string,
+): Record<string, unknown> | undefined {
+  const ids = row.joined_ids ?? [];
+  const ends = row.joined_ends ?? [];
+  if (ids.length === 0) return row.payload;
+  if (ids.length !== ends.length) {
+    throw new Error(`joined row ${row.id} has ${ids.length} ids and ${ends.length} ends`);
+  }
+  let from = -1;
+  ids.forEach((id, index) => {
+    if (BigInt(id) <= BigInt(after)) from = index;
+  });
+  if (from < 0) return row.payload;
+  if (from === ids.length - 1) return undefined;
+  const content = Buffer.from(String(row.payload.content ?? ""), "utf8");
+  if (ends[from] > content.length) {
+    throw new Error(`joined row ${row.id} cut ${ends[from]} is past its text`);
+  }
+  return { ...row.payload, content: content.subarray(ends[from]).toString("utf8") };
+}
+
 export function evalServerKey(login: Pick<EvalDatabaseLogin, "host" | "port">): string {
   return createHash("sha256").update(`${login.host}:${login.port}`).digest("hex").slice(0, 12);
 }
@@ -96,6 +129,13 @@ export function parallelEpisodeCap(available: number | undefined, reserve = EVAL
   if (available === undefined) return 1;
   return Math.max(0, Math.floor((available - reserve) / EVAL_EPISODE_MEMORY));
 }
+
+export type EvalReplyWritten = {
+  runId: string;
+  runKind?: string;
+  explicit: boolean;
+  responderText: boolean;
+};
 
 export type EvalModelRequest = {
   runId: string;
@@ -387,14 +427,17 @@ export class EvalEpisode {
     let after = "0";
     while (Date.now() < deadline) {
       signal?.throwIfAborted();
-      const { rows } = await this.events.query<{ id: string; payload: Record<string, unknown> }>(
-        `select e.id::text as id, e.payload from work_run_event e where e.run_id::text = $1 and e.id > $2::bigint order by e.id`,
+      const { rows } = await this.events.query<StoredRunEventRow>(
+        `select e.id::text as id, e.payload, e.joined_ids::text[] as joined_ids, e.joined_ends
+           from work_run_event e where e.run_id::text = $1 and e.id > $2::bigint order by e.id`,
         [runId, after],
       );
       for (const row of rows) {
+        const payload = unreadStoredRunEvent(row, after);
         after = row.id;
-        onEvent(row.payload);
-        if (row.payload.type === "done") return row.payload;
+        if (!payload) continue;
+        onEvent(payload);
+        if (payload.type === "done") return payload;
       }
       await new Promise((wake) => setTimeout(wake, 100));
     }
@@ -473,14 +516,20 @@ export class EvalEpisode {
   }
 
   async readModelRequests(runId: string): Promise<EvalModelRequest[]> {
+    return (await this.readTraceRecords(runId)).requests;
+  }
+
+  async readTraceRecords(runId: string): Promise<{ requests: EvalModelRequest[]; replies: EvalReplyWritten[] }> {
     const text = await readFile(this.tracePath, "utf8").catch(() => "");
     const requests: EvalModelRequest[] = [];
+    const replies: EvalReplyWritten[] = [];
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;
-      const entry = JSON.parse(line) as { modelRequest?: EvalModelRequest };
+      const entry = JSON.parse(line) as { modelRequest?: EvalModelRequest; replyWritten?: EvalReplyWritten };
       if (entry.modelRequest?.runId === runId) requests.push(entry.modelRequest);
+      if (entry.replyWritten?.runId === runId) replies.push(entry.replyWritten);
     }
-    return requests;
+    return { requests, replies };
   }
 
   async logs(): Promise<string> {

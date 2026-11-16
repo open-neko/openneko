@@ -127,14 +127,34 @@ describe("responder measurements", () => {
       responderUsageReported: true,
       responderModels: ["gemini-3.8-flash"],
       responderReasoningEffort: "low",
+      writtenReplies: 0,
+      writtenRepliesWithResponderText: 0,
     });
-    expect(responderMeasurements([requests[0]!])).toEqual({ modelRequests: 1, responderCalls: 0 });
+    expect(responderMeasurements([requests[0]!])).toEqual({
+      modelRequests: 1,
+      responderCalls: 0,
+      writtenReplies: 0,
+      writtenRepliesWithResponderText: 0,
+    });
     expect(responderMeasurements([{ runId: "r", callId: 3, streamed: true, durationMs: 4100 }])).toEqual({
       modelRequests: 1,
       responderCalls: 1,
       responderLatencyMs: 4100,
       responderUsageReported: false,
       responderModels: [undefined],
+      writtenReplies: 0,
+      writtenRepliesWithResponderText: 0,
+    });
+  });
+
+  it("counts the written replies that became the answer", () => {
+    const replies = [
+      { runId: "r", explicit: true, responderText: false },
+      { runId: "r", explicit: false, responderText: true },
+    ];
+    expect(responderMeasurements([], replies)).toMatchObject({
+      writtenReplies: 2,
+      writtenRepliesWithResponderText: 1,
     });
   });
 
@@ -154,6 +174,8 @@ describe("responder measurements", () => {
       responderReasoningTokens: 900,
       responderUsageReported: true,
       responderModels: ["gemini-3.8-flash"],
+      writtenReplies: 0,
+      writtenRepliesWithResponderText: 0,
     });
   });
 
@@ -171,6 +193,8 @@ describe("responder measurements", () => {
       responderLatencyMs: 900,
       responderUsageReported: false,
       responderModels: [undefined],
+      writtenReplies: 0,
+      writtenRepliesWithResponderText: 0,
     });
   });
 });

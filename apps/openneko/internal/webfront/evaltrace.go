@@ -141,6 +141,7 @@ func (t *EvalTrace) register(runID string) func() {
 	traceSinks.Lock()
 	if reg := traceSinks.runs[runID]; reg != nil {
 		reg.model = t.writeModelRequest
+		reg.reply = t.writeReplyWritten
 	}
 	traceSinks.Unlock()
 	return unregister
@@ -155,6 +156,29 @@ func (t *EvalTrace) writeModelRequest(record *jsObj) {
 	if _, err := t.f.WriteString(jsStringify(line, false) + "\n"); err != nil {
 		log.Printf("[eval-trace] write failed: %v", err)
 	}
+}
+
+func (t *EvalTrace) writeReplyWritten(record *jsObj) {
+	line := jsObjOf("replyWritten", record)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if _, err := t.f.WriteString(jsStringify(line, false) + "\n"); err != nil {
+		log.Printf("[eval-trace] write failed: %v", err)
+	}
+}
+
+// traceReplyWritten records that a written reply became the answer of an
+// eval run.
+func traceReplyWritten(b traceBinding, data *jsObj) {
+	traceSinks.Lock()
+	reg := traceSinks.runs[b.RunID]
+	traceSinks.Unlock()
+	if reg == nil || reg.reply == nil {
+		return
+	}
+	explicit, _ := data.vals["explicit"].(bool)
+	responderText, _ := data.vals["responder_text"].(bool)
+	reg.reply(jsObjOf("runId", b.RunID, "runKind", b.Kind, "explicit", explicit, "responderText", responderText))
 }
 
 const evalResponderEffortEnv = "OPENNEKO_EVAL_RESPONDER_REASONING_EFFORT"

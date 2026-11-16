@@ -22,6 +22,7 @@ import {
   evalMemoryReserveFromEnv,
   evalSessionCookie,
   parallelEpisodeCap,
+  unreadStoredRunEvent,
   waitForEpisodeMemory,
 } from "../scripts/eval-install";
 import {
@@ -36,6 +37,26 @@ import {
 const GB = 1024 ** 3;
 
 describe("eval install helpers", () => {
+  it("reads a joined text row from the end of the parts the reader already has", () => {
+    const parts = ["Résumé of the run ", "```neko_value\n{ \"basis\": \"via GraphJin", ", emitted €\" }\n```"];
+    const text = parts.join("");
+    const ends = parts.map((_, i) => Buffer.byteLength(parts.slice(0, i + 1).join(""), "utf8"));
+    const joined = {
+      id: "42",
+      payload: { type: "message", role: "assistant", content: text },
+      joined_ids: ["40", "41", "42"],
+      joined_ends: ends,
+    };
+    const read = (after: string) => unreadStoredRunEvent(joined, after)?.content;
+    expect(read("39")).toBe(text);
+    expect(read("40")).toBe(parts.slice(1).join(""));
+    expect(read("41")).toBe(parts[2]);
+    expect(unreadStoredRunEvent(joined, "41")).toMatchObject({ type: "message", role: "assistant" });
+    const plain = { id: "43", payload: { type: "done" }, joined_ids: null, joined_ends: null };
+    expect(unreadStoredRunEvent(plain, "42")).toEqual({ type: "done" });
+    expect(() => unreadStoredRunEvent({ ...joined, joined_ends: [1] }, "40")).toThrow(/3 ids and 1 ends/);
+  });
+
   it("keys the episode folders to one Postgres server", () => {
     const login = { host: "127.0.0.1", port: 15432 };
     expect(evalEpisodeFolderPrefix(login)).toMatch(/^openneko-eval-ep-[0-9a-f]{12}-$/);

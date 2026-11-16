@@ -947,6 +947,8 @@ func (m *axEventMapper) handle(ev axEvent) {
 		m.emit(jsObjOf("type", "retry", "reason", "model_route_fallback"))
 	case "executor.step.failed":
 		m.emit(jsObjOf("type", "retry", "reason", "executor_step_failed"))
+	case "reply.written":
+		traceReplyWritten(m.trace, data)
 	case "model.request.finished":
 		traceModelRequest(m.trace, m.responderEffort, ev)
 		if ev.Observed != "" {
