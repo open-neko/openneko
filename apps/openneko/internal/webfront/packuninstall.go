@@ -448,7 +448,7 @@ var retireNative = map[packs.ArtifactKind]string{
 		where t.id = m.id returning to_jsonb(t)::text`,
 	packs.KindWatcher: `update watcher t set enabled = false, updated_at = now() from (select id from watcher where org_id = $1 and name = $2 limit 1) m
 		where t.id = m.id returning to_jsonb(t)::text`,
-	packs.KindWorkflow: `update workflow_definition t set enabled = false, cron_enabled = false, updated_at = now()
+	packs.KindWorkflow: `update workflow_definition t set enabled = false, cron_enabled = false, paused_until = null, updated_at = now()
 		from (select id from workflow_definition where org_id = $1 and owner_user_id = '' and name = $2 limit 1) m
 		where t.id = m.id returning to_jsonb(t)::text`,
 	packs.KindPolicy: `update action_policy t set enabled = false, updated_at = now() from (select id from action_policy where org_id = $1 and name = $2 limit 1) m

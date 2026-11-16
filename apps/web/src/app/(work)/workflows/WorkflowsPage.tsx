@@ -66,6 +66,7 @@ type RecentRun = {
   finishedAt: string | null;
   durationMs: number | null;
   createdAt: string;
+  scheduleFiring?: boolean;
 };
 
 type RecentAction = {
@@ -983,42 +984,61 @@ function WorkflowDetail({
                 key={r.id}
                 className="flex items-baseline gap-2 text-ui-body-sm"
               >
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="workflow-drawer-run-link"
-                  onClick={() => router.push(`/runs/${r.id}`)}
-                >
-                  <span
-                    className={cn(
-                      "inline-block w-3.5 text-center",
-                      runStatusColor(r.status),
-                    )}
-                  >
-                    {statusGlyph(r.status)}
-                  </span>
-                  <span className="workflow-drawer-run-meta text-xs tabular-nums text-text2">
-                    {formatRelative(r.createdAt)} · {r.triggerKind}
-                    {r.executionMode ? ` ${r.executionMode}` : ""} ·{" "}
-                    {formatDuration(r.durationMs)}
-                    {recentRunTelemetry(r) ? ` · ${recentRunTelemetry(r)}` : ""}
-                  </span>
-                  {r.executionMode ? (
-                    <Badge
-                      variant={
-                        r.executionMode === "batch" ? "success" : "muted"
-                      }
+                {r.scheduleFiring ? (
+                  <span className="flex items-baseline gap-2">
+                    <span
+                      className={cn(
+                        "inline-block w-3.5 text-center",
+                        runStatusColor(r.status),
+                      )}
                     >
-                      {r.executionMode}
-                    </Badge>
-                  ) : null}
-                  <span
-                    className="workflow-drawer-run-arrow ml-auto text-text3 text-ui-caption transition-[color,transform] duration-[0.18s]"
-                    aria-hidden="true"
-                  >
-                    →
+                      {statusGlyph(r.status)}
+                    </span>
+                    <span className="text-xs tabular-nums text-text2">
+                      {formatRelative(r.createdAt)} · {r.triggerKind} · did not
+                      start{r.error ? `: ${r.error}` : ""}
+                    </span>
                   </span>
-                </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="workflow-drawer-run-link"
+                    onClick={() => router.push(`/runs/${r.id}`)}
+                  >
+                    <span
+                      className={cn(
+                        "inline-block w-3.5 text-center",
+                        runStatusColor(r.status),
+                      )}
+                    >
+                      {statusGlyph(r.status)}
+                    </span>
+                    <span className="workflow-drawer-run-meta text-xs tabular-nums text-text2">
+                      {formatRelative(r.createdAt)} · {r.triggerKind}
+                      {r.executionMode ? ` ${r.executionMode}` : ""} ·{" "}
+                      {formatDuration(r.durationMs)}
+                      {recentRunTelemetry(r)
+                        ? ` · ${recentRunTelemetry(r)}`
+                        : ""}
+                    </span>
+                    {r.executionMode ? (
+                      <Badge
+                        variant={
+                          r.executionMode === "batch" ? "success" : "muted"
+                        }
+                      >
+                        {r.executionMode}
+                      </Badge>
+                    ) : null}
+                    <span
+                      className="workflow-drawer-run-arrow ml-auto text-text3 text-ui-caption transition-[color,transform] duration-[0.18s]"
+                      aria-hidden="true"
+                    >
+                      →
+                    </span>
+                  </Button>
+                )}
               </li>
             ))}
           </ul>
@@ -1083,7 +1103,11 @@ function WorkflowDetail({
         </Button>
       </div>
       <div className="px-[var(--panel-padding)] pb-5">
-        <ItemAccessPanel itemType="workflow" itemId={workflow.id} label={workflow.name} />
+        <ItemAccessPanel
+          itemType="workflow"
+          itemId={workflow.id}
+          label={workflow.name}
+        />
       </div>
     </div>
   );
