@@ -181,6 +181,12 @@ RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-
 COPY --from=build --chown=neko:neko /app/apps/web/dist ./apps/web/dist
 COPY --chown=neko:neko db/seeds ./db/seeds
 COPY packs /usr/local/share/openneko/packs
+COPY packages/llm/assets/builtin-skills /usr/local/share/openneko/skills/builtin
+COPY recipes/sandbox/skills/docx /usr/local/share/openneko/skills/sandbox/docx
+COPY recipes/sandbox/skills/pdf /usr/local/share/openneko/skills/sandbox/pdf
+COPY recipes/sandbox/skills/pptx /usr/local/share/openneko/skills/sandbox/pptx
+COPY recipes/sandbox/skills/skill-creator /usr/local/share/openneko/skills/sandbox/skill-creator
+COPY recipes/sandbox/skills/xlsx /usr/local/share/openneko/skills/sandbox/xlsx
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 COPY --from=go-build --chown=neko:neko /out/openneko /usr/local/bin/openneko

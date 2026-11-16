@@ -382,9 +382,20 @@ On the public port, `/health/scheduler` and `/health/security` give only
 --scheduler`, run in the web container, uses that socket and fails until the
 scheduler has finished a database tick. `openneko release-check --packs`
 reads the pack catalog on that socket and fails when it lists no built-in
-pack. `openneko release-check --sandbox` prints `sandbox=off`, `ok` or
+pack. `openneko release-check --skills` prints `bundled_skills=<count>`. It
+fails when `openneko web` finds no built-in skill or lacks a sandbox skill
+(`docx`, `pdf`, `pptx`, `skill-creator`, `xlsx`). `openneko release-check
+--sandbox` prints `sandbox=off`, `ok` or
 `remote`. It fails when the sandbox socket is in the folder of serve's
 sockets, or when nothing answers on it.
+
+To check a Docker install with a sandbox, run
+`scripts/smoke-script-step.sh <compose project> <web URL>` from a checkout.
+It fails when the first organization does not list every bundled skill.
+It then runs a workflow whose script step uses the `xlsx` skill in the
+sandbox, and fails unless that step succeeds within 150 seconds. The step
+runs before the agent turn, so the check needs no model provider. The
+post-release smoke runs it with the sandbox of `recipes/sandbox`.
 
 For immediate delivery independent of PostgreSQL, configure an HTTPS webhook
 on `web`:
@@ -909,8 +920,9 @@ curl -fsSL https://raw.githubusercontent.com/open-neko/openneko/main/scripts/ins
 
 The script downloads `openneko-native_<version>_linux_<arch>.tar.gz` and
 `checksums-native.txt` from the release and checks the archive. It puts
-`bin/openneko`, `share/openneko/web` and the built-in packs
-(`share/openneko/packs`) in `~/.local/opt/openneko` and links
+`bin/openneko`, `share/openneko/web`, the built-in packs
+(`share/openneko/packs`) and the bundled skills (`share/openneko/skills`) in
+`~/.local/opt/openneko` and links
 `~/.local/bin/openneko`. `OPENNEKO_VERSION` picks a release (default: the
 latest). `OPENNEKO_PREFIX` and `OPENNEKO_BIN_DIR` change the two folders.
 `OPENNEKO_RELEASE_URL` points at a mirror that holds `<tag>/<file>`, and
@@ -948,13 +960,25 @@ and `upgrade` act on the native install. `openneko logs` reads the
   OpenNeko again when it ran before. The start applies the migrations.
 - `openneko upgrade` downloads the release archive for this host and
   checks it against `checksums-native.txt`. It takes a backup, stops
-  OpenNeko, puts the release's `bin/openneko`, `share/openneko/web` and
-  `share/openneko/packs` in place of the current ones, and starts OpenNeko again when it ran before.
+  OpenNeko, puts the release's `bin/openneko`, `share/openneko/web`,
+  `share/openneko/packs` and `share/openneko/skills` in place of the current
+  ones, and starts OpenNeko again when it ran before.
   `--version` picks the release (default: the latest), and
   `OPENNEKO_RELEASE_URL` points at a mirror. `--from <folder>` upgrades from
   a release folder instead of a download. `--skip-backup` upgrades with no
   backup. The upgrade stops before any change when the release has no web
-  app or no built-in pack (`share/openneko/packs/<id>/pack.yaml`).
+  app, no built-in pack (`share/openneko/packs/<id>/pack.yaml`), no built-in
+  skill or a missing sandbox skill (`share/openneko/skills/builtin` and
+  `share/openneko/skills/sandbox`). It skips other folders under
+  `share/openneko` that it does not know.
+- Use `install-native.sh --upgrade` when the installed `openneko` is older
+  than the release that added `share/openneko/skills`: that `openneko
+  upgrade` refuses the new archive. The script downloads and checks the
+  archive, then runs the new release's `openneko upgrade` on your install.
+  It keeps `OPENNEKO_PREFIX`, `OPENNEKO_VERSION` and `OPENNEKO_RELEASE_URL`
+  as the install does, and passes later options (for example
+  `--skip-backup`) to `openneko upgrade`. On a server install, run it with
+  `sudo`.
 
 Backup and restore run `pg_dump` and `pg_restore` on this host. Install the
 PostgreSQL client tools of the server's major version or later (on Debian
@@ -965,6 +989,7 @@ serve roles; the database check prints the SQL when it does not have it.
 |---|---|
 | Web app files | `--web-dir`, else `OPENNEKO_WEB_DIR`, else `share/openneko/web` beside the release's `bin` folder |
 | Built-in packs | `OPENNEKO_PACKS_DIR`, else `share/openneko/packs` beside the release's `bin` folder (a Docker install: `/usr/local/share/openneko/packs` in the web image) |
+| Bundled skills | `OPENNEKO_BUILTIN_SKILLS_ROOT` and `OPENNEKO_SANDBOX_SKILLS_ROOT`, else `share/openneko/skills/builtin` and `share/openneko/skills/sandbox` beside the release's `bin` folder (a Docker install: `/usr/local/share/openneko/skills` in the web image) |
 | Files, file index, serve credentials, GraphJin config, agent runs | `$XDG_DATA_HOME/openneko` (default `~/.local/share/openneko`) |
 | Logs | `~/.local/share/openneko/logs` |
 | Supervisor state and the sockets | `~/.local/share/openneko/run` |
@@ -1059,7 +1084,7 @@ act on the two services. Set `OPENNEKO_SERVER_FILE` when you gave
 | `sudo openneko doctor` | root | the native checks, the owner and mode of each folder, and whether the units match what `server-install` writes |
 | `sudo openneko backup` | root | the config folder, the data folders of both zones and the database, to `/var/lib/openneko/control/openneko/backups` |
 | `sudo openneko restore <file> --confirm RESTORE` | root | stops the services, restores, gives each file the owner of its folder, and starts the services again if they ran |
-| `sudo openneko upgrade` | root | a backup, then a new executable and web folder in `/opt/openneko`, then a start if the services ran |
+| `sudo openneko upgrade` | root | a backup, then a new executable, web folder, packs and skills in `/opt/openneko`, then a start if the services ran |
 
 The agent-zone user cannot read `server.json`, so each command refuses it.
 A backup of a one-user native install restores into a server install, and

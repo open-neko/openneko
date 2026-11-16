@@ -169,6 +169,20 @@ jobs:
           docker run --rm --entrypoint sh "ghcr.io/open-neko/neko-web:$OPENNEKO_VERSION" \
             -c '! command -v node && ! command -v nodejs'
 
+      - name: Sandbox from this commit's recipe
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
+        run: |
+          set -euo pipefail
+          key=$(openssl rand -hex 24)
+          echo "::add-mask::$key"
+          echo "OPENNEKO_SANDBOX_KEY=$key" >> "$GITHUB_ENV"
+          docker build -t openneko-sandbox:smoke recipes/sandbox
+          mkdir -p ~/.config/openneko
+          sed -e 's#^    build:$#    image: openneko-sandbox:smoke\n    pull_policy: never#' \
+              -e '/^      context: recipes\/sandbox$/d' \
+            recipes/sandbox/compose.yml > ~/.config/openneko/compose.override.yml
+          grep -q 'image: openneko-sandbox:smoke' ~/.config/openneko/compose.override.yml
+
       - name: openneko demo start (detached) against pre-pulled images
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         env:
@@ -238,14 +252,19 @@ jobs:
           test -n "$web"
           # The signed web -> GraphJin -> AdventureWorks path must return a real
           # row, web must reach the agent socket of openneko serve, and the pack
-          # catalog must list the built-in packs.
-          checks=$(docker exec "$web" openneko release-check --datasource adventureworks --serve-socket --sandbox --packs)
+          # catalog must list the built-in packs, and web must find the bundled skills.
+          checks=$(docker exec "$web" openneko release-check --datasource adventureworks --serve-socket --sandbox --packs --skills)
           echo "$checks"
           grep -qx authenticated_datasource_query=ok <<<"$checks"
           grep -qx serve_socket=ok <<<"$checks"
-          grep -qE '^sandbox=(off|ok|remote)$' <<<"$checks"
+          grep -qx sandbox=ok <<<"$checks"
           grep -qE '^builtin_packs=[1-9][0-9]*$' <<<"$checks"
+          grep -qE '^bundled_skills=[1-9][0-9]*$' <<<"$checks"
           openneko status
+
+      - name: A workflow script step runs a bundled skill in the sandbox
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
+        run: scripts/smoke-script-step.sh openneko-demo
 
       - name: Verify reconciled database volumes
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}

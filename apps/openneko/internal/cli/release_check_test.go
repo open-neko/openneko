@@ -132,3 +132,28 @@ func TestReleaseCheckSandbox(t *testing.T) {
 		t.Fatalf("own socket folder: %q %v", state, err)
 	}
 }
+
+func TestReleaseCheckSkills(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := func() (string, error) {
+		cmd := newReleaseCheckCmd()
+		var out strings.Builder
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"--skills"})
+		err := cmd.Execute()
+		return out.String(), err
+	}
+	t.Setenv("OPENNEKO_BUILTIN_SKILLS_ROOT", filepath.Join(root, "packages", "llm", "assets", "builtin-skills"))
+	t.Setenv("OPENNEKO_SANDBOX_SKILLS_ROOT", filepath.Join(root, "recipes", "sandbox", "skills"))
+	if out, err := run(); err != nil || !strings.Contains(out, "bundled_skills=6\n") {
+		t.Fatalf("repository skills: %q %v", out, err)
+	}
+	t.Setenv("OPENNEKO_SANDBOX_SKILLS_ROOT", t.TempDir())
+	if out, err := run(); err == nil || !strings.Contains(err.Error(), "xlsx") {
+		t.Fatalf("no sandbox skills: %q %v", out, err)
+	}
+}
