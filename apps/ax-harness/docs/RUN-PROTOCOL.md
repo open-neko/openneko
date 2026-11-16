@@ -36,6 +36,7 @@ Send exactly one object, at most 16 MiB. Unknown fields fail the run.
 | `max_model_tokens` | integer | Optional. Token ceiling, up to 10,000,000. 0 means no ceiling. |
 | `max_cost_micros` | integer | Optional. Cost ceiling in USD micros at Ax catalog rates. Every route needs a catalog price. |
 | `reasoning_effort` | string | Optional. `low`, `medium` or `high`. |
+| `responder_reasoning_effort` | string | Optional. `minimal`, `low`, `medium` or `high`. Replaces `reasoning_effort` for the responder stage only. OpenNeko sends the org's answer effort, `low` by default. |
 | `context_window_tokens` | integer | Optional. The model context window. A prompt larger than this estimate fails before any model call. |
 | `max_output_tokens` | integer | Optional. Maximum output tokens per model call. Must be below `context_window_tokens`. |
 

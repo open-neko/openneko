@@ -64,7 +64,7 @@ func TestAgentSettings(t *testing.T) {
 	}
 
 	w := call(f, "GET", "/api/v1/settings/agent", "", admin)
-	want := `{"agent":{"source":"default","backend":"ax","globalCap":3,"terminal":true},"defaults":{"globalCap":3,"terminal":true},"options":[{"value":"ax","label":"Ax","description":"OpenNeko's Go agent. Calls tools from code, so one model step can run many tools."}],"terminalAvailable":false}`
+	want := `{"agent":{"source":"default","backend":"ax","globalCap":3,"terminal":true,"responderEffort":"low"},"defaults":{"globalCap":3,"responderEffort":"low","terminal":true},"options":[{"value":"ax","label":"Ax","description":"OpenNeko's Go agent. Calls tools from code, so one model step can run many tools."}],"terminalAvailable":false}`
 	if w.Code != 200 || strings.TrimSpace(w.Body.String()) != want {
 		t.Errorf("defaults: %d %s", w.Code, w.Body.String())
 	}
@@ -81,6 +81,8 @@ func TestAgentSettings(t *testing.T) {
 		`{"zeta":1,"globalCap":2,"alpha":2}`:           "Unsupported agent setting: zeta, alpha",
 		`[1]`:                                          "Agent settings payload must be an object",
 		`{"globalCap":`:                                "The request body is not valid JSON.",
+		`{"responderEffort":"minimal"}`:                "responderEffort must be low, medium or high",
+		`{"responderEffort":null}`:                     "responderEffort must be low, medium or high",
 	} {
 		if code, got := put(body); code != 400 || got != `{"error":"`+wantErr+`"}` {
 			t.Errorf("%s: %d %s", body, code, got)
@@ -91,13 +93,13 @@ func TestAgentSettings(t *testing.T) {
 		t.Fatalf("a refused save wrote a row: %d %v", n, err)
 	}
 
-	if code, got := put(`{"terminal":false}`); code != 200 || got != `{"source":"org","backend":"ax","globalCap":3,"terminal":false}` {
+	if code, got := put(`{"terminal":false}`); code != 200 || got != `{"source":"org","backend":"ax","globalCap":3,"terminal":false,"responderEffort":"low"}` {
 		t.Errorf("terminal off: %d %s", code, got)
 	}
-	if code, got := put(`{"globalCap":"4"}`); code != 200 || got != `{"source":"org","backend":"ax","globalCap":4,"terminal":false}` {
+	if code, got := put(`{"globalCap":"4"}`); code != 200 || got != `{"source":"org","backend":"ax","globalCap":4,"terminal":false,"responderEffort":"low"}` {
 		t.Errorf("a later save keeps the terminal off: %d %s", code, got)
 	}
-	if code, got := put(`{"globalCap":null,"backend":"ax"}`); code != 200 || got != `{"source":"org","backend":"ax","globalCap":4,"terminal":false}` {
+	if code, got := put(`{"globalCap":null,"backend":"ax"}`); code != 200 || got != `{"source":"org","backend":"ax","globalCap":4,"terminal":false,"responderEffort":"low"}` {
 		t.Errorf("a null cap keeps the stored cap: %d %s", code, got)
 	}
 	for _, bad := range []string{`"invalid"`, `""`, `0`, `-2`, `0.5`, `1001`, `false`, `{}`, `[]`} {
@@ -105,20 +107,26 @@ func TestAgentSettings(t *testing.T) {
 			t.Errorf("cap %s: %d %s", bad, code, got)
 		}
 	}
-	if code, got := put(`{}`); code != 200 || got != `{"source":"org","backend":"ax","globalCap":4,"terminal":false}` {
+	if code, got := put(`{}`); code != 200 || got != `{"source":"org","backend":"ax","globalCap":4,"terminal":false,"responderEffort":"low"}` {
 		t.Errorf("a refused cap changed the stored settings: %d %s", code, got)
 	}
-	if code, got := put(`{"terminal":true}`); code != 200 || got != `{"source":"org","backend":"ax","globalCap":4,"terminal":true}` {
+	if code, got := put(`{"terminal":true}`); code != 200 || got != `{"source":"org","backend":"ax","globalCap":4,"terminal":true,"responderEffort":"low"}` {
 		t.Errorf("terminal on: %d %s", code, got)
 	}
-	if code, got := put(`{"globalCap":12.7}`); code != 200 || got != `{"source":"org","backend":"ax","globalCap":12,"terminal":true}` {
+	if code, got := put(`{"globalCap":12.7}`); code != 200 || got != `{"source":"org","backend":"ax","globalCap":12,"terminal":true,"responderEffort":"low"}` {
 		t.Errorf("a fractional cap: %d %s", code, got)
+	}
+	if code, got := put(`{"responderEffort":"medium"}`); code != 200 || got != `{"source":"org","backend":"ax","globalCap":12,"terminal":true,"responderEffort":"medium"}` {
+		t.Errorf("responder effort medium: %d %s", code, got)
+	}
+	if code, got := put(`{"globalCap":11}`); code != 200 || got != `{"source":"org","backend":"ax","globalCap":11,"terminal":true,"responderEffort":"medium"}` {
+		t.Errorf("a later save keeps the responder effort: %d %s", code, got)
 	}
 	var provider, cfg string
 	if err := db.QueryRow(t.Context(), `select provider, config::text from llm_provider_config where org_id = 'org' and scope = 'agent'`).Scan(&provider, &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if provider != "ax" || cfg != `{"backend": "ax", "terminal": true, "globalCap": 12}` {
+	if provider != "ax" || cfg != `{"backend": "ax", "terminal": true, "globalCap": 11, "responderEffort": "medium"}` {
 		t.Errorf("stored row: %s %s", provider, cfg)
 	}
 	if got := decode(t, call(f, "GET", "/api/v1/settings/agent", "", admin)); got["agent"].(map[string]any)["source"] != "org" {

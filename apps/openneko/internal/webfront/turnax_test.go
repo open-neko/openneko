@@ -682,6 +682,16 @@ func TestResolveAgentBackendDatabase(t *testing.T) {
 		cfg.Route.KeyEnv == "" || cfg.ContextWindowTokens != 128000 || cfg.MaxOutputTokens != 0 || cfg.ReasoningEffort != "medium" || cfg.Fallback != nil {
 		t.Fatalf("primary row: %+v", cfg)
 	}
+	if cfg.ResponderEffort != "low" {
+		t.Fatalf("an org with no agent row answers at effort %q, want low", cfg.ResponderEffort)
+	}
+	for stored, want := range map[string]string{`{"responderEffort":"high"}`: "high", `{"responderEffort":"minimal"}`: "low", `{}`: "low"} {
+		seed(t, db, `delete from llm_provider_config where org_id = 'org' and scope = 'agent'`)
+		seed(t, db, `insert into llm_provider_config (org_id, scope, provider, enabled, config, secrets) values ('org', 'agent', 'ax', true, '`+stored+`', '{}')`)
+		if got := resolve().ResponderEffort; got != want {
+			t.Fatalf("agent row %s: responder effort %q, want %q", stored, got, want)
+		}
+	}
 	seed(t, db, `update llm_provider_config set enabled = false where org_id = 'org' and scope = 'primary'`)
 	if cfg := resolve(); cfg != nil {
 		t.Fatalf("disabled row: %+v", cfg)

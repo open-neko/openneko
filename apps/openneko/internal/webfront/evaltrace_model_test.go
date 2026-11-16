@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/open-neko/neko/apps/openneko/internal/llm"
 )
 
 func modelRequestServe(t *testing.T) (string, <-chan string) {
@@ -46,6 +48,10 @@ func modelRequestServe(t *testing.T) (string, <-chan string) {
 }
 
 func evalTraceTurn(t *testing.T, register bool, effort string) (string, string) {
+	return evalTraceTurnWith(t, plainCfg, register, effort)
+}
+
+func evalTraceTurnWith(t *testing.T, cfg *llm.AxBackendConfig, register bool, effort string) (string, string) {
 	t.Helper()
 	clearAxEnv(t, map[string]string{evalResponderEffortEnv: effort})
 	path := filepath.Join(t.TempDir(), "trace.jsonl")
@@ -58,7 +64,7 @@ func evalTraceTurn(t *testing.T, register bool, effort string) (string, string) 
 		defer trace.register("run-1")()
 	}
 	socket, request := modelRequestServe(t)
-	res, err := runAx(context.Background(), plainCfg, axTurnOptions{Prompt: "p", Tag: "work run-1", RunID: "run-1", RunKind: "work",
+	res, err := runAx(context.Background(), cfg, axTurnOptions{Prompt: "p", Tag: "work run-1", RunID: "run-1", RunKind: "work",
 		OrgID: "org-1", Socket: socket, Emit: func(context.Context, any) error { return nil }})
 	if err != nil || res.Status != "completed" {
 		t.Fatalf("got %+v %v", res, err)
@@ -101,5 +107,18 @@ func TestResponderEffortNeedsAnEvalTraceAndAKnownLevel(t *testing.T) {
 	request, _ = evalTraceTurn(t, true, "none")
 	if strings.Contains(request, "responder_reasoning_effort") {
 		t.Fatalf("an unknown level reached the spec: %s", request)
+	}
+}
+
+func TestTurnSendsTheOrgResponderEffortAndAnEvalTrialWins(t *testing.T) {
+	cfg := *plainCfg
+	cfg.ReasoningEffort, cfg.ResponderEffort = "medium", "low"
+	request, _ := evalTraceTurnWith(t, &cfg, false, "")
+	if !strings.Contains(request, `"responder_reasoning_effort":"low"`) || !strings.Contains(request, `"reasoning_effort":"medium"`) {
+		t.Fatalf("the spec lacks the org responder effort beside the main effort: %s", request)
+	}
+	request, written := evalTraceTurnWith(t, &cfg, true, "minimal")
+	if !strings.Contains(request, `"responder_reasoning_effort":"minimal"`) || !strings.Contains(written, `"responderReasoningEffort":"minimal"`) {
+		t.Fatalf("the eval trial setting did not win: %s / %s", request, written)
 	}
 }

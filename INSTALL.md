@@ -434,6 +434,12 @@ setting again within 30 seconds. `OPENNEKO_AGENT_CONCURRENCY` overrides the
 setting. Slack and Telegram messages run as `work_run` jobs, at most 3 at once
 in each `openneko web`, so a setting above 3 does not run more channel turns.
 
+**Admin → Settings → Agent → Answer effort** sets how much the model thinks
+before it writes the answer from what the agent found: `low` (the default),
+`medium` or `high`. The agent's own steps keep the effort of the model record.
+A save applies from the next run. Ax maps the level to each provider's own
+setting; a provider with no lower level keeps its usual one.
+
 At start, `openneko web` logs one warning line when no model provider is set,
 or when it cannot read or check the stored credential of a provider. A turn
 route to an enabled model under **Admin → Settings → Models** counts as a
