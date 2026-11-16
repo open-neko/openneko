@@ -93,14 +93,20 @@ func TestOnboardingWizardRead(t *testing.T) {
 		t.Fatalf("before setup: %d %s", w.Code, w.Body.String())
 	}
 	seed(t, db, `update organization set setup_complete_at = now(), name = 'Acme' where id = 'org'`)
-	seed(t, db, `insert into onboarding_wizard (org_id, company_note, fiscal_year_start_month, active_seats, priorities)
-		values ('org', 'We sell bikes', 4, array['CEO','CFO'], array['Margin'])`)
-	w = call(f, "GET", "/api/v1/onboarding/wizard", "", sessionCookie("admin"))
 	var wiz struct {
 		Kind     string        `json:"kind"`
 		Initial  wizardInitial `json:"initial"`
 		TeamMode bool          `json:"teamMode"`
 	}
+	seed(t, db, `insert into onboarding_wizard (org_id) values ('org')`)
+	w = call(f, "GET", "/api/v1/onboarding/wizard", "", sessionCookie("admin"))
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &wiz) != nil || wiz.Kind != "wizard" ||
+		wiz.Initial.CompanyNote != "" || wiz.Initial.FiscalYearStartMonth != 1 {
+		t.Fatalf("wizard row with null note and month: %d %s", w.Code, w.Body.String())
+	}
+	seed(t, db, `update onboarding_wizard set company_note = 'We sell bikes', fiscal_year_start_month = 4,
+		active_seats = array['CEO','CFO'], priorities = array['Margin'] where org_id = 'org'`)
+	w = call(f, "GET", "/api/v1/onboarding/wizard", "", sessionCookie("admin"))
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &wiz) != nil || wiz.Kind != "wizard" || !wiz.TeamMode ||
 		wiz.Initial.CompanyName != "Acme" || wiz.Initial.CompanyNote != "We sell bikes" || wiz.Initial.FiscalYearStartMonth != 4 {
 		t.Fatalf("wizard: %d %s", w.Code, w.Body.String())
