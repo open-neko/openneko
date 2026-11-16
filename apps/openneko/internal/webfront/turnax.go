@@ -865,6 +865,13 @@ func (m *axEventMapper) handle(ev axEvent) {
 		if isText {
 			m.thoughtDelta(data.vals["version"], text)
 		}
+	case "executor.thought.delta":
+		if isText {
+			call, _ := data.vals["version"].(float64)
+			index, _ := data.vals["index"].(float64)
+			m.closeThought()
+			m.thoughtDelta("executor-"+jsNumberText(call)+"-"+jsNumberText(index), text)
+		}
 	case "actor.step":
 		m.closeThought()
 		if isText && jsTrim(text) != "" {
