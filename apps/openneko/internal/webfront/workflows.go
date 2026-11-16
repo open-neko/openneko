@@ -157,6 +157,8 @@ type recentRunOut struct {
 	FinishedAt    *string    `json:"finishedAt"`
 	DurationMs    *int64     `json:"durationMs"`
 	CreatedAt     string     `json:"createdAt"`
+	// A cron firing that failed before it made a run has no run page.
+	ScheduleFiring bool `json:"scheduleFiring,omitempty"`
 }
 
 type recentActionOut struct {
@@ -240,9 +242,16 @@ func (a *API) workflowDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	runRows, err := a.DB.Query(ctx, `
-		select id::text, status, trigger_kind, execution_mode, queue_attempts, progress, telemetry_summary, summary, error,
-		  started_at, finished_at, created_at
-		from workflow_run where org_id = $1 and workflow_id = $2 order by created_at desc limit 10`, act.OrgID, id)
+		select * from (
+		  select id::text, status, trigger_kind, execution_mode, queue_attempts, progress, telemetry_summary, summary, error,
+		    started_at, finished_at, created_at, false as firing
+		  from workflow_run where org_id = $1 and workflow_id = $2
+		  union all
+		  select id::text, 'failed', 'cron', null::text, attempts, '{}'::jsonb, null::jsonb, null::text, last_error,
+		    null::timestamptz, completed_at, scheduled_for, true
+		  from workflow_schedule_firing
+		  where org_id = $1 and workflow_id = $2 and status = 'failed' and workflow_run_id is null
+		) runs order by created_at desc limit 10`, act.OrgID, id)
 	if err != nil {
 		a.fail(w, r, err)
 		return
@@ -253,7 +262,7 @@ func (a *API) workflowDetail(w http.ResponseWriter, r *http.Request) {
 		var started, finished *time.Time
 		var created time.Time
 		err := row.Scan(&o.ID, &o.Status, &o.TriggerKind, &o.ExecutionMode, &o.QueueAttempts, &progress, &telemetry,
-			&o.Summary, &o.Error, &started, &finished, &created)
+			&o.Summary, &o.Error, &started, &finished, &created, &o.ScheduleFiring)
 		o.Progress, o.Telemetry = progress, telemetry
 		o.StartedAt, o.FinishedAt, o.DurationMs, o.CreatedAt = jsTimePtr(started), jsTimePtr(finished), durationMs(started, finished), jsTime(created)
 		return o, err

@@ -438,3 +438,65 @@ func TestSchedulerFailedDispatchKeepsACancelledFiring(t *testing.T) {
 		t.Errorf("a failed dispatch changed a cancelled firing to %s (%s)", status, lastError)
 	}
 }
+
+func TestSchedulerFailsAFiringWhoseQueueJobEnded(t *testing.T) {
+	f, exec := schedulerTestFront(t)
+	ctx := context.Background()
+	const wfID = "00000000-0000-4000-8000-000000000050"
+	day := func(d, h, m int) time.Time { return time.Date(2026, 8, d, h, m, 0, 0, time.UTC) }
+	exec(`insert into workflow_definition (id, org_id, name, cron, cron_timezone, cron_enabled, enabled, updated_at)
+		values ($1, 'org', 'Morning check', '0 7 * * *', 'UTC', true, true, '2026-08-27 06:00Z')`, wfID)
+	var firingID string
+	if err := f.API.DB.QueryRow(ctx, `insert into workflow_schedule_firing (org_id, workflow_id, scheduled_for, status, available_at)
+		values ('org', $1, $2, 'pending', $2) returning id::text`, wfID, day(26, 7, 0)).Scan(&firingID); err != nil {
+		t.Fatal(err)
+	}
+	if snap := f.API.RunWorkflowSchedulerTick(ctx, day(27, 6, 30)); snap.Dispatched != 1 {
+		t.Fatalf("first dispatch: %+v", snap)
+	}
+	var schema string
+	if err := f.API.DB.QueryRow(ctx, `select current_schema() || '_river'`).Scan(&schema); err != nil {
+		t.Fatal(err)
+	}
+	jobCount := func() (n int) {
+		t.Helper()
+		if err := f.API.DB.QueryRow(ctx, `select count(*) from `+schema+`.river_job where args->>'scheduleFiringId' = $1`, firingID).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	exec(`update `+schema+`.river_job set state = 'discarded', finalized_at = now() where args->>'scheduleFiringId' = $1`, firingID)
+	exec(`update workflow_schedule_firing set status = 'running', lease_until = $2, last_error = 'no model key' where id = $1`, firingID, day(27, 6, 31))
+
+	for i, at := range []time.Time{day(27, 6, 40), day(27, 6, 45), day(27, 7, 0).Add(-time.Second)} {
+		if snap := f.API.RunWorkflowSchedulerTick(ctx, at); snap.Dispatched != 1 {
+			t.Errorf("tick %d dispatched a firing whose job ended: %+v", i, snap)
+		}
+	}
+	if got := schedulerFirings(t, f, wfID)[day(26, 7, 0)]; got != "failed" {
+		t.Errorf("firing whose queue job ended = %q, want failed", got)
+	}
+	if n := jobCount(); n != 1 {
+		t.Errorf("queue jobs for the firing = %d, want 1", n)
+	}
+
+	w := call(f, "GET", "/api/v1/workflows/"+wfID, "", sessionCookie("admin"))
+	if w.Code != 200 {
+		t.Fatalf("workflow detail: %d %s", w.Code, w.Body.String())
+	}
+	var detail struct {
+		RecentRuns []struct {
+			ID             string  `json:"id"`
+			Status         string  `json:"status"`
+			Error          *string `json:"error"`
+			ScheduleFiring bool    `json:"scheduleFiring"`
+		} `json:"recentRuns"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.RecentRuns) != 1 || detail.RecentRuns[0].ID != firingID || detail.RecentRuns[0].Status != "failed" ||
+		!detail.RecentRuns[0].ScheduleFiring || detail.RecentRuns[0].Error == nil || *detail.RecentRuns[0].Error != "no model key" {
+		t.Errorf("run list = %s", w.Body.String())
+	}
+}

@@ -521,6 +521,7 @@ func (a *API) dispatchPendingWorkflowFirings(ctx context.Context, now time.Time)
 		})
 		dedupeKey := fmt.Sprintf("cron:%s:%s", firing.workflowID, scheduledISO)
 		var jobID string
+		var ended bool
 		err := pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
 			var qerr error
 			jobID, qerr = a.enqueueWorkflowRunFire(ctx, tx, jobs.WorkflowRunFireArgs{
@@ -530,11 +531,26 @@ func (a *API) dispatchPendingWorkflowFirings(ctx context.Context, now time.Time)
 				ScheduleFiringID: firing.id,
 				TriggerPayload:   payload,
 			}, dedupeKey, workflowSchedulerDedupeWindow)
+			if qerr != nil || jobID != "" {
+				return qerr
+			}
+			if ended, qerr = a.Jobs.FiringJobEnded(ctx, tx, firing.id); qerr != nil || !ended {
+				return qerr
+			}
+			_, qerr = tx.Exec(ctx, `
+				update workflow_schedule_firing
+				set status = 'failed', completed_at = now(), lease_until = null,
+				    last_error = coalesce(last_error, 'the queue job ended before the run finished'), updated_at = now()
+				where id = $1 and status = 'pending'`, firing.id)
 			return qerr
 		})
 		if err != nil {
 			a.releaseFailedWorkflowDispatch(ctx, firing.id, err)
 			log.Printf("[workflow-scheduler] dispatch failed firing=%s: %v", firing.id, err)
+			continue
+		}
+		if ended {
+			log.Printf("[workflow-scheduler] firing=%s failed: its queue job ended", firing.id)
 			continue
 		}
 		var jobIDPtr *string
