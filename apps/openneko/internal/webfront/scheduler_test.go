@@ -3,6 +3,7 @@ package webfront
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"reflect"
 	"strings"
@@ -102,8 +103,8 @@ func TestDurableWorkflowSchedulerAndHealthEndpoint(t *testing.T) {
 	f.API.Jobs = ins
 
 	const wfID = "00000000-0000-4000-8000-000000000042"
-	seed(t, db, `insert into workflow_definition (id, org_id, name, cron, cron_timezone, cron_enabled, enabled)
-		values ($1, 'org', 'Morning check', '0 7 * * *', 'UTC', true, true)`, wfID)
+	seed(t, db, `insert into workflow_definition (id, org_id, name, cron, cron_timezone, cron_enabled, enabled, updated_at)
+		values ($1, 'org', 'Morning check', '0 7 * * *', 'UTC', true, true, '2026-08-26 06:00Z')`, wfID)
 
 	boot := time.Date(2026, 8, 26, 6, 30, 0, 0, time.UTC)
 	f.API.ResetWorkflowSchedulerHealth(boot)
@@ -258,8 +259,8 @@ func TestSchedulerCronEditMovesTheCursor(t *testing.T) {
 	f, exec := schedulerTestFront(t)
 	ctx := context.Background()
 	const wfID = "00000000-0000-4000-8000-000000000043"
-	exec(`insert into workflow_definition (id, org_id, name, cron, cron_timezone, cron_enabled, enabled)
-		values ($1, 'org', 'Morning check', '0 7 * * *', 'UTC', true, true)`, wfID)
+	exec(`insert into workflow_definition (id, org_id, name, cron, cron_timezone, cron_enabled, enabled, updated_at)
+		values ($1, 'org', 'Morning check', '0 7 * * *', 'UTC', true, true, '2026-08-26 06:00Z')`, wfID)
 	day := func(d, h, m int) time.Time { return time.Date(2026, 8, d, h, m, 0, 0, time.UTC) }
 	f.API.RunWorkflowSchedulerTick(ctx, day(26, 6, 30))
 	f.API.RunWorkflowSchedulerTick(ctx, day(26, 7, 1))
@@ -267,7 +268,7 @@ func TestSchedulerCronEditMovesTheCursor(t *testing.T) {
 		t.Fatalf("07:00 firing before the edit = %q", got)
 	}
 
-	exec(`update workflow_definition set cron = '0 17 * * *', updated_at = now() where id = $1`, wfID)
+	exec(`update workflow_definition set cron = '0 17 * * *', updated_at = $2 where id = $1`, wfID, day(26, 7, 1).Add(30*time.Second))
 	f.API.RunWorkflowSchedulerTick(ctx, day(26, 7, 2))
 	if got := schedulerFirings(t, f, wfID)[day(26, 7, 0)]; got != "cancelled" {
 		t.Errorf("the open firing of the old schedule = %q, want cancelled", got)
@@ -289,14 +290,14 @@ func TestSchedulerDisabledWorkflowKeepsNoCursor(t *testing.T) {
 	f, exec := schedulerTestFront(t)
 	ctx := context.Background()
 	const wfID = "00000000-0000-4000-8000-000000000044"
-	exec(`insert into workflow_definition (id, org_id, name, cron, cron_timezone, cron_enabled, enabled)
-		values ($1, 'org', 'Morning check', '0 7 * * *', 'UTC', true, true)`, wfID)
+	exec(`insert into workflow_definition (id, org_id, name, cron, cron_timezone, cron_enabled, enabled, updated_at)
+		values ($1, 'org', 'Morning check', '0 7 * * *', 'UTC', true, true, '2026-08-26 06:00Z')`, wfID)
 	day := func(d, h, m int) time.Time { return time.Date(2026, 8, d, h, m, 0, 0, time.UTC) }
 	f.API.RunWorkflowSchedulerTick(ctx, day(26, 6, 30))
 	exec(`insert into workflow_schedule_firing (org_id, workflow_id, scheduled_for, status, available_at)
 		values ('org', $1, $2, 'pending', $2)`, wfID, day(26, 7, 0))
 
-	exec(`update workflow_definition set enabled = false, updated_at = now() where id = $1`, wfID)
+	exec(`update workflow_definition set enabled = false, updated_at = $2 where id = $1`, wfID, day(26, 6, 40))
 	f.API.RunWorkflowSchedulerTick(ctx, day(26, 6, 45))
 	if got := schedulerFirings(t, f, wfID)[day(26, 7, 0)]; got != "cancelled" {
 		t.Errorf("open firing of a disabled workflow = %q, want cancelled", got)
@@ -306,7 +307,7 @@ func TestSchedulerDisabledWorkflowKeepsNoCursor(t *testing.T) {
 		t.Errorf("schedule state rows for a disabled workflow = %d, %v", n, err)
 	}
 
-	exec(`update workflow_definition set enabled = true, updated_at = now() where id = $1`, wfID)
+	exec(`update workflow_definition set enabled = true, updated_at = $2 where id = $1`, wfID, day(30, 7, 30))
 	snap := f.API.RunWorkflowSchedulerTick(ctx, day(30, 8, 0))
 	if snap.Materialized != 0 {
 		t.Errorf("re-enable fired a stale occurrence at once: %+v %v", snap, schedulerFirings(t, f, wfID))
@@ -359,8 +360,8 @@ func TestSchedulerKeepsCronFiringsInTheDailyRunBudget(t *testing.T) {
 	ctx := context.Background()
 	const wfID = "00000000-0000-4000-8000-000000000046"
 	day := func(d, h, m int) time.Time { return time.Date(2026, 8, d, h, m, 0, 0, time.UTC) }
-	exec(`insert into workflow_definition (id, org_id, name, cron, cron_timezone, cron_enabled, enabled, daily_run_budget)
-		values ($1, 'org', 'Hourly check', '0 * * * *', 'UTC', true, true, 1)`, wfID)
+	exec(`insert into workflow_definition (id, org_id, name, cron, cron_timezone, cron_enabled, enabled, daily_run_budget, updated_at)
+		values ($1, 'org', 'Hourly check', '0 * * * *', 'UTC', true, true, 1, '2026-08-27 06:00Z')`, wfID)
 	f.API.RunWorkflowSchedulerTick(ctx, day(27, 6, 30))
 	f.API.RunWorkflowSchedulerTick(ctx, day(27, 7, 1))
 	f.API.RunWorkflowSchedulerTick(ctx, day(27, 8, 1))
@@ -382,8 +383,8 @@ func TestSchedulerWaitsForTheRetryDelayOfAFiring(t *testing.T) {
 	ctx := context.Background()
 	const wfID = "00000000-0000-4000-8000-000000000047"
 	day := func(d, h, m, s int) time.Time { return time.Date(2026, 8, d, h, m, s, 0, time.UTC) }
-	exec(`insert into workflow_definition (id, org_id, name, cron, cron_timezone, cron_enabled, enabled)
-		values ($1, 'org', 'Morning check', '0 7 * * *', 'UTC', true, true)`, wfID)
+	exec(`insert into workflow_definition (id, org_id, name, cron, cron_timezone, cron_enabled, enabled, updated_at)
+		values ($1, 'org', 'Morning check', '0 7 * * *', 'UTC', true, true, '2026-08-27 06:00Z')`, wfID)
 	f.API.RunWorkflowSchedulerTick(ctx, day(27, 6, 30, 0))
 	exec(`insert into workflow_schedule_firing (org_id, workflow_id, scheduled_for, status, available_at)
 		values ('org', $1, $2, 'pending', $3)`, wfID, day(26, 7, 0, 0), day(27, 6, 30, 15))
@@ -392,5 +393,110 @@ func TestSchedulerWaitsForTheRetryDelayOfAFiring(t *testing.T) {
 	}
 	if snap := f.API.RunWorkflowSchedulerTick(ctx, day(27, 6, 30, 20)); snap.Dispatched != 1 {
 		t.Errorf("the firing after its retry delay: %+v", snap)
+	}
+}
+
+func TestSchedulerEditJustBeforeTheFiringKeepsTheRun(t *testing.T) {
+	f, exec := schedulerTestFront(t)
+	ctx := context.Background()
+	const wfID = "00000000-0000-4000-8000-000000000048"
+	at := func(h, m, s int) time.Time { return time.Date(2026, 8, 26, h, m, s, 0, time.UTC) }
+	exec(`insert into workflow_definition (id, org_id, name, cron, cron_timezone, cron_enabled, enabled, updated_at)
+		values ($1, 'org', 'Morning check', '0 7 * * *', 'UTC', true, true, '2026-08-25 12:00Z')`, wfID)
+	f.API.RunWorkflowSchedulerTick(ctx, at(8, 0, 0))
+
+	exec(`update workflow_definition set cron = '0 9 * * *', updated_at = $2 where id = $1`, wfID, at(8, 59, 45))
+	f.API.RunWorkflowSchedulerTick(ctx, at(9, 0, 10))
+	if got := schedulerFirings(t, f, wfID)[at(9, 0, 0)]; got == "" {
+		t.Errorf("the 09:00 run after an edit at 08:59:45 is lost: %v", schedulerFirings(t, f, wfID))
+	}
+
+	exec(`update workflow_definition set updated_at = $2 where id = $1`, wfID, at(9, 0, 30).Add(24*time.Hour-90*time.Second))
+	f.API.RunWorkflowSchedulerTick(ctx, at(9, 0, 10).Add(24*time.Hour))
+	if got := schedulerFirings(t, f, wfID)[at(9, 0, 0).Add(24*time.Hour)]; got == "" {
+		t.Errorf("the 09:00 run after a re-apply at 08:59:00 is lost: %v", schedulerFirings(t, f, wfID))
+	}
+}
+
+func TestSchedulerFailedDispatchKeepsACancelledFiring(t *testing.T) {
+	f, exec := schedulerTestFront(t)
+	ctx := context.Background()
+	const wfID = "00000000-0000-4000-8000-000000000049"
+	exec(`insert into workflow_definition (id, org_id, name, cron, cron_timezone, cron_enabled, enabled)
+		values ($1, 'org', 'Morning check', '0 7 * * *', 'UTC', true, true)`, wfID)
+	var firingID string
+	if err := f.API.DB.QueryRow(ctx, `insert into workflow_schedule_firing (org_id, workflow_id, scheduled_for, status, last_error)
+		values ('org', $1, '2026-08-26 07:00Z', 'cancelled', 'schedule disabled before dispatch') returning id::text`, wfID).Scan(&firingID); err != nil {
+		t.Fatal(err)
+	}
+	f.API.releaseFailedWorkflowDispatch(ctx, firingID, errors.New("queue down"))
+	var status, lastError string
+	if err := f.API.DB.QueryRow(ctx, `select status, last_error from workflow_schedule_firing where id = $1`, firingID).Scan(&status, &lastError); err != nil {
+		t.Fatal(err)
+	}
+	if status != "cancelled" || lastError != "schedule disabled before dispatch" {
+		t.Errorf("a failed dispatch changed a cancelled firing to %s (%s)", status, lastError)
+	}
+}
+
+func TestSchedulerFailsAFiringWhoseQueueJobEnded(t *testing.T) {
+	f, exec := schedulerTestFront(t)
+	ctx := context.Background()
+	const wfID = "00000000-0000-4000-8000-000000000050"
+	day := func(d, h, m int) time.Time { return time.Date(2026, 8, d, h, m, 0, 0, time.UTC) }
+	exec(`insert into workflow_definition (id, org_id, name, cron, cron_timezone, cron_enabled, enabled, updated_at)
+		values ($1, 'org', 'Morning check', '0 7 * * *', 'UTC', true, true, '2026-08-27 06:00Z')`, wfID)
+	var firingID string
+	if err := f.API.DB.QueryRow(ctx, `insert into workflow_schedule_firing (org_id, workflow_id, scheduled_for, status, available_at)
+		values ('org', $1, $2, 'pending', $2) returning id::text`, wfID, day(26, 7, 0)).Scan(&firingID); err != nil {
+		t.Fatal(err)
+	}
+	if snap := f.API.RunWorkflowSchedulerTick(ctx, day(27, 6, 30)); snap.Dispatched != 1 {
+		t.Fatalf("first dispatch: %+v", snap)
+	}
+	var schema string
+	if err := f.API.DB.QueryRow(ctx, `select current_schema() || '_river'`).Scan(&schema); err != nil {
+		t.Fatal(err)
+	}
+	jobCount := func() (n int) {
+		t.Helper()
+		if err := f.API.DB.QueryRow(ctx, `select count(*) from `+schema+`.river_job where args->>'scheduleFiringId' = $1`, firingID).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	exec(`update `+schema+`.river_job set state = 'discarded', finalized_at = now() where args->>'scheduleFiringId' = $1`, firingID)
+	exec(`update workflow_schedule_firing set status = 'running', lease_until = $2, last_error = 'no model key' where id = $1`, firingID, day(27, 6, 31))
+
+	for i, at := range []time.Time{day(27, 6, 40), day(27, 6, 45), day(27, 7, 0).Add(-time.Second)} {
+		if snap := f.API.RunWorkflowSchedulerTick(ctx, at); snap.Dispatched != 1 {
+			t.Errorf("tick %d dispatched a firing whose job ended: %+v", i, snap)
+		}
+	}
+	if got := schedulerFirings(t, f, wfID)[day(26, 7, 0)]; got != "failed" {
+		t.Errorf("firing whose queue job ended = %q, want failed", got)
+	}
+	if n := jobCount(); n != 1 {
+		t.Errorf("queue jobs for the firing = %d, want 1", n)
+	}
+
+	w := call(f, "GET", "/api/v1/workflows/"+wfID, "", sessionCookie("admin"))
+	if w.Code != 200 {
+		t.Fatalf("workflow detail: %d %s", w.Code, w.Body.String())
+	}
+	var detail struct {
+		RecentRuns []struct {
+			ID             string  `json:"id"`
+			Status         string  `json:"status"`
+			Error          *string `json:"error"`
+			ScheduleFiring bool    `json:"scheduleFiring"`
+		} `json:"recentRuns"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.RecentRuns) != 1 || detail.RecentRuns[0].ID != firingID || detail.RecentRuns[0].Status != "failed" ||
+		!detail.RecentRuns[0].ScheduleFiring || detail.RecentRuns[0].Error == nil || *detail.RecentRuns[0].Error != "no model key" {
+		t.Errorf("run list = %s", w.Body.String())
 	}
 }

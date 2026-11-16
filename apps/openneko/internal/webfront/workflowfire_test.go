@@ -64,7 +64,7 @@ func TestWorkflowRunFireReleasesFiring(t *testing.T) {
 	seed(t, db, `insert into workflow_schedule_firing (id, org_id, workflow_id, scheduled_for, status) values ($1, 'org', $2, now(), 'enqueued')`, wfFiring, wf.ID)
 	job := jobs.WorkflowRunFireArgs{OrgID: "org", WorkflowID: wf.ID, TriggerKind: "cron", ScheduleFiringID: wfFiring}
 	firing := func() string {
-		return rowText(t, db, `select status || ':' || coalesce(workflow_run_id::text, '-') || ':' || coalesce(last_error, '-') || ':' || (available_at > now()) from workflow_schedule_firing where id = $1`, wfFiring)
+		return rowText(t, db, `select status || ':' || coalesce(workflow_run_id::text, '-') || ':' || coalesce(last_error, '-') from workflow_schedule_firing where id = $1`, wfFiring)
 	}
 
 	a.turnResolve = func(context.Context, string) (*llm.AxBackendConfig, map[string]string, error) {
@@ -73,7 +73,7 @@ func TestWorkflowRunFireReleasesFiring(t *testing.T) {
 	if err := a.WorkflowRunFire(ctx, job, 1); err == nil || err.Error() != "no model key" {
 		t.Fatalf("thrown: %v", err)
 	}
-	if g := firing(); g != "pending:-:no model key:true" {
+	if g := firing(); g != "enqueued:-:no model key" {
 		t.Errorf("after a thrown run: %s", g)
 	}
 	if g := rowText(t, db, `select string_agg(status, ',') from workflow_run where trigger_kind = 'cron' and id <> $1`, wfTurnRun); g != "failed" {
@@ -94,8 +94,19 @@ func TestWorkflowRunFireReleasesFiring(t *testing.T) {
 	if err := a.WorkflowRunFire(ctx, job, 2); !errors.Is(err, errTurnShutdown) {
 		t.Fatalf("shutdown: %v", err)
 	}
-	if g := firing(); !strings.HasPrefix(g, "pending:-:"+errTurnShutdown.Error()) {
+	if g := firing(); g != "enqueued:-:"+errTurnShutdown.Error() {
 		t.Errorf("after a shutdown: %s", g)
+	}
+
+	a.turnResolve = func(context.Context, string) (*llm.AxBackendConfig, map[string]string, error) {
+		return nil, nil, errors.New("no model key")
+	}
+	if err := a.WorkflowRunFire(ctx, job, jobs.WorkflowRunFireAttempts); err == nil {
+		t.Fatal("the last attempt did not fail")
+	}
+	lastRun := rowText(t, db, `select id::text from workflow_run where trigger_kind = 'cron' order by created_at desc limit 1`)
+	if g := firing(); g != "failed:"+lastRun+":no model key" {
+		t.Errorf("after the last attempt: %s", g)
 	}
 }
 

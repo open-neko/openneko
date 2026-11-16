@@ -14,6 +14,7 @@ import (
 
 	"github.com/open-neko/neko/apps/openneko/internal/packs"
 	"github.com/open-neko/neko/apps/openneko/internal/secrets"
+	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
 type fakePackGraphjin struct {
@@ -314,5 +315,18 @@ func TestPackUninstallRollsBack(t *testing.T) {
 	}
 	if got := x.scalar(t, `select count(*)::text from pack_artifact where ownership = 'retired'`); got != "0" || x.actionRow()["enabled"] != true {
 		t.Errorf("a receipt was retired: %s", got)
+	}
+}
+
+func TestPackUninstallRetiresAPausedWorkflowForGood(t *testing.T) {
+	db := testpg.Migrated(t)
+	seedOrg(t, db)
+	seed(t, db, `insert into workflow_definition (org_id, owner_user_id, name, cron, cron_enabled, enabled, paused_until)
+		values ('org', '', 'Pack check', '0 7 * * *', true, false, now() + interval '1 day')`)
+	if _, err := db.Exec(context.Background(), retireNative[packs.KindWorkflow], "org", "Pack check"); err != nil {
+		t.Fatal(err)
+	}
+	if got := queryText(t, db, `select enabled || ',' || (paused_until is null) from workflow_definition where name = 'Pack check'`); got != "false,true" {
+		t.Errorf("retired workflow = %s; a kept pause enables it again at midnight", got)
 	}
 }

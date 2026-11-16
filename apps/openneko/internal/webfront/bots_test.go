@@ -277,6 +277,14 @@ func TestBotRoutes(t *testing.T) {
 		t.Errorf("enable by other: %d", w.Code)
 	}
 	var enabled, paused bool
+	seed(t, db, `update workflow_definition set enabled = false where id = $1`, botCron)
+	if w := call(f, "PATCH", runsPath, `{"enabled":false}`, member); w.Code != 200 {
+		t.Errorf("disable: %d %s", w.Code, w.Body)
+	}
+	if err := db.QueryRow(ctx, `select paused_until is not null from workflow_definition where id = $1`, botCron).Scan(&paused); err != nil || paused {
+		t.Errorf("a disable kept the pause, so midnight would enable it again: %v %v", paused, err)
+	}
+	seed(t, db, `update workflow_definition set paused_until = now() + interval '1 day' where id = $1`, botCron)
 	if w := call(f, "PATCH", runsPath, `{"enabled":true}`, member); w.Code != 200 || w.Body.String() != `{"ok":true}` {
 		t.Errorf("enable: %d %s", w.Code, w.Body)
 	}
