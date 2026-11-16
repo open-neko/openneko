@@ -18,9 +18,20 @@ The `run` line runs the start steps (storage check, migrations, config
 volume, serve credentials) before `up`.
 
 The overlay adds the `openneko-sandbox` service and sets
-`OPENNEKO_SANDBOX_URL=unix:///run/openneko/sandbox.sock` for web and
-`openneko-serve`. Set `OPENNEKO_SANDBOX_KEY` in the shell or in `.env` to
-require a key on the socket as well.
+`OPENNEKO_SANDBOX_URL=unix:///run/openneko-sandbox/sandbox.sock` for web and
+`openneko-serve`. The socket is in its own volume, `openneko-sandbox-socket`,
+which the sandbox, web and serve mount at `/run/openneko-sandbox`. The
+sandbox does not mount `openneko-run`, the folder of serve's sockets. The
+socket belongs to group `OPENNEKO_SANDBOX_GID` (1001) with mode 0660, so the
+overlay adds web to group 1001.
+
+Earlier releases put `sandbox.sock` in `openneko-run`. On an upgrade,
+`docker compose up -d` with this overlay creates the new volume and starts
+the sandbox, web and serve again with it. The old socket file stays in
+`openneko-run` with nothing listening on it.
+
+Set `OPENNEKO_SANDBOX_KEY` in the shell or in `.env` to require a key on the
+socket as well.
 
 The image carries Node, Python, Poppler, Tesseract, the Python and npm
 packages the bundled skills use, and the DejaVu Sans and Droid Sans Fallback
@@ -104,7 +115,7 @@ and the answer is relative to the run's folder, with `/` between parts.
 `dir`, `skill_dir` and the `env` values must stay inside the run;
 `PYTHONPATH` takes a `:` list. With `OPENNEKO_SANDBOX_KEY` set, every
 request except health needs `Authorization: Bearer <key>`. `--listen` takes
-`unix:///path` (default `unix:///run/openneko/sandbox.sock`) or
+`unix:///path` (default `unix:///run/openneko-sandbox/sandbox.sock`) or
 `host:port`. A TCP listener needs a key.
 
 ## Another host
