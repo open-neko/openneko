@@ -239,7 +239,7 @@ func (a *API) onboardingWizard(w http.ResponseWriter, r *http.Request) {
 		initial.CompanyName = ""
 	}
 	err := noRows(a.DB.QueryRow(ctx, `
-		select company_note, fiscal_year_start_month, active_seats, priorities
+		select coalesce(company_note, ''), coalesce(fiscal_year_start_month, 1), active_seats, priorities
 		from onboarding_wizard where org_id = $1 limit 1`, act.OrgID).Scan(
 		&initial.CompanyNote, &initial.FiscalYearStartMonth, &initial.ActiveSeats, &initial.Priorities))
 	if err != nil {
