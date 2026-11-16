@@ -648,7 +648,7 @@ func (a *API) botRoutineEnable(w http.ResponseWriter, r *http.Request) {
 	found := false
 	err = pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `update workflow_definition set enabled = $1,
-			paused_until = case when $1 then null else paused_until end, updated_at = now()
+			paused_until = null, updated_at = now()
 			where org_id = $2 and id = $3 and created_by_thread_id = $4`, enabled, act.OrgID, workflowID, *b.threadID)
 		if err != nil || tag.RowsAffected() == 0 {
 			return err

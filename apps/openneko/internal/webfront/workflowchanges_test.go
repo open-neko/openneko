@@ -35,6 +35,7 @@ func TestWorkflowPatch(t *testing.T) {
 	for _, c := range []struct{ body, want, state string }{
 		{`{"cronEnabled":false}`, `{"ok":true}`, "true,false,-"},
 		{`{"pauseForToday":true,"enabled":true}`, `{"ok":true}`, "false,false," + time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02") + " 00:00"},
+		{`{"enabled":false}`, `{"ok":true}`, "false,false,-"},
 		{`{"enabled":true,"cronEnabled":true}`, `{"ok":true}`, "true,true,-"},
 		{`{"enabled":"no","pauseForToday":false}`, `{"error":"no recognized fields"}`, "true,true,-"},
 		{`not json`, `{"error":"no recognized fields"}`, "true,true,-"},
