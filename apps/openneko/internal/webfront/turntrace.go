@@ -31,6 +31,7 @@ type traceSink func(event, content *jsObj)
 type traceRegistration struct {
 	sink  traceSink
 	scrub func(string) string
+	model func(record *jsObj)
 	next  int
 }
 
