@@ -280,6 +280,18 @@ func (a *API) materializeDueWorkflowFirings(ctx context.Context, now time.Time) 
 		recovered = r
 
 		if _, err := tx.Exec(ctx, `
+			with resumed as (
+			  update workflow_definition
+			  set enabled = true, paused_until = null, updated_at = $1
+			  where enabled = false and paused_until is not null and paused_until <= $1
+			  returning id, org_id
+			)
+			update watcher w set enabled = true, updated_at = $1
+			from resumed r
+			where w.org_id = r.org_id and w.workflow_id = r.id and not w.enabled`, now); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
 			delete from workflow_schedule_state s
 			where not exists (
 			  select 1 from workflow_definition d

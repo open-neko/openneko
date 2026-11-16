@@ -319,3 +319,37 @@ func TestSchedulerDisabledWorkflowKeepsNoCursor(t *testing.T) {
 		t.Errorf("next_fire_at after re-enable = %v, want 31 Aug 07:00", next.UTC())
 	}
 }
+
+func TestSchedulerResumesAWorkflowPausedForToday(t *testing.T) {
+	f, exec := schedulerTestFront(t)
+	ctx := context.Background()
+	const wfID = "00000000-0000-4000-8000-000000000045"
+	day := func(d, h, m int) time.Time { return time.Date(2026, 8, d, h, m, 0, 0, time.UTC) }
+	exec(`insert into workflow_definition (id, org_id, name, cron, cron_timezone, cron_enabled, enabled, paused_until)
+		values ($1, 'org', 'Morning check', '0 7 * * *', 'UTC', true, false, $2)`, wfID, day(27, 0, 0))
+	exec(`insert into watcher (org_id, workflow_id, name, query, value_path, op, enabled) values ('org', $1, 'w', 'q', 'v', 'gt', false)`, wfID)
+	state := func() (enabled, paused, watcher bool) {
+		t.Helper()
+		if err := f.API.DB.QueryRow(ctx, `select d.enabled, d.paused_until is not null, w.enabled
+			from workflow_definition d join watcher w on w.workflow_id = d.id where d.id = $1`, wfID).Scan(&enabled, &paused, &watcher); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+
+	f.API.RunWorkflowSchedulerTick(ctx, day(26, 8, 0))
+	if enabled, paused, watcher := state(); enabled || !paused || watcher {
+		t.Fatalf("before the pause ends: enabled=%v paused=%v watcher=%v", enabled, paused, watcher)
+	}
+	f.API.RunWorkflowSchedulerTick(ctx, day(27, 0, 1))
+	if enabled, paused, watcher := state(); !enabled || paused || !watcher {
+		t.Fatalf("after the pause ends: enabled=%v paused=%v watcher=%v", enabled, paused, watcher)
+	}
+	var next time.Time
+	if err := f.API.DB.QueryRow(ctx, `select next_fire_at from workflow_schedule_state where workflow_id = $1`, wfID).Scan(&next); err != nil {
+		t.Fatal(err)
+	}
+	if !next.Equal(day(27, 7, 0)) {
+		t.Errorf("next_fire_at after the pause = %v, want 27 Aug 07:00", next.UTC())
+	}
+}
