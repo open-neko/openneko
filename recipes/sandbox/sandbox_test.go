@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -443,6 +444,80 @@ func TestSandboxSocketBelongsToTheSharedGroup(t *testing.T) {
 	if perm := info.Mode().Perm(); perm != 0o660 {
 		t.Fatalf("socket mode = %o, want 660", perm)
 	}
+}
+
+func TestSandboxCommandCannotReachAnotherUsersSocket(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("switching run users needs root")
+	}
+	_, socket := startSandbox(t, true)
+	dir := t.TempDir()
+	for _, d := range []string{filepath.Dir(dir), dir} {
+		if err := os.Chmod(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dial := filepath.Join(dir, "dial")
+	if err := os.WriteFile(dial, raw, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	listenAs := func(name string, mode os.FileMode) string {
+		path := filepath.Join(dir, name)
+		listener, err := net.Listen("unix", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = listener.Close() })
+		go func() {
+			for {
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				_ = conn.Close()
+			}
+		}()
+		if err := os.Chown(path, 24001, 24001); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	open, serve := listenAs("open.sock", 0o666), listenAs("serve.sock", 0o660)
+	client := newClient(socket)
+	ctx := context.Background()
+	res, err := client.Exec(ctx, dial+" -test.run=^TestDialHelper$ -- "+open)
+	if err != nil || res.ExitCode != 0 {
+		t.Fatalf("a run user could not reach an open socket, so the check proves nothing: %+v %v", res, err)
+	}
+	res, err = client.Exec(ctx, dial+" -test.run=^TestDialHelper$ -- "+serve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ExitCode == 0 || !strings.Contains(res.Output, "permission denied") {
+		t.Fatalf("a run user reached a 0660 socket of another user: %+v", res)
+	}
+}
+
+func TestDialHelper(t *testing.T) {
+	if flag.NArg() != 1 {
+		t.Skip("runs only as a sandbox command")
+	}
+	conn, err := net.Dial("unix", flag.Arg(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.Close()
 }
 
 func processesOf(uid int) []int {
