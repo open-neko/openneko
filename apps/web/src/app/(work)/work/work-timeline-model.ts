@@ -142,6 +142,7 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
         const existing = toolsById.get(event.id);
         if (existing) {
           existing.name = event.name;
+          existing.label = event.label;
           existing.input = event.input;
           break;
         }
@@ -149,6 +150,7 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
         const item: ToolItem = {
           id: event.id,
           name: event.name,
+          label: event.label,
           input: event.input,
           deltas: [],
         };
