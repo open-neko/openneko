@@ -389,6 +389,14 @@ fails when `openneko web` finds no built-in skill or lacks a sandbox skill
 `remote`. It fails when the sandbox socket is in the folder of serve's
 sockets, or when nothing answers on it.
 
+To check a Docker install with a sandbox, run
+`scripts/smoke-script-step.sh <compose project> <web URL>` from a checkout.
+It fails when the first organization does not list every bundled skill.
+It then runs a workflow whose script step uses the `xlsx` skill in the
+sandbox, and fails unless that step succeeds within 150 seconds. The step
+runs before the agent turn, so the check needs no model provider. The
+post-release smoke runs it with the sandbox of `recipes/sandbox`.
+
 For immediate delivery independent of PostgreSQL, configure an HTTPS webhook
 on `web`:
 
