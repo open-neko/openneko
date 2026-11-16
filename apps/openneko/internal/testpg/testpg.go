@@ -4,9 +4,7 @@ package testpg
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"os"
-	"path"
 	"testing"
 	"time"
 
@@ -36,16 +34,14 @@ func Pool(t testing.TB, migrations ...string) *pgxpool.Pool {
 	return pool(t, false, migrations)
 }
 
-// Migrated returns a pool on a new schema with every embedded migration
-// applied. The public schema stays on the search path for the vector type.
-func Migrated(t testing.TB) *pgxpool.Pool {
+// migratedSchema applies every embedded migration to a new schema of the
+// test database. The public schema stays on the search path for the vector
+// type.
+func migratedSchema(t testing.TB) *pgxpool.Pool {
 	t.Helper()
-	names, err := fs.Glob(assets.MigrationsFS, "migrations/*.sql")
+	names, _, err := migrationNames()
 	if err != nil {
 		t.Fatal(err)
-	}
-	for i, name := range names {
-		names[i] = path.Base(name)
 	}
 	return pool(t, true, names)
 }
