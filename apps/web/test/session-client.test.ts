@@ -69,6 +69,20 @@ describe("session loading (FIX12)", () => {
     expect(seen.at(-1)).toBeNull();
     stop();
   });
+
+  it("gives up when the signal aborts a session check that hangs (FIX20)", async () => {
+    vi.stubGlobal("window", { addEventListener: () => {}, removeEventListener: () => {} });
+    const fetchMock = vi.fn(
+      (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("timed out", "TimeoutError")));
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { confirmSessionUser } = await import("../src/lib/session-client");
+    expect(await confirmSessionUser(AbortSignal.timeout(50))).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("session unknown and signed out (FIX18b)", () => {
