@@ -522,6 +522,7 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 				answer = ""
 			}
 			answer = reply.answer(answer)
+			events.send(Event{Type: "reply.written", Data: replyWrittenPayload(*reply, answer)})
 		}
 		engine.CloseRuntimeSession()
 		events.setReserve(0)

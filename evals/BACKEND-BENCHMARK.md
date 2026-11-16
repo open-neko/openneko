@@ -245,6 +245,20 @@ time to the first stream chunk, which is often a thought chunk. Results
 made after STREAM2c and before the stage field count the executor's
 streamed calls as responder calls. `firstOutputMs` is the time to the
 first answer text.
+A trace line `replyWritten` marks a run whose answer came from
+`replyAsWritten` or a tool's `reply_as_written` field. `writtenReplies`
+counts them per episode, and `writtenRepliesWithResponderText` counts
+those where the answer kept the responder's own text. Results made before
+this field have neither, so they cannot tell a written reply from a
+responder answer.
+`answer.exact` compares the answer with the closed `neko_` blocks removed,
+as the user sees it (scorer 2.1.0). Under scorer 2.0.0 the blocks counted,
+so an exact answer with its closing blocks failed.
+The eval reads a workflow run's stored events. At the end of a run the
+host joins the text rows into the last one; the reader takes only the
+text after the parts it already read, as the product's run stream does.
+Before this fix a workflow answer could read as its first part followed
+by the whole answer.
 `pnpm tsx scripts/eval-responder-report.ts --json <result folder>...`
 prints these per run, with the `answer.*` gates and the named safety and
 approval cases.

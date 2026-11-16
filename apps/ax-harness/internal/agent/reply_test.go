@@ -58,3 +58,21 @@ func TestExplicitReplyIgnoresTheModelText(t *testing.T) {
 		t.Fatalf("answer = %q", got)
 	}
 }
+
+func TestReplyWrittenPayloadSaysWhoseTextTheReaderGets(t *testing.T) {
+	explicit := writtenAnswer{text: "Exactly this.", cards: "\n\n```neko_cards\n{}\n```", explicit: true}
+	printed := writtenAnswer{text: "Script text.", cards: explicit.cards}
+	for _, c := range []struct {
+		reply writtenAnswer
+		model string
+		want  string
+	}{
+		{explicit, "Model text.", `{"explicit":true,"responder_text":false}`},
+		{printed, "Model text.", `{"explicit":false,"responder_text":true}`},
+		{printed, "", `{"explicit":false,"responder_text":false}`},
+	} {
+		if got := string(replyWrittenPayload(c.reply, c.reply.answer(c.model))); got != c.want {
+			t.Errorf("%+v with %q: %s, want %s", c.reply, c.model, got, c.want)
+		}
+	}
+}

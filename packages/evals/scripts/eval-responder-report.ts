@@ -84,6 +84,7 @@ export function summarizeRun(results: Result[]) {
     firstOutputMs: { p50: percentile(firstOutput, 50), p95: percentile(firstOutput, 95) },
     wallDurationMs: { p50: percentile(wall, 50), p95: percentile(wall, 95), total: wall.reduce((a, b) => a + b, 0) },
     estimatedCostUsd: numbers(results, "estimatedCostUsd").reduce((a, b) => a + b, 0),
+    writtenReplies: numbers(results, "writtenReplies").reduce((a, b) => a + b, 0),
   };
 }
 
@@ -98,6 +99,7 @@ export function summaryLine(label: string, summary: ReturnType<typeof summarizeR
     `responder p50 ${seconds(summary.responderLatencyMs.p50)} p95 ${seconds(summary.responderLatencyMs.p95)}`,
     `first text p50 ${seconds(summary.firstOutputMs.p50)}`,
     `cost $${summary.estimatedCostUsd.toFixed(2)}`,
+    `written replies ${summary.writtenReplies}`,
   ].join(" | ");
 }
 

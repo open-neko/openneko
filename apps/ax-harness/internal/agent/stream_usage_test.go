@@ -256,3 +256,55 @@ func TestRunUsageCountsTheStreamedResponder(t *testing.T) {
 		t.Fatalf("%d streamed requests, run usage %+v", streamed, u)
 	}
 }
+
+func TestRunSendsReplyWrittenWhenTheWrittenReplyIsTheAnswer(t *testing.T) {
+	write := `{"javascriptCode":"replyAsWritten({text: 'Exactly this.'}); final('Report', {})"}`
+	replies := []string{write, write, "Answer: model text"}
+	var mu sync.Mutex
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		reply := replies[min(calls, len(replies)-1)]
+		calls++
+		mu.Unlock()
+		if strings.Contains(string(body), `"stream":true`) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			chunk, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"index": 0, "delta": map[string]any{"role": "assistant", "content": reply}, "finish_reason": "stop"}}})
+			_, _ = fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", chunk)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": reply}, "finish_reason": "stop"}}})
+	}))
+	t.Cleanup(server.Close)
+	log := &eventLog{}
+	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "w", InputID: "i", Prompt: "p", StreamResponses: true}, openAIClient(server), Tools{}, log.emit)
+	if err != nil || result.Status != "completed" || result.Answer != "Exactly this." {
+		t.Fatalf("result %+v err %v", result, err)
+	}
+	var written []string
+	for _, e := range log.events {
+		if e.Type == "reply.written" {
+			written = append(written, string(e.Data))
+		}
+	}
+	if len(written) != 1 || written[0] != `{"explicit":true,"responder_text":false}` {
+		t.Fatalf("reply.written events %v", written)
+	}
+
+	plain := &eventLog{}
+	plainCode := `{"javascriptCode":"final('Report', {})"}`
+	mu.Lock()
+	replies = []string{plainCode, plainCode, "Answer: model text"}
+	calls = 0
+	mu.Unlock()
+	if _, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "p", InputID: "i", Prompt: "p", StreamResponses: true}, openAIClient(server), Tools{}, plain.emit); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range plain.events {
+		if e.Type == "reply.written" {
+			t.Fatalf("a run with no written reply sent %s", e.Data)
+		}
+	}
+}

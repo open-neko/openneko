@@ -33,7 +33,8 @@ func modelRequestServe(t *testing.T) (string, <-chan string) {
 		for _, l := range []string{
 			`{"type":"event","event":{"version":1,"run_id":"workrun-1","sequence":1,"type":"model.request.finished","call_id":1,"name":"gpt-4.1","streaming":true,"stage":"root/executor","duration_ms":900,"usage":{"input_tokens":50,"output_tokens":7}}}`,
 			`{"type":"event","event":{"version":1,"run_id":"workrun-1","sequence":2,"type":"model.request.finished","call_id":2,"name":"gpt-4.1","streaming":true,"stage":"root/responder","duration_ms":4200,"usage":{"input_tokens":80,"output_tokens":120,"reasoning_tokens":30}}}`,
-			`{"type":"event","event":{"version":1,"run_id":"workrun-1","sequence":3,"type":"run.finished","result":{"status":"completed","answer":"Done."}}}`,
+			`{"type":"event","event":{"version":1,"run_id":"workrun-1","sequence":3,"type":"reply.written","data":{"explicit":true,"responder_text":false}}}`,
+			`{"type":"event","event":{"version":1,"run_id":"workrun-1","sequence":4,"type":"run.finished","result":{"status":"completed","answer":"Done."}}}`,
 			`{"type":"exit","code":0}`,
 		} {
 			if _, err := conn.Write([]byte(l + "\n")); err != nil {
@@ -75,11 +76,12 @@ func TestEvalTraceRecordsEachModelRequestAndTheResponderEffort(t *testing.T) {
 		t.Fatalf("the spec has no responder effort: %s", request)
 	}
 	lines := strings.Split(strings.TrimSpace(written), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("trace lines = %d, want 2:\n%s", len(lines), written)
+	if len(lines) != 3 {
+		t.Fatalf("trace lines = %d, want 3:\n%s", len(lines), written)
 	}
 	for _, want := range []string{
 		`{"modelRequest":{"runId":"run-1","runKind":"work","callId":1,"streamed":true,"durationMs":900,"stage":"root/executor","model":"gpt-4.1","responderReasoningEffort":"minimal","usage":{"input_tokens":50,"output_tokens":7}}}`,
+		`{"replyWritten":{"runId":"run-1","runKind":"work","explicit":true,"responderText":false}}`,
 		`{"modelRequest":{"runId":"run-1","runKind":"work","callId":2,"streamed":true,"durationMs":4200,"stage":"root/responder","model":"gpt-4.1","responderReasoningEffort":"minimal","usage":{"input_tokens":80,"output_tokens":120,"reasoning_tokens":30}}}`,
 	} {
 		if !strings.Contains(written, want) {

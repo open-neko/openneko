@@ -81,6 +81,7 @@ credentials. `tool.finished` carries the tool result in `data`.
 | `model.request.finished` | A model call ended, with the same `stage` and `streaming`. `usage` holds the tokens and the call's cost, `observed_model` the model the provider reported, and `error` is set on failure. A streamed call ends when its stream ends, and `duration_ms` covers the whole stream. When a stream stops early, `usage` holds the tokens the provider sent so far, with `coverage` `partial`. |
 | `model.route.fallback` | A transient provider error moved the call from `name` to `origin`. |
 | `executor.step.failed` | Actor code failed. Later executor calls can use the escalation route. |
+| `reply.written` | A reply from `replyAsWritten` or a tool's `reply_as_written` field became the answer. `data.explicit` is true for `replyAsWritten`; `data.responder_text` is true when the answer kept the responder's own text with the reply's cards. |
 | `skill.used` | The agent declared that the staged skill `name` influenced the turn. |
 | `tool.input.rejected` | Tool input failed its schema. The tool did not run. |
 | `tool.started`, `tool.finished` | One tool call, with `operation_id`, `effect` and, when finished, `data` or `error`. |
