@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { expect, test } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import pg from "pg";
 
 function resolveDatabaseUrl(): string {
@@ -868,4 +868,280 @@ test.describe("4.6 stream resume and offline question queue", () => {
       await client.end();
     }
   });
+
+  test("sends three questions queued offline in one thread in order, each streaming live after the run before it ends (FIX20)", async ({
+    context,
+    page,
+  }) => {
+    await checkQueuedAfterRun(context, page, "three");
+  });
+
+  test("streams a question queued during a live run when the thread reload after that run is slow (FIX20)", async ({
+    context,
+    page,
+  }) => {
+    await checkQueuedAfterRun(context, page, "live");
+  });
+
+  test("shows no failure notice when the server answers a queued question with run_in_flight (FIX20)", async ({
+    context,
+    page,
+  }) => {
+    await checkQueuedAfterRun(context, page, "busy");
+  });
 });
+
+test.describe("4.6 offline question notices, Retry and the send timeout (FIX20)", () => {
+  test.use({ viewport: { width: 400, height: 860 } });
+
+  test("tells once how many questions were removed, links refused questions of other chats, sends again on Retry and after a send that hangs", async ({
+    context,
+    page,
+  }) => {
+    test.setTimeout(150_000);
+    const client = new pg.Client({ connectionString: resolveDatabaseUrl() });
+    await client.connect();
+    try {
+      const { rows: orgRows } = await client.query<{ id: string }>(
+        "select id from organization limit 1",
+      );
+      const orgId = orgRows[0]!.id;
+      const session = (await (
+        await page.request.get("/api/v1/auth/session")
+      ).json()) as { user: { id: string } | null };
+      const userA = session.user!.id;
+      const [here, there] = [randomUUID(), randomUUID()];
+      for (const id of [here, there]) {
+        await client.query(
+          `insert into work_thread (id, org_id, title, created_by_user_id)
+           values ($1, $2, 'Notice check', $3)`,
+          [id, orgId, userA],
+        );
+      }
+      const sent = async (content: string) => {
+        const { rows } = await client.query<{ n: string }>(
+          `select count(*)::text as n from work_message where role = 'user' and content = $1`,
+          [content],
+        );
+        return rows[0]!.n;
+      };
+      const myKey = `openneko.work.offlineQueue.user.${userA}`;
+      const now = new Date().toISOString();
+      const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+
+      // 3. Questions removed unsent show one notice with the count.
+      await page.goto(`/work/${here}`, { waitUntil: "networkidle" });
+      await page.evaluate(
+        ({ myKey, otherKey, items, others }) => {
+          localStorage.setItem(myKey, JSON.stringify(items));
+          localStorage.setItem(otherKey, JSON.stringify(others));
+        },
+        {
+          myKey,
+          otherKey: "openneko.work.offlineQueue.user.someone-else",
+          items: [
+            { id: randomUUID(), threadId: there, threadBase: "/work", content: "Eight days old", createdAt: old, status: "waiting" },
+            { id: randomUUID(), threadId: there, threadBase: "/work", content: "Refused in the other chat", createdAt: now, status: "failed", error: "The server refused this question (HTTP 400): bad" },
+          ],
+          others: [
+            { id: randomUUID(), threadId: null, threadBase: "/work", content: "Not mine 1", createdAt: now, status: "waiting" },
+            { id: randomUUID(), threadId: null, threadBase: "/work", content: "Not mine 2", createdAt: now, status: "waiting" },
+          ],
+        },
+      );
+      await page.reload({ waitUntil: "networkidle" });
+      const lost = page.getByTestId("offline-lost-notice");
+      await expect(lost).toContainText("1 question that waited for the network was not sent and removed after 7 days.");
+      await expect(lost).toContainText("2 questions that another user typed in this browser were not sent and removed.");
+      await lost.getByRole("button", { name: "Dismiss" }).click();
+      await expect(lost).toHaveCount(0);
+      await page.reload({ waitUntil: "networkidle" });
+      await expect(page.getByTestId("offline-queued-question")).toHaveCount(0);
+      await expect(lost).toHaveCount(0);
+
+      // 6. A refused question of another chat shows a count and a link to it.
+      const elsewhere = page.getByTestId("offline-failed-elsewhere");
+      await expect(elsewhere).toContainText("The server refused 1 question in other chats.");
+      await elsewhere.getByRole("link").click();
+      await expect(page).toHaveURL(new RegExp(`/work/${there}$`));
+      await expect(page.getByTestId("offline-failed-status")).toContainText("HTTP 400");
+      await expect(elsewhere).toHaveCount(0);
+
+      // 7. Retry sends the refused question again.
+      await page.getByRole("button", { name: "Send refused question again" }).click();
+      await expect.poll(() => sent("Refused in the other chat"), { timeout: 20_000 }).toBe("1");
+      await expect(page.getByTestId("offline-queued-question")).toHaveCount(0);
+
+      // 7. A queued send that hangs ends at the send timeout and goes again.
+      let posts = 0;
+      let release: () => void = () => {};
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await context.route(`**/api/v1/work/threads/${here}/runs`, async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        posts += 1;
+        if (posts === 1) {
+          await released;
+          return route.abort().catch(() => {});
+        }
+        return route.continue();
+      });
+      await page.goto(`/work/${here}`, { waitUntil: "networkidle" });
+      const composer = page.locator("textarea.work-input");
+      await expect(composer).toBeEnabled({ timeout: 20_000 });
+      await context.setOffline(true);
+      await composer.fill("Sent after a hung post");
+      await composer.press("Enter");
+      await context.setOffline(false);
+      await expect.poll(() => posts, { timeout: 20_000 }).toBe(1);
+      const hungAt = Date.now();
+      await expect.poll(() => posts, { timeout: 60_000 }).toBe(2);
+      expect(Date.now() - hungAt).toBeGreaterThan(25_000);
+      await expect.poll(() => sent("Sent after a hung post"), { timeout: 20_000 }).toBe("1");
+      await expect(page.getByTestId("offline-queued-question")).toHaveCount(0);
+      release();
+    } finally {
+      await context.setOffline(false).catch(() => {});
+      await client.end();
+    }
+  });
+});
+
+async function checkQueuedAfterRun(
+  context: BrowserContext,
+  page: Page,
+  mode: "three" | "live" | "busy",
+) {
+  const liveRunFirst = mode !== "three";
+  const client = new pg.Client({ connectionString: resolveDatabaseUrl() });
+  await client.connect();
+  try {
+    const { rows: orgRows } = await client.query<{ id: string }>(
+      "select id from organization limit 1",
+    );
+    const orgId = orgRows[0]!.id;
+    const session = (await (
+      await page.request.get("/api/v1/auth/session")
+    ).json()) as { user: { id: string } | null };
+    const userA = session.user!.id;
+    const threadId = randomUUID();
+    await client.query(
+      `insert into work_thread (id, org_id, title, created_by_user_id)
+       values ($1, $2, 'Three queued questions', $3)`,
+      [threadId, orgId, userA],
+    );
+    const runs: { runId: string; message: string }[] = [];
+    let busyAnswers = 0;
+    await context.route(`**/api/v1/work/threads/${threadId}/runs`, async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      const body = JSON.parse(route.request().postData() ?? "{}") as { message?: string };
+      if (mode === "busy" && busyAnswers === 0) {
+        busyAnswers += 1;
+        return route.fulfill({
+          status: 409,
+          contentType: "application/json",
+          headers: { "Retry-After": "1" },
+          body: JSON.stringify({ error: "A question is still running in this thread.", code: "run_in_flight" }),
+        });
+      }
+      const runId = randomUUID();
+      await client.query(
+        `insert into work_run (id, org_id, thread_id, backend, status, actor_user_id, actor_role)
+         values ($1, $2, $3, 'ax', 'running', $4, 'admin')`,
+        [runId, orgId, threadId, userA],
+      );
+      await client.query(
+        `insert into work_message (org_id, thread_id, run_id, role, content)
+         values ($1, $2, $3, 'user', $4)`,
+        [orgId, threadId, runId, body.message ?? ""],
+      );
+      runs.push({ runId, message: body.message ?? "" });
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ runId, threadId, backend: "ax", actorRole: "admin" }),
+      });
+    });
+    // A slow thread read returns a bundle from before the next queued send.
+    await context.route(
+      (url) => url.pathname === `/api/v1/work/threads/${threadId}`,
+      async (route) => {
+        if (route.request().method() !== "GET") return route.continue();
+        const response = await route.fetch();
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        return route.fulfill({ response });
+      },
+    );
+    const questions = liveRunFirst
+      ? ["Queued during a live run"]
+      : ["Queued question one", "Queued question two", "Queued question three"];
+    const composer = page.locator("textarea.work-input");
+    const liveRunId = randomUUID();
+    if (liveRunFirst) {
+      await client.query(
+        `insert into work_run (id, org_id, thread_id, backend, status, actor_user_id, actor_role)
+         values ($1, $2, $3, 'ax', 'running', $4, 'admin')`,
+        [liveRunId, orgId, threadId, userA],
+      );
+      await client.query(
+        `insert into work_message (org_id, thread_id, run_id, role, content)
+         values ($1, $2, $3, 'user', 'Question of the live run')`,
+        [orgId, threadId, liveRunId],
+      );
+    }
+    await page.goto(`/work/${threadId}`, { waitUntil: liveRunFirst ? "domcontentloaded" : "networkidle" });
+    if (liveRunFirst) {
+      await expect(page.getByRole("button", { name: "Stop" })).toBeVisible({ timeout: 20_000 });
+    } else {
+      await expect(composer).toBeEnabled({ timeout: 20_000 });
+    }
+    await context.setOffline(true);
+    for (const question of questions) {
+      await expect(composer).toBeEnabled({ timeout: 20_000 });
+      await composer.fill(question);
+      await composer.press("Enter");
+    }
+    await expect(page.getByTestId("offline-queued-question")).toHaveCount(questions.length);
+    await context.setOffline(false);
+    if (liveRunFirst) {
+      await page.waitForTimeout(3_000);
+      expect(runs).toHaveLength(0);
+      await completeRunInDb(client, orgId, threadId, liveRunId, "The live run is done.");
+    }
+    if (mode === "busy") {
+      await expect.poll(() => busyAnswers, { timeout: 20_000 }).toBe(1);
+      await expect(page.getByTestId("offline-waiting-status")).toContainText("Server busy");
+      for (let i = 0; i < 5; i++) {
+        expect(await page.locator('.work-transcript > [role="alert"]').count()).toBe(0);
+        await page.waitForTimeout(200);
+      }
+    }
+
+    const transcript = page.locator(".work-transcript");
+    for (let i = 0; i < questions.length; i++) {
+      await expect.poll(() => runs.length, { timeout: 30_000 }).toBe(i + 1);
+      expect(runs.map((run) => run.message)).toEqual(questions.slice(0, i + 1));
+      await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
+      await page.waitForTimeout(2_000);
+      const answer = `Answer number ${i + 1}`;
+      await emitRunEvent(client, orgId, threadId, runs[i]!.runId, {
+        type: "message",
+        role: "assistant",
+        content: answer,
+      });
+      await expect(transcript).toContainText(answer, { timeout: 10_000 });
+      await completeRunInDb(client, orgId, threadId, runs[i]!.runId, answer);
+    }
+    await expect(page.getByTestId("offline-queued-question")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Stop" })).toHaveCount(0, { timeout: 20_000 });
+    await page.waitForTimeout(3_000);
+    expect(runs).toHaveLength(questions.length);
+    for (let i = 0; i < questions.length; i++) {
+      await expect(transcript).toContainText(`Answer number ${i + 1}`);
+    }
+  } finally {
+    await context.setOffline(false).catch(() => {});
+    await client.end();
+  }
+}

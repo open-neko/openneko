@@ -1,6 +1,6 @@
 "use client";
 
-import { acknowledgeWorkStartup, markWorkStartup } from "@/lib/work-startup-timing";
+import { acknowledgeWorkStartup } from "@/lib/work-startup-timing";
 
 import "@/a2ui/components";
 import {
@@ -50,13 +50,15 @@ import { useWorkShell } from "../work-shell-context";
 import { joinMessageWithAttachments, uploadFiles } from "./work-attachments";
 import { WorkComposer, useWorkMentions } from "./work-composer";
 import { EmptyAsk, MessageBubble, PendingMemoryPanel } from "./work-messages";
-import { WorkFailureNotice } from "./work-notices";
+import { OfflineFailedElsewhere, OfflineLossNotice, WorkFailureNotice } from "./work-notices";
 import {
   cancelOfflineQuestion,
   claimNextOfflineQuestion,
   completeOfflineQuestion,
   deferAfterNetworkFailure,
+  dismissOfflineQueueLosses,
   enqueueOfflineQuestion,
+  hasSendableOfflineQuestion,
   moveNewChatQuestions,
   offlineQueueUser,
   offlineSendOutcome,
@@ -67,10 +69,12 @@ import {
   settleOfflineRefusal,
   setOfflineQueueUser,
   useOfflineQueue,
+  useOfflineQueueLosses,
   useOfflineStorageBroken,
   withOfflineQueueLock,
   type QueuedQuestion,
 } from "./work-offline-queue";
+import { followRunEvents } from "./work-run-events";
 import { RunTimeline } from "./work-run-timeline";
 import {
   applyStreamEventToBundle,
@@ -85,7 +89,6 @@ import type {
   MessageRecord,
   PendingMemory,
   RunRecord,
-  StreamResult,
   ThreadBundle,
   UploadedWorkFile,
   WorkEvent,
@@ -187,6 +190,7 @@ export default function WorkScreen() {
   const isOnline = useOnlineStatus();
   const offlineQueue = useOfflineQueue();
   const storageBroken = useOfflineStorageBroken();
+  const offlineLosses = useOfflineQueueLosses();
   const session = useSession();
   const sessionKnown = session !== undefined;
   const sessionUserId = session?.user?.id ?? null;
@@ -203,6 +207,15 @@ export default function WorkScreen() {
           item.status !== "sending" &&
           item.threadBase === threadBase &&
           item.threadId === currentThreadKey,
+      ),
+    [offlineQueue, threadBase, currentThreadKey],
+  );
+  const failedElsewhere = useMemo(
+    () =>
+      offlineQueue.filter(
+        (item) =>
+          item.status === "failed" &&
+          !(item.threadBase === threadBase && item.threadId === currentThreadKey),
       ),
     [offlineQueue, threadBase, currentThreadKey],
   );
@@ -224,6 +237,17 @@ export default function WorkScreen() {
     const timer = window.setTimeout(() => setRetryTick((n) => n + 1), next - now + 50);
     return () => window.clearTimeout(timer);
   }, [allWaiting]);
+
+  const endOfflineFlush = () => {
+    flushingOfflineRef.current = false;
+    if (!mountedRef.current) return;
+    const openThread = activeThreadIdRef.current ?? routeThreadIdRef.current;
+    const sendable = hasSendableOfflineQuestion(
+      (item) =>
+        !(item.threadBase === threadBase && item.threadId === openThread) || !sendingRef.current,
+    );
+    if (sendable) setRetryTick((n) => n + 1);
+  };
 
   const updateActiveRunId = (next: string | null) => {
     setActiveRunIdState(next);
@@ -886,7 +910,7 @@ export default function WorkScreen() {
     } finally {
       releaseLock();
       sendingClaimedRef.current = false;
-      flushingOfflineRef.current = false;
+      endOfflineFlush();
     }
   }
 
@@ -1007,7 +1031,7 @@ export default function WorkScreen() {
     void withOfflineQueueLock(async () => {
       if (!mountedRef.current) return;
       const queueUser = offlineQueueUser();
-      const confirmedUser = await confirmSessionUser();
+      const confirmedUser = await confirmSessionUser(sendTimeout());
       if (!mountedRef.current) return;
       if (confirmedUser === undefined) {
         reportNetworkOffline();
@@ -1034,7 +1058,7 @@ export default function WorkScreen() {
         if (!(await sendQueuedInBackground(claimed, queueUser))) return;
       }
     }).finally(() => {
-      if (!sendingClaimedRef.current) flushingOfflineRef.current = false;
+      if (!sendingClaimedRef.current) endOfflineFlush();
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -1190,21 +1214,20 @@ export default function WorkScreen() {
         await loadThread(threadId);
         return true;
       }
-      if (
-        request?.claimed
-          ? settleOfflineRefusal(
-              request.clientRequestId,
-              { status: res.status, headers: res.headers, code },
-              error,
-              threadId,
-            ) === "signin"
-          : code === "user_mismatch"
-      ) {
+      const outcome = request?.claimed
+        ? settleOfflineRefusal(
+            request.clientRequestId,
+            { status: res.status, headers: res.headers, code },
+            error,
+            threadId,
+          )
+        : null;
+      if (outcome ? outcome === "signin" : code === "user_mismatch") {
         void confirmSessionUser();
       }
       request?.onPosted?.();
       setSending(false);
-      setStreamError(error);
+      if (outcome !== "retry") setStreamError(error);
       await loadThread(threadId);
       return true;
     }
@@ -1285,6 +1308,7 @@ export default function WorkScreen() {
 
   function resumeLatestInFlightRun(threadId: string, nextBundle: ThreadBundle) {
     const run = latestInFlightRun(nextBundle.runs);
+    if (!run && sendingClaimedRef.current) return;
     const current = activeRunStreamRef.current;
     if (current && (!run || current.threadId !== threadId || current.runId !== run.id)) {
       current.close();
@@ -1316,219 +1340,25 @@ export default function WorkScreen() {
     afterId: number,
     skipInitialCount = 0,
   ) {
-    const result = await followRunEvents(
+    const result = await followRunEvents({
+      activeRunStreamRef,
       threadId,
       runId,
       afterId,
       skipInitialCount,
-    );
+      onEvent: applyIncomingEvent,
+    });
     if (result !== "done" || !mountedRef.current) return;
     if (activeThreadIdRef.current !== threadId) return;
 
-    setSending(false);
     setStreamError(null);
     updateActiveRunId(null);
     await loadThread(threadId);
+    setSending(false);
     window.setTimeout(() => {
       if (!mountedRef.current || activeThreadIdRef.current !== threadId) return;
       void loadPendingMemories(threadId);
     }, 1500);
-  }
-
-  async function followRunEvents(
-    threadId: string,
-    runId: string,
-    afterId: number,
-    skipInitialCount = 0,
-  ): Promise<StreamResult> {
-    const current = activeRunStreamRef.current;
-    if (current?.runId === runId && current.threadId === threadId) {
-      return "closed";
-    }
-
-    current?.close();
-
-    return new Promise<StreamResult>((resolve) => {
-      let settled = false;
-      let es: EventSource | null = null;
-      let retryTimer: number | null = null;
-      let cursor = afterId;
-      let skipped = 0;
-      let retryDelayMs = 250;
-      const seenEventIds = new Set<number>();
-
-      const clearRetry = () => {
-        if (retryTimer !== null) {
-          window.clearTimeout(retryTimer);
-          retryTimer = null;
-        }
-      };
-
-      const settle = (result: StreamResult) => {
-        if (settled) return;
-        settled = true;
-        clearRetry();
-        window.removeEventListener("online", onOnline);
-        window.removeEventListener("offline", onOffline);
-        document.removeEventListener("visibilitychange", onVisibilityChange);
-        es?.close();
-        es = null;
-        const active = activeRunStreamRef.current;
-        if (active?.runId === runId && active.threadId === threadId) {
-          activeRunStreamRef.current = null;
-        }
-        resolve(result);
-      };
-
-      const checkRunStillInFlight = async () => {
-        if (settled || !isBrowserOnline()) return;
-        try {
-          const res = await fetch(withRunEventFormat(`/api/v1/work/threads/${threadId}`), {
-            cache: "no-store",
-          });
-          if (!res.ok || settled) return;
-          const data = (await res.json()) as ThreadBundle;
-          if (settled) return;
-          const run = data.runs.find((item) => item.id === runId);
-          if (run && !isRunInFlight(run)) {
-            settle("done");
-          }
-        } catch {
-          // Still offline or unreachable; retry loop will continue.
-        }
-      };
-
-      const scheduleReconnect = (delayMs = retryDelayMs) => {
-        if (settled || retryTimer !== null) return;
-        retryTimer = window.setTimeout(() => {
-          retryTimer = null;
-          if (settled) return;
-          if (typeof navigator !== "undefined" && navigator.onLine === false) {
-            scheduleReconnect(1000);
-            return;
-          }
-          connect();
-        }, delayMs);
-      };
-
-      const connect = () => {
-        if (settled) return;
-        clearRetry();
-        es?.close();
-        es = null;
-
-        if (typeof navigator !== "undefined" && navigator.onLine === false) {
-          reportNetworkOffline();
-          scheduleReconnect(1000);
-          return;
-        }
-
-        const params = cursor > 0 ? `?afterId=${cursor}` : "";
-        const source = new EventSource(
-          withRunEventFormat(`/api/v1/work/threads/${threadId}/runs/${runId}/events${params}`),
-        );
-        es = source;
-        let openedThisAttempt = false;
-
-        source.onopen = () => {
-          if (settled || es !== source) return;
-          openedThisAttempt = true;
-          retryDelayMs = 250;
-          reportNetworkOnline();
-          markWorkStartup(runId, "streamOpenMs");
-        };
-
-        source.onmessage = (msgEvent) => {
-          if (settled || es !== source) return;
-          reportNetworkOnline();
-          const rawId = msgEvent.lastEventId ? Number(msgEvent.lastEventId) : NaN;
-          if (Number.isFinite(rawId) && rawId > 0) {
-            if (seenEventIds.has(rawId)) return;
-            seenEventIds.add(rawId);
-            if (rawId > cursor) cursor = rawId;
-          }
-          let event: WorkEvent;
-          try {
-            event = JSON.parse(msgEvent.data) as WorkEvent;
-          } catch {
-            return;
-          }
-          if (event.type === "hello") return;
-          if (skipped < skipInitialCount) {
-            skipped += 1;
-            if (event.type === "done") {
-              markWorkStartup(runId, "doneMs");
-              settle("done");
-            }
-            return;
-          }
-          applyIncomingEvent(runId, event);
-          markWorkStartup(runId, "firstEventMs");
-          if (
-            (event.type === "message" &&
-              event.role === "assistant" &&
-              event.content) ||
-            event.type === "surface"
-          ) {
-            markWorkStartup(runId, "firstOutputMs");
-          }
-          if (event.type === "done") {
-            markWorkStartup(runId, "doneMs");
-            settle("done");
-          }
-        };
-
-        source.onerror = () => {
-          if (settled || es !== source) return;
-          source.close();
-          es = null;
-          if (typeof navigator !== "undefined" && navigator.onLine === false) {
-            reportNetworkOffline();
-            scheduleReconnect(1000);
-            return;
-          }
-          if (openedThisAttempt) {
-            void checkRunStillInFlight();
-          }
-          const delay = retryDelayMs;
-          retryDelayMs = Math.min(retryDelayMs * 2, 2000);
-          scheduleReconnect(delay);
-        };
-      };
-
-      const onOnline = () => {
-        if (settled) return;
-        retryDelayMs = 250;
-        connect();
-      };
-
-      const onOffline = () => {
-        if (settled) return;
-        reportNetworkOffline();
-        clearRetry();
-        es?.close();
-        es = null;
-      };
-
-      const onVisibilityChange = () => {
-        if (settled || document.visibilityState !== "visible") return;
-        if (!es || es.readyState === EventSource.CLOSED) {
-          retryDelayMs = 250;
-          connect();
-        }
-      };
-
-      activeRunStreamRef.current = {
-        threadId,
-        runId,
-        close: () => settle("closed"),
-      };
-
-      window.addEventListener("online", onOnline);
-      window.addEventListener("offline", onOffline);
-      document.addEventListener("visibilitychange", onVisibilityChange);
-      connect();
-    });
   }
 
   function applyIncomingEvent(runId: string, event: WorkEvent) {
@@ -1892,6 +1722,10 @@ export default function WorkScreen() {
             this page, they are lost.
           </div>
         ) : null}
+        {offlineLosses.expired + offlineLosses.otherUser > 0 ? (
+          <OfflineLossNotice losses={offlineLosses} onDismiss={dismissOfflineQueueLosses} />
+        ) : null}
+        {failedElsewhere.length > 0 ? <OfflineFailedElsewhere items={failedElsewhere} /> : null}
         {queuedQuestions.map((item) => (
           <div
             key={item.id}
