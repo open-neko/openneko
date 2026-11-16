@@ -87,11 +87,13 @@ func scrubRunEvent(scrub func(string) string, event any) any {
 		str("content")
 	case "tool_start":
 		deep("input")
+		str("label")
 	case "tool_delta":
 		deep("delta")
 	case "tool_end":
 		deep("result")
 		str("error")
+		str("label")
 	case "surface":
 		deep("messages")
 	case "artifact":

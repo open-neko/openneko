@@ -8,6 +8,7 @@ import {
 } from "@/lib/linkify-workspace-paths";
 import { Disclosure } from "@/components/ui/disclosure";
 import { REMARK_PLUGINS } from "./work-markdown";
+import { currentTool, stepLabel } from "./work-step-label";
 import type { RunRecord, TimelineItem } from "./work-types";
 
 export function ProviderProgress({
@@ -147,13 +148,17 @@ export function progressPreview(content: string): string {
 }
 
 /**
- * The line that says what the run does now: the newest thinking note, or the
- * step status when the provider sends no thinking text.
+ * The line that says what the run does now: the newest thinking note or tool
+ * step, or the step status when the provider sends no thinking text.
  */
 export function liveStep(items: TimelineItem[], lastStatus: string | null): string | null {
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
     if (item.kind === "progress") return progressPreview(item.content);
+    if (item.kind === "tools") {
+      const tool = currentTool(item.tools.filter((t) => !t.approval));
+      if (tool) return stepLabel(tool);
+    }
   }
   return lastStatus;
 }
@@ -192,7 +197,7 @@ export function WorkTrail({ run, items, children }: { run: RunRecord | null; ite
   const duration = workDuration(run);
   const meta = [
     notes ? `${notes} ${notes === 1 ? "note" : "notes"}` : "",
-    tools ? `${tools} ${tools === 1 ? "tool call" : "tool calls"}` : "",
+    tools ? `${tools} ${tools === 1 ? "step" : "steps"}` : "",
   ].filter(Boolean).join(", ");
   return (
     <Disclosure title={duration ? `Worked for ${duration}` : "How OpenNeko worked"} meta={meta} className="work-trail">
