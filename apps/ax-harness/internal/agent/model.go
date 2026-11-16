@@ -35,7 +35,7 @@ func thoughtSummaries(provider string) bool {
 // modelOptions adds stage routes, reasoning effort, thought summaries and the
 // prompt cache to agent options. Ax reads model settings per stage, and each
 // stage uses its own route's provider.
-func modelOptions(options map[string]ax.Value, routed *RoutedClient, effort string) {
+func modelOptions(options map[string]ax.Value, routed *RoutedClient, effort, responderEffort string) {
 	stages := map[string]string{}
 	defaultProvider := ""
 	if routed != nil {
@@ -62,8 +62,12 @@ func modelOptions(options map[string]ax.Value, routed *RoutedClient, effort stri
 				stage["structuredOutputMode"] = "function"
 			}
 		}
-		reasoningOption(stage, provider, effort)
-		if key == "responderOptions" && effort != "" && thoughtSummaries(provider) {
+		stageEffort := effort
+		if key == "responderOptions" && responderEffort != "" {
+			stageEffort = responderEffort
+		}
+		reasoningOption(stage, provider, stageEffort)
+		if key == "responderOptions" && stageEffort != "" && thoughtSummaries(provider) {
 			stage["showThoughts"] = true
 		}
 		if len(stage) > 0 {

@@ -36,6 +36,8 @@ type Spec struct {
 	MaxModelTokens  int64  `json:"max_model_tokens,omitempty"`
 	MaxCostMicros   int64  `json:"max_cost_micros,omitempty"` // Host ceiling at Ax catalog rates.
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	// ResponderReasoningEffort replaces ReasoningEffort for the responder stage only.
+	ResponderReasoningEffort string `json:"responder_reasoning_effort,omitempty"`
 	// Mirror Hermes model.context_length and model.max_tokens.
 	ContextWindowTokens int64 `json:"context_window_tokens,omitempty"`
 	MaxOutputTokens     int64 `json:"max_output_tokens,omitempty"`
@@ -77,6 +79,8 @@ func (s Spec) valid() bool {
 		strings.TrimSpace(s.RunID) != "" && len(s.RunID) <= 128 && strings.TrimSpace(s.InputID) != "" && len(s.InputID) <= 128 &&
 		strings.TrimSpace(s.Prompt) != "" &&
 		(s.ReasoningEffort == "" || s.ReasoningEffort == "low" || s.ReasoningEffort == "medium" || s.ReasoningEffort == "high") &&
+		(s.ResponderReasoningEffort == "" || s.ResponderReasoningEffort == "minimal" || s.ResponderReasoningEffort == "low" ||
+			s.ResponderReasoningEffort == "medium" || s.ResponderReasoningEffort == "high") &&
 		(s.SkillRerank == "" || s.SkillRerank == "off")
 }
 
@@ -128,14 +132,16 @@ type Event struct {
 	CallID      uint64          `json:"call_id,omitempty"`
 	Name        string          `json:"name,omitempty"`
 	// ObservedModel is the model the provider reported; Name is the configured one.
-	ObservedModel string      `json:"observed_model,omitempty"`
-	Provider      string      `json:"provider,omitempty"`
-	Origin        string      `json:"origin,omitempty"`
-	Effect        string      `json:"effect,omitempty"`
-	DurationMS    int64       `json:"duration_ms,omitempty"`
-	Usage         *ModelUsage `json:"usage,omitempty"`
-	CostMicros    *int64      `json:"cost_micros,omitempty"`
-	Result        *Result     `json:"result,omitempty"`
+	ObservedModel string `json:"observed_model,omitempty"`
+	// Streaming marks a model request that Ax streamed: only the responder streams.
+	Streaming  bool        `json:"streaming,omitempty"`
+	Provider   string      `json:"provider,omitempty"`
+	Origin     string      `json:"origin,omitempty"`
+	Effect     string      `json:"effect,omitempty"`
+	DurationMS int64       `json:"duration_ms,omitempty"`
+	Usage      *ModelUsage `json:"usage,omitempty"`
+	CostMicros *int64      `json:"cost_micros,omitempty"`
+	Result     *Result     `json:"result,omitempty"`
 }
 
 // maxStartedInput bounds the tool input copied onto a start event.
@@ -421,7 +427,7 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 		}
 		engineOptions := ax.Object("runtime", runtime, "instruction", instruction, "directResponse", "off", "max_actor_steps", spec.ActorSteps(), "validationRetries", 0, "infraRetries", 0,
 			"contextPolicy", ax.Object("preset", "checkpointed", "budget", "balanced"))
-		modelOptions(engineOptions, routed, spec.ReasoningEffort)
+		modelOptions(engineOptions, routed, spec.ReasoningEffort, spec.ResponderReasoningEffort)
 		var rerank skillRerank
 		if spec.SkillRerank == "" && (spec.ModelCallLimit() == 0 || spec.ModelCallLimit() > 3) {
 			rerank = axSkillRerank(client, rerankOptions(routed),
@@ -484,7 +490,7 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 			registerSaved(childRuntime, childView)
 			childOptions := ax.Object("runtime", childRuntime, "instruction", childInstruction, "directResponse", "off", "max_actor_steps", spec.ChildSteps(), "validationRetries", 0, "infraRetries", 0,
 				"contextPolicy", ax.Object("preset", "checkpointed", "budget", "balanced"))
-			modelOptions(childOptions, routed, spec.ReasoningEffort)
+			modelOptions(childOptions, routed, spec.ReasoningEffort, spec.ResponderReasoningEffort)
 			engine.AddChildAgent("team", "worker", ax.NewAgent("task:string -> answer:string", childOptions))
 		}
 		anchoredClient := &contextAnchorClient{AIClient: attemptClient, request: spec.request()}
@@ -795,7 +801,7 @@ func (r *recorder) admitModel(next ax.AxRequestExecutor, info ax.AxRateLimitInfo
 	if provider == "" {
 		provider = info.Provider
 	}
-	e := Event{Version: 1, RunID: r.spec.RunID, InputID: r.spec.InputID, Sequence: r.seq, Type: "model.request.started", CallID: id, Name: modelName, Origin: info.Provider, Provider: provider}
+	e := Event{Version: 1, RunID: r.spec.RunID, InputID: r.spec.InputID, Sequence: r.seq, Type: "model.request.started", CallID: id, Name: modelName, Origin: info.Provider, Provider: provider, Streaming: info.Streaming}
 	if r.spec.MaxCostMicros > 0 {
 		e.CostMicros = &costReservation
 	}
@@ -810,7 +816,7 @@ func (r *recorder) admitModel(next ax.AxRequestExecutor, info ax.AxRateLimitInfo
 	started := time.Now()
 	response, err := next()
 	finished := Event{Type: "model.request.finished", CallID: id, Name: modelName, Origin: info.Provider, Provider: provider,
-		ObservedModel: observedModel(response), DurationMS: time.Since(started).Milliseconds()}
+		ObservedModel: observedModel(response), DurationMS: time.Since(started).Milliseconds(), Streaming: info.Streaming}
 	if err != nil {
 		finished.Error = "model_request_failed"
 	}
