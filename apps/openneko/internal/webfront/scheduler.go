@@ -315,7 +315,8 @@ func (a *API) materializeDueWorkflowFirings(ctx context.Context, now time.Time) 
 			select d.id::text, d.org_id, d.cron, coalesce(nullif(d.cron_timezone, ''), 'UTC'), d.updated_at, s.next_fire_at,
 			  s.workflow_id is not null and (s.cron is distinct from d.cron
 			    or s.cron_timezone is distinct from coalesce(nullif(d.cron_timezone, ''), 'UTC')
-			    or s.definition_updated_at is distinct from d.updated_at)
+			    or s.definition_updated_at is distinct from d.updated_at),
+			  d.daily_run_budget::bigint
 			from workflow_definition d
 			left join workflow_schedule_state s on s.workflow_id = d.id
 			where d.enabled = true
@@ -335,10 +336,11 @@ func (a *API) materializeDueWorkflowFirings(ctx context.Context, now time.Time) 
 			definitionUpdatedAt time.Time
 			nextFireAt          *time.Time
 			changed             bool
+			dailyRunBudget      *int64
 		}
 		defs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (scheduleRow, error) {
 			var s scheduleRow
-			err := row.Scan(&s.id, &s.orgID, &s.cron, &s.timezone, &s.definitionUpdatedAt, &s.nextFireAt, &s.changed)
+			err := row.Scan(&s.id, &s.orgID, &s.cron, &s.timezone, &s.definitionUpdatedAt, &s.nextFireAt, &s.changed, &s.dailyRunBudget)
 			return s, err
 		})
 		if err != nil {
@@ -374,8 +376,21 @@ func (a *API) materializeDueWorkflowFirings(ctx context.Context, now time.Time) 
 				continue
 			}
 			coalesced += plan.Coalesced
+			due := plan.ScheduledFor
+			if row.dailyRunBudget != nil && len(due) > 0 {
+				dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+				var used int64
+				if err := tx.QueryRow(ctx, `
+					select (select count(*) from workflow_run where workflow_id = $1 and created_at >= $2)
+					     + (select count(*) from workflow_schedule_firing where workflow_id = $1 and created_at >= $2
+					          and workflow_run_id is null and status not in ('completed', 'cancelled'))`,
+					row.id, dayStart).Scan(&used); err != nil {
+					return err
+				}
+				due = due[:min(int64(len(due)), max(0, *row.dailyRunBudget-used))]
+			}
 			var lastMaterializedAt *time.Time
-			for _, sf := range plan.ScheduledFor {
+			for _, sf := range due {
 				sfCopy := sf
 				tag, ierr := tx.Exec(ctx, `
 					insert into workflow_schedule_firing (org_id, workflow_id, scheduled_for, status, available_at, created_at, updated_at)

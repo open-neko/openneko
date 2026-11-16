@@ -353,3 +353,26 @@ func TestSchedulerResumesAWorkflowPausedForToday(t *testing.T) {
 		t.Errorf("next_fire_at after the pause = %v, want 27 Aug 07:00", next.UTC())
 	}
 }
+
+func TestSchedulerKeepsCronFiringsInTheDailyRunBudget(t *testing.T) {
+	f, exec := schedulerTestFront(t)
+	ctx := context.Background()
+	const wfID = "00000000-0000-4000-8000-000000000046"
+	day := func(d, h, m int) time.Time { return time.Date(2026, 8, d, h, m, 0, 0, time.UTC) }
+	exec(`insert into workflow_definition (id, org_id, name, cron, cron_timezone, cron_enabled, enabled, daily_run_budget)
+		values ($1, 'org', 'Hourly check', '0 * * * *', 'UTC', true, true, 1)`, wfID)
+	f.API.RunWorkflowSchedulerTick(ctx, day(27, 6, 30))
+	f.API.RunWorkflowSchedulerTick(ctx, day(27, 7, 1))
+	f.API.RunWorkflowSchedulerTick(ctx, day(27, 8, 1))
+	got := schedulerFirings(t, f, wfID)
+	if _, ok := got[day(27, 7, 0)]; !ok {
+		t.Fatalf("the first firing of the day is missing: %v", got)
+	}
+	if _, ok := got[day(27, 8, 0)]; ok {
+		t.Errorf("a second firing on a budget of one: %v", got)
+	}
+	f.API.RunWorkflowSchedulerTick(ctx, day(28, 7, 1))
+	if _, ok := schedulerFirings(t, f, wfID)[day(28, 7, 0)]; !ok {
+		t.Errorf("the budget did not reset on the next day: %v", schedulerFirings(t, f, wfID))
+	}
+}
