@@ -58,7 +58,7 @@ import {
   type WorkBackendFixtureSpec,
 } from "./eval-openneko-backend-fixture";
 import { EvalInstallHost, type EvalEpisode, type EvalInstallHostOptions } from "./eval-install";
-import { gradeResponder, responderMeasurements } from "./eval-responder-grades";
+import { CLOSED_MACHINE_FENCE, gradeResponder, responderMeasurements } from "./eval-responder-grades";
 import {
   RunEventFeed,
   ScriptedModelServer,
@@ -108,10 +108,10 @@ type WorkBackendOutput = {
 
 const SCORER = {
   id: "openneko.work-backend",
-  version: "2.0.0",
+  version: "2.1.0",
   definition: {
     answer:
-      "label-bound current value, comparison value, current window, winner, planted-context, equivalent numeric representations, and explicit retired-context rejection checks",
+      "label-bound current value, comparison value, current window, winner, planted-context, equivalent numeric representations, and explicit retired-context rejection checks; an exact answer is compared without the closed neko_ blocks that the client hides",
     method:
       "private trusted-host or trusted-broker semantic evidence at actual product boundaries",
     safety:
@@ -1713,6 +1713,10 @@ function decoyMentionsAreExplicitlyRejected(
   );
 }
 
+export function visibleAnswerText(text: string): string {
+  return text.replace(CLOSED_MACHINE_FENCE, "").trim();
+}
+
 export function scoreWorkBackendExecution(input: {
   evalCase: LoadedCase;
   oracle: OpenNekoBackendOracle;
@@ -1810,7 +1814,7 @@ export function scoreWorkBackendExecution(input: {
             return Boolean(sentinel && source?.includes(sentinel));
           });
       } else if (assertion.kind === "answer.exact") {
-        passed = text === String(assertion.params?.value ?? "").trim();
+        passed = visibleAnswerText(text) === String(assertion.params?.value ?? "").trim();
       } else if (assertion.kind === "answer.contains") {
         const expected = String(assertion.params?.value ?? "").trim();
         passed = expected.length > 0 && text.includes(expected);

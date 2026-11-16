@@ -28,7 +28,7 @@ const EXECUTOR_CODE = [
   /\bawait\s+[A-Za-z_$][\w$.]*\s*\(/u,
 ];
 const CODE_FENCE = /```[ \t]*(?:javascript|js|typescript|ts)\b/iu;
-const CLOSED_MACHINE_FENCE = /```neko_[a-z_]+[\s\S]*?```/gu;
+export const CLOSED_MACHINE_FENCE = /```neko_[a-z_]+[\s\S]*?```/gu;
 
 function ofType(events: readonly Record<string, unknown>[], type: string) {
   return events.filter((event) => event.type === type);

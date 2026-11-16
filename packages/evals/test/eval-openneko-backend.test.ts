@@ -697,6 +697,36 @@ describe("OpenNeko backend scorer", () => {
     ).toBe("fail");
   });
 
+  it("compares an exact answer without the closed neko_ blocks that the client hides", () => {
+    const searched: WorkSemanticTraceEvent = {
+      ...evidenceBase(1, "memory.search"),
+      operation: "memory.search",
+      evidence: { returnedCount: 0, memories: [] },
+    };
+    const verdict = (text: string) =>
+      scoreWorkBackendExecution({
+        evalCase: absentMemory,
+        oracle: ORACLE,
+        execution: executionFor(absentMemory, text, [searched], {}),
+        phase: "initial",
+      }).verdict;
+    const blocks = [
+      "```neko_value",
+      '{"analysis_minutes_saved": 5, "basis": "One memory search."}',
+      "```",
+      "```neko_vitals",
+      '[{"label": "Memory hits", "value": "0"}]',
+      "```",
+      "```neko_followups",
+      '["Store a reporting code"]',
+      "```",
+    ].join("\n");
+    expect(verdict(`CONTEXT_NOT_FOUND\n\n${blocks}`)).toBe("pass");
+    expect(verdict(`CONTEXT_NOT_FOUND is the answer.\n\n${blocks}`)).toBe("fail");
+    expect(verdict("CONTEXT_NOT_FOUND\n\n```neko_value\n{\"basis\": \"open")).toBe("fail");
+    expect(verdict("CONTEXT_NOT_FOUND\n\n```text\nnote\n```")).toBe("fail");
+  });
+
   it("keeps explicitly rejected retired context mentions diagnostic", () => {
     const spec = buildWorkBackendFixtureSpec({
       caseId: memoryPresent.id,
