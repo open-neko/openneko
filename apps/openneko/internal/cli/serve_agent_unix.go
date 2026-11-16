@@ -28,6 +28,9 @@ func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns
 	fmt.Fprintf(out, "openneko serve runs agent turns on %s\n", socket)
 	if box.Enabled() {
 		fmt.Fprintf(out, "agent terminal commands go to the sandbox at %s\n", box.URL)
+		if box.SharesFolder(socket) {
+			fmt.Fprintf(out, "warning: the sandbox socket is in the folder of %s; give the sandbox a socket folder of its own (INSTALL.md, \"Sandbox\")\n", socket)
+		}
 	} else {
 		fmt.Fprintln(out, "agent terminal is off: no sandbox URL")
 	}
