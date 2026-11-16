@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,5 +78,30 @@ func TestServeAgentTurnsRefusesABadSandboxURL(t *testing.T) {
 	}
 	if _, err := os.Stat(socket); !os.IsNotExist(err) {
 		t.Fatalf("serve opened its socket before the sandbox URL was checked: %v", err)
+	}
+}
+
+func TestServeAgentTurnsWarnsWhenTheSandboxSharesItsSocketFolder(t *testing.T) {
+	dir := t.TempDir()
+	for _, tc := range []struct {
+		url  string
+		warn bool
+	}{
+		{"unix://" + filepath.Join(dir, "sandbox.sock"), true},
+		{"unix://" + filepath.Join(dir, "sandbox", "sandbox.sock"), false},
+		{"https://sandbox.example:8443", false},
+	} {
+		socket := filepath.Join(dir, "serve.sock")
+		var out strings.Builder
+		ctx, cancel := context.WithCancel(context.Background())
+		done, err := serveAgentTurns(ctx, &out, socket, 1, sandbox.Config{URL: tc.url})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cancel()
+		<-done
+		if got := strings.Contains(out.String(), "warning: the sandbox socket"); got != tc.warn {
+			t.Errorf("%s: warning = %v, want %v\n%s", tc.url, got, tc.warn, out.String())
+		}
 	}
 }
