@@ -238,13 +238,14 @@ jobs:
           test -n "$web"
           # The signed web -> GraphJin -> AdventureWorks path must return a real
           # row, web must reach the agent socket of openneko serve, and the pack
-          # catalog must list the built-in packs.
-          checks=$(docker exec "$web" openneko release-check --datasource adventureworks --serve-socket --sandbox --packs)
+          # catalog must list the built-in packs, and web must find the bundled skills.
+          checks=$(docker exec "$web" openneko release-check --datasource adventureworks --serve-socket --sandbox --packs --skills)
           echo "$checks"
           grep -qx authenticated_datasource_query=ok <<<"$checks"
           grep -qx serve_socket=ok <<<"$checks"
           grep -qE '^sandbox=(off|ok|remote)$' <<<"$checks"
           grep -qE '^builtin_packs=[1-9][0-9]*$' <<<"$checks"
+          grep -qE '^bundled_skills=[1-9][0-9]*$' <<<"$checks"
           openneko status
 
       - name: Verify reconciled database volumes

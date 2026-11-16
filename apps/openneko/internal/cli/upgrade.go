@@ -26,7 +26,7 @@ func newUpgradeCmd() *cobra.Command {
 	var stackOnly bool
 	var cliOnly bool
 	var skipBackup bool
-	var from string
+	var from, installedExe string
 
 	cmd := &cobra.Command{
 		Use:   "upgrade",
@@ -46,8 +46,8 @@ and specialized deployment workflows.
 A native install downloads the release archive for this host, checks it
 against checksums-native.txt and upgrades from it. --version picks the
 release; OPENNEKO_RELEASE_URL points at a mirror. --from <folder> upgrades
-from a release folder instead. The upgrade takes a
-backup, stops OpenNeko, replaces the executable and the web app, and starts
+from a release folder instead. The upgrade takes a backup, stops OpenNeko,
+replaces the executable, the web app, the packs and the skills, and starts
 OpenNeko again if it ran; the start applies the migrations.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -59,6 +59,16 @@ OpenNeko again if it ran; the start applies the migrations.`,
 				}
 				if from != "" && imageVersion != "" {
 					return errors.New("give --from or --version, not both")
+				}
+				if installedExe != "" {
+					abs, err := filepath.Abs(installedExe)
+					if err != nil {
+						return err
+					}
+					if info, err := os.Stat(abs); err != nil || !info.Mode().IsRegular() {
+						return fmt.Errorf("--exe %s is not an installed executable (nothing was changed)", installedExe)
+					}
+					installedExe = abs
 				}
 				if from == "" {
 					target, err := resolveNativeTarget(ctx, imageVersion)
@@ -73,10 +83,10 @@ OpenNeko again if it ran; the start applies the migrations.`,
 					defer os.RemoveAll(filepath.Dir(release))
 					from = release
 				}
-				return runNativeUpgrade(ctx, cmd, settings, from, skipBackup)
+				return runNativeUpgrade(ctx, cmd, settings, from, installedExe, skipBackup)
 			}
-			if from != "" {
-				return errors.New("--from is for a native install")
+			if from != "" || installedExe != "" {
+				return errors.New("--from and --exe are for a native install")
 			}
 			return runUpgrade(ctx, cmd, upgradeOptions{
 				mode:         mode,
@@ -94,7 +104,9 @@ OpenNeko again if it ran; the start applies the migrations.`,
 	cmd.Flags().BoolVar(&stackOnly, "stack-only", false, "Upgrade only stack images; keep the current local CLI")
 	cmd.Flags().BoolVar(&cliOnly, "cli-only", false, "Upgrade only the local CLI; do not change the stack")
 	cmd.Flags().BoolVar(&skipBackup, "skip-backup", false, "Upgrade the stack without taking a backup first")
-	cmd.Flags().StringVar(&from, "from", "", "Native: upgrade from this release folder (bin/openneko and share/openneko/web) instead of a download")
+	cmd.Flags().StringVar(&from, "from", "", "Native: upgrade from this release folder (bin/openneko and share/openneko) instead of a download")
+	cmd.Flags().StringVar(&installedExe, "exe", "", "Native: the installed executable to replace (install-native.sh --upgrade runs the new executable)")
+	_ = cmd.Flags().MarkHidden("exe")
 	return cmd
 }
 

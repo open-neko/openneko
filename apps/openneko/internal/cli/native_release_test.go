@@ -17,6 +17,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/installation"
 )
 
@@ -67,6 +68,8 @@ func goodNativeEntries() []tarEntry {
 		{name: "share/openneko/web/assets/app.js", body: "1"},
 		{name: "share/openneko/packs/", kind: tar.TypeDir},
 		{name: "share/openneko/packs/slack/pack.yaml", body: "id: slack"},
+		{name: "share/openneko/skills/builtin/graphjin-config/SKILL.md", body: "---\nname: graphjin-config\n---\n"},
+		{name: "share/openneko/skills/sandbox/xlsx/SKILL.md", body: "---\nname: xlsx\n---\n"},
 	}
 }
 
@@ -100,14 +103,15 @@ func TestExtractNativeArchiveTakesTheReleaseFiles(t *testing.T) {
 
 func TestExtractNativeArchiveRefusesUnsafeEntries(t *testing.T) {
 	cases := map[string]tarEntry{
-		"parent":      {name: "../evil", body: "x"},
-		"absolute":    {name: "/etc/evil", body: "x"},
-		"inner dots":  {name: "share/openneko/web/../../../evil", body: "x"},
-		"other path":  {name: "etc/openneko.conf", body: "x"},
-		"other share": {name: "share/openneko/packsx/a", body: "x"},
-		"symlink":     {name: "share/openneko/web/link", kind: tar.TypeSymlink},
-		"hard link":   {name: "share/openneko/web/link", kind: tar.TypeLink},
-		"twice":       {name: "bin/openneko", body: "again"},
+		"parent":           {name: "../evil", body: "x"},
+		"absolute":         {name: "/etc/evil", body: "x"},
+		"inner dots":       {name: "share/openneko/web/../../../evil", body: "x"},
+		"other path":       {name: "etc/openneko.conf", body: "x"},
+		"other share link": {name: "share/openneko/later/link", kind: tar.TypeSymlink},
+		"bin folder":       {name: "bin/other", body: "x"},
+		"symlink":          {name: "share/openneko/web/link", kind: tar.TypeSymlink},
+		"hard link":        {name: "share/openneko/web/link", kind: tar.TypeLink},
+		"twice":            {name: "bin/openneko", body: "again"},
 	}
 	for name, bad := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -217,7 +221,7 @@ func TestNativeUpgradeRefusesAReleaseWithNoPacks(t *testing.T) {
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
-		return runNativeUpgrade(context.Background(), cmd, installation.Settings{WebDir: installedWeb}, from, true)
+		return runNativeUpgrade(context.Background(), cmd, installation.Settings{WebDir: installedWeb}, from, "", true)
 	}
 	for name, setup := range map[string]func(){
 		"no packs folder": func() {},
@@ -274,5 +278,202 @@ func writePackYAML(t *testing.T, release, body string) {
 func TestTheRepositoryPacksPassTheReleaseCheck(t *testing.T) {
 	if err := checkReleasePacks(filepath.Join("..", "..", "..", "..", "packs")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestExtractNativeArchiveSkipsALaterShareFolder(t *testing.T) {
+	entries := append(goodNativeEntries(),
+		tarEntry{name: "share/openneko/later/", kind: tar.TypeDir},
+		tarEntry{name: "share/openneko/later/a.txt", body: "x"},
+		tarEntry{name: "share/openneko/packsx/a", body: "x"})
+	dst, err := extractEntries(t, entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{"share/openneko/later", "share/openneko/packsx"} {
+		if _, err := os.Stat(filepath.Join(dst, filepath.FromSlash(rel))); !os.IsNotExist(err) {
+			t.Fatalf("%s was extracted: %v", rel, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dst, "share", "openneko", "skills", "sandbox", "xlsx", "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestExtractNativeArchiveRefusesAnArchiveWithNoSkills(t *testing.T) {
+	without := func(prefix string) []tarEntry {
+		var out []tarEntry
+		for _, e := range goodNativeEntries() {
+			if !strings.HasPrefix(e.name, prefix) {
+				out = append(out, e)
+			}
+		}
+		return out
+	}
+	for name, entries := range map[string][]tarEntry{
+		"no skills":  without("share/openneko/skills/"),
+		"no builtin": without("share/openneko/skills/builtin/"),
+		"no sandbox": without("share/openneko/skills/sandbox/"),
+	} {
+		if _, err := extractEntries(t, entries); err == nil || !strings.Contains(err.Error(), "no bundled skills") {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+}
+
+func writeReleaseSkills(t *testing.T, release string, sandbox ...string) {
+	t.Helper()
+	skills := filepath.Join(release, "share", "openneko", "skills")
+	write := func(dir string) {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: "+filepath.Base(dir)+"\n---\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(skills, "builtin", "graphjin-config"))
+	for _, name := range sandbox {
+		write(filepath.Join(skills, "sandbox", name))
+	}
+}
+
+var releaseSandboxSkills = []string{"docx", "pdf", "pptx", "skill-creator", "xlsx"}
+
+func TestNativeUpgradeRefusesAReleaseWithNoSkills(t *testing.T) {
+	from := t.TempDir()
+	web := filepath.Join(from, "share", "openneko", "web")
+	if err := os.MkdirAll(web, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(web, "index.html"), []byte("<html></html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writePackYAML(t, from, "metadata:\n  name: Slack\n")
+	ran := filepath.Join(t.TempDir(), "ran")
+	if err := os.MkdirAll(filepath.Join(from, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(from, "bin", "openneko"), []byte("#!/bin/sh\ntouch "+ran+"\necho 9.9.9\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	upgrade := func() error {
+		cmd := &cobra.Command{}
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		return runNativeUpgrade(context.Background(), cmd, installation.Settings{WebDir: t.TempDir()}, from, "", true)
+	}
+	for name, setup := range map[string]func(){
+		"no skills folder": func() {},
+		"no xlsx":          func() { writeReleaseSkills(t, from, "docx", "pdf", "pptx", "skill-creator") },
+	} {
+		setup()
+		err := upgrade()
+		if err == nil || !strings.Contains(err.Error(), "nothing was changed") || !strings.Contains(err.Error(), "skills") {
+			t.Fatalf("%s: err = %v", name, err)
+		}
+		if _, err := os.Stat(ran); !os.IsNotExist(err) {
+			t.Fatalf("%s: the upgrade ran the new executable before the skills check", name)
+		}
+	}
+	writeReleaseSkills(t, from, releaseSandboxSkills...)
+	if err := checkReleaseSkills(filepath.Join(from, "share", "openneko", "skills")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNativeUpgradeReplacesTheReleaseSkills(t *testing.T) {
+	installed := t.TempDir()
+	exe := filepath.Join(installed, "bin", "openneko")
+	from := t.TempDir()
+	if err := replaceReleaseSkills(from, exe); err == nil {
+		t.Fatal("replaceReleaseSkills took a release with no skills")
+	}
+	writeReleaseSkills(t, from, releaseSandboxSkills...)
+	old := filepath.Join(installed, "share", "openneko", "skills", "sandbox", "gone")
+	if err := os.MkdirAll(old, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := replaceReleaseSkills(from, exe); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(installed, "share", "openneko", "skills", "sandbox", "xlsx", "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatalf("the old skill stayed: %v", err)
+	}
+}
+
+func TestNativeUpgradeReplacesTheExeNamedByTheInstallScript(t *testing.T) {
+	home := t.TempDir()
+	for k, v := range map[string]string{"XDG_CONFIG_HOME": "config", "XDG_DATA_HOME": "data", "XDG_STATE_HOME": "state"} {
+		t.Setenv(k, filepath.Join(home, v))
+	}
+	prefix := filepath.Join(home, "opt")
+	exe := filepath.Join(prefix, "bin", "openneko")
+	installedWeb := filepath.Join(prefix, "share", "openneko", "web")
+	for _, f := range []string{exe, filepath.Join(installedWeb, "index.html")} {
+		if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(f, []byte("old"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	settings := installation.Settings{Version: installation.CurrentVersion, Mode: "prod", WebPort: 3999, WebBindAddress: "127.0.0.1", Runtime: installation.RuntimeNative, WebDir: installedWeb}
+	if err := installation.Save(config.Dir(""), settings); err != nil {
+		t.Fatal(err)
+	}
+	from := t.TempDir()
+	newWeb := filepath.Join(from, "share", "openneko", "web")
+	if err := os.MkdirAll(newWeb, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(newWeb, "index.html"), []byte("<html>new</html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(from, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(from, "bin", "openneko"), []byte("#!/bin/sh\necho 9.9.9\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writePackYAML(t, from, "metadata:\n  name: Slack\n")
+	writeReleaseSkills(t, from, releaseSandboxSkills...)
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := func(args ...string) (string, error) {
+		cmd := newUpgradeCmd()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs(args)
+		err := cmd.Execute()
+		return out.String(), err
+	}
+	if _, err := run("--from", from, "--skip-backup", "--exe", filepath.Join(prefix, "bin")); err == nil || !strings.Contains(err.Error(), "--exe") {
+		t.Fatalf("a folder as --exe: err = %v", err)
+	}
+	if out, err := run("--from", from, "--skip-backup", "--exe", exe); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if b, _ := os.ReadFile(exe); !strings.Contains(string(b), "9.9.9") {
+		t.Fatalf("--exe was not replaced: %q", b)
+	}
+	for _, f := range []string{"web/index.html", "packs/slack/pack.yaml", "skills/sandbox/xlsx/SKILL.md"} {
+		if _, err := os.Stat(filepath.Join(prefix, "share", "openneko", filepath.FromSlash(f))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if after, err := os.Stat(self); err != nil || !after.ModTime().Equal(before.ModTime()) || after.Size() != before.Size() {
+		t.Fatalf("the upgrade changed the running executable: %v", err)
 	}
 }
