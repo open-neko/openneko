@@ -310,6 +310,11 @@ type wfAPIFinish struct {
 	errText, errCode  *string
 }
 
+const wfAPIFinishWorkRun = `update work_run
+     set status = case when $2 = 'needs_input' then 'failed' else $2 end, error = coalesce($3, error),
+         finished_at = coalesce(finished_at, $4), updated_at = $4
+   where id = $1`
+
 func (a *API) finishAPIRun(ctx context.Context, c *wfAPIClaim, f wfAPIFinish) error {
 	admission := f.status
 	if admission == "needs_input" {
@@ -328,11 +333,16 @@ func (a *API) finishAPIRun(ctx context.Context, c *wfAPIClaim, f wfAPIFinish) er
 	if f.errCode != nil {
 		errCode = jsSlice(*f.errCode, wfAPIErrorCodeUnits)
 	}
-	open := false
+	var previous string
+	gone := false
 	err := a.wfSerializable(ctx, func(tx pgx.Tx) error {
 		now := time.Now()
-		if err := tx.QueryRow(ctx, `select status in ('queued', 'running') from workflow_run where id = $1 for update`,
-			c.workflowRunID).Scan(&open); err != nil {
+		err := tx.QueryRow(ctx, `select status from workflow_run where id = $1 for update`, c.workflowRunID).Scan(&previous)
+		if gone = errors.Is(err, pgx.ErrNoRows); gone {
+			_, err = tx.Exec(ctx, wfAPIFinishWorkRun+` and status in ('queued', 'running')`, c.workRunID, f.status, errText, now)
+			return err
+		}
+		if err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `update workflow_api_admission
@@ -347,13 +357,13 @@ func (a *API) finishAPIRun(ctx context.Context, c *wfAPIClaim, f wfAPIFinish) er
 		   where id = $1`, c.workflowRunID, f.status, result, f.artifact, progress, f.summary, errText, now); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `update work_run
-		     set status = case when $2 = 'needs_input' then 'failed' else $2 end, error = coalesce($3, error),
-		         finished_at = coalesce(finished_at, $4), updated_at = $4
-		   where id = $1`, c.workRunID, f.status, errText, now)
+		_, err = tx.Exec(ctx, wfAPIFinishWorkRun, c.workRunID, f.status, errText, now)
 		return err
 	})
-	if err == nil && open {
+	if err == nil && gone {
+		log.Printf("[workflow-run-fire] API run=%s ended after its run row was deleted", c.workflowRunID)
+	}
+	if err == nil && !gone && previous != f.status {
 		a.queueWorkflowRunPush(ctx, c.workflowRunID, f.status)
 	}
 	return err

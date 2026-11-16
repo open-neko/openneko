@@ -1,8 +1,10 @@
 package webfront
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -414,24 +416,64 @@ func TestWorkflowAPIRunFireQueuesPush(t *testing.T) {
 	for _, c := range []struct{ status, event string }{
 		{"completed", "run_finished"},
 		{"failed", "workflow_needs_attention"},
+		{"ceiling", "workflow_needs_attention"},
 	} {
 		t.Run(c.status, func(t *testing.T) {
 			a, db, job := apiRunFront(t, "single")
+			if c.status == "ceiling" {
+				seed(t, db, `update workflow_api_access set max_tokens_per_run = 1000 where workflow_id = $1`, job.WorkflowID)
+			}
 			seedRiver(t, db, &Front{API: a})
 			sub := testPushSubscription(t, "https://push.example.com/admin")
 			seed(t, db, `insert into app_push_subscription (org_id, user_id, endpoint, p256dh, auth) values ('org', 'admin', $1, $2, $3)`,
 				sub.Endpoint, sub.P256dh, sub.Auth)
 			a.turnResolve = fixedBackend("http://unused")
 			a.turnCore = func(ctx context.Context, in agentCoreInput) (axRunResult, error) {
+				if c.status == "ceiling" {
+					if err := in.Emit(ctx, jsObjOf("type", "usage", "usage", jsObjOf("totalTokens", 1001.0))); err != nil {
+						return axRunResult{}, err
+					}
+				}
 				return axRunResult{Status: c.status, FinalText: "Done."}, nil
 			}
 			if err := a.WorkflowRunFire(context.Background(), job, 1); err != nil {
 				t.Fatal(err)
+			}
+			if c.status == "ceiling" {
+				if g := rowText(t, db, `select status from workflow_run where id = $1`, wfTurnRun); g != "failed" {
+					t.Fatalf("run status after the ceiling: %s", g)
+				}
 			}
 			queued := riverJobs(t, db, jobs.KindWebPush)
 			if len(queued) != 1 || !strings.Contains(queued[0].Args, `"event": "`+c.event+`"`) || !strings.Contains(queued[0].Args, `"users": ["admin"]`) {
 				t.Fatalf("web_push jobs after a %s API run: %+v", c.status, queued)
 			}
 		})
+	}
+}
+
+func TestWorkflowAPIRunFireEndsWhenItsRunRowIsDeleted(t *testing.T) {
+	a, db, job := apiRunFront(t, "single")
+	var logs bytes.Buffer
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	a.turnResolve = fixedBackend("http://unused")
+	a.turnCore = func(ctx context.Context, in agentCoreInput) (axRunResult, error) {
+		if _, err := db.Exec(ctx, `delete from workflow_definition where id = $1`, job.WorkflowID); err != nil {
+			return axRunResult{}, err
+		}
+		return axRunResult{Status: "completed", FinalText: "Done."}, nil
+	}
+	if err := a.WorkflowRunFire(context.Background(), job, 1); err != nil {
+		t.Fatal(err)
+	}
+	if g := rowText(t, db, `select count(*)::text from workflow_run where id = $1`, wfTurnRun); g != "0" {
+		t.Fatalf("the run row is still there: %s", g)
+	}
+	if strings.Contains(logs.String(), "could not finalize") {
+		t.Errorf("the finish failed on a deleted run row:\n%s", logs.String())
+	}
+	if g := rowText(t, db, `select status from work_run where id = $1`, wfTurnWorkRun); g != "completed" {
+		t.Errorf("work run status %s", g)
 	}
 }
