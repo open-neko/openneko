@@ -53,7 +53,7 @@ describe("tool steps in plain words", () => {
   it("puts the newest step on the open line while the run works", () => {
     const { items, lastStatus } = buildRunTimeline([
       { type: "status", message: "Check the data" },
-      { type: "progress", id: "p1", content: "**Planning**\n\nFirst the orders." },
+      { type: "progress", id: "p1", content: "**Planning**\n\nFirst the orders.", source: "provider_summary", provider: "anthropic" },
       { type: "tool_start", id: "1", name: sql, label: "Reading sales orders" },
     ], "run-1");
     expect(liveStep(items, lastStatus)).toBe("Reading sales orders");
