@@ -16,8 +16,7 @@ const workflowFiringRunLease = 30 * time.Minute
 var errWorkflowRunInterrupted = errors.New("The workflow run stopped before it finished.")
 
 // WorkflowRunFire is the workflow_run_fire job. An error return lets River
-// try again; a cron firing then goes back to the scheduler, as it did on
-// pg-boss.
+// try again.
 func (a *API) WorkflowRunFire(ctx context.Context, job jobs.WorkflowRunFireArgs, attempt int) error {
 	if job.TriggerKind == "api" {
 		return a.workflowAPIRunFire(ctx, job)
@@ -55,13 +54,26 @@ func (a *API) WorkflowRunFire(ctx context.Context, job jobs.WorkflowRunFireArgs,
 		return nil
 	}
 	if firing != "" {
-		if _, rerr := a.DB.Exec(bg, `update workflow_schedule_firing set status = 'pending', workflow_run_id = null,
-			lease_until = null, available_at = now() + interval '15 seconds', last_error = $2, updated_at = now()
-			where id = $1 and status = 'running'`, firing, err.Error()); rerr != nil {
+		if rerr := a.releaseFailedScheduleFiring(bg, firing, attempt >= jobs.WorkflowRunFireAttempts, err); rerr != nil {
 			log.Printf("[workflow-run-fire] could not release firing=%s: %v", firing, rerr)
 		}
 	}
 	log.Printf("[workflow-run-fire] workflow=%s attempt %d failed; River may retry: %v", job.WorkflowID, attempt, err)
+	return err
+}
+
+// River owns the retries of a firing it has queued, so a failed attempt
+// leaves the firing enqueued; the last attempt ends it as failed.
+func (a *API) releaseFailedScheduleFiring(ctx context.Context, firingID string, final bool, cause error) error {
+	if final {
+		_, err := a.DB.Exec(ctx, `update workflow_schedule_firing set status = 'failed', lease_until = null,
+			completed_at = now(), last_error = $2, updated_at = now()
+			where id = $1 and status = 'running'`, firingID, cause.Error())
+		return err
+	}
+	_, err := a.DB.Exec(ctx, `update workflow_schedule_firing set status = 'enqueued', workflow_run_id = null,
+		lease_until = null, last_error = $2, updated_at = now()
+		where id = $1 and status = 'running'`, firingID, cause.Error())
 	return err
 }
 

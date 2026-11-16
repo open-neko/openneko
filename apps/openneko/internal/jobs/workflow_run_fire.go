@@ -125,5 +125,17 @@ func (i *Inserter) WorkflowRunFire(ctx context.Context, tx pgx.Tx, args Workflow
 	return strconv.FormatInt(res.Job.ID, 10), nil
 }
 
+// FiringJobEnded reports whether the newest job of a schedule firing is
+// discarded or completed, so that River runs it no more.
+func (i *Inserter) FiringJobEnded(ctx context.Context, tx pgx.Tx, firingID string) (bool, error) {
+	var state string
+	err := tx.QueryRow(ctx, `select state::text from `+pgx.Identifier{i.schema}.Sanitize()+`.river_job
+		where kind = $1 and args->>'scheduleFiringId' = $2 order by id desc limit 1`, KindWorkflowRunFire, firingID).Scan(&state)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return state == "discarded" || state == "completed", err
+}
+
 // Snooze puts a job back in its queue after d without using an attempt.
 func Snooze(d time.Duration) error { return river.JobSnooze(d) }
