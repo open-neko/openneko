@@ -102,6 +102,7 @@ export type EvalModelRequest = {
   runKind?: string;
   callId: number;
   streamed: boolean;
+  stage?: string;
   durationMs: number;
   model?: string;
   observedModel?: string;

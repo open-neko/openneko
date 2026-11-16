@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -54,6 +55,17 @@ type streamingModeClient struct {
 	lastStatus    atomic.Int32
 	executorNotes *executorNotes
 	executorCalls atomic.Int64
+	stageLimiter  func(stage string) ax.AxRateLimiter
+}
+
+func (c *streamingModeClient) staged(options map[string]ax.Value) map[string]ax.Value {
+	path, _ := options["executionPath"].(string)
+	if c.stageLimiter == nil || path == "" {
+		return options
+	}
+	out := maps.Clone(options)
+	out["rateLimiter"] = c.stageLimiter(path)
+	return out
 }
 
 func executorStage(options map[string]ax.Value) bool {
@@ -101,6 +113,7 @@ func (c *streamingModeClient) Chat(ctx context.Context, request, options map[str
 const maxResamples = 3
 
 func (c *streamingModeClient) chat(ctx context.Context, request, options map[string]ax.Value) (ax.Value, error) {
+	options = c.staged(options)
 	response, err := c.AIClient.Chat(ctx, request, options)
 	for attempt := 0; attempt < maxResamples && err != nil && ctx.Err() == nil && resampleable(err); attempt++ {
 		noteResample(err)
@@ -135,6 +148,7 @@ func (c *streamingModeClient) StreamEvents(ctx context.Context, request, options
 		}
 		return &valueStream{values: []ax.Value{response}}, nil
 	}
+	options = c.staged(options)
 	open := func() (ax.AxChatStream, error) { return streamEvents(ctx, c.AIClient, request, options) }
 	if c.executorNotes != nil && executorStage(options) {
 		plain := open
