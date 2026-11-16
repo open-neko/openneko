@@ -9,16 +9,19 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
+
+	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
 func newReleaseCheckCmd() *cobra.Command {
-	var scheduler, serveSocket, packsCheck bool
+	var scheduler, serveSocket, packsCheck, sandboxCheck bool
 	var datasourceOrg, mcpURL, query string
 	cmd := &cobra.Command{
 		Use:    "release-check",
@@ -26,8 +29,8 @@ func newReleaseCheckCmd() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if !scheduler && !serveSocket && !packsCheck && datasourceOrg == "" {
-				return errors.New("name a check: --scheduler, --datasource ORG, --serve-socket or --packs")
+			if !scheduler && !serveSocket && !packsCheck && !sandboxCheck && datasourceOrg == "" {
+				return errors.New("name a check: --scheduler, --datasource ORG, --serve-socket, --sandbox or --packs")
 			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 			defer cancel()
@@ -57,6 +60,13 @@ func newReleaseCheckCmd() *cobra.Command {
 				}
 				fmt.Fprintln(out, "serve_socket=ok")
 			}
+			if sandboxCheck {
+				state, err := checkSandboxSocket(ctx, os.Getenv("OPENNEKO_SANDBOX_URL"), os.Getenv("OPENNEKO_SERVE_SOCKET"), os.Getenv("OPENNEKO_CONFIG_CHECK_SOCKET"))
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(out, "sandbox=%s\n", state)
+			}
 			return nil
 		},
 	}
@@ -66,6 +76,7 @@ func newReleaseCheckCmd() *cobra.Command {
 	f.StringVar(&mcpURL, "mcp-url", "http://graphjin:8080/api/v1/mcp", "GraphJin MCP endpoint for --datasource")
 	f.StringVar(&query, "query", "query { soh(limit: 1, order_by: { id: desc }) { id } }", "GraphQL query for --datasource")
 	f.BoolVar(&serveSocket, "serve-socket", false, "Connect to the agent socket of openneko serve (OPENNEKO_SERVE_SOCKET)")
+	f.BoolVar(&sandboxCheck, "sandbox", false, "The sandbox is off, or its socket answers in a folder that holds none of serve's sockets")
 	f.BoolVar(&packsCheck, "packs", false, "The pack catalog on the web admin socket lists one or more built-in packs")
 	return cmd
 }
@@ -114,6 +125,26 @@ func checkServeSocket(ctx context.Context, socket string) error {
 		return fmt.Errorf("serve socket %s: %w", socket, err)
 	}
 	return conn.Close()
+}
+
+func checkSandboxSocket(ctx context.Context, url string, stackSockets ...string) (string, error) {
+	box := sandbox.Config{URL: url}
+	if !box.Enabled() {
+		return "off", nil
+	}
+	if box.SharesFolder(stackSockets...) {
+		return "", fmt.Errorf("the sandbox socket %s is in the folder of serve's sockets; give the sandbox a socket folder of its own (INSTALL.md, \"Sandbox\")", url)
+	}
+	path, ok := strings.CutPrefix(url, "unix://")
+	if !ok {
+		return "remote", nil
+	}
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "unix", path)
+	if err != nil {
+		return "", fmt.Errorf("sandbox socket %s: %w", path, err)
+	}
+	return "ok", conn.Close()
 }
 
 func checkScheduler(ctx context.Context, socket string) error {

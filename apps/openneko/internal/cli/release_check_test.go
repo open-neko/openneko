@@ -99,3 +99,36 @@ func TestReleaseCheckPacksNeedsABuiltinPack(t *testing.T) {
 		t.Fatal("no socket: the check passed")
 	}
 }
+
+func TestReleaseCheckSandbox(t *testing.T) {
+	ctx := context.Background()
+	run := t.TempDir()
+	serve, check := filepath.Join(run, "serve.sock"), filepath.Join(run, "config-check.sock")
+	if state, err := checkSandboxSocket(ctx, "", serve, check); state != "off" || err != nil {
+		t.Fatalf("no sandbox: %q %v", state, err)
+	}
+	if state, err := checkSandboxSocket(ctx, "https://sandbox.example:8443", serve, check); state != "remote" || err != nil {
+		t.Fatalf("remote sandbox: %q %v", state, err)
+	}
+	shared := filepath.Join(run, "sandbox.sock")
+	ln, err := net.Listen("unix", shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	if _, err := checkSandboxSocket(ctx, "unix://"+shared, serve, check); err == nil || !strings.Contains(err.Error(), "folder of serve's sockets") {
+		t.Fatalf("a sandbox socket beside serve's passed: %v", err)
+	}
+	own := filepath.Join(t.TempDir(), "sandbox.sock")
+	if _, err := checkSandboxSocket(ctx, "unix://"+own, serve, check); err == nil {
+		t.Fatal("a sandbox socket with nothing listening passed")
+	}
+	ln2, err := net.Listen("unix", own)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln2.Close()
+	if state, err := checkSandboxSocket(ctx, "unix://"+own, serve, check); state != "ok" || err != nil {
+		t.Fatalf("own socket folder: %q %v", state, err)
+	}
+}

@@ -31,7 +31,11 @@ type Server struct {
 	WebDir      string `json:"web_dir"`
 	WebAddr     string `json:"web_addr"`
 	PublicURL   string `json:"public_url"`
+	SandboxDir  string `json:"sandbox_dir,omitempty"`
+	TmpfilesDir string `json:"tmpfiles_dir,omitempty"`
 }
+
+const SandboxTmpfile = "openneko-sandbox.conf"
 
 func (s Server) OneUser() bool { return s.ControlUser == s.AgentUser }
 
@@ -49,7 +53,13 @@ func (s Server) Validate() error {
 			return fmt.Errorf("the %s %q is not a valid name", name, v)
 		}
 	}
-	for name, v := range map[string]string{"config folder": s.ConfigDir, "data folder": s.DataDir, "unit folder": s.UnitDir, "executable": s.Exe, "web folder": s.WebDir} {
+	paths := map[string]string{"config folder": s.ConfigDir, "data folder": s.DataDir, "unit folder": s.UnitDir, "executable": s.Exe, "web folder": s.WebDir}
+	for name, v := range map[string]string{"sandbox socket folder": s.SandboxDir, "tmpfiles folder": s.TmpfilesDir} {
+		if v != "" {
+			paths[name] = v
+		}
+	}
+	for name, v := range paths {
 		if !filepath.IsAbs(v) || strings.ContainsAny(v, " \t\n\"'\\%$") {
 			return fmt.Errorf("the %s %q must be an absolute path with no spaces or quotes", name, v)
 		}
@@ -91,7 +101,7 @@ type Dir struct {
 func (s Server) Dirs() []Dir {
 	l := s.Layout()
 	c, a, g := s.ControlUser, s.AgentUser, s.Group
-	return []Dir{
+	dirs := []Dir{
 		{s.ConfigDir, c, c, 0o700},
 		{s.DataDir, "root", g, 0o750},
 		{l.Root, c, c, 0o700},
@@ -107,6 +117,32 @@ func (s Server) Dirs() []Dir {
 		{filepath.Dir(l.GraphJin()), c, g, fs.ModeSetgid | 0o770},
 		{l.Credentials(), c, a, fs.ModeSetgid | 0o750},
 	}
+	if d, ok := s.SandboxSocketDir(); ok {
+		dirs = append(dirs, d)
+	}
+	return dirs
+}
+
+// SandboxSocketDir is the folder for the sandbox's socket, apart from serve's
+// sockets. Only web and serve may enter it.
+func (s Server) SandboxSocketDir() (Dir, bool) {
+	if s.SandboxDir == "" {
+		return Dir{}, false
+	}
+	if s.OneUser() {
+		return Dir{s.SandboxDir, s.ControlUser, s.ControlUser, 0o700}, true
+	}
+	return Dir{s.SandboxDir, "root", s.Group, 0o750}, true
+}
+
+// SandboxTmpfileText makes systemd-tmpfiles create the sandbox socket folder
+// again at each boot, as /run is empty then.
+func (s Server) SandboxTmpfileText() string {
+	d, ok := s.SandboxSocketDir()
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("d %s %04o %s %s -\n", d.Path, d.Mode.Perm(), d.Owner, d.Group)
 }
 
 func (s Server) WebEnv() map[string]string {

@@ -382,7 +382,9 @@ On the public port, `/health/scheduler` and `/health/security` give only
 --scheduler`, run in the web container, uses that socket and fails until the
 scheduler has finished a database tick. `openneko release-check --packs`
 reads the pack catalog on that socket and fails when it lists no built-in
-pack.
+pack. `openneko release-check --sandbox` prints `sandbox=off`, `ok` or
+`remote`. It fails when the sandbox socket is in the folder of serve's
+sockets, or when nothing answers on it.
 
 For immediate delivery independent of PostgreSQL, configure an HTTPS webhook
 on `web`:
@@ -505,7 +507,10 @@ above and run `docker compose up -d` (or `openneko stop` and
 starts the sandbox, web and serve again with it. The old socket file stays
 in `openneko-run` with nothing listening on it. An install that keeps the
 old URL still works. `openneko serve` then logs a warning at each start:
-the sandbox socket is in the folder of serve's socket.
+the sandbox socket is in the folder of serve's socket. An old override can
+also keep `openneko-run` mounted in the sandbox with the new URL. `openneko
+start` then prints a warning with the names of the services, other than web
+and serve, that mount `openneko-run`. Remove that mount.
 
 With a sandbox connected, each organization has a **Terminal** setting at
 Admin, Settings, Agent. It is on by default. An admin who turns it off
@@ -972,11 +977,16 @@ these ports free. The embedding service and the sandbox stay external. Set
 and `OPENNEKO_SANDBOX_URL` and `OPENNEKO_SANDBOX_KEY`, in the shell before
 `openneko start --native`. Both processes get the environment of that shell.
 
-Give the sandbox a socket folder of its own. Keep it out of
-`~/.local/share/openneko/run`, which holds serve's sockets. For example, run
-the sandbox image with `-v ~/.local/share/openneko-sandbox:/run/openneko-sandbox`
-and `OPENNEKO_SANDBOX_GID` set to your group (`id -g`), and set
-`OPENNEKO_SANDBOX_URL=unix://$HOME/.local/share/openneko-sandbox/sandbox.sock`.
+`openneko start --native` makes the sandbox socket folder
+`~/.local/share/openneko-sandbox`, mode 0700. Keep the sandbox out of
+`~/.local/share/openneko/run`, which holds serve's sockets. Run the sandbox
+image with `-v ~/.local/share/openneko-sandbox:/run/openneko-sandbox`,
+`OPENNEKO_SANDBOX_GID` set to your group (`id -g`) and a key in
+`OPENNEKO_SANDBOX_KEY`. Then set
+`OPENNEKO_SANDBOX_URL=unix://$HOME/.local/share/openneko-sandbox/sandbox.sock`
+and the same key. Other users can share your primary group, so the start
+refuses a sandbox URL with no key, and a socket folder that other users can
+enter.
 
 #### Server install (systemd, two users)
 
@@ -1019,15 +1029,20 @@ files as root.
   when the URL is set (`apps/openneko/internal/webfront/workflowturn.go`,
   `workspace.go`). The logs are `/var/lib/openneko/control/logs/web.log` and
 `/var/lib/openneko/agent/logs/serve.log`.
-- Give the sandbox a socket folder of its own, for example
-  `/run/openneko-sandbox`, mode 0755. Keep it out of
-  `/var/lib/openneko/shared/run`, which holds serve's sockets, and out of
-  `/home` and `/tmp`, which the units hide. Start the sandbox with
+- `server-install` makes the sandbox socket folder `/run/openneko-sandbox`:
+  owner root, group `openneko-shared`, mode 0750 (with `--one-user`, owner
+  and group `openneko`, mode 0700). It writes
+  `/etc/tmpfiles.d/openneko-sandbox.conf`, so systemd makes the folder again
+  at each boot. Mount that folder in the sandbox and start it with
   `OPENNEKO_SANDBOX_GID` set to the group ID of `openneko-shared` (with
-  `--one-user`, of `openneko`), so that both services can connect.
+  `--one-user`, of `openneko`), so that both services can connect. The
+  folder stays apart from `/var/lib/openneko/shared/run`, which holds
+  serve's sockets. An install from an earlier release gets the folder when
+  you run `server-install` again.
 
 `server-install` options: `--database-url`, `--port` (3000), `--bind`
-(0.0.0.0), `--public-url`, `--start` (start both services and wait until web
+(0.0.0.0), `--public-url`, `--sandbox-dir` (`/run/openneko-sandbox`),
+`--tmpfiles-dir` (`/etc/tmpfiles.d`), `--start` (start both services and wait until web
 answers), and `--one-user`, which runs both
 services as the `openneko` user with no agent-zone user. A second run of
 `server-install` keeps the data and sets the given values again.

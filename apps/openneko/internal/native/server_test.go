@@ -125,3 +125,38 @@ func TestOneUserLayoutIsUnchanged(t *testing.T) {
 		}
 	}
 }
+
+func TestServerSandboxSocketDir(t *testing.T) {
+	s := testServer()
+	if _, ok := s.SandboxSocketDir(); ok || s.SandboxTmpfileText() != "" {
+		t.Fatal("a server with no sandbox folder lists one")
+	}
+	s.SandboxDir, s.TmpfilesDir = "/run/openneko-sandbox", "/etc/tmpfiles.d"
+	if err := s.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	want := Dir{"/run/openneko-sandbox", "root", "openneko-shared", 0o750}
+	if d := s.Dirs()[len(s.Dirs())-1]; d != want {
+		t.Errorf("two users: %+v, want %+v", d, want)
+	}
+	if got := s.SandboxTmpfileText(); got != "d /run/openneko-sandbox 0750 root openneko-shared -\n" {
+		t.Errorf("two users tmpfile %q", got)
+	}
+	for _, d := range s.Dirs() {
+		if d.Path == s.SandboxDir && d.Path == s.Layout().Run() {
+			t.Error("the sandbox folder is serve's socket folder")
+		}
+	}
+	s.AgentUser, s.Group = s.ControlUser, s.ControlUser
+	want = Dir{"/run/openneko-sandbox", "openneko", "openneko", 0o700}
+	if d := s.Dirs()[len(s.Dirs())-1]; d != want {
+		t.Errorf("one user: %+v, want %+v", d, want)
+	}
+	if got := s.SandboxTmpfileText(); got != "d /run/openneko-sandbox 0700 openneko openneko -\n" {
+		t.Errorf("one user tmpfile %q", got)
+	}
+	s.SandboxDir = "run/openneko-sandbox"
+	if err := s.Validate(); err == nil {
+		t.Error("a relative sandbox folder passed")
+	}
+}
