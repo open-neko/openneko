@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -115,6 +116,7 @@ func TestExecutorThoughtsStreamForSummaryProviders(t *testing.T) {
 			defer server.Close()
 			var executorText, responderText strings.Builder
 			var order []string
+			var stages []string
 			result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "executor-thinking-" + name, InputID: "i", Prompt: "How many orders?",
 				ReasoningEffort: "low", StreamResponses: true}, thinkingClient(fixture, server.URL), Tools{}, func(e Event) error {
 				var data struct {
@@ -124,6 +126,9 @@ func TestExecutorThoughtsStreamForSummaryProviders(t *testing.T) {
 				_ = json.Unmarshal(e.Data, &data)
 				if e.Type == "model.request.finished" && (e.Usage == nil || e.Usage.Reported != 1) {
 					t.Errorf("call %d reported no usage: %+v", e.CallID, e.Usage)
+				}
+				if e.Type == "model.request.finished" {
+					stages = append(stages, fmt.Sprintf("%s streamed=%t", e.Stage, e.Streaming))
 				}
 				switch e.Type {
 				case "executor.thought.delta":
@@ -149,6 +154,11 @@ func TestExecutorThoughtsStreamForSummaryProviders(t *testing.T) {
 			}
 			if responderText.String() != fixture.Thought {
 				t.Fatalf("responder thinking %q, want %q", responderText.String(), fixture.Thought)
+			}
+			executorStreamed := name != "deepseek"
+			if responders := slices.Index(stages, "root/responder streamed=true"); responders < 0 || responders != len(stages)-1 ||
+				!slices.Contains(stages, fmt.Sprintf("root/executor streamed=%t", executorStreamed)) {
+				t.Fatalf("model request stages %v: want the executor (streamed=%t) and one streamed responder at the end", stages, executorStreamed)
 			}
 			if name == "deepseek" {
 				if executorText.Len() > 0 || strings.Contains(executorBodies[0], `"stream":true`) {

@@ -77,8 +77,8 @@ credentials. `tool.finished` carries the tool result in `data`.
 | --- | --- |
 | `run.started` | The run started. |
 | `child.admitted` | The run has a read-only child agent. |
-| `model.request.started` | A model call passed admission. `name` is the configured model, `origin` the route, `provider` the provider type, `call_id` the count. |
-| `model.request.finished` | A model call ended. `usage` holds the tokens and the call's cost, `observed_model` the model the provider reported, and `error` is set on failure. A streamed call ends when its stream ends, and `duration_ms` covers the whole stream. When a stream stops early, `usage` holds the tokens the provider sent so far, with `coverage` `partial`. |
+| `model.request.started` | A model call passed admission. `name` is the configured model, `origin` the route, `provider` the provider type, `call_id` the count, `stage` the Ax execution path (`root/executor`, `root/responder`) and `streaming` whether Ax streams the call. |
+| `model.request.finished` | A model call ended, with the same `stage` and `streaming`. `usage` holds the tokens and the call's cost, `observed_model` the model the provider reported, and `error` is set on failure. A streamed call ends when its stream ends, and `duration_ms` covers the whole stream. When a stream stops early, `usage` holds the tokens the provider sent so far, with `coverage` `partial`. |
 | `model.route.fallback` | A transient provider error moved the call from `name` to `origin`. |
 | `executor.step.failed` | Actor code failed. Later executor calls can use the escalation route. |
 | `skill.used` | The agent declared that the staged skill `name` influenced the turn. |

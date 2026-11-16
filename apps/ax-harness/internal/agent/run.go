@@ -133,8 +133,10 @@ type Event struct {
 	Name        string          `json:"name,omitempty"`
 	// ObservedModel is the model the provider reported; Name is the configured one.
 	ObservedModel string `json:"observed_model,omitempty"`
-	// Streaming marks a model request that Ax streamed: only the responder streams.
-	Streaming  bool        `json:"streaming,omitempty"`
+	// Streaming marks a model request that Ax streamed.
+	Streaming bool `json:"streaming,omitempty"`
+	// Stage is the Ax execution path of a model request, such as root/responder.
+	Stage      string      `json:"stage,omitempty"`
 	Provider   string      `json:"provider,omitempty"`
 	Origin     string      `json:"origin,omitempty"`
 	Effect     string      `json:"effect,omitempty"`
@@ -497,7 +499,7 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 		if routed != nil {
 			anchoredClient.contextRoute = routed.Stages.Context
 		}
-		streamClient := &streamingModeClient{AIClient: anchoredClient, enabled: spec.StreamResponses}
+		streamClient := &streamingModeClient{AIClient: anchoredClient, enabled: spec.StreamResponses, stageLimiter: events.stageLimiter}
 		if spec.StreamResponses && executorSummaries(routed, spec.ReasoningEffort) {
 			streamClient.executorNotes = newExecutorNotes(func(call int64, index int, text string) {
 				events.progress(Event{Type: "executor.thought.delta", Data: deltaPayload(int(call), index, text)})
@@ -756,6 +758,18 @@ func (r *recorder) isPaused() bool {
 }
 
 func (r *recorder) admitModel(next ax.AxRequestExecutor, info ax.AxRateLimitInfo) (ax.Value, error) {
+	return r.admit(next, info, "")
+}
+
+// stageLimiter admits the requests of one Ax stage. Ax takes a per-call
+// rateLimiter option before the run's hooks.
+func (r *recorder) stageLimiter(stage string) ax.AxRateLimiter {
+	return ax.AxRateLimiterFunc(func(next ax.AxRequestExecutor, info ax.AxRateLimitInfo) (ax.Value, error) {
+		return r.admit(next, info, stage)
+	})
+}
+
+func (r *recorder) admit(next ax.AxRequestExecutor, info ax.AxRateLimitInfo, stage string) (ax.Value, error) {
 	r.mu.Lock()
 	if r.paused {
 		r.mu.Unlock()
@@ -808,7 +822,7 @@ func (r *recorder) admitModel(next ax.AxRequestExecutor, info ax.AxRateLimitInfo
 	if provider == "" {
 		provider = info.Provider
 	}
-	e := Event{Version: 1, RunID: r.spec.RunID, InputID: r.spec.InputID, Sequence: r.seq, Type: "model.request.started", CallID: id, Name: modelName, Origin: info.Provider, Provider: provider, Streaming: info.Streaming}
+	e := Event{Version: 1, RunID: r.spec.RunID, InputID: r.spec.InputID, Sequence: r.seq, Type: "model.request.started", CallID: id, Name: modelName, Origin: info.Provider, Provider: provider, Streaming: info.Streaming, Stage: stage}
 	if r.spec.MaxCostMicros > 0 {
 		e.CostMicros = &costReservation
 	}
@@ -820,7 +834,7 @@ func (r *recorder) admitModel(next ax.AxRequestExecutor, info ax.AxRateLimitInfo
 	}
 	r.costMicros += costReservation
 	r.mu.Unlock()
-	call := modelCall{id: id, name: modelName, origin: info.Provider, provider: provider, streaming: info.Streaming, started: time.Now(),
+	call := modelCall{id: id, name: modelName, origin: info.Provider, provider: provider, streaming: info.Streaming, stage: stage, started: time.Now(),
 		rates: rates, priced: priced, reservation: costReservation}
 	response, err := next()
 	if stream, ok := response.(ax.AxChatStream); ok && err == nil {
@@ -838,6 +852,7 @@ type modelCall struct {
 	id                     uint64
 	name, origin, provider string
 	streaming              bool
+	stage                  string
 	started                time.Time
 	rates                  catalog.Rates
 	priced                 bool
@@ -848,7 +863,7 @@ type modelCall struct {
 // the usage the provider sent so far, but it does not count as reported.
 func (r *recorder) finishModel(call modelCall, response ax.Value, err error, truncated, early bool) {
 	finished := Event{Type: "model.request.finished", CallID: call.id, Name: call.name, Origin: call.origin, Provider: call.provider,
-		ObservedModel: observedModel(response), DurationMS: time.Since(call.started).Milliseconds(), Streaming: call.streaming}
+		ObservedModel: observedModel(response), DurationMS: time.Since(call.started).Milliseconds(), Streaming: call.streaming, Stage: call.stage}
 	if err != nil {
 		finished.Error = "model_request_failed"
 	}

@@ -138,6 +138,25 @@ describe("responder measurements", () => {
     });
   });
 
+  it("takes the root responder by its stage when the executor also streams", () => {
+    const requests = [
+      { runId: "r", callId: 1, streamed: false, stage: "root/distiller", durationMs: 2000, usage: { input_tokens: 500, output_tokens: 20 } },
+      { runId: "r", callId: 2, streamed: true, stage: "root/executor", durationMs: 9000, usage: { input_tokens: 40000, output_tokens: 600 } },
+      { runId: "r", callId: 3, streamed: true, stage: "root/worker/responder", durationMs: 3000, usage: { input_tokens: 900, output_tokens: 90 } },
+      { runId: "r", callId: 4, streamed: true, stage: "root/responder", durationMs: 7000, model: "gemini-3.8-flash", usage: { input_tokens: 3000, output_tokens: 400, reasoning_tokens: 900 } },
+    ];
+    expect(responderMeasurements(requests)).toEqual({
+      modelRequests: 4,
+      responderCalls: 1,
+      responderLatencyMs: 7000,
+      responderInputTokens: 3000,
+      responderOutputTokens: 400,
+      responderReasoningTokens: 900,
+      responderUsageReported: true,
+      responderModels: ["gemini-3.8-flash"],
+    });
+  });
+
   it("does not count a stream that ended early as reported", () => {
     const partial = {
       runId: "r",
