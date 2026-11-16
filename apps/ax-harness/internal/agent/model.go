@@ -28,14 +28,20 @@ func reasoningOption(target map[string]ax.Value, provider, effort string) {
 	}
 }
 
+// thoughtSummaries is true for providers that send a summary of their
+// thinking. Other providers send raw reasoning text or none.
 func thoughtSummaries(provider string) bool {
 	return provider == "anthropic" || provider == "google-gemini"
+}
+
+func executorSummaries(routed *RoutedClient, effort string) bool {
+	return effort != "" && routed != nil && thoughtSummaries(routed.providerFor(routed.Stages.Executor))
 }
 
 // modelOptions adds stage routes, reasoning effort, thought summaries and the
 // prompt cache to agent options. Ax reads model settings per stage, and each
 // stage uses its own route's provider.
-func modelOptions(options map[string]ax.Value, routed *RoutedClient, effort, responderEffort string) {
+func modelOptions(options map[string]ax.Value, routed *RoutedClient, effort, responderEffort string, executorThoughts bool) {
 	stages := map[string]string{}
 	defaultProvider := ""
 	if routed != nil {
@@ -67,8 +73,14 @@ func modelOptions(options map[string]ax.Value, routed *RoutedClient, effort, res
 			stageEffort = responderEffort
 		}
 		reasoningOption(stage, provider, stageEffort)
-		if key == "responderOptions" && stageEffort != "" && thoughtSummaries(provider) {
-			stage["showThoughts"] = true
+		if stageEffort != "" && thoughtSummaries(provider) {
+			switch {
+			case key == "responderOptions":
+				stage["showThoughts"] = true
+			case key == "executorOptions" && executorThoughts:
+				stage["showThoughts"] = true
+				stage["stream"] = true
+			}
 		}
 		if len(stage) > 0 {
 			options[key] = stage

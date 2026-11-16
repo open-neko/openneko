@@ -427,7 +427,7 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 		}
 		engineOptions := ax.Object("runtime", runtime, "instruction", instruction, "directResponse", "off", "max_actor_steps", spec.ActorSteps(), "validationRetries", 0, "infraRetries", 0,
 			"contextPolicy", ax.Object("preset", "checkpointed", "budget", "balanced"))
-		modelOptions(engineOptions, routed, spec.ReasoningEffort, spec.ResponderReasoningEffort)
+		modelOptions(engineOptions, routed, spec.ReasoningEffort, spec.ResponderReasoningEffort, spec.StreamResponses)
 		var rerank skillRerank
 		if spec.SkillRerank == "" && (spec.ModelCallLimit() == 0 || spec.ModelCallLimit() > 3) {
 			rerank = axSkillRerank(client, rerankOptions(routed),
@@ -490,7 +490,7 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 			registerSaved(childRuntime, childView)
 			childOptions := ax.Object("runtime", childRuntime, "instruction", childInstruction, "directResponse", "off", "max_actor_steps", spec.ChildSteps(), "validationRetries", 0, "infraRetries", 0,
 				"contextPolicy", ax.Object("preset", "checkpointed", "budget", "balanced"))
-			modelOptions(childOptions, routed, spec.ReasoningEffort, spec.ResponderReasoningEffort)
+			modelOptions(childOptions, routed, spec.ReasoningEffort, spec.ResponderReasoningEffort, spec.StreamResponses)
 			engine.AddChildAgent("team", "worker", ax.NewAgent("task:string -> answer:string", childOptions))
 		}
 		anchoredClient := &contextAnchorClient{AIClient: attemptClient, request: spec.request()}
@@ -498,6 +498,11 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 			anchoredClient.contextRoute = routed.Stages.Context
 		}
 		streamClient := &streamingModeClient{AIClient: anchoredClient, enabled: spec.StreamResponses}
+		if spec.StreamResponses && executorSummaries(routed, spec.ReasoningEffort) {
+			streamClient.executorNotes = newExecutorNotes(func(call int64, index int, text string) {
+				events.progress(Event{Type: "executor.thought.delta", Data: deltaPayload(int(call), index, text)})
+			})
+		}
 		// Ax streams only the responder. Deltas are provisional; the final
 		// answer is the assembled text after Ax settles the run.
 		if spec.ModelCallLimit() > 1 {

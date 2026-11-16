@@ -65,6 +65,14 @@ test.describe("STREAM2b tool steps in plain words at phone width", () => {
       return { open, opened, reached, atGate };
     });
 
+    const note = (() => {
+      let open!: () => void;
+      let reached!: () => void;
+      const opened = new Promise<void>((r) => (open = r));
+      const atGate = new Promise<void>((r) => (reached = r));
+      return { open, opened, reached, atGate };
+    })();
+
     const socketPath = path.join(work, "serve.sock");
     const serve = net.createServer((conn) => {
       let buf = "";
@@ -87,6 +95,9 @@ test.describe("STREAM2b tool steps in plain words at phone width", () => {
         const tool = "mcp_neko_graphjin_execute_graphql";
         void (async () => {
           send({ type: "actor.step", data: { text: "Check the sales data" } });
+          send({ type: "executor.thought.delta", data: { version: 1, index: 1, text: "Analyzing Sales Data" } });
+          note.reached();
+          await note.opened;
           send({ type: "tool.started", operation_id: 1, name: tool, data: { query: QUERIES.orders } });
           gates[0].reached();
           await gates[0].opened;
@@ -182,6 +193,11 @@ test.describe("STREAM2b tool steps in plain words at phone width", () => {
       await composer.press("Enter");
       const transcript = page.locator(".work-transcript");
 
+      await note.atGate;
+      await expect(page.locator(".work-progress-summary .work-markdown")).toHaveText("Analyzing Sales Data");
+      await noSidewaysScroll(page);
+      note.open();
+
       await gates[0].atGate;
       await expect(page.locator(".work-tool-row-name")).toHaveText("Reading sales orders, filtered by order date");
       await expect(transcript).not.toContainText("execute_graphql");
@@ -231,6 +247,7 @@ test.describe("STREAM2b tool steps in plain words at phone width", () => {
       gates[3].open();
       await expect(page.locator(".work-status-row")).toHaveCount(0);
       const trail = page.locator(".work-trail");
+      await expect(trail).toContainText("1 note");
       await expect(trail).toContainText("3 steps");
       await expect(trail).not.toContainText("tool call");
       await noSidewaysScroll(page);
@@ -239,6 +256,7 @@ test.describe("STREAM2b tool steps in plain words at phone width", () => {
       console.error(logs.slice(-4000));
       throw err;
     } finally {
+      note.open();
       for (const g of gates) g.open();
       srv.kill("SIGTERM");
       serve.close();

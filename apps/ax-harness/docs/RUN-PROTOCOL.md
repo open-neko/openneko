@@ -96,6 +96,7 @@ them as provisional; only `run.finished` holds the answer.
 | --- | --- |
 | `answer.delta` | `{version, index, text}` from the responder. A new `version` replaces the earlier text. |
 | `thought.delta` | `{version, index, text}`. The responder's thinking text, from routes with `reasoning_effort` set: thought summaries from Anthropic and Gemini, raw reasoning from DeepSeek, OpenRouter and Together. Other providers send none through the pinned Ax. |
+| `executor.thought.delta` | `{version, index, text}`. One short note from the executor's thought summary, on Anthropic and Gemini routes with `reasoning_effort` set. `version` numbers the executor call and `index` the note in the run. The note is the bold heading of a summary section, or the first sentence when the summary has no heading. The harness drops a note that names a program term, holds code marks, repeats an earlier note or exceeds 80 characters, and sends at most 24 notes per run. It never sends the summary body. |
 | `actor.step` | `{text}`. The short request the actor writes when it hands work to the executor. |
 
 ## Result
