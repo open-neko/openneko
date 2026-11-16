@@ -41,7 +41,7 @@ func (u *ModelUsage) setCoverage() {
 	switch {
 	case u.Requests > 0 && u.Reported == u.Requests:
 		u.Coverage = "complete"
-	case u.Reported > 0:
+	case u.Reported > 0 || u.TotalTokens > 0:
 		u.Coverage = "partial"
 	default:
 		u.Coverage = "unavailable"

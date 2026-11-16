@@ -224,7 +224,7 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 	}
 	ctx, cancel := context.WithTimeout(ctx, spec.Timeout())
 	defer cancel()
-	events := &recorder{spec: spec, emit: emit, cancel: cancel}
+	events := &recorder{spec: spec, emit: emit, cancel: cancel, openStreams: map[*meteredStream]struct{}{}}
 	if routed != nil {
 		events.modelNames = routed.ModelNames
 		events.providers = routed.Providers
@@ -576,6 +576,7 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 	if result.Status == "failed" {
 		result.Kind = "failure"
 	}
+	events.closeStreams()
 	usage := events.usageSnapshot()
 	result.Usage = &usage
 	if spec.MaxCostMicros > 0 {
@@ -721,6 +722,7 @@ type recorder struct {
 	cancel                context.CancelFunc
 	seq, spans            uint64
 	modelCalls            int
+	openStreams           map[*meteredStream]struct{}
 	usage                 ModelUsage
 	maxReportedCallTokens int64
 	prices                map[string]catalog.Rates
@@ -813,20 +815,48 @@ func (r *recorder) admitModel(next ax.AxRequestExecutor, info ax.AxRateLimitInfo
 	}
 	r.costMicros += costReservation
 	r.mu.Unlock()
-	started := time.Now()
+	call := modelCall{id: id, name: modelName, origin: info.Provider, provider: provider, streaming: info.Streaming, started: time.Now(),
+		rates: rates, priced: priced, reservation: costReservation}
 	response, err := next()
-	finished := Event{Type: "model.request.finished", CallID: id, Name: modelName, Origin: info.Provider, Provider: provider,
-		ObservedModel: observedModel(response), DurationMS: time.Since(started).Milliseconds(), Streaming: info.Streaming}
+	if stream, ok := response.(ax.AxChatStream); ok && err == nil {
+		metered := &meteredStream{AxChatStream: stream, recorder: r, call: call}
+		r.mu.Lock()
+		r.openStreams[metered] = struct{}{}
+		r.mu.Unlock()
+		return metered, nil
+	}
+	r.finishModel(call, response, err, outputTruncated(response), false)
+	return response, err
+}
+
+type modelCall struct {
+	id                     uint64
+	name, origin, provider string
+	streaming              bool
+	started                time.Time
+	rates                  catalog.Rates
+	priced                 bool
+	reservation            int64
+}
+
+// finishModel settles one model request. A stream that ended early keeps
+// the usage the provider sent so far, but it does not count as reported.
+func (r *recorder) finishModel(call modelCall, response ax.Value, err error, truncated, early bool) {
+	finished := Event{Type: "model.request.finished", CallID: call.id, Name: call.name, Origin: call.origin, Provider: call.provider,
+		ObservedModel: observedModel(response), DurationMS: time.Since(call.started).Milliseconds(), Streaming: call.streaming}
 	if err != nil {
 		finished.Error = "model_request_failed"
 	}
-	overflow, truncated := contextOverflow(err), outputTruncated(response)
+	overflow := contextOverflow(err)
 	if tokens, ok := modelTokens(response); ok {
-		tokens.price(rates, priced, r.catalogVersion)
+		tokens.price(call.rates, call.priced, r.catalogVersion)
+		if early {
+			tokens.Reported, tokens.priced, tokens.Coverage = 0, 0, "partial"
+		}
 		finished.Usage = &tokens
 	}
-	charge := costReservation
-	if finished.Usage != nil && finished.Usage.TotalTokens > 0 && priced {
+	charge := call.reservation
+	if finished.Usage != nil && finished.Usage.TotalTokens > 0 && call.priced && (!early || finished.Usage.CostMicros > charge) {
 		charge = finished.Usage.CostMicros
 	}
 	if r.spec.MaxCostMicros > 0 {
@@ -835,7 +865,7 @@ func (r *recorder) admitModel(next ax.AxRequestExecutor, info ax.AxRateLimitInfo
 	r.send(finished)
 	r.mu.Lock()
 	r.lastOverflow, r.lastTruncated = overflow, truncated
-	r.costMicros += charge - costReservation
+	r.costMicros += charge - call.reservation
 	if r.spec.MaxCostMicros > 0 && r.costMicros > r.spec.MaxCostMicros {
 		r.costOverspent = true
 	}
@@ -849,7 +879,64 @@ func (r *recorder) admitModel(next ax.AxRequestExecutor, info ax.AxRateLimitInfo
 		r.modelTokenOverspent = true
 	}
 	r.mu.Unlock()
-	return response, err
+}
+
+// closeStreams settles each model stream that its reader left open.
+func (r *recorder) closeStreams() {
+	r.mu.Lock()
+	open := make([]*meteredStream, 0, len(r.openStreams))
+	for stream := range r.openStreams {
+		open = append(open, stream)
+	}
+	r.mu.Unlock()
+	for _, stream := range open {
+		_ = stream.Close()
+	}
+}
+
+// meteredStream settles its model request when the stream ends. Providers
+// send usage in a late chunk, after the stream opened; Ax puts the running
+// total on each chunk that carries usage, so the last one counts.
+type meteredStream struct {
+	ax.AxChatStream
+	recorder  *recorder
+	call      modelCall
+	usage     ax.Value
+	truncated bool
+	once      sync.Once
+}
+
+func (s *meteredStream) Next() bool {
+	if s.AxChatStream.Next() {
+		chunk, _ := s.AxChatStream.Value().(map[string]ax.Value)
+		if usage := chunk["model_usage"]; usage != nil {
+			s.usage = usage
+		}
+		s.truncated = s.truncated || outputTruncated(chunk)
+		return true
+	}
+	err := s.AxChatStream.Err()
+	s.finish(err, err != nil)
+	return false
+}
+
+func (s *meteredStream) Close() error {
+	err := s.AxChatStream.Close()
+	s.finish(nil, true)
+	return err
+}
+
+func (s *meteredStream) finish(err error, early bool) {
+	s.once.Do(func() {
+		s.recorder.mu.Lock()
+		delete(s.recorder.openStreams, s)
+		s.recorder.mu.Unlock()
+		var response ax.Value
+		if s.usage != nil {
+			response = ax.Object("model_usage", s.usage)
+		}
+		s.recorder.finishModel(s.call, response, err, s.truncated, early)
+	})
 }
 
 func (r *recorder) setReserve(n int) {

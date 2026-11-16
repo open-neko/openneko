@@ -137,4 +137,21 @@ describe("responder measurements", () => {
       responderModels: [undefined],
     });
   });
+
+  it("does not count a stream that ended early as reported", () => {
+    const partial = {
+      runId: "r",
+      callId: 4,
+      streamed: true,
+      durationMs: 900,
+      usage: { input_tokens: 1200, output_tokens: 12, coverage: "partial" },
+    };
+    expect(responderMeasurements([partial])).toEqual({
+      modelRequests: 1,
+      responderCalls: 1,
+      responderLatencyMs: 900,
+      responderUsageReported: false,
+      responderModels: [undefined],
+    });
+  });
 });

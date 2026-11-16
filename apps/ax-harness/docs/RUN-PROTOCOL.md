@@ -78,7 +78,7 @@ credentials. `tool.finished` carries the tool result in `data`.
 | `run.started` | The run started. |
 | `child.admitted` | The run has a read-only child agent. |
 | `model.request.started` | A model call passed admission. `name` is the configured model, `origin` the route, `provider` the provider type, `call_id` the count. |
-| `model.request.finished` | A model call ended. `usage` holds the tokens and the call's cost, `observed_model` the model the provider reported, and `error` is set on failure. |
+| `model.request.finished` | A model call ended. `usage` holds the tokens and the call's cost, `observed_model` the model the provider reported, and `error` is set on failure. A streamed call ends when its stream ends, and `duration_ms` covers the whole stream. When a stream stops early, `usage` holds the tokens the provider sent so far, with `coverage` `partial`. |
 | `model.route.fallback` | A transient provider error moved the call from `name` to `origin`. |
 | `executor.step.failed` | Actor code failed. Later executor calls can use the escalation route. |
 | `skill.used` | The agent declared that the staged skill `name` influenced the turn. |
@@ -106,7 +106,7 @@ them as provisional; only `run.finished` holds the answer.
 | `kind` | `answer`, `summary`, `clarification`, `failure` |
 | `answer` | The final text, unchanged, with any fences. |
 | `code` | Set when the run did not complete, or names the budget for a `summary`. |
-| `usage` | Requests, reported calls, tokens, `coverage` (`complete`, `partial` or `unavailable`) and the fields in [Cost](#cost). |
+| `usage` | Requests, reported calls, tokens, `coverage` (`complete`, `partial` or `unavailable`) and the fields in [Cost](#cost). The tokens include those of a stream that stopped early; that call does not count as reported. |
 | `cost` | Present when `max_cost_micros` is set: `catalog_version`, `charged_micros` (reservations for calls without usage included) and `budget_micros`. |
 
 A tool error is a normal result. The model sees it and can adapt; the run does

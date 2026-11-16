@@ -113,6 +113,7 @@ export type EvalModelRequest = {
     reasoning_tokens?: number;
     cache_read_tokens?: number;
     total_tokens?: number;
+    coverage?: string;
   };
 };
 
