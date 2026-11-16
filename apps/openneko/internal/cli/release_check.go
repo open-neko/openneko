@@ -21,7 +21,7 @@ import (
 )
 
 func newReleaseCheckCmd() *cobra.Command {
-	var scheduler, serveSocket, packsCheck, sandboxCheck bool
+	var scheduler, serveSocket, packsCheck, sandboxCheck, skillsCheck bool
 	var datasourceOrg, mcpURL, query string
 	cmd := &cobra.Command{
 		Use:    "release-check",
@@ -29,8 +29,8 @@ func newReleaseCheckCmd() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if !scheduler && !serveSocket && !packsCheck && !sandboxCheck && datasourceOrg == "" {
-				return errors.New("name a check: --scheduler, --datasource ORG, --serve-socket, --sandbox or --packs")
+			if !scheduler && !serveSocket && !packsCheck && !sandboxCheck && !skillsCheck && datasourceOrg == "" {
+				return errors.New("name a check: --scheduler, --datasource ORG, --serve-socket, --sandbox, --packs or --skills")
 			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 			defer cancel()
@@ -53,6 +53,13 @@ func newReleaseCheckCmd() *cobra.Command {
 					return err
 				}
 				fmt.Fprintf(out, "builtin_packs=%d\n", n)
+			}
+			if skillsCheck {
+				names, err := webfront.BundledSkillsCheck()
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(out, "bundled_skills=%d\n", len(names))
 			}
 			if serveSocket {
 				if err := checkServeSocket(ctx, os.Getenv("OPENNEKO_SERVE_SOCKET")); err != nil {
@@ -78,6 +85,7 @@ func newReleaseCheckCmd() *cobra.Command {
 	f.BoolVar(&serveSocket, "serve-socket", false, "Connect to the agent socket of openneko serve (OPENNEKO_SERVE_SOCKET)")
 	f.BoolVar(&sandboxCheck, "sandbox", false, "The sandbox is off, or its socket answers in a folder that holds none of serve's sockets")
 	f.BoolVar(&packsCheck, "packs", false, "The pack catalog on the web admin socket lists one or more built-in packs")
+	f.BoolVar(&skillsCheck, "skills", false, "This executable finds every sandbox skill and one or more built-in skills")
 	return cmd
 }
 

@@ -538,7 +538,7 @@ func runNativeDoctor(ctx context.Context, out io.Writer) error {
 	return nil
 }
 
-func runNativeUpgrade(ctx context.Context, cmd *cobra.Command, settings installation.Settings, from string, skipBackup bool) error {
+func runNativeUpgrade(ctx context.Context, cmd *cobra.Command, settings installation.Settings, from, installedExe string, skipBackup bool) error {
 	out, errOut := cmd.OutOrStdout(), cmd.ErrOrStderr()
 	if err := requireServerRoot("upgrade"); err != nil {
 		return err
@@ -560,14 +560,20 @@ func runNativeUpgrade(ctx context.Context, cmd *cobra.Command, settings installa
 	if err := checkReleasePacks(newPacks); err != nil {
 		return fmt.Errorf("the release packs in %s: %w (nothing was changed)", newPacks, err)
 	}
+	newSkills := filepath.Join(from, "share", "openneko", "skills")
+	if err := checkReleaseSkills(newSkills); err != nil {
+		return fmt.Errorf("the release skills in %s: %w (nothing was changed)", newSkills, err)
+	}
 	raw, err := exec.CommandContext(ctx, newExe, "version").Output()
 	if err != nil {
 		return fmt.Errorf("run %s version: %w (nothing was changed)", newExe, err)
 	}
 	fmt.Fprintf(out, "Upgrading to %s", raw)
-	exe, err := os.Executable()
-	if err != nil {
-		return err
+	exe := installedExe
+	if exe == "" {
+		if exe, err = os.Executable(); err != nil {
+			return err
+		}
 	}
 	if activeServer != nil {
 		exe = activeServer.Exe
@@ -601,6 +607,9 @@ func runNativeUpgrade(ctx context.Context, cmd *cobra.Command, settings installa
 		}
 	}
 	if err := replaceReleasePacks(from, exe); err != nil {
+		return err
+	}
+	if err := replaceReleaseSkills(from, exe); err != nil {
 		return err
 	}
 	if !wasRunning {
@@ -726,6 +735,31 @@ func replaceReleasePacks(from, exe string) error {
 	}
 	if err := replaceFolder(newPacks, packs); err != nil {
 		return fmt.Errorf("replace %s: %w", packs, err)
+	}
+	return nil
+}
+
+func checkReleaseSkills(dir string) error {
+	_, err := webfront.CheckSkillFolders(filepath.Join(dir, "builtin"), filepath.Join(dir, "sandbox"))
+	return err
+}
+
+// replaceReleaseSkills puts the bundled skills of the new release beside the
+// executable, where openneko web reads them.
+func replaceReleaseSkills(from, exe string) error {
+	newSkills := filepath.Join(from, "share", "openneko", "skills")
+	if err := checkReleaseSkills(newSkills); err != nil {
+		return fmt.Errorf("the release skills in %s: %w", newSkills, err)
+	}
+	skills := filepath.Join(filepath.Dir(filepath.Dir(exe)), "share", "openneko", "skills")
+	if sameFile(newSkills, skills) {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(skills), 0o755); err != nil {
+		return err
+	}
+	if err := replaceFolder(newSkills, skills); err != nil {
+		return fmt.Errorf("replace %s: %w", skills, err)
 	}
 	return nil
 }

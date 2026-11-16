@@ -246,11 +246,12 @@ func TestPostReleaseSmokeGatesRetainedDemoUpgrades(t *testing.T) {
 		"test ! -e /config/.openneko-graphjin-supervisor.sh",
 		"com.docker.compose.service=openneko-serve",
 		"{{.State.Status}}",
-		`docker exec "$web" openneko release-check --datasource adventureworks --serve-socket --sandbox --packs`,
+		`docker exec "$web" openneko release-check --datasource adventureworks --serve-socket --sandbox --packs --skills`,
 		`grep -qE '^sandbox=(off|ok|remote)$' <<<"$checks"`,
 		"authenticated_datasource_query=ok",
 		"serve_socket=ok",
 		`grep -qE '^builtin_packs=[1-9][0-9]*$' <<<"$checks"`,
+		`grep -qE '^bundled_skills=[1-9][0-9]*$' <<<"$checks"`,
 	} {
 		if !strings.Contains(workflow, required) {
 			t.Fatalf("post-release smoke no longer gates retained demo upgrades: missing %q", required)
@@ -276,11 +277,12 @@ func TestProductionDeployRequiresAuthenticatedDatasourceQuery(t *testing.T) {
 		"OPENNEKO_PORT=80 openneko status",
 		"--filter label=com.docker.compose.service=web",
 		`docker exec "$WEB" openneko release-check --scheduler`,
-		`docker exec "$WEB" openneko release-check --datasource adventureworks --serve-socket --sandbox --packs`,
+		`docker exec "$WEB" openneko release-check --datasource adventureworks --serve-socket --sandbox --packs --skills`,
 		`grep -qE '^sandbox=(off|ok|remote)$' <<<"$checks"`,
 		"authenticated_datasource_query=ok",
 		"serve_socket=ok",
 		`grep -qE '^builtin_packs=[1-9][0-9]*$' <<<"$checks"`,
+		`grep -qE '^bundled_skills=[1-9][0-9]*$' <<<"$checks"`,
 	} {
 		if !strings.Contains(workflow, required) {
 			t.Fatalf("production deploy no longer verifies the upgrade: missing %q", required)

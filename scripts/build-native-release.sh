@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/build-native-release.sh <tag> <out-dir> [arch ...]
-# Writes openneko-native_<version>_linux_<arch>.tar.gz (bin/openneko, share/openneko/web
-# and share/openneko/packs) and checksums-native.txt.
+# Writes openneko-native_<version>_linux_<arch>.tar.gz (bin/openneko, share/openneko/web,
+# share/openneko/packs and share/openneko/skills) and checksums-native.txt.
 set -euo pipefail
 
 tag="${1:?release tag, for example v5.1.0}"
@@ -35,12 +35,21 @@ for arch in "${arches[@]}"; do
     -o "$tree/bin/openneko" ./cmd/openneko)
   cp -R "$OPENNEKO_WEB_DIST" "$tree/share/openneko/web"
   cp -R "$root/packs" "$tree/share/openneko/packs"
+  mkdir -p "$tree/share/openneko/skills/sandbox"
+  cp -R "$root/packages/llm/assets/builtin-skills" "$tree/share/openneko/skills/builtin"
+  for skill in "$root"/recipes/sandbox/skills/*/SKILL.md; do
+    cp -R "$(dirname "$skill")" "$tree/share/openneko/skills/sandbox/"
+  done
   tar -C "$tree" --owner=0 --group=0 --numeric-owner --sort=name -czf "$out/$name" bin share
-  if ! tar -tzf "$out/$name" | grep -E '^share/openneko/packs/[^/]+/pack\.yaml$' >/dev/null; then
-    echo "build-native-release: $name holds no share/openneko/packs/*/pack.yaml" >&2
-    rm -f "$out/$name"
-    exit 1
-  fi
+  listing="$(tar -tzf "$out/$name")"
+  for want in 'share/openneko/packs/[^/]+/pack\.yaml' 'share/openneko/skills/builtin/[^/]+/SKILL\.md' \
+    share/openneko/skills/sandbox/{docx,pdf,pptx,skill-creator,xlsx}/SKILL\\.md; do
+    if ! grep -E "^$want\$" <<<"$listing" >/dev/null; then
+      echo "build-native-release: $name holds no $want" >&2
+      rm -f "$out/$name"
+      exit 1
+    fi
+  done
   (cd "$out" && sha256sum "$name" >> checksums-native.txt)
 done
 cat "$out/checksums-native.txt"
