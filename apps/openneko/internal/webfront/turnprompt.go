@@ -92,7 +92,6 @@ type workPromptInput struct {
 	InstalledSkills           []installedSkill `json:"installedSkills"`
 	WantsCards                bool             `json:"wantsCards"`
 	IncludeUxMetadata         bool             `json:"includeUxMetadata"`
-	SupportsCardTool          bool             `json:"supportsCardTool"`
 	RichCards                 bool             `json:"richCards"`
 	SupportsSkillTool         bool             `json:"supportsSkillTool"`
 	SupportsMemoryTool        bool             `json:"supportsMemoryTool"`
@@ -121,7 +120,7 @@ func buildWorkPrompt(in workPromptInput) string {
 	const shellTool = "terminal"
 	cards := ""
 	if in.WantsCards {
-		cards = cardsSection(in.SupportsCardTool, in.RichCards, in.Backend == "ax")
+		cards = cardsSection(in.RichCards)
 	}
 	delegation := ""
 	if in.SupportsNativeDelegation && in.Backend == "ax" {
@@ -189,14 +188,9 @@ func formatTranscript(messages []promptMessage) string {
 	return strings.Join(lines, "\n\n")
 }
 
-func cardsSection(cardTool, rich, answerFence bool) string {
+func cardsSection(rich bool) string {
 	richPart := func(name string) string { return pick(rich, section(name), "") }
-	return section("cards",
-		"tool", pick(cardTool, "mcp__neko__ui_render_cards", "render_cards"),
-		"choices", richPart("rich_card_choices"),
-		"examples", richPart("rich_card_examples"),
-		"fence", pick(answerFence, section("answer_fence_cards"), ""),
-		"stages", richPart("rich_card_stages"))
+	return section("cards", "choices", richPart("rich_card_choices"), "examples", richPart("rich_card_examples"))
 }
 
 func skillsSection(skillTool bool, ws agentWorkspace, skills []installedSkill, catalog string) string {

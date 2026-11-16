@@ -9,7 +9,7 @@ import (
 
 func TestMapperReplacesTheAnswerWhenTheModelStartsAgain(t *testing.T) {
 	var events []string
-	m := &axEventMapper{textVersion: -1.0, renderCalls: map[string]bool{},
+	m := &axEventMapper{textVersion: -1.0,
 		emit: func(e *jsObj) { events = append(events, jsStringify(e, false)) }}
 	delta := func(version int, text string) {
 		data, _ := json.Marshal(map[string]any{"version": version, "index": 0, "text": text})
@@ -65,7 +65,7 @@ func TestJoinedAnswerTextStartsAgainAfterAReset(t *testing.T) {
 
 func TestMapperMarksAnOpenCardOnceAndHidesItsPayload(t *testing.T) {
 	var events []string
-	m := &axEventMapper{textVersion: -1.0, renderCalls: map[string]bool{},
+	m := &axEventMapper{textVersion: -1.0,
 		emit: func(e *jsObj) { events = append(events, jsStringify(e, false)) }}
 	for _, part := range []string{"Sales rose.\n`", "``neko_ca", "rds\n{\"cards\":[{\"title\":", "\"East\"}]}\n``", "`\nEast led.", "\n```neko_a2ui\n[]"} {
 		data, _ := json.Marshal(map[string]any{"version": 1, "index": 0, "text": part})
@@ -85,7 +85,7 @@ func TestMapperMarksAnOpenCardOnceAndHidesItsPayload(t *testing.T) {
 
 func TestMapperKeepsAnAnswerThatDiffersOnlyInTrailingSpace(t *testing.T) {
 	var events []string
-	m := &axEventMapper{textVersion: -1.0, renderCalls: map[string]bool{},
+	m := &axEventMapper{textVersion: -1.0,
 		emit: func(e *jsObj) { events = append(events, jsStringify(e, false)) }}
 	data, _ := json.Marshal(map[string]any{"version": 1, "index": 0, "text": "Revenue rose by 2%.\n\n"})
 	m.handle(axEvent{Type: "answer.delta", Data: data})
@@ -98,7 +98,7 @@ func TestMapperKeepsAnAnswerThatDiffersOnlyInTrailingSpace(t *testing.T) {
 func TestMapperMarksOnlyFencesThatBecomeACard(t *testing.T) {
 	for _, opener := range []string{"neko_workflow_save", "neko_workflow_output", "neko_action_request", "neko_rule_save"} {
 		var events []string
-		m := &axEventMapper{textVersion: -1.0, renderCalls: map[string]bool{},
+		m := &axEventMapper{textVersion: -1.0,
 			emit: func(e *jsObj) { events = append(events, jsStringify(e, false)) }}
 		data, _ := json.Marshal(map[string]any{"version": 1, "index": 0, "text": "Saved.\n```" + opener + "\n{}\n```\nDone."})
 		m.handle(axEvent{Type: "answer.delta", Data: data})

@@ -1,0 +1,1787 @@
+[
+ {
+  "name": "cards full report",
+  "rich": false,
+  "arguments": {
+   "title": " Revenue by region ",
+   "stage": "final",
+   "table": "| Region | Revenue | Orders |\n|---|---:|---:|\n| North | 12699845.92 | 1,250 |\n| South | 9876543.2 | 980 |\n| East | -3.5 | 0 |",
+   "chart": "bar",
+   "chartColumn": "revenue",
+   "keyFigures": [
+    "Total: $22.6M (up 4%)",
+    "Regions: 3"
+   ],
+   "callout": "North leads.",
+   "mood": "good",
+   "followUps": [
+    "Why is East negative?",
+    "Show orders"
+   ]
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "Revenue by region",
+       "children": [
+        "keyFigures",
+        "chart",
+        "table",
+        "callout",
+        "followUps"
+       ]
+      },
+      {
+       "id": "keyFigures",
+       "component": "KeyFigures",
+       "items": [
+        {
+         "label": "Total",
+         "value": "$22.6M",
+         "sub": "up 4%"
+        },
+        {
+         "label": "Regions",
+         "value": "3"
+        }
+       ]
+      },
+      {
+       "id": "chart",
+       "component": "Chart",
+       "type": "bar",
+       "title": "Revenue by region",
+       "valueLabel": "Revenue",
+       "data": [
+        {
+         "d": "North",
+         "v": 12699845.92
+        },
+        {
+         "d": "South",
+         "v": 9876543.2
+        },
+        {
+         "d": "East",
+         "v": -3.5
+        }
+       ]
+      },
+      {
+       "id": "table",
+       "component": "Table",
+       "columns": [
+        {
+         "key": "c0",
+         "label": "Region"
+        },
+        {
+         "key": "c1",
+         "label": "Revenue",
+         "align": "right"
+        },
+        {
+         "key": "c2",
+         "label": "Orders",
+         "align": "right"
+        }
+       ],
+       "rows": [
+        {
+         "c0": "North",
+         "c1": "12,699,846",
+         "c2": "1,250"
+        },
+        {
+         "c0": "South",
+         "c1": "9,876,543",
+         "c2": "980"
+        },
+        {
+         "c0": "East",
+         "c1": "-4",
+         "c2": "0"
+        }
+       ]
+      },
+      {
+       "id": "callout",
+       "component": "Callout",
+       "mood": "good",
+       "text": "North leads."
+      },
+      {
+       "id": "followUps",
+       "component": "Choice",
+       "options": [
+        {
+         "label": "Why is East negative?",
+         "prompt": "Why is East negative?"
+        },
+        {
+         "label": "Show orders",
+         "prompt": "Show orders"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "name": "cards draft auto chart",
+  "rich": false,
+  "arguments": {
+   "title": "Prices",
+   "stage": "draft",
+   "table": "| Item | Price |\n| A | 1.005 |\n| B | 2.5 |\n| C | 0.125 |",
+   "chart": "line"
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "Prices",
+       "stage": "draft",
+       "children": [
+        "chart",
+        "table"
+       ]
+      },
+      {
+       "id": "chart",
+       "component": "Chart",
+       "type": "line",
+       "title": "Prices",
+       "valueLabel": "Price",
+       "data": [
+        {
+         "d": "A",
+         "v": 1.005
+        },
+        {
+         "d": "B",
+         "v": 2.5
+        },
+        {
+         "d": "C",
+         "v": 0.125
+        }
+       ]
+      },
+      {
+       "id": "table",
+       "component": "Table",
+       "columns": [
+        {
+         "key": "c0",
+         "label": "Item"
+        },
+        {
+         "key": "c1",
+         "label": "Price",
+         "align": "right"
+        }
+       ],
+       "rows": [
+        {
+         "c0": "A",
+         "c1": "1.01"
+        },
+        {
+         "c0": "B",
+         "c1": "2.50"
+        },
+        {
+         "c0": "C",
+         "c1": "0.13"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "name": "cards escaped lines",
+  "rich": false,
+  "arguments": {
+   "title": "Lines",
+   "table": "| A | B |\\n| x | 1 |\\n| y | 2 |",
+   "keyFigures": "One: 1\nTwo: 2 (note)\n\n",
+   "followUps": "Next?"
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "Lines",
+       "children": [
+        "keyFigures",
+        "table",
+        "followUps"
+       ]
+      },
+      {
+       "id": "keyFigures",
+       "component": "KeyFigures",
+       "items": [
+        {
+         "label": "One",
+         "value": "1"
+        },
+        {
+         "label": "Two",
+         "value": "2",
+         "sub": "note"
+        }
+       ]
+      },
+      {
+       "id": "table",
+       "component": "Table",
+       "columns": [
+        {
+         "key": "c0",
+         "label": "A"
+        },
+        {
+         "key": "c1",
+         "label": "B",
+         "align": "right"
+        }
+       ],
+       "rows": [
+        {
+         "c0": "x",
+         "c1": "1"
+        },
+        {
+         "c0": "y",
+         "c1": "2"
+        }
+       ]
+      },
+      {
+       "id": "followUps",
+       "component": "Choice",
+       "options": [
+        {
+         "label": "Next?",
+         "prompt": "Next?"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "name": "cards nested arguments",
+  "rich": false,
+  "arguments": {
+   "arguments": {
+    "title": "Nested",
+    "callout": "Check stock."
+   }
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "Nested",
+       "children": [
+        "callout"
+       ]
+      },
+      {
+       "id": "callout",
+       "component": "Callout",
+       "mood": "watch",
+       "text": "Check stock."
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "name": "cards json text",
+  "rich": false,
+  "arguments": {
+   "input": "{\"title\":\"Json\",\"callout\":\"From text\",\"mood\":\"act\"}"
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "Json",
+       "children": [
+        "callout"
+       ]
+      },
+      {
+       "id": "callout",
+       "component": "Callout",
+       "mood": "act",
+       "text": "From text"
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "name": "cards empty fields dropped",
+  "rich": false,
+  "arguments": {
+   "title": "Sparse",
+   "table": null,
+   "chart": false,
+   "chartColumn": "",
+   "keyFigures": [],
+   "callout": "Only this.",
+   "extra": "x"
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "Sparse",
+       "children": [
+        "callout"
+       ]
+      },
+      {
+       "id": "callout",
+       "component": "Callout",
+       "mood": "watch",
+       "text": "Only this."
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "name": "cards rich fields when core",
+  "rich": false,
+  "arguments": {
+   "title": "Core",
+   "callout": "x",
+   "layout": "compare",
+   "diagram": [
+    "A -> B"
+   ]
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "Core",
+       "children": [
+        "callout"
+       ]
+      },
+      {
+       "id": "callout",
+       "component": "Callout",
+       "mood": "watch",
+       "text": "x"
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "name": "cards compare rich",
+  "rich": true,
+  "arguments": {
+   "title": "Plans",
+   "layout": "compare",
+   "table": "| Plan | Price |\n| Basic | 10 |\n| Pro | 25 |",
+   "rowDetails": [
+    "Basic >> | Feature | Limit |\n| Users | 3 |",
+    "Pro >> | Feature | Limit |\n| Users | 30000.5 |"
+   ],
+   "drillDown": "Tell me about {label}"
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "Plans",
+       "children": [
+        "table"
+       ]
+      },
+      {
+       "id": "table",
+       "component": "Compare",
+       "columns": [
+        {
+         "key": "c0",
+         "label": "Plan"
+        },
+        {
+         "key": "c1",
+         "label": "Price",
+         "align": "right"
+        }
+       ],
+       "rows": [
+        {
+         "c0": "Basic",
+         "c1": "10"
+        },
+        {
+         "c0": "Pro",
+         "c1": "25"
+        }
+       ],
+       "details": {
+        "Basic": {
+         "columns": [
+          {
+           "key": "c0",
+           "label": "Feature"
+          },
+          {
+           "key": "c1",
+           "label": "Limit",
+           "align": "right"
+          }
+         ],
+         "rows": [
+          {
+           "c0": "Users",
+           "c1": "3"
+          }
+         ]
+        },
+        "Pro": {
+         "columns": [
+          {
+           "key": "c0",
+           "label": "Feature"
+          },
+          {
+           "key": "c1",
+           "label": "Limit",
+           "align": "right"
+          }
+         ],
+         "rows": [
+          {
+           "c0": "Users",
+           "c1": "30,001"
+          }
+         ]
+        }
+       },
+       "drill": "Tell me about {label}"
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "name": "cards what-if",
+  "rich": true,
+  "arguments": {
+   "title": "Price what-if",
+   "controls": [
+    "price_change: Price change (%) = 5 (-20 to 20, step 1)",
+    "Plan: Plan = Basic (10) | Pro (25)",
+    "volume: Volume = 0.5 (0 to 1)"
+   ],
+   "values": [
+    "Road_Revenue = 1,496,791.67"
+   ],
+   "computed": [
+    "New revenue (USD): road_revenue * (1 + price_change / 100)",
+    "Per plan: round(road_revenue / plan, 2) + max(volume, abs(-1)) ^ 2"
+   ]
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "Price what-if",
+       "children": [
+        "whatIf"
+       ]
+      },
+      {
+       "id": "whatIf",
+       "component": "WhatIf",
+       "controls": [
+        {
+         "name": "price_change",
+         "label": "Price change",
+         "unit": "%",
+         "value": 5,
+         "min": -20,
+         "max": 20,
+         "step": 1
+        },
+        {
+         "name": "plan",
+         "label": "Plan",
+         "value": 10,
+         "min": 10,
+         "max": 25,
+         "step": 1,
+         "options": [
+          {
+           "label": "Basic",
+           "value": 10
+          },
+          {
+           "label": "Pro",
+           "value": 25
+          }
+         ]
+        },
+        {
+         "name": "volume",
+         "label": "Volume",
+         "value": 0.5,
+         "min": 0,
+         "max": 1,
+         "step": 0.01
+        }
+       ],
+       "values": {
+        "road_revenue": 1496791.67
+       },
+       "outputs": [
+        {
+         "label": "New revenue",
+         "unit": "USD",
+         "expression": "road_revenue * (1 + price_change / 100)"
+        },
+        {
+         "label": "Per plan",
+         "expression": "round(road_revenue / plan, 2) + max(volume, abs(-1)) ^ 2"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "name": "cards what-if faults",
+  "rich": true,
+  "arguments": {
+   "title": "Bad",
+   "controls": [
+    "a: A = 5 (10 to 1)",
+    "b: B = 50 (0 to 10)",
+    "c: C = 1 (0 to 2, step 0)",
+    "nope",
+    "d: D = X | Y (2)",
+    "a: Again = 1 (0 to 2)"
+   ],
+   "values": [
+    "e = 1",
+    "bad"
+   ],
+   "computed": [
+    "Out: a + zz",
+    "Div: 1 / 0",
+    "Parse: a +",
+    "NoColon",
+    "Fn: foo(1)",
+    "Arity: abs(1, 2)",
+    "Paren: (a",
+    "Char: a $ 2"
+   ]
+  },
+  "problems": [
+   "controls: Too big: expected array to have <=4 items",
+   "computed: Too big: expected array to have <=6 items"
+  ]
+ },
+ {
+  "name": "cards what-if half",
+  "rich": true,
+  "arguments": {
+   "title": "Half",
+   "controls": [
+    "a: A = 1 (0 to 2)"
+   ]
+  },
+  "problems": [
+   "Fill at least one of table, keyFigures, callout, followUps, computed, map, diagram, tool.",
+   "controls and computed go together: the controls move, the computed results follow."
+  ]
+ },
+ {
+  "name": "cards what-if non-finite",
+  "rich": true,
+  "arguments": {
+   "title": "Inf",
+   "controls": [
+    "a: A = 0 (0 to 2)"
+   ],
+   "values": [
+    "one = 1"
+   ],
+   "computed": [
+    "Pow: one ^ (1 / a)",
+    "Ok: min(a, one, 3) + floor(1.5) + ceil(0.2) + round(2.5) + 1e400 - 1e400"
+   ]
+  },
+  "problems": [
+   "computed.0 gives no finite number at the default control values.",
+   "computed.1 gives no finite number at the default control values."
+  ]
+ },
+ {
+  "name": "cards map and diagram",
+  "rich": true,
+  "arguments": {
+   "title": "Stores",
+   "map": [
+    "Paris @ 48.85, 2.35: 1,200",
+    "Lyon @45.76,4.84:300"
+   ],
+   "mapValue": "Sales (EUR)",
+   "diagram": [
+    "Order -> Pick: 2h",
+    "Pick -> Ship",
+    "order -> Cancel",
+    "Standalone"
+   ],
+   "drillDown": "Explain {label}"
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "Stores",
+       "children": [
+        "map",
+        "diagram"
+       ]
+      },
+      {
+       "id": "map",
+       "component": "AnswerMap",
+       "title": "Stores",
+       "valueLabel": "Sales (EUR)",
+       "points": [
+        {
+         "label": "Paris",
+         "lat": 48.85,
+         "lon": 2.35,
+         "v": 1200
+        },
+        {
+         "label": "Lyon",
+         "lat": 45.76,
+         "lon": 4.84,
+         "v": 300
+        }
+       ],
+       "drill": "Explain {label}"
+      },
+      {
+       "id": "diagram",
+       "component": "Diagram",
+       "title": "Stores",
+       "nodes": [
+        {
+         "id": "Order",
+         "label": "Order"
+        },
+        {
+         "id": "Pick",
+         "label": "Pick"
+        },
+        {
+         "id": "Ship",
+         "label": "Ship"
+        },
+        {
+         "id": "Cancel",
+         "label": "Cancel"
+        },
+        {
+         "id": "Standalone",
+         "label": "Standalone"
+        }
+       ],
+       "edges": [
+        {
+         "from": "Order",
+         "to": "Pick",
+         "label": "2h"
+        },
+        {
+         "from": "Pick",
+         "to": "Ship"
+        },
+        {
+         "from": "Order",
+         "to": "Cancel"
+        }
+       ],
+       "drill": "Explain {label}"
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "name": "cards map and diagram faults",
+  "rich": true,
+  "arguments": {
+   "title": "Bad map",
+   "map": [
+    "Nowhere @ 91, 0: 5",
+    "Neg @ 1, 1: -5",
+    "Text"
+   ],
+   "diagram": [
+    "-> B",
+    "N0",
+    "N1",
+    "N2",
+    "N3",
+    "N4",
+    "N5",
+    "N6",
+    "N7",
+    "N8",
+    "N9",
+    "N10",
+    "N11",
+    "N12",
+    "N13",
+    "N14",
+    "N15",
+    "N16",
+    "N17",
+    "N18",
+    "N19",
+    "N20",
+    "N21",
+    "N22",
+    "N23",
+    "N24",
+    "N25",
+    "N26",
+    "N27",
+    "N28",
+    "N29",
+    "N30"
+   ],
+   "drillDown": "no placeholder"
+  },
+  "problems": [
+   "drillDown needs {label} where the item's name goes.",
+   "map.0 needs the form \"Place @ latitude, longitude: value\" with latitude -90 to 90 and longitude -180 to 180.",
+   "map.2 needs the form \"Place @ latitude, longitude: value\" with latitude -90 to 90 and longitude -180 to 180.",
+   "map values need to be 0 or more.",
+   "diagram.0 needs the form \"From -> To\" with an optional \": label\".",
+   "a diagram holds up to 30 steps."
+  ]
+ },
+ {
+  "name": "cards tool",
+  "rich": true,
+  "arguments": {
+   "title": "Calc",
+   "tool": "<label>Qty <input id=q></label><output id=o></output><script>q.oninput=()=>o.value=q.value*2</script><a href=\"#top\">top</a><img src=\"data:image/png;base64,AA\">"
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "Calc",
+       "children": [
+        "tool"
+       ]
+      },
+      {
+       "id": "tool",
+       "component": "AnswerTool",
+       "title": "Calc",
+       "html": "<label>Qty <input id=q></label><output id=o></output><script>q.oninput=()=>o.value=q.value*2</script><a href=\"#top\">top</a><img src=\"data:image/png;base64,AA\">"
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "name": "cards tool reaches out",
+  "rich": true,
+  "arguments": {
+   "title": "Calc",
+   "tool": "<img src=' https://x.example/a.png'>"
+  },
+  "problems": [
+   "tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+  ]
+ },
+ {
+  "name": "cards tool fetch",
+  "rich": true,
+  "arguments": {
+   "title": "Calc",
+   "tool": "<button onclick=\"fetch('/x')\">Go</button>"
+  },
+  "problems": [
+   "tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+  ]
+ },
+ {
+  "name": "cards tool css url",
+  "rich": true,
+  "arguments": {
+   "title": "Calc",
+   "tool": "<div style=\"background: url( 'DATA:x')\">a</div><div style=\"background:url(http://x)\">b</div>"
+  },
+  "problems": [
+   "tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+  ]
+ },
+ {
+  "name": "cards tool protocol relative",
+  "rich": true,
+  "arguments": {
+   "title": "Calc",
+   "tool": "<script>let a = 1;</script><link rel=x><p>hi</p>"
+  },
+  "problems": [
+   "tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+  ]
+ },
+ {
+  "name": "cards table faults",
+  "rich": false,
+  "arguments": {
+   "title": "Bad",
+   "table": "| A | B |\n| 1 |",
+   "chart": "bar"
+  },
+  "problems": [
+   "table row 1 needs 2 cells, one per column."
+  ]
+ },
+ {
+  "name": "cards table one row",
+  "rich": false,
+  "arguments": {
+   "title": "Bad",
+   "table": "| A | B |\n|---|---|"
+  },
+  "problems": [
+   "table needs a header row and at least one data row."
+  ]
+ },
+ {
+  "name": "cards chart column faults",
+  "rich": false,
+  "arguments": {
+   "title": "Bad",
+   "table": "| Region | Revenue | Orders |\n|---|---:|---:|\n| North | 12699845.92 | 1,250 |\n| South | 9876543.2 | 980 |\n| East | -3.5 | 0 |",
+   "chart": "bar",
+   "chartColumn": "Region"
+  },
+  "problems": [
+   "chartColumn must be one of the table's value columns: Revenue, Orders."
+  ]
+ },
+ {
+  "name": "cards chart no numbers",
+  "rich": false,
+  "arguments": {
+   "title": "Bad",
+   "table": "| A | B |\n| x | y |\n| z | 1 |",
+   "chart": "area"
+  },
+  "problems": [
+   "chart needs a table column of plain numbers, such as 12699845.92; name it in chartColumn."
+  ]
+ },
+ {
+  "name": "cards chart bad value",
+  "rich": false,
+  "arguments": {
+   "title": "Bad",
+   "table": "| A | B |\n| x | 1 |\n| z | n/a |",
+   "chart": "area",
+   "chartColumn": "b"
+  },
+  "problems": [
+   "table row 2 needs a plain number in the B column, such as 12699845.92."
+  ]
+ },
+ {
+  "name": "cards chart one point",
+  "rich": false,
+  "arguments": {
+   "title": "Bad",
+   "table": "| A | B |\n| x | 1 |",
+   "chart": "line"
+  },
+  "problems": [
+   "chart needs 2 to 60 table rows."
+  ]
+ },
+ {
+  "name": "cards donut",
+  "rich": false,
+  "arguments": {
+   "title": "Mix",
+   "table": "| Region | Revenue | Orders |\n|---|---:|---:|\n| North | 12699845.92 | 1,250 |\n| South | 9876543.2 | 980 |\n| East | -3.5 | 0 |",
+   "chart": "donut",
+   "chartColumn": "Orders"
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "Mix",
+       "children": [
+        "chart",
+        "table"
+       ]
+      },
+      {
+       "id": "chart",
+       "component": "Chart",
+       "type": "donut",
+       "title": "Mix",
+       "valueLabel": "Orders",
+       "data": [
+        {
+         "d": "North",
+         "v": 1250
+        },
+        {
+         "d": "South",
+         "v": 980
+        },
+        {
+         "d": "East",
+         "v": 0
+        }
+       ]
+      },
+      {
+       "id": "table",
+       "component": "Table",
+       "columns": [
+        {
+         "key": "c0",
+         "label": "Region"
+        },
+        {
+         "key": "c1",
+         "label": "Revenue",
+         "align": "right"
+        },
+        {
+         "key": "c2",
+         "label": "Orders",
+         "align": "right"
+        }
+       ],
+       "rows": [
+        {
+         "c0": "North",
+         "c1": "12,699,846",
+         "c2": "1,250"
+        },
+        {
+         "c0": "South",
+         "c1": "9,876,543",
+         "c2": "980"
+        },
+        {
+         "c0": "East",
+         "c1": "-4",
+         "c2": "0"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "name": "cards donut negative",
+  "rich": false,
+  "arguments": {
+   "title": "Mix",
+   "table": "| Region | Revenue | Orders |\n|---|---:|---:|\n| North | 12699845.92 | 1,250 |\n| South | 9876543.2 | 980 |\n| East | -3.5 | 0 |",
+   "chart": "donut",
+   "chartColumn": "Revenue"
+  },
+  "problems": [
+   "a donut needs 2 to 8 rows with nonnegative values."
+  ]
+ },
+ {
+  "name": "cards compare faults",
+  "rich": true,
+  "arguments": {
+   "title": "Cmp",
+   "layout": "compare",
+   "table": "| A | B |\n| x | 1 |",
+   "rowDetails": [
+    "y >> | C |\n| 1 |",
+    "x >> | C |"
+   ],
+   "chart": "pie"
+  },
+  "problems": [
+   "chart: Invalid option: expected one of \"line\"|\"bar\"|\"area\"|\"donut\""
+  ]
+ },
+ {
+  "name": "cards layout without table",
+  "rich": true,
+  "arguments": {
+   "title": "Cmp",
+   "layout": "compare",
+   "chart": "bar",
+   "rowDetails": [
+    "x >> | C |\n| 1 |"
+   ],
+   "callout": "c"
+  },
+  "problems": [
+   "chart draws from table; add a table.",
+   "compare shows table rows side by side; add a table.",
+   "rowDetails open under table rows; add a table."
+  ]
+ },
+ {
+  "name": "cards empty answer",
+  "rich": false,
+  "arguments": {
+   "title": "Nothing",
+   "stage": "draft"
+  },
+  "problems": [
+   "Fill at least one of table, keyFigures, callout, followUps, computed, map, diagram, tool."
+  ]
+ },
+ {
+  "name": "cards schema faults",
+  "rich": false,
+  "arguments": {
+   "title": "  ",
+   "stage": "done",
+   "keyFigures": [
+    "Bad",
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    3,
+    "A: 1",
+    "B: 2",
+    "C: 3",
+    "D: 4"
+   ],
+   "callout": 5,
+   "mood": "calm",
+   "followUps": true
+  },
+  "problems": [
+   "title: Too small: expected string to have >=1 characters",
+   "stage: Invalid option: expected one of \"draft\"|\"final\"",
+   "keyFigures.1: Too big: expected string to have <=160 characters",
+   "keyFigures.2: Invalid input: expected string, received number",
+   "keyFigures: Too big: expected array to have <=6 items",
+   "callout: Invalid input: expected string, received number",
+   "mood: Invalid option: expected one of \"good\"|\"watch\"|\"act\"",
+   "followUps: Invalid input: expected array, received boolean"
+  ]
+ },
+ {
+  "name": "cards key figure faults",
+  "rich": false,
+  "arguments": {
+   "title": "KF",
+   "keyFigures": [
+    "Label:",
+    ": 5",
+    "Total: (only note)",
+    "Margin: 12% (vs 10%) (est)"
+   ]
+  },
+  "problems": [
+   "keyFigures.0 needs the form \"Label: value\".",
+   "keyFigures.1 needs the form \"Label: value\"."
+  ]
+ },
+ {
+  "name": "cards missing title",
+  "rich": false,
+  "arguments": {
+   "callout": "x"
+  },
+  "problems": [
+   "title: Invalid input: expected string, received undefined"
+  ]
+ },
+ {
+  "name": "cards not an object",
+  "rich": false,
+  "arguments": {
+   "only": [
+    1,
+    2
+   ]
+  },
+  "problems": [
+   "title: Invalid input: expected string, received undefined"
+  ]
+ },
+ {
+  "name": "cards number formats",
+  "rich": false,
+  "arguments": {
+   "title": "Fmt",
+   "table": "| N | Big | Mixed | Neg | Zero |\n| a | 12345.678 | 1.5 | -0.004 | -0 |\n| b | 1e21 | 9999.995 | -1,234.5 | 0 |\n| c | 0x10 | 2 | 1. | .5 |"
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "Fmt",
+       "children": [
+        "table"
+       ]
+      },
+      {
+       "id": "table",
+       "component": "Table",
+       "columns": [
+        {
+         "key": "c0",
+         "label": "N"
+        },
+        {
+         "key": "c1",
+         "label": "Big",
+         "align": "right"
+        },
+        {
+         "key": "c2",
+         "label": "Mixed",
+         "align": "right"
+        },
+        {
+         "key": "c3",
+         "label": "Neg",
+         "align": "right"
+        },
+        {
+         "key": "c4",
+         "label": "Zero",
+         "align": "right"
+        }
+       ],
+       "rows": [
+        {
+         "c0": "a",
+         "c1": "12,346",
+         "c2": "1.50",
+         "c3": "-0.00",
+         "c4": "-0.00"
+        },
+        {
+         "c0": "b",
+         "c1": "1,000,000,000,000,000,000,000",
+         "c2": "10,000.00",
+         "c3": "-1,234.50",
+         "c4": "0.00"
+        },
+        {
+         "c0": "c",
+         "c1": "16",
+         "c2": "2.00",
+         "c3": "1.00",
+         "c4": "0.50"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "name": "cards tool javascript link",
+  "rich": true,
+  "arguments": {
+   "title": "T",
+   "tool": "<a href=\"javascript:alert(1)\">x</a>"
+  },
+  "problems": [
+   "tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+  ]
+ },
+ {
+  "name": "cards tool hash and data",
+  "rich": true,
+  "arguments": {
+   "title": "T",
+   "tool": "<a href = '#x'>x</a><img srcset=\" data:image/png;base64,AA\"><p data-x=\"1\">y</p>"
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "T",
+       "children": [
+        "tool"
+       ]
+      },
+      {
+       "id": "tool",
+       "component": "AnswerTool",
+       "title": "T",
+       "html": "<a href = '#x'>x</a><img srcset=\" data:image/png;base64,AA\"><p data-x=\"1\">y</p>"
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "name": "cards tool protocol-relative src",
+  "rich": true,
+  "arguments": {
+   "title": "T",
+   "tool": "<img src = '//cdn.example/a.png'>"
+  },
+  "problems": [
+   "tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+  ]
+ },
+ {
+  "name": "cards tool window open",
+  "rich": true,
+  "arguments": {
+   "title": "T",
+   "tool": "<script type=module>\nwindow . open('x')\n</script >"
+  },
+  "problems": [
+   "tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+  ]
+ },
+ {
+  "name": "cards tool handler import",
+  "rich": true,
+  "arguments": {
+   "title": "T",
+   "tool": "<body onload=import('x')>"
+  },
+  "problems": [
+   "tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+  ]
+ },
+ {
+  "name": "cards tool location outside script",
+  "rich": true,
+  "arguments": {
+   "title": "T",
+   "tool": "<p>location.href and fetch are words here</p>"
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "T",
+       "children": [
+        "tool"
+       ]
+      },
+      {
+       "id": "tool",
+       "component": "AnswerTool",
+       "title": "T",
+       "html": "<p>location.href and fetch are words here</p>"
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "name": "cards tool upper iframe",
+  "rich": true,
+  "arguments": {
+   "title": "T",
+   "tool": "< IFRAME></iframe>"
+  },
+  "problems": [
+   "tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+  ]
+ },
+ {
+  "name": "cards choice faults",
+  "rich": true,
+  "arguments": {
+   "title": "F",
+   "controls": [
+    "c: C = One (1) | Two (2) | Three (x)",
+    "d: D = O0 (0) | O1 (1) | O2 (2) | O3 (3) | O4 (4) | O5 (5) | O6 (6) | O7 (7) | O8 (8) | O9 (9) | O10 (10) | O11 (11) | O12 (12)"
+   ],
+   "computed": [
+    "Out: 1"
+   ]
+  },
+  "problems": [
+   "controls.0 needs each choice in the form \"Option (number)\", separated by |.",
+   "controls.1 has more than 12 choices."
+  ]
+ },
+ {
+  "name": "cards tool upper data attr",
+  "rich": true,
+  "arguments": {
+   "title": "T",
+   "tool": "<object DATA=\"https://x\"></object>"
+  },
+  "problems": [
+   "tool runs offline inside the answer; put every figure it needs in the fragment, and load, open, or navigate to nothing outside it."
+  ]
+ },
+ {
+  "name": "cards tool safe script",
+  "rich": true,
+  "arguments": {
+   "title": "T",
+   "tool": "<script>const total = [1,2].reduce((a, b) => a + b); document.getElementById('o').textContent = total; const reopen = 1;</script><output id=o></output>"
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "T",
+       "children": [
+        "tool"
+       ]
+      },
+      {
+       "id": "tool",
+       "component": "AnswerTool",
+       "title": "T",
+       "html": "<script>const total = [1,2].reduce((a, b) => a + b); document.getElementById('o').textContent = total; const reopen = 1;</script><output id=o></output>"
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "name": "cards formula faults",
+  "rich": true,
+  "arguments": {
+   "title": "F",
+   "controls": [
+    "a: A = 2 (0 to 4)"
+   ],
+   "values": [
+    "b = 3"
+   ],
+   "computed": [
+    "Two numbers: 1.50 2.50",
+    "Empty:   ",
+    "No args: max()",
+    "Many: min(1,2,3,4,5,6,7,8,9)",
+    "Close: abs(1",
+    "Op: a * * b"
+   ]
+  },
+  "problems": [
+   "computed.0: unexpected \"2.5\".",
+   "computed.1: the formula is empty.",
+   "computed.2: max takes 1 to 8 values.",
+   "computed.3: min takes 1 to 8 values.",
+   "computed.4: close abs( with ).",
+   "computed.5: unexpected \"*\"."
+  ]
+ },
+ {
+  "name": "cards formula forms",
+  "rich": true,
+  "arguments": {
+   "title": "F",
+   "controls": [
+    "a: A = 2 (0 to 12.5)",
+    "b: B (kg) = 0.05 (0 to 0.07)",
+    "c: C = 1 (-3 to 997)"
+   ],
+   "computed": [
+    "Right: a ^ b ^ 2",
+    "Neg: -a ^ 2 + +b",
+    "Round: round(a * 1234.5, -1) + round(c)",
+    "Exp: 1.5e3 * .5 + 5. - A",
+    "Unit (a very long unit text here): a"
+   ]
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "F",
+       "children": [
+        "whatIf"
+       ]
+      },
+      {
+       "id": "whatIf",
+       "component": "WhatIf",
+       "controls": [
+        {
+         "name": "a",
+         "label": "A",
+         "value": 2,
+         "min": 0,
+         "max": 12.5,
+         "step": 0.13
+        },
+        {
+         "name": "b",
+         "label": "B",
+         "unit": "kg",
+         "value": 0.05,
+         "min": 0,
+         "max": 0.07,
+         "step": 0.0007
+        },
+        {
+         "name": "c",
+         "label": "C",
+         "value": 1,
+         "min": -3,
+         "max": 997,
+         "step": 10
+        }
+       ],
+       "values": {},
+       "outputs": [
+        {
+         "label": "Right",
+         "expression": "a ^ b ^ 2"
+        },
+        {
+         "label": "Neg",
+         "expression": "-a ^ 2 + +b"
+        },
+        {
+         "label": "Round",
+         "expression": "round(a * 1234.5, -1) + round(c)"
+        },
+        {
+         "label": "Exp",
+         "expression": "1.5e3 * .5 + 5. - A"
+        },
+        {
+         "label": "Unit (a very long unit text here)",
+         "expression": "a"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "name": "cards control odd numbers",
+  "rich": true,
+  "arguments": {
+   "title": "F",
+   "controls": [
+    "a: A = 1.2.3 (0 to 2)",
+    "b: B = 1 (0 to 2, step 1.2.3)"
+   ],
+   "computed": [
+    "Out: b"
+   ]
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "F",
+       "children": [
+        "whatIf"
+       ]
+      },
+      {
+       "id": "whatIf",
+       "component": "WhatIf",
+       "controls": [
+        {
+         "name": "a",
+         "label": "A",
+         "min": 0,
+         "max": 2,
+         "step": 0.02
+        },
+        {
+         "name": "b",
+         "label": "B",
+         "value": 1,
+         "min": 0,
+         "max": 2,
+         "step": 0.02
+        }
+       ],
+       "values": {},
+       "outputs": [
+        {
+         "label": "Out",
+         "expression": "b"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "name": "cards control unused default",
+  "rich": true,
+  "arguments": {
+   "title": "F",
+   "controls": [
+    "a: A = 1.2.3 (0 to 2)",
+    "b: B = 1 (0 to 2)"
+   ],
+   "computed": [
+    "Out: b"
+   ]
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "F",
+       "children": [
+        "whatIf"
+       ]
+      },
+      {
+       "id": "whatIf",
+       "component": "WhatIf",
+       "controls": [
+        {
+         "name": "a",
+         "label": "A",
+         "min": 0,
+         "max": 2,
+         "step": 0.02
+        },
+        {
+         "name": "b",
+         "label": "B",
+         "value": 1,
+         "min": 0,
+         "max": 2,
+         "step": 0.02
+        }
+       ],
+       "values": {},
+       "outputs": [
+        {
+         "label": "Out",
+         "expression": "b"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "name": "cards and ask together",
+  "rich": false,
+  "arguments": {
+   "title": "Both",
+   "callout": "x"
+  },
+  "messages": [
+   {
+    "version": "v1.0",
+    "createSurface": {
+     "surfaceId": "answer-<id>",
+     "catalogId": "urn:openneko:catalog:work:v2",
+     "dataModel": {},
+     "components": [
+      {
+       "id": "root",
+       "component": "Answer",
+       "title": "Both",
+       "children": [
+        "callout"
+       ]
+      },
+      {
+       "id": "callout",
+       "component": "Callout",
+       "mood": "watch",
+       "text": "x"
+      }
+     ]
+    }
+   }
+  ]
+ }
+]

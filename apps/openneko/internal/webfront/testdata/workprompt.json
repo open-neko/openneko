@@ -49,7 +49,6 @@
       ],
       "wantsCards": true,
       "includeUxMetadata": true,
-      "supportsCardTool": true,
       "richCards": true,
       "supportsSkillTool": true,
       "supportsMemoryTool": true,
@@ -65,8 +64,8 @@
       },
       "scriptData": true
     },
-    "bytes": 52408,
-    "sha256": "c59163b3aeb4a5182b63066875ace0e5396cf95751cdc880268176052e3960da"
+    "bytes": 51948,
+    "sha256": "e430cea3f93297c917d1bf22e7b652f893a2132f90da78af04a12addbb224e30"
   },
   {
     "name": "telegram member",
@@ -100,7 +99,6 @@
       "installedSkills": [],
       "wantsCards": true,
       "includeUxMetadata": true,
-      "supportsCardTool": true,
       "richCards": false,
       "supportsSkillTool": true,
       "supportsMemoryTool": true,
@@ -113,8 +111,8 @@
       "bot": null,
       "scriptData": true
     },
-    "bytes": 26486,
-    "sha256": "de8b2c3f9bb142e06497337fe18c5aa69bfdf9fb74f0599328d54f2297bab0f8"
+    "bytes": 26359,
+    "sha256": "e5add477260acc447ea2dcd2033ee9e2d6e944dba63b83029559badd0da748b8"
   },
   {
     "name": "slack eval without cards",
@@ -148,7 +146,6 @@
       "installedSkills": [],
       "wantsCards": false,
       "includeUxMetadata": false,
-      "supportsCardTool": true,
       "richCards": false,
       "supportsSkillTool": true,
       "supportsMemoryTool": true,
@@ -199,7 +196,6 @@
       "installedSkills": [],
       "wantsCards": true,
       "includeUxMetadata": true,
-      "supportsCardTool": false,
       "richCards": true,
       "supportsSkillTool": false,
       "supportsMemoryTool": false,
@@ -212,8 +208,8 @@
       "bot": null,
       "scriptData": true
     },
-    "bytes": 43730,
-    "sha256": "d56407e49a0b15ee2c59531c5c1ce8c9e236c1fdf238e5b56ee0ffd897c35ccb"
+    "bytes": 43284,
+    "sha256": "71f72d0ac45a19a4c3d1da9867c9de26e141c31b0702a18509cc8dc33dc87ae5"
   },
   {
     "name": "skill list catalog",
@@ -256,7 +252,6 @@
       ],
       "wantsCards": true,
       "includeUxMetadata": true,
-      "supportsCardTool": true,
       "richCards": true,
       "supportsSkillTool": false,
       "supportsMemoryTool": true,
@@ -269,8 +264,8 @@
       "bot": null,
       "scriptData": true
     },
-    "bytes": 32414,
-    "sha256": "8a6bf4da9e6f982d028cb43300d6ca9ae187e47fc47bf9775df1e11ac3b4a8a8"
+    "bytes": 32326,
+    "sha256": "7a7b904a4a9045917a3c54b601f955d564fe53ae67bd178a800d7691a2cad726"
   },
   {
     "name": "skill list catalog empty",
@@ -304,7 +299,6 @@
       "installedSkills": [],
       "wantsCards": true,
       "includeUxMetadata": true,
-      "supportsCardTool": true,
       "richCards": true,
       "supportsSkillTool": true,
       "supportsMemoryTool": true,
@@ -317,8 +311,8 @@
       "bot": null,
       "scriptData": true
     },
-    "bytes": 32174,
-    "sha256": "8bca5eb352a2b1fa9667e266c4903c89bffa2c3b016cfeb68a9a649e1e76bf0d"
+    "bytes": 32086,
+    "sha256": "cfbe008bab01f343205aeb95fe4e445c066aa0ccd5722ed1e16f7583181cc2de"
   },
   {
     "name": "no sandbox, so no script data",
@@ -352,7 +346,6 @@
       "installedSkills": [],
       "wantsCards": true,
       "includeUxMetadata": true,
-      "supportsCardTool": true,
       "richCards": true,
       "supportsSkillTool": true,
       "supportsMemoryTool": true,
@@ -365,7 +358,7 @@
       "bot": null,
       "scriptData": false
     },
-    "bytes": 50608,
-    "sha256": "3c4b6f842bb3b663d41629e057054b128328ff1c8103a81e4a88186ce95cc77e"
+    "bytes": 50148,
+    "sha256": "98ed83eff88c3d468913ae334db8ad40c717146ea2845c2b85b5d7a2ea579e6f"
   }
 ]

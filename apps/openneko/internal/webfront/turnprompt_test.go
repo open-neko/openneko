@@ -48,13 +48,13 @@ func TestWorkPromptMatchesNode(t *testing.T) {
 }
 
 func TestTurnSectionsParse(t *testing.T) {
-	for _, name := range []string{"cards", "answer_fence_cards", "memory_fence", "ax_delegation", "transcript"} {
+	for _, name := range []string{"cards", "rich_card_examples", "memory_fence", "ax_delegation", "transcript"} {
 		if turnSections[name] == "" {
 			t.Fatalf("section %s is empty", name)
 		}
 	}
-	if !strings.HasPrefix(turnSections["answer_fence_cards"], "\nWhen you write") ||
-		!strings.HasSuffix(turnSections["answer_fence_cards"], "repeat the table in markdown.\n") {
-		t.Fatalf("answer_fence_cards lost its edge newlines: %q", turnSections["answer_fence_cards"])
+	if !strings.HasPrefix(turnSections["rich_card_examples"], "\nA comparison:") ||
+		!strings.HasSuffix(turnSections["rich_card_examples"], "step\"}\n") {
+		t.Fatalf("rich_card_examples lost its edge newlines: %q", turnSections["rich_card_examples"])
 	}
 }

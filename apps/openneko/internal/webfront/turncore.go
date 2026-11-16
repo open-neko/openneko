@@ -62,14 +62,10 @@ func (in agentCoreInput) binding() turnBinding {
 func filesEnabled() bool { return strings.TrimSpace(os.Getenv("OPENNEKO_SERVE_URL")) != "" }
 
 // agentCoreServers is the logical servers runAgentBackend() mounts for a
-// work turn, in its order. The card server ships only to a turn that renders
-// cards; the pack action server only when one action is not denied.
+// work turn, in its order. The pack action server ships only when one action
+// is not denied.
 func agentCoreServers(in agentCoreInput, packTools int) []string {
-	servers := []string{"neko_interaction", "neko_graphjin"}
-	if !in.CardsOff {
-		servers = append(servers, "neko_ui")
-	}
-	servers = append(servers, "neko_skills", "neko_memory", "neko_guides")
+	servers := []string{"neko_interaction", "neko_graphjin", "neko_skills", "neko_memory", "neko_guides"}
 	files := filesEnabled
 	if in.FilesEnabled != nil {
 		files = in.FilesEnabled
