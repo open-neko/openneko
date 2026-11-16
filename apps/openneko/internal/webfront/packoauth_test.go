@@ -51,6 +51,7 @@ type fakeProvider struct {
 	account string
 	forms   []url.Values
 	bearer  string
+	onToken func()
 }
 
 func (p *fakeProvider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -60,6 +61,9 @@ func (p *fakeProvider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/token":
 		_ = r.ParseForm()
 		p.forms = append(p.forms, r.PostForm)
+		if p.onToken != nil {
+			p.onToken()
+		}
 		_, _ = w.Write([]byte(p.token))
 	case "/userinfo":
 		p.bearer = r.Header.Get("Authorization")

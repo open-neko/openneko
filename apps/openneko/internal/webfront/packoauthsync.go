@@ -277,7 +277,12 @@ func (a *API) refreshPackOAuth(ctx context.Context, orgID, packID string) (int, 
 			if err != nil {
 				return refreshed, err
 			}
+			disconnected := false
 			if _, err := p.updateSection(func(s map[string]string) {
+				if s[envKey(c.RefreshToken)] != refreshToken {
+					disconnected = true
+					return
+				}
 				s[envKey(c.AccessToken)] = tokens.AccessToken
 				s[envKey(c.RefreshToken)] = tokens.RefreshToken
 				s[oauthStateKey(c.Key, "EXPIRES_AT")] = tokens.ExpiresAt
@@ -285,6 +290,9 @@ func (a *API) refreshPackOAuth(ctx context.Context, orgID, packID string) (int, 
 				s[pendingKey] = "true"
 			}); err != nil {
 				return refreshed, err
+			}
+			if disconnected {
+				continue
 			}
 		}
 		if err := a.syncPackOAuth(ctx, orgID, packID, c.Key, true); err != nil {
