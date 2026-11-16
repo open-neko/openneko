@@ -475,6 +475,7 @@ func (a *API) leasePendingWorkflowFirings(ctx context.Context, now time.Time) ([
 			join workflow_definition d on d.id = f.workflow_id
 			where f.status = 'pending'
 			  and f.scheduled_for <= $1
+			  and f.available_at <= $1
 			  and (f.lease_until is null or f.lease_until <= $1)
 			  and d.enabled = true
 			  and d.cron_enabled = true

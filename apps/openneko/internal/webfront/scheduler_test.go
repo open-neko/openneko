@@ -376,3 +376,21 @@ func TestSchedulerKeepsCronFiringsInTheDailyRunBudget(t *testing.T) {
 		t.Errorf("the budget did not reset on the next day: %v", schedulerFirings(t, f, wfID))
 	}
 }
+
+func TestSchedulerWaitsForTheRetryDelayOfAFiring(t *testing.T) {
+	f, exec := schedulerTestFront(t)
+	ctx := context.Background()
+	const wfID = "00000000-0000-4000-8000-000000000047"
+	day := func(d, h, m, s int) time.Time { return time.Date(2026, 8, d, h, m, s, 0, time.UTC) }
+	exec(`insert into workflow_definition (id, org_id, name, cron, cron_timezone, cron_enabled, enabled)
+		values ($1, 'org', 'Morning check', '0 7 * * *', 'UTC', true, true)`, wfID)
+	f.API.RunWorkflowSchedulerTick(ctx, day(27, 6, 30, 0))
+	exec(`insert into workflow_schedule_firing (org_id, workflow_id, scheduled_for, status, available_at)
+		values ('org', $1, $2, 'pending', $3)`, wfID, day(26, 7, 0, 0), day(27, 6, 30, 15))
+	if snap := f.API.RunWorkflowSchedulerTick(ctx, day(27, 6, 30, 5)); snap.Dispatched != 0 {
+		t.Errorf("a firing dispatched inside its retry delay: %+v", snap)
+	}
+	if snap := f.API.RunWorkflowSchedulerTick(ctx, day(27, 6, 30, 20)); snap.Dispatched != 1 {
+		t.Errorf("the firing after its retry delay: %+v", snap)
+	}
+}
