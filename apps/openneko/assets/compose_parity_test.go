@@ -247,15 +247,32 @@ func TestPostReleaseSmokeGatesRetainedDemoUpgrades(t *testing.T) {
 		"com.docker.compose.service=openneko-serve",
 		"{{.State.Status}}",
 		`docker exec "$web" openneko release-check --datasource adventureworks --serve-socket --sandbox --packs --skills`,
-		`grep -qE '^sandbox=(off|ok|remote)$' <<<"$checks"`,
+		`grep -qx sandbox=ok <<<"$checks"`,
 		"authenticated_datasource_query=ok",
 		"serve_socket=ok",
 		`grep -qE '^builtin_packs=[1-9][0-9]*$' <<<"$checks"`,
 		`grep -qE '^bundled_skills=[1-9][0-9]*$' <<<"$checks"`,
+		"docker build -t openneko-sandbox:smoke recipes/sandbox",
+		`echo "OPENNEKO_SANDBOX_KEY=$key" >> "$GITHUB_ENV"`,
+		"recipes/sandbox/compose.yml > ~/.config/openneko/compose.override.yml",
+		"run: scripts/smoke-script-step.sh openneko-demo",
 	} {
 		if !strings.Contains(workflow, required) {
 			t.Fatalf("post-release smoke no longer gates retained demo upgrades: missing %q", required)
 		}
+	}
+	if strings.Index(workflow, "compose.override.yml") > strings.Index(workflow, "openneko start --mode demo") {
+		t.Fatal("post-release smoke writes the sandbox override after the demo starts")
+	}
+	recipe, err := os.ReadFile(filepath.Join(repoRootForTest(t), "recipes", "sandbox", "compose.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(recipe), "\n    build:\n      context: recipes/sandbox\n") {
+		t.Fatal("the sandbox recipe lost the build lines that post-release smoke replaces with its local image")
+	}
+	if info, err := os.Stat(filepath.Join(repoRootForTest(t), "scripts", "smoke-script-step.sh")); err != nil || info.Mode()&0o111 == 0 {
+		t.Fatalf("scripts/smoke-script-step.sh is missing or not executable: %v", err)
 	}
 	if strings.Contains(workflow, "neko-worker") || strings.Contains(workflow, "service=worker") {
 		t.Fatal("post-release smoke still references the removed worker")
