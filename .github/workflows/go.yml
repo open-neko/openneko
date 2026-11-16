@@ -64,6 +64,19 @@ jobs:
       - name: go build
         run: go build ./...
 
+      - name: Run the native server install tests as root
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          CGO_ENABLED=0 go test -c -o /tmp/cli.test ./internal/cli
+          docker run --rm -e OPENNEKO_TEST_SERVER_INSTALL=1 -v /tmp/cli.test:/cli.test:ro \
+            debian:bookworm-slim /cli.test -test.v -test.run 'TestServerInstall|TestServerRestore' | tee /tmp/server-install.log
+          grep -q -- '--- PASS: TestServerInstallZones' /tmp/server-install.log
+          if grep -- '--- SKIP' /tmp/server-install.log; then
+            echo "a root test skipped; this step must run every one" >&2
+            exit 1
+          fi
+
   test-database:
     name: test (ubuntu-22.04, postgres)
     runs-on: ubuntu-22.04

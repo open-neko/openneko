@@ -55,6 +55,8 @@ one group for the shared folders only. --one-user runs both services as one user
 	f.StringVar(&o.server.UnitDir, "unit-dir", "/etc/systemd/system", "Folder for the systemd units")
 	f.StringVar(&o.server.Exe, "exe", "", "The openneko executable the services run (default: this one)")
 	f.StringVar(&o.server.WebDir, "web-dir", "", "The web app folder (default: share/openneko/web of this release)")
+	f.StringVar(&o.server.SandboxDir, "sandbox-dir", "/run/openneko-sandbox", "Socket folder for the sandbox service, apart from serve's sockets")
+	f.StringVar(&o.server.TmpfilesDir, "tmpfiles-dir", "/etc/tmpfiles.d", "Folder for the tmpfiles entry that makes the sandbox socket folder at boot")
 	f.StringVar(&o.server.PublicURL, "public-url", "", "The URL people open (default: http://localhost:<port>)")
 	f.StringVar(&o.databaseURL, "database-url", "", "OpenNeko's Postgres database URL; the login needs CREATEROLE")
 	f.IntVar(&o.port, "port", 3000, "Web port")
@@ -104,6 +106,14 @@ func runServerInstall(cmd *cobra.Command, o serverInstallOptions) error {
 		}
 	}
 	fmt.Fprintf(out, "Wrote %s and %s to %s.\n", native.WebUnit, native.ServeUnit, s.UnitDir)
+	if text := s.SandboxTmpfileText(); text != "" && s.TmpfilesDir != "" {
+		if err := os.MkdirAll(s.TmpfilesDir, 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(s.TmpfilesDir, native.SandboxTmpfile), []byte(text), 0o644); err != nil {
+			return err
+		}
+	}
 	if o.systemctl {
 		steps := [][]string{{"daemon-reload"}, {"enable", native.WebUnit, native.ServeUnit}}
 		if o.start {

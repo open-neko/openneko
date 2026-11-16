@@ -139,6 +139,9 @@ func startNative(cmd *cobra.Command, webDir, dbURL string, detach, skipMigrate b
 	if err := layout.Prepare(); err != nil {
 		return err
 	}
+	if err := prepareNativeSandbox(nativeSandboxDir(), os.Getenv("OPENNEKO_SANDBOX_URL"), os.Getenv("OPENNEKO_SANDBOX_KEY")); err != nil {
+		return err
+	}
 	if err := os.WriteFile(layout.Seed(), assets.GraphJinSeed, 0o600); err != nil {
 		return err
 	}

@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"io/fs"
+	"net"
 	"os"
 	"os/exec"
 	"os/user"
@@ -107,6 +108,50 @@ func TestServerInstallZones(t *testing.T) {
 			t.Error(err)
 		}
 	}
+
+	if raw, err := os.ReadFile(filepath.Join(s.TmpfilesDir, native.SandboxTmpfile)); err != nil || string(raw) != "d "+s.SandboxDir+" 0750 root "+s.Group+" -\n" {
+		t.Errorf("tmpfiles entry %q %v", raw, err)
+	}
+	if problem, err := dirProblem(native.Dir{Path: s.SandboxDir, Owner: "root", Group: s.Group, Mode: 0o750}); err != nil || problem != "" {
+		t.Errorf("sandbox socket folder: %q %v", problem, err)
+	}
+	sock := filepath.Join(s.SandboxDir, "sandbox.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	_, gid, err := lookupIDs("root", s.Group)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown(sock, 0, gid); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(sock, 0o660); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{s.ControlUser, s.AgentUser} {
+		if err := as(name, "test -w "+sock); err != nil {
+			t.Errorf("%s cannot reach the sandbox socket", name)
+		}
+	}
+	if err := as("nobody", "test -w "+sock+" || ls "+s.SandboxDir); err == nil {
+		t.Error("a user outside the group reached the sandbox socket folder")
+	}
+	if err := as(s.AgentUser, "touch "+s.SandboxDir+"/planted"); err == nil {
+		t.Error("the agent-zone user wrote into the sandbox socket folder")
+	}
+}
+
+func TestServerInstallOneUserSandboxFolder(t *testing.T) {
+	s := installTestServerWith(t, true)
+	if problem, err := dirProblem(native.Dir{Path: s.SandboxDir, Owner: s.ControlUser, Group: s.ControlUser, Mode: 0o700}); err != nil || problem != "" {
+		t.Errorf("sandbox socket folder: %q %v", problem, err)
+	}
+	if raw, err := os.ReadFile(filepath.Join(s.TmpfilesDir, native.SandboxTmpfile)); err != nil || string(raw) != "d "+s.SandboxDir+" 0700 "+s.ControlUser+" "+s.ControlUser+" -\n" {
+		t.Errorf("tmpfiles entry %q %v", raw, err)
+	}
 }
 
 func TestServerRestoreOwners(t *testing.T) {
@@ -157,6 +202,11 @@ func TestServerRestoreOwners(t *testing.T) {
 
 func installTestServer(t *testing.T) native.Server {
 	t.Helper()
+	return installTestServerWith(t, false)
+}
+
+func installTestServerWith(t *testing.T, oneUser bool) native.Server {
+	t.Helper()
 	if os.Getenv("OPENNEKO_TEST_SERVER_INSTALL") != "1" || os.Geteuid() != 0 {
 		t.Skip("needs root and OPENNEKO_TEST_SERVER_INSTALL=1")
 	}
@@ -168,7 +218,7 @@ func installTestServer(t *testing.T) native.Server {
 	if err := os.Chmod(base, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, d := range []string{"etc", "units", "opt/bin", "opt/share/openneko/web"} {
+	for _, d := range []string{"etc", "run", "units", "opt/bin", "opt/share/openneko/web"} {
 		if err := os.MkdirAll(filepath.Join(base, d), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -176,7 +226,9 @@ func installTestServer(t *testing.T) native.Server {
 	o := serverInstallOptions{
 		server: native.Server{ControlUser: "ozt-control", AgentUser: "ozt-agent", Group: "ozt-shared",
 			ConfigDir: filepath.Join(base, "etc", "openneko"), DataDir: filepath.Join(base, "data"),
-			UnitDir: filepath.Join(base, "units"), Exe: filepath.Join(base, "opt", "bin", "openneko")},
+			UnitDir: filepath.Join(base, "units"), Exe: filepath.Join(base, "opt", "bin", "openneko"),
+			SandboxDir: filepath.Join(base, "run", "openneko-sandbox"), TmpfilesDir: filepath.Join(base, "tmpfiles.d")},
+		oneUser:     oneUser,
 		databaseURL: "postgres://owner:control-secret@127.0.0.1:5432/neko?sslmode=disable",
 		port:        3000, bind: "127.0.0.1",
 	}
