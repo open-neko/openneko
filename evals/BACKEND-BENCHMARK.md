@@ -223,14 +223,18 @@ and `passed`:
 - `cards`: a card surface arrived. Due only when the variant has cards on
   and the question asks for a chart, graph, plot or table. The v4 configs
   turn cards off, so this grader is not due there.
-- `noLeak`: the answer holds no executor code (`final(`, `await` calls,
-  `javascriptCode`), no JavaScript fence, no machine block name and no
-  unclosed fence.
+- `noLeak`: the answer that the user sees holds no executor code
+  (`final(`, `await` calls, `javascriptCode`), no JavaScript fence, no
+  machine block name and no unclosed fence. The stream carries the closing
+  blocks, and the web client hides each closed `neko_` fence, so the grader
+  removes those fences first.
 
 The eval install also records each model request in its trace file, on
 lines that hold no semantic trace event. Only the responder streams, so the
 streamed requests give `responderLatencyMs`, `responderCalls` and the
-responder tokens. `firstOutputMs` is the time to the first answer text.
+responder tokens. With Gemini the streamed call reports no usage
+(`responderUsageReported` false), so the responder token fields are left
+out and the run's usage is partial. `firstOutputMs` is the time to the first answer text.
 `pnpm tsx scripts/eval-responder-report.ts --json <result folder>...`
 prints these per run, with the `answer.*` gates and the named safety and
 approval cases.

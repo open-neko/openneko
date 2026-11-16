@@ -28,6 +28,7 @@ const EXECUTOR_CODE = [
   /\bawait\s+[A-Za-z_$][\w$.]*\s*\(/u,
 ];
 const CODE_FENCE = /```[ \t]*(?:javascript|js|typescript|ts)\b/iu;
+const CLOSED_MACHINE_FENCE = /```neko_[a-z_]+[\s\S]*?```/gu;
 
 function ofType(events: readonly Record<string, unknown>[], type: string) {
   return events.filter((event) => event.type === type);
@@ -63,8 +64,10 @@ export function gradeCards(input: ResponderGradeInput): ResponderGrade {
     : { due: true, passed: false, findings: ["no card surface"] };
 }
 
+// The stream carries the closing blocks; the web client hides each closed
+// neko_ fence, so the user sees the rest.
 export function gradeNoLeak(input: ResponderGradeInput): ResponderGrade {
-  const text = input.finalText;
+  const text = input.finalText.replace(CLOSED_MACHINE_FENCE, "");
   if (!text.trim()) return { due: false, passed: true, findings: [] };
   const findings: string[] = [];
   if ((text.match(/```/gu)?.length ?? 0) % 2 !== 0) findings.push("unclosed fence");
@@ -87,6 +90,7 @@ export function responderMeasurements(requests: readonly EvalModelRequest[]) {
   const responder = requests.filter((request) => request.streamed);
   const sum = (pick: (request: EvalModelRequest) => number | undefined) =>
     responder.reduce((total, request) => total + (pick(request) ?? 0), 0);
+  const reported = responder.every((request) => request.usage !== undefined);
   const efforts = [
     ...new Set(requests.map((request) => request.responderReasoningEffort).filter(Boolean)),
   ];
@@ -96,11 +100,15 @@ export function responderMeasurements(requests: readonly EvalModelRequest[]) {
     ...(responder.length
       ? {
           responderLatencyMs: sum((request) => request.durationMs),
+          responderUsageReported: reported,
+          responderModels: [...new Set(responder.map((request) => request.observedModel ?? request.model))],
+        }
+      : {}),
+    ...(responder.length && reported
+      ? {
           responderInputTokens: sum((request) => request.usage?.input_tokens),
           responderOutputTokens: sum((request) => request.usage?.output_tokens),
           responderReasoningTokens: sum((request) => request.usage?.reasoning_tokens),
-          responderUsageReported: responder.every((request) => request.usage !== undefined),
-          responderModels: [...new Set(responder.map((request) => request.observedModel ?? request.model))],
         }
       : {}),
     ...(efforts.length ? { responderReasoningEffort: efforts.join(",") } : {}),
