@@ -77,6 +77,12 @@ describe("cards grader", () => {
 });
 
 describe("leak grader", () => {
+  it("passes the closing blocks, which the client hides", () => {
+    const finalText =
+      "Receipt AW-1.\n\n```neko_value\n{ \"minutes_saved\": 20 }\n```\n\n```neko_vitals\n{ \"vitals\": [] }\n```\n\n```neko_followups\n{ \"followups\": [\"Next\"] }\n```";
+    expect(gradeNoLeak({ ...good, finalText })).toEqual({ due: true, passed: true, findings: [] });
+  });
+
   it("passes a plain answer and a closed SQL block", () => {
     expect(gradeNoLeak(good).passed).toBe(true);
     expect(gradeNoLeak({ ...good, finalText: "Query:\n```sql\nselect 1\n```\nCurrent value: 7.2%" }).passed).toBe(true);
@@ -85,6 +91,7 @@ describe("leak grader", () => {
   it.each([
     ["an unclosed fence", "Current value: 7.2%\n```neko", "unclosed fence"],
     ["a machine block name", 'Current value: 7.2%\nneko_vitals { "vitals": [] }', "machine block name"],
+    ["an unclosed closing block", 'Current value: 7.2%\n```neko_vitals\n{ "vitals": [', "machine block name"],
     ["an executor code fence", "```javascript\nconst rows = 1;\n```", "code fence"],
     ["a final() call", 'final("Current value: 7.2%", {})', "executor code"],
     ["an awaited tool call", "const r = await tools.graphjin({ query })", "executor code"],
@@ -122,5 +129,12 @@ describe("responder measurements", () => {
       responderReasoningEffort: "low",
     });
     expect(responderMeasurements([requests[0]!])).toEqual({ modelRequests: 1, responderCalls: 0 });
+    expect(responderMeasurements([{ runId: "r", callId: 3, streamed: true, durationMs: 4100 }])).toEqual({
+      modelRequests: 1,
+      responderCalls: 1,
+      responderLatencyMs: 4100,
+      responderUsageReported: false,
+      responderModels: [undefined],
+    });
   });
 });
