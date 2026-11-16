@@ -31,7 +31,7 @@ func newSeedCmd() *cobra.Command {
 				return WithExit(2, fmt.Errorf("seed: unknown target %q (want: adventureworks)", target))
 			}
 
-			if err := requireDemoInstance(); err != nil {
+			if err := requireDemoInstance(loadOnly || orgOnly); err != nil {
 				return err
 			}
 
@@ -94,19 +94,29 @@ func newSeedCmd() *cobra.Command {
 	return cmd
 }
 
-func requireDemoInstance() error {
-	if instance.Current() == "" {
-		return nil
-	}
+const seedTargetEnv = "OPENNEKO_SEED_TARGET"
+
+// requireDemoInstance refuses a seed of an installation that is not in demo
+// mode. With no installation settings here, the step flags write to the
+// database that the environment names, so the caller must mark that target as
+// a demo with OPENNEKO_SEED_TARGET=demo.
+func requireDemoInstance(steps bool) error {
 	settings, ok, err := requireConfiguredNamedInstallation()
 	if err != nil {
 		return err
 	}
-	if !ok {
-		return fmt.Errorf("instance %q has not been configured; run `openneko --instance %s setup --mode demo` first", instance.Current(), instance.Current())
-	}
-	if settings.Mode != string(compose.ModeDemo) {
-		return fmt.Errorf("instance %q is installed in %s mode; AdventureWorks seed requires a demo instance", instance.Current(), settings.Mode)
+	name := instance.Current()
+	switch {
+	case ok && settings.Mode != string(compose.ModeDemo) && name != "":
+		return fmt.Errorf("instance %q is installed in %s mode; AdventureWorks seed requires a demo instance", name, settings.Mode)
+	case ok && settings.Mode != string(compose.ModeDemo):
+		return fmt.Errorf("this installation is in %s mode; AdventureWorks seed requires a demo instance", settings.Mode)
+	case ok:
+		return nil
+	case name != "":
+		return fmt.Errorf("instance %q has not been configured; run `openneko --instance %s setup --mode demo` first", name, name)
+	case steps && os.Getenv(seedTargetEnv) != string(compose.ModeDemo):
+		return fmt.Errorf("no demo installation here, so the seed would write to the database that the environment names; AdventureWorks seed requires a demo instance. Run `openneko setup --mode demo`, or set %s=demo to seed a development database of your own", seedTargetEnv)
 	}
 	return nil
 }

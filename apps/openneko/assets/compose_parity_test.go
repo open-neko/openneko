@@ -572,13 +572,26 @@ func TestPackagedDemoLoaderHasItsTools(t *testing.T) {
 			t.Fatalf("demo %s image = %q, want neko-cli", svc, image)
 		}
 	}
+	root := repoRootForTest(t)
+	rawWorkspace, err := os.ReadFile(filepath.Join(root, "compose.adventureworks.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := loadComposeParityDocument(t, rawWorkspace)
+	for _, svc := range []string{"adventureworks-init", "neko-adventureworks-seed"} {
+		for file, doc := range map[string]composeParityDocument{"demo.yml": demo, "compose.adventureworks.yml": workspace} {
+			if got := doc.Services[svc].Environment["OPENNEKO_SEED_TARGET"]; got != "demo" {
+				t.Errorf("%s %s OPENNEKO_SEED_TARGET = %v, want demo", file, svc, got)
+			}
+		}
+	}
 	if want := []string{"seed", "adventureworks", "--load"}; !reflect.DeepEqual(demo.Services["adventureworks-init"].Command, want) {
 		t.Fatalf("demo adventureworks-init command = %v, want %v", demo.Services["adventureworks-init"].Command, want)
 	}
 	if want := []string{"seed", "adventureworks", "--org"}; !reflect.DeepEqual(demo.Services["neko-adventureworks-seed"].Command, want) {
 		t.Fatalf("demo neko-adventureworks-seed command = %v, want %v", demo.Services["neko-adventureworks-seed"].Command, want)
 	}
-	raw, err := os.ReadFile(filepath.Join(repoRootForTest(t), "Dockerfile"))
+	raw, err := os.ReadFile(filepath.Join(root, "Dockerfile"))
 	if err != nil {
 		t.Fatal(err)
 	}

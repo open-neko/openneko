@@ -331,6 +331,8 @@ Modes:
 - **`dev`** — source-checkout workflow: use `pnpm dev:setup` for the Docker backing services plus AdventureWorks demo data, then `pnpm dev` to run `openneko web` and `openneko serve` on the host from source.
 - **`demo`** — core + `neko-db` + AdventureWorks: `adventureworks-db`, `adventureworks-init`, `neko-adventureworks-seed`. The full live-trial flow (continuous order trickle + scenario injector) lives in `compose.adventureworks.yml` and needs the [Build from source](#build-from-source-advanced) path.
 
+The seed steps `openneko seed adventureworks --load` and `--org` write to the database that the environment names. They run only when the installation in this config folder is in demo mode. With no installation here, they need `OPENNEKO_SEED_TARGET=demo`. The demo steps set it, and so does `pnpm dev:seed` for a development database.
+
 `~/.config/openneko/compose.override.yml` is auto-applied if present (last `-f` to docker compose).
 
 `graphjin import` accepts a YAML fragment with `sources`, `tables`, and/or
