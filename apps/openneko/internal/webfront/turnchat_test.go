@@ -166,3 +166,47 @@ func TestDiscoverRunArtifacts(t *testing.T) {
 		t.Fatalf("a missing folder has no artifacts: %+v", got)
 	}
 }
+
+func TestClosingBlocksShortenALongFieldAndKeepTheBlock(t *testing.T) {
+	basis := strings.Repeat("Counted the discounted order lines of the preceding twelve months. ", 4)
+	raw := "Answer.\n```neko_value\n{\"minutes_saved\": 20, \"basis\": " + jsStringify(basis, false) + "}\n```\n" +
+		"```neko_vitals\n{\"vitals\": [{\"label\": \"Preceding 12M discounted lines\", \"value\": \"AW-API-SELECTION-APPROVED\", " +
+		"\"sub\": \"Sales orders from 2013-07-01 to 2014-06-30\"}, {\"label\": \"Orders\", \"value\": \"1,204\"}]}\n```"
+
+	value := extractFence(raw, valueFence, valueEstimateShape, false)
+	if len(value.Errors) > 0 || value.last() == nil {
+		t.Fatalf("value block dropped: %v", value.Errors)
+	}
+	got := value.last().vals["basis"].(string)
+	if utf16Len(got) > 160 || !strings.HasSuffix(got, "…") || !strings.HasPrefix(basis, strings.TrimSuffix(got, "…")) {
+		t.Fatalf("basis = %q (%d)", got, utf16Len(got))
+	}
+
+	vitals := extractFence(raw, vitalsFence, vitalsShape, false)
+	if len(vitals.Errors) > 0 || vitals.last() == nil {
+		t.Fatalf("vitals block dropped: %v", vitals.Errors)
+	}
+	items := jsArray(vitals.last().vals["vitals"])
+	want := []struct {
+		field, text string
+		max         int
+	}{
+		{"label", "Preceding 12M discounted…", 28},
+		{"value", "AW-API-SELECTION…", 18},
+		{"sub", "Sales orders from 2013-07-01 to…", 36},
+	}
+	for _, w := range want {
+		got := jsGet(items[0], w.field).(string)
+		if got != w.text || utf16Len(got) > w.max {
+			t.Errorf("%s = %q, want %q", w.field, got, w.text)
+		}
+	}
+	if jsGet(items[1], "label") != "Orders" || jsGet(items[1], "value") != "1,204" {
+		t.Errorf("short item changed: %v", items[1])
+	}
+
+	empty := extractFence("```neko_vitals\n{\"vitals\": [{\"label\": \"\", \"value\": \"1\"}]}\n```", vitalsFence, vitalsShape, false)
+	if empty.last() != nil {
+		t.Errorf("an empty label must still drop the block")
+	}
+}

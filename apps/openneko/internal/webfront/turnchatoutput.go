@@ -30,9 +30,11 @@ var (
 	spaceBeforeNewline = regexp.MustCompile(`[ \t]+\n`)
 )
 
+// The closing blocks shorten a long text field and keep the block, because
+// the prompt states no limits.
 var valueEstimateShape = &zObj{fields: []zField{
 	zRequired("minutes_saved", zIntRange(0, 600)),
-	zOptional("basis", &zStr{trim: true, max: num(160)}),
+	zOptional("basis", &zStr{trim: true, max: num(160), shorten: true}),
 }}
 
 var followupsShape = &zObj{fields: []zField{
@@ -41,9 +43,9 @@ var followupsShape = &zObj{fields: []zField{
 
 var vitalsShape = &zObj{fields: []zField{
 	zRequired("vitals", &zArr{max: num(4), elem: &zObj{fields: []zField{
-		zRequired("label", zText(1, 28)),
-		zRequired("value", zText(1, 18)),
-		zOptional("sub", &zStr{trim: true, max: num(36)}),
+		zRequired("label", &zStr{trim: true, min: num(1), max: num(28), shorten: true}),
+		zRequired("value", &zStr{trim: true, min: num(1), max: num(18), shorten: true}),
+		zOptional("sub", &zStr{trim: true, max: num(36), shorten: true}),
 		zOptional("basis", zEnum("", "observed", "calculated", "estimated")),
 		zOptional("asOf", zText(1, 48)),
 		zOptional("source", zText(1, 64)),

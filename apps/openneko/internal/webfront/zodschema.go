@@ -33,6 +33,7 @@ type zStr struct {
 	patternMsg  string
 	lengthFirst bool
 	refine      func(string) bool
+	shorten     bool
 }
 
 // zInt is z.number().int() with min, max and positive().
@@ -132,6 +133,9 @@ func (s *zStr) parse(v any, path []any, issues *[]any) any {
 	if s.trim {
 		text = strings.TrimFunc(text, isJSSpace)
 	}
+	if s.shorten && s.max != nil {
+		text = shortenText(text, int(*s.max))
+	}
 	if s.uuid && !zodUUID.MatchString(text) {
 		*issues = append(*issues, zodIssue("origin", "string", "code", "invalid_format", "format", "uuid",
 			"pattern", "/"+uuidPatternText+"/", "path", path, "message", "Invalid UUID"))
@@ -186,6 +190,24 @@ func zodEmail(text string) bool {
 func zodURL(text string) bool {
 	u, err := url.Parse(strings.TrimFunc(text, isJSSpace))
 	return err == nil && u.Scheme != "" && (u.Opaque != "" || u.Host != "" || u.Path != "")
+}
+
+// shortenText cuts text to max UTF-16 units with a closing ellipsis, at the
+// last space when that keeps at least two thirds of the room.
+func shortenText(text string, max int) string {
+	if max < 2 || utf16Len(text) <= max {
+		return text
+	}
+	runes := []rune(text)
+	n, room := 0, max-1
+	for n < len(runes) && utf16Len(string(runes[:n+1])) <= room {
+		n++
+	}
+	cut := string(runes[:n])
+	if i := strings.LastIndexFunc(cut, isJSSpace); i > 0 && utf16Len(cut[:i]) >= room*2/3 {
+		cut = cut[:i]
+	}
+	return strings.TrimRightFunc(cut, func(r rune) bool { return isJSSpace(r) || strings.ContainsRune(",;:-", r) }) + "…"
 }
 
 // zLengthIssues is zod's minLength and maxLength checks. They run on any
