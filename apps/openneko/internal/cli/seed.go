@@ -17,7 +17,6 @@ func newSeedCmd() *cobra.Command {
 	var (
 		loadOnly bool
 		orgOnly  bool
-		localOrg bool
 	)
 	cmd := &cobra.Command{
 		Use:   "seed [adventureworks]",
@@ -32,8 +31,11 @@ func newSeedCmd() *cobra.Command {
 				return WithExit(2, fmt.Errorf("seed: unknown target %q (want: adventureworks)", target))
 			}
 
-			runOrg := orgOnly || localOrg
-			if loadOnly || runOrg {
+			if err := requireDemoInstance(); err != nil {
+				return err
+			}
+
+			if loadOnly || orgOnly {
 				ctx := cmd.Context()
 				out := cmd.OutOrStdout()
 				if loadOnly {
@@ -45,7 +47,7 @@ func newSeedCmd() *cobra.Command {
 						return err
 					}
 				}
-				if runOrg {
+				if orgOnly {
 					cfg, err := adventureWorksOrgSeedConfigFromEnv(out)
 					if err != nil {
 						return err
@@ -57,18 +59,6 @@ func newSeedCmd() *cobra.Command {
 				return nil
 			}
 
-			if instance.Current() != "" {
-				settings, ok, err := requireConfiguredNamedInstallation()
-				if err != nil {
-					return err
-				}
-				if !ok {
-					return fmt.Errorf("instance %q has not been configured; run `openneko --instance %s setup --mode demo` first", instance.Current(), instance.Current())
-				}
-				if settings.Mode != string(compose.ModeDemo) {
-					return fmt.Errorf("instance %q is installed in %s mode; AdventureWorks seed requires a demo instance", instance.Current(), settings.Mode)
-				}
-			}
 			sup := compose.New(assets.ComposeFS)
 			project, err := sup.ProjectName(compose.ModeDemo)
 			if err != nil {
@@ -101,6 +91,22 @@ func newSeedCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&loadOnly, "load", false, "Load the AdventureWorks dataset into the customer database")
 	cmd.Flags().BoolVar(&orgOnly, "org", false, "Seed the AdventureWorks organization, data source, workflows, and policy into neko-db")
-	cmd.Flags().BoolVar(&localOrg, "local", false, "Alias for --org")
 	return cmd
+}
+
+func requireDemoInstance() error {
+	if instance.Current() == "" {
+		return nil
+	}
+	settings, ok, err := requireConfiguredNamedInstallation()
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("instance %q has not been configured; run `openneko --instance %s setup --mode demo` first", instance.Current(), instance.Current())
+	}
+	if settings.Mode != string(compose.ModeDemo) {
+		return fmt.Errorf("instance %q is installed in %s mode; AdventureWorks seed requires a demo instance", instance.Current(), settings.Mode)
+	}
+	return nil
 }
