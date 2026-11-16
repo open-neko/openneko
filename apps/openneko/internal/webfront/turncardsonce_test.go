@@ -3,6 +3,7 @@ package webfront
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -46,7 +47,7 @@ func TestCardFencesKeepEveryCardCheck(t *testing.T) {
 	defer func() { cardSurfaceID = saved }()
 	for _, c := range cases {
 		answer := "East leads.\n\n```neko_cards\n" + string(c.Arguments) + "\n```"
-		text, messages, issues := extractCardFences(answer, c.Rich)
+		text, messages, issues := extractCardFences(context.Background(), answer, c.Rich, nil)
 		if text != "East leads." {
 			t.Errorf("%s: text %q", c.Name, text)
 		}
@@ -96,14 +97,18 @@ func TestWebTurnWritesTheCardsOnce(t *testing.T) {
 	const fence = "```neko_cards\n{\"title\":\"Sales by region\",\"table\":\"Region | Sales\\nEast | 12\\nWest | 9\",\"callout\":\"East leads.\"}\n```"
 	cases := []struct {
 		name, actor, answer string
-		surfaces            int
+		repaired            string
+		repairs, surfaces   int
 	}{
 		{"executor tool and responder fence",
 			"try { await mcp_neko_ui_render_cards({title:'Sales by region', table:'Region | Sales\\nEast | 12\\nWest | 9', callout:'East leads.'}); } catch (e) {} final('Report', {east:12, west:9});",
-			"Answer: East sold the most.\n\n" + fence, 1},
-		{"responder fence only", "final('Report', {east:12, west:9});", "Answer: East sold the most.\n\n" + fence, 1},
-		{"responder fence that fails the check", "final('Report', {east:12, west:9});",
-			"Answer: East sold the most.\n\n```neko_cards\n{\"title\":\"Sales\",\"chart\":\"pie\"}\n```", 0},
+			"Answer: East sold the most.\n\n" + fence, "", 0, 1},
+		{"responder fence only", "final('Report', {east:12, west:9});", "Answer: East sold the most.\n\n" + fence, "", 0, 1},
+		{"responder fence that the repair fixes", "final('Report', {east:12, west:9});",
+			"Answer: East sold the most.\n\n```neko_cards\n{\"title\":\"Sales\",\"callout\":\"East leads.\",\"mood\":\"warning\"}\n```",
+			`{"title":"Sales","callout":"East leads.","mood":"watch"}`, 1, 1},
+		{"responder fence that the repair cannot fix", "final('Report', {east:12, west:9});",
+			"Answer: East sold the most.\n\n```neko_cards\n{\"title\":\"Sales\",\"chart\":\"pie\"}\n```", `{"title":"Sales","chart":"pie"}`, 2, 0},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -134,6 +139,7 @@ func TestWebTurnWritesTheCardsOnce(t *testing.T) {
 			}
 			var mu sync.Mutex
 			var events []string
+			repairs := 0
 			tools := &fakeTools{reply: []any{}}
 			res, err := (&API{}).runAgentCore(context.Background(), agentCoreInput{
 				Backend: &llm.AxBackendConfig{Route: llm.AxModelRoute{Provider: "openai-compatible", Model: "fixture", URL: model.URL, KeyEnv: "OPENAI_API_KEY"}},
@@ -143,6 +149,10 @@ func TestWebTurnWritesTheCardsOnce(t *testing.T) {
 				FilesEnabled:        func() bool { return false },
 				toolBackend:         func(turnBinding) toolBackend { return tools },
 				withoutScriptData:   true,
+				repairCards: func(context.Context, string, []string, bool) (string, error) {
+					repairs++
+					return c.repaired, nil
+				},
 				Emit: func(_ context.Context, e any) error {
 					mu.Lock()
 					events = append(events, jsStringify(e, false))
@@ -169,6 +179,9 @@ func TestWebTurnWritesTheCardsOnce(t *testing.T) {
 					surfaces++
 				}
 			}
+			if repairs != c.repairs {
+				t.Fatalf("%d repairs, want %d", repairs, c.repairs)
+			}
 			if surfaces != c.surfaces {
 				t.Fatalf("%d answer surfaces, want %d\nevents %v", surfaces, c.surfaces, events)
 			}
@@ -192,5 +205,86 @@ func TestCardsPromptCarriesTheCardFieldContract(t *testing.T) {
 		if strings.Contains(text, `"mapValue":{`) != rich {
 			t.Errorf("rich=%v: the map fields belong only to rich cards", rich)
 		}
+	}
+}
+
+func TestCardFenceRepair(t *testing.T) {
+	ctx := context.Background()
+	good := `{"title":"Sales","table":"Region | Sales\nEast | 12","callout":"East leads.","mood":"watch"}`
+	bad := `{"title":"Sales","table":"Region | Sales\nEast | 12","callout":"East leads.","mood":"warning"}`
+	answer := func(body string) string { return "East leads.\n\n```neko_cards\n" + body + "\n```" }
+	var asked [][]string
+	repair := func(reply string, err error) cardRepair {
+		return func(_ context.Context, cards string, problems []string, rich bool) (string, error) {
+			if strings.TrimSpace(cards) != bad || !rich {
+				t.Fatalf("repair got %q rich=%v", cards, rich)
+			}
+			asked = append(asked, problems)
+			return reply, err
+		}
+	}
+
+	_, messages, issues := extractCardFences(ctx, answer(good), true, repair("", errors.New("not called")))
+	if len(messages) != 1 || len(issues) != 0 || len(asked) != 0 {
+		t.Fatalf("a valid fence: %d messages, issues %q, %d repairs", len(messages), issues, len(asked))
+	}
+	text, messages, issues := extractCardFences(ctx, answer(bad), true, repair(good, nil))
+	if text != "East leads." || len(messages) != 1 || len(issues) != 0 || len(asked) != 1 || !strings.HasPrefix(asked[0][0], "mood: Invalid option") {
+		t.Fatalf("a repaired fence: %q %d messages, issues %q, asked %q", text, len(messages), issues, asked)
+	}
+	_, messages, issues = extractCardFences(ctx, answer(bad), true, repair(bad, nil))
+	if len(messages) != 0 || len(issues) != 2 || issues[0] != "after repair" || len(asked) != 3 {
+		t.Fatalf("a repair that still fails: %d messages, issues %q, %d repairs", len(messages), issues, len(asked))
+	}
+	_, messages, issues = extractCardFences(ctx, answer(bad), true, repair("", errors.New("model down")))
+	if len(messages) != 0 || issues[len(issues)-1] != "repair failed: model down" || len(asked) != 4 {
+		t.Fatalf("a repair error: %d messages, issues %q", len(messages), issues)
+	}
+	_, messages, issues = extractCardFences(ctx, answer(bad), true, nil)
+	if len(messages) != 0 || len(issues) != 1 {
+		t.Fatalf("no repair: %d messages, issues %q", len(messages), issues)
+	}
+}
+
+func TestCardRepairHostCall(t *testing.T) {
+	f, db, g := hostFront(t)
+	ctx := t.Context()
+	seedPrimary(t, db, "openai", "gpt-5", `{}`, `{"apiKey":"k"}`)
+	g.reply = map[string]any{"fixedCards": "```json\n{\"title\":\"Sales\",\"callout\":\"East leads.\",\"mood\":\"watch\"}\n```"}
+	bad := "{\"title\":\"Sales\",\"callout\":\"East leads.\",\"mood\":\"warning\"}"
+	_, messages, issues := extractCardFences(ctx, "East leads.\n\n```neko_cards\n"+bad+"\n```", false, f.API.cardRepair("org"))
+	if len(messages) != 1 || len(issues) != 0 {
+		t.Fatalf("%d messages, issues %q", len(messages), issues)
+	}
+	if len(g.calls) != 1 {
+		t.Fatalf("gateway calls %d", len(g.calls))
+	}
+	v := g.calls[0].request.Values
+	if v["cards"] != bad || !strings.HasPrefix(v["problems"].(string), "mood: Invalid option") ||
+		!strings.Contains(v["schema"].(string), `"enum":["good","watch","act"]`) || strings.Contains(v["schema"].(string), `"mapValue"`) ||
+		!strings.Contains(g.calls[0].request.Signature, "-> fixedCards:string") {
+		t.Fatalf("request %+v", g.calls[0].request)
+	}
+	var task string
+	if err := db.QueryRow(ctx, `select task from spend_ledger where org_id = 'org' order by created_at desc limit 1`).Scan(&task); err != nil || task != "turn" {
+		t.Fatalf("spend row: %q %v", task, err)
+	}
+}
+
+func TestCardFenceRepairSeesTheLaterFaults(t *testing.T) {
+	stages := []string{
+		`{"title":"Sales","keyFigures":["March 1,311,000"],"mood":"warning","callout":"Up."}`,
+		`{"title":"Sales","keyFigures":["March 1,311,000"],"mood":"watch","callout":"Up."}`,
+		`{"title":"Sales","keyFigures":["March: 1,311,000"],"mood":"watch","callout":"Up."}`,
+	}
+	var asked []string
+	_, messages, issues := extractCardFences(context.Background(), "Up.\n\n```neko_cards\n"+stages[0]+"\n```", true,
+		func(_ context.Context, cards string, problems []string, _ bool) (string, error) {
+			asked = append(asked, problems[0])
+			return stages[len(asked)], nil
+		})
+	if len(messages) != 1 || len(issues) != 0 || len(asked) != 2 ||
+		!strings.HasPrefix(asked[0], "mood:") || !strings.HasPrefix(asked[1], "keyFigures.0 needs") {
+		t.Fatalf("%d messages, issues %q, asked %q", len(messages), issues, asked)
 	}
 }
