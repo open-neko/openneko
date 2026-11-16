@@ -85,9 +85,13 @@ export function gradeResponder(input: ResponderGradeInput): ResponderGrades {
   };
 }
 
-// Only the responder streams, so the streamed requests are its calls.
+// The executor also streams on thought-summary providers, so the stage names
+// the responder; a trace written before stages has only the streamed mark.
 export function responderMeasurements(requests: readonly EvalModelRequest[]) {
-  const responder = requests.filter((request) => request.streamed);
+  const staged = requests.some((request) => request.stage !== undefined);
+  const responder = requests.filter((request) =>
+    staged ? request.stage === "root/responder" : request.streamed,
+  );
   const sum = (pick: (request: EvalModelRequest) => number | undefined) =>
     responder.reduce((total, request) => total + (pick(request) ?? 0), 0);
   const reported = responder.every(

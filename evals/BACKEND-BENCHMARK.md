@@ -230,16 +230,21 @@ and `passed`:
   removes those fences first.
 
 The eval install also records each model request in its trace file, on
-lines that hold no semantic trace event. Only the responder streams, so the
-streamed requests give `responderLatencyMs`, `responderCalls` and the
-responder tokens. The harness reads a stream's usage from its last chunk
+lines that hold no semantic trace event. Each line names the Ax stage of
+the request. The requests of the `root/responder` stage give
+`responderLatencyMs`, `responderCalls` and the responder tokens. The
+executor also streams on Gemini and Anthropic routes (STREAM2c), so the
+streamed mark alone does not find the responder; a trace with no stage
+falls back to it. The harness reads a stream's usage from its last chunk
 and records the request when the stream ends, so `responderLatencyMs`
 covers the whole responder call. When a responder stream stopped early or
 sent no usage, `responderUsageReported` is false and the responder token
 fields are left out. Results made before this fix (STREAM3 chain, head
 db5b619b8) have no responder usage, and their `responderLatencyMs` is the
-time to the first stream chunk. `firstOutputMs` is the time to the first
-answer text.
+time to the first stream chunk, which is often a thought chunk. Results
+made after STREAM2c and before the stage field count the executor's
+streamed calls as responder calls. `firstOutputMs` is the time to the
+first answer text.
 `pnpm tsx scripts/eval-responder-report.ts --json <result folder>...`
 prints these per run, with the `answer.*` gates and the named safety and
 approval cases.
