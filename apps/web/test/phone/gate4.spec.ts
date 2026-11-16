@@ -194,6 +194,9 @@ const PACK_ACT_DEF_ID = "c0a7ac70-0000-4000-8000-000000000495";
 const PACK_ARTIFACT_ID = "c0a7ac70-0000-4000-8000-000000000496";
 const SECOND_AR_ID = "c0a7ac70-0000-4000-8000-000000000497";
 
+// The headless shell refuses notification permission inside a service worker.
+test.use({ channel: "chromium" });
+
 test.describe("Phase 4 gate check (G4)", () => {
   test("new user signs in, finishes onboarding, verifies PWA installability, streams and resumes on reload against the scripted model, enables Web Push, registers a passkey, receives a zero-data push notice on an action request, approves with passkey into the audit log, and gets 403 without a passkey", async ({
     browser,
@@ -1166,6 +1169,22 @@ test.describe("Phase 4 gate check (G4)", () => {
       const approvalPush = receivedPushes.find(
         (p) => p.notice.event === "approval_waiting",
       )!;
+      await expect
+        .poll(
+          async () => {
+            const n = receivedPushes.filter((p) => p.notice.event === "run_finished").length;
+            if (n === 0) await wakeJobs();
+            return n;
+          },
+          { timeout: 15_000 },
+        )
+        .toBe(1);
+      expect(receivedPushes.find((p) => p.notice.event === "run_finished")!.notice).toEqual({
+        title: "OpenNeko",
+        body: "A run finished.",
+        url: "/runs",
+        event: "run_finished",
+      });
       expect(approvalPush.headers["content-encoding"]).toBe("aes128gcm");
       const subscribedKey = await page.evaluate(
         () => localStorage.getItem("gate4.pushServerKey") ?? "",
@@ -1250,7 +1269,28 @@ test.describe("Phase 4 gate check (G4)", () => {
 
       // 8. Approves with the passkey at 400 px, and the audit log holds the
       //    approval with method `passkey`.
-      await page.goto(`${origin}${swNotice.url}`, { waitUntil: "networkidle" });
+      const shown = await swWorker.evaluate(async () => {
+        const reg = (globalThis as unknown as { registration: ServiceWorkerRegistration }).registration;
+        return (await reg.getNotifications({ tag: "approval_waiting" })).map((n) => ({
+          title: n.title,
+          body: n.body,
+          data: n.data as unknown,
+        }));
+      });
+      expect(shown).toEqual([
+        { title: "OpenNeko", body: "An approval is waiting.", data: { event: "approval_waiting", url: "/actions" } },
+      ]);
+      await swWorker.evaluate(async () => {
+        const g = globalThis as unknown as {
+          registration: ServiceWorkerRegistration;
+          NotificationEvent: new (type: string, init: { notification: Notification }) => Event;
+          dispatchEvent: (event: Event) => boolean;
+        };
+        const [notice] = await g.registration.getNotifications({ tag: "approval_waiting" });
+        g.dispatchEvent(new g.NotificationEvent("notificationclick", { notification: notice! }));
+      });
+      await page.waitForURL(`${origin}${swNotice.url}`);
+      await page.waitForLoadState("networkidle");
       await assertNoHorizontalOverflow(page, "/actions");
       await page.goto(`${origin}/actions/${actionRequestId}`, {
         waitUntil: "networkidle",
