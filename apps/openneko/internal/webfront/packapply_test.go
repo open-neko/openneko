@@ -287,3 +287,56 @@ func TestInstallGraphjinFiles(t *testing.T) {
 		t.Error("the new spec stayed after restore")
 	}
 }
+
+func TestPackReapplyClearsThePauseOfItsWorkflow(t *testing.T) {
+	x := newApplyFixture(t)
+	root := t.TempDir()
+	if err := os.CopyFS(root, os.DirFS(os.Getenv("OPENNEKO_PACKS_DIR"))); err != nil {
+		t.Fatal(err)
+	}
+	slack := filepath.Join(root, "slack")
+	manifest, err := os.ReadFile(filepath.Join(slack, "pack.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(slack, "pack.yaml"), []byte(strings.Replace(string(manifest), "  actions: actions\n", "  actions: actions\n  workflows: workflows\n", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(slack, "workflows"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(slack, "workflows", "digest.yaml"), []byte(`key: workflow.slack_digest
+targetRef: slack.workflow.digest
+name: Slack digest
+description: Summarize the channels.
+enabled: false
+status: active
+goal: Summarize the approved channels.
+schedule: null
+outputContract:
+  kind: briefing
+  required: [title, body]
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENNEKO_PACKS_DIR", root)
+
+	if got := x.post(t, "install", strings.Replace(slackInstall, "%s", "k1", 1)); got["status"] != "installed" {
+		t.Fatalf("install %v", got)
+	}
+	seed(t, x.f.API.DB, `update workflow_definition set enabled = false, paused_until = now() + interval '1 day' where name = 'Slack digest'`)
+	digest := filepath.Join(slack, "workflows", "digest.yaml")
+	raw, err := os.ReadFile(digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(digest, []byte(strings.Replace(string(raw), "Summarize the channels.", "Summarize the approved channels each day.", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := x.post(t, "upgrade", `{"idempotencyKey":"k2"}`); got["status"] != "installed" {
+		t.Fatalf("re-apply %v", got)
+	}
+	if got := x.scalar(t, `select description || ',' || enabled::text || ',' || (paused_until is null)::text from workflow_definition where name = 'Slack digest'`); got != "Summarize the approved channels each day.,false,true" {
+		t.Errorf("after a re-apply that sets the workflow off: description,enabled,pause cleared = %s", got)
+	}
+}
