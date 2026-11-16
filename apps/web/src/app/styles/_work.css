@@ -525,6 +525,8 @@
   justify-content: flex-start;
   gap: 8px;
   width: auto;
+  max-width: 100%;
+  min-width: 0;
   align-self: flex-start;
   background: color-mix(in srgb, var(--neutral-soft) 60%, transparent);
   border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
@@ -561,24 +563,25 @@
   text-align: center;
   flex-shrink: 0;
 }
-.work-tool-group-count {
+.work-tool-group-spin {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.work-tool-group-step {
   font-weight: 600;
   color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.work-tool-group-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 9px;
-  border-radius: 999px;
-  font-size: var(--type-label);
-  font-weight: 500;
-  background: var(--accent-soft);
-  color: var(--accent);
+.work-tool-group-step-failed {
+  color: var(--warn-ink);
 }
-.work-tool-group-badge.failed {
-  background: var(--danger-soft);
-  color: var(--danger);
+.work-tool-group-count {
+  color: var(--text3);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .work-tool-group-body {
   display: flex;
@@ -642,8 +645,8 @@
   background: var(--success-soft);
 }
 .work-tool-row-icon-failed {
-  color: var(--danger);
-  background: var(--danger-soft);
+  color: var(--warn-ink);
+  background: var(--warn-soft);
 }
 .work-tool-row-name {
   font-weight: 600;
@@ -653,6 +656,7 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .work-tool-row-subtitle {
   color: var(--text3);
@@ -665,7 +669,7 @@
   flex: 1;
 }
 .work-tool-row-failed .work-tool-row-name {
-  color: var(--danger);
+  color: var(--warn-ink);
 }
 .work-tool-row-detail {
   padding: 4px 16px 14px 16px;

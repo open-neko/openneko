@@ -386,7 +386,8 @@
      "name": "graphjin_query",
      "input": {
       "query": "{ sales }"
-     }
+     },
+     "label": "Reading sales"
     },
     {
      "type": "tool_end",
@@ -398,12 +399,15 @@
     {
      "type": "tool_start",
      "id": "ax-op-2",
-     "name": "memory_save"
+     "name": "memory_save",
+     "label": "Saving a memory"
     },
     {
      "type": "tool_end",
      "id": "ax-op-2",
-     "error": "denied"
+     "error": "denied",
+     "failed": true,
+     "label": "That step failed; trying another way"
     },
     {
      "type": "status",
@@ -419,7 +423,8 @@
      "name": "skill_view",
      "input": {
       "path": "/srv/neko/org/skills/sales-report/SKILL.md"
-     }
+     },
+     "label": "Opening the sales-report skill"
     },
     {
      "type": "tool_end",
@@ -431,7 +436,8 @@
      "name": "skill_used",
      "input": {
       "path": "/srv/neko/org/skills/sales-report/SKILL.md"
-     }
+     },
+     "label": "Using the sales-report skill"
     },
     {
      "type": "tool_end",
@@ -1765,7 +1771,8 @@
     {
      "type": "tool_start",
      "id": "ax-op-1",
-     "name": "graphjin_query"
+     "name": "graphjin_query",
+     "label": "Reading data"
     },
     {
      "type": "usage",
@@ -1943,7 +1950,8 @@
     {
      "type": "tool_start",
      "id": "ax-op-1",
-     "name": "memory_save"
+     "name": "memory_save",
+     "label": "Saving a memory"
     },
     {
      "type": "usage",
