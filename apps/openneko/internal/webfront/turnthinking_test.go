@@ -42,7 +42,7 @@ func thinkingRecordings(t *testing.T) []thinkingRecording {
 
 func thinkingMapper(provider string, events *[]*jsObj) *axEventMapper {
 	return &axEventMapper{emit: func(e *jsObj) { *events = append(*events, e) }, route: llm.AxModelRoute{Provider: provider},
-		textVersion: -1.0, renderCalls: map[string]bool{}}
+		textVersion: -1.0}
 }
 
 func TestThinkingIsOneContractForEveryProvider(t *testing.T) {

@@ -151,54 +151,6 @@
       "event": {
        "version": 1,
        "run_id": "workrun-1",
-       "sequence": 8,
-       "type": "tool.started",
-       "name": "mcp_neko_ui_render_cards",
-       "operation_id": 3,
-       "data": {
-        "title": "x"
-       }
-      }
-     },
-     {
-      "type": "event",
-      "event": {
-       "version": 1,
-       "run_id": "workrun-1",
-       "sequence": 9,
-       "type": "tool.finished",
-       "name": "mcp_neko_ui_render_cards",
-       "operation_id": 3
-      }
-     },
-     {
-      "type": "event",
-      "event": {
-       "version": 1,
-       "run_id": "workrun-1",
-       "sequence": 10,
-       "type": "tool.started",
-       "name": "mcp_neko_ui_render_cards",
-       "operation_id": 4
-      }
-     },
-     {
-      "type": "event",
-      "event": {
-       "version": 1,
-       "run_id": "workrun-1",
-       "sequence": 11,
-       "type": "tool.finished",
-       "name": "mcp_neko_ui_render_cards",
-       "operation_id": 4,
-       "error": "bad cards"
-      }
-     },
-     {
-      "type": "event",
-      "event": {
-       "version": 1,
-       "run_id": "workrun-1",
        "sequence": 12,
        "type": "skill.shortlist",
        "data": [
@@ -452,16 +404,6 @@
      "type": "tool_end",
      "id": "ax-op-2",
      "error": "denied"
-    },
-    {
-     "type": "tool_start",
-     "id": "ax-op-4",
-     "name": "mcp_neko_ui_render_cards"
-    },
-    {
-     "type": "tool_end",
-     "id": "ax-op-4",
-     "error": "bad cards"
     },
     {
      "type": "status",
@@ -2435,7 +2377,6 @@
    "servers": [
     "neko_interaction",
     "neko_graphjin",
-    "neko_ui",
     "neko_skills",
     "neko_memory",
     "neko_guides",
@@ -2513,7 +2454,6 @@
    "servers": [
     "neko_interaction",
     "neko_graphjin",
-    "neko_ui",
     "neko_skills",
     "neko_memory",
     "neko_guides",

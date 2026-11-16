@@ -283,7 +283,7 @@ func TestTurnToolsMatchNode(t *testing.T) {
 	if err := json.Unmarshal(raw, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if len(fixture.Lists) != 13 || len(fixture.Calls) < 293 {
+	if len(fixture.Lists) != 12 || len(fixture.Calls) < 241 {
 		t.Fatalf("fixture holds %d lists and %d calls", len(fixture.Lists), len(fixture.Calls))
 	}
 	gjTools := func(own json.RawMessage) any {
@@ -547,7 +547,7 @@ func TestTurnToolsWithMCPClient(t *testing.T) {
 	fake := &fakeTools{reply: []any{}}
 	b := fixtureBinding
 	b.WantsCards, b.SkillsRoot = true, t.TempDir()
-	s, err := turnTools(b, fake, []string{"neko_memory", "neko_files", "neko_interaction", "neko_ui", "neko_skills"})
+	s, err := turnTools(b, fake, []string{"neko_memory", "neko_files", "neko_interaction", "neko_skills"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -571,7 +571,7 @@ func TestTurnToolsWithMCPClient(t *testing.T) {
 	for _, tool := range listed.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "memory_search,memory_save,memory_update,files_search,files_read_text,files_query_tables,interaction_ask_user_question,ui_render_cards,skills_create_skill" {
+	if strings.Join(names, ",") != "memory_search,memory_save,memory_update,files_search,files_read_text,files_query_tables,interaction_ask_user_question,skills_create_skill" {
 		t.Fatalf("tools: %v", names)
 	}
 	var wg sync.WaitGroup
@@ -602,9 +602,9 @@ func TestTurnToolsWithMCPClient(t *testing.T) {
 		!strings.Contains(err.Error(), "mcp-bridge: unknown tool graphjin_execute_graphql") {
 		t.Fatalf("unknown tool: %v", err)
 	}
-	res, err = session.CallTool(ctx, &mcp.CallToolParams{Name: "ui_render_cards", Arguments: map[string]any{"title": "Sales", "table": "| Region | Total |\n| EU | 1200.5 |", "callout": "EU leads."}})
-	if err != nil || res.IsError || res.Content[0].(*mcp.TextContent).Text != "Cards shown." {
-		t.Fatalf("cards: %v %+v", err, res)
+	if _, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "ui_render_cards", Arguments: map[string]any{"title": "Sales", "callout": "EU leads."}}); err == nil ||
+		!strings.Contains(err.Error(), "mcp-bridge: unknown tool ui_render_cards") {
+		t.Fatalf("card tool: %v", err)
 	}
 	res, err = session.CallTool(ctx, &mcp.CallToolParams{Name: "interaction_ask_user_question", Arguments: map[string]any{"questions": []any{map[string]any{"question": "Which year?"}}}})
 	if err != nil || res.IsError {
@@ -617,7 +617,7 @@ func TestTurnToolsWithMCPClient(t *testing.T) {
 	if raw, err := os.ReadFile(filepath.Join(b.SkillsRoot, "year-end", "SKILL.md")); err != nil || !strings.HasPrefix(string(raw), "---\nname: year-end\n") {
 		t.Fatalf("skill file: %v %q", err, raw)
 	}
-	if len(fake.events) != 3 || fake.events[0].(map[string]any)["type"] != "surface" || fake.events[2].(map[string]any)["type"] != "needs_input" {
+	if len(fake.events) != 2 || fake.events[1].(map[string]any)["type"] != "needs_input" {
 		t.Fatalf("events: %s", mustJSON(fake.events))
 	}
 	if err := session.Close(); err != nil {
@@ -800,16 +800,12 @@ func TestTurnEventsDatabase(t *testing.T) {
 		sunk = append(sunk, jsStringify(event, false))
 		return nil
 	}
-	s, err := turnTools(b, backend, []string{"neko_interaction", "neko_ui", "neko_skills"})
+	s, err := turnTools(b, backend, []string{"neko_interaction", "neko_skills"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, _ := callTool(t, s, "ui_render_cards", map[string]any{"title": "Map", "map": []any{"Paris @ 48.85, 2.35: 10"}})
-	if got != `{"content":[{"type":"text","text":"Cards shown."}]}` || len(sunk) != 1 || !strings.Contains(sunk[0], `"component":"AnswerMap"`) {
-		t.Fatalf("cards: %s %v", got, sunk)
-	}
-	got, _ = callTool(t, s, "interaction_ask_user_question", map[string]any{"questions": []any{map[string]any{"question": "Which store?"}}})
-	if !strings.Contains(got, `needs_input`) || len(sunk) != 3 || !strings.HasPrefix(sunk[2], `{"type":"needs_input","question":"Which store?"`) {
+	got, _ := callTool(t, s, "interaction_ask_user_question", map[string]any{"questions": []any{map[string]any{"question": "Which store?"}}})
+	if !strings.Contains(got, `needs_input`) || len(sunk) != 2 || !strings.HasPrefix(sunk[1], `{"type":"needs_input","question":"Which store?"`) {
 		t.Fatalf("ask: %s %v", got, sunk)
 	}
 	backend.events = func(context.Context, any) error { return errors.New("the run has ended") }
@@ -817,9 +813,6 @@ func TestTurnEventsDatabase(t *testing.T) {
 		t.Fatalf("sink fault: %s", got)
 	}
 	backend.events = nil
-	if got, _ = callTool(t, s, "ui_render_cards", map[string]any{"title": "No sink", "callout": "x"}); got != `{"content":[{"type":"text","text":"Cards shown."}]}` {
-		t.Fatalf("no sink: %s", got)
-	}
 	if _, rpcErr := callTool(t, s, "skills_create_skill", map[string]any{"name": "close", "description": "d", "body": "b"}); rpcErr != nil {
 		t.Fatal(rpcErr)
 	}
@@ -833,7 +826,7 @@ func TestTurnEventsDatabase(t *testing.T) {
 		_ = rows.Scan(&p)
 		paths = append(paths, p)
 	}
-	if strings.Join(paths, ",") != "/v1/events member,/v1/events member,/v1/events member,/v1/events member,/v1/events member" {
+	if strings.Join(paths, ",") != "/v1/events member,/v1/events member,/v1/events member" {
 		t.Fatalf("audit rows: %v", paths)
 	}
 

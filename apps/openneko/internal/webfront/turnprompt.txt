@@ -1,9 +1,8 @@
 @@ cards
 <cards>
 When an answer rests on two or more figures, a comparison, a table, findings,
-or a decision, show the evidence with `${tool}` and state the answer itself in
-one or two plain sentences. The cards hold the figures; your sentences interpret
-them. Read the tool's parameters before your first call.
+or a decision, show the evidence as cards and state the answer itself in one or
+two plain sentences. The cards hold the figures; your sentences interpret them.
 
 Choose fields by the shape of the data:
 - Three or more time periods: a table of the periods with chart "line", and
@@ -15,7 +14,7 @@ Choose fields by the shape of the data:
 - Natural next questions: followUps.
 ${choices}Write the charted column as plain numbers and put the unit in its header.
 
-Each example below is one complete set of tool arguments.
+Each example below is one complete set of card fields.
 
 A trend:
 {"title": "Website sessions by month", "table": "Month | Sessions\nMarch | 39800\nApril | 41500\nMay | 45100\nJune | 48200", "chart": "line", "chartColumn": "Sessions", "keyFigures": ["June: 48,200 (latest month)", "Change since March: +21%"], "followUps": ["Break June sessions down by channel"]}
@@ -31,17 +30,15 @@ turn or from the operator. Copy each value exactly as that source gives it.
 Report a failed tool call as an error. When one period differs from its
 neighbours by more than three times, add a watch callout that names the likely
 cause, such as incomplete data or a one-off event. A single fact needs only a
-sentence. When the tool reports a problem, fix the named fields and call it
-again. Refer to the cards in your answer only after the tool confirms them.
-${fence}${stages}</cards>
-@@ answer_fence_cards
+sentence.
 
-When you write the final answer and cannot call tools, put the cards in the
-answer: a ```neko_cards fence that holds one complete set of tool arguments as
-JSON, with the same fields as the examples above. Use one fence for each set of
-cards. OpenNeko shows the cards and removes the fence, so keep your plain
-sentences outside it and do not repeat the table in markdown.
-
+Write the cards only in the final answer, as a ```neko_cards fence that holds
+one complete set of card fields as JSON, with the same fields as the examples
+above. No tool shows cards. Use one fence for each set of cards. OpenNeko checks
+each fence, shows the cards and removes the fence, so keep your plain sentences
+outside it and do not repeat the table in markdown. A fence that fails the
+check shows nothing, so use the field names and formats of the examples.
+</cards>
 @@ rich_card_choices
 - Two to six items compared on the same measures for one period: the table
   with layout "compare", so each item reads as its own panel. A change over
@@ -77,13 +74,6 @@ Places:
 
 A flow:
 {"title": "Support ticket lifecycle", "diagram": ["Customer -> Ticket: opens", "Ticket -> Triage: routes", "Triage -> Engineer: assigns", "Engineer -> Ticket: resolves"], "drillDown": "Show open tickets in the {label} step"}
-
-@@ rich_card_stages
-When an answer needs several queries, show the operator a first card as soon
-as the first figures arrive: call the tool with stage "draft" and the figures
-you hold, keep working, then call it with stage "final" when every figure is
-checked. The final card replaces the draft. When you already hold every figure,
-send one final card.
 
 @@ conversation
 <conversation>

@@ -121,10 +121,7 @@ func axRunPrompt(spec *jsObj, prompt, userMessage string) {
 	spec.set("prompt", question)
 }
 
-const (
-	primaryRouteKeyEnv = "PRIMARY_MODEL_API_KEY"
-	axRenderToolTitle  = "mcp_neko_ui_render_cards"
-)
+const primaryRouteKeyEnv = "PRIMARY_MODEL_API_KEY"
 
 var axKillGrace = 15 * time.Second
 
@@ -472,7 +469,7 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions) (
 	if o.Workspace != nil {
 		skillsRoot = o.Workspace.SkillsRoot
 	}
-	mapper := &axEventMapper{emit: emit, route: cfg.Route, skillsRoot: skillsRoot, debug: o.Debug, textVersion: -1.0, renderCalls: map[string]bool{}}
+	mapper := &axEventMapper{emit: emit, route: cfg.Route, skillsRoot: skillsRoot, debug: o.Debug, textVersion: -1.0}
 	var result *jsObj
 	protocolError := ""
 	last := 0.0
@@ -809,7 +806,6 @@ type axEventMapper struct {
 	thoughtVersion any
 	thoughtCount   int
 	observed       *jsObj
-	renderCalls    map[string]bool
 	wroteState     bool
 }
 
@@ -865,23 +861,12 @@ func (m *axEventMapper) handle(ev axEvent) {
 		if ev.Effect == "durable" {
 			m.wroteState = true
 		}
-		if ev.Name != nil && *ev.Name == axRenderToolTitle {
-			m.renderCalls[opID] = true
-			return
-		}
 		e := jsObjOf("type", "tool_start", "id", "ax-op-"+opID, "name", name)
 		if hasData {
 			e.set("input", dataValue)
 		}
 		m.emit(e)
 	case "tool.finished":
-		if m.renderCalls[opID] {
-			delete(m.renderCalls, opID)
-			if ev.Error == "" {
-				return
-			}
-			m.emit(jsObjOf("type", "tool_start", "id", "ax-op-"+opID, "name", name))
-		}
 		e := jsObjOf("type", "tool_end", "id", "ax-op-"+opID)
 		if hasData {
 			e.set("result", dataValue)
