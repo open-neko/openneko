@@ -39,13 +39,13 @@ export function loadSession(): Promise<ClientSession | null | undefined> {
 /**
  * Asks the server for the session now, past the cache, and tells every
  * watcher. Resolves to the user id, null when no user is signed in, or
- * undefined when the server could not be reached.
+ * undefined when the server could not be reached before the signal aborts.
  */
-export async function confirmSessionUser(): Promise<string | null | undefined> {
+export async function confirmSessionUser(signal?: AbortSignal): Promise<string | null | undefined> {
   forgetSession();
   let res: Response;
   try {
-    res = await fetch("/api/v1/auth/session", { cache: "no-store" });
+    res = await fetch("/api/v1/auth/session", { cache: "no-store", ...(signal ? { signal } : {}) });
   } catch {
     return undefined;
   }

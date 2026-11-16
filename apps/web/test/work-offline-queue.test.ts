@@ -417,6 +417,41 @@ describe("offline question queue storage (FIX6b)", () => {
     expect(storage.getItem("openneko.work.offlineQueue.user.user-b")).toBeNull();
   });
 
+  it("counts once each question removed unsent: too old, or of another user (FIX20 3)", async () => {
+    const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+    const now = new Date().toISOString();
+    storage.setItem(
+      "openneko.work.offlineQueue.user.user-a",
+      JSON.stringify([
+        { id: "a1", createdAt: now, status: "waiting", ...question("Of user A") },
+        { id: "a2", createdAt: now, status: "failed", ...question("Refused, of user A") },
+      ]),
+    );
+    storage.setItem(
+      "openneko.work.offlineQueue.user.user-b",
+      JSON.stringify([
+        { id: "b-old", createdAt: old, status: "waiting", ...question("Eight days old") },
+        { id: "b-new", createdAt: now, status: "waiting", ...question("New") },
+      ]),
+    );
+    const tab = await openTab();
+    expect(tab.getOfflineQueueLosses()).toEqual({ expired: 0, otherUser: 0 });
+    tab.setOfflineQueueUser("user-b");
+    expect(tab.getOfflineQueueSnapshot().map((q) => q.id)).toEqual(["b-new"]);
+    expect(tab.getOfflineQueueLosses()).toEqual({ expired: 1, otherUser: 2 });
+    expect(JSON.parse(storage.getItem("openneko.work.offlineQueue.user.user-b")!)).toHaveLength(1);
+    tab.getOfflineQueueSnapshot();
+    tab.enqueueOfflineQuestion(question("Later"));
+    expect(tab.getOfflineQueueLosses()).toEqual({ expired: 1, otherUser: 2 });
+
+    tab.dismissOfflineQueueLosses();
+    expect(tab.getOfflineQueueLosses()).toEqual({ expired: 0, otherUser: 0 });
+    const next = await openTab();
+    next.setOfflineQueueUser("user-b");
+    expect(next.getOfflineQueueSnapshot()).toHaveLength(2);
+    expect(next.getOfflineQueueLosses()).toEqual({ expired: 0, otherUser: 0 });
+  });
+
   it("keeps a question typed before the session loads for the first user of this tab only (FIX18b 5)", async () => {
     const tab = await openTab();
     tab.enqueueOfflineQuestion(question("Typed before the session"));

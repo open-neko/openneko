@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Skeleton } from "@/components/ui/skeleton";
 import { presentWorkFailure } from "@/lib/work-failure";
+import type { OfflineQueueLosses, QueuedQuestion } from "./work-offline-queue";
 import type { HeldBlock } from "./work-streaming-text";
 import type { WorkEvent } from "./work-types";
 
@@ -84,6 +85,69 @@ export function WorkFailureNotice({ message }: { message: string }) {
           {failure.detail}
         </p>
       </Disclosure>
+    </div>
+  );
+}
+
+const OFFLINE_NOTICE =
+  "ml-auto flex max-w-full flex-wrap items-center justify-end gap-2.5 rounded-xl border border-border bg-warn-soft px-3 py-1.5 text-ui-caption font-medium text-warn-ink";
+
+function questions(count: number): string {
+  return count === 1 ? "1 question" : `${count} questions`;
+}
+
+/** Tells once how many waiting questions this browser removed unsent. */
+export function OfflineLossNotice({
+  losses,
+  onDismiss,
+}: {
+  losses: OfflineQueueLosses;
+  onDismiss: () => void;
+}) {
+  const lines: string[] = [];
+  if (losses.expired > 0) {
+    lines.push(
+      `${questions(losses.expired)} that waited for the network ${losses.expired === 1 ? "was" : "were"} not sent and removed after 7 days.`,
+    );
+  }
+  if (losses.otherUser > 0) {
+    lines.push(
+      `${questions(losses.otherUser)} that another user typed in this browser ${losses.otherUser === 1 ? "was" : "were"} not sent and removed.`,
+    );
+  }
+  return (
+    <div role="status" data-testid="offline-lost-notice" className={OFFLINE_NOTICE}>
+      <span>{lines.join(" ")}</span>
+      <Button size="sm" variant="secondary" onClick={onDismiss}>
+        Dismiss
+      </Button>
+    </div>
+  );
+}
+
+/** Refused questions of other chats, with a link to each chat. */
+export function OfflineFailedElsewhere({ items }: { items: readonly QueuedQuestion[] }) {
+  const chats = new Map<string, string>();
+  for (const item of items) {
+    const href = item.threadId
+      ? `${item.threadBase}/${item.threadId}`
+      : item.threadBase === "/work"
+        ? "/work"
+        : null;
+    if (href && !chats.has(href)) chats.set(href, item.content);
+  }
+  return (
+    <div role="status" data-testid="offline-failed-elsewhere" className={OFFLINE_NOTICE}>
+      <span>
+        The server refused {questions(items.length)} in other chats.
+      </span>
+      {[...chats].map(([href, content]) => (
+        <Button key={href} asChild size="sm" variant="secondary">
+          <Link href={href} title={content}>
+            Open “{content.length > 32 ? `${content.slice(0, 31)}…` : content}”
+          </Link>
+        </Button>
+      ))}
     </div>
   );
 }
