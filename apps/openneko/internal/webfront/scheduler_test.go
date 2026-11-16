@@ -212,3 +212,110 @@ func TestPublicHealthProbeDoesNoAuthWork(t *testing.T) {
 		t.Fatal("/health/scheduler did not check for a signed-in admin")
 	}
 }
+
+func schedulerTestFront(t *testing.T) (*Front, func(string, ...any)) {
+	t.Helper()
+	db := testpg.Migrated(t)
+	seedOrg(t, db)
+	ctx := context.Background()
+	var schema string
+	if err := db.QueryRow(ctx, `select current_schema()`).Scan(&schema); err != nil {
+		t.Fatal(err)
+	}
+	q := &jobs.Queue{Pool: db, Schema: schema + "_river", BossSchema: schema + "_boss"}
+	t.Cleanup(func() { db.Exec(context.Background(), "drop schema if exists "+q.Schema+" cascade") }) //nolint:errcheck
+	if err := q.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ins, err := jobs.NewInserter(db, q.Schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, _ := newSetupFront(t, `{"provider":null}`, db)
+	f.API.Jobs = ins
+	return f, func(sql string, args ...any) { seed(t, db, sql, args...) }
+}
+
+func schedulerFirings(t *testing.T, f *Front, wfID string) map[time.Time]string {
+	t.Helper()
+	rows, err := f.API.DB.Query(context.Background(), `select scheduled_for, status from workflow_schedule_firing where workflow_id = $1`, wfID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[time.Time]string{}
+	for rows.Next() {
+		var at time.Time
+		var status string
+		if err := rows.Scan(&at, &status); err != nil {
+			t.Fatal(err)
+		}
+		out[at.UTC()] = status
+	}
+	return out
+}
+
+func TestSchedulerCronEditMovesTheCursor(t *testing.T) {
+	f, exec := schedulerTestFront(t)
+	ctx := context.Background()
+	const wfID = "00000000-0000-4000-8000-000000000043"
+	exec(`insert into workflow_definition (id, org_id, name, cron, cron_timezone, cron_enabled, enabled)
+		values ($1, 'org', 'Morning check', '0 7 * * *', 'UTC', true, true)`, wfID)
+	day := func(d, h, m int) time.Time { return time.Date(2026, 8, d, h, m, 0, 0, time.UTC) }
+	f.API.RunWorkflowSchedulerTick(ctx, day(26, 6, 30))
+	f.API.RunWorkflowSchedulerTick(ctx, day(26, 7, 1))
+	if got := schedulerFirings(t, f, wfID)[day(26, 7, 0)]; got != "enqueued" {
+		t.Fatalf("07:00 firing before the edit = %q", got)
+	}
+
+	exec(`update workflow_definition set cron = '0 17 * * *', updated_at = now() where id = $1`, wfID)
+	f.API.RunWorkflowSchedulerTick(ctx, day(26, 7, 2))
+	if got := schedulerFirings(t, f, wfID)[day(26, 7, 0)]; got != "cancelled" {
+		t.Errorf("the open firing of the old schedule = %q, want cancelled", got)
+	}
+	var next time.Time
+	if err := f.API.DB.QueryRow(ctx, `select next_fire_at from workflow_schedule_state where workflow_id = $1`, wfID).Scan(&next); err != nil {
+		t.Fatal(err)
+	}
+	if !next.Equal(day(26, 17, 0)) {
+		t.Errorf("next_fire_at after the edit = %v, want 17:00", next.UTC())
+	}
+	snap := f.API.RunWorkflowSchedulerTick(ctx, day(27, 7, 5))
+	if _, ok := schedulerFirings(t, f, wfID)[day(27, 7, 0)]; ok {
+		t.Errorf("a firing at the old time after the edit: %+v", snap)
+	}
+}
+
+func TestSchedulerDisabledWorkflowKeepsNoCursor(t *testing.T) {
+	f, exec := schedulerTestFront(t)
+	ctx := context.Background()
+	const wfID = "00000000-0000-4000-8000-000000000044"
+	exec(`insert into workflow_definition (id, org_id, name, cron, cron_timezone, cron_enabled, enabled)
+		values ($1, 'org', 'Morning check', '0 7 * * *', 'UTC', true, true)`, wfID)
+	day := func(d, h, m int) time.Time { return time.Date(2026, 8, d, h, m, 0, 0, time.UTC) }
+	f.API.RunWorkflowSchedulerTick(ctx, day(26, 6, 30))
+	exec(`insert into workflow_schedule_firing (org_id, workflow_id, scheduled_for, status, available_at)
+		values ('org', $1, $2, 'pending', $2)`, wfID, day(26, 7, 0))
+
+	exec(`update workflow_definition set enabled = false, updated_at = now() where id = $1`, wfID)
+	f.API.RunWorkflowSchedulerTick(ctx, day(26, 6, 45))
+	if got := schedulerFirings(t, f, wfID)[day(26, 7, 0)]; got != "cancelled" {
+		t.Errorf("open firing of a disabled workflow = %q, want cancelled", got)
+	}
+	var n int
+	if err := f.API.DB.QueryRow(ctx, `select count(*) from workflow_schedule_state where workflow_id = $1`, wfID).Scan(&n); err != nil || n != 0 {
+		t.Errorf("schedule state rows for a disabled workflow = %d, %v", n, err)
+	}
+
+	exec(`update workflow_definition set enabled = true, updated_at = now() where id = $1`, wfID)
+	snap := f.API.RunWorkflowSchedulerTick(ctx, day(30, 8, 0))
+	if snap.Materialized != 0 {
+		t.Errorf("re-enable fired a stale occurrence at once: %+v %v", snap, schedulerFirings(t, f, wfID))
+	}
+	var next time.Time
+	if err := f.API.DB.QueryRow(ctx, `select next_fire_at from workflow_schedule_state where workflow_id = $1`, wfID).Scan(&next); err != nil {
+		t.Fatal(err)
+	}
+	if !next.Equal(day(31, 7, 0)) {
+		t.Errorf("next_fire_at after re-enable = %v, want 31 Aug 07:00", next.UTC())
+	}
+}

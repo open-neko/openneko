@@ -279,8 +279,31 @@ func (a *API) materializeDueWorkflowFirings(ctx context.Context, now time.Time) 
 		}
 		recovered = r
 
+		if _, err := tx.Exec(ctx, `
+			delete from workflow_schedule_state s
+			where not exists (
+			  select 1 from workflow_definition d
+			  where d.id = s.workflow_id and d.enabled = true and d.cron_enabled = true
+			    and d.cron is not null and btrim(d.cron) <> '')`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+			update workflow_schedule_firing f
+			set status = 'cancelled', completed_at = $1, lease_until = null,
+			    last_error = 'schedule disabled before dispatch', updated_at = $1
+			where f.status in ('pending', 'dispatching', 'enqueued')
+			  and exists (
+			    select 1 from workflow_definition d
+			    where d.id = f.workflow_id
+			      and (d.enabled = false or d.cron_enabled = false or d.cron is null or btrim(d.cron) = ''))`, now); err != nil {
+			return err
+		}
+
 		rows, err := tx.Query(ctx, `
-			select d.id::text, d.org_id, d.cron, coalesce(nullif(d.cron_timezone, ''), 'UTC'), d.updated_at, s.next_fire_at
+			select d.id::text, d.org_id, d.cron, coalesce(nullif(d.cron_timezone, ''), 'UTC'), d.updated_at, s.next_fire_at,
+			  s.workflow_id is not null and (s.cron is distinct from d.cron
+			    or s.cron_timezone is distinct from coalesce(nullif(d.cron_timezone, ''), 'UTC')
+			    or s.definition_updated_at is distinct from d.updated_at)
 			from workflow_definition d
 			left join workflow_schedule_state s on s.workflow_id = d.id
 			where d.enabled = true
@@ -299,10 +322,11 @@ func (a *API) materializeDueWorkflowFirings(ctx context.Context, now time.Time) 
 			timezone            string
 			definitionUpdatedAt time.Time
 			nextFireAt          *time.Time
+			changed             bool
 		}
 		defs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (scheduleRow, error) {
 			var s scheduleRow
-			err := row.Scan(&s.id, &s.orgID, &s.cron, &s.timezone, &s.definitionUpdatedAt, &s.nextFireAt)
+			err := row.Scan(&s.id, &s.orgID, &s.cron, &s.timezone, &s.definitionUpdatedAt, &s.nextFireAt, &s.changed)
 			return s, err
 		})
 		if err != nil {
@@ -310,6 +334,16 @@ func (a *API) materializeDueWorkflowFirings(ctx context.Context, now time.Time) 
 		}
 
 		for _, row := range defs {
+			if row.changed {
+				if _, err := tx.Exec(ctx, `
+					update workflow_schedule_firing
+					set status = 'cancelled', completed_at = $2, lease_until = null,
+					    last_error = 'schedule definition changed before dispatch', updated_at = $2
+					where workflow_id = $1 and status in ('pending', 'dispatching', 'enqueued')`, row.id, now); err != nil {
+					return err
+				}
+				row.nextFireAt = nil
+			}
 			plan, err := advanceWorkflowSchedule(row.cron, row.timezone, row.nextFireAt, now)
 			if err != nil {
 				if _, uerr := tx.Exec(ctx, `
