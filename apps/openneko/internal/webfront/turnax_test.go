@@ -368,7 +368,7 @@ func TestAxHelpersMatchNode(t *testing.T) {
 	cardSurfaceID = func() string { return "answer-ID" }
 	defer func() { cardSurfaceID = saved }()
 	for _, c := range fixture.Cards {
-		text, messages, issues := extractCardFences(c.Raw, c.Rich)
+		text, messages, issues := extractCardFences(context.Background(), c.Raw, c.Rich, nil)
 		got := jsStringify(jsObjOf("text", text, "messages", messages, "issues", stringsAny(issues)), false)
 		if want := string(jsCompact(c.Out)); got != want {
 			t.Errorf("cards %q rich=%v:\n got %s\nwant %s", c.Raw, c.Rich, got, want)

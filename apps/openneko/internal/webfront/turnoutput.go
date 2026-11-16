@@ -1,6 +1,7 @@
 package webfront
 
 import (
+	"context"
 	"regexp"
 	"strings"
 
@@ -99,18 +100,38 @@ var (
 	cardSurfaceID = func() string { return "answer-" + uuid.NewString() }
 )
 
-// extractCardFences takes the render_cards arguments written into an answer
-// as neko_cards fences out of the text.
-func extractCardFences(raw string, rich bool) (string, []any, []string) {
+type cardRepair func(ctx context.Context, cards string, problems []string, rich bool) (string, error)
+
+func checkCardFence(body string, rich bool) ([]any, []string) {
+	args, err := jsParse([]byte(strings.TrimSpace(body)))
+	if err != nil {
+		return nil, []string{"neko_cards fence is not JSON"}
+	}
+	return renderCards(args, rich, cardSurfaceID())
+}
+
+const cardRepairTries = 2
+
+// extractCardFences takes the card fields written into an answer as
+// neko_cards fences out of the text. A fence that fails the check gets up to
+// cardRepairTries repairs; the check reports some faults only after others
+// are fixed. A repair must pass the same check.
+func extractCardFences(ctx context.Context, raw string, rich bool, repair cardRepair) (string, []any, []string) {
 	messages, issues := []any{}, []string{}
 	text := cardFenceRE.ReplaceAllStringFunc(raw, func(m string) string {
 		body := cardFenceRE.FindStringSubmatch(m)[1]
-		args, err := jsParse([]byte(strings.TrimSpace(body)))
-		if err != nil {
-			issues = append(issues, "neko_cards fence is not JSON")
-			return ""
+		msgs, problems := checkCardFence(body, rich)
+		for try := 0; len(problems) > 0 && repair != nil && try < cardRepairTries; try++ {
+			fixed, err := repair(ctx, body, problems, rich)
+			if err != nil {
+				problems = append(problems, "repair failed: "+err.Error())
+				break
+			}
+			body = fixed
+			if msgs, problems = checkCardFence(body, rich); len(problems) > 0 && try == cardRepairTries-1 {
+				problems = append([]string{"after repair"}, problems...)
+			}
 		}
-		msgs, problems := renderCards(args, rich, cardSurfaceID())
 		if len(problems) > 0 {
 			issues = append(issues, problems...)
 		} else {
