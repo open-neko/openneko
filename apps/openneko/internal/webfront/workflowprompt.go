@@ -56,7 +56,7 @@ func buildWorkflowPrompt(in workflowPromptInput) string {
 	}
 	value := ""
 	if in.IncludeUxMetadata {
-		value = " Then emit one time-saved block.\n\n" + section("value_estimate")
+		value = " Then emit one time-saved block.\n\n" + valueEstimateSection()
 	}
 	return section("workflow",
 		"name", in.Name,

@@ -3,6 +3,7 @@ package webfront
 import (
 	_ "embed"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf16"
@@ -39,6 +40,24 @@ func section(name string, vars ...string) string {
 		pairs[i], pairs[i+1] = "${"+vars[i]+"}", vars[i+1]
 	}
 	return strings.NewReplacer(pairs...).Replace(text)
+}
+
+func valueEstimateSection() string {
+	return section("value_estimate", "basisMax", closingLimit(valueEstimateShape, "basis"))
+}
+
+// closingLimit is the length limit of a closing block field in its schema.
+func closingLimit(shape *zObj, path ...string) string {
+	var typ zType = shape
+	for _, name := range path {
+		if arr, ok := typ.(*zArr); ok {
+			typ = arr.elem
+		}
+		obj := typ.(*zObj)
+		i := slices.IndexFunc(obj.fields, func(f zField) bool { return f.name == name })
+		typ = obj.fields[i].typ
+	}
+	return strconv.Itoa(int(*typ.(*zStr).max))
 }
 
 type agentWorkspace struct {
@@ -132,7 +151,9 @@ func buildWorkPrompt(in workPromptInput) string {
 	}
 	closing := ""
 	if in.IncludeUxMetadata {
-		closing = section("closing", "value", section("value_estimate"))
+		closing = section("closing", "value", valueEstimateSection(),
+			"labelMax", closingLimit(vitalsShape, "vitals", "label"), "valueMax", closingLimit(vitalsShape, "vitals", "value"),
+			"subMax", closingLimit(vitalsShape, "vitals", "sub"))
 	}
 	bot := ""
 	if in.Bot != nil {

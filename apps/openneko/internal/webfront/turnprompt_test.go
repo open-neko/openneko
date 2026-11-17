@@ -58,3 +58,27 @@ func TestTurnSectionsParse(t *testing.T) {
 		t.Fatalf("rich_card_examples lost its edge newlines: %q", turnSections["rich_card_examples"])
 	}
 }
+
+func TestThePromptStatesTheClosingBlockLimitsOfTheSchema(t *testing.T) {
+	prompt := buildWorkPrompt(workPromptInput{IncludeUxMetadata: true})
+	for _, want := range []string{
+		"Keep `basis` to 160 characters.",
+		"Keep each `label` to 28 characters, each `value` to\n   18 characters, and each `sub` to 36 characters.",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the prompt lacks %q", want)
+		}
+	}
+	if strings.Contains(prompt, "${") {
+		t.Error("the prompt holds a placeholder")
+	}
+	if flow := buildWorkflowPrompt(workflowPromptInput{IncludeUxMetadata: true}); !strings.Contains(flow, "Keep `basis` to 160 characters.") || strings.Contains(flow, "${") {
+		t.Error("the workflow prompt lacks the basis limit")
+	}
+	old := vitalsShape.fields[0].typ.(*zArr).elem.(*zObj).fields[0].typ.(*zStr).max
+	t.Cleanup(func() { vitalsShape.fields[0].typ.(*zArr).elem.(*zObj).fields[0].typ.(*zStr).max = old })
+	vitalsShape.fields[0].typ.(*zArr).elem.(*zObj).fields[0].typ.(*zStr).max = num(30)
+	if !strings.Contains(buildWorkPrompt(workPromptInput{IncludeUxMetadata: true}), "Keep each `label` to 30 characters") {
+		t.Error("the prompt does not follow the schema")
+	}
+}

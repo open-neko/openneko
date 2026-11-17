@@ -30,8 +30,8 @@ var (
 	spaceBeforeNewline = regexp.MustCompile(`[ \t]+\n`)
 )
 
-// The closing blocks shorten a long text field and keep the block, because
-// the prompt states no limits.
+// The prompt states the text field limits from these shapes. A closing block
+// still shortens a longer field and keeps the block.
 var valueEstimateShape = &zObj{fields: []zField{
 	zRequired("minutes_saved", zIntRange(0, 600)),
 	zOptional("basis", &zStr{trim: true, max: num(160), shorten: true}),
