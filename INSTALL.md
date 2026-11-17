@@ -975,8 +975,9 @@ and `upgrade` act on the native install. `openneko logs` reads the
   backup. The upgrade stops before any change when the release has no web
   app, no built-in pack (`share/openneko/packs/<id>/pack.yaml`), no built-in
   skill or a missing sandbox skill (`share/openneko/skills/builtin` and
-  `share/openneko/skills/sandbox`). It skips other folders under
-  `share/openneko` that it does not know.
+  `share/openneko/skills/sandbox`). It also puts every other folder under
+  `share/openneko` of the release beside the executable, so a later release
+  can add a folder.
 - Use `install-native.sh --upgrade` when the installed `openneko` is older
   than the release that added `share/openneko/skills`: that `openneko
   upgrade` refuses the new archive. The script downloads and checks the

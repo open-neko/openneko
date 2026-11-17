@@ -281,7 +281,7 @@ func TestTheRepositoryPacksPassTheReleaseCheck(t *testing.T) {
 	}
 }
 
-func TestExtractNativeArchiveSkipsALaterShareFolder(t *testing.T) {
+func TestExtractNativeArchiveTakesALaterShareFolder(t *testing.T) {
 	entries := append(goodNativeEntries(),
 		tarEntry{name: "share/openneko/later/", kind: tar.TypeDir},
 		tarEntry{name: "share/openneko/later/a.txt", body: "x"},
@@ -290,9 +290,10 @@ func TestExtractNativeArchiveSkipsALaterShareFolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, rel := range []string{"share/openneko/later", "share/openneko/packsx"} {
-		if _, err := os.Stat(filepath.Join(dst, filepath.FromSlash(rel))); !os.IsNotExist(err) {
-			t.Fatalf("%s was extracted: %v", rel, err)
+	for _, rel := range []string{"share/openneko/later/a.txt", "share/openneko/packsx/a"} {
+		fi, err := os.Stat(filepath.Join(dst, filepath.FromSlash(rel)))
+		if err != nil || fi.Mode().Perm() != 0o644 {
+			t.Fatalf("%s: %v %v", rel, fi, err)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(dst, "share", "openneko", "skills", "sandbox", "xlsx", "SKILL.md")); err != nil {
@@ -442,6 +443,20 @@ func TestNativeUpgradeReplacesTheExeNamedByTheInstallScript(t *testing.T) {
 	}
 	writePackYAML(t, from, "metadata:\n  name: Slack\n")
 	writeReleaseSkills(t, from, releaseSandboxSkills...)
+	later := filepath.Join(from, "share", "openneko", "later")
+	if err := os.MkdirAll(later, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(later, "a.txt"), []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gone := filepath.Join(prefix, "share", "openneko", "later", "gone.txt")
+	if err := os.MkdirAll(filepath.Dir(gone), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(gone, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -468,10 +483,16 @@ func TestNativeUpgradeReplacesTheExeNamedByTheInstallScript(t *testing.T) {
 	if b, _ := os.ReadFile(exe); !strings.Contains(string(b), "9.9.9") {
 		t.Fatalf("--exe was not replaced: %q", b)
 	}
-	for _, f := range []string{"web/index.html", "packs/slack/pack.yaml", "skills/sandbox/xlsx/SKILL.md"} {
+	for _, f := range []string{"web/index.html", "packs/slack/pack.yaml", "skills/sandbox/xlsx/SKILL.md", "later/a.txt"} {
 		if _, err := os.Stat(filepath.Join(prefix, "share", "openneko", filepath.FromSlash(f))); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if _, err := os.Stat(gone); !os.IsNotExist(err) {
+		t.Fatalf("the old file of the later folder stayed: %v", err)
+	}
+	if fi, err := os.Stat(exe); err != nil || fi.Mode().Perm() != 0o755 {
+		t.Fatalf("the replaced executable: %v %v", fi, err)
 	}
 	if after, err := os.Stat(self); err != nil || !after.ModTime().Equal(before.ModTime()) || after.Size() != before.Size() {
 		t.Fatalf("the upgrade changed the running executable: %v", err)
