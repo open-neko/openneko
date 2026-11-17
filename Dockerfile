@@ -158,6 +158,12 @@ COPY evals/environment/adventureworks/api/server.mjs /app/server.mjs
 EXPOSE 8090
 ENTRYPOINT ["node", "/app/server.mjs"]
 
+# The backend eval's first seed: `seed.sh` needs a shell around
+# `openneko seed adventureworks --load`, which the distroless neko-cli lacks.
+FROM alpine:3.22 AS eval-adventureworks-seed
+RUN apk add --no-cache --upgrade ca-certificates-bundle
+COPY --from=go-build /out/openneko /usr/local/bin/openneko
+
 # ─── 5a. web runtime ───────────────────────────────────────────────────
 FROM runtime-base AS web
 ARG OPENNEKO_VERSION=unknown
