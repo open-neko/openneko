@@ -110,7 +110,7 @@ them as provisional; only `run.finished` holds the answer.
 | `kind` | `answer`, `summary`, `clarification`, `failure` |
 | `answer` | The final text, unchanged, with any fences. |
 | `code` | Set when the run did not complete, or names the budget for a `summary`. |
-| `usage` | Requests, reported calls, tokens, `coverage` (`complete`, `partial` or `unavailable`) and the fields in [Cost](#cost). The tokens include those of a stream that stopped early; that call does not count as reported. |
+| `usage` | Requests, reported calls, tokens, `coverage` (`complete`, `partial` or `unavailable`) and the fields in [Cost](#cost). The tokens include those of a stream that stopped early; that call does not count as reported. `early` holds the requests, tokens and cost of those streams apart, so a host scales only the reported calls and adds the early ones once. The token budget charges no reservation for such a call. |
 | `cost` | Present when `max_cost_micros` is set: `catalog_version`, `charged_micros` (reservations for calls without usage included) and `budget_micros`. |
 
 A tool error is a normal result. The model sees it and can adapt; the run does
