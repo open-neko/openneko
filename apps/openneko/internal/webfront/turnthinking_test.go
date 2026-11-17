@@ -1,9 +1,11 @@
 package webfront
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -156,5 +158,38 @@ func TestExecutorNotesAreThinkingNotes(t *testing.T) {
 	want := "ax-summary-1:Analyzing Sales Data|ax-summary-2:Clarifying [REDACTED] Ranges|ax-summary-3:Analyzing Sales Growth|ax-summary-4:Writing the answer."
 	if strings.Join(got, "|") != want {
 		t.Fatalf("got %s", strings.Join(got, "|"))
+	}
+}
+
+func TestThinkingNoteIdsGoOnAfterAMalformedCallRetry(t *testing.T) {
+	clearAxEnv(t, nil)
+	note := func(seq int, call int, text string) string {
+		return `{"type":"event","event":{"version":1,"run_id":"workrun-1","sequence":` + strconv.Itoa(seq) +
+			`,"type":"executor.thought.delta","data":{"version":` + strconv.Itoa(call) + `,"index":1,"text":"` + text + `"}}}`
+	}
+	srv := newScriptedServe(t, [][]json.RawMessage{
+		frames(note(1, 1, "Checking the sales"),
+			`{"type":"event","event":{"version":1,"run_id":"workrun-1","sequence":2,"type":"run.finished","result":{"status":"failed","code":"MALFORMED_FUNCTION_CALL"}}}`,
+			`{"type":"exit","code":1}`),
+		frames(note(1, 1, "Comparing the regions"),
+			`{"type":"event","event":{"version":1,"run_id":"workrun-1","sequence":2,"type":"answer.delta","data":{"version":1,"text":"Done."}}}`,
+			`{"type":"event","event":{"version":1,"run_id":"workrun-1","sequence":3,"type":"run.finished","result":{"status":"completed","answer":"Done."}}}`,
+			`{"type":"exit","code":0}`),
+	})
+	notes := map[string]string{}
+	res, err := runAx(context.Background(), plainCfg, axTurnOptions{Prompt: "p", Tag: "work run-1", Socket: srv.socket,
+		Emit: func(_ context.Context, event any) error {
+			e := event.(*jsObj)
+			if e.vals["type"] == "progress" {
+				id := e.vals["id"].(string)
+				notes[id] += e.vals["content"].(string)
+			}
+			return nil
+		}})
+	if err != nil || res.Status != "completed" {
+		t.Fatalf("got %+v %v", res, err)
+	}
+	if len(notes) != 2 || notes["ax-summary-1"] != "Checking the sales" || notes["ax-summary-2"] != "Comparing the regions" {
+		t.Fatalf("notes %v", notes)
 	}
 }
