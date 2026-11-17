@@ -15,10 +15,9 @@ const (
 )
 
 var (
-	executorHeading   = regexp.MustCompile(`\*\*([^*\n]+)\*\*`)
-	executorSentence  = regexp.MustCompile(`^[^\n]*?[.!?](\s|$)`)
+	executorHeading   = regexp.MustCompile(`^\s*\*\*([^*\n]+)\*\*\s*$`)
 	executorCodeMark  = regexp.MustCompile("[`_(){}\\[\\]<>=/\\\\$#@|~^*\"]|\\w\\.\\w|[a-z][A-Z]")
-	executorInnerWord = regexp.MustCompile(`(?i)\b(executor|responder|action log|actions?|task definition|callables?|runtime|globalthis|harness|functions?|tools?|discovery|discover|prompt|javascript|js|mcp|variables?|json|schema|fields?|contract|final|conduct|sandbox|api|vitals|followups?|cards?|undefined|null|error|errors|debugging|debug|scope|keys?|instructions?|system|agent|worker|team|turn)\b`)
+	executorInnerWord = regexp.MustCompile(`(?i)\b(executor|responder|action log|actions?|task definition|callables?|runtime|globalthis|harness|functions?|tools?|discovery|discover|prompt|javascript|js|mcp|variables?|json|schema|fields?|contract|final|conduct|sandbox|api|vitals|followups?|cards?|undefined|null|error|errors|debugging|debug|scope|keys?|instructions?|system|agent|worker|team|turn|dspy|signatures?|pars(e|es|ed|ing))\b`)
 )
 
 // executorNoteText returns the note as the user may see it, or "" when it
@@ -66,34 +65,30 @@ func (n *executorNotes) show(call int64, heading string) {
 	n.emit(call, index, text)
 }
 
-// executorNoteStream reads one executor call. A provider that writes bold
-// headings gives a note per heading; one that does not gives the first
-// sentence.
+// executorNoteStream reads one executor call. Only a bold span that fills a
+// whole line is a heading: any other text may quote tool rows.
 type executorNoteStream struct {
-	notes    *executorNotes
-	call     int64
-	text     strings.Builder
-	headings int
-	sentence bool
+	notes *executorNotes
+	call  int64
+	line  strings.Builder
 }
 
 func (s *executorNoteStream) add(chunk string) {
-	s.text.WriteString(chunk)
-	all := s.text.String()
-	found := executorHeading.FindAllStringSubmatch(all, -1)
-	for _, m := range found[s.headings:] {
+	for chunk != "" {
+		i := strings.IndexByte(chunk, '\n')
+		if i < 0 {
+			s.line.WriteString(chunk)
+			return
+		}
+		s.line.WriteString(chunk[:i])
+		s.end()
+		chunk = chunk[i+1:]
+	}
+}
+
+func (s *executorNoteStream) end() {
+	if m := executorHeading.FindStringSubmatch(s.line.String()); m != nil {
 		s.notes.show(s.call, m[1])
 	}
-	s.headings = len(found)
-	if s.headings > 0 || s.sentence {
-		return
-	}
-	trimmed := strings.TrimLeft(all, " \n\t")
-	if strings.HasPrefix(trimmed, "*") {
-		return
-	}
-	if m := executorSentence.FindString(trimmed); m != "" {
-		s.sentence = true
-		s.notes.show(s.call, m)
-	}
+	s.line.Reset()
 }

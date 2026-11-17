@@ -33,7 +33,7 @@ type thinkingFixture struct {
 	Events   []json.RawMessage `json:"events"`
 }
 
-const thinkingActorReply = `{"javascriptCode":"final('Check the data',{})"}`
+var thinkingActorReply = `{"javascriptCode":"final('Check the data',{})"}`
 
 func thinkingServer(t *testing.T, fixture thinkingFixture, streamed *[]string) *httptest.Server {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
