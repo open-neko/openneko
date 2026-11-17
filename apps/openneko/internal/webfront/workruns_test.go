@@ -816,3 +816,65 @@ func TestManualRunRoute(t *testing.T) {
 		t.Error("a refused manual run left a workflow run")
 	}
 }
+
+func TestRunEventStreamWaitsForTheDoneOfAJustFinishedRun(t *testing.T) {
+	f, db := signedInChatFront(t)
+	srv := httptest.NewServer(f)
+	t.Cleanup(srv.Close)
+	oldPoll, oldGrace := runStreamPoll, runStreamDoneGrace
+	t.Cleanup(func() { runStreamPoll, runStreamDoneGrace = oldPoll, oldGrace })
+	runStreamPoll, runStreamDoneGrace = time.Hour, 2*time.Second
+	open := func(runID string) *sseReader {
+		s := openStream(t, srv, "/api/v1/work/threads/"+threadMine+"/runs/"+runID+"/events", "member")
+		s.next(5 * time.Second)
+		s.next(5 * time.Second)
+		return s
+	}
+
+	t.Run("done after the final status", func(t *testing.T) {
+		runID := insertRun(t, db, threadMine, "running")
+		answer := insertEvent(t, db, threadMine, runID, `{"type":"message","role":"assistant","content":"Budget summary."}`)
+		s := open(runID)
+		if got := s.next(5 * time.Second); got != frame(answer, `{"role":"assistant","type":"message","content":"Budget summary."}`) {
+			t.Fatalf("answer %q", got)
+		}
+		seed(t, db, `update work_run set status = 'completed', finished_at = now() where id = $1`, runID)
+		usage := insertEvent(t, db, threadMine, runID, `{"type":"usage","source":"turn"}`)
+		if got := s.next(5 * time.Second); got != frame(usage, `{"type":"usage","source":"turn"}`) {
+			t.Fatalf("usage %q", got)
+		}
+		time.Sleep(300 * time.Millisecond)
+		done := insertEvent(t, db, threadMine, runID, `{"type":"done","result":{"status":"completed"}}`)
+		if got := s.next(5 * time.Second); got != frame(done, `{"type":"done","result":{"status":"completed"}}`) {
+			t.Fatalf("the stream ended with no done event: %q", got)
+		}
+		if got := s.next(5 * time.Second); got != "" {
+			t.Fatalf("a frame after done: %q", got)
+		}
+	})
+
+	t.Run("no done arrives", func(t *testing.T) {
+		runID := insertRun(t, db, threadMine, "running")
+		s := open(runID)
+		started := time.Now()
+		seed(t, db, `update work_run set status = 'failed', finished_at = now() where id = $1`, runID)
+		insertEvent(t, db, threadMine, runID, `{"type":"status","message":"Wake"}`)
+		s.next(5 * time.Second)
+		if got := s.next(5 * time.Second); got != "" {
+			t.Fatalf("frame %q", got)
+		}
+		if waited := time.Since(started); waited > 4*time.Second {
+			t.Fatalf("the stream waited %s for a done event", waited)
+		}
+	})
+
+	t.Run("an old run ends at once", func(t *testing.T) {
+		runID := insertRun(t, db, threadMine, "completed")
+		seed(t, db, `update work_run set finished_at = now() - interval '1 hour' where id = $1`, runID)
+		started := time.Now()
+		w := call(f, "GET", "/api/v1/work/threads/"+threadMine+"/runs/"+runID+"/events", "", sessionCookie("member"))
+		if w.Body.String() != helloFrames(runID, threadMine) || time.Since(started) > time.Second {
+			t.Fatalf("%s %q", time.Since(started), w.Body)
+		}
+	})
+}

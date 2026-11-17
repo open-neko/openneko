@@ -22,6 +22,7 @@ var (
 	runStreamPoll      = 5 * time.Second
 	runStreamLifetime  = 10 * time.Minute
 	runStreamKeepalive = 30 * time.Second
+	runStreamDoneGrace = 5 * time.Second
 )
 
 // hostProvision is ensureHostConfigProvisioned() in

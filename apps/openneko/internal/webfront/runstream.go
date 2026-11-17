@@ -2,6 +2,7 @@ package webfront
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"strconv"
@@ -291,6 +292,12 @@ func (a *API) runEventStream(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return err
 			}
+			var kind struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(payload, &kind) == nil && kind.Type == "done" {
+				doneSent = true
+			}
 			send(string(payload), s.id, func(f *legacyAnswerFilter) bool { return f.keepPayload(payload) })
 		}
 		return nil
@@ -306,18 +313,33 @@ func (a *API) runEventStream(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var status string
-		if err := a.DB.QueryRow(ctx, `select status from work_run where org_id = $1 and id = $2`, act.OrgID, runID).Scan(&status); err != nil {
+		var justFinished bool
+		if err := a.DB.QueryRow(ctx, `select status, coalesce(finished_at > now() - interval '30 seconds', false)
+			from work_run where org_id = $1 and id = $2`, act.OrgID, runID).Scan(&status, &justFinished); err != nil {
 			if ctx.Err() == nil {
 				log.Printf("[work-events] status read failed for %s: %v", runID, err)
 			}
 			return
 		}
 		if status == "completed" || status == "failed" || status == "cancelled" || status == "needs_input" {
-			sendLive()
-			if err := readStored(); err != nil && ctx.Err() == nil {
-				log.Printf("[work-events] read failed for %s: %v", runID, err)
+			// The turn stores its done event after the final status.
+			deadline := time.Now().Add(runStreamDoneGrace)
+			for {
+				sendLive()
+				if err := readStored(); err != nil && ctx.Err() == nil {
+					log.Printf("[work-events] read failed for %s: %v", runID, err)
+					return
+				}
+				if doneSent || !justFinished || closed || ctx.Err() != nil || time.Now().After(deadline) {
+					return
+				}
+				select {
+				case <-live.signal:
+				case <-wake:
+				case <-time.After(100 * time.Millisecond):
+				case <-ctx.Done():
+				}
 			}
-			return
 		}
 		if time.Since(start) > runStreamLifetime {
 			return
