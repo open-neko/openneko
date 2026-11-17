@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/open-neko/neko/apps/openneko/internal/gjconfig"
 	"github.com/open-neko/neko/apps/openneko/internal/packs"
 )
 
@@ -216,7 +217,7 @@ func magentoGraphjinUpdate(inputs map[string]any, secretValues map[string]string
 			map[string]any{"name": "magento_sensitive_executor", "comment": "Short-lived Magento executor minted after administrator approval"},
 		},
 		"update_sources": []any{analytics, map[string]any{
-			"name": "magento_operator", "kind": "api", "default": false, "specs_dir": "/config/specs",
+			"name": "magento_operator", "kind": "api", "default": false, "specs_dir": gjconfig.RuntimeSpecsDir(),
 			"specs": map[string]any{
 				"magento-operator-v1": spec(map[string]any{"magentoAddInternalOrderComment": map[string]any{"expose_mutation": false, "allowed_roles": []any{}}}),
 				"magento-operator-v2": spec(exposure),

@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/gjconfig"
 )
 
 type sourceConfigPreviewIn struct {
@@ -147,16 +148,12 @@ func (p *configPreview) run(ctx context.Context) (any, error) {
 			return nil, err
 		}
 		p.localFiles = manifest
-		base := strings.TrimSpace(os.Getenv("OPENNEKO_GRAPHJIN_FILES_DIR"))
-		if base == "" {
-			base = "/config/files"
-		}
-		if opts.managedLocalFilesRoot, err = managedFileSourceRuntimeRoot(p.orgID, p.sourceName, base); err != nil {
+		if opts.managedLocalFilesRoot, err = managedFileSourceRuntimeRoot(p.orgID, p.sourceName, gjconfig.RuntimeFilesDir()); err != nil {
 			return nil, err
 		}
 	}
 	if p.specAsset != nil {
-		opts.managedOpenAPISpecsDir = "/config/specs"
+		opts.managedOpenAPISpecsDir = gjconfig.RuntimeSpecsDir()
 	}
 	var err error
 	if p.token, err = p.api.mintGraphjinToken(graphjinClaims{orgID: p.orgID, userID: p.userID, role: "admin"}, 120*time.Second); err != nil {

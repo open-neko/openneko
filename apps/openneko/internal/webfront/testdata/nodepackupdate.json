@@ -24,7 +24,7 @@
             "write": "authenticated",
             "delete": "blocked"
           },
-          "specs_dir": "/config/specs",
+          "specs_dir": "specs",
           "specs": {
             "slack": {
               "base_url": "https://slack.com",
@@ -253,7 +253,7 @@
             "write": "authenticated",
             "delete": "blocked"
           },
-          "specs_dir": "/config/specs",
+          "specs_dir": "specs",
           "specs": {
             "shopify": {
               "base_url": "https://acme.myshopify.com",
@@ -460,7 +460,7 @@
             "write": "authenticated",
             "delete": "blocked"
           },
-          "specs_dir": "/config/specs",
+          "specs_dir": "specs",
           "specs": {
             "resend": {
               "base_url": "https://api.resend.com",
@@ -659,7 +659,7 @@
             "write": "authenticated",
             "delete": "blocked"
           },
-          "specs_dir": "/config/specs",
+          "specs_dir": "specs",
           "specs": {
             "parallel": {
               "base_url": "https://api.parallel.ai",
@@ -823,7 +823,7 @@
             "write": "authenticated",
             "delete": "authenticated"
           },
-          "specs_dir": "/config/specs",
+          "specs_dir": "specs",
           "specs": {
             "calendar": {
               "base_url": "https://www.googleapis.com",
@@ -880,7 +880,7 @@
             "write": "blocked",
             "delete": "blocked"
           },
-          "specs_dir": "/config/specs",
+          "specs_dir": "specs",
           "specs": {
             "docs": {
               "base_url": "https://docs.googleapis.com",
@@ -908,7 +908,7 @@
             "write": "authenticated",
             "delete": "authenticated"
           },
-          "specs_dir": "/config/specs",
+          "specs_dir": "specs",
           "specs": {
             "drive": {
               "base_url": "https://www.googleapis.com",
@@ -986,7 +986,7 @@
             "write": "authenticated",
             "delete": "authenticated"
           },
-          "specs_dir": "/config/specs",
+          "specs_dir": "specs",
           "specs": {
             "gmail": {
               "base_url": "https://gmail.googleapis.com",
@@ -1091,7 +1091,7 @@
             "write": "authenticated",
             "delete": "blocked"
           },
-          "specs_dir": "/config/specs",
+          "specs_dir": "specs",
           "specs": {
             "sheets": {
               "base_url": "https://sheets.googleapis.com",
@@ -1155,7 +1155,7 @@
             "write": "blocked",
             "delete": "blocked"
           },
-          "specs_dir": "/config/specs",
+          "specs_dir": "specs",
           "specs": {
             "slides": {
               "base_url": "https://slides.googleapis.com",

@@ -80,6 +80,9 @@ func prepareGraphjinAuth(ctx context.Context, out io.Writer, admin db.ConnConfig
 	if r.Secret {
 		fmt.Fprintf(out, "wrote the GraphJin JWT secret for organization %s to %s\n", orgID, gjConfig)
 	}
+	if r.Paths {
+		fmt.Fprintf(out, "moved the managed specs and files folders in %s to paths beside the config\n", gjConfig)
+	}
 	if r.WritePolicy {
 		fmt.Fprintf(out, "turned on GraphJin mutations and listed the worker roles in %s\n", gjConfig)
 	}

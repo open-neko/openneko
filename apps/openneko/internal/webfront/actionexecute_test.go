@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -513,6 +514,14 @@ paths:
 	stagedSpec, err := os.ReadFile(filepath.Join(dir, "specs", specFile))
 	if err != nil || string(stagedSpec) != specContent {
 		t.Fatalf("staged OpenAPI spec mismatch: %v %s", err, string(stagedSpec))
+	}
+	diskYAML, _ = os.ReadFile(configFile)
+	specsDir := regexp.MustCompile(`specs_dir: (\S+)`).FindStringSubmatch(string(diskYAML))
+	if specsDir == nil {
+		t.Fatalf("specs_dir was not persisted to disk: %s", diskYAML)
+	}
+	if _, err := os.Stat(filepath.Join(graphjinPath(configFile, specsDir[1]), specFile)); err != nil {
+		t.Fatalf("specs_dir %s does not hold the staged spec: %v", specsDir[1], err)
 	}
 }
 

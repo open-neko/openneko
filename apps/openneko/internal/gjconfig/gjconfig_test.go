@@ -142,3 +142,72 @@ func TestShippedGraphjinSeedsNeedOnlyTheSecret(t *testing.T) {
 		}
 	}
 }
+
+func TestMigrateManagedPaths(t *testing.T) {
+	t.Setenv(specsDirEnv, "")
+	t.Setenv(filesDirEnv, "")
+	old := `sources:
+  - name: main
+    kind: database
+  - name: orders
+    kind: api
+    specs_dir: /config/specs
+  - name: docs
+    kind: file
+    backend: local
+    root: /config/files/org_abc_docs
+  - name: archive
+    kind: file
+    backend: local
+    root: /srv/data/archive
+`
+	r, err := Reconcile(old, "s")
+	if err != nil || !r.Paths || !r.Changed() {
+		t.Fatalf("paths=%v err=%v", r.Paths, err)
+	}
+	for _, want := range []string{"specs_dir: specs\n", "root: files/org_abc_docs\n", "root: /srv/data/archive\n"} {
+		if !strings.Contains(r.Content, want) {
+			t.Fatalf("missing %q in\n%s", want, r.Content)
+		}
+	}
+	if again, err := Reconcile(r.Content, "s"); err != nil || again.Paths || again.Content != r.Content {
+		t.Fatalf("second run changed the config: paths=%v err=%v", again.Paths, err)
+	}
+
+	custom := strings.NewReplacer("/config/specs", "/srv/specs", "/config/files/", "/config/files/../").Replace(old)
+	if r, err := Reconcile(custom, "s"); err != nil || r.Paths || !strings.Contains(r.Content, "specs_dir: /srv/specs\n") {
+		t.Fatalf("custom paths changed: paths=%v err=%v\n%s", r.Paths, err, r.Content)
+	}
+
+	t.Setenv(specsDirEnv, "/config/specs")
+	t.Setenv(filesDirEnv, "/config/files")
+	if r, err := Reconcile(old, "s"); err != nil || r.Paths || !strings.Contains(r.Content, "specs_dir: /config/specs\n") || !strings.Contains(r.Content, "root: /config/files/org_abc_docs\n") {
+		t.Fatalf("paths under an environment value changed: paths=%v err=%v\n%s", r.Paths, err, r.Content)
+	}
+
+	t.Setenv(specsDirEnv, "")
+	t.Setenv(filesDirEnv, "")
+	file := filepath.Join(t.TempDir(), "agentic.yml")
+	if err := os.WriteFile(file, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := ReconcileFile(file, "s"); err != nil || !r.Paths {
+		t.Fatalf("file: paths=%v err=%v", r.Paths, err)
+	}
+	if raw, _ := os.ReadFile(file); strings.Contains(string(raw), "/config/") || !strings.Contains(string(raw), "specs_dir: specs\n") {
+		t.Fatalf("file not migrated:\n%s", raw)
+	}
+}
+
+func TestRuntimeDirs(t *testing.T) {
+	t.Setenv(specsDirEnv, "")
+	t.Setenv(filesDirEnv, "")
+	if RuntimeSpecsDir() != "specs" || RuntimeFilesDir() != "files" {
+		t.Fatalf("defaults: %q %q", RuntimeSpecsDir(), RuntimeFilesDir())
+	}
+	t.Setenv(specsDirEnv, "/srv/specs/")
+	t.Setenv(filesDirEnv, " /srv/files ")
+	if RuntimeSpecsDir() != "/srv/specs" || RuntimeFilesDir() != "/srv/files" {
+		t.Fatalf("overrides: %q %q", RuntimeSpecsDir(), RuntimeFilesDir())
+	}
+}
