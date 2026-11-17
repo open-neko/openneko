@@ -64,7 +64,7 @@ func TestSpecAcceptsMinimalForTheResponderOnly(t *testing.T) {
 	}
 }
 
-func TestExecutorThoughtsOnlyForStreamedSummaryProviders(t *testing.T) {
+func TestActorThoughtsOnlyForStreamedSummaryProviders(t *testing.T) {
 	for _, tc := range []struct {
 		provider string
 		streamed bool
@@ -78,8 +78,8 @@ func TestExecutorThoughtsOnlyForStreamedSummaryProviders(t *testing.T) {
 		if got := executor["showThoughts"] == true && executor["stream"] == true; got != tc.want {
 			t.Errorf("%s streamed=%v: executor %v, want thoughts %v", tc.provider, tc.streamed, executor, tc.want)
 		}
-		if context["showThoughts"] != nil {
-			t.Errorf("%s: the context stage asks for thoughts", tc.provider)
+		if got := context["showThoughts"] == true && context["stream"] == true; got != tc.want {
+			t.Errorf("%s streamed=%v: context stage %v, want thoughts %v", tc.provider, tc.streamed, context, tc.want)
 		}
 		if got := executorSummaries(&RoutedClient{DefaultProvider: tc.provider}, "low"); got != (tc.want || !tc.streamed && thoughtSummaries(tc.provider)) {
 			t.Errorf("%s: executorSummaries %v", tc.provider, got)

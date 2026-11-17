@@ -27,7 +27,7 @@ Send exactly one object, at most 16 MiB. Unknown fields fail the run.
 | `prompt` | string | Required. The rest of the turn, including history and the user message. The model sees it next, as `Question:`. Without `instructions`, it carries the whole turn. Only the model context window bounds the two together. |
 | `skill_query` | string | Optional. The user message. The host skill index recalls up to 10 guides by meaning. When it recalls two or more, one model call on the context route keeps the two or fewer that fit the request. A `discover()` search that names a staged guide loads only that guide; a free-text search gets the same rerank. |
 | `skill_rerank` | string | Optional. `off` keeps the index order and makes no rerank call. The harness also skips the call when `max_model_calls` is 1 to 3. |
-| `stream_responses` | boolean | Optional. Sends live `answer.delta`, `thought.delta` and `actor.step` events. |
+| `stream_responses` | boolean | Optional. Sends live `answer.delta`, `thought.delta`, `executor.thought.delta`, `actor.step` and `step.quiet` events. |
 | `timeout_ms` | integer | Optional. Run wall clock, 1,000 to 1,800,000. Default 540,000 (9 minutes). |
 | `max_actor_steps` | integer | Optional. Actor steps, 1 to 500. Default 25. |
 | `max_child_steps` | integer | Optional. Child agent steps, 1 to 500. Default 50. |
@@ -98,8 +98,9 @@ them as provisional; only `run.finished` holds the answer.
 | --- | --- |
 | `answer.delta` | `{version, index, text}` from the responder. A new `version` replaces the earlier text. |
 | `thought.delta` | `{version, index, text}`. The responder's thinking text, from routes with `reasoning_effort` set: thought summaries from Anthropic and Gemini, raw reasoning from DeepSeek, OpenRouter and Together. Other providers send none through the pinned Ax. The harness drops a heading line (a bold line or a markdown heading) that names a program term or holds code marks, and writes answer contract names such as `neko_cards` as plain words. |
-| `executor.thought.delta` | `{version, index, text}`. One short note from the executor's thought summary, on Anthropic and Gemini routes with `reasoning_effort` set. `version` numbers the executor call and `index` the note in the run. The note is a bold span that fills a whole line of the summary. A summary with no such line gives no note. The harness drops a note that names a program term, holds code marks, repeats an earlier note or exceeds 80 characters, and sends at most 24 notes per run. It never sends the summary body. |
+| `executor.thought.delta` | `{version, index, text}`. One short note from the thought summary of the context stage (`root/distiller`) or the executor, on Anthropic and Gemini routes with `reasoning_effort` set. The harness reads both stages as streams for these notes. `version` numbers the call and `index` the note in the run. The note is a bold span that fills a whole line of the summary. A summary with no such line gives no note. The harness drops a note that names a program term, holds code marks, repeats an earlier note or exceeds 80 characters, and sends at most 24 notes per run. It never sends the summary body. |
 | `actor.step` | `{text}`. The short request the actor writes when it hands work to the executor, with answer contract names such as `neko_cards` written as plain words. |
+| `step.quiet` | `{text}`. A plain step line when an executor or responder model call shows nothing new for 3 seconds: "Working out the first step" before the first tool result, "Putting the findings together" after it, and "Writing the answer" for the responder. A thinking note, an answer delta, an `actor.step` or a tool event inside the 3 seconds cancels it. |
 
 ## Result
 

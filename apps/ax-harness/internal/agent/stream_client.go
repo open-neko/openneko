@@ -68,9 +68,14 @@ func (c *streamingModeClient) staged(options map[string]ax.Value) map[string]ax.
 	return out
 }
 
-func executorStage(options map[string]ax.Value) bool {
+func actorStage(options map[string]ax.Value) bool {
 	path, _ := options["executionPath"].(string)
-	return path == "executor" || strings.HasSuffix(path, "/executor")
+	for _, stage := range []string{"executor", "distiller"} {
+		if path == stage || strings.HasSuffix(path, "/"+stage) {
+			return true
+		}
+	}
+	return false
 }
 
 type thoughtTap struct {
@@ -151,7 +156,7 @@ func (c *streamingModeClient) StreamEvents(ctx context.Context, request, options
 	}
 	options = c.staged(options)
 	open := func() (ax.AxChatStream, error) { return streamEvents(ctx, c.AIClient, request, options) }
-	if c.executorNotes != nil && executorStage(options) {
+	if c.executorNotes != nil && actorStage(options) {
 		plain := open
 		open = func() (ax.AxChatStream, error) {
 			stream, err := plain()

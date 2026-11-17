@@ -40,7 +40,7 @@ func thinkingServer(t *testing.T, fixture thinkingFixture, streamed *[]string) *
 		body, _ := io.ReadAll(r.Body)
 		if strings.Contains(r.URL.Path, "streamGenerateContent") || strings.Contains(string(body), `"stream":true`) {
 			w.Header().Set("Content-Type", "text/event-stream")
-			if strings.Contains(string(body), "(`executor`)") {
+			if strings.Contains(string(body), "(`executor`)") || strings.Contains(string(body), "(`distiller`)") {
 				lines, _ := executorThoughtStream(fixture.Provider)
 				_, _ = io.WriteString(w, strings.Join(lines, "\n"))
 				return
