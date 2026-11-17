@@ -265,14 +265,17 @@ func TestBuiltinPacksRootFindsTheReleasePacks(t *testing.T) {
 	release := t.TempDir()
 	exe := filepath.Join(release, "bin", "openneko")
 	wd := t.TempDir()
-	if got := builtinPacksRoot(exe, wd); got != filepath.Join(wd, "packs") {
+	if got := builtinPacksRoot(exe, wd, true); got != filepath.Join(wd, "packs") {
 		t.Fatalf("no release packs: got %s", got)
+	}
+	if got := builtinPacksRoot(exe, wd, false); got != "" {
+		t.Fatalf("no release packs and no walk: got %s", got)
 	}
 	packsDir := filepath.Join(release, "share", "openneko", "packs")
 	if err := os.MkdirAll(packsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := builtinPacksRoot(exe, wd); got != packsDir {
+	if got := builtinPacksRoot(exe, wd, false); got != packsDir {
 		t.Fatalf("release packs: got %s, want %s", got, packsDir)
 	}
 }

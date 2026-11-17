@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"testing"
 
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
@@ -99,17 +100,34 @@ func assetsRoot(env, sub, release string) string {
 	}
 	exe, _ := os.Executable()
 	wd, _ := os.Getwd()
-	return assetsRootFrom(exe, wd, sub, release)
+	return assetsRootFrom(exe, wd, sub, release, checkoutWalk(exe))
+}
+
+// checkoutWalk allows the search for a source checkout: in development and
+// in tests, never beside a release layout.
+func checkoutWalk(exe string) bool {
+	return !releaseLayout(exe) && (Development() || testing.Testing())
+}
+
+func releaseLayout(exe string) bool {
+	if exe == "" {
+		return false
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	info, err := os.Stat(filepath.Join(filepath.Dir(filepath.Dir(exe)), "share", "openneko"))
+	return err == nil && info.IsDir()
 }
 
 // assetsRootFrom is the release folder share/openneko/<release> beside the
-// bin folder of exe when it exists, else assets/<sub> of a source checkout
-// above wd.
-func assetsRootFrom(exe, wd, sub, release string) string {
+// bin folder of exe when it exists, else, with walk, assets/<sub> of a
+// source checkout above wd.
+func assetsRootFrom(exe, wd, sub, release string, walk bool) string {
 	if dir := releaseShareDir(exe, release); dir != "" {
 		return dir
 	}
-	if wd == "" {
+	if wd == "" || !walk {
 		return ""
 	}
 	dir := wd
