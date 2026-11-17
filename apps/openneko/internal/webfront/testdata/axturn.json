@@ -545,6 +545,11 @@
        }
       }
      ]
+    },
+    {
+     "type": "notice",
+     "code": "card_not_shown",
+     "message": "A chart could not be shown"
     }
    ],
    "result": {
@@ -3246,7 +3251,8 @@
          "component": "Answer",
          "title": "Sales",
          "children": [
-          "table"
+          "table",
+          "part2-section"
          ]
         },
         {
@@ -3269,27 +3275,17 @@
            "c1": "12"
           }
          ]
-        }
-       ]
-      }
-     },
-     {
-      "version": "v1.0",
-      "createSurface": {
-       "surfaceId": "answer-ID",
-       "catalogId": "urn:openneko:catalog:work:v2",
-       "dataModel": {},
-       "components": [
+        },
         {
-         "id": "root",
-         "component": "Answer",
+         "id": "part2-section",
+         "component": "Section",
          "title": "Sales",
          "children": [
-          "table"
+          "part2-table"
          ]
         },
         {
-         "id": "table",
+         "id": "part2-table",
          "component": "Table",
          "columns": [
           {
@@ -3334,7 +3330,8 @@
          "component": "Answer",
          "title": "Sales",
          "children": [
-          "table"
+          "table",
+          "part2-section"
          ]
         },
         {
@@ -3357,27 +3354,17 @@
            "c1": "12"
           }
          ]
-        }
-       ]
-      }
-     },
-     {
-      "version": "v1.0",
-      "createSurface": {
-       "surfaceId": "answer-ID",
-       "catalogId": "urn:openneko:catalog:work:v2",
-       "dataModel": {},
-       "components": [
+        },
         {
-         "id": "root",
-         "component": "Answer",
+         "id": "part2-section",
+         "component": "Section",
          "title": "Sales",
          "children": [
-          "table"
+          "part2-table"
          ]
         },
         {
-         "id": "table",
+         "id": "part2-table",
          "component": "Table",
          "columns": [
           {

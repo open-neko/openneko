@@ -98,7 +98,7 @@ state transition, delivery, denial, audit record, or user-visible contract.
 
 All current `AgentEvent` variants map here or to runtime/action semantics:
 `message`, `tool_start`, `tool_delta`, `tool_end`, `surface`, `artifact`,
-`status`, `usage`, `telemetry`, `error`, `capability_denied`, `done`, `output_emit`,
+`status`, `usage`, `telemetry`, `error`, `notice`, `capability_denied`, `done`, `output_emit`,
 `action_request_emit`, `action_request_result`, `needs_input`, `followups`, and
 `vitals`.
 

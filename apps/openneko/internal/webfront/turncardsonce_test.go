@@ -10,9 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/open-neko/neko/apps/openneko/internal/llm"
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
@@ -99,16 +101,17 @@ func TestWebTurnWritesTheCardsOnce(t *testing.T) {
 		name, actor, answer string
 		repaired            string
 		repairs, surfaces   int
+		notices             int
 	}{
 		{"executor tool and responder fence",
 			"try { await mcp_neko_ui_render_cards({title:'Sales by region', table:'Region | Sales\\nEast | 12\\nWest | 9', callout:'East leads.'}); } catch (e) {} final('Report', {east:12, west:9});",
-			"Answer: East sold the most.\n\n" + fence, "", 0, 1},
-		{"responder fence only", "final('Report', {east:12, west:9});", "Answer: East sold the most.\n\n" + fence, "", 0, 1},
+			"Answer: East sold the most.\n\n" + fence, "", 0, 1, 0},
+		{"responder fence only", "final('Report', {east:12, west:9});", "Answer: East sold the most.\n\n" + fence, "", 0, 1, 0},
 		{"responder fence that the repair fixes", "final('Report', {east:12, west:9});",
 			"Answer: East sold the most.\n\n```neko_cards\n{\"title\":\"Sales\",\"callout\":\"East leads.\",\"mood\":\"warning\"}\n```",
-			`{"title":"Sales","callout":"East leads.","mood":"watch"}`, 1, 1},
+			`{"title":"Sales","callout":"East leads.","mood":"watch"}`, 1, 1, 0},
 		{"responder fence that the repair cannot fix", "final('Report', {east:12, west:9});",
-			"Answer: East sold the most.\n\n```neko_cards\n{\"title\":\"Sales\",\"chart\":\"pie\"}\n```", `{"title":"Sales","chart":"pie"}`, 2, 0},
+			"Answer: East sold the most.\n\n```neko_cards\n{\"title\":\"Sales\",\"chart\":\"pie\"}\n```", `{"title":"Sales","chart":"pie"}`, 2, 0, 1},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -149,9 +152,10 @@ func TestWebTurnWritesTheCardsOnce(t *testing.T) {
 				FilesEnabled:        func() bool { return false },
 				toolBackend:         func(turnBinding) toolBackend { return tools },
 				withoutScriptData:   true,
-				repairCards: func(context.Context, string, []string, bool) (string, error) {
+				repairCards: func(context.Context, string, []string, bool) (string, llm.Usage, error) {
 					repairs++
-					return c.repaired, nil
+					cost := 0.0004
+					return c.repaired, llm.Usage{Coverage: "complete", Input: 900, Output: 80, Total: 980, Calls: 1, CostStatus: "estimated", CostUSD: &cost}, nil
 				},
 				Emit: func(_ context.Context, e any) error {
 					mu.Lock()
@@ -185,6 +189,17 @@ func TestWebTurnWritesTheCardsOnce(t *testing.T) {
 			if surfaces != c.surfaces {
 				t.Fatalf("%d answer surfaces, want %d\nevents %v", surfaces, c.surfaces, events)
 			}
+			fixing, spends, notices := 0, 0, 0
+			for _, e := range events {
+				fixing += strings.Count(e, `"message":"Fixing a chart"`)
+				if strings.Contains(e, `"source":"card_repair"`) && strings.Contains(e, `"estimatedCostUsd":0.0004`) {
+					spends++
+				}
+				notices += strings.Count(e, `{"type":"notice","code":"card_not_shown","message":"A chart could not be shown"}`)
+			}
+			if fixing != min(c.repairs, 1) || spends != c.repairs || notices != c.notices {
+				t.Fatalf("%d status lines, %d repair spends, %d notices\nevents %v", fixing, spends, notices, events)
+			}
 			for _, body := range bodies() {
 				if strings.Contains(body, "render_cards") {
 					t.Fatal("a model request offers the card tool")
@@ -215,12 +230,12 @@ func TestCardFenceRepair(t *testing.T) {
 	answer := func(body string) string { return "East leads.\n\n```neko_cards\n" + body + "\n```" }
 	var asked [][]string
 	repair := func(reply string, err error) cardRepair {
-		return func(_ context.Context, cards string, problems []string, rich bool) (string, error) {
+		return func(_ context.Context, cards string, problems []string, rich bool) (string, llm.Usage, error) {
 			if strings.TrimSpace(cards) != bad || !rich {
 				t.Fatalf("repair got %q rich=%v", cards, rich)
 			}
 			asked = append(asked, problems)
-			return reply, err
+			return reply, llm.Usage{}, err
 		}
 	}
 
@@ -279,12 +294,99 @@ func TestCardFenceRepairSeesTheLaterFaults(t *testing.T) {
 	}
 	var asked []string
 	_, messages, issues := extractCardFences(context.Background(), "Up.\n\n```neko_cards\n"+stages[0]+"\n```", true,
-		func(_ context.Context, cards string, problems []string, _ bool) (string, error) {
+		func(_ context.Context, cards string, problems []string, _ bool) (string, llm.Usage, error) {
 			asked = append(asked, problems[0])
-			return stages[len(asked)], nil
+			return stages[len(asked)], llm.Usage{}, nil
 		})
 	if len(messages) != 1 || len(issues) != 0 || len(asked) != 2 ||
 		!strings.HasPrefix(asked[0], "mood:") || !strings.HasPrefix(asked[1], "keyFigures.0 needs") {
 		t.Fatalf("%d messages, issues %q, asked %q", len(messages), issues, asked)
+	}
+}
+
+func TestTwoCardFencesShowOneAnswerSurface(t *testing.T) {
+	answer := "East leads.\n\n```neko_cards\n{\"title\":\"Sales\",\"table\":\"Region | Sales\\nEast | 12\",\"callout\":\"East leads.\"}\n```\n\n" +
+		"West is second.\n\n```neko_cards\n{\"title\":\"Margins\",\"table\":\"Region | Margin\\nWest | 9\",\"callout\":\"West holds.\",\"mood\":\"good\"}\n```"
+	text, messages, issues := extractCardFences(context.Background(), answer, true, nil)
+	if len(issues) != 0 || len(messages) != 1 || text != "East leads.\n\nWest is second." {
+		t.Fatalf("text %q, %d messages, issues %q", text, len(messages), issues)
+	}
+	components := jsArray(jsGet(jsGet(messages[0], "createSurface"), "components"))
+	ids := map[string]bool{}
+	byID := map[string]any{}
+	for _, c := range components {
+		id := jsGet(c, "id").(string)
+		if ids[id] {
+			t.Fatalf("component id %s twice: %s", id, jsStringify(messages, false))
+		}
+		ids[id], byID[id] = true, c
+	}
+	root := byID["root"]
+	if jsGet(root, "title") != "Sales" || jsStringify(jsGet(root, "children"), false) != `["table","callout","part2-section"]` {
+		t.Fatalf("root %s", jsStringify(root, false))
+	}
+	section := byID["part2-section"]
+	if jsGet(section, "component") != "Section" || jsGet(section, "title") != "Margins" ||
+		jsStringify(jsGet(section, "children"), false) != `["part2-table","part2-callout"]` ||
+		!strings.Contains(jsStringify(byID["part2-table"], false), `West`) || jsGet(byID["part2-callout"], "mood") != "good" {
+		t.Fatalf("section %s", jsStringify(messages, false))
+	}
+}
+
+func TestCardRepairsHaveATurnLimit(t *testing.T) {
+	bad := `{"title":"Sales","callout":"East leads.","mood":"warning"}`
+	answer := strings.Repeat("```neko_cards\n"+bad+"\n```\n\n", 3)
+	calls := 0
+	_, messages, issues := extractCardFences(context.Background(), answer, true,
+		func(context.Context, string, []string, bool) (string, llm.Usage, error) {
+			calls++
+			return bad, llm.Usage{}, nil
+		})
+	if calls != cardRepairsPerTurn || len(messages) != 0 || !slices.Contains(issues, "no repair left in this turn") {
+		t.Fatalf("%d repair calls, %d messages, issues %q", calls, len(messages), issues)
+	}
+
+	old := cardRepairTimeout
+	t.Cleanup(func() { cardRepairTimeout = old })
+	cardRepairTimeout = 50 * time.Millisecond
+	began := time.Now()
+	calls = 0
+	_, _, issues = extractCardFences(context.Background(), answer, true,
+		func(ctx context.Context, _ string, _ []string, _ bool) (string, llm.Usage, error) {
+			calls++
+			if _, ok := ctx.Deadline(); !ok {
+				t.Error("a repair call has no deadline")
+			}
+			<-ctx.Done()
+			return "", llm.Usage{}, ctx.Err()
+		})
+	if took := time.Since(began); took > 2*time.Second || calls != 2 || !slices.Contains(issues, "repair failed: context deadline exceeded") {
+		t.Fatalf("took %v, %d calls, issues %q", took, calls, issues)
+	}
+}
+
+func TestACardRepairKeepsTheFieldsNoProblemNamed(t *testing.T) {
+	bad := `{"title":"Sales","table":"Region | Sales\nEast | 12","callout":"East leads.","mood":"warning"}`
+	for _, c := range []struct {
+		name, original, reply string
+		shown                 bool
+		issue                 string
+	}{
+		{"fixes the named field", bad, `{"title":"Sales","table":"Region | Sales\nEast | 12","callout":"East leads.","mood":"watch"}`, true, ""},
+		{"changes a figure", bad, `{"title":"Sales","table":"Region | Sales\nEast | 13","callout":"East leads.","mood":"watch"}`, false, "repair changed table, which no problem named"},
+		{"drops a field", bad, `{"title":"Sales","table":"Region | Sales\nEast | 12","mood":"watch"}`, false, "repair changed callout, which no problem named"},
+		{"adds a field", bad, `{"title":"Sales","table":"Region | Sales\nEast | 12","callout":"East leads.","mood":"watch","keyFigures":["East: 12"]}`, false, "repair changed keyFigures, which no problem named"},
+		{"mends JSON with the same texts", `{"title":"Sales","callout":"East leads." "mood":"watch"}`, `{"title":"Sales","callout":"East leads.","mood":"watch"}`, true, ""},
+		{"mends JSON with a new text", `{"title":"Sales","callout":"East leads." "mood":"watch"}`, `{"title":"Sales","callout":"West leads.","mood":"watch"}`, false, "repair changed callout, which no problem named"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, messages, issues := extractCardFences(context.Background(), "Up.\n\n```neko_cards\n"+c.original+"\n```", true,
+				func(context.Context, string, []string, bool) (string, llm.Usage, error) {
+					return c.reply, llm.Usage{}, nil
+				})
+			if (len(messages) == 1) != c.shown || c.issue != "" && !slices.Contains(issues, c.issue) {
+				t.Fatalf("%d messages, issues %q", len(messages), issues)
+			}
+		})
 	}
 }

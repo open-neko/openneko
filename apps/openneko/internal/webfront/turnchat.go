@@ -71,7 +71,7 @@ type chatTurnState struct {
 	toolCalls     []skillToolCall
 }
 
-var afterQuestion = map[string]bool{"message": true, "answer_reset": true, "card_pending": true, "surface": true, "vitals": true, "followups": true, "needs_input": true}
+var afterQuestion = map[string]bool{"message": true, "answer_reset": true, "card_pending": true, "surface": true, "vitals": true, "followups": true, "needs_input": true, "notice": true}
 
 func (s *chatTurnState) wrapped(ctx context.Context, event any) error {
 	typ, _ := jsGet(event, "type").(string)

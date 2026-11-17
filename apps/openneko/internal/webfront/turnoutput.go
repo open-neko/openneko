@@ -3,9 +3,13 @@ package webfront
 import (
 	"context"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/open-neko/neko/apps/openneko/internal/llm"
 )
 
 // The answer parsing of packages/llm/src/agent-backends/output.ts and
@@ -100,7 +104,7 @@ var (
 	cardSurfaceID = func() string { return "answer-" + uuid.NewString() }
 )
 
-type cardRepair func(ctx context.Context, cards string, problems []string, rich bool) (string, error)
+type cardRepair func(ctx context.Context, cards string, problems []string, rich bool) (string, llm.Usage, error)
 
 func checkCardFence(body string, rich bool) ([]any, []string) {
 	args, err := jsParse([]byte(strings.TrimSpace(body)))
@@ -110,39 +114,153 @@ func checkCardFence(body string, rich bool) ([]any, []string) {
 	return renderCards(args, rich, cardSurfaceID())
 }
 
-const cardRepairTries = 2
+const (
+	cardRepairTries    = 2
+	cardRepairsPerTurn = 2
+)
+
+var cardRepairTimeout = 30 * time.Second
 
 // extractCardFences takes the card fields written into an answer as
-// neko_cards fences out of the text. A fence that fails the check gets up to
-// cardRepairTries repairs; the check reports some faults only after others
-// are fixed. A repair must pass the same check.
+// neko_cards fences out of the text and shows all fences as one answer
+// surface. A fence that fails the check gets up to cardRepairTries repairs;
+// the check reports some faults only after others are fixed. A turn gets at
+// most cardRepairsPerTurn repairs within cardRepairTimeout. A repair must
+// pass the same check and keep every field that no problem named.
 func extractCardFences(ctx context.Context, raw string, rich bool, repair cardRepair) (string, []any, []string) {
-	messages, issues := []any{}, []string{}
+	var shown [][]any
+	issues := []string{}
+	repairs := 0
+	stop := func() {}
+	defer func() { stop() }()
 	text := cardFenceRE.ReplaceAllStringFunc(raw, func(m string) string {
-		body := cardFenceRE.FindStringSubmatch(m)[1]
+		original := cardFenceRE.FindStringSubmatch(m)[1]
+		body := original
 		msgs, problems := checkCardFence(body, rich)
+		named := slices.Clone(problems)
 		for try := 0; len(problems) > 0 && repair != nil && try < cardRepairTries; try++ {
-			fixed, err := repair(ctx, body, problems, rich)
+			if repairs >= cardRepairsPerTurn {
+				problems = append(problems, "no repair left in this turn")
+				break
+			}
+			if repairs == 0 {
+				ctx, stop = context.WithTimeout(ctx, cardRepairTimeout)
+			}
+			repairs++
+			fixed, _, err := repair(ctx, body, problems, rich)
 			if err != nil {
 				problems = append(problems, "repair failed: "+err.Error())
 				break
 			}
+			if field := cardRepairChangedField(original, fixed, rich, named); field != "" {
+				problems = append(problems, "repair changed "+field+", which no problem named")
+				break
+			}
 			body = fixed
-			if msgs, problems = checkCardFence(body, rich); len(problems) > 0 && try == cardRepairTries-1 {
-				problems = append([]string{"after repair"}, problems...)
+			if msgs, problems = checkCardFence(body, rich); len(problems) > 0 {
+				named = append(named, problems...)
+				if try == cardRepairTries-1 {
+					problems = append([]string{"after repair"}, problems...)
+				}
 			}
 		}
 		if len(problems) > 0 {
 			issues = append(issues, problems...)
 		} else {
-			messages = append(messages, msgs...)
+			shown = append(shown, msgs)
 		}
 		return ""
 	})
-	if len(messages) == 0 && len(issues) == 0 {
-		return raw, messages, issues
+	if len(shown) == 0 && len(issues) == 0 {
+		return raw, []any{}, issues
 	}
-	return strings.TrimSpace(blankLinesRE.ReplaceAllString(text, "\n\n")), messages, issues
+	return strings.TrimSpace(blankLinesRE.ReplaceAllString(text, "\n\n")), mergeCardSurfaces(shown), issues
+}
+
+// mergeCardSurfaces puts the cards of every fence on the first fence's
+// surface; each later fence becomes a Section under its own title. The web
+// app shows one answer surface per run.
+func mergeCardSurfaces(sets [][]any) []any {
+	if len(sets) == 0 {
+		return []any{}
+	}
+	first := jsGet(sets[0][0], "createSurface").(*jsObj)
+	components := first.vals["components"].([]any)
+	root := components[0].(*jsObj)
+	children := root.vals["children"].([]any)
+	for i, set := range sets[1:] {
+		prefix := "part" + strconv.Itoa(i+2) + "-"
+		later := jsGet(set[0], "createSurface").(*jsObj).vals["components"].([]any)
+		section := jsObjOf("id", prefix+"section", "component", "Section", "title", jsGet(later[0], "title"))
+		ids := []any{}
+		components = append(components, section)
+		for _, c := range later[1:] {
+			comp := c.(*jsObj)
+			comp.set("id", prefix+comp.vals["id"].(string))
+			ids = append(ids, comp.vals["id"])
+			components = append(components, comp)
+		}
+		section.set("children", ids)
+		children = append(children, section.vals["id"])
+	}
+	root.set("children", children)
+	first.set("components", components)
+	return []any{sets[0][0]}
+}
+
+// cardRepairChangedField names a card field that the repair added, removed
+// or changed although no problem named it, or "". When the fence was not
+// JSON, every text of the repair must come from the fence.
+func cardRepairChangedField(original, fixed string, rich bool, problems []string) string {
+	after, err := jsParse([]byte(strings.TrimSpace(fixed)))
+	if err != nil {
+		return ""
+	}
+	afterCards, ok := normalizeCards(after, rich).(*jsObj)
+	if !ok {
+		return ""
+	}
+	before, err := jsParse([]byte(strings.TrimSpace(original)))
+	beforeCards, ok := normalizeCards(before, rich).(*jsObj)
+	if err != nil || !ok {
+		for _, field := range afterCards.ordered() {
+			if !cardTextsFrom(afterCards.vals[field], original) {
+				return field
+			}
+		}
+		return ""
+	}
+	for _, field := range append(beforeCards.ordered(), afterCards.ordered()...) {
+		if cardFieldNamed(field, problems) {
+			continue
+		}
+		was, had := beforeCards.vals[field]
+		is, has := afterCards.vals[field]
+		if had != has || jsStringify(was, false) != jsStringify(is, false) {
+			return field
+		}
+	}
+	return ""
+}
+
+func cardFieldNamed(field string, problems []string) bool {
+	word := regexp.MustCompile(`(^|[^A-Za-z])` + regexp.QuoteMeta(field) + `([^A-Za-z]|$)`)
+	return slices.ContainsFunc(problems, word.MatchString)
+}
+
+func cardTextsFrom(value any, source string) bool {
+	switch v := value.(type) {
+	case string:
+		quoted := jsStringify(v, false)
+		return strings.Contains(source, v) || strings.Contains(source, quoted[1:len(quoted)-1])
+	case []any:
+		for _, item := range v {
+			if !cardTextsFrom(item, source) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // extractSurfaceMessages takes the first neko_a2ui fence out of the text. A

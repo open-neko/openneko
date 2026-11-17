@@ -232,6 +232,9 @@ export function RunTimeline({
         />
       );
     }
+    if (item.kind === "notice") {
+      return <p key={`notice-${index}`} className="work-run-stopped" role="status">{item.message}</p>;
+    }
     if (item.kind === "stopped") {
       return <p key={`stopped-${index}`} className="work-run-stopped">Stopped.</p>;
     }

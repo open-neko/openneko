@@ -30,6 +30,21 @@ describe("work run action timeline", () => {
     );
   });
 
+  it("shows a notice when the cards of an answer could not be shown", () => {
+    const result = buildRunTimeline(
+      [
+        { type: "message", role: "assistant", content: "East sold the most." },
+        { type: "status", message: "Fixing a chart" },
+        { type: "notice", code: "card_not_shown", message: "A chart could not be shown" },
+      ],
+      "run-1",
+    );
+    expect(result.items).toEqual([
+      { kind: "text", content: "East sold the most." },
+      { kind: "notice", message: "A chart could not be shown" },
+    ]);
+  });
+
   it("interleaves provider summaries without replacing assistant conversation", () => {
     const result = buildRunTimeline(
       [

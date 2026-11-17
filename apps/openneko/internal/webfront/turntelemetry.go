@@ -12,28 +12,35 @@ var runSummaryUsageKeys = []string{"inputTokens", "outputTokens", "cacheReadToke
 	"reasoningTokens", "totalTokens", "estimatedCostUsd", "billedCostUsd"}
 
 // runTelemetry builds the part of HarnessRunSummary (packages/telemetry) that
-// the web app reads: the usage of the run's last outer usage event.
+// the web app reads: the usage of the run's last outer usage event, and the
+// card repairs and the cards not shown.
 type runTelemetry struct {
-	mu    sync.Mutex
-	usage *jsObj
-	batch *jsObj
+	mu            sync.Mutex
+	usage         *jsObj
+	batch         *jsObj
+	cardRepairs   int
+	cardsNotShown int
 }
 
 func (t *runTelemetry) wrap(emit func(context.Context, any) error) func(context.Context, any) error {
 	return func(ctx context.Context, event any) error {
-		if jsGet(event, "type") == "usage" && jsGet(event, "source") == "outer" {
-			u, _ := jsGet(event, "usage").(*jsObj)
-			t.mu.Lock()
-			t.usage = u
-			t.mu.Unlock()
+		t.mu.Lock()
+		switch {
+		case jsGet(event, "type") == "usage" && jsGet(event, "source") == "outer":
+			t.usage, _ = jsGet(event, "usage").(*jsObj)
+		case jsGet(event, "type") == "usage" && jsGet(event, "source") == cardRepairUsageSource:
+			t.cardRepairs++
+		case jsGet(event, "type") == "notice" && jsGet(event, "code") == "card_not_shown":
+			t.cardsNotShown++
 		}
+		t.mu.Unlock()
 		return emit(ctx, event)
 	}
 }
 
 func (t *runTelemetry) summary(runID string) *jsObj {
 	t.mu.Lock()
-	m := t.usage
+	m, repairs, notShown := t.usage, t.cardRepairs, t.cardsNotShown
 	t.mu.Unlock()
 	usage := jsObjOf()
 	reasons := []any{}
@@ -62,6 +69,9 @@ func (t *runTelemetry) summary(runID string) *jsObj {
 		out.set("batch", t.batch)
 	}
 	out.set("usage", usage)
+	if repairs > 0 || notShown > 0 {
+		out.set("cards", jsObjOf("repairs", float64(repairs), "notShown", float64(notShown)))
+	}
 	return out
 }
 
