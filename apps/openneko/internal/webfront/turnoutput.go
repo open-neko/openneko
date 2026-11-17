@@ -208,9 +208,11 @@ func mergeCardSurfaces(sets [][]any) []any {
 	return []any{sets[0][0]}
 }
 
-// cardRepairChangedField names a card field that the repair added, removed
-// or changed although no problem named it, or "". When the fence was not
-// JSON, every text of the repair must come from the fence.
+// cardRepairChangedField names a card field that the repair changed beyond
+// its problems, or "". A field that no problem named stays as it was. In a
+// named field, each row or item that no problem named stays, and every number
+// and word of the repair comes from the rows that a problem named. When the
+// fence was not JSON, every field counts as named and no row as named.
 func cardRepairChangedField(original, fixed string, rich bool, problems []string) string {
 	after, err := jsParse([]byte(strings.TrimSpace(fixed)))
 	if err != nil {
@@ -220,27 +222,50 @@ func cardRepairChangedField(original, fixed string, rich bool, problems []string
 	if !ok {
 		return ""
 	}
-	before, err := jsParse([]byte(strings.TrimSpace(original)))
-	beforeCards, ok := normalizeCards(before, rich).(*jsObj)
-	if err != nil || !ok {
-		for _, field := range afterCards.ordered() {
-			if !cardTextsFrom(afterCards.vals[field], original) {
-				return field
-			}
-		}
-		return ""
-	}
+	beforeCards, parsed := originalCardFields(original, rich)
 	for _, field := range append(beforeCards.ordered(), afterCards.ordered()...) {
-		if cardFieldNamed(field, problems) {
-			continue
-		}
 		was, had := beforeCards.vals[field]
 		is, has := afterCards.vals[field]
-		if had != has || jsStringify(was, false) != jsStringify(is, false) {
+		switch {
+		case parsed && !cardFieldNamed(field, problems):
+			if had != has || jsStringify(was, false) != jsStringify(is, false) {
+				return field
+			}
+		case slices.Contains(cardLayoutFields, field):
+		case !has:
+			if slices.Contains(cardSections, field) {
+				return field
+			}
+		case !had || !cardRowsKept(field, was, is, problems):
 			return field
 		}
 	}
 	return ""
+}
+
+var (
+	cardLayoutFields  = []string{"stage", "layout", "chart", "chartColumn", "mood"}
+	cardFieldLooseRE  = regexp.MustCompile(`"([A-Za-z]+)"\s*:\s*("(?:[^"\\]|\\.)*"|\[(?:\s*"(?:[^"\\]|\\.)*"\s*,?)*\s*\])`)
+	cardTableRowRE    = regexp.MustCompile(`(?:^|[^-A-Za-z])table row (\d+)`)
+	cardNumberMarksRE = regexp.MustCompile(`^[$€£¥]|%$`)
+)
+
+func originalCardFields(original string, rich bool) (*jsObj, bool) {
+	if v, err := jsParse([]byte(strings.TrimSpace(original))); err == nil {
+		if cards, ok := normalizeCards(v, rich).(*jsObj); ok {
+			return cards, true
+		}
+	}
+	var pairs []string
+	for _, m := range cardFieldLooseRE.FindAllStringSubmatch(original, -1) {
+		pairs = append(pairs, `"`+m[1]+`":`+m[2])
+	}
+	if v, err := jsParse([]byte("{" + strings.Join(pairs, ",") + "}")); err == nil {
+		if cards, ok := normalizeCards(v, rich).(*jsObj); ok {
+			return cards, false
+		}
+	}
+	return &jsObj{}, false
 }
 
 func cardFieldNamed(field string, problems []string) bool {
@@ -248,19 +273,135 @@ func cardFieldNamed(field string, problems []string) bool {
 	return slices.ContainsFunc(problems, word.MatchString)
 }
 
-func cardTextsFrom(value any, source string) bool {
-	switch v := value.(type) {
-	case string:
-		quoted := jsStringify(v, false)
-		return strings.Contains(source, v) || strings.Contains(source, quoted[1:len(quoted)-1])
-	case []any:
-		for _, item := range v {
-			if !cardTextsFrom(item, source) {
+func cardRowsKept(field string, was, is any, problems []string) bool {
+	oldRows, newRows := cardFieldRows(was), cardFieldRows(is)
+	named := map[int]bool{}
+	sameRow := func(a, b string) bool { return strings.TrimFunc(a, isJSSpace) == strings.TrimFunc(b, isJSSpace) }
+	switch {
+	case field == "table":
+		oldRows, newRows = cardTableLines(oldRows), cardTableLines(newRows)
+		if len(oldRows) == 0 || len(newRows) == 0 || !sameCardRow(oldRows[0], newRows[0]) {
+			return false
+		}
+		oldRows, newRows = oldRows[1:], newRows[1:]
+		for _, p := range problems {
+			for _, m := range cardTableRowRE.FindAllStringSubmatch(p, -1) {
+				n, _ := strconv.Atoi(m[1])
+				named[n-1] = true
+			}
+		}
+		sameRow = sameCardRow
+	case len(oldRows) == 1 && !slices.Contains(cardListFields, field):
+		named[0] = true
+	default:
+		item := regexp.MustCompile(`(?:^|[^A-Za-z])` + regexp.QuoteMeta(field) + `\.(\d+)`)
+		for _, p := range problems {
+			for _, m := range item.FindAllStringSubmatch(p, -1) {
+				n, _ := strconv.Atoi(m[1])
+				named[n] = true
+			}
+		}
+	}
+	used := make([]bool, len(newRows))
+	var source []string
+	for i, row := range oldRows {
+		if named[i] {
+			source = append(source, row)
+			continue
+		}
+		found := false
+		for j, n := range newRows {
+			if !used[j] && sameRow(row, n) {
+				used[j], found = true, true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	words, numbers := cardTokens(source)
+	added := 0
+	for j, row := range newRows {
+		if used[j] {
+			continue
+		}
+		if added++; added > len(source) {
+			return false
+		}
+		w, n := cardTokens([]string{row})
+		for token := range w {
+			if !words[token] {
+				return false
+			}
+		}
+		for number := range n {
+			if !numbers[number] {
 				return false
 			}
 		}
 	}
 	return true
+}
+
+func cardFieldRows(v any) []string {
+	switch v := v.(type) {
+	case string:
+		return []string{v}
+	case []any:
+		rows := make([]string, len(v))
+		for i, item := range v {
+			if s, ok := item.(string); ok {
+				rows[i] = s
+			} else {
+				rows[i] = jsStringify(item, false)
+			}
+		}
+		return rows
+	}
+	return []string{jsStringify(v, false)}
+}
+
+func cardTableLines(texts []string) []string {
+	var rows []string
+	for _, text := range texts {
+		for _, line := range cardLines(text) {
+			if strings.TrimFunc(line, isJSSpace) != "" && strings.Trim(line, "|-: ") != "" {
+				rows = append(rows, line)
+			}
+		}
+	}
+	return rows
+}
+
+func sameCardRow(a, b string) bool {
+	return slices.EqualFunc(tableCells(a), tableCells(b), func(x, y string) bool {
+		if x == y {
+			return true
+		}
+		vx, okX := cardNumber(x)
+		vy, okY := cardNumber(y)
+		return okX && okY && vx == vy
+	})
+}
+
+func cardNumber(s string) (float64, bool) {
+	return plainNumber(cardNumberMarksRE.ReplaceAllString(strings.TrimFunc(s, isJSSpace), ""))
+}
+
+func cardTokens(texts []string) (map[string]bool, map[float64]bool) {
+	words, numbers := map[string]bool{}, map[float64]bool{}
+	for _, text := range texts {
+		for _, token := range strings.FieldsFunc(text, func(r rune) bool { return r == '|' || r == ':' || isJSSpace(r) }) {
+			token = strings.Trim(token, `.,;()"'[]{}`)
+			if v, ok := cardNumber(token); ok {
+				numbers[v] = true
+			} else if token != "" && strings.Trim(token, "-") != "" {
+				words[token] = true
+			}
+		}
+	}
+	return words, numbers
 }
 
 // extractSurfaceMessages takes the first neko_a2ui fence out of the text. A
