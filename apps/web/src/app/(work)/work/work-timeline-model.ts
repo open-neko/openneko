@@ -402,3 +402,15 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
     artifacts,
   };
 }
+
+export const TRAIL_KINDS = new Set<TimelineItem["kind"]>(["progress", "tools", "interim"]);
+
+export function liveFoldIndexes(items: TimelineItem[]): Set<number> {
+  const trail = items.flatMap((item, index) => (TRAIL_KINDS.has(item.kind) ? [index] : []));
+  if (trail.length < 2) return new Set();
+  const last = items[trail[trail.length - 1]];
+  const before = items[trail[trail.length - 2]];
+  const keep = last.kind === "tools" && before.kind === "progress" ? 2 : 1;
+  const folded = trail.slice(0, -keep);
+  return folded.length >= 2 ? new Set(folded) : new Set();
+}
