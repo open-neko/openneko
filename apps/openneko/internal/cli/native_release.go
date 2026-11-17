@@ -120,9 +120,8 @@ func downloadToFile(ctx context.Context, url, dst string, want []byte) error {
 	return nil
 }
 
-// extractNativeArchive takes bin/openneko and the files under the release
-// folders of share/openneko from the archive. It skips other share/openneko
-// paths, so that a later release can add a folder.
+// extractNativeArchive takes bin/openneko and the files under share/openneko
+// from the archive, so that a later release can add a folder.
 func extractNativeArchive(archive, dst string) error {
 	f, err := os.Open(archive)
 	if err != nil {
@@ -152,12 +151,8 @@ func extractNativeArchive(archive, dst string) error {
 			return fmt.Errorf("the release archive entry %q is not a file or a folder", hdr.Name)
 		}
 		exe := name == "bin/openneko"
-		take := exe || nativeReleasePath(name)
-		if !take && !nativeSharePath(name) {
+		if !exe && !nativeReleasePath(name) {
 			return fmt.Errorf("the release archive holds the unexpected path %q", hdr.Name)
-		}
-		if !take {
-			continue
 		}
 		target := filepath.Join(dst, filepath.FromSlash(name))
 		switch hdr.Typeflag {
@@ -220,21 +215,10 @@ func writeArchiveEntry(target string, r io.Reader, size int64, mode os.FileMode)
 	return err
 }
 
-var nativeReleaseFolders = []string{"share/openneko/web", "share/openneko/packs", "share/openneko/skills"}
-
 func nativeReleasePath(name string) bool {
 	switch name {
 	case "bin", "share", "share/openneko":
 		return true
 	}
-	for _, folder := range nativeReleaseFolders {
-		if name == folder || strings.HasPrefix(name, folder+"/") {
-			return true
-		}
-	}
-	return false
-}
-
-func nativeSharePath(name string) bool {
 	return strings.HasPrefix(name, "share/openneko/")
 }
