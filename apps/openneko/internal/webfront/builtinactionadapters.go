@@ -25,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/gjconfig"
 )
 
 const (
@@ -1104,11 +1105,7 @@ func (a *API) runSourceConfigAdminAction(ctx context.Context, req *actionRequest
 			return nil, errors.New("source_config_admin: managed OpenAPI asset failed its integrity check")
 		}
 		specAsset = &asset
-		runtimeRoot := strings.TrimRight(os.Getenv("OPENNEKO_GRAPHJIN_SPECS_DIR"), "/")
-		if runtimeRoot == "" {
-			runtimeRoot = "/config/specs"
-		}
-		managedRuntimeDir = runtimeRoot
+		managedRuntimeDir = gjconfig.RuntimeSpecsDir()
 		specFilename, err := managedOpenAPISpecFilename(orgID, sourceName)
 		if err != nil {
 			return nil, err
@@ -1125,11 +1122,7 @@ func (a *API) runSourceConfigAdminAction(ctx context.Context, req *actionRequest
 			return nil, err
 		}
 		localFileManifest = manifest
-		runtimeBase := strings.TrimSpace(os.Getenv("OPENNEKO_GRAPHJIN_FILES_DIR"))
-		if runtimeBase == "" {
-			runtimeBase = "/config/files"
-		}
-		managedLocalFilesRoot, err = managedFileSourceRuntimeRoot(orgID, sourceName, runtimeBase)
+		managedLocalFilesRoot, err = managedFileSourceRuntimeRoot(orgID, sourceName, gjconfig.RuntimeFilesDir())
 		if err != nil {
 			return nil, err
 		}

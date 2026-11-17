@@ -612,6 +612,9 @@ func runNativeUpgrade(ctx context.Context, cmd *cobra.Command, settings installa
 	if err := replaceReleaseSkills(from, exe); err != nil {
 		return err
 	}
+	if err := replaceReleaseOthers(from, exe); err != nil {
+		return err
+	}
 	if !wasRunning {
 		fmt.Fprintln(out, "Upgrade complete. `openneko start` starts OpenNeko and applies the migrations.")
 		return nil
@@ -760,6 +763,31 @@ func replaceReleaseSkills(from, exe string) error {
 	}
 	if err := replaceFolder(newSkills, skills); err != nil {
 		return fmt.Errorf("replace %s: %w", skills, err)
+	}
+	return nil
+}
+
+// replaceReleaseOthers puts each other folder under share/openneko of the
+// new release beside the executable, so that a later release can add one.
+func replaceReleaseOthers(from, exe string) error {
+	newShare := filepath.Join(from, "share", "openneko")
+	entries, err := os.ReadDir(newShare)
+	if err != nil {
+		return err
+	}
+	share := filepath.Join(filepath.Dir(filepath.Dir(exe)), "share", "openneko")
+	for _, e := range entries {
+		switch e.Name() {
+		case "web", "packs", "skills":
+			continue
+		}
+		src, dst := filepath.Join(newShare, e.Name()), filepath.Join(share, e.Name())
+		if !e.IsDir() || sameFile(src, dst) {
+			continue
+		}
+		if err := replaceFolder(src, dst); err != nil {
+			return fmt.Errorf("replace %s: %w", dst, err)
+		}
 	}
 	return nil
 }
