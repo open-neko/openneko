@@ -14,6 +14,10 @@ import (
 )
 
 func executorThoughtStream(provider string) ([]string, string) {
+	return actorThoughtStream(provider, "Planning the order count", "One query is enough.")
+}
+
+func actorThoughtStream(provider, heading, body string) ([]string, string) {
 	if provider == "anthropic" {
 		return []string{
 			"event: message_start",
@@ -23,10 +27,10 @@ func executorThoughtStream(provider string) ([]string, string) {
 			`data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}`,
 			"",
 			"event: content_block_delta",
-			`data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Planning the order count. "}}`,
+			`data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":` + jsonString(heading+". ") + `}}`,
 			"",
 			"event: content_block_delta",
-			`data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"One query is enough."}}`,
+			`data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":` + jsonString(body) + `}}`,
 			"",
 			"event: content_block_stop",
 			`data: {"type":"content_block_stop","index":0}`,
@@ -49,13 +53,13 @@ func executorThoughtStream(provider string) ([]string, string) {
 		}, ""
 	}
 	return []string{
-		`data: {"candidates":[{"content":{"role":"model","parts":[{"text":"**Planning the order count**\n\n","thought":true}]}}]}`,
+		`data: {"candidates":[{"content":{"role":"model","parts":[{"text":` + jsonString("**"+heading+"**\n\n") + `,"thought":true}]}}]}`,
 		"",
-		`data: {"candidates":[{"content":{"role":"model","parts":[{"text":"One query is enough.","thought":true}]}}]}`,
+		`data: {"candidates":[{"content":{"role":"model","parts":[{"text":` + jsonString(body) + `,"thought":true}]}}]}`,
 		"",
 		`data: {"candidates":[{"content":{"role":"model","parts":[{"text":` + jsonString(thinkingActorReply) + `}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":4,"thoughtsTokenCount":9,"totalTokenCount":16}}`,
 		"",
-	}, "Planning the order count"
+	}, heading
 }
 
 func jsonString(s string) string {
@@ -75,12 +79,16 @@ func TestExecutorThoughtsStreamForSummaryProviders(t *testing.T) {
 				t.Fatal(err)
 			}
 			executorStream, executorThought := executorThoughtStream(name)
-			var executorBodies, laterBodies []string
+			distillerStream, distillerThought := actorThoughtStream(name, "Reading the question", "The question names the orders table.")
+			var distillerBodies, executorBodies, laterBodies []string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				body, _ := io.ReadAll(r.Body)
 				streamed := strings.Contains(r.URL.Path, "streamGenerateContent") || strings.Contains(string(body), `"stream":true`)
 				executor := strings.Contains(string(body), "(`executor`)")
+				distiller := strings.Contains(string(body), "(`distiller`)")
 				switch {
+				case distiller:
+					distillerBodies = append(distillerBodies, string(body))
 				case executor:
 					executorBodies = append(executorBodies, string(body))
 				case len(executorBodies) > 0:
@@ -91,6 +99,9 @@ func TestExecutorThoughtsStreamForSummaryProviders(t *testing.T) {
 					lines := fixture.Stream
 					if executor {
 						lines = executorStream
+					}
+					if distiller {
+						lines = distillerStream
 					}
 					_, _ = io.WriteString(w, strings.Join(lines, "\n"))
 					return
@@ -117,6 +128,7 @@ func TestExecutorThoughtsStreamForSummaryProviders(t *testing.T) {
 			var executorText, responderText strings.Builder
 			var order []string
 			var stages []string
+			var calls []int
 			result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "executor-thinking-" + name, InputID: "i", Prompt: "How many orders?",
 				ReasoningEffort: "low", StreamResponses: true}, thinkingClient(fixture, server.URL), Tools{}, func(e Event) error {
 				var data struct {
@@ -132,9 +144,7 @@ func TestExecutorThoughtsStreamForSummaryProviders(t *testing.T) {
 				}
 				switch e.Type {
 				case "executor.thought.delta":
-					if data.Version != 1 {
-						t.Errorf("executor call %d, want 1", data.Version)
-					}
+					calls = append(calls, data.Version)
 					executorText.WriteString(data.Text)
 				case "thought.delta":
 					responderText.WriteString(data.Text)
@@ -155,25 +165,38 @@ func TestExecutorThoughtsStreamForSummaryProviders(t *testing.T) {
 			if responderText.String() != fixture.Thought {
 				t.Fatalf("responder thinking %q, want %q", responderText.String(), fixture.Thought)
 			}
-			executorStreamed := name != "deepseek"
+			actorStreamed := name != "deepseek"
 			if responders := slices.Index(stages, "root/responder streamed=true"); responders < 0 || responders != len(stages)-1 ||
-				!slices.Contains(stages, fmt.Sprintf("root/executor streamed=%t", executorStreamed)) {
-				t.Fatalf("model request stages %v: want the executor (streamed=%t) and one streamed responder at the end", stages, executorStreamed)
+				!slices.Contains(stages, fmt.Sprintf("root/distiller streamed=%t", actorStreamed)) ||
+				!slices.Contains(stages, fmt.Sprintf("root/executor streamed=%t", actorStreamed)) {
+				t.Fatalf("model request stages %v: want the distiller and the executor (streamed=%t) and one streamed responder at the end", stages, actorStreamed)
+			}
+			if len(distillerBodies) != 1 {
+				t.Fatalf("%d distiller requests, want 1", len(distillerBodies))
 			}
 			if name == "deepseek" {
-				if executorText.Len() > 0 || strings.Contains(executorBodies[0], `"stream":true`) {
-					t.Fatalf("raw reasoning provider: executor thinking %q, executor request %s", executorText.String(), executorBodies[0])
+				if executorText.Len() > 0 || strings.Contains(executorBodies[0], `"stream":true`) || strings.Contains(distillerBodies[0], `"stream":true`) {
+					t.Fatalf("raw reasoning provider: actor thinking %q, executor request %s", executorText.String(), executorBodies[0])
 				}
 				return
 			}
-			if !strings.Contains(executorBodies[0], fixture.Request) {
-				t.Fatalf("the executor request lacks %s", fixture.Request)
+			for _, body := range []string{distillerBodies[0], executorBodies[0]} {
+				if !strings.Contains(body, fixture.Request) {
+					t.Fatalf("an actor request lacks %s: %.300s", fixture.Request, body)
+				}
 			}
-			if strings.Contains(executorText.String(), "One query") {
-				t.Fatalf("the body of an executor note left the harness: %q", executorText.String())
+			if strings.Contains(executorText.String(), "One query") || strings.Contains(executorText.String(), "orders table") {
+				t.Fatalf("the body of an actor note left the harness: %q", executorText.String())
 			}
-			if executorText.String() != executorThought {
-				t.Fatalf("executor thinking %q, want %q", executorText.String(), executorThought)
+			if executorText.String() != distillerThought+executorThought {
+				t.Fatalf("actor thinking %q, want %q", executorText.String(), distillerThought+executorThought)
+			}
+			wantCalls := []int{1, 2}
+			if executorThought == "" {
+				wantCalls = nil
+			}
+			if !slices.Equal(calls, wantCalls) {
+				t.Fatalf("actor note calls %v, want %v", calls, wantCalls)
 			}
 			wantOrder := "executor.thought.delta,thought.delta"
 			if executorThought == "" {
@@ -182,8 +205,8 @@ func TestExecutorThoughtsStreamForSummaryProviders(t *testing.T) {
 			if strings.Join(order, ",") != wantOrder {
 				t.Fatalf("event order %v", order)
 			}
-			for _, body := range laterBodies {
-				if strings.Contains(body, "One query is enough") {
+			for _, body := range append([]string{executorBodies[0]}, laterBodies...) {
+				if strings.Contains(body, "One query is enough") || strings.Contains(body, "orders table") {
 					t.Fatalf("a later request carries the executor's thinking: %.300s", body)
 				}
 			}

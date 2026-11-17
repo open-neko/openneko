@@ -77,7 +77,7 @@ func modelOptions(options map[string]ax.Value, routed *RoutedClient, effort, res
 			switch {
 			case key == "responderOptions":
 				stage["showThoughts"] = true
-			case key == "executorOptions" && executorThoughts:
+			case key != "responderOptions" && executorThoughts:
 				stage["showThoughts"] = true
 				stage["stream"] = true
 			}

@@ -754,6 +754,71 @@ type recorder struct {
 	modelTokenOverspent   bool
 	paused                bool
 	err                   error
+	quiet                 *time.Timer
+	quietCall             uint64
+	toolsFinished         bool
+	ended                 bool
+}
+
+var quietStepDelay = 3 * time.Second
+
+func quietStepText(stage string, afterTools bool) string {
+	switch {
+	case strings.HasSuffix(stage, "responder"):
+		return "Writing the answer"
+	case !strings.HasSuffix(stage, "executor"):
+		return ""
+	case afterTools:
+		return "Putting the findings together"
+	}
+	return "Working out the first step"
+}
+
+// watchQuiet holds r.mu.
+func (r *recorder) watchQuiet(call uint64, stage string) {
+	r.stopQuiet()
+	text := quietStepText(stage, r.toolsFinished)
+	if !r.spec.StreamResponses || text == "" {
+		return
+	}
+	payload, _ := json.Marshal(struct {
+		Text string `json:"text"`
+	}{text})
+	r.quietCall = call
+	r.quiet = time.AfterFunc(quietStepDelay, func() {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if r.quietCall != call || r.ended || r.err != nil {
+			return
+		}
+		r.quietCall = 0
+		if err := r.emit(Event{Version: 1, RunID: r.spec.RunID, InputID: r.spec.InputID, Type: "step.quiet", Data: payload}); err != nil {
+			r.err = err
+			r.cancel()
+		}
+	})
+}
+
+// stopQuiet holds r.mu.
+func (r *recorder) stopQuiet() {
+	if r.quiet != nil {
+		r.quiet.Stop()
+	}
+	r.quiet, r.quietCall = nil, 0
+}
+
+// shown holds r.mu.
+func (r *recorder) shown(e Event) {
+	switch e.Type {
+	case "tool.finished":
+		r.toolsFinished = true
+		r.stopQuiet()
+	case "answer.delta", "thought.delta", "executor.thought.delta", "actor.step", "tool.started", "run.finished":
+		r.stopQuiet()
+	}
+	if e.Type == "run.finished" {
+		r.ended = true
+	}
 }
 
 func (r *recorder) pause() {
@@ -843,6 +908,7 @@ func (r *recorder) admit(next ax.AxRequestExecutor, info ax.AxRateLimitInfo, sta
 		r.mu.Unlock()
 		return nil, err
 	}
+	r.watchQuiet(id, stage)
 	r.costMicros += costReservation
 	r.mu.Unlock()
 	call := modelCall{id: id, name: modelName, origin: info.Provider, provider: provider, streaming: info.Streaming, stage: stage, started: time.Now(),
@@ -895,6 +961,9 @@ func (r *recorder) finishModel(call modelCall, response ax.Value, err error, tru
 	}
 	r.send(finished)
 	r.mu.Lock()
+	if r.quietCall == call.id {
+		r.stopQuiet()
+	}
 	r.lastOverflow, r.lastTruncated = overflow, truncated
 	r.costMicros += charge - call.reservation
 	if r.spec.MaxCostMicros > 0 && r.costMicros > r.spec.MaxCostMicros {
@@ -1049,6 +1118,7 @@ func (r *recorder) modelTokenBudgetExceeded() bool {
 func (r *recorder) send(e Event) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.shown(e)
 	if r.err != nil {
 		return
 	}
@@ -1067,6 +1137,7 @@ func (r *recorder) send(e Event) {
 func (r *recorder) progress(e Event) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.shown(e)
 	if r.err != nil {
 		return
 	}
