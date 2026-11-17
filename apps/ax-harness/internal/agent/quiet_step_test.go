@@ -19,7 +19,6 @@ import (
 
 func TestAQuietModelCallShowsAPlainStepLine(t *testing.T) {
 	saved := quietStepDelay
-	quietStepDelay = time.Second
 	t.Cleanup(func() { quietStepDelay = saved })
 	replies := []string{
 		`{"javascriptCode":"final('Read the data',{})"}`,
@@ -29,8 +28,9 @@ func TestAQuietModelCallShowsAPlainStepLine(t *testing.T) {
 	for _, slow := range []bool{true, false} {
 		t.Run(fmt.Sprintf("slow=%t", slow), func(t *testing.T) {
 			wait := time.Duration(0)
+			quietStepDelay = 10 * time.Second
 			if slow {
-				wait = 1500 * time.Millisecond
+				wait, quietStepDelay = 1500*time.Millisecond, time.Second
 			}
 			var calls atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -78,7 +78,7 @@ func TestAQuietModelCallShowsAPlainStepLine(t *testing.T) {
 			if err != nil || result.Status != "completed" || result.Answer != "Done" {
 				t.Fatalf("result=%+v err=%v", result, err)
 			}
-			time.Sleep(2 * quietStepDelay)
+			time.Sleep(2 * time.Second)
 			mu.Lock()
 			defer mu.Unlock()
 			want := []string{"line:Working out the first step", "tool.finished", "line:Putting the findings together", "line:Writing the answer", "answer.delta", "run.finished"}
