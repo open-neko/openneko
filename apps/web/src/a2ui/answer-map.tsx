@@ -303,7 +303,6 @@ function TileMap({ props, ctx, points, active, setActive, onFail }: Shared & { o
   return (
     <div className="answer-map-canvas is-tiles" data-ready={ready ? "" : undefined}>
       <div ref={container} className="answer-map-gl" role="img" aria-label={`${props.title}, ${points.length} places on a map`} />
-      {/* eslint-disable-next-line @next/next/no-img-element -- holds a data URL captured at print time */}
       <img ref={snapshot} className="answer-map-print" alt="" aria-hidden="true" />
       {ready ? (
         <div className="answer-map-pins" aria-hidden="true">
