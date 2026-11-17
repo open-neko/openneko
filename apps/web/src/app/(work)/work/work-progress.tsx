@@ -192,7 +192,19 @@ export function useElapsed(since: string | undefined, active: boolean): string |
   return Number.isFinite(ms) && ms >= 0 ? formatElapsed(ms) : null;
 }
 
-export function WorkTrail({ run, items, children }: { run: RunRecord | null; items: TimelineItem[]; children?: React.ReactNode }) {
+export function WorkTrail({
+  run,
+  items,
+  title,
+  className = "work-trail",
+  children,
+}: {
+  run: RunRecord | null;
+  items: TimelineItem[];
+  title?: string;
+  className?: string;
+  children?: React.ReactNode;
+}) {
   const notes = items.filter((item) => item.kind === "progress" || item.kind === "interim").length;
   const tools = items.reduce((count, item) => count + (item.kind === "tools" ? item.tools.length : 0), 0);
   const duration = workDuration(run);
@@ -201,7 +213,7 @@ export function WorkTrail({ run, items, children }: { run: RunRecord | null; ite
     tools ? `${tools} ${tools === 1 ? "step" : "steps"}` : "",
   ].filter(Boolean).join(", ");
   return (
-    <Disclosure title={duration ? `Worked for ${duration}` : "How OpenNeko worked"} meta={meta} className="work-trail">
+    <Disclosure title={title ?? (duration ? `Worked for ${duration}` : "How OpenNeko worked")} meta={meta} className={className}>
       <div className="flex flex-col gap-2.5 px-3 pb-3">{children}</div>
     </Disclosure>
   );
