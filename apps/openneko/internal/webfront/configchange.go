@@ -4,9 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/open-neko/neko/apps/openneko/internal/gjconfig"
 )
 
 // This file is packages/llm/src/graphjin/config-change.ts, with the file
@@ -393,7 +396,7 @@ func registerSourceUpdate(payload *jsObj, resolve func(string) (string, error), 
 		}
 		dir := opts.managedOpenAPISpecsDir
 		if dir == "" {
-			dir = "/config/specs"
+			dir = gjconfig.SpecsDir
 		}
 		source.set("specs_dir", dir)
 	case "file":
@@ -541,8 +544,8 @@ func validateFilePresignTTL(value string) error {
 // file source from.
 func managedFileSourceRuntimeRoot(orgID, sourceName, runtimeBase string) (string, error) {
 	base := strings.TrimRight(runtimeBase, "/")
-	if !strings.HasPrefix(base, "/") {
-		return "", errors.New("managed GraphJin file runtime directory must be absolute")
+	if !strings.HasPrefix(base, "/") && !filepath.IsLocal(base) {
+		return "", errors.New("managed GraphJin file runtime directory must be absolute or inside the config folder")
 	}
 	dir, err := managedSource{orgID: orgID, name: sourceName}.dirName()
 	if err != nil {

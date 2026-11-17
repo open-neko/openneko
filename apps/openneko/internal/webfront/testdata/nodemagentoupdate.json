@@ -834,7 +834,7 @@
             "name": "magento_operator",
             "kind": "api",
             "default": false,
-            "specs_dir": "/config/specs",
+            "specs_dir": "specs",
             "specs": {
               "magento-operator-v1": {
                 "base_url": "https://shop.test",
@@ -1268,7 +1268,7 @@
             "name": "magento_operator",
             "kind": "api",
             "default": false,
-            "specs_dir": "/config/specs",
+            "specs_dir": "specs",
             "specs": {
               "magento-operator-v1": {
                 "base_url": "https://shop.test",

@@ -31,12 +31,34 @@ func SigningSecretB64(configDir, orgID string) (string, error) {
 	return base64.StdEncoding.EncodeToString(key), nil
 }
 
-type Result struct {
-	Content                     string
-	System, Secret, WritePolicy bool
+// SpecsDir and FilesDir are relative to the folder of the config file.
+const (
+	SpecsDir = "specs"
+	FilesDir = "files"
+
+	specsDirEnv    = "OPENNEKO_GRAPHJIN_SPECS_DIR"
+	filesDirEnv    = "OPENNEKO_GRAPHJIN_FILES_DIR"
+	oldSpecsDir    = "/config/specs"
+	oldFilesPrefix = "/config/files/"
+)
+
+func runtimeDir(env, fallback string) string {
+	if v := strings.TrimRight(strings.TrimSpace(os.Getenv(env)), "/"); v != "" {
+		return v
+	}
+	return fallback
 }
 
-func (r Result) Changed() bool { return r.System || r.Secret || r.WritePolicy }
+func RuntimeSpecsDir() string { return runtimeDir(specsDirEnv, SpecsDir) }
+
+func RuntimeFilesDir() string { return runtimeDir(filesDirEnv, FilesDir) }
+
+type Result struct {
+	Content                            string
+	System, Secret, WritePolicy, Paths bool
+}
+
+func (r Result) Changed() bool { return r.System || r.Secret || r.WritePolicy || r.Paths }
 
 func Reconcile(raw, secret string) (Result, error) {
 	r := Result{Content: raw}
@@ -48,7 +70,35 @@ func Reconcile(raw, secret string) (Result, error) {
 	if r.Content, r.WritePolicy, err = editYAML(r.Content, reconcileWritePolicy); err != nil {
 		return r, err
 	}
+	if r.Content, r.Paths, err = editYAML(r.Content, migrateManagedPaths); err != nil {
+		return r, err
+	}
 	return r, nil
+}
+
+// migrateManagedPaths moves the old /config paths of the managed folders
+// beside the config file, unless an environment value sets the folder.
+func migrateManagedPaths(root *yaml.Node) (bool, error) {
+	_, sources := yamlLookup(root, "sources")
+	if sources == nil || sources.Kind != yaml.SequenceNode {
+		return false, nil
+	}
+	specs, files := os.Getenv(specsDirEnv) == "", os.Getenv(filesDirEnv) == ""
+	changed := false
+	for _, s := range sources.Content {
+		if s.Kind != yaml.MappingNode {
+			continue
+		}
+		if _, v := yamlLookup(s, "specs_dir"); specs && v != nil && v.Kind == yaml.ScalarNode && strings.TrimRight(v.Value, "/") == oldSpecsDir {
+			v.Value, changed = SpecsDir, true
+		}
+		if _, v := yamlLookup(s, "root"); files && v != nil && v.Kind == yaml.ScalarNode {
+			if rest, ok := strings.CutPrefix(v.Value, oldFilesPrefix); ok && filepath.IsLocal(rest) {
+				v.Value, changed = FilesDir+"/"+rest, true
+			}
+		}
+	}
+	return changed, nil
 }
 
 func ReconcileFile(path, secret string) (Result, error) {

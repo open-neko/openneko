@@ -238,17 +238,25 @@ func TestSourceConfigPreviewDatabase(t *testing.T) {
 	s = preview(`{"action":"register_source","name":"orders","kind":"api","specAssetId":"` + assetID + `"}`)
 	if !strings.HasPrefix(s, `{"source":`+source+`,"specAsset":{"id":"`+assetID+`","originalName":"orders.yaml","sourceType":"url"`) ||
 		!strings.Contains(s, `"scope":"managed_openapi","reloadMode":"staged_reload","changes":{"action":"register_source","source":"orders","kind":"api","title":"Orders","version":null,"baseUrl":"https://api.example.com","operationCount":3,"authSchemes":[],"checksumSha256":"bbbb`) ||
-		!strings.Contains(s, `"findings":["w1"],"errors":null,"summary":`) || !strings.Contains(s, `specs_dir: /config/specs`) {
+		!strings.Contains(s, `"findings":["w1"],"errors":null,"summary":`) || !strings.Contains(s, `specs_dir: specs`) {
 		t.Errorf("API source: %s", s)
 	}
-	t.Setenv("OPENNEKO_GRAPHJIN_FILES_DIR", "/srv/files/")
 	sum := strings.Repeat("c", 64)
-	s = preview(`{"action":"register_source","name":"docs","kind":"file","backend":"local","localFiles":{"sourceName":"docs","ready":true,"files":[{"name":"a.pdf","size":4,"contentType":"application/pdf","checksumSha256":"` + sum + `"}],"totalSize":4}}`)
+	localFiles := `{"action":"register_source","name":"docs","kind":"file","backend":"local","localFiles":{"sourceName":"docs","ready":true,"files":[{"name":"a.pdf","size":4,"contentType":"application/pdf","checksumSha256":"` + sum + `"}],"totalSize":4}}`
+	if s := preview(localFiles); !strings.Contains(s, "root: files/org_") {
+		t.Errorf("local files beside the config: %s", s)
+	}
+	t.Setenv("OPENNEKO_GRAPHJIN_SPECS_DIR", "/srv/specs/")
+	if s := preview(`{"action":"register_source","name":"orders","kind":"api","specAssetId":"` + assetID + `"}`); !strings.Contains(s, `specs_dir: /srv/specs\n`) {
+		t.Errorf("API source with a set specs folder: %s", s)
+	}
+	t.Setenv("OPENNEKO_GRAPHJIN_FILES_DIR", "/srv/files/")
+	s = preview(localFiles)
 	if !strings.Contains(s, `"scope":"managed_local_files","reloadMode":"staged_reload","changes":{"action":"register_source","source":"docs","kind":"file","backend":"local","fileCount":1,"totalSize":4,"readOnly":true,"access":"authenticated"},"findings":[],"errors":null`) ||
 		!strings.Contains(s, "root: /srv/files/org_") {
 		t.Errorf("local files: %s", s)
 	}
-	if gj.count()-before != 2 {
+	if gj.count()-before != 4 {
 		t.Errorf("managed sources sent a preview mutation: %d calls", gj.count()-before)
 	}
 	if s := preview(`{"action":"register_source","name":"docs","kind":"file","backend":"local","localFiles":{"sourceName":"other","ready":true}}`); s != `{"source":`+source+`,"error":"register_source local file manifest must match the selected source name"}` {
