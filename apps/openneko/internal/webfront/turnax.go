@@ -1095,6 +1095,7 @@ func usageNumber(u *jsObj, key string) (float64, bool) {
 
 // normalizeAxUsage is normalizeAxUsage(): a partial report is scaled up by
 // the calls it missed, and a host price beats the harness's catalog price.
+// A stream that ended early counts once, at its own usage, outside the scale.
 func normalizeAxUsage(u *jsObj, route *llm.AxModelRoute, at time.Time) *jsObj {
 	if u == nil {
 		return jsObjOf("coverage", "unavailable", "missingReasons", []any{"Ax Harness reported no usage"})
@@ -1109,32 +1110,47 @@ func normalizeAxUsage(u *jsObj, route *llm.AxModelRoute, at time.Time) *jsObj {
 	coverage, hasCoverage := u.vals["coverage"].(string)
 	requests, _ := usageNumber(u, "requests")
 	reported, _ := usageNumber(u, "reported")
+	early, _ := u.vals["early"].(*jsObj)
+	earlyRequests, _ := usageNumber(early, "requests")
 	scale := 0.0
 	if coverage == "complete" {
 		scale = 1
 	} else if coverage == "partial" && reported != 0 && requests != 0 {
-		scale = requests / reported
+		scale = (requests - earlyRequests) / reported
 	}
+	earlyOnly := scale == 0 && coverage == "partial" && earlyRequests > 0 && requests == earlyRequests
 	cost, hasCost := usageNumber(u, "cost_micros")
+	earlyCost, _ := usageNumber(early, "cost_micros")
 	version, _ := u.vals["catalog_version"].(string)
 	pricedBy, _ := u.vals["priced_by"].(string)
 	harnessPriced := pricedBy == "catalog" && hasCost && !math.IsInf(cost, 0) && !math.IsNaN(cost) && version != "" &&
 		!(route != nil && (route.Price != nil || llm.HasPriceOverride(route.Provider, route.Model, at)))
-	tokens := func(key string) int64 { v, _ := usageNumber(u, key); return int64(v) }
-	counts := llm.Usage{Input: tokens("input_tokens"), Output: tokens("output_tokens"), CacheRead: tokens("cache_read_tokens"),
-		CacheWrite: tokens("cache_write_tokens"), Total: tokens("total_tokens"), Calls: tokens("reported")}
+	countsOf := func(o *jsObj) llm.Usage {
+		n := func(key string) int64 { v, _ := usageNumber(o, key); return int64(v) }
+		return llm.Usage{Input: n("input_tokens"), Output: n("output_tokens"), CacheRead: n("cache_read_tokens"),
+			CacheWrite: n("cache_write_tokens"), Total: n("total_tokens"), Calls: n("reported")}
+	}
+	counts, earlyCounts := countsOf(u), countsOf(early)
+	counts.Input -= earlyCounts.Input
+	counts.Output -= earlyCounts.Output
+	counts.CacheRead -= earlyCounts.CacheRead
+	counts.CacheWrite -= earlyCounts.CacheWrite
+	counts.Total -= earlyCounts.Total
 	var usd float64
 	var source, pricing string
 	priced := false
-	if scale > 0 {
+	if scale > 0 || earlyOnly {
 		switch {
 		case route != nil && route.Price != nil:
-			usd, source, pricing, priced = llm.RecordCostUSD(*route.Price, counts), "model_record", "model_record", true
+			usd = llm.RecordCostUSD(*route.Price, counts)*scale + llm.RecordCostUSD(*route.Price, earlyCounts)
+			source, pricing, priced = "model_record", "model_record", true
 		case harnessPriced:
-			usd, source, pricing, priced = cost/1_000_000, "ax_harness_catalog", "ax-go@"+version, true
+			usd, source, pricing, priced = (cost-earlyCost)/1_000_000*scale+earlyCost/1_000_000, "ax_harness_catalog", "ax-go@"+version, true
 		case route != nil:
-			if usd, source, priced = llm.TokenCostUSD(route.Provider, route.Model, counts, at); priced {
-				pricing = llm.PricesVersion()
+			var reportedUSD, earlyUSD float64
+			if reportedUSD, source, priced = llm.TokenCostUSD(route.Provider, route.Model, counts, at); priced {
+				earlyUSD, _, _ = llm.TokenCostUSD(route.Provider, route.Model, earlyCounts, at)
+				usd, pricing = reportedUSD*scale+earlyUSD, llm.PricesVersion()
 			}
 		}
 	}
@@ -1150,7 +1166,7 @@ func normalizeAxUsage(u *jsObj, route *llm.AxModelRoute, at time.Time) *jsObj {
 			status = "included"
 		}
 		out.set("costStatus", status)
-		out.set("estimatedCostUsd", usd*scale)
+		out.set("estimatedCostUsd", usd)
 		out.set("currency", "USD")
 		out.set("costSource", source)
 		out.set("pricingCatalogVersion", pricing)

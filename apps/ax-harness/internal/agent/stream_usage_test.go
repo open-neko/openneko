@@ -170,6 +170,15 @@ func TestStreamThatEndsEarlyKeepsTheReportedUsageAsPartial(t *testing.T) {
 		if usage.Coverage != "partial" || usage.Reported != 0 || usage.TotalTokens != tokens || usage.PricedBy != unpriced {
 			t.Fatalf("run usage %+v", usage)
 		}
+		if usage.Early == nil || usage.Early.Requests != 1 || usage.Early.TotalTokens != tokens {
+			t.Fatalf("early usage %+v", usage.Early)
+		}
+		rec.mu.Lock()
+		charged := rec.chargedTokens()
+		rec.mu.Unlock()
+		if charged != tokens {
+			t.Fatalf("charged %d tokens for a stream that reported %d", charged, tokens)
+		}
 	}
 	t.Run("cancel", func(t *testing.T) {
 		var bodies []string
@@ -306,5 +315,42 @@ func TestRunSendsReplyWrittenWhenTheWrittenReplyIsTheAnswer(t *testing.T) {
 		if e.Type == "reply.written" {
 			t.Fatalf("a run with no written reply sent %s", e.Data)
 		}
+	}
+}
+
+func TestClosingStreamsWhileAReaderReadsHasNoRace(t *testing.T) {
+	var events []string
+	for i := 1; i <= 400; i++ {
+		events = append(events, fmt.Sprintf(`data: {"candidates":[{"content":{"role":"model","parts":[{"text":"x"}]}}],"usageMetadata":{"promptTokenCount":11,"candidatesTokenCount":%d,"totalTokenCount":%d},"modelVersion":"g"}`, i, 11+i))
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, event := range events {
+			if _, err := fmt.Fprintf(w, "%s\n\n", event); err != nil {
+				return
+			}
+			w.(http.Flusher).Flush()
+		}
+	}))
+	t.Cleanup(server.Close)
+	rec, log, stream := openMeteredStream(t, "google-gemini", server.URL)
+	read := make(chan int)
+	go func() {
+		n := 0
+		for stream.Next() {
+			n++
+			if n == 5 {
+				read <- n
+			}
+		}
+		close(read)
+	}()
+	<-read
+	rec.closeStreams()
+	for range read {
+	}
+	if finished := log.finished(); len(finished) != 1 || finished[0].Usage == nil || finished[0].Usage.Coverage != "partial" {
+		t.Fatalf("finished events %+v", finished)
 	}
 }

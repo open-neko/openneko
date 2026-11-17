@@ -974,6 +974,9 @@ func (r *recorder) finishModel(call modelCall, response ax.Value, err error, tru
 	}
 	if finished.Usage != nil {
 		r.usage.AddReported(*finished.Usage)
+		if early {
+			r.usage.addEarly(*finished.Usage)
+		}
 		if finished.Usage.TotalTokens > r.maxReportedCallTokens {
 			r.maxReportedCallTokens = finished.Usage.TotalTokens
 		}
@@ -1000,31 +1003,61 @@ func (r *recorder) closeStreams() {
 // meteredStream settles its model request when the stream ends. Providers
 // send usage in a late chunk, after the stream opened; Ax puts the running
 // total on each chunk that carries usage, so the last one counts.
+// The Ax stream is not safe for a Close during a Next: a Close that comes
+// while a read waits settles the request at once and leaves the inner Close
+// to the reader.
 type meteredStream struct {
 	ax.AxChatStream
 	recorder  *recorder
 	call      modelCall
+	mu        sync.Mutex
 	usage     ax.Value
 	truncated bool
+	reading   bool
+	closed    bool
 	once      sync.Once
 }
 
 func (s *meteredStream) Next() bool {
-	if s.AxChatStream.Next() {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return false
+	}
+	s.reading = true
+	s.mu.Unlock()
+	more := s.AxChatStream.Next()
+	s.mu.Lock()
+	s.reading = false
+	if s.closed {
+		s.mu.Unlock()
+		_ = s.AxChatStream.Close()
+		return false
+	}
+	if more {
 		chunk, _ := s.AxChatStream.Value().(map[string]ax.Value)
 		if usage := chunk["model_usage"]; usage != nil {
 			s.usage = usage
 		}
 		s.truncated = s.truncated || outputTruncated(chunk)
+		s.mu.Unlock()
 		return true
 	}
+	s.mu.Unlock()
 	err := s.AxChatStream.Err()
 	s.finish(err, err != nil)
 	return false
 }
 
 func (s *meteredStream) Close() error {
-	err := s.AxChatStream.Close()
+	s.mu.Lock()
+	reading := s.reading
+	s.closed = true
+	s.mu.Unlock()
+	var err error
+	if !reading {
+		err = s.AxChatStream.Close()
+	}
 	s.finish(nil, true)
 	return err
 }
@@ -1034,11 +1067,14 @@ func (s *meteredStream) finish(err error, early bool) {
 		s.recorder.mu.Lock()
 		delete(s.recorder.openStreams, s)
 		s.recorder.mu.Unlock()
+		s.mu.Lock()
+		usage, truncated := s.usage, s.truncated
+		s.mu.Unlock()
 		var response ax.Value
-		if s.usage != nil {
-			response = ax.Object("model_usage", s.usage)
+		if usage != nil {
+			response = ax.Object("model_usage", usage)
 		}
-		s.recorder.finishModel(s.call, response, err, s.truncated, early)
+		s.recorder.finishModel(s.call, response, err, truncated, early)
 	})
 }
 
@@ -1058,6 +1094,10 @@ func (r *recorder) usageSnapshot() ModelUsage {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	usage := r.usage
+	if usage.Early != nil {
+		early := *usage.Early
+		usage.Early = &early
+	}
 	usage.setCoverage()
 	usage.CatalogVersion = r.catalogVersion
 	return usage
@@ -1080,7 +1120,7 @@ const missingModelUsageCharge int64 = 4096
 // Caller holds r.mu. An unfinished or unreported request consumes a
 // conservative reservation; provider usage replaces it when available.
 func (r *recorder) chargedTokens() int64 {
-	missing := r.usage.Requests - r.usage.Reported
+	missing := r.usage.Requests - r.usage.Reported - r.usage.earlyRequests()
 	if missing < 0 {
 		missing = 0
 	}

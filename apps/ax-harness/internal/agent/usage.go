@@ -22,7 +22,25 @@ type ModelUsage struct {
 	CostMicros     int64  `json:"cost_micros,omitempty"`
 	PricedBy       string `json:"priced_by,omitempty"`
 	CatalogVersion string `json:"catalog_version,omitempty"`
-	priced         int
+	// Early holds the streams that ended early with some usage. Their
+	// tokens and cost are in the totals; Reported does not count them.
+	Early  *ModelUsage `json:"early,omitempty"`
+	priced int
+}
+
+func (u *ModelUsage) addEarly(other ModelUsage) {
+	if u.Early == nil {
+		u.Early = &ModelUsage{}
+	}
+	u.Early.Requests++
+	u.Early.AddReported(other)
+}
+
+func (u ModelUsage) earlyRequests() int {
+	if u.Early == nil {
+		return 0
+	}
+	return u.Early.Requests
 }
 
 func (u *ModelUsage) AddReported(other ModelUsage) {
