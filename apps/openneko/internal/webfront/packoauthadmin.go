@@ -357,10 +357,16 @@ func (a *API) lockPackOAuth(ctx context.Context, orgID, packID, key string) (fun
 		return nil, err
 	}
 	return func() {
-		_, _ = conn.Exec(context.WithoutCancel(ctx), `select pg_advisory_unlock(hashtextextended($1, 0))`, lockKey)
+		ctx := context.WithoutCancel(ctx)
+		var unlocked bool
+		if err := conn.QueryRow(ctx, packOAuthUnlockSQL, lockKey).Scan(&unlocked); err != nil || !unlocked {
+			_ = conn.Conn().Close(ctx)
+		}
 		conn.Release()
 	}, nil
 }
+
+var packOAuthUnlockSQL = `select pg_advisory_unlock(hashtextextended($1, 0))`
 
 func (p *packOAuth) sync(ctx context.Context, enabled bool) error {
 	if !p.graphjin {
