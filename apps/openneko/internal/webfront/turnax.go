@@ -321,10 +321,11 @@ func runAx(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions) (axRu
 	if cfg == nil {
 		return failed("Ax backend has no model configured. Set the primary provider in admin settings.")
 	}
-	out, err := runAxOnce(ctx, cfg, o)
+	notes := 0
+	out, err := runAxOnce(ctx, cfg, o, &notes)
 	if err == nil && out.err != "" && out.retrySafe && strings.Contains(out.err, "MALFORMED_FUNCTION_CALL") && ctx.Err() == nil {
 		if err = emitTo(ctx, o.Emit, jsObjOf("type", "retry", "reason", "malformed_function_call")); err == nil {
-			out, err = runAxOnce(ctx, cfg, o)
+			out, err = runAxOnce(ctx, cfg, o, &notes)
 		}
 	}
 	if err != nil {
@@ -381,7 +382,7 @@ type axEvent struct {
 	Result      json.RawMessage `json:"result"`
 }
 
-func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions) (axTurnOutcome, error) {
+func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions, notes *int) (axTurnOutcome, error) {
 	timeoutMs := o.TimeoutMs
 	if timeoutMs <= 0 {
 		timeoutMs = agentLimitsFor("chat").TimeoutMs
@@ -484,7 +485,8 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions) (
 		skillsRoot = o.Workspace.SkillsRoot
 	}
 	mapper := &axEventMapper{emit: emit, route: cfg.Route, skillsRoot: skillsRoot, debug: o.Debug, textVersion: -1.0,
-		trace: traceBinding{OrgID: o.OrgID, RunID: o.RunID, Kind: o.RunKind}, responderEffort: responderEffort}
+		trace: traceBinding{OrgID: o.OrgID, RunID: o.RunID, Kind: o.RunKind}, responderEffort: responderEffort, thoughtCount: *notes}
+	defer func() { *notes = mapper.thoughtCount }()
 	var result *jsObj
 	protocolError := ""
 	last := 0.0
