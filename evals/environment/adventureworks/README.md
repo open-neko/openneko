@@ -27,13 +27,14 @@ demo database or GraphJin config volumes.
 
 ## Frozen seed contract
 
-The first `up` reuses the production-compatible `adventureworks-loader` image
-target and the existing install SQL. Before accepting the result, the freeze
-step verifies all three seed inputs in `source.sha256`:
+The first `up` runs the product demo's loader, `openneko seed adventureworks
+--load`, from the `eval-adventureworks-seed` image target with the existing
+install SQL. Before accepting the result, the freeze step verifies the four
+seed inputs in `source.sha256`:
 
 - Microsoft's `AdventureWorks-oltp-install-script.zip` release asset;
 - `db/seeds/dev/adventureworks-install.sql`;
-- `apps/worker/scripts/load-adventureworks.ts`;
+- `apps/openneko/internal/cli/seed_adventureworks_load.go`;
 - this environment's retry-safe `seed.sh` wrapper.
 
 The pinned archive is the 17,486,641-byte asset downloaded by the loader from
@@ -53,7 +54,8 @@ PostgreSQL `16.15-alpine3.24`; the GraphJin build pins version `3.21.18`.
 It also checks canonical seed sentinels (68 business tables, 31,465 sales
 orders, 121,317 sales lines, 19,972 people, and 504 products). Only then does
 it create a custom-format PostgreSQL dump and logical baseline fingerprint in
-the dedicated snapshot volume. The contract version is in
+the dedicated snapshot volume. The seeded data must have the fingerprint in
+`BASELINE_FINGERPRINT`, else the capture fails. The contract version is in
 `SNAPSHOT_VERSION`.
 
 Before that first load, the wrapper drops any incomplete AdventureWorks
@@ -63,8 +65,10 @@ loader converts those files in place. An interrupted initial load is therefore
 safe to retry without double-converting cached data.
 
 Every later `up` restores that dump before GraphJin starts. A partial,
-unreadable, version-mismatched, or source-mismatched snapshot fails closed; it
-is never silently replaced. The logical fingerprint covers user schema
+unreadable or version-mismatched snapshot fails closed, and so does a
+snapshot whose baseline differs from `BASELINE_FINGERPRINT`; it is never
+silently replaced. A seed input may change without a reset when the new seed
+gives the same fingerprint. The logical fingerprint covers user schema
 columns, constraints, indexes, views, functions, and every base-table row as
 an order-independent multiset, plus sequence state. Column positions are
 normalized across active columns, so PostgreSQL's internal holes left by
@@ -156,8 +160,9 @@ scripts/eval-adventureworks/environment.sh up
 
 `reset --yes` is destructive for the eval project only. It does not address
 or remove the active OpenNeko demo project's containers, networks, or volumes.
-If a checked-in seed input changes intentionally, update `source.sha256`, bump
-`SNAPSHOT_VERSION`, review the new logical baseline, and then reset. If the
+If a checked-in seed input changes, update `source.sha256`. If the seeded
+data changes too, bump `SNAPSHOT_VERSION`, review the new logical baseline,
+put its fingerprint in `BASELINE_FINGERPRINT`, and then reset. If the
 pinned upstream ZIP is no longer downloadable, restore it into the dedicated
 cache volume from an approved artifact rather than accepting a different
 checksum.
