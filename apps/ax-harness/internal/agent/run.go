@@ -258,7 +258,7 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 			runtime.onStep = func(title string) {
 				payload, _ := json.Marshal(struct {
 					Text string `json:"text"`
-				}{runePrefix(title, 500)})
+				}{runePrefix(plainContractNames(title), 500)})
 				events.progress(Event{Type: "actor.step", Data: payload})
 			}
 		}
@@ -666,6 +666,13 @@ func leakedActorCode(answer string) bool {
 func streamAnswer(ctx context.Context, engine *ax.AxAgent, client ax.AIClient, values, options map[string]ax.Value, events *recorder, emitDeltas bool, replaced func() bool) (string, error) {
 	var answer strings.Builder
 	version := -1
+	thoughts := &thoughtFilter{}
+	sendThought := func(text string) {
+		if text != "" && emitDeltas && !replaced() {
+			events.progress(Event{Type: "thought.delta", Data: deltaPayload(version, 0, text)})
+		}
+	}
+	defer func() { sendThought(thoughts.end()) }()
 	for delta, err := range engine.StreamingForward(ctx, client, values, options) {
 		if err != nil {
 			return "", err
@@ -674,16 +681,19 @@ func streamAnswer(ctx context.Context, engine *ax.AxAgent, client ax.AIClient, v
 			continue
 		}
 		if delta.Version != version {
+			sendThought(thoughts.end())
 			version = delta.Version
 			answer.Reset()
+			thoughts = &thoughtFilter{}
 		}
-		if thought, ok := delta.Delta["thought"].(string); ok && thought != "" && emitDeltas && !replaced() {
-			events.progress(Event{Type: "thought.delta", Data: deltaPayload(version, delta.Index, thought)})
+		if thought, ok := delta.Delta["thought"].(string); ok && thought != "" {
+			sendThought(thoughts.add(thought))
 		}
 		part, ok := delta.Delta["answer"].(string)
 		if !ok || part == "" {
 			continue
 		}
+		sendThought(thoughts.end())
 		if answer.Len()+len(part) > 65536 {
 			// Drain Ax to settle the model request and its usage receipt. The
 			// terminal validator rejects the oversized assembled response.

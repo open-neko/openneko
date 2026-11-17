@@ -80,6 +80,7 @@ type thoughtTap struct {
 
 func (s *thoughtTap) Next() bool {
 	if !s.AxChatStream.Next() {
+		s.notes.end()
 		return false
 	}
 	chunk, _ := s.AxChatStream.Value().(map[string]ax.Value)

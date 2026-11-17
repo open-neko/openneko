@@ -46,7 +46,7 @@ func executorThoughtStream(provider string) ([]string, string) {
 			"event: message_stop",
 			`data: {"type":"message_stop"}`,
 			"",
-		}, "Planning the order count"
+		}, ""
 	}
 	return []string{
 		`data: {"candidates":[{"content":{"role":"model","parts":[{"text":"**Planning the order count**\n\n","thought":true}]}}]}`,
@@ -175,7 +175,11 @@ func TestExecutorThoughtsStreamForSummaryProviders(t *testing.T) {
 			if executorText.String() != executorThought {
 				t.Fatalf("executor thinking %q, want %q", executorText.String(), executorThought)
 			}
-			if strings.Join(order, ",") != "executor.thought.delta,thought.delta" {
+			wantOrder := "executor.thought.delta,thought.delta"
+			if executorThought == "" {
+				wantOrder = "thought.delta"
+			}
+			if strings.Join(order, ",") != wantOrder {
 				t.Fatalf("event order %v", order)
 			}
 			for _, body := range laterBodies {
@@ -198,7 +202,7 @@ func TestExecutorNoteTextKeepsPlainHeadingsOnly(t *testing.T) {
 	dropped := []string{"Listing Available Functions", "Inspecting the Callables", "Investigating Executor Capabilities",
 		"Discovering GraphJin Tools", "Reading `salesorderheader`", "Checking team.worker", "Reading mcp_neko_graphjin_execute_graphql",
 		"Reviewing the action log", "Parsing <task_definition>", "Writing the vitals and followups", "Checking harnessSavedOperation",
-		"Filling the time-saved estimate = 15", strings.Repeat("Analyzing Sales ", 6)}
+		"Filling the time-saved estimate = 15", "Confirming DSPy Parsing", "Matching the Output Signature", strings.Repeat("Analyzing Sales ", 6)}
 	for _, h := range dropped {
 		if got := executorNoteText(h); got != "" {
 			t.Errorf("%q shown as %q", h, got)
@@ -223,11 +227,19 @@ func TestExecutorNotesReadHeadingsAsTheyArrive(t *testing.T) {
 	plain := notes.stream(3)
 	plain.add("The user wants the order count")
 	plain.add(", so one query is enough. Then the table mcp_neko_x.")
-	if want := "1.1 Analyzing Sales Data|1.2 Clarifying Date Ranges|3.3 The user wants the order count, so one query is enough"; strings.Join(got, "|") != want {
+	plain.end()
+	inline := notes.stream(4)
+	inline.add("The top customer is **Alice Smith** with $4,200.\n**Jordan Lee**: $3,900\n")
+	inline.add("Next row\n**Checking Last Year**")
+	if want := "1.1 Analyzing Sales Data|1.2 Clarifying Date Ranges"; strings.Join(got, "|") != want {
+		t.Fatalf("before the stream ended: got %s\nwant %s", strings.Join(got, "|"), want)
+	}
+	inline.end()
+	if want := "1.1 Analyzing Sales Data|1.2 Clarifying Date Ranges|4.3 Checking Last Year"; strings.Join(got, "|") != want {
 		t.Fatalf("got %s\nwant %s", strings.Join(got, "|"), want)
 	}
 	for i := 0; i < executorNotesPerRun+5; i++ {
-		notes.stream(int64(10 + i)).add(fmt.Sprintf("**Checking Region %d**", i))
+		notes.stream(int64(10 + i)).add(fmt.Sprintf("**Checking Region %d**\n", i))
 	}
 	if len(got) != executorNotesPerRun {
 		t.Fatalf("%d notes, want the cap %d", len(got), executorNotesPerRun)
