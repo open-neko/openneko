@@ -88,6 +88,21 @@ describe("work reasoning", () => {
     expect(anthropic.step).toBe("Counting the orders");
   });
 
+  it("shows the newest of the notes, the steps and the status lines", () => {
+    const note = (id: string, content: string): WorkEvent => ({ type: "progress", id, content, source: "provider_summary", provider: "google-gemini" });
+    const live = (events: WorkEvent[]) => {
+      const { items, lastStatus, statusIsNewest } = buildRunTimeline(events, "run-1");
+      return liveStep(items, lastStatus, statusIsNewest);
+    };
+    const first: WorkEvent = { type: "status", message: "Reading your question" };
+    expect(live([first])).toBe("Reading your question");
+    expect(live([first, note("ax-summary-1", "**Analyzing Sales Data**")])).toBe("Analyzing Sales Data");
+    expect(live([first, note("ax-summary-1", "**Analyzing Sales Data**"), { type: "status", message: "Putting the findings together" }]))
+      .toBe("Putting the findings together");
+    expect(live([first, { type: "status", message: "Putting the findings together" }, note("ax-summary-2", "**Comparing Regions**")]))
+      .toBe("Comparing Regions");
+  });
+
   it("shows the step status when a provider sends no thinking text", () => {
     const { items, lastStatus } = buildRunTimeline([{ type: "status", message: "Check the data" }], "run-1");
     expect(liveStep(items, lastStatus)).toBe("Check the data");

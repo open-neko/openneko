@@ -193,3 +193,30 @@ func TestThinkingNoteIdsGoOnAfterAMalformedCallRetry(t *testing.T) {
 		t.Fatalf("notes %v", notes)
 	}
 }
+
+func TestATurnShowsAFirstLineAtOnceAndThePlainStepLines(t *testing.T) {
+	clearAxEnv(t, nil)
+	srv := newScriptedServe(t, [][]json.RawMessage{
+		frames(`{"type":"event","event":{"version":1,"run_id":"workrun-1","type":"step.quiet","data":{"text":"Putting the findings together"}}}`,
+			`{"type":"event","event":{"version":1,"run_id":"workrun-1","sequence":1,"type":"answer.delta","data":{"version":1,"text":"Done."}}}`,
+			`{"type":"event","event":{"version":1,"run_id":"workrun-1","sequence":2,"type":"run.finished","result":{"status":"completed","answer":"Done."}}}`,
+			`{"type":"exit","code":0}`),
+	})
+	var got []string
+	res, err := runAx(context.Background(), plainCfg, axTurnOptions{Prompt: "p", Tag: "work run-1", Socket: srv.socket,
+		Emit: func(_ context.Context, event any) error {
+			e := event.(*jsObj)
+			if e.vals["type"] == "status" {
+				got = append(got, "status:"+e.vals["message"].(string))
+			} else {
+				got = append(got, e.vals["type"].(string))
+			}
+			return nil
+		}})
+	if err != nil || res.Status != "completed" {
+		t.Fatalf("got %+v %v", res, err)
+	}
+	if len(got) < 3 || got[0] != "status:Reading your question" || got[1] != "status:Putting the findings together" {
+		t.Fatalf("events %v", got)
+	}
+}

@@ -285,7 +285,7 @@ export function RunTimeline({
       {pending && !hasSurface ? (
         <AnswerInProgress
           since={run?.createdAt}
-          step={liveStep(presentation.items, presentation.lastStatus)}
+          step={liveStep(presentation.items, presentation.lastStatus, presentation.statusIsNewest)}
           sources={presentation.sources}
         />
       ) : null}
