@@ -511,6 +511,8 @@ turn ran long; never drop it.
    unit, and a one-line comparison or context where it sharpens the figure.
    Add `basis` (`observed`, `calculated`, or `estimated`), plus `asOf`
    and `source` whenever known. Never call an estimate observed.
+   Keep each `label` to ${labelMax} characters, each `value` to
+   ${valueMax} characters, and each `sub` to ${subMax} characters.
    When the answer turns on no specific numbers, send an empty list:
 
 ```neko_vitals
@@ -781,6 +783,8 @@ The time a data analyst or BI specialist would need to produce this answer
 ```neko_value
 { "minutes_saved": 90, "basis": "Joined orders to products, ranked by revenue, cross-checked against returns — a half-day BI request" }
 ```
+
+   Keep `basis` to ${basisMax} characters.
 
    Anchors: a single metric lookup 15-30 · a multi-table breakdown or
    drill-down 45-120 · a multi-step diagnostic like "why did revenue drop"
