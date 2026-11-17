@@ -78,6 +78,8 @@ mkdir -p "$prefix" "$bindir"
 tar -xzf "$tmp/$name" -C "$prefix" --no-same-owner bin/openneko share/openneko
 ln -sf "$prefix/bin/openneko" "$bindir/openneko"
 "$bindir/openneko" version --short >/dev/null || fail "the installed executable does not run"
+"$prefix/bin/openneko" release-check --skills --bundled-packs >/dev/null ||
+  fail "the release in $prefix lacks its bundled skills or packs; remove $prefix and run this script again"
 
 if [ -n "$server" ]; then
   chmod -R go-w "$prefix"

@@ -385,6 +385,8 @@ reads the pack catalog on that socket and fails when it lists no built-in
 pack. `openneko release-check --skills` prints `bundled_skills=<count>`. It
 fails when `openneko web` finds no built-in skill or lacks a sandbox skill
 (`docx`, `pdf`, `pptx`, `skill-creator`, `xlsx`). `openneko release-check
+--bundled-packs` prints `bundled_packs=<count>` from the folder and needs no
+running web. `openneko release-check
 --sandbox` prints `sandbox=off`, `ok` or
 `remote`. It fails when the sandbox socket is in the folder of serve's
 sockets, or when nothing answers on it.
@@ -932,7 +934,9 @@ The script downloads `openneko-native_<version>_linux_<arch>.tar.gz` and
 `~/.local/bin/openneko`. `OPENNEKO_VERSION` picks a release (default: the
 latest). `OPENNEKO_PREFIX` and `OPENNEKO_BIN_DIR` change the two folders.
 `OPENNEKO_RELEASE_URL` points at a mirror that holds `<tag>/<file>`, and
-then `OPENNEKO_VERSION` is needed. Then start OpenNeko:
+then `OPENNEKO_VERSION` is needed. At the end, the script runs `openneko
+release-check --skills --bundled-packs` and fails when the install lacks its
+bundled skills or packs. Then start OpenNeko:
 
 ```bash
 openneko start --native -d \
@@ -977,7 +981,9 @@ and `upgrade` act on the native install. `openneko logs` reads the
   skill or a missing sandbox skill (`share/openneko/skills/builtin` and
   `share/openneko/skills/sandbox`). It also puts every other folder under
   `share/openneko` of the release beside the executable, so a later release
-  can add a folder.
+  can add a folder. After the change, the upgraded executable runs `openneko
+  release-check --skills --bundled-packs`; when that fails, the upgrade
+  stops and does not start OpenNeko. Skill scripts keep their executable bit.
 - Use `install-native.sh --upgrade` when the installed `openneko` is older
   than the release that added `share/openneko/skills`: that `openneko
   upgrade` refuses the new archive. The script downloads and checks the
@@ -1001,6 +1007,12 @@ serve roles; the database check prints the SQL when it does not have it.
 | Logs | `~/.local/share/openneko/logs` |
 | Supervisor state and the sockets | `~/.local/share/openneko/run` |
 | Web port | `OPENNEKO_PORT` and `OPENNEKO_WEB_BIND_ADDRESS` at the first start, then `installation.json` |
+
+In production (`OPENNEKO_ENV` unset or `production`), OpenNeko looks for the
+built-in packs and the bundled skills only in these places. `openneko web`
+does not start when it finds no built-in pack, no built-in skill or a missing
+sandbox skill, and the message names the folder. Only `OPENNEKO_ENV=development`
+uses the folders of a source checkout.
 
 `openneko serve` listens on `127.0.0.1:8090`, the customer GraphJin on
 `127.0.0.1:8080` and the subscriptions GraphJin on `127.0.0.1:8089`. Keep

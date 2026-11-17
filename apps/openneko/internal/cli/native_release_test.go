@@ -24,6 +24,7 @@ import (
 type tarEntry struct {
 	name, body string
 	kind       byte
+	mode       int64
 }
 
 func nativeTarGz(t *testing.T, entries []tarEntry) []byte {
@@ -36,7 +37,11 @@ func nativeTarGz(t *testing.T, entries []tarEntry) []byte {
 		if kind == 0 {
 			kind = tar.TypeReg
 		}
-		hdr := &tar.Header{Name: e.name, Typeflag: kind, Mode: 0o755, Size: int64(len(e.body))}
+		mode := e.mode
+		if mode == 0 {
+			mode = 0o644
+		}
+		hdr := &tar.Header{Name: e.name, Typeflag: kind, Mode: mode, Size: int64(len(e.body))}
 		if kind != tar.TypeReg {
 			hdr.Size = 0
 			hdr.Linkname = "/etc/passwd"
@@ -438,7 +443,8 @@ func TestNativeUpgradeReplacesTheExeNamedByTheInstallScript(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(from, "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(from, "bin", "openneko"), []byte("#!/bin/sh\necho 9.9.9\n"), 0o755); err != nil {
+	calls := filepath.Join(home, "calls")
+	if err := os.WriteFile(filepath.Join(from, "bin", "openneko"), []byte("#!/bin/sh\necho \"$*\" >> "+calls+"\necho 9.9.9\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	writePackYAML(t, from, "metadata:\n  name: Slack\n")
@@ -496,5 +502,36 @@ func TestNativeUpgradeReplacesTheExeNamedByTheInstallScript(t *testing.T) {
 	}
 	if after, err := os.Stat(self); err != nil || !after.ModTime().Equal(before.ModTime()) || after.Size() != before.Size() {
 		t.Fatalf("the upgrade changed the running executable: %v", err)
+	}
+	if b, _ := os.ReadFile(calls); !strings.Contains(string(b), "release-check --skills --bundled-packs") {
+		t.Fatalf("the upgraded executable did not check its skills and packs: %q", b)
+	}
+	failing := "#!/bin/sh\nif [ \"$1\" = release-check ]; then echo 'no built-in packs' >&2; exit 1; fi\necho 9.9.9\n"
+	if err := os.WriteFile(filepath.Join(from, "bin", "openneko"), []byte(failing), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := run("--from", from, "--skip-backup", "--exe", exe); err == nil || !strings.Contains(err.Error(), "skills and packs check") {
+		t.Fatalf("a failed check after the upgrade: err = %v\n%s", err, out)
+	}
+}
+
+func TestExtractNativeArchiveKeepsTheExecutableBit(t *testing.T) {
+	entries := append(goodNativeEntries(),
+		tarEntry{name: "share/openneko/skills/sandbox/xlsx/scripts/", kind: tar.TypeDir},
+		tarEntry{name: "share/openneko/skills/sandbox/xlsx/scripts/run.py", body: "#!/usr/bin/env python3\n", mode: 0o755},
+		tarEntry{name: "share/openneko/skills/sandbox/xlsx/scripts/notes.txt", body: "x", mode: 0o600})
+	dst, err := extractEntries(t, entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rel, want := range map[string]os.FileMode{
+		"share/openneko/skills/sandbox/xlsx/scripts/run.py":    0o755,
+		"share/openneko/skills/sandbox/xlsx/scripts/notes.txt": 0o644,
+		"bin/openneko": 0o755,
+	} {
+		fi, err := os.Stat(filepath.Join(dst, filepath.FromSlash(rel)))
+		if err != nil || fi.Mode().Perm() != want {
+			t.Fatalf("%s: %v %v, want %v", rel, fi, err, want)
+		}
 	}
 }

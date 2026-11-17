@@ -30,6 +30,7 @@ func runWeb(t *testing.T, ctx context.Context) (string, <-chan error) {
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("OPENNEKO_DATABASE_URL_FILE", "")
+	checkoutAssets(t)
 	addr := freeAddr(t)
 	cmd := newWebCmd()
 	cmd.SetOut(io.Discard)
@@ -90,5 +91,45 @@ func TestWebServesAppAndAPIAndStops(t *testing.T) {
 		}
 	case <-time.After(15 * time.Second):
 		t.Fatal("web did not stop")
+	}
+}
+
+func checkoutAssets(t *testing.T) {
+	t.Helper()
+	repo, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENNEKO_BUILTIN_SKILLS_ROOT", filepath.Join(repo, "packages", "llm", "assets", "builtin-skills"))
+	t.Setenv("OPENNEKO_SANDBOX_SKILLS_ROOT", filepath.Join(repo, "recipes", "sandbox", "skills"))
+	t.Setenv("OPENNEKO_PACKS_DIR", filepath.Join(repo, "packs"))
+}
+
+func TestWebInProductionNeedsTheBundledSkillsAndPacks(t *testing.T) {
+	t.Setenv("OPENNEKO_ENV", "production")
+	for name, missing := range map[string]string{
+		"skills": "OPENNEKO_SANDBOX_SKILLS_ROOT",
+		"packs":  "OPENNEKO_PACKS_DIR",
+	} {
+		t.Run(name, func(t *testing.T) {
+			app := t.TempDir()
+			if err := os.WriteFile(filepath.Join(app, "index.html"), []byte("<html>app</html>"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			t.Setenv("OPENNEKO_DATABASE_URL_FILE", "")
+			checkoutAssets(t)
+			t.Setenv(missing, t.TempDir())
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			cmd := newWebCmd()
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+			cmd.SetArgs([]string{"--addr", freeAddr(t), "--dir", app, "--jobs=false"})
+			err := cmd.ExecuteContext(ctx)
+			if err == nil || !strings.Contains(err.Error(), "openneko web cannot start") || !strings.Contains(err.Error(), "reinstall the release") {
+				t.Fatalf("err = %v", err)
+			}
+		})
 	}
 }
