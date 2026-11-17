@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/open-neko/neko/apps/openneko/internal/gjconfig"
 	"github.com/open-neko/neko/apps/openneko/internal/packs"
 )
 
@@ -163,7 +164,7 @@ func declarativeGraphjinUpdate(bundle *packs.Bundle, inputs map[string]any, secr
 			"capabilities": capabilities,
 		}
 		if api == nil {
-			out["specs_dir"] = "/config/specs"
+			out["specs_dir"] = gjconfig.RuntimeSpecsDir()
 		}
 		sources = append(sources, out)
 	}

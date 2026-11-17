@@ -594,7 +594,7 @@
      {
       "name": "shop",
       "kind": "api",
-      "specs_dir": "/config/specs",
+      "specs_dir": "specs",
       "access": {
        "read": "authenticated",
        "write": "blocked",
@@ -3301,8 +3301,8 @@
   {
    "orgId": "o",
    "sourceName": "docs",
-   "runtimeBase": "relative",
-   "error": "managed GraphJin file runtime directory must be absolute"
+   "runtimeBase": "../files",
+   "error": "managed GraphJin file runtime directory must be absolute or inside the config folder"
   },
   {
    "orgId": "o",
