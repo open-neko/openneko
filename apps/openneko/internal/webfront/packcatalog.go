@@ -54,17 +54,42 @@ func packsEmbeddedRoot() string {
 	}
 	exe, _ := os.Executable()
 	wd, _ := os.Getwd()
-	return builtinPacksRoot(exe, wd)
+	return builtinPacksRoot(exe, wd, checkoutWalk(exe))
 }
 
 // builtinPacksRoot is share/openneko/packs beside the bin folder of the
-// executable when it exists (a release), else the packs folder of a source
-// checkout.
-func builtinPacksRoot(exe, wd string) string {
+// executable when it exists (a release), else, with walk, the packs folder
+// of a source checkout.
+func builtinPacksRoot(exe, wd string, walk bool) string {
 	if dir := releaseShareDir(exe, "packs"); dir != "" {
 		return dir
 	}
+	if !walk {
+		return ""
+	}
 	return filepath.Join(wd, "packs")
+}
+
+// BundledPacksCheck counts the built-in packs this process finds.
+func BundledPacksCheck() (int, error) {
+	root := packsEmbeddedRoot()
+	if root == "" {
+		return 0, errors.New("no built-in packs: share/openneko/packs is not beside the bin folder of this executable; set OPENNEKO_PACKS_DIR or reinstall the release")
+	}
+	dirs, err := embeddedPackDirs(root)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, id := range dirs {
+		if _, err := os.Stat(filepath.Join(root, id, "pack.yaml")); err == nil {
+			n++
+		}
+	}
+	if n == 0 {
+		return 0, fmt.Errorf("no built-in pack with a pack.yaml in %q", root)
+	}
+	return n, nil
 }
 
 func packUploadsRoot(orgID string) string {
@@ -72,6 +97,9 @@ func packUploadsRoot(orgID string) string {
 }
 
 func embeddedPackDirs(root string) ([]string, error) {
+	if root == "" {
+		return nil, nil
+	}
 	entries, err := os.ReadDir(root)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
@@ -96,8 +124,9 @@ func packBundle(orgID, packID, version string) (*packs.Bundle, error) {
 	}
 	var bundle *packs.Bundle
 	var err error
-	embedded := filepath.Join(packsEmbeddedRoot(), packID)
-	if _, statErr := os.Stat(filepath.Join(embedded, "pack.yaml")); statErr == nil {
+	root := packsEmbeddedRoot()
+	embedded := filepath.Join(root, packID)
+	if _, statErr := os.Stat(filepath.Join(embedded, "pack.yaml")); root != "" && statErr == nil {
 		bundle, err = packs.LoadBundle(embedded)
 	} else {
 		bundle, err = packs.LoadUploaded(packUploadsRoot(orgID), orgID, packID, version)
