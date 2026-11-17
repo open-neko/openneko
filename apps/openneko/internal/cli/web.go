@@ -78,6 +78,9 @@ with exit code 0, so its supervisor starts it again.`,
 			if err := webfront.Check(dir); err != nil {
 				return err
 			}
+			if err := bundledAssetsCheck(); err != nil {
+				return err
+			}
 			conn, err := defaultConn()
 			if err != nil {
 				return err

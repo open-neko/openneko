@@ -168,9 +168,10 @@ func extractNativeArchive(archive, dst string) error {
 				return fmt.Errorf("the release archive entry %q is too large", hdr.Name)
 			}
 			mode := os.FileMode(0o644)
-			if exe {
-				mode, sawExe = 0o755, true
+			if exe || hdr.Mode&0o111 != 0 {
+				mode = 0o755
 			}
+			sawExe = sawExe || exe
 			for pattern, saw := range map[string]*bool{
 				"share/openneko/packs/*/pack.yaml":         &sawPack,
 				"share/openneko/skills/builtin/*/SKILL.md": &sawBuiltin,
