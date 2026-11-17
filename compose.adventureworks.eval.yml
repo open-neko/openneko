@@ -25,13 +25,13 @@ services:
     networks:
       - eval-adventureworks
 
-  # Reuses the product demo's loader. The freeze service below accepts its
-  # output only when the downloaded archive, loader source, and install SQL
-  # match the checked-in source manifest.
+  # Runs the product demo's loader, `openneko seed adventureworks --load`. The
+  # freeze service below accepts its output only when the seed inputs match
+  # the checked-in source manifest and the data matches BASELINE_FINGERPRINT.
   adventureworks-init:
     build:
       context: .
-      target: adventureworks-loader
+      target: eval-adventureworks-seed
     depends_on:
       adventureworks-db:
         condition: service_healthy
@@ -43,6 +43,7 @@ services:
       ADVENTUREWORKS_DB: adventureworks
       ADVENTUREWORKS_CACHE_DIR: /cache
       ADVENTUREWORKS_INSTALL_SQL: /workspace/db/seeds/dev/adventureworks-install.sql
+      OPENNEKO_SEED_TARGET: demo
       OPENNEKO_EVAL_DIR: /eval
     entrypoint: ["/bin/sh", "/eval/seed.sh"]
     restart: "no"

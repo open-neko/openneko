@@ -30,6 +30,15 @@ esac
 
 expected_version=$(sed -n '1p' "$eval_dir/SNAPSHOT_VERSION")
 [ -n "$expected_version" ] || fail "SNAPSHOT_VERSION is empty"
+expected_fingerprint=$(sed -n '1p' "$eval_dir/BASELINE_FINGERPRINT")
+case "$expected_fingerprint" in
+  *[!0-9a-f]*|'') fail "BASELINE_FINGERPRINT is not a SHA-256 value" ;;
+  *) [ "${#expected_fingerprint}" -eq 64 ] || fail "BASELINE_FINGERPRINT is not a SHA-256 value" ;;
+esac
+
+fingerprint_of() {
+  awk -F '|' '$1 == "fingerprint_sha256" { print $2 }' "$1"
+}
 
 snapshot_state() {
   present=0
@@ -57,7 +66,7 @@ validate_snapshot_contract() {
 
   observed_version=$(sed -n '1p' "$version_file")
   [ "$observed_version" = "$expected_version" ] || fail "snapshot version '$observed_version' does not match '$expected_version'; reset is required"
-  cmp -s "$eval_dir/source.sha256" "$source_file" || fail "snapshot source manifest does not match the checked-in contract; bump the snapshot version and reset intentionally"
+  [ "$(fingerprint_of "$baseline_file")" = "$expected_fingerprint" ] || fail "snapshot data does not match BASELINE_FINGERPRINT; bump the snapshot version and reset intentionally"
   pg_restore --list "$dump_file" >/dev/null || fail "snapshot dump is unreadable; reset is required"
 }
 
@@ -178,7 +187,7 @@ verify_fingerprint() {
     exit 1
   fi
 
-  observed=$(awk -F '|' '$1 == "fingerprint_sha256" { print $2 }' "$current_file")
+  observed=$(fingerprint_of "$current_file")
   echo "[eval-freeze] $label fingerprint verified: $observed"
   rm -f "$current_file"
   trap - EXIT HUP INT TERM
@@ -198,6 +207,8 @@ capture_snapshot() {
   rm -f "$partial_dump" "$partial_baseline" "$partial_source" "$partial_version"
 
   write_fingerprint "$partial_baseline" baseline
+  seeded=$(fingerprint_of "$partial_baseline")
+  [ "$seeded" = "$expected_fingerprint" ] || fail "seeded data fingerprint $seeded does not match BASELINE_FINGERPRINT $expected_fingerprint"
   pg_dump --format=custom --compress=9 --no-owner --no-acl \
     --dbname "$database" --file "$partial_dump"
   pg_restore --list "$partial_dump" >/dev/null
