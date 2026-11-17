@@ -82,3 +82,60 @@ func TestStreamFallbackOnlyBeforeTheFirstValue(t *testing.T) {
 		t.Fatalf("an unrecorded fallback opened the spare: err=%v opened=%v", err, inner.opened)
 	}
 }
+
+func TestAFallbackProviderWithRawReasoningShowsNoThinking(t *testing.T) {
+	chunk := func(thought, content string) ax.Value {
+		return map[string]ax.Value{"results": []ax.Value{map[string]ax.Value{"index": 0, "thought": thought, "content": content}}}
+	}
+	spare := func() (ax.AxChatStream, error) {
+		return &valueStream{values: []ax.Value{chunk("**Checking the regional totals**\n", ""), chunk("raw reasoning about Alice\n", ""), chunk("", "East leads.")}}, nil
+	}
+	for _, c := range []struct {
+		name        string
+		spareRaw    bool
+		path        string
+		notes       int
+		thoughtText bool
+	}{
+		{"executor, raw fallback", true, "root/executor", 0, true},
+		{"executor, summary fallback", false, "root/executor", 1, true},
+		{"responder, raw fallback", true, "root/responder", 0, false},
+		{"responder, summary fallback", false, "root/responder", 0, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			inner := &routeStreams{streams: map[string]func() (ax.AxChatStream, error){
+				"primary": func() (ax.AxChatStream, error) { return nil, outage() }, "spare": spare}}
+			var notes []string
+			client := &streamingModeClient{
+				AIClient: &transientRouteFallback{AIClient: inner, fallbacks: map[string]string{"primary": "spare"}},
+				enabled:  true,
+				executorNotes: newExecutorNotes(func(_ int64, _ int, text string) {
+					notes = append(notes, text)
+				}),
+				summaries: func(route string) bool { return route == "primary" || !c.spareRaw },
+			}
+			stream, err := client.StreamEvents(context.Background(), map[string]ax.Value{"model": "primary"}, map[string]ax.Value{"executionPath": c.path})
+			if err != nil {
+				t.Fatal(err)
+			}
+			values, err := drainAll(stream)
+			if err != nil {
+				t.Fatal(err)
+			}
+			thoughtText, content := false, ""
+			for _, v := range values {
+				for _, item := range items(v.(map[string]ax.Value)["results"]) {
+					result := item.(map[string]ax.Value)
+					if text, _ := result["thought"].(string); text != "" {
+						thoughtText = true
+					}
+					text, _ := result["content"].(string)
+					content += text
+				}
+			}
+			if len(notes) != c.notes || thoughtText != c.thoughtText || content != "East leads." || inner.opened[len(inner.opened)-1] != "spare" {
+				t.Fatalf("notes %q, thought text %v, content %q, opened %v", notes, thoughtText, content, inner.opened)
+			}
+		})
+	}
+}

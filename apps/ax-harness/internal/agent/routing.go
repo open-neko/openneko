@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 
 	ax "github.com/ax-llm/ax/packages/go"
@@ -99,7 +100,35 @@ func (r *transientRouteFallback) reroute(ctx context.Context, request map[string
 		copy[key] = value
 	}
 	copy["model"] = to
+	if served, ok := ctx.Value(servedRouteKey{}).(*servedRoute); ok {
+		served.set(to)
+	}
 	return copy, true, nil
+}
+
+type servedRouteKey struct{}
+
+// servedRoute holds the route that served a call after a fallback, or "".
+type servedRoute struct {
+	mu    sync.Mutex
+	route string
+}
+
+func withServedRoute(ctx context.Context) (context.Context, *servedRoute) {
+	served := &servedRoute{}
+	return context.WithValue(ctx, servedRouteKey{}, served), served
+}
+
+func (s *servedRoute) set(route string) {
+	s.mu.Lock()
+	s.route = route
+	s.mu.Unlock()
+}
+
+func (s *servedRoute) get() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.route
 }
 
 func firstError(errs ...error) error {

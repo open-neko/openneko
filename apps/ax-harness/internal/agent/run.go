@@ -500,6 +500,9 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 			anchoredClient.contextRoute = routed.Stages.Context
 		}
 		streamClient := &streamingModeClient{AIClient: anchoredClient, enabled: spec.StreamResponses, stageLimiter: events.stageLimiter}
+		if routed != nil {
+			streamClient.summaries = func(route string) bool { return thoughtSummaries(routed.providerFor(route)) }
+		}
 		if spec.StreamResponses && executorSummaries(routed, spec.ReasoningEffort) {
 			streamClient.executorNotes = newExecutorNotes(func(call int64, index int, text string) {
 				events.progress(Event{Type: "executor.thought.delta", Data: deltaPayload(int(call), index, text)})

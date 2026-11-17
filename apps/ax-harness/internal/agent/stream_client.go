@@ -56,6 +56,15 @@ type streamingModeClient struct {
 	executorNotes *executorNotes
 	executorCalls atomic.Int64
 	stageLimiter  func(stage string) ax.AxRateLimiter
+	// summaries tells whether a route's provider sends thought summaries.
+	summaries func(route string) bool
+}
+
+// rawReasoning is true when a fallback route serves the call and its
+// provider sends raw reasoning text in place of a summary.
+func (c *streamingModeClient) rawReasoning(served *servedRoute) bool {
+	route := served.get()
+	return route != "" && c.summaries != nil && !c.summaries(route)
 }
 
 func (c *streamingModeClient) staged(options map[string]ax.Value) map[string]ax.Value {
@@ -96,6 +105,35 @@ func (s *thoughtTap) Next() bool {
 		}
 	}
 	return true
+}
+
+// thoughtStrip removes the thinking text from a responder stream.
+type thoughtStrip struct{ ax.AxChatStream }
+
+func (s *thoughtStrip) Value() ax.Value {
+	chunk, ok := s.AxChatStream.Value().(map[string]ax.Value)
+	if !ok {
+		return s.AxChatStream.Value()
+	}
+	results := items(chunk["results"])
+	out := maps.Clone(chunk)
+	kept := make([]ax.Value, len(results))
+	for i, item := range results {
+		result, ok := item.(map[string]ax.Value)
+		if ok {
+			result = maps.Clone(result)
+			delete(result, "thought")
+			item = result
+		}
+		kept[i] = item
+	}
+	switch chunk["results"].(type) {
+	case []ax.Value:
+		out["results"] = kept
+	case *ax.AxArray:
+		out["results"] = &ax.AxArray{Items: kept}
+	}
+	return out
 }
 
 func (c *streamingModeClient) record(err error) error {
@@ -155,16 +193,28 @@ func (c *streamingModeClient) StreamEvents(ctx context.Context, request, options
 		return &valueStream{values: []ax.Value{response}}, nil
 	}
 	options = c.staged(options)
+	ctx, served := withServedRoute(ctx)
 	open := func() (ax.AxChatStream, error) { return streamEvents(ctx, c.AIClient, request, options) }
-	if c.executorNotes != nil && actorStage(options) {
+	if actorStage(options) {
+		if c.executorNotes != nil {
+			plain := open
+			open = func() (ax.AxChatStream, error) {
+				stream, err := plain()
+				if err != nil || c.rawReasoning(served) {
+					return stream, err
+				}
+				call := c.executorCalls.Add(1)
+				return &thoughtTap{AxChatStream: stream, notes: c.executorNotes.stream(call)}, nil
+			}
+		}
+	} else {
 		plain := open
 		open = func() (ax.AxChatStream, error) {
 			stream, err := plain()
-			if err != nil {
-				return nil, err
+			if err != nil || !c.rawReasoning(served) {
+				return stream, err
 			}
-			call := c.executorCalls.Add(1)
-			return &thoughtTap{AxChatStream: stream, notes: c.executorNotes.stream(call)}, nil
+			return &thoughtStrip{AxChatStream: stream}, nil
 		}
 	}
 	if request["response_format"] != nil {
