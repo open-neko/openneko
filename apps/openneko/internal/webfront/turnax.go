@@ -322,10 +322,10 @@ func runAx(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions) (axRu
 		return failed("Ax backend has no model configured. Set the primary provider in admin settings.")
 	}
 	notes := 0
-	out, err := runAxOnce(ctx, cfg, o, &notes)
+	out, err := runAxOnce(ctx, cfg, o, &notes, true)
 	if err == nil && out.err != "" && out.retrySafe && strings.Contains(out.err, "MALFORMED_FUNCTION_CALL") && ctx.Err() == nil {
 		if err = emitTo(ctx, o.Emit, jsObjOf("type", "retry", "reason", "malformed_function_call")); err == nil {
-			out, err = runAxOnce(ctx, cfg, o, &notes)
+			out, err = runAxOnce(ctx, cfg, o, &notes, false)
 		}
 	}
 	if err != nil {
@@ -382,7 +382,7 @@ type axEvent struct {
 	Result      json.RawMessage `json:"result"`
 }
 
-func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions, notes *int) (axTurnOutcome, error) {
+func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions, notes *int, first bool) (axTurnOutcome, error) {
 	timeoutMs := o.TimeoutMs
 	if timeoutMs <= 0 {
 		timeoutMs = agentLimitsFor("chat").TimeoutMs
@@ -465,6 +465,9 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions, n
 	if o.Emit != nil {
 		queue = newEmitQueue(ctx, o.Emit)
 		defer queue.close()
+		if first {
+			queue.push(jsObjOf("type", "status", "message", "Reading your question"))
+		}
 	}
 	emit := func(event *jsObj) {
 		if t := event.vals["type"]; (t == "message" || t == "interim") && event.vals["content"] != "" {
@@ -878,7 +881,7 @@ func (m *axEventMapper) handle(ev axEvent) {
 			m.closeThought()
 			m.thoughtDelta("executor-"+jsNumberText(call)+"-"+jsNumberText(index), text)
 		}
-	case "actor.step":
+	case "actor.step", "step.quiet":
 		m.closeThought()
 		if isText && jsTrim(text) != "" {
 			m.emit(jsObjOf("type", "status", "message", jsTrim(text)))

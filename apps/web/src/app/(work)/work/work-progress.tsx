@@ -148,10 +148,11 @@ export function progressPreview(content: string): string {
 }
 
 /**
- * The line that says what the run does now: the newest thinking note or tool
- * step, or the step status when the provider sends no thinking text.
+ * The line that says what the run does now: the newest of the thinking
+ * notes, the tool steps and the step status.
  */
-export function liveStep(items: TimelineItem[], lastStatus: string | null): string | null {
+export function liveStep(items: TimelineItem[], lastStatus: string | null, statusIsNewest = false): string | null {
+  if (statusIsNewest && lastStatus) return lastStatus;
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
     if (item.kind === "progress") return progressPreview(item.content);

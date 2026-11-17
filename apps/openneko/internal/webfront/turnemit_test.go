@@ -68,7 +68,11 @@ func TestAxTurnSlowEmitDoesNotHoldTheReadLoop(t *testing.T) {
 			if e.vals["type"] == "status" {
 				msg, _ := e.vals["message"].(string)
 				mu.Lock()
-				got = append(got, strings.Fields(msg)[1])
+				if msg == "Reading your question" && len(got) == 0 {
+					got = append(got, "first")
+				} else {
+					got = append(got, strings.Fields(msg)[1])
+				}
 				mu.Unlock()
 			}
 			return nil
@@ -79,10 +83,10 @@ func TestAxTurnSlowEmitDoesNotHoldTheReadLoop(t *testing.T) {
 	if waited {
 		t.Fatal("the read loop waited for the emit: serve could not write the turn")
 	}
-	if len(got) != steps {
-		t.Fatalf("got %d status events, want %d", len(got), steps)
+	if len(got) != steps+1 || got[0] != "first" {
+		t.Fatalf("got %d status events, want the first line and %d", len(got), steps)
 	}
-	for i, n := range got {
+	for i, n := range got[1:] {
 		if n != fmt.Sprint(i) {
 			t.Fatalf("event %d is step %s: order lost", i, n)
 		}

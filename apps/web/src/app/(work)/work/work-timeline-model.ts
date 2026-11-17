@@ -63,6 +63,7 @@ function toolSources(event: Extract<WorkEvent, { type: "tool_start" }>): string[
 export function buildRunTimeline(events: WorkEvent[], runId: string): {
   items: TimelineItem[];
   lastStatus: string | null;
+  statusIsNewest: boolean;
   isDone: boolean;
   vitals: AnswerVital[];
   followups: string[];
@@ -87,6 +88,7 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
   let followups: string[] = [];
   let pendingText = "";
   let lastStatus: string | null = null;
+  let statusIsNewest = false;
   let isDone = false;
 
   const flushTextSegment = () => {
@@ -122,6 +124,7 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
       }
       case "progress": {
         flushTextSegment();
+        statusIsNewest = false;
         const existing = progressById.get(event.id);
         if (existing) {
           existing.content += event.content;
@@ -137,6 +140,7 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
         break;
       }
       case "tool_start": {
+        statusIsNewest = false;
         // A tool_start can arrive twice (e.g. a replayed in-flight run);
         // update the existing row in place rather than emitting a duplicate.
         const existing = toolsById.get(event.id);
@@ -189,6 +193,7 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
       }
       case "status": {
         lastStatus = event.message;
+        statusIsNewest = true;
         break;
       }
       case "error": {
@@ -384,6 +389,7 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
   return {
     items,
     lastStatus,
+    statusIsNewest,
     isDone,
     vitals,
     followups,

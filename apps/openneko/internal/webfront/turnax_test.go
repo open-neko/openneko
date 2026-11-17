@@ -232,11 +232,15 @@ func TestAxTurnMatchesNode(t *testing.T) {
 					t.Errorf("start %d:\n got %s\nwant %s", i, got, want)
 				}
 			}
-			if len(events) != len(c.Events) {
-				t.Errorf("events: got %d, want %d\n got %v", len(events), len(c.Events), events)
+			wantEvents := c.Events
+			if len(starts) > 0 {
+				wantEvents = append([]json.RawMessage{json.RawMessage(`{"type":"status","message":"Reading your question"}`)}, c.Events...)
 			}
-			for i := range min(len(events), len(c.Events)) {
-				got, want := events[i], string(jsCompact(c.Events[i]))
+			if len(events) != len(wantEvents) {
+				t.Errorf("events: got %d, want %d\n got %v", len(events), len(wantEvents), events)
+			}
+			for i := range min(len(events), len(wantEvents)) {
+				got, want := events[i], string(jsCompact(wantEvents[i]))
 				if catalog.Version() == "" {
 					got, want = pricesVersionRE.ReplaceAllString(got, "ax-go@V+"), pricesVersionRE.ReplaceAllString(want, "ax-go@V+")
 				}
