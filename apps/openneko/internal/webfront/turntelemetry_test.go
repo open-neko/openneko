@@ -52,3 +52,25 @@ func TestRunTelemetryMatchesNode(t *testing.T) {
 		}
 	}
 }
+
+func TestRunTelemetryCountsTheCardRepairs(t *testing.T) {
+	tel := &runTelemetry{}
+	emit := tel.wrap(func(context.Context, any) error { return nil })
+	for _, e := range []any{
+		jsObjOf("type", "usage", "source", "outer", "usage", jsObjOf("totalTokens", 10.0)),
+		jsObjOf("type", "usage", "source", cardRepairUsageSource, "usage", jsObjOf("totalTokens", 3.0)),
+		jsObjOf("type", "usage", "source", cardRepairUsageSource, "usage", jsObjOf("totalTokens", 4.0)),
+		cardNotShownNotice(),
+	} {
+		if err := emit(context.Background(), e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	summary := tel.summary("run-1")
+	if got := jsStringify(summary.vals["cards"], false); got != `{"repairs":2,"notShown":1}` || jsGet(jsGet(summary, "usage"), "totalTokens") != 10.0 {
+		t.Fatalf("summary %s", jsStringify(summary, false))
+	}
+	if _, ok := (&runTelemetry{}).summary("run-2").vals["cards"]; ok {
+		t.Fatal("a run with no card repair reports cards")
+	}
+}

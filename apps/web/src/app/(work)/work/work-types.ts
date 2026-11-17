@@ -53,6 +53,7 @@ export type WorkEvent =
       provider: string;
     }
   | { type: "error"; message: string }
+  | { type: "notice"; code: string; message: string }
   | {
       type: "capability_denied";
       capability: "network_egress";
@@ -179,6 +180,7 @@ export type TimelineItem =
       request: Extract<WorkEvent, { type: "needs_input" }>;
     }
   | { kind: "error"; message: string }
+  | { kind: "notice"; message: string }
   | { kind: "stopped" };
 
 export type RunArtifact = Extract<WorkEvent, { type: "artifact" }>["artifact"];

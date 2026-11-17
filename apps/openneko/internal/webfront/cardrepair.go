@@ -17,7 +17,7 @@ var cardRepairer = llm.Program{
 }
 
 func (a *API) cardRepair(orgID string) cardRepair {
-	return func(ctx context.Context, cards string, problems []string, rich bool) (string, error) {
+	return func(ctx context.Context, cards string, problems []string, rich bool) (string, llm.Usage, error) {
 		shape := coreCardShape
 		if rich {
 			shape = richCardShape
@@ -26,13 +26,13 @@ func (a *API) cardRepair(orgID string) cardRepair {
 		res, err := a.hostCalls().Generate(ctx, orgID, "turn", cardRepairer, map[string]any{
 			"cards": strings.TrimSpace(cards), "problems": strings.Join(problems, "\n"), "schema": jsStringify(shape.jsonSchema(), false)})
 		if err != nil {
-			return "", err
+			return "", llm.Usage{}, err
 		}
 		fixed := strings.TrimSpace(jsValueString(res.Outputs["fixedCards"]))
 		fixed = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(fixed, "```json"), "```"), "```"))
 		if fixed == "" {
-			return "", errors.New("no cards in the reply")
+			return "", res.Usage, errors.New("no cards in the reply")
 		}
-		return fixed, nil
+		return fixed, res.Usage, nil
 	}
 }

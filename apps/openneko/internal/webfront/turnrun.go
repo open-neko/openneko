@@ -559,6 +559,10 @@ func (a *API) appendRunEvent(ctx context.Context, orgID, threadID, runID string,
 	return id, nil
 }
 
+// cardRepairUsageSource marks the usage of a card repair call. Its ledger
+// row is written by the host call, so the run's store skips it.
+const cardRepairUsageSource = "card_repair"
+
 // runSpendGuard is createRunSpendGuard() in packages/llm/src/spend/run-guard.ts:
 // once the run's spend passes its reserved cap, the next event stops the
 // run. A tool call carries the running turn's cost so far.
@@ -593,8 +597,13 @@ func (g *runSpendGuard) emit(ctx context.Context, event any) error {
 	current := g.completed
 	switch jsGet(event, "type") {
 	case "usage":
-		if jsGet(event, "source") == "outer" {
+		switch jsGet(event, "source") {
+		case "outer":
 			micros, _ := turnUsagePrice(jsGet(event, "usage"), g.cap)
+			g.completed += micros
+			current = g.completed
+		case cardRepairUsageSource:
+			micros, _ := turnUsagePrice(jsGet(event, "usage"), 0)
 			g.completed += micros
 			current = g.completed
 		}

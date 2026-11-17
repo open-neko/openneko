@@ -202,6 +202,11 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
         items.push(stopped ? { kind: "stopped" } : { kind: "error", message: event.message });
         break;
       }
+      case "notice": {
+        flushTextSegment();
+        items.push({ kind: "notice", message: event.message });
+        break;
+      }
       case "surface": {
         flushTextSegment();
         for (let i = items.length - 1; i >= 0; i--) {

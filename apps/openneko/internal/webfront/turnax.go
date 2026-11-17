@@ -581,12 +581,13 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions, n
 	mapper.finish(answer)
 	finalText := answer
 	if o.Emit != nil && o.WantsCards {
-		text, messages, issues := extractCardFences(ctx, answer, o.RichCards, o.RepairCards)
+		text, messages, issues := extractCardFences(ctx, answer, o.RichCards, shownCardRepair(o.RepairCards, emit))
 		if len(messages) > 0 {
 			emit(jsObjOf("type", "surface", "messages", messages))
 		}
 		if len(issues) > 0 {
 			log.Printf("[ax] cards in the answer not shown: %s", strings.Join(issues, "; "))
+			emit(cardNotShownNotice())
 		}
 		finalText = text
 	} else {
@@ -611,6 +612,40 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions, n
 		}
 	}
 	return out, nil
+}
+
+func cardNotShownNotice() *jsObj {
+	return jsObjOf("type", "notice", "code", "card_not_shown", "message", "A chart could not be shown")
+}
+
+// shownCardRepair shows a status line while cards are repaired and sends the
+// spend of each repair call to the run's spend guard.
+func shownCardRepair(repair cardRepair, emit func(*jsObj)) cardRepair {
+	if repair == nil {
+		return nil
+	}
+	started := false
+	return func(ctx context.Context, cards string, problems []string, rich bool) (string, llm.Usage, error) {
+		if !started {
+			started = true
+			emit(statusEvent("Fixing a chart"))
+		}
+		fixed, usage, err := repair(ctx, cards, problems, rich)
+		if usage.Calls > 0 || usage.Total > 0 || usage.CostUSD != nil {
+			emit(jsObjOf("type", "usage", "source", cardRepairUsageSource, "usage", hostUsageEvent(usage)))
+		}
+		return fixed, usage, err
+	}
+}
+
+func hostUsageEvent(u llm.Usage) *jsObj {
+	out := jsObjOf("coverage", u.Coverage, "inputTokens", float64(u.Input), "outputTokens", float64(u.Output),
+		"totalTokens", float64(u.Total), "cacheReadTokens", float64(u.CacheRead), "cacheWriteTokens", float64(u.CacheWrite),
+		"costStatus", u.CostStatus)
+	if u.CostUSD != nil {
+		out.set("estimatedCostUsd", *u.CostUSD)
+	}
+	return out
 }
 
 func stringsAny(list []string) []any {

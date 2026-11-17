@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/open-neko/neko/apps/openneko/internal/llm"
 )
 
 func TestRunStoreHelpersMatchNode(t *testing.T) {
@@ -671,5 +673,46 @@ func TestStartChatRunStartsOneTurnPerRun(t *testing.T) {
 	}
 	if got := rowText(t, db, `select status from work_run where id = $1`, runID); got != "completed" {
 		t.Fatalf("run status %q", got)
+	}
+}
+
+func TestRunSpendGuardCountsTheCardRepairs(t *testing.T) {
+	f, db, _ := chatTurnFront(t)
+	a := f.API
+	ctx := context.Background()
+	seed(t, db, `insert into spend_reservation (org_id, work_run_id, source, reserved_micros) values ('org', $1, 'chat', 1000000)`, runAdmin)
+	seed(t, db, `update work_run set status = 'running' where id = $1`, runAdmin)
+	log := &eventLog{}
+	runCtx, emit, err := a.newRunSpendGuard(ctx, runAdmin, log.emit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repair := func(usage *jsObj) any {
+		return jsObjOf("type", "usage", "source", cardRepairUsageSource, "usage", usage)
+	}
+	for _, e := range []any{
+		jsObjOf("type", "usage", "source", "outer", "usage", jsObjOf("costStatus", "estimated", "estimatedCostUsd", 0.5)),
+		repair(hostUsageEvent(llm.Usage{Total: 10, CostStatus: "unknown"})),
+		repair(jsObjOf("costStatus", "estimated", "estimatedCostUsd", 0.3)),
+	} {
+		if err := emit(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if runCtx.Err() != nil {
+		t.Fatalf("stopped under the cap: %v", log.all())
+	}
+	if err := emit(ctx, repair(jsObjOf("costStatus", "estimated", "estimatedCostUsd", 0.3))); err != nil {
+		t.Fatal(err)
+	}
+	if stop := spendStop(runCtx); stop == nil || stop.Error() != "The run exceeded its $1.00 spend cap ($1.10 spent)." {
+		t.Fatalf("stop %v, events %v", stop, log.all())
+	}
+	before := rowText(t, db, `select count(*)::text from spend_ledger`)
+	if _, err := a.appendRunEvent(ctx, "org", threadMine, runAdmin, repair(jsObjOf("costStatus", "estimated", "estimatedCostUsd", 0.3))); err != nil {
+		t.Fatal(err)
+	}
+	if after := rowText(t, db, `select count(*)::text from spend_ledger`); after != before {
+		t.Fatalf("a card repair usage event wrote a second ledger row: %s, then %s", before, after)
 	}
 }
