@@ -29,7 +29,7 @@ closed="$(node -e 'const s = require("net").createServer().listen(0, "127.0.0.1"
 
 export XDG_CONFIG_HOME="$work/config"
 export OPENNEKO_DATABASE_URL_FILE="$work/database-url"
-export OPENNEKO_PACKS_DIR="$root/packs"
+. "$here/scripts/checkout-assets.sh"
 export OPENNEKO_SERVE_URL="http://127.0.0.1:$closed"
 export OPENNEKO_GRAPHJIN_URL="http://127.0.0.1:$closed"
 export OPENNEKO_PUBLIC_URL="http://127.0.0.1:$port"

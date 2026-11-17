@@ -65,6 +65,7 @@ chmod 600 "$work/database-url"
 mkdir -p "$work/config"
 export XDG_CONFIG_HOME="$work/config"
 export OPENNEKO_DATABASE_URL_FILE="$work/database-url"
+. "$contract/scripts/checkout-assets.sh"
 
 (cd "$contract" && pnpm exec tsx scripts/database.ts create "$OPENNEKO_PHONE_PG" "$database")
 (cd "$root/apps/openneko" && go build -o "$work/openneko" ./cmd/openneko)
