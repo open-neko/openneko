@@ -271,6 +271,8 @@ type toolServer struct {
 	scriptData func(ctx context.Context, raw json.RawMessage) (*jsObj, error)
 	mu         sync.Mutex
 	routes     map[string]toolRoute
+	starting   bool
+	listed     []any
 }
 
 func newToolServer(groups ...toolGroup) *toolServer {
@@ -280,6 +282,7 @@ func newToolServer(groups ...toolGroup) *toolServer {
 func (s *toolServer) list(ctx context.Context) ([]any, error) {
 	out := []any{}
 	routes := map[string]toolRoute{}
+	starting := false
 	for _, g := range s.groups {
 		if g.dynamic == nil {
 			for i := range g.static {
@@ -295,6 +298,8 @@ func (s *toolServer) list(ctx context.Context) ([]any, error) {
 		}
 		if err != nil {
 			log.Printf("[mcp-bridge] %s tools/list failed; its tools are unavailable until the next tools/list: %v", g.dynamic.server, err)
+			var e *graphjinStartingError
+			starting = starting || errors.As(err, &e)
 			continue
 		}
 		for _, tool := range tools {
@@ -311,8 +316,25 @@ func (s *toolServer) list(ctx context.Context) ([]any, error) {
 	}
 	s.mu.Lock()
 	s.routes = routes
+	s.starting = starting
 	s.mu.Unlock()
 	return out, nil
+}
+
+// dataStarting lists the tools before the turn and keeps the list for the
+// harness. It reports that GraphJin still starts after the wait.
+func (s *toolServer) dataStarting(ctx context.Context) bool {
+	list, err := s.list(ctx)
+	if err != nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.starting {
+		return true
+	}
+	s.listed = list
+	return false
 }
 
 func (s *toolServer) route(ctx context.Context, name string) (toolRoute, bool, error) {
@@ -408,9 +430,15 @@ func (s *toolServer) handle(ctx context.Context, method string, params json.RawM
 	case "ping":
 		return map[string]any{}, nil
 	case "tools/list":
-		list, err := s.list(ctx)
-		if err != nil {
-			return nil, &rpcError{-32603, err.Error()}
+		s.mu.Lock()
+		list := s.listed
+		s.listed = nil
+		s.mu.Unlock()
+		if list == nil {
+			var err error
+			if list, err = s.list(ctx); err != nil {
+				return nil, &rpcError{-32603, err.Error()}
+			}
 		}
 		return json.RawMessage(`{"tools":` + jsStringify(list, false) + `}`), nil
 	case "tools/call":

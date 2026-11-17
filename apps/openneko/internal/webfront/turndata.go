@@ -313,7 +313,11 @@ func graphjinMCPRequest(ctx context.Context, ep graphjinEndpoint, method string,
 	}
 	text := string(bytes.ToValidUTF8(raw, []byte("�")))
 	if res.StatusCode < 200 || res.StatusCode > 299 {
-		return nil, errors.New(jsTrim(fmt.Sprintf("GraphJin MCP %s failed: %d %s", method, res.StatusCode, jsSlice(text, 1000))))
+		msg := jsTrim(fmt.Sprintf("GraphJin MCP %s failed: %d %s", method, res.StatusCode, jsSlice(text, 1000)))
+		if res.StatusCode == http.StatusServiceUnavailable && graphjinStartingText.MatchString(text) {
+			return nil, &graphjinStartingError{msg}
+		}
+		return nil, errors.New(msg)
 	}
 	reply, err := parseMCPResponse(text, res.Header.Get("content-type"))
 	if err != nil {
@@ -339,6 +343,34 @@ func graphjinMCPRequest(ctx context.Context, ep graphjinEndpoint, method string,
 		return nil, fmt.Errorf("GraphJin MCP %s returned no result", method)
 	}
 	return result, nil
+}
+
+var graphjinStartingText = regexp.MustCompile(`GraphJin is (re)?starting`)
+
+var graphjinStartWait, graphjinStartRetry = 25 * time.Second, time.Second
+
+const dataStartingMessage = "The data connection is still starting. Ask again in a minute."
+
+type graphjinStartingError struct{ msg string }
+
+func (e *graphjinStartingError) Error() string { return e.msg }
+
+// graphjinWhenStarted sends the request again while GraphJin reports that it
+// starts, for graphjinStartWait at most.
+func graphjinWhenStarted(ctx context.Context, request func() (any, error)) (any, error) {
+	deadline := time.Now().Add(graphjinStartWait)
+	for {
+		result, err := request()
+		var starting *graphjinStartingError
+		if !errors.As(err, &starting) || !time.Now().Before(deadline) {
+			return result, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(graphjinStartRetry):
+		}
+	}
 }
 
 var sseEventBreak = regexp.MustCompile(`\r?\n\r?\n`)
@@ -399,7 +431,7 @@ func listGraphjinMCPTools(ctx context.Context, ep graphjinEndpoint) ([]any, erro
 		if cursor != "" {
 			params.set("cursor", cursor)
 		}
-		result, err := graphjinMCPRequest(ctx, ep, "tools/list", params)
+		result, err := graphjinWhenStarted(ctx, func() (any, error) { return graphjinMCPRequest(ctx, ep, "tools/list", params) })
 		if err != nil {
 			return nil, err
 		}
@@ -438,7 +470,16 @@ func callGraphjinMCPTool(ctx context.Context, ep graphjinEndpoint, name string, 
 	if args == nil {
 		args = &jsObj{}
 	}
-	result, err := graphjinMCPRequest(ctx, ep, "tools/call", jsObjOf("name", name, "arguments", args))
+	request := func() (any, error) {
+		return graphjinMCPRequest(ctx, ep, "tools/call", jsObjOf("name", name, "arguments", args))
+	}
+	var result any
+	var err error
+	if name == "execute_graphql" && graphqlMutationWord.MatchString(jsStringOrEmpty(jsGet(args, "query"))) {
+		result, err = request()
+	} else {
+		result, err = graphjinWhenStarted(ctx, request)
+	}
 	if err != nil {
 		return nil, err
 	}

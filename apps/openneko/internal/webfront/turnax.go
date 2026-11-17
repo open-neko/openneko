@@ -321,6 +321,9 @@ func runAx(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions) (axRu
 	if cfg == nil {
 		return failed("Ax backend has no model configured. Set the primary provider in admin settings.")
 	}
+	if o.Tools != nil && len(o.Servers) > 0 && o.Tools.dataStarting(ctx) {
+		return failed(dataStartingMessage)
+	}
 	notes := 0
 	out, err := runAxOnce(ctx, cfg, o, &notes)
 	if err == nil && out.err != "" && out.retrySafe && strings.Contains(out.err, "MALFORMED_FUNCTION_CALL") && ctx.Err() == nil {
