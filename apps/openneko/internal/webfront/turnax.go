@@ -396,7 +396,10 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions, n
 		cwd = o.Workspace.OrgRoot
 	}
 	if cwd == "" {
-		scratch, err := os.MkdirTemp("", "neko-ax-")
+		if err := os.MkdirAll(agentRunsRoot(), 0o755); err != nil {
+			return axTurnOutcome{}, err
+		}
+		scratch, err := os.MkdirTemp(agentRunsRoot(), "neko-ax-")
 		if err != nil {
 			return axTurnOutcome{}, err
 		}

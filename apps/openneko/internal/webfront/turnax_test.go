@@ -153,7 +153,7 @@ func jsCompact(raw []byte) []byte {
 var (
 	pricesVersionRE = regexp.MustCompile(`ax-go@[^+"]*\+`)
 	answerIDs       = regexp.MustCompile(`answer-[0-9a-f-]{36}`)
-	scratchRE       = regexp.MustCompile(regexp.QuoteMeta(filepath.Join(os.TempDir(), "neko-ax-")) + `[A-Za-z0-9]+`)
+	scratchRE       = regexp.MustCompile(regexp.QuoteMeta(filepath.Join(agentRunsRoot(), "neko-ax-")) + `[A-Za-z0-9]+`)
 )
 
 func normalStart(t *testing.T, raw string) string {
