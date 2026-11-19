@@ -20,6 +20,14 @@ export function ProviderProgress({
   live: boolean;
   collapsed?: boolean;
 }) {
+  if (collapsed && !content.trim().includes("\n")) {
+    return (
+      <div className="work-progress-disclosure flex min-h-10 items-center gap-3 rounded-inner border border-border bg-card px-3.5 py-2.5 font-body text-ui-body-sm text-text2">
+        <span className="min-w-0 flex-1">{progressPreview(content)}</span>
+        <span className="text-ui-caption font-semibold text-text3">Progress</span>
+      </div>
+    );
+  }
   if (collapsed) {
     return (
       <Disclosure title={<span className="font-normal text-text2">{progressPreview(content)}</span>} meta="Progress" className="work-progress-disclosure">
