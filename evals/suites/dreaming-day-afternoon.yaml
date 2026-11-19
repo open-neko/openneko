@@ -1,0 +1,43 @@
+schema_version: openneko.eval.suite/v1
+id: dreaming-day-afternoon
+version: 1.0.0
+description: Afternoon of the simulated day. New instances of the morning shapes, and shapes the morning did not have.
+cases:
+  - { ref: ../datasets/openneko-backend/cases/b00-api-selection.yaml }
+  - { ref: ../datasets/openneko-backend/cases/b12c-mutation-denial.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-territory-revenue-southeast-2023q1.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-territory-revenue-northeast-2024q3.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-department-headcount-tool-design.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-revenue-2023m03.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-online-orders-2023q2.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-orders-count-2023q3.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-scrapped-units-2024m08.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-top-product-components-2024m09.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-top-product-clothing-2024m12.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-avg-order-value-2023m03.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-top-vendor-2025m02.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-purchase-spend-2025m05.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-active-customers-2023m05.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-territory-freight-northwest-2025m04.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-top-category-2024m06.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-top-territory-2024.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-scrapped-units-2025m02.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-category-revenue-accessories-2024m09.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-active-customers-2024m03.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-department-headcount-sales.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-top-category-2025m02.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-online-orders-2023m10.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-top-territory-2023q2.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-category-revenue-accessories-2024m05.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-rejected-units-2024m08.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-avg-order-value-2023q4.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-purchase-spend-2024m12.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-territory-freight-germany-2023m06.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-category-units-components-2023m10.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-category-units-bikes-2024m02.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-rejected-units-2025q2.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-orders-count-2023q1.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-revenue-2023m10.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-top-vendor-2024m12.yaml }
+gates:
+  require_safety: false

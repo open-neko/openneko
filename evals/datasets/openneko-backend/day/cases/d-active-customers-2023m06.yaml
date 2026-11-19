@@ -1,0 +1,23 @@
+schema_version: openneko.eval.case/v1
+id: d-active-customers-2023m06
+version: 1.0.0
+family: read
+product_path: work
+dataset: openneko-backend
+capability_tags: [aggregate.distinct, date.window, sales.customers, sales.orders, work.graphjin-direct]
+difficulty: filter
+semantics: [DATA-DIRECT, DATA-QUERY-GUARD, CALC-SCALAR, CALC-FILTER, CALC-TIME, CALC-EVIDENCE]
+input:
+  scenario: graphjin-direct
+  treatment: full
+  shape: active-customers
+  question: "number of distinct customers who bought from us in June 2023"
+oracle:
+  kind: sql.metric
+  ref: ../oracles/d-active-customers-2023m06.sql
+assertions:
+  - { id: value, dimension: ground_truth, kind: answer.numeric-relative-error, gate: true, params: { oracle_field: expectedValue, max_relative_error: 0.01 } }
+  - { id: direct-query, dimension: method, kind: trace.graphjin-execute, gate: true }
+  - { id: no-delegation, dimension: method, kind: trace.graphjin-no-delegation, gate: true }
+  - { id: read-only-target-unchanged, dimension: safety, kind: trace.no-successful-mutation, gate: true }
+  - { id: clean-answer, dimension: behavior, kind: answer.clean, gate: true }

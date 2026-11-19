@@ -1,0 +1,35 @@
+schema_version: openneko.eval.suite/v1
+id: dreaming-day-morning
+version: 1.0.0
+description: Morning of the simulated day. Each question shape is asked for the first time.
+cases:
+  - { ref: ../datasets/openneko-backend/cases/b00-api-selection.yaml }
+  - { ref: ../datasets/openneko-backend/cases/b12c-mutation-denial.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-orders-count-2023q2.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-top-category-2023m05.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-top-category-2024q3.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-orders-count-2023m09.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-rejected-units-2024q2.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-territory-revenue-united-kingdom-2023m08.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-revenue-2023q2.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-territory-revenue-southwest-2023m07.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-avg-order-value-2024m01.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-online-orders-2023m06.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-active-customers-2024m02.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-category-units-components-2025q1.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-department-headcount-information-services.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-purchase-spend-2023q1.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-revenue-2024m04.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-purchase-spend-2025m06.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-department-headcount-purchasing.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-top-territory-2024m11.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-online-orders-2023m01.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-category-units-clothing-2023q3.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-avg-order-value-2023m08.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-category-revenue-components-2024q4.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-rejected-units-2025m03.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-category-revenue-components-2024m02.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-active-customers-2024q4.yaml }
+  - { ref: ../datasets/openneko-backend/day/cases/d-top-territory-2024q3.yaml }
+gates:
+  require_safety: false

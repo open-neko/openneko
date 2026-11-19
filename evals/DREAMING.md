@@ -158,13 +158,72 @@ no cap. It measures:
 
 Oscillation is covered by `l14` and `l15`, not here.
 
+### 5.6 The simulated day
+
+The main efficiency test is a simulated day of usage on a generated question
+bank, not the hand-written cases of §5.1.
+
+`packages/evals/scripts/generate-adventureworks-day.ts` writes the bank from
+the frozen AdventureWorks data. It is deterministic: the same seed gives the
+same files.
+
+- **Shapes.** 17 question shapes, each a measure with a time window and
+  sometimes a dimension: orders in a period, revenue for a territory, the top
+  category, purchase spend, department headcount.
+- **Instances.** Up to 24 per shape, 388 in all. An instance is a shape with
+  its own period and dimension value.
+- **Wording.** Three plain phrasings per shape, as a person asks. The
+  question gives no method and no answer format.
+- **Ground truth.** Each instance has its own oracle SQL. All 388 return a
+  non-zero value on the frozen data.
+- **Scoring.** The answer passes when it holds a number within 1% of the
+  oracle value, and the winner's name for a ranked question.
+
+The day has two parts, each a suite and a config:
+
+| Part | Suite | Questions |
+|---|---|---|
+| Morning | `dreaming-day-morning` | 26: two instances of each of 13 shapes |
+| Afternoon | `dreaming-day-afternoon` | 34: two new instances of those 13 shapes, and two of each of 4 shapes the morning did not have |
+| Bank | `dreaming-day-bank` | all 388 |
+
+The learning pass runs between morning and afternoon. The twin runs the same
+day with no pass. The 4 unseen shapes show that learning does no harm where
+it has nothing to offer.
+
+Generated questions are more regular than real ones. The real questions of
+§5.7 are the check on that.
+
+### 5.7 Baseline from real runs
+
+Read on 2026-11-20 from the run telemetry of three demo installs. These are
+runs that a person started, on the Ax backend.
+
+| Install | Runs | Tool calls per question | Queries per question | Runs with a failed call |
+|---|---|---|---|---|
+| AdventureWorks | 50 | 7.1 | 4.8 | 13 |
+| City data A | 24 | 10.9 | 6.2 | 21 |
+| City data B | 33 | 7.0 | 5.2 | 29 |
+
+- On city data B, 15 questions were asked two times. 14 had a failed call
+  the first time. 13 of those failed again the second time.
+- Most failures are a guessed column name: "Field X is not a column on the
+  queried table".
+- Queries that succeed are the larger cost. A run makes about five queries
+  where two can answer the question. It spends the others to learn the date
+  range, the column types and the dimension values.
+
+The earlier eval cases (`g01` to `g40`) do not show this. Their questions
+state the method, and a run needs about three queries.
+
 ## 6. Measures
 
 | Measure | Definition | Compared |
 |---|---|---|
 | Probe correctness | Value-oracle pass rate on same-shape probes | Learning install minus twin |
-| Calls to first correct result | `execute_graphql` calls before the first correct value | Learning install minus twin |
-| Repeated-failure rate | Share of probe runs that issue a query that already failed in `baseline` | Target is zero |
+| Queries per question | `execute_graphql` calls in the run. The main efficiency measure | Learning install minus twin |
+| Repeated-failure rate | Share of questions with a failed call in `baseline` that have a failed call again in `probe` | 13 of 14 today (§5.7); target is zero |
+| Repeated queries | Queries in a run that repeat an earlier query of that run | Learning install minus twin |
 | Tokens and cost per successful run | From `spend_ledger`, as the metric adapter reads it | Learning install minus twin |
 | Unrelated-task pass rate | Value-oracle pass rate on questions the lessons do not cover | Must not fall |
 | Corrections to convergence | Corrections a person makes before the fix holds | Target is one |
