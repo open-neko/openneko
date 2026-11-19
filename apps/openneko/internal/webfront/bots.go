@@ -545,16 +545,6 @@ func (a *API) botByThread(w http.ResponseWriter, r *http.Request) {
 	starters := []string{}
 	if b.instructions == "" {
 		starters = botStarters(b.name)
-		if b.isDefault {
-			profile, err := a.currentBusinessProfile(r.Context(), act.OrgID)
-			if err != nil {
-				a.fail(w, r, err)
-				return
-			}
-			if _, questions := splitProfileQuestions(profile); len(questions) > 0 {
-				starters = questions[:min(len(questions), 4)]
-			}
-		}
 	}
 	sendJSON(w, http.StatusOK, map[string]any{"bot": b.summary(nil, nil, nil), "starters": starters})
 }

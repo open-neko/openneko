@@ -15,11 +15,12 @@ import { LocalDateTime } from "@/components/ui/local-date-time";
 import { REMARK_PLUGINS } from "./work-markdown";
 import type { MessageRecord, PendingMemory } from "./work-types";
 
+const WATCH_PROMPT = { label: "Watch for a change", text: "Set up a workflow that " };
 const EMPTY_PROMPTS: Array<{ label: string; text: string }> = [
   { label: "Top customers", text: "Who are our top 10 customers by revenue this year?" },
   { label: "Revenue trend", text: "How has revenue changed over the last 4 quarters?" },
   { label: "Inventory risk", text: "Which products are below their reorder threshold?" },
-  { label: "Watch for a change", text: "Set up a workflow that " },
+  WATCH_PROMPT,
 ];
 
 const ATTACHMENT_LINE = /^- (\S+)\s+\((.+), (\d+) KB\)$/;
@@ -65,7 +66,7 @@ export function EmptyAsk({ onPick }: { onPick: (text: string) => void }) {
     };
   }, []);
   const prompts = questions.length
-    ? questions.map((text) => ({ label: "", text }))
+    ? [...questions.slice(0, 3).map((text) => ({ label: "", text })), WATCH_PROMPT]
     : EMPTY_PROMPTS;
   return (
     <div className="ask-start">
