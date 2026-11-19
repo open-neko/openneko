@@ -31,6 +31,13 @@ When a person corrects an answer in the thread, the fix stays in that thread.
    version.
 7. A lesson is offered only to a person who can already query every table it
    touches.
+8. Nothing expires with time. A lesson or a position stays until a
+   correction, a recount or a schema change removes it.
+9. Every kind of run uses every kind of lesson, unattended runs included.
+10. There is no cap on how many lessons an org holds or how many runs a pass
+    reads.
+11. A query that fails because the person lacks access does not count against
+    the lesson.
 
 ## 3. What exists to build on
 
@@ -74,7 +81,7 @@ one version per org, and carry support counts and a table list.
 |---|---|---|
 | `dream_lesson` | lesson version | `org_id`, `kind`, `question_shape`, `body`, `tables[]`, `catalog_revision`, `state`, `supersedes_id`, `embedding`, `use_count`, `last_used_at` |
 | `dream_position` | person and lesson group | `org_id`, `lesson_group_id`, `user_id`, `lesson_id` supported, `strength` (`correction` or `use`), `run_id`, `updated_at` |
-| `dream_lesson_use` | run and lesson | `run_id`, `lesson_id`, `offered`, `outcome` (`succeeded`, `failed`, `corrected`) |
+| `dream_lesson_use` | run and lesson | `run_id`, `lesson_id`, `offered`, `outcome` (`succeeded`, `failed_source`, `failed_access`, `corrected`) |
 | `dream_pass` | learning pass | `org_id`, event watermark, decisions, rationale, evidence run ids, tokens, cost |
 
 `dream_pass` plays the part of `skill_learn_event`. Nobody approves from it.
@@ -116,7 +123,8 @@ lesson groups by embedding of the question shape, then:
 - record or update each person's position (§6)
 - write a new lesson, or add support to an existing one
 - recount the group and set the active version
-- retire a lesson whose query failed in a run, or that a correction replaced
+- retire a lesson that a correction replaced, or that no longer matches the
+  source (§8)
 
 **Step 4. Gate (no model).** A lesson is written only if all hold:
 
@@ -148,8 +156,9 @@ still tied, the current active version stays.
 The first correction of a lesson nobody has corrected is 1 to 0, so it takes
 effect for the org at the next pass.
 
-*Proposal:* a position expires 90 days after that person last used the
-lesson. Without expiry, people who have left can hold a version in place.
+A position does not expire. *Proposal:* a position counts only while its
+person is a member of the org, so people who have left do not hold a version
+in place. That is a membership rule, not a time limit.
 
 ## 7. Using lessons in a run
 
@@ -157,7 +166,7 @@ At the start of a turn the host adds a lessons section to the prompt, next to
 the memory section, built the way `memoryPromptContext` builds its own:
 
 1. Embed the user's message.
-2. Take the active lessons closest to it, at most five.
+2. Take the active lessons closest to it (see "Selection" below).
 3. Drop any lesson that names a table this person cannot query.
 4. Add them to the prompt as known-good starting points, each with its id.
 5. Record a `dream_lesson_use` row per lesson offered.
@@ -173,41 +182,65 @@ definition can see why the number differs.
 The host adds lessons to the prompt; the agent does not search for them. That
 is reliable, and it gives the eval one switch to turn off for the twin.
 
+**Selection.** The store has no cap, so a large org may hold many thousands
+of lessons. A turn cannot carry them all, and most have nothing to do with
+the question asked. So each turn takes only the lessons closest to its
+question. This is a choice by relevance to one question, made fresh each
+turn. It never removes a lesson or ranks one above another in the store.
+*Proposal:* the closest five. The number is the one bound left in the
+design, and the scale case in the eval tests it.
+
 ## 8. Repair with no person
+
+A lesson is removed for one of two reasons only: people corrected it, or the
+source no longer matches it.
 
 | Event | Effect |
 |---|---|
-| A query built on a lesson fails | The use is marked `failed` at once; the next pass retires the lesson |
 | A person corrects an answer that used a lesson | The use is marked `corrected`; the next pass recounts the group |
-| The catalog revision changes | Lessons naming a changed or missing table are retired by the next pass |
-| A lesson goes 90 days unused | It is retired |
+| A query built on a lesson fails | The host checks the lesson against the source (below) |
+| The catalog revision changes | The next pass checks every lesson that names a changed or missing table |
 | A retired lesson is proposed again from runs older than its retirement | Rejected |
 
-A `failed` mark takes the lesson out of the prompt before the next pass runs,
-so one schema change costs one failed call, not one per run until the pass.
+**Why a failure alone does not retire a lesson.** A query can fail because
+the person asking has no access to a table: someone outside HR asking an HR
+question. The lesson is still right for the people who do have access.
 
-## 9. Unattended runs *(proposal)*
+So when a query built on a lesson fails, the host checks the lesson itself,
+not the person's result: it validates the lesson's query against the current
+catalog under the service identity.
 
-Scheduled workflows and metric refreshes have no thread, so nobody corrects
-them.
+| Check result | Meaning | Effect |
+|---|---|---|
+| The lesson still validates | The failure was this person's access, or a passing fault | The lesson stays. The use is marked `failed_access` and counts for nothing |
+| The lesson no longer validates | The source changed | The lesson leaves the prompt at once and the next pass retires it |
 
-- `query`, `schema_fact` and `dead_end` lessons are used in unattended runs.
-  A wrong one fails loudly and is retired.
-- A `business_rule` lesson is used in an unattended run only after it has
-  been used in chat by at least one person who did not correct it. A wrong
-  one would change a number silently.
+The check reads the catalog, not the error text, so it does not depend on
+how a source words its errors.
 
-Unattended runs are read by the pass like any other: their failed and
-recovered calls teach `query`, `schema_fact` and `dead_end` lessons.
+Decision 7 means a person should seldom be offered a lesson they cannot use.
+The check covers the cases where the filter is wrong or access changed
+between the filter and the call.
 
-## 10. Cost and limits
+## 9. Unattended runs
+
+Scheduled workflows and metric refreshes use every kind of lesson, as chat
+does. The pass reads them like any other run, and their failed and recovered
+calls teach lessons.
+
+They have no thread, so nobody corrects them there. A wrong business rule in
+an unattended run is fixed when someone corrects the same question in chat,
+and the recount then applies to the unattended run too.
+
+## 10. Cost and scale
 
 - The pass is a host call, so it writes a `spend_ledger` row under the
   `dreaming` task.
-- *Proposal:* a pass reads at most 200 settled runs; the rest wait for the
-  next pass. One org has at most 2,000 active lessons; past that, the least
-  recently used are retired.
-- Five lessons per turn bounds the added prompt tokens.
+- There is no cap on lessons per org or on runs per pass. A pass reads every
+  settled run since its watermark, in batches, until none is left.
+- What keeps a large org workable is selection (§7): the cost of a turn
+  depends on how many lessons it takes, not on how many the org holds. The
+  lesson search needs an index that stays fast as the store grows.
 
 ## 11. What it does not do
 
@@ -226,19 +259,23 @@ Each step ends with named eval cases passing. The cases are written first.
 | 0 | Nothing. Measure failed and repeated GraphJin calls per run today | The baseline number |
 | 1 | `dream_lesson`, `dream_lesson_use`, prompt injection, the access filter | Delivery cases with seeded lessons: `l04`, `l30`, `l31` |
 | 2 | Extraction, the `dreaming` task, the pass for `query`, `schema_fact`, `dead_end`, the gates | `l01` to `l03`, `l20` to `l22`, `l34` |
-| 3 | Failure marks, catalog-revision retirement | `l32` |
+| 3 | The source check on failure, catalog-revision retirement | `l32`, `l35` |
 | 4 | Follow-up classification, `business_rule`, `dream_position`, counting | `l10` to `l17`, `l33` |
-| 5 | Limits, expiry, unattended-run rule | `l40`, the provider tier, the skill-lessons comparison |
+| 5 | Batching, the lesson search index at scale | `l40`, `l41`, the provider tier, the skill-lessons comparison |
 
 ## 13. Open questions
 
 1. **Table access check.** §7 step 3 needs the set of tables a person's role
    can query. How to read that from GraphJin per role has not been verified.
-2. **Position expiry**, **unattended runs** and the **limits** above are
-   proposals.
-3. **Delay.** A correction reaches other people at the next pass, at least
+2. **Service-identity validation.** §8 needs the host to validate a query
+   against the catalog without running it for the person. Whether GraphJin
+   offers that for a whole query has not been verified.
+3. **Members only.** Whether positions of people who left the org still
+   count (§6) is a proposal.
+4. **Lessons per turn.** Five is a proposal (§7).
+5. **Delay.** A correction reaches other people at the next pass, at least
    two hours later. Whether a correction should trigger a pass for that
    thread sooner is undecided.
-4. **Question shapes.** Matching by embedding alone may merge two questions
+6. **Question shapes.** Matching by embedding alone may merge two questions
    that differ in one word ("gross" and "net"). `l12` tests this; the fix may
    need the model to confirm a match.

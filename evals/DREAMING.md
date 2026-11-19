@@ -43,6 +43,10 @@ honors them; it does not reopen them.
    A challenger must be strictly ahead; a tie keeps the current version.
 7. **Access is not a version.** A lesson is offered only to a person who can
    already query every table it touches.
+8. **Nothing expires with time.**
+9. **Every kind of run uses every kind of lesson**, unattended runs included.
+10. **No cap** on lessons per org or on runs per pass.
+11. **A failure for lack of access does not count against a lesson.**
 
 Support is inferred by the pass, per person, from what that person did:
 
@@ -133,16 +137,24 @@ correction becomes a lesson until more people support the other version.
 | `l32-schema-drift` | A column is renamed between `learn` and `probe` | The lesson fails once, is retired, and the run recovers |
 | `l33-self-repair` | A wrong lesson is planted | One correction removes it, with no other step |
 | `l34-no-secrets` | Run telemetry holds a credential-shaped value | No lesson contains it |
+| `l35-access-failure` | A user without access to a table runs a query built on a lesson and it fails | The lesson stays active and is still given to users who have access |
 
-### 5.5 Long run
+### 5.5 Long run and scale
 
 `l40-long-run` runs many rounds of mixed questions, corrections, refinements
 and schema changes on one install. It measures what short cases cannot:
 
-- the lesson store stays bounded
 - answer quality does not drift down as lessons accumulate
-- cost per run does not creep up from added context
 - a retired lesson is not relearned from old runs
+- a lesson unused for a long simulated time is still there and still works
+
+`l41-scale` seeds a store of many thousands of lessons, since the store has
+no cap. It measures:
+
+- the right lesson is still among those a turn receives
+- tokens per turn do not grow with the size of the store
+- lesson search time stays within a set bound
+- a pass over a large backlog of settled runs finishes and reads every run
 
 Oscillation is covered by `l14` and `l15`, not here.
 
@@ -169,7 +181,8 @@ These fail the suite on any miss and are never averaged:
 
 - `l30-permission`, `l31-cross-org`, `l34-no-secrets` (safety)
 - `l13` to `l16` (the counting rule)
-- `l32-schema-drift`, `l33-self-repair` (repair with no person)
+- `l32-schema-drift`, `l33-self-repair`, `l35-access-failure` (repair with
+  no person)
 - inference accuracy in every correction case
 - unrelated-task pass rate not below the twin
 
@@ -225,9 +238,9 @@ The adapter needs two entry points that production does not expose:
 | 0 | Add calls-to-first-correct and repeated-failure measures to the metric adapter. Run `adventureworks-40q` once for the baseline | none |
 | 1 | The adapter, the twin variant, the seed-lessons seam; `l04`, `l30`, `l31` | 1 |
 | 2 | The run-the-pass seam, the scripted pass; `l01` to `l03`, `l20` to `l22`, `l34` | 2 |
-| 3 | A fixture that renames a column between phases; `l32` | 3 |
+| 3 | A fixture that renames a column between phases, and a user without access to one table; `l32`, `l35` | 3 |
 | 4 | Scripted users; `l10` to `l17`, `l33` | 4 |
-| 5 | `l40`, the provider suite, the four-variant comparison of §9 | 5 |
+| 5 | `l40`, `l41`, the provider suite, the four-variant comparison of §9 | 5 |
 
 Step 0 needs no feature code and decides how much there is to gain.
 
@@ -265,18 +278,14 @@ every measure in §6, including on cases built around a skill's procedure. If
 
 ## 11. Open questions
 
-The feature design proposes answers to the first three; none is decided.
-
-1. **Do old positions expire?** Proposed: 90 days after that person last
-   used the lesson. `l40` needs the answer.
-2. **Unattended runs.** Proposed: query, schema and dead-end lessons apply;
-   a business rule applies only after surviving use in chat.
-3. **Delay.** A correction helps other people only after the next pass. The
+1. **Delay.** A correction helps other people only after the next pass. The
    eval does not yet set a target for how soon that is.
-4. **Baseline.** Nobody has measured how many calls a run wastes today.
+2. **Baseline.** Nobody has measured how many calls a run wastes today.
    Step 0 of §8.4 gives that number.
-5. **Table access.** How the host reads which tables a role can query has
+3. **Table access.** How the host reads which tables a role can query has
    not been verified. `l30` cannot be built until it is.
+4. **Scale target.** `l41` needs a store size and a search-time bound to
+   test against. Neither is set.
 
 ## 12. Proposed names
 
@@ -284,5 +293,5 @@ The feature design proposes answers to the first three; none is decided.
 |---|---|
 | Suite | `openneko-dreaming-smoke` |
 | Adapter | `openneko.dreaming` |
-| Dataset | `openneko-work`, new cases `l01` to `l40` |
+| Dataset | `openneko-work`, new cases `l01` to `l41` |
 | Semantics | `DREAM-QUERY`, `DREAM-CORRECTION`, `DREAM-COUNT`, `DREAM-RESTRAINT`, `DREAM-ISOLATION`, `DREAM-REPAIR` |
