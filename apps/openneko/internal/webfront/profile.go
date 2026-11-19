@@ -25,10 +25,10 @@ func (a *API) researchOff(ctx context.Context, orgID string) (bool, error) {
 }
 
 type profileAnswer struct {
-	BusinessProfile        string `json:"businessProfile"`
-	IndustryInsights       string `json:"industryInsights"`
-	CompanyNote            string `json:"companyNote"`
-	IndustryInsightsStatus string `json:"industryInsightsStatus"`
+	BusinessProfile        string   `json:"businessProfile"`
+	IndustryInsights       string   `json:"industryInsights"`
+	CompanyNote            string   `json:"companyNote"`
+	IndustryInsightsStatus string   `json:"industryInsightsStatus"`
 	StarterQuestions       []string `json:"starterQuestions,omitempty"`
 }
 
@@ -62,7 +62,7 @@ func (a *API) profileGet(w http.ResponseWriter, r *http.Request) {
 	}
 	out := profileAnswer{BusinessProfile: deref(business), IndustryInsights: deref(insights), CompanyNote: deref(note)}
 	if _, questions := splitProfileQuestions(out.BusinessProfile); len(questions) > 0 {
-		out.StarterQuestions = questions[:min(len(questions), 4)]
+		out.StarterQuestions = questions[:min(len(questions), 3)]
 	}
 	switch {
 	case out.IndustryInsights != "":
