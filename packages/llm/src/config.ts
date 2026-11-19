@@ -76,7 +76,7 @@ export function getDefaultPrimaryModel(provider: PrimaryProviderId): string {
     case "anthropic":
       return "claude-opus-4-7";
     case "google-gemini":
-      return "gemini-3.6-flash";
+      return "gemini-3.8-flash";
     case "azure-openai":
       return "gpt-4.1";
     case "mistral":
