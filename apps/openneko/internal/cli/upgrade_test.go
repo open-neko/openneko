@@ -256,3 +256,10 @@ func stubComposeProjects(t *testing.T, running, all []string) {
 		return running, nil
 	}
 }
+
+func TestUpgradeMaintenanceRemovesDroppedServices(t *testing.T) {
+	want := []string{"down", "--remove-orphans"}
+	if got := upgradeMaintenanceArgs(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("upgradeMaintenanceArgs() = %v, want %v", got, want)
+	}
+}
