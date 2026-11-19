@@ -228,9 +228,10 @@ func restartUpgradedStack(ctx context.Context, sup *compose.Supervisor, project 
 	// Enter a real maintenance boundary before replacing the database image.
 	// Without this, old web/GraphJin containers can reconnect in the window
 	// between Postgres becoming healthy and the storage-reconcile step
-	// acquiring its locks. Stopping the whole project is intentionally simple:
-	// no database consumer can be omitted as the service graph evolves.
-	if code, err := sup.Run(ctx, project, files, []string{"stop"}, os.Stdout, os.Stderr); err != nil {
+	// acquiring its locks. Remove every container of the project, including
+	// services that the new compose file no longer names: a release can drop
+	// a service, and a plain stop leaves that service running on the database.
+	if code, err := sup.Run(ctx, project, files, upgradeMaintenanceArgs(), os.Stdout, os.Stderr); err != nil {
 		return err
 	} else if code != 0 {
 		return WithExit(code, fmt.Errorf("failed to enter upgrade maintenance mode"))
@@ -252,6 +253,10 @@ func restartUpgradedStack(ctx context.Context, sup *compose.Supervisor, project 
 // then run with --pull never.
 func upgradePullArgs() []string {
 	return []string{"--profile", "steps", "pull"}
+}
+
+func upgradeMaintenanceArgs() []string {
+	return []string{"down", "--remove-orphans"}
 }
 
 func upgradeStackUpArgs() []string {
