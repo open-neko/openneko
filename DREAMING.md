@@ -156,9 +156,9 @@ still tied, the current active version stays.
 The first correction of a lesson nobody has corrected is 1 to 0, so it takes
 effect for the org at the next pass.
 
-A position does not expire. *Proposal:* a position counts only while its
-person is a member of the org, so people who have left do not hold a version
-in place. That is a membership rule, not a time limit.
+A position does not expire and is never removed for any reason but its own
+person changing it. If people who have left hold an outdated version in
+place, the people who are there now correct it.
 
 ## 7. Using lessons in a run
 
@@ -270,12 +270,10 @@ Each step ends with named eval cases passing. The cases are written first.
 2. **Service-identity validation.** §8 needs the host to validate a query
    against the catalog without running it for the person. Whether GraphJin
    offers that for a whole query has not been verified.
-3. **Members only.** Whether positions of people who left the org still
-   count (§6) is a proposal.
-4. **Lessons per turn.** Five is a proposal (§7).
-5. **Delay.** A correction reaches other people at the next pass, at least
+3. **Lessons per turn.** Five is a proposal (§7).
+4. **Delay.** A correction reaches other people at the next pass, at least
    two hours later. Whether a correction should trigger a pass for that
    thread sooner is undecided.
-6. **Question shapes.** Matching by embedding alone may merge two questions
+5. **Question shapes.** Matching by embedding alone may merge two questions
    that differ in one word ("gross" and "net"). `l12` tests this; the fix may
    need the model to confirm a match.
