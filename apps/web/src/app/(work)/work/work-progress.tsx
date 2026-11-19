@@ -33,7 +33,7 @@ export function ProviderProgress({
       <Disclosure title={<span className="font-normal text-text2">{progressPreview(content)}</span>} meta="Progress" className="work-progress-disclosure">
         <div className="work-markdown px-3.5 pb-3">
           <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>
-            {linkifyWorkspacePaths(readableTrace(content))}
+            {linkifyWorkspacePaths(noteBody(content))}
           </ReactMarkdown>
         </div>
       </Disclosure>
@@ -51,12 +51,18 @@ export function ProviderProgress({
         <span className="work-progress-summary-label">Progress</span>
         <div className="work-markdown">
           <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>
-            {linkifyWorkspacePaths(readableTrace(content))}
+            {linkifyWorkspacePaths(content)}
           </ReactMarkdown>
         </div>
       </div>
     </div>
   );
+}
+
+/** A note without its heading line, which the collapsed row already shows. */
+function noteBody(content: string): string {
+  const lines = content.trim().split("\n");
+  return /^\s*(\*\*.+\*\*|#{1,6}\s.+)\s*$/.test(lines[0]) ? lines.slice(1).join("\n").trim() : content;
 }
 
 type ProgressSection = { heading: string; detail: string };
