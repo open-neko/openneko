@@ -47,7 +47,7 @@ describe("getDefaultPrimaryModel", () => {
   });
 
   it("uses Gemini 3.6 Flash for Google Gemini", () => {
-    expect(getDefaultPrimaryModel("google-gemini")).toBe("gemini-3.6-flash");
+    expect(getDefaultPrimaryModel("google-gemini")).toBe("gemini-3.8-flash");
   });
 });
 

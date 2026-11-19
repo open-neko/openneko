@@ -32,7 +32,7 @@ func TestAdminModelsKeySealedAndMasked(t *testing.T) {
 
 	got := decode(t, call(f, "GET", "/api/v1/admin/models", "", admin))
 	dm := got["defaultModel"].(map[string]any)
-	if dm["provider"] != "google-gemini" || dm["model"] != "gemini-3.6-flash" || dm["source"] != "default" {
+	if dm["provider"] != "google-gemini" || dm["model"] != "gemini-3.8-flash" || dm["source"] != "default" {
 		t.Errorf("default model with no provider row: %v", dm)
 	}
 	if routes := got["routes"].([]any); len(routes) != 8 || routes[0].(map[string]any)["task"] != "default" || routes[0].(map[string]any)["modelId"] != nil {

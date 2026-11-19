@@ -44,7 +44,7 @@ var PrimaryProviders = []ProviderOption{
 var defaultModels = map[string]string{
 	"openai":            "gpt-4.1-mini",
 	"anthropic":         "claude-opus-4-7",
-	"google-gemini":     "gemini-3.6-flash",
+	"google-gemini":     "gemini-3.8-flash",
 	"azure-openai":      "gpt-4.1",
 	"mistral":           "mistral-large-latest",
 	"groq":              "llama-3.3-70b-versatile",
