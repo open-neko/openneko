@@ -106,14 +106,18 @@ func agentCorrectionPrompt(base, rejected, reason string) string {
 
 var jobLabelUnsafe = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
 
-// isolatedJobWorkspace is ensureIsolatedJobWorkspace(): an empty tree, so the
-// job never sees member memories, uploads or earlier runs.
+// isolatedJobWorkspace is ensureIsolatedJobWorkspace(): an empty tree in the
+// folder shared with serve, so the job never sees member memories, uploads or
+// earlier runs.
 func isolatedJobWorkspace(label string) (agentWorkspace, func(), error) {
 	safe := jsSlice(jobLabelUnsafe.ReplaceAllString(label, "_"), 48)
 	if safe == "" {
 		safe = "job"
 	}
-	root, err := os.MkdirTemp("", "openneko-agent-"+safe+"-")
+	if err := os.MkdirAll(agentRunsRoot(), 0o755); err != nil {
+		return agentWorkspace{}, nil, err
+	}
+	root, err := os.MkdirTemp(agentRunsRoot(), "openneko-agent-"+safe+"-")
 	if err != nil {
 		return agentWorkspace{}, nil, err
 	}
