@@ -107,6 +107,7 @@ type workPromptInput struct {
 	CurrentUserMessage        string           `json:"currentUserMessage"`
 	PriorSummary              string           `json:"priorSummary"`
 	MemoryContext             string           `json:"memoryContext"`
+	Business                  string           `json:"business"`
 	OperatorProfile           string           `json:"operatorProfile"`
 	InstalledSkills           []installedSkill `json:"installedSkills"`
 	WantsCards                bool             `json:"wantsCards"`
@@ -174,6 +175,7 @@ func buildWorkPrompt(in workPromptInput) string {
 		dataAccessSection(in.Knowledge, false, in.ScriptData),
 		section("conduct", "date_rule", section("date_rule")),
 		closing,
+		in.Business,
 		in.OperatorProfile,
 		bot,
 		section("workspace", "orgRoot", ws.OrgRoot, "skillsRoot", ws.SkillsRoot, "memoryRoot", ws.MemoryRoot,

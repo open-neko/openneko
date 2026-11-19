@@ -148,6 +148,10 @@ func (a *API) loadTurnContext(ctx context.Context, o turnOptions) (*turnContext,
 	if err != nil {
 		return nil, err
 	}
+	business, err := a.currentBusinessProfile(ctx, o.OrgID)
+	if err != nil {
+		return nil, err
+	}
 	terminal, err := a.orgTerminal(ctx, o.OrgID)
 	if err != nil {
 		return nil, err
@@ -185,6 +189,7 @@ func (a *API) loadTurnContext(ctx context.Context, o turnOptions) (*turnContext,
 			CurrentUserMessage:        o.Message,
 			PriorSummary:              summary,
 			MemoryContext:             memory,
+			Business:                  businessSection(business),
 			OperatorProfile:           operatorProfileSection(profile),
 			InstalledSkills:           skills,
 			WantsCards:                wantsCards,
