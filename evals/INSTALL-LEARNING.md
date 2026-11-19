@@ -56,7 +56,7 @@ One person counts once per lesson, by their most recent position.
 
 ## 3. What a lesson is
 
-The pass learns three kinds of lesson from runs that failed and then
+The pass learns four kinds of lesson from runs that failed and then
 recovered, and from corrected threads:
 
 | Lesson | Example | Effect on the next run |
