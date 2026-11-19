@@ -29,6 +29,7 @@ type profileAnswer struct {
 	IndustryInsights       string `json:"industryInsights"`
 	CompanyNote            string `json:"companyNote"`
 	IndustryInsightsStatus string `json:"industryInsightsStatus"`
+	StarterQuestions       []string `json:"starterQuestions,omitempty"`
 }
 
 func (a *API) profileGet(w http.ResponseWriter, r *http.Request) {
@@ -60,6 +61,9 @@ func (a *API) profileGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := profileAnswer{BusinessProfile: deref(business), IndustryInsights: deref(insights), CompanyNote: deref(note)}
+	if _, questions := splitProfileQuestions(out.BusinessProfile); len(questions) > 0 {
+		out.StarterQuestions = questions[:min(len(questions), 4)]
+	}
 	switch {
 	case out.IndustryInsights != "":
 		out.IndustryInsightsStatus = "ready"
