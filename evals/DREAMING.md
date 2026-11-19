@@ -1,4 +1,4 @@
-# Evaluating install learning
+# Evaluating Dreaming
 
 > **STATUS — 2026-11-19: design only.** Neither the feature nor the suite
 > exists. This document fixes what the eval must measure so that the feature
@@ -7,7 +7,7 @@
 
 ## 1. What is being evaluated
 
-**Install learning** is the proposed way for one OpenNeko install to get
+**Dreaming** is the proposed way for one OpenNeko install to get
 better at its own recurring work with no person in the loop.
 
 Today each turn starts cold on data. The agent gets the GraphJin tools
@@ -17,7 +17,7 @@ an identical call after it fails twice
 (`apps/ax-harness/internal/agent/failed_calls.go`), but that record lasts one
 run. The next similar run makes the same failing calls before it recovers.
 
-Install learning adds a background **learning pass**. It reads the telemetry
+Dreaming adds a background **learning pass**. It reads the telemetry
 of finished runs and threads, and writes or retires **lessons** for the org.
 A later run on a similar question starts from those lessons.
 
@@ -195,17 +195,17 @@ per-install learning that ships today. They learn additive procedure text for
 one skill after five settled uses, and they are off until an org turns them
 on. No eval case exercises them.
 
-Install learning may make them redundant. The eval tests that as a variant
+Dreaming may make them redundant. The eval tests that as a variant
 comparison on the same cases:
 
-| Variant | Skill lessons | Install learning |
+| Variant | Skill lessons | Dreaming |
 |---|---|---|
 | `neither` | off | off |
 | `skill-lessons` | on | off |
-| `install-learning` | off | on |
+| `dreaming` | off | on |
 | `both` | on | on |
 
-Skill lessons are redundant if `install-learning` matches or beats `both` on
+Skill lessons are redundant if `dreaming` matches or beats `both` on
 every measure in §6, including on cases built around a skill's procedure. If
 `both` wins on those cases, skill lessons keep a job.
 
@@ -242,7 +242,7 @@ every measure in §6, including on cases built around a skill's procedure. If
 
 | Kind | Name |
 |---|---|
-| Suite | `openneko-install-learning-smoke` |
-| Adapter | `openneko.install-learning` |
+| Suite | `openneko-dreaming-smoke` |
+| Adapter | `openneko.dreaming` |
 | Dataset | `openneko-work`, new cases `l01` to `l40` |
-| Semantics | `LEARN-QUERY`, `LEARN-CORRECTION`, `LEARN-COUNT`, `LEARN-RESTRAINT`, `LEARN-ISOLATION`, `LEARN-REPAIR` |
+| Semantics | `DREAM-QUERY`, `DREAM-CORRECTION`, `DREAM-COUNT`, `DREAM-RESTRAINT`, `DREAM-ISOLATION`, `DREAM-REPAIR` |
