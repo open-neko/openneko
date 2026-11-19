@@ -1,7 +1,7 @@
 # Evaluating Dreaming
 
 > **STATUS — 2026-11-19: design only.** Neither the feature nor the suite
-> exists. This document fixes what the eval must measure so that the feature
+> exists. The feature design is in [DREAMING.md](../DREAMING.md). This document fixes what the eval must measure so that the feature
 > is built against it. Names marked *proposed* are not in the schemas or the
 > semantic registry yet.
 
@@ -177,16 +177,59 @@ With no reviewer, these gates are the only check on the feature. The
 improvement measures in §6 are scored and tracked, not gated, until a
 baseline exists.
 
-## 8. Tiers
+## 8. How the eval is built
 
-| Tier | Model | Purpose | Runs in |
+The eval is built with the feature, one step ahead of it. For each build step
+in [DREAMING.md](../DREAMING.md) §12, the cases are written first and fail,
+then the feature code makes them pass.
+
+### 8.1 Three levels of test
+
+| Level | Tests | Model | Runs in |
 |---|---|---|---|
-| Deterministic | Scripted agent and scripted learning pass | The plumbing: phases, counting, retirement, isolation | CI, no provider |
-| Provider | Real agent and real pass, about ten cases, three repetitions | Whether the lessons a model writes help | On approval, with a budget |
+| Go unit tests | Pure rules: extraction from an event list, the counting rule, the gates, the access filter | none | `go test`, every commit |
+| Deterministic suite | The product path end to end on an eval install: phases, twin, isolation, repair | scripted agent, scripted learning pass | CI, no provider |
+| Provider suite | Whether lessons a real model writes help a real agent. About ten cases, three repetitions | real agent, real pass | on approval, with a budget |
 
-The deterministic tier lands first. It follows `openneko-work-memory-smoke`:
-its own adapter, one eval install per phase, a fixed clock for any settlement
-wait.
+The counting rule and the gates are pure functions, so most of §5.2 and §5.3
+is checked exhaustively in unit tests. The suite cases then prove the same
+rules hold through the product path.
+
+### 8.2 The two seams
+
+The adapter needs two entry points that production does not expose:
+
+- **Seed lessons.** Write lessons straight into the store. This tests
+  delivery (injection, the access filter, cross-org isolation) before the
+  learning pass exists, and it plants the wrong lesson for `l33`.
+- **Run the pass now.** Call the learning pass on an eval install with a
+  fixed clock, so no case waits for the settlement period.
+
+### 8.3 Scripting
+
+- **The agent** is scripted per phase: in `baseline` it issues the planted
+  failing query, then the working one; in `probe` it issues whatever the
+  prompt's lessons section gives it, or the failing query when there is none.
+  The failing query really fails, against the frozen AdventureWorks GraphJin.
+- **The users** are scripted follow-up messages posted to the thread, each
+  under its own user, for the `correct` phase.
+- **The learning pass's model call** is scripted in the deterministic suite:
+  it returns the classification and the proposed lessons the case expects a
+  correct model to return. This tests everything around the model. Only the
+  provider suite tests the model's own judgement.
+
+### 8.4 Order
+
+| Step | Eval work | Feature step it gates |
+|---|---|---|
+| 0 | Add calls-to-first-correct and repeated-failure measures to the metric adapter. Run `adventureworks-40q` once for the baseline | none |
+| 1 | The adapter, the twin variant, the seed-lessons seam; `l04`, `l30`, `l31` | 1 |
+| 2 | The run-the-pass seam, the scripted pass; `l01` to `l03`, `l20` to `l22`, `l34` | 2 |
+| 3 | A fixture that renames a column between phases; `l32` | 3 |
+| 4 | Scripted users; `l10` to `l17`, `l33` | 4 |
+| 5 | `l40`, the provider suite, the four-variant comparison of §9 | 5 |
+
+Step 0 needs no feature code and decides how much there is to gain.
 
 ## 9. Relation to skill lessons
 
@@ -211,32 +254,29 @@ every measure in §6, including on cases built around a skill's procedure. If
 
 ## 10. What the adapter needs
 
-- A learning-pass entry point the eval can call directly on an eval install.
-- A variant setting that turns the pass off for the twin.
-- Per-run telemetry of each GraphJin call, its error and its order. The
-  summary schema has `repeatedToolCalls`; what it counts has not been checked
-  against the repeated-failure measure.
-- A scripted user that posts follow-ups in a thread, for the `correct` phase.
-- A read of the lesson store and of the inferred positions, for `learn`.
+- The seed-lessons and run-the-pass seams of §8.2.
+- A variant setting that turns Dreaming off for the twin.
+- Per-run GraphJin calls with their errors and order. These are in
+  `work_run_event` (`tool_start` and `tool_end`). The summary schema has
+  `repeatedToolCalls`; what it counts has not been checked against the
+  repeated-failure measure.
+- A read of the lesson store, the positions and the pass record, for `learn`.
 - Two users with different table access in one org, for `l30`.
 
 ## 11. Open questions
 
-1. **Do old positions expire?** Without expiry, people who have left can
-   outnumber the current team and a version cannot be overturned. The
-   proposal is that a position ages out after a period in which that person
-   has not used the lesson. `l40` needs the answer.
-2. **How does a run receive lessons?** Host injection of the closest matches
-   gives the twin a clean switch and is the working assumption. Agent-side
-   search is the alternative; the agent may not look.
-3. **Unattended runs.** Scheduled workflows and metric refreshes have no
-   thread, so they produce no corrections. Whether they may use a lesson that
-   has not yet survived use in chat is undecided.
-4. **Delay.** A correction helps other people only after the next pass. The
+The feature design proposes answers to the first three; none is decided.
+
+1. **Do old positions expire?** Proposed: 90 days after that person last
+   used the lesson. `l40` needs the answer.
+2. **Unattended runs.** Proposed: query, schema and dead-end lessons apply;
+   a business rule applies only after surviving use in chat.
+3. **Delay.** A correction helps other people only after the next pass. The
    eval does not yet set a target for how soon that is.
-5. **Baseline.** Nobody has measured how many calls a run wastes today.
-   Counting failed `execute_graphql` calls per run on `adventureworks-40q`
-   gives that number and the size of the possible gain.
+4. **Baseline.** Nobody has measured how many calls a run wastes today.
+   Step 0 of §8.4 gives that number.
+5. **Table access.** How the host reads which tables a role can query has
+   not been verified. `l30` cannot be built until it is.
 
 ## 12. Proposed names
 
