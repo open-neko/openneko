@@ -14,7 +14,7 @@ const describeIfDb = reachable ? describe : describe.skip;
 
 const PROGRAM = hostProgram(`question:string "a question" -> answer:string "the answer"`, "Answer it.");
 const PLANTED = "sk-planted-4f1e9c2a";
-const FALLBACK_PLANTED = "sk-fallback-planted-77b0";
+const FALLBACK_PLANTED = "sk-fallback-77b0";
 
 function fakeGateway(fallback = false) {
   const calls: Array<{ request: GatewayRequest; key: string; fallbackKey?: string }> = [];
