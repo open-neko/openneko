@@ -89,13 +89,29 @@ const dreamRules = `Rules:
 // DreamSweep runs the learning pass over every settled thread that has a
 // message newer than its last pass.
 func (a *API) DreamSweep(ctx context.Context) error {
-	return a.dreamSweep(ctx, time.Now().Add(-dreamSettlement), func(orgID, input string) (string, error) {
-		res, err := a.hostCalls().Generate(ctx, orgID, "dreaming", dreamProposer, map[string]any{"dreamInput": input})
+	_, err := a.DreamSweepAt(ctx, "", time.Now())
+	return err
+}
+
+// DreamSweepResult is what one sweep did.
+type DreamSweepResult struct {
+	At        string          `json:"at"`
+	Threads   int             `json:"threads"`
+	Decisions []dreamDecision `json:"decisions"`
+}
+
+// DreamSweepAt runs the sweep with the clock at now, for one org or, with no
+// org, for all.
+func (a *API) DreamSweepAt(ctx context.Context, orgID string, now time.Time) (DreamSweepResult, error) {
+	res := DreamSweepResult{At: now.UTC().Format(time.RFC3339), Decisions: []dreamDecision{}}
+	err := a.dreamSweep(ctx, orgID, now.Add(-dreamSettlement), &res, func(orgID, input string) (string, error) {
+		out, err := a.hostCalls().Generate(ctx, orgID, "dreaming", dreamProposer, map[string]any{"dreamInput": input})
 		if err != nil {
 			return "", err
 		}
-		return jsValueString(res.Outputs["dreamLessons"]), nil
+		return jsValueString(out.Outputs["dreamLessons"]), nil
 	})
+	return res, err
 }
 
 type dreamDueThread struct {
@@ -103,14 +119,15 @@ type dreamDueThread struct {
 	LastAt    time.Time
 }
 
-func (a *API) dreamSweep(ctx context.Context, settledBefore time.Time, propose func(orgID, input string) (string, error)) error {
+func (a *API) dreamSweep(ctx context.Context, orgID string, settledBefore time.Time, res *DreamSweepResult, propose func(orgID, input string) (string, error)) error {
 	for {
 		rows, err := a.DB.Query(ctx, `select t.id::text, t.org_id, max(m.created_at)
 			from work_thread t join work_message m on m.thread_id = t.id
+			where $3 = '' or t.org_id = $3
 			group by t.id, t.org_id
 			having max(m.created_at) < $1 and max(m.created_at) > coalesce(
 			  (select max(p.last_message_at) from dream_pass p where p.thread_id = t.id), '-infinity')
-			order by max(m.created_at) limit $2`, settledBefore, dreamThreadBatch)
+			order by max(m.created_at) limit $2`, settledBefore, dreamThreadBatch, orgID)
 		if err != nil {
 			return err
 		}
@@ -140,6 +157,8 @@ func (a *API) dreamSweep(ctx context.Context, settledBefore time.Time, propose f
 				note = passErr.Error()
 				log.Printf("[dreaming] org=%s thread=%s pass failed: %v", t.OrgID, t.ID, passErr)
 			}
+			res.Threads++
+			res.Decisions = append(res.Decisions, decisions...)
 			raw, _ := json.Marshal(decisions)
 			if decisions == nil {
 				raw = []byte("[]")

@@ -275,6 +275,14 @@ export type EvalInstallHostOptions = {
   lockWaitMs?: number;
 };
 
+interface DreamStoreLesson {
+  kind: string;
+  question_shape: string;
+  body: string;
+  state: string;
+  source_run_ids: string[];
+}
+
 export class EvalEpisode {
   readonly sessionSecret = randomBytes(32).toString("base64url");
   readonly modelKey = `eval-${randomBytes(12).toString("hex")}`;
@@ -610,9 +618,69 @@ export class EvalEpisode {
     return child;
   }
 
+  private async dreamClient<T>(use: (client: pg.Client) => Promise<T>): Promise<T> {
+    const client = new pg.Client({ ...this.host.login, database: this.database, ssl: false });
+    await client.connect();
+    try {
+      return await use(client);
+    } finally {
+      await client.end();
+    }
+  }
+
+  // Writes the lessons of the store file into every org of the episode.
+  async dreamSeed(): Promise<void> {
+    const file = process.env.OPENNEKO_EVAL_DREAM_STORE;
+    if (!file || !existsSync(file)) return;
+    const lessons = JSON.parse(await readFile(file, "utf8")) as DreamStoreLesson[];
+    if (lessons.length === 0) return;
+    await this.dreamClient(async (client) => {
+      await client.query(
+        `insert into dream_lesson (org_id, kind, question_shape, body, state, source_run_ids)
+         select o.id, l.kind, l.question_shape, l.body, l.state, l.source_run_ids::uuid[]
+         from organization o, jsonb_to_recordset($1::jsonb)
+           as l(kind text, question_shape text, body text, state text, source_run_ids text[])
+         where not exists (select 1 from dream_lesson d where d.org_id = o.id)`,
+        [JSON.stringify(lessons)],
+      );
+    });
+  }
+
+  // Runs the learning pass on the runs of the episode, with every thread
+  // settled, and writes the lessons of the org back to the store file.
+  async dreamLearn(): Promise<void> {
+    const file = process.env.OPENNEKO_EVAL_DREAM_STORE;
+    if (!file) return;
+    const orgId = await this.dreamClient(async (client) => {
+      const { rows } = await client.query<{ org_id: string }>(
+        `select org_id from work_run order by created_at desc limit 1`,
+      );
+      return rows[0]?.org_id;
+    });
+    if (!orgId) return;
+    await this.dreamSeed();
+    const result = await this.jobsRun("dream_sweep", orgId, new Date(Date.now() + 24 * 3600 * 1000));
+    const lessons = await this.dreamClient(async (client) => {
+      const { rows } = await client.query<DreamStoreLesson>(
+        `select kind, question_shape, body, state, source_run_ids::text[] as source_run_ids
+         from dream_lesson where org_id = $1 and state in ('active', 'candidate') order by created_at, id`,
+        [orgId],
+      );
+      return rows;
+    });
+    await writeFile(file, JSON.stringify(lessons, null, 1));
+    await writeFile(`${file}.log`, `${JSON.stringify({ database: this.database, result })}\n`, { flag: "a" });
+  }
+
   async stop(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
+    if (process.env.OPENNEKO_EVAL_DREAM_MODE === "learn" && this.web && this.serve) {
+      await this.dreamLearn().catch(async (cause) => {
+        const file = process.env.OPENNEKO_EVAL_DREAM_STORE;
+        if (file) await writeFile(`${file}.log`, `${JSON.stringify({ database: this.database, error: String(cause) })}\n`, { flag: "a" });
+      });
+    }
     await Promise.allSettled([stopChild(this.web), stopChild(this.serve)]);
     await this.events?.end();
     await this.deactivate();
@@ -782,6 +850,7 @@ export class EvalInstallHost {
       );
       if (options.org) await this.createOrg(database, options.org);
       await episode.start(options);
+      if (process.env.OPENNEKO_EVAL_DREAM_MODE === "use") await episode.dreamSeed();
       return episode;
     } catch (cause) {
       await episode.stop().catch(() => {});

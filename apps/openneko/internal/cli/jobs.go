@@ -15,7 +15,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 )
 
-var jobRunKinds = []string{jobs.KindCronSweep}
+var jobRunKinds = []string{jobs.KindCronSweep, jobs.KindDreamSweep}
 
 func newJobsCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -39,6 +39,9 @@ Kinds:
   workflow_cron_sweep  the behavior thresholds, then the condition watchers.
                        A watcher that fires queues its workflow on the
                        River workflow_run_fire job, as the minute job does.
+  dream_sweep          the Dreaming learning pass over the settled threads
+                       of the organization. A thread is settled two hours
+                       after its last message, by the clock of the job.
 
 --at sets the clock of the job (RFC 3339, default now). Use it to rerun a
 sweep for a past minute.`,
@@ -75,12 +78,19 @@ sweep for a past minute.`,
 			}
 			secretsDir := config.Dir("")
 			api := &webfront.API{Gate: &webfront.Gate{SecretsDir: secretsDir, DB: pool}, DB: pool, SecretsDir: secretsDir, Jobs: inserter}
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			if kind == jobs.KindDreamSweep {
+				res, runErr := api.DreamSweepAt(ctx, orgID, now)
+				if err := enc.Encode(res); err != nil {
+					return err
+				}
+				return runErr
+			}
 			res, runErr := api.CronSweepAt(ctx, orgID, now)
 			if runErr != nil && res.At == "" {
 				return runErr
 			}
-			enc := json.NewEncoder(cmd.OutOrStdout())
-			enc.SetIndent("", "  ")
 			if err := enc.Encode(res); err != nil {
 				return err
 			}

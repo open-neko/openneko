@@ -150,7 +150,7 @@ func TestDreamSweepLearnsFromASettledThreadOnce(t *testing.T) {
 		inputs = append(inputs, input)
 		return reply, nil
 	}
-	if err := a.dreamSweep(ctx, time.Now().Add(-dreamSettlement), propose); err != nil {
+	if err := a.dreamSweep(ctx, "", time.Now().Add(-dreamSettlement), &DreamSweepResult{}, propose); err != nil {
 		t.Fatal(err)
 	}
 	if len(inputs) != 1 {
@@ -201,7 +201,7 @@ func TestDreamSweepLearnsFromASettledThreadOnce(t *testing.T) {
 		}
 	}
 
-	if err := a.dreamSweep(ctx, time.Now().Add(-dreamSettlement), propose); err != nil || len(inputs) != 1 {
+	if err := a.dreamSweep(ctx, "", time.Now().Add(-dreamSettlement), &DreamSweepResult{}, propose); err != nil || len(inputs) != 1 {
 		t.Fatalf("a second sweep read the thread again: %d inputs, %v", len(inputs), err)
 	}
 
@@ -220,7 +220,7 @@ func TestDreamSweepLearnsFromASettledThreadOnce(t *testing.T) {
 	reply = `{"lessons":[
 		{"kind":"dead_end","question_shape":"columns of productcategory","call":"c5","text":"productcategory has no column totl.","same_as":"` + deadEnd + `"},
 		{"kind":"data_fact","question_shape":"ids of the product categories","call":"c6","text":"productcategory.productcategoryid: 3 Clothing, 4 Accessories.","same_as":"` + fact + `"}]}`
-	if err := a.dreamSweep(ctx, time.Now().Add(-dreamSettlement), propose); err != nil || len(inputs) != 2 {
+	if err := a.dreamSweep(ctx, "", time.Now().Add(-dreamSettlement), &DreamSweepResult{}, propose); err != nil || len(inputs) != 2 {
 		t.Fatalf("the thread with a new message was not read again: %d inputs, %v", len(inputs), err)
 	}
 	if !strings.Contains(inputs[1], "- id "+deadEnd+" · dead_end · columns of productcategory") {
