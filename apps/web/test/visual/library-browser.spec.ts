@@ -6,7 +6,7 @@ const date = "2026-09-01T00:00:00.000Z";
 test("large Library browsing, details and removal stay usable on desktop and phone", async ({ page }, testInfo) => {
   const removed = new Set<string>();
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.route("**/api/library?*", route => {
+  await page.route("**/api/v1/library?*", route => {
     const params = new URL(route.request().url()).searchParams;
     const q = params.get("q") ?? "";
     if (q === "server-error") return route.fulfill({ status: 503, json: { error: "Library could not be loaded. Try again." } });
@@ -21,7 +21,7 @@ test("large Library browsing, details and removal stay usable on desktop and pho
     }));
     return route.fulfill({ json: { total: matching.length, page: current, pageSize: 50, documents } });
   });
-  await page.route("**/api/library/documents/*", route => {
+  await page.route("**/api/v1/library/documents/*", route => {
     const docId = new URL(route.request().url()).pathname.split("/").pop()!;
     if (route.request().method() === "DELETE") {
       removed.add(docId);

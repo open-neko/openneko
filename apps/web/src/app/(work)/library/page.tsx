@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, FileText, Trash2, Upload } from "lucide-react";
 import type { LibraryDocument, LibraryPage } from "@neko/llm/work";
 import { LIBRARY_UPLOAD_ACCEPT } from "@neko/llm/library/formats";
@@ -36,6 +36,7 @@ export default function LibraryPage() {
 
 function LibraryBrowser() {
   const params = useSearchParams();
+  const router = useRouter();
   const q = params.get("q") ?? "";
   const selectedId = params.get("id");
   const listParams = new URLSearchParams(params.toString());
@@ -67,9 +68,9 @@ function LibraryBrowser() {
       if (value) next.set(key, value); else next.delete(key);
     }
     const href = `/library?${next}`;
-    if (replace) window.history.replaceState(null, "", href);
-    else window.history.pushState(null, "", href);
-  }, []);
+    if (replace) router.replace(href, { scroll: false });
+    else router.push(href, { scroll: false });
+  }, [router]);
   const refresh = useCallback(async () => { setError(null); setVersion(value => value + 1); }, []);
 
   useEffect(() => {
