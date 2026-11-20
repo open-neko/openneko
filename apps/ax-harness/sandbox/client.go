@@ -266,26 +266,41 @@ func (c *Client) Close() error {
 // Probe asks the sandbox to check the key, as checkSandbox() in
 // packages/llm/src/work/sandbox-service.ts does.
 func Probe(ctx context.Context, cfg Config) error {
+	_, err := ProbeEgress(ctx, cfg)
+	return err
+}
+
+// ProbeEgress is Probe that also returns the sandbox's egress state:
+// "closed" when its network has no route out, "open", or "unknown" when the
+// sandbox does not report it.
+func ProbeEgress(ctx context.Context, cfg Config) (string, error) {
 	httpClient, base, err := transport(cfg.URL)
 	if err != nil {
-		return err
+		return "", err
 	}
 	c := &Client{http: httpClient, base: base, key: cfg.Key}
 	res, err := c.request(ctx, http.MethodGet, "/v2/check", nil)
 	if err != nil {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return "", ctx.Err()
 		}
-		return fmt.Errorf("the sandbox did not answer")
+		return "", fmt.Errorf("the sandbox did not answer")
 	}
 	defer res.Body.Close()
 	switch res.StatusCode {
 	case http.StatusOK:
-		return nil
+		var body struct {
+			Egress string `json:"egress"`
+		}
+		_ = json.NewDecoder(io.LimitReader(res.Body, 4096)).Decode(&body)
+		if body.Egress != "closed" && body.Egress != "open" {
+			return "unknown", nil
+		}
+		return body.Egress, nil
 	case http.StatusUnauthorized:
-		return fmt.Errorf("the sandbox refused the key")
+		return "", fmt.Errorf("the sandbox refused the key")
 	case http.StatusNotFound:
-		return fmt.Errorf("the sandbox is older than this release; rebuild it from recipes/sandbox")
+		return "", fmt.Errorf("the sandbox is older than this release; rebuild it from recipes/sandbox")
 	}
-	return fmt.Errorf("the sandbox answered HTTP %d", res.StatusCode)
+	return "", fmt.Errorf("the sandbox answered HTTP %d", res.StatusCode)
 }
