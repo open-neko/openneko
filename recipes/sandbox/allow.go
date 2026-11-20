@@ -7,6 +7,8 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 const maxEgressHosts = 100
@@ -58,10 +60,28 @@ func parseEgressHost(entry string) (egressRule, error) {
 	}
 	wildcard := strings.HasPrefix(host, "*.")
 	name := strings.TrimSuffix(strings.TrimPrefix(host, "*."), ".")
-	if !validHostname(name) || wildcard && !strings.Contains(name, ".") {
+	if !validHostname(name) || wildcard && publicSuffix(name) {
 		return egressRule{}, bad
 	}
 	return egressRule{name: name, wildcard: wildcard, port: port}, nil
+}
+
+// publicSuffix is true for a name under which unrelated owners register
+// hosts: "co.uk", "github.io", and every single label.
+func publicSuffix(name string) bool {
+	suffix, _ := publicsuffix.PublicSuffix(name)
+	return suffix == name
+}
+
+// underWildcard keeps "*.name" inside one owner: a host matches only when
+// its registrable domain is name or a parent of name, so "*.amazonaws.com"
+// does not reach a host under the public suffix "s3.amazonaws.com".
+func underWildcard(host, name string) bool {
+	if !strings.HasSuffix(host, "."+name) || publicSuffix(name) {
+		return false
+	}
+	registered, err := publicsuffix.EffectiveTLDPlusOne(host)
+	return err == nil && (registered == name || strings.HasSuffix(name, "."+registered))
 }
 
 func validHostname(name string) bool {
@@ -101,7 +121,7 @@ func allows(rules []egressRule, host string, port int) bool {
 		if r.port != port {
 			continue
 		}
-		if r.wildcard && strings.HasSuffix(host, "."+r.name) || !r.wildcard && host == r.name {
+		if r.wildcard && underWildcard(host, r.name) || !r.wildcard && host == r.name {
 			return true
 		}
 	}
@@ -114,7 +134,7 @@ var nonPublic = func() []netip.Prefix {
 		"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12",
 		"192.0.0.0/24", "192.0.2.0/24", "192.88.99.0/24", "192.168.0.0/16", "198.18.0.0/15",
 		"198.51.100.0/24", "203.0.113.0/24", "224.0.0.0/4", "240.0.0.0/4",
-		"::/128", "::1/128", "::ffff:0:0/96", "64:ff9b::/96", "64:ff9b:1::/48", "100::/64",
+		"::/128", "::1/128", "::/96", "::ffff:0:0/96", "::ffff:0:0:0/96", "64:ff9b::/96", "64:ff9b:1::/48", "100::/64",
 		"2001::/32", "2001:db8::/32", "2002::/16", "fc00::/7", "fe80::/10", "fec0::/10", "ff00::/8",
 	} {
 		out = append(out, netip.MustParsePrefix(p))

@@ -85,7 +85,7 @@ func (s *Server) controlHandler() http.Handler {
 		s.mu.Lock()
 		found, ok := s.runs[req.Run]
 		var e runEgress
-		if ok {
+		if ok && s.live(found) {
 			e = found.egress
 		}
 		s.mu.Unlock()

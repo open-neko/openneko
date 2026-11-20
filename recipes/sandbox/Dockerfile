@@ -2,7 +2,7 @@
 
 FROM golang:1.26.10-bookworm AS build
 WORKDIR /src
-COPY go.mod *.go ./
+COPY go.mod go.sum *.go ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/openneko-sandbox .
 
 FROM node:24.22.1-bookworm-slim

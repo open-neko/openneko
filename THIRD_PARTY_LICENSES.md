@@ -80,7 +80,7 @@ OpenNeko's runtime dependencies are listed in the `package.json` and `go.mod` fi
 | `github.com/go-webauthn/webauthn` v0.18.2, `github.com/go-webauthn/x` | BSD-3-Clause | Checks passkey registration and approval in `openneko web` |
 | `github.com/fxamacker/cbor/v2`, `github.com/x448/float16` | MIT | Reads the CBOR of a passkey; linked by `go-webauthn` |
 | `github.com/tinylib/msgp`, `github.com/philhofer/fwd` | MIT | Linked by `go-webauthn` |
-| `golang.org/x/net` (`idna`) | BSD-3-Clause | Converts the host of an OpenAPI import URL to ASCII in `openneko web`; GraphJin already links it |
+| `golang.org/x/net` (`idna`, `publicsuffix`) | BSD-3-Clause | Converts the host of an OpenAPI import URL to ASCII in `openneko web`; refuses an egress wildcard on a public suffix in `openneko web` and in the sandbox image; GraphJin already links it |
 
 Run `pnpm licenses ls -P` from the repo root to see the full transitive list at a given snapshot.
 
