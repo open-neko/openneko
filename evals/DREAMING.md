@@ -389,7 +389,11 @@ into one conversation.
   messages have no single right answer and count for queries per message
   only.
 - **Scoring.** The assertion `answer.turn-values` passes a thread when every
-  message with an expectation holds one of its values and its names.
+  message with an expectation holds one of its values and its names. Its
+  diagnostic lists the result of each message, as `turns=pass,fail,none`.
+- **Per-message evidence.** The output of an episode holds `turnEvidence`:
+  for each message, the count of queries, the count of failed queries, and
+  the lessons that the prompt offered.
 - **Relative dates.** A period such as "last quarter" counts back from
   2025-06-29, the last order date of the frozen data.
 
@@ -398,6 +402,59 @@ and `dreaming-threads-afternoon` (74 messages).
 
 A small expected number, such as a team of 6, can match by chance. Five
 staff expectations have this weakness.
+
+### 5.12 The first thread day
+
+Run on 2026-11-20, one run for each condition, agent and pass on
+`gemini-3.8-flash`. The pass wrote 22 lessons from the 31 morning threads:
+7 queries, 5 data facts, 4 schema facts, and 6 candidates.
+
+The afternoon, 74 messages, scored with the corrected expectations below:
+
+| Measure | No lessons | With lessons |
+|---|---|---|
+| Queries per message | 4.51 | 4.16 |
+| Queries per first message (29) | 5.76 | 4.48 |
+| Queries per follow-up (45) | 3.71 | 3.96 |
+| Failed queries | 45 | 32 |
+| Messages with a failed query | 29 | 25 |
+| Correct messages | 51 of 53 | 49 of 53 |
+
+The lessons cut the queries of a first message by 22%. They gave no gain
+on a follow-up. The difference on all messages, 0.35, is inside the noise
+of one run, which was 0.4 on the question day.
+
+Four messages were wrong with lessons:
+
+- `t-w-stock-tool-crib`, message 1. The agent found the location and then
+  answered "no inventory" with no query on the inventory.
+- `t-w-customers-q1-2025`, message 1. The agent read 5,901 rows as no
+  buyers. The next message corrected it.
+- `t-w-category-components`, message 3. GraphJin failed with "column
+  salesorderdetail_0.specialofferid does not exist". The agent added the
+  column to the group, which split each product, and named the wrong top
+  product.
+- `t-r-reorder-recommend`, message 1. The agent left out the 72 products
+  with no stock record. It did the same with no lessons.
+
+None of the four answers used a wrong lesson. The first two are the same
+defect as on the question day: the agent misreads its own result.
+
+Corrections to the bank after this run:
+
+- Six threads failed in each run because of the expectation, not the
+  answer. The third message of a territory thread and the second message of
+  a vendor thread allowed two readings. Both now name the subject and the
+  year.
+- The count of products below the reorder point accepts 79, or the 72 with
+  no stock record, or the 76 with zero stock.
+- The top bike in Australia accepts the model name.
+- Vendor spend accepts the subtotal or the subtotal with tax and freight.
+
+What this run does not show:
+
+- Which messages got a lesson. The run came before `turnEvidence`.
+- The noise between runs. Each condition ran one time.
 
 ## 6. Measures
 

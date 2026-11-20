@@ -58,14 +58,20 @@ const PURCHASE_LINES = `${PURCHASES} join purchasing.purchaseorderdetail l using
 const topVendor = (where: string) =>
   `(select v.name from ${PURCHASES} where ${where} group by v.name order by sum(h.subtotal) desc, v.name limit 1)`;
 const topVendorSpend = (where: string) =>
-  `(select sum(h.subtotal) from ${PURCHASES} where ${where} group by v.name order by 1 desc limit 1)`;
+  ["h.subtotal", "h.subtotal + h.taxamt + h.freight"].map(
+    (amount) => `(select sum(${amount}) from ${PURCHASES} where ${where} group by v.name order by sum(h.subtotal) desc limit 1)`,
+  );
 const topRejectVendor = (where: string) =>
   `(select v.name from ${PURCHASE_LINES} where ${where} group by v.name order by sum(l.rejectedqty) desc, v.name limit 1)`;
 
 const STOCK = "production.productinventory i join production.location loc using (locationid) join production.product p using (productid)";
-const BELOW_REORDER = `(select count(*) from production.product p
+const reorderCount = (where: string) => `(select count(*) from production.product p
   left join (select productid, sum(quantity) qty from production.productinventory group by 1) i using (productid)
-  where p.reorderpoint > coalesce(i.qty, 0))`;
+  where p.reorderpoint > coalesce(i.qty, 0) and ${where})`;
+// An answer can give the full count, or the count of products with no stock
+// next to the count of products with some stock.
+const BELOW_REORDER = { values: [reorderCount("true"), reorderCount("i.qty is null"), reorderCount("coalesce(i.qty, 0) = 0")] };
+const model = (product: string) => `split_part(${product}, ' ', 1)`;
 
 const STAFF = `humanresources.employee e join person.person pp using (businessentityid)
   join humanresources.employeedepartmenthistory dh using (businessentityid)
@@ -90,7 +96,7 @@ const pick = <T>(list: T[], index: number): T => list[index % list.length]!;
 // answer on the frozen data has no expectation.
 const REAL: Thread[] = [
   real("reorder-vendors", "am", [
-    ["Which products are below their reorder threshold?", { values: [BELOW_REORDER] }],
+    ["Which products are below their reorder threshold?", BELOW_REORDER],
     ["Which vendors supply the out-of-stock items?", null],
     ["View contact information for these four vendors", null],
     ["Check historical lead times and order history for each vendor", null],
@@ -116,8 +122,8 @@ const REAL: Thread[] = [
       "What are our most popular bikes in Australia?",
       {
         anyNames: [
-          topProduct(`${category("Bikes")} and ${territory("Australia")}`, "sum(d.orderqty)"),
-          topProduct(`${category("Bikes")} and ${territory("Australia")}`, `sum(${NET})`),
+          model(topProduct(`${category("Bikes")} and ${territory("Australia")}`, "sum(d.orderqty)")),
+          model(topProduct(`${category("Bikes")} and ${territory("Australia")}`, `sum(${NET})`)),
         ],
       },
     ],
@@ -129,7 +135,7 @@ const REAL: Thread[] = [
     ["What is the cost difference for a 200-unit air freight split?", null],
   ]),
   real("reorder-out-of-stock", "pm", [
-    ["Which products are below their reorder threshold?", { values: [BELOW_REORDER] }],
+    ["Which products are below their reorder threshold?", BELOW_REORDER],
     ["Show the out-of-stock frame and apparel items", null],
   ]),
   real("revenue-quarters", "am", [
@@ -142,12 +148,12 @@ const REAL: Thread[] = [
   real("reorder-recommend", "pm", [
     [
       "Are any products running below their reorder point right now? Show the most urgent ones and recommend how many units we should reorder.",
-      { values: [BELOW_REORDER] },
+      BELOW_REORDER,
     ],
   ]),
   real("top-resellers", "am", [["who are our top resellers", { anyNames: [topStore(ALL), topStore(LAST_365), topStore(YTD)] }]]),
   real("reorder-locations", "am", [
-    ["Which products are below their reorder threshold?", { values: [BELOW_REORDER] }],
+    ["Which products are below their reorder threshold?", BELOW_REORDER],
     [
       "Which locations hold the lowest stock?",
       { anyNames: [`(select loc.name from ${STOCK} group by loc.name order by sum(i.quantity), loc.name limit 1)`] },
@@ -187,7 +193,7 @@ const REAL: Thread[] = [
   ]),
   real("last-quarter", "pm", [["What is the revenue fo rlast quarter", { values: revenue(Q1_2025, Q2_2025, LAST_90) }]]),
   real("reorder-saddle", "pm", [
-    ["Which products are below their reorder threshold?", { values: [BELOW_REORDER] }],
+    ["Which products are below their reorder threshold?", BELOW_REORDER],
     [
       "whom do we buy the HL Mountain Seat/Saddle from",
       {
@@ -280,7 +286,10 @@ const WRITTEN: Thread[] = [
         pick(["who are the biggest customers there?", "which stores buy the most there", "top reseller in that territory?"], i),
         { anyNames: [topStore(territory(name)), topStore(`${territory(name)} and ${YTD}`), topStore(`${territory(name)} and ${LAST_365}`)] },
       ],
-      [pick(["and how does that compare to last year?", "was last year better?", "how was 2024 for them"], i), { values: revenue(`${territory(name)} and ${year(2024)}`) }],
+      [
+        pick([`and total ${name} revenue in 2024?`, `what did the whole territory make in 2024`, `how was 2024 for ${name} overall, total revenue`], i),
+        { values: revenue(`${territory(name)} and ${year(2024)}`) },
+      ],
     ]),
   ),
   ...CATEGORIES.map((name, i) =>
@@ -309,7 +318,7 @@ const WRITTEN: Thread[] = [
   ...[2024, 2025].map((y, i) =>
     written("vendor-spend", String(y), half(i), [
       [pick([`who are our biggest vendors by spend in ${y}?`, `which vendor did we buy the most from in ${y}`], i), { anyNames: [topVendor(year(y))] }],
-      [pick(["how much did we spend with the top one?", "what was the total with them"], i), { values: [topVendorSpend(year(y))] }],
+      [pick(["how much did we spend with the top one that year?", `what was the ${y} total with them`], i), { values: topVendorSpend(year(y)) }],
       [pick(["what's their average lead time?", "how long do they usually take to deliver"], i), null],
     ]),
   ),

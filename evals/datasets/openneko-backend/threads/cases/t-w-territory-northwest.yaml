@@ -15,7 +15,7 @@ input:
   question: "how is Northwest doing this year?"
   follow_ups:
     - "who are the biggest customers there?"
-    - "and how does that compare to last year?"
+    - "and total Northwest revenue in 2024?"
 oracle:
   kind: sql.metric
   ref: ../oracles/t-w-territory-northwest.sql

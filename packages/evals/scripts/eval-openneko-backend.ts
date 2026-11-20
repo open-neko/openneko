@@ -99,10 +99,18 @@ export type StateMachineObservation = {
   collateral: Record<string, unknown>;
 };
 
+type TurnEvidence = { queries: number; failedQueries: number; lessons: string[] };
+
+function turnEvidence(events: Record<string, unknown>[], lessons: string[]): TurnEvidence {
+  const queries = events.filter((event) => event.operation === "graphjin.execute");
+  return { queries: queries.length, failedQueries: queries.filter((event) => event.status !== "ok").length, lessons };
+}
+
 type WorkBackendOutput = {
   status: "completed";
   finalText: string;
   turnTexts?: string[];
+  turnEvidence?: TurnEvidence[];
   fixture: {
     spec: WorkBackendFixtureSpec;
     orgId: string;
@@ -1746,6 +1754,7 @@ export function scoreWorkBackendExecution(input: {
     (assertion) => {
       let passed = false;
       let score: number | undefined;
+      let detail: string | undefined;
 
       if (assertion.kind === "answer.numeric-relative-error") {
         if (!metricOracle) {
@@ -1791,7 +1800,7 @@ export function scoreWorkBackendExecution(input: {
         const scored = metricOracle.turnExpectations
           .map((expectation, index) => ({ expectation, text: texts[index] ?? "" }))
           .filter((turn) => turn.expectation);
-        const held = scored.filter(({ expectation, text: turnText }) => {
+        const holds = (expectation: TurnExpectation, turnText: string) => {
           const candidates = numericCandidates(turnText);
           const values = expectation?.values ?? [];
           const names = expectation?.names ?? [];
@@ -1803,9 +1812,13 @@ export function scoreWorkBackendExecution(input: {
             names.every((name) => lower.includes(name.toLocaleLowerCase())) &&
             (anyNames.length === 0 || anyNames.some((name) => lower.includes(name.toLocaleLowerCase())))
           );
-        });
+        };
+        const held = scored.filter((turn) => holds(turn.expectation, turn.text));
         passed = scored.length > 0 && held.length === scored.length;
         score = scored.length > 0 ? held.length / scored.length : 0;
+        detail = `turns=${metricOracle.turnExpectations
+          .map((expectation, index) => (expectation ? (holds(expectation, texts[index] ?? "") ? "pass" : "fail") : "none"))
+          .join(",")}`;
       } else if (assertion.kind === "answer.window-exact") {
         if (!metricOracle) {
           throw new Error(`${assertion.kind} requires a sql.metric oracle`);
@@ -2250,7 +2263,7 @@ export function scoreWorkBackendExecution(input: {
           ? { capabilities: assertion.capabilities }
           : {}),
         ...(assertion.semantics ? { semantics: assertion.semantics } : {}),
-        diagnostic: diagnostic(passed, `${assertion.kind.replace(/[^a-z0-9]+/giu, "_")}_failed`),
+        diagnostic: detail ?? diagnostic(passed, `${assertion.kind.replace(/[^a-z0-9]+/giu, "_")}_failed`),
       };
     },
   );
@@ -2929,6 +2942,7 @@ export function createOpenNekoBackendDriver(
         const trace = await episode.readTrace(run.runId);
         evidence.push(...(trace.events as unknown as WorkSemanticTraceEvent[]));
         steps.push(...(trace.steps as unknown as WorkSemanticStepContent[]));
+        const turnEvidenceList = [turnEvidence(trace.events, await episode.dreamOffered(run.runId))];
         if (scenario === "stateful-compaction-resume" && turn) {
           assertCompactionPrompt(turn.prompt);
           compactionPromptVerified = true;
@@ -2983,6 +2997,7 @@ export function createOpenNekoBackendDriver(
           const nextTrace = await episode.readTrace(next.runId);
           evidence.push(...(nextTrace.events as unknown as WorkSemanticTraceEvent[]));
           steps.push(...(nextTrace.steps as unknown as WorkSemanticStepContent[]));
+          turnEvidenceList.push(turnEvidence(nextTrace.events, await episode.dreamOffered(next.runId)));
           const nextStatus = String(record(nextDone?.result)?.status ?? "failed");
           if (nextStatus !== "completed") {
             throw new EvalTaskError(
@@ -3069,6 +3084,7 @@ export function createOpenNekoBackendDriver(
             status: "completed",
             finalText,
             ...(followUps.length > 0 ? { turnTexts } : {}),
+            turnEvidence: turnEvidenceList,
             fixture: {
               spec: fixture.spec,
               orgId: fixture.orgId,

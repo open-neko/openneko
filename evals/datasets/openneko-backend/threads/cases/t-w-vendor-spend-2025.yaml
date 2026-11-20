@@ -14,7 +14,7 @@ input:
   source: written
   question: "which vendor did we buy the most from in 2025"
   follow_ups:
-    - "what was the total with them"
+    - "what was the 2025 total with them"
     - "how long do they usually take to deliver"
 oracle:
   kind: sql.metric

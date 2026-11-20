@@ -15,7 +15,7 @@ input:
   question: "France sales this year?"
   follow_ups:
     - "top reseller in that territory?"
-    - "how was 2024 for them"
+    - "how was 2024 for France overall, total revenue"
 oracle:
   kind: sql.metric
   ref: ../oracles/t-w-territory-france.sql

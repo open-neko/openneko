@@ -7,5 +7,11 @@ SELECT
   jsonb_build_array(
 jsonb_build_object('values', to_jsonb(array_remove(array[(select count(*) from production.product p
   left join (select productid, sum(quantity) qty from production.productinventory group by 1) i using (productid)
-  where p.reorderpoint > coalesce(i.qty, 0))]::numeric[], null)))
+  where p.reorderpoint > coalesce(i.qty, 0) and true),
+    (select count(*) from production.product p
+  left join (select productid, sum(quantity) qty from production.productinventory group by 1) i using (productid)
+  where p.reorderpoint > coalesce(i.qty, 0) and i.qty is null),
+    (select count(*) from production.product p
+  left join (select productid, sum(quantity) qty from production.productinventory group by 1) i using (productid)
+  where p.reorderpoint > coalesce(i.qty, 0) and coalesce(i.qty, 0) = 0)]::numeric[], null)))
   )::text AS turn_expectations;

@@ -14,7 +14,7 @@ input:
   source: written
   question: "who are our biggest vendors by spend in 2024?"
   follow_ups:
-    - "how much did we spend with the top one?"
+    - "how much did we spend with the top one that year?"
     - "what's their average lead time?"
 oracle:
   kind: sql.metric

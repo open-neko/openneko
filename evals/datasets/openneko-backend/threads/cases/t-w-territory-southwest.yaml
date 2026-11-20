@@ -15,7 +15,7 @@ input:
   question: "how is Southwest doing this year?"
   follow_ups:
     - "who are the biggest customers there?"
-    - "and how does that compare to last year?"
+    - "and total Southwest revenue in 2024?"
 oracle:
   kind: sql.metric
   ref: ../oracles/t-w-territory-southwest.sql

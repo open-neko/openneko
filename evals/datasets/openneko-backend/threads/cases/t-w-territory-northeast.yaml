@@ -15,7 +15,7 @@ input:
   question: "Northeast sales this year?"
   follow_ups:
     - "top reseller in that territory?"
-    - "how was 2024 for them"
+    - "how was 2024 for Northeast overall, total revenue"
 oracle:
   kind: sql.metric
   ref: ../oracles/t-w-territory-northeast.sql

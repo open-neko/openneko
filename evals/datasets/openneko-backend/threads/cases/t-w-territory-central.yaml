@@ -15,7 +15,7 @@ input:
   question: "whats Central revenue so far this year"
   follow_ups:
     - "which stores buy the most there"
-    - "was last year better?"
+    - "what did the whole territory make in 2024"
 oracle:
   kind: sql.metric
   ref: ../oracles/t-w-territory-central.sql

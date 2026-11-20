@@ -646,6 +646,19 @@ export class EvalEpisode {
     });
   }
 
+  // Lists the lessons that the turn prompt of a run offered.
+  async dreamOffered(runId: string): Promise<string[]> {
+    return this.dreamClient(async (client) => {
+      const { rows } = await client.query<{ label: string }>(
+        `select l.kind || ' · ' || l.question_shape as label
+         from dream_lesson_use u join dream_lesson l on l.id = u.lesson_id
+         where u.run_id = $1 order by l.kind, l.question_shape`,
+        [runId],
+      );
+      return rows.map((row) => row.label);
+    }).catch(() => []);
+  }
+
   // Runs the learning pass on the runs of the episode, with every thread
   // settled, and writes the lessons of the org back to the store file.
   async dreamLearn(): Promise<void> {
