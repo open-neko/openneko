@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/open-neko/neko/apps/openneko/internal/instance"
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
 )
 
 // LocalPg mirrors the `pg` block of ~/.config/openneko/config.json, written
@@ -135,7 +136,7 @@ func updateLocal(override string, change func(map[string]any)) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := ownonly.Mkdir(dir); err != nil {
 		return err
 	}
 	return os.WriteFile(path, out, 0o600)

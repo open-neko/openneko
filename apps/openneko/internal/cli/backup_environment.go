@@ -10,9 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/open-neko/neko/apps/openneko/internal/appdir"
 	"github.com/open-neko/neko/apps/openneko/internal/compose"
 	"github.com/open-neko/neko/apps/openneko/internal/config"
-	"github.com/open-neko/neko/apps/openneko/internal/instance"
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
 )
 
 // backupDirectory is where `openneko backup` writes by default and where
@@ -32,15 +33,7 @@ func backupDirectory(sup *compose.Supervisor, project string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	base := os.Getenv("XDG_DATA_HOME")
-	if base == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		base = filepath.Join(home, ".local", "share")
-	}
-	return filepath.Abs(filepath.Join(base, "openneko", "backups", installationID, project))
+	return filepath.Abs(filepath.Join(appdir.Data(), "backups", installationID, project))
 }
 
 // backupKeyPath returns the key file backups are encrypted with:
@@ -56,11 +49,11 @@ func backupKeyPath(sup *compose.Supervisor) (path string, explicit bool, err err
 	if err != nil {
 		return "", false, err
 	}
-	stateHome, err := instance.StateHome()
+	stateHome, err := appdir.State()
 	if err != nil {
 		return "", false, err
 	}
-	return filepath.Join(stateHome, "openneko", "backup-keys", "installation-"+installationID+".key"), false, nil
+	return filepath.Join(stateHome, "backup-keys", "installation-"+installationID+".key"), false, nil
 }
 
 // loadBackupKey reads the backup key. With create, a missing default key is
@@ -71,7 +64,7 @@ func loadBackupKey(sup *compose.Supervisor, create bool) (string, string, error)
 		return "", "", err
 	}
 	if create && !explicit {
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		if err := ownonly.Mkdir(filepath.Dir(path)); err != nil {
 			return "", "", err
 		}
 		value, err := config.CreateBackupKey(path)

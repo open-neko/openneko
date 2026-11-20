@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/open-neko/neko/apps/openneko/internal/appdir"
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/filecontent"
@@ -129,10 +130,10 @@ func newServeCmd() *cobra.Command {
 			return nil
 		},
 	}
-	data := dataHome()
+	data := appdir.Data()
 	cmd.Flags().StringVar(&addr, "addr", envOr("OPENNEKO_SERVE_ADDR", "127.0.0.1:8090"), "Listen address")
-	cmd.Flags().StringVar(&filesDir, "files-dir", envOr("OPENNEKO_FILES_DIR", filepath.Join(data, "openneko", "files")), "Folder that holds each user's private files. OPENNEKO_FILES_BUCKET=s3://bucket[/prefix] keeps them in a bucket instead")
-	cmd.Flags().StringVar(&indexDir, "index-dir", envOr("OPENNEKO_FILES_INDEX_DIR", filepath.Join(data, "openneko", "file-index")), "Folder for the sheet tables derived from the files; safe to delete")
+	cmd.Flags().StringVar(&filesDir, "files-dir", envOr("OPENNEKO_FILES_DIR", filepath.Join(data, "files")), "Folder that holds each user's private files. OPENNEKO_FILES_BUCKET=s3://bucket[/prefix] keeps them in a bucket instead")
+	cmd.Flags().StringVar(&indexDir, "index-dir", envOr("OPENNEKO_FILES_INDEX_DIR", filepath.Join(data, "file-index")), "Folder for the sheet tables derived from the files; safe to delete")
 	cmd.Flags().StringVar(&agentSocket, "agent-socket", os.Getenv("OPENNEKO_SERVE_SOCKET"), "Unix socket for agent turns; empty turns them off")
 	cmd.Flags().StringVar(&checkSocket, "config-check-socket", os.Getenv("OPENNEKO_CONFIG_CHECK_SOCKET"), "Unix socket where web asks serve to load a candidate GraphJin config with the pinned loader; empty turns the check off")
 	cmd.Flags().StringVar(&sandboxURL, "sandbox-url", os.Getenv("OPENNEKO_SANDBOX_URL"), "Sandbox service for agent terminal commands (unix:///path or http(s)://host:port); empty turns the terminal off. Its key is read from OPENNEKO_SANDBOX_KEY")

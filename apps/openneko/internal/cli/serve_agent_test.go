@@ -1,5 +1,3 @@
-//go:build !windows
-
 package cli
 
 import (
@@ -10,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -30,7 +29,7 @@ func TestServeAgentTurnsAnswersOnTheSocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm()&0o007 != 0 {
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o007 != 0 {
 		t.Fatalf("socket mode %v is open to others", info.Mode().Perm())
 	}
 
@@ -85,6 +84,9 @@ func TestServeAgentTurnsRefusesABadSandboxURL(t *testing.T) {
 }
 
 func TestServeAgentTurnsWarnsWhenTheSandboxSharesItsSocketFolder(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a unix:// sandbox URL is for Linux and macOS; Windows has no local sandbox (WIN0 A9)")
+	}
 	cleanServeEnv(t)
 	dir := testsock.Dir(t)
 	for _, tc := range []struct {

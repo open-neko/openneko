@@ -11,7 +11,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+
+	"github.com/open-neko/neko/apps/openneko/internal/appdir"
 )
 
 // GitSkillOptions configures a single `openneko install <git-url>` call.
@@ -206,6 +209,9 @@ func resolveSkillsInstallDir(override string) string {
 	}
 	if v := os.Getenv("OPENNEKO_SKILLS_DIR"); v != "" {
 		return v
+	}
+	if runtime.GOOS == "windows" {
+		return filepath.Join(appdir.Data(), "skills")
 	}
 	home, _ := os.UserHomeDir()
 	if home == "" {
