@@ -43,6 +43,10 @@
 * A server install gets the door folder `/var/lib/openneko/shared/door` and new units from `openneko upgrade`, which now runs `systemctl daemon-reload`.
 * `openneko web` with no serve socket, and the stand-alone eval harness, still put the key in the process of the agent loop. Use them for development and demos only.
 
+### Backup on a native install
+
+* `openneko backup` and `openneko restore` check `pg_dump` and `pg_restore` before they start. When a tool is older than the database server, they stop with one line that names both versions and the PostgreSQL client tools to install. Nothing is written or changed.
+
 ## [5.0.0](https://github.com/open-neko/openneko/compare/v4.9.2...v5.0.0) (2026-10-24)
 
 
