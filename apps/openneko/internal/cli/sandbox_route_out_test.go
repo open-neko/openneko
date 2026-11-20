@@ -30,8 +30,13 @@ func TestSandboxRoutesOutReadsTheMergedNetworks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	desktop, err := filepath.Abs(filepath.Join("..", "..", "..", "..", "recipes", "sandbox", "compose.desktop.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	for name, files := range map[string][]string{
 		"core only":           {core},
+		"desktop recipe":      {desktop},
 		"recipe":              {core, recipe},
 		"native recipe":       {native},
 		"no network":          {core, write("none.yml", "services:\n  openneko-sandbox:\n    network_mode: none\n")},

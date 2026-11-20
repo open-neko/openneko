@@ -1211,6 +1211,17 @@ and the same key. Other users can share your primary group, so the start
 refuses a sandbox URL with no key, and a socket folder that other users can
 enter.
 
+On macOS and Windows, Docker Desktop runs containers in a Linux VM, and a
+socket on a bind mount does not reach the host. Use
+`share/openneko/sandbox/compose.desktop.yml` there. It starts the same
+sandbox and egress proxy, and a third container that joins the sandbox
+network and publishes the sandbox's port on `127.0.0.1:8091` only. Set a
+key in `OPENNEKO_SANDBOX_KEY` and `OPENNEKO_VERSION`, run
+`docker compose -f compose.desktop.yml up -d` in that folder, then set
+`OPENNEKO_SANDBOX_URL=http://127.0.0.1:8091` and the same key.
+`OPENNEKO_SANDBOX_PORT` changes the port. Each request needs the key.
+`recipes/sandbox/prove-desktop.sh` checks the recipe on your machine.
+
 #### Server install (systemd, two users)
 
 On a Linux server, run the install script once as root with `--server`:
