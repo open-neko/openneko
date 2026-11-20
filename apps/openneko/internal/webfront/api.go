@@ -61,9 +61,10 @@ type API struct {
 	Embedder    llm.Embedder
 	GoogleToken llm.TokenFunc
 	// Door holds the model keys for the calls that serve makes.
-	Door     *llm.KeyDoor
-	doorMu   sync.Mutex
-	doorPath string
+	Door       *llm.KeyDoor
+	doorMu     sync.Mutex
+	egressGate sandboxEgressGate
+	doorPath   string
 	// ResearchURL overrides the Perplexity chat URL; tests set it.
 	ResearchURL string
 	// EvalTrace receives every run's semantic trace; nil records nothing.

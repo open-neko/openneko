@@ -7966,6 +7966,13 @@ paths:
                     type: array
                   terminalAvailable:
                     type: boolean
+                  terminalBlocked:
+                    type: string
+                    description: Why the terminal is off although a sandbox is set; empty when it is not blocked
+                  sandboxEgress:
+                    type: string
+                    enum: ["off", "closed", "open", "unknown", "operator"]
+                    description: What the sandbox reports about a route out of its network; the terminal runs only on closed or operator
                   defaults:
                     type: object
                   egressSuggestions:

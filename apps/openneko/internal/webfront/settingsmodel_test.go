@@ -64,7 +64,7 @@ func TestAgentSettings(t *testing.T) {
 	}
 
 	w := call(f, "GET", "/api/v1/settings/agent", "", admin)
-	want := `{"agent":{"source":"default","backend":"ax","globalCap":3,"terminal":true,"responderEffort":"low","egressHosts":[]},"defaults":{"globalCap":3,"responderEffort":"low","terminal":true},"egressSuggestions":[],"options":[{"value":"ax","label":"Ax","description":"OpenNeko's Go agent. Calls tools from code, so one model step can run many tools."}],"terminalAvailable":false}`
+	want := `{"agent":{"source":"default","backend":"ax","globalCap":3,"terminal":true,"responderEffort":"low","egressHosts":[]},"defaults":{"globalCap":3,"responderEffort":"low","terminal":true},"egressSuggestions":[],"options":[{"value":"ax","label":"Ax","description":"OpenNeko's Go agent. Calls tools from code, so one model step can run many tools."}],"sandboxEgress":"off","terminalAvailable":false,"terminalBlocked":""}`
 	if w.Code != 200 || strings.TrimSpace(w.Body.String()) != want {
 		t.Errorf("defaults: %d %s", w.Code, w.Body.String())
 	}
