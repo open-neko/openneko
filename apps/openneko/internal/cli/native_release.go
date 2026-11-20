@@ -2,6 +2,7 @@ package cli
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -24,7 +25,18 @@ const (
 )
 
 func nativeArchiveName(target, goos, goarch string) string {
-	return fmt.Sprintf("openneko-native_%s_%s_%s.tar.gz", strings.TrimPrefix(target, "v"), goos, goarch)
+	ext := "tar.gz"
+	if goos == "windows" {
+		ext = "zip"
+	}
+	return fmt.Sprintf("openneko-native_%s_%s_%s.%s", strings.TrimPrefix(target, "v"), goos, goarch, ext)
+}
+
+func nativeExeName(goos string) string {
+	if goos == "windows" {
+		return "openneko.exe"
+	}
+	return "openneko"
 }
 
 // nativeReleaseBase is the folder of one release. OPENNEKO_RELEASE_URL
@@ -54,8 +66,10 @@ func resolveNativeTarget(ctx context.Context, requested string) (string, error) 
 // downloadNativeRelease puts the verified release of target in a new
 // folder under parent and returns that folder.
 func downloadNativeRelease(ctx context.Context, target, parent string) (string, error) {
-	if runtime.GOOS != "linux" {
-		return "", fmt.Errorf("no native release download for %s yet; use --from <release folder>", runtime.GOOS)
+	switch runtime.GOOS {
+	case "linux", "darwin", "windows":
+	default:
+		return "", fmt.Errorf("no native release download for %s; use --from <release folder>", runtime.GOOS)
 	}
 	base := nativeReleaseBase(target)
 	name := nativeArchiveName(target, runtime.GOOS, runtime.GOARCH)
@@ -77,7 +91,7 @@ func downloadNativeRelease(ctx context.Context, target, parent string) (string, 
 		return "", fmt.Errorf("download %s: %w", name, err)
 	}
 	release := filepath.Join(dir, "release")
-	if err := extractNativeArchive(archive, release); err != nil {
+	if err := extractNativeArchive(archive, release, nativeExeName(runtime.GOOS)); err != nil {
 		os.RemoveAll(dir)
 		return "", err
 	}
@@ -120,9 +134,29 @@ func downloadToFile(ctx context.Context, url, dst string, want []byte) error {
 	return nil
 }
 
-// extractNativeArchive takes bin/openneko and the files under share/openneko
-// from the archive, so that a later release can add a folder.
-func extractNativeArchive(archive, dst string) error {
+// extractNativeArchive takes bin/<exe> and the files under share/openneko
+// from a .tar.gz or .zip release archive, so that a later release can add
+// a folder.
+func extractNativeArchive(archive, dst, exe string) error {
+	x := &nativeExtract{dst: dst, exe: "bin/" + exe}
+	var err error
+	if strings.HasSuffix(archive, ".zip") {
+		err = x.zip(archive)
+	} else {
+		err = x.tarGz(archive)
+	}
+	if err != nil {
+		return err
+	}
+	return x.finish()
+}
+
+type nativeExtract struct {
+	dst, exe                                string
+	sawExe, sawPack, sawBuiltin, sawSandbox bool
+}
+
+func (x *nativeExtract) tarGz(archive string) error {
 	f, err := os.Open(archive)
 	if err != nil {
 		return err
@@ -134,65 +168,100 @@ func extractNativeArchive(archive, dst string) error {
 	}
 	defer gz.Close()
 	tr := tar.NewReader(gz)
-	sawExe, sawPack, sawBuiltin, sawSandbox := false, false, false, false
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
-			break
+			return nil
 		}
 		if err != nil {
 			return fmt.Errorf("read the release archive: %w", err)
 		}
-		name := path.Clean(strings.TrimPrefix(hdr.Name, "./"))
-		if name == "." || strings.HasPrefix(name, "/") || name == ".." || strings.HasPrefix(name, "../") {
-			return fmt.Errorf("the release archive holds the unsafe path %q", hdr.Name)
-		}
 		if hdr.Typeflag != tar.TypeDir && hdr.Typeflag != tar.TypeReg {
 			return fmt.Errorf("the release archive entry %q is not a file or a folder", hdr.Name)
 		}
-		exe := name == "bin/openneko"
-		if !exe && !nativeReleasePath(name) {
-			return fmt.Errorf("the release archive holds the unexpected path %q", hdr.Name)
-		}
-		target := filepath.Join(dst, filepath.FromSlash(name))
-		switch hdr.Typeflag {
-		case tar.TypeDir:
-			if exe {
-				return errors.New("bin/openneko in the release archive is a folder")
-			}
-			if err := os.MkdirAll(target, 0o755); err != nil {
-				return err
-			}
-		case tar.TypeReg:
-			if hdr.Size < 0 || hdr.Size > maxNativeEntryBytes {
-				return fmt.Errorf("the release archive entry %q is too large", hdr.Name)
-			}
-			mode := os.FileMode(0o644)
-			if exe || hdr.Mode&0o111 != 0 {
-				mode = 0o755
-			}
-			sawExe = sawExe || exe
-			for pattern, saw := range map[string]*bool{
-				"share/openneko/packs/*/pack.yaml":         &sawPack,
-				"share/openneko/skills/builtin/*/SKILL.md": &sawBuiltin,
-				"share/openneko/skills/sandbox/*/SKILL.md": &sawSandbox,
-			} {
-				if m, _ := path.Match(pattern, name); m {
-					*saw = true
-				}
-			}
-			if err := writeArchiveEntry(target, tr, hdr.Size, mode); err != nil {
-				return err
-			}
+		if err := x.entry(hdr.Name, hdr.Typeflag == tar.TypeDir, hdr.Size, hdr.Mode&0o111 != 0, tr); err != nil {
+			return err
 		}
 	}
-	if !sawExe {
-		return errors.New("the release archive holds no bin/openneko")
+}
+
+func (x *nativeExtract) zip(archive string) error {
+	zr, err := zip.OpenReader(archive)
+	if err != nil {
+		return fmt.Errorf("open the release archive: %w", err)
 	}
-	if !sawPack {
+	defer zr.Close()
+	for _, f := range zr.File {
+		mode := f.Mode()
+		dir := mode.IsDir()
+		if !dir && !mode.IsRegular() {
+			return fmt.Errorf("the release archive entry %q is not a file or a folder", f.Name)
+		}
+		if f.UncompressedSize64 > maxNativeEntryBytes {
+			return fmt.Errorf("the release archive entry %q is too large", f.Name)
+		}
+		var r io.ReadCloser = io.NopCloser(strings.NewReader(""))
+		if !dir {
+			if r, err = f.Open(); err != nil {
+				return fmt.Errorf("read the release archive: %w", err)
+			}
+		}
+		err = x.entry(f.Name, dir, int64(f.UncompressedSize64), mode&0o111 != 0, r)
+		if cerr := r.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (x *nativeExtract) entry(raw string, dir bool, size int64, executable bool, r io.Reader) error {
+	name := path.Clean(strings.TrimPrefix(raw, "./"))
+	if name == "." || strings.HasPrefix(name, "/") || name == ".." || strings.HasPrefix(name, "../") ||
+		strings.ContainsAny(name, `\:`) || !filepath.IsLocal(filepath.FromSlash(name)) {
+		return fmt.Errorf("the release archive holds the unsafe path %q", raw)
+	}
+	exe := name == x.exe
+	if !exe && !nativeReleasePath(name) {
+		return fmt.Errorf("the release archive holds the unexpected path %q", raw)
+	}
+	target := filepath.Join(x.dst, filepath.FromSlash(name))
+	if dir {
+		if exe {
+			return fmt.Errorf("%s in the release archive is a folder", x.exe)
+		}
+		return os.MkdirAll(target, 0o755)
+	}
+	if size < 0 || size > maxNativeEntryBytes {
+		return fmt.Errorf("the release archive entry %q is too large", raw)
+	}
+	mode := os.FileMode(0o644)
+	if exe || executable {
+		mode = 0o755
+	}
+	x.sawExe = x.sawExe || exe
+	for pattern, saw := range map[string]*bool{
+		"share/openneko/packs/*/pack.yaml":         &x.sawPack,
+		"share/openneko/skills/builtin/*/SKILL.md": &x.sawBuiltin,
+		"share/openneko/skills/sandbox/*/SKILL.md": &x.sawSandbox,
+	} {
+		if m, _ := path.Match(pattern, name); m {
+			*saw = true
+		}
+	}
+	return writeArchiveEntry(target, r, size, mode)
+}
+
+func (x *nativeExtract) finish() error {
+	if !x.sawExe {
+		return fmt.Errorf("the release archive holds no %s", x.exe)
+	}
+	if !x.sawPack {
 		return errors.New("the release archive holds no built-in pack (share/openneko/packs/*/pack.yaml)")
 	}
-	if !sawBuiltin || !sawSandbox {
+	if !x.sawBuiltin || !x.sawSandbox {
 		return errors.New("the release archive holds no bundled skills (share/openneko/skills/builtin/*/SKILL.md and share/openneko/skills/sandbox/*/SKILL.md)")
 	}
 	return nil
