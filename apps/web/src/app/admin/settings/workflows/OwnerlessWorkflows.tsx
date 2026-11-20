@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
 import { NativeSelect } from "@/components/ui/native-select";
 
 type Workflow = { id: string; name: string };
@@ -62,16 +63,16 @@ function OwnerRow({ workflow, users, onAssigned }: { workflow: Workflow; users: 
   const selectId = `owner-${workflow.id}`;
   return (
     <li>
-      <form onSubmit={assign} className="grid gap-2 sm:grid-cols-[1fr_minmax(0,16rem)_auto] sm:items-center">
-        <label htmlFor={selectId} className="min-w-0 break-words font-medium">{workflow.name}</label>
-        <NativeSelect id={selectId} value={owner} onChange={(event) => setOwner(event.target.value)}>
-          <option value="">Choose an owner</option>
-          {users.map((user) => (
-            <option key={user.id} value={user.id}>{user.name ? `${user.name} (${user.email})` : user.email}</option>
-          ))}
-        </NativeSelect>
+      <form onSubmit={assign} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+        <Field label={workflow.name} htmlFor={selectId} error={error ?? undefined}>
+          <NativeSelect id={selectId} value={owner} onChange={(event) => setOwner(event.target.value)}>
+            <option value="">Choose an owner</option>
+            {users.map((user) => (
+              <option key={user.id} value={user.id}>{user.name ? `${user.name} (${user.email})` : user.email}</option>
+            ))}
+          </NativeSelect>
+        </Field>
         <Button type="submit" variant="secondary" disabled={!owner || saving}>{saving ? "Assigning…" : "Assign"}</Button>
-        {error ? <p role="alert" className="text-danger sm:col-span-3">{error}</p> : null}
       </form>
     </li>
   );
