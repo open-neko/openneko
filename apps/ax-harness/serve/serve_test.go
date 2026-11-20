@@ -263,7 +263,13 @@ func TestServeWithRequireDoorRefusesARealKey(t *testing.T) {
 		{Frame{Type: "start", Spec: json.RawMessage(spec), ModelKeys: map[string]string{"MODEL_API_KEY": "sk-real"}}, false},
 		{Frame{Type: "generate", Generate: json.RawMessage(`{}`), ModelKey: token, FallbackKey: "sk-real"}, false},
 		{Frame{Type: "embed", Embed: json.RawMessage(`{}`), ModelKey: "sk-real"}, false},
-		{Frame{Type: "start", Spec: json.RawMessage(spec), ModelKeys: map[string]string{"MODEL_API_KEY": token, "FALLBACK_MODEL_API_KEY": "none"}}, true},
+		{Frame{Type: "start", Spec: json.RawMessage(spec), ModelKeys: map[string]string{"MODEL_API_KEY": token}, Environ: []string{"HARNESS_MODEL_OPTIONS={\"k\":\"sk-proj-abcdefghijklmnopqrstuv\"}"}}, false},
+		{Frame{Type: "start", Spec: json.RawMessage(spec), ModelKeys: map[string]string{"MODEL_API_KEY": token}, Environ: []string{"RUN_DIR=/r", "NOTE=AIzaSyA1234567890abcdefghijklmnopqrstuv"}}, false},
+		{Frame{Type: "start", Spec: json.RawMessage(spec), ModelKeys: map[string]string{"MODEL_API_KEY": token}, Environ: []string{"MY_API_KEY=plain"}}, false},
+		{Frame{Type: "start", Spec: json.RawMessage(spec), ModelKeys: map[string]string{"MODEL_API_KEY": token}, Environ: []string{"OPENNEKO_DATABASE_URL=postgres://u:p@db/x"}}, false},
+		{Frame{Type: "start", Spec: json.RawMessage(spec), ModelKeys: map[string]string{"MODEL_API_KEY": token}, Environ: []string{"AWS_SECRET_ACCESS_KEY=s"}}, false},
+		{Frame{Type: "start", Spec: json.RawMessage(spec), ModelKeys: map[string]string{"MODEL_API_KEY": token, "FALLBACK_MODEL_API_KEY": "none"},
+			Environ: []string{"RUN_DIR=/tmp/desk-abcdefghijklmnopqrstuvwxyz", "HARNESS_MODEL=gpt-5", "MODEL_API_KEY=" + token, "OPENNEKO_HARNESS_WORKSPACE_DIR=/w"}}, true},
 	} {
 		frame := <-dial(t, socket, c.frame).frames
 		refused := frame.Type == "exit" && strings.Contains(frame.Error, "takes no model key")
@@ -289,5 +295,18 @@ func TestServeReportsItsKeyStateInAStatusFrame(t *testing.T) {
 		if got.RequireDoor != server.RequireDoor || strings.Join(got.KeyEnv, ",") != strings.Join(server.KeyEnv, ",") {
 			t.Fatalf("status %+v, want %+v", got, server)
 		}
+	}
+}
+
+func TestKeyEnvNamesNamesEveryControlZoneSecret(t *testing.T) {
+	secrets := []string{"OPENAI_API_KEY", "NEKO_EMBEDDING_API_KEY", "HF_TOKEN", "VERTEX_ACCESS_TOKEN", "GOOGLE_VERTEX_ACCESS_TOKEN",
+		"GOOGLE_APPLICATION_CREDENTIALS", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AZURE_OPENAI_KEY", "NEKO_SECRET_KEY",
+		"DATABASE_URL", "OPENNEKO_DATABASE_URL", "OPENNEKO_DATABASE_URL_FILE", "OPENNEKO_MAGENTO_LIVE_DATABASE_URL"}
+	environ := []string{"PATH=/bin", "OPENNEKO_SANDBOX_KEY=box", "GJ_DATABASE_URL=postgres://gj", "AWS_REGION=eu-west-1", "EMPTY_API_KEY="}
+	for _, name := range secrets {
+		environ = append(environ, name+"=v")
+	}
+	if got := strings.Join(KeyEnvNames(environ), ","); got != strings.Join(secrets, ",") {
+		t.Fatalf("KeyEnvNames = %s\nwant %s", got, strings.Join(secrets, ","))
 	}
 }

@@ -122,8 +122,14 @@ func TestKeyDoorRefusesOtherRoutesAndRedactsErrors(t *testing.T) {
 	if status, _ := post(t, client, keydoor.URL("fallback")+"/chat/completions", "Authorization", "Bearer "+token); status != http.StatusForbidden {
 		t.Errorf("another route: status %d", status)
 	}
-	if status, _ := post(t, client, keydoor.URL("primary")+"/../x", "Authorization", "Bearer "+token); status == 200 {
-		t.Errorf("a path out of the upstream passed")
+	open, reached := upstream(t, 200, `{}`)
+	dots, revokeDots := issue(t, door, "org-1", map[string]DoorRoute{"primary": {Upstream: open.URL + "/v1", Key: "k"}})
+	defer revokeDots()
+	for _, path := range []string{"/../x", "/../chat/completions", "/chat/../chat/completions", "/./chat/completions", "/%2e%2e/chat/completions", "/chat%2Fcompletions"} {
+		if status, _ := post(t, client, keydoor.URL("primary")+path, "Authorization", "Bearer "+dots); status == 200 {
+			t.Errorf("the path %s passed", path)
+		}
+		noCall(t, reached, path)
 	}
 	if status, _ := post(t, client, keydoor.URL("primary")+"/chat/completions", "Authorization", "Bearer "+token+"x"); status != http.StatusUnauthorized {
 		t.Errorf("a changed token: status %d", status)
@@ -188,7 +194,7 @@ func TestKeyDoorTokenReachesOnlyItsOwnOrgsRoute(t *testing.T) {
 	if s := <-gotA; s.header.Get("Authorization") != "Bearer key-of-a" {
 		t.Fatalf("org-a's upstream got %q", s.header.Get("Authorization"))
 	}
-	if status, _ := post(t, client, keydoor.URL("embed")+"/embeddings", "Authorization", "Bearer "+tokenA); status != http.StatusForbidden {
+	if status, _ := post(t, client, keydoor.URL("embed")+"/chat/completions", "Authorization", "Bearer "+tokenA); status != http.StatusForbidden {
 		t.Errorf("org-a's token on a route only org-b holds: status %d", status)
 	}
 	idA, _, _ := strings.Cut(strings.TrimPrefix(tokenA, keydoor.TokenPrefix), ".")

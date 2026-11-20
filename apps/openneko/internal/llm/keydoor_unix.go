@@ -25,7 +25,7 @@ func ListenDoor(ctx context.Context, path string, door *KeyDoor) (<-chan error, 
 	if err != nil {
 		return nil, fmt.Errorf("key door socket unavailable: %w", err)
 	}
-	srv := &http.Server{Handler: door, ReadHeaderTimeout: 30 * time.Second}
+	srv := &http.Server{Handler: door, ReadHeaderTimeout: 30 * time.Second, IdleTimeout: doorBodyWait}
 	done := make(chan error, 1)
 	go func() {
 		<-ctx.Done()

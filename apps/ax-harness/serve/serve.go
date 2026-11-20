@@ -183,7 +183,7 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 		_ = out.write(Frame{Type: "status", Result: result})
 		return
 	}
-	if err == nil && s.RequireDoor && !onlyDoorTokens(start) {
+	if err == nil && s.RequireDoor && (!onlyDoorTokens(start) || environHoldsAKey(start.Environ)) {
 		exit(2, errors.New("openneko serve takes no model key: the frame must carry a key door token"))
 		return
 	}
@@ -325,19 +325,43 @@ func onlyDoorTokens(frame Frame) bool {
 	return true
 }
 
-var tokenEnvNames = map[string]bool{"HF_TOKEN": true, "VERTEX_ACCESS_TOKEN": true, "GOOGLE_VERTEX_ACCESS_TOKEN": true}
+var secretEnvNames = map[string]bool{
+	"HF_TOKEN": true, "VERTEX_ACCESS_TOKEN": true, "GOOGLE_VERTEX_ACCESS_TOKEN": true, "GOOGLE_APPLICATION_CREDENTIALS": true,
+	"AWS_SECRET_ACCESS_KEY": true, "AWS_SESSION_TOKEN": true, "AZURE_OPENAI_KEY": true, "NEKO_SECRET_KEY": true,
+}
 
-// KeyEnvNames lists the variables in environ that can hold a model or
-// embedding key. Serve must hold none of them.
+var databaseURLEnvName = regexp.MustCompile(`^([A-Z0-9_]+_)?DATABASE_URL(_FILE)?$`)
+
+// keyShaped matches the forms of the provider keys and cloud credentials
+// that the product knows.
+var keyShaped = regexp.MustCompile(`\b(sk-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35}|xai-[A-Za-z0-9]{20,}|gsk_[A-Za-z0-9]{20,}|hf_[A-Za-z0-9]{30,}|(AKIA|ASIA)[0-9A-Z]{16}|ya29\.[0-9A-Za-z_-]{20,})|-----BEGIN [A-Z ]*PRIVATE KEY-----`)
+
+func secretEnvName(name string) bool {
+	return keyEnvName.MatchString(name) || secretEnvNames[name] || (!strings.HasPrefix(name, "GJ_") && databaseURLEnvName.MatchString(name))
+}
+
+// KeyEnvNames lists the variables in environ that can hold a model,
+// embedding or cloud key, a database URL or the secret key. Serve must hold
+// none of them.
 func KeyEnvNames(environ []string) []string {
 	var names []string
 	for _, entry := range environ {
 		name, value, ok := strings.Cut(entry, "=")
-		if ok && value != "" && (keyEnvName.MatchString(name) || tokenEnvNames[name]) {
+		if ok && value != "" && secretEnvName(name) {
 			names = append(names, name)
 		}
 	}
 	return names
+}
+
+func environHoldsAKey(environ []string) bool {
+	for _, entry := range environ {
+		name, value, _ := strings.Cut(entry, "=")
+		if keyShaped.MatchString(value) || (secretEnvName(name) && value != "" && value != "none" && !keydoor.IsToken(value)) {
+			return true
+		}
+	}
+	return false
 }
 
 // secrets reads model keys from the turn's frame only. HARNESS_MODEL_API_KEY
