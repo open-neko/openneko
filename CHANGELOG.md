@@ -28,6 +28,7 @@
 * **Breaking:** the image has no compiler, pip, npm or git. A terminal command cannot install a package at run time, also for a host on the egress list. Tesseract has no `osd` data; the `pdf` skill does not use it.
 * **Breaking:** the image has no Python document libraries (pypdf, python-docx, python-pptx, openpyxl, lxml, Pillow, XlsxWriter). No bundled skill uses them, and the agent prompt no longer names them. An agent's own Python script that imports one of them fails; the bundled `docx`, `pptx`, `xlsx` and `pdf` skills do the same work.
 * **Breaking:** a script skill that your organization wrote and that imports or calls git, npm, pip, pypdf, openpyxl, python-docx or python-pptx fails until it uses the bundled skills or the Python standard library.
+* **Breaking:** runs share no place to write. At start the sandbox takes write and list rights from other users on `/tmp`, `/var/tmp`, `/run/lock`, `/dev/shm`, `/dev/mqueue` and each other folder or file that any user could write. A command's `TMPDIR`, `TEMP` and `TMP` point into the run's own home. A tool that writes to `/tmp` by a fixed path fails with "Permission denied". Python `multiprocessing` locks and pools fail, because they need `/dev/shm`. When a run ends, the sandbox also removes the System V shared memory, queues and semaphores of its user.
 * The `skill-creator` skill no longer names `eval-viewer/`, `assets/eval_review.html` or `python -m scripts.run_loop`, which the image does not hold. It shows results and the eval set in the chat.
 
 ### Model keys

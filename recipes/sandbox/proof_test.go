@@ -37,6 +37,7 @@ func TestEgressProof(t *testing.T) {
 	t.Run("native", func(t *testing.T) { proveNative(t, image, bin) })
 	t.Run("firewall alone", func(t *testing.T) { proveFirewallAlone(t, image, bin) })
 	t.Run("no firewall, no start", func(t *testing.T) { proveNoStartWithoutTheFirewall(t, image, bin) })
+	t.Run("runs apart", func(t *testing.T) { proveRunsApart(t, image, bin) })
 }
 
 const runProxy = "127.0.0.1:3128"

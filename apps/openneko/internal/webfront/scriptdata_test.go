@@ -271,7 +271,7 @@ func TestScriptDataSandboxHoldsNoSecret(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "FILES\nDONE") || strings.Contains(out, planted) {
 		t.Fatalf("sandbox output: %d %s", code, out)
 	}
-	allowed := map[string]bool{"PATH": true, "HOME": true, "TMPDIR": true, "LANG": true, "NODE_PATH": true, "SKILL_DIR": true,
+	allowed := map[string]bool{"PATH": true, "HOME": true, "TMPDIR": true, "TEMP": true, "TMP": true, "LANG": true, "NODE_PATH": true, "SKILL_DIR": true,
 		"RUN_DIR": true, "ARTIFACT_DIR": true, "PYTHONPATH": true, "PWD": true, "SHLVL": true, "_": true, "OLDPWD": true,
 		"HTTP_PROXY": true, "HTTPS_PROXY": true, "http_proxy": true, "https_proxy": true, "NODE_USE_ENV_PROXY": true}
 	envPart, _, _ := strings.Cut(out, "FILES\n")
