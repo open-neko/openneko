@@ -6,7 +6,14 @@ the run's files; it runs the command and returns the exit code, the output
 and the files the command changed. It holds no model key and no OpenNeko
 secret.
 
-## Build and run beside the stack
+## Run beside the stack
+
+Each release publishes this image as `ghcr.io/open-neko/neko-sandbox`, for
+amd64 and arm64, with the release's tag. Both compose files name it with
+`${OPENNEKO_VERSION:-latest}`, the same as the other OpenNeko images, and
+keep their `build:` lines. `docker compose pull` takes the published image.
+`docker compose build`, or `up` with `--build`, builds it from this folder
+instead. When the image is not on the host, `up` builds it.
 
 ```sh
 docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml --profile steps build
@@ -37,13 +44,16 @@ socket as well.
 
 A native install (`openneko start --native` or `openneko server-install`)
 runs the sandbox with `compose.native.yml`. It starts the same two services
-on the same networks, and bind-mounts the socket folder of the install:
+on the same networks, and bind-mounts the socket folder of the install. The
+native release archive holds the file as `share/openneko/sandbox/compose.native.yml`,
+so you need no checkout. Run it from that folder with the release's tag:
 
 ```sh
 OPENNEKO_SANDBOX_DIR=/run/openneko-sandbox \
 OPENNEKO_SANDBOX_GID=$(getent group openneko-shared | cut -d: -f3) \
 OPENNEKO_SANDBOX_KEY=<a long random string> \
-docker compose -f recipes/sandbox/compose.native.yml up -d --build
+OPENNEKO_VERSION=v$(openneko version --short) \
+docker compose -f compose.native.yml up -d
 ```
 
 A one-user native install uses
@@ -60,7 +70,9 @@ package of `pdfjs-dist`; the `pdf` skill draws pages with Poppler. Keep it in st
 The image holds only what the skills and the service use, plus `jq`,
 `ripgrep` and `file` for the agent's shell. It has no compiler, no pip, no
 npm and no git, so a command cannot install a package at run time. It is
-about 594 MB unpacked and 154 MB compressed on amd64.
+about 594 MB unpacked. The published image is 148 MiB compressed on amd64
+and 146 MiB on arm64; the release fails above 155 MiB
+(`scripts/image-size-budgets.json`).
 
 ## Skills
 
@@ -256,6 +268,19 @@ the Sandbox card as failing. When a firewall on that host closes the
 sandbox, set `OPENNEKO_SANDBOX_EGRESS_BY_OPERATOR=1` for web: the terminal
 then runs, and the status page says that the operator enforces the egress.
 
+## Upgrade the sandbox
+
+On a Docker install, `openneko upgrade` pulls the sandbox image with the
+stack when `compose.override.yml` names `ghcr.io/open-neko/neko-sandbox`,
+and removes its older tags. An override that only builds the sandbox from
+source keeps its image; run `up -d --build` after the upgrade.
+
+On a native install, run the compose command of
+[Run with a native install](#run-with-a-native-install) again with the new
+`OPENNEKO_VERSION`. `openneko upgrade` prints a warning when the sandbox
+still runs an older tag. Then run `docker image prune` to remove the old
+image.
+
 ## Upgrade an install that runs an earlier recipe
 
 Before 6.0.0, this recipe put the sandbox on a network with a route out,
@@ -263,11 +288,12 @@ so commands reached the internet. 6.0.0 closes that network and adds the
 egress proxy. After the upgrade, commands reach no host until an admin
 lists one.
 
-1. Take the new recipe and build the image again. Compose does not build a
-   new image for `up` on its own:
+1. Take the new recipe and pull the image of the release, or build it
+   again from source with `up -d --build`:
 
    ```sh
-   docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml up -d --build
+   docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml pull openneko-sandbox openneko-egress
+   docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml up -d
    ```
 
    Compose makes the `openneko-sandbox` network again with
@@ -276,7 +302,7 @@ lists one.
    its own `cap_add` for the sandbox must add both, or the sandbox does not
    start. If your Compose version
    stops and says that the network must be made again, run the same files
-   with `down` (no `-v`), then `up -d --build`.
+   with `down` (no `-v`), then `up -d`.
 2. A native install that runs the sandbox with `docker run`: stop and
    remove that container, then start `compose.native.yml` as in
    [Run with a native install](#run-with-a-native-install).
@@ -406,6 +432,8 @@ recipes/sandbox/egress-proof.sh openneko-sandbox:local
 It needs Docker, Go, `nsenter` for rootless Docker, and the test database
 of `apps/openneko` (`OPENNEKO_TEST_DATABASE_URL`). The PR checks and the
 post-release smoke run `TestEgressProof` with
-`OPENNEKO_EGRESS_PROOF_REQUIRED=1`, so a missing image fails the run.
+`OPENNEKO_EGRESS_PROOF_REQUIRED=1`, so a missing image fails the run. The
+PR checks build the image from the Dockerfile. The post-release smoke
+pulls the published image of the release and runs the stack with it.
 No minimum Docker Engine version applies; the kernel needs nftables
 (`nf_tables`), which every supported Linux has.

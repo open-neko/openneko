@@ -12,11 +12,19 @@
 * `openneko release-check --sandbox` prints `sandbox_egress=closed`, `open` or `unknown`, and fails on `open` and `unknown`.
 * `openneko start` and `openneko upgrade` warn when `compose.override.yml` gives the sandbox a route out.
 * For a sandbox on another host whose egress you enforce yourself, set `OPENNEKO_SANDBOX_EGRESS_BY_OPERATOR=1` for web. It is off by default; the status page shows it, and a change goes in the audit chain.
-* Upgrade an install that runs the sandbox recipe: take the new recipe, run the same compose command with `up -d --build`, then run `openneko release-check --sandbox` and check for `sandbox_egress=closed`. A native install starts the sandbox with `recipes/sandbox/compose.native.yml`. The steps are in `recipes/sandbox/README.md`, "Upgrade an install that runs an earlier recipe".
+* Upgrade an install that runs the sandbox recipe: take the new recipe, run the same compose command with `pull` and then `up -d`, then run `openneko release-check --sandbox` and check for `sandbox_egress=closed`. A native install starts the sandbox with `compose.native.yml`. The steps are in `recipes/sandbox/README.md`, "Upgrade an install that runs an earlier recipe".
 * The bundled skills (`xlsx`, `docx`, `pptx`, `pdf`, `skill-creator`), `neko_data` and declared queries need no host on the list.
 * The admin form and the proxy refuse a wildcard on a public suffix (`*.co.uk`, `*.github.io`, `*.s3.amazonaws.com`). A wildcard matches no host under a public suffix below its domain. A saved list that holds such a wildcard reads as empty after the upgrade; save it again with the hosts named one by one.
 * The proxy closes a connection after 5 minutes with no traffic, and when its host leaves the list or its run ends. A run holds at most 32 connections through the proxy at once.
 * A run that OpenNeko does not end expires after its longest command time plus 10 minutes with no command. The sandbox voids its proxy token and gives its user back to the pool.
+
+### Sandbox image
+
+* Each release publishes the sandbox as `ghcr.io/open-neko/neko-sandbox`, for amd64 and arm64, with the release's tag. One image holds the sandbox service and the egress proxy. It is 148 MiB compressed on amd64 and 146 MiB on arm64.
+* `recipes/sandbox/compose.yml` and `compose.native.yml` name the image with `OPENNEKO_VERSION`, the same as the other OpenNeko images. They keep their `build:` lines, so `up --build` still builds the image from source.
+* The native release archive holds `share/openneko/sandbox/compose.native.yml`, so a native install needs no checkout to run the sandbox.
+* `openneko upgrade` pulls the sandbox image with the stack when `compose.override.yml` names it, and removes its older tags. A native upgrade prints a warning when the sandbox still runs an older tag.
+* **Breaking:** the image has no compiler, pip, npm or git. A terminal command cannot install a package at run time, also for a host on the egress list. Tesseract has no `osd` data; the `pdf` skill does not use it.
 
 ### Model keys
 
