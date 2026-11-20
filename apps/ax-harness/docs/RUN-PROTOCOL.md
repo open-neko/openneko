@@ -228,7 +228,7 @@ The `harness` package reads these variables from the turn's environment:
 | `OPENNEKO_SANDBOX_URL`, `OPENNEKO_SANDBOX_KEY` | The sandbox service that runs `terminal` commands: `unix:///path`, `http://` or `https://`. In serve, only serve's own values count. Without a URL there is no `terminal`. |
 | `OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS` | Default terminal timeout, 1 to 600. Default 180. |
 | `OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT` | Terminal output cap in characters, 1,000 to 1,000,000. Default 50,000. |
-| `OPENNEKO_HARNESS_WEB_HOSTS` | Comma list of hosts for `web_fetch`. `*.example.com` matches subdomains; `*` matches any public host. Unset means no `web_fetch`. |
+| `OPENNEKO_HARNESS_WEB_HOSTS` | Comma list of hosts for `web_fetch`. `*.example.com` matches subdomains; `*` matches any public host. Unset means no `web_fetch`. The turn needs the tool bridge: web makes each fetch and checks the URL against its own list for the run. |
 | `OPENNEKO_HARNESS_UPLOADS_DIR` | Adds read-only upload tools. |
 | `OPENNEKO_HARNESS_SKILLS_READ`, `OPENNEKO_MCP_SKILLS_ROOT` | Adds the staged skills to the Ax skills catalog, and `skill_read` and `skill_search` for supporting files. |
 | `OPENNEKO_HARNESS_CHILD_TOOLS` | `*` or a comma list of tools for the child agent. Pause tools stay with the parent. |
@@ -250,7 +250,9 @@ once unless `replace_all` is true.
 `{path, line, text}` matches; a glob alone returns paths. The default limit is
 50 and the maximum is 200.
 
-`web_fetch` sends a GET with no cookies or credentials. Each redirect must stay
+`web_fetch` runs in `openneko web`: the harness sends each call over the
+bridge as the hidden tool `openneko_web_fetch`, and web logs the URL with
+the organization and the run. It sends a GET with no cookies or credentials. Each redirect must stay
 on the allowlist. Without a proxy, connections reach public addresses only.
 HTML returns as plain text. The cap is 10 MiB of body and 2,000,000 characters.
 

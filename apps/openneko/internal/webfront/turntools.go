@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
+	"github.com/open-neko/openneko/apps/ax-harness/webfetch"
 )
 
 // The turn's tools are one multiplexed MCP server whose tools are
@@ -269,6 +270,7 @@ type toolRoute struct {
 type toolServer struct {
 	groups     []toolGroup
 	scriptData func(ctx context.Context, raw json.RawMessage) (*jsObj, error)
+	webFetch   func(ctx context.Context, raw json.RawMessage) json.RawMessage
 	mu         sync.Mutex
 	routes     map[string]toolRoute
 	starting   bool
@@ -455,6 +457,9 @@ func (s *toolServer) handle(ctx context.Context, method string, params json.RawM
 				return nil, &rpcError{-32603, "MCP error -32603: " + err.Error()}
 			}
 			return json.RawMessage(jsStringify(result, false)), nil
+		}
+		if p.Name == webfetch.BridgeTool && s.webFetch != nil {
+			return s.webFetch(ctx, p.Arguments), nil
 		}
 		route, ok, err := s.route(ctx, p.Name)
 		if err != nil {

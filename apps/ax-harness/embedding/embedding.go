@@ -99,6 +99,9 @@ func embed(ctx context.Context, request Request, key string) (Result, error) {
 		httpRequest.Header.Set("authorization", "Bearer "+key)
 	}
 	do := client
+	if keydoor.DoorOnly() && !keydoor.IsURL(request.URL) {
+		return Result{}, keydoor.ErrNotDoor
+	}
 	if keydoor.IsURL(request.URL) {
 		if do, err = keydoor.Client(); err != nil {
 			return Result{}, err

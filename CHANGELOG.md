@@ -32,6 +32,7 @@
 ### Serve confines itself (Linux)
 
 * **Breaking:** on Linux, `openneko serve` confines itself with Landlock at start. In production mode it does not start on a kernel with no Landlock or with an ABI below 3 (Linux 6.2). Set `OPENNEKO_ENV=development` to run it unconfined for development.
+* On Linux and macOS, `openneko serve` runs each agent turn in its own `openneko agent-runner` process. The runner gets only its link to serve and a broker link; serve passes it each connection to the key door and the sandbox. The runner refuses a model or embedding URL that is not the door. `web_fetch` now runs in `openneko web`, which logs each URL with the organization and the run. Windows still runs turns inside serve.
 * A confined serve cannot read the config folder (the secret key, `config.json`, `secrets.json`), the web admin socket token or the rest of the home folder, cannot write outside its folders, cannot run a file it wrote, and cannot read the memory or environment of another process or trace it.
 * The web admin socket needs the token in `web-admin.sock.token` beside it. `openneko pack`, `openneko source` and `openneko graphjin import` read it; a script that calls the socket must send `Authorization: Bearer <token>`.
 * A native install gives serve its own temp folder, `<data>/tmp`.
