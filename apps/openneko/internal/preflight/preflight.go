@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -153,8 +154,17 @@ func DuplicateBinary() Result {
 	return duplicateBinaryWith(self, bin, lookErr)
 }
 
+func sameFile(a, b string) bool {
+	if a == b {
+		return true
+	}
+	ra, errA := filepath.EvalSymlinks(a)
+	rb, errB := filepath.EvalSymlinks(b)
+	return errA == nil && errB == nil && ra == rb
+}
+
 func duplicateBinaryWith(self, found string, lookErr error) Result {
-	if lookErr != nil || found == self {
+	if lookErr != nil || sameFile(found, self) {
 		return Result{Name: "path", Level: Pass, Detail: "single openneko on PATH"}
 	}
 	return Result{
