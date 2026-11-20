@@ -110,6 +110,7 @@ func (s Server) Dirs() []Dir {
 		{l.Files(), a, a, 0o700},
 		{l.Index(), a, a, 0o700},
 		{l.Subscriptions(), a, a, 0o700},
+		{l.Tmp(), a, a, 0o700},
 		{filepath.Dir(l.Log("serve")), a, a, 0o700},
 		{l.shared(), "root", g, 0o750},
 		{l.Run(), a, g, fs.ModeSetgid | 0o750},

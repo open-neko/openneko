@@ -79,6 +79,8 @@ type Server struct {
 	// KeyEnv names the model key variables that serve's environment held at
 	// start. A status frame reports them.
 	KeyEnv []string
+	// Confinement is how the OS confines serve; a status frame reports it.
+	Confinement json.RawMessage
 	// MaxTurns bounds the turns that run at once; more are refused.
 	MaxTurns int
 	// Sandbox runs every turn's terminal commands. The worker cannot set it.
@@ -161,7 +163,7 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 	}
 	start, err := readFrame(reader)
 	if err == nil && start.Type == "status" {
-		result, _ := json.Marshal(Status{RequireDoor: s.RequireDoor, KeyEnv: append([]string{}, s.KeyEnv...)})
+		result, _ := json.Marshal(Status{RequireDoor: s.RequireDoor, KeyEnv: append([]string{}, s.KeyEnv...), Confinement: s.Confinement})
 		_ = out.write(Frame{Type: "status", Result: result})
 		return
 	}
@@ -288,10 +290,12 @@ func (s *Server) environ(in []string) []string {
 }
 
 // Status is serve's answer to a status frame: whether it refuses a frame
-// with a model key, and the key variables its environment held at start.
+// with a model key, the key variables its environment held at start, and
+// how the OS confines it.
 type Status struct {
-	RequireDoor bool     `json:"require_door"`
-	KeyEnv      []string `json:"key_env"`
+	RequireDoor bool            `json:"require_door"`
+	KeyEnv      []string        `json:"key_env"`
+	Confinement json.RawMessage `json:"confinement,omitempty"`
 }
 
 func onlyDoorTokens(frame Frame) bool {

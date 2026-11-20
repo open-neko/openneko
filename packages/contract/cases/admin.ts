@@ -8,7 +8,7 @@ export const adminCases: Case[] = [
     op: "GET /admin/services", name: "reports each external service", status: 200, request: { query: { refresh: "1" } },
     check: (r) => {
       const services = body(r).services as { id: string; state: string }[];
-      expect(services.map((s) => s.id)).toEqual(["inference", "embedding", "sandbox", "file-store"]);
+      expect(services.map((s) => s.id)).toEqual(["inference", "embedding", "sandbox", "file-store", "agent-confinement"]);
     },
   },
   { op: "GET /admin/services", name: "is for administrators only", as: "member", status: 403 },

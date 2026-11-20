@@ -312,6 +312,7 @@ components:
           - embedding
           - sandbox
           - file-store
+          - agent-confinement
         label:
           type: string
         state:
