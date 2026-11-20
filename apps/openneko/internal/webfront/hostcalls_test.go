@@ -290,14 +290,14 @@ func TestAdminServicesChecks(t *testing.T) {
 	if s := got["inference"]; s["state"] != "failing" || s["detail"] != "401 from https://models.example.test: key [redacted] refused" {
 		t.Errorf("inference failing: %v", s)
 	}
-	if s := got["sandbox"]; s["state"] != "failing" || s["detail"] != "the sandbox refused the key" {
+	if s := got["sandbox"]; s["state"] != "failing" || s["detail"] != "the sandbox refused the key. The terminal is off until the sandbox reports that its network is closed" {
 		t.Errorf("sandbox failing: %v", s)
 	}
 
 	t.Setenv("OPENNEKO_SANDBOX_KEY", "sandbox-key-1")
 	for body, want := range map[string]string{
-		`{"status":"ok","egress":"open"}`: "its network has a route out",
-		`{"status":"ok"}`:                 "does not report whether its network has a route out",
+		`{"status":"ok","egress":"open"}`: "The terminal is off: the sandbox network has a route out",
+		`{"status":"ok"}`:                 "The terminal is off: the sandbox does not report that its network is closed",
 	} {
 		sandboxCheck.Store(body)
 		got = servicesByID(t, f, "?refresh=1")

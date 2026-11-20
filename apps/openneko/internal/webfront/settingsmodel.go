@@ -96,12 +96,15 @@ func (a *API) settingsAgentGet(w http.ResponseWriter, r *http.Request) {
 		source = "org"
 	}
 	egress := egressHostsOf(cfg)
+	state, _ := a.sandboxEgress(r.Context(), false)
 	sendJSON(w, http.StatusOK, map[string]any{
 		"agent": agentSettings{Source: source, Backend: "ax", GlobalCap: positiveCap(cfg["globalCap"], agentDefaultGlobalCap),
 			Terminal: cfg["terminal"] != false, ResponderEffort: llm.ResponderEffort(cfg), EgressHosts: egress},
 		"egressSuggestions": a.packEgressSuggestions(r.Context(), act.OrgID, egress),
 		"options":           agentBackendOptions,
 		"terminalAvailable": strings.TrimSpace(os.Getenv("OPENNEKO_SANDBOX_URL")) != "",
+		"terminalBlocked":   terminalBlockedReason(state),
+		"sandboxEgress":     state,
 		"defaults":          map[string]any{"globalCap": agentDefaultGlobalCap, "terminal": true, "responderEffort": llm.DefaultResponderEffort},
 	})
 }

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, Input } from "@/components/ui/field";
 import EgressHostsField, { egressHostLines } from "./EgressHostsField";
+import { terminalHint } from "./terminal-hint";
 
 type ProviderOption = { value: string; label: string; description: string };
 type ProviderField = {
@@ -47,6 +48,7 @@ type AgentSettingsPayload = {
   egressSuggestions?: string[];
   options: readonly ProviderOption[];
   terminalAvailable: boolean;
+  terminalBlocked?: string;
   defaults: { globalCap: number; terminal: boolean; responderEffort: ResponderEffort };
 };
 type ResponderEffort = "low" | "medium" | "high";
@@ -209,11 +211,7 @@ export default function AgentForm({
 
           <Field
             label="Terminal"
-            hint={
-              terminalAvailable
-                ? "Lets the agent run commands, script skills and workflow script steps in the sandbox service. The sandbox gets no model key and no database login. Applies from the next run."
-                : "Unavailable: this install has no sandbox service. Set OPENNEKO_SANDBOX_URL on the server to use it."
-            }
+            hint={terminalHint(terminalAvailable, initial.agent.terminalBlocked)}
           >
             <Checkbox
               label="Let the agent use the terminal"

@@ -333,14 +333,14 @@ func (a *API) externalServices() []externalService {
 				return out, nil
 			},
 			check: func(ctx context.Context, _ string, _ *serviceSettings) (string, string, error) {
-				egress, err := sandbox.ProbeEgress(ctx, sandbox.ConfigFromEnv(os.Getenv))
+				egress, err := a.sandboxEgress(ctx, true)
 				switch {
+				case egress == "operator":
+					return "The terminal is on because " + OperatorEgressEnv + " is set: the operator enforces the sandbox's egress outside it. OpenNeko does not check it.", "", nil
 				case err != nil:
-					return "", "", err
-				case egress == "open":
-					return "", "", errors.New(`The sandbox accepted the key, but its network has a route out, so the agent's commands can reach the internet. Run it on an internal network (INSTALL.md, "Sandbox").`)
+					return "", "", fmt.Errorf("%w. The terminal is off until the sandbox reports that its network is closed", err)
 				case egress != "closed":
-					return "", "", errors.New(`The sandbox accepted the key, but it does not report whether its network has a route out. Rebuild it from recipes/sandbox and run it on an internal network (INSTALL.md, "Sandbox").`)
+					return "", "", errors.New(terminalBlockedReason(egress))
 				}
 				return "The sandbox accepted the key. Its network has no route out.", "", nil
 			},

@@ -1,6 +1,7 @@
 package webfront
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -241,6 +242,7 @@ func TestWorkflowContinuationsMatchNode(t *testing.T) {
 
 type fakeStepSandbox struct {
 	mu      sync.Mutex
+	egress  string
 	answers []sandboxAnswerFixture
 	seen    []seenRequest
 	ended   int
@@ -249,6 +251,10 @@ type fakeStepSandbox struct {
 func (f *fakeStepSandbox) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if r.URL.Path == "/v2/check" {
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "egress": cmp.Or(f.egress, "closed")})
+		return
+	}
 	if r.Method == http.MethodDelete {
 		f.ended++
 		w.WriteHeader(http.StatusNoContent)

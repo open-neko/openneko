@@ -326,15 +326,16 @@ func (a *API) orgTerminal(ctx context.Context, orgID string) (bool, error) {
 	}
 	var raw []byte
 	err := a.DB.QueryRow(ctx, `select config from llm_provider_config where org_id = $1 and scope = 'agent' limit 1`, orgID).Scan(&raw)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return true, nil
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return false, err
 	}
 	var cfg map[string]any
 	_ = json.Unmarshal(raw, &cfg)
-	return cfg["terminal"] != false, nil
+	if cfg["terminal"] == false {
+		return false, nil
+	}
+	state, _ := a.sandboxEgress(ctx, false)
+	return egressAllowsTerminal(state), nil
 }
 
 var unsafeSegmentPattern = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
