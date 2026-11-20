@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/open-neko/openneko/apps/openneko/internal/testpg"
+	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
 const (
