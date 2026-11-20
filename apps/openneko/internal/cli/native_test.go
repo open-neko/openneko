@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
 	"github.com/open-neko/neko/apps/openneko/internal/installation"
 	"github.com/open-neko/neko/apps/openneko/internal/native"
 )
@@ -18,11 +20,25 @@ func TestClassifyNative(t *testing.T) {
 		"serve": {PID: os.Getpid(), Started: now.Add(-time.Minute)},
 		"web":   {PID: os.Getpid(), Started: now.Add(-time.Minute), Restarts: 2},
 	}}
-	if state, lines := classifyNative(st, now); state != serving || !strings.Contains(strings.Join(lines, "\n"), "web: pid") {
-		t.Errorf("both up: %v %v", state, lines)
+	gj := &gjhost.State{State: gjhost.StateRunning, Since: now.Add(-time.Minute), PID: os.Getpid(), Restarts: 1}
+	if state, lines := classifyNative(st, gj, now); state != serving || !strings.Contains(strings.Join(lines, "\n"), "web: pid") ||
+		!strings.Contains(strings.Join(lines, "\n"), fmt.Sprintf("graphjin: pid %d, up 1m0s, 1 restarts", os.Getpid())) {
+		t.Errorf("all up: %v %v", state, lines)
+	}
+	for _, c := range []struct {
+		gj   *gjhost.State
+		want string
+	}{
+		{nil, "graphjin: no state from serve yet"},
+		{&gjhost.State{State: gjhost.StateRunning, PID: 0}, "graphjin: not running, 0 restarts"},
+		{&gjhost.State{State: gjhost.StateRestarting, Reason: "graphjin exited", Restarts: 2}, "graphjin: restarting, 2 restarts; graphjin exited"},
+	} {
+		if state, lines := classifyNative(st, c.gj, now); state != degraded || !strings.Contains(strings.Join(lines, "\n"), c.want) {
+			t.Errorf("graphjin %+v: %v %v", c.gj, state, lines)
+		}
 	}
 	st.Procs["web"] = &native.ProcState{Restarts: 3, LastExit: "exit status 1"}
-	state, lines := classifyNative(st, now)
+	state, lines := classifyNative(st, gj, now)
 	if state != down || !strings.Contains(strings.Join(lines, "\n"), "web: not running, 3 restarts; last stop: exit status 1") {
 		t.Errorf("web down: %v %v", state, lines)
 	}

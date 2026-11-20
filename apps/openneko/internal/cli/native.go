@@ -20,6 +20,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/assets"
 	"github.com/open-neko/neko/apps/openneko/internal/appdir"
 	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
 	"github.com/open-neko/neko/apps/openneko/internal/installation"
 	"github.com/open-neko/neko/apps/openneko/internal/instance"
 	"github.com/open-neko/neko/apps/openneko/internal/native"
@@ -298,7 +299,11 @@ func statusNative(ctx context.Context, out io.Writer) error {
 		writeStatus(out, degraded, []string{fmt.Sprintf("  ·  supervisor: pid %d; %v", pid, err)}, "")
 		return WithExit(1, nil)
 	}
-	state, lines := classifyNative(st, time.Now())
+	var gj *gjhost.State
+	if g, err := gjhost.ReadState(layout.GraphJin()); err == nil {
+		gj = &g
+	}
+	state, lines := classifyNative(st, gj, time.Now())
 	checks := []struct{ name, url string }{{"serve", "http://" + native.ServeAddr + "/healthz"}}
 	if probe, err := native.ProbeHost(st.WebAddr); err == nil {
 		checks = append(checks, struct{ name, url string }{"web", "http://" + probe + "/api/v1/version"})
@@ -320,7 +325,7 @@ func statusNative(ctx context.Context, out io.Writer) error {
 	return WithExit(1, nil)
 }
 
-func classifyNative(st native.State, now time.Time) (health, []string) {
+func classifyNative(st native.State, gj *gjhost.State, now time.Time) (health, []string) {
 	state := serving
 	lines := []string{fmt.Sprintf("  ·  supervisor: pid %d, up %s", st.PID, now.Sub(st.Started).Round(time.Second))}
 	for _, name := range []string{"serve", "web"} {
@@ -339,6 +344,26 @@ func classifyNative(st native.State, now time.Time) (health, []string) {
 		default:
 			lines = append(lines, fmt.Sprintf("  ·  %s: pid %d, up %s, %d restarts", name, ps.PID, now.Sub(ps.Started).Round(time.Second), ps.Restarts))
 		}
+	}
+	switch {
+	case gj == nil:
+		lines = append(lines, "  ·  graphjin: no state from serve yet")
+	case gj.State == gjhost.StateRunning && native.Alive(gj.PID):
+		lines = append(lines, fmt.Sprintf("  ·  graphjin: pid %d, up %s, %d restarts", gj.PID, now.Sub(gj.Since).Round(time.Second), gj.Restarts))
+		return state, lines
+	default:
+		what := gj.State
+		if what == gjhost.StateRunning {
+			what = "not running"
+		}
+		line := fmt.Sprintf("  ·  graphjin: %s, %d restarts", what, gj.Restarts)
+		if gj.Reason != "" {
+			line += "; " + gj.Reason
+		}
+		lines = append(lines, line)
+	}
+	if state == serving {
+		state = degraded
 	}
 	return state, lines
 }

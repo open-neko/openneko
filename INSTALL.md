@@ -1134,6 +1134,9 @@ The start writes `"runtime": "native"` to `installation.json`. After that,
 and `upgrade` act on the native install. `openneko logs` reads the
 `supervisor`, `serve` and `web` logs.
 
+- `openneko status` gives the PID of the supervisor, `serve`, `web` and the
+  GraphJin that `serve` runs, with the restarts of each. Then it checks that
+  serve and web answer. It reports `degraded` when GraphJin does not run.
 - `openneko doctor` checks the host, the web app folder, the database (the
   same checks as the start), `pg_dump` and `pg_restore`, the latest backup
   and the processes.

@@ -132,7 +132,16 @@ func writeAtomic(path string, data []byte) error {
 	if err := os.WriteFile(tmp, data, 0o660); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	var err error
+	// On Windows a rename onto a file that a reader holds open fails for a moment.
+	for range 20 {
+		if err = os.Rename(tmp, path); err == nil {
+			return nil
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	_ = os.Remove(tmp)
+	return err
 }
 
 // Version reports the serv/v3 module version linked into the binary.

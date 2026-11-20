@@ -11,6 +11,9 @@ import (
 // new openneko release on every system: it logs its arguments to that file
 // and answers as version 9.9.9.
 func TestMain(m *testing.M) {
+	if mode := os.Getenv(treeEnv); mode != "" {
+		os.Exit(treeHelper(mode))
+	}
 	calls := os.Getenv("OPENNEKO_TEST_FAKE_CLI")
 	if calls == "" {
 		os.Exit(m.Run())
