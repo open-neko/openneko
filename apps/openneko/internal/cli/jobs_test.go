@@ -11,7 +11,7 @@ func TestJobsRunRefusals(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"jobs", "run", "directory_sync", "--org", "o"}, `can run workflow_cron_sweep; "directory_sync" is not one of them`},
+		{[]string{"jobs", "run", "directory_sync", "--org", "o"}, `can run workflow_cron_sweep, dream_sweep; "directory_sync" is not one of them`},
 		{[]string{"jobs", "run", "workflow_cron_sweep"}, "--org is required"},
 		{[]string{"jobs", "run", "workflow_cron_sweep", "--org", "o", "--at", "tomorrow"}, "--at:"},
 	} {
