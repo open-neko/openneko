@@ -24,6 +24,7 @@ on:
       - "compose.yml"
       - ".github/workflows/deploy.yml"
       - ".github/workflows/go.yml"
+  workflow_dispatch:
 
 jobs:
   test:
