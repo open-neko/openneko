@@ -539,9 +539,10 @@ volumes:
 Run the sandbox in the same file with the `openneko-sandbox` service of
 `recipes/sandbox/compose.yml`. Each release publishes its image as
 `ghcr.io/open-neko/neko-sandbox` with the release's tag. Keep the recipe's
-`image:` line and leave out its `build:` lines, so `openneko start` and
-`openneko upgrade` pull the image of the CLI's release, and the upgrade
-removes the older tags. The service mounts `openneko-sandbox-socket` at
+`image:` line, so `openneko start` and `openneko upgrade` pull the image of
+the CLI's release, and the upgrade removes the older tags. The recipe has no
+`build:` line. To run a source build, build the image from `recipes/sandbox`
+and set `OPENNEKO_SANDBOX_IMAGE` to its name. The service mounts `openneko-sandbox-socket` at
 `/run/openneko-sandbox` and gives its socket to group 1001. Keep its
 `openneko-sandbox` network with `internal: true`: that network has no route
 out and no DNS for external names. The sandbox also sets its own firewall
@@ -944,6 +945,14 @@ This release has fewer parts. The upgrade migrates your data in place:
   allowlists. The sandbox recipe takes only the list at Admin, Settings,
   Agent, which is empty after the upgrade. A workflow's network hosts
   apply only to the agent's web tool.
+- **The sandbox image** holds no git, npm, pip, pypdf, openpyxl,
+  python-docx or python-pptx. A script skill that your organization wrote
+  and that imports or calls one of them fails. Change it to use the bundled
+  skills (`xlsx`, `docx`, `pptx`, `pdf`) or the Python standard library.
+- **The sandbox recipe** names the image of the release and has no `build:`
+  line. Without `OPENNEKO_VERSION`, Compose stops and asks for it. For a
+  source build, build the image and set `OPENNEKO_SANDBOX_IMAGE`
+  ([recipes/sandbox/README.md](recipes/sandbox/README.md)).
 - **The serve roles** now have the database name in them. The first start
   creates `neko_files_<database>` and `neko_subscriptions_<database>` with the
   rights of the old roles. On a database that you run, the `neko` login needs

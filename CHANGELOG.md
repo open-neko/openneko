@@ -21,11 +21,14 @@
 ### Sandbox image
 
 * Each release publishes the sandbox as `ghcr.io/open-neko/neko-sandbox`, for amd64 and arm64, with the release's tag. One image holds the sandbox service and the egress proxy. It is 131 MiB compressed on amd64 and 130 MiB on arm64.
-* `recipes/sandbox/compose.yml` and `compose.native.yml` name the image with `OPENNEKO_VERSION`, the same as the other OpenNeko images. They keep their `build:` lines, so `up --build` still builds the image from source.
+* `recipes/sandbox/compose.yml` and `compose.native.yml` name the image of the release: `ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION}`. They have no `build:` line and no `latest` default, so a stale local image does not stay in use. Without `OPENNEKO_VERSION`, Compose stops and asks for it; `openneko start` and `openneko upgrade` set it. For a source build, build the image from `recipes/sandbox` and set `OPENNEKO_SANDBOX_IMAGE` to its name.
+* The sandbox does not start when `OPENNEKO_SANDBOX_USERS` is not 1 to 4096, when `OPENNEKO_SANDBOX_BASE_UID` is below 1000, or when either is not a whole number. Before, `0` started a sandbox whose firewall covered one user while runs used 256.
 * The native release archive holds `share/openneko/sandbox/compose.native.yml`, so a native install needs no checkout to run the sandbox.
 * `openneko upgrade` pulls the sandbox image with the stack when `compose.override.yml` names it, and removes its older tags. A native upgrade prints a warning when the sandbox still runs an older tag.
 * **Breaking:** the image has no compiler, pip, npm or git. A terminal command cannot install a package at run time, also for a host on the egress list. Tesseract has no `osd` data; the `pdf` skill does not use it.
 * **Breaking:** the image has no Python document libraries (pypdf, python-docx, python-pptx, openpyxl, lxml, Pillow, XlsxWriter). No bundled skill uses them, and the agent prompt no longer names them. An agent's own Python script that imports one of them fails; the bundled `docx`, `pptx`, `xlsx` and `pdf` skills do the same work.
+* **Breaking:** a script skill that your organization wrote and that imports or calls git, npm, pip, pypdf, openpyxl, python-docx or python-pptx fails until it uses the bundled skills or the Python standard library.
+* The `skill-creator` skill no longer names `eval-viewer/`, `assets/eval_review.html` or `python -m scripts.run_loop`, which the image does not hold. It shows results and the eval set in the chat.
 
 ### Model keys
 
