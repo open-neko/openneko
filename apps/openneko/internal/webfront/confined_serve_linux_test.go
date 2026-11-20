@@ -236,6 +236,9 @@ func TestConfinedServeDoesItsWork(t *testing.T) {
 		t.Fatalf("serve reports %+v", rs.state)
 	}
 	t.Logf("serve: %s", rs.state)
+	if runner := serveRunner(t, rs.socket); runner != "process" {
+		t.Fatalf("serve runs turns %q, want each in an agent runner process", runner)
+	}
 
 	t.Setenv("OPENNEKO_AGENT_RUNS_DIR", l.AgentRuns())
 	t.Setenv("HOME", home)
@@ -332,6 +335,27 @@ func TestConfinedServeDoesItsWork(t *testing.T) {
 	} else if os.Getenv("CI") != "" {
 		t.Fatal("no DuckDB CLI: the sheet query of the confined serve did not run")
 	}
+}
+
+func serveRunner(t *testing.T, socket string) string {
+	t.Helper()
+	conn, err := net.Dial("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.Write([]byte(`{"type":"status"}` + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	var frame struct {
+		Result struct {
+			Runner string `json:"runner"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(conn).Decode(&frame); err != nil {
+		t.Fatal(err)
+	}
+	return frame.Result.Runner
 }
 
 func envOrDefault(name, def string) string {

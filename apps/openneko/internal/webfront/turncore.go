@@ -148,6 +148,11 @@ func (a *API) runAgentCore(ctx context.Context, in agentCoreInput) (axRunResult,
 	}
 	if w := in.Workflow; w != nil {
 		o.Tag, o.RunKind, o.NetworkHosts = "workflow "+in.RunID, "workflow", w.NetworkHosts
+		if len(w.NetworkHosts) > 0 {
+			if tools.webFetch, err = webFetchTool(w.NetworkHosts, in.OrgID, in.RunID); err != nil {
+				return axRunResult{}, err
+			}
+		}
 		o.TimeoutMs, o.MaxToolIterations, o.ReasoningEffort = w.TimeoutMs, w.MaxToolIterations, w.ReasoningEffort
 		o.MaxModelCalls = w.MaxModelCalls
 	}

@@ -110,6 +110,9 @@ func NewClient(route Route, key string, retry Retry) (client ax.AxAIService, err
 	if route.URL != "" {
 		options["base_url"] = route.URL
 	}
+	if keydoor.DoorOnly() && !keydoor.IsURL(route.URL) {
+		return nil, keydoor.ErrNotDoor
+	}
 	if keydoor.IsURL(route.URL) {
 		door, err := keydoor.Client()
 		if err != nil {

@@ -173,11 +173,14 @@ func RunTurn(ctx context.Context, turn Turn) (int, error) {
 		tools.Capabilities = append(tools.Capabilities, shell.Capability())
 	}
 	if hosts := getenv("OPENNEKO_HARNESS_WEB_HOSTS"); hosts != "" {
-		web, err := localtool.OpenWeb(hosts)
+		if hostCall == nil {
+			return failed(errors.New("web_fetch needs the OpenNeko bridge, which makes the fetch"))
+		}
+		web, err := localtool.BridgedWeb(hosts, hostCall)
 		if err != nil {
 			return failed(err)
 		}
-		tools.Capabilities = append(tools.Capabilities, web.Capability())
+		tools.Capabilities = append(tools.Capabilities, web)
 	}
 	if dir := getenv("OPENNEKO_HARNESS_UPLOADS_DIR"); dir != "" {
 		uploads, err := localtool.OpenFiles(dir)
