@@ -114,6 +114,7 @@ jobs:
               apps/openneko/assets/compose/core.yml \
               apps/openneko/assets/compose/demo.yml \
               apps/openneko/assets/compose/bundled-db.yml \
+              recipes/sandbox/compose.yml \
             | sed -e "s/\${OPENNEKO_VERSION:-latest}/${tag}/" \
                   -e 's/\${[A-Za-z_][A-Za-z_0-9]*:-\([^}]*\)}/\1/g' \
             | sort -u
@@ -169,25 +170,28 @@ jobs:
           docker run --rm --entrypoint sh "ghcr.io/open-neko/neko-web:$OPENNEKO_VERSION" \
             -c '! command -v node && ! command -v nodejs'
 
-      - name: Sandbox from this commit's recipe
+      - name: Sandbox from the release's published image
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         run: |
           set -euo pipefail
           key=$(openssl rand -hex 24)
           echo "::add-mask::$key"
           echo "OPENNEKO_SANDBOX_KEY=$key" >> "$GITHUB_ENV"
-          docker build -t openneko-sandbox:smoke recipes/sandbox
           mkdir -p ~/.config/openneko
-          sed -e 's#^    build:$#    image: openneko-sandbox:smoke\n    pull_policy: never#' \
-              -e '/^      context: recipes\/sandbox$/d' \
+          sed -e '/^    build:$/d' -e '/^      context: recipes\/sandbox$/d' \
             recipes/sandbox/compose.yml > ~/.config/openneko/compose.override.yml
-          grep -q 'image: openneko-sandbox:smoke' ~/.config/openneko/compose.override.yml
+          # shellcheck disable=SC2016
+          grep -qF 'image: ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION:-latest}' ~/.config/openneko/compose.override.yml
+          if grep -q 'build:' ~/.config/openneko/compose.override.yml; then
+            echo "the sandbox override still builds from source" >&2
+            exit 1
+          fi
 
       - name: Prove the sandbox's egress controls with real containers
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         working-directory: recipes/sandbox
         env:
-          OPENNEKO_EGRESS_PROOF_IMAGE: openneko-sandbox:smoke
+          OPENNEKO_EGRESS_PROOF_IMAGE: ghcr.io/open-neko/neko-sandbox:${{ steps.ctx.outputs.tag }}
           OPENNEKO_EGRESS_PROOF_REQUIRED: "1"
           OPENNEKO_EGRESS_PROOF_HOST_PORT: "39187"
         run: |
