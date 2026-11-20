@@ -539,7 +539,11 @@ In the Compose overlay and in `compose.native.yml` the sandbox container:
   the stack, no host on your network and no internet host, except through
   the egress proxy;
 - drops every capability except `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `KILL`,
-  `SETGID` and `SETUID`, and sets `no-new-privileges`;
+  `SETGID`, `SETUID`, `NET_ADMIN` and `SETPCAP`, and sets
+  `no-new-privileges`. The sandbox uses the last two only at start: it sets
+  a firewall in its own network namespace that lets the run users send
+  packets only to its relay to the egress proxy, then drops both from every
+  set. It does not start when it cannot do this;
 - mounts only the sockets folder and its own volumes for run folders and
   homes. It mounts no configuration, no secret, no Docker socket and no
   folder of the stack.
@@ -554,7 +558,10 @@ and logs each request with the run and the organization. A change of the
 list goes in the audit chain as `agent:egress_changed`. The rules and the
 log are in `recipes/sandbox/README.md`, "Egress".
 
-The sandbox reports in `GET /v2/check` whether its network has a route out.
+The sandbox reports in `GET /v2/check` whether runs can get out: `closed`
+needs the firewall in place, no default route, and a quiet probe. A probe
+runs as a run user at start and every minute; a name that resolves or an
+address that answers sets `open`.
 Web gives a run the terminal only when the answer is `closed`, or when the
 operator sets `OPENNEKO_SANDBOX_EGRESS_BY_OPERATOR=1` for a sandbox on
 another host. Web asks again every 30 seconds and records each change as
@@ -587,7 +594,7 @@ Compose sets all of these. They matter only for custom deployments.
 | `OPENNEKO_AGENT_RUNS_DIR` | web | where runs are staged |
 | `OPENNEKO_SANDBOX_URL` | web, serve | the sandbox service (`unix:///path`, `http://` or `https://`); empty turns the terminal off |
 | `OPENNEKO_SANDBOX_KEY` | web, serve, sandbox | the bearer key of the sandbox service |
-| `OPENNEKO_SANDBOX_EGRESS_PROXY` | sandbox | the egress proxy that commands use (`openneko-egress:3128`); empty gives commands no proxy |
+| `OPENNEKO_SANDBOX_EGRESS_PROXY` | sandbox | the egress proxy that the sandbox's relay at `127.0.0.1:3128` passes commands to (`openneko-egress:3128`); empty gives commands no proxy |
 | `OPENNEKO_SANDBOX_EGRESS_CONTROL` | sandbox | the control socket that the proxy asks (`unix:///run/openneko-egress/control.sock`) |
 | `OPENNEKO_GRAPHJIN_CONFIG` | web, serve, serve-init | the customer GraphJin config (`/config/graphjin/agentic.yml`); empty runs no GraphJin in serve |
 | `OPENNEKO_GRAPHJIN_ADDR` | serve | where the customer GraphJin listens (default `127.0.0.1:8080`; Compose sets `0.0.0.0:8080`) |

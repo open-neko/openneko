@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -25,13 +26,20 @@ import (
 // here is tested without a new image.
 func TestEgressProof(t *testing.T) {
 	image := os.Getenv("OPENNEKO_EGRESS_PROOF_IMAGE")
+	if image == "" && os.Getenv("OPENNEKO_EGRESS_PROOF_REQUIRED") == "1" {
+		t.Fatal("OPENNEKO_EGRESS_PROOF_REQUIRED is set and OPENNEKO_EGRESS_PROOF_IMAGE is not: the release path must run the egress proof")
+	}
 	if image == "" {
 		t.Skip("set OPENNEKO_EGRESS_PROOF_IMAGE to run the egress proof against real containers")
 	}
 	bin := buildProofBinary(t)
 	t.Run("stack", func(t *testing.T) { proveStack(t, image, bin) })
 	t.Run("native", func(t *testing.T) { proveNative(t, image, bin) })
+	t.Run("firewall alone", func(t *testing.T) { proveFirewallAlone(t, image, bin) })
+	t.Run("no firewall, no start", func(t *testing.T) { proveNoStartWithoutTheFirewall(t, image, bin) })
 }
+
+const runProxy = "127.0.0.1:3128"
 
 type proofStack struct {
 	project string
@@ -74,7 +82,7 @@ func (s *proofStack) composeErr(args ...string) (string, error) {
 }
 
 // nameEverything gives each container, network and volume of the project a
-// name that ends in -e, so the proof's leftovers are easy to find.
+// name that ends in the proof suffix, so the proof's leftovers are easy to find.
 func (s *proofStack) nameEverything(t *testing.T, dir string) {
 	t.Helper()
 	var cfg struct {
@@ -87,13 +95,13 @@ func (s *proofStack) nameEverything(t *testing.T, dir string) {
 	}
 	overlay := map[string]any{"services": map[string]any{}, "networks": map[string]any{}, "volumes": map[string]any{}}
 	for name := range cfg.Services {
-		overlay["services"].(map[string]any)[name] = map[string]any{"container_name": name + "-" + s.tag + "-e"}
+		overlay["services"].(map[string]any)[name] = map[string]any{"container_name": s.named(name)}
 	}
 	for name := range cfg.Networks {
-		overlay["networks"].(map[string]any)[name] = map[string]any{"name": name + "-" + s.tag + "-e"}
+		overlay["networks"].(map[string]any)[name] = map[string]any{"name": s.named(name)}
 	}
 	for name := range cfg.Volumes {
-		overlay["volumes"].(map[string]any)[name] = map[string]any{"name": name + "-" + s.tag + "-e"}
+		overlay["volumes"].(map[string]any)[name] = map[string]any{"name": s.named(name)}
 	}
 	raw, _ := json.Marshal(overlay)
 	path := filepath.Join(dir, "names.json")
@@ -104,6 +112,11 @@ func (s *proofStack) nameEverything(t *testing.T, dir string) {
 }
 
 func (s *proofStack) up(t *testing.T, dir string, services ...string) {
+	t.Helper()
+	s.upWant(t, dir, "closed", services...)
+}
+
+func (s *proofStack) upWant(t *testing.T, dir, egress string, services ...string) {
 	t.Helper()
 	s.nameEverything(t, dir)
 	t.Cleanup(func() {
@@ -122,8 +135,8 @@ func (s *proofStack) up(t *testing.T, dir string, services ...string) {
 			var check struct{ Status, Egress string }
 			_ = json.NewDecoder(resp.Body).Decode(&check)
 			resp.Body.Close()
-			if check.Egress != "closed" {
-				t.Errorf("the sandbox reports egress %q, want closed", check.Egress)
+			if check.Egress != egress {
+				t.Errorf("the sandbox reports egress %q, want %s", check.Egress, egress)
 			}
 			return
 		}
@@ -140,8 +153,18 @@ func (s *proofStack) client() *testClient {
 	return c
 }
 
+// proofSuffix ends every name of the proof, so that two people who run it
+// on one machine do not share containers.
+func proofSuffix() string {
+	return cmp.Or(os.Getenv("OPENNEKO_EGRESS_PROOF_SUFFIX"), "e")
+}
+
+func (s *proofStack) named(name string) string {
+	return name + "-" + s.tag + "-" + proofSuffix()
+}
+
 func (s *proofStack) container(service string) string {
-	return service + "-" + s.tag + "-e"
+	return s.named(service)
 }
 
 func inspect(t *testing.T, kind, format, name string) string {
@@ -159,7 +182,7 @@ func newProofStack(t *testing.T, tag string) (*proofStack, string) {
 	if err := os.Mkdir(socketDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s := &proofStack{project: "openneko-egress-" + tag + "-e", tag: tag, socket: filepath.Join(socketDir, "sandbox.sock"), key: newEgressToken()}
+	s := &proofStack{project: "openneko-egress-" + tag + "-" + proofSuffix(), tag: tag, socket: filepath.Join(socketDir, "sandbox.sock"), key: newEgressToken()}
 	s.env = []string{"OPENNEKO_SANDBOX_KEY=" + s.key, "OPENNEKO_SANDBOX_DIR=" + socketDir,
 		"OPENNEKO_SANDBOX_GID=" + strconv.Itoa(os.Getgid()), "OPENNEKO_DATABASE_URL=postgres://neko:secret@neko-db:5432/neko"}
 	return s, dir
@@ -315,23 +338,170 @@ func hostAddress(t *testing.T) string {
 
 func publicTargets(t *testing.T) []target {
 	host := hostAddress(t)
+	port := 22
+	if p := os.Getenv("OPENNEKO_EGRESS_PROOF_HOST_PORT"); p != "" {
+		port, _ = strconv.Atoi(p)
+	}
 	return []target{
 		{"public:1.1.1.1:443", "1.1.1.1", 443, true},
 		{"public:8.8.8.8:53", "8.8.8.8", 53, true},
-		{"docker-host:" + host + ":22", host, 22, true},
+		{fmt.Sprintf("docker-host:%s:%d", host, port), host, port, true},
 		{"metadata:169.254.169.254:80", "169.254.169.254", 80, true},
 	}
 }
 
+func gatewayPort() int {
+	if p, err := strconv.Atoi(os.Getenv("OPENNEKO_EGRESS_PROOF_GATEWAY_PORT")); err == nil {
+		return p
+	}
+	return 39187
+}
+
+// listenOnTheGateway starts a listener in the network namespace that holds
+// Docker's bridges, so each bridge gateway has a port that answers. Rootful
+// Docker keeps the bridges in the host's namespace; rootless Docker keeps
+// them in the namespace of its RootlessKit child.
+func listenOnTheGateway(t *testing.T, s *proofStack, image string) {
+	t.Helper()
+	port := strconv.Itoa(gatewayPort())
+	state := filepath.Join(cmp.Or(os.Getenv("XDG_RUNTIME_DIR"), fmt.Sprintf("/run/user/%d", os.Getuid())), "dockerd-rootless")
+	info, _ := exec.Command("docker", "info", "-f", "{{.SecurityOptions}}").Output()
+	if !strings.Contains(string(info), "rootless") {
+		name := s.named("gateway-listener")
+		if out, err := exec.Command("docker", "run", "-d", "--name", name, "--network", "host", "--entrypoint", "python3", image, "-c", proofListener, port).CombinedOutput(); err != nil {
+			t.Fatalf("gateway listener: %v\n%s", err, out)
+		}
+		t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", name).Run() })
+		return
+	}
+	pid, err := os.ReadFile(filepath.Join(state, "child_pid"))
+	if err != nil {
+		t.Fatalf("rootless Docker, and its RootlessKit state is not readable: %v", err)
+	}
+	args := []string{"-U", "--preserve-credentials", "-t", strings.TrimSpace(string(pid))}
+	if _, err := os.Stat(filepath.Join(state, "netns")); err == nil {
+		args = append(args, "-m", "--", "nsenter", "--net="+filepath.Join(state, "netns"))
+	} else {
+		args = append(args, "-n", "--")
+	}
+	cmd := exec.Command("nsenter", append(args, "python3", "-c", proofListener, port)...)
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("gateway listener: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	time.Sleep(500 * time.Millisecond)
+}
+
+func gatewayTarget(t *testing.T, network string) target {
+	gw := inspect(t, "network", `{{range .IPAM.Config}}{{.Gateway}}{{end}}`, network)
+	return target{"docker-host:sandbox-gateway", gw, gatewayPort(), true}
+}
+
+func nativeOverlay(image, bin, extra string) string {
+	return "services:\n  openneko-sandbox:\n" + sandboxImageYAML(image, bin) + "  openneko-egress:\n" + sandboxImageYAML(image, bin) +
+		controlYAML(image, "openneko-egress") + extra
+}
+
 func proveNative(t *testing.T, image, bin string) {
 	s, dir := newProofStack(t, "native")
-	overlay := "services:\n  openneko-sandbox:\n" + sandboxImageYAML(image, bin) + "  openneko-egress:\n" + sandboxImageYAML(image, bin) +
-		controlYAML(image, "openneko-egress")
-	s.files = []string{"compose.native.yml", writeFile(t, filepath.Join(dir, "proof.yml"), overlay)}
+	s.files = []string{"compose.native.yml", writeFile(t, filepath.Join(dir, "proof.yml"), nativeOverlay(image, bin, ""))}
 	s.up(t, dir)
 	run := s.client()
 	defer run.Close()
-	checkClosed(t, s, run, publicTargets(t), []string{"example.com", "metadata.google.internal"})
+	listenOnTheGateway(t, s, image)
+	targets := append(publicTargets(t), gatewayTarget(t, s.named("openneko-sandbox")))
+	checkClosed(t, s, run, targets, []string{"example.com", "metadata.google.internal"})
+
+	status := inspectExec(t, s.container("openneko-sandbox"), "cat", "/proc/1/status")
+	if err := capsWithout(strings.NewReader(status), capNetAdmin, capSetPCap); err != nil {
+		t.Errorf("the sandbox process kept a capability after its start: %v", err)
+	}
+	if rules := inspectExec(t, s.container("openneko-sandbox"), "nft", "list", "table", "inet", firewallTable); !strings.Contains(rules, "drop") {
+		t.Errorf("the firewall table is not in place:\n%s", rules)
+	}
+	out := execIn(t, run, nil, `python3 - <<'PY'
+import socket
+srv = socket.socket()
+srv.bind(("127.0.0.1", 39190))
+srv.listen()
+print("own listener: bound")
+c = socket.socket()
+c.settimeout(3)
+try:
+    c.connect(("127.0.0.1", 39190))
+    print("own loopback: connected")
+except OSError:
+    print("own loopback: blocked")
+PY`)
+	for _, want := range []string{"own listener: bound", "own loopback: blocked"} {
+		if !strings.Contains(out, want+"\n") {
+			t.Errorf("want %q in:\n%s", want, out)
+		}
+	}
+}
+
+func inspectExec(t *testing.T, container string, args ...string) string {
+	t.Helper()
+	out, err := exec.Command("docker", append([]string{"exec", container}, args...)...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("docker exec %s %v: %v\n%s", container, args, err, out)
+	}
+	return string(out)
+}
+
+// proveFirewallAlone puts the sandbox on a network with a route out: the
+// sandbox must say so, and the firewall must still keep every run in.
+func proveFirewallAlone(t *testing.T, image, bin string) {
+	s, dir := newProofStack(t, "open")
+	extra := "networks:\n  openneko-sandbox:\n    internal: false\n"
+	s.files = []string{"compose.native.yml", writeFile(t, filepath.Join(dir, "proof.yml"), nativeOverlay(image, bin, extra))}
+	s.upWant(t, dir, "open")
+	listenOnTheGateway(t, s, image)
+	run := s.client()
+	defer run.Close()
+	targets := append(publicTargets(t), gatewayTarget(t, s.named("openneko-sandbox")))
+	checkClosed(t, s, run, targets, []string{"example.com", "metadata.google.internal"})
+}
+
+// proveNoStartWithoutTheFirewall removes one capability that the firewall
+// needs: the sandbox must exit, not serve.
+func proveNoStartWithoutTheFirewall(t *testing.T, image, bin string) {
+	for _, missing := range []string{"NET_ADMIN", "SETPCAP"} {
+		t.Run(missing, func(t *testing.T) {
+			tag := "no" + strings.ToLower(strings.ReplaceAll(missing, "_", ""))
+			s, dir := newProofStack(t, tag)
+			var caps []string
+			for _, c := range []string{"CHOWN", "DAC_OVERRIDE", "FOWNER", "KILL", "SETGID", "SETUID", "NET_ADMIN", "SETPCAP"} {
+				if c != missing {
+					caps = append(caps, c)
+				}
+			}
+			overlay := "services:\n  openneko-sandbox:\n" + sandboxImageYAML(image, bin) +
+				"    restart: \"no\"\n    cap_add: !override [" + strings.Join(caps, ", ") + "]\n"
+			s.files = []string{"compose.native.yml", writeFile(t, filepath.Join(dir, "proof.yml"), overlay)}
+			s.nameEverything(t, dir)
+			t.Cleanup(func() { _, _ = s.composeErr("down", "-v", "--remove-orphans", "-t", "1") })
+			s.compose(t, "up", "-d", "--no-build", "--no-deps", "openneko-sandbox")
+			name := s.container("openneko-sandbox")
+			var state string
+			for i := 0; i < 150; i++ {
+				if state = inspect(t, "container", "{{.State.Status}} {{.State.ExitCode}}", name); strings.HasPrefix(state, "exited") {
+					break
+				}
+				time.Sleep(200 * time.Millisecond)
+			}
+			logs, _ := exec.Command("docker", "logs", name).CombinedOutput()
+			if state != "exited 1" || !strings.Contains(string(logs), "so the sandbox does not start") {
+				t.Errorf("without %s: state %q, logs:\n%s", missing, state, logs)
+			}
+			if _, err := os.Stat(s.socket); err == nil {
+				t.Errorf("without %s the sandbox opened its socket", missing)
+			}
+		})
+	}
 }
 
 func proveStack(t *testing.T, image, bin string) {
@@ -357,9 +527,8 @@ func proveStack(t *testing.T, image, bin string) {
 	s.up(t, dir, "neko-db", "openneko-serve", "web", "openneko-sandbox", "openneko-egress", "intranet")
 
 	ipOf := func(service string) string {
-		return inspect(t, "container", `{{range $k, $v := .NetworkSettings.Networks}}{{if eq $k "default-stack-e"}}{{$v.IPAddress}}{{end}}{{end}}`, s.container(service))
+		return inspect(t, "container", `{{range $k, $v := .NetworkSettings.Networks}}{{if eq $k "`+s.named("default")+`"}}{{$v.IPAddress}}{{end}}{{end}}`, s.container(service))
 	}
-	sandboxGateway := inspect(t, "network", `{{range .IPAM.Config}}{{.Gateway}}{{end}}`, "openneko-sandbox-stack-e")
 	stack := []target{
 		{"stack:neko-db", "neko-db", 5432, true},
 		{"stack:neko-db-ip", ipOf("neko-db"), 5432, true},
@@ -368,14 +537,15 @@ func proveStack(t *testing.T, image, bin string) {
 		{"stack:openneko-serve", "openneko-serve", 8090, true},
 		{"stack:graphjin", "graphjin", 8080, true},
 		{"stack:openneko-serve-ip", ipOf("openneko-serve"), 8089, true},
-		{"docker-host:sandbox-gateway", sandboxGateway, 22, false},
+		gatewayTarget(t, s.named("openneko-sandbox")),
 	}
 
 	t.Run("a: an empty list reaches nothing", func(t *testing.T) {
+		listenOnTheGateway(t, s, image)
 		run := s.client()
 		defer run.Close()
 		checkClosed(t, s, run, append(publicTargets(t), stack...), []string{"example.com", "metadata.google.internal", "web"})
-		out := execIn(t, run, nil, `printf 'no token: '; fetch --proxy http://openneko-egress:3128 http://example.com/
+		out := execIn(t, run, nil, `printf 'no token: '; fetch --proxy http://`+runProxy+` http://example.com/
 printf 'listed none: '; fetch https://example.com/
 printf 'stack by proxy: '; fetch http://web:8080/`)
 		for _, want := range []string{"no token: status 407", "listed none: connect 403", "stack by proxy: status 403"} {
@@ -432,7 +602,7 @@ c no-proxy --direct https://example.com/`)
 		defer b.Close()
 		listed := &egressBody{Org: "org-proof", Label: "run-a", Hosts: []string{"example.com"}}
 		proxyA := strings.TrimSpace(execIn(t, a, listed, `printf %s "$HTTPS_PROXY"`))
-		m := regexp.MustCompile(`^http://(run-[A-Za-z0-9]+):([0-9a-f]{64})@openneko-egress:3128$`).FindStringSubmatch(proxyA)
+		m := regexp.MustCompile(`^http://(run-[A-Za-z0-9]+):([0-9a-f]{64})@` + regexp.QuoteMeta(runProxy) + `$`).FindStringSubmatch(proxyA)
 		if m == nil || m[1] != a.run {
 			t.Fatalf("run a's proxy = %q", proxyA)
 		}
@@ -450,7 +620,7 @@ c no-proxy --direct https://example.com/`)
 printf 'token read: '; cat /proc/[0-9]*/environ 2>/dev/null | tr '\0' '\n' | grep -c %s
 printf 'key read: '; cat /proc/[0-9]*/environ 2>/dev/null | tr '\0' '\n' | grep -c %s
 printf 'pid 1 environ: '; cat /proc/1/environ >/dev/null 2>&1 && echo readable || echo refused
-printf 'b with a token: '; fetch --proxy http://%s:%s@openneko-egress:3128 https://example.com/`,
+printf 'b with a token: '; fetch --proxy http://%s:%s@`+runProxy+` https://example.com/`,
 			tokenA, s.key, b.run, tokenA))
 		wg.Wait()
 		for _, want := range []string{"run a visible: yes", "token read: 0", "key read: 0", "pid 1 environ: refused", "b with a token: connect 407"} {
