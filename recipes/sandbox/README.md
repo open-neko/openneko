@@ -17,7 +17,7 @@ docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml u
 The `run` line runs the start steps (storage check, migrations, config
 volume, serve credentials) before `up`.
 
-The overlay adds the `openneko-sandbox` service and sets
+The overlay adds the `openneko-sandbox` and `openneko-egress` services and sets
 `OPENNEKO_SANDBOX_URL=unix:///run/openneko-sandbox/sandbox.sock` for web and
 `openneko-serve`. The socket is in its own volume, `openneko-sandbox-socket`,
 which the sandbox, web and serve mount at `/run/openneko-sandbox`. The
@@ -32,6 +32,23 @@ the sandbox, web and serve again with it. The old socket file stays in
 
 Set `OPENNEKO_SANDBOX_KEY` in the shell or in `.env` to require a key on the
 socket as well.
+
+## Run with a native install
+
+A native install (`openneko start --native` or `openneko server-install`)
+runs the sandbox with `compose.native.yml`. It starts the same two services
+on the same networks, and bind-mounts the socket folder of the install:
+
+```sh
+OPENNEKO_SANDBOX_DIR=/run/openneko-sandbox \
+OPENNEKO_SANDBOX_GID=$(getent group openneko-shared | cut -d: -f3) \
+OPENNEKO_SANDBOX_KEY=<a long random string> \
+docker compose -f recipes/sandbox/compose.native.yml up -d --build
+```
+
+A one-user native install uses
+`OPENNEKO_SANDBOX_DIR=$HOME/.local/share/openneko-sandbox` and
+`OPENNEKO_SANDBOX_GID=$(id -g)`. This file needs a key.
 
 The image carries Node, Python, Poppler, Tesseract, the Python and npm
 packages the bundled skills use, and the DejaVu Sans and Droid Sans Fallback
@@ -69,13 +86,72 @@ CommonJS (`.cjs`), because `import` does not read `NODE_PATH`.
   folder with OpenNeko.
 - A command's environment holds only `PATH`, `HOME`, `TMPDIR`, `LANG`,
   `NODE_PATH`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH`.
-  `PATH` and `NODE_PATH` come from the service's own environment. The last
-  four are paths in the run's folder.
+  `PATH` and `NODE_PATH` come from the service's own environment.
+  `SKILL_DIR` and the three after it are paths in the run's folder. With a
+  proxy set, it also holds `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy`,
+  `https_proxy` and `NODE_USE_ENV_PROXY=1` (see [Egress](#egress)).
 - When a command ends, the sandbox kills every process of the run's user.
   Ending a run removes its folder and its home. At start, the sandbox
   removes the run folders of an earlier start.
-- In the overlay, the service sits on its own network. Commands reach the
-  internet but no service of the stack.
+- The service sits on its own network, `openneko-sandbox`, which no
+  service of the stack joins. The network is internal: commands reach no
+  host outside it except through the egress proxy.
+
+## Egress
+
+Commands reach no host by default. An admin lists the hosts that the
+organization's commands may reach at Admin, Settings, Agent. The list is
+empty by default.
+
+- The `openneko-sandbox` network has `internal: true`. It has no route out,
+  and its DNS answers no external name. A command that does not use the
+  proxy reaches nothing outside the network.
+- `openneko-egress` is the only way out. It runs the same image as
+  `openneko-sandbox egress`. It joins `openneko-sandbox` and the
+  `openneko-egress` network, which has a route out. It has a read-only root
+  and no capabilities, and it mounts only the control volume.
+- OpenNeko sends the organization's list with each command, in `egress`.
+  On the first command of a run, the sandbox makes a random 32-byte token
+  for the run. It gives the command the proxy URL
+  `http://<run>:<token>@openneko-egress:3128` in the proxy variables.
+  Ending the run removes the token, so it fails at once.
+- The proxy takes `CONNECT` and plain `http://` requests. For each request
+  it asks the sandbox for the run's list over the control socket,
+  `/run/openneko-egress/control.sock`. Only root can open that socket, so a
+  command cannot ask for a list or a token. A run cannot read another run's
+  environment, because each run has its own user.
+- The proxy checks the host and the port against the list before it looks
+  up the name. It then resolves the name once and refuses the request when
+  an address is loopback, private, link-local, carrier-grade NAT, unique
+  local, multicast or the metadata address 169.254.169.254. It connects to
+  the address that it checked. It answers 407 for a bad token and 403 for a
+  host that the list does not allow.
+- The proxy writes one JSON line per request to its log: the time, the
+  run, the organization, the work run (`label`), the host, the port, the
+  address, the result and the reason. Read it with
+  `docker compose logs openneko-egress`.
+
+List entries:
+
+| Entry | Matches |
+|---|---|
+| `pypi.org` | `pypi.org`, port 443 |
+| `files.example.com:8443` | that host, port 8443 |
+| `*.example.com` | each subdomain of `example.com`, port 443; not `example.com` |
+| `203.0.113.10:443` | that public address |
+
+A list holds at most 100 entries. The admin form refuses `*`, an entry that
+matches every host, and a private, loopback, link-local or metadata
+address. Tools that read the proxy variables (pip, npm, curl, Python's
+`urllib`, Node with `NODE_USE_ENV_PROXY`) work for a listed host. A tool
+that ignores them reaches nothing.
+
+`GET /v2/check` reports `egress`: `closed` when the sandbox's network has
+no default route, else `open`. `openneko release-check --sandbox` prints it
+as `sandbox_egress`, and the Sandbox card on the status page shows it.
+
+The bundled skills, `neko_data` and declared queries need no host on the
+list.
 
 ## How files travel
 
@@ -106,8 +182,8 @@ or removed. OpenNeko writes them back into its own copy of the run.
 | Request | Body | Answer |
 |---|---|---|
 | `GET /v2/health` | | `{"status":"ok"}`, no key needed |
-| `GET /v2/check` | | `{"status":"ok"}` with the key, 401 without it. The status page uses it. |
-| `POST /v2/runs/{run}/exec` | `fresh` (true on the run's first command), `root`, `command`, `dir`, `skill_dir`, `env`, `timeout_seconds` (1 to 3600), `max_output` (1,000 to 1,000,000), `dirs`, `put` (`path`, `mode`, `data` in base64), `delete` | `exit_code`, `output`, `timed_out`, `truncated`, `dirs`, `changed` (`path`, `mode`, `data`), `deleted`, `skipped` (`path`, `reason`) |
+| `GET /v2/check` | | `{"status":"ok","egress":"closed"}` with the key, 401 without it. `egress` is `closed` or `open`. The status page uses it. |
+| `POST /v2/runs/{run}/exec` | `fresh` (true on the run's first command), `root`, `command`, `dir`, `skill_dir`, `env`, `timeout_seconds` (1 to 3600), `max_output` (1,000 to 1,000,000), `dirs`, `put` (`path`, `mode`, `data` in base64), `delete`, `egress` (`org`, `label`, `hosts`) | `exit_code`, `output`, `timed_out`, `truncated`, `dirs`, `changed` (`path`, `mode`, `data`), `deleted`, `skipped` (`path`, `reason`) |
 | `DELETE /v2/runs/{run}` | | 204 |
 
 `{run}` is `run-` and 8 to 64 letters or digits. Every path in the body
@@ -118,12 +194,55 @@ request except health needs `Authorization: Bearer <key>`. `--listen` takes
 `unix:///path` (default `unix:///run/openneko-sandbox/sandbox.sock`) or
 `host:port`. A TCP listener needs a key.
 
+`OPENNEKO_SANDBOX_EGRESS_PROXY` (`host:port`) is the proxy that commands
+use; without it, commands get no proxy variables.
+`OPENNEKO_SANDBOX_EGRESS_CONTROL` (`unix:///path`) is the control socket
+that the proxy asks. The proxy takes `--listen` (default `:3128`) and
+`--control`.
+
 ## Another host
 
 The sandbox can run on another host. Start it with a TCP listener and a key,
 put TLS in front of it, and set `OPENNEKO_SANDBOX_URL` to
 `https://host:port` and `OPENNEKO_SANDBOX_KEY` to the key in OpenNeko's
 `.env`.
+
+OpenNeko cannot see the network of another host. Run the sandbox there with
+`compose.native.yml`, or give it a network with no route out and run the
+egress proxy beside it yourself. `openneko release-check --sandbox` prints
+`sandbox_egress=open` when the sandbox has a route out, and `unknown` when
+the sandbox does not report its egress (a build from before 6.0.0). The
+status page then shows the Sandbox card as failing.
+
+## Upgrade an install that runs an earlier recipe
+
+Before 6.0.0, this recipe put the sandbox on a network with a route out,
+so commands reached the internet. 6.0.0 closes that network and adds the
+egress proxy. After the upgrade, commands reach no host until an admin
+lists one.
+
+1. Take the new recipe and build the image again. Compose does not build a
+   new image for `up` on its own:
+
+   ```sh
+   docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml up -d --build
+   ```
+
+   Compose makes the `openneko-sandbox` network again with
+   `internal: true`, and starts `openneko-egress`. If your Compose version
+   stops and says that the network must be made again, run the same files
+   with `down` (no `-v`), then `up -d --build`.
+2. A native install that runs the sandbox with `docker run`: stop and
+   remove that container, then start `compose.native.yml` as in
+   [Run with a native install](#run-with-a-native-install).
+3. Run `openneko release-check --sandbox`. It must print
+   `sandbox_egress=closed`.
+4. At Admin, Settings, Agent, list the hosts that your commands need, for
+   example a package index.
+
+A sandbox from an earlier recipe keeps working with OpenNeko 6.0.0: it
+ignores `egress`, so its commands still reach the internet, and the status
+page shows the Sandbox card as failing until you upgrade it.
 
 ## Script data
 
@@ -195,6 +314,11 @@ each query there.
 
 - A run's folder lives in the sandbox until the run ends. Plan disk space
   for the largest run folder times the runs at once.
+- A token is a bearer secret for the life of its run. A command that holds
+  it can pass it to a child process of the same run. No other run can read
+  it.
+- The proxy filters by host and port. It does not read the traffic inside
+  a `CONNECT` tunnel.
 
 ## Test
 
@@ -211,3 +335,17 @@ container:
 docker run --rm --init --tmpfs /tmp:exec,mode=1777 -v /tmp/sandbox.test:/sandbox.test:ro \
   debian:bookworm-slim /sandbox.test -test.v
 ```
+
+`egress-proof.sh` proves the egress controls against real containers. It
+starts the recipe's compose files with a built image, checks from inside a
+run what a command can reach with an empty list and with a short list, and
+runs the `neko_data` and declared-query tests against a sandbox on the
+closed network:
+
+```sh
+docker build -t openneko-sandbox:local recipes/sandbox
+recipes/sandbox/egress-proof.sh openneko-sandbox:local
+```
+
+It needs Docker, Go and the test database of `apps/openneko`
+(`OPENNEKO_TEST_DATABASE_URL`).

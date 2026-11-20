@@ -1,5 +1,16 @@
 # Changelog
 
+## 6.0.0 (unreleased): upgrade notes
+
+### Terminal egress
+
+* **Breaking:** sandbox commands reach no host by default. The sandbox network of `recipes/sandbox` is internal, with no route out and no DNS for external names. The new `openneko-egress` proxy is the only way out, and it lets a run reach only the hosts on its organization's list.
+* An admin lists the hosts at Admin, Settings, Agent, beside the Terminal setting. The list is empty after the upgrade. The form offers the hosts of installed packs, and the admin adds each one. A workflow's network hosts apply only to the agent's web tool.
+* Each change of the list or of the Terminal setting goes in the audit chain (`agent:egress_changed`, `agent:terminal_changed`). The proxy logs each request with the run, the organization, the host and the result.
+* `openneko release-check --sandbox` prints `sandbox_egress=closed`, `open` or `unknown`. The status page shows the Sandbox card as failing for `open` and `unknown`.
+* Upgrade an install that runs the sandbox recipe: take the new recipe, run the same compose command with `up -d --build`, then run `openneko release-check --sandbox` and check for `sandbox_egress=closed`. A native install starts the sandbox with `recipes/sandbox/compose.native.yml`. The steps are in `recipes/sandbox/README.md`, "Upgrade an install that runs an earlier recipe".
+* The bundled skills (`xlsx`, `docx`, `pptx`, `pdf`, `skill-creator`), `neko_data` and declared queries need no host on the list.
+
 ## [5.0.0](https://github.com/open-neko/openneko/compare/v4.9.2...v5.0.0) (2026-10-24)
 
 
