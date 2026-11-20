@@ -36,14 +36,15 @@ func TestAgentEgressHostsSetting(t *testing.T) {
 	}
 
 	for body, want := range map[string]string{
-		`{"egressHosts":"pypi.org"}`:             "egressHosts must be a list of host names",
-		`{"egressHosts":[1]}`:                    "egressHosts must be a list of host names",
-		`{"egressHosts":null}`:                   "egressHosts must be a list of host names",
-		`{"egressHosts":["https://pypi.org"]}`:   `\"https://pypi.org\" is not a host name, *.domain, or an address, with an optional :port`,
-		`{"egressHosts":["*"]}`:                  `\"*\" is not a host name, *.domain, or an address, with an optional :port`,
-		`{"egressHosts":["pypi.org:99999"]}`:     `\"pypi.org:99999\" is not a host name, *.domain, or an address, with an optional :port`,
-		`{"egressHosts":["169.254.169.254:80"]}`: `\"169.254.169.254:80\" is not a public address: the sandbox's proxy refuses private, loopback, link-local and metadata addresses`,
-		`{"egressHosts":["10.0.0.5"]}`:           `\"10.0.0.5\" is not a public address: the sandbox's proxy refuses private, loopback, link-local and metadata addresses`,
+		`{"egressHosts":"pypi.org"}`:                  "egressHosts must be a list of host names",
+		`{"egressHosts":[1]}`:                         "egressHosts must be a list of host names",
+		`{"egressHosts":null}`:                        "egressHosts must be a list of host names",
+		`{"egressHosts":["https://pypi.org"]}`:        `\"https://pypi.org\" is not a host name, *.domain, or an address, with an optional :port`,
+		`{"egressHosts":["*"]}`:                       `\"*\" is not a host name, *.domain, or an address, with an optional :port`,
+		`{"egressHosts":["pypi.org:99999"]}`:          `\"pypi.org:99999\" is not a host name, *.domain, or an address, with an optional :port`,
+		`{"egressHosts":["169.254.169.254:80"]}`:      `\"169.254.169.254:80\" is not a public address: the sandbox's proxy refuses private, loopback, link-local and metadata addresses`,
+		`{"egressHosts":["10.0.0.5"]}`:                `\"10.0.0.5\" is not a public address: the sandbox's proxy refuses private, loopback, link-local and metadata addresses`,
+		`{"egressHosts":["*.githubusercontent.com"]}`: `\"*.githubusercontent.com\" covers a public suffix, where unrelated owners register hosts; list the hosts, or a wildcard under one domain`,
 	} {
 		if code, got := put(body); code != 400 || got != `{"error":"`+want+`"}` {
 			t.Errorf("%s: %d %s", body, code, got)
@@ -53,11 +54,11 @@ func TestAgentEgressHostsSetting(t *testing.T) {
 	if w := call(f, "PUT", "/api/v1/settings/agent", `{"egressHosts":["evil.example"]}`, sessionCookie("member")); w.Code != 403 {
 		t.Errorf("a member changed the list: %d %s", w.Code, w.Body.String())
 	}
-	if code, got := put(`{"egressHosts":["PyPI.org","pypi.org:443","*.githubusercontent.com","files.example.com:8443"]}`); code != 200 ||
-		!strings.Contains(got, `"egressHosts":["pypi.org","*.githubusercontent.com","files.example.com:8443"]`) {
+	if code, got := put(`{"egressHosts":["PyPI.org","pypi.org:443","*.cdn.example.net","files.example.com:8443"]}`); code != 200 ||
+		!strings.Contains(got, `"egressHosts":["pypi.org","*.cdn.example.net","files.example.com:8443"]`) {
 		t.Fatalf("save: %d %s", code, got)
 	}
-	if code, got := put(`{"globalCap":5}`); code != 200 || !strings.Contains(got, `"egressHosts":["pypi.org","*.githubusercontent.com","files.example.com:8443"]`) {
+	if code, got := put(`{"globalCap":5}`); code != 200 || !strings.Contains(got, `"egressHosts":["pypi.org","*.cdn.example.net","files.example.com:8443"]`) {
 		t.Errorf("a later save dropped the list: %d %s", code, got)
 	}
 	if code, got := put(`{"egressHosts":[],"terminal":false}`); code != 200 || !strings.Contains(got, `"egressHosts":[]`) {
@@ -78,9 +79,9 @@ func TestAgentEgressHostsSetting(t *testing.T) {
 	}
 	rows.Close()
 	want := []string{
-		`agent:egress_changed {"next": ["pypi.org", "*.githubusercontent.com", "files.example.com:8443"], "previous": [], "actorUserId": "admin"}`,
+		`agent:egress_changed {"next": ["pypi.org", "*.cdn.example.net", "files.example.com:8443"], "previous": [], "actorUserId": "admin"}`,
 		`agent:terminal_changed {"next": false, "previous": true, "actorUserId": "admin"}`,
-		`agent:egress_changed {"next": [], "previous": ["pypi.org", "*.githubusercontent.com", "files.example.com:8443"], "actorUserId": "admin"}`,
+		`agent:egress_changed {"next": [], "previous": ["pypi.org", "*.cdn.example.net", "files.example.com:8443"], "actorUserId": "admin"}`,
 	}
 	if !slices.Equal(events, want) {
 		t.Errorf("audit chain:\n%s\nwant:\n%s", strings.Join(events, "\n"), strings.Join(want, "\n"))

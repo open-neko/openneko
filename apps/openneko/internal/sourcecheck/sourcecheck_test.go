@@ -236,17 +236,18 @@ func TestPostgres(t *testing.T) {
 	admin, u := pgTarget(t)
 	suffix := strconv.FormatInt(time.Now().UnixNano(), 36)
 	db := "sc_" + suffix
-	reader, writer, owner := "sc_reader_"+suffix, "sc_writer_"+suffix, "sc_owner_"+suffix
+	reader, writer, owner, super := "sc_reader_"+suffix, "sc_writer_"+suffix, "sc_owner_"+suffix, "sc_super_"+suffix
 	pgExec(t, admin, "create database "+db)
 	t.Cleanup(func() {
 		admin.Exec(context.Background(), "drop database if exists "+db+" with (force)")
-		for _, r := range []string{reader, writer, owner} {
+		for _, r := range []string{reader, writer, owner, super} {
 			admin.Exec(context.Background(), "drop role if exists "+r)
 		}
 	})
 	for _, r := range []string{reader, writer, owner} {
 		pgExec(t, admin, fmt.Sprintf("create role %s login password 'pw-%s'", r, r))
 	}
+	pgExec(t, admin, fmt.Sprintf("create role %s superuser login password 'pw-%s'", super, super))
 	target := *u
 	target.Path = "/" + db
 	dbConn, err := pgx.Connect(context.Background(), target.String())
@@ -256,8 +257,7 @@ func TestPostgres(t *testing.T) {
 	defer dbConn.Close(context.Background())
 	host, p, _ := net.SplitHostPort(u.Host)
 	pn, _ := strconv.Atoi(p)
-	superUser := u.User.Username()
-	superPW, _ := u.User.Password()
+	superUser, superPW := super, "pw-"+super
 	check := func(user, password, database string) Result {
 		return Check(context.Background(), Input{Type: "postgres", Host: host, Port: port(pn), Database: database, User: user, Password: password})
 	}

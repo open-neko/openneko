@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -28,9 +30,15 @@ type Proxy struct {
 	Dial    func(ctx context.Context, address string) (net.Conn, error)
 	Public  func(netip.Addr) bool
 
+	IdleTimeout time.Duration
+	MaxPerRun   int
+	Recheck     time.Duration
+
 	once    sync.Once
 	control *http.Client
 	logMu   sync.Mutex
+	openMu  sync.Mutex
+	open    map[string]int
 }
 
 type egressGrant struct {
@@ -51,7 +59,12 @@ type egressLog struct {
 	Reason  string `json:"reason,omitempty"`
 }
 
-const egressDialTimeout = 15 * time.Second
+const (
+	egressDialTimeout = 15 * time.Second
+	egressIdle        = 5 * time.Minute
+	egressPerRun      = 32
+	egressRecheck     = 30 * time.Second
+)
 
 func (p *Proxy) ListenAndServe(ctx context.Context, address string) error {
 	listener, err := net.Listen("tcp", address)
@@ -110,8 +123,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	target := netip.AddrPortFrom(addr, uint16(port)).String()
 	entry.Address = target
+	if !p.acquire(run) {
+		entry.Reason = "the run has too many open connections"
+		http.Error(w, "openneko egress: the run has too many open connections through the proxy", http.StatusTooManyRequests)
+		return
+	}
+	defer p.release(run)
 	dialCtx, cancel := context.WithTimeout(r.Context(), egressDialTimeout)
-	upstream, err := p.dial(dialCtx, target)
+	conn, err := p.dial(dialCtx, target)
 	cancel()
 	if err != nil {
 		entry.Reason = "connect failed"
@@ -119,11 +138,106 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entry.Result = "allowed"
+	upstream := &activeConn{Conn: conn}
+	upstream.touch()
+	watched, stop := context.WithCancel(context.Background())
+	defer stop()
+	closed := entry
+	closed.Result = "closed"
+	go p.watch(watched, stop, upstream, run, token, host, port, closed)
 	if r.Method == http.MethodConnect {
-		tunnel(w, upstream)
+		tunnel(watched, w, upstream)
 		return
 	}
-	forward(w, r, upstream)
+	forward(watched, w, r, upstream)
+}
+
+func (p *Proxy) acquire(run string) bool {
+	p.openMu.Lock()
+	defer p.openMu.Unlock()
+	if p.open == nil {
+		p.open = map[string]int{}
+	}
+	if p.open[run] >= cmp.Or(p.MaxPerRun, egressPerRun) {
+		return false
+	}
+	p.open[run]++
+	return true
+}
+
+func (p *Proxy) release(run string) {
+	p.openMu.Lock()
+	defer p.openMu.Unlock()
+	if p.open[run]--; p.open[run] <= 0 {
+		delete(p.open, run)
+	}
+}
+
+// watch ends a connection that sits idle, or whose host is no longer on
+// the run's list, or whose run token has expired.
+func (p *Proxy) watch(ctx context.Context, stop context.CancelFunc, conn *activeConn, run, token, host string, port int, entry egressLog) {
+	idle, recheck := cmp.Or(p.IdleTimeout, egressIdle), cmp.Or(p.Recheck, egressRecheck)
+	ticker := time.NewTicker(min(idle, recheck) / 4)
+	defer ticker.Stop()
+	checked := time.Now()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			if now.Sub(conn.last()) >= idle {
+				entry.Reason = "idle"
+			} else if now.Sub(checked) >= recheck {
+				checked = now
+				grant, err := p.grant(ctx, run, token)
+				if ctx.Err() != nil {
+					return
+				}
+				if err != nil {
+					entry.Reason = err.Error()
+				} else if rules, err := parseEgressHosts(grant.Hosts); err != nil || !allows(rules, host, port) {
+					entry.Reason = "the host left the organization's egress list"
+				}
+			}
+			if entry.Reason != "" {
+				p.record(entry)
+				stop()
+				return
+			}
+		}
+	}
+}
+
+type activeConn struct {
+	net.Conn
+	at atomic.Int64
+}
+
+func (c *activeConn) touch() { c.at.Store(time.Now().UnixNano()) }
+
+func (c *activeConn) last() time.Time { return time.Unix(0, c.at.Load()) }
+
+func (c *activeConn) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	if n > 0 {
+		c.touch()
+	}
+	return n, err
+}
+
+func (c *activeConn) Write(b []byte) (int, error) {
+	n, err := c.Conn.Write(b)
+	if n > 0 {
+		c.touch()
+	}
+	return n, err
+}
+
+func (c *activeConn) CloseWrite() error {
+	if tcp, ok := c.Conn.(interface{ CloseWrite() error }); ok {
+		return tcp.CloseWrite()
+	}
+	return c.Conn.Close()
 }
 
 func (p *Proxy) record(e egressLog) {
@@ -240,7 +354,7 @@ func (p *Proxy) grant(ctx context.Context, run, token string) (egressGrant, erro
 	return grant, nil
 }
 
-func tunnel(w http.ResponseWriter, upstream net.Conn) {
+func tunnel(ctx context.Context, w http.ResponseWriter, upstream net.Conn) {
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		upstream.Close()
@@ -257,10 +371,15 @@ func tunnel(w http.ResponseWriter, upstream net.Conn) {
 		upstream.Close()
 		return
 	}
-	splice(client, buffered.Reader, upstream)
+	splice(ctx, client, buffered.Reader, upstream)
 }
 
-func splice(client net.Conn, fromClient *bufio.Reader, upstream net.Conn) {
+func splice(ctx context.Context, client net.Conn, fromClient *bufio.Reader, upstream net.Conn) {
+	stop := context.AfterFunc(ctx, func() {
+		client.Close()
+		upstream.Close()
+	})
+	defer stop()
 	done := make(chan struct{}, 2)
 	go func() {
 		_, _ = io.Copy(upstream, fromClient)
@@ -288,8 +407,10 @@ func closeWrite(c net.Conn) {
 
 var hopHeaders = []string{"Connection", "Proxy-Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization", "Te", "Trailer", "Transfer-Encoding", "Upgrade"}
 
-func forward(w http.ResponseWriter, r *http.Request, upstream net.Conn) {
+func forward(ctx context.Context, w http.ResponseWriter, r *http.Request, upstream net.Conn) {
 	defer upstream.Close()
+	stop := context.AfterFunc(ctx, func() { upstream.Close() })
+	defer stop()
 	out := r.Clone(r.Context())
 	for _, name := range strings.Split(r.Header.Get("Connection"), ",") {
 		out.Header.Del(strings.TrimSpace(name))
