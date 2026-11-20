@@ -2,6 +2,7 @@ package llm
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -28,13 +29,104 @@ type DoorRoute struct {
 	Header string
 	Key    string
 	Query  url.Values
+	// API names the provider calls the route may carry: DoorChat when empty.
+	API string
+}
+
+const (
+	DoorChat      = "chat"
+	DoorAnthropic = "anthropic"
+	DoorGemini    = "gemini"
+	DoorEmbed     = "embed"
+)
+
+// doorCall reports whether the route's API makes a call at tail with query.
+func (r DoorRoute) doorCall(tail string, query url.Values) bool {
+	for name, values := range query {
+		_, replaced := r.Query[name]
+		streamed := r.API == DoorGemini && name == "alt" && len(values) == 1 && values[0] == "sse"
+		if !replaced && !streamed {
+			return false
+		}
+	}
+	switch r.API {
+	case DoorAnthropic:
+		return tail == "v1/messages"
+	case DoorGemini:
+		model, method, ok := strings.Cut(strings.TrimPrefix(tail, "models/"), ":")
+		return ok && strings.HasPrefix(tail, "models/") && model != "" && !strings.Contains(model, "/") &&
+			(method == "generateContent" || method == "streamGenerateContent")
+	case DoorEmbed:
+		return tail == "embeddings"
+	}
+	return tail == "chat/completions"
 }
 
 type doorGrant struct {
-	org      string
-	secret   [32]byte
-	routes   map[string]DoorRoute
-	deadline time.Time
+	org, purpose string
+	secret       [32]byte
+	routes       map[string]DoorRoute
+	deadline     time.Time
+	ctx          context.Context
+	cancel       context.CancelFunc
+
+	mu           sync.Mutex
+	calls, limit int
+}
+
+func (g *doorGrant) take() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.calls >= g.limit {
+		return false
+	}
+	g.calls++
+	return true
+}
+
+// DoorPass is one issued token. Revoke ends it and cuts its open calls.
+type DoorPass struct {
+	Token  string
+	door   *KeyDoor
+	grant  *doorGrant
+	revoke sync.Once
+	id     string
+}
+
+func (p *DoorPass) Revoke() {
+	p.revoke.Do(func() {
+		p.door.mu.Lock()
+		delete(p.door.grants, p.id)
+		p.door.mu.Unlock()
+		p.grant.cancel()
+	})
+}
+
+// Calls is the number of calls the door forwarded for the token.
+func (p *DoorPass) Calls() int {
+	p.grant.mu.Lock()
+	defer p.grant.mu.Unlock()
+	return p.grant.calls
+}
+
+// Settle compares the door's count with the calls serve reported, and
+// reports a difference to the door's Mismatch.
+func (p *DoorPass) Settle(ctx context.Context, reported int) bool {
+	counted := p.Calls()
+	if counted == reported {
+		return true
+	}
+	log.Printf("[key-door] org %q %s: the door forwarded %d model calls, serve reported %d", p.grant.org, p.grant.purpose, counted, reported)
+	if p.door.Mismatch != nil {
+		p.door.Mismatch(context.WithoutCancel(ctx), DoorMismatch{OrgID: p.grant.org, Purpose: p.grant.purpose, Counted: counted, Reported: reported})
+	}
+	return false
+}
+
+// DoorMismatch is a call whose count at the door differs from serve's report.
+type DoorMismatch struct {
+	OrgID, Purpose    string
+	Counted, Reported int
 }
 
 // KeyDoor holds the model keys in the control zone and forwards the agent
@@ -42,6 +134,7 @@ type doorGrant struct {
 type KeyDoor struct {
 	Transport http.RoundTripper
 	Now       func() time.Time
+	Mismatch  func(context.Context, DoorMismatch)
 
 	mu     sync.Mutex
 	grants map[string]*doorGrant
@@ -62,39 +155,37 @@ func (d *KeyDoor) now() time.Time {
 	return time.Now()
 }
 
-// Issue makes a token for one call. The token reaches only routes, and only
-// until revoke runs or ttl ends.
-func (d *KeyDoor) Issue(org string, routes map[string]DoorRoute, ttl time.Duration) (string, func(), error) {
+// Issue makes a token for one purpose. The token reaches only routes, for
+// at most calls calls, and only until Revoke runs or ttl ends.
+func (d *KeyDoor) Issue(org, purpose string, routes map[string]DoorRoute, ttl time.Duration, calls int) (*DoorPass, error) {
 	if ttl <= 0 || ttl > maxGrant {
 		ttl = maxGrant
+	}
+	if calls <= 0 {
+		return nil, errors.New("the key door needs a call cap")
 	}
 	for name, r := range routes {
 		u, err := url.Parse(r.Upstream)
 		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil || u.RawQuery != "" {
-			return "", nil, fmt.Errorf("the key door cannot reach route %s: invalid upstream", name)
+			return nil, fmt.Errorf("the key door cannot reach route %s: invalid upstream", name)
 		}
 	}
 	raw := make([]byte, doorIDBytes+doorSecretLen)
 	if _, err := rand.Read(raw); err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	id := base64.RawURLEncoding.EncodeToString(raw[:doorIDBytes])
 	token := keydoor.TokenPrefix + id + "." + base64.RawURLEncoding.EncodeToString(raw[doorIDBytes:])
-	grant := &doorGrant{org: org, secret: sha256.Sum256(raw[doorIDBytes:]), routes: routes, deadline: d.now().Add(ttl)}
+	grant := &doorGrant{org: org, purpose: purpose, secret: sha256.Sum256(raw[doorIDBytes:]), routes: routes,
+		deadline: d.now().Add(ttl), limit: calls}
+	grant.ctx, grant.cancel = context.WithCancel(context.Background())
 	d.mu.Lock()
 	if d.grants == nil {
 		d.grants = map[string]*doorGrant{}
 	}
 	d.grants[id] = grant
 	d.mu.Unlock()
-	var once sync.Once
-	return token, func() {
-		once.Do(func() {
-			d.mu.Lock()
-			delete(d.grants, id)
-			d.mu.Unlock()
-		})
-	}, nil
+	return &DoorPass{Token: token, door: d, grant: grant, id: id}, nil
 }
 
 func (d *KeyDoor) grant(token string) *doorGrant {
@@ -169,6 +260,21 @@ func (d *KeyDoor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if !route.doorCall(tail, r.URL.Query()) {
+		log.Printf("[key-door] route %s: refused a call that is not a model call", name)
+		doorFail(w, http.StatusForbidden, "the key door forwards model calls only")
+		return
+	}
+	if !g.take() {
+		log.Printf("[key-door] route %s: refused a call over the cap of %d", name, g.limit)
+		doorFail(w, http.StatusTooManyRequests, "the token used all its model calls")
+		return
+	}
+	ctx, cut := context.WithCancel(r.Context())
+	defer cut()
+	stop := context.AfterFunc(g.ctx, cut)
+	defer stop()
+	r = r.WithContext(ctx)
 	upstream, _ := url.Parse(route.Upstream)
 	keys := []string{route.Key}
 	proxy := &httputil.ReverseProxy{
@@ -182,13 +288,11 @@ func (d *KeyDoor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				out.URL.Path += "/" + tail
 			}
 			out.URL.RawPath = ""
-			if len(route.Query) > 0 {
-				q := out.URL.Query()
-				for k, v := range route.Query {
-					q[k] = v
-				}
-				out.URL.RawQuery = q.Encode()
+			q := out.URL.Query()
+			for k, v := range route.Query {
+				q[k] = v
 			}
+			out.URL.RawQuery = q.Encode()
 			out.Host = upstream.Host
 			for _, h := range doorKeyHeaders {
 				out.Header.Del(h)
@@ -250,6 +354,11 @@ func redactKeys(text string, keys []string) string {
 	return text
 }
 
+var doorAPIs = map[string]string{
+	"anthropic":     DoorAnthropic,
+	"google-gemini": DoorGemini,
+}
+
 var doorHeaders = map[string]string{
 	"anthropic":     "x-api-key",
 	"google-gemini": "x-goog-api-key",
@@ -259,7 +368,7 @@ var doorHeaders = map[string]string{
 // DoorRouteFor is the upstream of an Ax route: the URL Ax would call when
 // the route carries no door URL.
 func DoorRouteFor(route AxModelRoute, key string) (DoorRoute, error) {
-	r := DoorRoute{Header: doorHeaders[route.Provider], Key: key}
+	r := DoorRoute{Header: doorHeaders[route.Provider], Key: key, API: doorAPIs[route.Provider]}
 	if r.Header == "" {
 		r.Header = "authorization"
 	}

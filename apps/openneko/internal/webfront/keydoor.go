@@ -22,7 +22,7 @@ func (a *API) StartKeyDoor(ctx context.Context, out io.Writer) (<-chan error, er
 	a.doorMu.Lock()
 	defer a.doorMu.Unlock()
 	path := keydoor.SocketPath(os.Getenv, socket)
-	door := &llm.KeyDoor{}
+	door := a.newKeyDoor()
 	done, err := llm.ListenDoor(ctx, path, door)
 	if err != nil {
 		return nil, err
@@ -44,10 +44,24 @@ func (a *API) keyDoor(socket string) (*llm.KeyDoor, error) {
 	if a.Door != nil && a.doorPath == path {
 		return a.Door, nil
 	}
-	door := &llm.KeyDoor{}
+	door := a.newKeyDoor()
 	if _, err := llm.ListenDoor(context.Background(), path, door); err != nil {
 		return nil, err
 	}
 	a.Door, a.doorPath = door, path
 	return door, nil
+}
+
+func (a *API) newKeyDoor() *llm.KeyDoor {
+	return &llm.KeyDoor{Mismatch: a.doorMismatch}
+}
+
+// doorMismatch puts a call count that serve misreported in the org's audit
+// chain. An embedding call belongs to no org, so only its log line stays.
+func (a *API) doorMismatch(ctx context.Context, m llm.DoorMismatch) {
+	if m.OrgID == "" || a.DB == nil {
+		return
+	}
+	a.recordAudit(ctx, auditEvent{OrgID: m.OrgID, EntityKind: "key_door", EntityID: m.OrgID, Event: "agent:model_calls_mismatch",
+		Payload: map[string]any{"purpose": m.Purpose, "doorCalls": m.Counted, "reportedCalls": m.Reported}})
 }

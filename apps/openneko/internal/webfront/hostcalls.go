@@ -65,12 +65,16 @@ func (a *API) embed(ctx context.Context, request embedding.Request, key string) 
 	if err != nil {
 		return embedding.Result{}, err
 	}
-	request, token, revoke, err := llm.DoorEmbedRequest(door, request, key, ttl)
+	request, pass, err := llm.DoorEmbedRequest(door, request, key, ttl)
 	if err != nil {
 		return embedding.Result{}, err
 	}
-	defer revoke()
-	return llm.ServeEmbedder(socket)(ctx, request, token)
+	defer pass.Revoke()
+	result, err := llm.ServeEmbedder(socket)(ctx, request, pass.Token)
+	if err == nil {
+		pass.Settle(ctx, 1)
+	}
+	return result, err
 }
 
 // recordHostSpend is recordUsageSpend() with unpriced "zero" for a host call:

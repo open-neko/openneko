@@ -101,11 +101,12 @@ The door keeps every model key, fallback key and embedding key in the
 control zone. For each turn, host call and embedding call, web does this:
 
 1. It makes a random token for that call. The token is valid for one org,
-   for the routes of that call (`primary`, `fallback` or `embed`), and
-   until the call ends or its deadline passes.
+   for the routes of that call (`primary`, `fallback` or `embed`), for a
+   number of calls, and until the call ends or its deadline passes.
 2. It sends serve the token in place of each key, and
    `http://openneko-door/r/<route>` in place of each provider URL.
-3. When the call ends, it revokes the token.
+3. When the call ends, it revokes the token. A call that is still
+   streaming stops at once.
 
 Serve and the Ax harness send the model calls to the door over a Unix
 socket, `keydoor.sock`. The door checks the token in constant time. It
@@ -122,10 +123,41 @@ real key where the provider wants it:
 | Vertex AI | `Authorization: Bearer <token>`; web gets the token from Google Application Default Credentials when the call starts |
 | OpenAI-compatible URL with no key | no key header |
 
+The door forwards model calls only. Each route allows the paths of its
+provider's chat, streamed chat or embedding call, and refuses every other
+path with 403:
+
+| Route | Paths | Query |
+|---|---|---|
+| Anthropic | `/v1/messages` | none |
+| Google Gemini | `/models/<model>:generateContent`, `/models/<model>:streamGenerateContent` | `alt=sse` |
+| Azure OpenAI | `/chat/completions` | `api-version`, which the door sets to the route's version |
+| Every other chat route | `/chat/completions` | none |
+| Embedding | `/embeddings` | none |
+
+A query parameter that is not in the table gets 403. Each token also has a
+call cap, and the door answers 429 after it:
+
+- A turn: the turn's model-call ceiling plus 4, for the resamples and the
+  fallback of the last call. Web sends the ceiling to serve as
+  `max_model_calls`: the actor steps times one more than the delegated
+  child steps, plus 2, at most 2000 (1277 for a chat turn with the
+  defaults).
+- A host call: 5 per route, the first try and four retries.
+- An embedding call: 1.
+
+The door counts the calls of each token. When the call ends, web compares
+the count with the calls that serve reported: `usage.requests` of the
+turn's result, the requests of a host call, and one for an embedding call.
+A difference writes a log line and, for a turn or a host call, an
+`agent:model_calls_mismatch` event in the org's audit chain, with the
+purpose and both counts. An embedding call belongs to no org, so it gets
+the log line only.
+
 The door streams each answer back as it arrives. It replaces a key in an
 error body with `[redacted]`, and its log lines carry the route and the
-status only. Spend rows, audit rows, traces, retries, fallback rules and
-the model-call ceiling work as before.
+status only. Spend rows, audit rows, traces, retries and fallback rules
+work as before.
 
 The socket has mode 0660, so only the accounts of web and serve can
 connect, and each call needs a valid token as well. Its path is

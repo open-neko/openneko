@@ -60,16 +60,25 @@ func post(t *testing.T, client *http.Client, url, header, value string) (int, st
 	return res.StatusCode, string(raw)
 }
 
+func issue(t *testing.T, door *KeyDoor, org string, routes map[string]DoorRoute) (string, func()) {
+	t.Helper()
+	pass, err := door.Issue(org, "test", routes, time.Minute, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pass.Token, pass.Revoke
+}
+
 func TestKeyDoorPutsEachProvidersKeyInItsHeader(t *testing.T) {
 	door := &KeyDoor{}
 	client := doorClient(t, door)
 	for _, c := range []struct {
-		provider, header, want string
+		provider, header, want, path string
 	}{
-		{"openai-compatible", "Authorization", "Bearer real-key-1"},
-		{"anthropic", "X-Api-Key", "real-key-1"},
-		{"google-gemini", "X-Goog-Api-Key", "real-key-1"},
-		{"azure-openai", "Api-Key", "real-key-1"},
+		{"openai-compatible", "Authorization", "Bearer real-key-1", "/chat/completions"},
+		{"anthropic", "X-Api-Key", "real-key-1", "/v1/messages"},
+		{"google-gemini", "X-Goog-Api-Key", "real-key-1", "/models/m:streamGenerateContent?alt=sse"},
+		{"azure-openai", "Api-Key", "real-key-1", "/chat/completions?api-version=old"},
 	} {
 		srv, got := upstream(t, 200, `{"ok":true}`)
 		route, err := DoorRouteFor(AxModelRoute{Provider: c.provider, Model: "m", URL: srv.URL + "/v1"}, "real-key-1")
@@ -80,11 +89,8 @@ func TestKeyDoorPutsEachProvidersKeyInItsHeader(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		token, revoke, err := door.Issue("org-1", map[string]DoorRoute{"primary": route}, time.Minute)
-		if err != nil {
-			t.Fatal(err)
-		}
-		status, _ := post(t, client, keydoor.URL("primary")+"/chat/completions?api-version=old", c.header, map[bool]string{true: "Bearer ", false: ""}[c.header == "Authorization"]+token)
+		token, revoke := issue(t, door, "org-1", map[string]DoorRoute{"primary": route})
+		status, _ := post(t, client, keydoor.URL("primary")+c.path, c.header, map[bool]string{true: "Bearer ", false: ""}[c.header == "Authorization"]+token)
 		if status != 200 {
 			t.Fatalf("%s: status %d", c.provider, status)
 		}
@@ -101,7 +107,7 @@ func TestKeyDoorPutsEachProvidersKeyInItsHeader(t *testing.T) {
 			t.Errorf("azure upstream %s?%s", s.path, s.query)
 		}
 		revoke()
-		if status, _ := post(t, client, keydoor.URL("primary")+"/chat/completions", c.header, token); status != http.StatusUnauthorized {
+		if status, _ := post(t, client, keydoor.URL("primary")+c.path, c.header, token); status != http.StatusUnauthorized {
 			t.Errorf("%s: a revoked token got status %d", c.provider, status)
 		}
 	}
@@ -111,10 +117,7 @@ func TestKeyDoorRefusesOtherRoutesAndRedactsErrors(t *testing.T) {
 	door := &KeyDoor{}
 	client := doorClient(t, door)
 	srv, _ := upstream(t, 401, `{"error":"bad key real-key-2"}`)
-	token, revoke, err := door.Issue("org-1", map[string]DoorRoute{"primary": {Upstream: srv.URL, Key: "real-key-2"}}, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	token, revoke := issue(t, door, "org-1", map[string]DoorRoute{"primary": {Upstream: srv.URL, Key: "real-key-2"}})
 	defer revoke()
 	if status, _ := post(t, client, keydoor.URL("fallback")+"/chat/completions", "Authorization", "Bearer "+token); status != http.StatusForbidden {
 		t.Errorf("another route: status %d", status)
@@ -134,10 +137,7 @@ func TestKeyDoorRefusesOtherRoutesAndRedactsErrors(t *testing.T) {
 func TestKeyDoorTokenEndsAtItsDeadline(t *testing.T) {
 	now := time.Now()
 	door := &KeyDoor{Now: func() time.Time { return now }}
-	token, _, err := door.Issue("org-1", map[string]DoorRoute{"primary": {Upstream: "https://example.test"}}, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	token, _ := issue(t, door, "org-1", map[string]DoorRoute{"primary": {Upstream: "https://example.test"}})
 	if door.grant(token) == nil {
 		t.Fatal("a fresh token was refused")
 	}
@@ -178,15 +178,9 @@ func TestKeyDoorTokenReachesOnlyItsOwnOrgsRoute(t *testing.T) {
 	client := doorClient(t, door)
 	srvA, gotA := upstream(t, 200, `{}`)
 	srvB, gotB := upstream(t, 200, `{}`)
-	tokenA, revokeA, err := door.Issue("org-a", map[string]DoorRoute{"primary": {Upstream: srvA.URL, Key: "key-of-a"}}, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	tokenA, revokeA := issue(t, door, "org-a", map[string]DoorRoute{"primary": {Upstream: srvA.URL, Key: "key-of-a"}})
 	defer revokeA()
-	tokenB, revokeB, err := door.Issue("org-b", map[string]DoorRoute{"primary": {Upstream: srvB.URL, Key: "key-of-b"}, "embed": {Upstream: srvB.URL, Key: "key-of-b"}}, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	tokenB, revokeB := issue(t, door, "org-b", map[string]DoorRoute{"primary": {Upstream: srvB.URL, Key: "key-of-b"}, "embed": {Upstream: srvB.URL, Key: "key-of-b"}})
 	defer revokeB()
 	if status, _ := post(t, client, keydoor.URL("primary")+"/chat/completions", "Authorization", "Bearer "+tokenA); status != 200 {
 		t.Fatalf("org-a's own route: status %d", status)
@@ -215,10 +209,7 @@ func TestKeyDoorForwardsToTheRoutesUpstreamOnly(t *testing.T) {
 	srv, got := upstream(t, 200, `{}`)
 	other, otherGot := upstream(t, 200, `{}`)
 	otherHost := strings.TrimPrefix(other.URL, "http://")
-	token, revoke, err := door.Issue("org-1", map[string]DoorRoute{"primary": {Upstream: srv.URL + "/v1", Key: "real-key-3"}}, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	token, revoke := issue(t, door, "org-1", map[string]DoorRoute{"primary": {Upstream: srv.URL + "/v1", Key: "real-key-3"}})
 	defer revoke()
 	for _, path := range []string{
 		"/chat/completions",
@@ -246,7 +237,7 @@ func TestKeyDoorForwardsToTheRoutesUpstreamOnly(t *testing.T) {
 			}
 		}
 	}
-	if _, _, err := door.Issue("org-1", map[string]DoorRoute{"primary": {Upstream: "http://user:pw@" + otherHost}}, time.Minute); err == nil {
+	if _, err := door.Issue("org-1", "test", map[string]DoorRoute{"primary": {Upstream: "http://user:pw@" + otherHost}}, time.Minute, 1); err == nil {
 		t.Error("an upstream with user info was accepted")
 	}
 	select {
@@ -264,10 +255,7 @@ func TestKeyDoorPassesNoRedirectToAnotherHost(t *testing.T) {
 		http.Redirect(w, r, other.URL+"/steal", http.StatusTemporaryRedirect)
 	}))
 	t.Cleanup(srv.Close)
-	token, revoke, err := door.Issue("org-1", map[string]DoorRoute{"primary": {Upstream: srv.URL, Key: "real-key-4"}}, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	token, revoke := issue(t, door, "org-1", map[string]DoorRoute{"primary": {Upstream: srv.URL, Key: "real-key-4"}})
 	defer revoke()
 	req, _ := http.NewRequest(http.MethodPost, keydoor.URL("primary")+"/chat/completions", strings.NewReader(`{}`))
 	req.Header.Set("Authorization", "Bearer "+token)
