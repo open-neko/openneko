@@ -67,12 +67,18 @@ import {
   type ScriptedToolResult,
 } from "./eval-scripted-model";
 
+// The expectation of one message of a thread: the answer must hold one of
+// the values, every name and one of any_names. A null entry is a message
+// with no ground truth.
+type TurnExpectation = { values?: number[]; names?: string[]; any_names?: string[] } | null;
+
 type AdventureWorksOracle = {
   anchorDate: string;
   startDate: string;
   expectedValue: number;
   baselineValue: number;
   expectedDimension?: string;
+  turnExpectations?: TurnExpectation[];
   oracleSqlDigest: string;
 };
 
@@ -96,6 +102,7 @@ export type StateMachineObservation = {
 type WorkBackendOutput = {
   status: "completed";
   finalText: string;
+  turnTexts?: string[];
   fixture: {
     spec: WorkBackendFixtureSpec;
     orgId: string;
@@ -1775,6 +1782,30 @@ export function scoreWorkBackendExecution(input: {
         score = Number.isFinite(best)
           ? Math.max(0, 1 - best / Math.max(tolerance, 1e-9))
           : 0;
+      } else if (assertion.kind === "answer.turn-values") {
+        if (!metricOracle?.turnExpectations) {
+          throw new Error(`${assertion.kind} requires a sql.metric oracle with turn_expectations`);
+        }
+        const tolerance = Number(assertion.params?.max_relative_error ?? 0.01);
+        const texts = output.turnTexts ?? [output.finalText];
+        const scored = metricOracle.turnExpectations
+          .map((expectation, index) => ({ expectation, text: texts[index] ?? "" }))
+          .filter((turn) => turn.expectation);
+        const held = scored.filter(({ expectation, text: turnText }) => {
+          const candidates = numericCandidates(turnText);
+          const values = expectation?.values ?? [];
+          const names = expectation?.names ?? [];
+          const anyNames = expectation?.any_names ?? [];
+          const lower = turnText.toLocaleLowerCase();
+          return (
+            (values.length === 0 ||
+              values.some((value) => candidates.some((candidate) => relativeError(candidate, value) <= tolerance))) &&
+            names.every((name) => lower.includes(name.toLocaleLowerCase())) &&
+            (anyNames.length === 0 || anyNames.some((name) => lower.includes(name.toLocaleLowerCase())))
+          );
+        });
+        passed = scored.length > 0 && held.length === scored.length;
+        score = scored.length > 0 ? held.length / scored.length : 0;
       } else if (assertion.kind === "answer.window-exact") {
         if (!metricOracle) {
           throw new Error(`${assertion.kind} requires a sql.metric oracle`);
@@ -2330,6 +2361,7 @@ async function startEpisodeTurn(input: {
   actorUserId: string;
   question: string;
   workflowId?: string;
+  threadId?: string;
   beforeRun?: (threadId: string) => Promise<void>;
 }): Promise<{ threadId: string; runId: string; workflowRunId?: string }> {
   const { episode, actorUserId, question } = input;
@@ -2354,12 +2386,15 @@ async function startEpisodeTurn(input: {
       workflowRunId: String(body.workflowRunId),
     };
   }
-  const created = await answer(
-    await episode.api(actorUserId, "/api/v1/work/threads", { method: "POST", body: "{}" }),
-    "the thread create route",
-  );
-  const threadId = String(record(created.thread)?.id ?? "");
-  await input.beforeRun?.(threadId);
+  let threadId = input.threadId ?? "";
+  if (!threadId) {
+    const created = await answer(
+      await episode.api(actorUserId, "/api/v1/work/threads", { method: "POST", body: "{}" }),
+      "the thread create route",
+    );
+    threadId = String(record(created.thread)?.id ?? "");
+    await input.beforeRun?.(threadId);
+  }
   const started = await answer(
     await episode.api(actorUserId, `/api/v1/work/threads/${threadId}/runs`, {
       method: "POST",
@@ -2619,6 +2654,7 @@ export function createOpenNekoBackendDriver(
         expected_value: string;
         baseline_value: string;
         expected_dimension: string | null;
+        turn_expectations?: string | null;
       }>(sql);
       const row = result.rows[0];
       const oracle: AdventureWorksOracle = {
@@ -2628,6 +2664,9 @@ export function createOpenNekoBackendDriver(
         baselineValue: Number(row?.baseline_value),
         ...(row?.expected_dimension
           ? { expectedDimension: row.expected_dimension }
+          : {}),
+        ...(row?.turn_expectations
+          ? { turnExpectations: JSON.parse(row.turn_expectations) as TurnExpectation[] }
           : {}),
         oracleSqlDigest: textDigest(sql),
       };
@@ -2650,6 +2689,9 @@ export function createOpenNekoBackendDriver(
       const oracle = rawOracle as OpenNekoBackendOracle;
       const input = slot.case.input;
       const question = String(input.question ?? "").trim();
+      const followUps = Array.isArray(input.follow_ups)
+        ? input.follow_ups.map((item) => String(item).trim()).filter(Boolean)
+        : [];
       if (!question) {
         throw new EvalTaskError(
           `${slot.caseId} has no question`,
@@ -2855,6 +2897,7 @@ export function createOpenNekoBackendDriver(
         });
 
         let cancelSent = false;
+        let activeRunId = run.runId;
         const onEvent = (raw: Record<string, unknown>) => {
           feed.push(raw);
           const event = raw as AgentEvent;
@@ -2875,7 +2918,7 @@ export function createOpenNekoBackendDriver(
           if (toolCallLimitReached && !cancelSent) {
             cancelSent = true;
             void episode
-              .api(actorUserId, `/api/v1/work/runs/${run.runId}/cancel`, { method: "POST", body: "{}" })
+              .api(actorUserId, `/api/v1/work/runs/${activeRunId}/cancel`, { method: "POST", body: "{}" })
               .then((res) => res.arrayBuffer())
               .catch(() => {});
           }
@@ -2928,6 +2971,36 @@ export function createOpenNekoBackendDriver(
             errorText || `agent ended with ${status}`,
             errorType,
             partialExecution(),
+          );
+        }
+
+        const turnTexts = [finalText];
+        for (const followUp of followUps) {
+          const from = events.length;
+          const next = await startEpisodeTurn({ episode, actorUserId, question: followUp, threadId: run.threadId });
+          activeRunId = next.runId;
+          const nextDone = await episode.followRun(actorUserId, next.threadId, next.runId, onEvent, signal);
+          const nextTrace = await episode.readTrace(next.runId);
+          evidence.push(...(nextTrace.events as unknown as WorkSemanticTraceEvent[]));
+          steps.push(...(nextTrace.steps as unknown as WorkSemanticStepContent[]));
+          const nextStatus = String(record(nextDone?.result)?.status ?? "failed");
+          if (nextStatus !== "completed") {
+            throw new EvalTaskError(
+              `follow-up ${turnTexts.length} ended with ${nextStatus}`,
+              "agent_failed",
+              partialExecution(),
+            );
+          }
+          turnTexts.push(
+            events.slice(from).reduce(
+              (text, event) =>
+                (event as { type: string }).type === "answer_reset"
+                  ? ""
+                  : event.type === "message" && event.role === "assistant"
+                    ? text + event.content
+                    : text,
+              "",
+            ),
           );
         }
 
@@ -2995,6 +3068,7 @@ export function createOpenNekoBackendDriver(
           output: {
             status: "completed",
             finalText,
+            ...(followUps.length > 0 ? { turnTexts } : {}),
             fixture: {
               spec: fixture.spec,
               orgId: fixture.orgId,
@@ -3015,6 +3089,7 @@ export function createOpenNekoBackendDriver(
             ...(scenario === "stateful-compaction-resume" ? { compactionPromptVerified } : {}),
             ...(firstOutputMs !== undefined ? { firstOutputMs } : {}),
             toolCalls: events.filter((event) => event.type === "tool_start").length,
+            ...(followUps.length > 0 ? { turns: turnTexts.length } : {}),
             repeatedToolCalls: repeatedBackendToolCallCount(events),
             ...(maxToolCalls !== undefined ? { maxToolCalls } : {}),
             semanticEvidenceEvents: evidence.length,
