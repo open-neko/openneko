@@ -72,7 +72,7 @@ and proposing actions, with brakes so it never runs away from you.
 | Feature | What it does for you | Shipped in |
 |---|---|---|
 | The operating loop | Workflows observe your data on schedules, surface findings as observations, and propose actions through an approval stack — the full loop from data to decision. | #11 |
-| Build workflows by chatting | Create, update, and look up workflows and approval rules in the same chat where you ask questions — every artifact links back to the conversation that produced it. | #46 |
+| Build workflows by chatting | Create, update, and look up workflows and approval rules in the same chat where you ask questions. Only an admin saves an approval rule, and a pack's rule changes only in Settings. Every artifact links back to the conversation that produced it. | #46 |
 | Retire workflows by @mention | Delete a noisy or obsolete workflow mid-conversation by @mentioning it — composer autocomplete included. | #110 |
 | Row-level data triggers | Workflows fire the moment a row changes — stock dips below its reorder point, an account flips to at-risk — not just on a schedule. Wired in plain language when you save the workflow. | #50, #52, #63 |
 | Watchers | Set a condition in plain language — "tell me if daily orders drop below 500" — and the assistant monitors it and alerts you when it trips. | #96 |

@@ -2,6 +2,10 @@
 
 ## 6.0.0 (unreleased): upgrade notes
 
+### Agent runs and data that leaves the install
+
+* **Breaking:** only a run of an admin saves an approval rule from chat (`save_rule` and the rule fence). A member's run, a workflow run and a bot run get a refusal. No run changes a rule that a pack installed; an admin changes it at Settings, Approval rules.
+
 ### Terminal egress
 
 * **Breaking:** sandbox commands reach no host by default. The sandbox network of `recipes/sandbox` is internal, with no route out and no DNS for external names. The new `openneko-egress` proxy is the only way out, and it lets a run reach only the hosts on its organization's list.
