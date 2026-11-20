@@ -316,6 +316,29 @@ func TestEveryStackCommandUsesTheStoredImageVersion(t *testing.T) {
 	}
 }
 
+func TestCommandsOfTheWholeStackUseTheStoredImageVersion(t *testing.T) {
+	sup := isolateStackDatabase(t, "openneko_neko-db-data")
+	t.Setenv("OPENNEKO_VERSION", "")
+	if err := sup.WriteImageVersion("v9.9.9-pinned"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := allStackFiles(sup); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv("OPENNEKO_VERSION"); got != "v9.9.9-pinned" {
+		t.Fatalf("OPENNEKO_VERSION = %q, want the stored tag", got)
+	}
+	for _, name := range []string{"stop.go", "status.go", "logs.go", "reset.go", "seed.go"} {
+		raw, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), "sup.Materialize(") || !strings.Contains(string(raw), "allStackFiles(sup)") {
+			t.Fatalf("%s materializes the stack without the stored image tag; the sandbox recipe in an override then fails", name)
+		}
+	}
+}
+
 func TestBundledDatabaseSurvivesTheComposeMerge(t *testing.T) {
 	if exec.Command("docker", "compose", "version").Run() != nil {
 		t.Skip("docker compose is not installed")

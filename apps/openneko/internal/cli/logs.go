@@ -21,7 +21,7 @@ func newLogsCmd() *cobra.Command {
 				return logsNative(cmd.Context(), cmd.OutOrStdout(), args, follow, tail)
 			}
 			sup := compose.New(assets.ComposeFS)
-			files, err := sup.Materialize(compose.ModeDemo)
+			files, err := allStackFiles(sup)
 			if err != nil {
 				return err
 			}

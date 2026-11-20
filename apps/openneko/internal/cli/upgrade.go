@@ -406,7 +406,7 @@ func normalizeUpgradeImageVersion(raw string) string {
 }
 
 func pruneOldOpenNekoImages(ctx context.Context, targetTag string, stdout, stderr *os.File) error {
-	cmd := exec.CommandContext(ctx, "docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}}")
+	cmd := exec.CommandContext(ctx, "docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}} {{.ID}}")
 	out, err := cmd.Output()
 	if err != nil {
 		return err
@@ -434,15 +434,23 @@ func oldOpenNekoImageRefs(imageListOutput, targetTag string) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, line := range strings.Split(imageListOutput, "\n") {
-		ref := strings.TrimSpace(line)
-		if ref == "" || seen[ref] {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
 			continue
 		}
+		ref := fields[0]
 		repo, tag, ok := strings.Cut(ref, ":")
-		if !ok || tag == "" || tag == "<none>" {
+		if !ok || tag == "" || !repos[repo] || tag == targetTag {
 			continue
 		}
-		if !repos[repo] || tag == targetTag {
+		// An image pulled by digest (5.0.0 pinned the librarian so) has no tag.
+		if tag == "<none>" {
+			if len(fields) < 2 {
+				continue
+			}
+			ref = fields[1]
+		}
+		if seen[ref] {
 			continue
 		}
 		seen[ref] = true

@@ -28,7 +28,7 @@ func newStopCmd() *cobra.Command {
 			sup := compose.New(assets.ComposeFS)
 			// Materialize against the broadest mode (demo) so we tear down any
 			// overlay services the operator may have started.
-			files, err := sup.Materialize(compose.ModeDemo)
+			files, err := allStackFiles(sup)
 			if err != nil {
 				return err
 			}
