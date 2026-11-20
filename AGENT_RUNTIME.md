@@ -416,6 +416,34 @@ status page says so.
 
 Serve's network does not change: Landlock here governs files only.
 
+## The agent runner (Linux and macOS)
+
+On Linux and macOS, `openneko serve` runs each agent turn in a new
+process, `openneko agent-runner`. Serve checks the turn's frame, then
+starts the runner with two connected sockets and nothing else: the turn's
+link and a broker link. The runner gets no variable of serve's except
+`PATH` and `TMPDIR`. It inherits no other descriptor.
+
+The runner opens no connection itself. For each connection to the key door
+or the sandbox, it asks serve over the broker link. Serve dials, then
+passes the connected socket to the runner (`SCM_RIGHTS`). The broker passes
+these two connections only. In the runner:
+
+- a model or embedding URL that is not a door URL fails the call;
+- a sandbox without a passed connection fails the terminal;
+- `web_fetch` calls `openneko web` over the tool bridge. Web holds the
+  host list of the run, makes the fetch and logs each URL with the
+  organization and the run.
+
+When web hangs up, serve closes the link and the runner ends the turn.
+When the runner stops without an exit frame, serve sends one with code 2.
+`openneko serve` says on start that it uses the runner, and its status
+frame reports `"runner":"process"`. On Windows, turns still run inside
+serve; the Windows runner waits for the Windows probe.
+
+The runner is not confined yet beyond what it inherits from serve. Its
+own Landlock and seccomp filter come next.
+
 Agent runs read customer data only through the direct GraphJin tools. No run
 hands a question to GraphJin's own agent, so GraphJin gets no provider key.
 Migration 0128 removed the setting that did that. Admin chat plans GraphJin

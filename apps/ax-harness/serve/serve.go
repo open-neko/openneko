@@ -32,6 +32,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -67,6 +68,7 @@ type Frame struct {
 	Message     json.RawMessage   `json:"message,omitempty"`
 	Code        *int              `json:"code,omitempty"`
 	Error       string            `json:"error,omitempty"`
+	Runner      *RunnerSetup      `json:"runner,omitempty"`
 }
 
 // Server runs turns for connections on a listener.
@@ -85,10 +87,16 @@ type Server struct {
 	MaxTurns int
 	// Sandbox runs every turn's terminal commands. The worker cannot set it.
 	Sandbox sandbox.Config
+	// Runner, when set, is the command that runs each turn in a process of
+	// its own (see RunRunner); RunnerEnv is that process's whole environment.
+	Runner    []string
+	RunnerEnv []string
 	// Run runs one turn; tests replace it.
 	Run      func(context.Context, harness.Turn) (int, error)
 	Generate func(context.Context, inference.Request, string, string) (inference.Result, error)
 	Embed    func(context.Context, embedding.Request, string) (embedding.Result, error)
+
+	runnerStarted func(*os.Process)
 
 	mu      sync.Mutex
 	running int
@@ -98,21 +106,7 @@ type Server struct {
 // Serve accepts turns until ctx ends, then cancels the running turns and
 // waits for them.
 func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
-	if s.Run == nil {
-		s.Run = harness.RunTurn
-	}
-	if s.Generate == nil {
-		s.Generate = inference.Generate
-	}
-	if s.Embed == nil {
-		s.Embed = embedding.Embed
-	}
-	if s.Getenv == nil {
-		s.Getenv = func(string) string { return "" }
-	}
-	if s.MaxTurns <= 0 {
-		s.MaxTurns = defaultTurns
-	}
+	s.defaults()
 	go func() {
 		<-ctx.Done()
 		_ = listener.Close()
@@ -134,6 +128,24 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 	}
 }
 
+func (s *Server) defaults() {
+	if s.Run == nil {
+		s.Run = harness.RunTurn
+	}
+	if s.Generate == nil {
+		s.Generate = inference.Generate
+	}
+	if s.Embed == nil {
+		s.Embed = embedding.Embed
+	}
+	if s.Getenv == nil {
+		s.Getenv = func(string) string { return "" }
+	}
+	if s.MaxTurns <= 0 {
+		s.MaxTurns = defaultTurns
+	}
+}
+
 func (s *Server) acquire() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -152,8 +164,11 @@ func (s *Server) release() {
 
 func (s *Server) handle(parent context.Context, conn net.Conn) {
 	defer conn.Close()
+	s.handleStream(parent, conn, bufio.NewReaderSize(conn, 64<<10))
+}
+
+func (s *Server) handleStream(parent context.Context, conn io.Writer, reader *bufio.Reader) {
 	out := &frameWriter{enc: json.NewEncoder(conn)}
-	reader := bufio.NewReaderSize(conn, 64<<10)
 	exit := func(code int, err error) {
 		frame := Frame{Type: "exit", Code: &code}
 		if err != nil {
@@ -163,7 +178,11 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 	}
 	start, err := readFrame(reader)
 	if err == nil && start.Type == "status" {
-		result, _ := json.Marshal(Status{RequireDoor: s.RequireDoor, KeyEnv: append([]string{}, s.KeyEnv...), Confinement: s.Confinement})
+		runner := "in-process"
+		if len(s.Runner) > 0 {
+			runner = "process"
+		}
+		result, _ := json.Marshal(Status{RequireDoor: s.RequireDoor, KeyEnv: append([]string{}, s.KeyEnv...), Confinement: s.Confinement, Runner: runner})
 		_ = out.write(Frame{Type: "status", Result: result})
 		return
 	}
@@ -202,6 +221,12 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 		return
 	}
 	defer s.release()
+	if len(s.Runner) > 0 {
+		if err := s.runInRunner(parent, conn, reader, start); err != nil {
+			exit(2, err)
+		}
+		return
+	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 
@@ -289,6 +314,15 @@ func (s *Server) environ(in []string) []string {
 	return out
 }
 
+// RunnerSetup is the first frame on a runner's link: what serve decides for
+// the turn and the runner cannot.
+type RunnerSetup struct {
+	RequireDoor bool   `json:"require_door"`
+	Path        string `json:"path,omitempty"`
+	SandboxURL  string `json:"sandbox_url,omitempty"`
+	SandboxKey  string `json:"sandbox_key,omitempty"`
+}
+
 // Status is serve's answer to a status frame: whether it refuses a frame
 // with a model key, the key variables its environment held at start, and
 // how the OS confines it.
@@ -296,6 +330,8 @@ type Status struct {
 	RequireDoor bool            `json:"require_door"`
 	KeyEnv      []string        `json:"key_env"`
 	Confinement json.RawMessage `json:"confinement,omitempty"`
+	// Runner is "process" when each turn runs in an agent runner process.
+	Runner string `json:"runner,omitempty"`
 }
 
 func onlyDoorTokens(frame Frame) bool {
@@ -367,20 +403,27 @@ func (s *Server) secrets(modelKeyEnv string, keys map[string]string) func(string
 	}
 }
 
-func readFrame(r *bufio.Reader) (Frame, error) {
+func readLine(r *bufio.Reader) ([]byte, error) {
 	var line []byte
 	for {
 		chunk, isPrefix, err := r.ReadLine()
 		if err != nil {
-			return Frame{}, err
+			return nil, err
 		}
 		line = append(line, chunk...)
 		if len(line) > maxFrameBytes {
-			return Frame{}, errors.New("frame too large")
+			return nil, errors.New("frame too large")
 		}
 		if !isPrefix {
-			break
+			return line, nil
 		}
+	}
+}
+
+func readFrame(r *bufio.Reader) (Frame, error) {
+	line, err := readLine(r)
+	if err != nil {
+		return Frame{}, err
 	}
 	var frame Frame
 	if err := json.Unmarshal(line, &frame); err != nil {
