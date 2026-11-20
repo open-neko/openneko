@@ -37,7 +37,8 @@ func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns
 	} else {
 		fmt.Fprintln(out, "agent terminal is off: no sandbox URL")
 	}
-	if names := serve.KeyEnvNames(os.Environ()); len(names) > 0 {
+	names := serve.KeyEnvNames(os.Environ())
+	if len(names) > 0 {
 		fmt.Fprintf(out, "warning: openneko serve drops %s from its environment; model keys belong to openneko web (INSTALL.md, \"Model keys\")\n", strings.Join(names, ", "))
 		for _, name := range names {
 			_ = os.Unsetenv(name)
@@ -46,7 +47,7 @@ func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns
 	door := keydoor.SocketPath(os.Getenv, socket)
 	keydoor.SetSocket(door)
 	fmt.Fprintf(out, "openneko serve reaches the model providers through the key door at %s\n", door)
-	srv := &serve.Server{Getenv: os.Getenv, MaxTurns: maxTurns, Sandbox: box, RequireDoor: !webfront.Development()}
+	srv := &serve.Server{Getenv: os.Getenv, MaxTurns: maxTurns, Sandbox: box, RequireDoor: !webfront.Development(), KeyEnv: names}
 	done := make(chan error, 1)
 	go func() {
 		err := srv.Serve(ctx, ln)

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
+	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
 
 func TestReleaseCheckSchedulerReadsTheAdminSocket(t *testing.T) {
@@ -50,7 +52,8 @@ func TestReleaseCheckServeSocket(t *testing.T) {
 	if err := checkServeSocket(ctx, ""); err == nil {
 		t.Fatal("an unset socket passed")
 	}
-	socket := filepath.Join(t.TempDir(), "serve.sock")
+	dir := t.TempDir()
+	socket := filepath.Join(dir, "serve.sock")
 	if err := checkServeSocket(ctx, socket); err == nil {
 		t.Fatal("a missing socket passed")
 	}
@@ -58,9 +61,44 @@ func TestReleaseCheckServeSocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
-	if err := checkServeSocket(ctx, socket); err != nil {
-		t.Fatal(err)
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+	if err := checkServeSocket(ctx, socket); err == nil || !strings.Contains(err.Error(), "did not report") {
+		t.Fatalf("a socket that gives no status: err = %v", err)
+	}
+	_ = ln.Close()
+	for i, c := range []struct {
+		server *serve.Server
+		want   string
+	}{
+		{&serve.Server{RequireDoor: true}, ""},
+		{&serve.Server{RequireDoor: true, KeyEnv: []string{"OPENAI_API_KEY", "HF_TOKEN"}}, "OPENAI_API_KEY, HF_TOKEN"},
+		{&serve.Server{RequireDoor: false}, "development mode"},
+	} {
+		path := filepath.Join(dir, fmt.Sprintf("serve-%d.sock", i))
+		ln, err := serve.Listen(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sctx, stop := context.WithCancel(ctx)
+		done := make(chan struct{})
+		go func() { _ = c.server.Serve(sctx, ln); close(done) }()
+		err = checkServeSocket(ctx, path)
+		stop()
+		<-done
+		if c.want == "" && err != nil {
+			t.Fatalf("a serve with no key: %v", err)
+		}
+		if c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
+			t.Fatalf("want an error naming %q, got %v", c.want, err)
+		}
 	}
 }
 
