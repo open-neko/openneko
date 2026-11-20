@@ -36,12 +36,14 @@ func TestAgentEgressHostsSetting(t *testing.T) {
 	}
 
 	for body, want := range map[string]string{
-		`{"egressHosts":"pypi.org"}`:           "egressHosts must be a list of host names",
-		`{"egressHosts":[1]}`:                  "egressHosts must be a list of host names",
-		`{"egressHosts":null}`:                 "egressHosts must be a list of host names",
-		`{"egressHosts":["https://pypi.org"]}`: `\"https://pypi.org\" is not a host name, *.domain, or an address, with an optional :port`,
-		`{"egressHosts":["*"]}`:                `\"*\" is not a host name, *.domain, or an address, with an optional :port`,
-		`{"egressHosts":["pypi.org:99999"]}`:   `\"pypi.org:99999\" is not a host name, *.domain, or an address, with an optional :port`,
+		`{"egressHosts":"pypi.org"}`:             "egressHosts must be a list of host names",
+		`{"egressHosts":[1]}`:                    "egressHosts must be a list of host names",
+		`{"egressHosts":null}`:                   "egressHosts must be a list of host names",
+		`{"egressHosts":["https://pypi.org"]}`:   `\"https://pypi.org\" is not a host name, *.domain, or an address, with an optional :port`,
+		`{"egressHosts":["*"]}`:                  `\"*\" is not a host name, *.domain, or an address, with an optional :port`,
+		`{"egressHosts":["pypi.org:99999"]}`:     `\"pypi.org:99999\" is not a host name, *.domain, or an address, with an optional :port`,
+		`{"egressHosts":["169.254.169.254:80"]}`: `\"169.254.169.254:80\" is not a public address: the sandbox's proxy refuses private, loopback, link-local and metadata addresses`,
+		`{"egressHosts":["10.0.0.5"]}`:           `\"10.0.0.5\" is not a public address: the sandbox's proxy refuses private, loopback, link-local and metadata addresses`,
 	} {
 		if code, got := put(body); code != 400 || got != `{"error":"`+want+`"}` {
 			t.Errorf("%s: %d %s", body, code, got)

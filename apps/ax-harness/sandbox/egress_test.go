@@ -19,6 +19,11 @@ func TestNormalizeEgressHosts(t *testing.T) {
 			t.Errorf("%q passed", bad)
 		}
 	}
+	for _, private := range []string{"10.0.0.5", "127.0.0.1:8080", "169.254.169.254:80", "192.168.1.1", "172.16.0.1", "100.64.0.1", "0.0.0.0", "[::1]", "[fe80::1]", "[fd00::1]", "[::ffff:10.0.0.1]:80", "[64:ff9b::a00:1]"} {
+		if _, err := NormalizeEgressHosts([]string{private}); err == nil || !strings.Contains(err.Error(), "not a public address") {
+			t.Errorf("%q: %v, want the private address refused", private, err)
+		}
+	}
 	long := make([]string, MaxEgressHosts+1)
 	for i := range long {
 		long[i] = "h" + strings.Repeat("x", i%50) + ".example.com:" + string(rune('1'+i%9))
