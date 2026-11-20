@@ -1,13 +1,15 @@
 # Runs the sandbox for a native install (openneko start --native or
 # openneko server install) on a network with no route out:
 #   OPENNEKO_SANDBOX_DIR=/run/openneko-sandbox OPENNEKO_SANDBOX_GID=$(getent group openneko-shared | cut -d: -f3) \
-#   OPENNEKO_SANDBOX_KEY=... docker compose -f recipes/sandbox/compose.native.yml up -d
+#   OPENNEKO_SANDBOX_KEY=... OPENNEKO_VERSION=v$(openneko version --short) \
+#   docker compose -f recipes/sandbox/compose.native.yml up -d
 # A one-user native install uses OPENNEKO_SANDBOX_DIR=$HOME/.local/share/openneko-sandbox
 # and OPENNEKO_SANDBOX_GID=$(id -g).
 name: openneko-sandbox
 
 services:
   openneko-sandbox:
+    image: ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION:-latest}
     build:
       context: .
     command: ["--listen", "unix:///run/openneko-sandbox/sandbox.sock"]
@@ -45,6 +47,7 @@ services:
   # The only way out of the sandbox network: each run's commands reach the
   # hosts on the organization's egress list through it, and nothing else.
   openneko-egress:
+    image: ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION:-latest}
     build:
       context: .
     command: ["egress", "--listen", ":3128", "--control", "unix:///run/openneko-egress/control.sock"]

@@ -3,5 +3,6 @@
   "neko-cli": 10,
   "neko-serve": 50,
   "neko-db": 165,
+  "neko-sandbox": 155,
   "uniqueStack": 2500
 }

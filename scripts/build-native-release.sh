@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/build-native-release.sh <tag> <out-dir> [arch ...]
 # Writes openneko-native_<version>_linux_<arch>.tar.gz (bin/openneko, share/openneko/web,
-# share/openneko/packs and share/openneko/skills) and checksums-native.txt.
+# share/openneko/packs, share/openneko/skills and share/openneko/sandbox) and checksums-native.txt.
 set -euo pipefail
 
 tag="${1:?release tag, for example v5.1.0}"
@@ -40,10 +40,12 @@ for arch in "${arches[@]}"; do
   for skill in "$root"/recipes/sandbox/skills/*/SKILL.md; do
     cp -R "$(dirname "$skill")" "$tree/share/openneko/skills/sandbox/"
   done
+  mkdir -p "$tree/share/openneko/sandbox"
+  cp "$root/recipes/sandbox/compose.native.yml" "$tree/share/openneko/sandbox/"
   tar -C "$tree" --owner=0 --group=0 --numeric-owner --sort=name -czf "$out/$name" bin share
   listing="$(tar -tzf "$out/$name")"
   for want in 'share/openneko/packs/[^/]+/pack\.yaml' 'share/openneko/skills/builtin/[^/]+/SKILL\.md' \
-    share/openneko/skills/sandbox/{docx,pdf,pptx,skill-creator,xlsx}/SKILL\\.md; do
+    share/openneko/skills/sandbox/{docx,pdf,pptx,skill-creator,xlsx}/SKILL\\.md 'share/openneko/sandbox/compose\.native\.yml'; do
     if ! grep -E "^$want\$" <<<"$listing" >/dev/null; then
       echo "build-native-release: $name holds no $want" >&2
       rm -f "$out/$name"
