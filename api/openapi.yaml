@@ -9478,7 +9478,7 @@ paths:
       - deviceToken: []
       responses:
         '200':
-          description: Secret names and descriptions
+          description: Secret names, descriptions, and the host and port each one belongs to
           content:
             application/json:
               schema:
@@ -9527,6 +9527,17 @@ paths:
                   type: string
                 description:
                   type: string
+                host:
+                  type: string
+                  description: The only host that OpenNeko sends this password to. Give it with port
+                port:
+                  description: The only port that OpenNeko sends this password to. Give it with host
+                  oneOf:
+                  - type: integer
+                  - type: string
+                allowUnverifiedTls:
+                  type: boolean
+                  description: Send the password over TLS whose certificate does not verify
               required:
               - name
               - value

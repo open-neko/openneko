@@ -59,11 +59,26 @@ type Input struct {
 	User     string
 	Password string
 	Timeout  time.Duration
+	// AllowUnverifiedTLS sends the password over TLS whose certificate does
+	// not verify. An admin sets it with the stored password.
+	AllowUnverifiedTLS bool
+	// PasswordTarget, when set, is the only host and port that the stored
+	// password goes to. An empty Host means the password has no target yet.
+	PasswordTarget *Target
+}
+
+type Target struct {
+	Host string
+	Port float64
 }
 
 var Steps = []string{"resolve", "port", "tls", "login", "schema", "read_only"}
 
 const TableLimit = 1000
+
+const PasswordHasNoTarget = "The saved password has no host and port. Save it again in the source card, or at Admin, Settings, GraphJin config with the source's host and port."
+
+const ClearTextRefused = "The server asked for the password in clear text, so OpenNeko did not send it. Ask the database administrator to use scram-sha-256 for this login."
 
 const PasswordRequired = "OpenNeko needs a login with a password. Save the password for this login first."
 
@@ -719,6 +734,17 @@ func Check(ctx context.Context, in Input) Result {
 		findings = append(findings, Finding{Step: "resolve", Status: "fail", Field: field, Message: fmt.Sprintf("Enter the %s first.", strings.Join(words, ", "))})
 		return finish()
 	}
+	if t := in.PasswordTarget; t != nil && in.Password != "" {
+		if t.Host == "" {
+			findings = append(findings, Finding{Step: "resolve", Status: "fail", Field: "secretRef", Message: PasswordHasNoTarget})
+			return finish()
+		}
+		if !strings.EqualFold(strings.TrimSpace(t.Host), host) || t.Port != port {
+			findings = append(findings, Finding{Step: "resolve", Status: "fail", Field: "host", Message: fmt.Sprintf(
+				"The saved password belongs to %s on port %s. OpenNeko sends it to no other host or port. Save the password again for this host and port.", t.Host, portText(t.Port))})
+			return finish()
+		}
+	}
 
 	address, err := resolve(ctx, host, d)
 	if err != nil {
@@ -789,9 +815,14 @@ func Check(ctx context.Context, in Input) Result {
 	}
 	var tlsConfig *tls.Config
 	if probe.offered {
-		tlsConfig = &tls.Config{InsecureSkipVerify: true}
-		if !isIP(host) {
-			tlsConfig.ServerName = host
+		tlsConfig = &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
+		if !probe.verified {
+			if !in.AllowUnverifiedTLS {
+				findings = append(findings, Finding{Step: "login", Status: "fail", Field: "secretRef", Message: fmt.Sprintf(
+					"OpenNeko did not send the password, because it cannot verify the server's certificate (%s). Ask the database administrator for a valid certificate, or let an admin allow an unverified certificate for this password at Admin, Settings, GraphJin config.", probe.reason)})
+				return finish()
+			}
+			tlsConfig.InsecureSkipVerify = true
 		}
 	}
 	loginCtx, cancel := context.WithTimeout(ctx, 4*d)
@@ -808,7 +839,16 @@ func Check(ctx context.Context, in Input) Result {
 		cfg.RuntimeParams = map[string]string{"application_name": "openneko-source-check",
 			"statement_timeout": strconv.FormatInt((2 * d).Milliseconds(), 10)}
 		cfg.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+		var guard *cleartextGuard
+		cfg.AfterNetConnect = func(_ context.Context, _ *pgconn.Config, c net.Conn) (net.Conn, error) {
+			guard = &cleartextGuard{Conn: c}
+			return guard, nil
+		}
 		conn, err := pgx.ConnectConfig(loginCtx, cfg)
+		if err != nil && guard != nil && guard.asked {
+			findings = append(findings, Finding{Step: "login", Status: "fail", Field: "secretRef", Message: ClearTextRefused})
+			return finish()
+		}
 		if err != nil {
 			findings = append(findings, postgresLoginFailure(err, res.Database, res.User))
 			return finish()
@@ -874,4 +914,59 @@ func Check(ctx context.Context, in Input) Result {
 
 func schemaFailure(err error) Finding {
 	return Finding{Step: "schema", Status: "fail", Message: fmt.Sprintf("OpenNeko signed in, but could not read the schema: %s.", errorText(err))}
+}
+
+var errClearText = errors.New("the server asked for a clear-text password")
+
+// cleartextGuard reads the server's messages up to the end of the login and
+// closes the connection when the server asks for a clear-text password.
+type cleartextGuard struct {
+	net.Conn
+	head  []byte
+	skip  int
+	done  bool
+	asked bool
+}
+
+func (g *cleartextGuard) Read(p []byte) (int, error) {
+	n, err := g.Conn.Read(p)
+	if !g.done && n > 0 && g.scan(p[:n]) {
+		g.asked = true
+		g.Conn.Close()
+		return 0, errClearText
+	}
+	return n, err
+}
+
+func (g *cleartextGuard) scan(b []byte) bool {
+	for len(b) > 0 && !g.done {
+		if g.skip > 0 {
+			k := min(g.skip, len(b))
+			g.skip -= k
+			b = b[k:]
+			continue
+		}
+		need := 5
+		if len(g.head) >= 5 && g.head[0] == 'R' {
+			need = 9
+		}
+		k := min(need-len(g.head), len(b))
+		g.head = append(g.head, b[:k]...)
+		b = b[k:]
+		if len(g.head) < need || need == 5 && g.head[0] == 'R' {
+			continue
+		}
+		length := int(binary.BigEndian.Uint32(g.head[1:5]))
+		g.skip = max(0, length+1-len(g.head))
+		if g.head[0] == 'R' {
+			switch binary.BigEndian.Uint32(g.head[5:9]) {
+			case 3:
+				return true
+			case 0:
+				g.done = true
+			}
+		}
+		g.head = g.head[:0]
+	}
+	return false
 }

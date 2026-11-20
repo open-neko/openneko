@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, Copy, Pencil, RefreshCw, X } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown from "@/lib/safe-markdown";
 import { useEffect, useState } from "react";
 import {
   WORKSPACE_MARKDOWN_COMPONENTS as MARKDOWN_COMPONENTS,

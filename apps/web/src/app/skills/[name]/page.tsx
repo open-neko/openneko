@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, Copy, FileText, Pencil, Share2 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown from "@/lib/safe-markdown";
 import { confirmDialog } from "@/components/ConfirmModal";
 import PageHeading from "@/components/PageHeading";
 import { SkillCopyDialog } from "@/components/SkillCopyDialog";

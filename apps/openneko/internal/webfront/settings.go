@@ -285,11 +285,14 @@ func (a *API) sourceSecrets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type secret struct {
-		Name        string  `json:"name"`
-		Description *string `json:"description"`
-		UpdatedAt   string  `json:"updatedAt"`
+		Name               string  `json:"name"`
+		Description        *string `json:"description"`
+		Host               *string `json:"host"`
+		Port               *int    `json:"port"`
+		AllowUnverifiedTLS bool    `json:"allowUnverifiedTls"`
+		UpdatedAt          string  `json:"updatedAt"`
 	}
-	rows, err := a.DB.Query(r.Context(), `select name, description, updated_at from data_source_secret
+	rows, err := a.DB.Query(r.Context(), `select name, description, host, port, allow_unverified_tls, updated_at from data_source_secret
 		where org_id = $1 order by updated_at desc`, act.OrgID)
 	if err != nil {
 		a.fail(w, r, err)
@@ -298,7 +301,7 @@ func (a *API) sourceSecrets(w http.ResponseWriter, r *http.Request) {
 	secrets, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (secret, error) {
 		var s secret
 		var updated time.Time
-		err := row.Scan(&s.Name, &s.Description, &updated)
+		err := row.Scan(&s.Name, &s.Description, &s.Host, &s.Port, &s.AllowUnverifiedTLS, &updated)
 		s.UpdatedAt = jsTime(updated)
 		return s, err
 	})
@@ -332,18 +335,39 @@ func (a *API) sourceSecretPut(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, "value is required")
 		return
 	}
+	var host *string
+	var port *int
+	if h, _ := fieldString(body, "host"); jsTrim(h) != "" {
+		h = jsTrim(h)
+		host = &h
+	}
+	if p := answerPort(body); p != nil {
+		if *p < 1 || *p > 65535 || *p != float64(int(*p)) {
+			sendError(w, http.StatusBadRequest, "port must be a whole number from 1 to 65535")
+			return
+		}
+		n := int(*p)
+		port = &n
+	}
+	if (host == nil) != (port == nil) {
+		sendError(w, http.StatusBadRequest, "host and port go together: the password goes only to that host and port")
+		return
+	}
+	allowUnverified, _ := fieldBool(body, "allowUnverifiedTls")
 	enc, err := config.EncryptValue(a.SecretsDir, value)
 	if err != nil {
 		a.fail(w, r, err)
 		return
 	}
 	description := fieldStringOrNil(body, "description")
-	if _, err := a.DB.Exec(r.Context(), `insert into data_source_secret (org_id, name, value_enc, description, updated_at)
-		values ($1, $2, $3, $4, now())
+	if _, err := a.DB.Exec(r.Context(), `insert into data_source_secret (org_id, name, value_enc, description, host, port,
+		allow_unverified_tls, updated_at)
+		values ($1, $2, $3, $4, $6, $7, $8, now())
 		on conflict (org_id, name) do update set value_enc = excluded.value_enc,
 		  description = case when $5 then excluded.description else data_source_secret.description end,
+		  host = excluded.host, port = excluded.port, allow_unverified_tls = excluded.allow_unverified_tls,
 		  updated_at = excluded.updated_at`,
-		act.OrgID, name, enc, description, description != nil); err != nil {
+		act.OrgID, name, enc, description, description != nil, host, port, allowUnverified); err != nil {
 		a.fail(w, r, err)
 		return
 	}

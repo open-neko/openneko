@@ -1,6 +1,6 @@
 "use client";
 
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown from "@/lib/safe-markdown";
 import { useEffect, useState } from "react";
 import {
   WORKSPACE_MARKDOWN_COMPONENTS as MARKDOWN_COMPONENTS,
