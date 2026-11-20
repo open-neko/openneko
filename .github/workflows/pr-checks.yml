@@ -45,9 +45,24 @@ jobs:
           set -euo pipefail
           CGO_ENABLED=0 go test -c -o /tmp/sandbox.test .
           docker run --rm --init --tmpfs /tmp:exec,mode=1777 -v /tmp/sandbox.test:/sandbox.test:ro \
-            debian:bookworm-slim /sandbox.test -test.v -test.skip '^TestDialHelper$' | tee /tmp/sandbox-root.log
+            debian:bookworm-slim /sandbox.test -test.v -test.skip '^(TestDialHelper|TestEgressProof)$' | tee /tmp/sandbox-root.log
           if grep -- '--- SKIP' /tmp/sandbox-root.log; then
             echo "a root test skipped; this step must run every one" >&2
+            exit 1
+          fi
+      - name: Prove the egress controls with real containers
+        working-directory: recipes/sandbox
+        env:
+          OPENNEKO_EGRESS_PROOF_IMAGE: openneko-sandbox:proof
+          OPENNEKO_EGRESS_PROOF_REQUIRED: "1"
+          OPENNEKO_EGRESS_PROOF_HOST_PORT: "39187"
+        run: |
+          set -euo pipefail
+          docker build -t openneko-sandbox:proof .
+          docker pull -q pgvector/pgvector:0.8.6-pg16
+          go test -count=1 -run '^TestEgressProof$' -v -timeout 20m . | tee /tmp/egress-proof.log
+          if grep -- '--- SKIP' /tmp/egress-proof.log; then
+            echo "the egress proof skipped; it must run" >&2
             exit 1
           fi
 
