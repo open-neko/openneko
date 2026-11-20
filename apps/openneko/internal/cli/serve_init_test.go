@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -102,8 +103,21 @@ func TestServeInitGivesEachServeRoleOnlyItsTables(t *testing.T) {
 	}
 	for _, f := range []string{serveTokenKeyFile, serveDatabaseFile, serveSubsFile} {
 		raw, _ := os.ReadFile(filepath.Join(out, f))
-		if bytes.Contains(raw, bytes.TrimSpace(secret)) || bytes.Contains(raw, []byte(base.Password)) {
-			t.Fatalf("%s holds the secret-key or the main database password", f)
+		if bytes.Contains(raw, bytes.TrimSpace(secret)) {
+			t.Fatalf("%s holds the secret-key", f)
+		}
+		if f == serveTokenKeyFile {
+			if string(raw) != hex.EncodeToString(key)+"\n" {
+				t.Fatalf("%s holds more than the token key", f)
+			}
+			continue
+		}
+		role, err := pgx.ParseConfig(strings.TrimSpace(string(raw)))
+		if err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+		if role.User == base.User || role.Password == base.Password || len(role.Password) < 32 {
+			t.Fatalf("%s signs in as the main user or with the main database password", f)
 		}
 	}
 
