@@ -146,6 +146,9 @@ func TestSandboxNetworkHasNoRouteOut(t *testing.T) {
 		ExtraHosts  yaml.Node `yaml:"extra_hosts"`
 		Privileged  bool      `yaml:"privileged"`
 		CapAdd      []string  `yaml:"cap_add"`
+		CapDrop     []string  `yaml:"cap_drop"`
+		SecurityOpt []string  `yaml:"security_opt"`
+		PidsLimit   int       `yaml:"pids_limit"`
 	}
 	type network struct {
 		Internal   bool   `yaml:"internal"`
@@ -164,6 +167,7 @@ func TestSandboxNetworkHasNoRouteOut(t *testing.T) {
 		networks := map[string]network{}
 		modes := map[string]string{}
 		caps := map[string][]string{}
+		hardening := map[string]service{}
 		for _, file := range set {
 			var doc struct {
 				Services map[string]service `yaml:"services"`
@@ -187,6 +191,13 @@ func TestSandboxNetworkHasNoRouteOut(t *testing.T) {
 						t.Errorf("%s: %s is privileged", file, name)
 					}
 					caps[name] = append(caps[name], svc.CapAdd...)
+					got := hardening[name]
+					got.CapDrop = append(got.CapDrop, svc.CapDrop...)
+					got.SecurityOpt = append(got.SecurityOpt, svc.SecurityOpt...)
+					if svc.PidsLimit != 0 {
+						got.PidsLimit = svc.PidsLimit
+					}
+					hardening[name] = got
 				}
 				switch svc.Networks.Kind {
 				case yaml.SequenceNode:
@@ -201,6 +212,18 @@ func TestSandboxNetworkHasNoRouteOut(t *testing.T) {
 			}
 			for name, n := range doc.Networks {
 				networks[name] = n
+			}
+		}
+		for name := range allowedCaps {
+			got := hardening[name]
+			if !slices.ContainsFunc(got.CapDrop, func(c string) bool { return strings.EqualFold(c, "ALL") }) {
+				t.Errorf("%v: %s does not drop every capability (cap_drop: ALL)", set, name)
+			}
+			if !slices.Contains(got.SecurityOpt, "no-new-privileges:true") && !slices.Contains(got.SecurityOpt, "no-new-privileges") {
+				t.Errorf("%v: %s lacks no-new-privileges", set, name)
+			}
+			if got.PidsLimit <= 0 {
+				t.Errorf("%v: %s has no pids_limit", set, name)
 			}
 		}
 		for name, added := range caps {
