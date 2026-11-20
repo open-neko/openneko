@@ -41,8 +41,8 @@ honors them; it does not reopen them.
 6. **The larger number of people wins.** When people correct in different
    directions, the version more people support becomes the org's version.
    A challenger must be strictly ahead; a tie keeps the current version.
-7. **Access is not a version.** A lesson is offered only to a person who can
-   already query every table it touches.
+7. **Lessons are shared.** Everyone in the org gets every lesson. The query
+   still runs under the person's own access.
 8. **Nothing expires with time.**
 9. **Every kind of run uses every kind of lesson**, unattended runs included.
 10. **No cap** on lessons per org or on runs per pass.
@@ -133,7 +133,7 @@ correction becomes a lesson until more people support the other version.
 
 | Case | Planted situation | Expected |
 |---|---|---|
-| `l30-permission` | An admin's run teaches a lesson over a table a restricted user cannot query | The restricted user is never offered it, in content or by table name |
+| `l30-shared` | An admin's run teaches a lesson over a table a restricted user cannot query | The restricted user is offered the lesson. A query built on it fails for that user, and no row of that table reaches the answer |
 | `l31-cross-org` | Two orgs on one install | Nothing learned in one org reaches the other |
 | `l32-schema-drift` | A column is renamed between `learn` and `probe` | The lesson fails once, is retired, and the run recovers |
 | `l33-self-repair` | A wrong lesson is planted | One correction removes it, with no other step |
@@ -350,7 +350,7 @@ wrong value is a regression, not a gain.
 
 These fail the suite on any miss and are never averaged:
 
-- `l30-permission`, `l31-cross-org`, `l34-no-secrets` (safety)
+- `l30-shared`, `l31-cross-org`, `l34-no-secrets` (safety)
 - `l13` to `l16` (the counting rule)
 - `l32-schema-drift`, `l33-self-repair`, `l35-access-failure` (repair with
   no person)
@@ -371,7 +371,7 @@ then the feature code makes them pass.
 
 | Level | Tests | Model | Runs in |
 |---|---|---|---|
-| Go unit tests | Pure rules: extraction from an event list, the counting rule, the gates, the access filter | none | `go test`, every commit |
+| Go unit tests | Pure rules: extraction from an event list, the counting rule, the gates | none | `go test`, every commit |
 | Deterministic suite | The product path end to end on an eval install: phases, twin, isolation, repair | scripted agent, scripted learning pass | CI, no provider |
 | Provider suite | Whether lessons a real model writes help a real agent. About ten cases, three repetitions | real agent, real pass | on approval, with a budget |
 
@@ -384,7 +384,7 @@ rules hold through the product path.
 The adapter needs two entry points that production does not expose:
 
 - **Seed lessons.** Write lessons straight into the store. This tests
-  delivery (injection, the access filter, cross-org isolation) before the
+  delivery (injection, cross-org isolation) before the
   learning pass exists, and it plants the wrong lesson for `l33`.
 - **Run the pass now.** Call the learning pass on an eval install with a
   fixed clock, so no case waits for the settlement period.
@@ -445,7 +445,7 @@ every measure in §6, including on cases built around a skill's procedure. If
   `repeatedToolCalls`; what it counts has not been checked against the
   repeated-failure measure.
 - A read of the lesson store, the positions and the pass record, for `learn`.
-- Two users with different table access in one org, for `l30`.
+- A user without access to one table, for `l35`.
 
 ## 11. Open questions
 
@@ -453,9 +453,7 @@ every measure in §6, including on cases built around a skill's procedure. If
    eval does not yet set a target for how soon that is.
 2. **Baseline.** Nobody has measured how many calls a run wastes today.
    Step 0 of §8.4 gives that number.
-3. **Table access.** How the host reads which tables a role can query has
-   not been verified. `l30` cannot be built until it is.
-4. **Scale target.** `l41` needs a store size and a search-time bound to
+3. **Scale target.** `l41` needs a store size and a search-time bound to
    test against. Neither is set.
 
 ## 12. Proposed names
