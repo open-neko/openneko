@@ -216,7 +216,7 @@ function SettingsIndex({
         {
           href: "/admin/settings/workflows",
           title: "Workflow API",
-          copy: "Public URL and budgets for workflows that other systems start through the API.",
+          copy: "Owners of workflows that have none, and the public URL and budgets for workflows that other systems start through the API.",
           status: overview.customWorkflowBudget ? "Custom budget" : "Default budget",
           statusTone: "neutral",
         },

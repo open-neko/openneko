@@ -1566,6 +1566,8 @@ export const workflow_definition = pgTable(
     owner_user_id: text("owner_user_id").notNull().default(""),
     origin_id: uuid("origin_id"),
     parent_id: uuid("parent_id"),
+    team_approved_by: text("team_approved_by"),
+    team_approved_at: ts("team_approved_at"),
     output_contract: jsonb("output_contract"),
     created_by_thread_id: uuid("created_by_thread_id").references(
       () => work_thread.id,

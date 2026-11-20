@@ -482,6 +482,15 @@ func (a *API) prepareWorkflowRun(ctx context.Context, orgID, workflowID, trigger
 		return p, errors.New("Workflow " + wf.Name + " is disabled.")
 	}
 	userID, role := "", "service"
+	if wf.OwnerUserID == "" {
+		var needs bool
+		if err := a.DB.QueryRow(ctx, `select `+workflowNeedsOwner+` from workflow_definition w where w.id = $1`, wf.ID).Scan(&needs); err != nil {
+			return p, err
+		}
+		if needs {
+			return p, errors.New("Workflow " + wf.Name + " has no owner. An admin assigns one at Admin, Settings, Workflow API before it runs.")
+		}
+	}
 	if wf.OwnerUserID != "" {
 		var active bool
 		if err := a.DB.QueryRow(ctx, `select exists (select 1 from app_user where org_id = $1 and id = $2 and disabled_at is null)`,

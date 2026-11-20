@@ -269,6 +269,17 @@ func (r *runTools) saveWorkflow(ctx context.Context, in *jsObj) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if owner == "" && runID != "" {
+		var user *string
+		err := a.DB.QueryRow(ctx, `select actor_user_id from work_run where id::text = $1 and org_id = $2`, runID, orgID).Scan(&user)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
+		owner = deref(user)
+	}
+	if owner == "" {
+		return nil, errors.New("This run has no user, so it cannot save a workflow. An admin adds a team workflow from a personal one at Workflows.")
+	}
 	if runID != "" {
 		var existingID string
 		err := a.DB.QueryRow(ctx, `select id::text from workflow_definition where org_id = $1 and name = $2 and owner_user_id = $3
