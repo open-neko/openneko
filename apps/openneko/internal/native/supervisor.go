@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 )
@@ -47,10 +48,14 @@ type Supervisor struct {
 	Grace   time.Duration
 	Backoff time.Duration
 
-	mu    sync.Mutex
-	state State
-	job   *job
+	mu     sync.Mutex
+	state  State
+	job    *job
+	follow *os.File
 }
+
+// SupervisorFDEnv names the inherited pipe that FollowSupervisor reads.
+const SupervisorFDEnv = "OPENNEKO_SUPERVISOR_FD"
 
 // Run starts every process and starts each again when it stops, until ctx
 // ends. Then it sends each a stop signal and kills what is left after Grace.
@@ -66,6 +71,15 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 	defer j.close()
 	s.job = j
+	if parentWatch {
+		r, w, err := os.Pipe()
+		if err != nil {
+			return err
+		}
+		defer r.Close()
+		defer w.Close()
+		s.follow = r
+	}
 	if s.Grace == 0 {
 		s.Grace = 15 * time.Second
 	}
@@ -128,6 +142,14 @@ func (s *Supervisor) runOnce(ctx context.Context, p Proc) error {
 	cmd.Env = p.Env
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	cmd.SysProcAttr = childAttr()
+	if s.follow != nil {
+		env := p.Env
+		if env == nil {
+			env = os.Environ()
+		}
+		cmd.Env = append(slices.Clip(env), SupervisorFDEnv+"=3")
+		cmd.ExtraFiles = []*os.File{s.follow}
+	}
 	if err := cmd.Start(); err != nil {
 		return err
 	}

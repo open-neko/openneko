@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -32,6 +31,7 @@ func runHelper(mode, arg string) int {
 	case "graceful":
 		ctx, stop := NotifyStop(context.Background())
 		defer stop()
+		FollowSupervisor()
 		fmt.Println("up")
 		<-ctx.Done()
 		_ = os.WriteFile(arg, []byte("done"), 0o600)
@@ -235,9 +235,6 @@ func TestStopEndsADetachedSupervisorAndItsChildrenGracefully(t *testing.T) {
 }
 
 func TestChildrenDieWhenTheSupervisorIsKilled(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		t.Skip("macOS has no parent-death signal; WIN0 item A6 adds a watch")
-	}
 	l := preparedLayout(t)
 	cmd := startSupervisor(t, l, "graceful", filepath.Join(t.TempDir(), "term"), nil)
 	waitFor(t, "serve starts", 20*time.Second, func() bool { return servePID(l) > 0 })
