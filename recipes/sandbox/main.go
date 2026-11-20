@@ -22,12 +22,17 @@ func main() {
 	flags := flag.NewFlagSet("openneko-sandbox", flag.ExitOnError)
 	listen := flags.String("listen", envOr("OPENNEKO_SANDBOX_LISTEN", "unix:///run/openneko-sandbox/sandbox.sock"), "unix:///path or host:port")
 	_ = flags.Parse(os.Args[1:])
+	baseUID, users, err := userRangeFromEnv()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "openneko sandbox: %v\n", err)
+		os.Exit(1)
+	}
 	server := &Server{
 		Workspaces:  envOr("OPENNEKO_SANDBOX_WORKSPACES", "/var/lib/openneko/sandbox-runs"),
 		Homes:       envOr("OPENNEKO_SANDBOX_HOMES", "/var/lib/openneko/sandbox"),
 		Key:         os.Getenv("OPENNEKO_SANDBOX_KEY"),
-		BaseUID:     intEnv("OPENNEKO_SANDBOX_BASE_UID", defaultBaseUID),
-		Users:       intEnv("OPENNEKO_SANDBOX_USERS", defaultUsers),
+		BaseUID:     baseUID,
+		Users:       users,
 		GID:         intEnv("OPENNEKO_SANDBOX_GID", os.Getgid()),
 		SwitchUsers: os.Geteuid() == 0,
 		PATH:        envOr("PATH", "/usr/local/bin:/usr/bin:/bin"),
@@ -35,6 +40,10 @@ func main() {
 
 		EgressProxy:   os.Getenv("OPENNEKO_SANDBOX_EGRESS_PROXY"),
 		EgressControl: os.Getenv("OPENNEKO_SANDBOX_EGRESS_CONTROL"),
+	}
+	if err := server.checkUserRange(); err != nil {
+		fmt.Fprintf(os.Stderr, "openneko sandbox: %v\n", err)
+		os.Exit(1)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -85,4 +94,12 @@ func confineRuns(ctx context.Context, server *Server) error {
 		go relayToProxy(ctx, relay, server.EgressProxy)
 	}
 	return nil
+}
+
+func userRangeFromEnv() (baseUID, users int, err error) {
+	if baseUID, err = strictIntEnv("OPENNEKO_SANDBOX_BASE_UID", defaultBaseUID); err != nil {
+		return 0, 0, err
+	}
+	users, err = strictIntEnv("OPENNEKO_SANDBOX_USERS", defaultUsers)
+	return baseUID, users, err
 }
