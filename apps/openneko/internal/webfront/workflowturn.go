@@ -34,6 +34,7 @@ type workflowTurnOptions struct {
 	CardsOff                   bool
 	TimeoutMs                  int
 	MaxToolIterations          int
+	MaxModelCalls              int
 	Emit                       func(ctx context.Context, event any) error
 
 	wrapEmit func(func(context.Context, any) error) func(context.Context, any) error
@@ -190,7 +191,7 @@ func (a *API) workflowTurnBody(ctx context.Context, o workflowTurnOptions, st *w
 	in := agentCoreInput{Backend: backend, Prompt: prompt, UserMessage: seed, OrgID: wf.OrgID, ThreadID: o.ThreadID, RunID: o.RunID,
 		CoreCards: o.CardsOff, CardsOff: o.CardsOff, Shell: terminal, Keys: keys, Socket: a.serveSocket(), Emit: st.wrapped,
 		Workflow: &workflowCoreInput{WorkflowRunID: o.WorkflowRunID, ObservationID: o.ObservationID, Servers: workflowCoreServers(files),
-			NetworkHosts: wf.NetworkHosts, TimeoutMs: timeout, MaxToolIterations: maxCalls, ReasoningEffort: limits.ReasoningEffort}}
+			NetworkHosts: wf.NetworkHosts, TimeoutMs: timeout, MaxToolIterations: maxCalls, MaxModelCalls: o.MaxModelCalls, ReasoningEffort: limits.ReasoningEffort}}
 	scripted := slices.ContainsFunc(jsArray(steps), func(s any) bool { return jsTruthy(jsGet(s, "script")) })
 
 	release, err := a.slots.acquire(ctx,

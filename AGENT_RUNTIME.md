@@ -142,7 +142,8 @@ call cap, and the door answers 429 after it:
   fallback of the last call. Web sends the ceiling to serve as
   `max_model_calls`: the actor steps times one more than the delegated
   child steps, plus 2, at most 2000 (1277 for a chat turn with the
-  defaults).
+  defaults). A workflow API run uses its own `maxModelCalls` when that
+  number is lower.
 - A host call: 5 per route, the first try and four retries.
 - An embedding call: 1.
 
@@ -153,6 +154,12 @@ A difference writes a log line and, for a turn or a host call, an
 `agent:model_calls_mismatch` event in the org's audit chain, with the
 purpose and both counts. An embedding call belongs to no org, so it gets
 the log line only.
+
+The door limits time and load. Serve must send the whole request body
+within 2 minutes, else the door answers 408. The provider must start its
+answer within 10 minutes, else the door answers 502. A call ends at the
+token's deadline. The door has at most 64 calls open at once and answers
+503 to one more.
 
 The door streams each answer back as it arrives. It asks the provider for
 an uncompressed answer (`Accept-Encoding: identity`) and does not forward
@@ -180,14 +187,32 @@ connect, and each call needs a valid token as well. Its path is
 Windows has no key door yet, and no agent turns.
 
 In production (`OPENNEKO_ENV` unset or `production`), serve refuses a frame
-that holds a model key in place of a door token. At start, serve removes
-every `*_API_KEY`, `HF_TOKEN` and `VERTEX_ACCESS_TOKEN` variable from its
-environment and logs a warning that names them. `openneko release-check
+that holds a model key in place of a door token. It also refuses a frame
+whose environment holds a value in the form of a provider key or cloud
+credential, or a variable from the list below. At start, serve removes
+these variables from its environment and logs a warning that names them:
+every `*_API_KEY`, `HF_TOKEN`, `VERTEX_ACCESS_TOKEN`,
+`GOOGLE_VERTEX_ACCESS_TOKEN`, `GOOGLE_APPLICATION_CREDENTIALS`,
+`AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AZURE_OPENAI_KEY`,
+`NEKO_SECRET_KEY`, and each `DATABASE_URL`, `*_DATABASE_URL` and
+`*_DATABASE_URL_FILE` outside `GJ_*`. `openneko release-check
 --serve-socket` connects to `OPENNEKO_SERVE_SOCKET` and fails when serve
 started with such a variable or runs in development mode.
 
-Two paths still carry a key into the process that runs the agent loop.
-Use them for development and demos only:
+The one-user native install (`openneko start` with no server install)
+starts serve with a filtered copy of the shell environment. The copy holds
+no variable whose name holds `KEY`, `TOKEN`, `SECRET`, `PASS`,
+`CREDENTIAL`, `DATABASE_URL`, `DSN` or `AUTH`. Serve keeps its own
+`OPENNEKO_SANDBOX_KEY`, its bucket login (`OPENNEKO_FILES_BUCKET_KEY_ID`,
+`OPENNEKO_FILES_BUCKET_SECRET`) and GraphJin's `GJ_*` variables. Web and
+serve still run as the same OS user there, so the OS does not separate the
+zones: serve can read web's files. Use the one-user install for development
+and demos only; a server install or Docker gives each zone its own account
+or container.
+
+Two paths still carry a key into the process that runs the agent loop,
+and the one-user native install above has no zone separation by the OS.
+Use these three for development and demos only:
 
 - With no `OPENNEKO_SERVE_SOCKET`, `openneko web` runs the Ax harness in
   its own process, and the harness reads the keys there.

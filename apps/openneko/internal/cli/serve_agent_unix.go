@@ -39,7 +39,7 @@ func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns
 	}
 	names := serve.KeyEnvNames(os.Environ())
 	if len(names) > 0 {
-		fmt.Fprintf(out, "warning: openneko serve drops %s from its environment; model keys belong to openneko web (INSTALL.md, \"Model keys\")\n", strings.Join(names, ", "))
+		fmt.Fprintf(out, "warning: openneko serve drops %s from its environment; model keys, database URLs and the secret key belong to openneko web (INSTALL.md, \"Model keys\")\n", strings.Join(names, ", "))
 		for _, name := range names {
 			_ = os.Unsetenv(name)
 		}

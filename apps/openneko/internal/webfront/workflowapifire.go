@@ -544,7 +544,7 @@ func (a *API) runAPISingle(ctx context.Context, job jobs.WorkflowRunFireArgs, c 
 		TriggerPayload: triggerPayload, TriggerInput: wfAPITriggerInput(c.payload), HasTriggerInput: true,
 		UserMessage: wfAPIInputMessage(c.payload), Mode: "headless", IncludeUxMetadata: true,
 		TimeoutMs: int(c.limits[limRuntime] * 1_000), MaxToolIterations: int(c.limits[limToolCalls]),
-		wrapEmit: ceiling.wrap, resolve: a.turnResolve, runCore: a.turnCore}
+		MaxModelCalls: int(c.limits[limModelCalls]), wrapEmit: ceiling.wrap, resolve: a.turnResolve, runCore: a.turnCore}
 	timer := time.AfterFunc(time.Duration(c.limits[limRuntime])*time.Second, func() {
 		ceiling.abort("runtime_limit", "The API run exceeded its runtime ceiling.")
 	})

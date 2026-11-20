@@ -33,6 +33,7 @@ type agentLimits struct {
 	ReasoningEffort                                     string
 	DelegationMaxIterations, ToolOutputMaxBytes         int
 	TerminalTimeoutSeconds                              int
+	ModelCallCeiling                                    int
 }
 
 func readLimitInt(name string, fallback, lo, hi int) int {
@@ -89,7 +90,11 @@ func (l agentLimits) steps() (actor, child int) {
 // responder. Serve's spec takes at most 2000.
 func (l agentLimits) maxModelCalls() int {
 	actor, child := l.steps()
-	return min(2000, actor*(1+child)+2)
+	n := min(2000, actor*(1+child)+2)
+	if l.ModelCallCeiling > 0 {
+		n = min(n, l.ModelCallCeiling)
+	}
+	return n
 }
 
 // axDoorCallAllowance covers the resamples and the fallback of the last
@@ -198,6 +203,7 @@ type axTurnOptions struct {
 	NetworkHosts, EgressHosts                 []string
 	Debug, NativeDelegationOff, Shell         bool
 	TimeoutMs, MaxToolIterations              int
+	MaxModelCalls                             int
 	ReasoningEffort, PythonPath               string
 	Keys                                      map[string]string
 	Door                                      *llm.KeyDoor
@@ -486,6 +492,7 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions, n
 	if o.MaxToolIterations > 0 {
 		runLimits.MaxToolCalls = o.MaxToolIterations
 	}
+	runLimits.ModelCallCeiling = o.MaxModelCalls
 	runLimits.ReasoningEffort = orDefault(o.ReasoningEffort, cfg.ReasoningEffort)
 	doorCfg, modelKeys, pass, err := axDoorGrant(cfg, o, time.Duration(timeoutMs)*time.Millisecond+axKillGrace,
 		runLimits.maxModelCalls()+axDoorCallAllowance)

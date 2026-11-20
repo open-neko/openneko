@@ -475,8 +475,10 @@ for each provider.
 
 Give model keys only to web: in Admin, Settings, Models, and
 `NEKO_EMBEDDING_API_KEY` in web's environment. Give `openneko-serve` no
-`*_API_KEY` variable. Serve removes each such variable at start and logs a
-warning that names it. `openneko release-check --serve-socket` fails when
+`*_API_KEY` variable, no cloud credential, no database URL and no
+`NEKO_SECRET_KEY`. Serve removes each such variable at start and logs a
+warning that names it. [AGENT_RUNTIME.md](AGENT_RUNTIME.md#the-key-door)
+lists the names. `openneko release-check --serve-socket` fails when
 serve started with one, or when serve runs with `OPENNEKO_ENV=development`.
 In production, serve refuses a turn that carries a real key.
 
@@ -486,7 +488,9 @@ the model APIs must let web reach them.
 Two set-ups put the key in the process that runs the agent loop. Use them
 for development and demos only: `openneko web` with no
 `OPENNEKO_SERVE_SOCKET`, which runs the Ax harness in its own process, and
-the stand-alone harness of the evals.
+the stand-alone harness of the evals. The one-user native install starts
+serve with no key, token, password or database URL from your shell, but web
+and serve run as one OS user there. Use it for development and demos only.
 
 ### External services
 
