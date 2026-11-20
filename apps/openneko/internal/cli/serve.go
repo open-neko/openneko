@@ -33,6 +33,7 @@ func newServeCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, stop := native.NotifyStop(cmd.Context())
 			defer stop()
+			native.FollowSupervisor()
 
 			key, dsn, err := serveKeyAndDatabase(credentials)
 			if err != nil {

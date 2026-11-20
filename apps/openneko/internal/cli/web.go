@@ -71,6 +71,7 @@ with exit code 0, so its supervisor starts it again.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := native.NotifyStop(cmd.Context())
 			defer stop()
+			native.FollowSupervisor()
 			if local, _ := config.ReadLocal(""); local.SecretsBackendError() != nil {
 				return local.SecretsBackendError()
 			}

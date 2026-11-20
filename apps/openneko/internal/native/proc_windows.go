@@ -131,3 +131,8 @@ func (j *job) add(p *os.Process) error {
 }
 
 func (j *job) close() { _ = windows.CloseHandle(j.h) }
+
+// The job object already ends the children with the supervisor.
+var parentWatch = false
+
+func FollowSupervisor() {}
