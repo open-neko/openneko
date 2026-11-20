@@ -1,0 +1,388 @@
+//go:build !windows
+
+package serve
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	osexec "os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
+	"syscall"
+	"testing"
+	"time"
+
+	"github.com/open-neko/openneko/apps/ax-harness/embedding"
+	"github.com/open-neko/openneko/apps/ax-harness/harness"
+	"github.com/open-neko/openneko/apps/ax-harness/inference"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/testsock"
+	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
+	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
+)
+
+const runnerChildEnv = "AX_SERVE_TEST_RUNNER"
+
+func TestMain(m *testing.M) {
+	switch os.Getenv(runnerChildEnv) {
+	case "":
+		os.Exit(m.Run())
+	case "turn":
+	case "fds":
+		runnerRun = reportDescriptors
+	case "hang":
+		runnerRun = func(ctx context.Context, _ harness.Turn) (int, error) {
+			<-ctx.Done()
+			return 1, ctx.Err()
+		}
+	case "door-only":
+		os.Exit(checkDoorOnly())
+	}
+	if err := RunRunner(context.Background()); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	os.Exit(0)
+}
+
+// reportDescriptors writes the runner's open descriptors as one event.
+func reportDescriptors(_ context.Context, turn harness.Turn) (int, error) {
+	dir := "/proc/self/fd"
+	if runtime.GOOS != "linux" {
+		dir = "/dev/fd"
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 2, err
+	}
+	var open []string
+	for _, entry := range entries {
+		var stat syscall.Stat_t
+		var fd int
+		if _, err := fmt.Sscan(entry.Name(), &fd); err != nil || syscall.Fstat(fd, &stat) != nil {
+			continue
+		}
+		kind := "other"
+		if stat.Mode&syscall.S_IFMT == syscall.S_IFSOCK {
+			kind = "socket"
+		}
+		open = append(open, fmt.Sprintf("%d:%s", fd, kind))
+	}
+	line, _ := json.Marshal(map[string]any{"type": "fds", "open": open, "env": os.Environ()})
+	_, err = turn.Out.Write(append(line, '\n'))
+	return 0, err
+}
+
+// checkDoorOnly runs in a runner-like process: after SetDialer, a model,
+// an embedding or a sandbox that is not reached through a passed connection
+// must be refused.
+func checkDoorOnly() int {
+	keydoor.SetDialer(func(context.Context) (net.Conn, error) { return nil, errors.New("no door in this check") })
+	sandbox.RequirePassedConnections()
+	failures := 0
+	if _, err := inference.NewClient(inference.Route{Provider: "openai", Model: "m", URL: "http://127.0.0.1:9/v1"}, "k", inference.NoRetry); !errors.Is(err, keydoor.ErrNotDoor) {
+		fmt.Println("a model URL that is not the door was accepted:", err)
+		failures++
+	}
+	if _, err := inference.NewClient(inference.Route{Provider: "openai", Model: "m"}, "k", inference.NoRetry); !errors.Is(err, keydoor.ErrNotDoor) {
+		fmt.Println("the provider's own URL was accepted:", err)
+		failures++
+	}
+	if _, err := inference.NewClient(inference.Route{Provider: "openai", Model: "m", URL: keydoor.URL("primary")}, "k", inference.NoRetry); err != nil {
+		fmt.Println("the door URL was refused:", err)
+		failures++
+	}
+	if _, err := embedding.Embed(context.Background(), embedding.Request{URL: "http://127.0.0.1:9/v1", Model: "e", Input: []string{"x"}}, "test-embedding-key"); err == nil || err.Error() != keydoor.ErrNotDoor.Error() {
+		fmt.Println("an embedding URL that is not the door was accepted:", err)
+		failures++
+	}
+	if _, err := sandbox.NewClient(sandbox.Config{URL: "unix:///tmp/sandbox.sock"}, "/tmp"); err == nil {
+		fmt.Println("a sandbox that is not a passed connection was accepted")
+		failures++
+	}
+	if _, err := sandbox.NewClient(sandbox.Config{URL: "unix:///tmp/sandbox.sock", Dial: func(context.Context) (net.Conn, error) { return nil, errors.New("x") }}, "/tmp"); err != nil {
+		fmt.Println("a sandbox with a passed connection was refused:", err)
+		failures++
+	}
+	keydoor.SetSocket("/tmp/elsewhere.sock")
+	if !keydoor.DoorOnly() {
+		fmt.Println("SetSocket undid the door-only rule")
+		failures++
+	}
+	return failures
+}
+
+func runnerServer(t *testing.T, mode string, server *Server) *Server {
+	t.Helper()
+	server.Runner = []string{os.Args[0]}
+	server.RunnerEnv = []string{runnerChildEnv + "=" + mode, "PATH=" + os.Getenv("PATH")}
+	if server.Run == nil {
+		server.Run = func(context.Context, harness.Turn) (int, error) {
+			t.Error("the turn ran inside serve, not in the runner")
+			return 2, nil
+		}
+	}
+	return server
+}
+
+// fakeDoor is a key door on a Unix socket in front of the fixture model.
+func fakeDoor(t *testing.T, handler http.Handler) string {
+	t.Helper()
+	path := filepath.Join(testsock.Dir(t), keydoor.SocketName)
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: handler}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	keydoor.SetSocket(path)
+	t.Cleanup(func() { keydoor.SetSocket("") })
+	return path
+}
+
+func waitExit(t *testing.T, c *client) (Frame, []json.RawMessage) {
+	t.Helper()
+	var events []json.RawMessage
+	timeout := time.After(60 * time.Second)
+	for {
+		select {
+		case frame, ok := <-c.frames:
+			if !ok {
+				t.Fatal("the link closed before an exit frame")
+			}
+			if frame.Type == "exit" {
+				return frame, events
+			}
+			if frame.Type == "event" {
+				events = append(events, frame.Event)
+			}
+		case <-timeout:
+			t.Fatal("no exit frame")
+		}
+	}
+}
+
+func TestRunnerRunsAWholeTurnThroughTheDoorDescriptor(t *testing.T) {
+	model, keys := fixtureModel(t)
+	var paths []string
+	var mu sync.Mutex
+	fakeDoor(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		model.Config.Handler.ServeHTTP(w, r)
+	}))
+	token := keydoor.TokenPrefix + strings.Repeat("a", 22) + "." + strings.Repeat("b", 43)
+	socket := startServer(t, runnerServer(t, "turn", &Server{RequireDoor: true, Getenv: os.Getenv}))
+	listed := make(chan struct{}, 1)
+	c := dial(t, socket, Frame{
+		Type: "start",
+		Environ: []string{"OPENNEKO_MCP_ORG_ID=org-1", "OPENNEKO_MCP_THREAD_ID=thread-1",
+			"HARNESS_MODEL_URL=" + keydoor.URL("primary"), "HARNESS_MODEL=fixture"},
+		Spec: json.RawMessage(spec), Bridge: true, ModelKeys: map[string]string{"MODEL_API_KEY": token},
+	}, func(c *client) { c.serveTools(t, listed) })
+	exit, events := waitExit(t, c)
+	if exit.Code == nil || *exit.Code != 0 {
+		t.Fatalf("exit = %+v", exit)
+	}
+	select {
+	case <-listed:
+	default:
+		t.Fatal("the runner never listed the worker's tools over the link")
+	}
+	if last := string(events[len(events)-1]); !strings.Contains(last, `"run.finished"`) || !strings.Contains(last, "REF-42") {
+		t.Fatalf("last event = %s", last)
+	}
+	if len(*keys) == 0 {
+		t.Fatal("the model got no call through the door")
+	}
+	for i, key := range *keys {
+		if key != "Bearer "+token || !strings.HasPrefix(paths[i], "/r/primary/") {
+			t.Fatalf("call %d reached the door at %s with %q", i, paths[i], key)
+		}
+	}
+}
+
+func TestRunnerRefusesAModelThatIsNotTheDoor(t *testing.T) {
+	model, keys := fixtureModel(t)
+	fakeDoor(t, http.NotFoundHandler())
+	socket := startServer(t, runnerServer(t, "turn", &Server{Getenv: os.Getenv}))
+	c := dial(t, socket, Frame{
+		Type: "start",
+		Environ: []string{"OPENNEKO_MCP_ORG_ID=org-1", "OPENNEKO_MCP_THREAD_ID=thread-1",
+			"HARNESS_MODEL_URL=" + model.URL, "HARNESS_MODEL=fixture"},
+		Spec: json.RawMessage(spec), ModelKeys: map[string]string{"MODEL_API_KEY": "k"},
+	})
+	exit, events := waitExit(t, c)
+	all := exit.Error
+	for _, e := range events {
+		all += string(e)
+	}
+	if (exit.Code != nil && *exit.Code == 0) || !strings.Contains(all, "only through the key door") {
+		t.Fatalf("exit = %+v, events = %s", exit, all)
+	}
+	if len(*keys) != 0 {
+		t.Fatalf("the runner called the model directly %d times", len(*keys))
+	}
+}
+
+func TestRunnerProcessRefusesEveryWayOutButPassedConnections(t *testing.T) {
+	cmd := osexec.Command(os.Args[0])
+	cmd.Env = []string{runnerChildEnv + "=door-only"}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+}
+
+func TestRunnerHoldsOnlyItsTwoLinks(t *testing.T) {
+	t.Setenv("OPENNEKO_SANDBOX_KEY", "serve-sandbox-key")
+	other, err := net.Listen("unix", filepath.Join(testsock.Dir(t), "other.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	socket := startServer(t, runnerServer(t, "fds", &Server{MaxTurns: 8}))
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			checkRunnerHolds(t, dial(t, socket, Frame{Type: "start", Spec: json.RawMessage(spec), Environ: []string{"OPENNEKO_MCP_ORG_ID=o", "OPENNEKO_MCP_THREAD_ID=t"}}))
+		}()
+	}
+	wg.Wait()
+}
+
+func checkRunnerHolds(t *testing.T, c *client) {
+	var events []json.RawMessage
+	var exit Frame
+	for frame := range c.frames {
+		if frame.Type == "event" {
+			events = append(events, frame.Event)
+		}
+		if frame.Type == "exit" {
+			exit = frame
+			break
+		}
+	}
+	if exit.Code == nil || *exit.Code != 0 || len(events) != 1 {
+		t.Errorf("exit = %+v, events = %d", exit, len(events))
+		return
+	}
+	var report struct {
+		Open []string `json:"open"`
+		Env  []string `json:"env"`
+	}
+	if err := json.Unmarshal(events[0], &report); err != nil {
+		t.Error(err)
+		return
+	}
+	var sockets []string
+	for _, fd := range report.Open {
+		if strings.HasSuffix(fd, ":socket") {
+			sockets = append(sockets, fd)
+		}
+	}
+	if len(sockets) != 2 {
+		t.Errorf("the runner holds the sockets %v, want only its link and its broker; all: %v", sockets, report.Open)
+	}
+	for _, entry := range report.Env {
+		if !strings.HasPrefix(entry, runnerChildEnv+"=") && !strings.HasPrefix(entry, "PATH=") {
+			t.Errorf("the runner got %q from serve's environment", entry)
+		}
+	}
+}
+
+func TestRunnerStopsWhenTheCallerHangsUp(t *testing.T) {
+	started := make(chan *os.Process, 1)
+	server := runnerServer(t, "hang", &Server{})
+	server.runnerStarted = func(p *os.Process) { started <- p }
+	socket := startServer(t, server)
+	c := dial(t, socket, Frame{Type: "start", Spec: json.RawMessage(spec), Environ: []string{"OPENNEKO_MCP_ORG_ID=o", "OPENNEKO_MCP_THREAD_ID=t"}})
+	process := <-started
+	time.Sleep(200 * time.Millisecond)
+	_ = c.conn.Close()
+	deadline := time.Now().Add(10 * time.Second)
+	for process.Signal(syscall.Signal(0)) == nil {
+		if time.Now().After(deadline) {
+			t.Fatal("the runner kept running after the caller hung up")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestRunnerCrashGivesAnExitFrame(t *testing.T) {
+	server := runnerServer(t, "turn", &Server{})
+	server.Runner = []string{"/bin/sh", "-c", "exit 3"}
+	c := dial(t, startServer(t, server), Frame{Type: "start", Spec: json.RawMessage(spec)})
+	exit, _ := waitExit(t, c)
+	if exit.Code == nil || *exit.Code != 2 || !strings.Contains(exit.Error, "agent runner stopped") {
+		t.Fatalf("exit = %+v", exit)
+	}
+}
+
+func TestBrokerPassesConnectedDescriptors(t *testing.T) {
+	dir := testsock.Dir(t)
+	fakeDoor(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "door") }))
+	box, err := net.Listen("unix", filepath.Join(dir, "sandbox.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	boxSrv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "sandbox") })}
+	go func() { _ = boxSrv.Serve(box) }()
+	defer boxSrv.Close()
+
+	parent, child, err := socketPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	serveEnd, err := unixConn(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerEnd, err := unixConn(child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runnerEnd.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s := &Server{Sandbox: sandbox.Config{URL: "unix://" + filepath.Join(dir, "sandbox.sock")}}
+	go func() { s.serveBroker(ctx, serveEnd); _ = serveEnd.Close() }()
+	b := &brokerClient{conn: runnerEnd, in: bufio.NewReader(runnerEnd)}
+
+	for _, c := range []struct{ name, body string }{{brokerKeyDoor, "door"}, {brokerSandbox, "sandbox"}, {brokerKeyDoor, "door"}} {
+		client := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) { return b.get(ctx, c.name) }, DisableKeepAlives: true}}
+		resp, err := client.Get("http://x/")
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if string(body) != c.body {
+			t.Fatalf("%s answered %q", c.name, body)
+		}
+	}
+	if _, err := b.get(context.Background(), "/var/run/docker.sock"); err == nil || !strings.Contains(err.Error(), "passes no connection") {
+		t.Fatalf("the broker passed a connection it does not name: %v", err)
+	}
+	off := &Server{}
+	p2, c2, _ := socketPair()
+	s2, _ := unixConn(p2)
+	r2, _ := unixConn(c2)
+	defer r2.Close()
+	go func() { off.serveBroker(ctx, s2); _ = s2.Close() }()
+	if _, err := (&brokerClient{conn: r2, in: bufio.NewReader(r2)}).get(context.Background(), brokerSandbox); err == nil || !strings.Contains(err.Error(), "terminal is off") {
+		t.Fatalf("a sandbox with no URL gave %v", err)
+	}
+}

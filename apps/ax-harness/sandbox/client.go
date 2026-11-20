@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/open-neko/openneko/apps/ax-harness/internal/localtool"
@@ -27,6 +28,32 @@ import (
 type Config struct {
 	URL string
 	Key string
+	// Dial, when set, gives each connection to the sandbox in place of a
+	// dial to the URL's host. The agent runner gets connections this way.
+	Dial func(ctx context.Context) (net.Conn, error) `json:"-"`
+}
+
+var passedOnly atomic.Bool
+
+// RequirePassedConnections makes NewClient refuse a Config without Dial,
+// for good: the process may reach the sandbox only by a passed connection.
+func RequirePassedConnections() { passedOnly.Store(true) }
+
+// DialService opens one connection to the sandbox that the URL names.
+func (c Config) DialService(ctx context.Context) (net.Conn, error) {
+	var d net.Dialer
+	if socket, ok := strings.CutPrefix(c.URL, "unix://"); ok {
+		return d.DialContext(ctx, "unix", socket)
+	}
+	parsed, err := url.Parse(c.URL)
+	if err != nil || parsed.Host == "" {
+		return nil, fmt.Errorf("invalid OPENNEKO_SANDBOX_URL")
+	}
+	host := parsed.Host
+	if parsed.Port() == "" {
+		host = net.JoinHostPort(parsed.Hostname(), map[string]string{"http": "80", "https": "443"}[parsed.Scheme])
+	}
+	return d.DialContext(ctx, "tcp", host)
 }
 
 func ConfigFromEnv(getenv func(string) string) Config {
@@ -80,9 +107,20 @@ type Client struct {
 
 // NewClient accepts unix:///path, http:// and https:// URLs.
 func NewClient(cfg Config, workspace string) (*Client, error) {
+	if passedOnly.Load() && cfg.Dial == nil {
+		return nil, errors.New("the agent runner reaches the sandbox only through a connection that serve passes")
+	}
 	httpClient, base, err := transport(cfg.URL)
 	if err != nil {
 		return nil, err
+	}
+	if cfg.Dial != nil {
+		dial := cfg.Dial
+		t := http.DefaultTransport.(*http.Transport).Clone()
+		t.Proxy = nil
+		t.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) { return dial(ctx) }
+		t.DialTLSContext = nil
+		httpClient = &http.Client{Transport: t}
 	}
 	var id [12]byte
 	_, _ = rand.Read(id[:])
