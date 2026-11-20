@@ -1044,15 +1044,17 @@ openneko upgrade
 It needs no Docker. It runs prod mode only, for the default installation.
 OpenNeko's database is yours, by URL.
 
-On Linux (amd64 or arm64), this script installs the native release for your
-user:
+On Linux or macOS (amd64 or arm64), this script installs the native release
+for your user:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/open-neko/openneko/main/scripts/install-native.sh | sh
 ```
 
-The script downloads `openneko-native_<version>_linux_<arch>.tar.gz` and
-`checksums-native.txt` from the release and checks the archive. It puts
+The script downloads `openneko-native_<version>_<os>_<arch>.tar.gz` and
+`checksums-native.txt` from the release and checks the archive with
+`sha256sum` or, on macOS, `shasum`. On an Apple silicon Mac it takes the
+arm64 archive, also when the shell runs under Rosetta. It puts
 `bin/openneko`, `share/openneko/web`, the built-in packs
 (`share/openneko/packs`) and the bundled skills (`share/openneko/skills`) in
 `~/.local/opt/openneko` and links
@@ -1061,7 +1063,27 @@ latest). `OPENNEKO_PREFIX` and `OPENNEKO_BIN_DIR` change the two folders.
 `OPENNEKO_RELEASE_URL` points at a mirror that holds `<tag>/<file>`, and
 then `OPENNEKO_VERSION` is needed. At the end, the script runs `openneko
 release-check --skills --bundled-packs` and fails when the install lacks its
-bundled skills or packs.
+bundled skills or packs. `--server` is for Linux only.
+
+On Windows (amd64 or arm64), `scripts/install-native.ps1` does the same in
+PowerShell 5.1 or later, with no admin rights:
+
+```powershell
+irm https://raw.githubusercontent.com/open-neko/openneko/main/scripts/install-native.ps1 | iex
+```
+
+It downloads `openneko-native_<version>_windows_<arch>.zip`, checks it
+against `checksums-native.txt`, and puts `bin\openneko.exe` and
+`share\openneko` in `%LOCALAPPDATA%\Programs\OpenNeko`
+(`OPENNEKO_PREFIX` changes it). It adds the `bin` folder to your user
+`PATH` and runs `openneko release-check --skills --bundled-packs` at the
+end. `OPENNEKO_VERSION` and `OPENNEKO_RELEASE_URL` work as in the Linux
+script. To upgrade with the new release's own executable, run it with
+`-Upgrade`; the arguments after it go to `openneko upgrade`:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/open-neko/openneko/main/scripts/install-native.ps1))) -Upgrade --skip-backup
+```
 
 Each release also holds `openneko-native_<version>_darwin_<arch>.tar.gz`
 for macOS and `openneko-native_<version>_windows_<arch>.zip` for Windows
@@ -1132,7 +1154,9 @@ and `upgrade` act on the native install. `openneko logs` reads the
 
 Backup and restore run `pg_dump` and `pg_restore` on this host. Install the
 PostgreSQL client tools of the server's major version or later (on Debian
-and Ubuntu, `postgresql-client-16`). The login needs `CREATEROLE` for the
+and Ubuntu, `postgresql-client-16`). On Windows, the PostgreSQL installer
+puts them in `C:\Program Files\PostgreSQL\<version>\bin` and does not add
+that folder to `PATH`; add it to your user `PATH`. The login needs `CREATEROLE` for the
 serve roles; the database check prints the SQL when it does not have it.
 
 | What | Where |

@@ -1,22 +1,31 @@
 #!/bin/sh
-# Installs the native OpenNeko release on Linux, with no Docker: for one
-# user, or with --server as two systemd services (needs root). --upgrade
-# upgrades an install with the new release's own executable.
+# Installs the native OpenNeko release on Linux or macOS, with no Docker: for
+# one user, or on Linux with --server as two systemd services (needs root).
+# --upgrade upgrades an install with the new release's own executable.
 set -eu
 
 fail() { echo "openneko install: $*" >&2; exit 1; }
 
-[ "$(uname -s)" = Linux ] || fail "the native release is for Linux only"
-case "$(uname -m)" in
+case "$(uname -s)" in
+  Linux) os=linux ;;
+  Darwin) os=darwin ;;
+  *) fail "this script is for Linux and macOS; on Windows, run install-native.ps1" ;;
+esac
+machine="$(uname -m)"
+if [ "$os" = darwin ] && [ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" = 1 ]; then
+  machine=arm64
+fi
+case "$machine" in
   x86_64 | amd64) arch=amd64 ;;
   aarch64 | arm64) arch=arm64 ;;
-  *) fail "no native release for $(uname -m)" ;;
+  *) fail "no native release for $machine" ;;
 esac
 server=
 upgrade=
 if [ "${1:-}" = --server ]; then
   server=1
   shift
+  [ "$os" = linux ] || fail "--server is for Linux only"
   [ "$(id -u)" = 0 ] || fail "--server needs root: run it with sudo"
 elif [ "${1:-}" = --upgrade ]; then
   upgrade=1
@@ -29,7 +38,13 @@ elif [ "$#" -gt 0 ]; then
   fail "unknown option $1; the options go after --server or --upgrade"
 fi
 command -v curl >/dev/null || fail "curl is needed"
-command -v sha256sum >/dev/null || fail "sha256sum is needed"
+if command -v sha256sum >/dev/null; then
+  sha256() { sha256sum "$1"; }
+elif command -v shasum >/dev/null; then
+  sha256() { shasum -a 256 "$1"; }
+else
+  fail "sha256sum or shasum is needed"
+fi
 
 if [ -n "$server" ]; then
   prefix="${OPENNEKO_PREFIX:-/opt/openneko}"
@@ -54,15 +69,15 @@ else
   [ ! -e "$prefix/bin/openneko" ] || fail "$prefix already holds OpenNeko; run \`openneko upgrade\` or this script with --upgrade"
 fi
 
-name="openneko-native_${tag#v}_linux_${arch}.tar.gz"
+name="openneko-native_${tag#v}_${os}_${arch}.tar.gz"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT INT TERM
-echo "Downloading OpenNeko $tag for linux/$arch..."
+echo "Downloading OpenNeko $tag for $os/$arch..."
 curl -fsSL -o "$tmp/checksums-native.txt" "$base/$tag/checksums-native.txt"
 curl -fsSL -o "$tmp/$name" "$base/$tag/$name"
-grep -E "^[0-9a-f]{64}  \*?$name\$" "$tmp/checksums-native.txt" | sed 's/  \*/  /' > "$tmp/want.txt"
-[ -s "$tmp/want.txt" ] || fail "checksums-native.txt does not list $name"
-(cd "$tmp" && sha256sum -c --quiet want.txt) || fail "checksum mismatch for $name"
+want="$(grep -E "^[0-9a-f]{64}  \*?$name\$" "$tmp/checksums-native.txt" | cut -c1-64 || true)"
+[ -n "$want" ] || fail "checksums-native.txt does not list $name"
+[ "$(sha256 "$tmp/$name" | cut -c1-64)" = "$want" ] || fail "checksum mismatch for $name"
 
 if [ -n "$upgrade" ]; then
   mkdir "$tmp/release"
