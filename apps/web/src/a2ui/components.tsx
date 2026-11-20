@@ -10,7 +10,7 @@
 
 import React from "react";
 import { ChevronRight, MessageSquare } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown from "@/lib/safe-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { CheckboxControl } from "@/components/ui/checkbox";

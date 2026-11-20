@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import Markdown, { type Components } from "react-markdown";
+import Markdown, { type Components } from "@/lib/safe-markdown";
 
 type Props = {
   value: string;

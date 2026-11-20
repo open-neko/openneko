@@ -125,6 +125,10 @@
 .work-markdown a:hover {
   text-decoration-color: var(--text);
 }
+.markdown-link-host {
+  color: var(--text3);
+  overflow-wrap: anywhere;
+}
 .work-markdown h1,
 .work-markdown h2,
 .work-markdown h3,
