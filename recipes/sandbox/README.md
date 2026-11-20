@@ -57,6 +57,11 @@ text. It leaves out the optional native canvas
 package of `pdfjs-dist`; the `pdf` skill draws pages with Poppler. Keep it in step with `KNOWN_SKILL_DEPS` in
 `packages/llm/src/work/skill-deps.ts`.
 
+The image holds only what the skills and the service use, plus `jq`,
+`ripgrep` and `file` for the agent's shell. It has no compiler, no pip, no
+npm and no git, so a command cannot install a package at run time. It is
+about 594 MB unpacked and 154 MB compressed on amd64.
+
 ## Skills
 
 `skills/` holds the bundled skills that run only here, one folder each, and
@@ -172,8 +177,8 @@ unrelated owners register hosts: `*.co.uk`, `*.github.io`,
 `*.s3.amazonaws.com`. A wildcard matches a host only when the host's
 registered domain, by the public suffix list, is the wildcard's domain or
 a parent of it. So `*.amazonaws.com` matches `sts.amazonaws.com`, and no
-host under the public suffix `s3.amazonaws.com`. Tools that read the proxy variables (pip, npm, curl, Python's
-`urllib`, Node with `NODE_USE_ENV_PROXY`) work for a listed host. A tool
+host under the public suffix `s3.amazonaws.com`. Tools that read the proxy variables (Python's `urllib`, Node with
+`NODE_USE_ENV_PROXY`) work for a listed host. A tool
 that ignores them reaches nothing.
 
 `GET /v2/check` reports `egress`: `closed` when the firewall is in place,

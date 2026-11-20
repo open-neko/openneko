@@ -653,7 +653,7 @@ func TestTurnToolsDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const planted = "sk-planted-secret-0001"
+	const planted = "sk-planted-sec-01"
 	var events, contents []string
 	unregister := registerTraceSink(runMine, func(event, content *jsObj) {
 		events = append(events, jsStringify(event, false))

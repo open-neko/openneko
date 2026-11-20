@@ -242,13 +242,13 @@ export const adminCases: Case[] = [
     request: {
       body: {
         name: "contract-cheap", provider: "openai-compatible", model: "qwen3",
-        config: { url: "https://models.contract.test/v1" }, secrets: { apiKey: "sk-contract-planted-0193" },
+        config: { url: "https://models.contract.test/v1" }, secrets: { apiKey: "sk-contract-0193" },
         price: { inputUsdPer1M: 0.5, outputUsdPer1M: 2 },
       },
     },
     check: (r, c) => {
       c.ids.modelId = id(r, "model");
-      expect(JSON.stringify(r.body)).not.toContain("sk-contract-planted-0193");
+      expect(JSON.stringify(r.body)).not.toContain("sk-contract-0193");
     },
   },
   {

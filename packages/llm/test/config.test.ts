@@ -124,7 +124,7 @@ describe("maskSecret", () => {
   });
 
   it("never reveals the middle of a long key", () => {
-    const secret = "sk-proj-supersecretlonglongkey-1234";
+    const secret = "sk-proj-" + "supersecretlonglongkey-1234";
     const masked = maskSecret(secret);
     expect(masked).not.toContain("supersecret");
   });
