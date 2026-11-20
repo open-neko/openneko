@@ -1234,6 +1234,12 @@ export function sourceSecretName(sourceName: string): string {
   return base ? `${base}-password` : "";
 }
 
+export function secretPort(port: unknown, type: unknown): number {
+  const n = typeof port === "number" ? port : Number(typeof port === "string" ? port.trim() : NaN);
+  if (Number.isInteger(n) && n > 0) return n;
+  return type === "mysql" || type === "mariadb" ? 3306 : 5432;
+}
+
 function SourceSecretInputView({
   props,
   ctx,
@@ -1246,6 +1252,8 @@ function SourceSecretInputView({
     typeof props.sourceName === "string" ? props.sourceName.trim() : "";
   const saved = typeof props.value === "string" ? props.value : "";
   const secretName = sourceSecretName(sourceName);
+  const host = typeof props.host === "string" ? props.host.trim() : "";
+  const port = secretPort(props.port, props.type);
   const [password, setPassword] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -1254,6 +1262,10 @@ function SourceSecretInputView({
     if (!path) return;
     if (!secretName) {
       setError("Enter a source name before you save the password.");
+      return;
+    }
+    if (!host) {
+      setError("Enter the host before you save the password. OpenNeko sends it only to that host and port.");
       return;
     }
     setBusy(true);
@@ -1266,6 +1278,8 @@ function SourceSecretInputView({
           name: secretName,
           value: password,
           description: `Password for the ${sourceName} source`,
+          host,
+          port,
         }),
       });
       const result = (await response.json().catch(() => ({}))) as {

@@ -60,7 +60,7 @@ const SOURCE_FORM_COMPONENTS: Array<Record<string, unknown>> = [
   {"id": "database", "component": "Row", "children": ["dbname", "user"]},
   {"id": "dbname", "component": "TextField", "label": "Database", "value": {"path": "/form/dbname"}, "error": {"path": "/problems/dbname"}},
   {"id": "user", "component": "TextField", "label": "Read-only login", "value": {"path": "/form/user"}, "error": {"path": "/problems/user"}},
-  {"id": "password", "component": "SourceSecretInput", "label": "Password", "sourceName": {"path": "/form/name"}, "value": {"path": "/form/secretRef"}, "error": {"path": "/problems/secretRef"}},
+  {"id": "password", "component": "SourceSecretInput", "label": "Password", "sourceName": {"path": "/form/name"}, "type": {"path": "/form/type"}, "host": {"path": "/form/host"}, "port": {"path": "/form/port"}, "value": {"path": "/form/secretRef"}, "error": {"path": "/problems/secretRef"}},
   {"id": "connectionCheck", "component": "SourceConnectionCheck", "label": "Check connection", "type": {"path": "/form/type"}, "host": {"path": "/form/host"}, "port": {"path": "/form/port"}, "dbname": {"path": "/form/dbname"}, "user": {"path": "/form/user"}, "secretRef": {"path": "/form/secretRef"}, "value": {"path": "/form/blockedTables"}},
   {"id": "tables", "component": "Column", "children": ["blockedTables", "adminTables"]},
   {"id": "blockedTables", "component": "TextField", "label": "Tables no one may read (optional)", "value": {"path": "/form/blockedTables"}, "placeholder": "admin_user, oauth_token", "error": {"path": "/problems/blockedTables"}},

@@ -3,7 +3,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { applyMessage } from "@/a2ui/surface";
 import { renderComponent } from "@/a2ui/renderer";
-import { sourceSecretName } from "@/a2ui/components";
+import { secretPort, sourceSecretName } from "@/a2ui/components";
 import { WORK_CATALOG_ID } from "@/a2ui/catalog";
 
 function surface(secretRef: string) {
@@ -52,5 +52,12 @@ describe("SourceSecretInput", () => {
     expect(sourceSecretName("shop db")).toBe("shop-db-password");
     expect(sourceSecretName("  ")).toBe("");
     expect(sourceSecretName("a/b:c")).toMatch(/^[A-Za-z0-9._-]+$/);
+  });
+
+  it("saves the password for the form's port, or the default port of the database type", () => {
+    expect(secretPort("6543", "postgres")).toBe(6543);
+    expect(secretPort(3307, "mysql")).toBe(3307);
+    expect(secretPort("", "postgres")).toBe(5432);
+    expect(secretPort(undefined, "mariadb")).toBe(3306);
   });
 });
