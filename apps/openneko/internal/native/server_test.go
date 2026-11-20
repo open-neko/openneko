@@ -3,11 +3,16 @@ package native
 import (
 	"io/fs"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
-func testServer() Server {
+func testServer(t *testing.T) Server {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the server install writes systemd units and runs on Linux only; cli/server_install.go refuses it on Windows")
+	}
 	return Server{ControlUser: "openneko", AgentUser: "openneko-agent", Group: "openneko-shared",
 		ConfigDir: "/etc/openneko", DataDir: "/var/lib/openneko", UnitDir: "/etc/systemd/system",
 		Exe: "/opt/openneko/bin/openneko", WebDir: "/opt/openneko/share/openneko/web",
@@ -15,7 +20,7 @@ func testServer() Server {
 }
 
 func TestServerDirsKeepTheAgentOutOfTheControlZone(t *testing.T) {
-	s := testServer()
+	s := testServer(t)
 	l := s.Layout()
 	for _, d := range s.Dirs() {
 		if d.Mode&0o007 != 0 {
@@ -53,7 +58,7 @@ func TestServerDirsKeepTheAgentOutOfTheControlZone(t *testing.T) {
 }
 
 func TestServerUnits(t *testing.T) {
-	s := testServer()
+	s := testServer(t)
 	l := s.Layout()
 	units := s.Units()
 	web, serve := units[WebUnit], units[ServeUnit]
@@ -78,7 +83,7 @@ func TestServerUnits(t *testing.T) {
 }
 
 func TestServerOneUser(t *testing.T) {
-	s := testServer()
+	s := testServer(t)
 	s.AgentUser, s.Group = s.ControlUser, s.ControlUser
 	if err := s.Validate(); err != nil {
 		t.Fatal(err)
@@ -105,13 +110,13 @@ func TestServerValidate(t *testing.T) {
 		"bad web address":   func(s *Server) { s.WebAddr = "3000" },
 		"percent in folder": func(s *Server) { s.DataDir = "/var/lib/%h" },
 	} {
-		s := testServer()
+		s := testServer(t)
 		change(&s)
 		if err := s.Validate(); err == nil {
 			t.Errorf("%s: no error", name)
 		}
 	}
-	if err := testServer().Validate(); err != nil {
+	if err := testServer(t).Validate(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -120,14 +125,14 @@ func TestOneUserLayoutIsUnchanged(t *testing.T) {
 	l := Layout{Root: "/r"}
 	for got, want := range map[string]string{l.Files(): "/r/files", l.Credentials(): "/r/credentials", l.Run(): "/r/run",
 		l.Log("serve"): "/r/logs/serve.log", l.Log("web"): "/r/logs/web.log", l.GraphJin(): "/r/graphjin/agentic.yml"} {
-		if got != want {
+		if want = filepath.FromSlash(want); got != want {
 			t.Errorf("%s, want %s", got, want)
 		}
 	}
 }
 
 func TestServerSandboxSocketDir(t *testing.T) {
-	s := testServer()
+	s := testServer(t)
 	if _, ok := s.SandboxSocketDir(); ok || s.SandboxTmpfileText() != "" {
 		t.Fatal("a server with no sandbox folder lists one")
 	}

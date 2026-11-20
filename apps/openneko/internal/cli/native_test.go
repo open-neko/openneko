@@ -2,6 +2,7 @@ package cli
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -33,10 +34,11 @@ func TestNativeSettings(t *testing.T) {
 	t.Setenv("OPENNEKO_WEB_BIND_ADDRESS", "127.0.0.1")
 	t.Setenv("OPENNEKO_WEB_DIR", "")
 	s, err := nativeSettings("/opt/web")
-	if err != nil || !s.Native() || s.Mode != "prod" || s.WebPort != 3123 || s.WebBindAddress != "127.0.0.1" || s.WebDir != "/opt/web" {
+	webDir, _ := filepath.Abs("/opt/web")
+	if err != nil || !s.Native() || s.Mode != "prod" || s.WebPort != 3123 || s.WebBindAddress != "127.0.0.1" || s.WebDir != webDir {
 		t.Fatalf("new native settings: %+v %v", s, err)
 	}
-	if !strings.HasSuffix(defaultNativeWebDir(), "/share/openneko/web") {
+	if !strings.HasSuffix(defaultNativeWebDir(), filepath.FromSlash("/share/openneko/web")) {
 		t.Errorf("default web dir %s", defaultNativeWebDir())
 	}
 	if err := installation.Save(config.Dir(""), installation.Settings{Version: 1, Mode: "prod", WebPort: 3000, WebBindAddress: "0.0.0.0"}); err != nil {

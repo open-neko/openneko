@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -200,13 +201,18 @@ func TestSkillTrace(t *testing.T) {
 func TestEvalTraceRefused(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("APPDATA", home)
 	t.Setenv("OPENNEKO_AGENT_RUNS_DIR", filepath.Join(home, "stages"))
+	agents := filepath.Join(home, ".config", "openneko", "agents")
+	if runtime.GOOS == "windows" {
+		agents = filepath.Join(home, "OpenNeko", "agents")
+	}
 	got := EvalTraceRefused(filepath.Join(home, "files"))
-	want := []string{filepath.Join(home, ".config", "openneko", "agents"), filepath.Join(home, "stages"), filepath.Join(home, "files")}
+	want := []string{agents, filepath.Join(home, "stages"), filepath.Join(home, "files")}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("%v", got)
 	}
-	if _, err := OpenEvalTrace(filepath.Join(home, ".config", "openneko", "agents", "orgs", "org", "uploads", "t.jsonl"), got, nil); err == nil {
+	if _, err := OpenEvalTrace(filepath.Join(agents, "orgs", "org", "uploads", "t.jsonl"), got, nil); err == nil {
 		t.Fatal("a trace inside the uploads folder")
 	}
 }

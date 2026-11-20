@@ -44,9 +44,7 @@ func TestRootComposeSetsDefineEveryService(t *testing.T) {
 }
 
 func TestRootComposeSetsPassComposeConfig(t *testing.T) {
-	if exec.Command("docker", "compose", "version").Run() != nil {
-		t.Skip("docker compose is not installed")
-	}
+	needCompose(t)
 	for name, files := range documentedRootComposeSets {
 		t.Run(name, func(t *testing.T) {
 			args := []string{"compose"}
@@ -64,9 +62,7 @@ func TestRootComposeSetsPassComposeConfig(t *testing.T) {
 }
 
 func TestSandboxRecipeImageIsTheReleaseOrAnExplicitBuild(t *testing.T) {
-	if exec.Command("docker", "compose", "version").Run() != nil {
-		t.Skip("docker compose is not installed")
-	}
+	needCompose(t)
 	t.Setenv("OPENNEKO_VERSION", "v0.0.0-from-the-caller")
 	t.Setenv("OPENNEKO_SANDBOX_IMAGE", "from-the-caller:1")
 	for _, set := range [][]string{documentedRootComposeSets["sandbox"], {"recipes/sandbox/compose.native.yml"}} {
@@ -132,5 +128,15 @@ func TestShippedComposeAndDockerfileNameNoWorker(t *testing.T) {
 				t.Errorf("%s:%d: %s", name, i+1, line)
 			}
 		}
+	}
+}
+
+// needCompose skips when the Compose plugin is missing. The Docker CLI on
+// GitHub's Windows runner exits 0 for "docker compose version" without it.
+func needCompose(t *testing.T) {
+	t.Helper()
+	out, err := exec.Command("docker", "compose", "version").Output()
+	if err != nil || !strings.Contains(string(out), "Docker Compose") {
+		t.Skipf("docker compose is not installed: %v %s", err, out)
 	}
 }

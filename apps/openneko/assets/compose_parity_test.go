@@ -3,6 +3,7 @@ package assets
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -270,8 +271,8 @@ func TestPostReleaseSmokeGatesRetainedDemoUpgrades(t *testing.T) {
 	if strings.Contains(string(recipe), "build:") {
 		t.Fatal("the sandbox recipe builds from source; post-release smoke must run the published image")
 	}
-	if info, err := os.Stat(filepath.Join(repoRootForTest(t), "scripts", "smoke-script-step.sh")); err != nil || info.Mode()&0o111 == 0 {
-		t.Fatalf("scripts/smoke-script-step.sh is missing or not executable: %v", err)
+	if !executableInGit(t, "scripts/smoke-script-step.sh") {
+		t.Fatal("scripts/smoke-script-step.sh is missing or not executable")
 	}
 	if strings.Contains(workflow, "neko-worker") || strings.Contains(workflow, "service=worker") {
 		t.Fatal("post-release smoke still references the removed worker")
@@ -645,4 +646,17 @@ func TestBundledDatabaseGatesStorageReconciliation(t *testing.T) {
 			}
 		}
 	}
+}
+
+// executableInGit reads the mode from the git index, because a Windows
+// checkout keeps no executable bit.
+func executableInGit(t *testing.T, path string) bool {
+	t.Helper()
+	cmd := exec.Command("git", "ls-files", "-s", "--", path)
+	cmd.Dir = repoRootForTest(t)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git ls-files %s: %v", path, err)
+	}
+	return strings.HasPrefix(string(out), "100755 ")
 }

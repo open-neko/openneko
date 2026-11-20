@@ -67,6 +67,7 @@ func TestUpgradeReexecArgsPinsResolvedTarget(t *testing.T) {
 }
 
 func TestInstallStandaloneCLIVerifiesAndAtomicallyReplaces(t *testing.T) {
+	standaloneSelfUpdate(t)
 	archiveName, archive, checksums := fakeCLIRelease(t, "9.8.7")
 	server := releaseAssetServer(t, "v9.8.7", archiveName, archive, checksums)
 	defer server.Close()
@@ -92,6 +93,7 @@ func TestInstallStandaloneCLIVerifiesAndAtomicallyReplaces(t *testing.T) {
 }
 
 func TestInstallStandaloneCLIRejectsChecksumMismatchWithoutReplacing(t *testing.T) {
+	standaloneSelfUpdate(t)
 	archiveName, archive, _ := fakeCLIRelease(t, "9.8.7")
 	badChecksums := []byte(fmt.Sprintf("%064x  %s\n", 0, archiveName))
 	server := releaseAssetServer(t, "v9.8.7", archiveName, archive, badChecksums)
@@ -118,6 +120,7 @@ func TestInstallStandaloneCLIRejectsChecksumMismatchWithoutReplacing(t *testing.
 }
 
 func TestUpgradeCLIAndReexecStandalone(t *testing.T) {
+	standaloneSelfUpdate(t)
 	archiveName, archive, checksums := fakeCLIRelease(t, "9.8.7")
 	server := releaseAssetServer(t, "v9.8.7", archiveName, archive, checksums)
 	defer server.Close()
@@ -191,6 +194,9 @@ func TestUpgradeCLIRejectsDevelopmentBuild(t *testing.T) {
 }
 
 func TestHomebrewManagedCLIRequiresSameInstalledFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Homebrew does not run on Windows")
+	}
 	dir := t.TempDir()
 	executable := filepath.Join(dir, "openneko")
 	if err := os.WriteFile(executable, []byte("cli"), 0o755); err != nil {
@@ -227,6 +233,7 @@ func TestHomebrewManagedCLIFailsClosedWhenBrewIsUnavailable(t *testing.T) {
 }
 
 func TestInstallStandaloneCLIWithSudoStagesThenAtomicallyMoves(t *testing.T) {
+	standaloneSelfUpdate(t)
 	dir := t.TempDir()
 	executable := filepath.Join(dir, "openneko")
 	if err := os.WriteFile(executable, []byte("old-cli"), 0o755); err != nil {
@@ -322,4 +329,11 @@ func stubUpgradeReleaseEndpoints(t *testing.T, latestURL, releaseBaseURL string)
 	latestOpenNekoReleaseURL = latestURL
 	openNekoReleaseBaseURL = releaseBaseURL
 	upgradeHTTPClient = http.DefaultClient
+}
+
+func standaloneSelfUpdate(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the standalone CLI self-update is refused on Windows; TestStandaloneSelfUpdateIsRefusedOnWindows checks the refusal")
+	}
 }

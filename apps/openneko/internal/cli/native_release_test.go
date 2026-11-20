@@ -530,7 +530,7 @@ func TestNativeUpgradeReplacesTheExeNamedByTheInstallScript(t *testing.T) {
 		t.Setenv(k, filepath.Join(home, v))
 	}
 	prefix := filepath.Join(home, "opt")
-	exe := filepath.Join(prefix, "bin", "openneko")
+	exe := filepath.Join(prefix, "bin", nativeExeName(runtime.GOOS))
 	installedWeb := filepath.Join(prefix, "share", "openneko", "web")
 	for _, f := range []string{exe, filepath.Join(installedWeb, "index.html")} {
 		if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
@@ -556,9 +556,8 @@ func TestNativeUpgradeReplacesTheExeNamedByTheInstallScript(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := filepath.Join(home, "calls")
-	if err := os.WriteFile(filepath.Join(from, "bin", "openneko"), []byte("#!/bin/sh\necho \"$*\" >> "+calls+"\necho 9.9.9\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	t.Setenv("OPENNEKO_TEST_FAKE_CLI", calls)
+	fake := writeFakeCLI(t, filepath.Join(from, "bin", nativeExeName(runtime.GOOS)))
 	writePackYAML(t, from, "metadata:\n  name: Slack\n")
 	writeReleaseSkills(t, from, releaseSandboxSkills...)
 	later := filepath.Join(from, "share", "openneko", "later")
@@ -598,8 +597,8 @@ func TestNativeUpgradeReplacesTheExeNamedByTheInstallScript(t *testing.T) {
 	if out, err := run("--from", from, "--skip-backup", "--exe", exe); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	if b, _ := os.ReadFile(exe); !strings.Contains(string(b), "9.9.9") {
-		t.Fatalf("--exe was not replaced: %q", b)
+	if b, _ := os.ReadFile(exe); !bytes.Equal(b, fake) {
+		t.Fatalf("--exe was not replaced: %d bytes", len(b))
 	}
 	for _, f := range []string{"web/index.html", "packs/slack/pack.yaml", "skills/sandbox/xlsx/SKILL.md", "later/a.txt"} {
 		if _, err := os.Stat(filepath.Join(prefix, "share", "openneko", filepath.FromSlash(f))); err != nil {
@@ -618,10 +617,7 @@ func TestNativeUpgradeReplacesTheExeNamedByTheInstallScript(t *testing.T) {
 	if b, _ := os.ReadFile(calls); !strings.Contains(string(b), "release-check --skills --bundled-packs") {
 		t.Fatalf("the upgraded executable did not check its skills and packs: %q", b)
 	}
-	failing := "#!/bin/sh\nif [ \"$1\" = release-check ]; then echo 'no built-in packs' >&2; exit 1; fi\necho 9.9.9\n"
-	if err := os.WriteFile(filepath.Join(from, "bin", "openneko"), []byte(failing), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	t.Setenv("OPENNEKO_TEST_FAKE_CLI_FAIL", "release-check")
 	if out, err := run("--from", from, "--skip-backup", "--exe", exe); err == nil || !strings.Contains(err.Error(), "skills and packs check") {
 		t.Fatalf("a failed check after the upgrade: err = %v\n%s", err, out)
 	}

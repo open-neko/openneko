@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -27,7 +28,7 @@ func TestBridgeCommandGetsOnlyBridgeEnvironment(t *testing.T) {
 		"PATH=/usr/bin", "OPENNEKO_MCP_ORG_ID=org", "OPENNEKO_BROKER_URL=http://broker", "OPENNEKO_BROKER_TOKEN=secret",
 		"HTTPS_PROXY=http://proxy", "MODEL_API_KEY=placeholder", "HARNESS_MODEL_ROUTES={}", "HOME=/root",
 	})
-	if strings.Join(cmd.Args, " ") != "node --import tsx /app/mcp-bridge.ts neko_memory,neko_library" || cmd.Dir != "/app" {
+	if strings.Join(cmd.Args, " ") != "node --import tsx /app/mcp-bridge.ts neko_memory,neko_library" || cmd.Dir != filepath.Dir("/app/mcp-bridge.ts") {
 		t.Fatalf("args=%v dir=%s", cmd.Args, cmd.Dir)
 	}
 	want := []string{"PATH=/usr/bin", "OPENNEKO_MCP_ORG_ID=org", "OPENNEKO_BROKER_URL=http://broker", "OPENNEKO_BROKER_TOKEN=secret", "HTTPS_PROXY=http://proxy"}

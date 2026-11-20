@@ -39,7 +39,8 @@ func otherAccount(t *testing.T) windows.Token {
 	_, _ = rand.Read(b[:])
 	name := "onk" + hex.EncodeToString(b[:])
 	_, _ = rand.Read(b[:])
-	password := "Aa1!" + hex.EncodeToString(b[:]) + "xY"
+	// net user stops at a prompt for a password longer than 14 characters.
+	password := "Aa1!" + hex.EncodeToString(b[:4]) + "xY"
 	if out, err := exec.Command("net", "user", name, password, "/add").CombinedOutput(); err != nil {
 		if os.Getenv("CI") != "" {
 			t.Fatalf("make a local account: %v\n%s", err, out)

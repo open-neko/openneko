@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -176,6 +177,7 @@ func validPath(path string) bool {
 
 // local accepts a workspace-relative path, or an absolute path inside the workspace.
 func (f *Files) local(path string) (string, bool) {
+	path = filepath.FromSlash(path)
 	if filepath.IsAbs(path) {
 		rel, err := filepath.Rel(f.dir, filepath.Clean(path))
 		if err != nil {
@@ -184,6 +186,19 @@ func (f *Files) local(path string) (string, bool) {
 		path = rel
 	}
 	return path, validPath(path)
+}
+
+func (f *Files) syncDir(path string) error {
+	// Windows cannot flush a directory handle; NTFS journals the rename itself.
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	dir, err := f.root.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 func (f *Files) pathError() error {
@@ -337,12 +352,7 @@ func (f *Files) edit(ctx context.Context, raw json.RawMessage) (json.RawMessage,
 	if err := f.root.Rename(tmp, input.Path); err != nil {
 		return nil, err
 	}
-	dir, err := f.root.Open(filepath.Dir(input.Path))
-	if err == nil {
-		err = dir.Sync()
-		_ = dir.Close()
-	}
-	if err != nil {
+	if err := f.syncDir(filepath.Dir(input.Path)); err != nil {
 		return nil, err
 	}
 	version := digest([]byte(content))
@@ -401,12 +411,7 @@ func (f *Files) write(ctx context.Context, raw json.RawMessage) (json.RawMessage
 	if err := f.root.Link(tmp, input.Path); err != nil {
 		return nil, fmt.Errorf("file already exists or path unavailable: %w", err)
 	}
-	dir, err := f.root.Open(filepath.Dir(input.Path))
-	if err == nil {
-		err = dir.Sync()
-		_ = dir.Close()
-	}
-	if err != nil {
+	if err := f.syncDir(filepath.Dir(input.Path)); err != nil {
 		return nil, err
 	}
 	return json.Marshal(struct {

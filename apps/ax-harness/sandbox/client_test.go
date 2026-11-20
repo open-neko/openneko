@@ -284,7 +284,10 @@ func TestClientReachesAUnixSocket(t *testing.T) {
 }
 
 func TestClientReportsAnUnreachableOrRefusingSandbox(t *testing.T) {
-	client, _ := NewClient(Config{URL: "unix://" + filepath.Join(testsock.Dir(t), "none.sock")}, t.TempDir())
+	client, err := NewClient(Config{URL: "unix://" + filepath.Join(testsock.Dir(t), "none.sock")}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := client.Exec(context.Background(), "true", "", nil, 5, 1000); err == nil || !strings.Contains(err.Error(), "unavailable") {
 		t.Fatalf("err = %v", err)
 	}
@@ -302,7 +305,7 @@ func TestClientRefusesBadURLs(t *testing.T) {
 	if (Config{}).Enabled() || (Config{}).Check() != nil {
 		t.Fatal("an empty URL must mean off")
 	}
-	for _, raw := range []string{"ftp://x", "unix://", "http://", "sandbox:8080"} {
+	for _, raw := range []string{"ftp://x", "unix://", "unix://sandbox.sock", "http://", "sandbox:8080"} {
 		if _, err := NewClient(Config{URL: raw}, "/w"); err == nil || (Config{URL: raw}).Check() == nil {
 			t.Fatalf("accepted %q", raw)
 		}
