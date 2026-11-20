@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
@@ -60,10 +61,11 @@ func (s *Server) setEgress(r *run, e *egressBody) string {
 }
 
 func (s *Server) proxyEnv(id, token string) []string {
-	if s.EgressProxy == "" {
+	address := cmp.Or(s.Relay, s.EgressProxy)
+	if address == "" {
 		return nil
 	}
-	proxy := "http://" + id + ":" + token + "@" + s.EgressProxy
+	proxy := "http://" + id + ":" + token + "@" + address
 	return []string{"HTTP_PROXY=" + proxy, "HTTPS_PROXY=" + proxy, "http_proxy=" + proxy, "https_proxy=" + proxy, "NODE_USE_ENV_PROXY=1"}
 }
 

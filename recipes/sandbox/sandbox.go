@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -66,10 +67,15 @@ type Server struct {
 	ProcNet             string
 	EgressProxy         string
 	EgressControl       string
+	Confined            bool
+	Relay               string
+	Probe               func(context.Context) ([]string, error)
+	ProbeEvery          time.Duration
 
-	mu   sync.Mutex
-	runs map[string]*run
-	used map[int]bool
+	mu        sync.Mutex
+	runs      map[string]*run
+	used      map[int]bool
+	probeOpen bool
 }
 
 type run struct {
@@ -138,6 +144,9 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 			_ = controlServer.Close()
 		}()
 	}
+	if s.Probe != nil {
+		s.watchEgress(ctx, cmp.Or(s.ProbeEvery, time.Minute))
+	}
 	httpServer := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -186,7 +195,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /v2/check", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "egress": egressState(s.procNet())})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "egress": s.egress()})
 	})
 	mux.HandleFunc("POST /v2/runs/{run}/exec", s.exec)
 	mux.HandleFunc("DELETE /v2/runs/{run}", s.end)
@@ -197,6 +206,18 @@ func (s *Server) Handler() http.Handler {
 		}
 		mux.ServeHTTP(w, r)
 	})
+}
+
+// egress is "closed" only when the namespace has no default route, the
+// firewall holds the run users, and the last probe got nowhere.
+func (s *Server) egress() string {
+	s.mu.Lock()
+	probeOpen := s.probeOpen
+	s.mu.Unlock()
+	if !s.Confined || probeOpen {
+		return "open"
+	}
+	return egressState(s.procNet())
 }
 
 func (s *Server) procNet() string {

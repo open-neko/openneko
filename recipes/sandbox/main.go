@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,6 +13,10 @@ import (
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "egress" {
 		egressMain(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "egress-probe" {
+		egressProbeMain()
 		return
 	}
 	flags := flag.NewFlagSet("openneko-sandbox", flag.ExitOnError)
@@ -31,11 +36,17 @@ func main() {
 		EgressProxy:   os.Getenv("OPENNEKO_SANDBOX_EGRESS_PROXY"),
 		EgressControl: os.Getenv("OPENNEKO_SANDBOX_EGRESS_CONTROL"),
 	}
-	if !server.SwitchUsers {
-		fmt.Fprintln(os.Stderr, "openneko sandbox: not root, so commands run as this user")
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if server.SwitchUsers {
+		if err := confineRuns(ctx, server); err != nil {
+			fmt.Fprintf(os.Stderr, "openneko sandbox: cannot close the network of the runs, so the sandbox does not start: %v\n", err)
+			os.Exit(1)
+		}
+		server.Probe = server.probeAsRunUser
+	} else {
+		fmt.Fprintln(os.Stderr, "openneko sandbox: not root, so commands run as this user and the sandbox reports egress open")
+	}
 	if err := server.ListenAndServe(ctx, *listen); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -54,4 +65,24 @@ func egressMain(args []string) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func confineRuns(ctx context.Context, server *Server) error {
+	var relay net.Listener
+	if server.EgressProxy != "" {
+		var err error
+		if relay, err = net.Listen("tcp", relayAddress); err != nil {
+			return fmt.Errorf("the relay to the egress proxy: %w", err)
+		}
+	}
+	if err := server.confine(relay); err != nil {
+		if relay != nil {
+			_ = relay.Close()
+		}
+		return err
+	}
+	if relay != nil {
+		go relayToProxy(ctx, relay, server.EgressProxy)
+	}
+	return nil
 }

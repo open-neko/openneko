@@ -77,7 +77,8 @@ CommonJS (`.cjs`), because `import` does not read `NODE_PATH`.
 ## How it keeps runs apart
 
 - The service runs as root with every capability dropped except the ones it
-  needs to switch users. Each run gets its own user and group, from
+  needs to switch users, and `NET_ADMIN` and `SETPCAP` for its firewall at
+  start (see [Egress](#egress)). Each run gets its own user and group, from
   `OPENNEKO_SANDBOX_BASE_UID` (default 20000) up to
   `OPENNEKO_SANDBOX_USERS` (default 256) runs at once.
 - Each run gets its own folder under `OPENNEKO_SANDBOX_WORKSPACES` (default
@@ -103,9 +104,28 @@ Commands reach no host by default. An admin lists the hosts that the
 organization's commands may reach at Admin, Settings, Agent. The list is
 empty by default.
 
-- The `openneko-sandbox` network has `internal: true`. It has no route out,
-  and its DNS answers no external name. A command that does not use the
-  proxy reaches nothing outside the network.
+- At start, the sandbox sets a firewall (nftables) in its own network
+  namespace for the run users and the probe user
+  (`OPENNEKO_SANDBOX_BASE_UID` up to `BASE_UID + OPENNEKO_SANDBOX_USERS`).
+  Their packets may go only to the sandbox's relay at `127.0.0.1:3128`,
+  which passes each connection to `openneko-egress:3128`. The firewall
+  drops every other address: Docker's DNS at `127.0.0.11`, the bridge
+  gateway, the Docker host, the stack's services and the internet. The
+  sandbox then drops `NET_ADMIN` and `SETPCAP` from every set, so neither
+  it nor a program it starts can change the rules. When it cannot set the
+  rules or drop the capabilities, the sandbox exits and does not serve.
+- A command keeps no loopback network, not even to its own listener. A
+  loopback rule cannot tell one run's listener from another's. Child
+  processes still talk through pipes and Unix sockets in the run's folder.
+- The `openneko-sandbox` network also has `internal: true`: no route out,
+  and its DNS answers no external name. The firewall does not depend on it.
+  On Docker Engine 29.9.3 (rootless), a container on an internal network
+  still reaches its own bridge gateway; the firewall closes that path.
+- A probe runs at start and every minute as the probe user. It looks up
+  `example.com` and `metadata.google.internal`, and connects to 1.1.1.1:443,
+  8.8.8.8:53, 169.254.169.254:80 and ports 22, 53, 80, 443, 2375 and 2376
+  of each bridge gateway. A name that resolves, or an address that answers
+  or refuses, sets the egress state to `open`.
 - `openneko-egress` is the only way out. It runs the same image as
   `openneko-sandbox egress`. It joins `openneko-sandbox` and the
   `openneko-egress` network, which has a route out. It has a read-only root
@@ -113,7 +133,7 @@ empty by default.
 - OpenNeko sends the organization's list with each command, in `egress`.
   On the first command of a run, the sandbox makes a random 32-byte token
   for the run. It gives the command the proxy URL
-  `http://<run>:<token>@openneko-egress:3128` in the proxy variables.
+  `http://<run>:<token>@127.0.0.1:3128` (the relay) in the proxy variables.
   Ending the run removes the token, so it fails at once.
 - The proxy takes `CONNECT` and plain `http://` requests. For each request
   it asks the sandbox for the run's list over the control socket,
@@ -146,8 +166,9 @@ address. Tools that read the proxy variables (pip, npm, curl, Python's
 `urllib`, Node with `NODE_USE_ENV_PROXY`) work for a listed host. A tool
 that ignores them reaches nothing.
 
-`GET /v2/check` reports `egress`: `closed` when the sandbox's network has
-no default route, else `open`. OpenNeko gives a run the terminal only on
+`GET /v2/check` reports `egress`: `closed` when the firewall is in place,
+the sandbox's network has no default route, and the last probe reached
+nothing; else `open`. OpenNeko gives a run the terminal only on
 `closed`. `openneko release-check --sandbox` prints it as `sandbox_egress`
 and fails on `open`, and the Sandbox card on the status page shows it.
 
@@ -195,8 +216,10 @@ request except health needs `Authorization: Bearer <key>`. `--listen` takes
 `unix:///path` (default `unix:///run/openneko-sandbox/sandbox.sock`) or
 `host:port`. A TCP listener needs a key.
 
-`OPENNEKO_SANDBOX_EGRESS_PROXY` (`host:port`) is the proxy that commands
-use; without it, commands get no proxy variables.
+`OPENNEKO_SANDBOX_EGRESS_PROXY` (`host:port`) is the proxy that the relay
+passes commands to; without it, commands get no proxy variables. A sandbox
+that runs as another user than root sets no firewall, runs commands as its
+own user, and reports `egress` `open`.
 `OPENNEKO_SANDBOX_EGRESS_CONTROL` (`unix:///path`) is the control socket
 that the proxy asks. The proxy takes `--listen` (default `:3128`) and
 `--control`.
@@ -233,7 +256,10 @@ lists one.
    ```
 
    Compose makes the `openneko-sandbox` network again with
-   `internal: true`, and starts `openneko-egress`. If your Compose version
+   `internal: true`, gives the sandbox `NET_ADMIN` and `SETPCAP` for its
+   firewall, and starts `openneko-egress`. A `compose.override.yml` that sets
+   its own `cap_add` for the sandbox must add both, or the sandbox does not
+   start. If your Compose version
    stops and says that the network must be made again, run the same files
    with `down` (no `-v`), then `up -d --build`.
 2. A native install that runs the sandbox with `docker run`: stop and
@@ -344,12 +370,19 @@ docker run --rm --init --tmpfs /tmp:exec,mode=1777 -v /tmp/sandbox.test:/sandbox
 starts the recipe's compose files with a built image, checks from inside a
 run what a command can reach with an empty list and with a short list, and
 runs the `neko_data` and declared-query tests against a sandbox on the
-closed network:
+closed network. It also puts the sandbox on a network with a route out and
+checks that the firewall alone keeps every run in, checks that the sandbox
+does not start without `NET_ADMIN` or `SETPCAP`, and listens on each bridge
+gateway so that a blocked result there means something:
 
 ```sh
 docker build -t openneko-sandbox:local recipes/sandbox
 recipes/sandbox/egress-proof.sh openneko-sandbox:local
 ```
 
-It needs Docker, Go and the test database of `apps/openneko`
-(`OPENNEKO_TEST_DATABASE_URL`).
+It needs Docker, Go, `nsenter` for rootless Docker, and the test database
+of `apps/openneko` (`OPENNEKO_TEST_DATABASE_URL`). The PR checks and the
+post-release smoke run `TestEgressProof` with
+`OPENNEKO_EGRESS_PROOF_REQUIRED=1`, so a missing image fails the run.
+No minimum Docker Engine version applies; the kernel needs nftables
+(`nf_tables`), which every supported Linux has.
