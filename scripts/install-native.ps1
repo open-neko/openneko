@@ -19,6 +19,7 @@ param(
   }
   $machine = $env:PROCESSOR_ARCHITEW6432
   if (-not $machine) { $machine = $env:PROCESSOR_ARCHITECTURE }
+  if (-not $machine) { $machine = "$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)" -replace '^X64$', 'AMD64' }
   switch ($machine) {
     'AMD64' { $arch = 'amd64' }
     'ARM64' { $arch = 'arm64' }
