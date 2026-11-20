@@ -1,0 +1,126 @@
+name: smoke (native)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/openneko/**"
+      - "apps/ax-harness/**"
+      - "db/migrations/**"
+      - "packages/packs/**"
+      - "scripts/build-native-release.sh"
+      - "scripts/native-zip.py"
+      - "scripts/smoke-native.sh"
+      - ".github/workflows/smoke-native.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  archives:
+    name: native archives
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.10"
+          cache-dependency-path: apps/openneko/go.sum
+      - name: Build the archives
+        run: |
+          mkdir -p "$RUNNER_TEMP/web"
+          echo '<!doctype html><title>OpenNeko</title>' > "$RUNNER_TEMP/web/index.html"
+          OPENNEKO_WEB_DIST="$RUNNER_TEMP/web" bash scripts/build-native-release.sh v9.9.9 mirror/v9.9.9 \
+            linux/amd64 darwin/arm64 windows/amd64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoke-archives
+          path: mirror
+          retention-days: 3
+
+  smoke:
+    name: smoke (${{ matrix.os }})
+    needs: archives
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    env:
+      SMOKE_DATABASE_URL: postgres://neko:smoke-pass@127.0.0.1:5432/openneko?sslmode=disable
+      SMOKE_SOURCE_URL: postgres://neko:smoke-pass@127.0.0.1:5432/smokedata?sslmode=disable
+      SMOKE_MODEL_PROVIDER: google-gemini
+      SMOKE_MODEL: ${{ vars.SMOKE_MODEL }}
+      SMOKE_MODEL_KEY: ${{ secrets.GEMINI_API_KEY }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: smoke-archives
+          path: mirror
+
+      - name: Postgres with pgvector (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          docker run -d --name pg -p 127.0.0.1:5432:5432 -e POSTGRES_USER=neko -e POSTGRES_PASSWORD=smoke-pass \
+            -e POSTGRES_DB=postgres pgvector/pgvector:0.8.6-pg16
+          for i in $(seq 60); do docker exec pg pg_isready -U neko -h 127.0.0.1 && break; sleep 1; done
+          psql --version
+
+      - name: Postgres with pgvector (macOS)
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: |
+          set -euo pipefail
+          brew install postgresql@17 pgvector
+          prefix=$(brew --prefix postgresql@17)
+          echo "$prefix/bin" >> "$GITHUB_PATH"
+          brew services start postgresql@17
+          for i in $(seq 60); do "$prefix/bin/pg_isready" -h 127.0.0.1 && break; sleep 1; done
+          "$prefix/bin/psql" -h 127.0.0.1 -d postgres -c "create role neko login superuser password 'smoke-pass'"
+
+      - name: Postgres with pgvector (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pgroot = $env:PGROOT
+          git clone --quiet --depth 1 --branch v0.8.6 https://github.com/pgvector/pgvector.git "$env:RUNNER_TEMP\pgvector"
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          cmd /c "call `"$vs\VC\Auxiliary\Build\vcvars64.bat`" && cd /d `"$env:RUNNER_TEMP\pgvector`" && set `"PGROOT=$pgroot`" && nmake /NOLOGO /F Makefile.win && nmake /NOLOGO /F Makefile.win install"
+          if ($LASTEXITCODE -ne 0) { throw 'pgvector build failed' }
+          $svc = Get-Service -Name 'postgresql*' | Select-Object -First 1
+          Set-Service -Name $svc.Name -StartupType Manual
+          Start-Service -Name $svc.Name
+          "$env:PGBIN" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $env:PGPASSWORD = 'root'
+          & "$env:PGBIN\psql.exe" -h 127.0.0.1 -U postgres -d postgres -c "create role neko login superuser password 'smoke-pass'"
+          if ($LASTEXITCODE -ne 0) { throw 'create role failed' }
+
+      - name: Create the databases
+        env:
+          PGPASSWORD: smoke-pass
+        run: |
+          set -euo pipefail
+          psql -h 127.0.0.1 -U neko -d postgres -v ON_ERROR_STOP=1 -c 'create database openneko' -c 'create database smokedata'
+
+      - name: Unpack the archive
+        run: |
+          set -euo pipefail
+          mkdir release
+          case "$RUNNER_OS" in
+            Linux) tar -C release -xzf mirror/v9.9.9/openneko-native_9.9.9_linux_amd64.tar.gz ;;
+            macOS) tar -C release -xzf mirror/v9.9.9/openneko-native_9.9.9_darwin_arm64.tar.gz ;;
+            Windows) unzip -q mirror/v9.9.9/openneko-native_9.9.9_windows_amd64.zip -d release ;;
+          esac
+
+      - name: Smoke
+        run: bash scripts/smoke-native.sh release
