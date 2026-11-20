@@ -572,7 +572,7 @@ func projectTelegram(events []any, profile channelProfile) []*jsObj {
 	}
 	var messages []*jsObj
 	for _, text := range splitHTML(full, profile.MaxOutboundChars) {
-		messages = append(messages, jsObjOf("text", text, "parse_mode", "HTML"))
+		messages = append(messages, jsObjOf("text", text, "parse_mode", "HTML", "link_preview_options", jsObjOf("is_disabled", true)))
 	}
 	last := messages[len(messages)-1]
 	if keyboard != nil {

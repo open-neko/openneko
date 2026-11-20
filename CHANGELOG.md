@@ -10,6 +10,7 @@
 * `openneko web` sends a Content-Security-Policy on every response: the app loads images, fonts, styles, frames and data only from the install, and the answer map also fetches from `https://tiles.openfreemap.org`. It also sends `Referrer-Policy: no-referrer` and `X-Content-Type-Options: nosniff`.
 * An image in an answer, a workflow output or a skill page that comes from another host shows as a link that names the host; the browser does not fetch it. A link to another host opens in a new tab with no referrer and shows its real host when the link text does not.
 * **Breaking:** a saved source password goes only to the host and port saved with it. The source card saves the form's host and port with the password; Admin, Settings, GraphJin config asks for both. Migration 0146 adds the columns. A password saved before 6.0.0 has no host, and **Check connection** refuses it until an admin saves it again. The check sends no password over TLS whose certificate does not verify, unless an admin ticks "Allow a server certificate that does not verify" for that password, and none to a PostgreSQL server that asks for it in clear text.
+* Slack replies go out with `unfurl_links` and `unfurl_media` off, and Telegram replies with link previews off, so neither service fetches a URL that an answer names.
 
 ### Terminal egress
 
