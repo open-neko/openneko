@@ -615,6 +615,11 @@ func runNativeUpgrade(ctx context.Context, cmd *cobra.Command, settings installa
 	if err := replaceReleaseOthers(from, exe); err != nil {
 		return err
 	}
+	if activeServer != nil {
+		if err := refreshServer(out, *activeServer); err != nil {
+			return fmt.Errorf("the files are upgraded but the folders and units of the server install were not (%w); run server-install again", err)
+		}
+	}
 	if err := runSelf(ctx, io.Discard, errOut, exe, "release-check", "--skills", "--bundled-packs"); err != nil {
 		return fmt.Errorf("the upgraded files in %s fail the skills and packs check (%w); OpenNeko was not started; run the upgrade again", filepath.Dir(filepath.Dir(exe)), err)
 	}

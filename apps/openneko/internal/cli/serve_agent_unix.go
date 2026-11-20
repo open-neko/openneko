@@ -9,10 +9,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
+	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 
+	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
@@ -34,7 +37,16 @@ func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns
 	} else {
 		fmt.Fprintln(out, "agent terminal is off: no sandbox URL")
 	}
-	srv := &serve.Server{Getenv: os.Getenv, MaxTurns: maxTurns, Sandbox: box}
+	if names := serve.KeyEnvNames(os.Environ()); len(names) > 0 {
+		fmt.Fprintf(out, "warning: openneko serve drops %s from its environment; model keys belong to openneko web (INSTALL.md, \"Model keys\")\n", strings.Join(names, ", "))
+		for _, name := range names {
+			_ = os.Unsetenv(name)
+		}
+	}
+	door := keydoor.SocketPath(os.Getenv, socket)
+	keydoor.SetSocket(door)
+	fmt.Fprintf(out, "openneko serve reaches the model providers through the key door at %s\n", door)
+	srv := &serve.Server{Getenv: os.Getenv, MaxTurns: maxTurns, Sandbox: box, RequireDoor: !webfront.Development()}
 	done := make(chan error, 1)
 	go func() {
 		err := srv.Serve(ctx, ln)

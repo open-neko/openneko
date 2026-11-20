@@ -100,12 +100,9 @@ func runServerInstall(cmd *cobra.Command, o serverInstallOptions) error {
 	if err := ownTree(s.ConfigDir, s.ControlUser, s.ControlUser); err != nil {
 		return err
 	}
-	for name, text := range s.Units() {
-		if err := os.WriteFile(filepath.Join(s.UnitDir, name), []byte(text), 0o644); err != nil {
-			return err
-		}
+	if err := writeServerUnits(out, s); err != nil {
+		return err
 	}
-	fmt.Fprintf(out, "Wrote %s and %s to %s.\n", native.WebUnit, native.ServeUnit, s.UnitDir)
 	if text := s.SandboxTmpfileText(); text != "" && s.TmpfilesDir != "" {
 		if err := os.MkdirAll(s.TmpfilesDir, 0o755); err != nil {
 			return err
@@ -196,6 +193,28 @@ func ensureServerAccounts(out io.Writer, s native.Server) error {
 		}
 	}
 	return nil
+}
+
+func writeServerUnits(out io.Writer, s native.Server) error {
+	for name, text := range s.Units() {
+		if err := os.WriteFile(filepath.Join(s.UnitDir, name), []byte(text), 0o644); err != nil {
+			return err
+		}
+	}
+	fmt.Fprintf(out, "Wrote %s and %s to %s.\n", native.WebUnit, native.ServeUnit, s.UnitDir)
+	return nil
+}
+
+// refreshServer gives a server install the folders and units of this
+// release, so an upgrade needs no second server-install.
+func refreshServer(out io.Writer, s native.Server) error {
+	if err := applyServerDirs(s); err != nil {
+		return err
+	}
+	if err := writeServerUnits(out, s); err != nil {
+		return err
+	}
+	return runTool(out, "systemctl", "daemon-reload")
 }
 
 func applyServerDirs(s native.Server) error {
