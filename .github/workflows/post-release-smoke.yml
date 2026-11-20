@@ -183,6 +183,22 @@ jobs:
             recipes/sandbox/compose.yml > ~/.config/openneko/compose.override.yml
           grep -q 'image: openneko-sandbox:smoke' ~/.config/openneko/compose.override.yml
 
+      - name: Prove the sandbox's egress controls with real containers
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
+        working-directory: recipes/sandbox
+        env:
+          OPENNEKO_EGRESS_PROOF_IMAGE: openneko-sandbox:smoke
+          OPENNEKO_EGRESS_PROOF_REQUIRED: "1"
+          OPENNEKO_EGRESS_PROOF_HOST_PORT: "39187"
+        run: |
+          set -euo pipefail
+          docker pull -q pgvector/pgvector:0.8.6-pg16
+          go test -count=1 -run '^TestEgressProof$' -v -timeout 20m . | tee /tmp/egress-proof.log
+          if grep -- '--- SKIP' /tmp/egress-proof.log; then
+            echo "the egress proof skipped; it must run" >&2
+            exit 1
+          fi
+
       - name: openneko demo start (detached) against pre-pulled images
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         env:
