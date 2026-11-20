@@ -7,7 +7,8 @@
 #                         one table and connects it as the data source
 #   SMOKE_MODEL_PROVIDER  default google-gemini
 #   SMOKE_MODEL           default: the provider's default model
-#   SMOKE_MODEL_KEY       the provider key
+#   SMOKE_MODEL_KEY       the provider key; empty skips the question
+#   SMOKE_REQUIRE_ANSWER  1 fails the smoke when the question would be skipped
 #   SMOKE_MODEL_URL       base URL, for the openai-compatible provider only
 #   SMOKE_PORT            web port, default 3000
 set -euo pipefail
@@ -21,9 +22,16 @@ provider=${SMOKE_MODEL_PROVIDER:-google-gemini}
 : "${SMOKE_DATABASE_URL:?SMOKE_DATABASE_URL is required}"
 : "${SMOKE_SOURCE_URL:?SMOKE_SOURCE_URL is required}"
 
-if [ "$provider" != openai-compatible ] && [ -z "${SMOKE_MODEL_KEY:-}" ]; then
-  echo "::error::No model key. Add the repository secret GEMINI_API_KEY (a Google AI key); the smoke asks one question with it." >&2
-  exit 1
+ask=1
+model_key=${SMOKE_MODEL_KEY:-}
+if [ "$provider" != openai-compatible ] && [ -z "$model_key" ]; then
+  if [ "${SMOKE_REQUIRE_ANSWER:-}" = 1 ]; then
+    echo "::error::No model key, and this run must ask the question. Check the GEMINI_API_KEY secret and the SMOKE_MODEL_KEY variable." >&2
+    exit 1
+  fi
+  echo "::warning::Question step skipped: no model key. Add the repository secret GEMINI_API_KEY to ask one question."
+  ask=0
+  model_key=smoke-no-model-key
 fi
 
 step() { printf '\n== %s\n' "$*"; }
@@ -72,10 +80,10 @@ api GET /api/v1/auth/session | grep -q '"role":"admin"' || fail "the first visit
 config='{}'
 [ -n "${SMOKE_MODEL_URL:-}" ] && config=$(printf '{"url":"%s"}' "$SMOKE_MODEL_URL")
 secrets='{}'
-[ -n "${SMOKE_MODEL_KEY:-}" ] && secrets=$(printf '{"apiKey":"%s"}' "$SMOKE_MODEL_KEY")
+[ -n "$model_key" ] && secrets=$(printf '{"apiKey":"%s"}' "$model_key")
 draft=$(printf '{"scope":"primary","provider":"%s","model":"%s","enabled":true,"config":%s,"secrets":%s}' \
   "$provider" "${SMOKE_MODEL:-}" "$config" "$secrets")
-api POST /api/v1/settings/provider/test "$draft" >/dev/null
+[ "$ask" = 1 ] && api POST /api/v1/settings/provider/test "$draft" >/dev/null
 api PUT /api/v1/settings/provider "$draft" >/dev/null
 gql="http://127.0.0.1:8080/api/v1/graphql"
 api POST /api/v1/settings/data-source/test "{\"graphqlUrl\":\"$gql\",\"mcpUrl\":\"\"}" >/dev/null
@@ -108,21 +116,25 @@ for i in $(seq 30); do
   sleep 2
 done
 
-step "ask"
-question="How many units of the Blue enamel kettle are in stock? Answer with the number."
-thread=$(api POST /api/v1/work/threads '{"title":"smoke"}' | jq -r .thread.id)
-run=$(api POST "/api/v1/work/threads/$thread/runs" "$(jq -n --arg m "$question" '{message: $m}')" | jq -r .runId)
-echo "thread $thread, run $run"
-curl -sS -N --max-time 600 -H "Origin: $base" -H 'Accept: text/event-stream' \
-  "$base/api/v1/work/threads/$thread/runs/$run/events" > "$tmp/events" || true
-done_event=$(sed -n 's/^data: //p' "$tmp/events" | jq -c 'select(.type == "done")' | tail -1)
-[ -n "$done_event" ] || fail "the run stream ended with no done event: $(tail -c 1500 "$tmp/events")"
-api GET "/api/v1/work/threads/$thread" > "$tmp/thread.json"
-status=$(jq -r --arg r "$run" '.runs[] | select(.id == $r) | .status' "$tmp/thread.json")
-answer=$(jq -r --arg r "$run" '[.messages[] | select(.runId == $r and .role == "assistant") | .content] | last // ""' "$tmp/thread.json")
-printf 'run %s\n%s\n' "$status" "$answer"
-[ "$status" = completed ] || fail "the run ended $status: $(jq -c --arg r "$run" '.runs[] | select(.id == $r)' "$tmp/thread.json")"
-printf '%s' "$answer" | tr -d ', ' | grep -q 4817 || fail "the answer does not name 4817"
+if [ "$ask" = 1 ]; then
+  step "ask"
+  question="How many units of the Blue enamel kettle are in stock? Answer with the number."
+  thread=$(api POST /api/v1/work/threads '{"title":"smoke"}' | jq -r .thread.id)
+  run=$(api POST "/api/v1/work/threads/$thread/runs" "$(jq -n --arg m "$question" '{message: $m}')" | jq -r .runId)
+  echo "thread $thread, run $run"
+  curl -sS -N --max-time 600 -H "Origin: $base" -H 'Accept: text/event-stream' \
+    "$base/api/v1/work/threads/$thread/runs/$run/events" > "$tmp/events" || true
+  done_event=$(sed -n 's/^data: //p' "$tmp/events" | jq -c 'select(.type == "done")' | tail -1)
+  [ -n "$done_event" ] || fail "the run stream ended with no done event: $(tail -c 1500 "$tmp/events")"
+  api GET "/api/v1/work/threads/$thread" > "$tmp/thread.json"
+  status=$(jq -r --arg r "$run" '.runs[] | select(.id == $r) | .status' "$tmp/thread.json")
+  answer=$(jq -r --arg r "$run" '[.messages[] | select(.runId == $r and .role == "assistant") | .content] | last // ""' "$tmp/thread.json")
+  printf 'run %s\n%s\n' "$status" "$answer"
+  [ "$status" = completed ] || fail "the run ended $status: $(jq -c --arg r "$run" '.runs[] | select(.id == $r)' "$tmp/thread.json")"
+  printf '%s' "$answer" | tr -d ', ' | grep -q 4817 || fail "the answer does not name 4817"
+else
+  step "ask: skipped, no model key"
+fi
 
 step "health"
 for path in /health /health/scheduler /health/security; do
@@ -133,4 +145,4 @@ done
 step "stop"
 "$exe" stop
 if curl -s --max-time 3 "$base/api/v1/version" >/dev/null; then fail "web still answers after stop"; fi
-echo "smoke passed"
+if [ "$ask" = 1 ]; then echo "smoke passed"; else echo "smoke passed; the question was skipped"; fi
