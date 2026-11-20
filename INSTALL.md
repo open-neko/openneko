@@ -1133,6 +1133,12 @@ serve roles; the database check prints the SQL when it does not have it.
 | Supervisor state and the sockets | `~/.local/share/openneko/run` |
 | Web port | `OPENNEKO_PORT` and `OPENNEKO_WEB_BIND_ADDRESS` at the first start, then `installation.json` |
 
+A Unix socket path holds at most 103 bytes on macOS and 107 on Linux. The
+longest socket is `run/config-check.sock` in the data folder, and a named
+instance adds `instances/<name>`. When a path is too long, `openneko start`
+stops with one line that names it. Set `XDG_DATA_HOME` to a shorter folder or
+use a shorter instance name.
+
 In production (`OPENNEKO_ENV` unset or `production`), OpenNeko looks for the
 built-in packs and the bundled skills only in these places. `openneko web`
 does not start when it finds no built-in pack, no built-in skill or a missing
