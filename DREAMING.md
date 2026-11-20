@@ -1,8 +1,9 @@
 # Dreaming
 
-> **STATUS — 2026-11-20: delivery started.** The lesson table and the
-> prompt section exist (`turndream.go`). The pass does not. The baseline and
-> the upper limit are measured (§1). The eval that the build is tested against is in
+> **STATUS — 2026-11-20: delivery and the pass for four lesson kinds are
+> built** (`turndream.go`, `dreampass.go`). Corrections, counting and repair
+> are not. With lessons the pass learned in the morning, the afternoon took
+> 1.9 queries per question against 3.7 (evals/DREAMING.md §5.10). The eval that the build is tested against is in
 > [evals/DREAMING.md](evals/DREAMING.md).
 > Items marked *proposal* answer a question that is still open.
 

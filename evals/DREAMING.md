@@ -328,6 +328,77 @@ often not the query that answered the question. One run ended with a lookup
 of product names. The pass cannot take the last query by rule; the model
 step must choose the answering query.
 
+### 5.10 The full day with the real learning pass
+
+Run on 2026-11-20. The morning ran with no lessons in the prompt. After
+each morning question the learning pass read that run and wrote to one
+shared lesson store. The afternoon then ran with that store. The agent and
+the pass both ran on `gemini-3.8-flash`.
+
+The pass wrote 14 lessons from 26 morning questions: 10 `query` lessons, 3
+`data_fact` lessons and 1 `dead_end` candidate. It supported an existing
+lesson 7 times and wrote a duplicate 0 times. No pass failed.
+
+| Afternoon | Baseline | Hand-written lessons | Learned lessons |
+|---|---|---|---|
+| Correct answers | 34 of 34 | 34 of 34 | 33 of 34 |
+| Queries per question | 3.7 | 1.7 | 1.9 |
+| Tool calls per question | 4.2 | 1.8 | 1.9 |
+| Questions with a failed query | 13 | 3 | 7 |
+| Failed queries | 17 of 127 | 4 of 59 | 11 of 64 |
+| Cost per question | $0.23 | $0.16 | $0.17 |
+
+- The learned lessons reach 1.9 queries per question. The upper limit is
+  1.7, so the pass gets most of the possible gain.
+- The noise between two runs of the same morning is 0.4 queries per
+  question (3.65 and 4.04). The afternoon gain of 1.9 is well outside it.
+- Ten shapes took 1.0 or 1.5 queries. Three shapes did not improve:
+  top-product, territory-freight and category-revenue. The first two have no
+  lesson, since the morning did not ask them. Category-revenue failed two
+  times on the GraphJin nested-filter error, for which the pass wrote no
+  dead end.
+- One answer was wrong. The agent ran the learned query, got the right
+  revenue (32,679.50), and then wrote that there were no sales. The lesson
+  was right; the model misread its own result. One case is not enough to
+  say if lessons make this more likely, so the thread day watches it.
+
+Two defects of the pass showed, and both are in its prompt:
+
+- A `data_fact` took the question of its run as its question shape ("what
+  was our order count for a quarter"). The shape must name the fact. Fixed
+  after this run.
+- The pass wrote no `dead_end` for an error that came back in several runs,
+  because each pass reads one thread and a dead end needs two runs.
+
+### 5.11 The thread bank
+
+`packages/evals/scripts/generate-adventureworks-threads.ts` writes a second
+bank, of threads. A thread is a first question and its follow-ups, sent
+into one conversation.
+
+- **Size.** 60 threads with 153 messages.
+- **Real.** 42 messages are the questions and follow-ups that people typed
+  into the AdventureWorks demo, word for word. One follow-up named a quarter
+  that the frozen data does not have; its date is moved.
+- **Written.** 111 messages are written after the real ones, in the same
+  voice: territories, categories, stock, vendors, staff, customers, rejects,
+  scrap, and two "why" threads.
+- **Ground truth.** 123 messages have an expectation: a value, a name, or
+  both. An expectation can hold several accepted values, because "this
+  year" and "revenue" each allow more than one reading. The other 30
+  messages have no single right answer and count for queries per message
+  only.
+- **Scoring.** The assertion `answer.turn-values` passes a thread when every
+  message with an expectation holds one of its values and its names.
+- **Relative dates.** A period such as "last quarter" counts back from
+  2025-06-29, the last order date of the frozen data.
+
+Suites: `dreaming-threads-bank`, `dreaming-threads-morning` (79 messages)
+and `dreaming-threads-afternoon` (74 messages).
+
+A small expected number, such as a team of 6, can match by chance. Five
+staff expectations have this weakness.
+
 ## 6. Measures
 
 | Measure | Definition | Compared |
