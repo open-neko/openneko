@@ -2,15 +2,15 @@ name: smoke (native)
 
 on:
   push:
-    branches: [main]
+    branches: [main, roadmap-phases-1-4]
     paths:
       - "apps/openneko/**"
       - "apps/ax-harness/**"
+      - "recipes/sandbox/**"
+      - "apps/web/**"
       - "db/migrations/**"
       - "packages/packs/**"
-      - "scripts/build-native-release.sh"
-      - "scripts/native-zip.py"
-      - "scripts/smoke-native.sh"
+      - "scripts/**"
       - ".github/workflows/smoke-native.yml"
   workflow_dispatch:
 
@@ -54,6 +54,7 @@ jobs:
       SMOKE_MODEL_PROVIDER: google-gemini
       SMOKE_MODEL: ${{ vars.SMOKE_MODEL }}
       SMOKE_MODEL_KEY: ${{ secrets.GEMINI_API_KEY }}
+      SMOKE_REQUIRE_ANSWER: ${{ secrets.GEMINI_API_KEY != '' && '1' || '0' }}
     defaults:
       run:
         shell: bash
