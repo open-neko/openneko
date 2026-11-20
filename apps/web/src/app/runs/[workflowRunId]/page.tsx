@@ -6,7 +6,7 @@ import { withRunEventFormat } from "@/lib/run-event-format";
 import { coalesceRunEvents, type RunEventRow } from "@/lib/run-event-items";
 import { useParams, useRouter } from "next/navigation";
 import { Download, MessageCircle, Square, TriangleAlert } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown from "@/lib/safe-markdown";
 import remarkGfm from "remark-gfm";
 import AppHeader from "@/components/AppHeader";
 import { confirmDialog } from "@/components/ConfirmModal";
