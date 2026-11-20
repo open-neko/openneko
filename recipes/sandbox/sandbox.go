@@ -41,6 +41,7 @@ type execBody struct {
 	Dirs           []string          `json:"dirs,omitempty"`
 	Put            []fileData        `json:"put,omitempty"`
 	Delete         []string          `json:"delete,omitempty"`
+	Egress         *egressBody       `json:"egress,omitempty"`
 }
 
 type execAnswer struct {
@@ -63,6 +64,8 @@ type Server struct {
 	PATH                string
 	NodePath            string
 	ProcNet             string
+	EgressProxy         string
+	EgressControl       string
 
 	mu   sync.Mutex
 	runs map[string]*run
@@ -77,6 +80,7 @@ type run struct {
 	dirs   map[string]bool
 	told   map[string]bool
 	ended  bool
+	egress runEgress
 }
 
 // ListenAndServe serves on address until ctx ends: unix:///path for a
@@ -120,6 +124,19 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 	if err := s.prepareWorkspaces(); err != nil {
 		_ = listener.Close()
 		return fmt.Errorf("runs folder unavailable: %w", err)
+	}
+	if s.EgressControl != "" {
+		control, err := listenControl(s.EgressControl)
+		if err != nil {
+			_ = listener.Close()
+			return fmt.Errorf("egress control socket unavailable: %w", err)
+		}
+		controlServer := &http.Server{Handler: s.controlHandler(), ReadHeaderTimeout: 10 * time.Second}
+		go func() { _ = controlServer.Serve(control) }()
+		go func() {
+			<-ctx.Done()
+			_ = controlServer.Close()
+		}()
 	}
 	httpServer := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
@@ -214,6 +231,10 @@ func (s *Server) exec(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := checkEgress(req.Egress); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	run, status, err := s.run(id, req.Fresh)
 	if err != nil {
 		http.Error(w, err.Error(), status)
@@ -240,6 +261,7 @@ func (s *Server) exec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	env = append(env, runPaths...)
+	env = append(env, s.proxyEnv(id, s.setEgress(run, req.Egress))...)
 	if req.SkillDir != "" {
 		dir, ok := runPath(run.dir, req.SkillDir)
 		if !ok {

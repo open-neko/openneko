@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -24,11 +25,12 @@ import (
 const agentDefaultGlobalCap = 3
 
 type agentSettings struct {
-	Source          string `json:"source"`
-	Backend         string `json:"backend"`
-	GlobalCap       int    `json:"globalCap"`
-	Terminal        bool   `json:"terminal"`
-	ResponderEffort string `json:"responderEffort"`
+	Source          string   `json:"source"`
+	Backend         string   `json:"backend"`
+	GlobalCap       int      `json:"globalCap"`
+	Terminal        bool     `json:"terminal"`
+	ResponderEffort string   `json:"responderEffort"`
+	EgressHosts     []string `json:"egressHosts"`
 }
 
 var agentBackendOptions = []llm.ProviderOption{
@@ -93,8 +95,11 @@ func (a *API) settingsAgentGet(w http.ResponseWriter, r *http.Request) {
 	if found {
 		source = "org"
 	}
+	egress := egressHostsOf(cfg)
 	sendJSON(w, http.StatusOK, map[string]any{
-		"agent":             agentSettings{source, "ax", positiveCap(cfg["globalCap"], agentDefaultGlobalCap), cfg["terminal"] != false, llm.ResponderEffort(cfg)},
+		"agent": agentSettings{Source: source, Backend: "ax", GlobalCap: positiveCap(cfg["globalCap"], agentDefaultGlobalCap),
+			Terminal: cfg["terminal"] != false, ResponderEffort: llm.ResponderEffort(cfg), EgressHosts: egress},
+		"egressSuggestions": a.packEgressSuggestions(r.Context(), act.OrgID, egress),
 		"options":           agentBackendOptions,
 		"terminalAvailable": strings.TrimSpace(os.Getenv("OPENNEKO_SANDBOX_URL")) != "",
 		"defaults":          map[string]any{"globalCap": agentDefaultGlobalCap, "terminal": true, "responderEffort": llm.DefaultResponderEffort},
@@ -151,7 +156,7 @@ func (a *API) settingsAgentPut(w http.ResponseWriter, r *http.Request) {
 	}
 	var unsupported []string
 	for _, k := range body.ordered() {
-		if k != "backend" && k != "globalCap" && k != "terminal" && k != "responderEffort" {
+		if k != "backend" && k != "globalCap" && k != "terminal" && k != "responderEffort" && k != "egressHosts" {
 			unsupported = append(unsupported, k)
 		}
 	}
@@ -172,6 +177,15 @@ func (a *API) settingsAgentPut(w http.ResponseWriter, r *http.Request) {
 	if effortSet && !llm.IsReasoningEffort(effortRaw) {
 		sendError(w, http.StatusBadRequest, "responderEffort must be low, medium or high")
 		return
+	}
+	egressRaw, egressSet := body.vals["egressHosts"]
+	var egressHosts []string
+	if egressSet {
+		var err error
+		if egressHosts, err = egressHostsFrom(egressRaw); err != nil {
+			sendError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	if raw, set := body.vals["globalCap"]; set && raw != nil && positiveCap(raw, 0) == 0 {
 		sendError(w, http.StatusBadRequest, "Concurrent jobs must be a number from 1 to 1000")
@@ -196,7 +210,11 @@ func (a *API) settingsAgentPut(w http.ResponseWriter, r *http.Request) {
 	if effortSet {
 		responderEffort = effortRaw.(string)
 	}
-	cfg, _ := json.Marshal(map[string]any{"backend": "ax", "globalCap": globalCap, "terminal": terminal, "responderEffort": responderEffort})
+	previousEgress := egressHostsOf(existing)
+	if !egressSet {
+		egressHosts = previousEgress
+	}
+	cfg, _ := json.Marshal(map[string]any{"backend": "ax", "globalCap": globalCap, "terminal": terminal, "responderEffort": responderEffort, "egressHosts": egressHosts})
 	if found {
 		_, err = a.DB.Exec(ctx, `update llm_provider_config set provider = 'ax', config = $2, updated_at = now() where id = $1`, id, cfg)
 	} else {
@@ -207,11 +225,20 @@ func (a *API) settingsAgentPut(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if previousTerminal := existing["terminal"] != false; previousTerminal != terminal {
+		a.recordAudit(ctx, auditEvent{OrgID: act.OrgID, EntityKind: "agent_settings", EntityID: act.OrgID, Event: "agent:terminal_changed",
+			Payload: map[string]any{"actorUserId": auditActor(act.UserID), "previous": previousTerminal, "next": terminal}})
+	}
+	if !slices.Equal(previousEgress, egressHosts) {
+		a.recordAudit(ctx, auditEvent{OrgID: act.OrgID, EntityKind: "agent_settings", EntityID: act.OrgID, Event: "agent:egress_changed",
+			Payload: map[string]any{"actorUserId": auditActor(act.UserID), "previous": anyList(previousEgress), "next": anyList(egressHosts)}})
+	}
 	a.provisionHostConfig(ctx, act.OrgID)
 	if _, err := a.ApplyAgentConcurrency(ctx); err != nil {
 		log.Printf("agent concurrency not applied: %v", err)
 	}
-	sendJSON(w, http.StatusOK, agentSettings{"org", "ax", globalCap, terminal, responderEffort})
+	sendJSON(w, http.StatusOK, agentSettings{Source: "org", Backend: "ax", GlobalCap: globalCap, Terminal: terminal,
+		ResponderEffort: responderEffort, EgressHosts: egressHosts})
 }
 
 type publicDataSource struct {

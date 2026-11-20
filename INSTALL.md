@@ -510,7 +510,10 @@ Run the sandbox in the same file with the `openneko-sandbox` service of
 `/run/openneko-sandbox` and gives its socket to group 1001. Keep its
 `openneko-sandbox` network with `internal: true`: that network has no route
 out and no DNS for external names, so the agent's commands reach nothing
-outside it. With an
+outside it. Run the `openneko-egress` service of the same file beside it.
+It is the only way out: it joins the sandbox network and the
+`openneko-egress` network, and lets a run reach only the hosts on its
+organization's list. With an
 `https://` URL, leave out the `volumes` and `group_add` lines.
 
 Without a URL the agent has no terminal, the script skills are hidden from
@@ -543,6 +546,18 @@ Admin, Settings, Agent. It is on by default. An admin who turns it off
 takes the terminal, the script skills and workflow script steps away from
 that organization's runs, from the next run. Without a sandbox URL the
 setting shows as unavailable.
+
+Beside it, **Hosts the terminal may reach** lists the hosts that commands
+may reach through the egress proxy. The list is empty by default, so
+commands reach no host. Write one host per line: `pypi.org` is port 443,
+`files.example.com:8443` names another port, and `*.example.com` matches
+each subdomain of `example.com`. The proxy refuses a name that resolves to
+a loopback, private, link-local or metadata address. The form offers the
+hosts that installed packs name; an admin adds each one. Each change of the
+list or of the Terminal setting goes in the audit chain
+(`agent:egress_changed`, `agent:terminal_changed`). The proxy writes one
+line per connection to its log, with the run, the organization, the host
+and the result.
 
 This release replaces the bundled `xlsx`, `docx`, `pptx` and `pdf` skills
 with new ones. It removes the bundled `document-extraction`,
