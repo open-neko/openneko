@@ -77,6 +77,33 @@ func (w *botNameSweep) Work(ctx context.Context, _ *river.Job[BotNameSweepArgs])
 	return w.run(ctx)
 }
 
+const KindDreamSweep = "dream_sweep"
+
+type DreamSweepArgs struct{}
+
+func (DreamSweepArgs) Kind() string { return KindDreamSweep }
+
+func (DreamSweepArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{MaxAttempts: 1, UniqueOpts: river.UniqueOpts{ByState: []rivertype.JobState{
+		rivertype.JobStateAvailable, rivertype.JobStatePending, rivertype.JobStateRetryable,
+		rivertype.JobStateRunning, rivertype.JobStateScheduled,
+	}}}
+}
+
+type dreamSweep struct {
+	river.WorkerDefaults[DreamSweepArgs]
+	run func(context.Context) error
+}
+
+func (w *dreamSweep) Work(ctx context.Context, _ *river.Job[DreamSweepArgs]) error {
+	if w.run == nil {
+		return errors.New("the dream sweep has no runner")
+	}
+	return w.run(ctx)
+}
+
+func (w *dreamSweep) Timeout(*river.Job[DreamSweepArgs]) time.Duration { return time.Hour }
+
 // QuarterHourly fires at 00, 15, 30 and 45 past each UTC hour, as the cron
 // "*/15 * * * *" did.
 type QuarterHourly struct{}

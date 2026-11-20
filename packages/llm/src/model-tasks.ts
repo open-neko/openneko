@@ -6,6 +6,7 @@ export const MODEL_TASKS = [
   { task: "bot_names", label: "Bot names", description: "Suggests a name for a new bot." },
   { task: "skill_lessons", label: "Skill lessons", description: "Proposes a skill change from a finished run." },
   { task: "research_mission", label: "Research mission", description: "Writes the company mission during setup." },
+  { task: "dreaming", label: "Dreaming", description: "Learns lessons from finished runs and threads." },
 ] as const;
 
 export type ModelTask = (typeof MODEL_TASKS)[number]["task"];

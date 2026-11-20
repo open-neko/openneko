@@ -9,7 +9,7 @@ create table if not exists dream_lesson (
   body text not null check (length(trim(body)) > 0),
   tables text[] not null default '{}',
   catalog_revision text,
-  state text not null default 'active' check (state in ('active', 'challenger', 'retired')),
+  state text not null default 'active' check (state in ('active', 'candidate', 'challenger', 'retired')),
   supersedes_id uuid references dream_lesson(id) on delete set null,
   source_run_ids uuid[] not null default '{}',
   embedding vector,
@@ -34,3 +34,24 @@ create table if not exists dream_lesson_use (
 
 create index if not exists dream_lesson_use_lesson_idx
   on dream_lesson_use (lesson_id);
+
+-- One row per thread that a learning pass read. A thread is read again when
+-- it gets a message after last_message_at.
+create table if not exists dream_pass (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references organization(id) on delete cascade,
+  thread_id uuid not null references work_thread(id) on delete cascade,
+  last_message_at timestamptz not null,
+  decisions jsonb not null default '[]',
+  error text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists dream_pass_thread_idx
+  on dream_pass (thread_id, last_message_at desc);
+
+alter table llm_task_route drop constraint if exists llm_task_route_task_check;
+alter table llm_task_route add constraint llm_task_route_task_check check (task in (
+  'default', 'turn', 'classify', 'briefing_summary', 'compact',
+  'bot_instructions', 'bot_names', 'skill_lessons', 'research_mission', 'dreaming'
+));

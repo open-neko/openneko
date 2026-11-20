@@ -311,6 +311,11 @@
       "task": "research_mission",
       "label": "Research mission",
       "description": "Writes the company mission during setup."
+    },
+    {
+      "task": "dreaming",
+      "label": "Dreaming",
+      "description": "Learns lessons from finished runs and threads."
     }
   ]
 }

@@ -23,7 +23,7 @@ func (a *API) dreamLessonsContext(ctx context.Context, orgID, runID, query strin
 	if query == "" {
 		return "", nil
 	}
-	lessons, err := a.dreamLessonsFor(ctx, orgID, query, dreamLessonsPerTurn)
+	lessons, err := a.dreamLessonsFor(ctx, orgID, query, dreamLessonsPerTurn, "active")
 	if err != nil || len(lessons) == 0 {
 		return "", err
 	}
@@ -47,28 +47,28 @@ func (a *API) dreamLessonsContext(ctx context.Context, orgID, runID, query strin
 	return strings.Join(lines, "\n"), nil
 }
 
-func (a *API) dreamLessonsFor(ctx context.Context, orgID, query string, limit int) ([]dreamLesson, error) {
-	if model := a.EmbeddingModel(); model != "" {
+func (a *API) dreamLessonsFor(ctx context.Context, orgID, query string, limit int, states ...string) ([]dreamLesson, error) {
+	if model := a.EmbeddingModel(); model != "" && jsTrim(query) != "" {
 		if err := a.embedDreamLessons(ctx, orgID, model); err != nil {
 			log.Printf("[dreaming] lesson embedding failed; selecting by keyword: %v", err)
 		} else if v, err := a.EmbedText(ctx, query); err != nil {
 			log.Printf("[dreaming] embedding unavailable; selecting by keyword: %v", err)
 		} else {
 			return a.collectDreamLessons(ctx, `select id::text, kind, question_shape, body from dream_lesson
-				where org_id = $1 and state = 'active' and embedding_model = $2
-				order by embedding <=> $3::vector, updated_at desc limit $4`, orgID, model, vectorText(v), limit)
+				where org_id = $1 and state = any($5) and embedding_model = $2
+				order by embedding <=> $3::vector, updated_at desc limit $4`, orgID, model, vectorText(v), limit, states)
 		}
 	}
 	return a.collectDreamLessons(ctx, `select id::text, kind, question_shape, body from dream_lesson
-		where org_id = $1 and state = 'active'
-		order by coalesce(`+dreamLessonKeyword+`, 0) desc, updated_at desc limit $3`, orgID, query, limit)
+		where org_id = $1 and state = any($4)
+		order by coalesce(`+dreamLessonKeyword+`, 0) desc, updated_at desc limit $3`, orgID, query, limit, states)
 }
 
 // embedDreamLessons embeds the active lessons that the configured model has
 // not embedded yet.
 func (a *API) embedDreamLessons(ctx context.Context, orgID, model string) error {
 	pending, err := a.collectDreamLessons(ctx, `select id::text, kind, question_shape, body from dream_lesson
-		where org_id = $1 and state = 'active' and (embedding is null or embedding_model is distinct from $2)
+		where org_id = $1 and state in ('active', 'candidate') and (embedding is null or embedding_model is distinct from $2)
 		order by created_at limit 200`, orgID, model)
 	if err != nil {
 		return err
