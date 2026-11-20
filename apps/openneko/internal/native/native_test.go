@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 )
 
 func envMap(env []string) map[string]string {
@@ -96,7 +98,7 @@ func (s *syncBuffer) Write(p []byte) (int, error) {
 }
 
 func TestSupervisorRestartsAndStops(t *testing.T) {
-	l := Layout{Root: t.TempDir()}
+	l := Layout{Root: testsock.Dir(t)}
 	if err := l.Prepare(); err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +165,7 @@ func TestSupervisorRestartsAndStops(t *testing.T) {
 }
 
 func TestSupervisorKillsAfterGrace(t *testing.T) {
-	l := Layout{Root: t.TempDir()}
+	l := Layout{Root: testsock.Dir(t)}
 	if err := l.Prepare(); err != nil {
 		t.Fatal(err)
 	}
