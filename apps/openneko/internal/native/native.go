@@ -37,6 +37,7 @@ func (l Layout) Credentials() string   { return filepath.Join(l.shared(), "crede
 func (l Layout) GraphJin() string      { return filepath.Join(l.shared(), "graphjin", "agentic.yml") }
 func (l Layout) Seed() string          { return filepath.Join(l.shared(), "graphjin", "seed.yml") }
 func (l Layout) Run() string           { return filepath.Join(l.shared(), "run") }
+func (l Layout) Door() string          { return filepath.Join(l.shared(), "door") }
 func (l Layout) AgentRuns() string     { return filepath.Join(l.shared(), "agent-runs") }
 func (l Layout) WebAdmin() string      { return filepath.Join(l.Root, "web-admin.sock") }
 func (l Layout) Logs() string          { return filepath.Join(l.Root, "logs") }
@@ -58,7 +59,7 @@ func (l Layout) DataFolders() map[string]string {
 }
 
 func (l Layout) Prepare() error {
-	for _, dir := range []string{l.Root, l.Files(), l.Index(), l.Credentials(), filepath.Dir(l.GraphJin()), l.Run(), l.Logs(), l.AgentRuns(), l.Subscriptions()} {
+	for _, dir := range []string{l.Root, l.Files(), l.Index(), l.Credentials(), filepath.Dir(l.GraphJin()), l.Run(), l.Door(), l.Logs(), l.AgentRuns(), l.Subscriptions()} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err
 		}
@@ -110,6 +111,7 @@ func sharedEnv(l Layout) map[string]string {
 		"OPENNEKO_GRAPHJIN_CONFIG":     l.GraphJin(),
 		"OPENNEKO_SERVE_SOCKET":        filepath.Join(l.Run(), "serve.sock"),
 		"OPENNEKO_CONFIG_CHECK_SOCKET": filepath.Join(l.Run(), "config-check.sock"),
+		"OPENNEKO_KEY_DOOR_SOCKET":     filepath.Join(l.Door(), "keydoor.sock"),
 		"OPENNEKO_AGENT_RUNS_DIR":      l.AgentRuns(),
 		"OPENNEKO_FILES_DIR":           l.Files(),
 		"OPENNEKO_FILES_INDEX_DIR":     l.Index(),

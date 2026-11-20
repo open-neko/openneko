@@ -116,6 +116,13 @@ with exit code 0, so its supervisor starts it again.`,
 			gate := &webfront.Gate{SecretsDir: secretsDir, DB: pool}
 			api := newWebAPI(gate, pool, webfront.AppVersion(dir, version.Version), secretsDir, stop, inserter, trace, cmd.ErrOrStderr())
 			api.CheckAuditWebhook(cmd.ErrOrStderr())
+			doorCtx, stopDoor := context.WithCancel(context.WithoutCancel(ctx))
+			defer stopDoor()
+			doorDone, err := api.StartKeyDoor(doorCtx, cmd.OutOrStdout())
+			if err != nil {
+				_ = ln.Close()
+				return err
+			}
 			if socket := strings.TrimSpace(os.Getenv(webAdminSocketEnv)); socket != "" {
 				stopAdmin, err := serveWebAdmin(socket, api.OperatorHandler())
 				if err != nil {
@@ -190,6 +197,8 @@ with exit code 0, so its supervisor starts it again.`,
 				if !errors.Is(err, http.ErrServerClosed) {
 					result = err
 				}
+			case err := <-doorDone:
+				result = fmt.Errorf("the key door stopped: %w", err)
 			case <-ctx.Done():
 			}
 			shut, cancel := context.WithTimeout(context.Background(), time.Second)
