@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -76,31 +77,53 @@ func TestReleaseCheckServeSocket(t *testing.T) {
 	}
 	_ = ln.Close()
 	for i, c := range []struct {
-		server *serve.Server
-		want   string
+		env  map[string]string
+		want []string
 	}{
-		{&serve.Server{RequireDoor: true}, ""},
-		{&serve.Server{RequireDoor: true, KeyEnv: []string{"OPENAI_API_KEY", "HF_TOKEN"}}, "OPENAI_API_KEY, HF_TOKEN"},
-		{&serve.Server{RequireDoor: false}, "development mode"},
+		{nil, nil},
+		{map[string]string{"OPENAI_API_KEY": "sk-1", "HF_TOKEN": "hf"}, []string{"secret variables", "OPENAI_API_KEY", "HF_TOKEN"}},
+		{map[string]string{"OPENNEKO_DATABASE_URL": "postgres://u:p@db/x", "NEKO_SECRET_KEY": "s", "AWS_SECRET_ACCESS_KEY": "a"},
+			[]string{"secret variables", "OPENNEKO_DATABASE_URL", "NEKO_SECRET_KEY", "AWS_SECRET_ACCESS_KEY"}},
+		{map[string]string{"OPENNEKO_ENV": "development"}, []string{"development mode"}},
 	} {
+		cleanServeEnv(t)
+		t.Setenv("OPENNEKO_ENV", "production")
+		for name, v := range c.env {
+			t.Setenv(name, v)
+		}
 		path := filepath.Join(dir, fmt.Sprintf("serve-%d.sock", i))
-		ln, err := serve.Listen(path)
+		sctx, stop := context.WithCancel(ctx)
+		done, err := serveAgentTurns(sctx, io.Discard, path, 1, sandbox.Config{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		sctx, stop := context.WithCancel(ctx)
-		done := make(chan struct{})
-		go func() { _ = c.server.Serve(sctx, ln); close(done) }()
 		err = checkServeSocket(ctx, path)
 		stop()
 		<-done
-		if c.want == "" && err != nil {
+		if c.want == nil && err != nil {
 			t.Fatalf("a serve with no key: %v", err)
 		}
-		if c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
-			t.Fatalf("want an error naming %q, got %v", c.want, err)
+		for _, want := range c.want {
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("want an error naming %q, got %v", want, err)
+			}
+		}
+		for name := range c.env {
+			if v := os.Getenv(name); v != "" && name != "OPENNEKO_ENV" {
+				t.Errorf("serve kept %s=%q in its environment", name, v)
+			}
 		}
 	}
+}
+
+// cleanServeEnv blanks the key variables of the test's own environment for
+// the test, so that a serve started in the test holds none of them.
+func cleanServeEnv(t *testing.T) {
+	t.Helper()
+	for _, name := range serve.KeyEnvNames(os.Environ()) {
+		t.Setenv(name, "")
+	}
+	t.Setenv("NODE_ENV", "")
 }
 
 func TestReleaseCheckPacksNeedsABuiltinPack(t *testing.T) {

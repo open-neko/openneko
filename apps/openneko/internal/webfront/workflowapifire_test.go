@@ -134,6 +134,9 @@ func TestWorkflowAPIRunFireCeilings(t *testing.T) {
 			a.turnResolve = fixedBackend("http://unused")
 			after := 0
 			a.turnCore = func(ctx context.Context, in agentCoreInput) (axRunResult, error) {
+				if c.name == "model calls" && (in.Workflow == nil || in.Workflow.MaxModelCalls != 2) {
+					t.Errorf("the turn got no model-call ceiling of 2: %+v", in.Workflow)
+				}
 				for _, e := range c.events {
 					if err := in.Emit(ctx, e); err != nil {
 						return axRunResult{}, err

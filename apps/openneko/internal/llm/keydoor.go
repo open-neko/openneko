@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -8,6 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -61,12 +63,11 @@ func (r DoorRoute) doorCall(tail string, query url.Values) bool {
 }
 
 type doorGrant struct {
-	org, purpose string
-	secret       [32]byte
-	routes       map[string]DoorRoute
-	deadline     time.Time
-	ctx          context.Context
-	cancel       context.CancelFunc
+	secret   [32]byte
+	routes   map[string]DoorRoute
+	deadline time.Time
+	ctx      context.Context
+	cancel   context.CancelFunc
 
 	mu           sync.Mutex
 	calls, limit int
@@ -85,6 +86,8 @@ func (g *doorGrant) take() bool {
 // DoorPass is one issued token. Revoke ends it and cuts its open calls.
 type DoorPass struct {
 	Token  string
+	org    string
+	what   string
 	door   *KeyDoor
 	grant  *doorGrant
 	revoke sync.Once
@@ -114,9 +117,9 @@ func (p *DoorPass) Settle(ctx context.Context, reported int) bool {
 	if counted == reported {
 		return true
 	}
-	log.Printf("[key-door] org %q %s: the door forwarded %d model calls, serve reported %d", p.grant.org, p.grant.purpose, counted, reported)
+	log.Printf("[key-door] org %q %s: the door forwarded %d model calls, serve reported %d", p.org, p.what, counted, reported)
 	if p.door.Mismatch != nil {
-		p.door.Mismatch(context.WithoutCancel(ctx), DoorMismatch{OrgID: p.grant.org, Purpose: p.grant.purpose, Counted: counted, Reported: reported})
+		p.door.Mismatch(context.WithoutCancel(ctx), DoorMismatch{OrgID: p.org, Purpose: p.what, Counted: counted, Reported: reported})
 	}
 	return false
 }
@@ -133,9 +136,32 @@ type KeyDoor struct {
 	Transport http.RoundTripper
 	Now       func() time.Time
 	Mismatch  func(context.Context, DoorMismatch)
+	// MaxOpen bounds the calls in flight at once; 0 means 64.
+	MaxOpen int
 
 	mu     sync.Mutex
 	grants map[string]*doorGrant
+	open   int
+}
+
+func (d *KeyDoor) enter() bool {
+	limit := d.MaxOpen
+	if limit <= 0 {
+		limit = defaultDoorOpen
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.open >= limit {
+		return false
+	}
+	d.open++
+	return true
+}
+
+func (d *KeyDoor) leave() {
+	d.mu.Lock()
+	d.open--
+	d.mu.Unlock()
 }
 
 const (
@@ -144,6 +170,15 @@ const (
 	maxDoorError  = 1 << 20
 	doorIDBytes   = 16
 	doorSecretLen = 32
+
+	defaultDoorOpen = 64
+)
+
+// The upstream must start its answer within doorHeaderWait; serve must send
+// a request body within doorBodyWait.
+var (
+	doorHeaderWait = 10 * time.Minute
+	doorBodyWait   = 2 * time.Minute
 )
 
 func (d *KeyDoor) now() time.Time {
@@ -174,7 +209,7 @@ func (d *KeyDoor) Issue(org, purpose string, routes map[string]DoorRoute, ttl ti
 	}
 	id := base64.RawURLEncoding.EncodeToString(raw[:doorIDBytes])
 	token := keydoor.TokenPrefix + id + "." + base64.RawURLEncoding.EncodeToString(raw[doorIDBytes:])
-	grant := &doorGrant{org: org, purpose: purpose, secret: sha256.Sum256(raw[doorIDBytes:]), routes: routes,
+	grant := &doorGrant{secret: sha256.Sum256(raw[doorIDBytes:]), routes: routes,
 		deadline: d.now().Add(ttl), limit: calls}
 	grant.ctx, grant.cancel = context.WithCancel(context.Background())
 	d.mu.Lock()
@@ -183,7 +218,7 @@ func (d *KeyDoor) Issue(org, purpose string, routes map[string]DoorRoute, ttl ti
 	}
 	d.grants[id] = grant
 	d.mu.Unlock()
-	return &DoorPass{Token: token, door: d, grant: grant, id: id}, nil
+	return &DoorPass{Token: token, org: org, what: purpose, door: d, grant: grant, id: id}, nil
 }
 
 func (d *KeyDoor) grant(token string) *doorGrant {
@@ -252,15 +287,25 @@ func (d *KeyDoor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		doorFail(w, http.StatusForbidden, "the token does not hold this route")
 		return
 	}
-	for _, part := range strings.Split(tail, "/") {
-		if part == ".." || part == "." {
-			doorFail(w, http.StatusNotFound, "the key door has no such route")
-			return
-		}
-	}
 	if !route.doorCall(tail, r.URL.Query()) {
 		log.Printf("[key-door] route %s: refused a call that is not a model call", name)
 		doorFail(w, http.StatusForbidden, "the key door forwards model calls only")
+		return
+	}
+	if !d.enter() {
+		log.Printf("[key-door] route %s: refused a call over the limit of calls at once", name)
+		doorFail(w, http.StatusServiceUnavailable, "the key door has too many calls open")
+		return
+	}
+	defer d.leave()
+	body, err := readDoorBody(w, r)
+	if err != nil {
+		log.Printf("[key-door] route %s: refused a request body: %v", name, err)
+		status := http.StatusRequestTimeout
+		if errors.As(err, new(*http.MaxBytesError)) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		doorFail(w, status, "the key door could not read the request")
 		return
 	}
 	if !g.take() {
@@ -268,11 +313,14 @@ func (d *KeyDoor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		doorFail(w, http.StatusTooManyRequests, "the token used all its model calls")
 		return
 	}
-	ctx, cut := context.WithCancel(r.Context())
+	ctx, cut := context.WithDeadline(r.Context(), g.deadline)
 	defer cut()
 	stop := context.AfterFunc(g.ctx, cut)
 	defer stop()
+	waiting := time.AfterFunc(doorHeaderWait, cut)
+	defer waiting.Stop()
 	r = r.WithContext(ctx)
+	r.Body, r.ContentLength = io.NopCloser(bytes.NewReader(body)), int64(len(body))
 	upstream, _ := url.Parse(route.Upstream)
 	forms := keyForms([]string{route.Key})
 	proxy := &httputil.ReverseProxy{
@@ -306,6 +354,7 @@ func (d *KeyDoor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		},
 		ModifyResponse: func(res *http.Response) error {
+			waiting.Stop()
 			var limit int64
 			if res.StatusCode < 200 || res.StatusCode > 299 {
 				limit = maxDoorError
@@ -318,8 +367,22 @@ func (d *KeyDoor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			doorFail(w, http.StatusBadGateway, "the model provider did not answer")
 		},
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxDoorBody)
 	proxy.ServeHTTP(w, r)
+}
+
+// readDoorBody reads the whole request within doorBodyWait. net/http clears
+// the read deadline when the body ends, so a long streamed answer keeps its
+// connection.
+func readDoorBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
+	if err := http.NewResponseController(w).SetReadDeadline(time.Now().Add(doorBodyWait)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return nil, err
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxDoorBody))
+	if err != nil {
+		w.Header().Set("Connection", "close")
+		return nil, err
+	}
+	return body, nil
 }
 
 func (d *KeyDoor) transport() http.RoundTripper {

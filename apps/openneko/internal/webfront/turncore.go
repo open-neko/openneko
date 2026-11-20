@@ -42,6 +42,7 @@ type workflowCoreInput struct {
 	Servers                      []string
 	NetworkHosts                 []string
 	TimeoutMs, MaxToolIterations int
+	MaxModelCalls                int
 	ReasoningEffort              string
 }
 
@@ -148,6 +149,7 @@ func (a *API) runAgentCore(ctx context.Context, in agentCoreInput) (axRunResult,
 	if w := in.Workflow; w != nil {
 		o.Tag, o.RunKind, o.NetworkHosts = "workflow "+in.RunID, "workflow", w.NetworkHosts
 		o.TimeoutMs, o.MaxToolIterations, o.ReasoningEffort = w.TimeoutMs, w.MaxToolIterations, w.ReasoningEffort
+		o.MaxModelCalls = w.MaxModelCalls
 	}
 	return runAx(ctx, in.Backend, o)
 }
