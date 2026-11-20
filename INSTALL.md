@@ -1061,7 +1061,16 @@ latest). `OPENNEKO_PREFIX` and `OPENNEKO_BIN_DIR` change the two folders.
 `OPENNEKO_RELEASE_URL` points at a mirror that holds `<tag>/<file>`, and
 then `OPENNEKO_VERSION` is needed. At the end, the script runs `openneko
 release-check --skills --bundled-packs` and fails when the install lacks its
-bundled skills or packs. Then start OpenNeko:
+bundled skills or packs.
+
+Each release also holds `openneko-native_<version>_darwin_<arch>.tar.gz`
+for macOS and `openneko-native_<version>_windows_<arch>.zip` for Windows
+(amd64 and arm64), with the same layout. In the Windows archive the
+executable is `bin\openneko.exe`. The Homebrew cask
+(`brew install open-neko/tap/openneko`) installs the macOS archive, so
+`openneko start --native` finds the web app beside the executable.
+
+Then start OpenNeko:
 
 ```bash
 openneko start --native -d \
