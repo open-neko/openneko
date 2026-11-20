@@ -127,7 +127,7 @@ func TestDreamSweepLearnsFromASettledThreadOnce(t *testing.T) {
 		passRunA, passRunB, passThread, freshRun, dreamThread)
 	seed(t, db, `insert into work_message (org_id, thread_id, run_id, role, content, created_at) values
 		('org', $1, null, 'user', 'units of Clothing sold in Q3 2023?', $3),
-		('org', $1, $2, 'assistant', 'Clothing sold 6,967 units.', $3)`, passThread, passRunA, old)
+		('org', $1, $2, 'assistant', 'Clothing sold 6,967 units.', $3::timestamptz + interval '1 second')`, passThread, passRunA, old)
 	seed(t, db, `insert into work_message (org_id, thread_id, run_id, role, content) values ('org', $1, $2, 'user', 'a fresh question')`, dreamThread, freshRun)
 	dreamToolEvents(t, db, passThread, passRunA, 1, "op1", `{ productcategory { totl } }`, `{"errors":[{"message":"Field 'totl' is not a column on the queried table"}]}`)
 	dreamToolEvents(t, db, passThread, passRunA, 3, "op2", `{ productcategory { productcategoryid name } }`, `{"data":{"productcategory":[{"productcategoryid":3,"name":"Clothing"}]}}`)
@@ -206,7 +206,7 @@ func TestDreamSweepLearnsFromASettledThreadOnce(t *testing.T) {
 	}
 
 	seed(t, db, `insert into work_message (org_id, thread_id, run_id, role, content, created_at) values
-		('org', $1, null, 'user', 'and for Q4?', $3), ('org', $1, $2, 'assistant', 'Clothing sold 7,100 units.', $3)`,
+		('org', $1, null, 'user', 'and for Q4?', $3), ('org', $1, $2, 'assistant', 'Clothing sold 7,100 units.', $3::timestamptz + interval '1 second')`,
 		passThread, passRunB, old.Add(30*time.Minute))
 	dreamToolEvents(t, db, passThread, passRunB, 1, "op1", `{ productcategory { totl } }`, `{"errors":[{"message":"Field 'totl' is not a column on the queried table"}]}`)
 	dreamToolEvents(t, db, passThread, passRunB, 3, "op2", `{ productcategory { productcategoryid name } }`, `{"data":{"productcategory":[{"productcategoryid":4,"name":"Accessories"}]}}`)
