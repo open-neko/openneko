@@ -49,6 +49,7 @@ type Supervisor struct {
 
 	mu    sync.Mutex
 	state State
+	job   *job
 }
 
 // Run starts every process and starts each again when it stops, until ctx
@@ -59,6 +60,12 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		return err
 	}
 	defer unlock()
+	j, err := newJob()
+	if err != nil {
+		return err
+	}
+	defer j.close()
+	s.job = j
 	if s.Grace == 0 {
 		s.Grace = 15 * time.Second
 	}
@@ -123,6 +130,11 @@ func (s *Supervisor) runOnce(ctx context.Context, p Proc) error {
 	cmd.SysProcAttr = childAttr()
 	if err := cmd.Start(); err != nil {
 		return err
+	}
+	if err := s.job.add(cmd.Process); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return fmt.Errorf("hold %s with the supervisor: %w", p.Name, err)
 	}
 	s.update(p.Name, func(ps *ProcState) { ps.PID, ps.Started = cmd.Process.Pid, time.Now().UTC() })
 	done := make(chan error, 1)

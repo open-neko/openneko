@@ -8,9 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -21,6 +19,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/files"
 	"github.com/open-neko/neko/apps/openneko/internal/filestore"
 	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
+	"github.com/open-neko/neko/apps/openneko/internal/native"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
@@ -32,7 +31,7 @@ func newServeCmd() *cobra.Command {
 		Short: "Run the OpenNeko core service (user files, file search, agent turns and the customer GraphJin)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			ctx, stop := native.NotifyStop(cmd.Context())
 			defer stop()
 
 			key, dsn, err := serveKeyAndDatabase(credentials)

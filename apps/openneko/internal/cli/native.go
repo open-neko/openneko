@@ -9,12 +9,10 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -156,7 +154,7 @@ func startNative(cmd *cobra.Command, webDir, dbURL string, detach, skipMigrate b
 		return err
 	}
 	if !detach {
-		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+		ctx, stop := native.NotifyStop(cmd.Context())
 		defer stop()
 		fmt.Fprintf(out, "OpenNeko runs at %s. Logs are in %s. Press Ctrl-C to stop.\n", opts.PublicURL, layout.Logs())
 		return runNativeSupervisor(ctx, out, layout, opts)
@@ -217,7 +215,7 @@ func newNativeRunCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			ctx, stop := native.NotifyStop(cmd.Context())
 			defer stop()
 			return runNativeSupervisor(ctx, cmd.OutOrStdout(), nativeLayout(), opts)
 		},
@@ -372,7 +370,7 @@ func logsNative(ctx context.Context, out io.Writer, services []string, follow bo
 	if !follow {
 		return nil
 	}
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	ctx, stop := native.NotifyStop(ctx)
 	defer stop()
 	for {
 		select {

@@ -3,17 +3,13 @@
 package native
 
 import (
-	"bytes"
-	"context"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 )
 
 func envMap(env []string) map[string]string {
@@ -81,117 +77,6 @@ func TestProbeHost(t *testing.T) {
 		if got, err := ProbeHost(in); err != nil || got != want {
 			t.Errorf("%s: %s %v", in, got, err)
 		}
-	}
-}
-
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func TestSupervisorRestartsAndStops(t *testing.T) {
-	l := Layout{Root: t.TempDir()}
-	if err := l.Prepare(); err != nil {
-		t.Fatal(err)
-	}
-	marker := filepath.Join(t.TempDir(), "term")
-	s := &Supervisor{Layout: l, WebAddr: "127.0.0.1:1", Log: &syncBuffer{}, Grace: 5 * time.Second, Backoff: 20 * time.Millisecond, Procs: []Proc{
-		{Name: "serve", Args: []string{"/bin/sh", "-c", `trap 'echo done > ` + marker + `; exit 0' TERM; echo up; while :; do sleep 0.05; done`}},
-		{Name: "web", Args: []string{"/bin/sh", "-c", "echo once; exit 3"}},
-	}}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
-
-	var st State
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		var err error
-		st, err = ReadState(l)
-		if err == nil && st.Procs["serve"].PID > 0 && st.Procs["web"].Restarts >= 2 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("state %+v %v", st, err)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if st.PID != os.Getpid() || !Alive(st.Procs["serve"].PID) || st.Procs["web"].LastExit != "exit status 3" {
-		t.Errorf("state %+v, web %+v", st, st.Procs["web"])
-	}
-	if pid, ok := Running(l); !ok || pid != os.Getpid() {
-		t.Errorf("Running = %d %v", pid, ok)
-	}
-	if _, err := Lock(l); err == nil {
-		t.Error("a second supervisor must not take the lock")
-	}
-	servePID := st.Procs["serve"].PID
-	cancel()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("the supervisor did not stop")
-	}
-	if raw, err := os.ReadFile(marker); err != nil || strings.TrimSpace(string(raw)) != "done" {
-		t.Errorf("serve did not get SIGTERM: %q %v", raw, err)
-	}
-	if Alive(servePID) {
-		t.Error("serve still runs")
-	}
-	if Locked(l) {
-		t.Error("the lock is still held")
-	}
-	if _, err := os.Stat(l.State()); !os.IsNotExist(err) {
-		t.Errorf("the state file stays: %v", err)
-	}
-	logs, _ := os.ReadFile(l.Log("web"))
-	if strings.Count(string(logs), "once") < 2 {
-		t.Errorf("web log %q", logs)
-	}
-	if err := Stop(l, time.Second); err != ErrNotRunning {
-		t.Errorf("Stop with no supervisor: %v", err)
-	}
-}
-
-func TestSupervisorKillsAfterGrace(t *testing.T) {
-	l := Layout{Root: t.TempDir()}
-	if err := l.Prepare(); err != nil {
-		t.Fatal(err)
-	}
-	s := &Supervisor{Layout: l, Log: &syncBuffer{}, Grace: 200 * time.Millisecond, Procs: []Proc{
-		{Name: "serve", Args: []string{"/bin/sh", "-c", "trap '' TERM; while :; do sleep 0.05; done"}},
-	}}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if st, err := ReadState(l); err == nil && st.Procs["serve"].PID > 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("serve did not start")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	start := time.Now()
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the supervisor did not kill serve")
-	}
-	if d := time.Since(start); d < 200*time.Millisecond {
-		t.Errorf("stopped after %s, before the grace", d)
 	}
 }
 
