@@ -137,7 +137,7 @@ func TestRuntimeDirUsesNamedInstanceStateOutsideWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join("/var/state", "openneko", "instances", "acme", "runtime")
+	want, _ := filepath.Abs(filepath.Join("/var/state", "openneko", "instances", "acme", "runtime"))
 	if got != want {
 		t.Fatalf("runtime dir = %q, want %q", got, want)
 	}

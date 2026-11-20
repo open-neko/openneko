@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 )
 
 func TestPackUploadReadsHostArchive(t *testing.T) {
@@ -337,7 +339,7 @@ func TestWebAdminSocketIsOwnerOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(socket)
-	if err != nil || info.Mode().Perm() != 0o600 {
+	if err != nil || !testmode.Is(t, info, 0o600) {
 		t.Fatalf("socket mode %v: %v", info.Mode(), err)
 	}
 	stop()

@@ -15,6 +15,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/assets"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/gjconfig"
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
@@ -80,7 +81,7 @@ func TestPrepareGraphjinAuthCreatesOneOrgAndWritesItsSecret(t *testing.T) {
 	if !strings.Contains(string(got), `secret: "`+secret+`"`) {
 		t.Fatalf("secret for %s not written:\n%s", orgID, got)
 	}
-	if info, _ := os.Stat(gj); info.Mode().Perm() != 0o640 {
+	if info, _ := os.Stat(gj); !testmode.Is(t, info, 0o640) {
 		t.Fatalf("mode changed to %v", info.Mode().Perm())
 	}
 	if !strings.Contains(out.String(), "created organization "+orgID) {

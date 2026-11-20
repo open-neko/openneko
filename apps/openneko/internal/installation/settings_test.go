@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 )
 
 func sampleSettings() Settings {
@@ -33,7 +35,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	if !testmode.Is(t, info, 0o600) {
 		t.Fatalf("settings mode = %v", info.Mode().Perm())
 	}
 }

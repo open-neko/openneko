@@ -18,6 +18,7 @@ import (
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/installation"
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
@@ -105,7 +106,7 @@ func TestReplaceFolderAndFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(filepath.Join(base, "bin"))
-	if err != nil || readFileOr(filepath.Join(base, "bin"), "") != "bin2" || info.Mode().Perm() != 0o755 {
+	if err != nil || readFileOr(filepath.Join(base, "bin"), "") != "bin2" || !testmode.Is(t, info, 0o755) {
 		t.Errorf("bin: %v %v", info, err)
 	}
 	if !sameFile(filepath.Join(base, "bin"), filepath.Join(base, "bin")) || sameFile(filepath.Join(base, "bin"), filepath.Join(base, "newbin")) {

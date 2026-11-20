@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/open-neko/neko/apps/openneko/assets"
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 )
 
 const oldOverride = `x-sandbox: &sandbox
@@ -91,7 +92,7 @@ func TestOverrideOfRemovedServicesIsIgnoredWithOneLine(t *testing.T) {
 		if _, ok := got.Volumes["extra"]; !ok {
 			t.Fatalf("the copy lost the volumes:\n%s", raw)
 		}
-		if info, err := os.Stat(used); err != nil || info.Mode().Perm() != 0o600 {
+		if info, err := os.Stat(used); err != nil || !testmode.Is(t, info, 0o600) {
 			t.Fatalf("copy mode %v, %v", info.Mode().Perm(), err)
 		}
 	}

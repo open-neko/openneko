@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -191,8 +192,12 @@ func TestClientKeepsTheWorkspaceInStepWithTheSandbox(t *testing.T) {
 	if data, _ := os.ReadFile(filepath.Join(workspace, "runs", "r1", "artifacts", "report.xlsx")); string(data) != "xlsx bytes" {
 		t.Fatalf("the artifact was not written back: %q", data)
 	}
-	if info, err := os.Stat(filepath.Join(workspace, "bin", "tool")); err != nil || info.Mode().Perm()&0o100 == 0 {
-		t.Fatalf("the tool lost its execute bit: %v %v", info, err)
+	if info, err := os.Stat(filepath.Join(workspace, "bin", "tool")); err != nil {
+		t.Fatal(err)
+	} else if runtime.GOOS == "windows" {
+		t.Log("Windows keeps no execute bit; the mode check does not apply")
+	} else if info.Mode().Perm()&0o100 == 0 {
+		t.Fatalf("the tool lost its execute bit: %v", info.Mode())
 	}
 	if info, err := os.Stat(filepath.Join(workspace, "runs", "r1", "empty")); err != nil || !info.IsDir() {
 		t.Fatalf("an empty folder the command made is missing: %v", err)

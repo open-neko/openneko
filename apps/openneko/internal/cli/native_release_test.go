@@ -20,6 +20,7 @@ import (
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/installation"
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 )
 
 type tarEntry struct {
@@ -205,7 +206,7 @@ func TestExtractNativeArchiveTakesTheReleaseFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	fi, err := os.Stat(filepath.Join(dst, "bin", "openneko"))
-	if err != nil || fi.Mode().Perm() != 0o755 {
+	if err != nil || !testmode.Is(t, fi, 0o755) {
 		t.Fatalf("bin/openneko: %v %v", fi, err)
 	}
 	if b, err := os.ReadFile(filepath.Join(dst, "share", "openneko", "web", "assets", "app.js")); err != nil || string(b) != "1" {
@@ -408,7 +409,7 @@ func TestExtractNativeArchiveTakesALaterShareFolder(t *testing.T) {
 	}
 	for _, rel := range []string{"share/openneko/later/a.txt", "share/openneko/packsx/a"} {
 		fi, err := os.Stat(filepath.Join(dst, filepath.FromSlash(rel)))
-		if err != nil || fi.Mode().Perm() != 0o644 {
+		if err != nil || !testmode.Is(t, fi, 0o644) {
 			t.Fatalf("%s: %v %v", rel, fi, err)
 		}
 	}
@@ -608,7 +609,7 @@ func TestNativeUpgradeReplacesTheExeNamedByTheInstallScript(t *testing.T) {
 	if _, err := os.Stat(gone); !os.IsNotExist(err) {
 		t.Fatalf("the old file of the later folder stayed: %v", err)
 	}
-	if fi, err := os.Stat(exe); err != nil || fi.Mode().Perm() != 0o755 {
+	if fi, err := os.Stat(exe); err != nil || !testmode.Is(t, fi, 0o755) {
 		t.Fatalf("the replaced executable: %v %v", fi, err)
 	}
 	if after, err := os.Stat(self); err != nil || !after.ModTime().Equal(before.ModTime()) || after.Size() != before.Size() {
@@ -641,7 +642,7 @@ func TestExtractNativeArchiveKeepsTheExecutableBit(t *testing.T) {
 		"bin/openneko": 0o755,
 	} {
 		fi, err := os.Stat(filepath.Join(dst, filepath.FromSlash(rel)))
-		if err != nil || fi.Mode().Perm() != want {
+		if err != nil || !testmode.Is(t, fi, want) {
 			t.Fatalf("%s: %v %v, want %v", rel, fi, err, want)
 		}
 	}

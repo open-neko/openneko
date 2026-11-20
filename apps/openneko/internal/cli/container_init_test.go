@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 )
 
 func clearContainerEnv(t *testing.T) {
@@ -71,7 +73,7 @@ func TestSeedContainerConfigKeepsExistingValues(t *testing.T) {
 	}
 	for _, name := range []string{"config.json", "secret-key"} {
 		info, err := os.Stat(filepath.Join(dir, name))
-		if err != nil || info.Mode().Perm() != 0o600 {
+		if err != nil || !testmode.Is(t, info, 0o600) {
 			t.Fatalf("%s mode = %v, %v", name, info.Mode(), err)
 		}
 	}

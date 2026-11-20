@@ -20,6 +20,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/files"
 	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
@@ -74,7 +75,7 @@ func TestServeInitGivesEachServeRoleOnlyItsTables(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if info.Mode().Perm() != 0o640 {
+		if !testmode.Is(t, info, 0o640) {
 			t.Fatalf("%s mode %v", f, info.Mode().Perm())
 		}
 	}
@@ -235,7 +236,7 @@ func TestSeedGraphjinConfigCreatesOnceAndDropsTheShellSupervisor(t *testing.T) {
 	if bytes.Contains(first, []byte(graphjinKeystorePlaceholder)) {
 		t.Fatalf("the keystore placeholder is still in the config:\n%s", first)
 	}
-	if info, _ := os.Stat(file); info.Mode().Perm() != 0o640 {
+	if info, _ := os.Stat(file); !testmode.Is(t, info, 0o640) {
 		t.Fatalf("config mode %v", info.Mode().Perm())
 	}
 

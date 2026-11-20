@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 )
 
 type upPart struct{ field, filename, body string }
@@ -153,7 +155,7 @@ func TestFileSourceUpload(t *testing.T) {
 	if string(got) != "row a.csv" || !strings.Contains(body, hex.EncodeToString(want[:])) {
 		t.Fatalf("content: %q %s", got, body)
 	}
-	if info, _ := os.Stat(filepath.Join(dir, "a.csv")); info.Mode().Perm() != 0o644 {
+	if info, _ := os.Stat(filepath.Join(dir, "a.csv")); !testmode.Is(t, info, 0o644) {
 		t.Fatalf("mode %v", info.Mode())
 	}
 

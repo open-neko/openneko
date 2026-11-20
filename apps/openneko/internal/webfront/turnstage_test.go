@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 )
 
 func TestSkillStageMatchesNode(t *testing.T) {
@@ -311,7 +313,7 @@ func TestStageTurn(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if mode := info.Mode().Perm(); mode&0o007 != 0 || mode&0o060 != 0o060 || info.IsDir() && mode&0o010 == 0 {
+		if mode := info.Mode().Perm(); testmode.HasModes(t) && (mode&0o007 != 0 || mode&0o060 != 0o060 || info.IsDir() && mode&0o010 == 0) {
 			t.Errorf("%s mode %v", p, mode)
 		}
 	}

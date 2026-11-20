@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 )
 
 func readTraceLines(t *testing.T, path string) []map[string]any {
@@ -85,7 +87,7 @@ func TestOpenEvalTrace(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { tr.Close() })
-	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
+	if info, err := os.Stat(path); err != nil || !testmode.Is(t, info, 0o600) {
 		t.Fatalf("mode %v %v", info.Mode(), err)
 	}
 
