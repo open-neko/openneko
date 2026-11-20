@@ -106,6 +106,10 @@ func TestChannelDeliveryMatchesNode(t *testing.T) {
 			if c.Channel == "hud" {
 				want.Path = "/api/deliver"
 			}
+			if c.Channel == "slack" && strings.Contains(got.Path, "chat.post") && !strings.Contains(got.Body, `"unfurl_links":false,"unfurl_media":false`) ||
+				c.Channel == "telegram" && strings.HasSuffix(got.Path, "/sendMessage") && !strings.Contains(got.Body, `"link_preview_options":{"is_disabled":true}`) {
+				t.Errorf("%s request %d asks the chat service to preview links: %s", c.Name, i, got.Body)
+			}
 			if got.Path != want.Path || got.Body != want.Body {
 				t.Errorf("%s request %d:\n got %s %s\nwant %s %s", c.Name, i, got.Path, got.Body, want.Path, want.Body)
 			}
@@ -132,7 +136,7 @@ func TestChannelDeliverJob(t *testing.T) {
 	if err := a.ChannelDeliver(t.Context(), job); err != nil {
 		t.Errorf("delivered: %v", err)
 	}
-	if len(srv.requests) != 1 || srv.requests[0].Path != "/bot123:abc/sendMessage" || srv.requests[0].Body != `{"chat_id":7,"text":"hi","parse_mode":"HTML"}` {
+	if len(srv.requests) != 1 || srv.requests[0].Path != "/bot123:abc/sendMessage" || srv.requests[0].Body != `{"chat_id":7,"text":"hi","parse_mode":"HTML","link_preview_options":{"is_disabled":true}}` {
 		t.Errorf("requests: %+v", srv.requests)
 	}
 	job.Events = json.RawMessage(`[]`)

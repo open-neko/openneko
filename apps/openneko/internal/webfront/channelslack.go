@@ -163,7 +163,7 @@ func deliverSlack(ctx context.Context, recipient any, events []any, env map[stri
 		log.Printf("[channel-slack dry-run] channel=%s", channel)
 		return channelDeliverResult{Ref: fmt.Sprintf("dry-run:%d", len(blocks))}, nil
 	}
-	body := jsObjOf("channel", channel, "blocks", blocks, "text", text)
+	body := jsObjOf("channel", channel, "blocks", blocks, "text", text, "unfurl_links", false, "unfurl_media", false)
 	if threadTS != "" {
 		body.set("thread_ts", threadTS)
 	}
