@@ -7,12 +7,13 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/open-neko/neko/apps/openneko/internal/appdir"
 	"github.com/open-neko/neko/apps/openneko/internal/instance"
 	"github.com/open-neko/neko/apps/openneko/internal/native"
 )
 
 func nativeSandboxDir() string {
-	return instance.ScopeConfigDir(filepath.Join(dataHome(), "openneko-sandbox"))
+	return instance.ScopeConfigDir(appdir.Data() + "-sandbox")
 }
 
 // prepareNativeSandbox makes the sandbox socket folder of a one-user native

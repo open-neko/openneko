@@ -1166,7 +1166,13 @@ serve roles; the database check prints the SQL when it does not have it.
 | Supervisor state and the sockets | `~/.local/share/openneko/run` |
 | Web port | `OPENNEKO_PORT` and `OPENNEKO_WEB_BIND_ADDRESS` at the first start, then `installation.json` |
 
-A Unix socket path holds at most 103 bytes on macOS and 107 on Linux. The
+On Windows the data folder is `%LOCALAPPDATA%\OpenNeko` and the config
+folder is `%APPDATA%\OpenNeko`. Windows has no file modes, so OpenNeko gives
+these two folders, the secret key, `secrets.json`, the backup key and each
+backup a protected access list: only your account and SYSTEM can open them.
+
+A Unix socket path holds at most 103 bytes on macOS and 107 on Linux and
+Windows. The
 longest socket is `run/config-check.sock` in the data folder, and a named
 instance adds `instances/<name>`. When a path is too long, `openneko start`
 stops with one line that names it. Set `XDG_DATA_HOME` to a shorter folder or

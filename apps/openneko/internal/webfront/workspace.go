@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -17,6 +18,8 @@ import (
 
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
+
+	"github.com/open-neko/neko/apps/openneko/internal/appdir"
 )
 
 const skillOriginFile = ".openneko-origin"
@@ -29,6 +32,9 @@ func orgAgentRoot(orgID string) string {
 	if os.Getenv("OPENNEKO_HOST_WEB_DEV") == "1" && Development() &&
 		os.Getenv("OPENNEKO_STACK_MODE") != "demo" && os.Getenv("NEXT_PUBLIC_DEMO") != "true" && os.Getenv("DEMO") != "true" {
 		home = strings.TrimSpace(os.Getenv("OPENNEKO_AGENT_HOME"))
+	}
+	if home == "" && runtime.GOOS == "windows" {
+		return filepath.Join(appdir.Config(), "agents", "orgs", unsafeSegment.ReplaceAllString(orgID, "_"))
 	}
 	if home == "" {
 		home = os.Getenv("HOME")

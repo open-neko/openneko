@@ -193,9 +193,10 @@ connect, and each call needs a valid token as well. Its path is
   sandbox does not mount the volume.
 - Server install: `/var/lib/openneko/shared/door`, owner `openneko`, group
   `openneko-shared`, mode 2750. Both units set `OPENNEKO_KEY_DOOR_SOCKET`.
-- One-user native install: `~/.local/share/openneko/door`.
-
-Windows has no key door yet, and no agent turns.
+- One-user native install: `~/.local/share/openneko/door`; on Windows
+  `%LOCALAPPDATA%\OpenNeko\door`. Windows has no file modes. OpenNeko gives
+  the data folder a protected access list that allows only the user and
+  SYSTEM, and each socket in it takes that list.
 
 In production (`OPENNEKO_ENV` unset or `production`), serve refuses a frame
 that holds a model key in place of a door token. It also refuses a frame

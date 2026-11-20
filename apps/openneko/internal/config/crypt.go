@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
 )
 
 // Mirrors packages/llm/src/secrets.ts exactly: AES-256-GCM, key =
@@ -43,7 +45,7 @@ func loadOrCreateKey(overrideDir string) ([]byte, error) {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := ownonly.Mkdir(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 	fresh := make([]byte, 32)
@@ -57,6 +59,11 @@ func loadOrCreateKey(overrideDir string) ([]byte, error) {
 	// The loser of O_EXCL re-reads the winner's key.
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err == nil {
+		if err := ownonly.Set(path); err != nil {
+			_ = f.Close()
+			_ = os.Remove(path)
+			return nil, err
+		}
 		_, werr := f.WriteString(secret)
 		cerr := f.Close()
 		if werr != nil {
