@@ -12088,7 +12088,7 @@ paths:
       operationId: patchWorkflowsByWorkflowId
       tags:
       - workflows
-      summary: Enable, disable, or pause a workflow
+      summary: Enable, disable, or pause a workflow, or assign an owner
       x-access: signed-in
       security:
       - session: []
@@ -12114,6 +12114,9 @@ paths:
                 pauseForToday:
                   type: boolean
                   description: Disable the workflow and its watchers until the next UTC midnight
+                ownerUserId:
+                  type: string
+                  description: Admin only. Assigns an owner to a workflow that has none; the workflow then runs with the owner's access
       responses:
         '200':
           description: The workflow is updated
@@ -12128,7 +12131,7 @@ paths:
                   ok:
                     type: boolean
         '400':
-          description: The body has no recognized fields
+          description: The body has no recognized fields, or the owner is not an active user
           content:
             application/json:
               schema:
@@ -12139,8 +12142,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '403':
+          description: Only an admin assigns an owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: The workflow is not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The workflow already has an owner, or the user has a workflow with this name
           content:
             application/json:
               schema:
