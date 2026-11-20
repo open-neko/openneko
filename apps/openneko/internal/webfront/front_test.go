@@ -61,8 +61,30 @@ func TestFront(t *testing.T) {
 	if ct := get(f, "GET", "/sw.js").Header().Get("Content-Type"); ct != "application/javascript; charset=utf-8" {
 		t.Errorf("sw.js Content-Type %q", ct)
 	}
-	if csp := get(f, "GET", "/chat").Header().Get("Content-Security-Policy"); csp != "frame-src 'self'" {
-		t.Errorf("CSP %q", csp)
+	for _, path := range []string{"/chat", "/assets/main.js", "/manifest.webmanifest", "/api/v1/version", "/nope", "/health"} {
+		h := get(f, "GET", path).Header()
+		csp := map[string]string{}
+		for _, d := range strings.Split(h.Get("Content-Security-Policy"), ";") {
+			name, value, _ := strings.Cut(strings.TrimSpace(d), " ")
+			csp[name] = value
+		}
+		for name, want := range map[string]string{
+			"default-src": "'self'",
+			"img-src":     "'self' data: blob:",
+			"connect-src": "'self' https://tiles.openfreemap.org",
+			"frame-src":   "'self'",
+			"font-src":    "'self' data:",
+			"style-src":   "'self' 'unsafe-inline'",
+			"media-src":   "'self' blob:",
+			"object-src":  "'none'",
+		} {
+			if csp[name] != want {
+				t.Errorf("%s: CSP %s = %q, want %q", path, name, csp[name], want)
+			}
+		}
+		if h.Get("Referrer-Policy") != "no-referrer" || h.Get("X-Content-Type-Options") != "nosniff" {
+			t.Errorf("%s: Referrer-Policy %q, X-Content-Type-Options %q", path, h.Get("Referrer-Policy"), h.Get("X-Content-Type-Options"))
+		}
 	}
 	if w := get(f, "GET", "/"); w.Code != 302 || w.Header().Get("Location") != "/chat" {
 		t.Errorf("/: %d %q", w.Code, w.Header().Get("Location"))

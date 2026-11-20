@@ -79,8 +79,10 @@ func (a *API) checkSourceForOrg(ctx context.Context, orgID string, body any) (so
 	ref := answer(body, "secretRef")
 	if in.Password == "" && ref != "" {
 		var enc string
-		err := a.DB.QueryRow(ctx, `select value_enc from data_source_secret where org_id = $1 and name = $2 limit 1`,
-			orgID, ref).Scan(&enc)
+		var host *string
+		var port *int
+		err := a.DB.QueryRow(ctx, `select value_enc, host, port, allow_unverified_tls from data_source_secret
+			where org_id = $1 and name = $2 limit 1`, orgID, ref).Scan(&enc, &host, &port, &in.AllowUnverifiedTLS)
 		if errors.Is(err, pgx.ErrNoRows) {
 			check := sourcecheck.Check(ctx, in)
 			for i, f := range check.Findings {
@@ -95,6 +97,10 @@ func (a *API) checkSourceForOrg(ctx context.Context, orgID string, body any) (so
 		}
 		if in.Password, err = config.MaybeDecryptValue(a.SecretsDir, enc); err != nil {
 			return sourcecheck.Result{}, err
+		}
+		in.PasswordTarget = &sourcecheck.Target{Host: deref(host)}
+		if port != nil {
+			in.PasswordTarget.Port = float64(*port)
 		}
 	}
 	return sourcecheck.Check(ctx, in), nil

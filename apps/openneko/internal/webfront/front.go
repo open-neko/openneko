@@ -50,7 +50,35 @@ func Check(dir string) error {
 	return nil
 }
 
+// MapTileHost serves the style, tiles, glyphs and sprites of the answer map.
+const MapTileHost = "https://tiles.openfreemap.org"
+
+// script-src keeps 'unsafe-inline': the answer tool frame is a srcdoc
+// document, so it inherits this policy and runs inline script.
+var ContentSecurityPolicy = strings.Join([]string{
+	"default-src 'self'",
+	"script-src 'self' 'unsafe-inline'",
+	"style-src 'self' 'unsafe-inline'",
+	"img-src 'self' data: blob:",
+	"font-src 'self' data:",
+	"connect-src 'self' " + MapTileHost,
+	"media-src 'self' blob:",
+	"worker-src 'self' blob:",
+	"frame-src 'self'",
+	"frame-ancestors 'self'",
+	"object-src 'none'",
+	"base-uri 'self'",
+	"manifest-src 'self'",
+}, "; ")
+
+func setSecurityHeaders(h http.Header) {
+	h.Set("Content-Security-Policy", ContentSecurityPolicy)
+	h.Set("Referrer-Policy", "no-referrer")
+	h.Set("X-Content-Type-Options", "nosniff")
+}
+
 func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	setSecurityHeaders(w.Header())
 	p := r.URL.Path
 	if p == WakePath && f.Wake != nil {
 		f.Wake.ServeHTTP(w, r)
@@ -80,7 +108,6 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Content-Security-Policy", "frame-src 'self'")
 	f.serveFile(w, r, "/index.html", false)
 }
 

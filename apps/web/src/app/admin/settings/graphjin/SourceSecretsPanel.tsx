@@ -3,11 +3,15 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Field, Input } from "@/components/ui/field";
 
 type SourceSecretSummary = {
   name: string;
   description: string | null;
+  host?: string | null;
+  port?: number | null;
+  allowUnverifiedTls?: boolean;
   updatedAt: string;
 };
 
@@ -20,6 +24,9 @@ export default function SourceSecretsPanel({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [value, setValue] = useState("");
+  const [host, setHost] = useState("");
+  const [port, setPort] = useState("");
+  const [allowUnverified, setAllowUnverified] = useState(false);
   const [saving, setSaving] = useState(false);
 
   async function refresh() {
@@ -40,6 +47,9 @@ export default function SourceSecretsPanel({
           name: trimmedName,
           value,
           description: description.trim() || null,
+          host: host.trim(),
+          port: port.trim(),
+          allowUnverifiedTls: allowUnverified,
         }),
       });
       const body = (await res.json().catch(() => null)) as
@@ -50,6 +60,9 @@ export default function SourceSecretsPanel({
       setName("");
       setDescription("");
       setValue("");
+      setHost("");
+      setPort("");
+      setAllowUnverified(false);
       toast.success(`Saved ${trimmedName}.`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
@@ -84,12 +97,12 @@ export default function SourceSecretsPanel({
         <div>
           <h2 className="settings-card-title">Connection secrets</h2>
           <p className="settings-card-copy">
-            Named credentials for GraphJin source registration requests.
+            Named credentials for GraphJin source registration requests. OpenNeko sends a password only to the host and port saved with it.
           </p>
         </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-[1fr_1fr_1.2fr_auto]">
+      <div className="grid gap-3 md:grid-cols-3">
         <Field label="Name" htmlFor="source-secret-name">
           <Input
             id="source-secret-name"
@@ -119,11 +132,38 @@ export default function SourceSecretsPanel({
             spellCheck={false}
           />
         </Field>
+        <Field label="Host" htmlFor="source-secret-host">
+          <Input
+            id="source-secret-host"
+            value={host}
+            onChange={(e) => setHost(e.target.value)}
+            placeholder="db.internal"
+            spellCheck={false}
+            autoComplete="off"
+          />
+        </Field>
+        <Field label="Port" htmlFor="source-secret-port">
+          <Input
+            id="source-secret-port"
+            inputMode="numeric"
+            value={port}
+            onChange={(e) => setPort(e.target.value)}
+            placeholder="5432"
+            autoComplete="off"
+          />
+        </Field>
+        <div className="flex items-end md:col-span-2">
+          <Checkbox
+            label="Allow a server certificate that does not verify"
+            checked={allowUnverified}
+            onCheckedChange={(checked) => setAllowUnverified(checked === true)}
+          />
+        </div>
         <div className="flex items-end">
           <Button
             type="button"
             variant="secondary"
-            disabled={saving || !name.trim() || !value}
+            disabled={saving || !name.trim() || !value || !host.trim() || !port.trim()}
             onClick={saveSecret}
           >
             Save
@@ -145,6 +185,9 @@ export default function SourceSecretsPanel({
               </code>
               <span className="hidden min-w-0 flex-1 truncate text-text3 md:block">
                 {secret.description ?? "No description"}
+              </span>
+              <span className="min-w-0 truncate text-text3">
+                {secret.host ? `${secret.host}:${secret.port}` : "No host: save again"}
               </span>
               <span className="text-xs text-text3">
                 {formatDate(secret.updatedAt)}

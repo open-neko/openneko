@@ -340,6 +340,9 @@ export interface SourceSecretInputProps {
   component: "SourceSecretInput";
   label?: string;
   sourceName?: string;
+  type?: unknown;
+  host?: unknown;
+  port?: unknown;
   value?: unknown;
   /** A problem with this answer, shown beside the field. */
   error?: string;

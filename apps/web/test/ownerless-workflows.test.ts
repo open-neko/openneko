@@ -12,7 +12,7 @@ it("lists each workflow with no owner on one line with an owner choice", () => {
   }));
   expect(html).toContain("Workflows with no owner");
   expect(html.match(/<li>/g)).toHaveLength(2);
-  expect(html).toContain('<label for="owner-w1"');
+  expect(html).toMatch(/<label[^>]*for="owner-w1"[^>]*>Daily Revenue Health Check<\/label>/);
   expect(html).toContain("Daily Revenue Health Check");
   expect(html).toContain('<option value="u1">Ana (ana@example.com)</option>');
   expect(html).toContain('<option value="u2">bo@example.com</option>');

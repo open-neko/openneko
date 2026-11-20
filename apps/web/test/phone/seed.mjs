@@ -37,6 +37,7 @@ await client.query(
   "insert into pack_install (org_id, pack_id, version, status, manifest_hash, installed_at, config) values ($1, 'magento', '1.0.0', 'installed', 'h', now(), '{}'::jsonb)",
   [org],
 );
+await client.query("insert into workflow_definition (org_id, name, description) values ($1, 'Revenue Drop Alert from an earlier release', 'Hourly check')", [org]);
 await client.query(
   `insert into work_message (org_id, thread_id, run_id, role, content, created_at) values
    ($1, $2, null, 'user', $4, now() - interval '2 minutes'),

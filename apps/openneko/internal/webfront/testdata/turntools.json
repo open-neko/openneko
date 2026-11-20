@@ -15791,6 +15791,15 @@
           "sourceName": {
            "path": "/form/name"
           },
+          "type": {
+           "path": "/form/type"
+          },
+          "host": {
+           "path": "/form/host"
+          },
+          "port": {
+           "path": "/form/port"
+          },
           "value": {
            "path": "/form/secretRef"
           },
@@ -16499,6 +16508,15 @@
           "sourceName": {
            "path": "/form/name"
           },
+          "type": {
+           "path": "/form/type"
+          },
+          "host": {
+           "path": "/form/host"
+          },
+          "port": {
+           "path": "/form/port"
+          },
           "value": {
            "path": "/form/secretRef"
           },
@@ -17204,6 +17222,15 @@
           "label": "Password",
           "sourceName": {
            "path": "/form/name"
+          },
+          "type": {
+           "path": "/form/type"
+          },
+          "host": {
+           "path": "/form/host"
+          },
+          "port": {
+           "path": "/form/port"
           },
           "value": {
            "path": "/form/secretRef"
@@ -18872,6 +18899,15 @@
           "label": "Password",
           "sourceName": {
            "path": "/form/name"
+          },
+          "type": {
+           "path": "/form/type"
+          },
+          "host": {
+           "path": "/form/host"
+          },
+          "port": {
+           "path": "/form/port"
           },
           "value": {
            "path": "/form/secretRef"

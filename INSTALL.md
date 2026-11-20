@@ -354,7 +354,10 @@ order: the host resolves, the port answers, TLS, the login, the rights to read
 the schema, and read-only rights. A failed step gives one sentence and, where
 SQL fixes it, the SQL for the database administrator, for example how to create
 a read-only login. A passed check lists the tables the login can read, with
-row estimates. `--secret` names a password saved in Admin settings, GraphJin
+row estimates. A saved password goes only to the host and port saved with it.
+The check sends a password only over TLS whose certificate verifies, unless an
+admin allowed an unverified certificate for that saved password, and never to
+a server that asks for it in clear text. `--secret` names a password saved in Admin settings, GraphJin
 config; `--password-stdin` reads it from standard input. The check runs in
 `openneko web` on its admin socket, so OpenNeko must be running. It exits 1 when a step fails. It checks
 PostgreSQL, MySQL and MariaDB, and says so for any other type.

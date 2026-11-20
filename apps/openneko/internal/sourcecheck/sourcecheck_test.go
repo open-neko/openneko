@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"net/http/httptest"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -405,5 +407,139 @@ func TestMysql(t *testing.T) {
 	r = check(ro, "pw", db+"_x")
 	if f := finding(t, r, "login"); f.Field != "user" || f.Message != ro+" may not read the database "+db+"_x." {
 		t.Fatalf("%+v", f)
+	}
+}
+
+func pgMessage(kind byte, body []byte) []byte {
+	return append(binary.BigEndian.AppendUint32([]byte{kind}, uint32(len(body)+4)), body...)
+}
+
+func TestPasswordStaysHome(t *testing.T) {
+	cert := selfSignedTLS(t)
+	var mu sync.Mutex
+	logins := 0
+	pgTLS := fakeServer(t, func(c net.Conn) {
+		buf := make([]byte, 8)
+		if _, err := c.Read(buf); err != nil {
+			return
+		}
+		c.Write([]byte("S"))
+		s := tls.Server(c, cert)
+		if s.Handshake() != nil {
+			return
+		}
+		if n, _ := s.Read(make([]byte, 512)); n > 0 {
+			mu.Lock()
+			logins++
+			mu.Unlock()
+		}
+	})
+	in := Input{Type: "postgres", Host: "127.0.0.1", Port: port(pgTLS), Database: "d", User: "u", Password: "pw", Timeout: time.Second}
+	l := finding(t, Check(context.Background(), in), "login")
+	if l.Status != "fail" || !strings.HasPrefix(l.Message, "OpenNeko did not send the password, because it cannot verify the server's certificate") {
+		t.Fatalf("unverified: %+v", l)
+	}
+	mu.Lock()
+	if logins != 0 {
+		t.Fatalf("the check signed in over an unverified certificate %d times", logins)
+	}
+	mu.Unlock()
+	in.AllowUnverifiedTLS = true
+	if l := finding(t, Check(context.Background(), in), "login"); strings.HasPrefix(l.Message, "OpenNeko did not send") {
+		t.Fatalf("allowed: %+v", l)
+	}
+	mu.Lock()
+	if logins == 0 {
+		t.Fatal("an allowed unverified certificate got no login")
+	}
+	mu.Unlock()
+
+	var sent []byte
+	clear := fakeServer(t, func(c net.Conn) {
+		for {
+			head := make([]byte, 4)
+			if _, err := io.ReadFull(c, head); err != nil {
+				return
+			}
+			body := make([]byte, binary.BigEndian.Uint32(head)-4)
+			if _, err := io.ReadFull(c, body); err != nil {
+				return
+			}
+			if binary.BigEndian.Uint32(body) == 80877103 {
+				c.Write([]byte("N"))
+				continue
+			}
+			c.Write(pgMessage('R', binary.BigEndian.AppendUint32(nil, 3)))
+			c.SetReadDeadline(time.Now().Add(time.Second))
+			rest, _ := io.ReadAll(c)
+			mu.Lock()
+			sent = append(sent, rest...)
+			mu.Unlock()
+			return
+		}
+	})
+	in = Input{Type: "postgres", Host: "127.0.0.1", Port: port(clear), Database: "d", User: "u", Password: "secret-pw", Timeout: time.Second}
+	if l := finding(t, Check(context.Background(), in), "login"); l.Status != "fail" || l.Message != ClearTextRefused {
+		t.Fatalf("clear text: %+v", l)
+	}
+	time.Sleep(100 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	if strings.Contains(string(sent), "secret-pw") {
+		t.Fatalf("the password went out in clear text: %q", sent)
+	}
+}
+
+func TestCleartextGuardReadsSplitMessages(t *testing.T) {
+	stream := append(pgMessage('R', binary.BigEndian.AppendUint32(nil, 10)), pgMessage('E', []byte("x\x00"))...)
+	stream = append(stream, pgMessage('R', binary.BigEndian.AppendUint32(nil, 3))...)
+	if (&cleartextGuard{}).scan(append(pgMessage('R', binary.BigEndian.AppendUint32(nil, 0)), pgMessage('R', binary.BigEndian.AppendUint32(nil, 3))...)) {
+		t.Fatal("the guard read past the end of the login")
+	}
+	g := &cleartextGuard{}
+	for i, b := range stream {
+		if g.scan([]byte{b}) {
+			if i != len(stream)-1 {
+				t.Fatalf("asked at byte %d of %d", i, len(stream))
+			}
+			return
+		}
+	}
+	t.Fatal("the guard missed the clear-text request")
+}
+
+func TestPasswordGoesOnlyToItsTarget(t *testing.T) {
+	hits := 0
+	var mu sync.Mutex
+	srv := fakeServer(t, func(c net.Conn) {
+		mu.Lock()
+		hits++
+		mu.Unlock()
+	})
+	base := Input{Type: "postgres", Host: "127.0.0.1", Port: port(srv), Database: "d", User: "u", Password: "pw", Timeout: time.Second}
+	for _, c := range []struct {
+		target  Target
+		message string
+	}{
+		{Target{}, PasswordHasNoTarget},
+		{Target{Host: "db.example.com", Port: float64(srv)}, "The saved password belongs to db.example.com on port " + strconv.Itoa(srv) + "."},
+		{Target{Host: "127.0.0.1", Port: 5432}, "The saved password belongs to 127.0.0.1 on port 5432."},
+	} {
+		in := base
+		in.PasswordTarget = &c.target
+		r := Check(context.Background(), in)
+		if f := finding(t, r, "resolve"); f.Status != "fail" || !strings.HasPrefix(f.Message, c.message) || r.OK {
+			t.Errorf("%+v: %+v", c.target, f)
+		}
+	}
+	mu.Lock()
+	if hits != 0 {
+		t.Fatalf("a refused check dialed the host %d times", hits)
+	}
+	mu.Unlock()
+	in := base
+	in.PasswordTarget = &Target{Host: "127.0.0.1", Port: float64(srv)}
+	if f := finding(t, Check(context.Background(), in), "resolve"); f.Status != "ok" {
+		t.Fatalf("its own target: %+v", f)
 	}
 }
