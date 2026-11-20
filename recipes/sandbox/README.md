@@ -72,6 +72,46 @@ A one-user native install uses
 `OPENNEKO_SANDBOX_DIR=$HOME/.local/share/openneko-sandbox` and
 `OPENNEKO_SANDBOX_GID=$(id -g)`. This file needs a key.
 
+## Run with Docker Desktop on macOS or Windows
+
+Docker Desktop runs the containers in a Linux VM. A Unix socket on a bind
+mount does not reach the host, and an internal network cannot publish a
+port. Use `compose.desktop.yml` there. It starts the sandbox and the egress
+proxy as `compose.native.yml` does, with the sandbox on TCP port 8091 of its
+internal network. A third service, `openneko-sandbox-publish`, joins that
+network and a network of its own, and publishes port 8091 on `127.0.0.1`
+only. It passes TCP to the sandbox and nothing else. It runs as user 65534
+with no capabilities. The runs' firewall drops their packets to it.
+
+```sh
+OPENNEKO_SANDBOX_KEY=<a long random string> \
+OPENNEKO_VERSION=v$(openneko version --short) \
+docker compose -f compose.desktop.yml up -d
+```
+
+Then start OpenNeko with `OPENNEKO_SANDBOX_URL=http://127.0.0.1:8091` and
+the same key. `OPENNEKO_SANDBOX_PORT` changes the host port.
+
+`prove-desktop.sh` starts the recipe under its own project name and prints
+one PASS or FAIL line per check. It checks that the port is on 127.0.0.1
+only, that a request with no key or a wrong key gets 401, that the sandbox
+reports its egress closed and runs a command, and that neither the sandbox
+container nor a command in it reaches a public address, a public name, DNS
+on 8.8.8.8, the metadata address or the Docker host. A control container on
+an open network must reach each target first, so that a blocked result
+counts. It also checks that a command cannot reach the publish container,
+the egress proxy directly or the sandbox's own port. It needs bash, curl and
+Docker. With no argument, it builds the image from this folder:
+
+```sh
+recipes/sandbox/prove-desktop.sh
+OPENNEKO_BIN=$(command -v openneko) recipes/sandbox/prove-desktop.sh ghcr.io/open-neko/neko-sandbox:v6.0.0
+```
+
+`OPENNEKO_BIN` adds `openneko release-check --sandbox` against the
+published port. The last line is `PASS all checks` or `FAIL one or more
+checks`, and the exit code is 0 or 1.
+
 The image carries Node, Python with PyYAML, Poppler, Tesseract, the npm
 packages the bundled skills use, and the DejaVu Sans and Droid Sans Fallback
 fonts. It has no Python document libraries (pypdf, python-docx, python-pptx,
