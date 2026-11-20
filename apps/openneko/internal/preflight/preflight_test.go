@@ -2,6 +2,8 @@ package preflight
 
 import (
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 )
@@ -80,6 +82,18 @@ func TestDuplicateBinary(t *testing.T) {
 	// No openneko on PATH → nothing to warn about.
 	if r := duplicateBinaryWith("/usr/local/bin/openneko", "", errNotFound); r.Level != Pass {
 		t.Fatalf("lookup error should be Pass, got %+v", r)
+	}
+	dir := t.TempDir()
+	real := filepath.Join(dir, "openneko")
+	if err := os.WriteFile(real, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if r := duplicateBinaryWith(real, link, nil); r.Level != Pass {
+		t.Fatalf("a link on PATH to this binary should be Pass, got %+v", r)
 	}
 	// A different openneko shadows us → warn with remediation.
 	r := duplicateBinaryWith("/opt/me/openneko", "/usr/bin/openneko", nil)
