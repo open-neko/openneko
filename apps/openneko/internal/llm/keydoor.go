@@ -1,7 +1,6 @@
 package llm
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -9,7 +8,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -276,7 +274,7 @@ func (d *KeyDoor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer stop()
 	r = r.WithContext(ctx)
 	upstream, _ := url.Parse(route.Upstream)
-	keys := []string{route.Key}
+	forms := keyForms([]string{route.Key})
 	proxy := &httputil.ReverseProxy{
 		Transport:     d.transport(),
 		FlushInterval: -1,
@@ -298,6 +296,7 @@ func (d *KeyDoor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				out.Header.Del(h)
 			}
 			out.Header.Del("Cookie")
+			out.Header.Set("Accept-Encoding", "identity")
 			if route.Key != "" && route.Key != "none" {
 				if route.Header == "authorization" || route.Header == "" {
 					out.Header.Set("Authorization", "Bearer "+route.Key)
@@ -307,24 +306,15 @@ func (d *KeyDoor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		},
 		ModifyResponse: func(res *http.Response) error {
-			if res.StatusCode >= 200 && res.StatusCode < 300 {
-				return nil
+			var limit int64
+			if res.StatusCode < 200 || res.StatusCode > 299 {
+				limit = maxDoorError
+				log.Printf("[key-door] route %s answered HTTP %d", name, res.StatusCode)
 			}
-			body, err := io.ReadAll(io.LimitReader(res.Body, maxDoorError))
-			_ = res.Body.Close()
-			if err != nil {
-				body = nil
-			}
-			body = []byte(redactKeys(string(body), keys))
-			res.Body = io.NopCloser(bytes.NewReader(body))
-			res.ContentLength = int64(len(body))
-			res.Header.Del("Content-Encoding")
-			res.Header.Set("Content-Length", fmt.Sprint(len(body)))
-			log.Printf("[key-door] route %s answered HTTP %d", name, res.StatusCode)
-			return nil
+			return scrubResponse(res, forms, limit)
 		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
-			log.Printf("[key-door] route %s unavailable: %s", name, redactKeys(err.Error(), keys))
+			log.Printf("[key-door] route %s unavailable: %s", name, scrubText(err.Error(), forms))
 			doorFail(w, http.StatusBadGateway, "the model provider did not answer")
 		},
 	}
@@ -344,15 +334,6 @@ var doorTransport = func() http.RoundTripper {
 	t.Proxy = http.ProxyFromEnvironment
 	return t
 }()
-
-func redactKeys(text string, keys []string) string {
-	for _, k := range keys {
-		if len(k) >= 4 && k != "none" {
-			text = strings.ReplaceAll(text, k, "[redacted]")
-		}
-	}
-	return text
-}
 
 var doorAPIs = map[string]string{
 	"anthropic":     DoorAnthropic,
