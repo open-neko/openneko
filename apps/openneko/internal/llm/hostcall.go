@@ -511,18 +511,25 @@ func (h HostCalls) OnRoute(ctx context.Context, orgID, task string, route TaskRo
 			return Result{}, err
 		}
 	}
+	var pass *DoorPass
 	if h.Door != nil {
-		var revoke func()
-		if request, key, fallbackKey, revoke, err = h.doorRequest(orgID, request, key, fallbackKey); err != nil {
+		if request, pass, err = h.doorRequest(orgID, task, request, key, fallbackKey); err != nil {
 			return Result{}, err
 		}
-		defer revoke()
+		defer pass.Revoke()
+		key, fallbackKey = pass.Token, ""
+		if request.Fallback != nil {
+			fallbackKey = pass.Token
+		}
 	}
 	callCtx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
 	result, err := h.Gateway(callCtx, request, key, fallbackKey)
 	if err != nil {
 		return Result{}, err
+	}
+	if pass != nil {
+		pass.Settle(ctx, result.Usage.Requests)
 	}
 	served, servedRoute := route.Primary, primary
 	byFallback := result.Fallback && route.Fallback != nil
@@ -548,42 +555,43 @@ func doorRouteOf(r inference.Route, key string) (DoorRoute, error) {
 	return DoorRouteFor(AxModelRoute{Provider: r.Provider, Model: r.Model, URL: r.URL, Options: r.Options}, key)
 }
 
-func (h HostCalls) doorRequest(orgID string, request inference.Request, key, fallbackKey string) (inference.Request, string, string, func(), error) {
+// HostCallCap is the door's call cap for each route of a host call: the
+// first try and the retries of inference.HostRetry.
+var HostCallCap = 1 + inference.HostRetry.MaxRetries
+
+func (h HostCalls) doorRequest(orgID, task string, request inference.Request, key, fallbackKey string) (inference.Request, *DoorPass, error) {
 	primary, err := doorRouteOf(request.Route, key)
 	if err != nil {
-		return request, "", "", nil, err
+		return request, nil, err
 	}
 	routes := map[string]DoorRoute{"primary": primary}
 	request.Route.URL = keydoor.URL("primary")
 	if request.Fallback != nil {
 		fallback, err := doorRouteOf(*request.Fallback, fallbackKey)
 		if err != nil {
-			return request, "", "", nil, err
+			return request, nil, err
 		}
 		routes["fallback"] = fallback
 		f := *request.Fallback
 		f.URL = keydoor.URL("fallback")
 		request.Fallback = &f
 	}
-	token, revoke, err := h.Door.Issue(orgID, routes, callTimeout+time.Minute)
+	pass, err := h.Door.Issue(orgID, strings.TrimSpace("host call "+task), routes, callTimeout+time.Minute, HostCallCap*len(routes))
 	if err != nil {
-		return request, "", "", nil, err
+		return request, nil, err
 	}
-	if request.Fallback == nil {
-		return request, token, "", revoke, nil
-	}
-	return request, token, token, revoke, nil
+	return request, pass, nil
 }
 
-// DoorEmbedRequest points an embedding call at the door and returns the
-// token that stands in for key.
-func DoorEmbedRequest(door *KeyDoor, request embedding.Request, key string, ttl time.Duration) (embedding.Request, string, func(), error) {
-	token, revoke, err := door.Issue("", map[string]DoorRoute{"embed": {Upstream: request.URL, Header: "authorization", Key: key}}, ttl)
+// DoorEmbedRequest points an embedding call at the door. The pass allows
+// the one POST that embedding.Embed makes.
+func DoorEmbedRequest(door *KeyDoor, request embedding.Request, key string, ttl time.Duration) (embedding.Request, *DoorPass, error) {
+	pass, err := door.Issue("", "embedding", map[string]DoorRoute{"embed": {Upstream: request.URL, Header: "authorization", Key: key, API: DoorEmbed}}, ttl, 1)
 	if err != nil {
-		return request, "", nil, err
+		return request, nil, err
 	}
 	request.URL = keydoor.URL("embed")
-	return request, token, revoke, nil
+	return request, pass, nil
 }
 
 var providerTest = Program{`prompt:string -> reply:string "the word READY"`, "Reply with READY only."}

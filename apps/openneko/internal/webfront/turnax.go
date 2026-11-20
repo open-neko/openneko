@@ -76,14 +76,32 @@ func agentLimitsFor(kind string) agentLimits {
 	return l
 }
 
-func (l agentLimits) axSpec(spec *jsObj) {
-	steps := l.MaxTurns
+func (l agentLimits) steps() (actor, child int) {
+	actor = l.MaxTurns
 	if l.MaxToolCalls > 0 {
-		steps = l.MaxToolCalls
+		actor = l.MaxToolCalls
 	}
+	return min(actor, 500), min(l.DelegationMaxIterations, 500)
+}
+
+// maxModelCalls is the turn's model-call ceiling: each actor step may run a
+// delegated child to its own step limit, plus the skill rerank and the
+// responder. Serve's spec takes at most 2000.
+func (l agentLimits) maxModelCalls() int {
+	actor, child := l.steps()
+	return min(2000, actor*(1+child)+2)
+}
+
+// axDoorCallAllowance covers the resamples and the fallback of the last
+// call that the ceiling admits.
+const axDoorCallAllowance = 4
+
+func (l agentLimits) axSpec(spec *jsObj) {
+	actor, child := l.steps()
 	spec.set("timeout_ms", float64(l.TimeoutMs))
-	spec.set("max_actor_steps", float64(min(steps, 500)))
-	spec.set("max_child_steps", float64(min(l.DelegationMaxIterations, 500)))
+	spec.set("max_actor_steps", float64(actor))
+	spec.set("max_child_steps", float64(child))
+	spec.set("max_model_calls", float64(l.maxModelCalls()))
 	if l.MaxToolCalls > 0 {
 		spec.set("max_operations", float64(l.MaxToolCalls))
 	}
@@ -220,7 +238,7 @@ func (r axRunResult) js() *jsObj {
 
 // axDoorGrant gives serve door URLs and one token in place of the routes'
 // URLs and keys; the key door holds the keys until the turn ends.
-func axDoorGrant(cfg *llm.AxBackendConfig, o axTurnOptions, ttl time.Duration) (*llm.AxBackendConfig, *jsObj, func(), error) {
+func axDoorGrant(cfg *llm.AxBackendConfig, o axTurnOptions, ttl time.Duration, calls int) (*llm.AxBackendConfig, *jsObj, *llm.DoorPass, error) {
 	door := o.Door
 	if door == nil {
 		door = &llm.KeyDoor{}
@@ -242,16 +260,28 @@ func axDoorGrant(cfg *llm.AxBackendConfig, o axTurnOptions, ttl time.Duration) (
 		f.URL = keydoor.URL("fallback")
 		out.Fallback = &f
 	}
-	token, revoke, err := door.Issue(o.OrgID, routes, ttl)
+	pass, err := door.Issue(o.OrgID, "turn "+orDefault(o.RunID, o.Tag), routes, ttl, calls)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	keys := jsObjOf("MODEL_API_KEY", token)
+	keys := jsObjOf("MODEL_API_KEY", pass.Token)
 	if cfg.Fallback != nil {
-		keys.set(primaryRouteKeyEnv, token)
-		keys.set(llm.FallbackKeyEnv, token)
+		keys.set(primaryRouteKeyEnv, pass.Token)
+		keys.set(llm.FallbackKeyEnv, pass.Token)
 	}
-	return &out, keys, revoke, nil
+	return &out, keys, pass, nil
+}
+
+func reportedRequests(result *jsObj) int {
+	if result == nil {
+		return 0
+	}
+	usage, _ := result.vals["usage"].(*jsObj)
+	if usage == nil {
+		return 0
+	}
+	n, _ := usage.vals["requests"].(float64)
+	return int(n)
 }
 
 func axModelKey(r llm.AxModelRoute, keys map[string]string) string {
@@ -451,11 +481,18 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions, n
 		cwd = scratch
 	}
 	limits := agentLimitsFor("chat")
-	doorCfg, modelKeys, revoke, err := axDoorGrant(cfg, o, time.Duration(timeoutMs)*time.Millisecond+axKillGrace)
+	runLimits := limits
+	runLimits.TimeoutMs = min(timeoutMs, 1_800_000)
+	if o.MaxToolIterations > 0 {
+		runLimits.MaxToolCalls = o.MaxToolIterations
+	}
+	runLimits.ReasoningEffort = orDefault(o.ReasoningEffort, cfg.ReasoningEffort)
+	doorCfg, modelKeys, pass, err := axDoorGrant(cfg, o, time.Duration(timeoutMs)*time.Millisecond+axKillGrace,
+		runLimits.maxModelCalls()+axDoorCallAllowance)
 	if err != nil {
 		return axTurnOutcome{}, err
 	}
-	defer revoke()
+	defer pass.Revoke()
 	environ := axEnviron(doorCfg, o, cwd, limits)
 
 	spec := jsObjOf("version", 1.0, "run_id", runID, "input_id", runID)
@@ -467,12 +504,6 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions, n
 		spec.set("skill_rerank", "off")
 	}
 	spec.set("stream_responses", o.Emit != nil)
-	runLimits := limits
-	runLimits.TimeoutMs = min(timeoutMs, 1_800_000)
-	if o.MaxToolIterations > 0 {
-		runLimits.MaxToolCalls = o.MaxToolIterations
-	}
-	runLimits.ReasoningEffort = orDefault(o.ReasoningEffort, cfg.ReasoningEffort)
 	runLimits.axSpec(spec)
 	responderEffort := evalResponderEffort(o.RunID)
 	if responderEffort == "" {
@@ -562,6 +593,7 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions, n
 			if parsed, err := jsParse(ev.Result); err == nil {
 				result, _ = parsed.(*jsObj)
 			}
+			pass.Settle(ctx, reportedRequests(result))
 			continue
 		}
 		mapper.handle(ev)
