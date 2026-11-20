@@ -210,7 +210,7 @@ func (a *API) dreamTurns(ctx context.Context, t dreamDueThread) ([]dreamTurn, er
 
 func (a *API) dreamCalls(ctx context.Context, t dreamDueThread) ([]dreamCall, error) {
 	rows, err := a.DB.Query(ctx, `select run_id::text, payload::text from work_run_event
-		where thread_id = $1::uuid and org_id = $2 and kind in ('tool_start', 'tool_end') order by run_id, seq`, t.ID, t.OrgID)
+		where thread_id = $1::uuid and org_id = $2 and kind in ('tool_start', 'tool_end') order by id`, t.ID, t.OrgID)
 	if err != nil {
 		return nil, err
 	}

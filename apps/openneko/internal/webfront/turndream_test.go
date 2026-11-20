@@ -107,12 +107,12 @@ const (
 	freshRun   = "d4000000-0000-4000-8000-000000000003"
 )
 
-func dreamToolEvents(t *testing.T, db *pgxpool.Pool, thread, run string, seq int, id, query, result string) {
+func dreamToolEvents(t *testing.T, db *pgxpool.Pool, thread, run, id, query, result string) {
 	t.Helper()
 	start, _ := json.Marshal(map[string]any{"type": "tool_start", "id": id, "name": "execute_graphql", "input": map[string]any{"query": query}})
 	end, _ := json.Marshal(map[string]any{"type": "tool_end", "id": id, "result": map[string]any{"content": []any{map[string]any{"type": "text", "text": result}}}})
-	seed(t, db, `insert into work_run_event (org_id, thread_id, run_id, seq, kind, payload) values
-		('org', $1, $2, $3, 'tool_start', $4::jsonb), ('org', $1, $2, $3 + 1, 'tool_end', $5::jsonb)`, thread, run, seq, string(start), string(end))
+	seed(t, db, `insert into work_run_event (org_id, thread_id, run_id, kind, payload) values
+		('org', $1, $2, 'tool_start', $3::jsonb), ('org', $1, $2, 'tool_end', $4::jsonb)`, thread, run, string(start), string(end))
 }
 
 func TestDreamSweepLearnsFromASettledThreadOnce(t *testing.T) {
@@ -129,11 +129,11 @@ func TestDreamSweepLearnsFromASettledThreadOnce(t *testing.T) {
 		('org', $1, null, 'user', 'units of Clothing sold in Q3 2023?', $3),
 		('org', $1, $2, 'assistant', 'Clothing sold 6,967 units.', $3::timestamptz + interval '1 second')`, passThread, passRunA, old)
 	seed(t, db, `insert into work_message (org_id, thread_id, run_id, role, content) values ('org', $1, $2, 'user', 'a fresh question')`, dreamThread, freshRun)
-	dreamToolEvents(t, db, passThread, passRunA, 1, "op1", `{ productcategory { totl } }`, `{"errors":[{"message":"Field 'totl' is not a column on the queried table"}]}`)
-	dreamToolEvents(t, db, passThread, passRunA, 3, "op2", `{ productcategory { productcategoryid name } }`, `{"data":{"productcategory":[{"productcategoryid":3,"name":"Clothing"}]}}`)
-	dreamToolEvents(t, db, passThread, passRunA, 5, "op3", `{ salesorderdetail(where: { product: { productsubcategory: { productcategoryid: { eq: 3 } } } }) { sum_orderqty } }`, `{"data":{"salesorderdetail":[{"sum_orderqty":6967}]}}`)
-	dreamToolEvents(t, db, passThread, passRunA, 7, "op4", `mutation { delete_orders { id } }`, `{"data":{}}`)
-	dreamToolEvents(t, db, dreamThread, freshRun, 1, "op1", `{ unsettled { id } }`, `{"data":{}}`)
+	dreamToolEvents(t, db, passThread, passRunA, "op1", `{ productcategory { totl } }`, `{"errors":[{"message":"Field 'totl' is not a column on the queried table"}]}`)
+	dreamToolEvents(t, db, passThread, passRunA, "op2", `{ productcategory { productcategoryid name } }`, `{"data":{"productcategory":[{"productcategoryid":3,"name":"Clothing"}]}}`)
+	dreamToolEvents(t, db, passThread, passRunA, "op3", `{ salesorderdetail(where: { product: { productsubcategory: { productcategoryid: { eq: 3 } } } }) { sum_orderqty } }`, `{"data":{"salesorderdetail":[{"sum_orderqty":6967}]}}`)
+	dreamToolEvents(t, db, passThread, passRunA, "op4", `mutation { delete_orders { id } }`, `{"data":{}}`)
+	dreamToolEvents(t, db, dreamThread, freshRun, "op1", `{ unsettled { id } }`, `{"data":{}}`)
 
 	a := &API{DB: db}
 	var inputs []string
@@ -208,8 +208,8 @@ func TestDreamSweepLearnsFromASettledThreadOnce(t *testing.T) {
 	seed(t, db, `insert into work_message (org_id, thread_id, run_id, role, content, created_at) values
 		('org', $1, null, 'user', 'and for Q4?', $3), ('org', $1, $2, 'assistant', 'Clothing sold 7,100 units.', $3::timestamptz + interval '1 second')`,
 		passThread, passRunB, old.Add(30*time.Minute))
-	dreamToolEvents(t, db, passThread, passRunB, 1, "op1", `{ productcategory { totl } }`, `{"errors":[{"message":"Field 'totl' is not a column on the queried table"}]}`)
-	dreamToolEvents(t, db, passThread, passRunB, 3, "op2", `{ productcategory { productcategoryid name } }`, `{"data":{"productcategory":[{"productcategoryid":4,"name":"Accessories"}]}}`)
+	dreamToolEvents(t, db, passThread, passRunB, "op1", `{ productcategory { totl } }`, `{"errors":[{"message":"Field 'totl' is not a column on the queried table"}]}`)
+	dreamToolEvents(t, db, passThread, passRunB, "op2", `{ productcategory { productcategoryid name } }`, `{"data":{"productcategory":[{"productcategoryid":4,"name":"Accessories"}]}}`)
 	var deadEnd, fact string
 	if err := db.QueryRow(ctx, `select id::text from dream_lesson where kind = 'dead_end'`).Scan(&deadEnd); err != nil {
 		t.Fatal(err)
