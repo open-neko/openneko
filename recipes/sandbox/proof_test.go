@@ -214,6 +214,24 @@ func sandboxImageYAML(image, bin string) string {
 `, image, bin)
 }
 
+// proofName resolves only through Docker's DNS on the proof's networks, and
+// proofMetadata only in the proxy, to the metadata address. The proof then
+// does not depend on the resolver of the cloud that runs it.
+const (
+	proofName     = "names.proof.test"
+	proofMetadata = "metadata.proof.test"
+)
+
+func egressYAML(image, bin string) string {
+	return sandboxImageYAML(image, bin) + fmt.Sprintf(`    extra_hosts: ["%s:169.254.169.254"]
+    networks:
+      openneko-sandbox:
+        aliases: [%[2]s]
+      openneko-egress:
+        aliases: [%[2]s]
+`, proofMetadata, proofName)
+}
+
 func controlYAML(image string, networks ...string) string {
 	return fmt.Sprintf(`  proof-control:
     image: %q
@@ -425,7 +443,7 @@ func gatewayTarget(t *testing.T, network string) target {
 }
 
 func nativeOverlay(image, bin, extra string) string {
-	return "services:\n  openneko-sandbox:\n" + sandboxImageYAML(image, bin) + "  openneko-egress:\n" + sandboxImageYAML(image, bin) +
+	return "services:\n  openneko-sandbox:\n" + sandboxImageYAML(image, bin) + "  openneko-egress:\n" + egressYAML(image, bin) +
 		controlYAML(image, "openneko-egress") + extra
 }
 
@@ -437,7 +455,7 @@ func proveNative(t *testing.T, image, bin string) {
 	defer run.Close()
 	listenOnTheGateway(t, s, image)
 	targets := append(publicTargets(t), gatewayTarget(t, s.named("openneko-sandbox")))
-	checkClosed(t, s, run, targets, []string{"example.com", "metadata.google.internal"})
+	checkClosed(t, s, run, targets, []string{"example.com", proofName})
 
 	status := inspectExec(t, s.container("openneko-sandbox"), "cat", "/proc/1/status")
 	if err := capsWithout(strings.NewReader(status), capNetAdmin, capSetPCap); err != nil {
@@ -487,7 +505,7 @@ func proveFirewallAlone(t *testing.T, image, bin string) {
 	run := s.client()
 	defer run.Close()
 	targets := append(publicTargets(t), gatewayTarget(t, s.named("openneko-sandbox")))
-	checkClosed(t, s, run, targets, []string{"example.com", "metadata.google.internal"})
+	checkClosed(t, s, run, targets, []string{"example.com", proofName})
 }
 
 // proveNoStartWithoutTheFirewall removes one capability that the firewall
@@ -544,7 +562,7 @@ func proveStack(t *testing.T, image, bin string) {
 		"  web:\n" + stand(`"8080"`) +
 		"  openneko-sandbox:\n" + strings.Replace(sandboxImageYAML(image, bin), "    volumes:\n",
 		fmt.Sprintf("    volumes:\n      - type: bind\n        source: %q\n        target: /run/openneko-sandbox\n", filepath.Dir(s.socket)), 1) +
-		"  openneko-egress:\n" + sandboxImageYAML(image, bin) +
+		"  openneko-egress:\n" + egressYAML(image, bin) +
 		"  intranet:\n" + stand(`"8080"`) + "    networks: [openneko-egress]\n" +
 		controlYAML(image, "default", "openneko-egress")
 	s.files = []string{"../../compose.yml", "../../compose.db.yml", "compose.yml", writeFile(t, filepath.Join(dir, "proof.yml"), overlay)}
@@ -568,7 +586,7 @@ func proveStack(t *testing.T, image, bin string) {
 		listenOnTheGateway(t, s, image)
 		run := s.client()
 		defer run.Close()
-		checkClosed(t, s, run, append(publicTargets(t), stack...), []string{"example.com", "metadata.google.internal", "web"})
+		checkClosed(t, s, run, append(publicTargets(t), stack...), []string{"example.com", proofName, "web"})
 		out := execIn(t, run, nil, `printf 'no token: '; fetch --proxy http://`+runProxy+` http://example.com/
 printf 'listed none: '; fetch https://example.com/
 printf 'stack by proxy: '; fetch http://web:8080/`)
@@ -582,7 +600,7 @@ printf 'stack by proxy: '; fetch http://web:8080/`)
 	t.Run("b: one listed host and no other", func(t *testing.T) {
 		run := s.client()
 		defer run.Close()
-		hosts := []string{"example.com", "web:8080", "intranet:8080", "metadata.google.internal:80", "169.254.169.254:80"}
+		hosts := []string{"example.com", "web:8080", "intranet:8080", proofMetadata + ":80", "169.254.169.254:80"}
 		out := execIn(t, run, &egressBody{Org: "org-proof", Label: "work-run-b", Hosts: hosts}, `c() { printf '%s: ' "$1"; shift; fetch "$@"; }
 c listed https://example.com/
 c other-host https://www.iana.org/
@@ -590,7 +608,7 @@ c other-port http://example.com/
 c stack-web http://web:8080/
 c private-name http://intranet:8080/
 c private-tunnel --tunnel intranet:8080
-c metadata-name http://metadata.google.internal/
+c metadata-name http://`+proofMetadata+`/
 c metadata-ip http://169.254.169.254/
 c no-proxy --direct https://example.com/`)
 		for _, want := range []string{"listed: status 200", "other-host: connect 403", "other-port: status 403", "stack-web: status 403",
