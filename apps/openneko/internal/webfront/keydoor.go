@@ -53,7 +53,14 @@ func (a *API) keyDoor(socket string) (*llm.KeyDoor, error) {
 }
 
 func (a *API) newKeyDoor() *llm.KeyDoor {
-	return &llm.KeyDoor{Mismatch: a.doorMismatch}
+	return &llm.KeyDoor{Mismatch: a.doorMismatch, MaxOpen: a.doorOpenLimit}
+}
+
+// doorOpenLimit lets every agent turn that may run at once hold a token's
+// full share of calls, beside the host and embedding calls.
+func (a *API) doorOpenLimit() int {
+	turns := max(a.AgentTurnLimit(), agentDefaultGlobalCap)
+	return max(64, turns*llm.MaxGrantOpen+32)
 }
 
 // doorMismatch puts a call count that serve misreported in the org's audit

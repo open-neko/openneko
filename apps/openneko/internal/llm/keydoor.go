@@ -69,18 +69,41 @@ type doorGrant struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 
-	mu           sync.Mutex
-	calls, limit int
+	mu                       sync.Mutex
+	calls, limit, open, shed int
+	closed                   bool
 }
 
 func (g *doorGrant) take() bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.calls >= g.limit {
+	if g.closed || g.calls >= g.limit {
 		return false
 	}
 	g.calls++
 	return true
+}
+
+func (g *doorGrant) enter() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.closed || g.open >= MaxGrantOpen {
+		return false
+	}
+	g.open++
+	return true
+}
+
+func (g *doorGrant) leave() {
+	g.mu.Lock()
+	g.open--
+	g.mu.Unlock()
+}
+
+func (g *doorGrant) shedOne() {
+	g.mu.Lock()
+	g.shed++
+	g.mu.Unlock()
 }
 
 // DoorPass is one issued token. Revoke ends it and cuts its open calls.
@@ -99,6 +122,9 @@ func (p *DoorPass) Revoke() {
 		p.door.mu.Lock()
 		delete(p.door.grants, p.id)
 		p.door.mu.Unlock()
+		p.grant.mu.Lock()
+		p.grant.closed = true
+		p.grant.mu.Unlock()
 		p.grant.cancel()
 	})
 }
@@ -110,11 +136,25 @@ func (p *DoorPass) Calls() int {
 	return p.grant.calls
 }
 
-// Settle compares the door's count with the calls serve reported, and
-// reports a difference to the door's Mismatch.
+// Settle revokes the token, compares the door's count with the calls serve
+// reported, and reports a difference to the door's Mismatch. Calls that the
+// door refused for load may be in serve's count.
 func (p *DoorPass) Settle(ctx context.Context, reported int) bool {
-	counted := p.Calls()
-	if counted == reported {
+	return p.settle(ctx, reported, 0)
+}
+
+// SettleCut is Settle for serve that ended with no result: its count may
+// hold one call that never reached the door.
+func (p *DoorPass) SettleCut(ctx context.Context, reported int) bool {
+	return p.settle(ctx, reported, 1)
+}
+
+func (p *DoorPass) settle(ctx context.Context, reported, slack int) bool {
+	p.Revoke()
+	p.grant.mu.Lock()
+	counted, shed := p.grant.calls, p.grant.shed
+	p.grant.mu.Unlock()
+	if reported >= counted && reported <= counted+shed+slack {
 		return true
 	}
 	log.Printf("[key-door] org %q %s: the door forwarded %d model calls, serve reported %d", p.org, p.what, counted, reported)
@@ -136,49 +176,75 @@ type KeyDoor struct {
 	Transport http.RoundTripper
 	Now       func() time.Time
 	Mismatch  func(context.Context, DoorMismatch)
-	// MaxOpen bounds the calls in flight at once; 0 means 64.
-	MaxOpen int
+	// MaxOpen gives the number of calls the door forwards at once; nil or a
+	// result below 1 means 64. A call over it waits up to doorSlotWait.
+	MaxOpen func() int
 
 	mu     sync.Mutex
 	grants map[string]*doorGrant
 	open   int
+	freed  chan struct{}
 }
 
-func (d *KeyDoor) enter() bool {
-	limit := d.MaxOpen
-	if limit <= 0 {
-		limit = defaultDoorOpen
+func (d *KeyDoor) enter(ctx context.Context) bool {
+	wait := time.NewTimer(doorSlotWait)
+	defer wait.Stop()
+	for {
+		limit := defaultDoorOpen
+		if d.MaxOpen != nil {
+			if n := d.MaxOpen(); n > 0 {
+				limit = n
+			}
+		}
+		d.mu.Lock()
+		if d.open < limit {
+			d.open++
+			d.mu.Unlock()
+			return true
+		}
+		if d.freed == nil {
+			d.freed = make(chan struct{})
+		}
+		freed := d.freed
+		d.mu.Unlock()
+		select {
+		case <-freed:
+		case <-ctx.Done():
+			return false
+		case <-wait.C:
+			return false
+		}
 	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.open >= limit {
-		return false
-	}
-	d.open++
-	return true
 }
 
 func (d *KeyDoor) leave() {
 	d.mu.Lock()
 	d.open--
+	if d.freed != nil {
+		close(d.freed)
+		d.freed = nil
+	}
 	d.mu.Unlock()
 }
 
 const (
 	maxGrant      = 2 * time.Hour
-	maxDoorBody   = 64 << 20
+	maxDoorBody   = 32 << 20
 	maxDoorError  = 1 << 20
 	doorIDBytes   = 16
 	doorSecretLen = 32
 
 	defaultDoorOpen = 64
+	MaxGrantOpen    = 4
 )
 
 // The upstream must start its answer within doorHeaderWait; serve must send
-// a request body within doorBodyWait.
+// a request body within doorBodyWait; a call waits for a free slot up to
+// doorSlotWait.
 var (
 	doorHeaderWait = 10 * time.Minute
-	doorBodyWait   = 2 * time.Minute
+	doorBodyWait   = 30 * time.Second
+	doorSlotWait   = 2 * time.Minute
 )
 
 func (d *KeyDoor) now() time.Time {
@@ -292,12 +358,16 @@ func (d *KeyDoor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		doorFail(w, http.StatusForbidden, "the key door forwards model calls only")
 		return
 	}
-	if !d.enter() {
-		log.Printf("[key-door] route %s: refused a call over the limit of calls at once", name)
-		doorFail(w, http.StatusServiceUnavailable, "the key door has too many calls open")
+	if r.Header.Get("Upgrade") != "" {
+		doorFail(w, http.StatusBadRequest, "the key door forwards no protocol upgrade")
 		return
 	}
-	defer d.leave()
+	if !g.enter() {
+		log.Printf("[key-door] route %s: refused a call over the token's %d calls at once", name, MaxGrantOpen)
+		doorFail(w, http.StatusTooManyRequests, "the token has too many calls open")
+		return
+	}
+	defer g.leave()
 	body, err := readDoorBody(w, r)
 	if err != nil {
 		log.Printf("[key-door] route %s: refused a request body: %v", name, err)
@@ -308,6 +378,18 @@ func (d *KeyDoor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		doorFail(w, status, "the key door could not read the request")
 		return
 	}
+	slotCtx, slotDone := context.WithCancel(r.Context())
+	stopSlot := context.AfterFunc(g.ctx, slotDone)
+	entered := d.enter(slotCtx)
+	stopSlot()
+	slotDone()
+	if !entered {
+		g.shedOne()
+		log.Printf("[key-door] route %s: no free slot for a call within %v", name, doorSlotWait)
+		doorFail(w, http.StatusServiceUnavailable, "the key door has too many calls open")
+		return
+	}
+	defer d.leave()
 	if !g.take() {
 		log.Printf("[key-door] route %s: refused a call over the cap of %d", name, g.limit)
 		doorFail(w, http.StatusTooManyRequests, "the token used all its model calls")
@@ -355,6 +437,9 @@ func (d *KeyDoor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		},
 		ModifyResponse: func(res *http.Response) error {
 			waiting.Stop()
+			if res.StatusCode < 200 {
+				return fmt.Errorf("the upstream answered HTTP %d", res.StatusCode)
+			}
 			var limit int64
 			if res.StatusCode < 200 || res.StatusCode > 299 {
 				limit = maxDoorError
@@ -367,8 +452,21 @@ func (d *KeyDoor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			doorFail(w, http.StatusBadGateway, "the model provider did not answer")
 		},
 	}
-	proxy.ServeHTTP(w, r)
+	proxy.ServeHTTP(finalOnly{w}, r)
 }
+
+// finalOnly drops the 1xx answers that ReverseProxy passes on.
+type finalOnly struct{ http.ResponseWriter }
+
+func (f finalOnly) WriteHeader(code int) {
+	if code >= 200 {
+		f.ResponseWriter.WriteHeader(code)
+	}
+}
+
+func (f finalOnly) Unwrap() http.ResponseWriter { return f.ResponseWriter }
+
+func (f finalOnly) Flush() { http.NewResponseController(f.ResponseWriter).Flush() }
 
 // readDoorBody reads the whole request within doorBodyWait. net/http clears
 // the read deadline when the body ends, so a long streamed answer keeps its
