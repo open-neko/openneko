@@ -18,7 +18,10 @@ func writeSkill(t *testing.T, root, name string) {
 }
 
 func TestReleaseSkillsComeFromShareBesideTheExecutable(t *testing.T) {
-	release := t.TempDir()
+	release, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	exe := filepath.Join(release, "bin", "openneko")
 	if err := os.MkdirAll(filepath.Dir(exe), 0o755); err != nil {
 		t.Fatal(err)

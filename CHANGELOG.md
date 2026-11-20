@@ -48,6 +48,12 @@
 
 * `openneko backup` and `openneko restore` check `pg_dump` and `pg_restore` before they start. When a tool is older than the database server, they stop with one line that names both versions and the PostgreSQL client tools to install. Nothing is written or changed.
 
+### macOS
+
+* `openneko start` on a native install stops with one line when a socket path is longer than the OS allows (103 bytes on macOS, 107 on Linux). Before, serve failed later with "bind: invalid argument". A long user name with a named instance can pass the macOS limit; set `XDG_DATA_HOME` to a shorter folder or use a shorter instance name.
+* `openneko doctor` and `openneko setup` no longer report a duplicate `openneko` when the one on `PATH` is a link to the running binary, as with Homebrew.
+* The sandbox service (`recipes/sandbox`) builds only for Linux. On another OS its program stops at start and says to run its image in Docker.
+
 ### Upgrade from 5.0.0
 
 * `openneko start` and `openneko upgrade` ignore the entries of `compose.override.yml` for services that this release does not run (`worker`, `librarian`, `embedding`, `neko-backup`, `neko-reaper`, the OpenShell, Records and old GraphJin services). They print one warning line that names the entries and the file, and leave the file as it is. Before, Compose stopped the upgrade with a service that has no image.

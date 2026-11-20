@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -97,9 +98,19 @@ func TestInspectInstalledMatchesNode(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	var folded []string
+	for path, text := range f.Files {
+		if raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path))); err != nil || string(raw) != text {
+			folded = append(folded, path)
+		}
+	}
 	target := &GraphjinTarget{Mode: "files", ConfigFile: filepath.Join(root, "graphjin.yml")}
 	for _, c := range f.State {
 		metadata := c.Metadata
+		if m, ok := metadata["materializedTarget"].(string); ok && slices.ContainsFunc(folded, func(p string) bool { return strings.HasPrefix(p, m+"/") }) {
+			t.Logf("%s: skipped, this file system folds case and %v share one file", c.Name, folded)
+			continue
+		}
 		if m, ok := metadata["materializedTarget"].(string); ok && !strings.HasPrefix(m, "graphjin:") {
 			metadata = map[string]any{"materializedTarget": filepath.Join(root, filepath.FromSlash(m))}
 		}
