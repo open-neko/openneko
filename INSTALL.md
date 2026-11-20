@@ -15,7 +15,7 @@ What you're installing, feature by feature, in plain language: **[FEATURES.md](F
 
 - PostgreSQL 16 or later with the `vector` extension (pgvector 0.6.0 or later) for production and native installs (`--mode demo` and `--mode dev` run a bundled Postgres container)
 - An API key for at least one supported model provider, or the URL of a model server that speaks the OpenAI chat API (Ollama, vLLM, LM Studio)
-- On Linux, a kernel with Landlock ABI 3 or later (Linux 6.2 or later, with `landlock` in the `lsm=` boot list), for both the native and the Docker install. In production mode `openneko serve` does not start without it ([AGENT_RUNTIME.md](AGENT_RUNTIME.md#serve-confines-itself-linux)). A Docker install also needs an engine whose default seccomp profile allows the Landlock calls; Docker 29.9 does.
+- On Linux, for agent turns: kernel 5.13 or later with `landlock` in the active security modules, and seccomp. Without them, OpenNeko starts but refuses every agent turn in production mode. See [Agent confinement](#agent-confinement-linux).
 
 ## Install
 
@@ -475,6 +475,55 @@ the Ax harness in-process when no socket is set. The model keys stay in
 `openneko web` ([Model keys](#model-keys)). The agent reads and writes files in its run folder and reaches data only through
 `openneko web`'s tool handlers. The agent has a terminal only when a sandbox is
 connected.
+
+### Agent confinement (Linux)
+
+On Linux, each agent turn runs in an `openneko agent-runner` process that
+confines itself with Landlock and a seccomp filter before agent code runs
+([AGENT_RUNTIME.md](AGENT_RUNTIME.md#the-runner-confines-itself-linux)).
+Without both, `openneko serve` refuses every agent turn in production mode.
+The web app, data reads and workflows without an agent step still work.
+
+The lowest kernel is Linux 5.13 (Landlock ABI 1). A newer kernel closes two
+small gaps: rename and link between folders (Linux 5.19) and ioctl on a
+device (Linux 6.10). `openneko doctor` prints the active security modules
+and the state. To check by hand:
+
+```bash
+cat /sys/kernel/security/lsm   # must hold landlock
+```
+
+| System | Kernel | Landlock by default |
+|---|---|---|
+| RHEL 8 | 4.18 | no: the kernel has no Landlock. Agent turns are off. |
+| RHEL 9 | 5.14 | from kernel `5.14.0-568.el9` (RHEL 9.6): `CONFIG_LSM` starts with `landlock`. Earlier RHEL 9 kernels have it off. |
+| Ubuntu 22.04 | 5.15 (HWE 6.8) | yes: `CONFIG_LSM="landlock,lockdown,yama,integrity,apparmor"` |
+| Ubuntu 24.04 | 6.8 | yes, the same list |
+| Debian 12 | 6.1 | yes: `CONFIG_LSM` starts with `landlock` |
+
+Sources: the kernel configs of each distribution (Ubuntu `debian.master`
+annotations, Debian `kernel-team/linux` `debian/config/config`, CentOS
+Stream 9 commit `33f5f63cc5`, RHEL-8810). The Ubuntu 22.04 HWE kernel and
+the RHEL 9.6 release were not checked on a running system.
+
+When `landlock` is missing from the list on a kernel that has it, add
+`lsm=landlock,` followed by the current list to the kernel command line.
+
+Inside a container, the engine's default seccomp profile must allow the
+three `landlock_*` calls and `seccomp`. The lowest versions whose default
+profile allows them:
+
+| Engine | Lowest version | Change |
+|---|---|---|
+| Docker Engine | 20.10.18 | moby PR #43991 (backport of #43199, in 23.0.0) |
+| containerd | 1.6.0 | containerd PR #6494 |
+| Podman | 4.2.0 | containers/common 0.49 (PR #1081) |
+
+An older engine refuses the calls. `openneko doctor` and the start line
+then say "the container engine blocks Landlock". Update the engine, or give
+the container a seccomp profile that allows the calls. A distribution
+package may ship its own `/usr/share/containers/seccomp.json`; check that
+file for `landlock_create_ruleset`.
 
 ### Model keys
 

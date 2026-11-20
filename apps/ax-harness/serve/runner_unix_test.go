@@ -46,7 +46,7 @@ func TestMain(m *testing.M) {
 	case "door-only":
 		os.Exit(checkDoorOnly())
 	}
-	if err := RunRunner(context.Background()); err != nil {
+	if err := RunRunner(context.Background(), nil); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}

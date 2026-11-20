@@ -27,9 +27,15 @@ func confinementService() externalService {
 			return &serviceSettings{url: "unix://" + socket, where: "openneko serve"}, nil
 		},
 		check: func(ctx context.Context, _ string, s *serviceSettings) (string, string, error) {
-			st, err := serveConfinement(ctx, strings.TrimPrefix(s.url, "unix://"))
+			st, runner, err := serveConfinement(ctx, strings.TrimPrefix(s.url, "unix://"))
 			if err != nil {
 				return "", "", err
+			}
+			if runner.turnsOff != "" {
+				return "", "", errors.New(runner.turnsOff)
+			}
+			if !runner.state.Confined && runner.state.Mechanism != "" {
+				return "", "", fmt.Errorf("agent runners run unconfined: %s", runner.state.Reason)
 			}
 			if !st.Confined {
 				if st.Mechanism == "" {
@@ -41,18 +47,30 @@ func confinementService() externalService {
 			if len(st.Gaps) > 0 {
 				detail += " This kernel cannot refuse: " + strings.Join(st.Gaps, "; ") + "."
 			}
+			if runner.state.Confined {
+				detail += fmt.Sprintf(" Each agent turn runs in a runner under %s: it opens no socket and reaches only the files of its turn.", runner.state)
+			} else if runner.state.Reason != "" {
+				detail += " Agent runners: " + runner.state.Reason + "."
+			}
 			return detail, "", nil
 		},
 	}
 }
 
-// serveConfinement asks serve over its agent socket how the OS confines it.
-func serveConfinement(ctx context.Context, socket string) (confine.State, error) {
+type runnerState struct {
+	state    confine.State
+	turnsOff string
+}
+
+// serveConfinement asks serve over its agent socket how the OS confines it
+// and its agent runners.
+func serveConfinement(ctx context.Context, socket string) (confine.State, runnerState, error) {
 	var st confine.State
+	var runner runnerState
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "unix", socket)
 	if err != nil {
-		return st, errors.New("openneko serve did not answer on its agent socket")
+		return st, runner, errors.New("openneko serve did not answer on its agent socket")
 	}
 	defer conn.Close()
 	if deadline, ok := ctx.Deadline(); ok {
@@ -64,7 +82,11 @@ func serveConfinement(ctx context.Context, socket string) (confine.State, error)
 	}
 	var status serve.Status
 	if reply.Type != "status" || json.Unmarshal(reply.Result, &status) != nil || len(status.Confinement) == 0 || json.Unmarshal(status.Confinement, &st) != nil {
-		return st, errors.New("openneko serve did not report its confinement; run serve from the same release as web")
+		return st, runner, errors.New("openneko serve did not report its confinement; run serve from the same release as web")
 	}
-	return st, nil
+	if len(status.RunnerConfinement) > 0 {
+		_ = json.Unmarshal(status.RunnerConfinement, &runner.state)
+	}
+	runner.turnsOff = status.TurnsOff
+	return st, runner, nil
 }

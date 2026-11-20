@@ -9,7 +9,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 const childEnv = "OPENNEKO_TEST_CONFINE_CHILD"
@@ -124,5 +127,45 @@ func TestAnOldKernelNamesWhatItLacks(t *testing.T) {
 	}
 	if handled(1)&(1<<13) != 0 || handled(2)&(1<<13) == 0 || handled(8)&fsResolveUnix != 0 || handled(9)&fsResolveUnix == 0 {
 		t.Error("the handled rights do not follow the ABI")
+	}
+}
+
+func TestNoLandlockNamesTheCause(t *testing.T) {
+	for _, c := range []struct {
+		errno     syscall.Errno
+		release   string
+		container bool
+		want      string
+	}{
+		{unix.ENOSYS, "4.18.0-553.el8", false, "Linux 4.18.0-553.el8 has no Landlock"},
+		{unix.EOPNOTSUPP, "5.15.0-25", false, "has Landlock but it is off: add landlock to the lsm= boot list"},
+		{unix.EPERM, "6.8.0-45", true, "the container engine blocks Landlock (Linux 6.8.0-45 has it)"},
+		{unix.ENOSYS, "6.8.0-45", true, "the container engine blocks Landlock"},
+		{unix.ENOSYS, "5.10.0", true, "Linux 5.10.0 has no Landlock"},
+	} {
+		if got := noLandlock(c.errno, c.release, c.container); !strings.Contains(got, c.want) {
+			t.Errorf("%v %s container=%v: %q, want %q", c.errno, c.release, c.container, got, c.want)
+		}
+	}
+}
+
+func TestRunnerFilterRefusesTheListedCalls(t *testing.T) {
+	prog, err := runnerFilter(4242)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, nr := range append(append([]uintptr{}, refusedCalls...), unix.SYS_SOCKET, unix.SYS_CONNECT, unix.SYS_TRUNCATE, unix.SYS_KILL, unix.SYS_PTRACE) {
+		found := false
+		for i, ins := range prog {
+			if ins.Code == jeq && ins.K == uint32(nr) && i+1 < len(prog) && prog[i+1].Code == ret && prog[i+1].K == retEPERM {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("the filter does not refuse call %d", nr)
+		}
+	}
+	if len(prog) > 255 {
+		t.Errorf("the filter has %d instructions; a jump cannot pass more than 255", len(prog))
 	}
 }

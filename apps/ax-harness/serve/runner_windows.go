@@ -17,4 +17,4 @@ func (s *Server) runInRunner(context.Context, io.Writer, *bufio.Reader, Frame) e
 }
 
 // RunRunner is not built on Windows yet.
-func RunRunner(context.Context) error { return errNoRunner }
+func RunRunner(context.Context, func([]string) error) error { return errNoRunner }

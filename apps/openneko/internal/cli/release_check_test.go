@@ -53,12 +53,12 @@ func TestReleaseCheckSchedulerReadsTheAdminSocket(t *testing.T) {
 
 func TestReleaseCheckServeSocket(t *testing.T) {
 	ctx := context.Background()
-	if _, err := checkServeSocket(ctx, ""); err == nil {
+	if _, _, err := checkServeSocket(ctx, ""); err == nil {
 		t.Fatal("an unset socket passed")
 	}
 	dir := testsock.Dir(t)
 	socket := filepath.Join(dir, "serve.sock")
-	if _, err := checkServeSocket(ctx, socket); err == nil {
+	if _, _, err := checkServeSocket(ctx, socket); err == nil {
 		t.Fatal("a missing socket passed")
 	}
 	ln, err := net.Listen("unix", socket)
@@ -74,7 +74,7 @@ func TestReleaseCheckServeSocket(t *testing.T) {
 			_ = conn.Close()
 		}
 	}()
-	if _, err := checkServeSocket(ctx, socket); err == nil || !strings.Contains(err.Error(), "did not report") {
+	if _, _, err := checkServeSocket(ctx, socket); err == nil || !strings.Contains(err.Error(), "did not report") {
 		t.Fatalf("a socket that gives no status: err = %v", err)
 	}
 	_ = ln.Close()
@@ -104,7 +104,7 @@ func TestReleaseCheckServeSocket(t *testing.T) {
 			t.Fatal(err)
 		}
 		var got confine.State
-		got, err = checkServeSocket(ctx, path)
+		got, _, err = checkServeSocket(ctx, path)
 		if err == nil && got.String() != c.state.String() {
 			t.Errorf("release-check read the confinement %q, serve has %q", got, c.state)
 		}
