@@ -144,6 +144,9 @@ func createNativeBackup(ctx context.Context, destination string, out io.Writer) 
 	if len(parts) != 3 {
 		return "", fmt.Errorf("inspect OpenNeko's database: unexpected response %q", identity)
 	}
+	if _, err := postgresTool(ctx, "pg_dump", parts[2]); err != nil {
+		return "", fmt.Errorf("%w (no backup was written)", err)
+	}
 	manifest := backupManifest{Format: backupManifestFormat, CreatedAt: now, Project: nativeBackupProject, OpenNekoVersion: version.Version}
 	manifest.Database.User, manifest.Database.Name, manifest.Database.ServerVersion = parts[0], parts[1], parts[2]
 	manifest.Database.External = true
@@ -314,6 +317,15 @@ func runNativeRestore(ctx context.Context, cmd *cobra.Command, path, keyFile str
 	if err != nil {
 		return err
 	}
+	identity, err := databaseIdentityOf(ctx, dsn)
+	if err != nil {
+		return fmt.Errorf("inspect OpenNeko's database; nothing was changed: %w", err)
+	}
+	if parts := strings.Split(identity, "|"); len(parts) == 3 {
+		if _, err := postgresTool(ctx, "pg_restore", parts[2]); err != nil {
+			return fmt.Errorf("%w (nothing was changed)", err)
+		}
+	}
 	fmt.Fprintf(out, "Restoring into %s, from OpenNeko's database URL.\n", describeDatabaseURL(dsn))
 	foreign, err := backupDump(path, key, func(dump io.Reader) ([]string, error) { return listForeignObjects(ctx, dsn, dump) })
 	if err != nil {
@@ -465,16 +477,24 @@ func majorOf(v string) string {
 	return ""
 }
 
-// postgresToolLine reports pg_dump or pg_restore. Each must be at least the
-// server's major version to read and write its archives.
-func postgresToolLine(ctx context.Context, tool, serverVersion string) (string, bool) {
+// postgresTool returns the version of pg_dump or pg_restore. Each must be at
+// least the server's major version to read and write its archives.
+func postgresTool(ctx context.Context, tool, serverVersion string) (string, error) {
 	raw, err := exec.CommandContext(ctx, tool, "--version").Output()
 	if err != nil {
-		return fmt.Sprintf("%s: FAIL, not found; install the PostgreSQL %s client tools so that backup and restore work", tool, majorOf(serverVersion)), false
+		return "", fmt.Errorf("%s was not found; install the PostgreSQL %s client tools so that backup and restore work", tool, majorOf(serverVersion))
 	}
 	toolVersion := toolVersionOf(string(raw))
 	if serverVersion != "" && olderVersion(majorOf(toolVersion), majorOf(serverVersion)) {
-		return fmt.Sprintf("%s: FAIL, %s is older than the server (%s); install the PostgreSQL %s client tools", tool, toolVersion, serverVersion, majorOf(serverVersion)), false
+		return toolVersion, fmt.Errorf("%s %s is older than the database server (%s); install the PostgreSQL %s client tools", tool, toolVersion, serverVersion, majorOf(serverVersion))
+	}
+	return toolVersion, nil
+}
+
+func postgresToolLine(ctx context.Context, tool, serverVersion string) (string, bool) {
+	toolVersion, err := postgresTool(ctx, tool, serverVersion)
+	if err != nil {
+		return fmt.Sprintf("%s: FAIL, %v", tool, err), false
 	}
 	return fmt.Sprintf("%s: %s", tool, toolVersion), true
 }
