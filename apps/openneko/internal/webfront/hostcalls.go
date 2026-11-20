@@ -361,6 +361,7 @@ func (a *API) externalServices() []externalService {
 			},
 			check: checkFileStore,
 		},
+		confinementService(),
 	}
 }
 

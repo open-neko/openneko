@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/confine"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
@@ -70,10 +71,12 @@ func newReleaseCheckCmd() *cobra.Command {
 				fmt.Fprintf(out, "bundled_skills=%d\n", len(names))
 			}
 			if serveSocket {
-				if err := checkServeSocket(ctx, os.Getenv("OPENNEKO_SERVE_SOCKET")); err != nil {
+				state, err := checkServeSocket(ctx, os.Getenv("OPENNEKO_SERVE_SOCKET"))
+				if err != nil {
 					return err
 				}
 				fmt.Fprintln(out, "serve_socket=ok")
+				fmt.Fprintf(out, "serve_confinement=%s\n", state)
 			}
 			if sandboxCheck {
 				state, err := checkSandboxSocket(ctx, os.Getenv("OPENNEKO_SANDBOX_URL"), os.Getenv("OPENNEKO_SERVE_SOCKET"), os.Getenv("OPENNEKO_CONFIG_CHECK_SOCKET"))
@@ -141,14 +144,15 @@ func checkBuiltinPacks(ctx context.Context, socket string) (int, error) {
 	return n, nil
 }
 
-func checkServeSocket(ctx context.Context, socket string) error {
+func checkServeSocket(ctx context.Context, socket string) (confine.State, error) {
+	var none confine.State
 	if socket == "" {
-		return errors.New("OPENNEKO_SERVE_SOCKET is not set")
+		return none, errors.New("OPENNEKO_SERVE_SOCKET is not set")
 	}
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "unix", socket)
 	if err != nil {
-		return fmt.Errorf("serve socket %s: %w", socket, err)
+		return none, fmt.Errorf("serve socket %s: %w", socket, err)
 	}
 	defer conn.Close()
 	if deadline, ok := ctx.Deadline(); ok {
@@ -160,15 +164,22 @@ func checkServeSocket(ctx context.Context, socket string) error {
 	}
 	var status serve.Status
 	if reply.Type != "status" || json.Unmarshal(reply.Result, &status) != nil {
-		return fmt.Errorf("openneko serve on %s did not report whether it holds a model key; run serve from the same release as web", socket)
+		return none, fmt.Errorf("openneko serve on %s did not report whether it holds a model key; run serve from the same release as web", socket)
 	}
 	if len(status.KeyEnv) > 0 {
-		return fmt.Errorf("openneko serve started with the secret variables %s; remove them from serve's environment and keep them in web (INSTALL.md, \"Model keys\")", strings.Join(status.KeyEnv, ", "))
+		return none, fmt.Errorf("openneko serve started with the secret variables %s; remove them from serve's environment and keep them in web (INSTALL.md, \"Model keys\")", strings.Join(status.KeyEnv, ", "))
 	}
 	if !status.RequireDoor {
-		return errors.New("openneko serve accepts a model key in a frame because it runs in development mode; run serve without OPENNEKO_ENV=development")
+		return none, errors.New("openneko serve accepts a model key in a frame because it runs in development mode; run serve without OPENNEKO_ENV=development")
 	}
-	return nil
+	var state confine.State
+	if len(status.Confinement) == 0 || json.Unmarshal(status.Confinement, &state) != nil {
+		return none, fmt.Errorf("openneko serve on %s did not report its confinement; run serve from the same release as web", socket)
+	}
+	if !state.Confined && state.Mechanism != "" {
+		return state, fmt.Errorf("openneko serve runs unconfined in production mode: %s", state.Reason)
+	}
+	return state, nil
 }
 
 func checkSandboxSocket(ctx context.Context, url string, stackSockets ...string) (string, error) {

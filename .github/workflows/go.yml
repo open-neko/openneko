@@ -82,6 +82,18 @@ jobs:
           go test -count=1 -v -run "^($(IFS='|'; echo "${tests[*]}"))\$" ./internal/llm ./internal/cli | tee "$RUNNER_TEMP/security.log"
           ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/security.log" "${tests[@]}"
 
+      - name: Confinement proofs run and do not skip
+        if: runner.os == 'Linux'
+        env:
+          CGO_ENABLED: "0"
+          OPENNEKO_TEST_REQUIRE_CONFINE: "1"
+        run: |
+          set -euo pipefail
+          uname -r
+          tests=(TestEveryThreadIsConfined TestConfinedServeOneAccount TestServeRefusesToStartUnconfinedInProduction)
+          go test -count=1 -v -run "^($(IFS='|'; echo "${tests[*]}"))\$" ./internal/confine ./internal/cli | tee "$RUNNER_TEMP/confine.log"
+          ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/confine.log" "${tests[@]}"
+
       - name: go build
         run: go build ./...
 
@@ -165,6 +177,12 @@ jobs:
         run: |
           pg_dump --version | grep -q '(PostgreSQL) 16\.'
           go test -count=1 -timeout 20m ./...
+
+      - name: A confined serve does its work and the proof does not skip
+        run: |
+          set -euo pipefail
+          go test -count=1 -v -run '^TestConfinedServeDoesItsWork$' ./internal/webfront | tee "$RUNNER_TEMP/confined-serve.log"
+          ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/confined-serve.log" TestConfinedServeDoesItsWork
 
   integration-migrator:
     name: integration - migrator (real postgres)

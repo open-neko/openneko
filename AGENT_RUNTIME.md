@@ -358,6 +358,64 @@ shares the stack network with the database and `openneko web`. The
 database grants and the broker's per-run tokens stop serve from acting
 outside its zone.
 
+## Serve confines itself (Linux)
+
+On Linux, `openneko serve` confines itself with Landlock before it listens
+and before any agent code runs. The confinement holds for good, for every
+thread and every child (GraphJin, DuckDB). It needs no root, no admin right
+and no cgo. Serve reads its credentials and opens its database pool first,
+then keeps only these paths:
+
+- read and run: the `openneko` program, the DuckDB program, and the loader
+  and library folders that DuckDB needs.
+- read: the TLS certificate folders, `/etc/resolv.conf`, `/etc/hosts` and
+  the other name files, the time zone files, `/proc`, `/sys/fs/cgroup`,
+  `~/.postgresql` and the certificate files named in the database URL, and
+  the subscriptions URL file in the serve credentials folder.
+- read and write: the files folder, the file index, the agent runs folder,
+  the subscriptions folder, the GraphJin config folder, the folders of its
+  own sockets, its temp folder (`TMPDIR`) and `/dev/null`.
+
+Serve loses the config folder (the secret key, `config.json` with the
+database login, `secrets.json`), the web admin socket token, the rest of the
+home folder and every other path. It cannot run a file that it wrote. It
+cannot read the memory or the environment of a process outside its domain,
+or trace one. A native install gives serve its own temp folder,
+`<data>/tmp`.
+
+Each Landlock ABI adds rights. Serve uses the newest ABI that the kernel
+has:
+
+| ABI | Linux | Adds |
+|---|---|---|
+| 1 | 5.13 | read, write, run, make and remove files and folders; no trace of a process outside the domain |
+| 2 | 5.19 | rename and link between folders |
+| 3 | 6.2 | truncate |
+| 4 | 6.7 | TCP bind and connect (serve does not use it yet) |
+| 5 | 6.10 | ioctl on devices |
+| 6 | 6.12 | no signal to, and no abstract socket of, a process outside the domain |
+| 7 | 6.15 | audit logs |
+| 8 | 7.0 | one call confines every thread |
+| 9 | 7.1 | connect to named Unix sockets |
+
+Serve needs ABI 3 or later. Below ABI 9, Landlock cannot refuse a connect
+to a named socket, so the web admin socket also needs a token that `openneko
+web` writes beside it (`web-admin.sock.token`, mode 0600). Serve cannot read
+that file. From ABI 9, serve may connect only to the key door socket and the
+sandbox socket.
+
+In production mode, serve does not start when the kernel has no Landlock or
+an ABI below 3. It prints one line that names the kernel and what to do.
+With `OPENNEKO_ENV=development`, serve starts unconfined and says so on each
+start; `OPENNEKO_SERVE_CONFINE=off` turns the confinement off in development
+mode only. `openneko release-check --serve-socket` prints
+`serve_confinement=landlock ABI <n>` and fails when serve runs unconfined in
+production mode. The status page shows the state under "Agent confinement".
+On macOS and Windows the confinement is not built yet: serve starts and the
+status page says so.
+
+Serve's network does not change: Landlock here governs files only.
+
 Agent runs read customer data only through the direct GraphJin tools. No run
 hands a question to GraphJin's own agent, so GraphJin gets no provider key.
 Migration 0128 removed the setting that did that. Admin chat plans GraphJin

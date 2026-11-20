@@ -2,9 +2,11 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -338,7 +340,7 @@ func TestWebAdminSocketIsOwnerOnly(t *testing.T) {
 		t.Fatal("a plain file at the socket path was replaced")
 	}
 	_ = os.Remove(socket)
-	stop, err := serveWebAdmin(socket, http.NotFoundHandler())
+	stop, err := serveWebAdmin(socket, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "ok") }))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,9 +348,33 @@ func TestWebAdminSocketIsOwnerOnly(t *testing.T) {
 	if err != nil || !testmode.Is(t, info, 0o600) {
 		t.Fatalf("socket mode %v: %v", info.Mode(), err)
 	}
+	if info, err := os.Stat(webAdminToken(socket)); err != nil || !testmode.Is(t, info, 0o600) {
+		t.Fatalf("token file: %v", err)
+	}
+	if res, err := webAdminClient(socket).Get("http://web/admin/packs"); err != nil || res.StatusCode != http.StatusOK {
+		t.Fatalf("a caller with the token: %v %v", res, err)
+	}
+	var d net.Dialer
+	plain := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return d.DialContext(ctx, "unix", socket)
+	}}}
+	for _, auth := range []string{"", "Bearer ", "Bearer 00"} {
+		req, _ := http.NewRequest(http.MethodGet, "http://web/admin/packs", nil)
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		res, err := plain.Do(req)
+		if err != nil || res.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("a caller with Authorization %q: %v %v", auth, res, err)
+		}
+		res.Body.Close()
+	}
 	stop()
 	if _, err := os.Stat(socket); !os.IsNotExist(err) {
 		t.Fatal("the socket stayed after stop")
+	}
+	if _, err := os.Stat(webAdminToken(socket)); !os.IsNotExist(err) {
+		t.Fatal("the token file stayed after stop")
 	}
 }
 

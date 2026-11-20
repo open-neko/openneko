@@ -15,6 +15,7 @@ What you're installing, feature by feature, in plain language: **[FEATURES.md](F
 
 - PostgreSQL 16 or later with the `vector` extension (pgvector 0.6.0 or later) for production and native installs (`--mode demo` and `--mode dev` run a bundled Postgres container)
 - An API key for at least one supported model provider, or the URL of a model server that speaks the OpenAI chat API (Ollama, vLLM, LM Studio)
+- On Linux, a kernel with Landlock ABI 3 or later (Linux 6.2 or later, with `landlock` in the `lsm=` boot list), for both the native and the Docker install. In production mode `openneko serve` does not start without it ([AGENT_RUNTIME.md](AGENT_RUNTIME.md#serve-confines-itself-linux)). A Docker install also needs an engine whose default seccomp profile allows the Landlock calls; Docker 29.9 does.
 
 ## Install
 
@@ -490,6 +491,12 @@ warning that names it. [AGENT_RUNTIME.md](AGENT_RUNTIME.md#the-key-door)
 lists the names. `openneko release-check --serve-socket` fails when
 serve started with one, or when serve runs with `OPENNEKO_ENV=development`.
 In production, serve refuses a turn that carries a real key.
+
+On Linux, serve also confines itself at start: it cannot read the config
+folder, `secrets.json` or the web admin socket token, and it cannot run a
+file that it wrote. `openneko release-check --serve-socket` prints
+`serve_confinement=` and fails when serve runs unconfined in production
+mode ([AGENT_RUNTIME.md](AGENT_RUNTIME.md#serve-confines-itself-linux)).
 
 The model calls now leave from web. A firewall that let only serve reach
 the model APIs must let web reach them.
