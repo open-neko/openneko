@@ -352,6 +352,7 @@
       "timeout_ms": 540000,
       "max_actor_steps": 25,
       "max_child_steps": 50,
+      "max_model_calls": 1277,
       "reasoning_effort": "medium"
      },
      "bridge": false,
@@ -760,6 +761,7 @@
       "timeout_ms": 1800000,
       "max_actor_steps": 40,
       "max_child_steps": 50,
+      "max_model_calls": 2000,
       "max_operations": 40,
       "reasoning_effort": "low",
       "context_window_tokens": 128000,
@@ -949,7 +951,8 @@
       "stream_responses": true,
       "timeout_ms": 540000,
       "max_actor_steps": 25,
-      "max_child_steps": 50
+      "max_child_steps": 50,
+      "max_model_calls": 1277
      },
      "bridge": false,
      "model_key_env": "MODEL_API_KEY",
@@ -1100,7 +1103,8 @@
       "stream_responses": true,
       "timeout_ms": 61000,
       "max_actor_steps": 25,
-      "max_child_steps": 50
+      "max_child_steps": 50,
+      "max_model_calls": 1277
      },
      "bridge": false,
      "model_key_env": "MODEL_API_KEY",
@@ -1255,7 +1259,8 @@
       "stream_responses": true,
       "timeout_ms": 540000,
       "max_actor_steps": 25,
-      "max_child_steps": 50
+      "max_child_steps": 50,
+      "max_model_calls": 1277
      },
      "bridge": false,
      "model_key_env": "MODEL_API_KEY",
@@ -1398,7 +1403,8 @@
       "stream_responses": true,
       "timeout_ms": 540000,
       "max_actor_steps": 25,
-      "max_child_steps": 50
+      "max_child_steps": 50,
+      "max_model_calls": 1277
      },
      "bridge": false,
      "model_key_env": "MODEL_API_KEY",
@@ -1552,7 +1558,8 @@
       "stream_responses": true,
       "timeout_ms": 540000,
       "max_actor_steps": 25,
-      "max_child_steps": 50
+      "max_child_steps": 50,
+      "max_model_calls": 1277
      },
      "bridge": false,
      "model_key_env": "MODEL_API_KEY",
@@ -1725,7 +1732,8 @@
       "stream_responses": true,
       "timeout_ms": 540000,
       "max_actor_steps": 25,
-      "max_child_steps": 50
+      "max_child_steps": 50,
+      "max_model_calls": 1277
      },
      "bridge": false,
      "model_key_env": "MODEL_API_KEY",
@@ -1763,7 +1771,8 @@
       "stream_responses": true,
       "timeout_ms": 540000,
       "max_actor_steps": 25,
-      "max_child_steps": 50
+      "max_child_steps": 50,
+      "max_model_calls": 1277
      },
      "bridge": false,
      "model_key_env": "MODEL_API_KEY",
@@ -1942,7 +1951,8 @@
       "stream_responses": true,
       "timeout_ms": 540000,
       "max_actor_steps": 25,
-      "max_child_steps": 50
+      "max_child_steps": 50,
+      "max_model_calls": 1277
      },
      "bridge": false,
      "model_key_env": "MODEL_API_KEY",
@@ -2088,7 +2098,8 @@
       "stream_responses": true,
       "timeout_ms": 540000,
       "max_actor_steps": 25,
-      "max_child_steps": 50
+      "max_child_steps": 50,
+      "max_model_calls": 1277
      },
      "bridge": false,
      "model_key_env": "MODEL_API_KEY",
@@ -2216,7 +2227,8 @@
       "stream_responses": true,
       "timeout_ms": 540000,
       "max_actor_steps": 25,
-      "max_child_steps": 50
+      "max_child_steps": 50,
+      "max_model_calls": 1277
      },
      "bridge": false,
      "model_key_env": "MODEL_API_KEY",
@@ -2323,7 +2335,8 @@
       "stream_responses": true,
       "timeout_ms": 540000,
       "max_actor_steps": 25,
-      "max_child_steps": 50
+      "max_child_steps": 50,
+      "max_model_calls": 1277
      },
      "bridge": false,
      "model_key_env": "MODEL_API_KEY",
@@ -2513,7 +2526,8 @@
    "spec": {
     "timeout_ms": 540000,
     "max_actor_steps": 25,
-    "max_child_steps": 50
+    "max_child_steps": 50,
+    "max_model_calls": 1277
    },
    "env2": {
     "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS": "180",
@@ -2543,6 +2557,7 @@
     "timeout_ms": 900000,
     "max_actor_steps": 150,
     "max_child_steps": 50,
+    "max_model_calls": 2000,
     "max_operations": 150,
     "reasoning_effort": "medium"
    },
@@ -2571,7 +2586,8 @@
    "spec": {
     "timeout_ms": 540000,
     "max_actor_steps": 25,
-    "max_child_steps": 50
+    "max_child_steps": 50,
+    "max_model_calls": 1277
    },
    "env2": {
     "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS": "180",
@@ -2606,6 +2622,7 @@
     "timeout_ms": 1000,
     "max_actor_steps": 500,
     "max_child_steps": 500,
+    "max_model_calls": 2000,
     "max_operations": 900,
     "reasoning_effort": "high"
    },
@@ -2639,7 +2656,8 @@
    "spec": {
     "timeout_ms": 540000,
     "max_actor_steps": 1,
-    "max_child_steps": 50
+    "max_child_steps": 50,
+    "max_model_calls": 53
    },
    "env2": {
     "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS": "600",
@@ -2671,6 +2689,7 @@
     "timeout_ms": 900000,
     "max_actor_steps": 150,
     "max_child_steps": 50,
+    "max_model_calls": 2000,
     "max_operations": 150,
     "reasoning_effort": "medium"
    },

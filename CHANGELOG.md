@@ -17,6 +17,7 @@
 * The model calls leave from web now. If a firewall lets only serve reach the model APIs, let web reach them too.
 * In production, serve refuses a turn that carries a real key. At start it removes every `*_API_KEY`, `HF_TOKEN` and `VERTEX_ACCESS_TOKEN` variable from its environment and logs a warning. Remove such variables from an override of `openneko-serve` or from `serve.env`.
 * `openneko release-check --serve-socket` fails when serve started with a model key variable or runs in development mode.
+* The key door forwards only the chat, streamed chat and embedding paths of each provider, and refuses an unknown query parameter. Each token has a call cap. A turn now has a model-call ceiling (`max_model_calls`, 1277 for a chat turn with the default limits, at most 2000), and its token allows 4 calls more. When serve reports a call count that differs from the door's count, web logs it and writes `agent:model_calls_mismatch` to the audit chain.
 * A server install gets the door folder `/var/lib/openneko/shared/door` and new units from `openneko upgrade`, which now runs `systemctl daemon-reload`.
 * `openneko web` with no serve socket, and the stand-alone eval harness, still put the key in the process of the agent loop. Use them for development and demos only.
 
