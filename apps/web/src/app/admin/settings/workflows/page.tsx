@@ -10,8 +10,10 @@ import AdminLoad from "@/app/admin/AdminLoad";
 import { WorkflowApiAccessPanel } from "@/app/(work)/workflows/WorkflowApiAccessPanel";
 import PublicUrlForm from "./PublicUrlForm";
 import WorkflowOrgLimitsForm from "./WorkflowOrgLimitsForm";
+import OwnerlessWorkflows from "./OwnerlessWorkflows";
 
-type WorkflowItem = { id: string; name: string };
+type WorkflowItem = { id: string; name: string; needsOwner?: boolean };
+type UserItem = { id: string; email: string; name: string | null; disabled: boolean };
 type PublicUrl = Parameters<typeof PublicUrlForm>[0]["initial"];
 type Limits = { rollingTokenBudget: number | null; rollingCostMicrosBudget: number | null };
 
@@ -19,13 +21,14 @@ export default function WorkflowSettingsPage() {
   return (
     <AdminLoad
       title="Workflow API"
-      paths={["/api/v1/workflows", "/api/v1/admin/workflow-api-limits", "/api/v1/admin/public-url"]}
+      paths={["/api/v1/workflows", "/api/v1/admin/workflow-api-limits", "/api/v1/admin/public-url", "/api/v1/admin/users"]}
     >
-      {([workflows, limits, publicUrl]) => (
+      {([workflows, limits, publicUrl, users]) => (
         <WorkflowSettings
           workflows={(workflows as { workflows: WorkflowItem[] }).workflows}
           limits={(limits as { limits: Limits }).limits}
           publicUrl={publicUrl as PublicUrl}
+          users={(users as { users: UserItem[] }).users.filter((user) => !user.disabled)}
         />
       )}
     </AdminLoad>
@@ -36,10 +39,12 @@ function WorkflowSettings({
   workflows,
   limits,
   publicUrl,
+  users,
 }: {
   workflows: WorkflowItem[];
   limits: Limits;
   publicUrl: PublicUrl;
+  users: UserItem[];
 }) {
   const selected = useSearchParams().get("workflow");
   const workflow = workflows.find((item) => item.id === selected) ?? workflows[0];
@@ -52,6 +57,10 @@ function WorkflowSettings({
       <PageHeading
         title="Workflow API"
         description="Set the public URL, the organization budget, and each workflow's API execution limits. Runtime also sets the agent's time allowance for API runs."
+      />
+      <OwnerlessWorkflows
+        workflows={workflows.filter((item) => item.needsOwner).map(({ id, name }) => ({ id, name }))}
+        users={users.map(({ id, email, name }) => ({ id, email, name }))}
       />
       <PublicUrlForm initial={publicUrl} />
       <WorkflowOrgLimitsForm initial={{

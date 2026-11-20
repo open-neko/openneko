@@ -114,6 +114,10 @@ func TestWorkflowAdopt(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(orgAgentRoot("org"), "workflows")); err == nil {
 		t.Error("the adopt wrote a workflow file")
 	}
+	if got := queryText(t, db, `select team_approved_by || ' ' || (team_approved_at is not null)::text || ' ' || `+workflowNeedsOwner+`::text
+		from workflow_definition w where id = $1`, copyID); got != "admin true false" {
+		t.Errorf("the adopted copy is not a team workflow: %s", got)
+	}
 	changes := queryText(t, db, `select string_agg(summary || '|' || scope || '|' || user_id || '|' || coalesce(actor_user_id, '-') || '|' ||
 		status || '|' || (commit_sha is not null)::text, ';' order by created_at, summary) from config_change where org_id = 'org' and artifact_kind = 'workflow'`)
 	if changes != "Added workflow: Mine|team||-|recorded|false;Adopted workflow for the team: Mine|team|member|admin|adopted|false" {

@@ -2,6 +2,7 @@ package webfront
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
 )
@@ -465,6 +466,10 @@ func ruleBuilderTools(b turnBinding, be toolBackend) []toolDef {
 				setNonNil(in, "createdByRunId", b.runID())
 				be.audit(ctx, "/v1/rule/save")
 				result, err := be.upsertPolicy(ctx, in)
+				var refused ruleRefusal
+				if errors.As(err, &refused) {
+					return toolText(jsObjOf("ok", false, "error", refused.Error())), nil
+				}
 				if err != nil {
 					return toolResult{}, err
 				}

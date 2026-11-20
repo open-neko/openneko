@@ -1,6 +1,7 @@
 package webfront
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,8 +63,70 @@ func TestWorkflowList(t *testing.T) {
 	want := `{"id":"` + wfHeld + `","name":"Held flow","description":"Daily","goal":"Find late orders","enabled":true,"status":"active",` +
 		`"cron":"0 7 * * *","cronTimezone":"Asia/Kolkata","cronEnabled":true,"steps":[{"n":1.5,"id":"s1","description":"Check"}],` +
 		`"createdAt":"`
-	if !strings.Contains(w.Body.String(), want) || !strings.Contains(w.Body.String(), `"updatedAt":"2026-11-01T02:00:00.000Z"}`) {
+	if !strings.Contains(w.Body.String(), want) || !strings.Contains(w.Body.String(), `"updatedAt":"2026-11-01T02:00:00.000Z","needsOwner":true}`) {
 		t.Errorf("admin body: %s", w.Body)
+	}
+}
+
+func TestWorkflowWithNoOwner(t *testing.T) {
+	f, db := workflowsFront(t)
+	admin := sessionCookie("admin")
+	needs := func() string {
+		t.Helper()
+		var body struct {
+			Workflows []struct {
+				Name       string `json:"name"`
+				NeedsOwner bool   `json:"needsOwner"`
+			} `json:"workflows"`
+		}
+		if err := json.Unmarshal(call(f, "GET", "/api/v1/workflows", "", admin).Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, w := range body.Workflows {
+			if w.NeedsOwner {
+				names = append(names, w.Name)
+			}
+		}
+		return strings.Join(names, ",")
+	}
+	if got := needs(); got != "Held flow,Org flow" {
+		t.Fatalf("needs an owner: %s", got)
+	}
+	if w := call(f, "POST", "/api/v1/workflows/"+wfOrg+"/manual-runs", `{}`, admin); w.Code != 400 || !strings.Contains(w.Body.String(), "has no owner") {
+		t.Fatalf("an ownerless run started: %d %s", w.Code, w.Body)
+	}
+	seed(t, db, `insert into pack_install (id, org_id, pack_id, version, status, manifest_hash) values ('b2000000-0000-4000-8000-000000000002', 'org', 'stock', '1', 'installed', 'h')`)
+	seed(t, db, `insert into pack_artifact (pack_install_id, org_id, artifact_kind, artifact_key, target_ref, desired_hash, last_applied_hash)
+		values ('b2000000-0000-4000-8000-000000000002', 'org', 'workflow', 'held', 'Held flow', 'h', 'h')`)
+	if got := needs(); got != "Org flow" {
+		t.Fatalf("a pack workflow needs an owner: %s", got)
+	}
+	for _, c := range []struct {
+		cookie map[string]string
+		id     string
+		body   string
+		code   int
+		text   string
+	}{
+		{sessionCookie("member"), wfHeld, `{"ownerUserId":"member"}`, 403, "admin only"},
+		{admin, wfOrg, `{"ownerUserId":"nobody"}`, 400, "active user"},
+		{admin, wfOrg, `{"ownerUserId":"member"}`, 200, `{"ok":true}`},
+		{admin, wfOrg, `{"ownerUserId":"other"}`, 409, "already has an owner"},
+	} {
+		if w := call(f, "PATCH", "/api/v1/workflows/"+c.id, c.body, c.cookie); w.Code != c.code || !strings.Contains(w.Body.String(), c.text) {
+			t.Fatalf("%s: %d %s", c.body, w.Code, w.Body)
+		}
+	}
+	if got := rowText(t, db, `select owner_user_id from workflow_definition where id = $1`, wfOrg); got != "member" {
+		t.Fatalf("owner: %s", got)
+	}
+	if got := rowText(t, db, `select summary || ' ' || user_id || ' ' || actor_user_id from config_change where artifact_ref = 'Org flow'`); got !=
+		"Assigned an owner to the workflow member admin" {
+		t.Fatalf("config change: %s", got)
+	}
+	if got := needs(); got != "" {
+		t.Fatalf("after the owner: %s", got)
 	}
 }
 

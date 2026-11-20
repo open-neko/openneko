@@ -20,6 +20,14 @@ export const workflowCases: Case[] = [
     request: (c) => ({ params: workflowParams(c), body: { cronEnabled: false } }),
   },
   { op: "PATCH /workflows/{workflowId}", name: "needs a known field", status: 400, request: (c) => ({ params: workflowParams(c), body: {} }) },
+  {
+    op: "PATCH /workflows/{workflowId}", name: "assigns an owner only to a workflow with none", status: 409,
+    request: (c) => ({ params: workflowParams(c), body: { ownerUserId: c.ids.memberUserId } }),
+  },
+  {
+    op: "PATCH /workflows/{workflowId}", name: "lets only an admin assign an owner", as: "member", status: 403,
+    request: (c) => ({ params: { workflowId: c.ids.memberWorkflowId! }, body: { ownerUserId: c.ids.memberUserId } }),
+  },
   { op: "POST /workflows/{workflowId}/adopt", name: "refuses an unknown personal workflow", status: 404, request: (c) => ({ params: { workflowId: c.ids.unknownId } }) },
   { op: "GET /workflows/{workflowId}/api-access", name: "reports API access", status: 200, request: (c) => ({ params: workflowParams(c) }) },
   {

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func (a *API) visibleWorkflow(w http.ResponseWriter, r *http.Request) (actor, string, bool) {
@@ -65,9 +66,37 @@ func (a *API) workflowPatch(w http.ResponseWriter, r *http.Request) {
 		values["enabled"] = false
 		values["paused_until"] = time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC)
 	}
+	owner, hasOwner := fieldString(body, "ownerUserId")
+	if hasOwner {
+		if !act.Admin {
+			sendError(w, http.StatusForbidden, "admin only")
+			return
+		}
+		var active bool
+		if err := a.DB.QueryRow(r.Context(), `select exists (select 1 from app_user where org_id = $1 and id = $2 and disabled_at is null)`,
+			act.OrgID, owner).Scan(&active); err != nil {
+			a.fail(w, r, err)
+			return
+		}
+		if !active {
+			sendError(w, http.StatusBadRequest, "The owner must be an active user of this organization.")
+			return
+		}
+		var current string
+		err := a.DB.QueryRow(r.Context(), `select owner_user_id from workflow_definition where org_id = $1 and id::text = $2`, act.OrgID, id).Scan(&current)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			a.fail(w, r, err)
+			return
+		}
+		if current != "" {
+			sendError(w, http.StatusConflict, "This workflow already has an owner.")
+			return
+		}
+		values["owner_user_id"] = owner
+	}
 	sets := []string{}
 	args := []any{act.OrgID, id}
-	for _, column := range []string{"enabled", "cron_enabled", "paused_until"} {
+	for _, column := range []string{"enabled", "cron_enabled", "paused_until", "owner_user_id"} {
 		if v, ok := values[column]; ok {
 			args = append(args, v)
 			sets = append(sets, fmt.Sprintf("%s = $%d", column, len(args)))
@@ -81,10 +110,18 @@ func (a *API) workflowPatch(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusNotFound, "workflow not found")
 		return
 	}
-	found := false
+	found, conflict := false, false
 	err := pgx.BeginFunc(r.Context(), a.DB, func(tx pgx.Tx) error {
+		where := ""
+		if hasOwner {
+			where = " and owner_user_id = ''"
+		}
 		tag, err := tx.Exec(r.Context(), `update workflow_definition set `+strings.Join(sets, ", ")+`, updated_at = now()
-			where org_id = $1 and id = $2`, args...)
+			where org_id = $1 and id = $2`+where, args...)
+		if pgErr := (*pgconn.PgError)(nil); errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			conflict = true
+			return nil
+		}
 		if err != nil || tag.RowsAffected() == 0 {
 			return err
 		}
@@ -101,9 +138,22 @@ func (a *API) workflowPatch(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
+	if conflict {
+		sendError(w, http.StatusConflict, "This user already has a workflow with this name.")
+		return
+	}
 	if !found {
 		sendError(w, http.StatusNotFound, "workflow not found")
 		return
+	}
+	if hasOwner {
+		var name string
+		if err := a.DB.QueryRow(r.Context(), `select name from workflow_definition where id = $1`, id).Scan(&name); err != nil {
+			a.fail(w, r, err)
+			return
+		}
+		a.insertConfigChange(r.Context(), configChange{OrgID: act.OrgID, Kind: "workflow", Ref: name, Actor: act.UserID,
+			Summary: "Assigned an owner to the workflow", UserID: owner, Status: "owner_assigned"})
 	}
 	sendJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
@@ -160,6 +210,12 @@ type workflowRecord struct {
 	UpdatedAt           string     `json:"updatedAt"`
 }
 
+// workflowNeedsOwner is true for a workflow of alias w that would run as
+// service but that neither a pack nor an admin put there.
+const workflowNeedsOwner = `(w.owner_user_id = '' and w.team_approved_by is null and not exists (
+	select 1 from pack_artifact pa join pack_install pi on pi.id = pa.pack_install_id and pi.status <> 'removed'
+	where pa.org_id = w.org_id and pa.artifact_kind = 'workflow' and pa.target_ref = w.name))`
+
 const workflowRecordColumns = `id::text, org_id, name, description, enabled, status, goal, system_prompt_overlay, steps, cron,
 	cron_timezone, cron_enabled, network_hosts, daily_run_budget, output_contract, created_by_thread_id::text,
 	created_by_run_id::text, owner_user_id, origin_id::text, parent_id::text, created_at, updated_at`
@@ -210,7 +266,7 @@ func (a *API) workflowAdopt(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
-	saved, verb, err := a.saveTeamCopy(ctx, source)
+	saved, verb, err := a.saveTeamCopy(ctx, source, act.UserID)
 	if err != nil {
 		a.fail(w, r, err)
 		return
@@ -229,14 +285,14 @@ func (a *API) workflowAdopt(w http.ResponseWriter, r *http.Request) {
 
 // saveTeamCopy is saveWorkflow() in packages/llm/src/workflows/store.ts for
 // the input that adoptWorkflowForTeam() gives it.
-func (a *API) saveTeamCopy(ctx context.Context, s workflowRecord) (workflowRecord, string, error) {
+func (a *API) saveTeamCopy(ctx context.Context, s workflowRecord, approver string) (workflowRecord, string, error) {
 	steps, contract := []byte(s.Steps), []byte(s.OutputContract)
 	saved, err := scanWorkflowRecord(a.DB.QueryRow(ctx, `update workflow_definition set description = $3, system_prompt_overlay = $4,
 		steps = $5, goal = $6, cron = $7, cron_timezone = $8, cron_enabled = $9, daily_run_budget = $10, output_contract = $11,
-		updated_at = now()
+		team_approved_by = $12, team_approved_at = now(), updated_at = now()
 		where org_id = $1 and owner_user_id = '' and name = $2 returning `+workflowRecordColumns,
 		s.OrgID, s.Name, s.Description, s.SystemPromptOverlay, steps, s.Goal, s.Cron, s.CronTimezone, s.CronEnabled,
-		s.DailyRunBudget, contract))
+		s.DailyRunBudget, contract, approver))
 	if err == nil {
 		return saved, "Updated", nil
 	}
@@ -245,10 +301,10 @@ func (a *API) saveTeamCopy(ctx context.Context, s workflowRecord) (workflowRecor
 	}
 	var newID string
 	if err := a.DB.QueryRow(ctx, `insert into workflow_definition (org_id, owner_user_id, name, description, system_prompt_overlay,
-		steps, goal, cron, cron_timezone, cron_enabled, network_hosts, daily_run_budget, output_contract)
-		values ($1, '', $2, $3, $4, $5, $6, $7, $8, $9, '{}', $10, $11) returning id::text`,
+		steps, goal, cron, cron_timezone, cron_enabled, network_hosts, daily_run_budget, output_contract, team_approved_by, team_approved_at)
+		values ($1, '', $2, $3, $4, $5, $6, $7, $8, $9, '{}', $10, $11, $12, now()) returning id::text`,
 		s.OrgID, s.Name, s.Description, s.SystemPromptOverlay, steps, s.Goal, s.Cron, s.CronTimezone, s.CronEnabled,
-		s.DailyRunBudget, contract).Scan(&newID); err != nil {
+		s.DailyRunBudget, contract, approver).Scan(&newID); err != nil {
 		return saved, "", err
 	}
 	saved, err = scanWorkflowRecord(a.DB.QueryRow(ctx, `update workflow_definition set origin_id = id where id = $1

@@ -1,0 +1,78 @@
+"use client";
+
+import { useState } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
+
+type Workflow = { id: string; name: string };
+type User = { id: string; email: string; name: string | null };
+
+export default function OwnerlessWorkflows({ workflows, users }: { workflows: Workflow[]; users: User[] }) {
+  const [waiting, setWaiting] = useState(workflows);
+  if (waiting.length === 0) return null;
+  return (
+    <section className="settings-card mb-6 grid gap-4" aria-labelledby="ownerless-title">
+      <div>
+        <h2 id="ownerless-title" className="settings-card-title">Workflows with no owner</h2>
+        <p className="settings-card-copy">
+          These workflows do not run until you assign an owner. Each one then runs with its owner&apos;s access.
+        </p>
+      </div>
+      <ul className="grid gap-3">
+        {waiting.map((workflow) => (
+          <OwnerRow
+            key={workflow.id}
+            workflow={workflow}
+            users={users}
+            onAssigned={() => setWaiting((list) => list.filter((item) => item.id !== workflow.id))}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function OwnerRow({ workflow, users, onAssigned }: { workflow: Workflow; users: User[]; onAssigned: () => void }) {
+  const [owner, setOwner] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function assign(event: React.FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/v1/workflows/${encodeURIComponent(workflow.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ownerUserId: owner }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? "Could not assign the owner.");
+      toast.success(`${workflow.name} has an owner.`);
+      onAssigned();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not assign the owner.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const selectId = `owner-${workflow.id}`;
+  return (
+    <li>
+      <form onSubmit={assign} className="grid gap-2 sm:grid-cols-[1fr_minmax(0,16rem)_auto] sm:items-center">
+        <label htmlFor={selectId} className="min-w-0 break-words font-medium">{workflow.name}</label>
+        <NativeSelect id={selectId} value={owner} onChange={(event) => setOwner(event.target.value)}>
+          <option value="">Choose an owner</option>
+          {users.map((user) => (
+            <option key={user.id} value={user.id}>{user.name ? `${user.name} (${user.email})` : user.email}</option>
+          ))}
+        </NativeSelect>
+        <Button type="submit" variant="secondary" disabled={!owner || saving}>{saving ? "Assigning…" : "Assign"}</Button>
+        {error ? <p role="alert" className="text-danger sm:col-span-3">{error}</p> : null}
+      </form>
+    </li>
+  );
+}

@@ -64,7 +64,7 @@ func TestTurnBuildersDatabase(t *testing.T) {
 	var wfID, origin, contract, tz string
 	var createdRun *string
 	if err := db.QueryRow(ctx, `select id::text, origin_id::text, output_contract::text, cron_timezone, created_by_run_id::text
-		from workflow_definition where org_id = 'org' and name = 'Stock check' and owner_user_id = ''`).
+		from workflow_definition where org_id = 'org' and name = 'Stock check' and owner_user_id = 'member'`).
 		Scan(&wfID, &origin, &contract, &tz, &createdRun); err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestTurnBuildersDatabase(t *testing.T) {
 		contract != `{"apiBatch": {"columns": [{"name": "Order", "path": "order.id"}], "version": 1, "compiled": true, "compiler": "workflow", "recordsField": "records"}}` {
 		t.Fatalf("saved row: %s %s %s %v", origin, tz, contract, createdRun)
 	}
-	if got := scalar(t, db, `select scope || ' ' || summary || ' ' || coalesce(commit_sha, 'no-commit') from config_change where artifact_ref = 'Stock check'`); got != "team Added workflow: Stock check no-commit" {
+	if got := scalar(t, db, `select scope || ' ' || summary || ' ' || coalesce(commit_sha, 'no-commit') from config_change where artifact_ref = 'Stock check'`); got != "user Added workflow: Stock check no-commit" {
 		t.Fatalf("team change row: %s", got)
 	}
 	if len(events) != 1 || !strings.Contains(events[0], `"label":"Created workflow"`) {
@@ -80,12 +80,20 @@ func TestTurnBuildersDatabase(t *testing.T) {
 	}
 
 	seed(t, db, `insert into data_source (org_id, kind, name, graphql_url) values ('org', 'graphjin', 'erp', 'http://gj.invalid/api/v1/graphql')`)
-	if out := call(member, "workflow_builder_create_workflow", map[string]any{"name": "Stock check", "steps": steps}); !strings.Contains(out,
-		`A workflow named \"Stock check\" exists and this run cannot change it. Choose another name.`) {
-		t.Fatalf("member without the grant: %s", out)
+	if out := call(server(threadMine, builderRunService, "neko_workflow_builder"), "workflow_builder_create_workflow",
+		map[string]any{"name": "Service flow", "steps": steps}); !strings.Contains(out, "This run has no user, so it cannot save a workflow.") {
+		t.Fatalf("service run save: %s", out)
 	}
-	seed(t, db, `insert into item_grant (org_id, group_id, item_type, item_id)
-		select 'org', id, 'workflow', $1 from user_group where org_id = 'org' and slug = 'everyone'`, wfID)
+	seed(t, db, `insert into workflow_definition (org_id, name, goal, team_approved_by) values ('org', 'Team check', 'Team goal', 'admin')`)
+	if out := call(member, "workflow_builder_create_workflow", map[string]any{"name": "Team check", "steps": steps, "goal": "Mine"}); !strings.Contains(out,
+		`\"action\":\"created\"`) {
+		t.Fatalf("member save beside a team workflow: %s", out)
+	}
+	if got := scalar(t, db, `select string_agg(owner_user_id || ':' || goal || ':' || coalesce(team_approved_by, '-'), ',' order by owner_user_id)
+		from workflow_definition where org_id = 'org' and name in ('Team check', 'Service flow')`); got != ":Team goal:admin,member:Mine:-" {
+		t.Fatalf("a member run changed a team workflow: %s", got)
+	}
+	seed(t, db, `delete from workflow_definition where org_id = 'org' and name = 'Team check'`)
 	if out := call(member, "workflow_builder_create_workflow", map[string]any{"name": "Stock check", "steps": steps,
 		"triggers": map[string]any{"when": when}}); !strings.Contains(out, `\"code\":\"mutation_loop\"`) ||
 		!strings.Contains(out, `the mutation verb \\\"update\\\"`) {
@@ -184,15 +192,24 @@ func TestTurnBuildersDatabase(t *testing.T) {
 	}
 
 	events = nil
-	out = call(member, "rule_builder_save_rule", map[string]any{"name": "slack_auto", "applies_to_kinds": []any{"slack_post"},
-		"mode": "auto_approve", "approver_role": "admin", "allowed_targets": map[string]any{"patterns": []any{"C*"}}})
+	rule := map[string]any{"name": "slack_auto", "applies_to_kinds": []any{"slack_post"},
+		"mode": "auto_approve", "approver_role": "admin", "allowed_targets": map[string]any{"patterns": []any{"C*"}}}
+	for name, s := range map[string]*toolServer{"member": member, "service": server(threadMine, builderRunService, "neko_rule_builder")} {
+		if out := call(s, "rule_builder_save_rule", rule); !strings.Contains(out, `\"ok\":false,\"error\":\"Only an admin can save an approval rule.`) {
+			t.Fatalf("%s rule save: %s", name, out)
+		}
+	}
+	if got := scalar(t, db, `select count(*)::text from action_policy where org_id = 'org' and name = 'slack_auto'`); got != "0" || len(events) != 0 {
+		t.Fatalf("a refused save wrote a rule: %s %v", got, events)
+	}
+	out = call(admin, "rule_builder_save_rule", rule)
 	if !strings.Contains(out, `\"ok\":true,\"action\":\"created\",\"ruleId\":\"`) || len(events) != 1 || !strings.Contains(events[0], "**Scopes:** external") {
 		t.Fatalf("rule create: %s %v", out, events)
 	}
 	if got := scalar(t, db, `select p.applies_to_scopes::text || ' ' || p.priority::text || ' ' || p.enabled::text || ' ' || p.limits::text || ' ' ||
 		p.allowed_targets::text || ' ' || coalesce(p.denied_targets::text, 'null') || ' ' || (p.approver_group_id = g.id)::text || ' ' || p.created_by_run_id::text
 		from action_policy p join user_group g on g.org_id = p.org_id and g.slug = 'administrators' where p.name = 'slack_auto'`); got !=
-		`{external} 100 true {} {"patterns": ["C*"]} null true `+runMine {
+		`{external} 100 true {} {"patterns": ["C*"]} null true `+builderRunAdmin {
 		t.Fatalf("rule row: %s", got)
 	}
 	out = call(admin, "rule_builder_save_rule", map[string]any{"name": "slack_auto", "applies_to_kinds": []any{}, "applies_to_scopes": []any{"internal"},
@@ -202,8 +219,18 @@ func TestTurnBuildersDatabase(t *testing.T) {
 	}
 	if got := scalar(t, db, `select p.mode || ' ' || p.applies_to_scopes::text || ' ' || p.priority::text || ' ' || p.enabled::text || ' ' ||
 		coalesce(p.allowed_targets::text, 'null') || ' ' || p.description || ' ' || (p.approver_group_id is not null)::text || ' ' || p.created_by_run_id::text
-		from action_policy p where p.name = 'slack_auto'`); got != "never {internal} 5 false null Off true "+runMine {
+		from action_policy p where p.name = 'slack_auto'`); got != "never {internal} 5 false null Off true "+builderRunAdmin {
 		t.Fatalf("rule updated row: %s", got)
+	}
+	seed(t, db, `insert into pack_install (id, org_id, pack_id, version, status, manifest_hash) values ('b2000000-0000-4000-8000-000000000001', 'org', 'slack', '1', 'installed', 'h')`)
+	seed(t, db, `insert into pack_artifact (pack_install_id, org_id, artifact_kind, artifact_key, target_ref, desired_hash, last_applied_hash)
+		values ('b2000000-0000-4000-8000-000000000001', 'org', 'policy', 'slack_auto', 'slack_auto', 'h', 'h')`)
+	if out := call(admin, "rule_builder_save_rule", map[string]any{"name": "slack_auto", "applies_to_kinds": []any{}, "mode": "auto_approve"}); !strings.Contains(out,
+		`belongs to the pack slack`) {
+		t.Fatalf("pack rule save: %s", out)
+	}
+	if got := scalar(t, db, `select mode from action_policy where org_id = 'org' and name = 'slack_auto'`); got != "never" {
+		t.Fatalf("a pack rule changed: %s", got)
 	}
 	seed(t, db, `delete from action_policy where org_id = 'org' and name <> 'slack_auto'`)
 	seed(t, db, `insert into action_policy (org_id, name, applies_to_kinds, applies_to_scopes, mode, priority) values

@@ -337,8 +337,8 @@ func seedAdventureWorksWorkflows(ctx context.Context, conn *pgx.Conn, cfg advent
 			if _, err := conn.Exec(ctx, `
 				insert into workflow_definition (
 					org_id, name, description, goal, cron, cron_timezone,
-					cron_enabled, enabled, status, output_contract
-				) values ($1, $2, $3, $4, $5, $6, $7, true, 'active', $8::jsonb)
+					cron_enabled, enabled, status, output_contract, team_approved_by, team_approved_at
+				) values ($1, $2, $3, $4, $5, $6, $7, true, 'active', $8::jsonb, 'openneko seed', now())
 				on conflict (org_id, owner_user_id, name) do nothing`,
 				orgID, wf.Name, wf.Description, wf.Goal, wf.Cron, wf.CronTimezone, hasCron, string(contractBytes)); err != nil {
 				return err
