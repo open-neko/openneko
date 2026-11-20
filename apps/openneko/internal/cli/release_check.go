@@ -18,6 +18,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
+	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
 
 func newReleaseCheckCmd() *cobra.Command {
@@ -96,7 +97,7 @@ func newReleaseCheckCmd() *cobra.Command {
 	f.StringVar(&datasourceOrg, "datasource", "", "Run --query through GraphJin as this org's service role and require a row")
 	f.StringVar(&mcpURL, "mcp-url", "http://graphjin:8080/api/v1/mcp", "GraphJin MCP endpoint for --datasource")
 	f.StringVar(&query, "query", "query { soh(limit: 1, order_by: { id: desc }) { id } }", "GraphQL query for --datasource")
-	f.BoolVar(&serveSocket, "serve-socket", false, "Connect to the agent socket of openneko serve (OPENNEKO_SERVE_SOCKET)")
+	f.BoolVar(&serveSocket, "serve-socket", false, "Connect to the agent socket of openneko serve (OPENNEKO_SERVE_SOCKET); fail when serve holds a model key or accepts one")
 	f.BoolVar(&sandboxCheck, "sandbox", false, "The sandbox is off, or its socket answers in a folder that holds none of serve's sockets; prints whether its network has a route out")
 	f.BoolVar(&packsCheck, "packs", false, "The pack catalog on the web admin socket lists one or more built-in packs")
 	f.BoolVar(&bundledPacks, "bundled-packs", false, "This executable finds one or more built-in packs, with no running web")
@@ -147,7 +148,25 @@ func checkServeSocket(ctx context.Context, socket string) error {
 	if err != nil {
 		return fmt.Errorf("serve socket %s: %w", socket, err)
 	}
-	return conn.Close()
+	defer conn.Close()
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	}
+	var reply serve.Frame
+	if err := json.NewEncoder(conn).Encode(serve.Frame{Type: "status"}); err == nil {
+		err = json.NewDecoder(conn).Decode(&reply)
+	}
+	var status serve.Status
+	if reply.Type != "status" || json.Unmarshal(reply.Result, &status) != nil {
+		return fmt.Errorf("openneko serve on %s did not report whether it holds a model key; run serve from the same release as web", socket)
+	}
+	if len(status.KeyEnv) > 0 {
+		return fmt.Errorf("openneko serve started with the model key variables %s; remove them from serve's environment and keep model keys in web (INSTALL.md, \"Model keys\")", strings.Join(status.KeyEnv, ", "))
+	}
+	if !status.RequireDoor {
+		return errors.New("openneko serve accepts a model key in a frame because it runs in development mode; run serve without OPENNEKO_ENV=development")
+	}
+	return nil
 }
 
 func checkSandboxSocket(ctx context.Context, url string, stackSockets ...string) (string, error) {
