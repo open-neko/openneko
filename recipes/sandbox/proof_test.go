@@ -374,6 +374,9 @@ func listenOnTheGateway(t *testing.T, s *proofStack, image string) {
 		t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", name).Run() })
 		return
 	}
+	if p := os.Getenv("OPENNEKO_EGRESS_PROOF_HOST_PORT"); p != "" {
+		listenOnTheHost(t, p)
+	}
 	pid, err := os.ReadFile(filepath.Join(state, "child_pid"))
 	if err != nil {
 		t.Fatalf("rootless Docker, and its RootlessKit state is not readable: %v", err)
@@ -393,6 +396,27 @@ func listenOnTheGateway(t *testing.T, s *proofStack, image string) {
 		_ = cmd.Wait()
 	})
 	time.Sleep(500 * time.Millisecond)
+}
+
+// listenOnTheHost answers on the host's own address. Rootful Docker gets
+// this from the host-network gateway listener; rootless Docker does not.
+func listenOnTheHost(t *testing.T, port string) {
+	t.Helper()
+	l, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		t.Fatalf("host listener: %v", err)
+	}
+	t.Cleanup(func() { _ = l.Close() })
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			_, _ = c.Write([]byte("HTTP/1.0 200 OK\r\n\r\nstack service\n"))
+			_ = c.Close()
+		}
+	}()
 }
 
 func gatewayTarget(t *testing.T, network string) target {
