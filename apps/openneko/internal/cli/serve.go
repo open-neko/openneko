@@ -21,6 +21,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/filestore"
 	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
 	"github.com/open-neko/neko/apps/openneko/internal/native"
+	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
@@ -45,6 +46,15 @@ func newServeCmd() *cobra.Command {
 				return err
 			}
 			defer pool.Close()
+			folders := serveFolders{dsn: dsn, files: filesDir, index: indexDir, agentRuns: webfront.AgentRunsDir(), subsDir: subsDir, gjConfig: gjConfig,
+				duckdb: duckdb, agentSocket: agentSocket, checkSocket: checkSocket, sandboxURL: sandboxURL}
+			if subsAddr != "" && credentials != "" {
+				folders.subsURLFile = filepath.Join(credentials, serveSubsFile)
+			}
+			confinement, err := confineServe(cmd.ErrOrStderr(), folders, webfront.Development())
+			if err != nil {
+				return err
+			}
 			store, err := filestore.Open(ctx, filestore.FromEnv(filesDir))
 			if err != nil {
 				return err
@@ -62,7 +72,7 @@ func newServeCmd() *cobra.Command {
 			}
 			var agentDone <-chan error
 			if agentSocket != "" {
-				if agentDone, err = serveAgentTurns(ctx, cmd.OutOrStdout(), agentSocket, maxTurns, sandbox.Config{URL: sandboxURL, Key: os.Getenv("OPENNEKO_SANDBOX_KEY")}); err != nil {
+				if agentDone, err = serveAgentTurns(ctx, cmd.OutOrStdout(), agentSocket, maxTurns, sandbox.Config{URL: sandboxURL, Key: os.Getenv("OPENNEKO_SANDBOX_KEY")}, confinement); err != nil {
 					_ = ln.Close()
 					return err
 				}

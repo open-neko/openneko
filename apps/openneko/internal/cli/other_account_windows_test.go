@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"github.com/open-neko/neko/apps/openneko/internal/confine"
 	"io"
 	"io/fs"
 	"net"
@@ -168,7 +169,7 @@ func TestAnotherAccountCannotReachTheSocketsOrTheSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	serveSock := filepath.Join(layout.Run(), "serve.sock")
-	if _, err := serveAgentTurns(ctx, io.Discard, serveSock, 1, sandbox.Config{}); err != nil {
+	if _, err := serveAgentTurns(ctx, io.Discard, serveSock, 1, sandbox.Config{}, confine.State{}); err != nil {
 		t.Fatal(err)
 	}
 	stopAdmin, err := serveWebAdmin(layout.WebAdmin(), http.NotFoundHandler())

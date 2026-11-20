@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"github.com/open-neko/neko/apps/openneko/internal/confine"
 	"io"
 	"net"
 	"net/http"
@@ -43,7 +44,7 @@ func TestListenersReplaceAStaleSocket(t *testing.T) {
 			return err
 		},
 		"serve.sock": func(path string) error {
-			_, err := serveAgentTurns(ctx, io.Discard, path, 1, sandbox.Config{})
+			_, err := serveAgentTurns(ctx, io.Discard, path, 1, sandbox.Config{}, confine.State{})
 			return err
 		},
 		"keydoor.sock": func(path string) error {

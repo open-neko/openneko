@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"github.com/open-neko/neko/apps/openneko/internal/confine"
 	"io"
 	"net"
 	"net/http"
@@ -52,12 +53,12 @@ func TestReleaseCheckSchedulerReadsTheAdminSocket(t *testing.T) {
 
 func TestReleaseCheckServeSocket(t *testing.T) {
 	ctx := context.Background()
-	if err := checkServeSocket(ctx, ""); err == nil {
+	if _, err := checkServeSocket(ctx, ""); err == nil {
 		t.Fatal("an unset socket passed")
 	}
 	dir := testsock.Dir(t)
 	socket := filepath.Join(dir, "serve.sock")
-	if err := checkServeSocket(ctx, socket); err == nil {
+	if _, err := checkServeSocket(ctx, socket); err == nil {
 		t.Fatal("a missing socket passed")
 	}
 	ln, err := net.Listen("unix", socket)
@@ -73,19 +74,23 @@ func TestReleaseCheckServeSocket(t *testing.T) {
 			_ = conn.Close()
 		}
 	}()
-	if err := checkServeSocket(ctx, socket); err == nil || !strings.Contains(err.Error(), "did not report") {
+	if _, err := checkServeSocket(ctx, socket); err == nil || !strings.Contains(err.Error(), "did not report") {
 		t.Fatalf("a socket that gives no status: err = %v", err)
 	}
 	_ = ln.Close()
+	confined := confine.State{Mechanism: "landlock", ABI: 8, Confined: true}
 	for i, c := range []struct {
-		env  map[string]string
-		want []string
+		env   map[string]string
+		state confine.State
+		want  []string
 	}{
-		{nil, nil},
-		{map[string]string{"OPENAI_API_KEY": "sk-1", "HF_TOKEN": "hf"}, []string{"secret variables", "OPENAI_API_KEY", "HF_TOKEN"}},
-		{map[string]string{"OPENNEKO_DATABASE_URL": "postgres://u:p@db/x", "NEKO_SECRET_KEY": "s", "AWS_SECRET_ACCESS_KEY": "a"},
+		{nil, confined, nil},
+		{nil, confine.State{Reason: "confinement on darwin is not built yet"}, nil},
+		{nil, confine.State{Mechanism: "landlock", Reason: "no Landlock"}, []string{"runs unconfined in production mode", "no Landlock"}},
+		{map[string]string{"OPENAI_API_KEY": "sk-1", "HF_TOKEN": "hf"}, confined, []string{"secret variables", "OPENAI_API_KEY", "HF_TOKEN"}},
+		{map[string]string{"OPENNEKO_DATABASE_URL": "postgres://u:p@db/x", "NEKO_SECRET_KEY": "s", "AWS_SECRET_ACCESS_KEY": "a"}, confined,
 			[]string{"secret variables", "OPENNEKO_DATABASE_URL", "NEKO_SECRET_KEY", "AWS_SECRET_ACCESS_KEY"}},
-		{map[string]string{"OPENNEKO_ENV": "development"}, []string{"development mode"}},
+		{map[string]string{"OPENNEKO_ENV": "development"}, confined, []string{"development mode"}},
 	} {
 		cleanServeEnv(t)
 		t.Setenv("OPENNEKO_ENV", "production")
@@ -94,11 +99,15 @@ func TestReleaseCheckServeSocket(t *testing.T) {
 		}
 		path := filepath.Join(dir, fmt.Sprintf("serve-%d.sock", i))
 		sctx, stop := context.WithCancel(ctx)
-		done, err := serveAgentTurns(sctx, io.Discard, path, 1, sandbox.Config{})
+		done, err := serveAgentTurns(sctx, io.Discard, path, 1, sandbox.Config{}, c.state)
 		if err != nil {
 			t.Fatal(err)
 		}
-		err = checkServeSocket(ctx, path)
+		var got confine.State
+		got, err = checkServeSocket(ctx, path)
+		if err == nil && got.String() != c.state.String() {
+			t.Errorf("release-check read the confinement %q, serve has %q", got, c.state)
+		}
 		stop()
 		<-done
 		if c.want == nil && err != nil {

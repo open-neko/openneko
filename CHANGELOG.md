@@ -26,6 +26,14 @@
 * The proxy closes a connection after 5 minutes with no traffic, and when its host leaves the list or its run ends. A run holds at most 32 connections through the proxy at once.
 * A run that OpenNeko does not end expires after its longest command time plus 10 minutes with no command. The sandbox voids its proxy token and gives its user back to the pool.
 
+### Serve confines itself (Linux)
+
+* **Breaking:** on Linux, `openneko serve` confines itself with Landlock at start. In production mode it does not start on a kernel with no Landlock or with an ABI below 3 (Linux 6.2). Set `OPENNEKO_ENV=development` to run it unconfined for development.
+* A confined serve cannot read the config folder (the secret key, `config.json`, `secrets.json`), the web admin socket token or the rest of the home folder, cannot write outside its folders, cannot run a file it wrote, and cannot read the memory or environment of another process or trace it.
+* The web admin socket needs the token in `web-admin.sock.token` beside it. `openneko pack`, `openneko source` and `openneko graphjin import` read it; a script that calls the socket must send `Authorization: Bearer <token>`.
+* A native install gives serve its own temp folder, `<data>/tmp`.
+* `openneko release-check --serve-socket` prints `serve_confinement=` and fails when serve runs unconfined in production mode. The status page shows "Agent confinement".
+
 ### Sandbox image
 
 * Each release publishes the sandbox as `ghcr.io/open-neko/neko-sandbox`, for amd64 and arm64, with the release's tag. One image holds the sandbox service and the egress proxy. It is 131 MiB compressed on amd64 and 130 MiB on arm64.
