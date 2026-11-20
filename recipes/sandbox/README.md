@@ -60,9 +60,11 @@ A one-user native install uses
 `OPENNEKO_SANDBOX_DIR=$HOME/.local/share/openneko-sandbox` and
 `OPENNEKO_SANDBOX_GID=$(id -g)`. This file needs a key.
 
-The image carries Node, Python, Poppler, Tesseract, the Python and npm
+The image carries Node, Python with PyYAML, Poppler, Tesseract, the npm
 packages the bundled skills use, and the DejaVu Sans and Droid Sans Fallback
-fonts. The `pdf` skill uses the fonts for ₹, arrows, Greek, Cyrillic and CJK
+fonts. It has no Python document libraries (pypdf, python-docx, python-pptx,
+openpyxl): no bundled skill uses them, and the agent prompt does not name
+them. Keep the libraries section of the prompt in step with the image. The `pdf` skill uses the fonts for ₹, arrows, Greek, Cyrillic and CJK
 text. It leaves out the optional native canvas
 package of `pdfjs-dist`; the `pdf` skill draws pages with Poppler. Keep it in step with `KNOWN_SKILL_DEPS` in
 `packages/llm/src/work/skill-deps.ts`.
@@ -70,8 +72,8 @@ package of `pdfjs-dist`; the `pdf` skill draws pages with Poppler. Keep it in st
 The image holds only what the skills and the service use, plus `jq`,
 `ripgrep` and `file` for the agent's shell. It has no compiler, no pip, no
 npm and no git, so a command cannot install a package at run time. It is
-about 594 MB unpacked. The published image is 148 MiB compressed on amd64
-and 146 MiB on arm64; the release fails above 155 MiB
+about 522 MB unpacked. The published image is 131 MiB compressed on amd64
+and 130 MiB on arm64; the release fails above 132 MiB
 (`scripts/image-size-budgets.json`).
 
 ## Skills
@@ -404,6 +406,15 @@ each query there.
 ```sh
 (cd recipes/sandbox && go test ./...)
 (cd recipes/sandbox/skills && npm ci && npm test)
+```
+
+Without the Python document libraries, `npm test` skips the five checks
+that open the output files. The `skill-test` stage of the Dockerfile adds
+the libraries and runs every skill test in the image:
+
+```sh
+docker build --target skill-test -t openneko-sandbox:skill-test recipes/sandbox
+docker run --rm openneko-sandbox:skill-test
 ```
 
 The tests that switch users and set ACLs run only as root, for example in a

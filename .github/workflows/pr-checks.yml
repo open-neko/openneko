@@ -33,12 +33,16 @@ jobs:
           cache: false
       - run: go vet ./... && go test -race ./...
         working-directory: recipes/sandbox
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24.22.1
-      - name: Test the sandbox skills
-        working-directory: recipes/sandbox/skills
-        run: npm ci --ignore-scripts --no-audit --no-fund && npm test
+      - name: Test the sandbox skills in the image
+        working-directory: recipes/sandbox
+        run: |
+          set -euo pipefail
+          docker build --target skill-test -t openneko-sandbox:skill-test .
+          docker run --rm openneko-sandbox:skill-test | tee /tmp/skill-test.log
+          if ! grep -qx 'ℹ skipped 0' /tmp/skill-test.log; then
+            echo "a skill test skipped; this step must run every one" >&2
+            exit 1
+          fi
       - name: Run the user-switching and ACL tests as root
         working-directory: recipes/sandbox
         run: |

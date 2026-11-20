@@ -46,7 +46,7 @@ Beyond the predefined expectations, extract implicit claims from the outputs and
 
 1. **Extract claims** from the transcript and outputs:
    - Factual statements ("The form has 12 fields")
-   - Process claims ("Used pypdf to fill the form")
+   - Process claims ("Used pdf-lib to fill the form")
    - Quality claims ("All fields were filled correctly")
 
 2. **Verify each claim**:
