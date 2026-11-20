@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
 )
 
 // ReadBackupKey reads a key without ever printing it and tightens its mode
@@ -68,6 +70,11 @@ func WriteBackupKey(path, value string) error {
 	}
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
+		return err
+	}
+	if err := ownonly.Set(path); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
 		return err
 	}
 	if _, err := file.WriteString(value + "\n"); err != nil {

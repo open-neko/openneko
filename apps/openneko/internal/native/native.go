@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
 )
 
 type Layout struct {
@@ -100,6 +102,9 @@ func (l Layout) Prepare() error {
 			return err
 		}
 		if err := os.Chmod(dir, 0o700); err != nil {
+			return err
+		}
+		if err := ownonly.Set(dir); err != nil {
 			return err
 		}
 	}

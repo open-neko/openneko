@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
 )
 
 const webAdminSocketEnv = "OPENNEKO_WEB_ADMIN_SOCKET"
@@ -27,7 +29,7 @@ func webAdminSocket() string {
 // serveWebAdmin listens on path with mode 0600: only the web's own OS user
 // (and root) can call it, and every caller acts as an admin.
 func serveWebAdmin(path string, handler http.Handler) (func(), error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := ownonly.Mkdir(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 	if info, err := os.Lstat(path); err == nil {

@@ -13,6 +13,7 @@ import (
 	"sort"
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
 )
 
 const StoreFilename = "secrets.json"
@@ -74,7 +75,7 @@ func ReadSoft(overrideDir string, warn func(string)) Store {
 
 func Write(store Store, overrideDir string) error {
 	file := Path(overrideDir)
-	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+	if err := ownonly.Mkdir(filepath.Dir(file)); err != nil {
 		return err
 	}
 

@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/open-neko/neko/apps/openneko/assets"
+	"github.com/open-neko/neko/apps/openneko/internal/appdir"
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/installation"
 	"github.com/open-neko/neko/apps/openneko/internal/instance"
@@ -36,7 +37,7 @@ func nativeLayout() native.Layout {
 	if activeServer != nil {
 		return activeServer.Layout()
 	}
-	return native.Layout{Root: instance.ScopeConfigDir(filepath.Join(dataHome(), "openneko"))}
+	return native.Layout{Root: instance.ScopeConfigDir(appdir.Data())}
 }
 
 func nativeInstall() (installation.Settings, bool) {
