@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -32,6 +33,9 @@ func TestPackUploadReadsHostArchive(t *testing.T) {
 }
 
 func TestPackUploadStreamsHostFileToSelectedWeb(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("this test drives a Docker install; Windows runs the native install only, and the pack command there uses the web admin socket")
+	}
 	directory := t.TempDir()
 	archive := filepath.Join(directory, "host-only.zip")
 	if err := os.WriteFile(archive, []byte("host ZIP bytes"), 0600); err != nil {

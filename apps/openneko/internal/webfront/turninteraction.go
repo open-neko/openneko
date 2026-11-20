@@ -170,7 +170,7 @@ func skillTools(b turnBinding) []toolDef {
 			if err != nil {
 				return toolResult{}, err
 			}
-			return toolText(jsObjOf("ok", true, "name", name, "skillFile", skillPath+"/SKILL.md")), nil
+			return toolText(jsObjOf("ok", true, "name", name, "skillFile", filepath.ToSlash(filepath.Join(skillPath, "SKILL.md")))), nil
 		}}}
 }
 

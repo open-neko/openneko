@@ -90,21 +90,21 @@ func NewClient(cfg Config, workspace string) (*Client, error) {
 }
 
 func transport(raw string) (*http.Client, string, error) {
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return nil, "", fmt.Errorf("invalid OPENNEKO_SANDBOX_URL")
-	}
-	switch parsed.Scheme {
-	case "unix":
-		if parsed.Path == "" {
+	if socket, ok := strings.CutPrefix(raw, "unix://"); ok {
+		if !filepath.IsAbs(socket) {
 			return nil, "", fmt.Errorf("OPENNEKO_SANDBOX_URL needs a socket path")
 		}
-		socket := parsed.Path
 		dial := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			var d net.Dialer
 			return d.DialContext(ctx, "unix", socket)
 		}}
 		return &http.Client{Transport: dial}, "http://sandbox", nil
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return nil, "", fmt.Errorf("invalid OPENNEKO_SANDBOX_URL")
+	}
+	switch parsed.Scheme {
 	case "http", "https":
 		if parsed.Host == "" {
 			return nil, "", fmt.Errorf("OPENNEKO_SANDBOX_URL needs a host")

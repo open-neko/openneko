@@ -1066,7 +1066,7 @@ func (m *axEventMapper) handle(ev axEvent) {
 		if ev.Type == "skill.used" {
 			id, tool = "ax-skill-"+*ev.Name, "skill_used"
 		}
-		input := jsObjOf("path", filepath.Join(m.skillsRoot, *ev.Name, "SKILL.md"))
+		input := jsObjOf("path", filepath.ToSlash(filepath.Join(m.skillsRoot, *ev.Name, "SKILL.md")))
 		m.emit(jsObjOf("type", "tool_start", "id", id, "name", tool, "input", input, "label", toolStepLabel(tool, input)))
 		m.emit(jsObjOf("type", "tool_end", "id", id))
 	case "actor.code":

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -31,9 +32,13 @@ func TestMigrateConfigRepoDryRun(t *testing.T) {
 	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("APPDATA", home)
 	t.Setenv("OPENNEKO_DATABASE_URL", "")
 	t.Setenv("DATABASE_URL", "")
 	root := filepath.Join(home, ".config", "openneko", "agents", "orgs", "org")
+	if runtime.GOOS == "windows" {
+		root = filepath.Join(home, "OpenNeko", "agents", "orgs", "org")
+	}
 	if err := os.MkdirAll(filepath.Join(root, "skills", "report"), 0o755); err != nil {
 		t.Fatal(err)
 	}

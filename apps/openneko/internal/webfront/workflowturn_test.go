@@ -349,10 +349,11 @@ func TestWorkflowScriptStepsMatchNode(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				return strings.ReplaceAll(string(raw), root, "$ROOT")
+				return strings.ReplaceAll(string(raw), filepath.ToSlash(root), "$ROOT")
 			}
 			for i := range results {
 				results[i].DurationMs = 0
+				results[i].OutputPath = filepath.ToSlash(results[i].OutputPath)
 			}
 			if got, want := norm(results), norm(s.Results); got != want {
 				t.Fatalf("results:\n%s\nwant\n%s", got, want)

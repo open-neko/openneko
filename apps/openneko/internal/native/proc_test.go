@@ -264,14 +264,19 @@ func TestAliveSeesAnEndedProcess(t *testing.T) {
 
 func TestDetachStartsOutsideTheCallersSession(t *testing.T) {
 	withConsole(t)
-	out := filepath.Join(t.TempDir(), "state")
-	cmd := exec.Command(os.Args[0], "-test.run=^$")
-	cmd.Env = helperEnviron("detached", out)
-	cmd.SysProcAttr = Detach()
-	if err := cmd.Run(); err != nil {
-		t.Fatal(err)
-	}
-	if raw, err := os.ReadFile(out); err != nil || string(raw) != "detached" {
-		t.Errorf("the child is %q %v, want detached", raw, err)
+	for _, c := range []struct {
+		attr *syscall.SysProcAttr
+		want string
+	}{{nil, "attached"}, {Detach(), "detached"}} {
+		out := filepath.Join(t.TempDir(), "state")
+		cmd := exec.Command(os.Args[0], "-test.run=^$")
+		cmd.Env = helperEnviron("detached", out)
+		cmd.SysProcAttr = c.attr
+		if err := cmd.Run(); err != nil {
+			t.Fatal(err)
+		}
+		if raw, err := os.ReadFile(out); err != nil || string(raw) != c.want {
+			t.Errorf("the child is %q %v, want %s", raw, err, c.want)
+		}
 	}
 }

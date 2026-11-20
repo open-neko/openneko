@@ -379,7 +379,7 @@ func TestTurnToolsMatchNode(t *testing.T) {
 var surfaceIDPattern = regexp.MustCompile(`(answer|source-form|pack-setup)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 
 func fixtureNeutral(text, skillsRoot string) string {
-	root, _ := json.Marshal(skillsRoot)
+	root, _ := json.Marshal(filepath.ToSlash(skillsRoot))
 	text = strings.ReplaceAll(text, strings.Trim(string(root), `"`), "<skills>")
 	return surfaceIDPattern.ReplaceAllString(text, "$1-<id>")
 }

@@ -17,7 +17,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -738,7 +737,7 @@ func Check(ctx context.Context, in Input) Result {
 	cancel()
 	if err != nil {
 		message := fmt.Sprintf("OpenNeko's server cannot reach %s on port %s: %s.", host, portText(port), errorText(err))
-		if errors.Is(err, syscall.ECONNREFUSED) {
+		if refused(err) {
 			message = fmt.Sprintf("%s refuses connections on port %s. Check the port, and check that the database listens on this address.", host, portText(port))
 		} else if timedOut(err) {
 			message = fmt.Sprintf("No answer from %s on port %s within %d seconds. A firewall may block OpenNeko's server, or the port is wrong.", host, portText(port), int(math.Round(d.Seconds())))
