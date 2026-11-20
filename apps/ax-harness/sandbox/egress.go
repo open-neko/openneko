@@ -6,6 +6,8 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 // MaxEgressHosts matches maxEgressHosts in recipes/sandbox/allow.go.
@@ -75,8 +77,11 @@ func normalizeEgressHost(entry string) (string, error) {
 	}
 	wildcard := strings.HasPrefix(host, "*.")
 	name := strings.TrimSuffix(strings.TrimPrefix(host, "*."), ".")
-	if !validHostname(name) || wildcard && !strings.Contains(name, ".") {
+	if !validHostname(name) {
 		return "", bad
+	}
+	if suffix, _ := publicsuffix.PublicSuffix(name); wildcard && suffix == name {
+		return "", fmt.Errorf("%q covers a public suffix, where unrelated owners register hosts; list the hosts, or a wildcard under one domain", strings.TrimSpace(entry))
 	}
 	if wildcard {
 		name = "*." + name
@@ -94,7 +99,7 @@ var nonPublic = func() []netip.Prefix {
 		"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12",
 		"192.0.0.0/24", "192.0.2.0/24", "192.88.99.0/24", "192.168.0.0/16", "198.18.0.0/15",
 		"198.51.100.0/24", "203.0.113.0/24", "224.0.0.0/4", "240.0.0.0/4",
-		"::/128", "::1/128", "::ffff:0:0/96", "64:ff9b::/96", "64:ff9b:1::/48", "100::/64",
+		"::/128", "::1/128", "::/96", "::ffff:0:0/96", "::ffff:0:0:0/96", "64:ff9b::/96", "64:ff9b:1::/48", "100::/64",
 		"2001::/32", "2001:db8::/32", "2002::/16", "fc00::/7", "fe80::/10", "fec0::/10", "ff00::/8",
 	} {
 		out = append(out, netip.MustParsePrefix(p))

@@ -579,8 +579,12 @@ Beside it, **Hosts the terminal may reach** lists the hosts that commands
 may reach through the egress proxy. The list is empty by default, so
 commands reach no host. Write one host per line: `pypi.org` is port 443,
 `files.example.com:8443` names another port, and `*.example.com` matches
-each subdomain of `example.com`. The proxy refuses a name that resolves to
-a loopback, private, link-local or metadata address. The form offers the
+each subdomain of `example.com`. The form and the proxy refuse a wildcard
+on a public suffix, such as `*.co.uk` or `*.github.io`, and a wildcard
+matches no host under a public suffix below it. The proxy refuses a name
+that resolves to a loopback, private, link-local or metadata address. It
+closes a connection after 5 minutes with no traffic or when its host
+leaves the list, and allows a run 32 connections at once. The form offers the
 hosts that installed packs name; an admin adds each one. Each change of the
 list or of the Terminal setting goes in the audit chain
 (`agent:egress_changed`, `agent:terminal_changed`). The proxy writes one
@@ -594,7 +598,9 @@ compose command with `up -d --build`. Compose makes the network again with
 firewall, and starts `openneko-egress`. An override that sets its own
 `cap_add` for the sandbox must add both, or the sandbox does not start. Then run `openneko
 release-check --sandbox`: it must print `sandbox_egress=closed`. Commands
-reach no host until an admin lists one. The steps for a native install are
+reach no host until an admin lists one. A saved list that holds a wildcard
+on a public suffix reads as empty after the upgrade; save it again with the
+hosts named one by one. The steps for a native install are
 in `recipes/sandbox/README.md`, "Upgrade an install that runs an earlier
 recipe".
 

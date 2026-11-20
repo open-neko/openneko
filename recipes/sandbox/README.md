@@ -143,9 +143,14 @@ empty by default.
 - The proxy checks the host and the port against the list before it looks
   up the name. It then resolves the name once and refuses the request when
   an address is loopback, private, link-local, carrier-grade NAT, unique
-  local, multicast or the metadata address 169.254.169.254. It connects to
-  the address that it checked. It answers 407 for a bad token and 403 for a
-  host that the list does not allow.
+  local, multicast or the metadata address 169.254.169.254, also in an IPv6
+  form that carries an IPv4 address. It connects to the address that it
+  checked. It answers 407 for a bad token and 403 for a host that the list
+  does not allow.
+- A run holds at most 32 connections through the proxy at once; the next
+  one gets 429. The proxy closes a connection after 5 minutes with no
+  traffic. Every 30 seconds it asks for the run's list again, and it closes
+  the connection when its host left the list or its run ended.
 - The proxy writes one JSON line per request to its log: the time, the
   run, the organization, the work run (`label`), the host, the port, the
   address, the result and the reason. Read it with
@@ -157,12 +162,17 @@ List entries:
 |---|---|
 | `pypi.org` | `pypi.org`, port 443 |
 | `files.example.com:8443` | that host, port 8443 |
-| `*.example.com` | each subdomain of `example.com`, port 443; not `example.com` |
+| `*.example.com` | each subdomain of `example.com` that `example.com`'s owner holds, port 443; not `example.com` |
 | `203.0.113.10:443` | that public address |
 
 A list holds at most 100 entries. The admin form refuses `*`, an entry that
 matches every host, and a private, loopback, link-local or metadata
-address. Tools that read the proxy variables (pip, npm, curl, Python's
+address. The form and the proxy refuse a wildcard on a public suffix, where
+unrelated owners register hosts: `*.co.uk`, `*.github.io`,
+`*.s3.amazonaws.com`. A wildcard matches a host only when the host's
+registered domain, by the public suffix list, is the wildcard's domain or
+a parent of it. So `*.amazonaws.com` matches `sts.amazonaws.com`, and no
+host under the public suffix `s3.amazonaws.com`. Tools that read the proxy variables (pip, npm, curl, Python's
 `urllib`, Node with `NODE_USE_ENV_PROXY`) work for a listed host. A tool
 that ignores them reaches nothing.
 
@@ -268,7 +278,10 @@ lists one.
 3. Run `openneko release-check --sandbox`. It must print
    `sandbox_egress=closed`.
 4. At Admin, Settings, Agent, list the hosts that your commands need, for
-   example a package index.
+   example a package index. A list saved before 6.0.0 that holds a wildcard
+   on a public suffix, such as `*.github.io`, no longer passes the check,
+   and the organization's list reads as empty. Save the list again with the
+   hosts named one by one.
 
 A sandbox from an earlier recipe does not report `egress`. OpenNeko 6.0.0
 turns the terminal off, and the status page shows the Sandbox card as
@@ -347,6 +360,11 @@ each query there.
 - A token is a bearer secret for the life of its run. A command that holds
   it can pass it to a child process of the same run. No other run can read
   it.
+- A run ends when OpenNeko ends it, or when no command comes for the run's
+  longest command time plus 10 minutes, counted from the last command's
+  start. The sandbox then kills the run's processes, removes its folder and
+  home, voids its token, and gives its user back to the pool. A later
+  command of that run gets 409, and OpenNeko sends the run folder again.
 - The proxy filters by host and port. It does not read the traffic inside
   a `CONNECT` tunnel.
 

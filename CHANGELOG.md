@@ -14,6 +14,9 @@
 * For a sandbox on another host whose egress you enforce yourself, set `OPENNEKO_SANDBOX_EGRESS_BY_OPERATOR=1` for web. It is off by default; the status page shows it, and a change goes in the audit chain.
 * Upgrade an install that runs the sandbox recipe: take the new recipe, run the same compose command with `up -d --build`, then run `openneko release-check --sandbox` and check for `sandbox_egress=closed`. A native install starts the sandbox with `recipes/sandbox/compose.native.yml`. The steps are in `recipes/sandbox/README.md`, "Upgrade an install that runs an earlier recipe".
 * The bundled skills (`xlsx`, `docx`, `pptx`, `pdf`, `skill-creator`), `neko_data` and declared queries need no host on the list.
+* The admin form and the proxy refuse a wildcard on a public suffix (`*.co.uk`, `*.github.io`, `*.s3.amazonaws.com`). A wildcard matches no host under a public suffix below its domain. A saved list that holds such a wildcard reads as empty after the upgrade; save it again with the hosts named one by one.
+* The proxy closes a connection after 5 minutes with no traffic, and when its host leaves the list or its run ends. A run holds at most 32 connections through the proxy at once.
+* A run that OpenNeko does not end expires after its longest command time plus 10 minutes with no command. The sandbox voids its proxy token and gives its user back to the pool.
 
 ### Model keys
 

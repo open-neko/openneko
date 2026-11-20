@@ -34,7 +34,7 @@ func TestParseEgressHosts(t *testing.T) {
 			t.Errorf("parse %q = %v, %v; want %s", in, rules, err, want)
 		}
 	}
-	for _, in := range []string{"", "*", "*.com", "exa mple.com", "-a.com", "example.com:0", "example.com:65536", "example.com:08", "http://example.com", "0x7f.1", "127.1", "fe80::1%eth0", "a/b"} {
+	for _, in := range []string{"", "*", "*.com", "*.co.uk", "*.github.io", "*.s3.amazonaws.com", "*.internal", "exa mple.com", "-a.com", "example.com:0", "example.com:65536", "example.com:08", "http://example.com", "0x7f.1", "127.1", "fe80::1%eth0", "a/b"} {
 		if _, err := parseEgressHosts([]string{in}); err == nil {
 			t.Errorf("parse %q: no error", in)
 		}
@@ -77,6 +77,26 @@ func TestEgressRulesMatch(t *testing.T) {
 	}
 }
 
+func TestWildcardStaysWithOneOwner(t *testing.T) {
+	rules := []egressRule{{name: "amazonaws.com", wildcard: true, port: 443}, {name: "co.uk", wildcard: true, port: 443}, {name: "example.co.uk", wildcard: true, port: 443}}
+	cases := []struct {
+		host string
+		want bool
+	}{
+		{"sts.amazonaws.com", true},
+		{"bucket.s3.amazonaws.com", false},
+		{"api.execute-api.us-east-1.amazonaws.com", false},
+		{"anyone.co.uk", false},
+		{"www.example.co.uk", true},
+		{"example.co.uk", false},
+	}
+	for _, c := range cases {
+		if got := allows(rules, c.host, 443); got != c.want {
+			t.Errorf("allows(%s) = %v, want %v", c.host, got, c.want)
+		}
+	}
+}
+
 func TestPublicAddr(t *testing.T) {
 	for _, a := range []string{"1.1.1.1", "8.8.8.8", "2606:4700::1111"} {
 		if !publicAddr(netip.MustParseAddr(a)) {
@@ -85,7 +105,7 @@ func TestPublicAddr(t *testing.T) {
 	}
 	for _, a := range []string{"127.0.0.1", "127.0.0.11", "10.1.2.3", "172.17.0.1", "192.168.1.1", "169.254.169.254",
 		"100.100.100.200", "0.0.0.0", "224.0.0.1", "255.255.255.255", "::1", "::", "::ffff:10.0.0.1",
-		"::ffff:169.254.169.254", "fd00:ec2::254", "fe80::1", "64:ff9b::a9fe:a9fe", "2002:a9fe:a9fe::1", "ff02::1"} {
+		"::ffff:169.254.169.254", "::a9fe:a9fe", "::7f00:1", "::ffff:0:a9fe:a9fe", "::ffff:0:7f00:1", "fd00:ec2::254", "fe80::1", "64:ff9b::a9fe:a9fe", "2002:a9fe:a9fe::1", "ff02::1"} {
 		if publicAddr(netip.MustParseAddr(a)) {
 			t.Errorf("%s passed as public", a)
 		}
@@ -120,7 +140,7 @@ func (l *lockedBuffer) String() string {
 // startEgress runs a sandbox and its proxy. The upstream on 127.0.0.1
 // stands for a public host: Public lets 127.0.0.1 through and keeps every
 // other rule.
-func startEgress(t *testing.T) *egressRig {
+func startEgress(t *testing.T, opts ...func(*Server, *Proxy)) *egressRig {
 	t.Helper()
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "upstream %s %s auth=%q", r.Method, r.URL.Path, r.Header.Get("Proxy-Authorization"))
@@ -158,6 +178,9 @@ func startEgress(t *testing.T) *egressRig {
 			return nil, fmt.Errorf("no such host")
 		},
 		Public: func(a netip.Addr) bool { return a == loopback || publicAddr(a) },
+	}
+	for _, opt := range opts {
+		opt(server, proxy)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 2)
