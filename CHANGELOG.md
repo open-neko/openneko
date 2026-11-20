@@ -48,8 +48,16 @@
 
 * `openneko backup` and `openneko restore` check `pg_dump` and `pg_restore` before they start. When a tool is older than the database server, they stop with one line that names both versions and the PostgreSQL client tools to install. Nothing is written or changed.
 
-### macOS
+### Windows and macOS
 
+* The native install runs on Windows and macOS, on amd64 and arm64, for one user with no admin rights. Each release holds `openneko-native_<version>_darwin_<arch>.tar.gz` and `openneko-native_<version>_windows_<arch>.zip`. `install-native.sh` installs it on macOS, and the new `install-native.ps1` on Windows. `openneko upgrade` downloads the release for the host on all three systems.
+* The server install with two system users stays Linux only. The Docker stack runs on Linux and macOS, and not on Windows.
+* Windows keeps data, logs and the sockets in `%LOCALAPPDATA%\OpenNeko`, the config in `%APPDATA%\OpenNeko` and the program in `%LOCALAPPDATA%\Programs\OpenNeko`. These folders, the secret key, `secrets.json`, the backup key and each backup get an access list that allows only your account and SYSTEM.
+* On Windows, serve and web stop with the supervisor through a job object, and `openneko upgrade` moves the running `openneko.exe` aside before it puts the new one in place.
+* On macOS, serve and web stop when the supervisor stops, also when it is killed.
+* The Homebrew cask installs the native archive, with `bin/openneko` and `share/openneko` beside it. `openneko start --native` finds the web app there. The Docker path works from the same cask.
+* `recipes/sandbox/compose.desktop.yml` runs the sandbox on Docker Desktop for a native install on macOS or Windows, on `127.0.0.1:8091` with a key. `recipes/sandbox/prove-desktop.sh` checks that the sandbox has no route out.
+* `openneko backup` on Windows names the PostgreSQL `bin` folder to add to `PATH` when it finds no `pg_dump`.
 * `openneko start` on a native install stops with one line when a socket path is longer than the OS allows (103 bytes on macOS, 107 on Linux). Before, serve failed later with "bind: invalid argument". A long user name with a named instance can pass the macOS limit; set `XDG_DATA_HOME` to a shorter folder or use a shorter instance name.
 * `openneko doctor` and `openneko setup` no longer report a duplicate `openneko` when the one on `PATH` is a link to the running binary, as with Homebrew.
 * The sandbox service (`recipes/sandbox`) builds only for Linux. On another OS its program stops at start and says to run its image in Docker.
