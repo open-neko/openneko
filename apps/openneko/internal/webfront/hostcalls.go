@@ -35,7 +35,42 @@ func (a *API) hostCalls() llm.HostCalls {
 	if token == nil {
 		token = llm.GoogleToken
 	}
-	return llm.HostCalls{DB: a.DB, SecretsDir: a.SecretsDir, Gateway: gateway, Token: token, Spend: a.recordHostSpend}
+	calls := llm.HostCalls{DB: a.DB, SecretsDir: a.SecretsDir, Gateway: gateway, Token: token, Spend: a.recordHostSpend}
+	if socket := a.serveSocket(); a.Gateway == nil && socket != "" {
+		door, err := a.keyDoor(socket)
+		if err != nil {
+			log.Printf("[key-door] %v", err)
+			door = &llm.KeyDoor{}
+		}
+		calls.Door = door
+	}
+	return calls
+}
+
+// embed runs one embedding call: through the key door when serve makes it,
+// else in this process.
+func (a *API) embed(ctx context.Context, request embedding.Request, key string) (embedding.Result, error) {
+	if a.Embedder != nil {
+		return a.Embedder(ctx, request, key)
+	}
+	socket := a.serveSocket()
+	if socket == "" {
+		return embedding.Embed(ctx, request, key)
+	}
+	ttl := 10 * time.Minute
+	if deadline, ok := ctx.Deadline(); ok {
+		ttl = time.Until(deadline) + time.Minute
+	}
+	door, err := a.keyDoor(socket)
+	if err != nil {
+		return embedding.Result{}, err
+	}
+	request, token, revoke, err := llm.DoorEmbedRequest(door, request, key, ttl)
+	if err != nil {
+		return embedding.Result{}, err
+	}
+	defer revoke()
+	return llm.ServeEmbedder(socket)(ctx, request, token)
 }
 
 // recordHostSpend is recordUsageSpend() with unpriced "zero" for a host call:
@@ -273,11 +308,7 @@ func (a *API) externalServices() []externalService {
 			},
 			check: func(ctx context.Context, _ string, _ *serviceSettings) (string, string, error) {
 				c := embeddingConfig()
-				embed := a.Embedder
-				if embed == nil {
-					embed = llm.ServeEmbedder(a.serveSocket())
-				}
-				result, err := embed(ctx, embedding.Request{URL: c.URL, Model: c.Model, Dimensions: c.Dimensions, Input: []string{"OpenNeko status check"}}, c.key)
+				result, err := a.embed(ctx, embedding.Request{URL: c.URL, Model: c.Model, Dimensions: c.Dimensions, Input: []string{"OpenNeko status check"}}, c.key)
 				if err != nil {
 					return "", "", err
 				}
@@ -660,13 +691,9 @@ func (a *API) EmbedText(ctx context.Context, text string) ([]float64, error) {
 	if len(utf16.Encode([]rune(text))) > 32000 {
 		return nil, errors.New("embedText: text exceeds 32000 characters")
 	}
-	embed := a.Embedder
-	if embed == nil {
-		embed = llm.ServeEmbedder(a.serveSocket())
-	}
 	ctx, cancel := context.WithTimeout(ctx, 150*time.Second)
 	defer cancel()
-	result, err := embed(ctx, embedding.Request{URL: c.URL, Model: c.Model, Dimensions: c.Dimensions, Input: []string{text}}, c.key)
+	result, err := a.embed(ctx, embedding.Request{URL: c.URL, Model: c.Model, Dimensions: c.Dimensions, Input: []string{text}}, c.key)
 	if err != nil {
 		return nil, err
 	}

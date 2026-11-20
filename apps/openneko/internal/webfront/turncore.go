@@ -134,6 +134,9 @@ func (a *API) runAgentCore(ctx context.Context, in agentCoreInput) (axRunResult,
 		Servers: servers, Tools: tools, NativeDelegationOff: in.NativeDelegationOff, Shell: in.Shell,
 		PythonPath: pythonPath, Keys: in.Keys, Socket: in.Socket, Emit: in.Emit, RepairCards: in.repairCards,
 	}
+	if o.Door, err = a.keyDoor(in.Socket); err != nil {
+		return axRunResult{}, err
+	}
 	if o.RepairCards == nil && a.DB != nil {
 		o.RepairCards = a.cardRepair(in.OrgID)
 	}

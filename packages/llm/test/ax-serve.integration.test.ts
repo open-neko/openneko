@@ -105,7 +105,7 @@ const runnable = Boolean(binary) || (process.env.OPENNEKO_SERVE_IT === "1" && ha
         "--index-dir", join(dir, "file-index"),
         "--sandbox-url", `unix://${sandboxSocket}`,
       ],
-      { stdio: ["ignore", "ignore", "pipe"], env: { ...serveEnv, OPENNEKO_SANDBOX_KEY: "sandbox-key" } },
+      { stdio: ["ignore", "ignore", "pipe"], env: { ...serveEnv, OPENNEKO_ENV: "development", OPENNEKO_SANDBOX_KEY: "sandbox-key" } },
     );
     for (let i = 0; i < 200 && !existsSync(socket); i++) await new Promise((r) => setTimeout(r, 25));
     if (!existsSync(socket)) throw new Error("openneko serve did not start");

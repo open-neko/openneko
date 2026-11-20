@@ -328,7 +328,7 @@
       "HARNESS_MODEL=claude-haiku-5-5",
       "HARNESS_MODEL_OPTIONS=",
       "HARNESS_MODEL_PROVIDER=anthropic",
-      "HARNESS_MODEL_URL=",
+      "HARNESS_MODEL_URL=http://openneko-door/r/primary",
       "OPENNEKO_HARNESS_CHILD_TOOLS=*",
       "OPENNEKO_HARNESS_SKILLS_READ=1",
       "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
@@ -355,9 +355,9 @@
       "reasoning_effort": "medium"
      },
      "bridge": false,
-     "model_key_env": "ANTHROPIC_API_KEY",
+     "model_key_env": "MODEL_API_KEY",
      "model_keys": {
-      "ANTHROPIC_API_KEY": "sk-ant"
+      "MODEL_API_KEY": "DOOR-TOKEN"
      }
     }
    ],
@@ -732,8 +732,8 @@
       "HARNESS_MODEL=gpt-4.1",
       "HARNESS_MODEL_OPTIONS={\"resource_name\":\"r\",\"deployment_name\":\"gpt-4.1\",\"api_version\":\"2024-10-21\"}",
       "HARNESS_MODEL_PROVIDER=azure-openai",
-      "HARNESS_MODEL_ROUTES={\"context\":\"primary\",\"executor\":\"primary\",\"responder\":\"primary\",\"fallbacks\":[{\"from\":\"primary\",\"to\":\"fallback\"}],\"routes\":[{\"key\":\"primary\",\"provider\":\"azure-openai\",\"model\":\"gpt-4.1\",\"api_key_env\":\"PRIMARY_MODEL_API_KEY\",\"options\":{\"resource_name\":\"r\",\"deployment_name\":\"gpt-4.1\",\"api_version\":\"2024-10-21\"}},{\"key\":\"fallback\",\"provider\":\"openai-compatible\",\"model\":\"llama\",\"url\":\"http://models.local/v1\",\"api_key_env\":\"FALLBACK_MODEL_API_KEY\"}]}",
-      "HARNESS_MODEL_URL=",
+      "HARNESS_MODEL_ROUTES={\"context\":\"primary\",\"executor\":\"primary\",\"responder\":\"primary\",\"fallbacks\":[{\"from\":\"primary\",\"to\":\"fallback\"}],\"routes\":[{\"key\":\"primary\",\"provider\":\"azure-openai\",\"model\":\"gpt-4.1\",\"url\":\"http://openneko-door/r/primary\",\"api_key_env\":\"PRIMARY_MODEL_API_KEY\",\"options\":{\"resource_name\":\"r\",\"deployment_name\":\"gpt-4.1\",\"api_version\":\"2024-10-21\"}},{\"key\":\"fallback\",\"provider\":\"openai-compatible\",\"model\":\"llama\",\"url\":\"http://openneko-door/r/fallback\",\"api_key_env\":\"FALLBACK_MODEL_API_KEY\"}]}",
+      "HARNESS_MODEL_URL=http://openneko-door/r/primary",
       "OPENNEKO_HARNESS_DEBUG=1",
       "OPENNEKO_HARNESS_SHELL=1",
       "OPENNEKO_HARNESS_SKILLS_READ=1",
@@ -767,11 +767,11 @@
       "debug": true
      },
      "bridge": false,
-     "model_key_env": "AZURE_OPENAI_API_KEY",
+     "model_key_env": "MODEL_API_KEY",
      "model_keys": {
-      "AZURE_OPENAI_API_KEY": "sk-az",
-      "PRIMARY_MODEL_API_KEY": "sk-az",
-      "FALLBACK_MODEL_API_KEY": "sk-fb"
+      "MODEL_API_KEY": "DOOR-TOKEN",
+      "PRIMARY_MODEL_API_KEY": "DOOR-TOKEN",
+      "FALLBACK_MODEL_API_KEY": "DOOR-TOKEN"
      }
     }
    ],
@@ -928,7 +928,7 @@
       "HARNESS_MODEL=gpt-4.1",
       "HARNESS_MODEL_OPTIONS=",
       "HARNESS_MODEL_PROVIDER=openai",
-      "HARNESS_MODEL_URL=",
+      "HARNESS_MODEL_URL=http://openneko-door/r/primary",
       "OPENNEKO_HARNESS_CHILD_TOOLS=*",
       "OPENNEKO_HARNESS_SKILLS_READ=1",
       "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
@@ -952,9 +952,9 @@
       "max_child_steps": 50
      },
      "bridge": false,
-     "model_key_env": "OPENAI_API_KEY",
+     "model_key_env": "MODEL_API_KEY",
      "model_keys": {
-      "OPENAI_API_KEY": "sk-openai"
+      "MODEL_API_KEY": "DOOR-TOKEN"
      }
     }
    ],
@@ -1077,7 +1077,7 @@
       "HARNESS_MODEL=gpt-4.1",
       "HARNESS_MODEL_OPTIONS=",
       "HARNESS_MODEL_PROVIDER=openai",
-      "HARNESS_MODEL_URL=",
+      "HARNESS_MODEL_URL=http://openneko-door/r/primary",
       "OPENNEKO_HARNESS_CHILD_TOOLS=*",
       "OPENNEKO_HARNESS_SKILLS_READ=1",
       "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
@@ -1103,9 +1103,9 @@
       "max_child_steps": 50
      },
      "bridge": false,
-     "model_key_env": "OPENAI_API_KEY",
+     "model_key_env": "MODEL_API_KEY",
      "model_keys": {
-      "OPENAI_API_KEY": "sk-model"
+      "MODEL_API_KEY": "DOOR-TOKEN"
      }
     }
    ],
@@ -1232,7 +1232,7 @@
       "HARNESS_MODEL=unpriced-model",
       "HARNESS_MODEL_OPTIONS=",
       "HARNESS_MODEL_PROVIDER=openai-compatible",
-      "HARNESS_MODEL_URL=http://m.local/v1",
+      "HARNESS_MODEL_URL=http://openneko-door/r/primary",
       "OPENNEKO_HARNESS_CHILD_TOOLS=*",
       "OPENNEKO_HARNESS_SKILLS_READ=1",
       "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
@@ -1260,7 +1260,7 @@
      "bridge": false,
      "model_key_env": "MODEL_API_KEY",
      "model_keys": {
-      "MODEL_API_KEY": "none"
+      "MODEL_API_KEY": "DOOR-TOKEN"
      }
     }
    ],
@@ -1375,7 +1375,7 @@
       "HARNESS_MODEL=gpt-4.1",
       "HARNESS_MODEL_OPTIONS=",
       "HARNESS_MODEL_PROVIDER=openai",
-      "HARNESS_MODEL_URL=",
+      "HARNESS_MODEL_URL=http://openneko-door/r/primary",
       "OPENNEKO_HARNESS_CHILD_TOOLS=*",
       "OPENNEKO_HARNESS_SKILLS_READ=1",
       "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
@@ -1401,9 +1401,9 @@
       "max_child_steps": 50
      },
      "bridge": false,
-     "model_key_env": "OPENAI_API_KEY",
+     "model_key_env": "MODEL_API_KEY",
      "model_keys": {
-      "OPENAI_API_KEY": "sk-openai"
+      "MODEL_API_KEY": "DOOR-TOKEN"
      }
     }
    ],
@@ -1529,7 +1529,7 @@
       "HARNESS_MODEL=gpt-4.1",
       "HARNESS_MODEL_OPTIONS=",
       "HARNESS_MODEL_PROVIDER=openai",
-      "HARNESS_MODEL_URL=",
+      "HARNESS_MODEL_URL=http://openneko-door/r/primary",
       "OPENNEKO_HARNESS_CHILD_TOOLS=*",
       "OPENNEKO_HARNESS_SKILLS_READ=1",
       "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
@@ -1555,9 +1555,9 @@
       "max_child_steps": 50
      },
      "bridge": false,
-     "model_key_env": "OPENAI_API_KEY",
+     "model_key_env": "MODEL_API_KEY",
      "model_keys": {
-      "OPENAI_API_KEY": "sk-openai"
+      "MODEL_API_KEY": "DOOR-TOKEN"
      }
     }
    ],
@@ -1702,7 +1702,7 @@
       "HARNESS_MODEL=gpt-4.1",
       "HARNESS_MODEL_OPTIONS=",
       "HARNESS_MODEL_PROVIDER=openai",
-      "HARNESS_MODEL_URL=",
+      "HARNESS_MODEL_URL=http://openneko-door/r/primary",
       "OPENNEKO_HARNESS_CHILD_TOOLS=*",
       "OPENNEKO_HARNESS_SKILLS_READ=1",
       "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
@@ -1728,9 +1728,9 @@
       "max_child_steps": 50
      },
      "bridge": false,
-     "model_key_env": "OPENAI_API_KEY",
+     "model_key_env": "MODEL_API_KEY",
      "model_keys": {
-      "OPENAI_API_KEY": "sk-openai"
+      "MODEL_API_KEY": "DOOR-TOKEN"
      }
     },
     {
@@ -1740,7 +1740,7 @@
       "HARNESS_MODEL=gpt-4.1",
       "HARNESS_MODEL_OPTIONS=",
       "HARNESS_MODEL_PROVIDER=openai",
-      "HARNESS_MODEL_URL=",
+      "HARNESS_MODEL_URL=http://openneko-door/r/primary",
       "OPENNEKO_HARNESS_CHILD_TOOLS=*",
       "OPENNEKO_HARNESS_SKILLS_READ=1",
       "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
@@ -1766,9 +1766,9 @@
       "max_child_steps": 50
      },
      "bridge": false,
-     "model_key_env": "OPENAI_API_KEY",
+     "model_key_env": "MODEL_API_KEY",
      "model_keys": {
-      "OPENAI_API_KEY": "sk-openai"
+      "MODEL_API_KEY": "DOOR-TOKEN"
      }
     }
    ],
@@ -1919,7 +1919,7 @@
       "HARNESS_MODEL=gpt-4.1",
       "HARNESS_MODEL_OPTIONS=",
       "HARNESS_MODEL_PROVIDER=openai",
-      "HARNESS_MODEL_URL=",
+      "HARNESS_MODEL_URL=http://openneko-door/r/primary",
       "OPENNEKO_HARNESS_CHILD_TOOLS=*",
       "OPENNEKO_HARNESS_SKILLS_READ=1",
       "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
@@ -1945,9 +1945,9 @@
       "max_child_steps": 50
      },
      "bridge": false,
-     "model_key_env": "OPENAI_API_KEY",
+     "model_key_env": "MODEL_API_KEY",
      "model_keys": {
-      "OPENAI_API_KEY": "sk-openai"
+      "MODEL_API_KEY": "DOOR-TOKEN"
      }
     }
    ],
@@ -2065,7 +2065,7 @@
       "HARNESS_MODEL=gpt-4.1",
       "HARNESS_MODEL_OPTIONS=",
       "HARNESS_MODEL_PROVIDER=openai",
-      "HARNESS_MODEL_URL=",
+      "HARNESS_MODEL_URL=http://openneko-door/r/primary",
       "OPENNEKO_HARNESS_CHILD_TOOLS=*",
       "OPENNEKO_HARNESS_SKILLS_READ=1",
       "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
@@ -2091,9 +2091,9 @@
       "max_child_steps": 50
      },
      "bridge": false,
-     "model_key_env": "OPENAI_API_KEY",
+     "model_key_env": "MODEL_API_KEY",
      "model_keys": {
-      "OPENAI_API_KEY": "sk-openai"
+      "MODEL_API_KEY": "DOOR-TOKEN"
      }
     }
    ],
@@ -2193,7 +2193,7 @@
       "HARNESS_MODEL=gpt-4.1",
       "HARNESS_MODEL_OPTIONS=",
       "HARNESS_MODEL_PROVIDER=openai",
-      "HARNESS_MODEL_URL=",
+      "HARNESS_MODEL_URL=http://openneko-door/r/primary",
       "OPENNEKO_HARNESS_CHILD_TOOLS=*",
       "OPENNEKO_HARNESS_SKILLS_READ=1",
       "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
@@ -2219,9 +2219,9 @@
       "max_child_steps": 50
      },
      "bridge": false,
-     "model_key_env": "OPENAI_API_KEY",
+     "model_key_env": "MODEL_API_KEY",
      "model_keys": {
-      "OPENAI_API_KEY": "sk-openai"
+      "MODEL_API_KEY": "DOOR-TOKEN"
      }
     }
    ],
@@ -2305,7 +2305,7 @@
       "HARNESS_MODEL=gpt-4.1",
       "HARNESS_MODEL_OPTIONS=",
       "HARNESS_MODEL_PROVIDER=openai",
-      "HARNESS_MODEL_URL=",
+      "HARNESS_MODEL_URL=http://openneko-door/r/primary",
       "OPENNEKO_HARNESS_CHILD_TOOLS=*",
       "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT=50000",
       "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS=180",
@@ -2326,9 +2326,9 @@
       "max_child_steps": 50
      },
      "bridge": false,
-     "model_key_env": "OPENAI_API_KEY",
+     "model_key_env": "MODEL_API_KEY",
      "model_keys": {
-      "OPENAI_API_KEY": "sk-openai"
+      "MODEL_API_KEY": "DOOR-TOKEN"
      }
     }
    ],

@@ -163,6 +163,9 @@ func (a *API) runAgentJob(ctx context.Context, j agentJob) (string, error) {
 	defer cleanup()
 	o := axTurnOptions{OrgID: j.OrgID, ThreadID: j.RunID, Tag: j.Label + " " + j.RunID, Workspace: &ws,
 		TimeoutMs: j.TimeoutMs, Keys: keys, Socket: a.serveSocket()}
+	if o.Door, err = a.keyDoor(o.Socket); err != nil {
+		return "", err
+	}
 	if j.GraphjinRead || j.MemorySearch {
 		b := turnBinding{OrgID: j.OrgID, ThreadID: j.RunID, RunID: j.RunID, Kind: "agent-job", MemoryReadOnly: true}
 		if j.GraphjinRead {

@@ -21,11 +21,12 @@ import (
 	"unicode/utf16"
 
 	"github.com/open-neko/neko/apps/openneko/internal/llm"
+	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
 )
 
 // The Ax backend of packages/llm/src/agent-backends/ax.ts and harness-turn.ts:
-// one ax-harness turn in openneko serve. The model keys travel in the start
-// frame's own field and never in the run's environment.
+// one ax-harness turn in openneko serve. The model keys stay in the key door;
+// the start frame carries a token for the turn and never a key.
 
 type agentLimits struct {
 	TimeoutMs, MaxTurns, MaxToolCalls, MaxContinuations int
@@ -181,6 +182,7 @@ type axTurnOptions struct {
 	TimeoutMs, MaxToolIterations              int
 	ReasoningEffort, PythonPath               string
 	Keys                                      map[string]string
+	Door                                      *llm.KeyDoor
 	Socket                                    string
 	Emit                                      func(ctx context.Context, event any) error
 	RepairCards                               cardRepair
@@ -214,6 +216,42 @@ func (r axRunResult) js() *jsObj {
 		o.set("degraded", true)
 	}
 	return o
+}
+
+// axDoorGrant gives serve door URLs and one token in place of the routes'
+// URLs and keys; the key door holds the keys until the turn ends.
+func axDoorGrant(cfg *llm.AxBackendConfig, o axTurnOptions, ttl time.Duration) (*llm.AxBackendConfig, *jsObj, func(), error) {
+	door := o.Door
+	if door == nil {
+		door = &llm.KeyDoor{}
+	}
+	primary, err := llm.DoorRouteFor(cfg.Route, axModelKey(cfg.Route, o.Keys))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	routes := map[string]llm.DoorRoute{"primary": primary}
+	out := *cfg
+	out.Route.URL = keydoor.URL("primary")
+	if cfg.Fallback != nil {
+		fallback, err := llm.DoorRouteFor(*cfg.Fallback, orNone(o.Keys[llm.FallbackKeyEnv]))
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		routes["fallback"] = fallback
+		f := *cfg.Fallback
+		f.URL = keydoor.URL("fallback")
+		out.Fallback = &f
+	}
+	token, revoke, err := door.Issue(o.OrgID, routes, ttl)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	keys := jsObjOf("MODEL_API_KEY", token)
+	if cfg.Fallback != nil {
+		keys.set(primaryRouteKeyEnv, token)
+		keys.set(llm.FallbackKeyEnv, token)
+	}
+	return &out, keys, revoke, nil
 }
 
 func axModelKey(r llm.AxModelRoute, keys map[string]string) string {
@@ -407,7 +445,12 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions, n
 		cwd = scratch
 	}
 	limits := agentLimitsFor("chat")
-	environ := axEnviron(cfg, o, cwd, limits)
+	doorCfg, modelKeys, revoke, err := axDoorGrant(cfg, o, time.Duration(timeoutMs)*time.Millisecond+axKillGrace)
+	if err != nil {
+		return axTurnOutcome{}, err
+	}
+	defer revoke()
+	environ := axEnviron(doorCfg, o, cwd, limits)
 
 	spec := jsObjOf("version", 1.0, "run_id", runID, "input_id", runID)
 	axRunPrompt(spec, o.Prompt, o.UserMessage)
@@ -442,21 +485,9 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions, n
 		spec.set("debug", true)
 	}
 
-	keyEnv := orDefault(cfg.Route.KeyEnv, "MODEL_API_KEY")
-	keys := map[string]string{keyEnv: axModelKey(cfg.Route, o.Keys)}
-	if cfg.Fallback != nil {
-		keys[primaryRouteKeyEnv] = axModelKey(cfg.Route, o.Keys)
-		keys[llm.FallbackKeyEnv] = orNone(o.Keys[llm.FallbackKeyEnv])
-	}
 	bridge := o.Tools != nil && len(o.Servers) > 0
-	modelKeys := jsObjOf(keyEnv, keys[keyEnv])
-	for _, name := range []string{primaryRouteKeyEnv, llm.FallbackKeyEnv} {
-		if v, ok := keys[name]; ok {
-			modelKeys.set(name, v)
-		}
-	}
 	start := jsObjOf("type", "start", "environ", stringsAny(environ), "spec", spec, "bridge", bridge,
-		"model_key_env", keyEnv, "model_keys", modelKeys)
+		"model_key_env", "MODEL_API_KEY", "model_keys", modelKeys)
 
 	turn, err := dialAxTurn(ctx, o.Socket, start, bridgeTools(bridge, o.Tools))
 	if err != nil {

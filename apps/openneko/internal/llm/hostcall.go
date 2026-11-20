@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/open-neko/openneko/apps/ax-harness/embedding"
 	"github.com/open-neko/openneko/apps/ax-harness/inference"
+	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -464,8 +465,11 @@ type HostCalls struct {
 	SecretsDir string
 	Gateway    Gateway
 	Token      TokenFunc
-	Spend      func(ctx context.Context, orgID, task string, served RoutedModel, usage Usage)
-	Now        func() time.Time
+	// Door, when set, keeps the keys out of the Gateway: the call carries a
+	// token and door URLs.
+	Door  *KeyDoor
+	Spend func(ctx context.Context, orgID, task string, served RoutedModel, usage Usage)
+	Now   func() time.Time
 }
 
 const callTimeout = 10 * time.Minute
@@ -507,6 +511,13 @@ func (h HostCalls) OnRoute(ctx context.Context, orgID, task string, route TaskRo
 			return Result{}, err
 		}
 	}
+	if h.Door != nil {
+		var revoke func()
+		if request, key, fallbackKey, revoke, err = h.doorRequest(orgID, request, key, fallbackKey); err != nil {
+			return Result{}, err
+		}
+		defer revoke()
+	}
 	callCtx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
 	result, err := h.Gateway(callCtx, request, key, fallbackKey)
@@ -531,6 +542,48 @@ func (h HostCalls) OnRoute(ctx context.Context, orgID, task string, route TaskRo
 		outputs = map[string]any{}
 	}
 	return Result{Outputs: outputs, Usage: usage, Provider: served.Settings.Provider, Model: served.Settings.Model, Fallback: byFallback}, nil
+}
+
+func doorRouteOf(r inference.Route, key string) (DoorRoute, error) {
+	return DoorRouteFor(AxModelRoute{Provider: r.Provider, Model: r.Model, URL: r.URL, Options: r.Options}, key)
+}
+
+func (h HostCalls) doorRequest(orgID string, request inference.Request, key, fallbackKey string) (inference.Request, string, string, func(), error) {
+	primary, err := doorRouteOf(request.Route, key)
+	if err != nil {
+		return request, "", "", nil, err
+	}
+	routes := map[string]DoorRoute{"primary": primary}
+	request.Route.URL = keydoor.URL("primary")
+	if request.Fallback != nil {
+		fallback, err := doorRouteOf(*request.Fallback, fallbackKey)
+		if err != nil {
+			return request, "", "", nil, err
+		}
+		routes["fallback"] = fallback
+		f := *request.Fallback
+		f.URL = keydoor.URL("fallback")
+		request.Fallback = &f
+	}
+	token, revoke, err := h.Door.Issue(orgID, routes, callTimeout+time.Minute)
+	if err != nil {
+		return request, "", "", nil, err
+	}
+	if request.Fallback == nil {
+		return request, token, "", revoke, nil
+	}
+	return request, token, token, revoke, nil
+}
+
+// DoorEmbedRequest points an embedding call at the door and returns the
+// token that stands in for key.
+func DoorEmbedRequest(door *KeyDoor, request embedding.Request, key string, ttl time.Duration) (embedding.Request, string, func(), error) {
+	token, revoke, err := door.Issue("", map[string]DoorRoute{"embed": {Upstream: request.URL, Header: "authorization", Key: key}}, ttl)
+	if err != nil {
+		return request, "", nil, err
+	}
+	request.URL = keydoor.URL("embed")
+	return request, token, revoke, nil
 }
 
 var providerTest = Program{`prompt:string -> reply:string "the word READY"`, "Reply with READY only."}

@@ -86,6 +86,7 @@ func startServe(t *testing.T) string {
 		t.Fatal(err)
 	}
 	ctx, stop := context.WithCancel(context.Background())
+	serveDoor(t, socket)
 	srv := &serve.Server{Getenv: os.Getenv, MaxTurns: 2}
 	done := make(chan struct{})
 	go func() { _ = srv.Serve(ctx, ln); close(done) }()
