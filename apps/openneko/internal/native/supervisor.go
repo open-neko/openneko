@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,6 +31,10 @@ type State struct {
 
 func ReadState(l Layout) (State, error) {
 	raw, err := os.ReadFile(l.State())
+	for i := 0; err != nil && !errors.Is(err, fs.ErrNotExist) && i < 10; i++ {
+		time.Sleep(20 * time.Millisecond)
+		raw, err = os.ReadFile(l.State())
+	}
 	if err != nil {
 		return State{}, err
 	}
@@ -49,6 +54,7 @@ type Supervisor struct {
 	Backoff time.Duration
 
 	mu     sync.Mutex
+	saveMu sync.Mutex
 	state  State
 	job    *job
 	follow *os.File
@@ -186,6 +192,8 @@ func (s *Supervisor) update(name string, f func(*ProcState)) {
 }
 
 func (s *Supervisor) save() error {
+	s.saveMu.Lock()
+	defer s.saveMu.Unlock()
 	s.mu.Lock()
 	raw, err := json.MarshalIndent(s.state, "", "  ")
 	s.mu.Unlock()
@@ -204,7 +212,21 @@ func (s *Supervisor) save() error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), s.Layout.State())
+	return renameState(tmp.Name(), s.Layout.State())
+}
+
+var renameState = replaceFile
+
+// On Windows a rename onto a file that a reader holds open fails for a moment.
+func replaceFile(from, to string) error {
+	var err error
+	for range 20 {
+		if err = os.Rename(from, to); err == nil {
+			return nil
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	return err
 }
 
 var ErrNotRunning = errors.New("the OpenNeko processes are not running")

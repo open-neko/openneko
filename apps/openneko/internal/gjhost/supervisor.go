@@ -38,6 +38,7 @@ type State struct {
 	Reason   string    `json:"reason,omitempty"`
 	Since    time.Time `json:"since"`
 	Restarts int       `json:"restarts"`
+	PID      int       `json:"pid,omitempty"`
 }
 
 const (
@@ -147,12 +148,16 @@ type supervisorState struct {
 }
 
 func (s *supervisorState) set(state, reason string, restart bool) {
+	s.setPID(state, reason, restart, 0)
+}
+
+func (s *supervisorState) setPID(state, reason string, restart bool, pid int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.state.State == state && s.state.Reason == reason && !restart {
+	if s.state.State == state && s.state.Reason == reason && s.state.PID == pid && !restart {
 		return
 	}
-	s.state.State, s.state.Reason, s.state.Since = state, reason, time.Now().UTC()
+	s.state.State, s.state.Reason, s.state.Since, s.state.PID = state, reason, time.Now().UTC(), pid
 	if restart {
 		s.state.Restarts++
 	}
@@ -256,7 +261,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			cur = nil
 			ack()
 		case <-ready:
-			st.set(StateRunning, "", false)
+			st.setPID(StateRunning, "", false, cur.cmd.Process.Pid)
 			s.logf("graphjin is running")
 			backoff = minB
 			ack()
