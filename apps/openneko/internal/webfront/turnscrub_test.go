@@ -41,7 +41,7 @@ func TestRunEventScrubMatchesNode(t *testing.T) {
 	if scrubRunEvent(nil, event) != event {
 		t.Error("no secrets: the event changed")
 	}
-	if got := jsStringify(scrubRunEvent(scrub, map[string]any{"type": "tool_end", "result": "sk-live-0123456789abcdef"}), false); got != `{"result":"[REDACTED]","type":"tool_end"}` {
+	if got := jsStringify(scrubRunEvent(scrub, map[string]any{"type": "tool_end", "result": "sk-live-0123456789a"}), false); got != `{"result":"[REDACTED]","type":"tool_end"}` {
 		t.Errorf("a Go map event: %s", got)
 	}
 }

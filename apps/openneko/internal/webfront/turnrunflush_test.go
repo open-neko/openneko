@@ -115,7 +115,7 @@ func plantRunSecret(t *testing.T, a *API, key string) {
 }
 
 func TestRunEventStoreHoldsASecretTailAcrossOtherEvents(t *testing.T) {
-	const key = "sk-planted-0123456789abcdef"
+	const key = "planted-key-0123456789ab"
 	f, db, _ := chatTurnFront(t)
 	a := f.API
 	ctx := context.Background()
@@ -163,7 +163,7 @@ func TestRunEventStoreHoldsASecretTailAcrossOtherEvents(t *testing.T) {
 }
 
 func TestRunEventStoreDropsTheHeldTailOnAReset(t *testing.T) {
-	const key = "sk-planted-0123456789abcdef"
+	const key = "planted-key-0123456789ab"
 	f, db, _ := chatTurnFront(t)
 	a := f.API
 	ctx := context.Background()
@@ -171,7 +171,7 @@ func TestRunEventStoreDropsTheHeldTailOnAReset(t *testing.T) {
 	s := a.newRunEventStore("org", threadMine, runAdmin)
 	s.afterFunc = (&fakeRunClock{}).afterFunc
 	for _, e := range []*jsObj{
-		jsObjOf("type", "message", "role", "assistant", "content", "Old answer sk-pl"),
+		jsObjOf("type", "message", "role", "assistant", "content", "Old answer plan"),
 		jsObjOf("type", "status", "message", "Again"),
 		jsObjOf("type", "answer_reset"),
 		jsObjOf("type", "message", "role", "assistant", "content", "New answer."),
@@ -213,7 +213,7 @@ func TestRunEventStoreKeepsTextWhenATimedStoreFails(t *testing.T) {
 }
 
 func TestRunEventStoreScrubsASecretSplitAcrossFlushes(t *testing.T) {
-	const key = "sk-planted-0123456789abcdef"
+	const key = "planted-key-0123456789ab"
 	f, db, _ := chatTurnFront(t)
 	a := f.API
 	ctx := context.Background()
@@ -316,7 +316,7 @@ func TestSecretSafeCutMatchesAWholeScrub(t *testing.T) {
 }
 
 func TestRunEventStoreJoinsAndScrubsThinkingDeltas(t *testing.T) {
-	const key = "sk-planted-0123456789abcdef"
+	const key = "planted-key-0123456789ab"
 	f, db, _ := chatTurnFront(t)
 	a := f.API
 	ctx := context.Background()

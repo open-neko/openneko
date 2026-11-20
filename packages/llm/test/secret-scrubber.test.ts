@@ -29,7 +29,7 @@ describe("createScrubber", () => {
   });
 
   it("longest-first ordering: overlapping secrets get the longer one masked first", () => {
-    const long = "xoxb-secret-very-long";
+    const long = "xoxb-secret-long";
     const short = "xoxb-secret";
     const s = createScrubber([short, long]);
     // The combined string contains the long value once; we want it

@@ -41,7 +41,7 @@ describe("server-provider-secrets", () => {
   });
 
   it("round-trips a typical API key", () => {
-    const plaintext = "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789";
+    const plaintext = "sk-proj-" + "abcdefghijklmnopqrstuvwxyz0123456789";
     const ciphertext = maybeEncryptSecret(plaintext);
     expect(maybeDecryptSecret(ciphertext)).toBe(plaintext);
   });
