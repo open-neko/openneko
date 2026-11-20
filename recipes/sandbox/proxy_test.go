@@ -1,3 +1,5 @@
+//go:build linux
+
 package main
 
 import (
@@ -148,7 +150,7 @@ func startEgress(t *testing.T, opts ...func(*Server, *Proxy)) *egressRig {
 	t.Cleanup(upstream.Close)
 	up, _ := url.Parse(upstream.URL)
 
-	controlDir := filepath.Join(t.TempDir(), "egress")
+	controlDir := filepath.Join(shortSocketDir(t), "egress")
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -156,7 +158,7 @@ func startEgress(t *testing.T, opts ...func(*Server, *Proxy)) *egressRig {
 	proxyAddr := listener.Addr().String()
 	_ = listener.Close()
 
-	root := t.TempDir()
+	root := shortSocketDir(t)
 	_ = os.Chmod(root, 0o755)
 	_ = os.Chmod(filepath.Dir(root), 0o755)
 	server := &Server{Workspaces: filepath.Join(root, "runs"), Homes: filepath.Join(root, "homes"), BaseUID: 23100, Users: 4,

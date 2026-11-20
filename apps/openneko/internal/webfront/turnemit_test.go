@@ -10,11 +10,13 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 )
 
 func floodServe(t *testing.T, steps int) (string, <-chan struct{}) {
 	t.Helper()
-	socket := filepath.Join(t.TempDir(), "serve.sock")
+	socket := filepath.Join(testsock.Dir(t), "serve.sock")
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatal(err)

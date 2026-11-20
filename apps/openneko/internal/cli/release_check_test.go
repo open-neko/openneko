@@ -12,12 +12,13 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
 
 func TestReleaseCheckSchedulerReadsTheAdminSocket(t *testing.T) {
-	socket := filepath.Join(t.TempDir(), "admin.sock")
+	socket := filepath.Join(testsock.Dir(t), "admin.sock")
 	body := `{"status":"ok","lastSuccessAt":null}`
 	code := http.StatusOK
 	stop, err := serveWebAdmin(socket, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +45,7 @@ func TestReleaseCheckSchedulerReadsTheAdminSocket(t *testing.T) {
 	if err := checkScheduler(ctx, socket); err == nil {
 		t.Fatal("a degraded scheduler passed")
 	}
-	if err := checkScheduler(ctx, filepath.Join(t.TempDir(), "none.sock")); err == nil || !strings.Contains(err.Error(), "unreachable") {
+	if err := checkScheduler(ctx, filepath.Join(testsock.Dir(t), "none.sock")); err == nil || !strings.Contains(err.Error(), "unreachable") {
 		t.Fatalf("no socket: err = %v", err)
 	}
 }
@@ -54,7 +55,7 @@ func TestReleaseCheckServeSocket(t *testing.T) {
 	if err := checkServeSocket(ctx, ""); err == nil {
 		t.Fatal("an unset socket passed")
 	}
-	dir := t.TempDir()
+	dir := testsock.Dir(t)
 	socket := filepath.Join(dir, "serve.sock")
 	if err := checkServeSocket(ctx, socket); err == nil {
 		t.Fatal("a missing socket passed")
@@ -127,7 +128,7 @@ func cleanServeEnv(t *testing.T) {
 }
 
 func TestReleaseCheckPacksNeedsABuiltinPack(t *testing.T) {
-	socket := filepath.Join(t.TempDir(), "admin.sock")
+	socket := filepath.Join(testsock.Dir(t), "admin.sock")
 	body := `{"packs":[{"id":"magento","source":"embedded"},{"id":"mine","source":"uploaded"}]}`
 	code := http.StatusOK
 	stop, err := serveWebAdmin(socket, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -160,14 +161,14 @@ func TestReleaseCheckPacksNeedsABuiltinPack(t *testing.T) {
 			t.Errorf("%s: the check passed", name)
 		}
 	}
-	if _, err := checkBuiltinPacks(ctx, filepath.Join(t.TempDir(), "none.sock")); err == nil {
+	if _, err := checkBuiltinPacks(ctx, filepath.Join(testsock.Dir(t), "none.sock")); err == nil {
 		t.Fatal("no socket: the check passed")
 	}
 }
 
 func TestReleaseCheckSandbox(t *testing.T) {
 	ctx := context.Background()
-	run := t.TempDir()
+	run := testsock.Dir(t)
 	serve, check := filepath.Join(run, "serve.sock"), filepath.Join(run, "config-check.sock")
 	if state, err := checkSandboxSocket(ctx, "", serve, check); state != "off" || err != nil {
 		t.Fatalf("no sandbox: %q %v", state, err)
@@ -184,7 +185,7 @@ func TestReleaseCheckSandbox(t *testing.T) {
 	if _, err := checkSandboxSocket(ctx, "unix://"+shared, serve, check); err == nil || !strings.Contains(err.Error(), "folder of serve's sockets") {
 		t.Fatalf("a sandbox socket beside serve's passed: %v", err)
 	}
-	own := filepath.Join(t.TempDir(), "sandbox.sock")
+	own := filepath.Join(testsock.Dir(t), "sandbox.sock")
 	if _, err := checkSandboxSocket(ctx, "unix://"+own, serve, check); err == nil {
 		t.Fatal("a sandbox socket with nothing listening passed")
 	}
@@ -225,7 +226,7 @@ func TestReleaseCheckSkills(t *testing.T) {
 
 func TestReleaseCheckSandboxEgress(t *testing.T) {
 	ctx := context.Background()
-	sock := filepath.Join(t.TempDir(), "sandbox.sock")
+	sock := filepath.Join(testsock.Dir(t), "sandbox.sock")
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
@@ -258,7 +259,7 @@ func TestReleaseCheckSandboxEgress(t *testing.T) {
 
 	t.Setenv("OPENNEKO_SANDBOX_URL", cfg.URL)
 	t.Setenv("OPENNEKO_SANDBOX_KEY", "k")
-	t.Setenv("OPENNEKO_SERVE_SOCKET", filepath.Join(t.TempDir(), "serve.sock"))
+	t.Setenv("OPENNEKO_SERVE_SOCKET", filepath.Join(testsock.Dir(t), "serve.sock"))
 	t.Setenv("OPENNEKO_CONFIG_CHECK_SOCKET", "")
 	run := func() (string, error) {
 		cmd := newReleaseCheckCmd()

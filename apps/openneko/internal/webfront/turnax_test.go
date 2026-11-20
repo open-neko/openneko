@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/open-neko/neko/apps/openneko/internal/llm"
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 	"github.com/open-neko/openneko/apps/ax-harness/catalog"
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
@@ -541,7 +542,7 @@ func TestAxTurnCancelReaperAndFaults(t *testing.T) {
 
 	t.Run("no serve", func(t *testing.T) {
 		var events []string
-		res, err := runAx(context.Background(), plainCfg, axTurnOptions{Prompt: "p", Socket: filepath.Join(t.TempDir(), "none.sock"),
+		res, err := runAx(context.Background(), plainCfg, axTurnOptions{Prompt: "p", Socket: filepath.Join(testsock.Dir(t), "none.sock"),
 			Emit: func(_ context.Context, e any) error { events = append(events, jsStringify(e, false)); return nil }})
 		if err != nil || res.Status != "failed" || !strings.HasPrefix(res.Error, "openneko serve unavailable: ") || len(events) != 1 {
 			t.Fatalf("got %+v %v %v", res, err, events)

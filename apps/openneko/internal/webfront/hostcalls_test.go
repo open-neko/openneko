@@ -15,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/open-neko/neko/apps/openneko/internal/llm"
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 	"github.com/open-neko/openneko/apps/ax-harness/embedding"
 	"github.com/open-neko/openneko/apps/ax-harness/inference"
 )
@@ -393,7 +394,7 @@ func TestOnboardingSubmitRefusals(t *testing.T) {
 	}
 	none("an empty name")
 
-	t.Setenv("OPENNEKO_SERVE_SOCKET", filepath.Join(t.TempDir(), "absent.sock"))
+	t.Setenv("OPENNEKO_SERVE_SOCKET", filepath.Join(testsock.Dir(t), "absent.sock"))
 	w := call(f, "POST", "/api/v1/onboarding/submit", fmt.Sprintf(acme, "x"), admin)
 	if got := decode(t, w); w.Code != 503 || got["code"] != "agent_runtime_unavailable" || got["error"] != agentRuntimeUnavailable {
 		t.Errorf("serve down: %d %v", w.Code, got)
@@ -403,7 +404,7 @@ func TestOnboardingSubmitRefusals(t *testing.T) {
 	}
 	none("a submit with serve down")
 
-	socket := filepath.Join(t.TempDir(), "serve.sock")
+	socket := filepath.Join(testsock.Dir(t), "serve.sock")
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatal(err)
@@ -454,10 +455,10 @@ func TestSettingsFinish(t *testing.T) {
 	refuse("no provider", 400, "Primary model provider not configured.")
 	seedPrimary(t, db, "openai", "gpt-5", `{}`, `{"apiKey":"k"}`)
 
-	t.Setenv("OPENNEKO_SERVE_SOCKET", filepath.Join(t.TempDir(), "absent.sock"))
+	t.Setenv("OPENNEKO_SERVE_SOCKET", filepath.Join(testsock.Dir(t), "absent.sock"))
 	refuse("serve down", 503, agentRuntimeUnavailable)
 
-	socket := filepath.Join(t.TempDir(), "serve.sock")
+	socket := filepath.Join(testsock.Dir(t), "serve.sock")
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatal(err)

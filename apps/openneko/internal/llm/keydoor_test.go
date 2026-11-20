@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
 )
 
@@ -32,7 +33,7 @@ func upstream(t *testing.T, status int, body string) (*httptest.Server, chan see
 
 func doorClient(t *testing.T, door *KeyDoor) *http.Client {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), keydoor.SocketName)
+	path := filepath.Join(testsock.Dir(t), keydoor.SocketName)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	if _, err := ListenDoor(ctx, path, door); err != nil {

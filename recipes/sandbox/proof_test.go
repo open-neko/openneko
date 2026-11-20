@@ -1,3 +1,5 @@
+//go:build linux
+
 package main
 
 import (
@@ -178,7 +180,7 @@ func inspect(t *testing.T, kind, format, name string) string {
 }
 
 func newProofStack(t *testing.T, tag string) (*proofStack, string) {
-	dir := t.TempDir()
+	dir := shortSocketDir(t)
 	socketDir := filepath.Join(dir, "socket")
 	if err := os.Mkdir(socketDir, 0o755); err != nil {
 		t.Fatal(err)

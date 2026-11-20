@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/open-neko/neko/apps/openneko/internal/llm"
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
 
@@ -121,7 +122,7 @@ func TestWebTurnWritesTheCardsOnce(t *testing.T) {
 				`{"javascriptCode":` + string(mustJSON(c.actor)) + `}`,
 				c.answer,
 			})
-			socket := filepath.Join(t.TempDir(), "serve.sock")
+			socket := filepath.Join(testsock.Dir(t), "serve.sock")
 			ln, err := serve.Listen(socket)
 			if err != nil {
 				t.Fatal(err)
