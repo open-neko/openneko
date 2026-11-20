@@ -574,6 +574,7 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions, n
 	var result *jsObj
 	protocolError := ""
 	last := 0.0
+	finished, started := false, 0
 	for raw := range turn.lines() {
 		var ev axEvent
 		if json.Unmarshal(raw, &ev) != nil {
@@ -595,15 +596,23 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions, n
 		if seq != 0 {
 			last = seq
 		}
+		if ev.Type == "model.request.started" {
+			started++
+		}
 		if ev.Type == "run.finished" {
 			result = nil
 			if parsed, err := jsParse(ev.Result); err == nil {
 				result, _ = parsed.(*jsObj)
 			}
-			pass.Settle(ctx, reportedRequests(result))
+			finished = true
 			continue
 		}
 		mapper.handle(ev)
+	}
+	if finished {
+		pass.Settle(ctx, reportedRequests(result))
+	} else {
+		pass.SettleCut(ctx, started)
 	}
 	code := turn.exitCode()
 	if err := drained(); err != nil {

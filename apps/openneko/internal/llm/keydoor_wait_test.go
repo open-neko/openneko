@@ -107,7 +107,8 @@ func TestKeyDoorEndsARequestWhoseBodyStalls(t *testing.T) {
 }
 
 func TestKeyDoorBoundsTheCallsAtOnce(t *testing.T) {
-	door := &KeyDoor{MaxOpen: 2}
+	setWait(t, &doorSlotWait, 300*time.Millisecond)
+	door := &KeyDoor{MaxOpen: func() int { return 2 }}
 	client := doorClient(t, door)
 	srv, arrived := blockingUpstream(t)
 	pass := issuePass(t, door, map[string]DoorRoute{"primary": {Upstream: srv.URL, Key: "k"}}, 10)
@@ -126,35 +127,16 @@ func TestKeyDoorBoundsTheCallsAtOnce(t *testing.T) {
 	}
 	<-arrived
 	<-arrived
-	third, stop := context.WithTimeout(context.Background(), 3*time.Second)
-	defer stop()
-	req, _ := http.NewRequestWithContext(third, http.MethodPost, keydoor.URL("primary")+"/chat/completions", strings.NewReader(`{}`))
-	req.Header.Set("Authorization", "Bearer "+pass.Token)
-	if res, err := client.Do(req); err != nil {
-		t.Errorf("a third call at once: %v, want 503", err)
-	} else {
-		res.Body.Close()
-		if res.StatusCode != http.StatusServiceUnavailable {
-			t.Errorf("a third call at once: status %d, want 503", res.StatusCode)
-		}
+	began := time.Now()
+	if status, _ := post(t, client, keydoor.URL("primary")+"/chat/completions", "Authorization", "Bearer "+pass.Token); status != http.StatusServiceUnavailable {
+		t.Errorf("a third call while two stay open: status %d, want 503", status)
+	}
+	if waited := time.Since(began); waited < 250*time.Millisecond || waited > 5*time.Second {
+		t.Errorf("the third call waited %v, want the slot wait", waited)
 	}
 	cancel()
 	wg.Wait()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		door.mu.Lock()
-		open := door.open
-		door.mu.Unlock()
-		if open == 0 || time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	if !pass.Settle(context.Background(), 3) {
+		t.Error("a call that the door refused for load counted as a mismatch")
 	}
-	go func() { <-arrived }()
-	srvOK, got := upstream(t, 200, `{}`)
-	ok := issuePass(t, door, map[string]DoorRoute{"primary": {Upstream: srvOK.URL, Key: "k"}}, 1)
-	if status, _ := post(t, client, keydoor.URL("primary")+"/chat/completions", "Authorization", "Bearer "+ok.Token); status != 200 {
-		t.Errorf("a call after the others ended: status %d", status)
-	}
-	<-got
 }

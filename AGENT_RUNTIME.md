@@ -147,19 +147,30 @@ call cap, and the door answers 429 after it:
 - A host call: 5 per route, the first try and four retries.
 - An embedding call: 1.
 
-The door counts the calls of each token. When the call ends, web compares
-the count with the calls that serve reported: `usage.requests` of the
-turn's result, the requests of a host call, and one for an embedding call.
-A difference writes a log line and, for a turn or a host call, an
+The door counts the calls of each token. When the call ends, web revokes
+the token and compares the count with the calls that serve reported:
+`usage.requests` of the turn's result, the requests of a host call, and one
+for an embedding call. When serve exits, fails or drops the connection with
+no result, web uses the number of `model.request.started` events that serve
+sent, and allows one call that serve started but did not send to the door.
+Serve's count may also hold the calls that the door refused for load. A
+difference outside these bounds writes a log line and, for a turn or a host call, an
 `agent:model_calls_mismatch` event in the org's audit chain, with the
 purpose and both counts. An embedding call belongs to no org, so it gets
 the log line only.
 
 The door limits time and load. Serve must send the whole request body
-within 2 minutes, else the door answers 408. The provider must start its
-answer within 10 minutes, else the door answers 502. A call ends at the
-token's deadline. The door has at most 64 calls open at once and answers
-503 to one more.
+within 30 seconds, else the door answers 408. A body over 32 MiB gets 413:
+the largest honest body is a prompt that fills a 2M-token context window,
+or 64 embedding texts of 32,000 characters each. The door reads the body
+before the call takes a slot. One token has at most 4 calls open at once
+and gets 429 for one more. The door forwards a number of calls at once
+that follows the "Concurrent jobs" setting: 4 for each agent turn that may
+run at once, plus 32 for host and embedding calls, and at least 64. A call
+over that number waits up to 2 minutes for a free slot, then gets 503. The
+provider must start its answer within 10 minutes, else the door answers
+502. A call ends at the token's deadline. The door refuses a protocol
+upgrade and drops the provider's 1xx answers.
 
 The door streams each answer back as it arrives. It asks the provider for
 an uncompressed answer (`Accept-Encoding: identity`) and does not forward
