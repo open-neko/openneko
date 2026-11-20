@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 )
 
@@ -17,6 +18,10 @@ func main() {
 	}
 	if len(os.Args) > 1 && os.Args[1] == "egress-probe" {
 		egressProbeMain()
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "ipc-clean" {
+		ipcCleanMain()
 		return
 	}
 	flags := flag.NewFlagSet("openneko-sandbox", flag.ExitOnError)
@@ -53,6 +58,10 @@ func main() {
 			os.Exit(1)
 		}
 		server.Probe = server.probeAsRunUser
+		if err := keepRunsApart(server); err != nil {
+			fmt.Fprintf(os.Stderr, "openneko sandbox: cannot keep the runs apart, so the sandbox does not start: %v\n", err)
+			os.Exit(1)
+		}
 	} else {
 		fmt.Fprintln(os.Stderr, "openneko sandbox: not root, so commands run as this user and the sandbox reports egress open")
 	}
@@ -94,6 +103,14 @@ func confineRuns(ctx context.Context, server *Server) error {
 		go relayToProxy(ctx, relay, server.EgressProxy)
 	}
 	return nil
+}
+
+func keepRunsApart(server *Server) error {
+	closed, err := server.closeShared("/")
+	if len(closed) > 0 {
+		fmt.Fprintf(os.Stderr, "openneko sandbox: closed to run users: %s\n", strings.Join(closed, " "))
+	}
+	return err
 }
 
 func userRangeFromEnv() (baseUID, users int, err error) {

@@ -279,7 +279,8 @@ func (s *Server) exec(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "run home unavailable", http.StatusInternalServerError)
 		return
 	}
-	env := []string{"PATH=" + s.PATH, "HOME=" + home, "TMPDIR=" + filepath.Join(home, "tmp"), "LANG=C.UTF-8"}
+	tmp := filepath.Join(home, "tmp")
+	env := []string{"PATH=" + s.PATH, "HOME=" + home, "TMPDIR=" + tmp, "TEMP=" + tmp, "TMP=" + tmp, "LANG=C.UTF-8"}
 	if s.NodePath != "" {
 		env = append(env, "NODE_PATH="+s.NodePath)
 	}
@@ -408,17 +409,24 @@ func (s *Server) end(w http.ResponseWriter, r *http.Request) {
 // retire kills the run's processes and removes its files. Its user goes
 // back to the pool last, so no new run shares it with a live process.
 func (s *Server) retire(id string, run *run) {
+	free := true
 	if s.SwitchUsers {
 		killUser(run.uid)
+		if err := removeIPC(run.uid); err != nil {
+			fmt.Fprintf(os.Stderr, "openneko sandbox: %v; uid %d stays out of the pool\n", err, run.uid)
+			free = false
+		}
 	}
 	run.mu.Lock()
 	run.ended = true
 	_ = os.RemoveAll(run.dir)
 	run.mu.Unlock()
 	_ = os.RemoveAll(filepath.Join(s.Homes, id))
-	s.mu.Lock()
-	delete(s.used, run.uid)
-	s.mu.Unlock()
+	if free {
+		s.mu.Lock()
+		delete(s.used, run.uid)
+		s.mu.Unlock()
+	}
 }
 
 func (s *Server) margin() time.Duration {

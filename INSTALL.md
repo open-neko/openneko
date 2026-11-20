@@ -949,6 +949,11 @@ This release has fewer parts. The upgrade migrates your data in place:
   python-docx or python-pptx. A script skill that your organization wrote
   and that imports or calls one of them fails. Change it to use the bundled
   skills (`xlsx`, `docx`, `pptx`, `pdf`) or the Python standard library.
+- **Sandbox runs** can no longer write to `/tmp`, `/var/tmp` or
+  `/dev/shm`. A command's `TMPDIR`, `TEMP` and `TMP` point into the run's
+  own home. A script skill that your organization wrote and that writes to
+  `/tmp` by a fixed path, or uses Python `multiprocessing`, fails. Change
+  it to use `TMPDIR` and one process.
 - **The sandbox recipe** names the image of the release and has no `build:`
   line. Without `OPENNEKO_VERSION`, Compose stops and asks for it. For a
   source build, build the image and set `OPENNEKO_SANDBOX_IMAGE`

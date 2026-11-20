@@ -117,7 +117,7 @@ CommonJS (`.cjs`), because `import` does not read `NODE_PATH`.
   `/var/lib/openneko/sandbox-runs`), owned by the run's user, mode 0700. The
   runs folder is mode 0711, so a run cannot list it. The sandbox shares no
   folder with OpenNeko.
-- A command's environment holds only `PATH`, `HOME`, `TMPDIR`, `LANG`,
+- A command's environment holds only `PATH`, `HOME`, `TMPDIR`, `TEMP`, `TMP`, `LANG`,
   `NODE_PATH`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH`.
   `PATH` and `NODE_PATH` come from the service's own environment.
   `SKILL_DIR` and the three after it are paths in the run's folder. With a
@@ -126,6 +126,22 @@ CommonJS (`.cjs`), because `import` does not read `NODE_PATH`.
 - When a command ends, the sandbox kills every process of the run's user.
   Ending a run removes its folder and its home. At start, the sandbox
   removes the run folders of an earlier start.
+- Runs share no place to write. At start, the sandbox takes write and
+  list rights from other users on `/tmp`, `/var/tmp`, `/run/lock`,
+  `/dev/shm`, `/dev/mqueue` and every other folder or file that any user
+  could write, and the runs and homes folders are mode 0711. A run can
+  write only its own folder and its home. `TMPDIR`, `TEMP` and `TMP` point
+  to `tmp` in the run's home, and each command runs with `umask 077`. A
+  tool that writes to `/tmp` by a fixed path gets "Permission denied", and
+  Python `multiprocessing` fails, because it needs `/dev/shm`. A private
+  `/tmp` for each command needs a mount namespace and so `CAP_SYS_ADMIN`,
+  which the sandbox does not take. When a run ends, the sandbox removes
+  the System V shared memory, queues and semaphores of its user before the
+  user goes back to the pool. Three channels stay open, because each needs
+  `CAP_SYS_ADMIN` to close. A run can read the process list and command
+  lines of another run in `/proc`, so keep data out of command arguments.
+  Two runs that both choose to can meet on an abstract Unix socket or on a
+  System V object that one of them opens to all users.
 - The service sits on its own network, `openneko-sandbox`, which no
   service of the stack joins. The network is internal: commands reach no
   host outside it except through the egress proxy.
