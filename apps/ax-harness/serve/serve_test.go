@@ -275,3 +275,19 @@ func TestServeWithRequireDoorRefusesARealKey(t *testing.T) {
 		t.Fatalf("%d turns ran, want only the one with a door token", len(ran))
 	}
 }
+
+func TestServeReportsItsKeyStateInAStatusFrame(t *testing.T) {
+	for _, server := range []*Server{
+		{RequireDoor: true},
+		{RequireDoor: false, KeyEnv: []string{"GEMINI_API_KEY"}},
+	} {
+		frame := <-dial(t, startServer(t, server), Frame{Type: "status"}).frames
+		var got Status
+		if frame.Type != "status" || json.Unmarshal(frame.Result, &got) != nil {
+			t.Fatalf("status frame %+v", frame)
+		}
+		if got.RequireDoor != server.RequireDoor || strings.Join(got.KeyEnv, ",") != strings.Join(server.KeyEnv, ",") {
+			t.Fatalf("status %+v, want %+v", got, server)
+		}
+	}
+}
