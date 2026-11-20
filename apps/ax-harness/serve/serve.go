@@ -30,14 +30,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
-	"syscall"
 
 	"github.com/open-neko/openneko/apps/ax-harness/embedding"
 	"github.com/open-neko/openneko/apps/ax-harness/harness"
@@ -94,21 +91,6 @@ type Server struct {
 	mu      sync.Mutex
 	running int
 	wg      sync.WaitGroup
-}
-
-// Listen replaces a stale socket at path and listens on it, readable and
-// writable by the owner and group only.
-func Listen(path string) (net.Listener, error) {
-	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSocket != 0 {
-		_ = os.Remove(path)
-	}
-	old := syscall.Umask(0o117)
-	listener, err := net.Listen("unix", path)
-	syscall.Umask(old)
-	if err != nil {
-		return nil, fmt.Errorf("serve socket unavailable: %w", err)
-	}
-	return listener, nil
 }
 
 // Serve accepts turns until ctx ends, then cancels the running turns and
