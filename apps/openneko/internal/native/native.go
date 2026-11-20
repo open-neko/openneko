@@ -37,6 +37,7 @@ func (l Layout) shared() string {
 func (l Layout) Files() string         { return filepath.Join(l.agent(), "files") }
 func (l Layout) Index() string         { return filepath.Join(l.agent(), "file-index") }
 func (l Layout) Subscriptions() string { return filepath.Join(l.agent(), "subscriptions") }
+func (l Layout) Tmp() string           { return filepath.Join(l.agent(), "tmp") }
 func (l Layout) Credentials() string   { return filepath.Join(l.shared(), "credentials") }
 func (l Layout) GraphJin() string      { return filepath.Join(l.shared(), "graphjin", "agentic.yml") }
 func (l Layout) Seed() string          { return filepath.Join(l.shared(), "graphjin", "seed.yml") }
@@ -97,7 +98,7 @@ func (l Layout) Prepare() error {
 			return err
 		}
 	}
-	for _, dir := range []string{l.Root, l.Files(), l.Index(), l.Credentials(), filepath.Dir(l.GraphJin()), l.Run(), l.Door(), l.Logs(), l.AgentRuns(), l.Subscriptions()} {
+	for _, dir := range []string{l.Root, l.Files(), l.Index(), l.Credentials(), filepath.Dir(l.GraphJin()), l.Run(), l.Door(), l.Logs(), l.AgentRuns(), l.Subscriptions(), l.Tmp()} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err
 		}
@@ -178,6 +179,7 @@ func ServeEnv(l Layout) map[string]string {
 	serve["OPENNEKO_GRAPHJIN_ADDR"] = GraphJinAddr
 	serve["OPENNEKO_SUBSCRIPTIONS_ADDR"] = SubscriptionsAddr
 	serve["OPENNEKO_SUBSCRIPTIONS_DIR"] = l.Subscriptions()
+	serve["TMPDIR"] = l.Tmp()
 	return serve
 }
 

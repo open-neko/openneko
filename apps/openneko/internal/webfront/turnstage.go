@@ -34,7 +34,9 @@ func stageSegment(v string) string {
 	return v
 }
 
-// agentRunsRoot is the folder this host shares with serve.
+// AgentRunsDir is the folder this host shares with serve.
+func AgentRunsDir() string { return agentRunsRoot() }
+
 func agentRunsRoot() string {
 	if v := strings.TrimSpace(os.Getenv("OPENNEKO_AGENT_RUNS_DIR")); v != "" {
 		return v

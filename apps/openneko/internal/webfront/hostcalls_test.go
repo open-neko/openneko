@@ -204,7 +204,7 @@ func servicesByID(t *testing.T, f *Front, query string) map[string]map[string]an
 		out[m["id"].(string)] = m
 		order = append(order, m["id"].(string))
 	}
-	if strings.Join(order, ",") != "inference,embedding,sandbox,file-store" {
+	if strings.Join(order, ",") != "inference,embedding,sandbox,file-store,agent-confinement" {
 		t.Errorf("order %v", order)
 	}
 	return out
@@ -214,10 +214,11 @@ func TestAdminServicesOff(t *testing.T) {
 	f, _, g := hostFront(t)
 	got := servicesByID(t, f, "")
 	for id, detail := range map[string]string{
-		"inference":  "No model is set up. Agent turns and summaries stop until an admin adds one in Admin, Settings, Models.",
-		"embedding":  "Search uses Postgres full-text search.",
-		"sandbox":    "The terminal and the script skills are off.",
-		"file-store": "File search is off: OPENNEKO_SERVE_URL is not set.",
+		"inference":         "No model is set up. Agent turns and summaries stop until an admin adds one in Admin, Settings, Models.",
+		"embedding":         "Search uses Postgres full-text search.",
+		"sandbox":           "The terminal and the script skills are off.",
+		"file-store":        "File search is off: OPENNEKO_SERVE_URL is not set.",
+		"agent-confinement": "Agent turns are off: OPENNEKO_SERVE_SOCKET is not set.",
 	} {
 		if s := got[id]; s["state"] != "off" || s["detail"] != detail || s["where"] != nil || s["checkedAt"] == "" {
 			t.Errorf("%s: %v", id, s)

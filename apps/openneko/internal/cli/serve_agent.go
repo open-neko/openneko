@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/open-neko/neko/apps/openneko/internal/confine"
 	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 
@@ -18,7 +20,7 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
 
-func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns int, box sandbox.Config) (<-chan error, error) {
+func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns int, box sandbox.Config, confinement confine.State) (<-chan error, error) {
 	if err := box.Check(); err != nil {
 		return nil, err
 	}
@@ -45,7 +47,8 @@ func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns
 	door := keydoor.SocketPath(os.Getenv, socket)
 	keydoor.SetSocket(door)
 	fmt.Fprintf(out, "openneko serve reaches the model providers through the key door at %s\n", door)
-	srv := &serve.Server{Getenv: os.Getenv, MaxTurns: maxTurns, Sandbox: box, RequireDoor: !webfront.Development(), KeyEnv: names}
+	state, _ := json.Marshal(confinement)
+	srv := &serve.Server{Getenv: os.Getenv, MaxTurns: maxTurns, Sandbox: box, RequireDoor: !webfront.Development(), KeyEnv: names, Confinement: state}
 	done := make(chan error, 1)
 	go func() {
 		err := srv.Serve(ctx, ln)
