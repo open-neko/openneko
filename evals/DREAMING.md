@@ -272,6 +272,62 @@ The target for Dreaming on this day: the five failing shapes take two
 queries or fewer in the afternoon, with no failed query, and the other
 shapes do not get worse.
 
+### 5.9 Upper limit with hand-written lessons
+
+Run on 2026-11-20. The same afternoon, with eight hand-written lessons in
+the lesson store: five `query` lessons for the five failing shapes and three
+`data_fact` lessons (category ids, the date range of sales orders, the date
+range of purchase orders). The product code offered the five closest
+lessons to each turn. No learning pass ran.
+
+| | Baseline | With lessons |
+|---|---|---|
+| Correct answers | 34 of 34 | 34 of 34 |
+| Queries per question | 3.7 | 1.7 |
+| Tool calls per question | 4.2 | 1.8 |
+| Questions with a failed query | 13 | 3 |
+| Failed queries | 17 of 127 | 4 of 59 |
+| Cost per question | $0.23 | $0.16 |
+
+Queries per question, by shape:
+
+| Shape | Baseline | With lessons | Has a query lesson |
+|---|---|---|---|
+| top-category | 10.0 | 1.0 | yes |
+| category-revenue | 8.0 | 2.5 | yes |
+| category-units | 6.5 | 1.0 | yes |
+| purchase-spend | 3.5 | 1.0 | yes |
+| rejected-units | 3.0 | 1.0 | yes |
+| top-product | 4.5 | 3.5 | no |
+| scrapped-units | 4.0 | 2.5 | no |
+| top-vendor | 4.0 | 2.0 | no |
+| territory-freight | 3.0 | 2.0 | no |
+| territory-revenue | 3.5 | 2.0 | no |
+| top-territory | 3.0 | 2.0 | no |
+| active-customers | 2.5 | 2.5 | no |
+| revenue | 2.0 | 1.0 | no |
+| orders-count | 2.0 | 1.5 | no |
+| avg-order-value | 1.5 | 2.0 | no |
+| department-headcount | 1.5 | 1.0 | no |
+| online-orders | 1.0 | 1.0 | no |
+
+- Four of the five shapes with a query lesson took one query.
+- Shapes with no query lesson also improved. The data facts and the
+  neighbour lessons removed the queries that learn the date range and the
+  join path.
+- No shape got worse by more than half a query.
+- Three of the four failed queries were one GraphJin error on a nested
+  filter ("column salesorderdetail_0.specialofferid does not exist"). That
+  is a `dead_end` lesson to learn.
+
+This is the upper limit for the learning pass: a pass that writes lessons
+as good as these reaches 1.7 queries per question on this day.
+
+The morning run also showed that the last successful query of a run is
+often not the query that answered the question. One run ended with a lookup
+of product names. The pass cannot take the last query by rule; the model
+step must choose the answering query.
+
 ## 6. Measures
 
 | Measure | Definition | Compared |

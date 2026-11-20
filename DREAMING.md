@@ -1,7 +1,8 @@
 # Dreaming
 
-> **STATUS — 2026-11-20: design only.** Nothing here is built. The baseline
-> is measured (§1). The eval that the build is tested against is in
+> **STATUS — 2026-11-20: delivery started.** The lesson table and the
+> prompt section exist (`turndream.go`). The pass does not. The baseline and
+> the upper limit are measured (§1). The eval that the build is tested against is in
 > [evals/DREAMING.md](evals/DREAMING.md).
 > Items marked *proposal* answer a question that is still open.
 
@@ -26,6 +27,9 @@ questions with no learning, every answer was correct, but:
 - 21 of the 60 questions had a failed query
 - the five question shapes that failed in the morning all failed again in
   the afternoon
+
+With eight hand-written lessons in the store, the same afternoon took 1.7
+queries per question, and 3 of 34 questions had a failed query.
 
 On a demo install, 13 of 14 questions that failed the first time failed
 again when a person asked them a second time. The full numbers are in
@@ -73,7 +77,7 @@ and its jobs.
 
 | Kind | Holds | Learned from |
 |---|---|---|
-| `query` | A question shape and the query that answered it | The last successful query of a run whose answer stood |
+| `query` | A question shape and the query that answered it | The query that gave the answer of a run whose answer stood. The model step chooses it; the last query of a run is often a side lookup |
 | `schema_fact` | One fact about the source ("orders join territories through a bridging table") | A failed call followed by a successful one that differs in that fact |
 | `dead_end` | A call pattern and the error it always gives | The same failure seen in several runs |
 | `business_rule` | A rule in the person's words ("revenue excludes cancelled orders") | A correction in a thread |
