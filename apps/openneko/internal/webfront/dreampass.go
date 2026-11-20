@@ -68,7 +68,7 @@ const dreamProposalShape = `{
   "lessons": [
     {
       "kind": "query | data_fact | schema_fact | dead_end",
-      "question_shape": "the general question or subject, with no specific date, name or value",
+      "question_shape": "see the rules for each kind; never a specific date, name or value",
       "call": "the ref of the call this lesson rests on, such as c3",
       "text": "see the rules for each kind",
       "same_as": "the id of an existing lesson that says the same thing, or empty"
@@ -77,6 +77,7 @@ const dreamProposalShape = `{
 }`
 
 const dreamRules = `Rules:
+- "question_shape" of a query lesson is the general question it answers, such as "revenue of one product category in a period". For every other kind it names the subject of the fact and the questions that need it, such as "date range of sales orders, for questions on orders, revenue and units sold".
 - query: "call" is the one successful call whose result gave the answer to the user's question. It is often not the last call. Choose a call that answers the question alone. "text" is one or two sentences on how to adapt the query: which values to change, and what the ids or names in it mean. Write no lesson when the answer needed several calls.
 - data_fact: "text" states the smallest and largest value of one date or number column, or the distinct values of a column with few of them, as a successful call returned them. Name the table and the column. Never state a measure, a total or a row.
 - schema_fact: "text" states one fact about tables, columns or joins that a failed call got wrong and a later successful call got right. "call" is the successful call.
