@@ -6,7 +6,10 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+
+	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
 func TestReleaseCheckSchedulerReadsTheAdminSocket(t *testing.T) {
@@ -155,5 +158,42 @@ func TestReleaseCheckSkills(t *testing.T) {
 	t.Setenv("OPENNEKO_SANDBOX_SKILLS_ROOT", t.TempDir())
 	if out, err := run(); err == nil || !strings.Contains(err.Error(), "xlsx") {
 		t.Fatalf("no sandbox skills: %q %v", out, err)
+	}
+}
+
+func TestReleaseCheckSandboxEgress(t *testing.T) {
+	ctx := context.Background()
+	sock := filepath.Join(t.TempDir(), "sandbox.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var answer atomic.Value
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/check" || r.Header.Get("Authorization") != "Bearer k" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(answer.Load().(string)))
+	})}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	cfg := sandbox.Config{URL: "unix://" + sock, Key: "k"}
+	for body, want := range map[string]string{
+		`{"status":"ok","egress":"closed"}`: "closed",
+		`{"status":"ok","egress":"open"}`:   "open",
+		`{"status":"ok"}`:                   "unknown",
+	} {
+		answer.Store(body)
+		if got := checkSandboxEgress(ctx, cfg); got != want {
+			t.Errorf("%s: sandbox_egress=%s, want %s", body, got, want)
+		}
+	}
+	answer.Store(`{"status":"ok","egress":"closed"}`)
+	if got := checkSandboxEgress(ctx, sandbox.Config{URL: cfg.URL, Key: "wrong"}); got != "unknown" {
+		t.Errorf("a refused key gave sandbox_egress=%s, want unknown", got)
+	}
+	if !strings.Contains(sandboxEgressWarning("open"), "route out") || !strings.Contains(sandboxEgressWarning("unknown"), "did not report") {
+		t.Error("the egress warning does not name the state")
 	}
 }

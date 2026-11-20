@@ -8,6 +8,7 @@ import Select from "@/components/Select";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, Input } from "@/components/ui/field";
+import EgressHostsField, { egressHostLines } from "./EgressHostsField";
 
 type ProviderOption = { value: string; label: string; description: string };
 type ProviderField = {
@@ -41,7 +42,9 @@ type AgentSettingsPayload = {
     globalCap: number;
     terminal: boolean;
     responderEffort: ResponderEffort;
+    egressHosts?: string[];
   };
+  egressSuggestions?: string[];
   options: readonly ProviderOption[];
   terminalAvailable: boolean;
   defaults: { globalCap: number; terminal: boolean; responderEffort: ResponderEffort };
@@ -65,6 +68,7 @@ export default function AgentForm({
     initial.agent.agent.responderEffort ?? initial.agent.defaults.responderEffort ?? "low",
   );
   const terminalAvailable = initial.agent.terminalAvailable;
+  const [egressHosts, setEgressHosts] = useState((initial.agent.agent.egressHosts ?? []).join("\n"));
   const [primary, setPrimary] = useState({
     provider: initial.providers.primary.provider,
     model: initial.providers.primary.model,
@@ -128,11 +132,14 @@ export default function AgentForm({
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
-          terminalAvailable ? { globalCap: cap, terminal, responderEffort } : { globalCap: cap, responderEffort },
+          terminalAvailable
+            ? { globalCap: cap, terminal, responderEffort, egressHosts: egressHostLines(egressHosts) }
+            : { globalCap: cap, responderEffort },
         ),
       });
       const agentBody = await agentRes.json();
       if (!agentRes.ok) throw new Error(agentBody.error ?? "Agent settings save failed");
+      if (Array.isArray(agentBody.egressHosts)) setEgressHosts(agentBody.egressHosts.join("\n"));
 
       toast.success("Agent settings saved.");
     } catch (e) {
@@ -215,6 +222,13 @@ export default function AgentForm({
               onCheckedChange={(checked) => setTerminal(checked === true)}
             />
           </Field>
+
+          <EgressHostsField
+            value={egressHosts}
+            onChange={setEgressHosts}
+            suggestions={initial.agent.egressSuggestions ?? []}
+            available={terminalAvailable}
+          />
 
           {fields.map((field) => {
             const masked = primary.secretStatus[field.key];

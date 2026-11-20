@@ -1,0 +1,69 @@
+# Runs the sandbox for a native install (openneko start --native or
+# openneko server install) on a network with no route out:
+#   OPENNEKO_SANDBOX_DIR=/run/openneko-sandbox OPENNEKO_SANDBOX_GID=$(getent group openneko-shared | cut -d: -f3) \
+#   OPENNEKO_SANDBOX_KEY=... docker compose -f recipes/sandbox/compose.native.yml up -d
+# A one-user native install uses OPENNEKO_SANDBOX_DIR=$HOME/.local/share/openneko-sandbox
+# and OPENNEKO_SANDBOX_GID=$(id -g).
+name: openneko-sandbox
+
+services:
+  openneko-sandbox:
+    build:
+      context: .
+    command: ["--listen", "unix:///run/openneko-sandbox/sandbox.sock"]
+    restart: unless-stopped
+    environment:
+      OPENNEKO_SANDBOX_WORKSPACES: /var/lib/openneko/sandbox-runs
+      OPENNEKO_SANDBOX_HOMES: /var/lib/openneko/sandbox-homes
+      OPENNEKO_SANDBOX_GID: ${OPENNEKO_SANDBOX_GID:?set the group that may use the socket}
+      OPENNEKO_SANDBOX_EGRESS_PROXY: openneko-egress:3128
+      OPENNEKO_SANDBOX_EGRESS_CONTROL: unix:///run/openneko-egress/control.sock
+      OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:?set a sandbox key}
+    volumes:
+      - ${OPENNEKO_SANDBOX_DIR:?set the sandbox socket folder}:/run/openneko-sandbox
+      - openneko-sandbox-runs:/var/lib/openneko/sandbox-runs
+      - openneko-sandbox-homes:/var/lib/openneko/sandbox-homes
+      - openneko-egress-control:/run/openneko-egress
+    networks:
+      - openneko-sandbox
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - KILL
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 1024
+
+  # The only way out of the sandbox network: each run's commands reach the
+  # hosts on the organization's egress list through it, and nothing else.
+  openneko-egress:
+    build:
+      context: .
+    command: ["egress", "--listen", ":3128", "--control", "unix:///run/openneko-egress/control.sock"]
+    restart: unless-stopped
+    volumes:
+      - openneko-egress-control:/run/openneko-egress
+    networks:
+      - openneko-sandbox
+      - openneko-egress
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+
+volumes:
+  openneko-sandbox-runs:
+  openneko-sandbox-homes:
+  openneko-egress-control:
+
+networks:
+  openneko-sandbox:
+    internal: true
+  openneko-egress:

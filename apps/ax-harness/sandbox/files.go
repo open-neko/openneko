@@ -33,6 +33,7 @@ type execBody struct {
 	Dirs           []string          `json:"dirs,omitempty"`
 	Put            []fileData        `json:"put,omitempty"`
 	Delete         []string          `json:"delete,omitempty"`
+	Egress         *Egress           `json:"egress,omitempty"`
 }
 
 type execAnswer struct {

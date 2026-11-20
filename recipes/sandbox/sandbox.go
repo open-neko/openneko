@@ -41,6 +41,7 @@ type execBody struct {
 	Dirs           []string          `json:"dirs,omitempty"`
 	Put            []fileData        `json:"put,omitempty"`
 	Delete         []string          `json:"delete,omitempty"`
+	Egress         *egressBody       `json:"egress,omitempty"`
 }
 
 type execAnswer struct {
@@ -62,6 +63,9 @@ type Server struct {
 	SwitchUsers         bool
 	PATH                string
 	NodePath            string
+	ProcNet             string
+	EgressProxy         string
+	EgressControl       string
 
 	mu   sync.Mutex
 	runs map[string]*run
@@ -76,6 +80,7 @@ type run struct {
 	dirs   map[string]bool
 	told   map[string]bool
 	ended  bool
+	egress runEgress
 }
 
 // ListenAndServe serves on address until ctx ends: unix:///path for a
@@ -120,6 +125,19 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 		_ = listener.Close()
 		return fmt.Errorf("runs folder unavailable: %w", err)
 	}
+	if s.EgressControl != "" {
+		control, err := listenControl(s.EgressControl)
+		if err != nil {
+			_ = listener.Close()
+			return fmt.Errorf("egress control socket unavailable: %w", err)
+		}
+		controlServer := &http.Server{Handler: s.controlHandler(), ReadHeaderTimeout: 10 * time.Second}
+		go func() { _ = controlServer.Serve(control) }()
+		go func() {
+			<-ctx.Done()
+			_ = controlServer.Close()
+		}()
+	}
 	httpServer := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -157,7 +175,7 @@ func (s *Server) prepareWorkspaces() error {
 // Handler is the sandbox API:
 //
 //	GET    /v2/health
-//	GET    /v2/check            the health check with the key
+//	GET    /v2/check            the health check with the key; egress is closed or open
 //	POST   /v2/runs/{run}/exec  writes the files sent, runs the command, returns the files it changed
 //	DELETE /v2/runs/{run}       kills the run's commands and removes its folder and home
 func (s *Server) Handler() http.Handler {
@@ -168,7 +186,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /v2/check", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "egress": egressState(s.procNet())})
 	})
 	mux.HandleFunc("POST /v2/runs/{run}/exec", s.exec)
 	mux.HandleFunc("DELETE /v2/runs/{run}", s.end)
@@ -179,6 +197,13 @@ func (s *Server) Handler() http.Handler {
 		}
 		mux.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) procNet() string {
+	if s.ProcNet != "" {
+		return s.ProcNet
+	}
+	return "/proc/net"
 }
 
 func (s *Server) authorized(r *http.Request) bool {
@@ -203,6 +228,10 @@ func (s *Server) exec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := checkPaths(req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := checkEgress(req.Egress); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -232,6 +261,7 @@ func (s *Server) exec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	env = append(env, runPaths...)
+	env = append(env, s.proxyEnv(id, s.setEgress(run, req.Egress))...)
 	if req.SkillDir != "" {
 		dir, ok := runPath(run.dir, req.SkillDir)
 		if !ok {
