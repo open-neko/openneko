@@ -693,7 +693,37 @@ func replaceFile(src, dst string) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), dst)
+	if !moveExecutableAside {
+		return os.Rename(tmp.Name(), dst)
+	}
+	return swapAside(tmp.Name(), dst)
+}
+
+// Windows refuses a rename onto the image of a running process but allows
+// a rename of that image, so the running openneko.exe moves aside first.
+var moveExecutableAside = runtime.GOOS == "windows"
+
+func swapAside(next, dst string) error {
+	aside := dst + ".old"
+	if err := os.Remove(aside); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		aside = fmt.Sprintf("%s.old-%d", dst, time.Now().UnixNano())
+	}
+	if err := os.Rename(dst, aside); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := os.Rename(next, dst); err != nil {
+		_ = os.Rename(aside, dst)
+		return err
+	}
+	_ = os.Remove(aside)
+	return nil
+}
+
+func removeAsideExecutables(exe string) {
+	old, _ := filepath.Glob(exe + ".old*")
+	for _, f := range old {
+		_ = os.Remove(f)
+	}
 }
 
 func replaceFolder(src, dst string) error {

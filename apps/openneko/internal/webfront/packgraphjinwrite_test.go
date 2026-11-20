@@ -16,6 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 )
 
 // fakeSupervisor answers the ping and restart files as gjhost's supervisor does.
@@ -117,7 +118,7 @@ func TestApplyPackGraphjinConfigFiles(t *testing.T) {
 	if len(written.Tables) != 2 || written.Tables[1]["name"] != "added" || written.Tables[1]["database"] != nil {
 		t.Errorf("tables %v", written.Tables)
 	}
-	if info, _ := os.Stat(configFile); info.Mode().Perm() != 0o640 {
+	if info, _ := os.Stat(configFile); !testmode.Is(t, info, 0o640) {
 		t.Errorf("mode %v", info.Mode())
 	}
 	if strings.Join(*seen, ",") != gjhost.PingFile+","+gjhost.RestartFile {

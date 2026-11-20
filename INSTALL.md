@@ -1118,6 +1118,9 @@ and `upgrade` act on the native install. `openneko logs` reads the
   can add a folder. After the change, the upgraded executable runs `openneko
   release-check --skills --bundled-packs`; when that fails, the upgrade
   stops and does not start OpenNeko. Skill scripts keep their executable bit.
+  Windows does not let a program replace a running `openneko.exe`, so the
+  upgrade renames it to `openneko.exe.old` first. The next `openneko start`
+  removes that file.
 - Use `install-native.sh --upgrade` when the installed `openneko` is older
   than the release that added `share/openneko/skills`: that `openneko
   upgrade` refuses the new archive. The script downloads and checks the

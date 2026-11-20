@@ -18,6 +18,7 @@ import (
 
 	"github.com/open-neko/neko/apps/openneko/assets"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
@@ -158,7 +159,7 @@ func TestSubscriptionsServeWorkflowOutputsAsTheNarrowRole(t *testing.T) {
 		_, out = graphql(t, addr, `{ workflow_output { title kind org_id } }`)
 		return strings.Contains(out, "stock is low")
 	})
-	if info, err := os.Stat(dir); err != nil || info.Mode().Perm() != 0o700 {
+	if info, err := os.Stat(dir); err != nil || !testmode.Is(t, info, 0o700) {
 		t.Fatalf("config folder mode: %v %v", info.Mode().Perm(), err)
 	}
 	if _, out := graphql(t, addr, `{ organization { id } }`); strings.Contains(out, "org-1") || !strings.Contains(out, "permission denied for table organization") {

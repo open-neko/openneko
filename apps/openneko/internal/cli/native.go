@@ -148,6 +148,9 @@ func startNative(cmd *cobra.Command, webDir, dbURL string, detach, skipMigrate b
 	if err != nil {
 		return err
 	}
+	if moveExecutableAside {
+		removeAsideExecutables(opts.Exe)
+	}
 	if err := runNativeSteps(cmd, layout, opts, !skipMigrate); err != nil {
 		return err
 	}

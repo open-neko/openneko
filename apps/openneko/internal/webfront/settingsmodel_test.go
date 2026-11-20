@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 )
 
 func modelSettingsFront(t *testing.T) (*Front, *pgxpool.Pool) {
@@ -420,7 +421,7 @@ func TestProvisionHostConfig(t *testing.T) {
 	if strings.Contains(string(raw), "REPLACE_WITH") || !strings.Contains(string(raw), base64.StdEncoding.EncodeToString(key)) || !strings.Contains(string(raw), "allow_mutations: true") {
 		t.Errorf("the config was not reconciled:\n%s", raw)
 	}
-	if info, _ := os.Stat(cfgPath); info.Mode().Perm() != 0o640 {
+	if info, _ := os.Stat(cfgPath); !testmode.Is(t, info, 0o640) {
 		t.Errorf("the config mode changed: %v", info.Mode())
 	}
 	if authMode() != "jwt" || gj.count() != 1 {

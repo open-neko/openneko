@@ -15,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
 )
 
@@ -232,7 +233,7 @@ func TestSkillEditKeepsMode(t *testing.T) {
 		t.Fatalf("PUT: %d %s", w.Code, w.Body)
 	}
 	info, err := os.Stat(script)
-	if b, _ := os.ReadFile(script); err != nil || string(b) != "echo new\n" || info.Mode().Perm() != 0o755 {
+	if b, _ := os.ReadFile(script); err != nil || string(b) != "echo new\n" || !testmode.Is(t, info, 0o755) {
 		t.Errorf("script after edit: %q %v %v", b, info.Mode(), err)
 	}
 	entries, _ := os.ReadDir(filepath.Dir(script))

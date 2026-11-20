@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 )
 
 func TestCreateBackupKeyIsStableAndPrivate(t *testing.T) {
@@ -21,13 +23,7 @@ func TestCreateBackupKeyIsStableAndPrivate(t *testing.T) {
 	if first != second || len(first) != 64 {
 		t.Fatalf("backup key was not a stable 256-bit hex value")
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("backup key mode = %o, want 600", info.Mode().Perm())
-	}
+	testmode.Private(t, path, 0o600)
 }
 
 func TestReadBackupKeyRejectsShortExistingKey(t *testing.T) {

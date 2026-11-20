@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 )
 
 func gitT(t *testing.T, dir string, env []string, stdin string, args ...string) string {
@@ -163,7 +165,7 @@ func TestConvertConfigRepo(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, ".git")); err == nil {
 		t.Error(".git is still there")
 	}
-	if st, err := os.Stat(filepath.Join(root, "skills/missing/run.sh")); err != nil || st.Mode().Perm() != 0o755 {
+	if st, err := os.Stat(filepath.Join(root, "skills/missing/run.sh")); err != nil || !testmode.Is(t, st, 0o755) {
 		t.Errorf("run.sh: %v %v", st, err)
 	}
 	if got := readFileT(t, filepath.Join(root, "skills/finance/SKILL.md")); got != skillMD("finance", "Newer on disk") {
@@ -175,7 +177,7 @@ func TestConvertConfigRepo(t *testing.T) {
 			t.Errorf("%s: %q", name, got)
 		}
 	}
-	if st, err := os.Stat(filepath.Join(own, "report-ann", "run.sh")); err != nil || st.Mode().Perm() != 0o755 {
+	if st, err := os.Stat(filepath.Join(own, "report-ann", "run.sh")); err != nil || !testmode.Is(t, st, 0o755) {
 		t.Errorf("report-ann run.sh: %v %v", st, err)
 	}
 	if got := readFileT(t, filepath.Join(root, "members/bob/skills/report-bob/SKILL.md")); got != skillMD("report-bob", "Bob's") {

@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 )
 
 type nodeFixture struct {
@@ -264,7 +266,7 @@ func TestStageArchiveHashesLikeNode(t *testing.T) {
 			t.Errorf("deflate=%v: got %s %s, want %s %s", deflate, b.BundleHash, content, f.Upload.BundleHash, f.Upload.ContentHash)
 		}
 		info, _ := os.Stat(filepath.Join(b.Root, "pack.yaml"))
-		if info.Mode().Perm() != 0o600 {
+		if !testmode.Is(t, info, 0o600) {
 			t.Errorf("pack.yaml mode %o", info.Mode().Perm())
 		}
 		cleanup()

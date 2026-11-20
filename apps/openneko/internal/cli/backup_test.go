@@ -11,6 +11,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/assets"
 	"github.com/open-neko/neko/apps/openneko/internal/compose"
 	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 )
 
 func configureBackupTestEnvironment(t *testing.T) string {
@@ -169,13 +170,7 @@ func TestBackupKeyIsCreatedOnceAndExplicitKeyIsNeverCreated(t *testing.T) {
 	if !strings.HasPrefix(path, filepath.Join(root, "state", "openneko", "backup-keys")) {
 		t.Fatalf("key path = %q", path)
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("key mode = %v", info.Mode().Perm())
-	}
+	testmode.Private(t, path, 0o600)
 	second, _, err := loadBackupKey(sup, true)
 	if err != nil || second != first {
 		t.Fatalf("key was not stable: %v", err)
