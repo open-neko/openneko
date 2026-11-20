@@ -963,8 +963,9 @@ This release has fewer parts. The upgrade migrates your data in place:
 - **Old images**: the upgrade also removes the untagged images of the
   earlier release, such as the librarian image that 5.0.0 pulled by digest.
 - **The sandbox recipe** names the image of the release and has no `build:`
-  line. Without `OPENNEKO_VERSION`, Compose stops and asks for it. For a
-  source build, build the image and set `OPENNEKO_SANDBOX_IMAGE`
+  line. Without `OPENNEKO_VERSION`, the image name is not valid and the
+  pull stops with a line that asks for it. For a source build, build the
+  image and set `OPENNEKO_SANDBOX_IMAGE`; it needs no `OPENNEKO_VERSION`
   ([recipes/sandbox/README.md](recipes/sandbox/README.md)).
 - **The serve roles** now have the database name in them. The first start
   creates `neko_files_<database>` and `neko_subscriptions_<database>` with the

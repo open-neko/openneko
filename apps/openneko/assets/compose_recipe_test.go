@@ -4,7 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"slices"
 	"strings"
 	"testing"
 
@@ -56,7 +55,7 @@ func TestRootComposeSetsPassComposeConfig(t *testing.T) {
 			}
 			cmd := exec.Command("docker", append(args, "config", "-q")...)
 			cmd.Dir = "../../.."
-			cmd.Env = append(composeEnvWithout("OPENNEKO_VERSION", "OPENNEKO_SANDBOX_IMAGE"), "OPENNEKO_VERSION=v6.0.0")
+			cmd.Env = cleanComposeEnv("OPENNEKO_VERSION=v6.0.0")
 			if out, err := cmd.CombinedOutput(); err != nil {
 				t.Errorf("docker compose config: %v\n%s", err, out)
 			}
@@ -68,6 +67,8 @@ func TestSandboxRecipeImageIsTheReleaseOrAnExplicitBuild(t *testing.T) {
 	if exec.Command("docker", "compose", "version").Run() != nil {
 		t.Skip("docker compose is not installed")
 	}
+	t.Setenv("OPENNEKO_VERSION", "v0.0.0-from-the-caller")
+	t.Setenv("OPENNEKO_SANDBOX_IMAGE", "from-the-caller:1")
 	for _, set := range [][]string{documentedRootComposeSets["sandbox"], {"recipes/sandbox/compose.native.yml"}} {
 		images := func(env ...string) (string, error) {
 			args := []string{"compose"}
@@ -76,13 +77,12 @@ func TestSandboxRecipeImageIsTheReleaseOrAnExplicitBuild(t *testing.T) {
 			}
 			cmd := exec.Command("docker", append(args, "config", "--images")...)
 			cmd.Dir = "../../.."
-			cmd.Env = append(composeEnvWithout("OPENNEKO_VERSION", "OPENNEKO_SANDBOX_IMAGE"),
-				"OPENNEKO_SANDBOX_DIR=/run/openneko-sandbox", "OPENNEKO_SANDBOX_GID=1001", "OPENNEKO_SANDBOX_KEY=k")
-			cmd.Env = append(cmd.Env, env...)
+			cmd.Env = cleanComposeEnv(append([]string{
+				"OPENNEKO_SANDBOX_DIR=/run/openneko-sandbox", "OPENNEKO_SANDBOX_GID=1001", "OPENNEKO_SANDBOX_KEY=k"}, env...)...)
 			out, err := cmd.CombinedOutput()
 			return string(out), err
 		}
-		if out, err := images(); err == nil || !strings.Contains(out, "OPENNEKO_VERSION") {
+		if out, err := images(); err != nil || !strings.Contains(out, "ghcr.io/open-neko/neko-sandbox:set OPENNEKO_VERSION to the release tag") || strings.Contains(out, "from-the-caller") {
 			t.Errorf("%v with no release tag: %v\n%s", set, err, out)
 		}
 		if out, err := images("OPENNEKO_VERSION=v6.0.0"); err != nil || !strings.Contains(out, "ghcr.io/open-neko/neko-sandbox:v6.0.0") || strings.Contains(out, "neko-sandbox:latest") {
@@ -94,15 +94,27 @@ func TestSandboxRecipeImageIsTheReleaseOrAnExplicitBuild(t *testing.T) {
 	}
 }
 
-func composeEnvWithout(names ...string) []string {
-	var env []string
-	for _, kv := range os.Environ() {
-		name, _, _ := strings.Cut(kv, "=")
-		if !slices.Contains(names, name) {
-			env = append(env, kv)
+// Docker Compose v2 interpolates a nested ${VAR:?} even when the outer
+// default is not used, so the recipe may hold none.
+func TestSandboxRecipeRequiresNoVariableInsideADefault(t *testing.T) {
+	nested := regexp.MustCompile(`\$\{[A-Z_]+:?-[^}]*\$\{[A-Z_]+:?\?`)
+	for _, name := range []string{"recipes/sandbox/compose.yml", "recipes/sandbox/compose.native.yml"} {
+		for i, line := range strings.Split(string(readRootCompose(t, name)), "\n") {
+			if nested.MatchString(line) {
+				t.Errorf("%s:%d: %s", name, i+1, line)
+			}
 		}
 	}
-	return env
+}
+
+func cleanComposeEnv(extra ...string) []string {
+	var env []string
+	for _, name := range []string{"PATH", "HOME", "DOCKER_CONFIG"} {
+		if v, ok := os.LookupEnv(name); ok {
+			env = append(env, name+"="+v)
+		}
+	}
+	return append(env, extra...)
 }
 
 func TestShippedComposeAndDockerfileNameNoWorker(t *testing.T) {

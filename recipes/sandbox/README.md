@@ -11,7 +11,8 @@ secret.
 Each release publishes this image as `ghcr.io/open-neko/neko-sandbox`, for
 amd64 and arm64, with the release's tag. Both compose files name it with
 `${OPENNEKO_VERSION}` and have no `build:` line. Set `OPENNEKO_VERSION` to
-the release tag, for example `v6.0.0`; without it, Compose stops.
+the release tag, for example `v6.0.0`; without it, the image name is not
+valid and the pull stops with a line that asks for it.
 `openneko start` and `openneko upgrade` set it.
 
 ```sh
@@ -23,7 +24,7 @@ docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml u
 
 To run a source build of the sandbox, build the image and name it in
 `OPENNEKO_SANDBOX_IMAGE`. The compose files then use that image in place of
-the published one:
+the published one, and `OPENNEKO_VERSION` is not needed:
 
 ```sh
 docker build -t openneko-sandbox:local recipes/sandbox

@@ -12,9 +12,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const sandboxImageRef = "${OPENNEKO_SANDBOX_IMAGE:-ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION:?set OPENNEKO_VERSION to the release tag, for example v6.0.0}}"
+const sandboxImageRef = "${OPENNEKO_SANDBOX_IMAGE:-ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION:-set OPENNEKO_VERSION to the release tag, for example v6.0.0}}"
 
-var publishedImage = regexp.MustCompile(`ghcr\.io/open-neko/([a-z0-9-]+):\$\{OPENNEKO_VERSION:(?:-latest|\?[^}]*)\}`)
+var publishedImage = regexp.MustCompile(`ghcr\.io/open-neko/([a-z0-9-]+):\$\{OPENNEKO_VERSION:(?:-latest|-set OPENNEKO_VERSION[^}]*)\}`)
 
 func TestReleasePublishesEveryImageThatAnInstallNames(t *testing.T) {
 	root := repoRootForTest(t)
