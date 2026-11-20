@@ -100,7 +100,7 @@ func TestClientSendsTheKeyAndTheRunOverHTTP(t *testing.T) {
 		}
 	}
 	body := got[0].body
-	if !body.Fresh || body.Root != workspace || body.Command != "echo hi" || body.SkillDir != "skills/xlsx" || body.TimeoutSeconds != 30 ||
+	if !body.Fresh || body.Root != filepath.ToSlash(workspace) || body.Command != "echo hi" || body.SkillDir != "skills/xlsx" || body.TimeoutSeconds != 30 ||
 		body.Env["RUN_DIR"] != "runs/r1" || body.Env["PYTHONPATH"] != "lib:." {
 		t.Fatalf("body = %+v", body)
 	}

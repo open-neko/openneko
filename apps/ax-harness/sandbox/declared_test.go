@@ -85,17 +85,17 @@ func TestDeclaredRowsArriveAsFiles(t *testing.T) {
 		t.Fatalf("record: %s", record)
 	}
 
-	if _, err := c.Exec(context.Background(), "python3 "+filepath.Join(skill, "report.py")+" --since=2026-11-01 --limit 50", "", nil, 60, 50_000); err != nil || len(b.calls) != 2 {
+	if _, err := c.Exec(context.Background(), "python3 "+filepath.ToSlash(filepath.Join(skill, "report.py"))+" --since=2026-11-01 --limit 50", "", nil, 60, 50_000); err != nil || len(b.calls) != 2 {
 		t.Fatalf("a rerun reads the record: %v, %d calls", err, len(b.calls))
 	}
-	if _, err := c.Exec(context.Background(), "python3 "+filepath.Join(skill, "report.py")+" --since 2026-10-01 --limit 5", "", nil, 60, 50_000); err != nil || len(b.calls) != 3 {
+	if _, err := c.Exec(context.Background(), "python3 "+filepath.ToSlash(filepath.Join(skill, "report.py"))+" --since 2026-10-01 --limit 5", "", nil, 60, 50_000); err != nil || len(b.calls) != 3 {
 		t.Fatalf("new parameters run the query: %v, %d calls", err, len(b.calls))
 	}
 	if string(seen[2].Variables) != `{"limit":5,"since":"2026-10-01"}` {
 		t.Fatalf("variables: %s", seen[2].Variables)
 	}
 
-	workflow := `OPENNEKO_WORKFLOW_INPUT="$(cat '` + runRoot + `/steps/a.input.json')" exec 'python3' '` + filepath.Join(skill, "report.py") + `' '--since' '2026-11-01'`
+	workflow := `OPENNEKO_WORKFLOW_INPUT="$(cat '` + filepath.ToSlash(runRoot) + `/steps/a.input.json')" exec 'python3' '` + filepath.ToSlash(filepath.Join(skill, "report.py")) + `' '--since' '2026-11-01'`
 	if res, err := c.ExecIn(context.Background(), runRoot, workflow, skill, nil, 60, 50_000); err != nil || res.ExitCode != 0 || len(b.calls) != 3 || len(queryFiles(fake)) != 2 {
 		t.Fatalf("a workflow script step: %+v %v, %d calls", res, err, len(b.calls))
 	}
