@@ -16,10 +16,10 @@
 //
 // An embedding call has the same shape, with {"type":"embed","embed":{...},"model_key":"..."}.
 //
-// Closing the connection cancels the turn. Serve holds the model keys for
-// the turn: the worker names the variable and sends the org's key in
-// model_keys, or serve reads it from its own environment. A key never goes
-// into the run's environment, so the run's tools and terminal never see it.
+// Closing the connection cancels the turn. The worker sends a key door token
+// in place of each model key and door URLs in place of the provider URLs; the
+// door in the control zone holds the keys. A token never goes into the run's
+// environment, so the run's tools and terminal never see it.
 package serve
 
 import (
@@ -40,6 +40,7 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/embedding"
 	"github.com/open-neko/openneko/apps/ax-harness/harness"
 	"github.com/open-neko/openneko/apps/ax-harness/inference"
+	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
@@ -71,8 +72,11 @@ type Frame struct {
 
 // Server runs turns for connections on a listener.
 type Server struct {
-	// Getenv reads the host's environment for model keys and PATH.
+	// Getenv reads the host's environment for PATH.
 	Getenv func(string) string
+	// RequireDoor refuses a frame that carries a model key: only key door
+	// tokens and "none" pass.
+	RequireDoor bool
 	// MaxTurns bounds the turns that run at once; more are refused.
 	MaxTurns int
 	// Sandbox runs every turn's terminal commands. The worker cannot set it.
@@ -169,6 +173,10 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 		_ = out.write(frame)
 	}
 	start, err := readFrame(reader)
+	if err == nil && s.RequireDoor && !onlyDoorTokens(start) {
+		exit(2, errors.New("openneko serve takes no model key: the frame must carry a key door token"))
+		return
+	}
 	if err == nil && start.Type == "generate" {
 		var request inference.Request
 		if len(start.Generate) == 0 || json.Unmarshal(start.Generate, &request) != nil {
@@ -287,9 +295,36 @@ func (s *Server) environ(in []string) []string {
 	return out
 }
 
-// secrets reads model keys from the turn's keys, then serve's environment.
-// HARNESS_MODEL_API_KEY reads the variable the worker named; route keys read
-// their own names.
+func onlyDoorTokens(frame Frame) bool {
+	values := []string{frame.ModelKey, frame.FallbackKey}
+	for _, v := range frame.ModelKeys {
+		values = append(values, v)
+	}
+	for _, v := range values {
+		if v != "" && v != "none" && !keydoor.IsToken(v) {
+			return false
+		}
+	}
+	return true
+}
+
+var tokenEnvNames = map[string]bool{"HF_TOKEN": true, "VERTEX_ACCESS_TOKEN": true, "GOOGLE_VERTEX_ACCESS_TOKEN": true}
+
+// KeyEnvNames lists the variables in environ that can hold a model or
+// embedding key. Serve must hold none of them.
+func KeyEnvNames(environ []string) []string {
+	var names []string
+	for _, entry := range environ {
+		name, value, ok := strings.Cut(entry, "=")
+		if ok && value != "" && (keyEnvName.MatchString(name) || tokenEnvNames[name]) {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// secrets reads model keys from the turn's frame only. HARNESS_MODEL_API_KEY
+// reads the variable the worker named; route keys read their own names.
 func (s *Server) secrets(modelKeyEnv string, keys map[string]string) func(string) string {
 	return func(name string) string {
 		if name == "HARNESS_MODEL_API_KEY" {
@@ -301,10 +336,7 @@ func (s *Server) secrets(modelKeyEnv string, keys map[string]string) func(string
 		if !keyEnvName.MatchString(name) {
 			return ""
 		}
-		if value := keys[name]; value != "" {
-			return value
-		}
-		return s.Getenv(name)
+		return keys[name]
 	}
 }
 

@@ -44,8 +44,7 @@ func TestServeLoad(t *testing.T) {
 	}))
 	defer model.Close()
 	before := runtime.NumGoroutine()
-	env := map[string]string{"MODEL_API_KEY": "k"}
-	socket := startServer(t, &Server{Getenv: func(name string) string { return env[name] }, MaxTurns: turns})
+	socket := startServer(t, &Server{MaxTurns: turns})
 
 	started := time.Now()
 	var wg sync.WaitGroup
@@ -58,7 +57,7 @@ func TestServeLoad(t *testing.T) {
 			c := dial(t, socket, Frame{Type: "start", Spec: json.RawMessage(spec), Environ: []string{
 				"OPENNEKO_MCP_ORG_ID=org-1", "OPENNEKO_MCP_THREAD_ID=thread-load",
 				"HARNESS_MODEL_URL=" + model.URL + "/t" + strconv.Itoa(i), "HARNESS_MODEL=fixture",
-			}})
+			}, ModelKeys: map[string]string{"MODEL_API_KEY": "k"}})
 			answered := false
 			for frame := range c.frames {
 				if frame.Type == "event" && strings.Contains(string(frame.Event), `"run.finished"`) {

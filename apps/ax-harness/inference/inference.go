@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	ax "github.com/ax-llm/ax/packages/go"
+	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
 )
 
 const OpenAICompatible = "openai-compatible"
@@ -108,6 +109,13 @@ func NewClient(route Route, key string, retry Retry) (client ax.AxAIService, err
 	}
 	if route.URL != "" {
 		options["base_url"] = route.URL
+	}
+	if keydoor.IsURL(route.URL) {
+		door, err := keydoor.Client()
+		if err != nil {
+			return nil, err
+		}
+		options["transport"] = ax.HTTPTransport{Client: door}
 	}
 	if provider == OpenAICompatible {
 		return ax.NewOpenAICompatibleClient(options), nil
