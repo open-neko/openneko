@@ -11,6 +11,15 @@
 * Upgrade an install that runs the sandbox recipe: take the new recipe, run the same compose command with `up -d --build`, then run `openneko release-check --sandbox` and check for `sandbox_egress=closed`. A native install starts the sandbox with `recipes/sandbox/compose.native.yml`. The steps are in `recipes/sandbox/README.md`, "Upgrade an install that runs an earlier recipe".
 * The bundled skills (`xlsx`, `docx`, `pptx`, `pdf`, `skill-creator`), `neko_data` and declared queries need no host on the list.
 
+### Model keys
+
+* **Breaking:** `openneko serve` gets no model key. `openneko web` keeps the model, fallback and embedding keys in its key door, and gives serve a token for one call. Serve sends each model call through the door, over `keydoor.sock` beside serve's socket. The door puts the key on the call and forwards it only to the provider of that call's route.
+* The model calls leave from web now. If a firewall lets only serve reach the model APIs, let web reach them too.
+* In production, serve refuses a turn that carries a real key. At start it removes every `*_API_KEY`, `HF_TOKEN` and `VERTEX_ACCESS_TOKEN` variable from its environment and logs a warning. Remove such variables from an override of `openneko-serve` or from `serve.env`.
+* `openneko release-check --serve-socket` fails when serve started with a model key variable or runs in development mode.
+* A server install gets the door folder `/var/lib/openneko/shared/door` and new units from `openneko upgrade`, which now runs `systemctl daemon-reload`.
+* `openneko web` with no serve socket, and the stand-alone eval harness, still put the key in the process of the agent loop. Use them for development and demos only.
+
 ## [5.0.0](https://github.com/open-neko/openneko/compare/v4.9.2...v5.0.0) (2026-10-24)
 
 
