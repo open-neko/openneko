@@ -1,0 +1,88 @@
+# Runs the sandbox for a one-user native install on macOS or Windows with
+# Docker Desktop. A Unix socket on a bind mount does not reach the host
+# there, and an internal network cannot publish a port, so a third
+# container joins the sandbox network and publishes the sandbox on
+# 127.0.0.1 only. The sandbox stays on a network with no route out.
+#   OPENNEKO_SANDBOX_KEY=... OPENNEKO_VERSION=v$(openneko version --short) \
+#   docker compose -f compose.desktop.yml up -d
+# OpenNeko then uses OPENNEKO_SANDBOX_URL=http://127.0.0.1:8091 and the same key.
+name: openneko-sandbox
+
+services:
+  openneko-sandbox:
+    image: ${OPENNEKO_SANDBOX_IMAGE:-ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION:-set OPENNEKO_VERSION to the release tag, for example v6.0.0}}
+    command: ["--listen", "tcp://:8091"]
+    restart: unless-stopped
+    environment:
+      OPENNEKO_SANDBOX_WORKSPACES: /var/lib/openneko/sandbox-runs
+      OPENNEKO_SANDBOX_HOMES: /var/lib/openneko/sandbox-homes
+      OPENNEKO_SANDBOX_EGRESS_PROXY: openneko-egress:3128
+      OPENNEKO_SANDBOX_EGRESS_CONTROL: unix:///run/openneko-egress/control.sock
+      OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:?set a sandbox key}
+    volumes:
+      - openneko-sandbox-runs:/var/lib/openneko/sandbox-runs
+      - openneko-sandbox-homes:/var/lib/openneko/sandbox-homes
+      - openneko-egress-control:/run/openneko-egress
+    networks:
+      - openneko-sandbox
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - KILL
+      - SETGID
+      - SETUID
+      # Only while the sandbox sets its firewall at start; it then drops both.
+      - NET_ADMIN
+      - SETPCAP
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 1024
+
+  openneko-egress:
+    image: ${OPENNEKO_SANDBOX_IMAGE:-ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION:-set OPENNEKO_VERSION to the release tag, for example v6.0.0}}
+    command: ["egress", "--listen", ":3128", "--control", "unix:///run/openneko-egress/control.sock"]
+    restart: unless-stopped
+    volumes:
+      - openneko-egress-control:/run/openneko-egress
+    networks:
+      - openneko-sandbox
+      - openneko-egress
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+
+  # Passes TCP from 127.0.0.1 on the host to the sandbox's port, and nothing
+  # else. The runs' firewall drops their packets to it.
+  openneko-sandbox-publish:
+    image: ${OPENNEKO_SANDBOX_IMAGE:-ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION:-set OPENNEKO_VERSION to the release tag, for example v6.0.0}}
+    command: ["publish", "--listen", ":8091", "--to", "openneko-sandbox:8091"]
+    restart: unless-stopped
+    user: "65534:65534"
+    ports:
+      - "127.0.0.1:${OPENNEKO_SANDBOX_PORT:-8091}:8091"
+    networks:
+      - openneko-sandbox
+      - openneko-sandbox-publish
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+
+volumes:
+  openneko-sandbox-runs:
+  openneko-sandbox-homes:
+  openneko-egress-control:
+
+networks:
+  openneko-sandbox:
+    internal: true
+  openneko-egress:
+  openneko-sandbox-publish:

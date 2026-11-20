@@ -180,7 +180,7 @@ func TestRelayPassesTheConnectionToTheProxy(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go relayToProxy(ctx, relay, proxy.Addr().String())
+	go relayTo(ctx, relay, proxy.Addr().String())
 	conn, err := net.Dial("tcp", relay.Addr().String())
 	if err != nil {
 		t.Fatal(err)

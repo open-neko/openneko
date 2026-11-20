@@ -22,6 +22,10 @@ func main() {
 		egressProbeMain()
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "publish" {
+		publishMain(os.Args[2:])
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "ipc-clean" {
 		ipcCleanMain()
 		return
@@ -87,6 +91,35 @@ func egressMain(args []string) {
 	}
 }
 
+// publishMain publishes the sandbox's TCP listener from a container that
+// joins the sandbox's internal network and one network that Docker can
+// publish a port on.
+func publishMain(args []string) {
+	flags := flag.NewFlagSet("openneko-sandbox publish", flag.ExitOnError)
+	listen := flags.String("listen", ":8091", "host:port to accept connections on")
+	to := flags.String("to", "", "host:port of the sandbox's TCP listener")
+	_ = flags.Parse(args)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := publish(ctx, *listen, *to); err != nil {
+		fmt.Fprintf(os.Stderr, "openneko-sandbox publish: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func publish(ctx context.Context, listen, to string) error {
+	if _, _, err := net.SplitHostPort(to); err != nil {
+		return fmt.Errorf("--to must be host:port: %w", err)
+	}
+	listener, err := net.Listen("tcp", listen)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "openneko-sandbox publish: %s to %s\n", listener.Addr(), to)
+	relayTo(ctx, listener, to)
+	return nil
+}
+
 func confineRuns(ctx context.Context, server *Server) error {
 	var relay net.Listener
 	if server.EgressProxy != "" {
@@ -102,7 +135,7 @@ func confineRuns(ctx context.Context, server *Server) error {
 		return err
 	}
 	if relay != nil {
-		go relayToProxy(ctx, relay, server.EgressProxy)
+		go relayTo(ctx, relay, server.EgressProxy)
 	}
 	return nil
 }
