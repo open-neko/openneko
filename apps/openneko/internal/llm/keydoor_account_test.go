@@ -32,12 +32,8 @@ func main() {
 }
 `
 
-// dialAs connects to the socket as the given container user. In a rootless
-// Docker, user 0 is this account and any other user is another account.
-func dialAs(t *testing.T, dir, user string) (string, int) {
+func exitCode(t *testing.T, out []byte, err error) (string, int) {
 	t.Helper()
-	out, err := exec.Command("docker", "run", "--rm", "--network", "none", "-u", user,
-		"-v", dir+":/door", "busybox", "/door/dial", "/door/keydoor.sock").CombinedOutput()
 	code := 0
 	if exit, ok := err.(*exec.ExitError); ok {
 		code = exit.ExitCode()
@@ -45,6 +41,52 @@ func dialAs(t *testing.T, dir, user string) (string, int) {
 		t.Fatal(err)
 	}
 	return strings.TrimSpace(string(out)), code
+}
+
+func buildDialer(t *testing.T, out string, env ...string) {
+	t.Helper()
+	src := filepath.Join(t.TempDir(), "dial.go")
+	if err := os.WriteFile(src, []byte(doorDialer), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	build := exec.Command("go", "build", "-o", out, src)
+	build.Env = append(os.Environ(), append([]string{"CGO_ENABLED=0", "GO111MODULE=off"}, env...)...)
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build the dialer: %v\n%s", err, out)
+	}
+	if err := os.Chmod(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// dockerDialer connects to the socket as a container user. In a rootless
+// Docker, user 0 is this account and any other user is another account.
+func dockerDialer(t *testing.T, dir string) func(other bool) (string, int) {
+	buildDialer(t, filepath.Join(dir, "dial"), "GOOS=linux")
+	return func(other bool) (string, int) {
+		user := "0:0"
+		if other {
+			user = "4242:4242"
+		}
+		out, err := exec.Command("docker", "run", "--rm", "--network", "none", "-u", user,
+			"-v", dir+":/door", "busybox", "/door/dial", "/door/keydoor.sock").CombinedOutput()
+		return exitCode(t, out, err)
+	}
+}
+
+// sudoDialer connects as this account and as nobody. Only CI sets
+// OPENNEKO_TEST_OTHER_ACCOUNT=sudo; its runners allow sudo with no password.
+func sudoDialer(t *testing.T, dir string) func(other bool) (string, int) {
+	dial, sock := filepath.Join(dir, "dial"), filepath.Join(dir, "keydoor.sock")
+	buildDialer(t, dial)
+	return func(other bool) (string, int) {
+		cmd := exec.Command(dial, sock)
+		if other {
+			cmd = exec.Command("sudo", "-n", "-u", "nobody", dial, sock)
+		}
+		out, err := cmd.CombinedOutput()
+		return exitCode(t, out, err)
+	}
 }
 
 func TestKeyDoorSocketRefusesAnotherAccount(t *testing.T) {
@@ -66,35 +108,29 @@ func TestKeyDoorSocketRefusesAnotherAccount(t *testing.T) {
 		t.Fatalf("the door socket has mode %o, want 660: only its owner and serve's group may connect", perm)
 	}
 
-	if os.Getenv("OPENNEKO_TEST_DOCKER") == "0" {
-		t.Skip("OPENNEKO_TEST_DOCKER=0: the mode check ran; the other-account dial needs Docker")
+	var dialAs func(other bool) (string, int)
+	switch {
+	case os.Getenv("OPENNEKO_TEST_OTHER_ACCOUNT") == "sudo":
+		dialAs = sudoDialer(t, dir)
+	case os.Getenv("OPENNEKO_TEST_DOCKER") != "0" && exec.Command("docker", "image", "inspect", "busybox").Run() == nil:
+		dialAs = dockerDialer(t, dir)
+	case os.Getenv("CI") != "":
+		t.Fatal("CI must test the door with another account: set OPENNEKO_TEST_OTHER_ACCOUNT=sudo")
+	default:
+		t.Skip("no Docker with the busybox image and no OPENNEKO_TEST_OTHER_ACCOUNT=sudo: the mode check ran; the other-account dial did not")
 	}
-	if exec.Command("docker", "image", "inspect", "busybox").Run() != nil {
-		t.Skip("no Docker with the busybox image: the mode check ran; the other-account dial needs Docker")
-	}
-	src := filepath.Join(t.TempDir(), "dial.go")
-	if err := os.WriteFile(src, []byte(doorDialer), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	build := exec.Command("go", "build", "-o", filepath.Join(dir, "dial"), src)
-	build.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GO111MODULE=off")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build the dialer: %v\n%s", err, out)
-	}
-	for _, c := range []struct {
-		user string
-		want int
-	}{
-		{"0:0", 0},
-		{"4242:4242", 3},
-	} {
-		out, code := dialAs(t, dir, c.user)
-		if code != c.want {
-			t.Fatalf("container user %s: exit %d (%s), want %d", c.user, code, out, c.want)
+	for _, other := range []bool{false, true} {
+		out, code := dialAs(other)
+		want := 0
+		if other {
+			want = 3
 		}
-		if c.want == 3 && !strings.Contains(out, "permission denied") {
-			t.Fatalf("container user %s: %s", c.user, out)
+		if code != want {
+			t.Fatalf("other account %v: exit %d (%s), want %d", other, code, out, want)
 		}
-		t.Logf("container user %s: %s", c.user, out)
+		if other && !strings.Contains(out, "permission denied") {
+			t.Fatalf("other account: %s", out)
+		}
+		t.Logf("other account %v: %s", other, out)
 	}
 }
