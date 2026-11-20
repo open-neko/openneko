@@ -18,6 +18,7 @@ import (
 )
 
 func TestServeAgentTurnsAnswersOnTheSocket(t *testing.T) {
+	cleanServeEnv(t)
 	socket := filepath.Join(t.TempDir(), "serve.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	done, err := serveAgentTurns(ctx, io.Discard, socket, 2, sandbox.Config{})
@@ -72,6 +73,7 @@ func TestServeAgentTurnsAnswersOnTheSocket(t *testing.T) {
 }
 
 func TestServeAgentTurnsRefusesABadSandboxURL(t *testing.T) {
+	cleanServeEnv(t)
 	socket := filepath.Join(t.TempDir(), "serve.sock")
 	if _, err := serveAgentTurns(context.Background(), io.Discard, socket, 1, sandbox.Config{URL: "ftp://sandbox"}); err == nil {
 		t.Fatal("serve started with a sandbox URL it cannot use")
@@ -82,6 +84,7 @@ func TestServeAgentTurnsRefusesABadSandboxURL(t *testing.T) {
 }
 
 func TestServeAgentTurnsWarnsWhenTheSandboxSharesItsSocketFolder(t *testing.T) {
+	cleanServeEnv(t)
 	dir := t.TempDir()
 	for _, tc := range []struct {
 		url  string

@@ -163,7 +163,7 @@ func checkServeSocket(ctx context.Context, socket string) error {
 		return fmt.Errorf("openneko serve on %s did not report whether it holds a model key; run serve from the same release as web", socket)
 	}
 	if len(status.KeyEnv) > 0 {
-		return fmt.Errorf("openneko serve started with the model key variables %s; remove them from serve's environment and keep model keys in web (INSTALL.md, \"Model keys\")", strings.Join(status.KeyEnv, ", "))
+		return fmt.Errorf("openneko serve started with the secret variables %s; remove them from serve's environment and keep them in web (INSTALL.md, \"Model keys\")", strings.Join(status.KeyEnv, ", "))
 	}
 	if !status.RequireDoor {
 		return errors.New("openneko serve accepts a model key in a frame because it runs in development mode; run serve without OPENNEKO_ENV=development")

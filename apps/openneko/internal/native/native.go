@@ -157,9 +157,35 @@ func WebEnv(l Layout, o Options) map[string]string {
 
 func Procs(l Layout, o Options) []Proc {
 	return []Proc{
-		{Name: "serve", Args: []string{o.Exe, "serve"}, Env: o.env(ServeEnv(l))},
+		{Name: "serve", Args: []string{o.Exe, "serve"}, Env: Options{Env: ServeEnviron(o.Env)}.env(ServeEnv(l))},
 		{Name: "web", Args: []string{o.Exe, "web"}, Env: o.env(WebEnv(l, o))},
 	}
+}
+
+var serveOwnSecrets = map[string]bool{"OPENNEKO_SANDBOX_KEY": true, "OPENNEKO_FILES_BUCKET_KEY_ID": true, "OPENNEKO_FILES_BUCKET_SECRET": true}
+
+// ServeEnviron drops the control zone's secrets from env: model and
+// provider keys, tokens, passwords, database URLs and the secret key. Serve
+// keeps its own sandbox key, its bucket login and GraphJin's GJ_ variables.
+func ServeEnviron(env []string) []string {
+	var out []string
+	for _, kv := range env {
+		name, _, _ := strings.Cut(kv, "=")
+		upper := strings.ToUpper(name)
+		if serveOwnSecrets[upper] || strings.HasPrefix(upper, "GJ_") || !secretEnvName(upper) {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
+
+func secretEnvName(upper string) bool {
+	for _, part := range []string{"KEY", "TOKEN", "SECRET", "PASS", "CREDENTIAL", "DATABASE_URL", "DSN", "AUTH"} {
+		if strings.Contains(upper, part) {
+			return true
+		}
+	}
+	return false
 }
 
 func hasEnv(env []string, key string) bool {
