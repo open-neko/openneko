@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/open-neko/neko/apps/openneko/internal/appdir"
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 )
 
@@ -342,17 +343,8 @@ func pluginName(provider json.RawMessage) string {
 	return p.PluginName
 }
 
-// DefaultMarkerPath matches markerPath() in apps/web/src/lib/auth-gate-marker.ts.
 func DefaultMarkerPath() string {
-	base := os.Getenv("XDG_CONFIG_HOME")
-	if strings.TrimSpace(base) == "" {
-		home := os.Getenv("HOME")
-		if home == "" {
-			home, _ = os.UserHomeDir()
-		}
-		base = filepath.Join(home, ".config")
-	}
-	return filepath.Join(strings.TrimSpace(base), "openneko", "auth-gate.json")
+	return filepath.Join(appdir.Config(), "auth-gate.json")
 }
 
 func (g *Gate) markerPath() string {

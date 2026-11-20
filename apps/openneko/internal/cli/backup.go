@@ -20,6 +20,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/assets"
 	"github.com/open-neko/neko/apps/openneko/internal/compose"
 	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
 	"github.com/open-neko/neko/apps/openneko/internal/version"
 )
 
@@ -315,6 +316,11 @@ type backupSource struct {
 func writeBackupFile(target, key, keyPath string, manifest backupManifest, src backupSource, out io.Writer) (string, error) {
 	partial, err := os.CreateTemp(filepath.Dir(target), "."+filepath.Base(target)+".partial-*")
 	if err != nil {
+		return "", err
+	}
+	if err := ownonly.Set(partial.Name()); err != nil {
+		_ = partial.Close()
+		_ = os.Remove(partial.Name())
 		return "", err
 	}
 	committed := false

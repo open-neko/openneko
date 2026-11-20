@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/open-neko/neko/apps/openneko/assets"
+	"github.com/open-neko/neko/apps/openneko/internal/appdir"
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/jobs"
@@ -95,7 +96,7 @@ with exit code 0, so its supervisor starts it again.`,
 			}
 			webfront.ReportDeploymentProfile(func(format string, args ...any) { fmt.Fprintf(cmd.OutOrStdout(), format+"\n", args...) })
 			tracePath := os.Getenv(webfront.EvalTraceEnv)
-			trace, err := webfront.OpenEvalTrace(tracePath, webfront.EvalTraceRefused(envOr("OPENNEKO_FILES_DIR", filepath.Join(dataHome(), "openneko", "files"))), os.Environ())
+			trace, err := webfront.OpenEvalTrace(tracePath, webfront.EvalTraceRefused(envOr("OPENNEKO_FILES_DIR", filepath.Join(appdir.Data(), "files"))), os.Environ())
 			if err != nil {
 				return err
 			}

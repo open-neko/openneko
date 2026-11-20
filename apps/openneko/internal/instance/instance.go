@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/open-neko/neko/apps/openneko/internal/appdir"
 )
 
 const (
@@ -64,18 +66,6 @@ func ScopeConfigDir(base string) string {
 	return base
 }
 
-// StateHome returns the XDG-compatible host state root.
-func StateHome() (string, error) {
-	if base := strings.TrimSpace(os.Getenv("XDG_STATE_HOME")); base != "" {
-		return filepath.Abs(base)
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".local", "state"), nil
-}
-
 // StateDir returns the durable host state directory for the selected named
 // instance. The bool is false for the legacy unnamed installation.
 func StateDir() (string, bool, error) {
@@ -83,9 +73,9 @@ func StateDir() (string, bool, error) {
 	if name == "" {
 		return "", false, nil
 	}
-	base, err := StateHome()
+	base, err := appdir.State()
 	if err != nil {
 		return "", false, err
 	}
-	return filepath.Join(base, "openneko", "instances", name), true, nil
+	return filepath.Join(base, "instances", name), true, nil
 }

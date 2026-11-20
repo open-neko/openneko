@@ -12,6 +12,7 @@ import (
 	"github.com/dosco/graphjin/core/v3/fstable"
 	"github.com/spf13/cobra"
 
+	"github.com/open-neko/neko/apps/openneko/internal/appdir"
 	"github.com/open-neko/neko/apps/openneko/internal/filestore"
 )
 
@@ -49,7 +50,7 @@ func newFilesCopyToBucketCmd() *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&dir, "files-dir", envOr("OPENNEKO_FILES_DIR", filepath.Join(dataHome(), "openneko", "files")), "Local files folder to copy from")
+	cmd.Flags().StringVar(&dir, "files-dir", envOr("OPENNEKO_FILES_DIR", filepath.Join(appdir.Data(), "files")), "Local files folder to copy from")
 	return cmd
 }
 
@@ -93,12 +94,4 @@ func copyToStore(ctx context.Context, dir string, store fstable.Backend) (copied
 		return nil
 	})
 	return copied, skipped, err
-}
-
-func dataHome() string {
-	if data := os.Getenv("XDG_DATA_HOME"); data != "" {
-		return data
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".local", "share")
 }
