@@ -14,6 +14,7 @@ on:
       - "packages/**"
       - "apps/web/**"
       - ".github/workflows/ax-harness.yml"
+  workflow_dispatch:
 
 jobs:
   test:
