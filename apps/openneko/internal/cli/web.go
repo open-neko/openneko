@@ -22,6 +22,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/jobs"
+	"github.com/open-neko/neko/apps/openneko/internal/native"
 	"github.com/open-neko/neko/apps/openneko/internal/version"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 )
@@ -72,6 +73,7 @@ with exit code 0, so its supervisor starts it again.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
+			native.FollowSupervisor()
 			if local, _ := config.ReadLocal(""); local.SecretsBackendError() != nil {
 				return local.SecretsBackendError()
 			}

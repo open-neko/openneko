@@ -21,6 +21,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/files"
 	"github.com/open-neko/neko/apps/openneko/internal/filestore"
 	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
+	"github.com/open-neko/neko/apps/openneko/internal/native"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
@@ -34,6 +35,7 @@ func newServeCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
+			native.FollowSupervisor()
 
 			key, dsn, err := serveKeyAndDatabase(credentials)
 			if err != nil {
