@@ -62,6 +62,7 @@ evals/DREAMING.md §5.7 and §5.8.
 | A host model call with its own route and spend row | The inference gateway and `llm_task_route`; `skill_lessons` is one task |
 | Context the host adds to a turn by similarity to the question | `memoryPromptContext` in `turnmemory.go`: pinned memories plus the five closest by embedding |
 | A user's data access | GraphJin enforces it from `X-User-Role` and the group claims (`turndata.go`) |
+| A check of a query with no run | GraphJin core has `ExplainQuery(query, vars, role)`. It compiles a query as a role, runs nothing, and returns the tables or the error. `openneko serve` hosts the engine in `gjhost` and can call it (§13) |
 | A sign that the schema changed | `catalogRevision` in `turnknowledge.go` |
 | A record of each learning decision | `skill_learn_event` (decision, reason, rationale, evidence run ids) |
 
@@ -76,9 +77,22 @@ and its jobs.
 | `schema_fact` | One fact about the source ("orders join territories through a bridging table") | A failed call followed by a successful one that differs in that fact |
 | `dead_end` | A call pattern and the error it always gives | The same failure seen in several runs |
 | `business_rule` | A rule in the person's words ("revenue excludes cancelled orders") | A correction in a thread |
+| `data_fact` | The range or the values of one column ("order dates run from 2022-05-30 to 2025-06-29"), and the query that gave them | A successful query that a run made only to learn the range or the values |
 
-A lesson holds query text and rule text. It never holds result rows or
-values.
+A lesson holds query text and rule text. It never holds a measure or a row
+of data.
+
+A `data_fact` is the one kind that holds values from the source. It holds
+only the smallest and largest value of a date or number column, or the
+distinct values of a column that has few of them. The baseline shows the
+need: a run spends most of its extra queries to learn the date range and
+the dimension values. The GraphJin catalog already gives the values of a
+column with eight distinct values or fewer; a `data_fact` covers the date
+ranges and the larger dimensions.
+
+A `data_fact` goes only to a person for whom its query compiles (§7), so
+nobody learns a value from a table they cannot read. When a later run gets
+a different result from the same query, the next pass replaces the fact.
 
 Each lesson records the tables it touches, the catalog revision it was
 learned under, the runs it came from, and its state: `active`, `retired`, or
@@ -180,7 +194,8 @@ the memory section, built the way `memoryPromptContext` builds its own:
 
 1. Embed the user's message.
 2. Take the active lessons closest to it (see "Selection" below).
-3. Drop any lesson that names a table this person cannot query.
+3. Compile the query of each lesson as this person's role, with no run.
+   Drop a lesson whose query does not compile.
 4. Add them to the prompt as known-good starting points, each with its id.
 5. Record a `dream_lesson_use` row per lesson offered.
 
@@ -220,16 +235,16 @@ the person asking has no access to a table: someone outside HR asking an HR
 question. The lesson is still right for the people who do have access.
 
 So when a query built on a lesson fails, the host checks the lesson itself,
-not the person's result: it validates the lesson's query against the current
-catalog under the service identity.
+not the person's result: it compiles the lesson's query under the service
+role, with no run.
 
 | Check result | Meaning | Effect |
 |---|---|---|
-| The lesson still validates | The failure was this person's access, or a passing fault | The lesson stays. The use is marked `failed_access` and counts for nothing |
-| The lesson no longer validates | The source changed | The lesson leaves the prompt at once and the next pass retires it |
+| The lesson still compiles | The failure was this person's access, or a passing fault | The lesson stays. The use is marked `failed_access` and counts for nothing |
+| The lesson no longer compiles | The source changed | The lesson leaves the prompt at once and the next pass retires it |
 
-The check reads the catalog, not the error text, so it does not depend on
-how a source words its errors.
+The check uses the GraphJin compiler, not the error text, so it does not
+depend on how a source words its errors.
 
 Decision 7 means a person should seldom be offered a lesson they cannot use.
 The check covers the cases where the filter is wrong or access changed
@@ -278,11 +293,25 @@ Each step ends with named eval cases passing. The cases are written first.
 
 ## 13. Open questions
 
-1. **Table access check.** §7 step 3 needs the set of tables a person's role
-   can query. How to read that from GraphJin per role has not been verified.
-2. **Service-identity validation.** §8 needs the host to validate a query
-   against the catalog without running it for the person. Whether GraphJin
-   offers that for a whole query has not been verified.
+1. **Table access check. Answered 2026-11-20, from the GraphJin 3.21.18
+   source; not yet run.** GraphJin core holds the per-role table list
+   (`AuditRolePermissions`), but the MCP server no longer registers the tool
+   for it, and the list covers only tables that a role names. Dreaming does
+   not need the list. It compiles the lesson's query as the person's role
+   with `ExplainQuery`. A blocked table gives a compile error.
+2. **Service-identity validation. Answered 2026-11-20, same basis.** The
+   same `ExplainQuery` call under the service role is the check. The MCP
+   tool for it (`explain_query`) is also unregistered. `gjhost` builds the
+   HTTP mux of the engine and holds the service, so OpenNeko adds one
+   internal route there that calls `GetGraphJin().ExplainQuery`. GraphJin
+   needs no change. Three points remain for the build:
+   - The first build task is a Go test that proves a blocked table fails
+     the compile for a member role and for a group role.
+   - `ExplainQuery` gets no request context. The host must pass the group
+     roles as the union role key that GraphJin builds from the token.
+   - A GraphJin that `openneko serve` does not host has no such route. For
+     that case the host reads its own `data_access_rule` table for access,
+     and skips the source check.
 3. **Lessons per turn.** Five is a proposal (§7).
 4. **Delay.** A correction reaches other people at the next pass, at least
    two hours later. Whether a correction should trigger a pass for that

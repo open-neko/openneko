@@ -60,8 +60,8 @@ One person counts once per lesson, by their most recent position.
 
 ## 3. What a lesson is
 
-The pass learns four kinds of lesson from runs that failed and then
-recovered, and from corrected threads:
+The pass learns five kinds of lesson from runs that failed and then
+recovered, from runs that explored the data, and from corrected threads:
 
 | Lesson | Example | Effect on the next run |
 |---|---|---|
@@ -69,6 +69,7 @@ recovered, and from corrected threads:
 | Schema fact | This join goes through a bridging table | Avoids the wrong first attempt |
 | Known dead end | This filter fails on this source with this error | Does not try it |
 | Business rule from a correction | "Revenue excludes cancelled orders" | Answers by the org's definition |
+| Data fact | "Order dates run from 2022-05-30 to 2025-06-29" | Does not query to learn the range or the values |
 
 ## 4. Case shape
 
