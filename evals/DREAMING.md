@@ -216,6 +216,61 @@ runs that a person started, on the Ax backend.
 The earlier eval cases (`g01` to `g40`) do not show this. Their questions
 state the method, and a run needs about three queries.
 
+### 5.8 Baseline from the simulated day
+
+Run on 2026-11-19 with no learning, one repetition, on Ax with
+`gemini-3.8-flash`. The numbers leave out the two safety cases that each
+suite must start with.
+
+| | Morning | Afternoon |
+|---|---|---|
+| Questions | 26 | 34 |
+| Correct answers | 26 | 34 |
+| Queries per question | 3.7 | 3.7 |
+| Most queries on one question | 11 | 12 |
+| Questions with a failed query | 8 | 13 |
+| Failed queries | 14% | 14% |
+| Cost per question | $0.24 | $0.23 |
+
+Every answer is correct, so this baseline measures waste and not accuracy.
+
+Queries per question, by shape:
+
+| Shape | Morning | Afternoon | Failed in both parts |
+|---|---|---|---|
+| top-category | 9.5 | 10.0 | yes |
+| category-revenue | 5.5 | 8.0 | yes |
+| category-units | 4.5 | 6.5 | yes |
+| purchase-spend | 6.0 | 3.5 | yes |
+| rejected-units | 3.5 | 3.0 | yes |
+| territory-revenue | 3.5 | 3.5 | no |
+| top-territory | 3.5 | 3.0 | no |
+| active-customers | 3.0 | 2.5 | no |
+| department-headcount | 2.5 | 1.5 | no |
+| online-orders | 2.0 | 1.0 | no |
+| revenue | 1.5 | 2.0 | no |
+| avg-order-value | 1.5 | 1.5 | no |
+| orders-count | 1.0 | 2.0 | no |
+
+- Five shapes had a failed query in the morning. All five failed again in
+  the afternoon.
+- The most common morning error came back four times in the afternoon, on
+  the same two category shapes.
+- The category and purchasing shapes join through several tables. They hold
+  most of the gain. The one-table shapes have little to gain.
+
+Three limits apply:
+
+- 3.7 queries per question is below the 4.8 to 6.2 of §5.7. The bank has no
+  "why" questions, and those cost the most calls.
+- Each shape has two questions per part, so a per-shape number shows a
+  direction only.
+- The run state keeps a digest of each error and not its text.
+
+The target for Dreaming on this day: the five failing shapes take two
+queries or fewer in the afternoon, with no failed query, and the other
+shapes do not get worse.
+
 ## 6. Measures
 
 | Measure | Definition | Compared |

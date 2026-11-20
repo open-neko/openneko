@@ -1,7 +1,8 @@
 # Dreaming
 
-> **STATUS — 2026-11-19: design only.** Nothing here is built. The eval that
-> the build is tested against is in [evals/DREAMING.md](evals/DREAMING.md).
+> **STATUS — 2026-11-20: design only.** Nothing here is built. The baseline
+> is measured (§1). The eval that the build is tested against is in
+> [evals/DREAMING.md](evals/DREAMING.md).
 > Items marked *proposal* answer a question that is still open.
 
 Dreaming lets one OpenNeko install get better at its own recurring work with
@@ -17,6 +18,18 @@ identical call after it fails twice
 (`apps/ax-harness/internal/agent/failed_calls.go`), but that record lasts one
 run, so the next similar run makes the same failing calls before it recovers.
 When a person corrects an answer in the thread, the fix stays in that thread.
+
+The baseline shows the size of this. On a simulated day of 60 AdventureWorks
+questions with no learning, every answer was correct, but:
+
+- a question took 3.7 queries on average, and up to 12
+- 21 of the 60 questions had a failed query
+- the five question shapes that failed in the morning all failed again in
+  the afternoon
+
+On a demo install, 13 of 14 questions that failed the first time failed
+again when a person asked them a second time. The full numbers are in
+evals/DREAMING.md §5.7 and §5.8.
 
 ## 2. Decisions already made
 
@@ -256,7 +269,7 @@ Each step ends with named eval cases passing. The cases are written first.
 
 | Step | Builds | Passes |
 |---|---|---|
-| 0 | Nothing. Measure failed and repeated GraphJin calls per run today | The baseline number |
+| 0 | Nothing. Measure failed and repeated GraphJin calls per run today | Done: 3.7 queries per question, 21 of 60 questions with a failed query |
 | 1 | `dream_lesson`, `dream_lesson_use`, prompt injection, the access filter | Delivery cases with seeded lessons: `l04`, `l30`, `l31` |
 | 2 | Extraction, the `dreaming` task, the pass for `query`, `schema_fact`, `dead_end`, the gates | `l01` to `l03`, `l20` to `l22`, `l34` |
 | 3 | The source check on failure, catalog-revision retirement | `l32`, `l35` |
