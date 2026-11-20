@@ -105,7 +105,7 @@ func TestSandboxRecipeRequiresNoVariableInsideADefault(t *testing.T) {
 
 func cleanComposeEnv(extra ...string) []string {
 	var env []string
-	for _, name := range []string{"PATH", "HOME", "DOCKER_CONFIG"} {
+	for _, name := range []string{"PATH", "HOME", "DOCKER_CONFIG", "USERPROFILE", "ProgramData", "ProgramFiles", "SystemRoot", "APPDATA", "LOCALAPPDATA", "TEMP"} {
 		if v, ok := os.LookupEnv(name); ok {
 			env = append(env, name+"="+v)
 		}

@@ -143,7 +143,7 @@ func (c *Client) Exec(ctx context.Context, command, skillDir string, env map[str
 func (c *Client) ExecIn(ctx context.Context, dir, command, skillDir string, env map[string]string, timeoutSeconds, maxOutput int) (localtool.ExecResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	body := execBody{Root: c.workspace, Command: command, TimeoutSeconds: timeoutSeconds, MaxOutput: maxOutput}
+	body := execBody{Root: filepath.ToSlash(c.workspace), Command: command, TimeoutSeconds: timeoutSeconds, MaxOutput: maxOutput}
 	if dir != "" {
 		rel, err := c.relative(dir)
 		if err != nil {

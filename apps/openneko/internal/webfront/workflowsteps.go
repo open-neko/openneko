@@ -124,7 +124,7 @@ func runScriptStep(ctx context.Context, in scriptStepsInput, client *sandbox.Cli
 	if rel, err := filepath.Rel(skillsRoot, skillDir); err != nil || strings.HasPrefix(rel, "..") || !pathExists(skillDir) {
 		return fail("skill " + skill + " is not installed")
 	}
-	vars := map[string]string{"SKILL_DIR": skillDir, "RUN_DIR": in.Workspace.RunRoot, "ARTIFACT_DIR": in.Workspace.ArtifactRoot}
+	vars := map[string]string{"SKILL_DIR": filepath.ToSlash(skillDir), "RUN_DIR": filepath.ToSlash(in.Workspace.RunRoot), "ARTIFACT_DIR": filepath.ToSlash(in.Workspace.ArtifactRoot)}
 	var argv []string
 	for _, arg := range jsArray(jsGet(script, "command")) {
 		expanded, err := expandStepArg(jsTemplate(arg), vars, in.Input)
@@ -152,7 +152,7 @@ func runScriptStep(ctx context.Context, in scriptStepsInput, client *sandbox.Cli
 	if t, ok := jsGet(script, "timeoutSeconds").(float64); ok {
 		timeout = int(t)
 	}
-	command := `OPENNEKO_WORKFLOW_INPUT="$(cat ` + shellQuote(inputPath) + `)" exec ` + strings.Join(argv, " ")
+	command := `OPENNEKO_WORKFLOW_INPUT="$(cat ` + shellQuote(filepath.ToSlash(inputPath)) + `)" exec ` + strings.Join(argv, " ")
 
 	var code *int
 	var timedOut bool
