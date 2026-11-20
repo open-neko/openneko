@@ -9,7 +9,7 @@ import (
 )
 
 func TestStoredRunEventsHoldNoSecret(t *testing.T) {
-	const key = "sk-planted-0123456789abcdef"
+	const key = "planted-key-0123456789ab"
 	front, db := signedInChatFront(t)
 	wf := seedWorkflowTurn(t, db, `[{"id":"s1","description":"Read stock"}]`)
 	a := front.API

@@ -19,7 +19,7 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/inference"
 )
 
-const plantedProviderKey = "sk-planted-provider-77a1"
+const plantedProviderKey = "sk-plant-prov-77a1"
 
 type fakeGateway struct {
 	mu    sync.Mutex

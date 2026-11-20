@@ -1,7 +1,7 @@
 {
   "values": [
-    "sk-live-0123456789abcdef",
-    "xoxb-planted-slack-token",
+    "sk-live-0123456789a",
+    "xoxb-planted-slack",
     "short",
     "sk-live-0123"
   ],
@@ -10,14 +10,14 @@
       "event": {
         "type": "message",
         "role": "assistant",
-        "content": "The key is sk-live-0123456789abcdef."
+        "content": "The key is sk-live-0123456789a."
       },
       "scrubbed": "{\"type\":\"message\",\"role\":\"assistant\",\"content\":\"The key is [REDACTED].\"}"
     },
     {
       "event": {
         "type": "interim",
-        "content": "xoxb-planted-slack-token and sk-live-0123 alone"
+        "content": "xoxb-planted-slack and sk-live-0123 alone"
       },
       "scrubbed": "{\"type\":\"interim\",\"content\":\"[REDACTED] and [REDACTED] alone\"}"
     },
@@ -27,7 +27,7 @@
         "id": "t1",
         "name": "terminal",
         "input": {
-          "command": "curl -H \"Authorization: sk-live-0123456789abcdef\"",
+          "command": "curl -H \"Authorization: sk-live-0123456789a\"",
           "n": 3
         }
       },
@@ -38,9 +38,9 @@
         "type": "tool_delta",
         "id": "t1",
         "delta": [
-          "chunk xoxb-planted-slack-token",
+          "chunk xoxb-planted-slack",
           {
-            "nested": "sk-live-0123456789abcdef"
+            "nested": "sk-live-0123456789a"
           }
         ]
       },
@@ -53,14 +53,14 @@
         "result": {
           "rows": [
             {
-              "secret": "sk-live-0123456789abcdef",
+              "secret": "sk-live-0123456789a",
               "count": 2,
               "ok": true,
               "none": null
             }
           ]
         },
-        "error": "failed with xoxb-planted-slack-token"
+        "error": "failed with xoxb-planted-slack"
       },
       "scrubbed": "{\"type\":\"tool_end\",\"id\":\"t1\",\"result\":{\"rows\":[{\"secret\":\"[REDACTED]\",\"count\":2,\"ok\":true,\"none\":null}]},\"error\":\"failed with [REDACTED]\"}"
     },
@@ -68,7 +68,7 @@
       "event": {
         "type": "tool_end",
         "id": "t2",
-        "result": "plain sk-live-0123456789abcdef"
+        "result": "plain sk-live-0123456789a"
       },
       "scrubbed": "{\"type\":\"tool_end\",\"id\":\"t2\",\"result\":\"plain [REDACTED]\"}"
     },
@@ -77,7 +77,7 @@
         "type": "surface",
         "messages": [
           {
-            "text": "sk-live-0123456789abcdef"
+            "text": "sk-live-0123456789a"
           }
         ]
       },
@@ -88,7 +88,7 @@
         "type": "artifact",
         "artifact": {
           "title": "a",
-          "body": "xoxb-planted-slack-token"
+          "body": "xoxb-planted-slack"
         }
       },
       "scrubbed": "{\"type\":\"artifact\",\"artifact\":{\"title\":\"a\",\"body\":\"[REDACTED]\"}}"
@@ -96,11 +96,11 @@
     {
       "event": {
         "type": "status",
-        "message": "using sk-live-0123456789abcdef",
-        "content": "xoxb-planted-slack-token",
-        "code": "sk-live-0123456789abcdef"
+        "message": "using sk-live-0123456789a",
+        "content": "xoxb-planted-slack",
+        "code": "sk-live-0123456789a"
       },
-      "scrubbed": "{\"type\":\"status\",\"message\":\"using [REDACTED]\",\"content\":\"[REDACTED]\",\"code\":\"sk-live-0123456789abcdef\"}"
+      "scrubbed": "{\"type\":\"status\",\"message\":\"using [REDACTED]\",\"content\":\"[REDACTED]\",\"code\":\"sk-live-0123456789a\"}"
     },
     {
       "event": {
@@ -112,7 +112,7 @@
     {
       "event": {
         "type": "error",
-        "message": "boom sk-live-0123456789abcdef"
+        "message": "boom sk-live-0123456789a"
       },
       "scrubbed": "{\"type\":\"error\",\"message\":\"boom [REDACTED]\"}"
     },
@@ -121,7 +121,7 @@
         "type": "done",
         "result": {
           "status": "completed",
-          "text": "xoxb-planted-slack-token"
+          "text": "xoxb-planted-slack"
         }
       },
       "scrubbed": "{\"type\":\"done\",\"result\":{\"status\":\"completed\",\"text\":\"[REDACTED]\"}}"
@@ -136,22 +136,22 @@
     {
       "event": {
         "type": "needs_input",
-        "question": "Use sk-live-0123456789abcdef?",
+        "question": "Use sk-live-0123456789a?",
         "options": [
-          "sk-live-0123456789abcdef",
+          "sk-live-0123456789a",
           {
-            "label": "sk-live-0123456789abcdef"
+            "label": "sk-live-0123456789a"
           }
         ],
         "questions": [
           {
-            "q": "xoxb-planted-slack-token"
+            "q": "xoxb-planted-slack"
           }
         ],
-        "reason": "xoxb-planted-slack-token",
-        "other": "sk-live-0123456789abcdef"
+        "reason": "xoxb-planted-slack",
+        "other": "sk-live-0123456789a"
       },
-      "scrubbed": "{\"type\":\"needs_input\",\"question\":\"Use [REDACTED]?\",\"options\":[\"[REDACTED]\",{\"label\":\"sk-live-0123456789abcdef\"}],\"questions\":[{\"q\":\"[REDACTED]\"}],\"reason\":\"[REDACTED]\",\"other\":\"sk-live-0123456789abcdef\"}"
+      "scrubbed": "{\"type\":\"needs_input\",\"question\":\"Use [REDACTED]?\",\"options\":[\"[REDACTED]\",{\"label\":\"sk-live-0123456789a\"}],\"questions\":[{\"q\":\"[REDACTED]\"}],\"reason\":\"[REDACTED]\",\"other\":\"sk-live-0123456789a\"}"
     },
     {
       "event": {
@@ -164,20 +164,20 @@
     {
       "event": {
         "type": "output_emit",
-        "output_id": "sk-live-0123456789abcdef",
+        "output_id": "sk-live-0123456789a",
         "kind": "report"
       },
-      "scrubbed": "{\"type\":\"output_emit\",\"output_id\":\"sk-live-0123456789abcdef\",\"kind\":\"report\"}"
+      "scrubbed": "{\"type\":\"output_emit\",\"output_id\":\"sk-live-0123456789a\",\"kind\":\"report\"}"
     },
     {
       "event": {
         "type": "action_request_emit",
         "action_request_id": "a1",
-        "kind": "sk-live-0123456789abcdef",
-        "intent": "pay sk-live-0123456789abcdef",
-        "summary": "xoxb-planted-slack-token"
+        "kind": "sk-live-0123456789a",
+        "intent": "pay sk-live-0123456789a",
+        "summary": "xoxb-planted-slack"
       },
-      "scrubbed": "{\"type\":\"action_request_emit\",\"action_request_id\":\"a1\",\"kind\":\"sk-live-0123456789abcdef\",\"intent\":\"pay [REDACTED]\",\"summary\":\"[REDACTED]\"}"
+      "scrubbed": "{\"type\":\"action_request_emit\",\"action_request_id\":\"a1\",\"kind\":\"sk-live-0123456789a\",\"intent\":\"pay [REDACTED]\",\"summary\":\"[REDACTED]\"}"
     },
     {
       "event": {
@@ -185,9 +185,9 @@
         "action_request_id": "a1",
         "outcome": {
           "result": {
-            "body": "sk-live-0123456789abcdef"
+            "body": "sk-live-0123456789a"
           },
-          "error": "xoxb-planted-slack-token"
+          "error": "xoxb-planted-slack"
         }
       },
       "scrubbed": "{\"type\":\"action_request_result\",\"action_request_id\":\"a1\",\"outcome\":{\"result\":{\"body\":\"[REDACTED]\"},\"error\":\"[REDACTED]\"}}"
@@ -197,7 +197,7 @@
         "type": "usage",
         "source": "outer",
         "provider": "google-gemini",
-        "model": "sk-live-0123456789abcdef",
+        "model": "sk-live-0123456789a",
         "usage": {
           "totalTokens": 7
         }
@@ -208,7 +208,7 @@
       "event": {
         "type": "telemetry",
         "summary": {
-          "note": "sk-live-0123456789abcdefsk-live-0123456789abcdef"
+          "note": "sk-live-0123456789ask-live-0123456789a"
         }
       },
       "scrubbed": "{\"type\":\"telemetry\",\"summary\":{\"note\":\"[REDACTED][REDACTED]\"}}"

@@ -139,11 +139,11 @@ func TestExecutorNotesAreThinkingNotes(t *testing.T) {
 	m := thinkingMapper("google-gemini", &events)
 	feed := func(typ, data string) { m.handle(axEvent{Type: typ, Data: json.RawMessage(data)}) }
 	feed("executor.thought.delta", `{"version":1,"index":1,"text":"Analyzing Sales Data"}`)
-	feed("executor.thought.delta", `{"version":1,"index":2,"text":"Clarifying sk-live-0123456789abcdef Ranges"}`)
+	feed("executor.thought.delta", `{"version":1,"index":2,"text":"Clarifying sk-live-0123456789a Ranges"}`)
 	feed("actor.step", `{"text":"Read the orders"}`)
 	feed("executor.thought.delta", `{"version":2,"index":3,"text":"Analyzing Sales Growth"}`)
 	feed("thought.delta", `{"version":0,"text":"Writing the answer."}`)
-	scrub := func(s string) string { return strings.ReplaceAll(s, "sk-live-0123456789abcdef", "[REDACTED]") }
+	scrub := func(s string) string { return strings.ReplaceAll(s, "sk-live-0123456789a", "[REDACTED]") }
 	var got []string
 	for _, e := range events {
 		if e.vals["type"] != "progress" {
