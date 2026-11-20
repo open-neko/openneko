@@ -2,6 +2,7 @@ package cli
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -64,6 +65,52 @@ func nativeTarGz(t *testing.T, entries []tarEntry) []byte {
 	return buf.Bytes()
 }
 
+func nativeZip(t *testing.T, entries []tarEntry) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, e := range entries {
+		hdr := &zip.FileHeader{Name: e.name, Method: zip.Deflate}
+		switch e.kind {
+		case tar.TypeDir:
+			hdr.SetMode(os.ModeDir | 0o755)
+		case tar.TypeSymlink, tar.TypeLink:
+			hdr.SetMode(os.ModeSymlink | 0o777)
+			e.body = "/etc/passwd"
+		default:
+			hdr.SetMode(0o644)
+		}
+		w, err := zw.CreateHeader(hdr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(e.body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func nativeArchiveFor(t *testing.T, goos string, entries []tarEntry) []byte {
+	if goos == "windows" {
+		return nativeZip(t, entries)
+	}
+	return nativeTarGz(t, entries)
+}
+
+func goodNativeEntriesFor(goos string) []tarEntry {
+	entries := goodNativeEntries()
+	for i := range entries {
+		if entries[i].name == "bin/openneko" {
+			entries[i].name = "bin/" + nativeExeName(goos)
+		}
+	}
+	return entries
+}
+
 func goodNativeEntries() []tarEntry {
 	return []tarEntry{
 		{name: "bin/", kind: tar.TypeDir},
@@ -86,7 +133,70 @@ func extractEntries(t *testing.T, entries []tarEntry) (string, error) {
 		t.Fatal(err)
 	}
 	dst := filepath.Join(dir, "release")
-	return dst, extractNativeArchive(archive, dst)
+	return dst, extractNativeArchive(archive, dst, "openneko")
+}
+
+func extractZipEntries(t *testing.T, entries []tarEntry) (string, error) {
+	t.Helper()
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "a.zip")
+	if err := os.WriteFile(archive, nativeZip(t, entries), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(dir, "release")
+	return dst, extractNativeArchive(archive, dst, "openneko.exe")
+}
+
+func TestNativeArchiveNamesPerSystem(t *testing.T) {
+	for _, c := range []struct{ goos, want, exe string }{
+		{"linux", "openneko-native_9.9.9_linux_arm64.tar.gz", "openneko"},
+		{"darwin", "openneko-native_9.9.9_darwin_arm64.tar.gz", "openneko"},
+		{"windows", "openneko-native_9.9.9_windows_arm64.zip", "openneko.exe"},
+	} {
+		if got := nativeArchiveName("v9.9.9", c.goos, "arm64"); got != c.want {
+			t.Errorf("%s: archive %q, want %q", c.goos, got, c.want)
+		}
+		if got := nativeExeName(c.goos); got != c.exe {
+			t.Errorf("%s: executable %q, want %q", c.goos, got, c.exe)
+		}
+	}
+}
+
+func TestExtractNativeZipTakesTheReleaseFiles(t *testing.T) {
+	dst, err := extractZipEntries(t, goodNativeEntriesFor("windows"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(dst, "bin", "openneko.exe")); err != nil || !strings.Contains(string(b), "9.9.9") {
+		t.Fatalf("bin/openneko.exe: %q %v", b, err)
+	}
+	if b, err := os.ReadFile(filepath.Join(dst, "share", "openneko", "web", "assets", "app.js")); err != nil || string(b) != "1" {
+		t.Fatalf("web file: %q %v", b, err)
+	}
+	if _, err := extractZipEntries(t, goodNativeEntriesFor("windows")[2:]); err == nil || !strings.Contains(err.Error(), "no bin/openneko.exe") {
+		t.Fatalf("a zip with no bin/openneko.exe: err = %v", err)
+	}
+}
+
+func TestExtractNativeZipRefusesUnsafeEntries(t *testing.T) {
+	cases := map[string]tarEntry{
+		"parent":     {name: "../evil", body: "x"},
+		"absolute":   {name: "/etc/evil", body: "x"},
+		"inner dots": {name: "share/openneko/web/../../../evil", body: "x"},
+		"backslash":  {name: `share/openneko/web/..\..\..\evil`, body: "x"},
+		"drive":      {name: "share/openneko/C:/evil", body: "x"},
+		"other path": {name: "etc/openneko.conf", body: "x"},
+		"symlink":    {name: "share/openneko/web/link", kind: tar.TypeSymlink},
+		"bin folder": {name: "bin/other", body: "x"},
+		"twice":      {name: "bin/openneko.exe", body: "again"},
+	}
+	for name, bad := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := extractZipEntries(t, append(goodNativeEntriesFor("windows"), bad)); err == nil {
+				t.Fatal("the archive was accepted")
+			}
+		})
+	}
 }
 
 func TestExtractNativeArchiveTakesTheReleaseFiles(t *testing.T) {
@@ -117,6 +227,7 @@ func TestExtractNativeArchiveRefusesUnsafeEntries(t *testing.T) {
 		"symlink":          {name: "share/openneko/web/link", kind: tar.TypeSymlink},
 		"hard link":        {name: "share/openneko/web/link", kind: tar.TypeLink},
 		"twice":            {name: "bin/openneko", body: "again"},
+		"backslash":        {name: `share/openneko/web/..\..\..\evil`, body: "x"},
 	}
 	for name, bad := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -133,10 +244,7 @@ func TestExtractNativeArchiveRefusesUnsafeEntries(t *testing.T) {
 }
 
 func TestDownloadNativeReleaseChecksTheChecksum(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("native release downloads are Linux only")
-	}
-	archive := nativeTarGz(t, goodNativeEntries())
+	archive := nativeArchiveFor(t, runtime.GOOS, goodNativeEntriesFor(runtime.GOOS))
 	name := nativeArchiveName("v9.9.9", runtime.GOOS, runtime.GOARCH)
 	sum := sha256.Sum256(archive)
 	sums := hex.EncodeToString(sum[:]) + "  " + name + "\n"
@@ -166,6 +274,9 @@ func TestDownloadNativeReleaseChecksTheChecksum(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(release, "share", "openneko", "web", "index.html")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(release, "bin", nativeExeName(runtime.GOOS))); err != nil {
 		t.Fatal(err)
 	}
 

@@ -276,9 +276,7 @@ jobs:
           app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
           owner: open-neko
-          repositories: |
-            openneko
-            homebrew-tap
+          repositories: openneko
 
       - uses: goreleaser/goreleaser-action@v6
         with:
@@ -287,10 +285,9 @@ jobs:
           workdir: apps/openneko
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
   native-archives:
-    name: native archives (linux)
+    name: native archives
     runs-on: ubuntu-22.04
     needs: goreleaser
     steps:
@@ -321,3 +318,27 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ github.event.inputs.tag || github.event.release.tag_name }}" dist-native/* --clobber
+
+      - id: tap-token
+        if: ${{ !contains(github.event.inputs.tag || github.event.release.tag_name, '-') }}
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: open-neko
+          repositories: homebrew-tap
+
+      - name: Publish the Homebrew cask
+        if: ${{ !contains(github.event.inputs.tag || github.event.release.tag_name, '-') }}
+        env:
+          TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+          TAP_TOKEN: ${{ steps.tap-token.outputs.token }}
+        run: |
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/open-neko/homebrew-tap.git" tap
+          bash scripts/write-brew-cask.sh "$TAG" dist-native/checksums-native.txt > tap/Casks/openneko.rb
+          cd tap
+          git config user.name "openneko-release"
+          git config user.email "openneko-release@users.noreply.github.com"
+          git add Casks/openneko.rb
+          git diff --cached --quiet || git commit -m "openneko ${TAG}"
+          git push origin HEAD

@@ -14,6 +14,9 @@ on:
       - "compose.yml"
       - ".github/workflows/deploy.yml"
       - ".github/workflows/go.yml"
+      - "scripts/build-native-release.sh"
+      - "scripts/native-zip.py"
+      - "scripts/write-brew-cask.sh"
   pull_request:
     paths:
       - "apps/openneko/**"
@@ -26,6 +29,9 @@ on:
       - "compose.yml"
       - ".github/workflows/deploy.yml"
       - ".github/workflows/go.yml"
+      - "scripts/build-native-release.sh"
+      - "scripts/native-zip.py"
+      - "scripts/write-brew-cask.sh"
   workflow_dispatch:
 
 jobs:
@@ -242,3 +248,78 @@ jobs:
           version: "~> v2"
           args: check
           workdir: apps/openneko
+
+  native-archives:
+    name: native archives
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.10"
+          cache-dependency-path: apps/openneko/go.sum
+      - name: Build the archives
+        run: |
+          mkdir -p "$RUNNER_TEMP/web"
+          echo '<!doctype html><title>OpenNeko</title>' > "$RUNNER_TEMP/web/index.html"
+          OPENNEKO_WEB_DIST="$RUNNER_TEMP/web" bash scripts/build-native-release.sh v9.9.9 mirror/v9.9.9 \
+            linux/amd64 darwin/arm64 windows/amd64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-archives
+          path: mirror
+          retention-days: 3
+
+  native-archive-check:
+    name: native archive (${{ matrix.os }})
+    needs: native-archives
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-15, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-archives
+          path: mirror
+      - name: Extract and check (Linux and macOS)
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          os=$(uname -s | tr A-Z a-z)
+          mkdir release
+          tar -C release -xzf "mirror/v9.9.9/openneko-native_9.9.9_${os}_$( [ "$os" = darwin ] && echo arm64 || echo amd64 ).tar.gz"
+          test "$(release/bin/openneko version --short)" = 9.9.9
+          test -f release/share/openneko/web/index.html
+          release/bin/openneko release-check --skills --bundled-packs
+      - name: Extract and check (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Expand-Archive -Path mirror/v9.9.9/openneko-native_9.9.9_windows_amd64.zip -DestinationPath release
+          $v = & release\bin\openneko.exe version --short
+          if ($LASTEXITCODE -ne 0 -or "$v".Trim() -ne '9.9.9') { throw "version: $v" }
+          if (-not (Test-Path release\share\openneko\web\index.html)) { throw 'no web app' }
+          & release\bin\openneko.exe release-check --skills --bundled-packs
+          if ($LASTEXITCODE -ne 0) { throw 'release-check failed' }
+      - name: Install the Homebrew cask from the archive
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' 0000000000000000000000000000000000000000000000000000000000000000 openneko-native_9.9.9_darwin_amd64.tar.gz \
+            0000000000000000000000000000000000000000000000000000000000000000 openneko-native_9.9.9_linux_arm64.tar.gz >> mirror/v9.9.9/checksums-native.txt
+          brew tap-new --no-git local/openneko
+          mkdir -p "$(brew --repository)/Library/Taps/local/homebrew-openneko/Casks"
+          bash scripts/write-brew-cask.sh v9.9.9 mirror/v9.9.9/checksums-native.txt "file://$PWD/mirror" \
+            > "$(brew --repository)/Library/Taps/local/homebrew-openneko/Casks/openneko.rb"
+          brew install --cask local/openneko/openneko
+          exe=$(command -v openneko)
+          test -L "$exe"
+          test "$(openneko version --short)" = 9.9.9
+          test -f "$(brew --caskroom)/openneko/9.9.9/share/openneko/web/index.html"
+          openneko release-check --skills --bundled-packs
