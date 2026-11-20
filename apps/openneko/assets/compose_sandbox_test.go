@@ -142,10 +142,19 @@ func TestSandboxNetworkHasNoRouteOut(t *testing.T) {
 	type service struct {
 		Networks    yaml.Node `yaml:"networks"`
 		NetworkMode string    `yaml:"network_mode"`
+		Ports       yaml.Node `yaml:"ports"`
+		ExtraHosts  yaml.Node `yaml:"extra_hosts"`
+		Privileged  bool      `yaml:"privileged"`
+		CapAdd      []string  `yaml:"cap_add"`
 	}
 	type network struct {
-		Internal bool   `yaml:"internal"`
-		Driver   string `yaml:"driver"`
+		Internal   bool   `yaml:"internal"`
+		Driver     string `yaml:"driver"`
+		EnableIPv6 bool   `yaml:"enable_ipv6"`
+	}
+	allowedCaps := map[string][]string{
+		"openneko-sandbox": {"CHOWN", "DAC_OVERRIDE", "FOWNER", "KILL", "SETGID", "SETUID", "NET_ADMIN", "SETPCAP"},
+		"openneko-egress":  {},
 	}
 	for _, set := range [][]string{
 		{"compose.yml", "compose.db.yml", "recipes/sandbox/compose.yml"},
@@ -154,6 +163,7 @@ func TestSandboxNetworkHasNoRouteOut(t *testing.T) {
 		joins := map[string][]string{}
 		networks := map[string]network{}
 		modes := map[string]string{}
+		caps := map[string][]string{}
 		for _, file := range set {
 			var doc struct {
 				Services map[string]service `yaml:"services"`
@@ -165,6 +175,18 @@ func TestSandboxNetworkHasNoRouteOut(t *testing.T) {
 			for name, svc := range doc.Services {
 				if svc.NetworkMode != "" {
 					modes[name] = svc.NetworkMode
+				}
+				if _, ours := allowedCaps[name]; ours {
+					if len(svc.Ports.Content) > 0 || svc.Ports.Kind == yaml.ScalarNode && svc.Ports.Value != "" {
+						t.Errorf("%s: %s publishes ports", file, name)
+					}
+					if len(svc.ExtraHosts.Content) > 0 || svc.ExtraHosts.Kind == yaml.ScalarNode && svc.ExtraHosts.Value != "" {
+						t.Errorf("%s: %s sets extra_hosts", file, name)
+					}
+					if svc.Privileged {
+						t.Errorf("%s: %s is privileged", file, name)
+					}
+					caps[name] = append(caps[name], svc.CapAdd...)
 				}
 				switch svc.Networks.Kind {
 				case yaml.SequenceNode:
@@ -181,6 +203,13 @@ func TestSandboxNetworkHasNoRouteOut(t *testing.T) {
 				networks[name] = n
 			}
 		}
+		for name, added := range caps {
+			for _, c := range added {
+				if !slices.Contains(allowedCaps[name], strings.TrimPrefix(strings.ToUpper(c), "CAP_")) {
+					t.Errorf("%v: %s adds the capability %s", set, name, c)
+				}
+			}
+		}
 		if mode, ok := modes["openneko-sandbox"]; ok {
 			t.Errorf("%v: the sandbox sets network_mode %q", set, mode)
 		}
@@ -191,6 +220,9 @@ func TestSandboxNetworkHasNoRouteOut(t *testing.T) {
 		for _, name := range own {
 			if n := networks[name]; !n.Internal || (n.Driver != "" && n.Driver != "bridge") {
 				t.Errorf("%v: the sandbox joins network %s, which is not internal: %+v", set, name, n)
+			}
+			if networks[name].EnableIPv6 {
+				t.Errorf("%v: the sandbox network %s enables IPv6", set, name)
 			}
 			for other, list := range joins {
 				if other != "openneko-sandbox" && other != "openneko-egress" && slices.Contains(list, name) {

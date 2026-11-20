@@ -26,6 +26,7 @@ const (
 	defaultUsers   = 256
 	maxTimeout     = 3600
 	maxOutput      = 1_000_000
+	runMargin      = 10 * time.Minute
 )
 
 var runIDPattern = regexp.MustCompile(`^run-[A-Za-z0-9]{8,64}$`)
@@ -71,6 +72,8 @@ type Server struct {
 	Relay               string
 	Probe               func(context.Context) ([]string, error)
 	ProbeEvery          time.Duration
+	RunMargin           time.Duration
+	Now                 func() time.Time
 
 	mu        sync.Mutex
 	runs      map[string]*run
@@ -79,14 +82,16 @@ type Server struct {
 }
 
 type run struct {
-	mu     sync.Mutex
-	uid    int
-	dir    string
-	synced map[string]fileState
-	dirs   map[string]bool
-	told   map[string]bool
-	ended  bool
-	egress runEgress
+	mu      sync.Mutex
+	uid     int
+	dir     string
+	synced  map[string]fileState
+	dirs    map[string]bool
+	told    map[string]bool
+	ended   bool
+	egress  runEgress
+	longest int
+	expires time.Time
 }
 
 // ListenAndServe serves on address until ctx ends: unix:///path for a
@@ -147,6 +152,7 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 	if s.Probe != nil {
 		s.watchEgress(ctx, cmp.Or(s.ProbeEvery, time.Minute))
 	}
+	go s.reapEvery(ctx, min(s.margin(), time.Minute))
 	httpServer := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -256,7 +262,8 @@ func (s *Server) exec(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	run, status, err := s.run(id, req.Fresh)
+	s.reap()
+	run, status, err := s.run(id, req.Fresh, req.TimeoutSeconds)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
@@ -336,7 +343,7 @@ func (s *Server) exec(w http.ResponseWriter, r *http.Request) {
 // run returns the run's state. A fresh run gets a new folder; a run the
 // sandbox does not know (it restarted, or the run ended) answers 409, so the
 // caller can send its files again.
-func (s *Server) run(id string, fresh bool) (*run, int, error) {
+func (s *Server) run(id string, fresh bool, timeout int) (*run, int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.runs == nil {
@@ -346,6 +353,7 @@ func (s *Server) run(id string, fresh bool) (*run, int, error) {
 		if fresh {
 			return nil, http.StatusConflict, errors.New("the run already exists")
 		}
+		s.extend(existing, timeout)
 		return existing, 0, nil
 	}
 	if !fresh {
@@ -377,6 +385,7 @@ func (s *Server) run(id string, fresh bool) (*run, int, error) {
 	}
 	s.used[uid] = true
 	created := &run{uid: uid, dir: dir, synced: map[string]fileState{}, dirs: map[string]bool{}, told: map[string]bool{}}
+	s.extend(created, timeout)
 	s.runs[id] = created
 	return created, 0, nil
 }
@@ -392,21 +401,78 @@ func (s *Server) end(w http.ResponseWriter, r *http.Request) {
 	delete(s.runs, id)
 	s.mu.Unlock()
 	if ok {
-		if s.SwitchUsers {
-			killUser(run.uid)
-		}
-		run.mu.Lock()
-		run.ended = true
-		_ = os.RemoveAll(run.dir)
-		run.mu.Unlock()
-	}
-	_ = os.RemoveAll(filepath.Join(s.Homes, id))
-	if ok {
-		s.mu.Lock()
-		delete(s.used, run.uid)
-		s.mu.Unlock()
+		s.retire(id, run)
+	} else {
+		_ = os.RemoveAll(filepath.Join(s.Homes, id))
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// retire kills the run's processes and removes its files. Its user goes
+// back to the pool last, so no new run shares it with a live process.
+func (s *Server) retire(id string, run *run) {
+	if s.SwitchUsers {
+		killUser(run.uid)
+	}
+	run.mu.Lock()
+	run.ended = true
+	_ = os.RemoveAll(run.dir)
+	run.mu.Unlock()
+	_ = os.RemoveAll(filepath.Join(s.Homes, id))
+	s.mu.Lock()
+	delete(s.used, run.uid)
+	s.mu.Unlock()
+}
+
+func (s *Server) margin() time.Duration {
+	return cmp.Or(s.RunMargin, runMargin)
+}
+
+func (s *Server) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
+}
+
+// extend runs under s.mu.
+func (s *Server) extend(r *run, timeout int) {
+	r.longest = max(r.longest, timeout)
+	r.expires = s.now().Add(time.Duration(r.longest)*time.Second + s.margin())
+}
+
+// live runs under s.mu.
+func (s *Server) live(r *run) bool {
+	return s.now().Before(r.expires)
+}
+
+// reap retires each run that its caller left behind.
+func (s *Server) reap() {
+	s.mu.Lock()
+	expired := map[string]*run{}
+	for id, r := range s.runs {
+		if !s.live(r) {
+			expired[id] = r
+			delete(s.runs, id)
+		}
+	}
+	s.mu.Unlock()
+	for id, r := range expired {
+		s.retire(id, r)
+	}
+}
+
+func (s *Server) reapEvery(ctx context.Context, every time.Duration) {
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.reap()
+		}
+	}
 }
 
 func runPathEnv(dir string, in map[string]string) ([]string, error) {
