@@ -5,7 +5,14 @@ What you're installing, feature by feature, in plain language: **[FEATURES.md](F
 
 ## Requirements
 
-- Linux (no Docker needed with the [native install](#run-without-docker-native), or Docker Engine + Docker Compose for the container stack), or Docker Desktop on macOS
+- Linux, macOS or Windows, on amd64 or arm64. What each system runs:
+
+  | Install | Linux | macOS | Windows |
+  |---|---|---|---|
+  | Docker stack (`openneko setup`, `openneko start`) | Docker Engine + Docker Compose | Docker Desktop | no |
+  | One-user [native install](#run-without-docker-native), no Docker | yes | yes | yes |
+  | [Server install](#server-install-systemd-two-users) with two system users | yes | no | no |
+
 - PostgreSQL 16 or later with the `vector` extension (pgvector 0.6.0 or later) for production and native installs (`--mode demo` and `--mode dev` run a bundled Postgres container)
 - An API key for at least one supported model provider, or the URL of a model server that speaks the OpenAI chat API (Ollama, vLLM, LM Studio)
 
@@ -27,6 +34,7 @@ Prefer to manage the binary yourself:
 
 - **macOS (Homebrew):** `brew install open-neko/tap/openneko`
 - **Linux:** download `openneko_<version>_linux_<arch>.tar.gz` from the [latest release](https://github.com/open-neko/openneko/releases/latest), verify it against `checksums.txt`, and put `openneko` on your `PATH`.
+- **Windows:** the Docker stack does not run on Windows. Use the [native install](#run-without-docker-native) with `install-native.ps1`.
 
 Then run `openneko setup` (guided), or `openneko start` to bring the stack up without the guided flow.
 
@@ -1044,6 +1052,10 @@ openneko upgrade
 It needs no Docker. It runs prod mode only, for the default installation.
 OpenNeko's database is yours, by URL.
 
+The native install runs on Linux, macOS and Windows for one user, with no
+admin rights. Serve and web run as your account. The install with two
+system users is for Linux only ([Server install](#server-install-systemd-two-users)).
+
 On Linux or macOS (amd64 or arm64), this script installs the native release
 for your user:
 
@@ -1098,6 +1110,16 @@ Then start OpenNeko:
 openneko start --native -d \
   --database-url 'postgres://USER:PASSWORD@HOST:5432/DATABASE?sslmode=verify-full'
 ```
+
+In PowerShell on Windows, give the command on one line:
+
+```powershell
+openneko start --native -d --database-url 'postgres://USER:PASSWORD@HOST:5432/DATABASE?sslmode=verify-full'
+```
+
+When the start ends, open http://localhost:3000 and finish the setup
+wizard there. `openneko setup` drives the Docker stack and does not run on
+Windows.
 
 1. **Start steps.** The command runs the database check, the migrations and
    serve's credentials and GraphJin config, in that order. A failed step
@@ -1170,9 +1192,19 @@ serve roles; the database check prints the SQL when it does not have it.
 | Web port | `OPENNEKO_PORT` and `OPENNEKO_WEB_BIND_ADDRESS` at the first start, then `installation.json` |
 
 On Windows the data folder is `%LOCALAPPDATA%\OpenNeko` and the config
-folder is `%APPDATA%\OpenNeko`. Windows has no file modes, so OpenNeko gives
+folder is `%APPDATA%\OpenNeko`. The logs, `run` and the backups are in the
+data folder, and the program is in `%LOCALAPPDATA%\Programs\OpenNeko`.
+Windows has no file modes, so OpenNeko gives
 these two folders, the secret key, `secrets.json`, the backup key and each
 backup a protected access list: only your account and SYSTEM can open them.
+The supervisor puts serve, web and GraphJin in a Windows job object, so they
+stop when the supervisor stops. `openneko stop` asks each process to stop
+and ends it when it does not. macOS keeps the Linux folders under your home
+folder; there serve and web stop when the supervisor stops, also when it is
+killed.
+
+The Windows PostgreSQL installer has no `vector` extension. Use a Postgres
+server that has it, or build pgvector on Windows as its README tells.
 
 A Unix socket path holds at most 103 bytes on macOS and 107 on Linux and
 Windows. The
@@ -1312,8 +1344,7 @@ sign-in (device sign-in, session and token checks), passkeys, Web Push
 notifications, pack install/doctor/OAuth/actions, channels, GraphJin group
 grants, external-event subscription dispatch, the Scalekit workspace
 connection, the built-in action adapters, and River background jobs in Go.
-The Docker images hold no Node.js either. Windows does not run the native
-runtime yet.
+The Docker images hold no Node.js either.
 
 After a change to group grants or data access rules, `openneko web` writes
 the GraphJin config 30 seconds after the last change and restarts GraphJin.
