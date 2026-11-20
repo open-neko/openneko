@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/open-neko/openneko/apps/ax-harness/inference"
+	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
 )
 
 const (
@@ -97,7 +98,13 @@ func embed(ctx context.Context, request Request, key string) (Result, error) {
 	if key != "" {
 		httpRequest.Header.Set("authorization", "Bearer "+key)
 	}
-	response, err := client.Do(httpRequest)
+	do := client
+	if keydoor.IsURL(request.URL) {
+		if do, err = keydoor.Client(); err != nil {
+			return Result{}, err
+		}
+	}
+	response, err := do.Do(httpRequest)
 	if err != nil {
 		if ctx.Err() != nil {
 			return Result{}, fmt.Errorf("embedding service: %w", ctx.Err())

@@ -16,6 +16,7 @@ import (
 
 	protocol "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/open-neko/openneko/apps/ax-harness/harness"
+	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
@@ -138,7 +139,7 @@ func fixtureModel(t *testing.T) (*httptest.Server, *[]string) {
 	return model, &keys
 }
 
-func TestServeRunsATurnWithServeHeldKeyAndSocketTools(t *testing.T) {
+func TestServeRunsATurnWithTheFramesKeyAndSocketTools(t *testing.T) {
 	model, keys := fixtureModel(t)
 	env := map[string]string{"OPENAI_API_KEY": "serve-held-key", "PATH": "/usr/bin:/bin"}
 	socket := startServer(t, &Server{Getenv: func(name string) string { return env[name] }})
@@ -154,6 +155,7 @@ func TestServeRunsATurnWithServeHeldKeyAndSocketTools(t *testing.T) {
 		Spec:        json.RawMessage(spec),
 		Bridge:      true,
 		ModelKeyEnv: "OPENAI_API_KEY",
+		ModelKeys:   map[string]string{"OPENAI_API_KEY": "frame-key"},
 	}, func(c *client) { c.serveTools(t, listed) })
 
 	var events []json.RawMessage
@@ -183,8 +185,8 @@ func TestServeRunsATurnWithServeHeldKeyAndSocketTools(t *testing.T) {
 		t.Fatalf("last event = %s", last)
 	}
 	for _, key := range *keys {
-		if key != "Bearer serve-held-key" {
-			t.Fatalf("model called with %q, want the key serve holds", key)
+		if key != "Bearer frame-key" {
+			t.Fatalf("model called with %q, want the frame's key and never serve's environment", key)
 		}
 	}
 }
@@ -233,5 +235,43 @@ func TestServeCancelsOnHangupAndBoundsTurns(t *testing.T) {
 	case <-cancelled:
 	case <-time.After(5 * time.Second):
 		t.Fatal("hanging up did not cancel the turn")
+	}
+}
+
+func TestServeReadsNoModelKeyFromItsEnvironment(t *testing.T) {
+	env := map[string]string{"MODEL_API_KEY": "serve-env-key", "OPENAI_API_KEY": "serve-env-key"}
+	s := &Server{Getenv: func(name string) string { return env[name] }}
+	for _, name := range []string{"HARNESS_MODEL_API_KEY", "OPENAI_API_KEY", "MODEL_API_KEY"} {
+		if got := s.secrets("OPENAI_API_KEY", nil)(name); got != "" {
+			t.Fatalf("%s read %q from serve's environment", name, got)
+		}
+	}
+}
+
+func TestServeWithRequireDoorRefusesARealKey(t *testing.T) {
+	ran := make(chan struct{}, 4)
+	server := &Server{RequireDoor: true, Run: func(context.Context, harness.Turn) (int, error) {
+		ran <- struct{}{}
+		return 0, nil
+	}}
+	socket := startServer(t, server)
+	token := keydoor.TokenPrefix + strings.Repeat("a", 22) + "." + strings.Repeat("b", 43)
+	for _, c := range []struct {
+		frame Frame
+		ok    bool
+	}{
+		{Frame{Type: "start", Spec: json.RawMessage(spec), ModelKeys: map[string]string{"MODEL_API_KEY": "sk-real"}}, false},
+		{Frame{Type: "generate", Generate: json.RawMessage(`{}`), ModelKey: token, FallbackKey: "sk-real"}, false},
+		{Frame{Type: "embed", Embed: json.RawMessage(`{}`), ModelKey: "sk-real"}, false},
+		{Frame{Type: "start", Spec: json.RawMessage(spec), ModelKeys: map[string]string{"MODEL_API_KEY": token, "FALLBACK_MODEL_API_KEY": "none"}}, true},
+	} {
+		frame := <-dial(t, socket, c.frame).frames
+		refused := frame.Type == "exit" && strings.Contains(frame.Error, "takes no model key")
+		if refused == c.ok {
+			t.Fatalf("%s frame: exit %+v, want refused=%v", c.frame.Type, frame, !c.ok)
+		}
+	}
+	if len(ran) != 1 {
+		t.Fatalf("%d turns ran, want only the one with a door token", len(ran))
 	}
 }
