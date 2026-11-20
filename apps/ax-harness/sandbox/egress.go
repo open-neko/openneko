@@ -61,6 +61,9 @@ func normalizeEgressHost(entry string) (string, error) {
 		if addr.Zone() != "" {
 			return "", bad
 		}
+		if !publicAddr(addr) {
+			return "", fmt.Errorf("%q is not a public address: the sandbox's proxy refuses private, loopback, link-local and metadata addresses", strings.TrimSpace(entry))
+		}
 		host = addr.Unmap().String()
 		if port == 443 {
 			if addr.Unmap().Is6() {
@@ -82,6 +85,31 @@ func normalizeEgressHost(entry string) (string, error) {
 		return name, nil
 	}
 	return name + ":" + strconv.Itoa(port), nil
+}
+
+// nonPublic matches nonPublic in recipes/sandbox/allow.go.
+var nonPublic = func() []netip.Prefix {
+	var out []netip.Prefix
+	for _, p := range []string{
+		"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12",
+		"192.0.0.0/24", "192.0.2.0/24", "192.88.99.0/24", "192.168.0.0/16", "198.18.0.0/15",
+		"198.51.100.0/24", "203.0.113.0/24", "224.0.0.0/4", "240.0.0.0/4",
+		"::/128", "::1/128", "::ffff:0:0/96", "64:ff9b::/96", "64:ff9b:1::/48", "100::/64",
+		"2001::/32", "2001:db8::/32", "2002::/16", "fc00::/7", "fe80::/10", "fec0::/10", "ff00::/8",
+	} {
+		out = append(out, netip.MustParsePrefix(p))
+	}
+	return out
+}()
+
+func publicAddr(a netip.Addr) bool {
+	a = a.Unmap()
+	for _, p := range nonPublic {
+		if p.Contains(a) {
+			return false
+		}
+	}
+	return true
 }
 
 func validHostname(name string) bool {
