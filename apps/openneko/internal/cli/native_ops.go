@@ -568,6 +568,11 @@ func runNativeUpgrade(ctx context.Context, cmd *cobra.Command, settings installa
 	if err != nil {
 		return fmt.Errorf("run %s version: %w (nothing was changed)", newExe, err)
 	}
+	short, err := exec.CommandContext(ctx, newExe, "version", "--short").Output()
+	if err != nil {
+		return fmt.Errorf("run %s version --short: %w (nothing was changed)", newExe, err)
+	}
+	sandboxTag := normalizeUpgradeImageVersion(string(short))
 	fmt.Fprintf(out, "Upgrading to %s", raw)
 	exe := installedExe
 	if exe == "" {
@@ -625,6 +630,7 @@ func runNativeUpgrade(ctx context.Context, cmd *cobra.Command, settings installa
 	}
 	if !wasRunning {
 		fmt.Fprintln(out, "Upgrade complete. `openneko start` starts OpenNeko and applies the migrations.")
+		warnStaleNativeSandbox(ctx, errOut, sandboxTag)
 		return nil
 	}
 	fmt.Fprintln(out, "Starting OpenNeko...")
@@ -632,6 +638,7 @@ func runNativeUpgrade(ctx context.Context, cmd *cobra.Command, settings installa
 		return fmt.Errorf("the files are upgraded but OpenNeko did not start: %w", err)
 	}
 	fmt.Fprintln(out, "Upgrade complete.")
+	warnStaleNativeSandbox(ctx, errOut, sandboxTag)
 	return nil
 }
 

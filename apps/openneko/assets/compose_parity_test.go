@@ -252,7 +252,6 @@ func TestPostReleaseSmokeGatesRetainedDemoUpgrades(t *testing.T) {
 		"serve_socket=ok",
 		`grep -qE '^builtin_packs=[1-9][0-9]*$' <<<"$checks"`,
 		`grep -qE '^bundled_skills=[1-9][0-9]*$' <<<"$checks"`,
-		"docker build -t openneko-sandbox:smoke recipes/sandbox",
 		`echo "OPENNEKO_SANDBOX_KEY=$key" >> "$GITHUB_ENV"`,
 		"recipes/sandbox/compose.yml > ~/.config/openneko/compose.override.yml",
 		"run: scripts/smoke-script-step.sh openneko-demo",
@@ -269,7 +268,7 @@ func TestPostReleaseSmokeGatesRetainedDemoUpgrades(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(recipe), "\n    build:\n      context: recipes/sandbox\n") {
-		t.Fatal("the sandbox recipe lost the build lines that post-release smoke replaces with its local image")
+		t.Fatal("the sandbox recipe lost the build lines that post-release smoke removes")
 	}
 	if info, err := os.Stat(filepath.Join(repoRootForTest(t), "scripts", "smoke-script-step.sh")); err != nil || info.Mode()&0o111 == 0 {
 		t.Fatalf("scripts/smoke-script-step.sh is missing or not executable: %v", err)

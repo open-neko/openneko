@@ -66,6 +66,16 @@ jobs:
             target: neko-db
             platform: linux/arm64
             runner: ubuntu-24.04-arm
+          - image: neko-sandbox
+            context: recipes/sandbox
+            file: recipes/sandbox/Dockerfile
+            platform: linux/amd64
+            runner: ubuntu-22.04
+          - image: neko-sandbox
+            context: recipes/sandbox
+            file: recipes/sandbox/Dockerfile
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
         with:
@@ -99,7 +109,7 @@ jobs:
         id: build
         uses: docker/build-push-action@v7
         with:
-          context: .
+          context: ${{ matrix.context || '.' }}
           file: ${{ matrix.file || './Dockerfile' }}
           build-args: |
             OPENNEKO_VERSION=${{ steps.tag.outputs.value }}
@@ -150,7 +160,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [neko-web, neko-cli, neko-serve, neko-db]
+        image: [neko-web, neko-cli, neko-serve, neko-db, neko-sandbox]
     steps:
       - name: Resolve release tag
         id: tag
@@ -233,7 +243,7 @@ jobs:
             "${{ matrix.arch }}" \
             "$MAX_MIB" \
             neko-web neko-cli neko-serve \
-            neko-db postgres:16-alpine
+            neko-db neko-sandbox postgres:16-alpine
 
   goreleaser:
     name: goreleaser

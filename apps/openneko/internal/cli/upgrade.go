@@ -459,6 +459,7 @@ func openNekoImageRepos() map[string]bool {
 		"ghcr.io/open-neko/neko-web":       true,
 		"ghcr.io/open-neko/neko-worker":    true,
 		"ghcr.io/open-neko/neko-embedding": true,
+		sandboxImageRepo:                   true,
 		// Legacy images kept so the first upgrade after their removal prunes them.
 		"ghcr.io/open-neko/neko-graphjin":        true,
 		"ghcr.io/open-neko/records-db":           true,

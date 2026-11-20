@@ -537,7 +537,11 @@ volumes:
 ```
 
 Run the sandbox in the same file with the `openneko-sandbox` service of
-`recipes/sandbox/compose.yml`: it mounts `openneko-sandbox-socket` at
+`recipes/sandbox/compose.yml`. Each release publishes its image as
+`ghcr.io/open-neko/neko-sandbox` with the release's tag. Keep the recipe's
+`image:` line and leave out its `build:` lines, so `openneko start` and
+`openneko upgrade` pull the image of the CLI's release, and the upgrade
+removes the older tags. The service mounts `openneko-sandbox-socket` at
 `/run/openneko-sandbox` and gives its socket to group 1001. Keep its
 `openneko-sandbox` network with `internal: true`: that network has no route
 out and no DNS for external names. The sandbox also sets its own firewall
@@ -597,7 +601,7 @@ and the result.
 
 An install that runs the sandbox recipe from before 6.0.0 has a sandbox
 network with a route out. To close it, take the new recipe and run the
-compose command with `up -d --build`. Compose makes the network again with
+compose command with `pull` and then `up -d`. Compose makes the network again with
 `internal: true`, gives the sandbox `NET_ADMIN` and `SETPCAP` for its
 firewall, and starts `openneko-egress`. An override that sets its own
 `cap_add` for the sandbox must add both, or the sandbox does not start. Then run `openneko
@@ -1123,11 +1127,13 @@ key variables from its copy ([Model keys](#model-keys)).
 `openneko start --native` makes the sandbox socket folder
 `~/.local/share/openneko-sandbox`, mode 0700. Keep the sandbox out of
 `~/.local/share/openneko/run`, which holds serve's sockets. Start the sandbox
-with `recipes/sandbox/compose.native.yml`. It runs the sandbox on a network
-with no route out. Set `OPENNEKO_SANDBOX_DIR=$HOME/.local/share/openneko-sandbox`,
-`OPENNEKO_SANDBOX_GID` to your group (`id -g`) and a key in
-`OPENNEKO_SANDBOX_KEY`, then run
-`docker compose -f recipes/sandbox/compose.native.yml up -d --build`. The
+with `share/openneko/sandbox/compose.native.yml` of the release archive. It
+runs the sandbox on a network with no route out. Set
+`OPENNEKO_SANDBOX_DIR=$HOME/.local/share/openneko-sandbox`,
+`OPENNEKO_SANDBOX_GID` to your group (`id -g`), a key in
+`OPENNEKO_SANDBOX_KEY` and `OPENNEKO_VERSION=v$(openneko version --short)`,
+then run `docker compose -f compose.native.yml up -d` in that folder. Compose
+pulls `ghcr.io/open-neko/neko-sandbox` at the release's tag. The
 file also starts the egress proxy, the only way out of that network. Then set
 `OPENNEKO_SANDBOX_URL=unix://$HOME/.local/share/openneko-sandbox/sandbox.sock`
 and the same key. Other users can share your primary group, so the start
@@ -1185,7 +1191,7 @@ files as root.
   and group `openneko`, mode 0700). It writes
   `/etc/tmpfiles.d/openneko-sandbox.conf`, so systemd makes the folder again
   at each boot. Start the sandbox with
-  `recipes/sandbox/compose.native.yml`, `OPENNEKO_SANDBOX_DIR=/run/openneko-sandbox`
+  `share/openneko/sandbox/compose.native.yml`, `OPENNEKO_SANDBOX_DIR=/run/openneko-sandbox`
   and `OPENNEKO_SANDBOX_GID` set to the group ID of `openneko-shared` (with
   `--one-user`, of `openneko`), so that both services can connect. The
   folder stays apart from `/var/lib/openneko/shared/run`, which holds
