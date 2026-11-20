@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-14]
+        os: [ubuntu-22.04, macos-15]
     defaults:
       run:
         working-directory: apps/openneko
@@ -122,11 +122,29 @@ jobs:
           chmod 0755 "$OPENNEKO_TEST_DUCKDB"
           "$OPENNEKO_TEST_DUCKDB" --version
 
+      - name: Install the PostgreSQL 16 client (the source in the Dockerfile)
+        run: |
+          set -euo pipefail
+          image=$(sed -n 's/^FROM \(pgvector\/pgvector:[^ ]*@sha256:[0-9a-f]*\) AS neko-db$/\1/p' "$GITHUB_WORKSPACE/Dockerfile")
+          test -n "$image"
+          docker run --rm --entrypoint cat "$image" /usr/local/share/keyrings/postgres.gpg.asc > /tmp/postgres.gpg.asc
+          sudo install -D -m 0644 /tmp/postgres.gpg.asc /usr/local/share/keyrings/postgres.gpg.asc
+          echo "deb [ signed-by=/usr/local/share/keyrings/postgres.gpg.asc ] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main 16" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-16
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
+          for tool in pg_dump pg_restore; do
+            /usr/lib/postgresql/16/bin/$tool --version | grep -q '(PostgreSQL) 16\.'
+          done
+
       - name: go vet
         run: go vet ./...
 
       - name: go test (with the database)
-        run: go test -count=1 -timeout 20m ./...
+        run: |
+          pg_dump --version | grep -q '(PostgreSQL) 16\.'
+          go test -count=1 -timeout 20m ./...
 
   integration-migrator:
     name: integration - migrator (real postgres)

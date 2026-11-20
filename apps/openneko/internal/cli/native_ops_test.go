@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -126,7 +128,13 @@ func TestPostgresToolVersion(t *testing.T) {
 	}
 }
 
-func TestNativeBackupAndRestore(t *testing.T) {
+type nativeFixture struct {
+	name, target, root, home string
+	settings                 installation.Settings
+}
+
+func newNativeFixture(t *testing.T) nativeFixture {
+	t.Helper()
 	dsn := testpg.URL(t)
 	ctx := context.Background()
 	admin, err := pgx.Connect(ctx, dsn)
@@ -174,6 +182,13 @@ func TestNativeBackupAndRestore(t *testing.T) {
 	}
 	root := nativeLayout().Root
 	writeTree(t, root, map[string]string{"files/u1/report.pdf": "before", "logs/web.log": "log"})
+	return nativeFixture{name: name, target: target, root: root, home: home, settings: settings}
+}
+
+func TestNativeBackupAndRestore(t *testing.T) {
+	f := newNativeFixture(t)
+	ctx := context.Background()
+	name, target, root, home, settings := f.name, f.target, f.root, f.home, f.settings
 
 	conn, err := pgx.Connect(ctx, target)
 	if err != nil {
@@ -227,5 +242,68 @@ func TestNativeBackupAndRestore(t *testing.T) {
 	}
 	if got, err := nativeDatabaseURL(); err != nil || got != target {
 		t.Errorf("database URL after restore: %v", err)
+	}
+}
+
+// TestNativeBackupNamesAnOldClient gives backup and restore a pg_dump and a
+// pg_restore one major version older than the server, the way a runner's
+// stock client tools are.
+func TestNativeBackupNamesAnOldClient(t *testing.T) {
+	f := newNativeFixture(t)
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, f.target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var server string
+	err = conn.QueryRow(ctx, "select current_setting('server_version')").Scan(&server)
+	conn.Close(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	major, _ := strconv.Atoi(majorOf(server))
+	old := fmt.Sprintf("%d.9", major-1)
+	var out bytes.Buffer
+	file, err := createNativeBackup(ctx, "", &out)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+
+	bin := t.TempDir()
+	for _, tool := range []string{"pg_dump", "pg_restore"} {
+		script := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = --version ]; then echo '%[1]s (PostgreSQL) %[2]s (Ubuntu %[2]s-1)'; exit 0; fi\n"+
+			"echo '%[1]s: error: server version: %[3]s; %[1]s version: %[2]s' >&2\necho '%[1]s: error: aborting because of server version mismatch' >&2\nexit 1\n", tool, old, server)
+		if err := os.WriteFile(filepath.Join(bin, tool), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	backups, _ := os.ReadDir(filepath.Dir(file))
+
+	for tool, run := range map[string]func() error{
+		"pg_dump": func() error { _, err := createNativeBackup(ctx, "", io.Discard); return err },
+		"pg_restore": func() error {
+			cmd := &cobra.Command{}
+			cmd.SetIn(strings.NewReader(f.name + "\n"))
+			cmd.SetOut(io.Discard)
+			return runNativeRestore(ctx, cmd, file, "", true)
+		},
+	} {
+		err := run()
+		if err == nil {
+			t.Fatalf("%s %s: no error", tool, old)
+		}
+		msg := err.Error()
+		for _, want := range []string{tool + " " + old, "(" + server + ")", fmt.Sprintf("install the PostgreSQL %d client tools", major)} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("%s: want %q in the error: %s", tool, want, msg)
+			}
+		}
+		if strings.Contains(msg, "\n") || strings.Contains(msg, "aborting") {
+			t.Errorf("%s: the error is not one clear line: %s", tool, msg)
+		}
+	}
+	if after, _ := os.ReadDir(filepath.Dir(file)); len(after) != len(backups) {
+		t.Errorf("a failed backup left a file: %d files, then %d", len(backups), len(after))
 	}
 }
