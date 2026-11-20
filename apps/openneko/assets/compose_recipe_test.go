@@ -65,7 +65,7 @@ func TestSandboxRecipeImageIsTheReleaseOrAnExplicitBuild(t *testing.T) {
 	needCompose(t)
 	t.Setenv("OPENNEKO_VERSION", "v0.0.0-from-the-caller")
 	t.Setenv("OPENNEKO_SANDBOX_IMAGE", "from-the-caller:1")
-	for _, set := range [][]string{documentedRootComposeSets["sandbox"], {"recipes/sandbox/compose.native.yml"}} {
+	for _, set := range [][]string{documentedRootComposeSets["sandbox"], {"recipes/sandbox/compose.native.yml"}, {"recipes/sandbox/compose.desktop.yml"}} {
 		images := func(env ...string) (string, error) {
 			args := []string{"compose"}
 			for _, file := range set {
@@ -94,7 +94,7 @@ func TestSandboxRecipeImageIsTheReleaseOrAnExplicitBuild(t *testing.T) {
 // default is not used, so the recipe may hold none.
 func TestSandboxRecipeRequiresNoVariableInsideADefault(t *testing.T) {
 	nested := regexp.MustCompile(`\$\{[A-Z_]+:?-[^}]*\$\{[A-Z_]+:?\?`)
-	for _, name := range []string{"recipes/sandbox/compose.yml", "recipes/sandbox/compose.native.yml"} {
+	for _, name := range []string{"recipes/sandbox/compose.yml", "recipes/sandbox/compose.native.yml", "recipes/sandbox/compose.desktop.yml"} {
 		for i, line := range strings.Split(string(readRootCompose(t, name)), "\n") {
 			if nested.MatchString(line) {
 				t.Errorf("%s:%d: %s", name, i+1, line)

@@ -9,10 +9,10 @@ import (
 	"time"
 )
 
-// relayToProxy passes each connection on the loopback relay to the egress
-// proxy. Commands cannot resolve the proxy's name themselves: the firewall
-// drops their DNS.
-func relayToProxy(ctx context.Context, listener net.Listener, proxy string) {
+// relayTo passes each connection on listener to target until ctx ends. The
+// runs' relay names the egress proxy: commands cannot resolve the proxy's
+// name themselves, because the firewall drops their DNS.
+func relayTo(ctx context.Context, listener net.Listener, target string) {
 	go func() {
 		<-ctx.Done()
 		_ = listener.Close()
@@ -26,13 +26,13 @@ func relayToProxy(ctx context.Context, listener net.Listener, proxy string) {
 			time.Sleep(50 * time.Millisecond)
 			continue
 		}
-		go relayOne(conn, proxy)
+		go relayOne(conn, target)
 	}
 }
 
-func relayOne(conn net.Conn, proxy string) {
+func relayOne(conn net.Conn, target string) {
 	defer conn.Close()
-	upstream, err := net.DialTimeout("tcp", proxy, 10*time.Second)
+	upstream, err := net.DialTimeout("tcp", target, 10*time.Second)
 	if err != nil {
 		return
 	}

@@ -158,10 +158,12 @@ func TestSandboxNetworkHasNoRouteOut(t *testing.T) {
 	allowedCaps := map[string][]string{
 		"openneko-sandbox": {"CHOWN", "DAC_OVERRIDE", "FOWNER", "KILL", "SETGID", "SETUID", "NET_ADMIN", "SETPCAP"},
 		"openneko-egress":  {},
+		publishService:     {},
 	}
 	for _, set := range [][]string{
 		{"compose.yml", "compose.db.yml", "recipes/sandbox/compose.yml"},
 		{"recipes/sandbox/compose.native.yml"},
+		{"recipes/sandbox/compose.desktop.yml"},
 	} {
 		joins := map[string][]string{}
 		networks := map[string]network{}
@@ -181,7 +183,13 @@ func TestSandboxNetworkHasNoRouteOut(t *testing.T) {
 					modes[name] = svc.NetworkMode
 				}
 				if _, ours := allowedCaps[name]; ours {
-					if len(svc.Ports.Content) > 0 || svc.Ports.Kind == yaml.ScalarNode && svc.Ports.Value != "" {
+					if name == publishService {
+						for _, port := range svc.Ports.Content {
+							if !strings.HasPrefix(port.Value, "127.0.0.1:") {
+								t.Errorf("%s: %s publishes %q beyond 127.0.0.1", file, name, port.Value)
+							}
+						}
+					} else if len(svc.Ports.Content) > 0 || svc.Ports.Kind == yaml.ScalarNode && svc.Ports.Value != "" {
 						t.Errorf("%s: %s publishes ports", file, name)
 					}
 					if len(svc.ExtraHosts.Content) > 0 || svc.ExtraHosts.Kind == yaml.ScalarNode && svc.ExtraHosts.Value != "" {
@@ -215,7 +223,10 @@ func TestSandboxNetworkHasNoRouteOut(t *testing.T) {
 			}
 		}
 		for name := range allowedCaps {
-			got := hardening[name]
+			got, present := hardening[name]
+			if !present && name == publishService {
+				continue
+			}
 			if !slices.ContainsFunc(got.CapDrop, func(c string) bool { return strings.EqualFold(c, "ALL") }) {
 				t.Errorf("%v: %s does not drop every capability (cap_drop: ALL)", set, name)
 			}
@@ -248,7 +259,7 @@ func TestSandboxNetworkHasNoRouteOut(t *testing.T) {
 				t.Errorf("%v: the sandbox network %s enables IPv6", set, name)
 			}
 			for other, list := range joins {
-				if other != "openneko-sandbox" && other != "openneko-egress" && slices.Contains(list, name) {
+				if other != "openneko-sandbox" && other != "openneko-egress" && other != publishService && slices.Contains(list, name) {
 					t.Errorf("%v: %s joins the sandbox network %s", set, other, name)
 				}
 			}
@@ -267,5 +278,23 @@ func TestSandboxNetworkHasNoRouteOut(t *testing.T) {
 				t.Errorf("%v: %s joins the proxy's outbound network %s", set, other, out[0])
 			}
 		}
+		if list, ok := joins[publishService]; ok {
+			var front []string
+			for _, name := range list {
+				if !slices.Contains(own, name) {
+					front = append(front, name)
+				}
+			}
+			if len(front) != 1 || len(list) != 2 {
+				t.Errorf("%v: %s must join the sandbox network and one network to publish on, got %v", set, publishService, list)
+			}
+			for other, others := range joins {
+				if len(front) == 1 && other != publishService && slices.Contains(others, front[0]) {
+					t.Errorf("%v: %s joins the publish network %s", set, other, front[0])
+				}
+			}
+		}
 	}
 }
+
+const publishService = "openneko-sandbox-publish"

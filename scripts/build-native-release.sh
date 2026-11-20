@@ -50,7 +50,7 @@ for target in "${targets[@]}"; do
     cp -R "$(dirname "$skill")" "$tree/share/openneko/skills/sandbox/"
   done
   mkdir -p "$tree/share/openneko/sandbox"
-  cp "$root/recipes/sandbox/compose.native.yml" "$tree/share/openneko/sandbox/"
+  cp "$root/recipes/sandbox/compose.native.yml" "$root/recipes/sandbox/compose.desktop.yml" "$tree/share/openneko/sandbox/"
   if [ "$ext" = zip ]; then
     python3 -I "$root/scripts/native-zip.py" "$tree" "$out/$name"
     listing="$(python3 -I "$root/scripts/native-zip.py" --list "$out/$name")"
@@ -60,7 +60,8 @@ for target in "${targets[@]}"; do
   fi
   for want in "bin/${exe/./\\.}" 'share/openneko/web/index\.html' 'share/openneko/packs/[^/]+/pack\.yaml' \
     'share/openneko/skills/builtin/[^/]+/SKILL\.md' \
-    share/openneko/skills/sandbox/{docx,pdf,pptx,skill-creator,xlsx}/SKILL\\.md 'share/openneko/sandbox/compose\.native\.yml'; do
+    share/openneko/skills/sandbox/{docx,pdf,pptx,skill-creator,xlsx}/SKILL\\.md 'share/openneko/sandbox/compose\.native\.yml' \
+    'share/openneko/sandbox/compose\.desktop\.yml'; do
     if ! grep -E "^$want\$" <<<"$listing" >/dev/null; then
       echo "build-native-release: $name holds no $want" >&2
       rm -f "${out:?}/${name:?}"

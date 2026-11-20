@@ -14,7 +14,7 @@
 
 ## Quickstart
 
-You'll need **Docker** (or a Linux host with PostgreSQL 16+ for the [native install](INSTALL.md#run-without-docker-native)) and **one LLM provider API key**.
+You'll need **Docker** on Linux or macOS (or PostgreSQL 16+ for the [native install](INSTALL.md#run-without-docker-native) on Linux, macOS or Windows) and **one LLM provider API key**.
 
 ```bash
 curl -fsSL https://openneko.app/install.sh | sh
@@ -22,7 +22,7 @@ mkdir -p ~/openneko && cd ~/openneko
 openneko setup --mode demo
 ```
 
-The installer detects your OS/arch (Homebrew on macOS, a checksum-verified release binary on Linux) and checks for Docker. `openneko setup` then runs preflight checks, brings up the stack, and walks you through configuration **right in the terminal** — admin password, data source, model provider + key. Prefer a browser? Choose **browser** at the first prompt (or pass `--skip-onboarding`) to finish the wizard at [http://localhost:3000](http://localhost:3000). On Linux without Docker, run `scripts/install-native.sh` and `openneko start --native` against your Postgres database (see [INSTALL.md](INSTALL.md#run-without-docker-native)).
+The installer detects your OS/arch (Homebrew on macOS, a checksum-verified release binary on Linux) and checks for Docker. `openneko setup` then runs preflight checks, brings up the stack, and walks you through configuration **right in the terminal** — admin password, data source, model provider + key. Prefer a browser? Choose **browser** at the first prompt (or pass `--skip-onboarding`) to finish the wizard at [http://localhost:3000](http://localhost:3000). Without Docker, run `scripts/install-native.sh` on Linux or macOS, or `scripts/install-native.ps1` on Windows, then `openneko start --native` against your Postgres database (see [INSTALL.md](INSTALL.md#run-without-docker-native)). Windows runs the native install only.
 
 The demo seeds four workflows against sample data. Run **Slow-Ship Operations** from `/workflows`, and an *"orders stuck in pending > 5 days"* finding shows on its run page under `/runs`.
 
@@ -76,7 +76,7 @@ Integrations ship as **solution packs** — sources, API specs, actions, workflo
 
 ## Under the hood
 
-- **Self-hosted on Linux (native or Docker) and macOS (Docker).** One binary, one `start` command. Data lives on your Postgres.
+- **Self-hosted on Linux, macOS and Windows.** One binary, one `start` command. Linux and macOS run the Docker stack or the native install; Windows runs the native install. The server install with two system users is for Linux. Data lives on your Postgres.
 - **Installable mobile web app.** Add to Home Screen on a phone, pair devices with an 8-letter code (`/device`), sign high-risk action approvals with WebAuthn passkeys, and receive encrypted Web Push notifications when an approval waits, a run finishes, or a workflow needs attention.
 - **Bring your own LLM.** The Ax agent runs against Anthropic, OpenAI, Google, Ollama, and other compatible providers. Change providers without changing the agent runtime.
 - **The agent runs no code in OpenNeko.** The agent loop runs in `openneko serve`, apart from the control plane, and reaches data only through `openneko web`'s per-run tool bridge. Its terminal runs only in an optional sandbox service that holds no secrets. See [AGENT_RUNTIME.md](AGENT_RUNTIME.md).

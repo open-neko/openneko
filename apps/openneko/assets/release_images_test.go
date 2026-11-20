@@ -32,6 +32,7 @@ func TestReleasePublishesEveryImageThatAnInstallNames(t *testing.T) {
 		"apps/openneko/assets/compose/bundled-db.yml",
 		"recipes/sandbox/compose.yml",
 		"recipes/sandbox/compose.native.yml",
+		"recipes/sandbox/compose.desktop.yml",
 	} {
 		for _, m := range publishedImage.FindAllStringSubmatch(read(name), -1) {
 			named[m[1]] = true
@@ -103,7 +104,7 @@ func TestReleasePublishesEveryImageThatAnInstallNames(t *testing.T) {
 
 func TestSandboxRecipePinsTheReleaseImage(t *testing.T) {
 	root := repoRootForTest(t)
-	for _, file := range []string{"recipes/sandbox/compose.yml", "recipes/sandbox/compose.native.yml"} {
+	for _, file := range []string{"recipes/sandbox/compose.yml", "recipes/sandbox/compose.native.yml", "recipes/sandbox/compose.desktop.yml"} {
 		raw, err := os.ReadFile(filepath.Join(root, file))
 		if err != nil {
 			t.Fatal(err)
@@ -114,8 +115,11 @@ func TestSandboxRecipePinsTheReleaseImage(t *testing.T) {
 		if err := yaml.Unmarshal(raw, &doc); err != nil {
 			t.Fatal(err)
 		}
-		for _, svc := range []string{"openneko-sandbox", "openneko-egress"} {
-			got := doc.Services[svc]
+		for _, svc := range []string{"openneko-sandbox", "openneko-egress", "openneko-sandbox-publish"} {
+			got, ok := doc.Services[svc]
+			if !ok && svc == "openneko-sandbox-publish" {
+				continue
+			}
 			if image := got["image"]; image.Value != sandboxImageRef {
 				t.Errorf("%s %s image = %q, want %q", file, svc, image.Value, sandboxImageRef)
 			}
