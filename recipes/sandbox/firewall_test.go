@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -50,6 +52,67 @@ func TestTheProbeUserIsInTheFirewallRange(t *testing.T) {
 		if uid == s.probeUID() {
 			t.Fatal("the probe user is a run user")
 		}
+	}
+}
+
+func TestTheUserRangeIsRefusedWhenThePoolAndFirewallCouldDiffer(t *testing.T) {
+	for _, bad := range []*Server{
+		{BaseUID: 20000, Users: 0},
+		{BaseUID: 20000, Users: -1},
+		{BaseUID: 20000, Users: maxUsers + 1},
+		{BaseUID: 0, Users: 256},
+		{BaseUID: 999, Users: 256},
+		{BaseUID: maxUID - 10, Users: 256},
+	} {
+		if err := bad.checkUserRange(); err == nil {
+			t.Errorf("base %d with %d users was accepted", bad.BaseUID, bad.Users)
+		}
+	}
+	if err := (&Server{BaseUID: 20000, Users: 0}).confine(nil); err == nil {
+		t.Error("confine accepted 0 run users")
+	}
+	for _, users := range []string{"0", "-3", "256x", " 4"} {
+		t.Setenv("OPENNEKO_SANDBOX_USERS", users)
+		base, n, err := userRangeFromEnv()
+		if err == nil {
+			err = (&Server{BaseUID: base, Users: n}).checkUserRange()
+		}
+		if err == nil {
+			t.Errorf("OPENNEKO_SANDBOX_USERS=%q was accepted", users)
+		}
+	}
+	t.Setenv("OPENNEKO_SANDBOX_USERS", "")
+	base, n, err := userRangeFromEnv()
+	if err != nil || base != defaultBaseUID || n != defaultUsers {
+		t.Fatalf("defaults = %d, %d, %v", base, n, err)
+	}
+}
+
+func TestThePoolHandsOutOnlyFirewalledUsers(t *testing.T) {
+	root := t.TempDir()
+	s := &Server{Workspaces: root, BaseUID: 20000, Users: 3}
+	rules, err := firewallRules(s.BaseUID, s.probeUID(), relayAddress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rules, "meta skuid 20000-20003 drop") {
+		t.Fatalf("rules:\n%s", rules)
+	}
+	for i := 0; i < s.Users; i++ {
+		r, _, err := s.run(fmt.Sprintf("run-%08d", i), true, 60)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.uid < 20000 || r.uid >= s.probeUID() {
+			t.Fatalf("run user %d is outside 20000-%d", r.uid, s.probeUID()-1)
+		}
+	}
+	if _, status, _ := s.run("run-extra000", true, 60); status != http.StatusServiceUnavailable {
+		t.Fatalf("a fourth run got status %d", status)
+	}
+	empty := &Server{Workspaces: t.TempDir(), BaseUID: 20000}
+	if _, status, _ := empty.run("run-00000000", true, 60); status != http.StatusServiceUnavailable {
+		t.Fatalf("a server with no run users gave a run, status %d", status)
 	}
 }
 

@@ -359,14 +359,11 @@ func (s *Server) run(id string, fresh bool, timeout int) (*run, int, error) {
 	if !fresh {
 		return nil, http.StatusConflict, errors.New("the sandbox does not know this run")
 	}
-	users := s.Users
-	if users <= 0 {
-		users = defaultUsers
-	}
+	first, last := s.runUIDs()
 	uid := -1
-	for i := 0; i < users; i++ {
-		if !s.used[s.BaseUID+i] {
-			uid = s.BaseUID + i
+	for candidate := first; candidate <= last; candidate++ {
+		if !s.used[candidate] {
+			uid = candidate
 			break
 		}
 	}
@@ -575,4 +572,16 @@ func intEnv(name string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func strictIntEnv(name string, fallback int) (int, error) {
+	value, set := os.LookupEnv(name)
+	if !set || value == "" {
+		return fallback, nil
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("%s=%q is not a whole number", name, value)
+	}
+	return n, nil
 }

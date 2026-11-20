@@ -18,6 +18,8 @@ import (
 const (
 	firewallTable = "openneko_sandbox"
 	relayAddress  = "127.0.0.1:3128"
+	maxUsers      = 4096
+	maxUID        = 1<<31 - 2
 	capSetPCap    = 8
 	capNetAdmin   = 12
 )
@@ -141,7 +143,11 @@ func capsWithout(status io.Reader, caps ...uint) error {
 // the relay to the egress proxy, and then gives up the capabilities that
 // could change the rules.
 func (s *Server) confine(relay net.Listener) error {
-	rules, err := firewallRules(s.BaseUID, s.probeUID(), relayAddress)
+	if err := s.checkUserRange(); err != nil {
+		return err
+	}
+	first, _ := s.runUIDs()
+	rules, err := firewallRules(first, s.probeUID(), relayAddress)
 	if err != nil {
 		return err
 	}
@@ -158,6 +164,24 @@ func (s *Server) confine(relay net.Listener) error {
 	return nil
 }
 
+func (s *Server) runUIDs() (first, last int) {
+	return s.BaseUID, s.BaseUID + s.Users - 1
+}
+
 func (s *Server) probeUID() int {
-	return s.BaseUID + s.Users
+	_, last := s.runUIDs()
+	return last + 1
+}
+
+func (s *Server) checkUserRange() error {
+	if s.BaseUID < 1000 {
+		return fmt.Errorf("OPENNEKO_SANDBOX_BASE_UID=%d: the run users must start at 1000 or above", s.BaseUID)
+	}
+	if s.Users < 1 || s.Users > maxUsers {
+		return fmt.Errorf("OPENNEKO_SANDBOX_USERS=%d: give 1 to %d run users", s.Users, maxUsers)
+	}
+	if s.probeUID() > maxUID {
+		return fmt.Errorf("OPENNEKO_SANDBOX_BASE_UID=%d with %d users passes uid %d", s.BaseUID, s.Users, maxUID)
+	}
+	return nil
 }
