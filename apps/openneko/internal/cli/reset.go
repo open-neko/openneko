@@ -24,7 +24,7 @@ func newResetCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			sup := compose.New(assets.ComposeFS)
-			files, err := sup.Materialize(compose.ModeDemo)
+			files, err := allStackFiles(sup)
 			if err != nil {
 				return err
 			}

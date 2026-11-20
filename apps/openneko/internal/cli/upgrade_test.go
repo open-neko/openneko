@@ -246,6 +246,21 @@ ghcr.io/open-neko/neko-sandbox:v2.0.0
 	}
 }
 
+func TestOldOpenNekoImageRefsTakesDigestPulledImagesByID(t *testing.T) {
+	in := `
+ghcr.io/open-neko/neko-librarian:<none> 361fd46387e5
+ghcr.io/open-neko/agent:<none> 5f1c0a2b9d77
+ghcr.io/open-neko/neko-web:v2.0.0 0a1b2c3d4e5f
+ghcr.io/open-neko/neko-web:v1.0.0 9e8d7c6b5a43
+ghcr.io/nvidia/openshell/gateway:<none> 2fe4dad9118e
+<none>:<none> 77aa88bb99cc
+`
+	want := []string{"361fd46387e5", "5f1c0a2b9d77", "ghcr.io/open-neko/neko-web:v1.0.0"}
+	if got := oldOpenNekoImageRefs(in, "v2.0.0"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("oldOpenNekoImageRefs = %#v, want %#v", got, want)
+	}
+}
+
 func stubComposeProjects(t *testing.T, running, all []string) {
 	t.Helper()
 	previous := listDockerComposeProjectNames

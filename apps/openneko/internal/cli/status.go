@@ -61,7 +61,7 @@ func newStatusCmd() *cobra.Command {
 				return statusNative(cmd.Context(), cmd.OutOrStdout())
 			}
 			sup := compose.New(assets.ComposeFS)
-			files, err := sup.Materialize(compose.ModeDemo)
+			files, err := allStackFiles(sup)
 			if err != nil {
 				return err
 			}

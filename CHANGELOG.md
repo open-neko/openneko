@@ -48,6 +48,12 @@
 
 * `openneko backup` and `openneko restore` check `pg_dump` and `pg_restore` before they start. When a tool is older than the database server, they stop with one line that names both versions and the PostgreSQL client tools to install. Nothing is written or changed.
 
+### Upgrade from 5.0.0
+
+* `openneko start` and `openneko upgrade` ignore the entries of `compose.override.yml` for services that this release does not run (`worker`, `librarian`, `embedding`, `neko-backup`, `neko-reaper`, the OpenShell, Records and old GraphJin services). They print one warning line that names the entries and the file, and leave the file as it is. Before, Compose stopped the upgrade with a service that has no image.
+* `openneko stop`, `status`, `logs`, `reset` and `seed` set `OPENNEKO_VERSION` from the install's image tag, as `start` and `upgrade` do. Before, they failed when `compose.override.yml` held the sandbox recipe, which requires that variable.
+* The upgrade removes the untagged images of the OpenNeko repositories too. 5.0.0 pulled the librarian image by digest, so an earlier upgrade kept it (2.45 GB).
+
 ## [5.0.0](https://github.com/open-neko/openneko/compare/v4.9.2...v5.0.0) (2026-10-24)
 
 

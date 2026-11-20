@@ -227,3 +227,13 @@ func pinImageVersion(sup *compose.Supervisor) error {
 	}
 	return os.Setenv("OPENNEKO_VERSION", imageVersion)
 }
+
+// allStackFiles materializes the services of every mode for a command that
+// acts on what the install runs. The sandbox recipe in an override requires
+// OPENNEKO_VERSION, so the install's image tag goes in first.
+func allStackFiles(sup *compose.Supervisor) ([]string, error) {
+	if err := pinImageVersion(sup); err != nil {
+		return nil, err
+	}
+	return sup.Materialize(compose.ModeDemo)
+}

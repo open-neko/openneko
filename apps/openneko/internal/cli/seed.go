@@ -64,7 +64,7 @@ func newSeedCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			files, err := sup.Materialize(compose.ModeDemo)
+			files, err := allStackFiles(sup)
 			if err != nil {
 				return err
 			}

@@ -954,6 +954,14 @@ This release has fewer parts. The upgrade migrates your data in place:
   own home. A script skill that your organization wrote and that writes to
   `/tmp` by a fixed path, or uses Python `multiprocessing`, fails. Change
   it to use `TMPDIR` and one process.
+- **An old `compose.override.yml`** can set services that this release does
+  not run, such as `worker`, `librarian`, `embedding`, `neko-backup`,
+  `neko-reaper` or the OpenShell services. `openneko start` and `upgrade`
+  ignore those entries, use the rest of the file, and print one warning
+  line that names them. Your file stays as it is; remove the entries to
+  stop the warning.
+- **Old images**: the upgrade also removes the untagged images of the
+  earlier release, such as the librarian image that 5.0.0 pulled by digest.
 - **The sandbox recipe** names the image of the release and has no `build:`
   line. Without `OPENNEKO_VERSION`, Compose stops and asks for it. For a
   source build, build the image and set `OPENNEKO_SANDBOX_IMAGE`

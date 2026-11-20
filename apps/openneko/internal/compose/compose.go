@@ -55,6 +55,9 @@ type Supervisor struct {
 	RuntimeDir string
 	// GOOS lets tests stub the platform.
 	GOOS string
+	// Notice receives the warning about ignored override entries; nil is stderr.
+	Notice          io.Writer
+	overrideNoticed bool
 }
 
 func New(assets fs.FS) *Supervisor {
@@ -149,11 +152,12 @@ func (s *Supervisor) MaterializeStack(mode Mode, bundledDB bool, overlays ...Ove
 		}
 		out = append(out, dst)
 	}
-	override := filepath.Join(config.Dir(""), "compose.override.yml")
-	if _, err := os.Stat(override); err == nil {
-		out = append(out, override)
-	} else if !errors.Is(err, fs.ErrNotExist) {
+	override, err := s.overrideFile(rt)
+	if err != nil {
 		return nil, err
+	}
+	if override != "" {
+		out = append(out, override)
 	}
 	return out, nil
 }
