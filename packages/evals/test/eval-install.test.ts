@@ -22,6 +22,7 @@ import {
   evalMemoryReserveFromEnv,
   evalSessionCookie,
   parallelEpisodeCap,
+  serveEnvironment,
   unreadStoredRunEvent,
   waitForEpisodeMemory,
 } from "../scripts/eval-install";
@@ -148,6 +149,18 @@ describe("eval install helpers", () => {
         waitForEpisodeMemory({ readMeminfo: memory.read, reserve: 4 * GB, waitMs: 0, log: () => {} }),
       ).rejects.toThrow("needs 5 GB");
     });
+  });
+
+  it("gives serve no model key and no oracle database URL", () => {
+    const env = serveEnvironment({
+      GEMINI_API_KEY: "k",
+      HF_TOKEN: "t",
+      GOOGLE_VERTEX_ACCESS_TOKEN: "v",
+      OPENNEKO_EVAL_ADVENTUREWORKS_DATABASE_URL: "postgres://reader@db/aw",
+      OPENNEKO_DATABASE_URL: "postgres://neko@db/neko",
+      PATH: "/bin",
+    });
+    expect(env).toEqual({ OPENNEKO_DATABASE_URL: "postgres://neko@db/neko", PATH: "/bin" });
   });
 
   it("signs a session cookie the way web checks it", () => {

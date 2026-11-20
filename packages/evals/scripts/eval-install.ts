@@ -96,6 +96,14 @@ function databaseEnv(login: EvalDatabaseLogin, database: string): Record<string,
   };
 }
 
+export function serveEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const serveEnv = { ...env };
+  for (const name of Object.keys(serveEnv)) {
+    if (/_API_KEY$|^HF_TOKEN$|VERTEX_ACCESS_TOKEN$|^OPENNEKO_EVAL_ADVENTUREWORKS_DATABASE_URL$/.test(name)) delete serveEnv[name];
+  }
+  return serveEnv;
+}
+
 export function episodeDatabaseName(label: string): string {
   const safe = label.toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 24);
   return `${EVAL_EPISODE_DATABASE_PREFIX}${safe}_${randomBytes(4).toString("hex")}`;
@@ -570,10 +578,7 @@ export class EvalEpisode {
     const env = { ...process.env, ...this.env(), ...options.env };
     delete env.OPENNEKO_EVAL_TRACE_FILE;
 
-    const serveEnv = { ...env };
-    for (const name of Object.keys(serveEnv)) {
-      if (/_API_KEY$|^HF_TOKEN$|VERTEX_ACCESS_TOKEN$/.test(name)) delete serveEnv[name];
-    }
+    const serveEnv = serveEnvironment(env);
     this.serve = this.spawn("serve.log", [
       "serve",
       "--addr", `127.0.0.1:${servePort}`,
