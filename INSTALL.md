@@ -391,7 +391,8 @@ running web. `openneko release-check
 `remote`. It fails when the sandbox socket is in the folder of serve's
 sockets, or when nothing answers on it. With a sandbox set, it also prints
 `sandbox_egress=closed`, `open` or `unknown`. `closed` means the sandbox's
-network has no route out. For `open` or `unknown` it fails, and the Sandbox
+firewall is in place, its network has no route out, and its last probe as
+a run user reached nothing. For `open` or `unknown` it fails, and the Sandbox
 card on the status page shows as failing. Run the sandbox from
 `recipes/sandbox` on its internal network (see [Sandbox](#sandbox-optional)).
 With `OPENNEKO_SANDBOX_EGRESS_BY_OPERATOR=1` it also prints
@@ -539,8 +540,9 @@ Run the sandbox in the same file with the `openneko-sandbox` service of
 `recipes/sandbox/compose.yml`: it mounts `openneko-sandbox-socket` at
 `/run/openneko-sandbox` and gives its socket to group 1001. Keep its
 `openneko-sandbox` network with `internal: true`: that network has no route
-out and no DNS for external names, so the agent's commands reach nothing
-outside it. Run the `openneko-egress` service of the same file beside it.
+out and no DNS for external names. The sandbox also sets its own firewall
+at start, so the agent's commands reach only the egress proxy, also when
+the network has a route out. Run the `openneko-egress` service of the same file beside it.
 It is the only way out: it joins the sandbox network and the
 `openneko-egress` network, and lets a run reach only the hosts on its
 organization's list. With an
@@ -592,7 +594,9 @@ and the result.
 An install that runs the sandbox recipe from before 6.0.0 has a sandbox
 network with a route out. To close it, take the new recipe and run the
 compose command with `up -d --build`. Compose makes the network again with
-`internal: true` and starts `openneko-egress`. Then run `openneko
+`internal: true`, gives the sandbox `NET_ADMIN` and `SETPCAP` for its
+firewall, and starts `openneko-egress`. An override that sets its own
+`cap_add` for the sandbox must add both, or the sandbox does not start. Then run `openneko
 release-check --sandbox`: it must print `sandbox_egress=closed`. Commands
 reach no host until an admin lists one. The steps for a native install are
 in `recipes/sandbox/README.md`, "Upgrade an install that runs an earlier

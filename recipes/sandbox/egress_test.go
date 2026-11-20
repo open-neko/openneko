@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 )
 
 const routeHeader = "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n"
@@ -49,32 +52,89 @@ func TestEgressStateReadsTheDefaultRoute(t *testing.T) {
 	}
 }
 
-func TestSandboxCheckReportsEgress(t *testing.T) {
+func askEgress(t *testing.T, server *Server) string {
+	t.Helper()
 	root := t.TempDir()
-	for _, c := range []struct{ v4, want string }{
-		{"eth0\t000012AC\t00000000\t0001\t0\t0\t0\t0000FFFF\t0\t0\t0\n", "closed"},
-		{"eth0\t00000000\t010012AC\t0003\t0\t0\t0\t00000000\t0\t0\t0\n", "open"},
-	} {
-		server := &Server{Workspaces: filepath.Join(root, "runs"), Homes: filepath.Join(root, "homes"), Key: "k", ProcNet: writeRoutes(t, c.v4, "-")}
-		listener, err := server.listen("127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		ctx, cancel := context.WithCancel(context.Background())
-		done := make(chan error, 1)
-		go func() { done <- server.Serve(ctx, listener) }()
-		client := &testClient{http: http.DefaultClient, base: "http://" + listener.Addr().String(), key: "k"}
-		resp, err := client.do(ctx, http.MethodGet, "/v2/check", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var body struct{ Status, Egress string }
-		err = json.NewDecoder(resp.Body).Decode(&body)
-		resp.Body.Close()
+	server.Workspaces, server.Homes, server.Key = filepath.Join(root, "runs"), filepath.Join(root, "homes"), "k"
+	listener, err := server.listen("127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(ctx, listener) }()
+	defer func() {
 		cancel()
 		<-done
-		if err != nil || body.Status != "ok" || body.Egress != c.want {
-			t.Fatalf("check = %+v, %v; want egress %q", body, err, c.want)
+	}()
+	client := &testClient{http: http.DefaultClient, base: "http://" + listener.Addr().String(), key: "k"}
+	var resp *http.Response
+	for i := 0; i < 200; i++ {
+		if resp, err = client.do(ctx, http.MethodGet, "/v2/check", nil); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body struct{ Status, Egress string }
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil || body.Status != "ok" {
+		t.Fatalf("check = %+v, %v", body, err)
+	}
+	return body.Egress
+}
+
+func TestSandboxCheckReportsEgress(t *testing.T) {
+	onLink := "eth0\t000012AC\t00000000\t0001\t0\t0\t0\t0000FFFF\t0\t0\t0\n"
+	defaultV4 := "eth0\t00000000\t010012AC\t0003\t0\t0\t0\t00000000\t0\t0\t0\n"
+	quiet := func(context.Context) ([]string, error) { return []string{}, nil }
+	through := func(context.Context) ([]string, error) { return []string{"reached 1.1.1.1:443"}, nil }
+	broken := func(context.Context) ([]string, error) { return nil, errors.New("the probe could not start") }
+	cases := []struct {
+		name     string
+		routes   string
+		confined bool
+		probe    func(context.Context) ([]string, error)
+		want     string
+	}{
+		{"firewall, no route, quiet probe", onLink, true, quiet, "closed"},
+		{"firewall, no route, no probe", onLink, true, nil, "closed"},
+		{"no firewall", onLink, false, quiet, "open"},
+		{"default route", onLink + defaultV4, true, quiet, "open"},
+		{"a probe got through", onLink, true, through, "open"},
+		{"the probe did not run", onLink, true, broken, "open"},
+	}
+	for _, c := range cases {
+		server := &Server{ProcNet: writeRoutes(t, c.routes, "-"), Confined: c.confined, Probe: c.probe}
+		if got := askEgress(t, server); got != c.want {
+			t.Errorf("%s: egress = %q, want %q", c.name, got, c.want)
 		}
 	}
+}
+
+func TestProbeOnATimerOpensAndClosesTheEgress(t *testing.T) {
+	var mu sync.Mutex
+	reached := []string{}
+	server := &Server{ProcNet: writeRoutes(t, "eth0\t000012AC\t00000000\t0001\t0\t0\t0\t0000FFFF\t0\t0\t0\n", "-"), Confined: true, ProbeEvery: 20 * time.Millisecond,
+		Probe: func(context.Context) ([]string, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			return reached, nil
+		}}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	server.watchEgress(ctx, server.ProbeEvery)
+	if got := server.egress(); got != "closed" {
+		t.Fatalf("start: egress = %q, want closed", got)
+	}
+	mu.Lock()
+	reached = []string{"resolved example.com"}
+	mu.Unlock()
+	waitFor(t, func() bool { return server.egress() == "open" })
+	mu.Lock()
+	reached = nil
+	mu.Unlock()
+	waitFor(t, func() bool { return server.egress() == "closed" })
 }

@@ -16,7 +16,7 @@ RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\n' > /etc/apt/ap
       'path-exclude=/usr/share/fonts/truetype/droid/*' > /etc/dpkg/dpkg.cfg.d/90-fonts \
     && apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates git jq ripgrep file python3 python3-pip poppler-utils \
-      tesseract-ocr fonts-dejavu-core fonts-droid-fallback \
+      tesseract-ocr fonts-dejavu-core fonts-droid-fallback nftables \
     && rm -rf /var/lib/apt/lists/* \
     && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2 \
     && pip3 install --no-cache-dir --break-system-packages \
@@ -26,6 +26,7 @@ RUN cd /opt/openneko/skills && npm ci --omit=dev --omit=optional --ignore-script
     && npm cache clean --force
 ENV NODE_PATH=/opt/openneko/skills/node_modules
 COPY --from=build /out/openneko-sandbox /usr/local/bin/openneko-sandbox
-# Root only to give each run its own user; compose drops every other capability.
+# Root only to give each run its own user and to set the runs' firewall at
+# start; compose drops every other capability.
 USER 0:0
 ENTRYPOINT ["/usr/local/bin/openneko-sandbox"]

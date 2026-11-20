@@ -36,6 +36,9 @@ services:
       - KILL
       - SETGID
       - SETUID
+      # Only while the sandbox sets its firewall at start; it then drops both.
+      - NET_ADMIN
+      - SETPCAP
     security_opt:
       - no-new-privileges:true
     pids_limit: 1024

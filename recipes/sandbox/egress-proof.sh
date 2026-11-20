@@ -6,13 +6,14 @@
 set -euo pipefail
 
 image="${1:?give the sandbox image, for example openneko-sandbox:local}"
+suffix="${OPENNEKO_EGRESS_PROOF_SUFFIX:-e}"
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
 
-(cd "$here" && OPENNEKO_EGRESS_PROOF_IMAGE="$image" go test -count=1 -run TestEgressProof -v -timeout 20m .)
+(cd "$here" && OPENNEKO_EGRESS_PROOF_IMAGE="$image" OPENNEKO_EGRESS_PROOF_REQUIRED=1 go test -count=1 -run TestEgressProof -v -timeout 20m .)
 
 work="$(mktemp -d)"
-project=openneko-egress-data-e
+project=openneko-egress-data-${suffix}
 compose() {
   OPENNEKO_SANDBOX_DIR="$work/socket" OPENNEKO_SANDBOX_GID="$(id -g)" OPENNEKO_SANDBOX_KEY="$key" \
     docker compose -p "$project" -f "$here/compose.native.yml" -f "$work/proof.yml" "$@"
@@ -25,24 +26,24 @@ services:
     image: $image
     build: !reset null
     pull_policy: never
-    container_name: openneko-sandbox-data-e
+    container_name: openneko-sandbox-data-${suffix}
   openneko-egress:
     image: $image
     build: !reset null
     pull_policy: never
-    container_name: openneko-egress-data-e
+    container_name: openneko-egress-data-${suffix}
 networks:
   openneko-sandbox:
-    name: openneko-sandbox-data-e
+    name: openneko-sandbox-data-${suffix}
   openneko-egress:
-    name: openneko-egress-data-e
+    name: openneko-egress-data-${suffix}
 volumes:
   openneko-sandbox-runs:
-    name: openneko-sandbox-runs-data-e
+    name: openneko-sandbox-runs-data-${suffix}
   openneko-sandbox-homes:
-    name: openneko-sandbox-homes-data-e
+    name: openneko-sandbox-homes-data-${suffix}
   openneko-egress-control:
-    name: openneko-egress-control-data-e
+    name: openneko-egress-control-data-${suffix}
 YAML
 trap 'compose down -v -t 1 >/dev/null 2>&1 || true; rm -rf "$work"' EXIT
 compose up -d --no-build --wait --wait-timeout 60
