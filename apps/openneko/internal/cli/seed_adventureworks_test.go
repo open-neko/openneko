@@ -245,11 +245,11 @@ func TestRunAdventureWorksOrgSeed(t *testing.T) {
 	}
 
 	var wfCount, subCount, policyCount int
-	if err := check.QueryRow(ctx, "select count(*) from workflow_definition where org_id = $1", orgID).Scan(&wfCount); err != nil {
+	if err := check.QueryRow(ctx, "select count(*) from workflow_definition where org_id = $1 and owner_user_id = '' and team_approved_by = 'openneko seed'", orgID).Scan(&wfCount); err != nil {
 		t.Fatal(err)
 	}
 	if wfCount != 4 {
-		t.Fatalf("workflow count = %d, want 4", wfCount)
+		t.Fatalf("team workflow count = %d, want 4", wfCount)
 	}
 	if err := check.QueryRow(ctx, "select count(*) from subscription where org_id = $1", orgID).Scan(&subCount); err != nil {
 		t.Fatal(err)
