@@ -482,13 +482,24 @@ func majorOf(v string) string {
 func postgresTool(ctx context.Context, tool, serverVersion string) (string, error) {
 	raw, err := exec.CommandContext(ctx, tool, "--version").Output()
 	if err != nil {
-		return "", fmt.Errorf("%s was not found; install the PostgreSQL %s client tools so that backup and restore work", tool, majorOf(serverVersion))
+		return "", postgresToolMissing(runtime.GOOS, tool, majorOf(serverVersion))
 	}
 	toolVersion := toolVersionOf(string(raw))
 	if serverVersion != "" && olderVersion(majorOf(toolVersion), majorOf(serverVersion)) {
 		return toolVersion, fmt.Errorf("%s %s is older than the database server (%s); install the PostgreSQL %s client tools", tool, toolVersion, serverVersion, majorOf(serverVersion))
 	}
 	return toolVersion, nil
+}
+
+func postgresToolMissing(goos, tool, major string) error {
+	err := fmt.Errorf("%s was not found; install the PostgreSQL %s client tools so that backup and restore work", tool, major)
+	if goos != "windows" {
+		return err
+	}
+	if major == "" {
+		major = "<version>"
+	}
+	return fmt.Errorf("%w; the PostgreSQL installer puts them in C:\\Program Files\\PostgreSQL\\%s\\bin and does not add that folder to PATH, so add it to your user PATH and open a new terminal", err, major)
 }
 
 func postgresToolLine(ctx context.Context, tool, serverVersion string) (string, bool) {
@@ -501,7 +512,7 @@ func postgresToolLine(ctx context.Context, tool, serverVersion string) (string, 
 
 func runNativeDoctor(ctx context.Context, out io.Writer) error {
 	failed := false
-	h := host.Platform()
+	h := host.Native()
 	if h.Supported {
 		fmt.Fprintf(out, "host: %s (supported)\n", h.Triple)
 	} else {

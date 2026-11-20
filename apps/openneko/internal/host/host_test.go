@@ -54,3 +54,19 @@ func TestWindows(t *testing.T) {
 		t.Fatal("windows should not be supported")
 	}
 }
+
+func TestNativeRelease(t *testing.T) {
+	for _, goos := range []string{"linux", "darwin", "windows"} {
+		for _, goarch := range []string{"amd64", "arm64"} {
+			if r := nativeCheck(goos, goarch); !r.Supported || r.Triple != goos+"-"+goarch {
+				t.Errorf("%s/%s: %+v", goos, goarch, r)
+			}
+		}
+		if r := nativeCheck(goos, "386"); r.Supported || r.Reason == "" {
+			t.Errorf("%s/386: %+v", goos, r)
+		}
+	}
+	if r := nativeCheck("freebsd", "amd64"); r.Supported || r.Reason == "" {
+		t.Errorf("freebsd: %+v", r)
+	}
+}
