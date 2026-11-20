@@ -95,8 +95,17 @@ var (
 
 // startRecipeSandbox runs the sandbox recipe as this user, on a Unix socket
 // or, with a key, on TCP.
+// startRecipeSandbox runs the recipe's sandbox program. With
+// OPENNEKO_TEST_SANDBOX_URL set, the tests use that sandbox instead.
 func startRecipeSandbox(t *testing.T, tcp bool) sandbox.Config {
 	t.Helper()
+	if url := os.Getenv("OPENNEKO_TEST_SANDBOX_URL"); url != "" {
+		cfg := sandbox.Config{URL: url, Key: os.Getenv("OPENNEKO_TEST_SANDBOX_KEY")}
+		if err := sandbox.Probe(context.Background(), cfg); err != nil {
+			t.Fatalf("OPENNEKO_TEST_SANDBOX_URL: %v", err)
+		}
+		return cfg
+	}
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 is not installed")
 	}
@@ -263,7 +272,8 @@ func TestScriptDataSandboxHoldsNoSecret(t *testing.T) {
 		t.Fatalf("sandbox output: %d %s", code, out)
 	}
 	allowed := map[string]bool{"PATH": true, "HOME": true, "TMPDIR": true, "LANG": true, "NODE_PATH": true, "SKILL_DIR": true,
-		"RUN_DIR": true, "ARTIFACT_DIR": true, "PYTHONPATH": true, "PWD": true, "SHLVL": true, "_": true, "OLDPWD": true}
+		"RUN_DIR": true, "ARTIFACT_DIR": true, "PYTHONPATH": true, "PWD": true, "SHLVL": true, "_": true, "OLDPWD": true,
+		"HTTP_PROXY": true, "HTTPS_PROXY": true, "http_proxy": true, "https_proxy": true, "NODE_USE_ENV_PROXY": true}
 	envPart, _, _ := strings.Cut(out, "FILES\n")
 	for _, line := range strings.Split(strings.TrimSpace(envPart), "\n") {
 		name, _, _ := strings.Cut(line, "=")
