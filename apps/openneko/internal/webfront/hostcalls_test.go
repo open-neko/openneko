@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -230,12 +231,14 @@ func TestAdminServicesChecks(t *testing.T) {
 	f, db, g := hostFront(t)
 	seedPrimary(t, db, "openai-compatible", "qwen3", `{"url":"https://models.example.test/v1"}`, `{"apiKey":"`+plantedProviderKey+`"}`)
 
+	var sandboxCheck atomic.Value
+	sandboxCheck.Store(`{"status":"ok","egress":"closed"}`)
 	sandboxSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v2/check" || r.Header.Get("Authorization") != "Bearer sandbox-key-1" {
 			w.WriteHeader(401)
 			return
 		}
-		w.WriteHeader(200)
+		_, _ = w.Write([]byte(sandboxCheck.Load().(string)))
 	}))
 	t.Cleanup(sandboxSrv.Close)
 	serveSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -258,7 +261,7 @@ func TestAdminServicesChecks(t *testing.T) {
 	want := map[string][3]string{
 		"inference":  {"ok", "openai-compatible · qwen3 · https://models.example.test", "The default model answered a test prompt."},
 		"embedding":  {"ok", "https://embed.example.test · embeddinggemma", "The service returned a vector of 4 numbers."},
-		"sandbox":    {"ok", serviceWhere(sandboxSrv.URL), "The sandbox accepted the key."},
+		"sandbox":    {"ok", serviceWhere(sandboxSrv.URL), "The sandbox accepted the key. Its network has no route out."},
 		"file-store": {"ok", "s3://bucket", "Files are in the bucket."},
 	}
 	for id, w := range want {
@@ -289,6 +292,18 @@ func TestAdminServicesChecks(t *testing.T) {
 	}
 	if s := got["sandbox"]; s["state"] != "failing" || s["detail"] != "the sandbox refused the key" {
 		t.Errorf("sandbox failing: %v", s)
+	}
+
+	t.Setenv("OPENNEKO_SANDBOX_KEY", "sandbox-key-1")
+	for body, want := range map[string]string{
+		`{"status":"ok","egress":"open"}`: "its network has a route out",
+		`{"status":"ok"}`:                 "does not report whether its network has a route out",
+	} {
+		sandboxCheck.Store(body)
+		got = servicesByID(t, f, "?refresh=1")
+		if s := got["sandbox"]; s["state"] != "failing" || !strings.Contains(s["detail"].(string), want) {
+			t.Errorf("sandbox egress %s: %v", body, s)
+		}
 	}
 }
 

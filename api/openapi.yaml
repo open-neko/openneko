@@ -7968,6 +7968,10 @@ paths:
                     type: boolean
                   defaults:
                     type: object
+                  egressSuggestions:
+                    type: array
+                    items:
+                      type: string
         '401':
           description: The session or device token is not valid
           content:
@@ -8011,6 +8015,11 @@ paths:
                   - low
                   - medium
                   - high
+                egressHosts:
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: string
       responses:
         '200':
           description: Saved agent settings
@@ -8024,6 +8033,7 @@ paths:
                 - globalCap
                 - terminal
                 - responderEffort
+                - egressHosts
                 additionalProperties: false
                 properties:
                   source:
@@ -8040,6 +8050,10 @@ paths:
                     - low
                     - medium
                     - high
+                  egressHosts:
+                    type: array
+                    items:
+                      type: string
         '400':
           description: Invalid or unsupported setting
           content:

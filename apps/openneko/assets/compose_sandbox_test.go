@@ -70,6 +70,7 @@ func TestSandboxOverlaySharesOnlyItsSocketVolume(t *testing.T) {
 		t.Fatalf("the sandbox listens on no Unix socket: %v", box.Command)
 	}
 	socketDir := path.Dir(listen)
+	controlDir := path.Dir(strings.TrimPrefix(box.Environment["OPENNEKO_SANDBOX_EGRESS_CONTROL"], "unix://"))
 	socketVolume := ""
 	for _, mount := range box.Volumes {
 		source, target, named := namedVolume(mount)
@@ -82,7 +83,7 @@ func TestSandboxOverlaySharesOnlyItsSocketVolume(t *testing.T) {
 			continue
 		}
 		for name, svc := range services {
-			if name == "openneko-sandbox" {
+			if name == "openneko-sandbox" || name == "openneko-egress" && target == controlDir {
 				continue
 			}
 			for _, other := range svc.Volumes {
@@ -94,6 +95,18 @@ func TestSandboxOverlaySharesOnlyItsSocketVolume(t *testing.T) {
 	}
 	if socketVolume == "" {
 		t.Fatalf("no sandbox volume holds the socket folder %s", socketDir)
+	}
+	proxy, ok := services["openneko-egress"]
+	if !ok || box.Environment["OPENNEKO_SANDBOX_EGRESS_PROXY"] != "openneko-egress:3128" {
+		t.Fatalf("the sandbox sends its runs to no egress proxy: %v", box.Environment)
+	}
+	if !slices.Contains(proxy.Command, box.Environment["OPENNEKO_SANDBOX_EGRESS_CONTROL"]) {
+		t.Errorf("the proxy asks another control socket than the sandbox opens: %v", proxy.Command)
+	}
+	for _, mount := range proxy.Volumes {
+		if _, target, named := namedVolume(mount); !named || target != controlDir {
+			t.Errorf("the egress proxy mounts more than the control folder: %s", mount)
+		}
 	}
 	gid := box.Environment["OPENNEKO_SANDBOX_GID"]
 	for _, name := range []string{"web", "openneko-serve"} {
@@ -120,6 +133,83 @@ func TestSandboxOverlaySharesOnlyItsSocketVolume(t *testing.T) {
 		for _, mount := range svc.Volumes {
 			if _, target, named := namedVolume(mount); named && target == socketDir && !strings.HasPrefix(mount, socketVolume+":") {
 				t.Errorf("%s mounts another volume at the sandbox socket folder: %s", name, mount)
+			}
+		}
+	}
+}
+
+func TestSandboxNetworkHasNoRouteOut(t *testing.T) {
+	type service struct {
+		Networks    yaml.Node `yaml:"networks"`
+		NetworkMode string    `yaml:"network_mode"`
+	}
+	type network struct {
+		Internal bool   `yaml:"internal"`
+		Driver   string `yaml:"driver"`
+	}
+	for _, set := range [][]string{
+		{"compose.yml", "compose.db.yml", "recipes/sandbox/compose.yml"},
+		{"recipes/sandbox/compose.native.yml"},
+	} {
+		joins := map[string][]string{}
+		networks := map[string]network{}
+		modes := map[string]string{}
+		for _, file := range set {
+			var doc struct {
+				Services map[string]service `yaml:"services"`
+				Networks map[string]network `yaml:"networks"`
+			}
+			if err := yaml.Unmarshal(readRootCompose(t, file), &doc); err != nil {
+				t.Fatalf("%s: %v", file, err)
+			}
+			for name, svc := range doc.Services {
+				if svc.NetworkMode != "" {
+					modes[name] = svc.NetworkMode
+				}
+				switch svc.Networks.Kind {
+				case yaml.SequenceNode:
+					for _, n := range svc.Networks.Content {
+						joins[name] = append(joins[name], n.Value)
+					}
+				case yaml.MappingNode:
+					for i := 0; i < len(svc.Networks.Content); i += 2 {
+						joins[name] = append(joins[name], svc.Networks.Content[i].Value)
+					}
+				}
+			}
+			for name, n := range doc.Networks {
+				networks[name] = n
+			}
+		}
+		if mode, ok := modes["openneko-sandbox"]; ok {
+			t.Errorf("%v: the sandbox sets network_mode %q", set, mode)
+		}
+		own := joins["openneko-sandbox"]
+		if len(own) == 0 {
+			t.Errorf("%v: the sandbox names no network, so it joins the default network with a route out", set)
+		}
+		for _, name := range own {
+			if n := networks[name]; !n.Internal || (n.Driver != "" && n.Driver != "bridge") {
+				t.Errorf("%v: the sandbox joins network %s, which is not internal: %+v", set, name, n)
+			}
+			for other, list := range joins {
+				if other != "openneko-sandbox" && other != "openneko-egress" && slices.Contains(list, name) {
+					t.Errorf("%v: %s joins the sandbox network %s", set, other, name)
+				}
+			}
+		}
+		var out []string
+		for _, name := range joins["openneko-egress"] {
+			if !slices.Contains(own, name) {
+				out = append(out, name)
+			}
+		}
+		if len(out) != 1 || networks[out[0]].Internal {
+			t.Errorf("%v: the egress proxy must join the sandbox network and one network with a route out, got %v", set, joins["openneko-egress"])
+		}
+		for other, list := range joins {
+			if len(out) == 1 && other != "openneko-egress" && slices.Contains(list, out[0]) {
+				t.Errorf("%v: %s joins the proxy's outbound network %s", set, other, out[0])
 			}
 		}
 	}

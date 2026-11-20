@@ -318,3 +318,25 @@ func TestConfigSharesFolder(t *testing.T) {
 		}
 	}
 }
+
+func TestProbeEgressReadsTheSandboxCheck(t *testing.T) {
+	for body, want := range map[string]string{
+		`{"status":"ok","egress":"closed"}`: "closed",
+		`{"status":"ok","egress":"open"}`:   "open",
+		`{"status":"ok"}`:                   "unknown",
+		`{"status":"ok","egress":"maybe"}`:  "unknown",
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/v2/check" || r.Header.Get("Authorization") != "Bearer k" {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			_, _ = io.WriteString(w, body)
+		}))
+		got, err := ProbeEgress(context.Background(), Config{URL: server.URL, Key: "k"})
+		server.Close()
+		if err != nil || got != want {
+			t.Fatalf("%s: egress = %q, %v; want %q", body, got, err, want)
+		}
+	}
+}

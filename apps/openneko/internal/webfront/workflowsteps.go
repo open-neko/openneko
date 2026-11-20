@@ -40,6 +40,7 @@ type scriptStepsInput struct {
 	Input     any
 	Allowed   []string
 	Sandbox   *sandbox.Config
+	Egress    sandbox.Egress
 	Data      sandbox.DataBroker
 	Emit      func(ctx context.Context, event any) error
 	now       func() time.Time
@@ -54,7 +55,8 @@ func runScriptSteps(ctx context.Context, in scriptStepsInput) ([]scriptStepResul
 	if in.Sandbox != nil {
 		if client, clientErr = sandbox.NewClient(*in.Sandbox, in.Workspace.OrgRoot); clientErr == nil {
 			defer client.Close()
-			if in.Data != nil {
+			clientErr = client.SetEgress(in.Egress)
+			if clientErr == nil && in.Data != nil {
 				if err := installDataClient(in.Workspace.BinRoot); err != nil {
 					return nil, err
 				}

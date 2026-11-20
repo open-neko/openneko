@@ -389,7 +389,11 @@ fails when `openneko web` finds no built-in skill or lacks a sandbox skill
 running web. `openneko release-check
 --sandbox` prints `sandbox=off`, `ok` or
 `remote`. It fails when the sandbox socket is in the folder of serve's
-sockets, or when nothing answers on it.
+sockets, or when nothing answers on it. With a sandbox set, it also prints
+`sandbox_egress=closed`, `open` or `unknown`. `closed` means the sandbox's
+network has no route out. For `open` or `unknown` it prints a warning, and
+the Sandbox card on the status page shows as failing. Run the sandbox from
+`recipes/sandbox` on its internal network (see [Sandbox](#sandbox-optional)).
 
 To check a Docker install with a sandbox, run
 `scripts/smoke-script-step.sh <compose project> <web URL>` from a checkout.
@@ -503,7 +507,13 @@ volumes:
 
 Run the sandbox in the same file with the `openneko-sandbox` service of
 `recipes/sandbox/compose.yml`: it mounts `openneko-sandbox-socket` at
-`/run/openneko-sandbox` and gives its socket to group 1001. With an
+`/run/openneko-sandbox` and gives its socket to group 1001. Keep its
+`openneko-sandbox` network with `internal: true`: that network has no route
+out and no DNS for external names, so the agent's commands reach nothing
+outside it. Run the `openneko-egress` service of the same file beside it.
+It is the only way out: it joins the sandbox network and the
+`openneko-egress` network, and lets a run reach only the hosts on its
+organization's list. With an
 `https://` URL, leave out the `volumes` and `group_add` lines.
 
 Without a URL the agent has no terminal, the script skills are hidden from
@@ -536,6 +546,18 @@ Admin, Settings, Agent. It is on by default. An admin who turns it off
 takes the terminal, the script skills and workflow script steps away from
 that organization's runs, from the next run. Without a sandbox URL the
 setting shows as unavailable.
+
+Beside it, **Hosts the terminal may reach** lists the hosts that commands
+may reach through the egress proxy. The list is empty by default, so
+commands reach no host. Write one host per line: `pypi.org` is port 443,
+`files.example.com:8443` names another port, and `*.example.com` matches
+each subdomain of `example.com`. The proxy refuses a name that resolves to
+a loopback, private, link-local or metadata address. The form offers the
+hosts that installed packs name; an admin adds each one. Each change of the
+list or of the Terminal setting goes in the audit chain
+(`agent:egress_changed`, `agent:terminal_changed`). The proxy writes one
+line per connection to its log, with the run, the organization, the host
+and the result.
 
 This release replaces the bundled `xlsx`, `docx`, `pptx` and `pdf` skills
 with new ones. It removes the bundled `document-extraction`,
@@ -1023,10 +1045,12 @@ and `OPENNEKO_SANDBOX_URL` and `OPENNEKO_SANDBOX_KEY`, in the shell before
 
 `openneko start --native` makes the sandbox socket folder
 `~/.local/share/openneko-sandbox`, mode 0700. Keep the sandbox out of
-`~/.local/share/openneko/run`, which holds serve's sockets. Run the sandbox
-image with `-v ~/.local/share/openneko-sandbox:/run/openneko-sandbox`,
-`OPENNEKO_SANDBOX_GID` set to your group (`id -g`) and a key in
-`OPENNEKO_SANDBOX_KEY`. Then set
+`~/.local/share/openneko/run`, which holds serve's sockets. Start the sandbox
+with `recipes/sandbox/compose.native.yml`. It runs the sandbox on a network
+with no route out. Set `OPENNEKO_SANDBOX_DIR=$HOME/.local/share/openneko-sandbox`,
+`OPENNEKO_SANDBOX_GID` to your group (`id -g`) and a key in
+`OPENNEKO_SANDBOX_KEY`, then run
+`docker compose -f recipes/sandbox/compose.native.yml up -d`. Then set
 `OPENNEKO_SANDBOX_URL=unix://$HOME/.local/share/openneko-sandbox/sandbox.sock`
 and the same key. Other users can share your primary group, so the start
 refuses a sandbox URL with no key, and a socket folder that other users can
@@ -1077,8 +1101,9 @@ files as root.
   owner root, group `openneko-shared`, mode 0750 (with `--one-user`, owner
   and group `openneko`, mode 0700). It writes
   `/etc/tmpfiles.d/openneko-sandbox.conf`, so systemd makes the folder again
-  at each boot. Mount that folder in the sandbox and start it with
-  `OPENNEKO_SANDBOX_GID` set to the group ID of `openneko-shared` (with
+  at each boot. Start the sandbox with
+  `recipes/sandbox/compose.native.yml`, `OPENNEKO_SANDBOX_DIR=/run/openneko-sandbox`
+  and `OPENNEKO_SANDBOX_GID` set to the group ID of `openneko-shared` (with
   `--one-user`, of `openneko`), so that both services can connect. The
   folder stays apart from `/var/lib/openneko/shared/run`, which holds
   serve's sockets. An install from an earlier release gets the folder when
