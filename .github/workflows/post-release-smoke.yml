@@ -116,6 +116,7 @@ jobs:
               apps/openneko/assets/compose/bundled-db.yml \
               recipes/sandbox/compose.yml \
             | sed -e "s/\${OPENNEKO_VERSION:-latest}/${tag}/" \
+                  -e "s/\${OPENNEKO_VERSION:?[^}]*}/${tag}/" \
                   -e 's/\${[A-Za-z_][A-Za-z_0-9]*:-\([^}]*\)}/\1/g' \
             | sort -u
           )
@@ -178,10 +179,9 @@ jobs:
           echo "::add-mask::$key"
           echo "OPENNEKO_SANDBOX_KEY=$key" >> "$GITHUB_ENV"
           mkdir -p ~/.config/openneko
-          sed -e '/^    build:$/d' -e '/^      context: recipes\/sandbox$/d' \
-            recipes/sandbox/compose.yml > ~/.config/openneko/compose.override.yml
+          cat recipes/sandbox/compose.yml > ~/.config/openneko/compose.override.yml
           # shellcheck disable=SC2016
-          grep -qF 'image: ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION:-latest}' ~/.config/openneko/compose.override.yml
+          grep -qF 'image: ${OPENNEKO_SANDBOX_IMAGE:-ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION:?' ~/.config/openneko/compose.override.yml
           if grep -q 'build:' ~/.config/openneko/compose.override.yml; then
             echo "the sandbox override still builds from source" >&2
             exit 1

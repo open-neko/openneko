@@ -12,9 +12,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const sandboxImageRef = "ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION:-latest}"
+const sandboxImageRef = "${OPENNEKO_SANDBOX_IMAGE:-ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION:?set OPENNEKO_VERSION to the release tag, for example v6.0.0}}"
 
-var publishedImage = regexp.MustCompile(`ghcr\.io/open-neko/([a-z0-9-]+):\$\{OPENNEKO_VERSION:-latest\}`)
+var publishedImage = regexp.MustCompile(`ghcr\.io/open-neko/([a-z0-9-]+):\$\{OPENNEKO_VERSION:(?:-latest|\?[^}]*)\}`)
 
 func TestReleasePublishesEveryImageThatAnInstallNames(t *testing.T) {
 	root := repoRootForTest(t)
@@ -101,34 +101,29 @@ func TestReleasePublishesEveryImageThatAnInstallNames(t *testing.T) {
 	}
 }
 
-func TestSandboxRecipeNamesThePublishedImageAndKeepsItsBuild(t *testing.T) {
+func TestSandboxRecipePinsTheReleaseImage(t *testing.T) {
 	root := repoRootForTest(t)
-	for file, context := range map[string]string{
-		"recipes/sandbox/compose.yml":        "recipes/sandbox",
-		"recipes/sandbox/compose.native.yml": ".",
-	} {
+	for _, file := range []string{"recipes/sandbox/compose.yml", "recipes/sandbox/compose.native.yml"} {
 		raw, err := os.ReadFile(filepath.Join(root, file))
 		if err != nil {
 			t.Fatal(err)
 		}
 		var doc struct {
-			Services map[string]struct {
-				Image string `yaml:"image"`
-				Build struct {
-					Context string `yaml:"context"`
-				} `yaml:"build"`
-			} `yaml:"services"`
+			Services map[string]map[string]yaml.Node `yaml:"services"`
 		}
 		if err := yaml.Unmarshal(raw, &doc); err != nil {
 			t.Fatal(err)
 		}
 		for _, svc := range []string{"openneko-sandbox", "openneko-egress"} {
 			got := doc.Services[svc]
-			if got.Image != sandboxImageRef {
-				t.Errorf("%s %s image = %q, want %q", file, svc, got.Image, sandboxImageRef)
+			if image := got["image"]; image.Value != sandboxImageRef {
+				t.Errorf("%s %s image = %q, want %q", file, svc, image.Value, sandboxImageRef)
 			}
-			if got.Build.Context != context {
-				t.Errorf("%s %s build context = %q, want %q, so that a source build stays possible", file, svc, got.Build.Context, context)
+			if _, builds := got["build"]; builds {
+				t.Errorf("%s %s has a build: line; a source build is the explicit OPENNEKO_SANDBOX_IMAGE choice", file, svc)
+			}
+			if policy, set := got["pull_policy"]; set && policy.Value != "missing" {
+				t.Errorf("%s %s pull_policy = %q", file, svc, policy.Value)
 			}
 		}
 	}

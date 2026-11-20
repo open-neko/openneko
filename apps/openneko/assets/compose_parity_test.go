@@ -267,8 +267,8 @@ func TestPostReleaseSmokeGatesRetainedDemoUpgrades(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(recipe), "\n    build:\n      context: recipes/sandbox\n") {
-		t.Fatal("the sandbox recipe lost the build lines that post-release smoke removes")
+	if strings.Contains(string(recipe), "build:") {
+		t.Fatal("the sandbox recipe builds from source; post-release smoke must run the published image")
 	}
 	if info, err := os.Stat(filepath.Join(repoRootForTest(t), "scripts", "smoke-script-step.sh")); err != nil || info.Mode()&0o111 == 0 {
 		t.Fatalf("scripts/smoke-script-step.sh is missing or not executable: %v", err)

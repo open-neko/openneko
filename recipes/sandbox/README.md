@@ -10,16 +10,27 @@ secret.
 
 Each release publishes this image as `ghcr.io/open-neko/neko-sandbox`, for
 amd64 and arm64, with the release's tag. Both compose files name it with
-`${OPENNEKO_VERSION:-latest}`, the same as the other OpenNeko images, and
-keep their `build:` lines. `docker compose pull` takes the published image.
-`docker compose build`, or `up` with `--build`, builds it from this folder
-instead. When the image is not on the host, `up` builds it.
+`${OPENNEKO_VERSION}` and have no `build:` line. Set `OPENNEKO_VERSION` to
+the release tag, for example `v6.0.0`; without it, Compose stops.
+`openneko start` and `openneko upgrade` set it.
 
 ```sh
+export OPENNEKO_VERSION=v6.0.0
 docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml --profile steps build
 docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml run --rm openneko-serve-init
 docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml up -d
 ```
+
+To run a source build of the sandbox, build the image and name it in
+`OPENNEKO_SANDBOX_IMAGE`. The compose files then use that image in place of
+the published one:
+
+```sh
+docker build -t openneko-sandbox:local recipes/sandbox
+export OPENNEKO_SANDBOX_IMAGE=openneko-sandbox:local
+```
+
+Build it again after each change to this folder.
 
 The `run` line runs the start steps (storage check, migrations, config
 volume, serve credentials) before `up`.
@@ -98,8 +109,10 @@ CommonJS (`.cjs`), because `import` does not read `NODE_PATH`.
 - The service runs as root with every capability dropped except the ones it
   needs to switch users, and `NET_ADMIN` and `SETPCAP` for its firewall at
   start (see [Egress](#egress)). Each run gets its own user and group, from
-  `OPENNEKO_SANDBOX_BASE_UID` (default 20000) up to
-  `OPENNEKO_SANDBOX_USERS` (default 256) runs at once.
+  `OPENNEKO_SANDBOX_BASE_UID` (default 20000, at least 1000) up to
+  `OPENNEKO_SANDBOX_USERS` (default 256, 1 to 4096) runs at once. The
+  firewall covers the same users and the probe user after them. The
+  sandbox does not start with another value.
 - Each run gets its own folder under `OPENNEKO_SANDBOX_WORKSPACES` (default
   `/var/lib/openneko/sandbox-runs`), owned by the run's user, mode 0700. The
   runs folder is mode 0711, so a run cannot list it. The sandbox shares no
@@ -274,8 +287,8 @@ then runs, and the status page says that the operator enforces the egress.
 
 On a Docker install, `openneko upgrade` pulls the sandbox image with the
 stack when `compose.override.yml` names `ghcr.io/open-neko/neko-sandbox`,
-and removes its older tags. An override that only builds the sandbox from
-source keeps its image; run `up -d --build` after the upgrade.
+and removes its older tags. A source build in `OPENNEKO_SANDBOX_IMAGE` keeps
+its image; build it again from the new recipe.
 
 On a native install, run the compose command of
 [Run with a native install](#run-with-a-native-install) again with the new
@@ -290,8 +303,9 @@ so commands reached the internet. 6.0.0 closes that network and adds the
 egress proxy. After the upgrade, commands reach no host until an admin
 lists one.
 
-1. Take the new recipe and pull the image of the release, or build it
-   again from source with `up -d --build`:
+1. Take the new recipe, set `OPENNEKO_VERSION` to the release tag, and pull
+   the image of the release. For a source build, build it again and set
+   `OPENNEKO_SANDBOX_IMAGE` as in [Run beside the stack](#run-beside-the-stack):
 
    ```sh
    docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml pull openneko-sandbox openneko-egress
