@@ -19,6 +19,15 @@ start and print one message. To upgrade, copy each secret into the local file
 with `openneko secrets set <section> <key>`, remove the `secrets` block from
 `config.json`, then start again.
 
+## Model keys
+
+Admin, Settings, Models stores each model key in the database, encrypted
+with the same cipher. `NEKO_EMBEDDING_API_KEY` is in the environment of
+`openneko web`. Only `openneko web` reads these keys. It keeps them in its
+key door and gives `openneko serve` a token for one call in place of a key.
+The door puts the key on the call to the provider and replaces the key with
+`[redacted]` in an error text ([AGENT_RUNTIME.md](AGENT_RUNTIME.md#the-key-door)).
+
 ## Secrets in run events
 
 `openneko web` replaces each secret value with `[REDACTED]` before it stores

@@ -26,8 +26,9 @@ per-run tool bridge.
                   ▼
               openneko web ── one turn per connection ──▶ openneko serve
               (in-process MCP tool handlers;              (openneko-serve container
-               model key for this turn only)               or native serve process;
-                  ▲                                        model key only for the turn)
+               the key door holds the model keys)          or native serve process;
+                  ▲    ▲                                   a door token, no model key)
+                  │    └── model calls over the door socket ────┤
                   │ MCP tools over the serve socket             │ terminal commands
                   └─────────────────────────────────────────────┤ (only with a sandbox URL)
                                                                 ▼
@@ -46,11 +47,13 @@ workflows, metric refreshes, and setup builds in Go:
    `OPENNEKO_AGENT_RUNS_DIR` (`/var/lib/openneko/agent-runs` in the images).
    It loads only the team skills that the person's groups hold and that
    person's own skills.
-2. `openneko web` resolves the org's model route and fallback route, loads their
-   API keys for this turn, and sends the turn to `openneko serve` over the Unix
-   socket `OPENNEKO_SERVE_SOCKET` (or runs the Ax harness in-process when no
-   socket is set). Serve uses the key for the model calls of that turn and
-   keeps it nowhere else. The agent's MCP tools (GraphJin, memory, files,
+2. `openneko web` resolves the org's model route and fallback route, gives
+   their API keys to the [key door](#the-key-door) for this turn, and sends
+   the turn to `openneko serve` over the Unix socket `OPENNEKO_SERVE_SOCKET`
+   (or runs the Ax harness in-process when no socket is set). The turn
+   carries a door token and door URLs in place of the keys and the provider
+   URLs. Serve sends each model call of the turn through the door. The
+   agent's MCP tools (GraphJin, memory, files,
    skills, cards, user input, actions) go back over the same socket to
    `openneko web`'s in-process tool bridge.
 3. For a workflow with script steps, `openneko web` runs the script steps
@@ -82,14 +85,77 @@ harness.
 
 | Piece | Runs as | Holds | Network |
 |---|---|---|---|
-| `openneko web` | `neko`, 1001 (or `openneko` on a server install) | the `neko` database login, `secrets.json`, and the in-process tool handlers | the stack's network |
-| `openneko serve` | `neko`, 1001 (or `openneko-agent` on a server install) | a turn's or a host call's model key while it runs; the files service; the `neko_files_<database>` login and the derived token key; the customer GraphJin and its config | the stack's network, for the model APIs and the customer's data sources |
+| `openneko web` | `neko`, 1001 (or `openneko` on a server install) | the `neko` database login, `secrets.json`, the in-process tool handlers and the key door | the stack's network, for the model APIs |
+| `openneko serve` | `neko`, 1001 (or `openneko-agent` on a server install) | a door token for each call that runs, never a model key; the files service; the `neko_files_<database>` login and the derived token key; the customer GraphJin and its config | the stack's network, for the customer's data sources |
 | Sandbox service | root, to give each run its own user | **no secrets**; a command gets only `PATH`, `HOME`, `TMPDIR`, `LANG`, `NODE_PATH`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH` (`recipes/sandbox/sandbox.go`) | only its own internal network, with no route out; it shares one volume with web and serve, `openneko-sandbox-socket`, which holds only its socket |
 | Egress proxy | `openneko-sandbox egress`, no capabilities, read-only root | **no secrets**; it asks the sandbox for a run's list over a root-only socket | the sandbox network and a network with a route out |
 
-Model keys exist only in `openneko web` while it starts a turn or host call, and in serve while the call runs. Serve drops every
-`OPENNEKO_SANDBOX_*` value that a turn sends, and the sandbox request carries
-no model key, so the terminal cannot read one.
+Model keys stay in `openneko web`. Serve gets a door token that is valid
+for one call only. Serve drops every `OPENNEKO_SANDBOX_*` value that a turn
+sends, and the sandbox request carries no model key and no door token.
+
+## The key door
+
+`openneko web` runs the key door (`apps/openneko/internal/llm/keydoor.go`).
+The door keeps every model key, fallback key and embedding key in the
+control zone. For each turn, host call and embedding call, web does this:
+
+1. It makes a random token for that call. The token is valid for one org,
+   for the routes of that call (`primary`, `fallback` or `embed`), and
+   until the call ends or its deadline passes.
+2. It sends serve the token in place of each key, and
+   `http://openneko-door/r/<route>` in place of each provider URL.
+3. When the call ends, it revokes the token.
+
+Serve and the Ax harness send the model calls to the door over a Unix
+socket, `keydoor.sock`. The door checks the token in constant time. It
+forwards a call only to the stored upstream of the token's route, so it is
+not an open proxy. It removes the key headers that serve sent and puts the
+real key where the provider wants it:
+
+| Provider | Key on the wire |
+|---|---|
+| OpenAI, OpenAI-compatible URL, and the other Ax providers | `Authorization: Bearer <key>` |
+| Anthropic | `x-api-key` |
+| Google Gemini | `x-goog-api-key` |
+| Azure OpenAI | `api-key`, on `https://<resource>.openai.azure.com/openai/deployments/<deployment>` with the route's `api-version` |
+| Vertex AI | `Authorization: Bearer <token>`; web gets the token from Google Application Default Credentials when the call starts |
+| OpenAI-compatible URL with no key | no key header |
+
+The door streams each answer back as it arrives. It replaces a key in an
+error body with `[redacted]`, and its log lines carry the route and the
+status only. Spend rows, audit rows, traces, retries, fallback rules and
+the model-call ceiling work as before.
+
+The socket has mode 0660, so only the accounts of web and serve can
+connect, and each call needs a valid token as well. Its path is
+`OPENNEKO_KEY_DOOR_SOCKET`, else `keydoor.sock` beside `OPENNEKO_SERVE_SOCKET`:
+
+- Docker: `/run/openneko/keydoor.sock`, in the `openneko-run` volume. Only
+  web and serve mount that volume. Web and serve run as the same account
+  (`neko`, 1001), so the token separates them from other callers there. The
+  sandbox does not mount the volume.
+- Server install: `/var/lib/openneko/shared/door`, owner `openneko`, group
+  `openneko-shared`, mode 2750. Both units set `OPENNEKO_KEY_DOOR_SOCKET`.
+- One-user native install: `~/.local/share/openneko/door`.
+
+Windows has no key door yet, and no agent turns.
+
+In production (`OPENNEKO_ENV` unset or `production`), serve refuses a frame
+that holds a model key in place of a door token. At start, serve removes
+every `*_API_KEY`, `HF_TOKEN` and `VERTEX_ACCESS_TOKEN` variable from its
+environment and logs a warning that names them. `openneko release-check
+--serve-socket` connects to `OPENNEKO_SERVE_SOCKET` and fails when serve
+started with such a variable or runs in development mode.
+
+Two paths still carry a key into the process that runs the agent loop.
+Use them for development and demos only:
+
+- With no `OPENNEKO_SERVE_SOCKET`, `openneko web` runs the Ax harness in
+  its own process, and the harness reads the keys there.
+- The stand-alone harness of the evals (`HARNESS_MODEL_API_KEY`) and
+  `openneko serve` with `OPENNEKO_ENV=development` take a real key in a
+  frame.
 
 ## The inference gateway
 
@@ -100,10 +166,11 @@ job descriptions, skill lessons, the research mission and the provider test
 in Admin, Settings.
 
 A host call is an Ax signature program. `openneko web` resolves the
-org's model route and loads its key, then sends one `generate` frame over
-the serve socket. The key travels in its own field, as it does for a turn.
-Serve runs the program, returns the output fields and the token counts, and
-keeps the key for that call only. Error text never carries the key. With no
+org's model route, gives its key to the key door, then sends one
+`generate` frame over the serve socket. The frame carries a door token in
+place of the key, as a turn does. Serve runs the program through the door
+and returns the output fields and the token counts. Error text never
+carries the key. With no
 serve socket, `openneko web` runs the call in-process.
 
 The gateway takes every Ax provider and any OpenAI-compatible URL. Ollama,
@@ -137,8 +204,9 @@ compaction, bot names and instructions, skill lessons, the research mission,
 the provider test (`/api/v1/settings/provider/test`), the external service
 checks (`/api/v1/admin/services`) and the onboarding submit
 (`/api/v1/onboarding/submit`). A Go host call reads the task route and its
-fallback, loads each key (a Vertex key is a token from Google Application
-Default Credentials), sends the `generate` frame to serve's socket and writes
+fallback, loads each key into the key door (a Vertex key is a token from
+Google Application Default Credentials), sends the `generate` frame to
+serve's socket and writes
 the `spend_ledger` row. With no `OPENNEKO_SERVE_SOCKET`, the call runs inside
 `openneko web`. The Go and TypeScript code must give the same Ax route for each
 provider and the same price for each case in
@@ -149,8 +217,8 @@ A route may name a fallback model. The gateway sends a call to the fallback
 only when the first model fails with an error that Ax classifies as
 retryable, such as a 503 or a timeout, after the first model's own retries.
 A refused key or a bad request does not go to the fallback. For a host call,
-the frame carries the fallback route and its key in `fallback_key`. For a
-turn, `openneko web` sends the fallback key as `FALLBACK_MODEL_API_KEY`, and the
+the frame carries the fallback route, and `fallback_key` holds the door
+token. For a turn, `FALLBACK_MODEL_API_KEY` holds the door token, and the
 harness reads a two-route profile in `HARNESS_MODEL_ROUTES`. The fallback
 route never runs a tool call again. A streamed answer goes to the fallback
 only when the first model fails before it sends any text. After the first
@@ -169,8 +237,8 @@ Every embedding call goes through one Go package,
 `apps/ax-harness/embedding`. It calls an OpenAI-compatible `/embeddings`
 route at `NEKO_EMBEDDING_URL`. `openneko web` reads the URL, the model
 and the dimensions, and decides whether embedding is on. It sends one
-`embed` frame over the serve socket with up to 64 texts and the key in
-`model_key`. Serve returns one vector per text, in order. It refuses a
+`embed` frame over the serve socket with up to 64 texts and a door token
+in `model_key`. Serve calls the service through the key door. Serve returns one vector per text, in order. It refuses a
 redirect, a URL with credentials or a query, and a vector of the wrong
 size, and keeps the key out of error text. With no serve socket,
 `openneko web` runs the call in-process. When embedding is off, nothing calls out and
@@ -192,8 +260,8 @@ and calls GraphJin's MCP or GraphQL route.
 ## Two zones
 
 The stack has two zones. The control zone is `openneko web`. It holds
-the secret key, the `neko` database login and the provider keys. The agent
-zone is serve and its turns. Serve holds only these:
+the secret key, the `neko` database login, the provider keys and the key
+door. The agent zone is serve and its turns. Serve holds only these:
 
 - the `neko_files_<database>` login. The role can read and write the three
   `file_content_*` tables and nothing else. `openneko serve-init` creates it
@@ -202,7 +270,8 @@ zone is serve and its turns. Serve holds only these:
   `workflow_output` and nothing else, and comes from the same step.
 - the token key, `HMAC(secret key, "openneko-serve:v1")`. It checks the
   tokens that `openneko web` signs. It cannot decrypt a stored value.
-- a turn's or a host call's model key, while it runs.
+- a door token for each turn, host call or embedding call, while it runs.
+  Serve holds no model key.
 
 The `openneko-serve-init` start step writes the first three into the
 `openneko-serve-credentials` volume before serve starts. It runs on every

@@ -456,11 +456,35 @@ setting.
 `openneko web` runs chat, channel and workflow agent turns in Go. It stages each
 run's files in a private folder under `OPENNEKO_AGENT_RUNS_DIR` and sends the
 turn to `openneko serve` over a Unix socket (`OPENNEKO_SERVE_SOCKET`), or runs
-the Ax harness in-process when no socket is set. The model key travels with the
-turn, and serve keeps every `*_API_KEY` variable out of the agent's tools. The
-agent reads and writes files in its run folder and reaches data only through
+the Ax harness in-process when no socket is set. The model keys stay in
+`openneko web` ([Model keys](#model-keys)). The agent reads and writes files in its run folder and reaches data only through
 `openneko web`'s tool handlers. The agent has a terminal only when a sandbox is
 connected.
+
+### Model keys
+
+`openneko web` keeps every model key, fallback key and embedding key. Serve
+never gets one. For each turn, host call and embedding call, web gives serve
+a token for that call only. Serve sends the model calls to web's key door
+over a Unix socket, `keydoor.sock`, beside serve's socket. The door checks
+the token, puts the real key on the call and forwards it to the provider.
+[AGENT_RUNTIME.md](AGENT_RUNTIME.md#the-key-door) tells how the door works
+for each provider.
+
+Give model keys only to web: in Admin, Settings, Models, and
+`NEKO_EMBEDDING_API_KEY` in web's environment. Give `openneko-serve` no
+`*_API_KEY` variable. Serve removes each such variable at start and logs a
+warning that names it. `openneko release-check --serve-socket` fails when
+serve started with one, or when serve runs with `OPENNEKO_ENV=development`.
+In production, serve refuses a turn that carries a real key.
+
+The model calls now leave from web. A firewall that let only serve reach
+the model APIs must let web reach them.
+
+Two set-ups put the key in the process that runs the agent loop. Use them
+for development and demos only: `openneko web` with no
+`OPENNEKO_SERVE_SOCKET`, which runs the Ax harness in its own process, and
+the stand-alone harness of the evals.
 
 ### External services
 
@@ -905,6 +929,12 @@ This release has fewer parts. The upgrade migrates your data in place:
   workspace in its owner's folder. A document with no owner, or with no
   file, gets the status `failed` and a message that asks for a new upload.
   `openneko migrate library` runs the same step by hand.
+- **Model keys stay in `openneko web`.** Serve gets a token for each call
+  and sends model calls through web's [key door](#model-keys). Remove any
+  `*_API_KEY` variable that an override gives `openneko-serve`, and run
+  `openneko release-check --serve-socket`. The model calls leave from web
+  now, so let web reach the model APIs. A server install gets the door
+  folder and the new units from `openneko upgrade`.
 - **A prod install** keeps its bundled `neko-db`. Move it to a database that
   you run with [`openneko database move`](#the-bundled-database-of-an-older-release).
 
@@ -1055,7 +1085,8 @@ uses the folders of a source checkout.
 these ports free. The embedding service and the sandbox stay external. Set
 `NEKO_EMBEDDING_URL`, `NEKO_EMBEDDING_MODEL` and `NEKO_EMBEDDING_API_KEY`,
 and `OPENNEKO_SANDBOX_URL` and `OPENNEKO_SANDBOX_KEY`, in the shell before
-`openneko start --native`. Both processes get the environment of that shell.
+`openneko start --native`. Both processes get the environment of that shell. Serve removes the model
+key variables from its copy ([Model keys](#model-keys)).
 
 `openneko start --native` makes the sandbox socket folder
 `~/.local/share/openneko-sandbox`, mode 0700. Keep the sandbox out of
@@ -1103,8 +1134,13 @@ credentials step. Put extra settings for a service in
 files as root.
 
 - `NEKO_EMBEDDING_*` go in `web.env`. `openneko web` reads them and sends
-  the URL, the model and the key to serve with each embedding call
-  (`apps/openneko/internal/webfront/hostcalls.go`).
+  serve the model and a door token with each embedding call. The key stays
+  in web (`apps/openneko/internal/webfront/hostcalls.go`).
+- Model keys go only in web: Admin, Settings, Models. Put no `*_API_KEY`
+  in `serve.env` ([Model keys](#model-keys)).
+- `server-install` makes the key door folder `/var/lib/openneko/shared/door`:
+  owner `openneko`, group `openneko-shared`, mode 2750. Both units get
+  `OPENNEKO_KEY_DOOR_SOCKET`.
 - `OPENNEKO_SANDBOX_URL` and `OPENNEKO_SANDBOX_KEY` go in both files.
   `openneko serve` sends the agent's terminal commands to the sandbox
   (`apps/openneko/internal/cli/serve.go`). `openneko web` runs workflow
@@ -1143,7 +1179,7 @@ act on the two services. Set `OPENNEKO_SERVER_FILE` when you gave
 | `sudo openneko doctor` | root | the native checks, the owner and mode of each folder, and whether the units match what `server-install` writes |
 | `sudo openneko backup` | root | the config folder, the data folders of both zones and the database, to `/var/lib/openneko/control/openneko/backups` |
 | `sudo openneko restore <file> --confirm RESTORE` | root | stops the services, restores, gives each file the owner of its folder, and starts the services again if they ran |
-| `sudo openneko upgrade` | root | a backup, then a new executable, web folder, packs and skills in `/opt/openneko`, then a start if the services ran |
+| `sudo openneko upgrade` | root | a backup, then a new executable, web folder, packs and skills in `/opt/openneko`, then the release's folders and units and `systemctl daemon-reload`, then a start if the services ran |
 
 The agent-zone user cannot read `server.json`, so each command refuses it.
 A backup of a one-user native install restores into a server install, and
