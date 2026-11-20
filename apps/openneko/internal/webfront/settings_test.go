@@ -158,6 +158,9 @@ func TestSourceSecrets(t *testing.T) {
 		{`not json`, `{"error":"name must be letters, digits, . _ - (no spaces)"}`},
 		{`{"name":"db.pw"}`, `{"error":"value is required"}`},
 		{`{"name":"db.pw","value":""}`, `{"error":"value is required"}`},
+		{`{"name":"db.pw","value":"x","host":"db.example.com"}`, `{"error":"host and port go together: the password goes only to that host and port"}`},
+		{`{"name":"db.pw","value":"x","port":5432}`, `{"error":"host and port go together: the password goes only to that host and port"}`},
+		{`{"name":"db.pw","value":"x","host":"db.example.com","port":70000}`, `{"error":"port must be a whole number from 1 to 65535"}`},
 	} {
 		if w := call(f, "PUT", "/api/v1/settings/source-secrets", c.body, admin); w.Code != 400 || w.Body.String() != c.want {
 			t.Errorf("%s: %d %s", c.body, w.Code, w.Body)
@@ -171,7 +174,7 @@ func TestSourceSecrets(t *testing.T) {
 	if plain, err := config.MaybeDecryptValue(f.API.SecretsDir, stored); !strings.HasPrefix(stored, "enc:v1:") || err != nil || plain != planted {
 		t.Errorf("stored %q: %q %v", stored, plain, err)
 	}
-	call(f, "PUT", "/api/v1/settings/source-secrets", `{"name":"db.pw","value":"second"}`, admin)
+	call(f, "PUT", "/api/v1/settings/source-secrets", `{"name":"db.pw","value":"second","host":"db.example.com","port":"5433","allowUnverifiedTls":true}`, admin)
 	call(f, "PUT", "/api/v1/settings/source-secrets", `{"name":"api_key","value":"x","description":7}`, admin)
 	stored = queryText(t, db, `select value_enc from data_source_secret where name = 'db.pw'`)
 	if plain, _ := config.MaybeDecryptValue(f.API.SecretsDir, stored); plain != "second" {
@@ -179,8 +182,8 @@ func TestSourceSecrets(t *testing.T) {
 	}
 	seed(t, db, `update data_source_secret set updated_at = '2026-11-01T00:00:00Z' where name = 'db.pw'`)
 	w := call(f, "GET", "/api/v1/settings/source-secrets", "", admin)
-	if !strings.HasPrefix(w.Body.String(), `{"secrets":[{"name":"api_key","description":null,"updatedAt":"`) ||
-		!strings.HasSuffix(w.Body.String(), `{"name":"db.pw","description":"Shop DB","updatedAt":"2026-11-01T00:00:00.000Z"}]}`) ||
+	if !strings.HasPrefix(w.Body.String(), `{"secrets":[{"name":"api_key","description":null,"host":null,"port":null,"allowUnverifiedTls":false,"updatedAt":"`) ||
+		!strings.HasSuffix(w.Body.String(), `{"name":"db.pw","description":"Shop DB","host":"db.example.com","port":5433,"allowUnverifiedTls":true,"updatedAt":"2026-11-01T00:00:00.000Z"}]}`) ||
 		strings.Contains(w.Body.String(), planted) || strings.Contains(w.Body.String(), "second") {
 		t.Errorf("list: %s", w.Body)
 	}

