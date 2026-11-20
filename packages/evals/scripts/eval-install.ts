@@ -570,6 +570,10 @@ export class EvalEpisode {
     const env = { ...process.env, ...this.env(), ...options.env };
     delete env.OPENNEKO_EVAL_TRACE_FILE;
 
+    const serveEnv = { ...env };
+    for (const name of Object.keys(serveEnv)) {
+      if (/_API_KEY$|^HF_TOKEN$|VERTEX_ACCESS_TOKEN$/.test(name)) delete serveEnv[name];
+    }
     this.serve = this.spawn("serve.log", [
       "serve",
       "--addr", `127.0.0.1:${servePort}`,
@@ -579,7 +583,7 @@ export class EvalEpisode {
       "--graphjin-config", options.graphjinConfig ?? "",
       "--graphjin-addr", `127.0.0.1:${await freePort()}`,
       "--subscriptions-addr", "",
-    ], env);
+    ], serveEnv);
     await waitFor(async () => existsSync(this.socketPath) && (await tcpOpen("127.0.0.1", servePort)), "openneko serve", () => this.logs());
 
     this.web = this.spawn("web.log", [

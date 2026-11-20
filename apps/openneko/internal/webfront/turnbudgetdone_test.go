@@ -59,6 +59,7 @@ func TestABudgetSummaryTurnEndsItsStreamWithDone(t *testing.T) {
 	}
 	ctx, stop := context.WithCancel(context.Background())
 	served := make(chan struct{})
+	serveDoor(t, socket)
 	server := &serve.Server{Getenv: os.Getenv, MaxTurns: 2}
 	go func() { _ = server.Serve(ctx, ln); close(served) }()
 	defer func() { stop(); <-served }()

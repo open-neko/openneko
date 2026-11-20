@@ -63,6 +63,7 @@ func TestTurnSpendIncludesTheStreamedResponder(t *testing.T) {
 		t.Fatal(err)
 	}
 	serveCtx, stop := context.WithCancel(context.Background())
+	serveDoor(t, socket)
 	srv := &serve.Server{Getenv: os.Getenv, MaxTurns: 2}
 	done := make(chan struct{})
 	go func() { _ = srv.Serve(serveCtx, ln); close(done) }()

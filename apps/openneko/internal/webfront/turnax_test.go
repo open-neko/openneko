@@ -156,9 +156,11 @@ var (
 	scratchRE       = regexp.MustCompile(regexp.QuoteMeta(filepath.Join(agentRunsRoot(), "neko-ax-")) + `[A-Za-z0-9]+`)
 )
 
+var doorTokenRE = regexp.MustCompile(`ondoor_[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`)
+
 func normalStart(t *testing.T, raw string) string {
 	t.Helper()
-	v, err := jsParse([]byte(raw))
+	v, err := jsParse([]byte(doorTokenRE.ReplaceAllString(raw, "DOOR-TOKEN")))
 	if err != nil {
 		t.Fatalf("start frame is not JSON: %s", raw)
 	}
@@ -607,6 +609,7 @@ func TestAgentCoreThroughServe(t *testing.T) {
 	}
 	ctx, stop := context.WithCancel(context.Background())
 	defer stop()
+	serveDoor(t, socket)
 	srv := &serve.Server{Getenv: os.Getenv, MaxTurns: 2}
 	done := make(chan struct{})
 	go func() { _ = srv.Serve(ctx, ln); close(done) }()
