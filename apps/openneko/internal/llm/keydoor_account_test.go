@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 )
 
 const doorDialer = `package main
@@ -46,7 +48,7 @@ func dialAs(t *testing.T, dir, user string) (string, int) {
 }
 
 func TestKeyDoorSocketRefusesAnotherAccount(t *testing.T) {
-	dir := t.TempDir()
+	dir := testsock.Dir(t)
 	if err := os.Chmod(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

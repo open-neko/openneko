@@ -9,11 +9,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
@@ -93,10 +95,9 @@ var (
 	sandboxBuildFail string
 )
 
-// startRecipeSandbox runs the sandbox recipe as this user, on a Unix socket
-// or, with a key, on TCP.
-// startRecipeSandbox runs the recipe's sandbox program. With
-// OPENNEKO_TEST_SANDBOX_URL set, the tests use that sandbox instead.
+// startRecipeSandbox runs the recipe's sandbox program as this user, on a
+// Unix socket or, with a key, on TCP. With OPENNEKO_TEST_SANDBOX_URL set, the
+// tests use that sandbox instead.
 func startRecipeSandbox(t *testing.T, tcp bool) sandbox.Config {
 	t.Helper()
 	if url := os.Getenv("OPENNEKO_TEST_SANDBOX_URL"); url != "" {
@@ -105,6 +106,9 @@ func startRecipeSandbox(t *testing.T, tcp bool) sandbox.Config {
 			t.Fatalf("OPENNEKO_TEST_SANDBOX_URL: %v", err)
 		}
 		return cfg
+	}
+	if runtime.GOOS != "linux" {
+		t.Skip("the sandbox service runs on Linux only; set OPENNEKO_TEST_SANDBOX_URL to test against one")
 	}
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 is not installed")
@@ -125,7 +129,7 @@ func startRecipeSandbox(t *testing.T, tcp bool) sandbox.Config {
 	if sandboxBuildFail != "" {
 		t.Fatalf("sandbox build: %s", sandboxBuildFail)
 	}
-	root := t.TempDir()
+	root := testsock.Dir(t)
 	cfg := sandbox.Config{URL: "unix://" + filepath.Join(root, "sandbox.sock")}
 	listen := cfg.URL
 	if tcp {

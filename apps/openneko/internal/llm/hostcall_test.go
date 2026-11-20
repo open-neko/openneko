@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 	"github.com/open-neko/openneko/apps/ax-harness/catalog"
 	"github.com/open-neko/openneko/apps/ax-harness/embedding"
 	"github.com/open-neko/openneko/apps/ax-harness/inference"
@@ -128,7 +129,7 @@ func TestPriceUsageCoverage(t *testing.T) {
 
 func fakeServe(t *testing.T, answer func(frame map[string]any) []string) string {
 	t.Helper()
-	socket := filepath.Join(t.TempDir(), "serve.sock")
+	socket := filepath.Join(testsock.Dir(t), "serve.sock")
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatal(err)
@@ -183,7 +184,7 @@ func TestServeGateway(t *testing.T) {
 	if _, err := ServeGateway(silent)(context.Background(), request, "k", ""); err == nil || err.Error() != "openneko serve returned no model result" {
 		t.Errorf("no result: %v", err)
 	}
-	if _, err := ServeGateway(filepath.Join(t.TempDir(), "absent.sock"))(context.Background(), request, "k", ""); err == nil || !strings.HasPrefix(err.Error(), "openneko serve unavailable") {
+	if _, err := ServeGateway(filepath.Join(testsock.Dir(t), "absent.sock"))(context.Background(), request, "k", ""); err == nil || !strings.HasPrefix(err.Error(), "openneko serve unavailable") {
 		t.Errorf("no serve: %v", err)
 	}
 	var embed map[string]any

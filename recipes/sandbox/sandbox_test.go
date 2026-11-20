@@ -1,3 +1,5 @@
+//go:build linux
+
 package main
 
 import (
@@ -23,7 +25,7 @@ import (
 
 func startSandbox(t *testing.T, switchUsers bool) (*Server, string) {
 	t.Helper()
-	root := t.TempDir()
+	root := shortSocketDir(t)
 	_ = os.Chmod(root, 0o755)
 	_ = os.Chmod(filepath.Dir(root), 0o755)
 	server := &Server{Workspaces: filepath.Join(root, "runs"), Homes: filepath.Join(root, "homes"), BaseUID: 23000, Users: 4, GID: os.Getgid(), SwitchUsers: switchUsers, PATH: "/usr/bin:/bin"}
@@ -420,7 +422,7 @@ func TestSandboxSocketBelongsToTheSharedGroup(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("only root can hand the socket to another group")
 	}
-	root := t.TempDir()
+	root := shortSocketDir(t)
 	server := &Server{Workspaces: filepath.Join(root, "runs"), Homes: filepath.Join(root, "homes"), BaseUID: 23000, Users: 1, GID: 23999, SwitchUsers: true, PATH: "/usr/bin:/bin"}
 	socket := filepath.Join(root, "sandbox.sock")
 	ctx, cancel := context.WithCancel(context.Background())

@@ -14,12 +14,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
 func TestServeAgentTurnsAnswersOnTheSocket(t *testing.T) {
 	cleanServeEnv(t)
-	socket := filepath.Join(t.TempDir(), "serve.sock")
+	socket := filepath.Join(testsock.Dir(t), "serve.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	done, err := serveAgentTurns(ctx, io.Discard, socket, 2, sandbox.Config{})
 	if err != nil {
@@ -74,7 +75,7 @@ func TestServeAgentTurnsAnswersOnTheSocket(t *testing.T) {
 
 func TestServeAgentTurnsRefusesABadSandboxURL(t *testing.T) {
 	cleanServeEnv(t)
-	socket := filepath.Join(t.TempDir(), "serve.sock")
+	socket := filepath.Join(testsock.Dir(t), "serve.sock")
 	if _, err := serveAgentTurns(context.Background(), io.Discard, socket, 1, sandbox.Config{URL: "ftp://sandbox"}); err == nil {
 		t.Fatal("serve started with a sandbox URL it cannot use")
 	}
@@ -85,7 +86,7 @@ func TestServeAgentTurnsRefusesABadSandboxURL(t *testing.T) {
 
 func TestServeAgentTurnsWarnsWhenTheSandboxSharesItsSocketFolder(t *testing.T) {
 	cleanServeEnv(t)
-	dir := t.TempDir()
+	dir := testsock.Dir(t)
 	for _, tc := range []struct {
 		url  string
 		warn bool

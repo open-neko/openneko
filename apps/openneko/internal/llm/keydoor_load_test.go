@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
 )
 
@@ -56,7 +57,7 @@ func TestKeyDoorCallsOverTheLimitWaitForASlot(t *testing.T) {
 
 func TestKeyDoorCapsTheCallsAtOnceOfOneToken(t *testing.T) {
 	door := &KeyDoor{MaxOpen: func() int { return 2 }}
-	path := filepath.Join(t.TempDir(), keydoor.SocketName)
+	path := filepath.Join(testsock.Dir(t), keydoor.SocketName)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	if _, err := ListenDoor(ctx, path, door); err != nil {

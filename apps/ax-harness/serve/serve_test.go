@@ -16,6 +16,7 @@ import (
 
 	protocol "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/open-neko/openneko/apps/ax-harness/harness"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/testsock"
 	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
@@ -24,7 +25,7 @@ const spec = `{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Find 
 
 func startServer(t *testing.T, server *Server) string {
 	t.Helper()
-	socket := filepath.Join(t.TempDir(), "serve.sock")
+	socket := filepath.Join(testsock.Dir(t), "serve.sock")
 	listener, err := Listen(socket)
 	if err != nil {
 		t.Fatal(err)

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
 )
 
@@ -77,7 +78,7 @@ func TestKeyDoorKeepsAStreamThatOutlastsTheWaits(t *testing.T) {
 func TestKeyDoorEndsARequestWhoseBodyStalls(t *testing.T) {
 	setWait(t, &doorBodyWait, 300*time.Millisecond)
 	door := &KeyDoor{}
-	path := filepath.Join(t.TempDir(), keydoor.SocketName)
+	path := filepath.Join(testsock.Dir(t), keydoor.SocketName)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	if _, err := ListenDoor(ctx, path, door); err != nil {

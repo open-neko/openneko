@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/open-neko/openneko/apps/ax-harness/internal/testsock"
 )
 
 type seen struct {
@@ -255,7 +257,7 @@ func TestClientSendsEverythingAgainWhenTheSandboxLostTheRun(t *testing.T) {
 }
 
 func TestClientReachesAUnixSocket(t *testing.T) {
-	socket := filepath.Join(t.TempDir(), "sandbox.sock")
+	socket := filepath.Join(testsock.Dir(t), "sandbox.sock")
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatal(err)
@@ -277,7 +279,7 @@ func TestClientReachesAUnixSocket(t *testing.T) {
 }
 
 func TestClientReportsAnUnreachableOrRefusingSandbox(t *testing.T) {
-	client, _ := NewClient(Config{URL: "unix://" + filepath.Join(t.TempDir(), "none.sock")}, t.TempDir())
+	client, _ := NewClient(Config{URL: "unix://" + filepath.Join(testsock.Dir(t), "none.sock")}, t.TempDir())
 	if _, err := client.Exec(context.Background(), "true", "", nil, 5, 1000); err == nil || !strings.Contains(err.Error(), "unavailable") {
 		t.Fatalf("err = %v", err)
 	}

@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 )
 
 type syncBuffer struct {
@@ -266,7 +268,7 @@ func TestChildExitsWhenItsStdinCloses(t *testing.T) {
 	t.Setenv("GO_ENV", "agentic")
 	dir := t.TempDir()
 	file := seedConfig(t, dir)
-	sock := filepath.Join(t.TempDir(), "gj.sock")
+	sock := filepath.Join(testsock.Dir(t), "gj.sock")
 	cmd := testCommand(file)(sock)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

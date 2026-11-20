@@ -10,11 +10,12 @@ import (
 	"testing"
 
 	"github.com/open-neko/neko/apps/openneko/internal/llm"
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 )
 
 func modelRequestServe(t *testing.T) (string, <-chan string) {
 	t.Helper()
-	socket := filepath.Join(t.TempDir(), "serve.sock")
+	socket := filepath.Join(testsock.Dir(t), "serve.sock")
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatal(err)

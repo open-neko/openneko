@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 )
 
 type previewGraphjin struct {
@@ -68,7 +70,7 @@ func TestSourceConfigPreviewDatabase(t *testing.T) {
 	srv := httptest.NewServer(gj)
 	defer srv.Close()
 
-	dir := t.TempDir()
+	dir := testsock.Dir(t)
 	configFile := filepath.Join(dir, "graphjin.yml")
 	if err := os.WriteFile(configFile, []byte("app_name: test\nsources:\n  - name: erp\n    kind: database\n    password: ${ERP_PASSWORD}\n    read_only: true\n"), 0o600); err != nil {
 		t.Fatal(err)
