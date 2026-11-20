@@ -154,9 +154,15 @@ A difference writes a log line and, for a turn or a host call, an
 purpose and both counts. An embedding call belongs to no org, so it gets
 the log line only.
 
-The door streams each answer back as it arrives. It replaces a key in an
-error body with `[redacted]`, and its log lines carry the route and the
-status only. Spend rows, audit rows, traces, retries and fallback rules
+The door streams each answer back as it arrives. It asks the provider for
+an uncompressed answer (`Accept-Encoding: identity`) and does not forward
+serve's value. It decodes a gzip or deflate answer and refuses any other
+encoding with HTTP 502, because it cannot scrub it. It replaces the key
+with `[redacted]` in every body, 2xx and streamed included, in each
+response header and trailer, and in the raw, JSON-escaped, URL-encoded
+and base64 forms. A key split across two chunks is replaced too: the door
+holds back a chunk's tail only while it can start a form of the key. Its
+log lines carry the route and the status only. Spend rows, audit rows, traces, retries and fallback rules
 work as before.
 
 The socket has mode 0660, so only the accounts of web and serve can
