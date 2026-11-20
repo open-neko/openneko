@@ -32,8 +32,11 @@ per-run tool bridge.
                   └─────────────────────────────────────────────┤ (only with a sandbox URL)
                                                                 ▼
                                                          sandbox service
-                                                         (own network, per-run user,
+                                                         (closed network, per-run user,
                                                           no secrets)
+                                                                │ listed hosts only
+                                                                ▼
+                                                         egress proxy
 ```
 
 `openneko web` runs chat questions, channel messages, manual and scheduled
@@ -63,7 +66,9 @@ workflows, metric refreshes, and setup builds in Go:
    (`orgTerminal` in `apps/openneko/internal/webfront/turncontext.go`). An
    admin turns the terminal off for one organization at Admin, Settings,
    Agent. Without the terminal, `openneko web` does not stage the script
-   skills, and the prompt and skill search leave them out.
+   skills, and the prompt and skill search leave them out. Web also sends
+   the organization's egress list (`OPENNEKO_HARNESS_EGRESS_HOSTS`), and
+   each command to the sandbox carries it.
 5. When the turn ends, `openneko web` copies artifacts and skill edits back
    (saving a member's edit to a team skill as a private copy for that member)
    and deletes the run folder. The next start deletes folders that a restart
@@ -79,7 +84,8 @@ harness.
 |---|---|---|---|
 | `openneko web` | `neko`, 1001 (or `openneko` on a server install) | the `neko` database login, `secrets.json`, and the in-process tool handlers | the stack's network |
 | `openneko serve` | `neko`, 1001 (or `openneko-agent` on a server install) | a turn's or a host call's model key while it runs; the files service; the `neko_files_<database>` login and the derived token key; the customer GraphJin and its config | the stack's network, for the model APIs and the customer's data sources |
-| Sandbox service | root, to give each run its own user | **no secrets**; a command gets only `PATH`, `HOME`, `TMPDIR`, `LANG`, `NODE_PATH`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH` (`recipes/sandbox/sandbox.go`) | only its own network; it shares one volume with web and serve, `openneko-sandbox-socket`, which holds only its socket |
+| Sandbox service | root, to give each run its own user | **no secrets**; a command gets only `PATH`, `HOME`, `TMPDIR`, `LANG`, `NODE_PATH`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH` (`recipes/sandbox/sandbox.go`) | only its own internal network, with no route out; it shares one volume with web and serve, `openneko-sandbox-socket`, which holds only its socket |
+| Egress proxy | `openneko-sandbox egress`, no capabilities, read-only root | **no secrets**; it asks the sandbox for a run's list over a root-only socket | the sandbox network and a network with a route out |
 
 Model keys exist only in `openneko web` while it starts a turn or host call, and in serve while the call runs. Serve drops every
 `OPENNEKO_SANDBOX_*` value that a turn sends, and the sandbox request carries
@@ -419,20 +425,32 @@ before the script starts and passes the rows in as files. The steps, the
 file format and the limits are in `recipes/sandbox/README.md`, "Script
 data".
 
-In the Compose overlay the sandbox container:
+In the Compose overlay and in `compose.native.yml` the sandbox container:
 
-- sits **only** on its own network. Commands can reach the internet, but not
-  GraphJin, the broker or another service of the stack. In prod mode
-  OpenNeko's database is a server on your network, so firewall the sandbox
-  network from it;
+- sits **only** on its own network, `openneko-sandbox`, which is internal:
+  no route out and no DNS for external names. Commands reach no service of
+  the stack, no host on your network and no internet host, except through
+  the egress proxy;
 - drops every capability except `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `KILL`,
   `SETGID` and `SETUID`, and sets `no-new-privileges`;
 - mounts only the sockets folder and its own volumes for run folders and
   homes. It mounts no configuration, no secret, no Docker socket and no
   folder of the stack.
 
-The OpenNeko product does not limit the internet egress of terminal commands.
-Put an egress proxy or firewall on the sandbox network if you need that.
+Commands reach no host by default. An admin lists the hosts that an
+organization's commands may reach at Admin, Settings, Agent; the list is
+empty by default. The egress proxy is the only way out of the sandbox
+network. Each run gets its own token for the proxy, and the token fails when
+the run ends. The proxy allows only the run's hosts and ports, refuses a
+name that resolves to a loopback, private, link-local or metadata address,
+and logs each request with the run and the organization. A change of the
+list goes in the audit chain as `agent:egress_changed`. The rules and the
+log are in `recipes/sandbox/README.md`, "Egress".
+
+The sandbox reports in `GET /v2/check` whether its network has a route out.
+`openneko release-check --sandbox` prints `sandbox_egress`, and the status
+page shows the Sandbox card as failing when the answer is `open` or
+`unknown`. A sandbox on another host is the operator's to close.
 
 ## Shared folders
 
@@ -444,6 +462,9 @@ Put an egress proxy or firewall on the sandbox network if you need that.
 - `openneko-sandbox-socket` → `/run/openneko-sandbox`, with the sandbox
   overlay only. It holds `sandbox.sock` (`root:1001`, mode `0660`). The
   sandbox, `web` and serve mount it; `web` joins group `1001` for it.
+- `openneko-egress-control` → `/run/openneko-egress`, with the sandbox
+  overlay only. Root owns the folder (mode `0700`) and the control socket
+  (mode `0600`). Only the sandbox and the egress proxy mount it.
 
 ## Configuration
 
@@ -456,6 +477,8 @@ Compose sets all of these. They matter only for custom deployments.
 | `OPENNEKO_AGENT_RUNS_DIR` | web | where runs are staged |
 | `OPENNEKO_SANDBOX_URL` | web, serve | the sandbox service (`unix:///path`, `http://` or `https://`); empty turns the terminal off |
 | `OPENNEKO_SANDBOX_KEY` | web, serve, sandbox | the bearer key of the sandbox service |
+| `OPENNEKO_SANDBOX_EGRESS_PROXY` | sandbox | the egress proxy that commands use (`openneko-egress:3128`); empty gives commands no proxy |
+| `OPENNEKO_SANDBOX_EGRESS_CONTROL` | sandbox | the control socket that the proxy asks (`unix:///run/openneko-egress/control.sock`) |
 | `OPENNEKO_GRAPHJIN_CONFIG` | web, serve, serve-init | the customer GraphJin config (`/config/graphjin/agentic.yml`); empty runs no GraphJin in serve |
 | `OPENNEKO_GRAPHJIN_ADDR` | serve | where the customer GraphJin listens (default `127.0.0.1:8080`; Compose sets `0.0.0.0:8080`) |
 | `OPENNEKO_GRAPHJIN_SEED` | serve-init | the template for a new config; the serve image sets it |
