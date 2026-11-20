@@ -159,15 +159,18 @@ func (a *API) executeSendWebhook(ctx context.Context, req *actionRequestRecord) 
 type webhookBlockedError struct{ ip string }
 
 func (e *webhookBlockedError) Error() string {
-	return "OpenNeko does not send a webhook to the loopback, link-local, multicast or unspecified address " + e.ip
+	return "OpenNeko does not send a webhook to the private, loopback, link-local, multicast or unspecified address " + e.ip
 }
+
+var sharedAddressSpace = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
 
 var webhookAddressBlocked = func(ip net.IP) bool {
 	if v4 := ip.To4(); v4 != nil && v4[0] == 0 {
 		return true
 	}
 	return ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsInterfaceLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified()
+		ip.IsInterfaceLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() ||
+		ip.IsPrivate() || sharedAddressSpace.Contains(ip)
 }
 
 func webhookClient() *http.Client {

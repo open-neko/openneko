@@ -557,8 +557,9 @@ func TestWebhookAdapterRefusesLocalAddressesAndRedirects(t *testing.T) {
 		_ = a.ActionExecute(t.Context(), "org", id)
 		return rowText(t, db, `select r.status || '|' || coalesce(e.error, '') from action_request r join action_execution e on e.action_request_id = r.id where r.id = $1`, id)
 	}
-	for _, url := range []string{target.URL + "/hook", "http://localhost:9/hook", "http://169.254.169.254/latest/meta-data/", "http://[::1]:9/", "http://0.0.0.0:9/"} {
-		if got := run(url); !strings.HasPrefix(got, "failed|") || !strings.Contains(got, "OpenNeko does not send a webhook to the loopback") {
+	for _, url := range []string{target.URL + "/hook", "http://localhost:9/hook", "http://169.254.169.254/latest/meta-data/", "http://[::1]:9/", "http://0.0.0.0:9/",
+		"http://10.0.0.5:9/", "http://172.16.0.1:9/", "http://192.168.1.1:9/", "http://[fd00:ec2::254]:9/", "http://100.100.100.200:9/"} {
+		if got := run(url); !strings.HasPrefix(got, "failed|") || !strings.Contains(got, "OpenNeko does not send a webhook to the private, loopback") {
 			t.Fatalf("%s: %s", url, got)
 		}
 	}
