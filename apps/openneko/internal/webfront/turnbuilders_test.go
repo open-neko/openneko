@@ -184,15 +184,24 @@ func TestTurnBuildersDatabase(t *testing.T) {
 	}
 
 	events = nil
-	out = call(member, "rule_builder_save_rule", map[string]any{"name": "slack_auto", "applies_to_kinds": []any{"slack_post"},
-		"mode": "auto_approve", "approver_role": "admin", "allowed_targets": map[string]any{"patterns": []any{"C*"}}})
+	rule := map[string]any{"name": "slack_auto", "applies_to_kinds": []any{"slack_post"},
+		"mode": "auto_approve", "approver_role": "admin", "allowed_targets": map[string]any{"patterns": []any{"C*"}}}
+	for name, s := range map[string]*toolServer{"member": member, "service": server(threadMine, builderRunService, "neko_rule_builder")} {
+		if out := call(s, "rule_builder_save_rule", rule); !strings.Contains(out, `\"ok\":false,\"error\":\"Only an admin can save an approval rule.`) {
+			t.Fatalf("%s rule save: %s", name, out)
+		}
+	}
+	if got := scalar(t, db, `select count(*)::text from action_policy where org_id = 'org' and name = 'slack_auto'`); got != "0" || len(events) != 0 {
+		t.Fatalf("a refused save wrote a rule: %s %v", got, events)
+	}
+	out = call(admin, "rule_builder_save_rule", rule)
 	if !strings.Contains(out, `\"ok\":true,\"action\":\"created\",\"ruleId\":\"`) || len(events) != 1 || !strings.Contains(events[0], "**Scopes:** external") {
 		t.Fatalf("rule create: %s %v", out, events)
 	}
 	if got := scalar(t, db, `select p.applies_to_scopes::text || ' ' || p.priority::text || ' ' || p.enabled::text || ' ' || p.limits::text || ' ' ||
 		p.allowed_targets::text || ' ' || coalesce(p.denied_targets::text, 'null') || ' ' || (p.approver_group_id = g.id)::text || ' ' || p.created_by_run_id::text
 		from action_policy p join user_group g on g.org_id = p.org_id and g.slug = 'administrators' where p.name = 'slack_auto'`); got !=
-		`{external} 100 true {} {"patterns": ["C*"]} null true `+runMine {
+		`{external} 100 true {} {"patterns": ["C*"]} null true `+builderRunAdmin {
 		t.Fatalf("rule row: %s", got)
 	}
 	out = call(admin, "rule_builder_save_rule", map[string]any{"name": "slack_auto", "applies_to_kinds": []any{}, "applies_to_scopes": []any{"internal"},
@@ -202,8 +211,18 @@ func TestTurnBuildersDatabase(t *testing.T) {
 	}
 	if got := scalar(t, db, `select p.mode || ' ' || p.applies_to_scopes::text || ' ' || p.priority::text || ' ' || p.enabled::text || ' ' ||
 		coalesce(p.allowed_targets::text, 'null') || ' ' || p.description || ' ' || (p.approver_group_id is not null)::text || ' ' || p.created_by_run_id::text
-		from action_policy p where p.name = 'slack_auto'`); got != "never {internal} 5 false null Off true "+runMine {
+		from action_policy p where p.name = 'slack_auto'`); got != "never {internal} 5 false null Off true "+builderRunAdmin {
 		t.Fatalf("rule updated row: %s", got)
+	}
+	seed(t, db, `insert into pack_install (id, org_id, pack_id, version, status, manifest_hash) values ('b2000000-0000-4000-8000-000000000001', 'org', 'slack', '1', 'installed', 'h')`)
+	seed(t, db, `insert into pack_artifact (pack_install_id, org_id, artifact_kind, artifact_key, target_ref, desired_hash, last_applied_hash)
+		values ('b2000000-0000-4000-8000-000000000001', 'org', 'policy', 'slack_auto', 'slack_auto', 'h', 'h')`)
+	if out := call(admin, "rule_builder_save_rule", map[string]any{"name": "slack_auto", "applies_to_kinds": []any{}, "mode": "auto_approve"}); !strings.Contains(out,
+		`belongs to the pack slack`) {
+		t.Fatalf("pack rule save: %s", out)
+	}
+	if got := scalar(t, db, `select mode from action_policy where org_id = 'org' and name = 'slack_auto'`); got != "never" {
+		t.Fatalf("a pack rule changed: %s", got)
 	}
 	seed(t, db, `delete from action_policy where org_id = 'org' and name <> 'slack_auto'`)
 	seed(t, db, `insert into action_policy (org_id, name, applies_to_kinds, applies_to_scopes, mode, priority) values
