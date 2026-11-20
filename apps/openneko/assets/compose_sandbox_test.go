@@ -124,3 +124,66 @@ func TestSandboxOverlaySharesOnlyItsSocketVolume(t *testing.T) {
 		}
 	}
 }
+
+func TestSandboxNetworkHasNoRouteOut(t *testing.T) {
+	type service struct {
+		Networks    yaml.Node `yaml:"networks"`
+		NetworkMode string    `yaml:"network_mode"`
+	}
+	type network struct {
+		Internal bool   `yaml:"internal"`
+		Driver   string `yaml:"driver"`
+	}
+	for _, set := range [][]string{
+		{"compose.yml", "compose.db.yml", "recipes/sandbox/compose.yml"},
+		{"recipes/sandbox/compose.native.yml"},
+	} {
+		joins := map[string][]string{}
+		networks := map[string]network{}
+		modes := map[string]string{}
+		for _, file := range set {
+			var doc struct {
+				Services map[string]service `yaml:"services"`
+				Networks map[string]network `yaml:"networks"`
+			}
+			if err := yaml.Unmarshal(readRootCompose(t, file), &doc); err != nil {
+				t.Fatalf("%s: %v", file, err)
+			}
+			for name, svc := range doc.Services {
+				if svc.NetworkMode != "" {
+					modes[name] = svc.NetworkMode
+				}
+				switch svc.Networks.Kind {
+				case yaml.SequenceNode:
+					for _, n := range svc.Networks.Content {
+						joins[name] = append(joins[name], n.Value)
+					}
+				case yaml.MappingNode:
+					for i := 0; i < len(svc.Networks.Content); i += 2 {
+						joins[name] = append(joins[name], svc.Networks.Content[i].Value)
+					}
+				}
+			}
+			for name, n := range doc.Networks {
+				networks[name] = n
+			}
+		}
+		if mode, ok := modes["openneko-sandbox"]; ok {
+			t.Errorf("%v: the sandbox sets network_mode %q", set, mode)
+		}
+		own := joins["openneko-sandbox"]
+		if len(own) == 0 {
+			t.Errorf("%v: the sandbox names no network, so it joins the default network with a route out", set)
+		}
+		for _, name := range own {
+			if n := networks[name]; !n.Internal || (n.Driver != "" && n.Driver != "bridge") {
+				t.Errorf("%v: the sandbox joins network %s, which is not internal: %+v", set, name, n)
+			}
+			for other, list := range joins {
+				if other != "openneko-sandbox" && slices.Contains(list, name) {
+					t.Errorf("%v: %s joins the sandbox network %s", set, other, name)
+				}
+			}
+		}
+	}
+}

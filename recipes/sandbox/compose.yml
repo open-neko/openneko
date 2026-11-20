@@ -57,5 +57,8 @@ volumes:
   openneko-sandbox-runs:
   openneko-sandbox-homes:
 
+# internal: no route out and no external DNS, so commands reach nothing
+# outside this network.
 networks:
   openneko-sandbox:
+    internal: true

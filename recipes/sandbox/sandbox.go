@@ -62,6 +62,7 @@ type Server struct {
 	SwitchUsers         bool
 	PATH                string
 	NodePath            string
+	ProcNet             string
 
 	mu   sync.Mutex
 	runs map[string]*run
@@ -157,7 +158,7 @@ func (s *Server) prepareWorkspaces() error {
 // Handler is the sandbox API:
 //
 //	GET    /v2/health
-//	GET    /v2/check            the health check with the key
+//	GET    /v2/check            the health check with the key; egress is closed or open
 //	POST   /v2/runs/{run}/exec  writes the files sent, runs the command, returns the files it changed
 //	DELETE /v2/runs/{run}       kills the run's commands and removes its folder and home
 func (s *Server) Handler() http.Handler {
@@ -168,7 +169,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /v2/check", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "egress": egressState(s.procNet())})
 	})
 	mux.HandleFunc("POST /v2/runs/{run}/exec", s.exec)
 	mux.HandleFunc("DELETE /v2/runs/{run}", s.end)
@@ -179,6 +180,13 @@ func (s *Server) Handler() http.Handler {
 		}
 		mux.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) procNet() string {
+	if s.ProcNet != "" {
+		return s.ProcNet
+	}
+	return "/proc/net"
 }
 
 func (s *Server) authorized(r *http.Request) bool {
