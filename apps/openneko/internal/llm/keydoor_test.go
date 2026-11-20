@@ -172,3 +172,111 @@ func TestDoorRouteForCallsTheURLThatAxBuilds(t *testing.T) {
 		}
 	}
 }
+
+func TestKeyDoorTokenReachesOnlyItsOwnOrgsRoute(t *testing.T) {
+	door := &KeyDoor{}
+	client := doorClient(t, door)
+	srvA, gotA := upstream(t, 200, `{}`)
+	srvB, gotB := upstream(t, 200, `{}`)
+	tokenA, revokeA, err := door.Issue("org-a", map[string]DoorRoute{"primary": {Upstream: srvA.URL, Key: "key-of-a"}}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer revokeA()
+	tokenB, revokeB, err := door.Issue("org-b", map[string]DoorRoute{"primary": {Upstream: srvB.URL, Key: "key-of-b"}, "embed": {Upstream: srvB.URL, Key: "key-of-b"}}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer revokeB()
+	if status, _ := post(t, client, keydoor.URL("primary")+"/chat/completions", "Authorization", "Bearer "+tokenA); status != 200 {
+		t.Fatalf("org-a's own route: status %d", status)
+	}
+	if s := <-gotA; s.header.Get("Authorization") != "Bearer key-of-a" {
+		t.Fatalf("org-a's upstream got %q", s.header.Get("Authorization"))
+	}
+	if status, _ := post(t, client, keydoor.URL("embed")+"/embeddings", "Authorization", "Bearer "+tokenA); status != http.StatusForbidden {
+		t.Errorf("org-a's token on a route only org-b holds: status %d", status)
+	}
+	idA, _, _ := strings.Cut(strings.TrimPrefix(tokenA, keydoor.TokenPrefix), ".")
+	_, secretB, _ := strings.Cut(strings.TrimPrefix(tokenB, keydoor.TokenPrefix), ".")
+	if status, _ := post(t, client, keydoor.URL("primary")+"/chat/completions", "Authorization", "Bearer "+keydoor.TokenPrefix+idA+"."+secretB); status != http.StatusUnauthorized {
+		t.Errorf("org-a's id with org-b's secret: status %d", status)
+	}
+	select {
+	case s := <-gotB:
+		t.Fatalf("org-b's upstream got a call with %q from org-a's token", s.header.Get("Authorization"))
+	default:
+	}
+}
+
+func TestKeyDoorForwardsToTheRoutesUpstreamOnly(t *testing.T) {
+	door := &KeyDoor{}
+	client := doorClient(t, door)
+	srv, got := upstream(t, 200, `{}`)
+	other, otherGot := upstream(t, 200, `{}`)
+	otherHost := strings.TrimPrefix(other.URL, "http://")
+	token, revoke, err := door.Issue("org-1", map[string]DoorRoute{"primary": {Upstream: srv.URL + "/v1", Key: "real-key-3"}}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer revoke()
+	for _, path := range []string{
+		"/chat/completions",
+		"//" + otherHost + "/chat/completions",
+		"/http://" + otherHost + "/chat/completions",
+		"/@" + otherHost + "/chat/completions",
+	} {
+		req, _ := http.NewRequest(http.MethodPost, keydoor.URL("primary")+path, strings.NewReader(`{}`))
+		req.Host = otherHost
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("X-Forwarded-Host", otherHost)
+		res, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = res.Body.Close()
+		if res.StatusCode == 200 {
+			select {
+			case s := <-got:
+				if !strings.HasPrefix(s.path, "/v1/") {
+					t.Errorf("%s reached the upstream at %s", path, s.path)
+				}
+			case <-time.After(5 * time.Second):
+				t.Errorf("%s: status 200, but the route's upstream got no call", path)
+			}
+		}
+	}
+	if _, _, err := door.Issue("org-1", map[string]DoorRoute{"primary": {Upstream: "http://user:pw@" + otherHost}}, time.Minute); err == nil {
+		t.Error("an upstream with user info was accepted")
+	}
+	select {
+	case s := <-otherGot:
+		t.Fatalf("a host that is not the route's upstream got %s %s", s.method, s.path)
+	default:
+	}
+}
+
+func TestKeyDoorPassesNoRedirectToAnotherHost(t *testing.T) {
+	door := &KeyDoor{}
+	client := doorClient(t, door)
+	other, otherGot := upstream(t, 200, `{}`)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/steal", http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(srv.Close)
+	token, revoke, err := door.Issue("org-1", map[string]DoorRoute{"primary": {Upstream: srv.URL, Key: "real-key-4"}}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer revoke()
+	req, _ := http.NewRequest(http.MethodPost, keydoor.URL("primary")+"/chat/completions", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer "+token)
+	if res, err := client.Do(req); err == nil {
+		_ = res.Body.Close()
+	}
+	select {
+	case s := <-otherGot:
+		t.Fatalf("a redirect reached another host with %q", s.header.Get("Authorization"))
+	default:
+	}
+}

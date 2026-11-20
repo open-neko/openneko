@@ -16,6 +16,8 @@
 //
 // An embedding call has the same shape, with {"type":"embed","embed":{...},"model_key":"..."}.
 //
+// A status frame, {"type":"status"}, gets one {"type":"status","result":{"require_door":true,"key_env":[]}}.
+//
 // Closing the connection cancels the turn. The worker sends a key door token
 // in place of each model key and door URLs in place of the provider URLs; the
 // door in the control zone holds the keys. A token never goes into the run's
@@ -77,6 +79,9 @@ type Server struct {
 	// RequireDoor refuses a frame that carries a model key: only key door
 	// tokens and "none" pass.
 	RequireDoor bool
+	// KeyEnv names the model key variables that serve's environment held at
+	// start. A status frame reports them.
+	KeyEnv []string
 	// MaxTurns bounds the turns that run at once; more are refused.
 	MaxTurns int
 	// Sandbox runs every turn's terminal commands. The worker cannot set it.
@@ -173,6 +178,11 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 		_ = out.write(frame)
 	}
 	start, err := readFrame(reader)
+	if err == nil && start.Type == "status" {
+		result, _ := json.Marshal(Status{RequireDoor: s.RequireDoor, KeyEnv: append([]string{}, s.KeyEnv...)})
+		_ = out.write(Frame{Type: "status", Result: result})
+		return
+	}
 	if err == nil && s.RequireDoor && !onlyDoorTokens(start) {
 		exit(2, errors.New("openneko serve takes no model key: the frame must carry a key door token"))
 		return
@@ -293,6 +303,13 @@ func (s *Server) environ(in []string) []string {
 		out = append(out, "PATH="+path)
 	}
 	return out
+}
+
+// Status is serve's answer to a status frame: whether it refuses a frame
+// with a model key, and the key variables its environment held at start.
+type Status struct {
+	RequireDoor bool     `json:"require_door"`
+	KeyEnv      []string `json:"key_env"`
 }
 
 func onlyDoorTokens(frame Frame) bool {
