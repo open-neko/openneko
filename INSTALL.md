@@ -559,6 +559,15 @@ list or of the Terminal setting goes in the audit chain
 line per connection to its log, with the run, the organization, the host
 and the result.
 
+An install that runs the sandbox recipe from before 6.0.0 has a sandbox
+network with a route out. To close it, take the new recipe and run the
+compose command with `up -d --build`. Compose makes the network again with
+`internal: true` and starts `openneko-egress`. Then run `openneko
+release-check --sandbox`: it must print `sandbox_egress=closed`. Commands
+reach no host until an admin lists one. The steps for a native install are
+in `recipes/sandbox/README.md`, "Upgrade an install that runs an earlier
+recipe".
+
 This release replaces the bundled `xlsx`, `docx`, `pptx` and `pdf` skills
 with new ones. It removes the bundled `document-extraction`,
 `internal-comms`, `excel-author`, `pptx-author` and five financial-model
@@ -870,6 +879,11 @@ This release has fewer parts. The upgrade migrates your data in place:
   Search by meaning is off until you connect an
   [embedding service](#semantic-search-optional), and the terminal is off
   until you connect a [sandbox](#sandbox-optional).
+- **Terminal egress** is an admin list now. OpenShell took its allowed hosts
+  from the model host, each workflow's network hosts and the plugin
+  allowlists. The sandbox recipe takes only the list at Admin, Settings,
+  Agent, which is empty after the upgrade. A workflow's network hosts
+  apply only to the agent's web tool.
 - **The serve roles** now have the database name in them. The first start
   creates `neko_files_<database>` and `neko_subscriptions_<database>` with the
   rights of the old roles. On a database that you run, the `neko` login needs
@@ -1050,7 +1064,8 @@ with `recipes/sandbox/compose.native.yml`. It runs the sandbox on a network
 with no route out. Set `OPENNEKO_SANDBOX_DIR=$HOME/.local/share/openneko-sandbox`,
 `OPENNEKO_SANDBOX_GID` to your group (`id -g`) and a key in
 `OPENNEKO_SANDBOX_KEY`, then run
-`docker compose -f recipes/sandbox/compose.native.yml up -d`. Then set
+`docker compose -f recipes/sandbox/compose.native.yml up -d --build`. The
+file also starts the egress proxy, the only way out of that network. Then set
 `OPENNEKO_SANDBOX_URL=unix://$HOME/.local/share/openneko-sandbox/sandbox.sock`
 and the same key. Other users can share your primary group, so the start
 refuses a sandbox URL with no key, and a socket folder that other users can
