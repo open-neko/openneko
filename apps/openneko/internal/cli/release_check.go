@@ -84,8 +84,10 @@ func newReleaseCheckCmd() *cobra.Command {
 				if state != "off" {
 					egress := checkSandboxEgress(ctx, sandbox.ConfigFromEnv(os.Getenv))
 					fmt.Fprintf(out, "sandbox_egress=%s\n", egress)
-					if egress != "closed" {
-						fmt.Fprintln(cmd.ErrOrStderr(), sandboxEgressWarning(egress))
+					if webfront.OperatorEnforcesEgress() {
+						fmt.Fprintf(out, "sandbox_egress_by_operator=on\n")
+					} else if egress != "closed" {
+						return errors.New(sandboxEgressFailure(egress))
 					}
 				}
 			}
@@ -199,11 +201,11 @@ func checkSandboxEgress(ctx context.Context, cfg sandbox.Config) string {
 	return egress
 }
 
-func sandboxEgressWarning(egress string) string {
+func sandboxEgressFailure(egress string) string {
 	if egress == "open" {
-		return "warning: the sandbox network has a route out, so the agent's commands can reach the internet; run the sandbox on an internal network (INSTALL.md, \"Sandbox\")"
+		return "the sandbox network has a route out, so the terminal is off; run the sandbox on an internal network (INSTALL.md, \"Sandbox\"), or set " + webfront.OperatorEgressEnv + "=1 when you enforce its egress yourself"
 	}
-	return "warning: the sandbox did not report whether its network has a route out; rebuild it from recipes/sandbox and run it on an internal network (INSTALL.md, \"Sandbox\")"
+	return "the sandbox did not report that its network is closed, so the terminal is off; rebuild it from recipes/sandbox and run it on an internal network (INSTALL.md, \"Sandbox\"), or set " + webfront.OperatorEgressEnv + "=1 when you enforce its egress yourself"
 }
 
 func checkScheduler(ctx context.Context, socket string) error {

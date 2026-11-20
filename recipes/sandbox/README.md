@@ -147,8 +147,9 @@ address. Tools that read the proxy variables (pip, npm, curl, Python's
 that ignores them reaches nothing.
 
 `GET /v2/check` reports `egress`: `closed` when the sandbox's network has
-no default route, else `open`. `openneko release-check --sandbox` prints it
-as `sandbox_egress`, and the Sandbox card on the status page shows it.
+no default route, else `open`. OpenNeko gives a run the terminal only on
+`closed`. `openneko release-check --sandbox` prints it as `sandbox_egress`
+and fails on `open`, and the Sandbox card on the status page shows it.
 
 The bundled skills, `neko_data` and declared queries need no host on the
 list.
@@ -211,8 +212,11 @@ OpenNeko cannot see the network of another host. Run the sandbox there with
 `compose.native.yml`, or give it a network with no route out and run the
 egress proxy beside it yourself. `openneko release-check --sandbox` prints
 `sandbox_egress=open` when the sandbox has a route out, and `unknown` when
-the sandbox does not report its egress (a build from before 6.0.0). The
-status page then shows the Sandbox card as failing.
+the sandbox does not report its egress (a build from before 6.0.0). In both
+cases release-check fails, the terminal is off, and the status page shows
+the Sandbox card as failing. When a firewall on that host closes the
+sandbox, set `OPENNEKO_SANDBOX_EGRESS_BY_OPERATOR=1` for web: the terminal
+then runs, and the status page says that the operator enforces the egress.
 
 ## Upgrade an install that runs an earlier recipe
 
@@ -240,9 +244,9 @@ lists one.
 4. At Admin, Settings, Agent, list the hosts that your commands need, for
    example a package index.
 
-A sandbox from an earlier recipe keeps working with OpenNeko 6.0.0: it
-ignores `egress`, so its commands still reach the internet, and the status
-page shows the Sandbox card as failing until you upgrade it.
+A sandbox from an earlier recipe does not report `egress`. OpenNeko 6.0.0
+turns the terminal off, and the status page shows the Sandbox card as
+failing until you upgrade it.
 
 ## Script data
 

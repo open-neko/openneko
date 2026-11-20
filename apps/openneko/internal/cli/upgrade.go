@@ -163,6 +163,9 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 	if err != nil {
 		return err
 	}
+	if err := warnSandboxRoutesOut(errOut, files); err != nil {
+		return err
+	}
 	if opts.skipBackup {
 		fmt.Fprintln(errOut, "warning: --skip-backup given; upgrading the stack without a backup.")
 	} else {

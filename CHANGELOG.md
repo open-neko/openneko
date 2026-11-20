@@ -7,7 +7,10 @@
 * **Breaking:** sandbox commands reach no host by default. The sandbox network of `recipes/sandbox` is internal, with no route out and no DNS for external names. The new `openneko-egress` proxy is the only way out, and it lets a run reach only the hosts on its organization's list.
 * An admin lists the hosts at Admin, Settings, Agent, beside the Terminal setting. The list is empty after the upgrade. The form offers the hosts of installed packs, and the admin adds each one. A workflow's network hosts apply only to the agent's web tool.
 * Each change of the list or of the Terminal setting goes in the audit chain (`agent:egress_changed`, `agent:terminal_changed`). The proxy logs each request with the run, the organization, the host and the result.
-* `openneko release-check --sandbox` prints `sandbox_egress=closed`, `open` or `unknown`. The status page shows the Sandbox card as failing for `open` and `unknown`.
+* **Breaking:** the terminal, the script skills and workflow script steps run only when the sandbox reports a closed network. On `open` or `unknown` (a sandbox from before 6.0.0, an override that puts it on a network with a route out, a sandbox with no egress report) the terminal is off, and Admin, Settings, Agent and the status page say why. Each change of the state goes in the audit chain as `sandbox:egress_state`.
+* `openneko release-check --sandbox` prints `sandbox_egress=closed`, `open` or `unknown`, and fails on `open` and `unknown`.
+* `openneko start` and `openneko upgrade` warn when `compose.override.yml` gives the sandbox a route out.
+* For a sandbox on another host whose egress you enforce yourself, set `OPENNEKO_SANDBOX_EGRESS_BY_OPERATOR=1` for web. It is off by default; the status page shows it, and a change goes in the audit chain.
 * Upgrade an install that runs the sandbox recipe: take the new recipe, run the same compose command with `up -d --build`, then run `openneko release-check --sandbox` and check for `sandbox_egress=closed`. A native install starts the sandbox with `recipes/sandbox/compose.native.yml`. The steps are in `recipes/sandbox/README.md`, "Upgrade an install that runs an earlier recipe".
 * The bundled skills (`xlsx`, `docx`, `pptx`, `pdf`, `skill-creator`), `neko_data` and declared queries need no host on the list.
 
