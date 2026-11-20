@@ -29,6 +29,7 @@ func wakeQueue(t *testing.T, action func(context.Context) error) (*Queue, *wakeC
 	q.CronSweep = func(context.Context) error { c.cron.Add(1); return nil }
 	q.DirectorySync = func(context.Context) error { c.directory.Add(1); return nil }
 	q.BotNameSweep = func(context.Context) error { c.bots.Add(1); return nil }
+	q.DreamSweep = func(context.Context) error { return nil }
 	q.WorkflowAPISweep = func(context.Context) error { c.api.Add(1); return nil }
 	q.SSOSetupPoll = func(context.Context) error { c.sso.Add(1); return nil }
 	q.ActionExecute = func(ctx context.Context, _, _ string) error {
@@ -162,9 +163,9 @@ func TestInsertDueOncePerPeriod(t *testing.T) {
 		{t0, len(cronJobs)},
 		{t0.Add(40 * time.Second), 0},
 		{t0.Add(time.Minute), 4},
-		{t0.Add(time.Hour), 7},
-		{t0.Add(2 * time.Hour), 8},
-		{t0.Add(2*time.Hour + 30*time.Minute), 5},
+		{t0.Add(time.Hour), 8},
+		{t0.Add(2 * time.Hour), 9},
+		{t0.Add(2*time.Hour + 30*time.Minute), 6},
 	} {
 		n, err := q.InsertDue(ctx, step.at)
 		if err != nil {

@@ -98,7 +98,7 @@ func (a *API) DreamSweep(ctx context.Context) error {
 	})
 }
 
-type dreamThread struct {
+type dreamDueThread struct {
 	ID, OrgID string
 	LastAt    time.Time
 }
@@ -114,9 +114,9 @@ func (a *API) dreamSweep(ctx context.Context, settledBefore time.Time, propose f
 		if err != nil {
 			return err
 		}
-		var due []dreamThread
+		var due []dreamDueThread
 		for rows.Next() {
-			var t dreamThread
+			var t dreamDueThread
 			if err := rows.Scan(&t.ID, &t.OrgID, &t.LastAt); err != nil {
 				rows.Close()
 				return err
@@ -152,7 +152,7 @@ func (a *API) dreamSweep(ctx context.Context, settledBefore time.Time, propose f
 	}
 }
 
-func (a *API) dreamThreadPass(ctx context.Context, t dreamThread, propose func(orgID, input string) (string, error)) ([]dreamDecision, error) {
+func (a *API) dreamThreadPass(ctx context.Context, t dreamDueThread, propose func(orgID, input string) (string, error)) ([]dreamDecision, error) {
 	turns, err := a.dreamTurns(ctx, t)
 	if err != nil {
 		return nil, err
@@ -190,7 +190,7 @@ func (a *API) dreamThreadPass(ctx context.Context, t dreamThread, propose func(o
 	return decisions, nil
 }
 
-func (a *API) dreamTurns(ctx context.Context, t dreamThread) ([]dreamTurn, error) {
+func (a *API) dreamTurns(ctx context.Context, t dreamDueThread) ([]dreamTurn, error) {
 	rows, err := a.DB.Query(ctx, `select role, content, coalesce(run_id::text, '') from work_message
 		where thread_id = $1::uuid and org_id = $2 and role in ('user', 'assistant') order by created_at, id`, t.ID, t.OrgID)
 	if err != nil {
@@ -208,7 +208,7 @@ func (a *API) dreamTurns(ctx context.Context, t dreamThread) ([]dreamTurn, error
 	return out, rows.Err()
 }
 
-func (a *API) dreamCalls(ctx context.Context, t dreamThread) ([]dreamCall, error) {
+func (a *API) dreamCalls(ctx context.Context, t dreamDueThread) ([]dreamCall, error) {
 	rows, err := a.DB.Query(ctx, `select run_id::text, payload::text from work_run_event
 		where thread_id = $1::uuid and org_id = $2 and kind in ('tool_start', 'tool_end') order by run_id, seq`, t.ID, t.OrgID)
 	if err != nil {
