@@ -72,7 +72,7 @@ and proposing actions, with brakes so it never runs away from you.
 | Feature | What it does for you | Shipped in |
 |---|---|---|
 | The operating loop | Workflows observe your data on schedules, surface findings as observations, and propose actions through an approval stack — the full loop from data to decision. | #11 |
-| Build workflows by chatting | Create, update, and look up workflows and approval rules in the same chat where you ask questions — every artifact links back to the conversation that produced it. | #46 |
+| Build workflows by chatting | Create, update, and look up workflows and approval rules in the same chat where you ask questions. Only an admin saves an approval rule, and a pack's rule changes only in Settings. Every artifact links back to the conversation that produced it. | #46 |
 | Retire workflows by @mention | Delete a noisy or obsolete workflow mid-conversation by @mentioning it — composer autocomplete included. | #110 |
 | Row-level data triggers | Workflows fire the moment a row changes — stock dips below its reorder point, an account flips to at-risk — not just on a schedule. Wired in plain language when you save the workflow. | #50, #52, #63 |
 | Watchers | Set a condition in plain language — "tell me if daily orders drop below 500" — and the assistant monitors it and alerts you when it trips. | #96 |
@@ -121,7 +121,7 @@ shareable on purpose. OpenNeko records each change; it keeps no old versions.
 | Feature | What it does for you | Shipped in |
 |---|---|---|
 | Change record | Each change to a skill, a workflow or a team memory adds a `config_change` row: who made it, what changed, when, and a short summary. OpenNeko keeps no old versions and has no undo. To try a change safely, copy the skill and edit the copy. | #96 |
-| Personal workflows | Your saved workflows are yours; the team's are the team's. Same name, no collisions. | #96 |
+| Personal workflows | Your saved workflows are yours; the team's are the team's. Same name, no collisions. A workflow that the assistant saves in your conversation is yours and runs with your access. A workflow with no owner runs only when a pack installed it or an admin adopted it for the team; an admin assigns an owner to any other one at Admin, Settings, Workflow API. | #96 |
 | Personal memory layer | Correct or hide a team memory just for yourself without changing it for anyone else — and pull in team updates when you want them. | #96 |
 | Your own skills | Copy any skill you can see to a new name. The copy is yours: only you see it, and you edit or delete it as you like. The team skill stays as it is. An admin can share their own skill with the team. Only an admin edits or deletes a team skill. Your conversations, your workflows and the workflow runs you start load your own skills beside the team skills your groups hold. A scheduled run of a workflow with no owner, and a pack workflow, load team skills only. | Phase 1 |
 | Skill edits that stick | When the assistant changes a skill during a conversation, OpenNeko saves the change when the turn ends. An admin's change goes to the team skill. A member's change to a team skill goes to a private copy named after the skill and the member, for example `report-ann`, and the team skill stays as it is. A change to your own skill is saved in place, and a new skill becomes your own. | #413 |

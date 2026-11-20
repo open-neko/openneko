@@ -269,6 +269,17 @@ func (r *runTools) saveWorkflow(ctx context.Context, in *jsObj) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if owner == "" && runID != "" {
+		var user *string
+		err := a.DB.QueryRow(ctx, `select actor_user_id from work_run where id::text = $1 and org_id = $2`, runID, orgID).Scan(&user)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
+		owner = deref(user)
+	}
+	if owner == "" {
+		return nil, errors.New("This run has no user, so it cannot save a workflow. An admin adds a team workflow from a personal one at Workflows.")
+	}
 	if runID != "" {
 		var existingID string
 		err := a.DB.QueryRow(ctx, `select id::text from workflow_definition where org_id = $1 and name = $2 and owner_user_id = $3
@@ -454,11 +465,47 @@ func policyRecord(p actionPolicy, orgID string) any {
 	return out
 }
 
+type ruleRefusal string
+
+func (e ruleRefusal) Error() string { return string(e) }
+
+// ruleSaveRefusal keeps approval rules out of a steered run's reach: only a
+// run of a current admin saves a rule, and no run rewrites a pack's rule.
+func (a *API) ruleSaveRefusal(ctx context.Context, orgID, runID, name string) error {
+	var userID *string
+	err := a.DB.QueryRow(ctx, `select actor_user_id from work_run where id::text = $1 and org_id = $2`, runID, orgID).Scan(&userID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	role := ""
+	if deref(userID) != "" {
+		if role, err = a.role(ctx, orgID, *userID); err != nil {
+			return err
+		}
+	}
+	if role != "admin" {
+		return ruleRefusal("Only an admin can save an approval rule. Ask an admin to change it in Settings, Approval rules.")
+	}
+	var pack string
+	err = a.DB.QueryRow(ctx, `select i.pack_id from pack_artifact p join pack_install i on i.id = p.pack_install_id
+		where p.org_id = $1 and p.artifact_kind = 'policy' and p.target_ref = $2 order by i.pack_id limit 1`, orgID, name).Scan(&pack)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	if pack != "" {
+		return ruleRefusal(fmt.Sprintf("The rule %q belongs to the pack %s. Change it in Settings, Approval rules.", name, pack))
+	}
+	return nil
+}
+
 // upsertPolicy is upsertActionPolicyByName() in packages/llm/src/workflows/action-store.ts.
 func (r *runTools) upsertPolicy(ctx context.Context, in *jsObj) (any, error) {
 	a := r.api
 	orgID, _ := in.vals["orgId"].(string)
 	name, _ := in.vals["name"].(string)
+	if err := a.ruleSaveRefusal(ctx, orgID, r.binding.RunID, name); err != nil {
+		return nil, err
+	}
 	description, _ := in.vals["description"].(string)
 	priority, _ := in.vals["priority"].(float64)
 	enabled, _ := in.vals["enabled"].(bool)
