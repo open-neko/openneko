@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/open-neko/neko/apps/openneko/internal/instance"
+	"github.com/open-neko/neko/apps/openneko/internal/native"
 )
 
 func nativeSandboxDir() string {
@@ -34,6 +35,9 @@ func prepareNativeSandbox(dir, url, key string) error {
 	path, ok := strings.CutPrefix(url, "unix://")
 	if !ok || runtime.GOOS == "windows" {
 		return nil
+	}
+	if err := native.CheckSocketPath(path); err != nil {
+		return err
 	}
 	folder := filepath.Dir(filepath.Clean(path))
 	info, err := os.Stat(folder)

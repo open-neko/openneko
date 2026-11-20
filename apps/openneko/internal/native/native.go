@@ -7,6 +7,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sort"
 	"strings"
 )
 
@@ -58,7 +60,41 @@ func (l Layout) DataFolders() map[string]string {
 	}
 }
 
+// MaxSocketPath is the longest Unix socket path that net.Listen accepts here.
+func MaxSocketPath() int {
+	switch runtime.GOOS {
+	case "linux", "windows":
+		return 107
+	default:
+		return 103
+	}
+}
+
+// CheckSocketPath fails with one line when path is too long for a Unix socket.
+func CheckSocketPath(path string) error {
+	if n := len(path); n > MaxSocketPath() {
+		return fmt.Errorf("the socket path %s has %d bytes and %s allows %d; set XDG_DATA_HOME to a shorter folder or use a shorter instance name", path, n, runtime.GOOS, MaxSocketPath())
+	}
+	return nil
+}
+
+func (l Layout) sockets() []string {
+	paths := []string{l.WebAdmin()}
+	for k, v := range sharedEnv(l) {
+		if strings.HasSuffix(k, "_SOCKET") {
+			paths = append(paths, v)
+		}
+	}
+	sort.Strings(paths)
+	return paths
+}
+
 func (l Layout) Prepare() error {
+	for _, path := range l.sockets() {
+		if err := CheckSocketPath(path); err != nil {
+			return err
+		}
+	}
 	for _, dir := range []string{l.Root, l.Files(), l.Index(), l.Credentials(), filepath.Dir(l.GraphJin()), l.Run(), l.Door(), l.Logs(), l.AgentRuns(), l.Subscriptions()} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err

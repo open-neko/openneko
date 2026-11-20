@@ -5,6 +5,8 @@ package native
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -234,5 +236,45 @@ func TestServeGetsNoControlZoneSecret(t *testing.T) {
 		if envMap(step.Env)["OPENNEKO_DATABASE_URL"] != "planted" {
 			t.Errorf("step %s lost the database URL", step.Name)
 		}
+	}
+}
+
+func TestPrepareRefusesASocketPathTooLongToListenOn(t *testing.T) {
+	base, err := os.MkdirTemp("/tmp", "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(base) })
+	longest := filepath.Join("run", "config-check.sock")
+	rootAt := func(n int) Layout {
+		pad := n - len(base) - len(longest) - 2
+		return Layout{Root: filepath.Join(base, strings.Repeat("r", pad))}
+	}
+
+	at := rootAt(MaxSocketPath())
+	if err := at.Prepare(); err != nil {
+		t.Fatalf("a path at the limit: %v", err)
+	}
+	for _, path := range at.sockets() {
+		ln, err := net.Listen("unix", path)
+		if err != nil {
+			t.Fatalf("listen on %s (%d bytes): %v", path, len(path), err)
+		}
+		_ = ln.Close()
+	}
+
+	over := rootAt(MaxSocketPath() + 1)
+	err = over.Prepare()
+	want := fmt.Sprintf("config-check.sock has %d bytes", MaxSocketPath()+1)
+	if err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "shorter instance name") {
+		t.Fatalf("a path one byte over the limit: %v", err)
+	}
+	if strings.Contains(err.Error(), "\n") {
+		t.Fatalf("not one line: %q", err)
+	}
+	path := filepath.Join(over.Run(), "config-check.sock")
+	if ln, lerr := net.Listen("unix", path); lerr == nil {
+		_ = ln.Close()
+		t.Fatalf("listen on %s (%d bytes) worked; the limit is too low", path, len(path))
 	}
 }

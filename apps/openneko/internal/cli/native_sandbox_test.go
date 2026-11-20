@@ -7,10 +7,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/open-neko/neko/apps/openneko/internal/native"
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 )
 
 func TestPrepareNativeSandboxNeedsAKeyAndAPrivateFolder(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "openneko-sandbox")
+	dir := filepath.Join(testsock.Dir(t), "openneko-sandbox")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +30,7 @@ func TestPrepareNativeSandboxNeedsAKeyAndAPrivateFolder(t *testing.T) {
 	if err := prepareNativeSandbox(dir, url, "k"); err != nil {
 		t.Fatalf("own folder with a key: %v", err)
 	}
-	open := filepath.Join(t.TempDir(), "open")
+	open := filepath.Join(testsock.Dir(t), "open")
 	if err := os.MkdirAll(open, 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -36,6 +39,10 @@ func TestPrepareNativeSandboxNeedsAKeyAndAPrivateFolder(t *testing.T) {
 	}
 	if err := prepareNativeSandbox(dir, "unix://"+filepath.Join(open, "sandbox.sock"), "k"); err == nil || !strings.Contains(err.Error(), "other users can enter it") {
 		t.Fatalf("a folder that the group can enter: %v", err)
+	}
+	long := "unix://" + filepath.Join(dir, strings.Repeat("s", native.MaxSocketPath()), "sandbox.sock")
+	if err := prepareNativeSandbox(dir, long, "k"); err == nil || !strings.Contains(err.Error(), "shorter instance name") {
+		t.Fatalf("a socket path over the limit: %v", err)
 	}
 	if err := prepareNativeSandbox(dir, "https://sandbox.example", "k"); err != nil {
 		t.Fatalf("remote sandbox: %v", err)
