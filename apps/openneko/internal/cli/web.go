@@ -8,11 +8,9 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,6 +20,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/jobs"
+	"github.com/open-neko/neko/apps/openneko/internal/native"
 	"github.com/open-neko/neko/apps/openneko/internal/version"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 )
@@ -70,7 +69,7 @@ The admin password route changes the neko role's password and writes it to
 config.json. With OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE=1, web then stops
 with exit code 0, so its supervisor starts it again.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			ctx, stop := native.NotifyStop(cmd.Context())
 			defer stop()
 			if local, _ := config.ReadLocal(""); local.SecretsBackendError() != nil {
 				return local.SecretsBackendError()

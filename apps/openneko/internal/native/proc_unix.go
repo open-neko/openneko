@@ -3,8 +3,10 @@
 package native
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"syscall"
 )
 
@@ -41,3 +43,14 @@ func terminate(p *os.Process) error { return p.Signal(syscall.SIGTERM) }
 
 // Detach puts a background supervisor in its own session.
 func Detach() *syscall.SysProcAttr { return &syscall.SysProcAttr{Setsid: true} }
+
+// NotifyStop ends the context on SIGINT or SIGTERM.
+func NotifyStop(parent context.Context) (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
+}
+
+type job struct{}
+
+func newJob() (*job, error)        { return &job{}, nil }
+func (*job) add(*os.Process) error { return nil }
+func (*job) close()                {}
