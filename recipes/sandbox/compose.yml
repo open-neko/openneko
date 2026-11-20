@@ -17,11 +17,14 @@ services:
       OPENNEKO_SANDBOX_WORKSPACES: /var/lib/openneko/sandbox-runs
       OPENNEKO_SANDBOX_HOMES: /var/lib/openneko/sandbox-homes
       OPENNEKO_SANDBOX_GID: "1001"
+      OPENNEKO_SANDBOX_EGRESS_PROXY: openneko-egress:3128
+      OPENNEKO_SANDBOX_EGRESS_CONTROL: unix:///run/openneko-egress/control.sock
       OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
     volumes:
       - openneko-sandbox-socket:/run/openneko-sandbox
       - openneko-sandbox-runs:/var/lib/openneko/sandbox-runs
       - openneko-sandbox-homes:/var/lib/openneko/sandbox-homes
+      - openneko-egress-control:/run/openneko-egress
     networks:
       - openneko-sandbox
     cap_drop:
@@ -36,6 +39,25 @@ services:
     security_opt:
       - no-new-privileges:true
     pids_limit: 1024
+
+  # The only way out of the sandbox network: each run's commands reach the
+  # hosts on the organization's egress list through it, and nothing else.
+  openneko-egress:
+    build:
+      context: recipes/sandbox
+    command: ["egress", "--listen", ":3128", "--control", "unix:///run/openneko-egress/control.sock"]
+    restart: unless-stopped
+    volumes:
+      - openneko-egress-control:/run/openneko-egress
+    networks:
+      - openneko-sandbox
+      - openneko-egress
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
 
   openneko-serve:
     environment: *sandbox-env
@@ -56,9 +78,11 @@ volumes:
   openneko-sandbox-socket:
   openneko-sandbox-runs:
   openneko-sandbox-homes:
+  openneko-egress-control:
 
 # internal: no route out and no external DNS, so commands reach nothing
 # outside this network.
 networks:
   openneko-sandbox:
     internal: true
+  openneko-egress:

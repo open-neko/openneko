@@ -141,6 +141,11 @@ func RunTurn(ctx context.Context, turn Turn) (int, error) {
 		if err != nil {
 			return failed(fmt.Errorf("terminal unavailable: %w", err))
 		}
+		if err := client.SetEgress(sandbox.Egress{Org: getenv("OPENNEKO_MCP_ORG_ID"), Label: getenv("OPENNEKO_HARNESS_RUN_ID"),
+			Hosts: splitList(getenv("OPENNEKO_HARNESS_EGRESS_HOSTS"))}); err != nil {
+			_ = client.Close()
+			return failed(fmt.Errorf("terminal unavailable: %w", err))
+		}
 		if runDir := getenv("RUN_DIR"); hostCall != nil && runDir != "" {
 			if err := client.SetData(runDir, bridgeDataBroker(hostCall), sandbox.DefaultDataLimits); err != nil {
 				_ = client.Close()
@@ -347,4 +352,14 @@ func bridgeDataBroker(call mcp.Caller) sandbox.DataBroker {
 		text, _ := json.Marshal(result.Content[0])
 		return sandbox.GraphQLData(text)
 	}
+}
+
+func splitList(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }

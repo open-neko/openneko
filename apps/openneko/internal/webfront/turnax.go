@@ -176,7 +176,7 @@ type axTurnOptions struct {
 	WantsCards, RichCards                     bool
 	Servers                                   []string
 	Tools                                     *toolServer
-	NetworkHosts                              []string
+	NetworkHosts, EgressHosts                 []string
 	Debug, NativeDelegationOff, Shell         bool
 	TimeoutMs, MaxToolIterations              int
 	ReasoningEffort, PythonPath               string
@@ -272,6 +272,12 @@ func axEnviron(cfg *llm.AxBackendConfig, o axTurnOptions, cwd string, limits age
 	add("OPENNEKO_HARNESS_WORKSPACE_DIR", cwd)
 	if o.Shell {
 		add("OPENNEKO_HARNESS_SHELL", "1")
+		if o.RunID != "" {
+			add("OPENNEKO_HARNESS_RUN_ID", o.RunID)
+		}
+		if len(o.EgressHosts) > 0 {
+			add("OPENNEKO_HARNESS_EGRESS_HOSTS", strings.Join(o.EgressHosts, ","))
+		}
 	}
 	if o.Workspace != nil {
 		if o.Workspace.ThreadUploadsRoot != "" {

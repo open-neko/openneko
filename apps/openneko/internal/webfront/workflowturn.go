@@ -247,9 +247,17 @@ func (a *API) workflowStagedCore(ctx context.Context, o workflowTurnOptions, st 
 	first := in.Prompt
 	if slices.ContainsFunc(jsArray(steps), func(s any) bool { return jsTruthy(jsGet(s, "script")) }) {
 		var box *sandbox.Config
+		egress := sandbox.Egress{Org: in.OrgID, Label: in.RunID}
 		if terminal {
 			cfg := sandbox.ConfigFromEnv(os.Getenv)
 			box = &cfg
+			if a.DB != nil {
+				hosts, err := a.orgEgressHosts(ctx, in.OrgID)
+				if err != nil {
+					return axRunResult{}, err
+				}
+				egress.Hosts = hosts
+			}
 		}
 		var data sandbox.DataBroker
 		if box != nil && !in.withoutScriptData {
@@ -268,7 +276,7 @@ func (a *API) workflowStagedCore(ctx context.Context, o workflowTurnOptions, st 
 			}
 		}
 		results, err := runScriptSteps(ctx, scriptStepsInput{Steps: jsArray(steps), Workspace: stage.Workspace,
-			Input: o.TriggerPayload, Allowed: allowed, Sandbox: box, Data: data, Emit: st.wrapped})
+			Input: o.TriggerPayload, Allowed: allowed, Sandbox: box, Egress: egress, Data: data, Emit: st.wrapped})
 		if err != nil {
 			return axRunResult{}, err
 		}

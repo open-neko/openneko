@@ -70,6 +70,7 @@ func TestSandboxOverlaySharesOnlyItsSocketVolume(t *testing.T) {
 		t.Fatalf("the sandbox listens on no Unix socket: %v", box.Command)
 	}
 	socketDir := path.Dir(listen)
+	controlDir := path.Dir(strings.TrimPrefix(box.Environment["OPENNEKO_SANDBOX_EGRESS_CONTROL"], "unix://"))
 	socketVolume := ""
 	for _, mount := range box.Volumes {
 		source, target, named := namedVolume(mount)
@@ -82,7 +83,7 @@ func TestSandboxOverlaySharesOnlyItsSocketVolume(t *testing.T) {
 			continue
 		}
 		for name, svc := range services {
-			if name == "openneko-sandbox" {
+			if name == "openneko-sandbox" || name == "openneko-egress" && target == controlDir {
 				continue
 			}
 			for _, other := range svc.Volumes {
@@ -94,6 +95,18 @@ func TestSandboxOverlaySharesOnlyItsSocketVolume(t *testing.T) {
 	}
 	if socketVolume == "" {
 		t.Fatalf("no sandbox volume holds the socket folder %s", socketDir)
+	}
+	proxy, ok := services["openneko-egress"]
+	if !ok || box.Environment["OPENNEKO_SANDBOX_EGRESS_PROXY"] != "openneko-egress:3128" {
+		t.Fatalf("the sandbox sends its runs to no egress proxy: %v", box.Environment)
+	}
+	if !slices.Contains(proxy.Command, box.Environment["OPENNEKO_SANDBOX_EGRESS_CONTROL"]) {
+		t.Errorf("the proxy asks another control socket than the sandbox opens: %v", proxy.Command)
+	}
+	for _, mount := range proxy.Volumes {
+		if _, target, named := namedVolume(mount); !named || target != controlDir {
+			t.Errorf("the egress proxy mounts more than the control folder: %s", mount)
+		}
 	}
 	gid := box.Environment["OPENNEKO_SANDBOX_GID"]
 	for _, name := range []string{"web", "openneko-serve"} {
@@ -180,9 +193,23 @@ func TestSandboxNetworkHasNoRouteOut(t *testing.T) {
 				t.Errorf("%v: the sandbox joins network %s, which is not internal: %+v", set, name, n)
 			}
 			for other, list := range joins {
-				if other != "openneko-sandbox" && slices.Contains(list, name) {
+				if other != "openneko-sandbox" && other != "openneko-egress" && slices.Contains(list, name) {
 					t.Errorf("%v: %s joins the sandbox network %s", set, other, name)
 				}
+			}
+		}
+		var out []string
+		for _, name := range joins["openneko-egress"] {
+			if !slices.Contains(own, name) {
+				out = append(out, name)
+			}
+		}
+		if len(out) != 1 || networks[out[0]].Internal {
+			t.Errorf("%v: the egress proxy must join the sandbox network and one network with a route out, got %v", set, joins["openneko-egress"])
+		}
+		for other, list := range joins {
+			if len(out) == 1 && other != "openneko-egress" && slices.Contains(list, out[0]) {
+				t.Errorf("%v: %s joins the proxy's outbound network %s", set, other, out[0])
 			}
 		}
 	}

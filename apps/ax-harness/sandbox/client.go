@@ -75,6 +75,7 @@ type Client struct {
 	synced  map[string]fileState
 	dirs    map[string]bool
 	data    *scriptData
+	egress  Egress
 }
 
 // NewClient accepts unix:///path, http:// and https:// URLs.
@@ -212,6 +213,8 @@ func (c *Client) send(ctx context.Context, body execBody) (execAnswer, error) {
 		return execAnswer{}, fmt.Errorf("terminal refused the command: %w", err)
 	}
 	body.Fresh, body.Dirs, body.Put, body.Delete = !c.started, dirs, put, remove
+	egress := c.egress
+	body.Egress = &egress
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return execAnswer{}, err
