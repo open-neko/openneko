@@ -820,7 +820,9 @@ func TestManualRunRoute(t *testing.T) {
 		t.Error("a refused manual run left a workflow run")
 	}
 	seed(t, db, `update workflow_definition set owner_user_id = 'member' where id = $1`, wf.ID)
-	a.turnCore = func(context.Context, agentCoreInput) (axRunResult, error) { return axRunResult{Status: "completed"}, nil }
+	a.turnCore = func(context.Context, agentCoreInput) (axRunResult, error) {
+		return axRunResult{Status: "completed"}, nil
+	}
 	body = decode(t, call(front, "POST", path, `{}`, admin))
 	if runID, _ := body["workRunId"].(string); !isUUID(runID) || rowText(t, db, `select actor_user_id || ':' || actor_role from work_run where id = $1`, runID) != "member:member" {
 		t.Errorf("a member's workflow runs as: %v", body)
