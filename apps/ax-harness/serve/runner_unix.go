@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"testing"
 	"time"
 
 	"github.com/open-neko/openneko/apps/ax-harness/harness"
@@ -120,7 +121,7 @@ func (s *Server) runInRunner(ctx context.Context, conn io.Writer, reader *bufio.
 	go s.serveBroker(ctx, broker)
 
 	enc := json.NewEncoder(link)
-	setup := RunnerSetup{RequireDoor: s.RequireDoor, Path: s.Getenv("PATH"), SandboxURL: s.Sandbox.URL, SandboxKey: s.Sandbox.Key}
+	setup := RunnerSetup{RequireDoor: s.RequireDoor, Path: s.Getenv("PATH"), SandboxURL: s.Sandbox.URL, SandboxKey: s.Sandbox.Key, Confine: s.ConfineRunner}
 	if enc.Encode(Frame{Type: "runner", Runner: &setup}) == nil && enc.Encode(start) == nil {
 		go func() {
 			_, _ = io.Copy(link, reader)
@@ -255,11 +256,22 @@ func (b *brokerClient) get(ctx context.Context, name string) (net.Conn, error) {
 // runnerRun replaces the harness in a test's runner.
 var runnerRun func(context.Context, harness.Turn) (int, error)
 
+// SetRunnerTurn replaces the harness in this process's agent runner, so a
+// proof test can run its checks where agent code runs. It panics outside a
+// test binary.
+func SetRunnerTurn(run func(context.Context, harness.Turn) (int, error)) {
+	if !testing.Testing() {
+		panic("serve.SetRunnerTurn works only in a test binary")
+	}
+	runnerRun = run
+}
+
 // RunRunner is the agent runner: one turn, on the links that serve passed
 // as descriptors 3 and 4. It reaches a model only through the key door and
 // the sandbox only through connections that the broker passes, and opens
-// no connection itself.
-func RunRunner(ctx context.Context) error {
+// no connection itself. When serve asks, confine runs after the start frame
+// and before any agent code, with the turn's folders.
+func RunRunner(ctx context.Context, confine func(folders []string) error) error {
 	link, err := unixConn(os.NewFile(runnerLinkFD, "runner-link"))
 	if err != nil {
 		return fmt.Errorf("the agent runner needs its link from serve: %w", err)
@@ -288,6 +300,14 @@ func RunRunner(ctx context.Context) error {
 	}
 	if setup.SandboxURL != "" {
 		srv.Sandbox = sandbox.Config{URL: setup.SandboxURL, Key: setup.SandboxKey, Dial: broker.dialer(brokerSandbox)}
+	}
+	if setup.Confine {
+		srv.confine = func(environ []string) error {
+			if confine == nil {
+				return errors.New("this agent runner cannot confine itself")
+			}
+			return confine(RunnerFolders(environ))
+		}
 	}
 	srv.defaults()
 	srv.handleStream(ctx, link, reader)

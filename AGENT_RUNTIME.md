@@ -398,17 +398,17 @@ has:
 | 8 | 7.0 | one call confines every thread |
 | 9 | 7.1 | connect to named Unix sockets |
 
-Serve needs ABI 3 or later. Below ABI 9, Landlock cannot refuse a connect
+Serve uses any ABI from 1. Below ABI 9, Landlock cannot refuse a connect
 to a named socket, so the web admin socket also needs a token that `openneko
 web` writes beside it (`web-admin.sock.token`, mode 0600). Serve cannot read
 that file. From ABI 9, serve may connect only to the key door socket and the
 sandbox socket.
 
-In production mode, serve does not start when the kernel has no Landlock or
-an ABI below 3. It prints one line that names the kernel and what to do.
-With `OPENNEKO_ENV=development`, serve starts unconfined and says so on each
-start; `OPENNEKO_SERVE_CONFINE=off` turns the confinement off in development
-mode only. `openneko release-check --serve-socket` prints
+On a Linux kernel with no Landlock, serve starts unconfined and says so, so
+that data reads, the web app and workflows without an agent step still
+work. In production mode it then refuses every agent turn (see the next
+section). `OPENNEKO_SERVE_CONFINE=off` turns the confinement off in
+development mode only. `openneko release-check --serve-socket` prints
 `serve_confinement=landlock ABI <n>` and fails when serve runs unconfined in
 production mode. The status page shows the state under "Agent confinement".
 On macOS and Windows the confinement is not built yet: serve starts and the
@@ -441,8 +441,60 @@ When the runner stops without an exit frame, serve sends one with code 2.
 frame reports `"runner":"process"`. On Windows, turns still run inside
 serve; the Windows runner waits for the Windows probe.
 
-The runner is not confined yet beyond what it inherits from serve. Its
-own Landlock and seccomp filter come next.
+### The runner confines itself (Linux)
+
+On Linux, the runner reads its setup frame and the turn's start frame, then
+confines itself for good, before any agent code runs:
+
+- Landlock keeps read and write on the folders of its turn only (the
+  workspace, the uploads, the skills, the run folder and the artifacts, all
+  in the turn's staged folder) and read on the time zone files. It keeps no
+  right to run a program. From ABI 4 it also refuses every TCP bind and
+  connect; from ABI 6 it refuses signals to, and abstract sockets of, a
+  process outside its domain.
+- A seccomp filter, on every thread with `no_new_privs`, refuses `socket`,
+  `connect`, `bind`, `listen`, the `io_uring` calls, `ptrace`,
+  `process_vm_readv`, `process_vm_writev`, `kcmp`, `pidfd_getfd`,
+  `process_madvise`, `kill`, `tkill`, `pidfd_send_signal`, `truncate` by
+  path, `unshare`, `setns`, `clone` with a namespace flag, `bpf`,
+  `perf_event_open`, `userfaultfd` and the key calls. It allows `tgkill` and
+  `pidfd_open` only for the runner's own process: the Go runtime signals its
+  own threads. It refuses the `TIOCSTI` and `TIOCLINUX` ioctls. `clone3`
+  gets `ENOSYS`, because a filter cannot read its flags. A call from another
+  architecture ends the process.
+
+So the runner holds the two sockets that serve passed and the connections
+that the broker passes, and can open no other. It reaches no file of
+another turn, the config folder or the home folder, and cannot read,
+trace or signal serve or web.
+
+The seccomp filter closes the gaps of the low Landlock ABIs: truncate (ABI
+3), signals and abstract sockets (ABI 6) and connects to named sockets (ABI
+9). Two gaps stay below ABI 5: a rename or link between folders fails (ABI
+2), and the runner can send an ioctl to a device it opened (ABI 5). The
+lowest kernel for agent turns is Linux 5.13 (ABI 1) with `landlock` in the
+active security modules.
+
+Fail closed: when Landlock or seccomp is missing, serve refuses every agent
+turn in production mode. Each refused turn, the start of serve, the status
+page and `openneko doctor` show one line, for example "agent confinement:
+off. Linux 4.18.0 has no Landlock: use kernel 5.13 or later with landlock in
+the lsm= boot list, so agent turns are off". The line tells a kernel with no
+Landlock apart from a kernel that has it off (`EOPNOTSUPP`) and from a
+container engine that blocks the calls. No setting turns agent turns on
+without the confinement in production mode. `openneko release-check
+--serve-socket` prints `runner_confinement=landlock+seccomp ABI <n>` and
+fails when a turn would run unconfined. A runner that cannot confine itself
+ends the turn with an error and runs no agent code.
+
+Proof tests (`apps/openneko/internal/cli/runner_confine_linux_test.go`):
+`TestConfinedRunner` runs the checks of the CONF0 probe, and the truncate,
+signal and pidfd checks, inside a real runner that serve starts, in a
+one-account layout. It runs them unconfined as a control, confined at the
+kernel's ABI and with the ABI capped at 1, and with Landlock or seccomp
+left out, which must fail named checks. `TestConfinedServeDoesItsWork`
+(`internal/webfront`) runs a whole turn with a fake model through the door
+descriptor in a confined runner.
 
 Agent runs read customer data only through the direct GraphJin tools. No run
 hands a question to GraphJin's own agent, so GraphJin gets no provider key.

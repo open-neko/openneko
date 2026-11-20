@@ -128,7 +128,7 @@ func confinedServe(t *testing.T, l native.Layout, home, dsn, sandboxURL string) 
 	deadline := time.Now().Add(30 * time.Second)
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		st, err := serveConfinement(ctx, rs.socket)
+		st, _, err := serveConfinement(ctx, rs.socket)
 		cancel()
 		if m := listenLine.FindStringSubmatch(logs.String()); err == nil && m != nil {
 			rs.state, rs.addr = st, m[1]
@@ -174,12 +174,12 @@ func filesCall(t *testing.T, rs runningServe, method, path string, body []byte) 
 // tools. The GraphJin config has no table, so a GraphQL answer of any kind
 // shows that the child runs.
 func TestConfinedServeDoesItsWork(t *testing.T) {
-	st := confine.Available()
-	if st.ABI < 3 {
+	st := confine.RunnerAvailable()
+	if !st.Confined {
 		if os.Getenv("CI") != "" {
-			t.Fatalf("this runner cannot prove the confinement: %s, Landlock ABI %d", confine.Kernel(), st.ABI)
+			t.Fatalf("this runner cannot prove the confinement: %s", st.Reason)
 		}
-		t.Skipf("%s gives Landlock ABI %d", confine.Kernel(), st.ABI)
+		t.Skip(st.Reason)
 	}
 	box := startRecipeSandbox(t, false)
 	pool := testpg.Pool(t, "0121_file_content.sql")
@@ -236,8 +236,8 @@ func TestConfinedServeDoesItsWork(t *testing.T) {
 		t.Fatalf("serve reports %+v", rs.state)
 	}
 	t.Logf("serve: %s", rs.state)
-	if runner := serveRunner(t, rs.socket); runner != "process" {
-		t.Fatalf("serve runs turns %q, want each in an agent runner process", runner)
+	if runner, confined := serveRunner(t, rs.socket); runner != "process" || !confined.Confined || confined.Mechanism != "landlock+seccomp" {
+		t.Fatalf("serve runs turns %q under %+v, want each in a confined agent runner process", runner, confined)
 	}
 
 	t.Setenv("OPENNEKO_AGENT_RUNS_DIR", l.AgentRuns())
@@ -337,7 +337,7 @@ func TestConfinedServeDoesItsWork(t *testing.T) {
 	}
 }
 
-func serveRunner(t *testing.T, socket string) string {
+func serveRunner(t *testing.T, socket string) (string, confine.State) {
 	t.Helper()
 	conn, err := net.Dial("unix", socket)
 	if err != nil {
@@ -349,13 +349,14 @@ func serveRunner(t *testing.T, socket string) string {
 	}
 	var frame struct {
 		Result struct {
-			Runner string `json:"runner"`
+			Runner            string        `json:"runner"`
+			RunnerConfinement confine.State `json:"runner_confinement"`
 		} `json:"result"`
 	}
 	if err := json.NewDecoder(conn).Decode(&frame); err != nil {
 		t.Fatal(err)
 	}
-	return frame.Result.Runner
+	return frame.Result.Runner, frame.Result.RunnerConfinement
 }
 
 func envOrDefault(name, def string) string {

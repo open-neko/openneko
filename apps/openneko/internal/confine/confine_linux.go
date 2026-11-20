@@ -84,24 +84,64 @@ func kernel() string {
 // abiCap lets a test act as an older kernel.
 var abiCap int
 
-func abiOf() int {
+func abiOf() (int, syscall.Errno) {
 	r, _, e := unix.Syscall(unix.SYS_LANDLOCK_CREATE_RULESET, 0, 0, unix.LANDLOCK_CREATE_RULESET_VERSION)
 	if e != 0 {
-		return 0
+		return 0, e
 	}
 	if abiCap > 0 && int(r) > abiCap {
-		return abiCap
+		return abiCap, 0
 	}
-	return int(r)
+	return int(r), 0
 }
 
 // Available tells what this kernel can give, with no change to the process.
 func Available() State {
-	abi := abiOf()
+	abi, e := abiOf()
 	if abi < 1 {
-		return State{Mechanism: "landlock", Reason: fmt.Sprintf("Linux %s has no Landlock: use kernel 5.13 or later with landlock in the lsm= boot list", kernel())}
+		return State{Mechanism: "landlock", Reason: noLandlock(e, kernel(), InContainer())}
 	}
 	return State{Mechanism: "landlock", ABI: abi, Confined: true, Gaps: gaps(abi)}
+}
+
+// noLandlock tells a kernel without Landlock apart from a kernel that has it
+// off and from a container engine that refuses the call.
+func noLandlock(e syscall.Errno, release string, container bool) string {
+	switch {
+	case e == unix.EOPNOTSUPP:
+		return fmt.Sprintf("Linux %s has Landlock but it is off: add landlock to the lsm= boot list", release)
+	case container && kernelAtLeast(release, 5, 13):
+		return fmt.Sprintf("the container engine blocks Landlock (Linux %s has it): use an engine whose default seccomp profile allows the landlock calls (INSTALL.md, \"Agent confinement\")", release)
+	}
+	return fmt.Sprintf("Linux %s has no Landlock: use kernel 5.13 or later with landlock in the lsm= boot list", release)
+}
+
+func kernelAtLeast(release string, major, minor int) bool {
+	var a, b int
+	if n, _ := fmt.Sscanf(release, "%d.%d", &a, &b); n < 2 {
+		return false
+	}
+	return a > major || a == major && b >= minor
+}
+
+// InContainer tells whether this process runs in a Docker, Podman or other
+// OCI container.
+func InContainer() bool {
+	for _, f := range []string{"/.dockerenv", "/run/.containerenv"} {
+		if _, err := os.Stat(f); err == nil {
+			return true
+		}
+	}
+	return os.Getenv("container") != ""
+}
+
+// LSMList reads the active Linux security modules.
+func LSMList() (string, error) {
+	b, err := os.ReadFile("/sys/kernel/security/lsm")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(b)), nil
 }
 
 // Kernel names the running kernel for a message.
@@ -116,6 +156,9 @@ func Apply(spec Spec) (State, error) {
 	}
 	fs := handled(st.ABI)
 	attr := unix.LandlockRulesetAttr{Access_fs: fs}
+	if spec.NoTCP && st.ABI >= 4 {
+		attr.Access_net = unix.LANDLOCK_ACCESS_NET_BIND_TCP | unix.LANDLOCK_ACCESS_NET_CONNECT_TCP
+	}
 	size := unsafe.Sizeof(attr)
 	switch {
 	case st.ABI >= 6:

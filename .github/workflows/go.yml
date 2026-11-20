@@ -90,7 +90,10 @@ jobs:
         run: |
           set -euo pipefail
           uname -r
-          tests=(TestEveryThreadIsConfined TestConfinedServeOneAccount TestServeRefusesToStartUnconfinedInProduction)
+          cat /sys/kernel/security/lsm || true
+          tests=(TestEveryThreadIsConfined TestConfinedServeOneAccount TestServeRefusesToStartUnconfinedInProduction
+            TestConfinedRunner TestRunnerRefusesATurnWhenItCannotConfine TestTurnsAreOffWhenRunnersCannotBeConfined
+            TestDoctorNamesTheConfinementAndTheModules TestNoLandlockNamesTheCause TestRunnerFilterRefusesTheListedCalls)
           go test -count=1 -v -run "^($(IFS='|'; echo "${tests[*]}"))\$" ./internal/confine ./internal/cli | tee "$RUNNER_TEMP/confine.log"
           ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/confine.log" "${tests[@]}"
 

@@ -523,6 +523,7 @@ func runNativeDoctor(ctx context.Context, out io.Writer) error {
 		failed = true
 	}
 	fmt.Fprintln(out, "runtime: native")
+	failed = confinementDoctorLines(out) || failed
 	if activeServer != nil {
 		failed = serverDoctorLines(out) || failed
 	}

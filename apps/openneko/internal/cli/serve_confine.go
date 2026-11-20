@@ -16,9 +16,6 @@ import (
 
 const (
 	serveConfineEnv = "OPENNEKO_SERVE_CONFINE"
-	// serveMinABI is the Landlock ABI that refuses truncate outside serve's
-	// folders: Linux 6.2.
-	serveMinABI = 3
 )
 
 type serveFolders struct {
@@ -98,17 +95,12 @@ func confineServe(out io.Writer, f serveFolders, development bool) (confine.Stat
 			}
 		}
 	}
-	avail := confine.Available()
-	if avail.Confined && avail.ABI < serveMinABI {
-		avail = confine.State{Mechanism: avail.Mechanism, ABI: avail.ABI,
-			Reason: fmt.Sprintf("%s gives Landlock ABI %d and serve needs ABI %d (Linux 6.2 or later)", confine.Kernel(), avail.ABI, serveMinABI)}
-	}
-	st := avail
+	st := confine.Available()
 	var err error
-	if avail.Confined {
+	if st.Confined {
 		st, err = confine.Apply(serveSpec(f))
 	} else {
-		err = fmt.Errorf("%w: %s", confine.ErrUnsupported, avail.Reason)
+		err = fmt.Errorf("%w: %s", confine.ErrUnsupported, st.Reason)
 	}
 	if err == nil {
 		fmt.Fprintf(out, "openneko serve is confined: %s\n", st)
@@ -117,19 +109,49 @@ func confineServe(out io.Writer, f serveFolders, development bool) (confine.Stat
 		}
 		return st, nil
 	}
-	if !development && st.Mechanism != "" {
-		if errors.Is(err, confine.ErrUnsupported) {
-			return st, fmt.Errorf("openneko serve cannot confine itself: %s. Use Linux 6.2 or later with landlock in the lsm= boot list; for development only, set OPENNEKO_ENV=development", st.Reason)
-		}
+	if !errors.Is(err, confine.ErrUnsupported) && st.Mechanism != "" && !development {
 		return st, fmt.Errorf("openneko serve cannot confine itself: %w", err)
 	}
 	st.Confined, st.Reason = false, err.Error()
-	mode := "development mode"
-	if !development {
-		mode = "the two-account install keeps the boundary"
-	}
-	fmt.Fprintf(out, "warning: openneko serve runs unconfined (%s): %s\n", mode, st.Reason)
+	fmt.Fprintf(out, "warning: openneko serve runs unconfined: %s\n", st.Reason)
 	return st, nil
+}
+
+var runnerAvailable = confine.RunnerAvailable
+
+// runnerConfinement tells how each agent runner will be confined. On Linux
+// in production mode a runner that cannot be confined runs no turn: turnsOff
+// then holds the line that each refused turn shows.
+func runnerConfinement(out io.Writer, development bool) (st confine.State, confineRunner bool, turnsOff string) {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv(serveConfineEnv)), "off") {
+		st = confine.State{Reason: serveConfineEnv + "=off in development mode"}
+		fmt.Fprintf(out, "warning: agent runners run unconfined: %s\n", st.Reason)
+		return st, false, ""
+	}
+	st = runnerAvailable()
+	switch {
+	case st.Confined:
+		fmt.Fprintf(out, "each agent runner confines itself: %s\n", st)
+		if len(st.Gaps) > 0 {
+			fmt.Fprintf(out, "agent runner gaps on this kernel: %s\n", strings.Join(st.Gaps, "; "))
+		}
+		return st, true, ""
+	case st.Mechanism == "":
+		fmt.Fprintf(out, "warning: agent runners run unconfined: %s\n", st.Reason)
+		return st, false, ""
+	case development:
+		fmt.Fprintf(out, "warning: agent runners run unconfined in development mode: %s\n", st.Reason)
+		return st, false, ""
+	}
+	turnsOff = turnsOffLine(st)
+	fmt.Fprintln(out, turnsOff)
+	return st, false, turnsOff
+}
+
+// turnsOffLine is the one line that the start, the status page, doctor and
+// each refused turn show when agent runners cannot be confined.
+func turnsOffLine(st confine.State) string {
+	return fmt.Sprintf("agent confinement: off. %s, so agent turns are off", st.Reason)
 }
 
 // postgresCertPaths lists where the Postgres client looks for TLS files: the

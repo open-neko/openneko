@@ -18,6 +18,8 @@ type Spec struct {
 	Exec []string
 	// Sockets holds named local sockets that it may connect to.
 	Sockets []string
+	// NoTCP refuses every TCP bind and connect where Landlock can (ABI 4).
+	NoTCP bool
 }
 
 // State tells how a process is confined.

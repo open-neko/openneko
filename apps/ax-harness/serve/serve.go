@@ -30,9 +30,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -91,12 +93,20 @@ type Server struct {
 	// its own (see RunRunner); RunnerEnv is that process's whole environment.
 	Runner    []string
 	RunnerEnv []string
+	// RunnerConfinement is how the OS confines each runner; a status frame
+	// reports it. ConfineRunner makes each runner confine itself.
+	RunnerConfinement json.RawMessage
+	ConfineRunner     bool
+	// TurnsOff, when set, refuses every agent turn with this text. Host
+	// model calls and embedding calls still run.
+	TurnsOff string
 	// Run runs one turn; tests replace it.
 	Run      func(context.Context, harness.Turn) (int, error)
 	Generate func(context.Context, inference.Request, string, string) (inference.Result, error)
 	Embed    func(context.Context, embedding.Request, string) (embedding.Result, error)
 
 	runnerStarted func(*os.Process)
+	confine       func(environ []string) error
 
 	mu      sync.Mutex
 	running int
@@ -182,7 +192,8 @@ func (s *Server) handleStream(parent context.Context, conn io.Writer, reader *bu
 		if len(s.Runner) > 0 {
 			runner = "process"
 		}
-		result, _ := json.Marshal(Status{RequireDoor: s.RequireDoor, KeyEnv: append([]string{}, s.KeyEnv...), Confinement: s.Confinement, Runner: runner})
+		result, _ := json.Marshal(Status{RequireDoor: s.RequireDoor, KeyEnv: append([]string{}, s.KeyEnv...), Confinement: s.Confinement, Runner: runner,
+			RunnerConfinement: s.RunnerConfinement, TurnsOff: s.TurnsOff})
 		_ = out.write(Frame{Type: "status", Result: result})
 		return
 	}
@@ -216,6 +227,10 @@ func (s *Server) handleStream(parent context.Context, conn io.Writer, reader *bu
 		exit(2, errors.New("expected a start frame with a run specification"))
 		return
 	}
+	if s.TurnsOff != "" {
+		exit(2, errors.New(s.TurnsOff))
+		return
+	}
 	if !s.acquire() {
 		exit(2, errors.New("serve is at its turn limit"))
 		return
@@ -226,6 +241,12 @@ func (s *Server) handleStream(parent context.Context, conn io.Writer, reader *bu
 			exit(2, err)
 		}
 		return
+	}
+	if s.confine != nil {
+		if err := s.confine(start.Environ); err != nil {
+			exit(2, fmt.Errorf("the agent runner could not confine itself, so the turn did not run: %w", err))
+			return
+		}
 	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
@@ -269,6 +290,10 @@ func (s *Server) handleStream(parent context.Context, conn io.Writer, reader *bu
 }
 
 func (s *Server) call(parent context.Context, reader *bufio.Reader, out *frameWriter, exit func(int, error), run func(context.Context) (any, error)) {
+	if s.TurnsOff != "" {
+		exit(2, errors.New(s.TurnsOff))
+		return
+	}
 	if !s.acquire() {
 		exit(2, errors.New("serve is at its turn limit"))
 		return
@@ -321,6 +346,9 @@ type RunnerSetup struct {
 	Path        string `json:"path,omitempty"`
 	SandboxURL  string `json:"sandbox_url,omitempty"`
 	SandboxKey  string `json:"sandbox_key,omitempty"`
+	// Confine makes the runner confine itself before the turn's agent code
+	// runs, and refuse the turn when it cannot.
+	Confine bool `json:"confine,omitempty"`
 }
 
 // Status is serve's answer to a status frame: whether it refuses a frame
@@ -332,6 +360,10 @@ type Status struct {
 	Confinement json.RawMessage `json:"confinement,omitempty"`
 	// Runner is "process" when each turn runs in an agent runner process.
 	Runner string `json:"runner,omitempty"`
+	// RunnerConfinement is how the OS confines each agent runner.
+	RunnerConfinement json.RawMessage `json:"runner_confinement,omitempty"`
+	// TurnsOff tells why serve refuses every agent turn.
+	TurnsOff string `json:"turns_off,omitempty"`
 }
 
 func onlyDoorTokens(frame Frame) bool {
@@ -481,3 +513,24 @@ type bridgeStream struct {
 
 func (b *bridgeStream) Write(p []byte) (int, error) { return b.out.Write(p) }
 func (b *bridgeStream) Close() error                { return b.PipeReader.Close() }
+
+// runnerFolderVars name the folders of a turn that its runner reads and
+// writes: all of them lie in the turn's staged workspace.
+var runnerFolderVars = []string{"OPENNEKO_HARNESS_WORKSPACE_DIR", "OPENNEKO_HARNESS_UPLOADS_DIR", "OPENNEKO_MCP_SKILLS_ROOT", "RUN_DIR", "ARTIFACT_DIR"}
+
+// RunnerFolders lists the folders that the turn of environ uses.
+func RunnerFolders(environ []string) []string {
+	var out []string
+	for _, name := range runnerFolderVars {
+		dir := ""
+		for _, entry := range environ {
+			if key, value, ok := strings.Cut(entry, "="); ok && key == name {
+				dir = value
+			}
+		}
+		if filepath.IsAbs(dir) {
+			out = append(out, filepath.Clean(dir))
+		}
+	}
+	return out
+}
