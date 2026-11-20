@@ -107,6 +107,7 @@ type workPromptInput struct {
 	CurrentUserMessage        string           `json:"currentUserMessage"`
 	PriorSummary              string           `json:"priorSummary"`
 	MemoryContext             string           `json:"memoryContext"`
+	LessonsContext            string           `json:"lessonsContext"`
 	Business                  string           `json:"business"`
 	OperatorProfile           string           `json:"operatorProfile"`
 	InstalledSkills           []installedSkill `json:"installedSkills"`
@@ -182,6 +183,7 @@ func buildWorkPrompt(in workPromptInput) string {
 			"knowledgeRoot", ws.KnowledgeRoot, "threadUploadsRoot", ws.ThreadUploadsRoot,
 			"artifactRoot", ws.ArtifactRoot, "shellTool", shellTool),
 		memorySection(in.SupportsMemoryTool, in.FilesEnabled, in.MemoryContext),
+		lessonsSection(in.LessonsContext),
 	}
 	kept := parts[:0]
 	for _, p := range parts {
@@ -263,6 +265,13 @@ func memorySection(searchTool, files bool, memoryContext string) string {
 	}
 	return section("memory", "loaded", loaded, "application", section("memory_apply"),
 		"usage", "\n\n"+strings.Join(usage, "\n\n"))
+}
+
+func lessonsSection(lessons string) string {
+	if jsTrim(lessons) == "" {
+		return ""
+	}
+	return section("lessons", "loaded", jsTrim(lessons))
 }
 
 // readOnlyMemorySection is buildMemorySection() with saveMode "none".

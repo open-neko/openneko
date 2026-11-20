@@ -144,6 +144,11 @@ func (a *API) loadTurnContext(ctx context.Context, o turnOptions) (*turnContext,
 	if err != nil {
 		return nil, err
 	}
+	lessons, err := a.dreamLessonsContext(ctx, o.OrgID, o.RunID, o.Message)
+	if err != nil {
+		log.Printf("[dreaming] lessons unavailable for run %s: %v", o.RunID, err)
+		lessons = ""
+	}
 	profile, err := a.operatorProfile(ctx, o.OrgID, act.UserID)
 	if err != nil {
 		return nil, err
@@ -189,6 +194,7 @@ func (a *API) loadTurnContext(ctx context.Context, o turnOptions) (*turnContext,
 			CurrentUserMessage:        o.Message,
 			PriorSummary:              summary,
 			MemoryContext:             memory,
+			LessonsContext:            lessons,
 			Business:                  businessSection(business),
 			OperatorProfile:           operatorProfileSection(profile),
 			InstalledSkills:           skills,

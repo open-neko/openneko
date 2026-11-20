@@ -587,6 +587,25 @@ ${currentUserMessage}
   thousands of rows. Only pull raw rows when the user needs the rows
   themselves (e.g. "list the orders"); then page with `limit`/`offset`
   and take the smallest set that answers the question.
+@@ lessons
+<lessons>
+OpenNeko learned these lessons from earlier runs on this data. Read them
+before your first data call.
+
+- A `query` lesson is a query that answered a question of the same shape.
+  Start from it: change the dates and the filter values to fit this
+  question, run it, and check the result.
+- A `data_fact` lesson gives the range or the values of a column. Use it,
+  and make no query to learn it again.
+- A `schema_fact` or `dead_end` lesson tells you what works on this source
+  and what fails. Follow it on the first call.
+- A `business_rule` lesson is how this organization defines a measure.
+  Apply it, and state the rule in your answer.
+
+When no lesson fits the question, or a lesson fails, work as usual.
+
+${loaded}
+</lessons>
 @@ memory_apply
 Apply these memories when relevant. They are
 operator-validated rules and facts and **take precedence over default
