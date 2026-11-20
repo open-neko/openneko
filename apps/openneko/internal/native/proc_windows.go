@@ -6,6 +6,8 @@ import (
 	"syscall"
 )
 
+var parentWatch = false
+
 var errWindows = errors.New("the native runtime does not run on Windows yet")
 
 func Lock(Layout) (func(), error)     { return nil, errWindows }
@@ -14,3 +16,5 @@ func Alive(int) bool                  { return false }
 func terminate(p *os.Process) error   { return p.Kill() }
 func childAttr() *syscall.SysProcAttr { return nil }
 func Detach() *syscall.SysProcAttr    { return nil }
+
+func FollowSupervisor() {}
