@@ -517,9 +517,12 @@ list goes in the audit chain as `agent:egress_changed`. The rules and the
 log are in `recipes/sandbox/README.md`, "Egress".
 
 The sandbox reports in `GET /v2/check` whether its network has a route out.
-`openneko release-check --sandbox` prints `sandbox_egress`, and the status
-page shows the Sandbox card as failing when the answer is `open` or
-`unknown`. A sandbox on another host is the operator's to close.
+Web gives a run the terminal only when the answer is `closed`, or when the
+operator sets `OPENNEKO_SANDBOX_EGRESS_BY_OPERATOR=1` for a sandbox on
+another host. Web asks again every 30 seconds and records each change as
+`sandbox:egress_state` in the audit chain. `openneko release-check
+--sandbox` prints `sandbox_egress` and fails on `open` and `unknown`; the
+status page shows the Sandbox card as failing.
 
 ## Shared folders
 

@@ -391,9 +391,11 @@ running web. `openneko release-check
 `remote`. It fails when the sandbox socket is in the folder of serve's
 sockets, or when nothing answers on it. With a sandbox set, it also prints
 `sandbox_egress=closed`, `open` or `unknown`. `closed` means the sandbox's
-network has no route out. For `open` or `unknown` it prints a warning, and
-the Sandbox card on the status page shows as failing. Run the sandbox from
+network has no route out. For `open` or `unknown` it fails, and the Sandbox
+card on the status page shows as failing. Run the sandbox from
 `recipes/sandbox` on its internal network (see [Sandbox](#sandbox-optional)).
+With `OPENNEKO_SANDBOX_EGRESS_BY_OPERATOR=1` it also prints
+`sandbox_egress_by_operator=on` and does not fail.
 
 To check a Docker install with a sandbox, run
 `scripts/smoke-script-step.sh <compose project> <web URL>` from a checkout.
@@ -591,6 +593,22 @@ release-check --sandbox`: it must print `sandbox_egress=closed`. Commands
 reach no host until an admin lists one. The steps for a native install are
 in `recipes/sandbox/README.md`, "Upgrade an install that runs an earlier
 recipe".
+
+OpenNeko gives a run the terminal, the script skills and workflow script
+steps only when the sandbox reports `closed`. Web asks the sandbox again
+every 30 seconds. On `open` or `unknown` the terminal is off, and Admin,
+Settings, Agent and the status page say why. Each change of the state goes
+in the audit chain of each organization as `sandbox:egress_state`.
+`openneko start` and `openneko upgrade` print a warning when
+`compose.override.yml` puts the sandbox on a network that is not internal,
+on an external network, or on `network_mode` other than `none`.
+
+A sandbox on another host can report `open` although a firewall there
+closes it. When you enforce its egress yourself, set
+`OPENNEKO_SANDBOX_EGRESS_BY_OPERATOR=1` for web. The terminal then runs
+whatever the sandbox reports, and the status page says that the operator
+enforces the egress. Web records the change in the audit chain at the first
+check after a restart. The setting is off by default.
 
 This release replaces the bundled `xlsx`, `docx`, `pptx` and `pdf` skills
 with new ones. It removes the bundled `document-extraction`,

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"path/filepath"
@@ -231,7 +232,34 @@ func TestReleaseCheckSandboxEgress(t *testing.T) {
 	if got := checkSandboxEgress(ctx, sandbox.Config{URL: cfg.URL, Key: "wrong"}); got != "unknown" {
 		t.Errorf("a refused key gave sandbox_egress=%s, want unknown", got)
 	}
-	if !strings.Contains(sandboxEgressWarning("open"), "route out") || !strings.Contains(sandboxEgressWarning("unknown"), "did not report") {
-		t.Error("the egress warning does not name the state")
+
+	t.Setenv("OPENNEKO_SANDBOX_URL", cfg.URL)
+	t.Setenv("OPENNEKO_SANDBOX_KEY", "k")
+	t.Setenv("OPENNEKO_SERVE_SOCKET", filepath.Join(t.TempDir(), "serve.sock"))
+	t.Setenv("OPENNEKO_CONFIG_CHECK_SOCKET", "")
+	run := func() (string, error) {
+		cmd := newReleaseCheckCmd()
+		var out strings.Builder
+		cmd.SetOut(&out)
+		cmd.SetErr(io.Discard)
+		cmd.SetArgs([]string{"--sandbox"})
+		err := cmd.Execute()
+		return out.String(), err
+	}
+	for _, c := range []struct{ body, out, err string }{
+		{`{"status":"ok","egress":"closed"}`, "sandbox_egress=closed\n", ""},
+		{`{"status":"ok","egress":"open"}`, "sandbox_egress=open\n", "has a route out"},
+		{`{"status":"ok"}`, "sandbox_egress=unknown\n", "did not report that its network is closed"},
+	} {
+		answer.Store(c.body)
+		out, err := run()
+		if !strings.Contains(out, c.out) || (c.err == "") != (err == nil) || err != nil && !strings.Contains(err.Error(), c.err) {
+			t.Errorf("%s: %q %v, want %q and an error with %q", c.body, out, err, c.out, c.err)
+		}
+	}
+	t.Setenv("OPENNEKO_SANDBOX_EGRESS_BY_OPERATOR", "1")
+	answer.Store(`{"status":"ok","egress":"open"}`)
+	if out, err := run(); err != nil || !strings.Contains(out, "sandbox_egress=open\nsandbox_egress_by_operator=on\n") {
+		t.Errorf("operator enforces egress: %q %v", out, err)
 	}
 }

@@ -101,6 +101,9 @@ func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, op
 	if err := warnStackSocketMounts(cmd.ErrOrStderr(), files); err != nil {
 		return err
 	}
+	if err := warnSandboxRoutesOut(cmd.ErrOrStderr(), files); err != nil {
+		return err
+	}
 	previousSkipMigrate, hadSkipMigrate := os.LookupEnv("OPENNEKO_SKIP_MIGRATE")
 	if opts.skipMigrate {
 		_ = os.Setenv("OPENNEKO_SKIP_MIGRATE", "1")
