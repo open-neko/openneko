@@ -48,8 +48,27 @@ func checkWith(goos, goarch string, docker func() bool) Result {
 	return Result{
 		Supported: false,
 		Triple:    triple,
-		Reason:    "Windows is not currently supported. WSL2 viability is being evaluated.",
+		Reason:    "the Docker install runs on Linux and macOS; on Windows, install the native release with install-native.ps1.",
 	}
+}
+
+// Native reports whether the native release, which needs no Docker, runs on
+// this host.
+func Native() Result {
+	return nativeCheck(runtime.GOOS, runtime.GOARCH)
+}
+
+func nativeCheck(goos, goarch string) Result {
+	triple := goos + "-" + goarch
+	switch goos {
+	case "linux", "darwin", "windows":
+	default:
+		return Result{Triple: triple, Reason: "the native release is for Linux, macOS and Windows."}
+	}
+	if goarch != "amd64" && goarch != "arm64" {
+		return Result{Triple: triple, Reason: "the native release is for amd64 and arm64."}
+	}
+	return Result{Supported: true, Triple: triple}
 }
 
 func hasDocker() bool {
