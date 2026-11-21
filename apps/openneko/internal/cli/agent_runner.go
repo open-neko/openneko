@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/spf13/cobra"
 
@@ -28,7 +29,7 @@ func newAgentRunnerCmd() *cobra.Command {
 }
 
 // agentRunner is the command and environment of serve's agent runner. The
-// runner gets no variable of serve's except PATH and TMPDIR.
+// runner gets no variable of serve's except those of runnerEnvNames.
 func agentRunner() ([]string, []string, error) {
 	if !serve.RunnerSupported {
 		return nil, nil, nil
@@ -38,12 +39,21 @@ func agentRunner() ([]string, []string, error) {
 		return nil, nil, err
 	}
 	var env []string
-	for _, name := range []string{"PATH", "TMPDIR"} {
+	for _, name := range runnerEnvNames() {
 		if value, ok := os.LookupEnv(name); ok {
 			env = append(env, name+"="+value)
 		}
 	}
 	return []string{exe, agentRunnerCmd}, env, nil
+}
+
+// runnerEnvNames are PATH and TMPDIR, and on Windows SYSTEMROOT, which
+// Windows sockets need.
+func runnerEnvNames() []string {
+	if runtime.GOOS == "windows" {
+		return []string{"PATH", "TMPDIR", "SYSTEMROOT"}
+	}
+	return []string{"PATH", "TMPDIR"}
 }
 
 // runnerSystemReads are the files that a runner reads after it confines

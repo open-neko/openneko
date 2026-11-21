@@ -67,6 +67,9 @@ func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns
 	srv := &serve.Server{Getenv: os.Getenv, Host: hostName, HostID: start.hostID, Kernel: confine.Kernel(), Log: out, MaxTurns: maxTurns, Sandbox: box, RequireDoor: !webfront.Development(), KeyEnv: names, Confinement: state, NetworkConfinement: networkState,
 		Runner: runner, RunnerEnv: runnerEnv, RunnerConfinement: runnerJSON, ConfineRunner: turnsOff == "", TurnsOff: turnsOff,
 		RefusePeer: agentPeerRefused}
+	if runner != nil && turnsOff == "" {
+		srv.StartRunner = runnerStarter(out, webfront.AgentRunsDir())
+	}
 	done := make(chan error, 1)
 	go func() {
 		err := srv.Serve(ctx, ln)
