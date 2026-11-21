@@ -78,7 +78,7 @@ func TestAgentSocketRefusesTheNetworkPart(t *testing.T) {
 		}
 		sock := filepath.Join(testsock.Dir(t), "serve.sock")
 		ctx, stop := context.WithCancel(context.Background())
-		done, err := serveAgentTurns(ctx, io.Discard, sock, 1, sandbox.Config{}, confine.State{}, confine.State{})
+		done, err := serveAgentTurns(ctx, io.Discard, sock, 1, turnHostStart{sandbox: sandbox.Config{}}, confine.State{}, confine.State{})
 		if err != nil {
 			t.Fatal(err)
 		}

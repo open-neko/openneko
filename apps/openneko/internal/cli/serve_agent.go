@@ -16,7 +16,6 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 
 	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
-	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
 
@@ -24,7 +23,8 @@ import (
 // agent socket.
 var agentPeerRefused func(pid int) bool
 
-func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns int, box sandbox.Config, confinement, network confine.State) (<-chan error, error) {
+func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns int, start turnHostStart, confinement, network confine.State) (<-chan error, error) {
+	box := start.sandbox
 	if err := box.Check(); err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns
 		fmt.Fprintln(out, "openneko serve runs each agent turn in an agent runner process of its own")
 	}
 	hostName, _ := os.Hostname()
-	srv := &serve.Server{Getenv: os.Getenv, Host: hostName, Kernel: confine.Kernel(), Log: out, MaxTurns: maxTurns, Sandbox: box, RequireDoor: !webfront.Development(), KeyEnv: names, Confinement: state, NetworkConfinement: networkState,
+	srv := &serve.Server{Getenv: os.Getenv, Host: hostName, HostID: start.hostID, Kernel: confine.Kernel(), Log: out, MaxTurns: maxTurns, Sandbox: box, RequireDoor: !webfront.Development(), KeyEnv: names, Confinement: state, NetworkConfinement: networkState,
 		Runner: runner, RunnerEnv: runnerEnv, RunnerConfinement: runnerJSON, ConfineRunner: confineRunner, TurnsOff: turnsOff,
 		RefusePeer: agentPeerRefused}
 	done := make(chan error, 1)

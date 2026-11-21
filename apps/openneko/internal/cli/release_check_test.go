@@ -106,7 +106,7 @@ func TestReleaseCheckServeSocket(t *testing.T) {
 		}
 		path := filepath.Join(dir, fmt.Sprintf("serve-%d.sock", i))
 		sctx, stop := context.WithCancel(ctx)
-		done, err := serveAgentTurns(sctx, io.Discard, path, 1, sandbox.Config{}, c.state, c.network)
+		done, err := serveAgentTurns(sctx, io.Discard, path, 1, turnHostStart{sandbox: sandbox.Config{}}, c.state, c.network)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -59,6 +59,7 @@ func TestConfineProbeChild(t *testing.T) {
 		Part      string
 		Hidden    []string
 		TempDir   string
+		KeyFile   string
 	}
 	if err := json.Unmarshal([]byte(os.Getenv(confineProbeEnv)), &in); err != nil {
 		t.Fatal(err)
@@ -71,9 +72,12 @@ func TestConfineProbeChild(t *testing.T) {
 	tool := mustRead(t, "/bin/true")
 	var log bytes.Buffer
 	var st confine.State
+	var start turnHostStart
 	var err error
 	if in.Part == "host" {
-		st, err = confineTurnHost(&log, f, os.Getenv("OPENNEKO_ENV") == "development")
+		t.Setenv("OPENNEKO_SANDBOX_KEY", "")
+		t.Setenv("OPENNEKO_SANDBOX_KEY_FILE", in.KeyFile)
+		st, start, err = confineTurnHost(&log, f, os.Getenv("OPENNEKO_ENV") == "development")
 	} else {
 		st, err = confineServe(&log, f, os.Getenv("OPENNEKO_ENV") == "development")
 	}
@@ -129,6 +133,9 @@ func TestConfineProbeChild(t *testing.T) {
 			conn.Close()
 		}
 		out.Allowed["connect to the key door"] = err == nil
+		out.Allowed["keep the sandbox key from its secret file"] = start.sandbox.Key == "planted-sandbox-key"
+		_, err = os.ReadFile(in.KeyFile)
+		out.Refused["read the sandbox key file after confinement"] = err != nil
 	}
 	if path, lerr := exec.LookPath("duckdb"); lerr == nil && in.Part != "host" {
 		cmd := exec.Command(path, "-c", "select 1")
@@ -197,6 +204,14 @@ func TestConfinedServeOneAccount(t *testing.T) {
 		}
 		planted = append(planted, p)
 	}
+	secrets := filepath.Join(base, "run-secrets")
+	if err := os.MkdirAll(secrets, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	keyFile := filepath.Join(secrets, "sandbox-key")
+	if err := os.WriteFile(keyFile, []byte("planted-sandbox-key\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	home := filepath.Join(base, "home")
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		t.Fatal(err)
@@ -261,7 +276,7 @@ func TestConfinedServeOneAccount(t *testing.T) {
 					"gj": l.GraphJin(), "agentSocket": env["OPENNEKO_SERVE_SOCKET"], "checkSocket": env["OPENNEKO_CONFIG_CHECK_SOCKET"]},
 				"Planted": planted, "WebAdmin": l.WebAdmin(), "Door": env["OPENNEKO_KEY_DOOR_SOCKET"], "WebPID": os.Getpid(), "WebAddr": uintptr(unsafe.Pointer(unsafe.StringData(webSecret))),
 				"Outside": filepath.Join(l.Root, "planted-by-serve"), "ExecCopy": filepath.Join(own, "tool"),
-				"FilesFile": filepath.Join(own, "kept.txt"), "Part": part, "Hidden": hidden, "TempDir": ownTmp,
+				"FilesFile": filepath.Join(own, "kept.txt"), "Part": part, "Hidden": hidden, "TempDir": ownTmp, "KeyFile": keyFile,
 			})
 			probeServePart(t, l, home, configDir, env, in)
 		})

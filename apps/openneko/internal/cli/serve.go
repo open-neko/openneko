@@ -84,13 +84,13 @@ func newServeCmd() *cobra.Command {
 			if err := os.Setenv("TMPDIR", tmp.Turns); err != nil {
 				return err
 			}
-			hostState, err := confineTurnHost(cmd.ErrOrStderr(), serveFolders{agentRuns: webfront.AgentRunsDir(), agentSocket: agentSocket, sandboxURL: sandboxURL}, development)
+			hostState, start, err := confineTurnHost(cmd.ErrOrStderr(), serveFolders{agentRuns: webfront.AgentRunsDir(), agentSocket: agentSocket, sandboxURL: sandboxURL}, development)
 			if err != nil {
 				return err
 			}
 			var agentDone <-chan error
 			if agentSocket != "" {
-				if agentDone, err = serveAgentTurns(ctx, cmd.OutOrStdout(), agentSocket, maxTurns, sandbox.Config{URL: sandboxURL, Key: secretenv.Get("OPENNEKO_SANDBOX_KEY")}, hostState, network.state); err != nil {
+				if agentDone, err = serveAgentTurns(ctx, cmd.OutOrStdout(), agentSocket, maxTurns, start, hostState, network.state); err != nil {
 					return err
 				}
 			}
