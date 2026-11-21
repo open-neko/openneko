@@ -190,7 +190,7 @@ func (a *API) workMemories(w http.ResponseWriter, r *http.Request) {
 		or (m.scope = 'database' and ('database:' || coalesce(m.scope_id, '')) = any($5::text[])))`
 	memories, err := a.collectMemories(ctx, a.DB, `select `+memoryColumns+` from work_memory m
 		where m.org_id = $1 and ($3 or m.archived_at is null) and case when $2 = ''
-		  then m.user_id is null and `+team+`
+		  then (m.user_id is null and `+team+`) or (m.user_id = $6 and m.suppressed = false)
 		  else (m.user_id = $2 and m.suppressed = false)
 		    or (m.user_id is null and `+team+` and not exists (
 		      select 1 from work_memory p where p.org_id = m.org_id and p.user_id = $2
@@ -198,7 +198,7 @@ func (a *API) workMemories(w http.ResponseWriter, r *http.Request) {
 		  end
 		order by m.pinned desc, m.updated_at desc
 		limit 200`,
-		act.OrgID, memoryLayer(act), r.URL.Query().Get("includeArchived") == "true", held.All, ids)
+		act.OrgID, memoryLayer(act), r.URL.Query().Get("includeArchived") == "true", held.All, ids, act.UserID)
 	if err != nil {
 		a.fail(w, r, err)
 		return

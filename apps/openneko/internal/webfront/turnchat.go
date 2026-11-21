@@ -389,7 +389,7 @@ func (t *chatTurn) finish(ctx context.Context, res axRunResult) (chatTurnResult,
 		threadID, runID := o.ThreadID, o.RunID
 		pinned := op.Pinned == nil || *op.Pinned
 		if _, err := rt.rememberMemory(ctx, memoryRememberIn{OrgID: o.OrgID, ThreadID: &threadID, RunID: &runID, Text: op.Text,
-			Kind: "business_rule", Scope: orDefault(op.Scope, "global"), Pinned: pinned}); err != nil {
+			Kind: "business_rule", Scope: orDefault(op.Scope, "global"), Pinned: pinned, For: op.For}); err != nil {
 			log.Printf("[work-memory] fence-driven save failed: %v", err)
 		}
 	}

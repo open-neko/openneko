@@ -53,7 +53,7 @@ OpenNeko 6.0.0 is one `openneko` program. Agent turns run only in a confined pro
 
 #### Team items and rules are proposals
 
-* **Breaking:** a run no longer changes team memory, team skills, skill lessons or approval rules at once. A change from an admin's chat run is a proposal, and an admin confirms or rejects it at Settings, Approval rules, which shows each changed line. Only an admin's chat run proposes such a change, and the skill-learning job proposes lessons. A member's run still writes the member's own memories and skills at once.
+* **Breaking:** a run no longer changes team memory, team skills, skill lessons or approval rules at once. A change from an admin's chat run is a proposal, and an admin confirms or rejects it at Settings, Approval rules, which shows each changed line. Only an admin's chat run proposes such a change, and the skill-learning job proposes lessons. A member's run still writes the member's own memories and skills at once. A memory that a person asks the agent to keep for themselves goes to that person's own memories at once, admins included; only a memory saved for the team is a proposal. The save result says where the memory went.
 * No run changes a rule that a pack installed.
 * **Breaking:** the risk threshold of an auto-approve rule uses the risk level of the action's definition, not the model's estimate. An action with no risk level goes to approval under a rule with a threshold.
 * **Breaking:** only the person who asked or an admin decides a request that no rule covers. In 5.0.0, any member could approve it, also from Slack or Telegram.

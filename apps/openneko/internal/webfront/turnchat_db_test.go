@@ -143,7 +143,7 @@ func TestChatTurnThroughServe(t *testing.T) {
 		"```neko_value\n" + `{"minutes_saved":12,"basis":"two reports"}` + "\n```",
 		"```neko_followups\n" + `{"followups":["By region?"]}` + "\n```",
 		"```neko_vitals\n" + `{"vitals":[{"label":"SKUs low","value":"3"}]}` + "\n```",
-		"```neko_memory\n" + `[{"save":{"text":"Stock counts come from the ERP"}}]` + "\n```",
+		"```neko_memory\n" + `[{"save":{"text":"Stock counts come from the ERP","for":"team"}}]` + "\n```",
 		"call:default_api:read_file{limit:100}",
 	}, "\n")
 	model := fakeModel(t, []string{

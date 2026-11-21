@@ -64,6 +64,7 @@ type memoryRememberIn struct {
 	Kind     string  `json:"kind"`
 	Scope    string  `json:"scope"`
 	Pinned   bool    `json:"pinned"`
+	For      string  `json:"for"`
 }
 
 type memoryUpdateIn struct {
@@ -107,7 +108,7 @@ type fileSQLIn struct {
 type toolBackend interface {
 	audit(ctx context.Context, path string)
 	searchMemory(ctx context.Context, in memorySearchIn) (any, error)
-	rememberMemory(ctx context.Context, in memoryRememberIn) (string, error)
+	rememberMemory(ctx context.Context, in memoryRememberIn) (memorySaved, error)
 	updateMemory(ctx context.Context, in memoryUpdateIn) (string, error)
 	searchSkills(ctx context.Context, in skillSearchIn) (any, error)
 	searchFiles(ctx context.Context, in fileSearchIn) (any, error)
@@ -232,24 +233,27 @@ func memoryTools(b turnBinding, be toolBackend) []toolDef {
 			"the operator says to remember/save something, corrects a recurring",
 			"assumption, defines a metric/business rule, or states a stable",
 			"preference. Never speculatively. Default scope=global, kind=business_rule,",
-			"pinned=true."),
+			"pinned=true. for=me saves it for the operator alone (default);",
+			"for=team asks to save it for everyone, which an admin confirms."),
 		props: []toolProp{strProp("text", 5, 2000, true), {name: "kind", typ: "string", enum: memoryKindEnum},
-			{name: "scope", typ: "string", enum: []string{"global", "thread"}}, {name: "pinned", typ: "boolean"}},
+			{name: "scope", typ: "string", enum: []string{"global", "thread"}}, {name: "pinned", typ: "boolean"},
+			{name: "for", typ: "string", enum: []string{"me", "team"}}},
 		call: func(ctx context.Context, args *jsObj) (toolResult, error) {
 			in := memoryRememberIn{OrgID: b.OrgID, ThreadID: b.threadID(), RunID: b.runID(), Text: stringArg(args, "text"),
-				Kind: orDefault(stringArg(args, "kind"), "business_rule"), Scope: orDefault(stringArg(args, "scope"), "global"), Pinned: true}
+				Kind: orDefault(stringArg(args, "kind"), "business_rule"), Scope: orDefault(stringArg(args, "scope"), "global"), Pinned: true,
+				For: stringArg(args, "for")}
 			if pinned, ok := args.vals["pinned"].(bool); ok {
 				in.Pinned = pinned
 			}
 			be.audit(ctx, "/v1/memory/remember")
-			id, err := be.rememberMemory(ctx, in)
+			saved, err := be.rememberMemory(ctx, in)
 			if result, ok := teamWriteResult(err); ok {
 				return result, nil
 			}
 			if err != nil {
 				return toolResult{}, err
 			}
-			return toolText(jsObjOf("ok", true, "memoryId", id)), nil
+			return toolText(jsObjOf("ok", true, "memoryId", saved.ID, "savedTo", "your memories", "note", saved.Note)), nil
 		}}
 	update := toolDef{server: "neko_memory", name: "update",
 		description: joinWords("Replace the text of a saved memory. Use when the operator corrects,",
@@ -426,7 +430,7 @@ func (a *API) runMemoryScope(ctx context.Context, orgID, runID string) (memorySc
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return s, err
 	}
-	if deref(role) == "member" && deref(userID) != "" {
+	if deref(userID) != "" && (deref(role) == "member" || deref(role) == "admin") {
 		s.Layer = *userID
 	}
 	act, err := a.entitlementActorForRun(ctx, orgID, runID)
@@ -458,9 +462,18 @@ func (r *runTools) searchMemory(ctx context.Context, in memorySearchIn) (any, er
 	return results, nil
 }
 
-func (r *runTools) rememberMemory(ctx context.Context, in memoryRememberIn) (string, error) {
+// memorySaved says where a save went, so the agent does not claim a team
+// save that did not happen.
+type memorySaved struct{ ID, Note string }
+
+const (
+	memorySavedOwn      = "Saved to the operator's own memories. Other people do not see it."
+	memorySavedOwnAsked = "Saved to the operator's own memories only. A team memory needs an admin; other people do not see it."
+)
+
+func (r *runTools) rememberMemory(ctx context.Context, in memoryRememberIn) (memorySaved, error) {
 	if !containsString(memoryKindEnum, in.Kind) {
-		return "", errors.New("Invalid work memory kind: " + in.Kind)
+		return memorySaved{}, errors.New("Invalid work memory kind: " + in.Kind)
 	}
 	scope := "global"
 	var scopeID *string
@@ -469,26 +482,31 @@ func (r *runTools) rememberMemory(ctx context.Context, in memoryRememberIn) (str
 	}
 	mode, userID, err := r.api.runTeamWrite(ctx, in.OrgID, in.RunID)
 	if err != nil {
-		return "", err
+		return memorySaved{}, err
 	}
-	switch mode {
-	case teamWriteRefused:
-		return "", errTeamWriteRefused
-	case teamWritePropose:
+	team := in.For == "team"
+	switch {
+	case mode == teamWriteRefused:
+		return memorySaved{}, errTeamWriteRefused
+	case mode == teamWritePropose && team:
 		id, err := r.api.proposeTeamItem(ctx, in.OrgID, "memory", "new", nil, memoryProposal{Kind: in.Kind, Text: strings.TrimSpace(in.Text),
 			Scope: scope, ScopeID: scopeID, Pinned: in.Pinned, ThreadID: in.ThreadID}, "", userID, in.RunID)
-		return "", teamChangeWaits(id, err)
+		return memorySaved{}, teamChangeWaits(id, err)
 	}
 	m, err := r.api.insertMemory(ctx, r.api.DB, in.OrgID, memoryDraft{Kind: in.Kind, Text: in.Text, Scope: scope, ScopeID: scopeID,
 		Pinned: in.Pinned, Confidence: 0.8, Metadata: []byte("{}"), RunID: in.RunID, ThreadID: in.ThreadID, Layer: userID}, jsNow())
 	if err != nil {
-		return "", err
+		return memorySaved{}, err
 	}
-	return m.ID, nil
+	if team {
+		return memorySaved{m.ID, memorySavedOwnAsked}, nil
+	}
+	return memorySaved{m.ID, memorySavedOwn}, nil
 }
 
-// updateMemory is updateWorkMemoryForRun(): a member's run edits through the
-// member's own layer; an admin's chat run proposes the new team text.
+// updateMemory is updateWorkMemoryForRun(): a run edits through its user's
+// own layer, except that an admin's chat run proposes new text for a team
+// memory.
 func (r *runTools) updateMemory(ctx context.Context, in memoryUpdateIn) (string, error) {
 	text := strings.TrimSpace(in.Text)
 	if text == "" {
@@ -512,17 +530,17 @@ func (r *runTools) updateMemory(ctx context.Context, in memoryUpdateIn) (string,
 		return "", errors.New("Memory not found: " + in.MemoryID)
 	}
 	target := found[0]
+	mode, userID, err := r.api.runTeamWrite(ctx, in.OrgID, in.RunID)
+	if err != nil {
+		return "", err
+	}
 	var m *memoryOut
-	if s.Layer != "" {
+	if s.Layer != "" && (mode == teamWriteOwn || mode == teamWritePropose && target.UserID != nil) {
 		m, err = r.api.overrideMemory(ctx, tx, in.OrgID, s.Layer, target.ID, text, false, in.RunID, in.ThreadID)
 		if err == nil && m == nil {
 			err = errors.New("Memory not found: " + in.MemoryID)
 		}
 	} else {
-		mode, userID, err := r.api.runTeamWrite(ctx, in.OrgID, in.RunID)
-		if err != nil {
-			return "", err
-		}
 		if mode != teamWritePropose {
 			return "", errTeamWriteRefused
 		}

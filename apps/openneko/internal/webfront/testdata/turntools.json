@@ -160,7 +160,7 @@
     },
     {
      "name": "memory_save",
-     "description": "Save a durable memory the operator stated explicitly. Use only when the operator says to remember/save something, corrects a recurring assumption, defines a metric/business rule, or states a stable preference. Never speculatively. Default scope=global, kind=business_rule, pinned=true.",
+     "description": "Save a durable memory the operator stated explicitly. Use only when the operator says to remember/save something, corrects a recurring assumption, defines a metric/business rule, or states a stable preference. Never speculatively. Default scope=global, kind=business_rule, pinned=true. for=me saves it for the operator alone (default); for=team asks to save it for everyone, which an admin confirms.",
      "inputSchema": {
       "type": "object",
       "properties": {
@@ -190,6 +190,13 @@
        },
        "pinned": {
         "type": "boolean"
+       },
+       "for": {
+        "type": "string",
+        "enum": [
+         "me",
+         "team"
+        ]
        }
       },
       "required": [
@@ -405,7 +412,7 @@
     },
     {
      "name": "memory_save",
-     "description": "Save a durable memory the operator stated explicitly. Use only when the operator says to remember/save something, corrects a recurring assumption, defines a metric/business rule, or states a stable preference. Never speculatively. Default scope=global, kind=business_rule, pinned=true.",
+     "description": "Save a durable memory the operator stated explicitly. Use only when the operator says to remember/save something, corrects a recurring assumption, defines a metric/business rule, or states a stable preference. Never speculatively. Default scope=global, kind=business_rule, pinned=true. for=me saves it for the operator alone (default); for=team asks to save it for everyone, which an admin confirms.",
      "inputSchema": {
       "type": "object",
       "properties": {
@@ -435,6 +442,13 @@
        },
        "pinned": {
         "type": "boolean"
+       },
+       "for": {
+        "type": "string",
+        "enum": [
+         "me",
+         "team"
+        ]
        }
       },
       "required": [
@@ -777,7 +791,7 @@
     },
     {
      "name": "memory_save",
-     "description": "Save a durable memory the operator stated explicitly. Use only when the operator says to remember/save something, corrects a recurring assumption, defines a metric/business rule, or states a stable preference. Never speculatively. Default scope=global, kind=business_rule, pinned=true.",
+     "description": "Save a durable memory the operator stated explicitly. Use only when the operator says to remember/save something, corrects a recurring assumption, defines a metric/business rule, or states a stable preference. Never speculatively. Default scope=global, kind=business_rule, pinned=true. for=me saves it for the operator alone (default); for=team asks to save it for everyone, which an admin confirms.",
      "inputSchema": {
       "type": "object",
       "properties": {
@@ -807,6 +821,13 @@
        },
        "pinned": {
         "type": "boolean"
+       },
+       "for": {
+        "type": "string",
+        "enum": [
+         "me",
+         "team"
+        ]
        }
       },
       "required": [
@@ -3295,7 +3316,7 @@
     },
     {
      "name": "memory_save",
-     "description": "Save a durable memory the operator stated explicitly. Use only when the operator says to remember/save something, corrects a recurring assumption, defines a metric/business rule, or states a stable preference. Never speculatively. Default scope=global, kind=business_rule, pinned=true.",
+     "description": "Save a durable memory the operator stated explicitly. Use only when the operator says to remember/save something, corrects a recurring assumption, defines a metric/business rule, or states a stable preference. Never speculatively. Default scope=global, kind=business_rule, pinned=true. for=me saves it for the operator alone (default); for=team asks to save it for everyone, which an admin confirms.",
      "inputSchema": {
       "type": "object",
       "properties": {
@@ -3325,6 +3346,13 @@
        },
        "pinned": {
         "type": "boolean"
+       },
+       "for": {
+        "type": "string",
+        "enum": [
+         "me",
+         "team"
+        ]
        }
       },
       "required": [
@@ -3849,7 +3877,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"ok\":true,\"memoryId\":\"44444444-4444-4444-8444-444444444444\"}"
+      "text": "{\"ok\":true,\"memoryId\":\"44444444-4444-4444-8444-444444444444\",\"savedTo\":\"your memories\",\"note\":\"Saved to the operator's own memories. Other people do not see it.\"}"
      }
     ]
    },
@@ -3863,7 +3891,8 @@
       "text": "Revenue is net of refunds.",
       "kind": "business_rule",
       "scope": "global",
-      "pinned": true
+      "pinned": true,
+      "for": ""
      }
     }
    ],
@@ -3880,7 +3909,8 @@
     "text": "Use the EU calendar.",
     "kind": "preference",
     "scope": "thread",
-    "pinned": false
+    "pinned": false,
+    "for": "team"
    },
    "reply": {
     "value": {
@@ -3891,7 +3921,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"ok\":true,\"memoryId\":\"44444444-4444-4444-8444-444444444444\"}"
+      "text": "{\"ok\":true,\"memoryId\":\"44444444-4444-4444-8444-444444444444\",\"savedTo\":\"your memories\",\"note\":\"Saved to the operator's own memories. Other people do not see it.\"}"
      }
     ]
    },
@@ -3905,7 +3935,8 @@
       "text": "Use the EU calendar.",
       "kind": "preference",
       "scope": "thread",
-      "pinned": false
+      "pinned": false,
+      "for": "team"
      }
     }
    ],
@@ -3974,7 +4005,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"ok\":true,\"memoryId\":\"44444444-4444-4444-8444-444444444444\"}"
+      "text": "{\"ok\":true,\"memoryId\":\"44444444-4444-4444-8444-444444444444\",\"savedTo\":\"your memories\",\"note\":\"Saved to the operator's own memories. Other people do not see it.\"}"
      }
     ]
    },
@@ -3988,7 +4019,8 @@
       "text": "Use the EU calendar.",
       "kind": "business_rule",
       "scope": "global",
-      "pinned": true
+      "pinned": true,
+      "for": ""
      }
     }
    ],

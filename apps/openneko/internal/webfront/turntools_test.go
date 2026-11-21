@@ -137,8 +137,9 @@ func (f *fakeTools) audit(_ context.Context, path string) {
 func (f *fakeTools) searchMemory(_ context.Context, in memorySearchIn) (any, error) {
 	return f.record("searchWorkMemoryByContext", in)
 }
-func (f *fakeTools) rememberMemory(_ context.Context, in memoryRememberIn) (string, error) {
-	return f.recordID("rememberWorkMemory", in)
+func (f *fakeTools) rememberMemory(_ context.Context, in memoryRememberIn) (memorySaved, error) {
+	id, err := f.recordID("rememberWorkMemory", in)
+	return memorySaved{ID: id, Note: memorySavedOwn}, err
 }
 func (f *fakeTools) updateMemory(_ context.Context, in memoryUpdateIn) (string, error) {
 	return f.recordID("updateWorkMemory", in)

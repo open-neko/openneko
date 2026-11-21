@@ -45,7 +45,7 @@ func TestTeamMemoryWritesWaitForAnAdmin(t *testing.T) {
 	}
 	proposals := func() string { return scalar(t, db, `select count(*)::text from team_item_proposal`) }
 
-	out := tool(adminChat, "memory_save", map[string]any{"text": planted})
+	out := tool(adminChat, "memory_save", map[string]any{"text": planted, "for": "team"})
 	if !strings.Contains(out, `\"proposed\":true`) || teamRows() != "0" || proposals() != "1" {
 		t.Fatalf("an admin's chat run saved team memory with no confirmation: %s, rows %s", out, teamRows())
 	}
@@ -160,6 +160,65 @@ func TestTeamMemoryWritesWaitForAnAdmin(t *testing.T) {
 	}
 	if got := scalar(t, db, `select string_agg(event, ',' order by event) from audit_chain where entity_kind = 'team_item_proposal'`); got != "team_item:confirmed,team_item:proposed,team_item:proposed" {
 		t.Fatalf("audit %s", got)
+	}
+}
+
+func TestAPersonalMemoryStaysWithItsAuthor(t *testing.T) {
+	f, db := memoryFront(t)
+	a := f.API
+	const (
+		adminChat = "b1000000-0000-4000-8000-0000000000b1"
+		flagship  = "Our flagship bike is the Mountain-200 Black, 38"
+		region    = "Our team covers Canada"
+	)
+	seed(t, db, `insert into work_run (id, org_id, thread_id, backend, actor_user_id, actor_role) values ($1, 'org', $2, 'test', 'admin', 'admin')`,
+		adminChat, threadMine)
+	tool := func(runID, name string, args map[string]any) string {
+		t.Helper()
+		b := turnBinding{OrgID: "org", ThreadID: threadMine, RunID: runID, Kind: "work"}
+		s, err := turnTools(b, a.runTools(b), []string{"neko_memory"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, rpcErr := callTool(t, s, name, args)
+		if rpcErr != nil {
+			t.Fatalf("%s: %v", name, rpcErr)
+		}
+		return out
+	}
+	proposals := func() string { return scalar(t, db, `select count(*)::text from team_item_proposal`) }
+
+	out := tool(adminChat, "memory_save", map[string]any{"text": flagship})
+	owner := scalar(t, db, `select coalesce(user_id, 'team') from work_memory where text = $1`, flagship)
+	if owner != "admin" || proposals() != "0" || !strings.Contains(out, "own memories") {
+		t.Fatalf("an admin's own memory: owner %s, proposals %s, result %s", owner, proposals(), out)
+	}
+	if out := tool(adminChat, "memory_search", map[string]any{"query": "flagship bike"}); !strings.Contains(out, flagship) {
+		t.Fatalf("the admin's search does not find the admin's memory: %s", out)
+	}
+	tc, err := a.loadTurnContext(t.Context(), turnOptions{OrgID: "org", ThreadID: threadMine, RunID: adminChat, Message: "flagship bike units", Summarize: noSummary(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(tc.Prompt, flagship) || strings.Contains(tc.Prompt, "Show amounts in INR") {
+		t.Fatal("an admin's turn loads the admin's own memories and no member's")
+	}
+	for who, want := range map[string]bool{"admin": true, "member": false, "other": false} {
+		w := call(f, "GET", "/api/v1/work/memories", "", sessionCookie(who))
+		if w.Code != 200 || strings.Contains(w.Body.String(), flagship) != want {
+			t.Errorf("%s lists the admin's own memory: %v, want %v", who, strings.Contains(w.Body.String(), flagship), want)
+		}
+	}
+	id := scalar(t, db, `select id::text from work_memory where text = $1`, flagship)
+	tool(adminChat, "memory_update", map[string]any{"memoryId": id, "text": flagship + " (size 38)"})
+	if got := scalar(t, db, `select text from work_memory where id = $1`, id); got != flagship+" (size 38)" || proposals() != "0" {
+		t.Fatalf("an admin's edit of the admin's own memory: %q, proposals %s", got, proposals())
+	}
+
+	out = tool(runMine, "memory_save", map[string]any{"text": region, "for": "team"})
+	owner = scalar(t, db, `select coalesce(user_id, 'team') from work_memory where text = $1`, region)
+	if owner != "member" || proposals() != "0" || !strings.Contains(out, "A team memory needs an admin") {
+		t.Fatalf("a member's team save: owner %s, proposals %s, result %s", owner, proposals(), out)
 	}
 }
 

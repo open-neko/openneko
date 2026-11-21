@@ -106,6 +106,7 @@ func extractFence(raw string, re *regexp.Regexp, shape *zObj, stopAtFirst bool) 
 type memoryFenceOp struct {
 	Text   string
 	Scope  string
+	For    string
 	Pinned *bool
 }
 
@@ -146,6 +147,9 @@ func memorySaveOp(item any) (memoryFenceOp, bool) {
 	}
 	if pinned, ok := save.vals["pinned"].(bool); ok {
 		op.Pinned = &pinned
+	}
+	if audience, _ := save.vals["for"].(string); audience == "team" {
+		op.For = audience
 	}
 	return op, true
 }

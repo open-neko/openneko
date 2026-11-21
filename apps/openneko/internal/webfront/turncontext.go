@@ -137,7 +137,7 @@ func (a *API) loadTurnContext(ctx context.Context, o turnOptions) (*turnContext,
 		return nil, err
 	}
 	scope := memoryScope{OrgID: o.OrgID, ThreadID: o.ThreadID, RunID: o.RunID, Team: heldList(team)}
-	if act.Role == "member" {
+	if act.Role == "member" || act.Role == "admin" {
 		scope.Layer = act.UserID
 	}
 	memory, err := a.memoryPromptContext(ctx, scope, o.Message)
