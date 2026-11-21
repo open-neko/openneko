@@ -139,7 +139,7 @@ func startRecipeSandbox(t *testing.T, tcp bool) sandbox.Config {
 		}
 		listen = ln.Addr().String()
 		ln.Close()
-		cfg = sandbox.Config{URL: "http://" + listen, Key: "sandbox-key-1"}
+		cfg = sandbox.Config{URL: "http://" + listen, Key: "sandbox-key-" + strings.Repeat("1", 32)}
 	}
 	cmd := exec.Command(sandboxBinary, "--listen", listen)
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "OPENNEKO_SANDBOX_WORKSPACES=" + filepath.Join(root, "runs"),
