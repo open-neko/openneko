@@ -1,0 +1,23 @@
+schema_version: openneko.eval.suite/v1
+id: workflows-replay
+version: 1.0.0
+description: The two daily workflows of the demo server, replayed as eight days.
+cases:
+  - { ref: ../datasets/openneko-backend/cases/b00-api-selection.yaml }
+  - { ref: ../datasets/openneko-backend/cases/b12c-mutation-denial.yaml }
+  - { ref: ../datasets/openneko-backend/workflows/cases/w-daily-revenue-d1.yaml }
+  - { ref: ../datasets/openneko-backend/workflows/cases/w-slow-ship-d1.yaml }
+  - { ref: ../datasets/openneko-backend/workflows/cases/w-daily-revenue-d2.yaml }
+  - { ref: ../datasets/openneko-backend/workflows/cases/w-slow-ship-d2.yaml }
+  - { ref: ../datasets/openneko-backend/workflows/cases/w-daily-revenue-d3.yaml }
+  - { ref: ../datasets/openneko-backend/workflows/cases/w-slow-ship-d3.yaml }
+  - { ref: ../datasets/openneko-backend/workflows/cases/w-daily-revenue-d4.yaml }
+  - { ref: ../datasets/openneko-backend/workflows/cases/w-slow-ship-d4.yaml }
+  - { ref: ../datasets/openneko-backend/workflows/cases/w-daily-revenue-d5.yaml }
+  - { ref: ../datasets/openneko-backend/workflows/cases/w-slow-ship-d5.yaml }
+  - { ref: ../datasets/openneko-backend/workflows/cases/w-daily-revenue-d6.yaml }
+  - { ref: ../datasets/openneko-backend/workflows/cases/w-slow-ship-d6.yaml }
+  - { ref: ../datasets/openneko-backend/workflows/cases/w-daily-revenue-d7.yaml }
+  - { ref: ../datasets/openneko-backend/workflows/cases/w-slow-ship-d7.yaml }
+  - { ref: ../datasets/openneko-backend/workflows/cases/w-daily-revenue-d8.yaml }
+  - { ref: ../datasets/openneko-backend/workflows/cases/w-slow-ship-d8.yaml }
