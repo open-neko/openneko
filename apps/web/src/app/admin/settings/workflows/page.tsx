@@ -13,7 +13,7 @@ import WorkflowOrgLimitsForm from "./WorkflowOrgLimitsForm";
 import OwnerlessWorkflows from "./OwnerlessWorkflows";
 import HeldWorkflows from "./HeldWorkflows";
 
-type WorkflowItem = { id: string; name: string; needsOwner?: boolean; accessHeld?: boolean };
+type WorkflowItem = { id: string; name: string; needsOwner?: boolean; accessHeld?: boolean; versionHash?: string };
 type UserItem = { id: string; email: string; name: string | null; disabled: boolean };
 type PublicUrl = Parameters<typeof PublicUrlForm>[0]["initial"];
 type Limits = { rollingTokenBudget: number | null; rollingCostMicrosBudget: number | null };
@@ -63,7 +63,7 @@ function WorkflowSettings({
         workflows={workflows.filter((item) => item.needsOwner).map(({ id, name }) => ({ id, name }))}
         users={users.map(({ id, email, name }) => ({ id, email, name }))}
       />
-      <HeldWorkflows workflows={workflows.filter((item) => item.accessHeld).map(({ id, name }) => ({ id, name }))} />
+      <HeldWorkflows workflows={workflows.filter((item) => item.accessHeld).map(({ id, name, versionHash }) => ({ id, name, versionHash: versionHash ?? "" }))} />
       <PublicUrlForm initial={publicUrl} />
       <WorkflowOrgLimitsForm initial={{
         rollingTokenBudget: limits.rollingTokenBudget ?? 1_000_000,

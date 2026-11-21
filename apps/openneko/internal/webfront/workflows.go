@@ -32,6 +32,7 @@ type workflowSummary struct {
 	UpdatedAt    string     `json:"updatedAt"`
 	NeedsOwner   bool       `json:"needsOwner"`
 	AccessHeld   bool       `json:"accessHeld"`
+	VersionHash  *string    `json:"versionHash,omitempty"`
 }
 
 func (a *API) workflows(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +49,8 @@ func (a *API) workflows(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := a.DB.Query(ctx, `
 		select id::text, name, description, goal, enabled, status, cron, cron_timezone, cron_enabled, steps,
-		  created_at, updated_at, owner_user_id, `+workflowNeedsOwner+`, access_held_at is not null
+		  created_at, updated_at, owner_user_id, `+workflowNeedsOwner+`, access_held_at is not null or access_approved_hash is not null
+		  or exists (select 1 from workflow_api_access x where x.workflow_id = w.id and x.enabled)
 		from workflow_definition w where org_id = $1 order by updated_at desc`, act.OrgID)
 	if err != nil {
 		a.fail(w, r, err)
@@ -75,6 +77,21 @@ func (a *API) workflows(w http.ResponseWriter, r *http.Request) {
 	if err := rows.Err(); err != nil {
 		a.fail(w, r, err)
 		return
+	}
+	rows.Close()
+	for i := range out {
+		if !out[i].AccessHeld {
+			continue
+		}
+		held, version, err := a.workflowAccessHeld(ctx, act.OrgID, out[i].ID)
+		if err != nil {
+			a.fail(w, r, err)
+			return
+		}
+		out[i].AccessHeld = held
+		if held && act.Admin {
+			out[i].VersionHash = &version
+		}
 	}
 	sendJSON(w, http.StatusOK, map[string]any{"workflows": out})
 }

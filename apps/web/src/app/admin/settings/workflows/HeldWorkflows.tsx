@@ -5,7 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
-type Workflow = { id: string; name: string };
+type Workflow = { id: string; name: string; versionHash: string };
 
 export default function HeldWorkflows({ workflows }: { workflows: Workflow[] }) {
   const [waiting, setWaiting] = useState(workflows);
@@ -15,7 +15,7 @@ export default function HeldWorkflows({ workflows }: { workflows: Workflow[] }) 
       <div>
         <h2 id="held-title" className="settings-card-title">Changed workflows with API access</h2>
         <p className="settings-card-copy">
-          A run changed these workflows after you gave them API access. API and webhook runs wait until you read the new version and approve it.
+          A run changed these workflows, or a skill they use, after you gave them API access. API and webhook runs wait until you read the new version and approve it. When the workflow changes again after you opened this page, the approval is refused; reload and read it again.
         </p>
       </div>
       <ul className="grid gap-3">
@@ -42,7 +42,7 @@ function HeldRow({ workflow, onApproved }: { workflow: Workflow; onApproved: () 
       const response = await fetch(`/api/v1/workflows/${encodeURIComponent(workflow.id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ approveChanges: true }),
+        body: JSON.stringify({ approveChanges: workflow.versionHash }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error ?? "Could not approve the workflow.");

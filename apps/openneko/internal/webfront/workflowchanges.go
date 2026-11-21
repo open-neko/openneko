@@ -94,17 +94,40 @@ func (a *API) workflowPatch(w http.ResponseWriter, r *http.Request) {
 		}
 		values["owner_user_id"] = owner
 	}
-	approve, _ := fieldBool(body, "approveChanges")
+	raw, approve := field(body, "approveChanges")
 	if approve {
 		if !act.Admin {
 			sendError(w, http.StatusForbidden, "admin only")
 			return
 		}
+		if !isUUID(id) {
+			sendError(w, http.StatusNotFound, "workflow not found")
+			return
+		}
+		version, _ := raw.(string)
+		if version == "" {
+			sendError(w, http.StatusBadRequest, "approveChanges must be the versionHash of the version that you read.")
+			return
+		}
+		current, err := a.workflowVersionHash(r.Context(), act.OrgID, id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			sendError(w, http.StatusNotFound, "workflow not found")
+			return
+		}
+		if err != nil {
+			a.fail(w, r, err)
+			return
+		}
+		if version != current {
+			sendError(w, http.StatusConflict, "The workflow or a skill it uses changed after you opened it. Read the new version and approve it again.")
+			return
+		}
 		values["access_held_at"] = nil
+		values["access_approved_hash"] = current
 	}
 	sets := []string{}
 	args := []any{act.OrgID, id}
-	for _, column := range []string{"enabled", "cron_enabled", "paused_until", "owner_user_id", "access_held_at"} {
+	for _, column := range []string{"enabled", "cron_enabled", "paused_until", "owner_user_id", "access_held_at", "access_approved_hash"} {
 		if v, ok := values[column]; ok {
 			args = append(args, v)
 			sets = append(sets, fmt.Sprintf("%s = $%d", column, len(args)))
@@ -117,6 +140,15 @@ func (a *API) workflowPatch(w http.ResponseWriter, r *http.Request) {
 	if !isUUID(id) {
 		sendError(w, http.StatusNotFound, "workflow not found")
 		return
+	}
+	var approvedBefore bool
+	if hasOwner && isUUID(id) {
+		held, _, err := a.workflowAccessHeld(r.Context(), act.OrgID, id)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			a.fail(w, r, err)
+			return
+		}
+		approvedBefore = err == nil && !held
 	}
 	found, conflict := false, false
 	err := pgx.BeginFunc(r.Context(), a.DB, func(tx pgx.Tx) error {
@@ -153,6 +185,17 @@ func (a *API) workflowPatch(w http.ResponseWriter, r *http.Request) {
 	if !found {
 		sendError(w, http.StatusNotFound, "workflow not found")
 		return
+	}
+	if hasOwner && approvedBefore {
+		current, err := a.workflowVersionHash(r.Context(), act.OrgID, id)
+		if err == nil {
+			_, err = a.DB.Exec(r.Context(), `update workflow_definition set access_approved_hash = $2
+				where id = $1 and access_held_at is null and access_approved_hash is not null`, id, current)
+		}
+		if err != nil {
+			a.fail(w, r, err)
+			return
+		}
 	}
 	if hasOwner {
 		var name string
@@ -722,6 +765,16 @@ func (a *API) issueAPIToken(ctx context.Context, act actor, workflowID, action s
 		for i := range limitColumns {
 			args = append(args, limits[i])
 			placeholders[i] = "$" + strconv.Itoa(len(args))
+		}
+		if action == "enable" {
+			current, err := a.workflowVersionHash(ctx, act.OrgID, workflowID)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `update workflow_definition set access_held_at = null, access_approved_hash = $2 where id = $1`,
+				workflowID, current); err != nil {
+				return err
+			}
 		}
 		_, err = tx.Exec(ctx, `insert into workflow_api_access (workflow_id, org_id, enabled, token_verifier, token_prefix,
 			token_created_at, token_rotated_at, updated_at, `+strings.Join(limitColumns, ", ")+`)

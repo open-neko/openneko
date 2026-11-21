@@ -5,7 +5,7 @@ import HeldWorkflows from "../src/app/admin/settings/workflows/HeldWorkflows";
 
 it("lists each changed workflow with a link to read it and an approve button", () => {
   const html = renderToStaticMarkup(createElement(HeldWorkflows, {
-    workflows: [{ id: "w1", name: "Order intake" }, { id: "w2", name: "Refund check" }],
+    workflows: [{ id: "w1", name: "Order intake", versionHash: "a".repeat(64) }, { id: "w2", name: "Refund check", versionHash: "b".repeat(64) }],
   }));
   expect(html).toContain("Changed workflows with API access");
   expect(html.match(/<li/g)).toHaveLength(2);
