@@ -91,7 +91,7 @@ the right workspace.
 
 | Feature | What it does for you | Shipped in |
 |---|---|---|
-| Slack & Telegram | Talk to your assistant from the tools your team already uses — replies are formatted natively for each app. Replies turn off link previews, so Slack and Telegram fetch no URL that an answer names. | #68, #96 |
+| Slack & Telegram | Talk to your assistant from the tools your team already uses — replies are formatted natively for each app. Replies turn off link previews, so Slack and Telegram fetch no URL that an answer names. An admin chooses where an answer to a question in a channel or group goes: in the thread, privately to the person who asked, or in the thread only in listed channels. Workflow outputs that post to a channel follow the same rule. | #68, #96 |
 | Built-in channels | Slack, Telegram and the HUD are built into the core behind one modality-free interface. A channel turns on when an admin saves its credentials in settings; no pack is needed. | #68, #70 |
 | Zero-config inbound | When a channel turns on, it starts listening: inbound polling starts and the first contact binds to your workspace. No env flags. | #72 |
 | It knows who's asking | Every inbound message is tied to the actual sender, so permissions and personalisation follow the person, not the channel. | #96 |
