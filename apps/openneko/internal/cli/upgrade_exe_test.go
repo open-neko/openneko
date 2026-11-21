@@ -78,8 +78,11 @@ func TestReplaceFileOverARunningExecutable(t *testing.T) {
 		t.Fatal("the running process ended during the upgrade")
 	default:
 	}
-	if left, _ := filepath.Glob(exe + ".old*"); len(left) != 0 {
-		t.Fatalf("the running image moved aside to %v, so a crash between two renames could leave no executable", left)
+	if _, err := os.Lstat(exe + ".new"); err == nil {
+		t.Fatal("the staged executable stayed beside the new one")
+	}
+	if left, _ := filepath.Glob(exe + ".old*"); runtime.GOOS == "windows" && len(left) != 1 {
+		t.Fatalf("want the running image moved aside while it runs, found %v", left)
 	}
 
 	_ = cmd.Process.Kill()
@@ -90,5 +93,40 @@ func TestReplaceFileOverARunningExecutable(t *testing.T) {
 	}
 	if got := readFileOr(exe, ""); got != "v2" {
 		t.Fatalf("the clean-up touched the new executable: %q", got)
+	}
+}
+
+func TestAnUpgradeCutBetweenTheTwoRenamesIsFinished(t *testing.T) {
+	write := func(t *testing.T, files map[string]string) string {
+		t.Helper()
+		dir := t.TempDir()
+		for name, body := range files {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return filepath.Join(dir, "openneko.exe")
+	}
+	for _, c := range []struct {
+		name  string
+		files map[string]string
+		want  string
+	}{
+		{"cut after the running image moved aside", map[string]string{"openneko.exe.new": "v2", "openneko.exe.old": "v1"}, "v2"},
+		{"cut while the swap rolled back", map[string]string{"openneko.exe.old": "v0", "openneko.exe.old-1700000000000000000": "v1"}, "v1"},
+		{"cut while the new image was copied", map[string]string{"openneko.exe": "v1", "openneko.exe.new": "v2 half"}, "v1"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			exe := write(t, c.files)
+			if err := finishExecutableSwap(exe); err != nil {
+				t.Fatal(err)
+			}
+			if got := readFileOr(exe, ""); got != c.want {
+				t.Fatalf("openneko.exe holds %q, want %q", got, c.want)
+			}
+			if _, err := os.Lstat(exe + ".new"); err == nil {
+				t.Fatal("openneko.exe.new stayed")
+			}
+		})
 	}
 }

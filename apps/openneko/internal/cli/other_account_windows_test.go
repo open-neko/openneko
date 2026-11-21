@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"unsafe"
 
@@ -205,27 +206,6 @@ func TestAnotherAccountCannotReachTheSocketsOrTheSecrets(t *testing.T) {
 	}
 }
 
-// lockedOpenFolder gives a folder an access list that lets every account in
-// and denies the current account the right to change it.
-func lockedOpenFolder(t *testing.T) string {
-	t.Helper()
-	dir := testsock.Dir(t)
-	user, err := windows.GetCurrentProcessToken().GetTokenUser()
-	if err != nil {
-		t.Fatal(err)
-	}
-	sd, err := windows.SecurityDescriptorFromString("D:P(D;;WD;;;OW)(D;;WD;;;" + user.User.Sid.String() + ")(A;OICI;FA;;;WD)(A;OICI;FA;;;SY)")
-	if err != nil {
-		t.Fatal(err)
-	}
-	dacl, _, _ := sd.DACL()
-	if err := windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil); err != nil {
-		t.Fatal(err)
-	}
-	return dir
-}
-
 func TestSocketsInAnOpenFolderShutOutAnotherAccount(t *testing.T) {
 	other := otherAccount(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -272,10 +252,30 @@ func TestSocketsInAnOpenFolderShutOutAnotherAccount(t *testing.T) {
 			t.Errorf("%s: the other account connects to a socket in a folder that was open", name)
 		}
 
-		locked := lockedOpenFolder(t)
+		locked := testsock.LockedOpenFolder(t)
 		path = filepath.Join(locked, "x.sock")
-		if err := listen(path); err == nil {
-			t.Errorf("%s: listens in a folder that stays open to every account", name)
+		if err := listen(path); err != nil {
+			if _, statErr := os.Lstat(path); statErr == nil {
+				t.Errorf("%s: refused, but left a socket at %s", name, path)
+			}
+		} else if err := ownacl.Verify(locked); err != nil {
+			t.Errorf("%s: listens in a folder that stays open to every account: %v", name, err)
+		} else if err := as(t, other, dial(path)); err == nil {
+			t.Errorf("%s: the other account connects to a socket in a folder that denied the change", name)
+		} else {
+			t.Logf("%s: limited a folder that denies the change, with the privileges %v", name, testsock.OverridePrivileges())
+		}
+
+		control := filepath.Join(openFolder(t), "x.sock")
+		if err := testsock.WithoutPrivileges(t, func() error { return listen(control) }); err != nil {
+			t.Fatalf("%s: control: with no privilege, cannot listen in a folder the account may limit: %v", name, err)
+		}
+		path = filepath.Join(testsock.LockedOpenFolder(t), "x.sock")
+		err := testsock.WithoutPrivileges(t, func() error { return listen(path) })
+		if err == nil {
+			t.Errorf("%s: with no privilege, listens in a folder that stays open to every account", name)
+		} else if !strings.Contains(err.Error(), "socket folder") {
+			t.Errorf("%s: with no privilege, refused for another reason: %v", name, err)
 		} else if _, statErr := os.Lstat(path); statErr == nil {
 			t.Errorf("%s: refused, but left a socket at %s", name, path)
 		}
