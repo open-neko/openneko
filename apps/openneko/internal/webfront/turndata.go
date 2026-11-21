@@ -43,7 +43,7 @@ func applyGraphjinToolPolicy(tools []any, policy string) []any {
 		tool, _ := entry.(*jsObj)
 		name, _ := jsGet(tool, "name").(string)
 		if policy == "" {
-			if name != graphjinAgentTool {
+			if !containsString(graphjinRunBlockedTools, name) {
 				out = append(out, entry)
 			}
 			continue
@@ -68,8 +68,8 @@ func applyGraphjinToolPolicy(tools []any, policy string) []any {
 // name it never listed.
 func assertGraphjinToolCall(policy, name string, args *jsObj) error {
 	if policy == "" {
-		if name == graphjinAgentTool {
-			return errors.New("GraphJin MCP tool " + graphjinAgentTool + " is not available")
+		if containsString(graphjinRunBlockedTools, name) {
+			return errors.New("GraphJin MCP tool " + name + " is not available")
 		}
 		return nil
 	}
@@ -529,59 +529,49 @@ func (a *API) savedQueryRefusal(ctx context.Context, in graphjinToolCall) (*jsOb
 
 var graphqlMutationWord = regexp.MustCompile(`(?i)\bmutation\b`)
 
-var nonDatabaseSourceKinds = []string{"api", "file", "graphjin"}
+const runMutationRefusal = "A run does not change data through GraphJin. A change goes through an action that the approval rules cover; ask an admin to add the operation to a pack action."
 
-// assertGraphjinMutationAllowed forwards a mutation only when the config
-// proves every database source is read-only. A config that cannot be read
-// blocks it.
-func assertGraphjinMutationAllowed(query, configPath string) error {
-	if !graphqlMutationWord.MatchString(query) {
-		return nil
-	}
-	path := jsTrim(configPath)
-	if path == "" {
-		return errors.New("GraphJin mutation blocked: OPENNEKO_GRAPHJIN_CONFIG is not set, so the host cannot confirm database sources are read-only")
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("GraphJin mutation blocked: cannot read %s: %v", path, err)
-	}
-	if err := assertDatabaseSourcesReadOnly(raw); err != nil {
-		return errors.New("GraphJin mutation blocked: " + err.Error())
+// graphjinRunBlockedTools change GraphJin's schema, config or saved
+// workflows, or dial a host the caller names.
+var graphjinRunBlockedTools = []string{graphjinAgentTool, "update_current_config", "apply_schema_changes", "apply_database_setup",
+	"save_workflow", "test_database_connection", "discover_databases"}
+
+// assertGraphjinMutationAllowed refuses every GraphQL mutation from a run.
+func assertGraphjinMutationAllowed(query string) error {
+	if graphqlMutationWord.MatchString(query) {
+		return errors.New("GraphJin mutation blocked: " + runMutationRefusal)
 	}
 	return nil
 }
 
-func assertDatabaseSourcesReadOnly(raw []byte) error {
-	var doc yaml.Node
-	if yaml.Unmarshal(raw, &doc) != nil || len(doc.Content) != 1 || doc.Content[0].Kind != yaml.MappingNode {
-		return errors.New("GraphJin config is not valid YAML")
+var leadingMutation = regexp.MustCompile(`^(?:\s|#[^\n]*\n)*mutation\b`)
+
+// savedQueryIsMutation asks GraphJin for the saved query's text. A reply
+// that names no operation and no query counts as a mutation.
+func savedQueryIsMutation(ctx context.Context, ep graphjinEndpoint, args *jsObj) bool {
+	in := jsObjOf("name", jsGet(args, "name"))
+	if ns, ok := jsGet(args, "namespace").(string); ok && ns != "" {
+		in.set("namespace", ns)
 	}
-	sources := yamlField(doc.Content[0], "sources")
-	if sources == nil || sources.Tag == "!!null" {
-		return nil
+	result, err := graphjinMCPRequest(ctx, ep, "tools/call", jsObjOf("name", "get_saved_query", "arguments", in))
+	if err != nil {
+		return true
 	}
-	if sources.Kind != yaml.SequenceNode {
-		return errors.New("GraphJin config sources must be a YAML list")
-	}
-	for _, item := range sources.Content {
-		if item.Kind != yaml.MappingNode {
-			return errors.New("GraphJin config source entries must be YAML objects")
-		}
-		if kind := yamlField(item, "kind"); kind != nil && kind.Tag == "!!str" && containsString(nonDatabaseSourceKinds, kind.Value) {
-			continue
-		}
-		readOnly := yamlField(item, "read_only")
-		var on bool
-		if readOnly == nil || readOnly.Tag != "!!bool" || readOnly.Decode(&on) != nil || !on {
-			name := "<unnamed>"
-			if n := yamlField(item, "name"); n != nil && n.Kind == yaml.ScalarNode && n.Tag != "!!null" {
-				name = n.Value
+	details, _ := jsGet(result, "structuredContent").(*jsObj)
+	if details == nil {
+		if content, ok := jsGet(result, "content").([]any); ok && len(content) > 0 {
+			if text, ok := jsGet(content[0], "text").(string); ok {
+				parsed, _ := jsParse([]byte(text))
+				details, _ = parsed.(*jsObj)
 			}
-			return fmt.Errorf(`GraphJin database source "%s" is not read_only`, name)
 		}
 	}
-	return nil
+	operation, _ := jsGet(details, "operation").(string)
+	query, _ := jsGet(details, "query").(string)
+	if operation == "" && query == "" {
+		return true
+	}
+	return strings.EqualFold(operation, "mutation") || leadingMutation.MatchString(query)
 }
 
 func yamlField(m *yaml.Node, key string) *yaml.Node {
@@ -762,14 +752,20 @@ func (r *runTools) callGraphjinTool(ctx context.Context, in graphjinToolCall) (a
 	if err := r.api.runHoldsDataSource(ctx, in.OrgID, in.RunID); err != nil {
 		return nil, err
 	}
+	if containsString(graphjinRunBlockedTools, in.Name) {
+		return nil, errors.New("GraphJin MCP tool " + in.Name + " is not available to a run")
+	}
 	if in.Name == "execute_graphql" {
-		if err := assertGraphjinMutationAllowed(jsStringOrEmpty(jsGet(in.Arguments, "query")), os.Getenv("OPENNEKO_GRAPHJIN_CONFIG")); err != nil {
+		if err := assertGraphjinMutationAllowed(jsStringOrEmpty(jsGet(in.Arguments, "query"))); err != nil {
 			return nil, err
 		}
 	}
 	ep, err := r.api.graphjinMCPAccess(ctx, in.OrgID, in.RunID)
 	if err != nil {
 		return nil, err
+	}
+	if in.Name == "execute_saved_query" && savedQueryIsMutation(ctx, ep, in.Arguments) {
+		return nil, errors.New("GraphJin saved mutation blocked: " + runMutationRefusal)
 	}
 	return callGraphjinMCPTool(ctx, ep, in.Name, in.Arguments)
 }
