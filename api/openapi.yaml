@@ -58,8 +58,24 @@ components:
       required:
       - setting
       - system
+      - applies
+      - commands
       additionalProperties: false
       properties:
+        applies:
+          type: boolean
+        notApplied:
+          type: string
+        commands:
+          type: object
+          required:
+          - allow
+          - deny
+          properties:
+            allow:
+              type: string
+            deny:
+              type: string
         setting:
           type: object
           required:
@@ -71,9 +87,11 @@ components:
               type: string
             kernel:
               type: string
+            missing:
+              type: string
             reason:
               type: string
-            by:
+            hostUser:
               type: string
             at:
               type: string
@@ -8536,15 +8554,15 @@ paths:
       operationId: getSettingsAgentUnconfined
       tags:
       - settings
-      summary: Read the install setting that runs agent turns without OS confinement
-      description: Off by default. It covers the whole install. It can be turned on only where openneko serve reports that this system cannot confine agent turns.
+      summary: Read the host override that runs agent turns without OS confinement
+      description: Denied by default. Only the host operator changes it, with `openneko confinement allow-unconfined` or `deny` on the host; no route of the API changes it. It applies only to the host id and kernel it was given for, and only while serve reports that the host cannot confine agent turns.
       x-access: admin
       security:
       - session: []
       - deviceToken: []
       responses:
         '200':
-          description: The setting and whether this system may turn it on
+          description: The override, whether it applies, and the host commands that change it
           content:
             application/json:
               schema:
@@ -8557,61 +8575,6 @@ paths:
                 $ref: '#/components/schemas/Error'
         '403':
           description: The caller is not an admin
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-    put:
-      operationId: putSettingsAgentUnconfined
-      tags:
-      - settings
-      summary: Turn agent turns without OS confinement on or off
-      description: Turning it on needs a signed-in admin, a system that cannot confine agent turns, and the host name that serve reports in confirm. Each change writes an audit event in every organization.
-      x-access: admin
-      security:
-      - session: []
-      - deviceToken: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-              - "on"
-              properties:
-                "on":
-                  type: boolean
-                confirm:
-                  type: string
-                  description: The host name of the system, typed by the admin
-      responses:
-        '200':
-          description: The saved setting
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UnconfinedTurns'
-        '400':
-          description: on is not a boolean, or confirm is not the host name
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '401':
-          description: The session or device token is not valid
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '403':
-          description: The caller is not a signed-in admin
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '409':
-          description: This system confines agent turns, or openneko serve did not answer
           content:
             application/json:
               schema:
