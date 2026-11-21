@@ -85,12 +85,18 @@ func runnerFilter(pid int) ([]unix.SockFilter, error) {
 		p = append(p, jump(jeq, uint32(nr), 0, 1), stmt(ret, retEPERM))
 	}
 	p = append(p, jump(jeq, unix.SYS_CLONE3, 0, 1), stmt(ret, retENOSYS))
+	for _, nr := range forkCalls {
+		p = append(p, jump(jeq, uint32(nr), 0, 1), stmt(ret, retEPERM))
+	}
+	// A runner starts threads only: CLONE_THREAD needs CLONE_VM and
+	// CLONE_SIGHAND, so the new task stays in the runner's process.
 	p = append(p,
-		jump(jeq, unix.SYS_CLONE, 0, 4),
+		jump(jeq, unix.SYS_CLONE, 0, 5),
 		stmt(ldAbs, argLow),
-		jump(jset, namespaceFlags, 0, 1),
-		stmt(ret, retEPERM),
+		jump(jset, namespaceFlags, 2, 0),
+		jump(jset, unix.CLONE_THREAD, 0, 1),
 		stmt(ret, retAllow),
+		stmt(ret, retEPERM),
 	)
 	for _, nr := range ownProcessCalls {
 		p = append(p,

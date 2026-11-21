@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -10,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 	"unsafe"
@@ -64,6 +66,11 @@ func runnerChecks(ctx context.Context, in runnerProbeIn, workspace string) probe
 		err = fmt.Errorf("no output")
 	}
 	refused("run another program", err)
+	_, err = syscall.ForkExec(filepath.Join(workspace, "no-such-program"), nil, nil)
+	if !errors.Is(err, syscall.EPERM) {
+		err = nil
+	}
+	refused("start a child process", err)
 	refused("open a raw, packet or ICMP socket", rawSocket())
 	mem, err := os.Open(fmt.Sprintf("/proc/%d/mem", in.Parent))
 	if err == nil {
@@ -236,7 +243,7 @@ func TestConfinedRunner(t *testing.T) {
 			}
 			t.Fatalf("%s: the confined runner gave no result: %s", name, msg)
 		}
-		if len(got.Refused) != len(control.Refused) || len(got.Refused) < 25 {
+		if len(got.Refused) != len(control.Refused) || len(got.Refused) < 26 {
 			t.Fatalf("%s: the runner ran %d checks confined and %d unconfined", name, len(got.Refused), len(control.Refused))
 		}
 		for what, refused := range got.Refused {
@@ -255,7 +262,7 @@ func TestConfinedRunner(t *testing.T) {
 	}
 
 	noSeccomp, _ := runRunnerProbe(t, tg, "landlock")
-	for _, what := range []string{"connect to a Unix socket outside its folders", "send to a datagram socket outside its folders", "UDP to loopback"} {
+	for _, what := range []string{"connect to a Unix socket outside its folders", "send to a datagram socket outside its folders", "UDP to loopback", "start a child process"} {
 		if noSeccomp.Refused[what] {
 			t.Errorf("with Landlock only, the runner still could not %s: the check does not prove the seccomp filter", what)
 		}

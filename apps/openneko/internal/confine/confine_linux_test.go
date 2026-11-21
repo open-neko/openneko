@@ -154,7 +154,7 @@ func TestRunnerFilterRefusesTheListedCalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, nr := range append(append([]uintptr{}, refusedCalls...), unix.SYS_SOCKET, unix.SYS_CONNECT, unix.SYS_TRUNCATE, unix.SYS_KILL, unix.SYS_PTRACE) {
+	for _, nr := range append(append(append([]uintptr{}, refusedCalls...), forkCalls...), unix.SYS_SOCKET, unix.SYS_CONNECT, unix.SYS_TRUNCATE, unix.SYS_KILL, unix.SYS_PTRACE) {
 		found := false
 		for i, ins := range prog {
 			if ins.Code == jeq && ins.K == uint32(nr) && i+1 < len(prog) && prog[i+1].Code == ret && prog[i+1].K == retEPERM {

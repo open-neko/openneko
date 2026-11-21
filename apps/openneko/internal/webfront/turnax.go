@@ -538,6 +538,14 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions, n
 		return axTurnOutcome{}, err
 	}
 	defer turn.stop()
+	if o.Workspace != nil {
+		o.Workspace.runners.start()
+		defer func() {
+			if turn.exited() {
+				o.Workspace.runners.ended()
+			}
+		}()
+	}
 	reaper := time.AfterFunc(time.Duration(timeoutMs)*time.Millisecond+axKillGrace, turn.stop)
 	defer reaper.Stop()
 
@@ -775,6 +783,7 @@ type axServeTurn struct {
 	mu       sync.Mutex
 	diag     strings.Builder
 	code     *int
+	exit     bool
 	stopped  bool
 	userStop bool
 	stopOnce sync.Once
@@ -874,12 +883,13 @@ func (t *axServeTurn) read() {
 						_, _ = t.toolsIn.Write(append(append([]byte{}, f.Message...), '\n'))
 					}
 				case "exit":
+					t.mu.Lock()
+					t.exit = true
 					if f.Code != nil {
 						c := int(*f.Code)
-						t.mu.Lock()
 						t.code = &c
-						t.mu.Unlock()
 					}
+					t.mu.Unlock()
 					if f.Error != "" {
 						t.note(f.Error)
 					}
@@ -923,6 +933,12 @@ func (t *axServeTurn) exitCode() *int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.code
+}
+
+func (t *axServeTurn) exited() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.exit
 }
 
 func (t *axServeTurn) cancelled() bool {
