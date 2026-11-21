@@ -444,7 +444,7 @@ func (a *API) sweepWatchersCounted(ctx context.Context, orgID string, now time.T
 		threshold, last := parse(w.threshold), parse(w.last)
 		var value any = jsUndefined{}
 		var failure *string
-		data, err := a.watcherQuery(ctx, orgID, w.id, w.query, parse(w.variables), fallback, now)
+		data, err := a.watcherQuery(ctx, orgID, w.id, w.workflowID, w.query, parse(w.variables), fallback, now)
 		if err != nil {
 			msg := utf16Prefix(err.Error(), 500)
 			failure = &msg
@@ -499,7 +499,7 @@ func (a *API) sweepWatchersCounted(ctx context.Context, orgID string, now time.T
 	return len(due), fired, nil
 }
 
-func (a *API) watcherQuery(ctx context.Context, orgID, watcherID, query string, variables any, fallback *packSource, now time.Time) (any, error) {
+func (a *API) watcherQuery(ctx context.Context, orgID, watcherID, workflowID, query string, variables any, fallback *packSource, now time.Time) (any, error) {
 	src, err := a.packArtifactSource(ctx, orgID, "watcher", watcherID)
 	if err != nil {
 		return nil, err
@@ -518,9 +518,13 @@ func (a *API) watcherQuery(ctx context.Context, orgID, watcherID, query string, 
 	if !strings.HasSuffix(endpoint, "/api/v1/graphql") {
 		endpoint += "/api/v1/graphql"
 	}
-	header := http.Header{"Content-Type": {"application/json"}, "X-Role": {"service"}}
+	owner, err := a.workflowPrincipalByID(ctx, orgID, workflowID)
+	if err != nil {
+		return nil, err
+	}
+	header := http.Header{"Content-Type": {"application/json"}, "X-Role": {owner.role}}
 	if src.AuthMode == "jwt" {
-		token, err := a.graphjinToken(orgID, "service", 300*time.Second)
+		token, err := a.graphjinPrincipalToken(ctx, orgID, owner, 300*time.Second)
 		if err != nil {
 			return nil, err
 		}
