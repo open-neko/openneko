@@ -2306,6 +2306,7 @@
       },
       "name": "execute_graphql"
      },
+     "error": "source is read_only",
      "rows": [],
      "rowCount": 0,
      "truncated": false
@@ -2340,6 +2341,7 @@
       },
       "name": "execute_graphql"
      },
+     "error": "source is read_only",
      "rows": [],
      "rowCount": 0,
      "truncated": false

@@ -19,6 +19,7 @@ import (
 const (
 	traceSchemaVersion = "openneko.work.semantic-trace/v1"
 	traceStepRowsMax   = 16 * 1024
+	traceStepErrorMax  = 2 * 1024
 	traceBroker        = "trusted-broker"
 )
 
@@ -142,6 +143,11 @@ func traceStepContent(sequence int, spec traceSpec, result any, err error, scrub
 	if err != nil {
 		content.set("error", scrub(err.Error()))
 		return content
+	}
+	if spec.logicalError != nil && spec.logicalError(result) {
+		if text := toolResultErrorText(result); text != "" {
+			content.set("error", scrub(text))
+		}
 	}
 	rows, _ := scrubJS(scrub, jsReparse(traceResultRows(result))).([]any)
 	kept := []any{}
@@ -493,6 +499,42 @@ func isToolResultError(result any) bool {
 		}
 	}
 	return false
+}
+
+// toolResultErrorText gives the error messages of a tool result that
+// isToolResultError accepts, capped at traceStepErrorMax bytes.
+func toolResultErrorText(result any) string {
+	obj, _ := result.(*jsObj)
+	if obj == nil {
+		return ""
+	}
+	var parts []string
+	for _, entry := range jsArray(obj.vals["content"]) {
+		text, ok := jsNonEmptyString(jsGet(entry, "text"))
+		if !ok {
+			continue
+		}
+		payload, err := jsParse([]byte(text))
+		errs := jsArray(jsGet(payload, "errors"))
+		if err != nil || len(errs) == 0 {
+			if obj.vals["isError"] == true {
+				parts = append(parts, text)
+			}
+			continue
+		}
+		for _, e := range errs {
+			if msg, ok := jsNonEmptyString(jsGet(e, "message")); ok {
+				parts = append(parts, msg)
+			} else if msg, ok := jsNonEmptyString(e); ok {
+				parts = append(parts, msg)
+			}
+		}
+	}
+	out := strings.Join(parts, "; ")
+	if len(out) > traceStepErrorMax {
+		out = strings.ToValidUTF8(out[:traceStepErrorMax], "")
+	}
+	return out
 }
 
 // traceGraphjinToolCall takes args nil when the call had no arguments.
