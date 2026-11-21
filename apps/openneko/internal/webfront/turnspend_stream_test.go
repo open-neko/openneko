@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/open-neko/neko/apps/openneko/internal/llm"
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
 
@@ -55,8 +56,7 @@ func TestTurnSpendIncludesTheStreamedResponder(t *testing.T) {
 	}))
 	defer model.Close()
 
-	dir, _ := os.MkdirTemp("", "ax")
-	defer os.RemoveAll(dir)
+	dir := testsock.Dir(t)
 	socket := filepath.Join(dir, "serve.sock")
 	ln, err := serve.Listen(socket)
 	if err != nil {

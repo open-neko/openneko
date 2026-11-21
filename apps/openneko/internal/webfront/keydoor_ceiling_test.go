@@ -7,12 +7,12 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/open-neko/neko/apps/openneko/internal/llm"
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
@@ -22,11 +22,7 @@ import (
 // calls the door forwarded.
 func spendingServe(t *testing.T) (string, *llm.KeyDoor, <-chan [2]int) {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "ceil")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
+	dir := testsock.Dir(t)
 	door := &llm.KeyDoor{}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
