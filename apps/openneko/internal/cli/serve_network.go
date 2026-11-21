@@ -92,8 +92,8 @@ func networkEnv(environ []string) []string {
 	}
 	out := make([]string, 0, len(environ))
 	for _, kv := range environ {
-		name, _, _ := strings.Cut(kv, "=")
-		if !drop[name] && !secretenv.SecretName(name) {
+		name, value, _ := strings.Cut(kv, "=")
+		if !drop[name] && !secretenv.Secret(name, value) {
 			out = append(out, kv)
 		}
 	}
@@ -104,7 +104,7 @@ func networkEnv(environ []string) []string {
 // got on stdin or in its environment.
 func graphJinSecrets() map[string]string {
 	out := gjhost.ChildSecrets(os.Environ())
-	for k, v := range secretenv.HandedWith(gjhost.ChildSecretName) {
+	for k, v := range secretenv.HandedWith(gjhost.ChildSecret) {
 		out[k] = v
 	}
 	return out

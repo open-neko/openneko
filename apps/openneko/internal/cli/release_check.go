@@ -204,16 +204,16 @@ func checkServeSocket(ctx context.Context, socket string) (host, network, runner
 		return state, network, runner, fmt.Errorf("%w: %s", errTurnsOff, status.TurnsOff)
 	}
 	if !runner.Confined && runner.Mechanism != "" {
-		return state, network, runner, fmt.Errorf("agent runners run unconfined in production mode: %s", runner.Reason)
+		return state, network, runner, fmt.Errorf("agent runners cannot be confined, and serve did not turn agent turns off: %s", runner.Reason)
 	}
 	if !runner.Confined {
-		return state, network, runner, fmt.Errorf("%s: agent turns run unconfined in production mode (%s)", confine.NotAvailable, runner.Reason)
+		return state, network, runner, fmt.Errorf("%s: agent runners cannot be confined (%s)", confine.NotAvailable, runner.Reason)
 	}
 	if !state.Confined && state.Mechanism != "" {
-		return state, network, runner, fmt.Errorf("openneko serve runs unconfined in production mode: %s", state.Reason)
+		return state, network, runner, fmt.Errorf("openneko serve runs unconfined: %s", state.Reason)
 	}
 	if !network.Confined && network.Mechanism != "" {
-		return state, network, runner, fmt.Errorf("the network part of openneko serve runs unconfined in production mode: %s", network.Reason)
+		return state, network, runner, fmt.Errorf("the network part of openneko serve runs unconfined: %s", network.Reason)
 	}
 	return state, network, runner, nil
 }

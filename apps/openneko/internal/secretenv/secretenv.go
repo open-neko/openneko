@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -74,7 +75,9 @@ func Hand(values map[string]string) {
 }
 
 // ReadHanded reads the one JSON line that the parent wrote on stdin when
-// StdinEnv is 1, and hands its values over.
+// StdinEnv is 1, and hands its values over. It also sets each URL value in
+// the process environment, where the readers of that URL look; the OS
+// does not show a variable that a process sets after its start.
 func ReadHanded(r io.Reader) error {
 	if os.Getenv(StdinEnv) != "1" {
 		return nil
@@ -89,17 +92,25 @@ func ReadHanded(r io.Reader) error {
 	}
 	clear(line)
 	Hand(values)
+	for k, v := range values {
+		if SecretURL(v) {
+			if err := os.Setenv(k, v); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
 // SecretName tells whether a variable can hold a secret value: a key, a
-// token, a password, a login, a database URL, or an OTLP header.
+// token, a password, a login, a database URL, a webhook URL, or an OTLP
+// header.
 func SecretName(name string) bool {
 	upper := strings.ToUpper(name)
 	if strings.HasPrefix(upper, "OTEL_") && strings.Contains(upper, "HEADERS") {
 		return true
 	}
-	for _, part := range []string{"KEY", "TOKEN", "SECRET", "PASS", "CREDENTIAL", "DATABASE_URL", "DSN", "AUTH"} {
+	for _, part := range []string{"KEY", "TOKEN", "SECRET", "PASS", "CREDENTIAL", "DATABASE_URL", "DSN", "AUTH", "WEBHOOK_URL"} {
 		if strings.Contains(upper, part) {
 			return true
 		}
@@ -107,13 +118,42 @@ func SecretName(name string) bool {
 	return false
 }
 
-// Split moves the secret-named variables of env into a map.
+// Secret tells whether a variable holds a secret: by its name, or because
+// its value is a URL with a login or a credential in its query.
+func Secret(name, value string) bool {
+	return SecretName(name) || SecretURL(value)
+}
+
+var secretQueryParts = []string{"TOKEN", "KEY", "SECRET", "SIG", "PASS", "AUTH", "CREDENTIAL"}
+
+// SecretURL tells whether value is a URL with a login, or with a query
+// parameter that can hold a credential.
+func SecretURL(value string) bool {
+	u, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || u.Scheme == "" || (u.Host == "" && u.User == nil) {
+		return false
+	}
+	if u.User != nil {
+		return true
+	}
+	for name := range u.Query() {
+		upper := strings.ToUpper(name)
+		for _, part := range secretQueryParts {
+			if strings.Contains(upper, part) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Split moves the secret variables of env into a map.
 func Split(env []string) ([]string, map[string]string) {
 	clean := make([]string, 0, len(env))
 	secrets := map[string]string{}
 	for _, kv := range env {
 		name, value, _ := strings.Cut(kv, "=")
-		if SecretName(name) {
+		if Secret(name, value) {
 			secrets[name] = value
 			continue
 		}
@@ -122,13 +162,13 @@ func Split(env []string) ([]string, map[string]string) {
 	return clean, secrets
 }
 
-// HandedWith returns the handed values whose names match keep.
-func HandedWith(keep func(name string) bool) map[string]string {
+// HandedWith returns the handed values that keep picks.
+func HandedWith(keep func(name, value string) bool) map[string]string {
 	mu.RLock()
 	defer mu.RUnlock()
 	out := map[string]string{}
 	for k, v := range handed {
-		if keep(k) {
+		if keep(k, v) {
 			out[k] = v
 		}
 	}

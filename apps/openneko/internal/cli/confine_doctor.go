@@ -17,8 +17,8 @@ import (
 // confinementDoctorLines prints the Linux security modules, when on Linux,
 // and how agent turns are confined. When serve answers on its socket, it
 // prints what serve reports; else what this system can give. It reports a
-// failure when production mode cannot confine agent turns, also when an
-// admin turned them on without confinement.
+// failure when agent runners or the network part of serve cannot be
+// confined.
 func confinementDoctorLines(ctx context.Context, out io.Writer) bool {
 	st := runnerAvailable()
 	if runtime.GOOS == "linux" && st.Mechanism != "" {
@@ -87,11 +87,11 @@ func serveConfinementLines(ctx context.Context, out io.Writer, socket string, st
 	}
 	failed := false
 	if !runner.Confined {
-		fmt.Fprintf(out, "agent confinement: FAIL, agent turns run unconfined in production mode (%s)\n", runner.Reason)
+		fmt.Fprintf(out, "agent confinement: FAIL, agent runners cannot be confined (%s)\n", runner.Reason)
 		failed = true
 	}
 	if !network.Confined && network.Mechanism != "" {
-		fmt.Fprintf(out, "agent confinement: FAIL, the network part of serve runs unconfined in production mode (%s)\n", network.Reason)
+		fmt.Fprintf(out, "agent confinement: FAIL, the network part of serve runs unconfined (%s)\n", network.Reason)
 		failed = true
 	}
 	if !failed {

@@ -184,7 +184,7 @@ func (a *API) auditWebhookURL() string {
 	if a.AuditWebhook != "" {
 		return a.AuditWebhook
 	}
-	return strings.TrimSpace(os.Getenv("OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL"))
+	return strings.TrimSpace(secretenv.Get("OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL"))
 }
 
 // auditWebhookHost is the only part of the URL that OpenNeko logs: the path
