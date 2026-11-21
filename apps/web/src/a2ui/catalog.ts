@@ -327,6 +327,8 @@ export interface OpenApiSpecInputProps {
   component: "OpenApiSpecInput";
   label?: string;
   value?: unknown;
+  url?: string;
+  baseUrl?: string;
 }
 
 export interface ManagedFileSourceInputProps {

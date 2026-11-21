@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -134,8 +133,6 @@ func gjPostVars(ctx context.Context, endpoint, token, query string, variables *j
 	return data, messages, nil
 }
 
-const openAPIStoreFailed = "The OpenAPI document could not be saved. The server log holds the cause."
-
 func sourceConfigError(err error) any { return jsObjOf("error", cutUTF16(err.Error(), 1000)) }
 
 // describeSourceGraph is InProcessControlPlane.describeSourceGraph().
@@ -216,7 +213,8 @@ func (r *runTools) listSourceSecretNames(ctx context.Context, in sourceConfigIn)
 	return jsFromGo(map[string]any{"names": names}), nil
 }
 
-// importOpenAPISpec is InProcessControlPlane.importOpenApiSpec().
+// importOpenAPISpec checks the URL that a run names and fetches nothing. The
+// admin sees the exact URL in a card and imports it from there.
 func (r *runTools) importOpenAPISpec(ctx context.Context, in openAPIImportIn) (any, error) {
 	gate, err := r.sourceConfigAccess(ctx, in.OrgID, in.RunID)
 	if err != nil {
@@ -225,17 +223,15 @@ func (r *runTools) importOpenAPISpec(ctx context.Context, in openAPIImportIn) (a
 	if gate.denied != "" {
 		return jsObjOf("denied", true, "error", gate.denied), nil
 	}
-	imported, err := importOpenAPISpecFromURL(ctx, in.URL, in.BaseURL)
+	requested, err := parseImportURL(strings.TrimSpace(in.URL))
 	if err != nil {
 		return sourceConfigError(err), nil
 	}
-	asset, err := r.api.storeOpenAPIAsset(ctx, actor{OrgID: in.OrgID, UserID: deref(gate.userID)}, "url",
-		imported.OriginalName, &imported.SourceURL, imported.openAPISpecSummary)
-	if err != nil {
-		log.Printf("[tools] store the imported OpenAPI document: %v", err)
-		return jsObjOf("error", openAPIStoreFailed), nil
+	confirm := jsObjOf("url", requested.String(), "host", requested.Host)
+	if in.BaseURL != nil {
+		confirm.set("baseUrl", *in.BaseURL)
 	}
-	return jsFromGo(map[string]any{"asset": asset}), nil
+	return jsObjOf("confirm", confirm), nil
 }
 
 // listOpenAPISpecs is InProcessControlPlane.listOpenApiSpecs().

@@ -896,6 +896,14 @@ type ImportedOpenApiAsset = {
   checksumSha256: string;
 };
 
+function urlHost(value: string): string {
+  try {
+    return new URL(value.trim()).host;
+  } catch {
+    return "";
+  }
+}
+
 function OpenApiSpecInputView({
   props,
   ctx,
@@ -909,8 +917,9 @@ function OpenApiSpecInputView({
       ? (props.value as ImportedOpenApiAsset)
       : null;
   const [mode, setMode] = React.useState<"url" | "upload">("url");
-  const [url, setUrl] = React.useState("");
-  const [baseUrl, setBaseUrl] = React.useState("");
+  const [url, setUrl] = React.useState(typeof props.url === "string" ? props.url : "");
+  const [baseUrl, setBaseUrl] = React.useState(typeof props.baseUrl === "string" ? props.baseUrl : "");
+  const fetchHost = urlHost(url);
   const [file, setFile] = React.useState<File | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -984,6 +993,9 @@ function OpenApiSpecInputView({
             placeholder="https://api.example.com/openapi.yaml"
             onChange={(event) => setUrl(event.target.value)}
           />
+          {fetchHost ? (
+            <span className="work-a2ui-label">OpenNeko fetches this file from {fetchHost} when you press Import.</span>
+          ) : null}
         </label>
       ) : (
         <label className="work-a2ui-field">

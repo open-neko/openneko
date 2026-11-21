@@ -21,6 +21,7 @@
 * A source that a run proposes with `register_source` gets a saved password only when its host and port are the ones saved with the password, the same rule as **Check connection**. The preview shows the refusal on the host field, and the approved change fails with the same line.
 * Slack replies go out with `unfurl_links` and `unfurl_media` off, and Telegram replies with link previews off, so neither service fetches a URL that an answer names.
 * **Breaking:** a pack action that posts a message (a body with `channel` and `text` or `blocks`, as the Slack pack's `slack.message`) goes out with `unfurl_links` and `unfurl_media` off. A message whose `blocks` hold a URL fails with a line that names the URL; put the link in the text.
+* The `import_openapi_spec` tool no longer fetches. It shows the admin a card with the exact URL and the host that OpenNeko fetches it from, and the fetch runs only when the admin presses Import in the card.
 * **Breaking:** the `send_webhook` action refuses private addresses (10/8, 172.16/12, 192.168/16, 100.64/10, IPv6 fc00::/7) as well as loopback, link-local, multicast and unspecified ones. A webhook to a host on your own network fails with "OpenNeko does not send a webhook to the private ... address"; use a public address or a pack action for that system.
 
 ### Terminal egress
