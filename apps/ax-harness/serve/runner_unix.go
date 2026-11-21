@@ -34,6 +34,7 @@ const (
 )
 
 const (
+	gateURL       = "http://sandbox"
 	brokerKeyDoor = "keydoor"
 	brokerSandbox = "sandbox"
 	brokerDial    = 10 * time.Second
@@ -99,6 +100,16 @@ func (s *Server) runInRunner(ctx context.Context, conn io.Writer, reader *bufio.
 	}
 	defer broker.Close()
 
+	gate, err := s.turnGate(start.Environ)
+	if err != nil {
+		_ = linkChild.Close()
+		_ = brokerChild.Close()
+		return fmt.Errorf("terminal unavailable: %w", err)
+	}
+	if gate != nil {
+		defer gate.Close()
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, s.Runner[0], s.Runner[1:]...)
@@ -118,10 +129,13 @@ func (s *Server) runInRunner(ctx context.Context, conn io.Writer, reader *bufio.
 	}
 	waited := make(chan error, 1)
 	go func() { waited <- cmd.Wait() }()
-	go s.serveBroker(ctx, broker)
+	go s.serveBroker(ctx, broker, gate)
 
 	enc := json.NewEncoder(link)
-	setup := RunnerSetup{RequireDoor: s.RequireDoor, Path: s.Getenv("PATH"), SandboxURL: s.Sandbox.URL, SandboxKey: s.Sandbox.Key, Confine: s.ConfineRunner}
+	setup := RunnerSetup{RequireDoor: s.RequireDoor, Path: s.Getenv("PATH"), Confine: s.ConfineRunner}
+	if gate != nil {
+		setup.SandboxURL, setup.SandboxRun = gateURL, gate.Run()
+	}
 	if enc.Encode(Frame{Type: "runner", Runner: &setup}) == nil && enc.Encode(start) == nil {
 		go func() {
 			_, _ = io.Copy(link, reader)
@@ -153,16 +167,35 @@ func (s *Server) runInRunner(ctx context.Context, conn io.Writer, reader *bufio.
 	return nil
 }
 
+// turnGate opens no connection: the gate reaches the sandbox when the
+// runner first asks for it.
+func (s *Server) turnGate(environ []string) (*sandbox.Gate, error) {
+	if !s.Sandbox.Enabled() {
+		return nil, nil
+	}
+	env := map[string]string{}
+	for _, entry := range environ {
+		if name, value, ok := strings.Cut(entry, "="); ok {
+			env[name] = value
+		}
+	}
+	egress, err := sandbox.TurnEgress(func(name string) string { return env[name] })
+	if err != nil {
+		return nil, err
+	}
+	return sandbox.NewGate(s.Sandbox, egress)
+}
+
 // serveBroker answers the runner's requests for a connection with a
 // connected descriptor.
-func (s *Server) serveBroker(ctx context.Context, broker *net.UnixConn) {
+func (s *Server) serveBroker(ctx context.Context, broker *net.UnixConn, gate *sandbox.Gate) {
 	requests := bufio.NewReader(broker)
 	for {
 		line, err := requests.ReadString('\n')
 		if err != nil {
 			return
 		}
-		conn, err := s.brokerDial(ctx, strings.TrimSpace(line))
+		conn, err := s.brokerDial(ctx, strings.TrimSpace(line), gate)
 		if err != nil {
 			if _, err := broker.Write([]byte("-" + strings.ReplaceAll(err.Error(), "\n", " ") + "\n")); err != nil {
 				return
@@ -177,17 +210,32 @@ func (s *Server) serveBroker(ctx context.Context, broker *net.UnixConn) {
 	}
 }
 
-func (s *Server) brokerDial(ctx context.Context, name string) (net.Conn, error) {
+func (s *Server) brokerDial(ctx context.Context, name string, gate *sandbox.Gate) (net.Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, brokerDial)
 	defer cancel()
 	switch name {
 	case brokerKeyDoor:
 		return keydoor.Dial(ctx)
 	case brokerSandbox:
-		if !s.Sandbox.Enabled() {
+		if gate == nil {
 			return nil, errors.New("the terminal is off: no sandbox URL")
 		}
-		return s.Sandbox.DialService(ctx)
+		parent, child, err := socketPair()
+		if err != nil {
+			return nil, err
+		}
+		gateEnd, err := unixConn(parent)
+		if err != nil {
+			_ = child.Close()
+			return nil, err
+		}
+		runnerEnd, err := unixConn(child)
+		if err != nil {
+			_ = gateEnd.Close()
+			return nil, err
+		}
+		gate.Serve(gateEnd)
+		return runnerEnd, nil
 	}
 	return nil, fmt.Errorf("serve passes no connection named %q", name)
 }
@@ -299,7 +347,7 @@ func RunRunner(ctx context.Context, confine func(folders []string) error) error 
 		Run:         runnerRun,
 	}
 	if setup.SandboxURL != "" {
-		srv.Sandbox = sandbox.Config{URL: setup.SandboxURL, Key: setup.SandboxKey, Dial: broker.dialer(brokerSandbox)}
+		srv.Sandbox = sandbox.Config{URL: setup.SandboxURL, Run: setup.SandboxRun, Dial: broker.dialer(brokerSandbox)}
 	}
 	if setup.Confine {
 		srv.confine = func(environ []string) error {

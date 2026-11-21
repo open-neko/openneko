@@ -427,7 +427,14 @@ link and a broker link. The runner gets no variable of serve's except
 The runner opens no connection itself. For each connection to the key door
 or the sandbox, it asks serve over the broker link. Serve dials, then
 passes the connected socket to the runner (`SCM_RIGHTS`). The broker passes
-these two connections only. In the runner:
+these two connections only. The runner holds no sandbox key. For the
+sandbox, serve opens the turn's run with its key and the org, run label and
+egress list of the turn's start frame, and passes a socket to its own gate
+for that run. The gate sends on only the exec and the end of that run,
+with the run's token. The sandbox refuses an egress list, org or label on
+a request with a run token (`apps/ax-harness/sandbox/gate.go`; tests
+`TestARunnerCannotChooseTheSandboxEgress`, `TestARunTokenCannotChooseTheEgress`).
+In the runner:
 
 - a model or embedding URL that is not a door URL fails the call;
 - a sandbox without a passed connection fails the terminal;
