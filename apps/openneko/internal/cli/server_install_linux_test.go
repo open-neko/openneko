@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -86,7 +88,7 @@ func TestServerRestoreOwners(t *testing.T) {
 	l := s.Layout()
 	writeTree(t, l.Files(), map[string]string{"u1/report.pdf": "pdf"})
 	writeTree(t, l.AgentRuns(), map[string]string{"run1/out/answer": "a"})
-	if err := os.Chmod(filepath.Join(l.AgentRuns(), "run1"), fs.ModeSetgid|0o770); err != nil {
+	if err := os.Chmod(filepath.Join(l.Files(), "u1"), fs.ModeSetgid|0o770); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(s.ConfigDir, "planted.json"), []byte("{}"), 0o644); err != nil {
@@ -96,7 +98,7 @@ func TestServerRestoreOwners(t *testing.T) {
 		t.Fatal(err)
 	}
 	uid, gid, _ := lookupIDs(s.User)
-	for _, path := range []string{filepath.Join(l.Files(), "u1", "report.pdf"), filepath.Join(l.AgentRuns(), "run1", "out", "answer"), filepath.Join(s.ConfigDir, "planted.json")} {
+	for _, path := range []string{filepath.Join(l.Files(), "u1", "report.pdf"), filepath.Join(s.ConfigDir, "planted.json")} {
 		info, err := os.Stat(path)
 		if err != nil {
 			t.Fatal(err)
@@ -105,11 +107,62 @@ func TestServerRestoreOwners(t *testing.T) {
 			t.Errorf("%s owned by %d:%d, want %s", path, u, g, s.User)
 		}
 	}
-	if info, _ := os.Stat(filepath.Join(l.AgentRuns(), "run1")); info.Mode()&fs.ModeSetgid != 0 {
+	if info, _ := os.Stat(filepath.Join(l.Files(), "u1")); info.Mode()&fs.ModeSetgid != 0 {
 		t.Error("a restored folder kept the setgid bit")
+	}
+	if left, _ := os.ReadDir(l.AgentRuns()); len(left) != 0 {
+		t.Errorf("agent-runs kept the folders of old turns: %v", left)
 	}
 	if info, _ := os.Stat(filepath.Join(s.ConfigDir, "planted.json")); info.Mode().Perm() != 0o600 {
 		t.Errorf("config file mode %v", info.Mode().Perm())
+	}
+}
+
+// TestServerInstallStopsARunningInstall: the units stop before root walks
+// the data folder and start again after it.
+func TestServerInstallStopsARunningInstall(t *testing.T) {
+	s := installTestServer(t)
+	o := testServerOptions(t)
+	o.server = s
+	o.server.Old = native.OldAccounts{}
+	o.systemctl = true
+	journal := filepath.Join(t.TempDir(), "journal")
+	fake := filepath.Join(t.TempDir(), "systemctl")
+	script := "#!/bin/sh\necho \"$*\" >> " + journal + "\n[ \"$1\" = is-active ] && echo active\nexit 0\n"
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	systemctlCmd = fake
+	ownWalkHook = func(dir string) {
+		if dir == s.DataDir {
+			f, _ := os.OpenFile(journal, os.O_APPEND|os.O_WRONLY, 0)
+			f.WriteString("walk\n")
+			f.Close()
+		}
+	}
+	waited := false
+	serverWaitWeb = func(context.Context, io.Writer, native.Server) error { waited = true; return nil }
+	t.Cleanup(func() { systemctlCmd = "systemctl"; ownWalkHook = nil; serverWaitWeb = waitServerWeb })
+	cmd := newServerInstallCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	if err := runServerInstall(cmd, o); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	raw, _ := os.ReadFile(journal)
+	var steps []string
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		if !strings.HasPrefix(line, "is-active") {
+			steps = append(steps, line)
+		}
+	}
+	units := native.WebUnit + " " + native.ServeUnit
+	want := []string{"stop " + units, "walk", "daemon-reload", "enable " + units, "start " + units}
+	if strings.Join(steps, "|") != strings.Join(want, "|") {
+		t.Errorf("steps %q, want %q", steps, want)
+	}
+	if !waited {
+		t.Error("server-install did not wait for web after it started the units again")
 	}
 }
 
@@ -246,8 +299,11 @@ func upgradeFromTwoAccounts(t *testing.T, how string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := runAs(t, s.User, "cat "+l.Files()+"/report.pdf "+l.AgentRuns()+"/run1/answer"); err != nil {
+	if err := runAs(t, s.User, "cat "+l.Files()+"/report.pdf"); err != nil {
 		t.Error("the user cannot read the files that the agent user wrote")
+	}
+	if left, _ := os.ReadDir(l.AgentRuns()); len(left) != 0 {
+		t.Errorf("agent-runs kept the folders of old turns: %v", left)
 	}
 	if err := runAs(t, agent, "ls "+s.DataDir); err == nil {
 		t.Error("the old agent user still reaches the data folder")
