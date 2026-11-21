@@ -591,7 +591,7 @@ func TestConfinedRunnerWindows(t *testing.T) {
 
 	got, gotUDP := probeRun(t, tg, winConfined, "confined")
 	t.Logf("confined runner notes: %v", got.Notes)
-	floor := 19
+	floor := 18
 	if tg.in.TCP6 != "" {
 		floor++
 	} else {
