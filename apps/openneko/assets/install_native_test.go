@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -412,5 +413,88 @@ func TestInstallNativePowerShell(t *testing.T) {
 	}
 	if out, err := run("", []string{"FAKE_OPENNEKO_BAD=1"}); err == nil || !strings.Contains(out, "lacks its bundled skills or packs") {
 		t.Fatalf("a failed release-check: %v %s", err, out)
+	}
+}
+
+func redirectingRelease(t *testing.T, to string) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, to+r.URL.Path, http.StatusFound)
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+func TestInstallNativeRefusesPlainHTTP(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("install-native.sh is for Linux and macOS")
+	}
+	needTools(t, "curl", "tar")
+	name := "openneko-native_9.9.9_" + runtime.GOOS + "_" + hostArch(t) + ".tar.gz"
+	archive := nativeArchive(t, false, []releaseFile{{"bin/openneko", "#!/bin/sh\n"}, {"share/openneko/web/index.html", "x"}})
+	var hits atomic.Int32
+	target := serveNativeRelease(t, name, archive, "")
+	counted := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		http.Redirect(w, r, target+r.URL.Path, http.StatusFound)
+	}))
+	defer counted.Close()
+
+	for label, url := range map[string]string{
+		"mirror":   "http://release.example.invalid",
+		"redirect": redirectingRelease(t, counted.URL),
+	} {
+		t.Run(label, func(t *testing.T) {
+			work := t.TempDir()
+			prefix := filepath.Join(work, "opt")
+			out, err := runInstallNative(t, []string{"HOME=" + work, "OPENNEKO_PREFIX=" + prefix,
+				"OPENNEKO_BIN_DIR=" + filepath.Join(work, "bin"), "OPENNEKO_RELEASE_URL=" + url, "OPENNEKO_VERSION=9.9.9"})
+			if err == nil {
+				t.Fatalf("the script installed from %s: %s", url, out)
+			}
+			if label == "mirror" && !strings.Contains(out, "must be an https URL") {
+				t.Fatalf("no clear line: %s", out)
+			}
+			if hits.Load() != 0 {
+				t.Fatalf("curl followed a redirect to plain http %d times: %s", hits.Load(), out)
+			}
+			if _, err := os.Stat(prefix); !os.IsNotExist(err) {
+				t.Fatalf("the refusal left %s: %v", prefix, err)
+			}
+		})
+	}
+}
+
+func TestInstallNativePowerShellRefusesPlainHTTP(t *testing.T) {
+	shell := powerShell(t)
+	arch := hostArch(t)
+	name := "openneko-native_9.9.9_windows_" + arch + ".zip"
+	archive := nativeArchive(t, true, []releaseFile{{"bin/openneko.exe", "x"}, {"share/openneko/web/index.html", "x"}})
+	for label, url := range map[string]string{
+		"mirror":   "http://release.example.invalid",
+		"redirect": redirectingRelease(t, serveNativeRelease(t, name, archive, "")),
+	} {
+		t.Run(label, func(t *testing.T) {
+			local := filepath.Join(t.TempDir(), "local")
+			cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+				"-File", filepath.Join(repoRootForTest(t), "scripts", "install-native.ps1"))
+			cmd.Env = append(os.Environ(), "LOCALAPPDATA="+local, "PROCESSOR_ARCHITECTURE="+strings.ToUpper(arch), "PROCESSOR_ARCHITEW6432=",
+				"OPENNEKO_PREFIX=", "OPENNEKO_RELEASE_URL="+url, "OPENNEKO_VERSION=9.9.9")
+			b, err := cmd.CombinedOutput()
+			out := string(b)
+			if err == nil {
+				t.Fatalf("the script installed from %s: %s", url, out)
+			}
+			want := "a release downloads over https only"
+			if label == "mirror" {
+				want = "must be an https URL"
+			}
+			if !strings.Contains(out, want) {
+				t.Fatalf("want %q: %s", want, out)
+			}
+			if _, err := os.Stat(filepath.Join(local, "Programs", "OpenNeko")); !os.IsNotExist(err) {
+				t.Fatalf("the refusal left an install: %v", err)
+			}
+		})
 	}
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/open-neko/neko/apps/openneko/internal/confine"
 	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
+	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
 const (
@@ -71,7 +72,7 @@ func serveSpec(f serveFolders) confine.Spec {
 	if door := keydoor.SocketPath(os.Getenv, f.agentSocket); door != "" {
 		spec.Sockets = append(spec.Sockets, door)
 	}
-	if path, ok := strings.CutPrefix(f.sandboxURL, "unix://"); ok {
+	if path, ok := sandbox.SocketPath(f.sandboxURL); ok && path != "" {
 		spec.Sockets = append(spec.Sockets, path)
 	}
 	return spec

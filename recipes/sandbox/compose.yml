@@ -9,7 +9,7 @@ x-sandbox-env: &sandbox-env
 
 services:
   openneko-sandbox:
-    image: ${OPENNEKO_SANDBOX_IMAGE:-ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION:-set OPENNEKO_VERSION to the release tag, for example v6.0.0}}
+    image: ${OPENNEKO_SANDBOX_IMAGE:-ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION:?set OPENNEKO_VERSION to the release tag, for example v6.0.0 (a source build in OPENNEKO_SANDBOX_IMAGE may set any value)}}
     command: ["--listen", "unix:///run/openneko-sandbox/sandbox.sock"]
     restart: unless-stopped
     environment:
@@ -45,7 +45,7 @@ services:
   # The only way out of the sandbox network: each run's commands reach the
   # hosts on the organization's egress list through it, and nothing else.
   openneko-egress:
-    image: ${OPENNEKO_SANDBOX_IMAGE:-ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION:-set OPENNEKO_VERSION to the release tag, for example v6.0.0}}
+    image: ${OPENNEKO_SANDBOX_IMAGE:-ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION:?set OPENNEKO_VERSION to the release tag, for example v6.0.0 (a source build in OPENNEKO_SANDBOX_IMAGE may set any value)}}
     command: ["egress", "--listen", ":3128", "--control", "unix:///run/openneko-egress/control.sock"]
     restart: unless-stopped
     volumes:

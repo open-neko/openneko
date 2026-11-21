@@ -37,8 +37,13 @@ func TestPrepareNativeSandboxNeedsAKeyAndAPrivateFolder(t *testing.T) {
 	if err := os.Chmod(open, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := prepareNativeSandbox(dir, "unix://"+filepath.Join(open, "sandbox.sock"), "k"); err == nil || !strings.Contains(err.Error(), "other users can enter it") {
-		t.Fatalf("a folder that the group can enter: %v", err)
+	for _, prefix := range []string{"unix://", "unix:", "unix://localhost"} {
+		if err := prepareNativeSandbox(dir, prefix+filepath.Join(open, "sandbox.sock"), "k"); err == nil || !strings.Contains(err.Error(), "other users can enter it") {
+			t.Fatalf("%s: a folder that the group can enter: %v", prefix, err)
+		}
+	}
+	if err := prepareNativeSandbox(dir, "unix:sandbox.sock", "k"); err == nil || !strings.Contains(err.Error(), "names no socket path") {
+		t.Fatalf("a unix URL with no path: %v", err)
 	}
 	long := "unix://" + filepath.Join(dir, strings.Repeat("s", native.MaxSocketPath()), "sandbox.sock")
 	if err := prepareNativeSandbox(dir, long, "k"); err == nil || !strings.Contains(err.Error(), "shorter instance name") {

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -40,13 +41,29 @@ func nativeExeName(goos string) string {
 }
 
 // nativeReleaseBase is the folder of one release. OPENNEKO_RELEASE_URL
-// points at a mirror with the same layout: <url>/<tag>/<asset>.
-func nativeReleaseBase(target string) string {
+// points at a mirror.
+func nativeReleaseBase(target string) (string, error) {
 	base := openNekoReleaseBaseURL
 	if mirror := strings.TrimSpace(os.Getenv("OPENNEKO_RELEASE_URL")); mirror != "" {
 		base = mirror
 	}
-	return strings.TrimSuffix(base, "/") + "/" + target
+	u, err := url.Parse(base)
+	if err != nil || u.Scheme != "https" || u.Host == "" {
+		return "", fmt.Errorf("the release URL %q is not an https URL; a release downloads over https only", base)
+	}
+	return strings.TrimSuffix(base, "/") + "/" + target, nil
+}
+
+var nativeReleaseClient = &http.Client{CheckRedirect: httpsOnlyRedirect}
+
+func httpsOnlyRedirect(req *http.Request, via []*http.Request) error {
+	if req.URL.Scheme != "https" {
+		return fmt.Errorf("refused a redirect to %s: a release downloads over https only", req.URL.Redacted())
+	}
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	return nil
 }
 
 func resolveNativeTarget(ctx context.Context, requested string) (string, error) {
@@ -71,7 +88,10 @@ func downloadNativeRelease(ctx context.Context, target, parent string) (string, 
 	default:
 		return "", fmt.Errorf("no native release download for %s; use --from <release folder>", runtime.GOOS)
 	}
-	base := nativeReleaseBase(target)
+	base, err := nativeReleaseBase(target)
+	if err != nil {
+		return "", err
+	}
 	name := nativeArchiveName(target, runtime.GOOS, runtime.GOARCH)
 	sums, err := downloadReleaseAsset(ctx, base+"/"+nativeChecksumsAsset)
 	if err != nil {
@@ -105,7 +125,7 @@ func downloadToFile(ctx context.Context, url, dst string, want []byte) error {
 		return err
 	}
 	req.Header.Set("User-Agent", "openneko-upgrade")
-	res, err := http.DefaultClient.Do(req)
+	res, err := nativeReleaseClient.Do(req)
 	if err != nil {
 		return err
 	}

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -57,7 +58,8 @@ func TestEgressStateReadsTheDefaultRoute(t *testing.T) {
 func askEgress(t *testing.T, server *Server) string {
 	t.Helper()
 	root := t.TempDir()
-	server.Workspaces, server.Homes, server.Key = filepath.Join(root, "runs"), filepath.Join(root, "homes"), "k"
+	key := strings.Repeat("k", minTCPKeyLength)
+	server.Workspaces, server.Homes, server.Key = filepath.Join(root, "runs"), filepath.Join(root, "homes"), key
 	listener, err := server.listen("127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +71,7 @@ func askEgress(t *testing.T, server *Server) string {
 		cancel()
 		<-done
 	}()
-	client := &testClient{http: http.DefaultClient, base: "http://" + listener.Addr().String(), key: "k"}
+	client := &testClient{http: http.DefaultClient, base: "http://" + listener.Addr().String(), key: key}
 	var resp *http.Response
 	for i := 0; i < 200; i++ {
 		if resp, err = client.do(ctx, http.MethodGet, "/v2/check", nil); err == nil {

@@ -23,7 +23,7 @@ fi
 key="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 run="run-proof$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 compose() {
-  OPENNEKO_SANDBOX_IMAGE="$image" OPENNEKO_SANDBOX_KEY="$key" OPENNEKO_SANDBOX_PORT="$port" \
+  OPENNEKO_VERSION=source OPENNEKO_SANDBOX_IMAGE="$image" OPENNEKO_SANDBOX_KEY="$key" OPENNEKO_SANDBOX_PORT="$port" \
     docker compose -p "$project" -f "$here/compose.desktop.yml" ${OPENNEKO_PROVE_OVERLAY:+-f "$OPENNEKO_PROVE_OVERLAY"} "$@"
 }
 trap 'compose down -v -t 1 >/dev/null 2>&1' EXIT

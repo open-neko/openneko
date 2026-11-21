@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -249,7 +250,7 @@ func TestDownloadNativeReleaseChecksTheChecksum(t *testing.T) {
 	name := nativeArchiveName("v9.9.9", runtime.GOOS, runtime.GOARCH)
 	sum := sha256.Sum256(archive)
 	sums := hex.EncodeToString(sum[:]) + "  " + name + "\n"
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v9.9.9/" + nativeChecksumsAsset:
 			_, _ = w.Write([]byte(sums))
@@ -260,6 +261,7 @@ func TestDownloadNativeReleaseChecksTheChecksum(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
+	useReleaseServer(t, srv)
 	t.Setenv("OPENNEKO_RELEASE_URL", srv.URL)
 
 	if _, err := resolveNativeTarget(context.Background(), ""); err == nil {
@@ -289,6 +291,51 @@ func TestDownloadNativeReleaseChecksTheChecksum(t *testing.T) {
 	if len(left) != 1 {
 		t.Fatalf("a failed download left folders behind: %v", left)
 	}
+}
+
+func useReleaseServer(t *testing.T, srv *httptest.Server) {
+	t.Helper()
+	previousAsset, previousArchive := upgradeHTTPClient, nativeReleaseClient
+	t.Cleanup(func() { upgradeHTTPClient, nativeReleaseClient = previousAsset, previousArchive })
+	upgradeHTTPClient = &http.Client{Transport: srv.Client().Transport, CheckRedirect: httpsOnlyRedirect}
+	nativeReleaseClient = &http.Client{Transport: srv.Client().Transport, CheckRedirect: httpsOnlyRedirect}
+}
+
+func TestDownloadNativeReleaseRefusesPlainHTTP(t *testing.T) {
+	name := nativeArchiveName("v9.9.9", runtime.GOOS, runtime.GOARCH)
+	var plainHits atomic.Int32
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		plainHits.Add(1)
+		_, _ = w.Write([]byte(strings.Repeat("0", 64) + "  " + name + "\n"))
+	}))
+	defer plain.Close()
+
+	t.Run("mirror", func(t *testing.T) {
+		t.Setenv("OPENNEKO_RELEASE_URL", plain.URL)
+		_, err := downloadNativeRelease(context.Background(), "v9.9.9", t.TempDir())
+		if err == nil || !strings.Contains(err.Error(), "https only") {
+			t.Fatalf("err = %v", err)
+		}
+		if plainHits.Load() != 0 {
+			t.Fatalf("the plain http mirror got %d requests", plainHits.Load())
+		}
+	})
+
+	t.Run("redirect", func(t *testing.T) {
+		tls := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, plain.URL+r.URL.Path, http.StatusFound)
+		}))
+		defer tls.Close()
+		useReleaseServer(t, tls)
+		t.Setenv("OPENNEKO_RELEASE_URL", tls.URL)
+		_, err := downloadNativeRelease(context.Background(), "v9.9.9", t.TempDir())
+		if err == nil || !strings.Contains(err.Error(), "https only") {
+			t.Fatalf("err = %v", err)
+		}
+		if plainHits.Load() != 0 {
+			t.Fatalf("the redirect reached the plain http server %d times", plainHits.Load())
+		}
+	})
 }
 
 func TestNativeUpgradeReplacesTheReleasePacks(t *testing.T) {

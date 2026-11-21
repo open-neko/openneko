@@ -551,7 +551,8 @@ func processesOf(uid int) []int {
 
 func TestSandboxChecksTheKey(t *testing.T) {
 	root := t.TempDir()
-	server := &Server{Workspaces: filepath.Join(root, "runs"), Homes: filepath.Join(root, "homes"), Key: "sandbox-key", BaseUID: 23300, Users: 1, GID: os.Getgid(), PATH: "/usr/bin:/bin"}
+	key := "sandbox-key-" + strings.Repeat("x", minTCPKeyLength)
+	server := &Server{Workspaces: filepath.Join(root, "runs"), Homes: filepath.Join(root, "homes"), Key: key, BaseUID: 23300, Users: 1, GID: os.Getgid(), PATH: "/usr/bin:/bin"}
 	listener, err := server.listen("127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -578,7 +579,7 @@ func TestSandboxChecksTheKey(t *testing.T) {
 			resp.Body.Close()
 		}
 	}
-	client.key = "sandbox-key"
+	client.key = key
 	if resp, err := client.do(ctx, http.MethodGet, "/v2/check", nil); err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatalf("check with the key = %v, %v", resp, err)
 	} else {
@@ -589,8 +590,18 @@ func TestSandboxChecksTheKey(t *testing.T) {
 	}
 }
 
-func TestSandboxRefusesTCPWithoutAKey(t *testing.T) {
-	if _, err := (&Server{}).listen("127.0.0.1:0"); err == nil {
-		t.Fatal("a TCP listener without a key was opened")
+func TestSandboxRefusesTCPWithoutALongKey(t *testing.T) {
+	for _, key := range []string{"", "sandbox-key", strings.Repeat("k", minTCPKeyLength-1)} {
+		if l, err := (&Server{Key: key}).listen("127.0.0.1:0"); err == nil {
+			l.Close()
+			t.Fatalf("a TCP listener with a key of %d characters was opened", len(key))
+		} else if !strings.Contains(err.Error(), "at least 32 characters") {
+			t.Fatalf("key of %d characters: %v", len(key), err)
+		}
 	}
+	l, err := (&Server{Key: strings.Repeat("k", minTCPKeyLength)}).listen("127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("a key of %d characters: %v", minTCPKeyLength, err)
+	}
+	l.Close()
 }

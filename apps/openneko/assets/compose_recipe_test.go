@@ -78,29 +78,26 @@ func TestSandboxRecipeImageIsTheReleaseOrAnExplicitBuild(t *testing.T) {
 			out, err := cmd.CombinedOutput()
 			return string(out), err
 		}
-		if out, err := images(); err != nil || !strings.Contains(out, "ghcr.io/open-neko/neko-sandbox:set OPENNEKO_VERSION to the release tag") || strings.Contains(out, "from-the-caller") {
-			t.Errorf("%v with no release tag: %v\n%s", set, err, out)
+		if out, err := images(); err == nil || !everyLineAsksForTheVersion(out) {
+			t.Errorf("%v with no release tag: want only lines that ask for OPENNEKO_VERSION, got %v\n%s", set, err, out)
 		}
 		if out, err := images("OPENNEKO_VERSION=v6.0.0"); err != nil || !strings.Contains(out, "ghcr.io/open-neko/neko-sandbox:v6.0.0") || strings.Contains(out, "neko-sandbox:latest") {
 			t.Errorf("%v with OPENNEKO_VERSION=v6.0.0: %v\n%s", set, err, out)
 		}
-		if out, err := images("OPENNEKO_SANDBOX_IMAGE=openneko-sandbox:local"); err != nil || !strings.Contains(out, "openneko-sandbox:local") || strings.Contains(out, "ghcr.io/open-neko/neko-sandbox") {
+		if out, err := images("OPENNEKO_SANDBOX_IMAGE=openneko-sandbox:local", "OPENNEKO_VERSION=source"); err != nil || !strings.Contains(out, "openneko-sandbox:local") || strings.Contains(out, "ghcr.io/open-neko/neko-sandbox") {
 			t.Errorf("%v with a source build: %v\n%s", set, err, out)
 		}
 	}
 }
 
-// Docker Compose v2 interpolates a nested ${VAR:?} even when the outer
-// default is not used, so the recipe may hold none.
-func TestSandboxRecipeRequiresNoVariableInsideADefault(t *testing.T) {
-	nested := regexp.MustCompile(`\$\{[A-Z_]+:?-[^}]*\$\{[A-Z_]+:?\?`)
-	for _, name := range []string{"recipes/sandbox/compose.yml", "recipes/sandbox/compose.native.yml", "recipes/sandbox/compose.desktop.yml"} {
-		for i, line := range strings.Split(string(readRootCompose(t, name)), "\n") {
-			if nested.MatchString(line) {
-				t.Errorf("%s:%d: %s", name, i+1, line)
-			}
+func everyLineAsksForTheVersion(out string) bool {
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	for _, line := range lines {
+		if !strings.Contains(line, "required variable OPENNEKO_VERSION is missing a value: set OPENNEKO_VERSION to the release tag") {
+			return false
 		}
 	}
+	return len(lines) > 0
 }
 
 func cleanComposeEnv(extra ...string) []string {

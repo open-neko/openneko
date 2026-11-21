@@ -43,7 +43,10 @@ func RequirePassedConnections() { passedOnly.Store(true) }
 // DialService opens one connection to the sandbox that the URL names.
 func (c Config) DialService(ctx context.Context) (net.Conn, error) {
 	var d net.Dialer
-	if socket, ok := strings.CutPrefix(c.URL, "unix://"); ok {
+	if socket, ok := SocketPath(c.URL); ok {
+		if socket == "" {
+			return nil, fmt.Errorf("OPENNEKO_SANDBOX_URL needs a socket path")
+		}
 		return d.DialContext(ctx, "unix", socket)
 	}
 	parsed, err := url.Parse(c.URL)
@@ -72,11 +75,28 @@ func (c Config) Check() error {
 	return err
 }
 
+// SocketPath reports whether the URL names a Unix socket and gives its path:
+// unix:///path, unix:/path, unix://host/path, and unix://C:\path on Windows.
+// The path is empty when the URL names none.
+func SocketPath(raw string) (string, bool) {
+	if rest, ok := strings.CutPrefix(raw, "unix://"); ok && filepath.IsAbs(rest) {
+		return rest, true
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "unix" {
+		return "", strings.HasPrefix(raw, "unix:")
+	}
+	if !filepath.IsAbs(parsed.Path) && !strings.HasPrefix(parsed.Path, "/") {
+		return "", true
+	}
+	return parsed.Path, true
+}
+
 // SharesFolder reports whether a unix:// URL puts the sandbox socket in the
 // folder of one of the given sockets.
 func (c Config) SharesFolder(sockets ...string) bool {
-	path, ok := strings.CutPrefix(c.URL, "unix://")
-	if !ok {
+	path, ok := SocketPath(c.URL)
+	if !ok || path == "" {
 		return false
 	}
 	dir := filepath.Dir(filepath.Clean(path))
@@ -132,8 +152,8 @@ func NewClient(cfg Config, workspace string) (*Client, error) {
 }
 
 func transport(raw string) (*http.Client, string, error) {
-	if socket, ok := strings.CutPrefix(raw, "unix://"); ok {
-		if !filepath.IsAbs(socket) {
+	if socket, ok := SocketPath(raw); ok {
+		if socket == "" {
 			return nil, "", fmt.Errorf("OPENNEKO_SANDBOX_URL needs a socket path")
 		}
 		dial := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {

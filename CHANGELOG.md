@@ -59,7 +59,7 @@
 ### Sandbox image
 
 * Each release publishes the sandbox as `ghcr.io/open-neko/neko-sandbox`, for amd64 and arm64, with the release's tag. One image holds the sandbox service and the egress proxy. It is 131 MiB compressed on amd64 and 130 MiB on arm64.
-* `recipes/sandbox/compose.yml` and `compose.native.yml` name the image of the release: `ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION}`. They have no `build:` line and no `latest` default, so a stale local image does not stay in use. Without `OPENNEKO_VERSION`, the image name is not valid and the pull stops with a line that asks for it; `openneko start` and `openneko upgrade` set it. For a source build, build the image from `recipes/sandbox` and set `OPENNEKO_SANDBOX_IMAGE` to its name; a source build needs no `OPENNEKO_VERSION`.
+* `recipes/sandbox/compose.yml` and `compose.native.yml` name the image of the release: `ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION}`. They have no `build:` line and no `latest` default, so a stale local image does not stay in use. Without `OPENNEKO_VERSION`, Compose stops before any change with a line that asks for it; `openneko start` and `openneko upgrade` set it. For a source build, build the image from `recipes/sandbox` and set `OPENNEKO_SANDBOX_IMAGE` to its name; Docker Compose v2 also needs `OPENNEKO_VERSION` then, with any value.
 * The sandbox does not start when `OPENNEKO_SANDBOX_USERS` is not 1 to 4096, when `OPENNEKO_SANDBOX_BASE_UID` is below 1000, or when either is not a whole number. Before, `0` started a sandbox whose firewall covered one user while runs used 256.
 * The native release archive holds `share/openneko/sandbox/compose.native.yml`, so a native install needs no checkout to run the sandbox.
 * `openneko upgrade` pulls the sandbox image with the stack when `compose.override.yml` names it, and removes its older tags. A native upgrade prints a warning when the sandbox still runs an older tag.
@@ -101,6 +101,10 @@
 * `openneko start` on a native install stops with one line when a socket path is longer than the OS allows (103 bytes on macOS, 107 on Linux). Before, serve failed later with "bind: invalid argument". A long user name with a named instance can pass the macOS limit; set `XDG_DATA_HOME` to a shorter folder or use a shorter instance name.
 * `openneko doctor` and `openneko setup` no longer report a duplicate `openneko` when the one on `PATH` is a link to the running binary, as with Homebrew.
 * The sandbox service (`recipes/sandbox`) builds only for Linux. On another OS its program stops at start and says to run its image in Docker.
+* The install scripts and `openneko upgrade` download over https only. They refuse an `OPENNEKO_RELEASE_URL` that starts with `http://` (except `127.0.0.1`, `localhost` and `[::1]`) and a redirect to `http://`. INSTALL.md names the install scripts at a release tag, not at `main`.
+* `install-native.ps1` keeps the entries of your user `PATH` as they are, for example `%USERPROFILE%\bin` unexpanded, when it adds OpenNeko's `bin` folder. Before, it wrote every entry back expanded.
+* **Breaking:** the sandbox refuses to listen on TCP with an `OPENNEKO_SANDBOX_KEY` shorter than 32 characters. This affects `compose.desktop.yml`; make a key with `openssl rand -hex 32`.
+* The sandbox client takes `unix:/path` and `unix://host/path` again, as in 5.0.0, beside `unix:///path`.
 
 ### Upgrade from 5.0.0
 

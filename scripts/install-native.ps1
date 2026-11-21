@@ -35,6 +35,16 @@ param(
   $base = $env:OPENNEKO_RELEASE_URL
   if (-not $base) { $base = 'https://github.com/open-neko/openneko/releases/download' }
   $base = $base.TrimEnd('/')
+  function Test-ReleaseUrl([string]$url) {
+    $url -cmatch '^https://' -or $url -cmatch '^http://(127\.0\.0\.1|localhost|\[::1\])(:[0-9]+)?(/|$)'
+  }
+  if (-not (Test-ReleaseUrl $base)) { Fail "OPENNEKO_RELEASE_URL must be an https URL: $base" }
+  function Save-ReleaseFile([string]$url, [string]$out) {
+    $r = Invoke-WebRequest -UseBasicParsing -PassThru -OutFile $out $url
+    $final = $r.BaseResponse.ResponseUri
+    if (-not $final -and $r.BaseResponse.RequestMessage) { $final = $r.BaseResponse.RequestMessage.RequestUri }
+    if (-not $final -or ("$final" -cnotmatch '^https://' -and ([Uri]"$final").Authority -cne ([Uri]$url).Authority)) { Fail "refused $final as the source of ${url}: a release downloads over https only" }
+  }
   $tag = $env:OPENNEKO_VERSION
   if (-not $tag) {
     if ($env:OPENNEKO_RELEASE_URL) { Fail 'OPENNEKO_RELEASE_URL is set, so set OPENNEKO_VERSION too' }
@@ -56,8 +66,8 @@ param(
     Write-Host "Downloading OpenNeko $tag for windows/$arch..."
     $sums = Join-Path $tmp 'checksums-native.txt'
     $zip = Join-Path $tmp $name
-    Invoke-WebRequest -UseBasicParsing -OutFile $sums "$base/$tag/checksums-native.txt"
-    Invoke-WebRequest -UseBasicParsing -OutFile $zip "$base/$tag/$name"
+    Save-ReleaseFile "$base/$tag/checksums-native.txt" $sums
+    Save-ReleaseFile "$base/$tag/$name" $zip
     $want = @(Get-Content -LiteralPath $sums | ForEach-Object {
         if ($_ -cmatch '^([0-9a-f]{64})  \*?(.+)$' -and $Matches[2] -ceq $name) { $Matches[1] }
       })
@@ -95,11 +105,29 @@ param(
     Fail "the release in $prefix lacks its bundled skills or packs; remove $prefix and run this script again"
   }
 
-  $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-  $parts = @($userPath -split ';' | Where-Object { $_ })
-  if ($parts -notcontains $bindir) {
-    [Environment]::SetEnvironmentVariable('Path', (($parts + $bindir) -join ';'), 'User')
-    Write-Host "Added $bindir to your PATH. A new terminal finds openneko."
+  if ([Environment]::OSVersion.Platform -eq 'Win32NT') {
+    $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+    try {
+      $raw = "$($key.GetValue('Path', '', 'DoNotExpandEnvironmentNames'))"
+      $kind = 'ExpandString'
+      if ($raw) { $kind = $key.GetValueKind('Path') }
+      $parts = @($raw -split ';' | Where-Object { $_ })
+      $expanded = @($parts | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_) })
+      if ($parts -notcontains $bindir -and $expanded -notcontains $bindir) {
+        $key.SetValue('Path', (($parts + $bindir) -join ';'), $kind)
+        try {
+          Add-Type -Namespace OpenNeko -Name Notice -MemberDefinition @'
+[DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
+'@
+          $result = [UIntPtr]::Zero
+          [void][OpenNeko.Notice]::SendMessageTimeout([IntPtr]0xffff, 0x1a, [UIntPtr]::Zero, 'Environment', 2, 5000, [ref]$result)
+        } catch {}
+        Write-Host "Added $bindir to your PATH. A new terminal finds openneko."
+      }
+    } finally {
+      $key.Close()
+    }
   }
   if (@($env:Path -split [IO.Path]::PathSeparator) -notcontains $bindir) {
     $env:Path = $bindir + [IO.Path]::PathSeparator + $env:Path

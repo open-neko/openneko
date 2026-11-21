@@ -12,7 +12,7 @@ stack supervisor, migrations, backups, and solution pack commands).
 On Linux without Docker (native install):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/open-neko/openneko/main/scripts/install-native.sh | sh
+curl --proto '=https' -fsSL https://raw.githubusercontent.com/open-neko/openneko/v6.0.0/scripts/install-native.sh | sh
 ```
 
 With Docker (macOS or Linux):

@@ -57,9 +57,14 @@ base="${OPENNEKO_RELEASE_URL:-https://github.com/open-neko/openneko/releases/dow
 tag="${OPENNEKO_VERSION:-}"
 if [ -z "$tag" ]; then
   [ -z "${OPENNEKO_RELEASE_URL:-}" ] || fail "OPENNEKO_RELEASE_URL is set, so set OPENNEKO_VERSION too"
-  url="$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/open-neko/openneko/releases/latest)"
+  url="$(curl --proto '=https' --proto-redir '=https' -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/open-neko/openneko/releases/latest)"
   tag="${url##*/}"
 fi
+case "$base" in
+  https://*) proto='=https' ;;
+  http://127.0.0.1:* | http://127.0.0.1/* | http://localhost:* | http://localhost/* | "http://[::1]:"* | "http://[::1]/"*) proto='=http' ;;
+  *) fail "OPENNEKO_RELEASE_URL must be an https URL: $base" ;;
+esac
 case "$tag" in v*) ;; *) tag="v$tag" ;; esac
 printf '%s\n' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$' || fail "not a release tag: $tag"
 
@@ -73,8 +78,8 @@ name="openneko-native_${tag#v}_${os}_${arch}.tar.gz"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT INT TERM
 echo "Downloading OpenNeko $tag for $os/$arch..."
-curl -fsSL -o "$tmp/checksums-native.txt" "$base/$tag/checksums-native.txt"
-curl -fsSL -o "$tmp/$name" "$base/$tag/$name"
+curl --proto "$proto" --proto-redir '=https' -fsSL -o "$tmp/checksums-native.txt" "$base/$tag/checksums-native.txt"
+curl --proto "$proto" --proto-redir '=https' -fsSL -o "$tmp/$name" "$base/$tag/$name"
 want="$(grep -E "^[0-9a-f]{64}  \*?$name\$" "$tmp/checksums-native.txt" | cut -c1-64 || true)"
 [ -n "$want" ] || fail "checksums-native.txt does not list $name"
 [ "$(sha256 "$tmp/$name" | cut -c1-64)" = "$want" ] || fail "checksum mismatch for $name"
