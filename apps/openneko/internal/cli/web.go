@@ -22,6 +22,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 	"github.com/open-neko/neko/apps/openneko/internal/native"
+	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
 	"github.com/open-neko/neko/apps/openneko/internal/version"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 )
@@ -73,6 +74,9 @@ with exit code 0, so its supervisor starts it again.`,
 			ctx, stop := native.NotifyStop(cmd.Context())
 			defer stop()
 			native.FollowSupervisor()
+			if err := secretenv.ReadHanded(os.Stdin); err != nil {
+				return err
+			}
 			if local, _ := config.ReadLocal(""); local.SecretsBackendError() != nil {
 				return local.SecretsBackendError()
 			}
@@ -185,7 +189,7 @@ with exit code 0, so its supervisor starts it again.`,
 				App:  os.DirFS(dir),
 				Gate: gate,
 				API:  api,
-				Wake: &webfront.Wake{Token: strings.TrimSpace(os.Getenv("OPENNEKO_JOBS_WAKE_TOKEN")), Queue: queue, JobsOn: runner != nil},
+				Wake: &webfront.Wake{Token: strings.TrimSpace(secretenv.Get("OPENNEKO_JOBS_WAKE_TOKEN")), Queue: queue, JobsOn: runner != nil},
 			}
 			srv := &http.Server{Handler: front, ReadHeaderTimeout: 10 * time.Second}
 			fmt.Fprintf(cmd.OutOrStdout(), "openneko web listening on %s, app from %s\n", ln.Addr(), dir)

@@ -37,7 +37,7 @@ func TestServeAndWebGetOnlyTheSecretsTheyRead(t *testing.T) {
 	webOnly := []string{"NEKO_EMBEDDING_API_KEY", "OPENNEKO_DATABASE_URL_FILE", "NEKO_PG_PASSWORD", "OPENNEKO_SESSION_SECRET",
 		"OPENNEKO_JOBS_WAKE_TOKEN", "OPENNEKO_GITHUB_TOKEN", "OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN"}
 	env := []string{"PATH=/bin", "HOME=/home/u", "HTTPS_PROXY=http://proxy:3128", "OPENNEKO_SANDBOX_URL=unix:///s/sandbox.sock",
-		"OPENNEKO_FILES_BUCKET=s3://b", "GJ_DATABASE_PASSWORD=gj",
+		"OPENNEKO_FILES_BUCKET=s3://b", "GJ_DATABASE_PASSWORD=gj", "GJ_DATABASE_HOST=gj-host", "OTEL_EXPORTER_OTLP_HEADERS=authorization=otel-header",
 		"OPENNEKO_SANDBOX_KEY=box", "OPENNEKO_FILES_BUCKET_KEY_ID=id", "OPENNEKO_FILES_BUCKET_SECRET=bs"}
 	for _, name := range append(notRead, webOnly...) {
 		env = append(env, name+"=planted")
@@ -50,25 +50,38 @@ func TestServeAndWebGetOnlyTheSecretsTheyRead(t *testing.T) {
 			t.Errorf("web holds %s, which it does not read", name)
 		}
 	}
+	var webHanded, handed map[string]string
+	if err := json.Unmarshal(procs[1].Stdin, &webHanded); err != nil {
+		t.Fatal(err)
+	}
 	for _, name := range webOnly {
-		if web[name] != "planted" {
-			t.Errorf("web lost %s", name)
+		if name == "OPENNEKO_DATABASE_URL_FILE" {
+			if web[name] != "planted" {
+				t.Errorf("web lost %s", name)
+			}
+			continue
+		}
+		if _, ok := web[name]; ok {
+			t.Errorf("web holds %s in its environment", name)
+		}
+		if webHanded[name] != "planted" {
+			t.Errorf("web's stdin lost %s", name)
 		}
 	}
-	if web["OPENNEKO_SANDBOX_KEY"] != "box" {
-		t.Error("web lost the sandbox key")
+	if _, ok := web["OPENNEKO_SANDBOX_KEY"]; ok || webHanded["OPENNEKO_SANDBOX_KEY"] != "box" {
+		t.Error("web holds the sandbox key in its environment, or lost it on stdin")
 	}
-	for _, kv := range procs[0].Env {
-		if strings.Contains(kv, "planted") {
-			t.Errorf("serve holds %q", kv)
+	for _, kv := range append(procs[0].Env, procs[1].Env...) {
+		if strings.Contains(kv, "planted") && kv != "OPENNEKO_DATABASE_URL_FILE=planted" || strings.Contains(kv, "otel-header") || strings.HasPrefix(kv, "GJ_DATABASE_PASSWORD") {
+			t.Errorf("serve or web holds %q", kv)
 		}
 	}
 	for _, name := range []string{"OPENNEKO_SANDBOX_KEY", "OPENNEKO_FILES_BUCKET_KEY_ID", "OPENNEKO_FILES_BUCKET_SECRET"} {
 		if _, ok := serve[name]; ok {
 			t.Errorf("serve holds %s in its environment", name)
 		}
-		if _, ok := web[name]; ok && name != "OPENNEKO_SANDBOX_KEY" {
-			t.Errorf("web holds %s", name)
+		if _, ok := webHanded[name]; ok && name != "OPENNEKO_SANDBOX_KEY" {
+			t.Errorf("web gets %s", name)
 		}
 	}
 	for _, kv := range env[:5] {
@@ -77,16 +90,25 @@ func TestServeAndWebGetOnlyTheSecretsTheyRead(t *testing.T) {
 			t.Errorf("serve %s=%q, web %q, want %q", k, serve[k], web[k], v)
 		}
 	}
-	if serve["GJ_DATABASE_PASSWORD"] != "gj" || web["GJ_DATABASE_PASSWORD"] != "" {
-		t.Errorf("GJ_DATABASE_PASSWORD: serve %q, web %q", serve["GJ_DATABASE_PASSWORD"], web["GJ_DATABASE_PASSWORD"])
+	if serve["GJ_DATABASE_HOST"] != "gj-host" {
+		t.Errorf("serve lost GJ_DATABASE_HOST: %q", serve["GJ_DATABASE_HOST"])
 	}
-	var handed map[string]string
-	if err := json.Unmarshal(procs[0].Stdin, &handed); err != nil || len(handed) != 3 ||
-		handed["OPENNEKO_SANDBOX_KEY"] != "box" || handed["OPENNEKO_FILES_BUCKET_KEY_ID"] != "id" || handed["OPENNEKO_FILES_BUCKET_SECRET"] != "bs" {
-		t.Errorf("serve's stdin %q %v", procs[0].Stdin, err)
+	if err := json.Unmarshal(procs[0].Stdin, &handed); err != nil {
+		t.Fatal(err)
 	}
-	if serve[secretenv.StdinEnv] != "1" || procs[1].Stdin != nil {
-		t.Errorf("serve reads stdin %q, web gets %q", serve[secretenv.StdinEnv], procs[1].Stdin)
+	want := map[string]string{"OPENNEKO_SANDBOX_KEY": "box", "OPENNEKO_FILES_BUCKET_KEY_ID": "id", "OPENNEKO_FILES_BUCKET_SECRET": "bs",
+		"AWS_ACCESS_KEY_ID": "planted", "AWS_SECRET_ACCESS_KEY": "planted", "AWS_SESSION_TOKEN": "planted",
+		"GJ_DATABASE_PASSWORD": "gj", "OTEL_EXPORTER_OTLP_HEADERS": "authorization=otel-header"}
+	if len(handed) != len(want) {
+		t.Errorf("serve's stdin %v, want %v", handed, want)
+	}
+	for k, v := range want {
+		if handed[k] != v {
+			t.Errorf("serve's stdin %s=%q, want %q", k, handed[k], v)
+		}
+	}
+	if serve[secretenv.StdinEnv] != "1" || web[secretenv.StdinEnv] != "1" {
+		t.Errorf("serve reads stdin %q, web %q", serve[secretenv.StdinEnv], web[secretenv.StdinEnv])
 	}
 	if serve["OPENNEKO_KEY_DOOR_SOCKET"] != filepath.Join("/srv/on", "door", "keydoor.sock") || serve["OPENNEKO_SERVE_CREDENTIALS"] != filepath.Join("/srv/on", "credentials") {
 		t.Errorf("serve lost its own paths: %v", serve)
@@ -127,6 +149,9 @@ func TestWebReadsIsComplete(t *testing.T) {
 		"OPENNEKO_BACKUP_KEY_FILE":           "backup and restore commands",
 		"OPENNEKO_FILES_BUCKET_KEY_ID":       "serve, on stdin",
 		"OPENNEKO_FILES_BUCKET_SECRET":       "serve, on stdin",
+		"AWS_ACCESS_KEY_ID":                  "serve, on stdin",
+		"AWS_SECRET_ACCESS_KEY":              "serve, on stdin",
+		"AWS_SESSION_TOKEN":                  "serve, on stdin",
 		"HARNESS_MODEL_API_KEY":              "agent runner",
 		"HARNESS_FALLBACK_API_KEY":           "agent runner",
 		"HARNESS_EMBEDDING_API_KEY":          "agent runner",
@@ -160,7 +185,7 @@ func TestWebReadsIsComplete(t *testing.T) {
 				return true
 			}
 			v, _ := strconv.Unquote(lit.Value)
-			if envName.MatchString(v) && secretEnvName(v) && !strings.HasPrefix(v, "OPENNEKO_TEST_") {
+			if envName.MatchString(v) && secretenv.SecretName(v) && !strings.HasPrefix(v, "OPENNEKO_TEST_") {
 				found[v] = fset.Position(lit.Pos()).String()
 			}
 			return true

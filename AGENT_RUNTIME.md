@@ -689,8 +689,14 @@ the arguments, environment and process record of every process of the same
 account (`kern.procargs2`, `kern.proc.pid`). On macOS 15.8 Seatbelt does not
 check a sysctl read by number: a profile that refuses every sysctl but a
 named list still lets the runner read them (proved on the `macos-15`
-runner). Keep secrets out of the environment of each process of the
-OpenNeko account (INSTALL.md, "Agent confinement (macOS)").
+runner). So no OpenNeko process keeps a secret in its arguments or
+environment: the supervisor, web, serve, the network part and the GraphJin
+child get theirs on stdin or in a start line (INSTALL.md, "Agent
+confinement (macOS)"). `TestNoOpenNekoProcessShowsAPlantedSecret` plants
+secrets in the shell of `openneko start` and the database URL in its
+arguments, runs the hand-over chain, and reads the arguments and
+environment of each process with no confinement (`kern.procargs2` on
+macOS, `/proc` on Linux).
 
 Fail closed: with no `sandbox_init`, or a profile that macOS refuses,
 serve refuses every agent turn in production mode with the same lines as

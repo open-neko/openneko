@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/open-neko/openneko/apps/ax-harness/ownacl"
 	"io"
 	"net"
 	"net/http"
@@ -19,6 +18,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
+	"github.com/open-neko/openneko/apps/ax-harness/ownacl"
 )
 
 // Supervisor serves the GraphJin address and runs the engine as a child
@@ -34,6 +36,9 @@ type Supervisor struct {
 	Command func(socket string) *exec.Cmd
 	// Socket is the child's unix socket; empty puts it in a new temp folder.
 	Socket string
+	// Secrets are the secret GJ_ and OTEL_ header variables. The child gets
+	// them on stdin, so they are in no process environment.
+	Secrets map[string]string
 }
 
 type State struct {
@@ -79,11 +84,33 @@ func ChildEnv(env []string) []string {
 	for _, kv := range env {
 		name, _, _ := strings.Cut(kv, "=")
 		upper := strings.ToUpper(name)
+		if secretenv.SecretName(upper) && !childEnvNames[upper] {
+			continue
+		}
 		if childEnvNames[upper] || strings.HasPrefix(upper, "GJ_") || strings.HasPrefix(upper, "OTEL_") || upper == "OPENNEKO_OTEL_ENABLED" {
 			out = append(out, kv)
 		}
 	}
 	return out
+}
+
+// ChildSecrets picks from env the secret variables that the customer
+// GraphJin and its trace exporter read.
+func ChildSecrets(env []string) map[string]string {
+	out := map[string]string{}
+	for _, kv := range env {
+		name, value, _ := strings.Cut(kv, "=")
+		if ChildSecretName(name) && value != "" {
+			out[name] = value
+		}
+	}
+	return out
+}
+
+// ChildSecretName tells whether name is a secret GJ_ or OTEL_ variable.
+func ChildSecretName(name string) bool {
+	upper := strings.ToUpper(name)
+	return secretenv.SecretName(upper) && (strings.HasPrefix(upper, "GJ_") || strings.HasPrefix(upper, "OTEL_"))
 }
 
 type child struct {
@@ -319,6 +346,11 @@ func (s *Supervisor) startChild(sock string) (*child, error) {
 	cmd.Stderr = cmd.Stdout
 	if err := cmd.Start(); err != nil {
 		return nil, err
+	}
+	if _, err := stdin.Write(secretenv.Line(s.Secrets)); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return nil, fmt.Errorf("hand the GraphJin child its secrets: %w", err)
 	}
 	c := &child{cmd: cmd, stdin: stdin, started: time.Now(), done: make(chan struct{}), ready: make(chan struct{}), tail: &tail{}}
 	go func() {

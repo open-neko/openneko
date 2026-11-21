@@ -13,6 +13,7 @@ import (
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
+	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
 )
 
 // Policy mirrors packages/db/src/install-policy.ts; keep the two in sync.
@@ -69,7 +70,7 @@ func resolvePolicyConn() (db.ConnConfig, error) {
 		Host:     envOr("NEKO_PG_HOST", "127.0.0.1"),
 		Port:     envInt("NEKO_PG_PORT", envInt("OPENNEKO_DB_PORT", 5432)),
 		User:     envOr("NEKO_PG_USER", "neko"),
-		Password: envOr("NEKO_PG_PASSWORD", "secret"),
+		Password: secretOr("NEKO_PG_PASSWORD", "secret"),
 		Database: envOr("NEKO_PG_DATABASE", "neko"),
 		SSLMode:  envOr("NEKO_PG_SSLMODE", "disable"),
 	}
@@ -98,7 +99,7 @@ func resolvePolicyConn() (db.ConnConfig, error) {
 		conn.Host = envOr("NEKO_PG_HOST", conn.Host)
 		conn.Port = envInt("NEKO_PG_PORT", conn.Port)
 		conn.User = envOr("NEKO_PG_USER", conn.User)
-		conn.Password = envOr("NEKO_PG_PASSWORD", conn.Password)
+		conn.Password = secretOr("NEKO_PG_PASSWORD", conn.Password)
 		conn.Database = envOr("NEKO_PG_DATABASE", conn.Database)
 		conn.SSLMode = envOr("NEKO_PG_SSLMODE", conn.SSLMode)
 	}
@@ -121,6 +122,13 @@ func resolvePolicyConn() (db.ConnConfig, error) {
 
 func envOr(name, fallback string) string {
 	if v := strings.TrimSpace(os.Getenv(name)); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func secretOr(name, fallback string) string {
+	if v := strings.TrimSpace(secretenv.Get(name)); v != "" {
 		return v
 	}
 	return fallback

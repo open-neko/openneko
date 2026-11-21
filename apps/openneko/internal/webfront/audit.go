@@ -21,6 +21,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
 )
 
 const genesisHash = "0000000000000000000000000000000000000000000000000000000000000000"
@@ -144,7 +146,7 @@ func (a *API) reportAuditFailure(e auditEvent, err error) {
 		a.reportAuditDeliveryFailure(e, host, err)
 		return
 	}
-	token := strings.TrimSpace(os.Getenv("OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN"))
+	token := strings.TrimSpace(secretenv.Get("OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN"))
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), auditWebhookTimeout)
 		defer cancel()

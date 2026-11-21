@@ -262,3 +262,43 @@ func TestWebAndServeReadTheirKeysFromSecretFiles(t *testing.T) {
 		}
 	}
 }
+
+// TestServeKeepsItsFoldersOnVolumes: the image's HOME is /, which serve
+// cannot write, so each folder that serve makes at start must be set and
+// lie on a volume. Web stages agent runs in the folder serve reads.
+func TestServeKeepsItsFoldersOnVolumes(t *testing.T) {
+	root := repoRootForTest(t)
+	type service struct {
+		Environment map[string]any `yaml:"environment"`
+		Volumes     []string       `yaml:"volumes"`
+	}
+	for _, name := range []string{"compose.yml", "apps/openneko/assets/compose/core.yml"} {
+		raw, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc struct {
+			Services map[string]service `yaml:"services"`
+		}
+		if err := yaml.Unmarshal(raw, &doc); err != nil {
+			t.Fatal(err)
+		}
+		serve, web := doc.Services["openneko-serve"], doc.Services["web"]
+		for _, env := range []string{"OPENNEKO_AGENT_RUNS_DIR", "OPENNEKO_SUBSCRIPTIONS_DIR", "OPENNEKO_FILES_DIR", "OPENNEKO_FILES_INDEX_DIR"} {
+			dir, _ := serve.Environment[env].(string)
+			onVolume := false
+			for _, v := range serve.Volumes {
+				parts := strings.Split(v, ":")
+				if len(parts) >= 2 && dir != "" && (dir == parts[1] || strings.HasPrefix(dir, strings.TrimSuffix(parts[1], "/")+"/")) {
+					onVolume = true
+				}
+			}
+			if !onVolume {
+				t.Errorf("%s: serve sets %s to %q, which is on none of its volumes %v", name, env, dir, serve.Volumes)
+			}
+		}
+		if serve.Environment["OPENNEKO_AGENT_RUNS_DIR"] != web.Environment["OPENNEKO_AGENT_RUNS_DIR"] {
+			t.Errorf("%s: serve reads agent runs in %v, web stages them in %v", name, serve.Environment["OPENNEKO_AGENT_RUNS_DIR"], web.Environment["OPENNEKO_AGENT_RUNS_DIR"])
+		}
+	}
+}

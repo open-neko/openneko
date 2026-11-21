@@ -128,6 +128,18 @@ func TestBucket(t *testing.T) {
 	if strings.Contains(err.Error(), "not-the-secret") {
 		t.Fatalf("the check error holds the secret: %v", err)
 	}
+	aws, err := filestore.Open(ctx, filestore.Config{Dir: t.TempDir(), Bucket: "s3://" + name, Endpoint: endpoint, AWS: filestore.AWSLogin{KeyID: s3test.KeyID, Secret: s3test.Secret}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := aws.Check(ctx); err != nil {
+		t.Fatalf("the handed AWS login: %v", err)
+	}
+	ownWins, _ := filestore.Open(ctx, filestore.Config{Dir: t.TempDir(), Bucket: "s3://" + name, Endpoint: endpoint, AccessKeyID: s3test.KeyID, SecretKey: "not-the-secret",
+		AWS: filestore.AWSLogin{KeyID: s3test.KeyID, Secret: s3test.Secret}})
+	if err := ownWins.Check(ctx); err == nil {
+		t.Fatal("the AWS login replaced the bucket's own login")
+	}
 	missing, _ := filestore.Open(ctx, filestore.Config{Dir: t.TempDir(), Bucket: "s3://no-such-bucket", Endpoint: endpoint, AccessKeyID: s3test.KeyID, SecretKey: s3test.Secret})
 	if err := missing.Check(ctx); err == nil {
 		t.Fatal("a missing bucket passed the check")

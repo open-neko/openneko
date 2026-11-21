@@ -11,14 +11,15 @@ import (
 func TestNetworkPartGetsNoSecretVariable(t *testing.T) {
 	env := []string{"PATH=/usr/bin", "OPENNEKO_SANDBOX_KEY=sandbox", "OPENAI_API_KEY=model", "OPENNEKO_DATABASE_URL=postgres://main",
 		"NEKO_SECRET_KEY=secret", serveCredentialsEnv + "=/data/credentials", "OPENNEKO_FILES_BUCKET_SECRET=bucket",
-		"AWS_SECRET_ACCESS_KEY=aws", "OPENNEKO_FILES_DIR=/data/files"}
+		"AWS_SECRET_ACCESS_KEY=aws", "GJ_DATABASE_PASSWORD=gj", "OTEL_EXPORTER_OTLP_HEADERS=a=b", "AWS_REGION=eu-west-1", "OPENNEKO_FILES_DIR=/data/files"}
 	got := strings.Join(networkEnv(env), "\n")
-	for _, gone := range []string{"OPENNEKO_SANDBOX_KEY", "OPENAI_API_KEY", "OPENNEKO_DATABASE_URL", "NEKO_SECRET_KEY", serveCredentialsEnv, "OPENNEKO_FILES_BUCKET_SECRET"} {
+	for _, gone := range []string{"OPENNEKO_SANDBOX_KEY", "OPENAI_API_KEY", "OPENNEKO_DATABASE_URL", "NEKO_SECRET_KEY", serveCredentialsEnv, "OPENNEKO_FILES_BUCKET_SECRET",
+		"AWS_SECRET_ACCESS_KEY", "GJ_DATABASE_PASSWORD", "OTEL_EXPORTER_OTLP_HEADERS"} {
 		if strings.Contains(got, gone+"=") {
 			t.Errorf("the network part gets %s:\n%s", gone, got)
 		}
 	}
-	for _, kept := range []string{"PATH=/usr/bin", "AWS_SECRET_ACCESS_KEY=aws", "OPENNEKO_FILES_DIR=/data/files"} {
+	for _, kept := range []string{"PATH=/usr/bin", "AWS_REGION=eu-west-1", "OPENNEKO_FILES_DIR=/data/files"} {
 		if !strings.Contains(got, kept) {
 			t.Errorf("the network part lost %s:\n%s", kept, got)
 		}

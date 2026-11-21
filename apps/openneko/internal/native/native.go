@@ -3,12 +3,12 @@
 package native
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 
@@ -207,43 +207,45 @@ func WebEnv(l Layout, o Options) map[string]string {
 
 func Procs(l Layout, o Options) []Proc {
 	return []Proc{
-		{Name: "serve", Args: []string{o.Exe, "serve"}, Env: Options{Env: ServeEnviron(o.Env)}.env(serveEnvWithStdin(l)), Stdin: ServeSecrets(o.Env)},
-		{Name: "web", Args: []string{o.Exe, "web"}, Env: Options{Env: WebEnviron(o.Env)}.env(WebEnv(l, o))},
+		{Name: "serve", Args: []string{o.Exe, "serve"}, Env: Options{Env: ServeEnviron(o.Env)}.env(withStdin(ServeEnv(l))), Stdin: ServeSecrets(o.Env)},
+		{Name: "web", Args: []string{o.Exe, "web"}, Env: Options{Env: WebEnviron(o.Env)}.env(withStdin(WebEnv(l, o))), Stdin: WebSecrets(o.Env)},
 	}
 }
 
-func serveEnvWithStdin(l Layout) map[string]string {
-	env := ServeEnv(l)
+func withStdin(env map[string]string) map[string]string {
 	env[secretenv.StdinEnv] = "1"
 	return env
 }
 
 // serveOwnSecrets go to serve on stdin, so they are in no environment that
 // a part of serve or its children can read.
-var serveOwnSecrets = []string{"OPENNEKO_SANDBOX_KEY", "OPENNEKO_FILES_BUCKET_KEY_ID", "OPENNEKO_FILES_BUCKET_SECRET"}
+var serveOwnSecrets = []string{"OPENNEKO_SANDBOX_KEY", "OPENNEKO_FILES_BUCKET_KEY_ID", "OPENNEKO_FILES_BUCKET_SECRET",
+	"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"}
 
 // ServeSecrets is the JSON line that serve reads on stdin: its own secrets
-// from env, or from the files that their _FILE variables name.
+// from env, or from the files that their _FILE variables name, and the
+// secret GraphJin and OTLP header variables for the customer GraphJin.
 func ServeSecrets(env []string) []byte {
-	values := map[string]string{}
-	for _, name := range serveOwnSecrets {
-		if v := secretenv.Lookup(env, name); v != "" {
+	values := handedValues(env, serveOwnSecrets)
+	_, secrets := secretenv.Split(env)
+	for name, v := range secrets {
+		if upper := strings.ToUpper(name); (strings.HasPrefix(upper, "GJ_") || strings.HasPrefix(upper, "OTEL_")) && v != "" {
 			values[name] = v
 		}
 	}
-	raw, _ := json.Marshal(values)
-	return append(raw, '\n')
+	return secretenv.Line(values)
 }
 
 // ServeEnviron drops every secret-named variable from env: model and
 // provider keys, tokens, passwords, database URLs, the secret key, the
-// sandbox key and the bucket login. Serve keeps GraphJin's GJ_ variables.
+// sandbox key, the bucket login and the OTLP headers.
 func ServeEnviron(env []string) []string {
-	return keepEnv(env, func(upper string) bool { return strings.HasPrefix(upper, "GJ_") })
+	return keepEnv(env, func(string) bool { return false })
 }
 
 // webReads lists the secret-named variables that web reads. Web gets no
 // other secret-named variable of the shell that ran `openneko start`.
+// Those in webSecrets go on stdin; the rest name a file or a setting.
 var webReads = map[string]bool{
 	"NEKO_PG_PASSWORD": true, "OPENNEKO_DATABASE_URL_FILE": true, "OPENNEKO_SESSION_SECRET": true,
 	"NEKO_EMBEDDING_API_KEY": true, "NEKO_EMBEDDING_API_KEY_FILE": true,
@@ -253,10 +255,28 @@ var webReads = map[string]bool{
 	"OPENNEKO_WORKFLOW_API_ORG_ROLLING_TOKEN_BUDGET": true, "OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE": true,
 }
 
+var webSecrets = []string{"NEKO_PG_PASSWORD", "OPENNEKO_SESSION_SECRET", "NEKO_EMBEDDING_API_KEY", "OPENNEKO_SANDBOX_KEY",
+	"OPENNEKO_JOBS_WAKE_TOKEN", "OPENNEKO_GITHUB_TOKEN", "GITHUB_TOKEN", "OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN"}
+
 // WebEnviron keeps the variables of env that are not secret-named, and the
-// secret-named ones that web reads.
+// secret-named ones that web reads and that hold no secret value.
 func WebEnviron(env []string) []string {
-	return keepEnv(env, func(upper string) bool { return webReads[upper] })
+	return keepEnv(env, func(upper string) bool { return webReads[upper] && !slices.Contains(webSecrets, upper) })
+}
+
+// WebSecrets is the JSON line that web reads on stdin.
+func WebSecrets(env []string) []byte {
+	return secretenv.Line(handedValues(env, webSecrets))
+}
+
+func handedValues(env []string, names []string) map[string]string {
+	values := map[string]string{}
+	for _, name := range names {
+		if v := secretenv.Lookup(env, name); v != "" {
+			values[name] = v
+		}
+	}
+	return values
 }
 
 func keepEnv(env []string, keep func(upper string) bool) []string {
@@ -264,20 +284,11 @@ func keepEnv(env []string, keep func(upper string) bool) []string {
 	for _, kv := range env {
 		name, _, _ := strings.Cut(kv, "=")
 		upper := strings.ToUpper(name)
-		if !secretEnvName(upper) || keep(upper) {
+		if !secretenv.SecretName(upper) || keep(upper) {
 			out = append(out, kv)
 		}
 	}
 	return out
-}
-
-func secretEnvName(upper string) bool {
-	for _, part := range []string{"KEY", "TOKEN", "SECRET", "PASS", "CREDENTIAL", "DATABASE_URL", "DSN", "AUTH"} {
-		if strings.Contains(upper, part) {
-			return true
-		}
-	}
-	return false
 }
 
 func hasEnv(env []string, key string) bool {

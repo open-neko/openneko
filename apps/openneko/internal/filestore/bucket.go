@@ -44,8 +44,11 @@ func openBucket(ctx context.Context, c Config) (Store, error) {
 		region = "us-east-1"
 	}
 	opts := []func(*awsconfig.LoadOptions) error{awsconfig.WithRegion(region)}
-	if c.AccessKeyID != "" {
+	switch {
+	case c.AccessKeyID != "":
 		opts = append(opts, awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(c.AccessKeyID, c.SecretKey, "")))
+	case c.AWS.KeyID != "" && c.AWS.Secret != "":
+		opts = append(opts, awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(c.AWS.KeyID, c.AWS.Secret, c.AWS.Session)))
 	}
 	cfg, err := awsconfig.LoadDefaultConfig(ctx, opts...)
 	if err != nil {
