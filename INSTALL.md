@@ -1500,7 +1500,17 @@ files as root.
 (0.0.0.0), `--public-url`, `--sandbox-dir` (`/run/openneko-sandbox`),
 `--tmpfiles-dir` (`/etc/tmpfiles.d`) and `--start` (start both services and wait until web
 answers). A second run of `server-install` keeps the data and sets the given
-values again.
+values again. When the services run, it stops them, gives each file under
+`/var/lib/openneko` and `/run/openneko-sandbox` to the `openneko` user, and
+starts them again. It follows no link below these folders. It does not
+change the folders of agent turns in `shared/agent-runs`: it deletes them,
+because each one belongs to one turn.
+
+To go back to the release you ran before, install it again with the same
+script and `OPENNEKO_VERSION=<that tag>`. Its own `server-install` writes
+its units again. The database keeps the migrations of the newer release,
+so restore the backup that `openneko upgrade` made before it changed
+anything, with the older executable.
 
 On a server install, the usual commands find `/etc/openneko/server.json` and
 act on the two services. Set `OPENNEKO_SERVER_FILE` when you gave

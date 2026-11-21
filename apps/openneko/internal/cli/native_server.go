@@ -244,9 +244,14 @@ func dirProblem(dir, owner string) (string, error) {
 
 // ownServerData gives the user every file of the data and sandbox folders,
 // after a restore or the move from two accounts, and drops the setgid bit
-// that the shared folders of two accounts had.
+// that the shared folders of two accounts had. agent-runs holds only the
+// folders of turns, which a runner may change during the walk, so the walk
+// never enters it; the caller stopped the units, so it empties it instead.
 func ownServerData(s native.Server) error {
 	if err := applyServerDirs(s); err != nil {
+		return err
+	}
+	if err := emptyFolder(s.Layout().AgentRuns()); err != nil {
 		return err
 	}
 	if err := ownTree(s.ConfigDir, s.User); err != nil {
@@ -260,27 +265,22 @@ func ownServerData(s native.Server) error {
 	if s.SandboxDir != "" {
 		roots = append(roots, s.SandboxDir)
 	}
+	skip := map[string]bool{s.Layout().AgentRuns(): true}
 	for _, root := range roots {
-		err := filepath.WalkDir(root, func(p string, e fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if err := os.Lchown(p, uid, gid); err != nil {
-				return err
-			}
-			if !e.IsDir() {
-				return nil
-			}
-			info, err := e.Info()
-			if err != nil {
-				return err
-			}
-			if info.Mode()&fs.ModeSetgid != 0 {
-				return os.Chmod(p, info.Mode().Perm())
-			}
-			return nil
-		})
-		if err != nil {
+		if err := ownTreeNoFollow(root, uid, gid, skip); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func emptyFolder(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
 			return err
 		}
 	}

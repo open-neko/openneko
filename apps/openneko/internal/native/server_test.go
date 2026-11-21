@@ -33,7 +33,7 @@ func TestServerDirsHoldEveryFolderOnce(t *testing.T) {
 		seen[d] = true
 	}
 	for _, want := range append([]string{s.ConfigDir, s.DataDir, l.Root, l.Logs(), filepath.Dir(l.Log("serve")), l.Run(), l.Check(), l.Door(),
-		filepath.Dir(l.GraphJin()), l.Tmp()}, slices.Collect(maps.Values(l.DataFolders()))...) {
+		filepath.Dir(l.GraphJin()), l.Tmp(), l.AgentRuns()}, slices.Collect(maps.Values(l.DataFolders()))...) {
 		if !seen[want] {
 			t.Errorf("Dirs lacks %s", want)
 		}
