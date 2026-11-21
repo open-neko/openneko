@@ -1,11 +1,13 @@
 package confine
 
 import (
+	"encoding/binary"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -149,23 +151,133 @@ func TestNoLandlockNamesTheCause(t *testing.T) {
 	}
 }
 
+// runFilter runs prog on one call, as the kernel would.
+func runFilter(t *testing.T, prog []unix.SockFilter, arch uint32, nr uintptr, args ...uint64) uint32 {
+	t.Helper()
+	var data [64]byte
+	binary.LittleEndian.PutUint32(data[0:], uint32(nr))
+	binary.LittleEndian.PutUint32(data[4:], arch)
+	for i, a := range args {
+		binary.LittleEndian.PutUint64(data[16+8*i:], a)
+	}
+	var acc uint32
+	for pc := 0; pc < len(prog); pc++ {
+		ins := prog[pc]
+		switch ins.Code {
+		case ldAbs:
+			acc = binary.LittleEndian.Uint32(data[ins.K:])
+		case ret:
+			return ins.K
+		case jeq, jgt, jset:
+			hit := acc == ins.K
+			if ins.Code == jgt {
+				hit = acc > ins.K
+			} else if ins.Code == jset {
+				hit = acc&ins.K != 0
+			}
+			if hit {
+				pc += int(ins.Jt)
+			} else {
+				pc += int(ins.Jf)
+			}
+		default:
+			t.Fatalf("instruction %d has code %#x", pc, ins.Code)
+		}
+	}
+	t.Fatal("the filter ran off its end")
+	return 0
+}
+
 func TestRunnerFilterRefusesTheListedCalls(t *testing.T) {
-	prog, err := runnerFilter(4242)
+	const pid, other = 4242, 4343
+	prog, err := runnerFilter(pid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, nr := range append(append(append([]uintptr{}, refusedCalls...), forkCalls...), unix.SYS_SOCKET, unix.SYS_CONNECT, unix.SYS_TRUNCATE, unix.SYS_KILL, unix.SYS_PTRACE) {
-		found := false
-		for i, ins := range prog {
-			if ins.Code == jeq && ins.K == uint32(nr) && i+1 < len(prog) && prog[i+1].Code == ret && prog[i+1].K == retEPERM {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("the filter does not refuse call %d", nr)
+	arch, _ := auditArch()
+	threadFlags := uint64(unix.CLONE_VM | unix.CLONE_FS | unix.CLONE_FILES | unix.CLONE_SIGHAND | unix.CLONE_THREAD | unix.CLONE_SYSVSEM)
+	refused := append(append(append([]uintptr{}, refusedCalls...), legacyRefusedCalls...), forkCalls...)
+	for _, nr := range refused {
+		if got := runFilter(t, prog, arch, nr); got != retEPERM {
+			t.Errorf("call %d: %#x, want EPERM", nr, got)
 		}
 	}
-	if len(prog) > 255 {
-		t.Errorf("the filter has %d instructions; a jump cannot pass more than 255", len(prog))
+	for _, nr := range []uintptr{unix.SYS_SOCKET, unix.SYS_CONNECT, unix.SYS_TRUNCATE, unix.SYS_KILL, unix.SYS_PTRACE,
+		unix.SYS_RT_SIGQUEUEINFO, unix.SYS_RT_TGSIGQUEUEINFO, unix.SYS_FCHMODAT, unix.SYS_FCHOWNAT, unix.SYS_SETXATTR,
+		unix.SYS_INOTIFY_ADD_WATCH, unix.SYS_FANOTIFY_INIT, unix.SYS_SOCKETPAIR, unix.SYS_SENDMSG} {
+		if !slices.Contains(refused, nr) {
+			t.Errorf("call %d is not in the refused list", nr)
+		}
+	}
+	for _, c := range []struct {
+		what string
+		nr   uintptr
+		args []uint64
+		want uint32
+	}{
+		{"read", unix.SYS_READ, nil, retAllow},
+		{"fchmod on a descriptor", unix.SYS_FCHMOD, []uint64{5, 0o600}, retAllow},
+		{"a thread", unix.SYS_CLONE, []uint64{threadFlags}, retAllow},
+		{"a process", unix.SYS_CLONE, []uint64{uint64(unix.SIGCHLD)}, retEPERM},
+		{"a thread in a new namespace", unix.SYS_CLONE, []uint64{threadFlags | unix.CLONE_NEWUSER}, retEPERM},
+		{"clone3", unix.SYS_CLONE3, nil, retENOSYS},
+		{"a call newer than this build", newestKnownCall + 1, nil, retENOSYS},
+		{"tgkill to its own thread", unix.SYS_TGKILL, []uint64{pid, pid + 1, uint64(unix.SIGURG)}, retAllow},
+		{"tgkill to another process", unix.SYS_TGKILL, []uint64{other, other, 0}, retEPERM},
+		{"tgkill with a pid of 2^32 + its own", unix.SYS_TGKILL, []uint64{1<<32 | pid, pid, 0}, retEPERM},
+		{"pidfd_open of itself", unix.SYS_PIDFD_OPEN, []uint64{pid}, retAllow},
+		{"pidfd_open of another process", unix.SYS_PIDFD_OPEN, []uint64{other}, retEPERM},
+		{"prlimit64 of itself (0)", unix.SYS_PRLIMIT64, []uint64{0, unix.RLIMIT_NOFILE}, retAllow},
+		{"prlimit64 of itself (pid)", unix.SYS_PRLIMIT64, []uint64{pid, unix.RLIMIT_NOFILE}, retAllow},
+		{"prlimit64 of another process", unix.SYS_PRLIMIT64, []uint64{other, unix.RLIMIT_NOFILE}, retEPERM},
+		{"sched_setaffinity of itself", unix.SYS_SCHED_SETAFFINITY, []uint64{0}, retAllow},
+		{"sched_setaffinity of another process", unix.SYS_SCHED_SETAFFINITY, []uint64{other}, retEPERM},
+		{"setpriority of itself", unix.SYS_SETPRIORITY, []uint64{unix.PRIO_PROCESS, 0, 10}, retAllow},
+		{"setpriority of another process", unix.SYS_SETPRIORITY, []uint64{unix.PRIO_PROCESS, other, 10}, retEPERM},
+		{"setpriority of every process of the account", unix.SYS_SETPRIORITY, []uint64{unix.PRIO_USER, 0, 10}, retEPERM},
+		{"setpriority of its group", unix.SYS_SETPRIORITY, []uint64{unix.PRIO_PGRP, 0, 10}, retEPERM},
+		{"utimensat on a descriptor", unix.SYS_UTIMENSAT, []uint64{5, 0, 0x7000, 0}, retAllow},
+		{"utimensat on a path", unix.SYS_UTIMENSAT, []uint64{0xffffff9c, 0x7000, 0, 0}, retEPERM},
+		{"utimensat on a path above 4 GiB", unix.SYS_UTIMENSAT, []uint64{5, 1 << 32, 0, 0}, retEPERM},
+		{"sendto with no address", unix.SYS_SENDTO, []uint64{3, 0x7000, 10, 0, 0, 0}, retAllow},
+		{"sendto with an address", unix.SYS_SENDTO, []uint64{3, 0x7000, 10, 0, 0x8000, 110}, retEPERM},
+		{"fcntl F_GETFL", unix.SYS_FCNTL, []uint64{3, unix.F_GETFL}, retAllow},
+		{"fcntl F_SETFL", unix.SYS_FCNTL, []uint64{3, unix.F_SETFL, unix.O_NONBLOCK}, retAllow},
+		{"fcntl F_DUPFD_CLOEXEC", unix.SYS_FCNTL, []uint64{3, unix.F_DUPFD_CLOEXEC}, retAllow},
+		{"fcntl F_SETOWN", unix.SYS_FCNTL, []uint64{3, unix.F_SETOWN, other}, retEPERM},
+		{"fcntl F_SETOWN_EX", unix.SYS_FCNTL, []uint64{3, unix.F_SETOWN_EX, 0x7000}, retEPERM},
+		{"fcntl F_SETSIG", unix.SYS_FCNTL, []uint64{3, unix.F_SETSIG, uint64(unix.SIGUSR1)}, retEPERM},
+		{"fcntl F_SETLEASE", unix.SYS_FCNTL, []uint64{3, unix.F_SETLEASE}, retEPERM},
+		{"fcntl F_NOTIFY", unix.SYS_FCNTL, []uint64{3, unix.F_NOTIFY}, retEPERM},
+		{"ioctl FIONREAD", unix.SYS_IOCTL, []uint64{3, unix.TIOCINQ}, retAllow},
+		{"ioctl TIOCSTI", unix.SYS_IOCTL, []uint64{0, unix.TIOCSTI}, retEPERM},
+		{"ioctl TIOCLINUX", unix.SYS_IOCTL, []uint64{0, unix.TIOCLINUX}, retEPERM},
+	} {
+		if got := runFilter(t, prog, arch, c.nr, c.args...); got != c.want {
+			t.Errorf("%s: %#x, want %#x", c.what, got, c.want)
+		}
+	}
+	if got := runFilter(t, prog, arch^1, unix.SYS_READ); got != unix.SECCOMP_RET_KILL_PROCESS {
+		t.Errorf("a call from another architecture: %#x", got)
+	}
+	if len(prog) > 4096 {
+		t.Errorf("the filter has %d instructions; the kernel takes 4096", len(prog))
+	}
+}
+
+func TestRunnerGapsNameWhatTheFilterLeaves(t *testing.T) {
+	for _, abi := range []int{1, 8, 9} {
+		g := strings.Join(runnerGaps(abi), "; ")
+		if !strings.Contains(g, "metadata") {
+			t.Errorf("ABI %d: the gaps %q do not name the metadata read", abi, g)
+		}
+		for _, closed := range []string{"signal", "socket", "truncate"} {
+			if strings.Contains(g, closed) {
+				t.Errorf("ABI %d: the gaps %q name %s, which the filter closes", abi, g, closed)
+			}
+		}
+	}
+	if g := strings.Join(runnerGaps(1), "; "); !strings.Contains(g, "ABI 2") || !strings.Contains(g, "ABI 5") {
+		t.Errorf("ABI 1 gaps %q", g)
 	}
 }

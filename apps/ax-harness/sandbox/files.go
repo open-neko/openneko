@@ -189,10 +189,7 @@ func (c *Client) apply(answer execAnswer) error {
 		if file.Mode&0o111 != 0 {
 			perm = 0o770
 		}
-		if err := root.WriteFile(local, file.Data, perm); err != nil {
-			return fmt.Errorf("%s: %w", rel, err)
-		}
-		if err := root.Chmod(local, perm); err != nil {
+		if err := writeWithMode(root, local, file.Data, perm); err != nil {
 			return fmt.Errorf("%s: %w", rel, err)
 		}
 		info, err := root.Lstat(local)
@@ -235,4 +232,18 @@ func skippedNote(files []skipped) string {
 		parts = append(parts, fmt.Sprintf("%s (%s)", file.Path, file.Reason))
 	}
 	return "\n[these files stay in the sandbox: " + strings.Join(parts, ", ") + "]"
+}
+
+// writeWithMode sets the mode through the open file: the agent runner's
+// seccomp filter refuses chmod by path.
+func writeWithMode(root *os.Root, name string, data []byte, perm os.FileMode) error {
+	f, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(data)
+	if err == nil {
+		err = f.Chmod(perm)
+	}
+	return errors.Join(err, f.Close())
 }
