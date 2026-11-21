@@ -1,5 +1,5 @@
-// Package harness runs one OpenNeko agent turn as the Ax backend. The
-// ax-harness binary and the openneko binary's ax-harness role both call Main.
+// Package harness runs one OpenNeko agent turn as the Ax backend, for the
+// confined runner of openneko serve.
 package harness
 
 import (
@@ -10,11 +10,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/open-neko/openneko/apps/ax-harness/catalog"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
@@ -27,8 +25,11 @@ import (
 // The bridge's ask tool ends the turn until the operator answers.
 var bridgeEffects = map[string]string{"interaction_ask_user_question": "pause"}
 
-// Main runs one agent turn, reading the run from stdin and the environment.
-// It exits the process when the turn ends.
+// ErrNoTurnHere is the answer of the ax-harness binary to a turn: a turn
+// runs only in the confined runner of openneko serve.
+var ErrNoTurnHere = errors.New("ax-harness runs no agent turn by itself: agent turns run only in the confined runner of openneko serve")
+
+// Main runs the catalog, generate and embed commands. It refuses a turn.
 func Main() {
 	if len(os.Args) == 2 && os.Args[1] == "catalog" {
 		exportCatalog()
@@ -40,18 +41,8 @@ func Main() {
 	if len(os.Args) == 2 && os.Args[1] == "embed" {
 		os.Exit(embedMain(os.Stdin, os.Stdout, os.Stderr, os.Getenv("HARNESS_EMBEDDING_API_KEY")))
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	environ := withoutSandbox(os.Environ())
-	box := sandbox.ConfigFromEnv(os.Getenv)
-	// Only the bridge may reach the broker.
-	_ = os.Unsetenv("OPENNEKO_BROKER_URL")
-	_ = os.Unsetenv("OPENNEKO_BROKER_TOKEN")
-	code, err := RunTurn(ctx, Turn{Environ: environ, Sandbox: box, In: os.Stdin, Out: os.Stdout})
-	stop()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-	}
-	os.Exit(code)
+	fmt.Fprintln(os.Stderr, ErrNoTurnHere)
+	os.Exit(2)
 }
 
 // Run runs one agent turn for a host that runs the harness in-process.
@@ -270,16 +261,6 @@ func bridgeCommand(bridge, servers string, environ []string) *exec.Cmd {
 		}
 	}
 	return cmd
-}
-
-func withoutSandbox(environ []string) []string {
-	out := make([]string, 0, len(environ))
-	for _, entry := range environ {
-		if !strings.HasPrefix(entry, "OPENNEKO_SANDBOX_") {
-			out = append(out, entry)
-		}
-	}
-	return out
 }
 
 // intEnv reads a host limit; an unset variable keeps the default and a malformed one fails the run.

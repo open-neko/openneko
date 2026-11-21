@@ -1,13 +1,10 @@
-// One Ax turn as a stream of harness event lines, run either as a child
-// process or by `openneko serve` over its socket. Serve protocol:
-// apps/ax-harness/serve/serve.go.
+// One Ax turn as a stream of harness event lines, run by `openneko serve`
+// over its socket. Serve protocol: apps/ax-harness/serve/serve.go.
 
-import { spawn, type ChildProcess } from "node:child_process";
 import { createConnection } from "node:net";
 import { createInterface } from "node:readline";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
-import { AX_HARNESS_BINARY } from "../agent-runtime-contract";
 
 export type HarnessTurn = {
   /** The harness's NDJSON event lines, ending when the turn ends. */
@@ -36,55 +33,6 @@ export function registerServeToolBridge(bridge: ServeToolBridge | undefined): vo
 
 export function serveSocket(): string | undefined {
   return process.env.OPENNEKO_SERVE_SOCKET || undefined;
-}
-
-function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
-  if (!child.pid) return;
-  try {
-    process.kill(-child.pid, signal);
-  } catch {
-    // Already exited, or not a group leader.
-  }
-  try {
-    child.kill(signal);
-  } catch {
-    // ignore
-  }
-}
-
-/** Runs the turn as an ax-harness child process. */
-export function spawnHarnessTurn(opts: {
-  spec: unknown;
-  env: NodeJS.ProcessEnv;
-  cwd: string;
-  debug?: boolean;
-}): HarnessTurn {
-  const child = spawn(AX_HARNESS_BINARY, [], { stdio: ["pipe", "pipe", "pipe"], cwd: opts.cwd, env: opts.env, detached: true });
-  const stderr: Buffer[] = [];
-  child.stderr?.on("data", (c: Buffer) => {
-    stderr.push(c);
-    if (opts.debug) process.stderr.write(c);
-  });
-  let spawnError: Error | undefined;
-  child.on("error", (e) => {
-    spawnError = new Error(`ax-harness spawn failed: ${e.message}`);
-  });
-  const exited = new Promise<number | null>((resolve) => child.on("close", (code) => resolve(code))).then((code) => {
-    if (spawnError) throw spawnError;
-    return code;
-  });
-  // An early exit (invalid configuration) closes stdin; the result check reports it.
-  child.stdin?.on("error", () => {});
-  child.stdin?.end(JSON.stringify(opts.spec));
-  return {
-    lines: createInterface({ input: child.stdout! }),
-    exited,
-    diagnostics: () => Buffer.concat(stderr).toString("utf8"),
-    stop: (hard) => killProcessGroup(child, hard ? "SIGKILL" : "SIGTERM"),
-    get running() {
-      return child.exitCode == null && child.signalCode == null;
-    },
-  };
 }
 
 /** Variables a serve turn may carry. Everything else, keys above all, stays here. */

@@ -20,7 +20,10 @@ import { A2UI_RENDER_ACP_TITLE, A2UI_RENDER_SERVER_NAME } from "../work/a2ui-con
 import { splitStablePrompt } from "../prompts/stable-prefix";
 import { extractMarkdownText, outsideFenceText } from "./output";
 import { extractCardFences, extractSurfaceMessages } from "./surface";
-import { serveHarnessTurn, serveSocket, spawnHarnessTurn } from "./harness-turn";
+import { serveHarnessTurn, serveSocket } from "./harness-turn";
+
+export const NO_SERVE_SOCKET =
+  "agent turns run only in the confined runner of openneko serve, and OPENNEKO_SERVE_SOCKET is not set";
 import { sandboxConfig } from "../work/sandbox-service";
 
 /** The run's model key: a stored key the worker loaded, a key in the environment, or "none" for a keyless provider such as Ollama. */
@@ -216,6 +219,8 @@ export class AxBackend implements AgentBackend {
     status?: "cancelled";
   }> {
     if (!this.ax) throw new Error("Ax backend has no model configured. Set the primary provider in admin settings.");
+    const socket = serveSocket();
+    if (!socket) return { finalText: "", error: NO_SERVE_SOCKET, errorCode: "agent_confinement_unavailable" };
     const { workspace, onEvent, signal } = opts;
     const timeoutMs = opts.timeoutMs ?? agentTurnTimeoutMs();
     const runId = (opts.tag ?? `ax-${Date.now()}`).replace(/[^\w.:-]/g, "").slice(0, 128) || "ax";
@@ -252,22 +257,19 @@ export class AxBackend implements AgentBackend {
     };
 
     const servers = this.bridgeServers(opts);
-    const socket = serveSocket();
-    const turn = socket
-      ? serveHarnessTurn({
-          socket,
-          spec,
-          env,
-          modelKeyEnv: this.ax.route.keyEnv || "MODEL_API_KEY",
-          modelKey: modelKey(this.ax.route),
-          ...(this.ax.fallback
-            ? { extraKeys: { [PRIMARY_ROUTE_KEY_ENV]: modelKey(this.ax.route), [FALLBACK_KEY_ENV]: fallbackKey() } }
-            : {}),
-          servers,
-          ...(opts.mcpBridgeEnv ? { bridgeEnv: { ...opts.mcpBridgeEnv, OPENNEKO_MCP_SERVERS: servers.join(",") } } : {}),
-          debug: opts.debug === true,
-        })
-      : spawnHarnessTurn({ spec, env, cwd, debug: opts.debug === true });
+    const turn = serveHarnessTurn({
+      socket,
+      spec,
+      env,
+      modelKeyEnv: this.ax.route.keyEnv || "MODEL_API_KEY",
+      modelKey: modelKey(this.ax.route),
+      ...(this.ax.fallback
+        ? { extraKeys: { [PRIMARY_ROUTE_KEY_ENV]: modelKey(this.ax.route), [FALLBACK_KEY_ENV]: fallbackKey() } }
+        : {}),
+      servers,
+      ...(opts.mcpBridgeEnv ? { bridgeEnv: { ...opts.mcpBridgeEnv, OPENNEKO_MCP_SERVERS: servers.join(",") } } : {}),
+      debug: opts.debug === true,
+    });
     const unregister = registerAgentCanceller(() => turn.stop(true));
     let cancelled = false;
     const onAbort = () => {
