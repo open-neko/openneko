@@ -38,7 +38,11 @@ export const GRAPHJIN_AGGREGATE_RULE = `- Make the database do the math. When th
   rows and tallying them yourself — that returns a few numbers, not
   thousands of rows. Only pull raw rows when the user needs the rows
   themselves (e.g. "list the orders"); then page with \`limit\`/\`offset\`
-  and take the smallest set that answers the question.`;
+  and take the smallest set that answers the question.
+- For a per-group breakdown with \`distinct\`, keep \`distinct\` to the
+  columns the question groups by: an extra column splits each group. Select
+  the group ids and the aggregates, then read the names of the top groups
+  in a second query by id, or root the query at the dimension table.`;
 
 export type MemorySaveMode = "tool" | "fence" | "none";
 

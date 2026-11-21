@@ -595,6 +595,10 @@ ${currentUserMessage}
   thousands of rows. Only pull raw rows when the user needs the rows
   themselves (e.g. "list the orders"); then page with `limit`/`offset`
   and take the smallest set that answers the question.
+- For a per-group breakdown with `distinct`, keep `distinct` to the
+  columns the question groups by: an extra column splits each group. Select
+  the group ids and the aggregates, then read the names of the top groups
+  in a second query by id, or root the query at the dimension table.
 @@ memory_apply
 Apply these memories when relevant. They are
 operator-validated rules and facts and **take precedence over default
