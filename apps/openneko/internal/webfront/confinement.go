@@ -36,8 +36,11 @@ func (a *API) confinementService() externalService {
 				if err != nil {
 					return "", "", fmt.Errorf("%s; the admin setting for turns without confinement cannot be read: %w", st.turnsOff, err)
 				}
-				if setting.On {
+				if setting.appliesTo(st) {
 					return "", "", errors.New(setting.line())
+				}
+				if why := setting.notHere(st); why != "" {
+					return "", "", fmt.Errorf("%s. The override for agent turns without OS confinement does not apply: %s", st.turnsOff, why)
 				}
 				return "", "", errors.New(st.turnsOff)
 			}
@@ -76,9 +79,9 @@ func (a *API) confinementService() externalService {
 }
 
 type serveStates struct {
-	host, network, runner      confine.State
-	turnsOff, hostName, kernel string
-	production                 bool
+	host, network, runner              confine.State
+	turnsOff, hostName, hostID, kernel string
+	production                         bool
 }
 
 // serveConfinement asks serve over its agent socket how the OS confines it
@@ -106,6 +109,6 @@ func serveConfinement(ctx context.Context, socket string) (serveStates, error) {
 	if len(status.RunnerConfinement) > 0 {
 		_ = json.Unmarshal(status.RunnerConfinement, &st.runner)
 	}
-	st.turnsOff, st.production, st.hostName, st.kernel = status.TurnsOff, status.RequireDoor, status.Host, status.Kernel
+	st.turnsOff, st.production, st.hostName, st.hostID, st.kernel = status.TurnsOff, status.RequireDoor, status.Host, status.HostID, status.Kernel
 	return st, nil
 }

@@ -1,97 +1,59 @@
-"use client";
-
-import { useState } from "react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Field, Input } from "@/components/ui/field";
+import { Field } from "@/components/ui/field";
 
 export type UnconfinedTurnsState = {
-  setting: { on: boolean; host?: string; kernel?: string; reason?: string; by?: string; at?: string };
+  setting: { on: boolean; host?: string; kernel?: string; reason?: string; hostUser?: string; at?: string };
   system: { available: boolean; blocked?: string; host?: string; kernel?: string; reason?: string };
+  applies: boolean;
+  notApplied?: string;
+  commands: { allow: string; deny: string };
 };
 
-const label = "Run agent turns without OS confinement on this system";
+const label = "Agent turns without OS confinement";
+
+function Command({ text }: { text: string }) {
+  return <code className="block rounded-[4px] bg-neutral px-2 py-1 font-mono text-ui-body-sm text-text2 break-all">{text}</code>;
+}
 
 export default function UnconfinedTurnsField({ initial }: { initial: UnconfinedTurnsState }) {
-  const [state, setState] = useState(initial);
-  const [confirm, setConfirm] = useState("");
-  const [saving, setSaving] = useState(false);
-  const { setting, system } = state;
+  const { setting, system, applies, notApplied, commands } = initial;
 
-  async function put(on: boolean) {
-    setSaving(true);
-    try {
-      const res = await fetch("/api/v1/settings/agent/unconfined", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(on ? { on, confirm } : { on }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "The setting was not saved");
-      setState(body as UnconfinedTurnsState);
-      setConfirm("");
-      toast.success(on ? "Agent turns now run without OS confinement." : "Agent turns without OS confinement are off.");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (setting.on) {
+  if (applies) {
     return (
       <Field label={label}>
         <div role="alert" className="text-danger text-ui-body-sm" data-testid="unconfined-on">
-          On. Agent turns run without OS confinement. The agent can read the files and reach the network of the OpenNeko
-          account. {setting.by ? `${setting.by} turned this on at ${setting.at}. ` : ""}
-          {setting.reason ? `Reason: ${setting.reason}.` : ""}
+          Allowed. Agent turns run without OS confinement. The agent can read the files and reach the network of the
+          OpenNeko account. Host user {setting.hostUser} allowed it on {setting.host} ({setting.kernel}) at {setting.at}.
+          {setting.reason ? ` Reason: ${setting.reason}.` : ""}
         </div>
-        <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => put(false)}>
-          Turn off
-        </Button>
+        <span className="text-text3 text-ui-body-sm">To refuse these turns again, run this on the host:</span>
+        <Command text={commands.deny} />
       </Field>
     );
   }
 
   if (!system.available) {
     return (
-      <Field label={label} hint={`Off. ${system.blocked ?? ""}`}>
+      <Field label={label} hint={`Denied. ${system.blocked ?? ""}`}>
         <span className="text-text3 text-ui-body-sm" data-testid="unconfined-unavailable">
-          You can turn this on only on a system that cannot confine agent turns.
+          The host operator can allow these turns only on a host that cannot confine them.
         </span>
       </Field>
     );
   }
 
   return (
-    <Field
-      label={label}
-      htmlFor="agent-unconfined-confirm"
-      hint={`Off, so agent turns do not run. ${system.reason ?? ""}`}
-    >
+    <Field label={label} hint={`Denied, so agent turns do not run. ${system.reason ?? ""}`}>
+      {setting.on && notApplied ? (
+        <span className="text-text3 text-ui-body-sm" data-testid="unconfined-not-applied">
+          An override exists and does not apply: {notApplied}.
+        </span>
+      ) : null}
       <div className="text-danger text-ui-body-sm" data-testid="unconfined-warning">
-        If you turn this on, each agent turn can read the files and reach the network of the OpenNeko account, also the
-        secret key and the database login. The audit log records who turned it on. To confirm, type the host name{" "}
-        <strong>{system.host}</strong>.
+        The operator of host {system.host} can allow agent turns without OS confinement. Each turn can then read the files
+        and reach the network of the OpenNeko account, also the secret key and the database login. The audit log records
+        the host user. Run this on the host as the account that owns the install, or as root for a server install:
       </div>
-      <Input
-        id="agent-unconfined-confirm"
-        value={confirm}
-        spellCheck={false}
-        autoCapitalize="none"
-        autoCorrect="off"
-        autoComplete="off"
-        onChange={(e) => setConfirm(e.target.value)}
-      />
-      <Button
-        type="button"
-        variant="danger"
-        size="sm"
-        disabled={saving || !system.host || confirm.trim() !== system.host}
-        onClick={() => put(true)}
-      >
-        Run agent turns without confinement
-      </Button>
+      <Command text={commands.allow} />
     </Field>
   );
 }

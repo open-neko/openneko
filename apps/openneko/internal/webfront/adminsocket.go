@@ -29,6 +29,7 @@ func (a *API) OperatorHandler() http.Handler {
 	mux.Handle("POST /admin/sources/check", operator(a.serveSourceCheck))
 	mux.Handle("POST /admin/graphjin/import", operator(a.serveGraphjinImport))
 	mux.HandleFunc("GET /health/agent-unconfined", a.serveUnconfinedHealth)
+	mux.HandleFunc("POST /admin/confinement/unconfined", a.operatorUnconfined)
 	for _, path := range []string{"/health", "/health/scheduler", "/health/security"} {
 		mux.HandleFunc("GET "+path, func(w http.ResponseWriter, r *http.Request) { a.serveHealth(w, path, true) })
 	}

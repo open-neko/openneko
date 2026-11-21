@@ -650,7 +650,7 @@ func TestTurnsAreOffWhenRunnersCannotBeConfined(t *testing.T) {
 	defer stop()
 	t.Setenv("OPENNEKO_ENV", "production")
 	cleanServeEnv(t)
-	done, err := serveAgentTurns(ctx, io.Discard, sock, 1, sandbox.Config{}, confine.State{Mechanism: "landlock", ABI: 8, Confined: true}, confine.State{Mechanism: "landlock", ABI: 8, Confined: true})
+	done, err := serveAgentTurns(ctx, io.Discard, sock, 1, turnHostStart{sandbox: sandbox.Config{}}, confine.State{Mechanism: "landlock", ABI: 8, Confined: true}, confine.State{Mechanism: "landlock", ABI: 8, Confined: true})
 	if err != nil {
 		t.Fatal(err)
 	}

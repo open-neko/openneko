@@ -108,8 +108,8 @@ type Server struct {
 	// TurnsOff, when set, refuses every agent turn with this text. Host
 	// model calls and embedding calls still run.
 	TurnsOff string
-	// Host and Kernel name this system in a status frame.
-	Host, Kernel string
+	// Host, HostID and Kernel name this system in a status frame.
+	Host, HostID, Kernel string
 	// Log takes serve's own lines; nil writes to stderr.
 	Log io.Writer
 	// RefusePeer, when set, closes a connection from a process for which it
@@ -227,7 +227,7 @@ func (s *Server) handleStream(parent context.Context, conn io.Writer, reader *bu
 			runner = "process"
 		}
 		result, _ := json.Marshal(Status{RequireDoor: s.RequireDoor, KeyEnv: append([]string{}, s.KeyEnv...), Confinement: s.Confinement, NetworkConfinement: s.NetworkConfinement, Runner: runner,
-			RunnerConfinement: s.RunnerConfinement, TurnsOff: s.TurnsOff, Host: s.Host, Kernel: s.Kernel})
+			RunnerConfinement: s.RunnerConfinement, TurnsOff: s.TurnsOff, Host: s.Host, HostID: s.HostID, Kernel: s.Kernel})
 		_ = out.write(Frame{Type: "status", Result: result})
 		return
 	}
@@ -267,7 +267,7 @@ func (s *Server) handleStream(parent context.Context, conn io.Writer, reader *bu
 			return
 		}
 		s.unconfined.Do(func() {
-			fmt.Fprintln(s.logOut(), "warning: agent turns run without OS confinement: an admin turned this on at Admin, Settings, Agent")
+			fmt.Fprintln(s.logOut(), "warning: agent turns run without OS confinement: the host operator allowed it with openneko confinement allow-unconfined")
 		})
 	}
 	if !s.acquire() {
@@ -410,8 +410,9 @@ type Status struct {
 	RunnerConfinement json.RawMessage `json:"runner_confinement,omitempty"`
 	// TurnsOff tells why serve refuses every agent turn.
 	TurnsOff string `json:"turns_off,omitempty"`
-	// Host and Kernel name the system that runs the agent turns.
+	// Host, HostID and Kernel name the system that runs the agent turns.
 	Host   string `json:"host,omitempty"`
+	HostID string `json:"host_id,omitempty"`
 	Kernel string `json:"kernel,omitempty"`
 }
 

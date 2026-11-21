@@ -485,7 +485,7 @@ confines itself with Landlock and a seccomp filter before agent code runs
 Without both, `openneko serve` still starts, unconfined, and refuses every
 agent turn in production mode. The web app, data reads, host model calls,
 embeddings and workflows without an agent step still work.
-An admin can turn agent turns on without confinement
+The host operator can allow agent turns without confinement
 ([Agent turns without confinement](#agent-turns-without-confinement)).
 
 The lowest kernel is Linux 5.13 (Landlock ABI 1). A newer kernel closes two
@@ -567,34 +567,44 @@ folder.
 Windows has no agent confinement yet. In production mode, `openneko serve`
 refuses every agent turn. The start line, the status page, `openneko doctor`
 and `openneko release-check --serve-socket` say "agent confinement: not
-available on this system yet". An admin can turn agent turns on without
-confinement ([Agent turns without confinement](#agent-turns-without-confinement)).
+available on this system yet". The host operator can allow agent turns
+without confinement ([Agent turns without confinement](#agent-turns-without-confinement)).
 
 ### Agent turns without confinement
 
-On a system that cannot confine agent turns, an admin can let them run
-without OS confinement. This applies to Linux without Landlock or seccomp,
-macOS without `sandbox_init`, and Windows. The agent then can read the files
-and reach the network of the OpenNeko account, also the secret key and the
-database login.
+On a host that cannot confine agent turns, the host operator can let them
+run without OS confinement. This applies to Linux without Landlock or
+seccomp, macOS without `sandbox_init`, and Windows. The agent then can read
+the files and reach the network of the OpenNeko account, also the secret key
+and the database login.
 
-1. Go to Admin, Settings, Agent.
-2. Read the warning at "Run agent turns without OS confinement on this
-   system".
-3. Type the host name that the form shows, then select the button.
+Run the command on the host, as the account that owns the install, or as
+root for a server install. In a Docker install, run it where you run
+`docker compose`; it names your host user.
 
-The form refuses the setting on a system that can confine agent turns, and
-serve ignores it there. The setting covers the whole install. Only a
-signed-in admin can change it: no environment variable, pack, member or
-agent run can set it.
+```sh
+openneko confinement allow-unconfined --reason "RHEL 8, no Landlock until the kernel upgrade"
+openneko confinement status
+openneko confinement deny
+```
 
-While the setting is on:
+The web app and the API show the state and the commands. They cannot change
+it, and no environment variable, pack, member or agent run can set it.
 
-- The audit chain of each organization records who turned it on or off,
-  with the host, the kernel and the reason that confinement is missing.
+The override holds only for the host id (the machine id, the macOS platform
+UUID or the Windows machine GUID) and the kernel it was given for, and only
+while serve reports that the host cannot confine agent turns. After a move
+to another host or a kernel upgrade, it does not apply, and the status page
+and `openneko doctor` say why.
+
+While the override applies:
+
+- The audit chain of each organization records each allow and deny, with
+  the host user, the host, the host id, the kernel, the reason that
+  confinement is missing and the reason the operator gave.
 - Serve logs one line at its first turn without confinement after each
   start, and web logs one line for each such turn.
-- Each run record stores `ran_unconfined`.
+- Each run record and each agent job record stores `ran_unconfined`.
 - The status page and `openneko doctor` show the state as a failure.
 - `openneko release-check --serve-socket` fails. Add `--allow-unconfined`
   to accept the state; it then prints `unconfined_turns=on`.
