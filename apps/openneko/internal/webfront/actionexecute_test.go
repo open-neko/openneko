@@ -466,11 +466,16 @@ func TestSourceConfigAdminAdapterInGo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	seed(t, db, `insert into data_source_secret (org_id, name, value_enc) values ('org', 'crm-pass', $1)`, enc)
+	seed(t, db, `insert into data_source_secret (org_id, name, value_enc, host, port) values ('org', 'crm-pass', $1, 'attacker.example', 5432)`, enc)
+	st, errText := execSourceConfig(jsObjOf("action", "register_source", "name", "crm", "kind", "database", "type", "postgres", "host", "crm.db", "port", float64(5432), "dbname", "crm", "user", "reader", "secretRef", "crm-pass"))
+	if st != "failed" || !strings.Contains(errText, "belongs to attacker.example on port 5432") {
+		t.Fatalf("an approved register_source sent a stored password to another host: %s %s", st, errText)
+	}
+	seed(t, db, `update data_source_secret set host = 'crm.db' where name = 'crm-pass'`)
 	mu.Lock()
 	applyErr = "apply failed with password " + secretVal
 	mu.Unlock()
-	st, errText := execSourceConfig(jsObjOf("action", "register_source", "name", "crm", "kind", "database", "type", "postgres", "host", "crm.db", "port", float64(5432), "dbname", "crm", "user", "reader", "secretRef", "crm-pass"))
+	st, errText = execSourceConfig(jsObjOf("action", "register_source", "name", "crm", "kind", "database", "type", "postgres", "host", "crm.db", "port", float64(5432), "dbname", "crm", "user", "reader", "secretRef", "crm-pass"))
 	if st != "failed" || strings.Contains(errText, secretVal) || !strings.Contains(errText, "[REDACTED]") {
 		t.Fatalf("password was not scrubbed from failure: %s %s", st, errText)
 	}
