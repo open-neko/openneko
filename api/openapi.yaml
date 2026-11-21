@@ -7717,6 +7717,142 @@ paths:
                 properties:
                   error:
                     type: string
+  /policies/proposals:
+    get:
+      operationId: getPoliciesProposals
+      tags:
+      - policies
+      summary: List the approval rules that runs proposed and that wait for an admin
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      responses:
+        '200':
+          description: Each pending proposal with the full rule, the rule of the same name that it replaces, and the enabled rules that it outranks
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - proposals
+                additionalProperties: false
+                properties:
+                  proposals:
+                    type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an admin, or SSO is live and no session is present
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /policies/proposals/{proposalId}/confirm:
+    post:
+      operationId: postPoliciesProposalsByProposalIdConfirm
+      tags:
+      - policies
+      summary: Confirm a proposed approval rule; it then takes effect
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      parameters:
+      - name: proposalId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The rule is saved
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  policy:
+                    type: object
+                  action:
+                    type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an admin, or SSO is live and no session is present
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: No pending rule proposal has this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /policies/proposals/{proposalId}/reject:
+    post:
+      operationId: postPoliciesProposalsByProposalIdReject
+      tags:
+      - policies
+      summary: Reject a proposed approval rule
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      parameters:
+      - name: proposalId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The proposal is rejected
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  ok:
+                    type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an admin, or SSO is live and no session is present
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: No pending rule proposal has this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /policies/{policyId}:
     get:
       operationId: getPoliciesByPolicyId

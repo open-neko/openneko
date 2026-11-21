@@ -16,6 +16,7 @@ import { SearchInput } from "@/components/ui/search-input";
 import { cn } from "@/lib/cn";
 import { matchesListSearch } from "@/lib/list-search";
 import SkillLearnCard from "./SkillLearnCard";
+import ProposedRules, { type RuleProposal } from "./ProposedRules";
 
 type Policy = {
   id: string;
@@ -105,9 +106,17 @@ export default function RulesClient() {
   const [policies, setPolicies] = useState<Policy[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [proposals, setProposals] = useState<RuleProposal[]>([]);
+  const [revision, setRevision] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    void fetch("/api/v1/policies/proposals", { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ proposals: RuleProposal[] }>) : { proposals: [] }))
+      .then((result) => {
+        if (!cancelled) setProposals(result.proposals ?? []);
+      })
+      .catch(() => undefined);
     void fetch("/api/v1/policies", { cache: "no-store" })
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -124,7 +133,7 @@ export default function RulesClient() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [revision]);
 
   const filteredPolicies = policies?.filter((policy) =>
     matchesListSearch(
@@ -174,6 +183,8 @@ export default function RulesClient() {
         </div>
 
         <SkillLearnCard />
+
+        <ProposedRules proposals={proposals} onDecided={() => setRevision((n) => n + 1)} />
 
         {error ? (
           <div className="py-14 text-center text-sm text-danger">{error}</div>

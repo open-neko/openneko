@@ -255,11 +255,16 @@ func subscriptionSavedCard(subscription any, workflowName any) any {
 	return confirmationCard("subscription-save-"+jsTemplate(jsLookup(subscription, "id")), "Trigger added", name, strings.Join(lines, "\n"))
 }
 
-func policySavedCard(policy any, action any) any {
-	verb := "Updated"
-	if action == "created" {
-		verb = "Created"
-	}
+func policyProposedCard(proposal any) any {
+	id := jsTemplate(jsLookup(proposal, "id"))
+	return confirmationCard("policy-proposal-"+id, "Proposed rule", jsTemplate(jsLookup(proposal, "name")), strings.Join([]string{
+		policyRuleLines(proposal),
+		"",
+		"An admin confirms or rejects this rule in [Settings, Approval rules](/admin/rules). It has no effect until then.",
+	}, "\n"))
+}
+
+func policyRuleLines(policy any) string {
 	scopes := jsJoin(jsArray(jsGet(policy, "appliesToScopes")), ", ")
 	if scopes == "" {
 		scopes = "—"
@@ -272,16 +277,13 @@ func policySavedCard(policy any, action any) any {
 		}
 		kinds = jsJoin(quoted, ", ")
 	}
-	id, name := jsTemplate(jsLookup(policy, "id")), jsTemplate(jsLookup(policy, "name"))
-	return confirmationCard("policy-save-"+id, verb+" rule", name, strings.Join([]string{
+	return strings.Join([]string{
 		"**Mode:** `" + jsTemplate(jsLookup(policy, "mode")) + "` • **Scopes:** " + scopes + " • **Priority:** " + jsTemplate(jsLookup(policy, "priority")),
 		"",
 		"**Kinds:** " + kinds,
 		"",
 		jsOrText(jsGet(policy, "description"), "_No description._"),
-		"",
-		"[Open detail](/admin/rules/" + id + ")",
-	}, "\n"))
+	}, "\n")
 }
 
 func copyPresent(out *jsObj, from *jsObj, keys ...string) {
@@ -439,14 +441,15 @@ func listedBatch(outputContract any) any {
 func ruleBuilderTools(b turnBinding, be toolBackend) []toolDef {
 	return []toolDef{
 		{server: "neko_rule_builder", name: "save_rule", shape: policySaveShape,
-			description: joinWords("Create or update an approval rule. Upserts by name within the org —",
-				"if a rule with the same name already exists, it is updated in place.",
+			description: joinWords("Propose an approval rule. The rule has no effect until an admin",
+				"confirms it in Settings, Approval rules; a confirmed rule with the name",
+				"of an existing rule replaces that rule.",
 				"Use this when the operator asks to gate, allow, or deny specific action",
 				"kinds (e.g. 'auto-approve low-risk slack posts', 'always ask before",
 				"sending email externally'). To send without approval only to approved",
 				"recipients, use allowed_targets with on_miss 'next' so any other",
-				"recipient falls to the rule that asks. After saving, the tool emits a",
-				"confirmation card the operator can click to open the rule."),
+				"recipient falls to the rule that asks. The tool emits a card that",
+				"shows the proposed rule and where an admin confirms it."),
 			call: func(ctx context.Context, args *jsObj) (toolResult, error) {
 				opt := func(name string) any { return jsOr(args.vals[name], true, nil) }
 				description := args.vals["description"]
@@ -473,14 +476,14 @@ func ruleBuilderTools(b turnBinding, be toolBackend) []toolDef {
 				if err != nil {
 					return toolResult{}, err
 				}
-				policy := jsGet(result, "policy")
-				if err := be.emitEvent(ctx, surfaceEvent(policySavedCard(policy, jsGet(result, "action")))); err != nil {
+				proposal := jsGet(result, "proposal")
+				if err := be.emitEvent(ctx, surfaceEvent(policyProposedCard(proposal))); err != nil {
 					return toolResult{}, err
 				}
-				out := jsObjOf("ok", true)
-				setPresent(out, "action", result, "action")
-				setPresent(out, "ruleId", policy, "id")
-				setPresent(out, "name", policy, "name")
+				out := jsObjOf("ok", true, "action", "proposed")
+				setPresent(out, "proposalId", proposal, "id")
+				setPresent(out, "name", proposal, "name")
+				out.set("message", "The rule is a proposal. It takes effect when an admin confirms it in Settings, Approval rules.")
 				return toolText(out), nil
 			}},
 		{server: "neko_rule_builder", name: "list_rules", shape: listLimitShape,

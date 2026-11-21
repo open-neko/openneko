@@ -74,6 +74,7 @@ func seedDaily(t *testing.T, db *pgxpool.Pool) {
 			values ($1, 'org', nullif($2, '')::uuid, $3, $4, nullif($5, ''), $6, '{"b":1,"a":[2]}', $7, $7)`,
 			a.id, a.run, a.scope, a.kind, a.risk, a.status, a.created)
 	}
+	seed(t, db, `update action_request set actor_user_id = 'member' where id in ($1, $2)`, arHeldRun, arOwnedRun)
 	seed(t, db, `update action_request set policy_id = $2, approved_at = '2026-11-03T06:00:01.5Z',
 		triggered_by_observation_id = null, minutes_saved = 12 where id = $1`, arFired, policyID)
 	seed(t, db, `insert into action_execution (org_id, action_request_id, executor, status, result, created_at) values
