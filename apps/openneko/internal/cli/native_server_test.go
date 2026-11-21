@@ -19,7 +19,7 @@ import (
 func testServer(t *testing.T) native.Server {
 	t.Helper()
 	base := t.TempDir()
-	s := native.Server{ControlUser: "openneko", AgentUser: "openneko-agent", Group: "openneko-shared",
+	s := native.Server{User: "openneko",
 		ConfigDir: filepath.Join(base, "etc", "openneko"), DataDir: filepath.Join(base, "data"),
 		UnitDir: filepath.Join(base, "units"), Exe: "/opt/openneko/bin/openneko",
 		WebDir: "/opt/openneko/share/openneko/web", WebAddr: "127.0.0.1:1", PublicURL: "http://localhost:1"}

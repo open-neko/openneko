@@ -86,7 +86,7 @@ harness.
 | Piece | Runs as | Holds | Network |
 |---|---|---|---|
 | `openneko web` | `neko`, 1001 (or `openneko` on a server install) | the `neko` database login, `secrets.json`, the in-process tool handlers and the key door | the stack's network, for the model APIs |
-| `openneko serve` | `neko`, 1001 (or `openneko-agent` on a server install) | a door token for each call that runs, never a model key; the files service; the `neko_files_<database>` login and the derived token key; the customer GraphJin and its config | the stack's network, for the customer's data sources |
+| `openneko serve` | `neko`, 1001 (or `openneko` on a server install) | a door token for each call that runs, never a model key; the files service; the `neko_files_<database>` login and the derived token key; the customer GraphJin and its config | the stack's network, for the customer's data sources |
 | Sandbox service | root, to give each run its own user | **no secrets**; a command gets only `PATH`, `HOME`, `TMPDIR`, `LANG`, `NODE_PATH`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH` (`recipes/sandbox/sandbox.go`) | only its own internal network, with no route out; it shares one volume with web and serve, `openneko-sandbox-socket`, which holds only its socket |
 | Egress proxy | `openneko-sandbox egress`, no capabilities, read-only root | **no secrets**; it asks the sandbox for a run's list over a root-only socket | the sandbox network and a network with a route out |
 
@@ -191,9 +191,9 @@ connect, and each call needs a valid token as well. Its path is
   web and serve mount that volume. Web and serve run as the same account
   (`neko`, 1001), so the token separates them from other callers there. The
   sandbox does not mount the volume.
-- Server install: `/var/lib/openneko/shared/door`, owner `openneko`, group
-  `openneko-shared`, mode 2750. Both units set `OPENNEKO_KEY_DOOR_SOCKET`.
-- One-user native install: `~/.local/share/openneko/door`; on Windows
+- Server install: `/var/lib/openneko/shared/door`, owner `openneko`, mode
+  0700. Both units set `OPENNEKO_KEY_DOOR_SOCKET`.
+- Native install for one user: `~/.local/share/openneko/door`; on Windows
   `%LOCALAPPDATA%\OpenNeko\door`. Windows has no file modes. OpenNeko gives
   the data folder a protected access list that allows only the user and
   SYSTEM, and each socket in it takes that list.
@@ -211,7 +211,7 @@ every `*_API_KEY`, `HF_TOKEN`, `VERTEX_ACCESS_TOKEN`,
 --serve-socket` connects to `OPENNEKO_SERVE_SOCKET` and fails when serve
 started with such a variable or runs in development mode.
 
-The one-user native install (`openneko start` with no server install)
+The native install for one user (`openneko start` with no server install)
 starts serve with a filtered copy of the shell environment. The copy holds
 no variable whose name holds `KEY`, `TOKEN`, `SECRET`, `PASS`,
 `CREDENTIAL`, `DATABASE_URL`, `DSN` or `AUTH`, except GraphJin's `GJ_*`
@@ -222,14 +222,18 @@ part the same way. Web gets the same filtered copy plus the secret-named
 variables that it reads (`webReads` in `apps/openneko/internal/native/native.go`;
 `TestWebReadsIsComplete` fails when the code reads a new one). In Docker, web
 and serve read the sandbox key and the embedding key from compose secret
-files. Web and
-serve still run as the same OS user there, so the OS does not separate the
-zones: serve can read web's files. Use the one-user install for development
-and demos only; a server install or Docker gives each zone its own account
-or container.
+files.
+
+On every native install, the server install too, web and serve run as one
+OS account, so the OS does not separate them by account. Serve confines
+itself so that it cannot read web's files (see "Serve confines itself
+(Linux and macOS)"), and each agent turn runs in a confined runner whose
+environment holds only `PATH` and `TMPDIR` (test
+`TestRunnerGetsNoControlZoneSecret`). Docker gives each zone its own
+container.
 
 Two paths still carry a key into the process that runs the agent loop,
-and the one-user native install above has no zone separation by the OS.
+and a native install has no separation of web and serve by OS account.
 Use these three for development and demos only:
 
 - With no `OPENNEKO_SERVE_SOCKET`, `openneko web` runs the Ax harness in

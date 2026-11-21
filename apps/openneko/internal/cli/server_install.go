@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -22,7 +24,6 @@ import (
 
 type serverInstallOptions struct {
 	server      native.Server
-	oneUser     bool
 	databaseURL string
 	port        int
 	bind        string
@@ -35,22 +36,18 @@ func newServerInstallCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "server-install",
 		Short: "Set up a native Linux server install with systemd (run once as root)",
-		Long: `Sets up OpenNeko as two systemd services. openneko-web runs as the control-zone
-user, which owns the config folder: the secret key, the database login and
-the provider settings. openneko-serve runs as the agent-zone user, with its
-own database roles, its socket and the agent runs folder. The two users share
-one group for the shared folders only. --one-user runs both services as one user.`,
+		Long: `Sets up OpenNeko as two systemd services, openneko-web and openneko-serve,
+that run as one system user. Each agent turn runs in a confined runner that
+opens no socket and reads only the files of its turn. The serve unit cannot
+see the config folder, and the web unit cannot see the agent folders.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runServerInstall(cmd, o)
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&o.server.ControlUser, "control-user", "openneko", "System user for openneko web (control zone)")
-	f.StringVar(&o.server.AgentUser, "agent-user", "openneko-agent", "System user for openneko serve (agent zone)")
-	f.StringVar(&o.server.Group, "group", "openneko-shared", "Group that the two users share for the serve socket, the agent runs and the GraphJin config")
-	f.BoolVar(&o.oneUser, "one-user", false, "Run web and serve as the control-zone user, with no agent-zone user")
-	f.StringVar(&o.server.ConfigDir, "config-dir", "/etc/openneko", "Config folder of the control zone")
+	f.StringVar(&o.server.User, "user", "openneko", "System user for openneko web and openneko serve")
+	f.StringVar(&o.server.ConfigDir, "config-dir", "/etc/openneko", "Config folder")
 	f.StringVar(&o.server.DataDir, "data-dir", "/var/lib/openneko", "Data folder")
 	f.StringVar(&o.server.UnitDir, "unit-dir", "/etc/systemd/system", "Folder for the systemd units")
 	f.StringVar(&o.server.Exe, "exe", "", "The openneko executable the services run (default: this one)")
@@ -78,10 +75,13 @@ func runServerInstall(cmd *cobra.Command, o serverInstallOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := ensureServerAccounts(out, s); err != nil {
+	if prev, err := native.LoadServer(filepath.Join(s.ConfigDir, native.ServerFile)); err == nil && prev.User == s.User {
+		s.Old = prev.Old
+	}
+	if err := ensureServerAccount(out, s); err != nil {
 		return err
 	}
-	if err := applyServerDirs(s); err != nil {
+	if err := ownServerData(s); err != nil {
 		return err
 	}
 	if o.databaseURL != "" {
@@ -97,19 +97,14 @@ func runServerInstall(cmd *cobra.Command, o serverInstallOptions) error {
 	if err := native.SaveServer(s); err != nil {
 		return err
 	}
-	if err := ownTree(s.ConfigDir, s.ControlUser, s.ControlUser); err != nil {
+	if err := ownTree(s.ConfigDir, s.User); err != nil {
 		return err
 	}
 	if err := writeServerUnits(out, s); err != nil {
 		return err
 	}
-	if text := s.SandboxTmpfileText(); text != "" && s.TmpfilesDir != "" {
-		if err := os.MkdirAll(s.TmpfilesDir, 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(filepath.Join(s.TmpfilesDir, native.SandboxTmpfile), []byte(text), 0o644); err != nil {
-			return err
-		}
+	if s.Old.Any() {
+		fmt.Fprintf(out, "OpenNeko web and serve now run as %s. %s\n", s.User, oldAccountsLine(s))
 	}
 	if o.systemctl {
 		steps := [][]string{{"daemon-reload"}, {"enable", native.WebUnit, native.ServeUnit}}
@@ -138,9 +133,6 @@ func runServerInstall(cmd *cobra.Command, o serverInstallOptions) error {
 
 func serverFromOptions(o serverInstallOptions) (native.Server, error) {
 	s := o.server
-	if o.oneUser {
-		s.AgentUser, s.Group = s.ControlUser, s.ControlUser
-	}
 	if s.Exe == "" {
 		exe, err := os.Executable()
 		if err != nil {
@@ -161,38 +153,15 @@ func serverFromOptions(o serverInstallOptions) (native.Server, error) {
 	return s, s.Validate()
 }
 
-func ensureServerAccounts(out io.Writer, s native.Server) error {
+func ensureServerAccount(out io.Writer, s native.Server) error {
+	if _, err := user.Lookup(s.User); err == nil {
+		return nil
+	}
 	nologin := "/usr/sbin/nologin"
 	if _, err := os.Stat(nologin); err != nil {
 		nologin = "/sbin/nologin"
 	}
-	l := s.Layout()
-	if !s.OneUser() {
-		if _, err := user.LookupGroup(s.Group); err != nil {
-			if err := runTool(out, "groupadd", "--system", s.Group); err != nil {
-				return err
-			}
-		}
-	}
-	for _, u := range []struct{ name, home string }{{s.ControlUser, l.Root}, {s.AgentUser, l.Agent}} {
-		if _, err := user.Lookup(u.name); err != nil {
-			args := []string{"--system", "--user-group", "--home-dir", u.home, "--no-create-home", "--shell", nologin}
-			if !s.OneUser() {
-				args = append(args, "--groups", s.Group)
-			}
-			if err := runTool(out, "useradd", append(args, u.name)...); err != nil {
-				return err
-			}
-		} else if !s.OneUser() {
-			if err := runTool(out, "usermod", "--append", "--groups", s.Group, u.name); err != nil {
-				return err
-			}
-		}
-		if s.OneUser() {
-			break
-		}
-	}
-	return nil
+	return runTool(out, "useradd", "--system", "--user-group", "--home-dir", s.Layout().Root, "--no-create-home", "--shell", nologin, s.User)
 }
 
 func writeServerUnits(out io.Writer, s native.Server) error {
@@ -202,44 +171,82 @@ func writeServerUnits(out io.Writer, s native.Server) error {
 		}
 	}
 	fmt.Fprintf(out, "Wrote %s and %s to %s.\n", native.WebUnit, native.ServeUnit, s.UnitDir)
+	if text := s.SandboxTmpfileText(); text != "" && s.TmpfilesDir != "" {
+		if err := os.MkdirAll(s.TmpfilesDir, 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(s.TmpfilesDir, native.SandboxTmpfile), []byte(text), 0o644)
+	}
 	return nil
 }
 
 // refreshServer gives a server install the folders and units of this
-// release, so an upgrade needs no second server-install.
+// release, so an upgrade needs no second server-install. An install made
+// with two accounts moves to its first one.
 func refreshServer(out io.Writer, s native.Server) error {
-	if err := applyServerDirs(s); err != nil {
+	if s.Old.Any() {
+		if err := ownServerData(s); err != nil {
+			return err
+		}
+	} else if err := applyServerDirs(s); err != nil {
 		return err
 	}
 	if err := writeServerUnits(out, s); err != nil {
 		return err
 	}
-	return runTool(out, "systemctl", "daemon-reload")
+	if err := systemctl(context.Background(), out, "daemon-reload"); err != nil {
+		return err
+	}
+	if !s.Old.Any() {
+		return nil
+	}
+	if err := native.SaveServer(s); err != nil {
+		return err
+	}
+	if err := ownTree(s.ConfigDir, s.User); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "OpenNeko web and serve now run as %s. %s\n", s.User, oldAccountsLine(s))
+	return nil
+}
+
+func oldAccountsLine(s native.Server) string {
+	var names, steps []string
+	if s.Old.AgentUser != "" {
+		names = append(names, "user "+s.Old.AgentUser)
+		steps = append(steps, "sudo userdel "+s.Old.AgentUser)
+	}
+	if s.Old.Group != "" {
+		names = append(names, "group "+s.Old.Group)
+		steps = append(steps, "sudo groupdel "+s.Old.Group)
+	}
+	return fmt.Sprintf("OpenNeko no longer uses the %s and did not remove them. Start the sandbox again with OPENNEKO_SANDBOX_GID=$(id -g %s) (recipes/sandbox/README.md), then remove them: %s",
+		strings.Join(names, " and "), s.User, strings.Join(steps, "; "))
 }
 
 func applyServerDirs(s native.Server) error {
-	for _, d := range s.Dirs() {
-		if err := os.MkdirAll(d.Path, 0o700); err != nil {
+	uid, gid, err := lookupIDs(s.User)
+	if err != nil {
+		return err
+	}
+	for _, dir := range s.Dirs() {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err
 		}
-		uid, gid, err := lookupIDs(d.Owner, d.Group)
-		if err != nil {
+		if err := os.Chown(dir, uid, gid); err != nil {
 			return err
 		}
-		if err := os.Chown(d.Path, uid, gid); err != nil {
-			return err
-		}
-		if err := os.Chmod(d.Path, d.Mode); err != nil {
+		if err := os.Chmod(dir, 0o700); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// ownTree gives the control-zone user the whole config folder, with no
-// access for anyone else, after root wrote into it.
-func ownTree(root, owner, group string) error {
-	uid, gid, err := lookupIDs(owner, group)
+// ownTree gives the user the whole config folder, with no access for anyone
+// else, after root wrote into it.
+func ownTree(root, owner string) error {
+	uid, gid, err := lookupIDs(owner)
 	if err != nil {
 		return err
 	}
@@ -261,12 +268,8 @@ func ownTree(root, owner, group string) error {
 	})
 }
 
-func lookupIDs(owner, group string) (int, int, error) {
+func lookupIDs(owner string) (int, int, error) {
 	u, err := user.Lookup(owner)
-	if err != nil {
-		return 0, 0, err
-	}
-	g, err := user.LookupGroup(group)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -274,7 +277,7 @@ func lookupIDs(owner, group string) (int, int, error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	gid, err := strconv.Atoi(g.Gid)
+	gid, err := strconv.Atoi(u.Gid)
 	return uid, gid, err
 }
 
