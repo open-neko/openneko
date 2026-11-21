@@ -82,9 +82,9 @@ var childEnvNames = map[string]bool{
 func ChildEnv(env []string) []string {
 	var out []string
 	for _, kv := range env {
-		name, _, _ := strings.Cut(kv, "=")
+		name, value, _ := strings.Cut(kv, "=")
 		upper := strings.ToUpper(name)
-		if secretenv.SecretName(upper) && !childEnvNames[upper] {
+		if secretenv.Secret(upper, value) && !childEnvNames[upper] {
 			continue
 		}
 		if childEnvNames[upper] || strings.HasPrefix(upper, "GJ_") || strings.HasPrefix(upper, "OTEL_") || upper == "OPENNEKO_OTEL_ENABLED" {
@@ -100,17 +100,17 @@ func ChildSecrets(env []string) map[string]string {
 	out := map[string]string{}
 	for _, kv := range env {
 		name, value, _ := strings.Cut(kv, "=")
-		if ChildSecretName(name) && value != "" {
+		if ChildSecret(name, value) && value != "" {
 			out[name] = value
 		}
 	}
 	return out
 }
 
-// ChildSecretName tells whether name is a secret GJ_ or OTEL_ variable.
-func ChildSecretName(name string) bool {
+// ChildSecret tells whether a GJ_ or OTEL_ variable holds a secret.
+func ChildSecret(name, value string) bool {
 	upper := strings.ToUpper(name)
-	return secretenv.SecretName(upper) && (strings.HasPrefix(upper, "GJ_") || strings.HasPrefix(upper, "OTEL_"))
+	return secretenv.Secret(upper, value) && (strings.HasPrefix(upper, "GJ_") || strings.HasPrefix(upper, "OTEL_"))
 }
 
 type child struct {

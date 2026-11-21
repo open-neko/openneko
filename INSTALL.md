@@ -565,6 +565,10 @@ check that read. So no OpenNeko process keeps a secret there:
   gets the bucket login and the AWS login in its start line, and the
   customer GraphJin gets the secret `GJ_*` and `OTEL_*` header variables on
   its stdin.
+- A variable counts as secret by its name (a key, token, password, database
+  URL or webhook URL, such as `OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL`) or by its
+  value: a URL with a login, or with a key, token, signature or password in
+  its query, whatever the variable's name.
 
 Other programs that you run as the OpenNeko account are not covered. Run
 OpenNeko as an account of its own on a shared Mac.
