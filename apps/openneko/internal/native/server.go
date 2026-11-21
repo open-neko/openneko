@@ -2,9 +2,7 @@ package native
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,26 +16,32 @@ const (
 	configDirApp = "openneko"
 )
 
-// Server is a native install that systemd runs: web in the control zone and
-// serve in the agent zone, each as its own system user.
+// Server is a native install that systemd runs: web and serve as one
+// system user. Old names the accounts of an install made with two.
 type Server struct {
-	ControlUser string `json:"control_user"`
-	AgentUser   string `json:"agent_user"`
-	Group       string `json:"group"`
-	ConfigDir   string `json:"config_dir"`
-	DataDir     string `json:"data_dir"`
-	UnitDir     string `json:"unit_dir"`
-	Exe         string `json:"exe"`
-	WebDir      string `json:"web_dir"`
-	WebAddr     string `json:"web_addr"`
-	PublicURL   string `json:"public_url"`
-	SandboxDir  string `json:"sandbox_dir,omitempty"`
-	TmpfilesDir string `json:"tmpfiles_dir,omitempty"`
+	User        string      `json:"user"`
+	ConfigDir   string      `json:"config_dir"`
+	DataDir     string      `json:"data_dir"`
+	UnitDir     string      `json:"unit_dir"`
+	Exe         string      `json:"exe"`
+	WebDir      string      `json:"web_dir"`
+	WebAddr     string      `json:"web_addr"`
+	PublicURL   string      `json:"public_url"`
+	SandboxDir  string      `json:"sandbox_dir,omitempty"`
+	TmpfilesDir string      `json:"tmpfiles_dir,omitempty"`
+	Old         OldAccounts `json:"-"`
 }
 
-const SandboxTmpfile = "openneko-sandbox.conf"
+// OldAccounts are the agent user and the shared group of a two-account
+// install. OpenNeko never deletes them.
+type OldAccounts struct {
+	AgentUser string
+	Group     string
+}
 
-func (s Server) OneUser() bool { return s.ControlUser == s.AgentUser }
+func (o OldAccounts) Any() bool { return o.AgentUser != "" || o.Group != "" }
+
+const SandboxTmpfile = "openneko-sandbox.conf"
 
 func (s Server) Layout() Layout {
 	return Layout{
@@ -48,10 +52,8 @@ func (s Server) Layout() Layout {
 }
 
 func (s Server) Validate() error {
-	for name, v := range map[string]string{"control user": s.ControlUser, "agent user": s.AgentUser, "group": s.Group} {
-		if !validName(v) {
-			return fmt.Errorf("the %s %q is not a valid name", name, v)
-		}
+	if !validName(s.User) {
+		return fmt.Errorf("the user %q is not a valid name", s.User)
 	}
 	paths := map[string]string{"config folder": s.ConfigDir, "data folder": s.DataDir, "unit folder": s.UnitDir, "executable": s.Exe, "web folder": s.WebDir}
 	for name, v := range map[string]string{"sandbox socket folder": s.SandboxDir, "tmpfiles folder": s.TmpfilesDir} {
@@ -66,9 +68,6 @@ func (s Server) Validate() error {
 	}
 	if filepath.Base(s.ConfigDir) != configDirApp {
 		return fmt.Errorf("the config folder must end in /%s", configDirApp)
-	}
-	if !s.OneUser() && (s.Group == s.ControlUser || s.Group == s.AgentUser) {
-		return errors.New("the shared group must differ from the two users")
 	}
 	if _, err := ProbeHost(s.WebAddr); err != nil {
 		return err
@@ -88,64 +87,24 @@ func validName(v string) bool {
 	return true
 }
 
-type Dir struct {
-	Path  string
-	Owner string
-	Group string
-	Mode  fs.FileMode
-}
-
-// Dirs lists each folder with its owner and the least mode that works. The
-// agent zone gets no way into the control folders, and the control zone
-// reaches the agent zone only through the shared folders.
-func (s Server) Dirs() []Dir {
+// Dirs lists each folder of the install. The user owns each one, mode 0700.
+func (s Server) Dirs() []string {
 	l := s.Layout()
-	c, a, g := s.ControlUser, s.AgentUser, s.Group
-	dirs := []Dir{
-		{s.ConfigDir, c, c, 0o700},
-		{s.DataDir, "root", g, 0o750},
-		{l.Root, c, c, 0o700},
-		{l.Logs(), c, c, 0o700},
-		{l.agent(), a, a, 0o700},
-		{l.Files(), a, a, 0o700},
-		{l.Index(), a, a, 0o700},
-		{l.Subscriptions(), a, a, 0o700},
-		{l.Tmp(), a, a, 0o700},
-		{filepath.Dir(l.Log("serve")), a, a, 0o700},
-		{l.shared(), "root", g, 0o750},
-		{l.Run(), a, g, fs.ModeSetgid | 0o750},
-		{l.Check(), a, g, fs.ModeSetgid | 0o750},
-		{l.Door(), c, g, fs.ModeSetgid | 0o750},
-		{l.AgentRuns(), c, g, fs.ModeSetgid | 0o770},
-		{filepath.Dir(l.GraphJin()), c, g, fs.ModeSetgid | 0o770},
-		{l.Credentials(), c, a, fs.ModeSetgid | 0o750},
-	}
-	if d, ok := s.SandboxSocketDir(); ok {
-		dirs = append(dirs, d)
+	dirs := []string{s.ConfigDir, s.DataDir, l.Root, l.Logs(), l.agent(), l.Files(), l.Index(), l.Subscriptions(), l.Tmp(),
+		filepath.Dir(l.Log("serve")), l.shared(), l.Run(), l.Check(), l.Door(), l.AgentRuns(), filepath.Dir(l.GraphJin()), l.Credentials()}
+	if s.SandboxDir != "" {
+		dirs = append(dirs, s.SandboxDir)
 	}
 	return dirs
-}
-
-// SandboxSocketDir is the folder for the sandbox's socket, apart from serve's
-// sockets. Only web and serve may enter it.
-func (s Server) SandboxSocketDir() (Dir, bool) {
-	if s.SandboxDir == "" {
-		return Dir{}, false
-	}
-	if s.OneUser() {
-		return Dir{s.SandboxDir, s.ControlUser, s.ControlUser, 0o700}, true
-	}
-	return Dir{s.SandboxDir, "root", s.Group, 0o750}, true
 }
 
 // SandboxTmpfileText makes systemd-tmpfiles create the sandbox socket folder
 // again at each boot, as /run is empty then.
 func (s Server) SandboxTmpfileText() string {
-	d, ok := s.SandboxSocketDir()
-	if !ok {
+	if s.SandboxDir == "" {
 		return ""
 	}
-	return fmt.Sprintf("d %s %04o %s %s -\n", d.Path, d.Mode.Perm(), d.Owner, d.Group)
+	return fmt.Sprintf("d %s 0700 %s %s -\n", s.SandboxDir, s.User, s.User)
 }
 
 func (s Server) WebEnv() map[string]string {
@@ -169,10 +128,10 @@ func (s Server) ServeEnv() map[string]string {
 func (s Server) Units() map[string]string {
 	l := s.Layout()
 	web := unit{
-		description: "OpenNeko web (control zone)",
+		description: "OpenNeko web",
 		wants:       "network-online.target " + ServeUnit,
 		after:       "network-online.target",
-		user:        s.ControlUser,
+		user:        s.User,
 		envFile:     filepath.Join(s.ConfigDir, "web.env"),
 		env:         s.WebEnv(),
 		pre:         s.Exe + " native-prepare --server " + filepath.Join(s.ConfigDir, ServerFile),
@@ -181,20 +140,18 @@ func (s Server) Units() map[string]string {
 		writable:    []string{s.ConfigDir, l.Root, l.shared()},
 	}
 	serve := unit{
-		description: "OpenNeko serve (agent zone)",
+		description: "OpenNeko serve",
 		wants:       WebUnit,
 		after:       "network-online.target " + WebUnit,
-		user:        s.AgentUser,
+		user:        s.User,
 		envFile:     filepath.Join(s.ConfigDir, "serve.env"),
 		env:         s.ServeEnv(),
 		start:       s.Exe + " serve",
 		log:         l.Log("serve"),
 		writable:    []string{l.agent(), l.shared()},
+		hidden:      []string{s.ConfigDir, l.Root},
 	}
-	if !s.OneUser() {
-		web.hidden = []string{l.agent()}
-		serve.hidden = []string{s.ConfigDir, l.Root}
-	}
+	web.hidden = []string{l.agent()}
 	return map[string]string{WebUnit: web.String(), ServeUnit: serve.String()}
 }
 
@@ -245,8 +202,25 @@ func LoadServer(path string) (Server, error) {
 		return Server{}, err
 	}
 	var s Server
+	var old struct {
+		ControlUser string `json:"control_user"`
+		AgentUser   string `json:"agent_user"`
+		Group       string `json:"group"`
+	}
 	if err := json.Unmarshal(raw, &s); err != nil {
 		return Server{}, fmt.Errorf("read %s: %w", path, err)
 	}
+	if err := json.Unmarshal(raw, &old); err != nil {
+		return Server{}, fmt.Errorf("read %s: %w", path, err)
+	}
+	if s.User == "" {
+		s.User = old.ControlUser
+	}
+	for _, name := range []*string{&old.AgentUser, &old.Group} {
+		if *name == s.User || !validName(*name) {
+			*name = ""
+		}
+	}
+	s.Old = OldAccounts{AgentUser: old.AgentUser, Group: old.Group}
 	return s, s.Validate()
 }

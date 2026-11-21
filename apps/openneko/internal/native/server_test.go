@@ -1,9 +1,12 @@
 package native
 
 import (
-	"io/fs"
+	"fmt"
+	"maps"
+	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -13,47 +16,27 @@ func testServer(t *testing.T) Server {
 	if runtime.GOOS == "windows" {
 		t.Skip("the server install writes systemd units and runs on Linux only; cli/server_install.go refuses it on Windows")
 	}
-	return Server{ControlUser: "openneko", AgentUser: "openneko-agent", Group: "openneko-shared",
+	return Server{User: "openneko",
 		ConfigDir: "/etc/openneko", DataDir: "/var/lib/openneko", UnitDir: "/etc/systemd/system",
 		Exe: "/opt/openneko/bin/openneko", WebDir: "/opt/openneko/share/openneko/web",
 		WebAddr: "0.0.0.0:3000", PublicURL: "http://localhost:3000"}
 }
 
-func TestServerDirsKeepTheAgentOutOfTheControlZone(t *testing.T) {
+func TestServerDirsHoldEveryFolderOnce(t *testing.T) {
 	s := testServer(t)
 	l := s.Layout()
+	seen := map[string]bool{}
 	for _, d := range s.Dirs() {
-		if d.Mode&0o007 != 0 {
-			t.Errorf("%s is open to others: %v", d.Path, d.Mode)
+		if seen[d] {
+			t.Errorf("%s is listed twice", d)
 		}
-		control := d.Path == s.ConfigDir || d.Path == l.Root || strings.HasPrefix(d.Path, l.Root+"/")
-		if control && (d.Owner != s.ControlUser || d.Group != s.ControlUser || d.Mode.Perm() != 0o700) {
-			t.Errorf("control folder %s: %s:%s %v", d.Path, d.Owner, d.Group, d.Mode)
-		}
-		if d.Path == l.Agent || strings.HasPrefix(d.Path, l.Agent+"/") {
-			if d.Owner != s.AgentUser || d.Mode.Perm() != 0o700 {
-				t.Errorf("agent folder %s: %s %v", d.Path, d.Owner, d.Mode)
-			}
-		}
+		seen[d] = true
 	}
-	want := map[string]Dir{
-		l.Run():                      {Owner: s.AgentUser, Group: s.Group, Mode: fs.ModeSetgid | 0o750},
-		l.AgentRuns():                {Owner: s.ControlUser, Group: s.Group, Mode: fs.ModeSetgid | 0o770},
-		filepath.Dir(l.GraphJin()):   {Owner: s.ControlUser, Group: s.Group, Mode: fs.ModeSetgid | 0o770},
-		l.Credentials():              {Owner: s.ControlUser, Group: s.AgentUser, Mode: fs.ModeSetgid | 0o750},
-		filepath.Dir(l.Log("serve")): {Owner: s.AgentUser, Group: s.AgentUser, Mode: 0o700},
-	}
-	found := 0
-	for _, d := range s.Dirs() {
-		if w, ok := want[d.Path]; ok {
-			found++
-			if d.Owner != w.Owner || d.Group != w.Group || d.Mode != w.Mode {
-				t.Errorf("%s: %s:%s %v, want %s:%s %v", d.Path, d.Owner, d.Group, d.Mode, w.Owner, w.Group, w.Mode)
-			}
+	for _, want := range append([]string{s.ConfigDir, s.DataDir, l.Root, l.Logs(), filepath.Dir(l.Log("serve")), l.Run(), l.Check(), l.Door(),
+		filepath.Dir(l.GraphJin()), l.Tmp()}, slices.Collect(maps.Values(l.DataFolders()))...) {
+		if !seen[want] {
+			t.Errorf("Dirs lacks %s", want)
 		}
-	}
-	if found != len(want) {
-		t.Fatalf("found %d of the %d shared folders", found, len(want))
 	}
 }
 
@@ -62,17 +45,27 @@ func TestServerUnits(t *testing.T) {
 	l := s.Layout()
 	units := s.Units()
 	web, serve := units[WebUnit], units[ServeUnit]
-	for _, line := range []string{"User=openneko\n", "UMask=0007\n", "ExecStartPre=/opt/openneko/bin/openneko native-prepare --server /etc/openneko/server.json\n",
+	for _, line := range []string{"User=openneko\n", "Group=openneko\n", "UMask=0007\n", "ExecStartPre=/opt/openneko/bin/openneko native-prepare --server /etc/openneko/server.json\n",
 		"ExecStart=/opt/openneko/bin/openneko web\n", "Environment=\"XDG_CONFIG_HOME=/etc\"\n", "InaccessiblePaths=" + l.Agent + "\n",
 		"StandardOutput=append:" + l.Log("web") + "\n"} {
 		if !strings.Contains(web, line) {
 			t.Errorf("web unit lacks %q:\n%s", line, web)
 		}
 	}
-	for _, line := range []string{"User=openneko-agent\n", "ExecStart=/opt/openneko/bin/openneko serve\n", "InaccessiblePaths=/etc/openneko " + l.Root + "\n",
+	for _, line := range []string{"User=openneko\n", "Group=openneko\n", "ExecStart=/opt/openneko/bin/openneko serve\n", "InaccessiblePaths=/etc/openneko " + l.Root + "\n",
 		"Environment=\"OPENNEKO_SERVE_CREDENTIALS=" + l.Credentials() + "\"\n", "After=network-online.target " + WebUnit + "\n"} {
 		if !strings.Contains(serve, line) {
 			t.Errorf("serve unit lacks %q:\n%s", line, serve)
+		}
+	}
+	for _, unit := range []string{web, serve} {
+		for _, line := range []string{"NoNewPrivileges=yes\n", "PrivateTmp=yes\n", "ProtectSystem=strict\n", "ProtectHome=yes\n", "ReadWritePaths="} {
+			if !strings.Contains(unit, line) {
+				t.Errorf("unit lacks %q:\n%s", line, unit)
+			}
+		}
+		if strings.Contains(unit, "openneko-agent") || strings.Contains(unit, "openneko-shared") {
+			t.Errorf("unit names an account of the two-account install:\n%s", unit)
 		}
 	}
 	for _, leak := range []string{"/etc/openneko\"", "DATABASE_URL", "ExecStartPre", l.Root + "/"} {
@@ -82,31 +75,50 @@ func TestServerUnits(t *testing.T) {
 	}
 }
 
-func TestServerOneUser(t *testing.T) {
+func TestLoadServerOfTwoAccounts(t *testing.T) {
 	s := testServer(t)
-	s.AgentUser, s.Group = s.ControlUser, s.ControlUser
-	if err := s.Validate(); err != nil {
+	dir := t.TempDir()
+	s.ConfigDir = filepath.Join(dir, "openneko")
+	if err := os.MkdirAll(s.ConfigDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for _, d := range s.Dirs() {
-		if d.Owner != "root" && d.Owner != s.ControlUser {
-			t.Errorf("%s owned by %s", d.Path, d.Owner)
+	path := filepath.Join(s.ConfigDir, ServerFile)
+	for name, c := range map[string]struct {
+		json string
+		old  OldAccounts
+	}{
+		"two accounts": {`"control_user":"openneko","agent_user":"openneko-agent","group":"openneko-shared"`, OldAccounts{"openneko-agent", "openneko-shared"}},
+		"one user":     {`"control_user":"openneko","agent_user":"openneko","group":"openneko"`, OldAccounts{}},
+		"this release": {`"user":"openneko"`, OldAccounts{}},
+	} {
+		raw := fmt.Sprintf(`{%s,"config_dir":%q,"data_dir":%q,"unit_dir":%q,"exe":%q,"web_dir":%q,"web_addr":%q,"public_url":%q}`,
+			c.json, s.ConfigDir, s.DataDir, s.UnitDir, s.Exe, s.WebDir, s.WebAddr, s.PublicURL)
+		if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+			t.Fatal(err)
 		}
-	}
-	for name, u := range s.Units() {
-		if strings.Contains(u, "InaccessiblePaths") || !strings.Contains(u, "User=openneko\n") {
-			t.Errorf("%s:\n%s", name, u)
+		got, err := LoadServer(path)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got.User != "openneko" || got.Old != c.old {
+			t.Errorf("%s: user %q, old %+v, want %+v", name, got.User, got.Old, c.old)
+		}
+		if err := SaveServer(got); err != nil {
+			t.Fatal(err)
+		}
+		if again, err := LoadServer(path); err != nil || again.Old.Any() {
+			t.Errorf("%s: saved again: %+v %v", name, again.Old, err)
 		}
 	}
 }
 
 func TestServerValidate(t *testing.T) {
 	for name, change := range map[string]func(*Server){
-		"group is a user":   func(s *Server) { s.Group = s.AgentUser },
+		"no user":           func(s *Server) { s.User = "" },
 		"relative data":     func(s *Server) { s.DataDir = "var/lib/openneko" },
 		"space in exe":      func(s *Server) { s.Exe = "/opt/open neko/bin/openneko" },
 		"config base":       func(s *Server) { s.ConfigDir = "/etc/neko" },
-		"bad user":          func(s *Server) { s.ControlUser = "Root;" },
+		"bad user":          func(s *Server) { s.User = "Root;" },
 		"bad web address":   func(s *Server) { s.WebAddr = "3000" },
 		"percent in folder": func(s *Server) { s.DataDir = "/var/lib/%h" },
 	} {
@@ -133,32 +145,18 @@ func TestOneUserLayoutIsUnchanged(t *testing.T) {
 
 func TestServerSandboxSocketDir(t *testing.T) {
 	s := testServer(t)
-	if _, ok := s.SandboxSocketDir(); ok || s.SandboxTmpfileText() != "" {
+	if slices.Contains(s.Dirs(), "") || s.SandboxTmpfileText() != "" {
 		t.Fatal("a server with no sandbox folder lists one")
 	}
 	s.SandboxDir, s.TmpfilesDir = "/run/openneko-sandbox", "/etc/tmpfiles.d"
 	if err := s.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	want := Dir{"/run/openneko-sandbox", "root", "openneko-shared", 0o750}
-	if d := s.Dirs()[len(s.Dirs())-1]; d != want {
-		t.Errorf("two users: %+v, want %+v", d, want)
-	}
-	if got := s.SandboxTmpfileText(); got != "d /run/openneko-sandbox 0750 root openneko-shared -\n" {
-		t.Errorf("two users tmpfile %q", got)
-	}
-	for _, d := range s.Dirs() {
-		if d.Path == s.SandboxDir && d.Path == s.Layout().Run() {
-			t.Error("the sandbox folder is serve's socket folder")
-		}
-	}
-	s.AgentUser, s.Group = s.ControlUser, s.ControlUser
-	want = Dir{"/run/openneko-sandbox", "openneko", "openneko", 0o700}
-	if d := s.Dirs()[len(s.Dirs())-1]; d != want {
-		t.Errorf("one user: %+v, want %+v", d, want)
+	if !slices.Contains(s.Dirs(), s.SandboxDir) || s.SandboxDir == s.Layout().Run() {
+		t.Errorf("dirs %v", s.Dirs())
 	}
 	if got := s.SandboxTmpfileText(); got != "d /run/openneko-sandbox 0700 openneko openneko -\n" {
-		t.Errorf("one user tmpfile %q", got)
+		t.Errorf("tmpfile %q", got)
 	}
 	s.SandboxDir = "run/openneko-sandbox"
 	if err := s.Validate(); err == nil {
