@@ -5,7 +5,7 @@ import { join } from "node:path";
 import pg from "pg";
 import { contentDigest } from "@neko/evals";
 import { afterAll, describe, expect, it } from "vitest";
-import { app_user, data_source, db } from "@neko/db";
+import { ADMINISTRATORS_GROUP_SLUG, addLocalGroupMember, app_user, data_source, db, listUserGroups } from "@neko/db";
 import { dbReachable, seedProvider } from "@neko/db/test-helpers";
 import { maybeEncryptSecret } from "@neko/llm/secrets";
 import { ensureOrgWorkspace, rememberWorkMemory, writeWorkSkill } from "@neko/llm/work";
@@ -468,8 +468,13 @@ describe.skipIf(!reachable)("eval install episode", () => {
           auth_mode: "development",
         });
         source.set("orders", { count: 31465 });
+        const ownerUserId = "eval-watcher-owner";
+        await db().insert(app_user).values({ id: ownerUserId, email: "watcher-owner@eval.invalid", name: "Eval Admin", org_id: orgId });
+        const admins = (await listUserGroups(orgId)).find((group) => group.slug === ADMINISTRATORS_GROUP_SLUG);
+        if (!admins) throw new Error("the episode org has no administrators group");
+        await addLocalGroupMember(orgId, admins.id, ownerUserId);
         const watch = async (name: string) => {
-          const { workflow } = await saveWorkflow({ orgId, name, steps: [{ id: "report", description: "Report the count" }] });
+          const { workflow } = await saveWorkflow({ orgId, name, ownerUserId, steps: [{ id: "report", description: "Report the count" }] });
           return upsertWatcher({
             orgId,
             workflowId: workflow.id,
