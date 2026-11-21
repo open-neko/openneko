@@ -192,7 +192,7 @@ func deliverSlack(ctx context.Context, recipient any, events []any, env map[stri
 		if code == "" {
 			code = "no error code"
 		}
-		return channelDeliverResult{}, fmt.Errorf("Slack %s returned ok=false (%s)", method, code)
+		return channelDeliverResult{}, channelRefusal{fmt.Errorf("Slack %s returned ok=false (%s)", method, code)}
 	}
 	ts, _ := envelope.TS.(string)
 	return channelDeliverResult{Delivered: true, Ref: ts}, nil

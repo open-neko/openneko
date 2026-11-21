@@ -646,7 +646,7 @@ func deliverTelegram(ctx context.Context, recipient any, events []any, env map[s
 			if desc == "" {
 				desc = "no description"
 			}
-			return channelDeliverResult{}, fmt.Errorf("Telegram sendMessage returned ok=false (%s)", desc)
+			return channelDeliverResult{}, channelRefusal{fmt.Errorf("Telegram sendMessage returned ok=false (%s)", desc)}
 		}
 		if envelope.Result.MessageID != nil {
 			lastID = jsNumberText(*envelope.Result.MessageID)

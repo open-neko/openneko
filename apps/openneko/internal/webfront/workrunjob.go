@@ -155,7 +155,11 @@ func (a *API) queueChatReply(ctx context.Context, job jobs.WorkRunArgs, body str
 	if event == nil {
 		return nil
 	}
-	return a.queueChannelDelivery(ctx, job.OrgID, job.ChannelPlugin, job.Recipient, []any{event}, "reply-"+job.RunID)
+	person := ""
+	if sender, err := jsParse(orEmptyObject(job.Sender)); err == nil {
+		person = jsStr(jsGet(sender, "id"))
+	}
+	return a.queueChannelSend(ctx, job.OrgID, job.ChannelPlugin, job.Recipient, []any{event}, "reply-"+job.RunID, "reply", person)
 }
 
 func chatReplyEvent(runID, body string, events []any) *jsObj {
@@ -214,6 +218,11 @@ func replySurface(body string, vitals []any) []any {
 }
 
 func (a *API) queueChannelDelivery(ctx context.Context, orgID, channel string, recipient json.RawMessage, events []any, key string) error {
+	return a.queueChannelJob(ctx, jobs.ChannelDeliverArgs{OrgID: orgID, ChannelPlugin: channel, Recipient: recipient,
+		Events: json.RawMessage(jsStringify(events, false)), Key: key})
+}
+
+func (a *API) queueChannelJob(ctx context.Context, args jobs.ChannelDeliverArgs) error {
 	if a.Jobs == nil {
 		return errors.New("the job queue is not ready")
 	}
@@ -222,8 +231,7 @@ func (a *API) queueChannelDelivery(ctx context.Context, orgID, channel string, r
 		return err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	if _, err := a.Jobs.ChannelDeliver(ctx, tx, jobs.ChannelDeliverArgs{OrgID: orgID, ChannelPlugin: channel, Recipient: recipient,
-		Events: json.RawMessage(jsStringify(events, false)), Key: key}); err != nil {
+	if _, err := a.Jobs.ChannelDeliver(ctx, tx, args); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

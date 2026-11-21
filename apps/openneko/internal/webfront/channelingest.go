@@ -548,8 +548,8 @@ func (a *API) startChannelRun(ctx context.Context, orgID, channel, requestID, me
 	var over *spendExceeded
 	if errors.As(err, &over) && recipient != nil {
 		reply := "spend-" + threadID + "-" + requestID
-		return a.queueChannelDelivery(ctx, orgID, channel, []byte(jsStringify(recipient, false)),
-			[]any{jsObjOf("kind", "converse", "id", reply, "role", "assistant", "text", over.Error())}, "reply-"+reply)
+		return a.queueChannelSend(ctx, orgID, channel, []byte(jsStringify(recipient, false)),
+			[]any{jsObjOf("kind", "converse", "id", reply, "role", "assistant", "text", over.Error())}, "reply-"+reply, "reply", jsStr(jsGet(sender, "id")))
 	}
 	if err != nil {
 		return err

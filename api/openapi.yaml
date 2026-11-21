@@ -53,6 +53,39 @@ components:
       in: header
       name: X-Webhook-Token
   schemas:
+    ChannelReplyPlaces:
+      type: object
+      additionalProperties: false
+      required:
+      - mode
+      - places
+      properties:
+        mode:
+          type: string
+          enum:
+          - thread
+          - direct
+          - listed
+          description: thread answers in the group chat; direct answers the asker privately with a note in the group chat; listed answers in the group chat only for the listed places
+        places:
+          type: array
+          items:
+            type: string
+    ChannelReplyRules:
+      type: object
+      additionalProperties: false
+      required:
+      - slack
+      - telegram
+      - keptFromUpgrade
+      properties:
+        slack:
+          $ref: '#/components/schemas/ChannelReplyPlaces'
+        telegram:
+          $ref: '#/components/schemas/ChannelReplyPlaces'
+        keptFromUpgrade:
+          type: boolean
+          description: True while the rule is the thread answer kept from before the upgrade and no admin has changed it
     PackOAuthFailure:
       type: object
       required:
@@ -722,6 +755,97 @@ paths:
                 properties:
                   error:
                     type: string
+  /admin/channels/replies:
+    get:
+      operationId: getAdminChannelsReplies
+      tags:
+      - admin
+      summary: Read where OpenNeko answers a question asked in a group chat
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      responses:
+        '200':
+          description: Where a Slack and a Telegram answer goes when someone asks in a group chat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelReplyRules'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an administrator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      operationId: putAdminChannelsReplies
+      tags:
+      - admin
+      summary: Set where OpenNeko answers a question asked in a group chat of one channel
+      description: A change writes the audit event channel:replies_changed.
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - channel
+              - mode
+              properties:
+                channel:
+                  type: string
+                  enum:
+                  - slack
+                  - telegram
+                mode:
+                  type: string
+                  enum:
+                  - thread
+                  - direct
+                  - listed
+                places:
+                  type: array
+                  maxItems: 200
+                  description: Slack channel IDs (C or G) or Telegram group IDs (a negative number or @name) that keep answers in the group chat in listed mode
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Where a Slack and a Telegram answer goes when someone asks in a group chat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelReplyRules'
+        '400':
+          description: Unknown channel or mode, or a place that is not a chat ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an administrator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /admin/channels/settings:
     get:
       operationId: getAdminChannelsSettings
