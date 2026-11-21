@@ -215,7 +215,7 @@ func TestSweepWatchers(t *testing.T) {
 	const source, workflow = "d0000000-0000-4000-8000-000000000001", "d0000000-0000-4000-8000-000000000002"
 	seed(t, db, `insert into data_source (id, org_id, name, kind, graphql_url, auth_mode, is_default, enabled)
 		values ($1, 'org', 'default', 'graphjin', $2, 'jwt', true, true)`, source, srv.URL)
-	seed(t, db, `insert into workflow_definition (id, org_id, name, description) values ($1, 'org', 'Refund spike response', 'x')`, workflow)
+	seed(t, db, `insert into workflow_definition (id, org_id, name, description, team_approved_by) values ($1, 'org', 'Refund spike response', 'x', 'admin')`, workflow)
 	seed(t, db, `insert into watcher (org_id, workflow_id, name, query, value_path, op, threshold, cadence_seconds, debounce_seconds, severity, variables_json)
 		values ('org', $1, 'refund-rate', '{ refunds_aggregate { rate } }', 'refunds_aggregate.rate', 'gt', '2', 60, 3600, 'high',
 		'{"since":{"kind":"seconds_ago","seconds":60}}')`, workflow)
@@ -302,7 +302,7 @@ func TestSweepWatchersChangedOp(t *testing.T) {
 	srv := httptest.NewServer(gj)
 	t.Cleanup(srv.Close)
 	seed(t, db, `insert into data_source (org_id, name, kind, graphql_url, auth_mode, is_default, enabled) values ('org', 'default', 'graphjin', $1, 'none', true, true)`, srv.URL)
-	seed(t, db, `insert into workflow_definition (org_id, name, description) values ('org', 'Stock', 'x')`)
+	seed(t, db, `insert into workflow_definition (org_id, name, description, team_approved_by) values ('org', 'Stock', 'x', 'admin')`)
 	for op, want := range map[string]string{"changed": "125,120", "gt": "120,125,120"} {
 		seed(t, db, `delete from watcher`)
 		seed(t, db, `insert into watcher (org_id, workflow_id, name, query, value_path, op, threshold, cadence_seconds, debounce_seconds)
@@ -339,7 +339,7 @@ func TestPackWatcherSource(t *testing.T) {
 	seed(t, db, `insert into data_source (id, org_id, name, kind, graphql_url, auth_mode, is_default, enabled) values
 		($1, 'org', 'pack', 'graphjin', $3, 'jwt', false, true),
 		($2, 'org', 'default', 'graphjin', 'http://default.invalid', 'jwt', true, true)`, source, other, srv.URL+"/api/v1/graphql")
-	seed(t, db, `insert into workflow_definition (org_id, name, description) values ('org', 'Stock', 'x')`)
+	seed(t, db, `insert into workflow_definition (org_id, name, description, team_approved_by) values ('org', 'Stock', 'x', 'admin')`)
 	seed(t, db, `insert into watcher (org_id, workflow_id, name, query, value_path, op, threshold, cadence_seconds)
 		select 'org', id, 'low-stock', '{ n }', 'n', 'gt', '5', 60 from workflow_definition`)
 	sourceYAML := "name: shop\ntype: mysql\nport: 3306\n"
@@ -412,7 +412,7 @@ func TestCronSweepAt(t *testing.T) {
 	const source, workflow = "d0000000-0000-4000-8000-000000000001", "d0000000-0000-4000-8000-000000000002"
 	seed(t, db, `insert into data_source (id, org_id, name, kind, graphql_url, auth_mode, is_default, enabled)
 		values ($1, 'org', 'default', 'graphjin', $2, 'jwt', true, true)`, source, srv.URL)
-	seed(t, db, `insert into workflow_definition (id, org_id, name, description) values ($1, 'org', 'Order alert', 'x')`, workflow)
+	seed(t, db, `insert into workflow_definition (id, org_id, name, description, team_approved_by) values ($1, 'org', 'Order alert', 'x', 'admin')`, workflow)
 	seed(t, db, `insert into watcher (org_id, workflow_id, name, query, value_path, op, threshold, cadence_seconds, debounce_seconds, severity)
 		values ('org', $1, 'order-count', '{ orders_aggregate { count } }', 'orders_aggregate.count', 'gt', '0', 60, 3600, 'high')`, workflow)
 	var id string

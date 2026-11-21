@@ -214,7 +214,7 @@ type workflowRecord struct {
 // service but that neither a pack nor an admin put there.
 const workflowNeedsOwner = `(w.owner_user_id = '' and w.team_approved_by is null and not exists (
 	select 1 from pack_artifact pa join pack_install pi on pi.id = pa.pack_install_id and pi.status <> 'removed'
-	where pa.org_id = w.org_id and pa.artifact_kind = 'workflow' and pa.target_ref = w.name))`
+	where pa.org_id = w.org_id and pa.artifact_kind = 'workflow' and coalesce(pa.metadata->'locator'->>'name', pa.target_ref) = w.name))`
 
 const workflowRecordColumns = `id::text, org_id, name, description, enabled, status, goal, system_prompt_overlay, steps, cron,
 	cron_timezone, cron_enabled, network_hosts, daily_run_budget, output_contract, created_by_thread_id::text,

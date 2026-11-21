@@ -449,6 +449,46 @@ func (a *API) cancelRun(w http.ResponseWriter, r *http.Request) {
 	sendJSON(w, http.StatusOK, obj("ok", recovered || terminal, "recovered", recovered))
 }
 
+// workflowPrincipal is who a workflow acts as: its owner with the owner's
+// role, or service for a pack workflow or an admin-approved team workflow.
+func (a *API) workflowPrincipal(ctx context.Context, wf workflowRecord) (graphjinPrincipal, error) {
+	if wf.OwnerUserID == "" {
+		var needs bool
+		if err := a.DB.QueryRow(ctx, `select `+workflowNeedsOwner+` from workflow_definition w where w.id = $1`, wf.ID).Scan(&needs); err != nil {
+			return graphjinPrincipal{}, err
+		}
+		if needs {
+			return graphjinPrincipal{}, errors.New("Workflow " + wf.Name + " has no owner. An admin assigns one at Admin, Settings, Workflow API before it runs.")
+		}
+		return graphjinPrincipal{role: "service"}, nil
+	}
+	var active bool
+	if err := a.DB.QueryRow(ctx, `select exists (select 1 from app_user where org_id = $1 and id = $2 and disabled_at is null)`,
+		wf.OrgID, wf.OwnerUserID).Scan(&active); err != nil {
+		return graphjinPrincipal{}, err
+	}
+	if !active {
+		return graphjinPrincipal{}, errors.New("The workflow owner is no longer active")
+	}
+	role, err := a.role(ctx, wf.OrgID, wf.OwnerUserID)
+	if err != nil {
+		return graphjinPrincipal{}, err
+	}
+	return graphjinPrincipal{userID: wf.OwnerUserID, role: role}, nil
+}
+
+func (a *API) workflowPrincipalByID(ctx context.Context, orgID, workflowID string) (graphjinPrincipal, error) {
+	wf, err := scanWorkflowRecord(a.DB.QueryRow(ctx, `select `+workflowRecordColumns+` from workflow_definition
+		where org_id = $1 and id = $2`, orgID, workflowID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return graphjinPrincipal{}, errors.New("Workflow " + workflowID + " not found for org " + orgID + ".")
+	}
+	if err != nil {
+		return graphjinPrincipal{}, err
+	}
+	return a.workflowPrincipal(ctx, wf)
+}
+
 type preparedWorkflowRun struct {
 	workflow                       workflowRecord
 	workflowRunID, threadID, runID string
@@ -481,30 +521,11 @@ func (a *API) prepareWorkflowRun(ctx context.Context, orgID, workflowID, trigger
 	if !wf.Enabled {
 		return p, errors.New("Workflow " + wf.Name + " is disabled.")
 	}
-	userID, role := "", "service"
-	if wf.OwnerUserID == "" {
-		var needs bool
-		if err := a.DB.QueryRow(ctx, `select `+workflowNeedsOwner+` from workflow_definition w where w.id = $1`, wf.ID).Scan(&needs); err != nil {
-			return p, err
-		}
-		if needs {
-			return p, errors.New("Workflow " + wf.Name + " has no owner. An admin assigns one at Admin, Settings, Workflow API before it runs.")
-		}
+	owner, err := a.workflowPrincipal(ctx, wf)
+	if err != nil {
+		return p, err
 	}
-	if wf.OwnerUserID != "" {
-		var active bool
-		if err := a.DB.QueryRow(ctx, `select exists (select 1 from app_user where org_id = $1 and id = $2 and disabled_at is null)`,
-			orgID, wf.OwnerUserID).Scan(&active); err != nil {
-			return p, err
-		}
-		if !active {
-			return p, errors.New("The workflow owner is no longer active")
-		}
-		if role, err = a.role(ctx, orgID, wf.OwnerUserID); err != nil {
-			return p, err
-		}
-		userID = wf.OwnerUserID
-	}
+	userID, role := owner.userID, owner.role
 	threadID := from.threadID
 	if threadID == "" && wf.CreatedByThreadID != nil {
 		err := a.DB.QueryRow(ctx, `select b.thread_id::text from bot b join work_thread t on t.id = b.thread_id

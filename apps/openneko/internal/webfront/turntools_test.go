@@ -853,10 +853,16 @@ func TestEntitlementActorForRun(t *testing.T) {
 		($3, 'org', $2, 'ax', 'member'), ($4, 'org', $2, 'ax', null)`, runPackTools, threadMine, runAdminTools, "b1000000-0000-4000-8000-000000000004")
 	seed(t, db, `insert into workflow_run (org_id, workflow_id, thread_id, work_run_id, trigger_kind) values ('org', $1, $2, $3, 'cron')`,
 		workflowID, threadMine, runPackTools)
+	seedBundledPack(t, db, "magento")
+	const magentoRun = "b1000000-0000-4000-8000-000000000005"
+	seed(t, db, `insert into work_run (id, org_id, thread_id, backend, actor_role) values ($1, 'org', $2, 'ax', 'service')`, magentoRun, threadMine)
+	seed(t, db, `with w as (insert into workflow_definition (org_id, name) values ('org', 'Magento daily commerce briefing') returning id)
+		insert into workflow_run (org_id, workflow_id, thread_id, work_run_id, trigger_kind) select 'org', id, $1, $2, 'cron' from w`, threadMine, magentoRun)
 	for _, c := range []struct {
 		run  string
 		want *actor
 	}{
+		{magentoRun, &actor{OrgID: "org", PackID: "magento"}},
 		{runPackTools, &actor{OrgID: "org", PackID: "shop"}},
 		{runAdminTools, &actor{OrgID: "org"}},
 		{"b1000000-0000-4000-8000-000000000004", &actor{OrgID: "org", Admin: true}},

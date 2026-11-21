@@ -714,8 +714,7 @@ func (p *packApplyRun) run(ctx context.Context) (*jsObj, error) {
 			if magento {
 				readiness, reason = magentoArtifactReadiness(art, p.magento)
 			}
-			metadata := packJSON(map[string]any{"path": art.Path, "materializedTarget": materializedTarget(art),
-				"locator": boundPackLocator(bundle, art, bindings), "borrowedSource": bindings[art.Key] != "", "stateHashVersion": 1})
+			metadata := packArtifactMetadata(bundle, art, bindings, materializedTarget(art))
 			if _, err := tx.Exec(ctx, `insert into pack_artifact (pack_install_id, org_id, artifact_kind, artifact_key, target_ref, desired_hash,
 				last_applied_hash, ownership, readiness, readiness_reason, metadata)
 				values ($1, $2, $3, $4, $5, $6, $7, 'managed', $9, $10, $8::jsonb)
@@ -1230,4 +1229,9 @@ func (p *packApplyRun) fail(ctx context.Context, cause error) {
 		return
 	}
 	_, _ = a.DB.Exec(ctx, `update pack_install set status = 'failed', last_error = $1, updated_at = now() where id = $2`, message, p.installID)
+}
+
+func packArtifactMetadata(bundle *packs.Bundle, art packs.Artifact, bindings map[string]string, target string) string {
+	return packJSON(map[string]any{"path": art.Path, "materializedTarget": target,
+		"locator": boundPackLocator(bundle, art, bindings), "borrowedSource": bindings[art.Key] != "", "stateHashVersion": 1})
 }

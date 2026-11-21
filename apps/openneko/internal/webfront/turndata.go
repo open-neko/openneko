@@ -680,6 +680,10 @@ func (a *API) graphjinCallerToken(ctx context.Context, orgID string, runID *stri
 	if err != nil {
 		return "", err
 	}
+	return a.graphjinPrincipalToken(ctx, orgID, p, 5*time.Minute)
+}
+
+func (a *API) graphjinPrincipalToken(ctx context.Context, orgID string, p graphjinPrincipal, ttl time.Duration) (string, error) {
 	claims := graphjinClaims{orgID: orgID, userID: p.userID, role: p.role}
 	if p.userID != "" && p.role == "member" {
 		on, err := a.groupGrantsEnabled(ctx, orgID)
@@ -693,7 +697,7 @@ func (a *API) graphjinCallerToken(ctx context.Context, orgID string, runID *stri
 			claims.withGroups = true
 		}
 	}
-	return a.mintGraphjinToken(claims, 5*time.Minute)
+	return a.mintGraphjinToken(claims, ttl)
 }
 
 func (a *API) graphjinMCPAccess(ctx context.Context, orgID string, runID *string) (graphjinEndpoint, error) {
