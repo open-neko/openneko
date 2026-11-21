@@ -469,13 +469,21 @@ func createInContainer(args, env []string, stderr *os.File, sid *windows.SID) (*
 	return pi, nil
 }
 
-// envBlock is env as a sorted Unicode environment block with SYSTEMROOT,
-// which Windows sockets need.
+// windowsPaths are the folder variables that the runner's block takes from
+// this process. Windows sockets need SYSTEMROOT. For an app container,
+// CreateProcess rewrites the user folder variables of the block and fails
+// with ERROR_ENVVAR_NOT_FOUND when they are missing.
+var windowsPaths = []string{"SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP"}
+
+// envBlock is env as a sorted Unicode environment block with windowsPaths.
 func envBlock(env []string) ([]uint16, error) {
 	env = slices.Clone(env)
-	if !slices.ContainsFunc(env, func(e string) bool { return strings.HasPrefix(strings.ToUpper(e), "SYSTEMROOT=") }) {
-		if root, ok := os.LookupEnv("SYSTEMROOT"); ok {
-			env = append(env, "SYSTEMROOT="+root)
+	for _, name := range windowsPaths {
+		if slices.ContainsFunc(env, func(e string) bool { return strings.HasPrefix(strings.ToUpper(e), name+"=") }) {
+			continue
+		}
+		if v, ok := os.LookupEnv(name); ok {
+			env = append(env, name+"="+v)
 		}
 	}
 	slices.SortFunc(env, func(a, b string) int { return strings.Compare(strings.ToUpper(a), strings.ToUpper(b)) })

@@ -776,8 +776,12 @@ confined, and the runner reaches serve on two sockets:
 - A job object holds the runner: one process, killed when serve's handle
   closes, 8 GiB of committed memory, the turn's CPU time, and no
   clipboard, desktop, global atoms or handles of other jobs.
-- The runner's environment holds `PATH`, `TMPDIR`, `SYSTEMROOT` and the
-  folder of its sockets.
+- The runner's environment holds `PATH`, `TMPDIR`, the folder of its
+  sockets, and the system and user folder variables of serve
+  (`SYSTEMROOT`, `SYSTEMDRIVE`, `WINDIR`, `USERPROFILE`, `APPDATA`,
+  `LOCALAPPDATA`, `TEMP`, `TMP`). Windows refuses to start a process in an
+  app container with a block that lacks them. The runner gets no other
+  variable of serve.
 
 Fail closed: the runner checks its own token before the turn. When the
 token is not an app container, or holds a capability, the runner refuses
