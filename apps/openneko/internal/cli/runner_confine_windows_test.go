@@ -591,7 +591,13 @@ func TestConfinedRunnerWindows(t *testing.T) {
 
 	got, gotUDP := probeRun(t, tg, winConfined, "confined")
 	t.Logf("confined runner notes: %v", got.Notes)
-	if len(got.Refused) != len(control.Refused) || len(got.Refused) < 20 {
+	floor := 19
+	if tg.in.TCP6 != "" {
+		floor++
+	} else {
+		t.Logf("no IPv6 loopback on this host, so the runner skips the IPv6 check")
+	}
+	if len(got.Refused) != len(control.Refused) || len(got.Refused) < floor {
 		t.Fatalf("the runner ran %d checks confined and %d unconfined", len(got.Refused), len(control.Refused))
 	}
 	for what, refused := range got.Refused {
