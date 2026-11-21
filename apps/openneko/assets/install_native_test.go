@@ -408,6 +408,16 @@ func TestInstallNativePowerShell(t *testing.T) {
 		t.Fatalf("the new executable ran as %q", got)
 	}
 
+	if err := os.Rename(exe, exe+".old"); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := run("", nil, "-Upgrade", "--skip-backup"); err != nil {
+		t.Fatalf("upgrade after an upgrade that stopped between its two renames: %v %s", err, out)
+	}
+	if got := ran(); len(got) != 1 || !strings.Contains(got[0], "|upgrade --from ") {
+		t.Fatalf("after a cut upgrade the new executable ran as %q", got)
+	}
+
 	if err := os.RemoveAll(prefix); err != nil {
 		t.Fatal(err)
 	}
