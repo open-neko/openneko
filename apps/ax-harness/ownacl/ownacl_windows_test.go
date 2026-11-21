@@ -1,10 +1,9 @@
 package ownacl
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
+	"strings"
 	"testing"
 
 	"golang.org/x/sys/windows"
@@ -23,78 +22,41 @@ func setTestList(t *testing.T, path, sddl string) {
 	}
 }
 
-func TestSocketFolderLimitsAnOpenFolder(t *testing.T) {
+func listOf(t *testing.T, path string) string {
+	t.Helper()
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sd.String()
+}
+
+func TestSocketFolderRefusesAnOpenFolderItDidNotMake(t *testing.T) {
 	dir := t.TempDir()
 	setTestList(t, dir, "D:P(A;OICI;FA;;;WD)(A;OICI;FA;;;SY)")
-	if err := Verify(dir); err == nil {
-		t.Fatal("Verify accepts a folder open to everyone")
+	before := listOf(t, dir)
+	err := SocketFolder(filepath.Join(dir, "x.sock"))
+	if err == nil || !strings.Contains(err.Error(), "does not change a folder it did not make") {
+		t.Fatalf("SocketFolder took a folder open to everyone: %v", err)
 	}
+	if after := listOf(t, dir); after != before {
+		t.Fatalf("SocketFolder changed the list of a folder it did not make: %s to %s", before, after)
+	}
+}
+
+func TestSocketFolderMakesAMissingFolderOwnerOnly(t *testing.T) {
+	parent := t.TempDir()
+	setTestList(t, parent, "D:P(A;OICI;FA;;;WD)(A;OICI;FA;;;SY)")
+	dir := filepath.Join(parent, "sockets")
 	if err := SocketFolder(filepath.Join(dir, "x.sock")); err != nil {
 		t.Fatal(err)
 	}
 	if err := Verify(dir); err != nil {
-		t.Fatal(err)
+		t.Fatalf("the new folder: %v", err)
 	}
-}
-
-func TestSocketFolderRefusesAFolderItCannotLimit(t *testing.T) {
-	user, err := windows.GetCurrentProcessToken().GetTokenUser()
-	if err != nil {
-		t.Fatal(err)
+	if err := SocketFolder(filepath.Join(dir, "y.sock")); err != nil {
+		t.Fatalf("an owner-only folder that exists: %v", err)
 	}
-	locked := func() string {
-		dir := t.TempDir()
-		setTestList(t, dir, "D:P(D;;WD;;;OW)(D;;WD;;;"+user.User.Sid.String()+")(A;OICI;FA;;;WD)(A;OICI;FA;;;SY)")
-		return dir
-	}
-	if dir := locked(); SocketFolder(filepath.Join(dir, "x.sock")) == nil {
-		if err := Verify(dir); err != nil {
-			t.Fatalf("SocketFolder accepts a folder that stays open to everyone: %v", err)
-		}
-		t.Log("a privilege of the token passed over the list, and the folder is limited")
-	}
-
-	control := t.TempDir()
-	setTestList(t, control, "D:P(A;OICI;FA;;;WD)(A;OICI;FA;;;SY)")
-	if err := withoutPrivileges(t, func() error { return SocketFolder(filepath.Join(control, "x.sock")) }); err != nil {
-		t.Fatalf("control: with no privilege, SocketFolder cannot limit a folder the account may change: %v", err)
-	}
-	dir := locked()
-	if err := withoutPrivileges(t, func() error { return SocketFolder(filepath.Join(dir, "x.sock")) }); err == nil {
-		t.Fatal("with no privilege, SocketFolder accepts a folder that stays open to everyone")
-	}
-}
-
-type setupError struct{ error }
-
-// withoutPrivileges runs fn on a thread that acts as a copy of the process
-// token with every privilege off. The thread ends with the goroutine.
-func withoutPrivileges(t *testing.T, fn func() error) error {
-	t.Helper()
-	result := make(chan error, 1)
-	go func() {
-		runtime.LockOSThread()
-		if err := windows.ImpersonateSelf(windows.SecurityImpersonation); err != nil {
-			result <- setupError{err}
-			return
-		}
-		var token windows.Token
-		if err := windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, true, &token); err != nil {
-			result <- setupError{err}
-			return
-		}
-		defer token.Close()
-		if err := windows.AdjustTokenPrivileges(token, true, nil, 0, nil, nil); err != nil {
-			result <- setupError{err}
-			return
-		}
-		result <- fn()
-	}()
-	err := <-result
-	if se := (setupError{}); errors.As(err, &se) {
-		t.Fatalf("act without privileges: %v", se.error)
-	}
-	return err
 }
 
 func TestVerifyReadsDenyEntriesAsHarmless(t *testing.T) {

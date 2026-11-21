@@ -46,6 +46,8 @@ type networkStart struct {
 	SubscriptionsDir    string `json:"subscriptions_dir,omitempty"`
 	SubscriptionsURL    string `json:"subscriptions_url,omitempty"`
 	SubscriptionsSocket string `json:"subscriptions_socket,omitempty"`
+	// TempDir is the part's own temp folder; it takes no other.
+	TempDir string `json:"temp_dir,omitempty"`
 }
 
 func (in networkStart) folders() serveFolders {
@@ -202,6 +204,12 @@ func newServeNetworkCmd() *cobra.Command {
 }
 
 func runNetworkPart(ctx context.Context, stdout, stderr io.Writer, in networkStart, ready func(confine.State)) error {
+	if in.TempDir != "" {
+		if err := os.Setenv("TMPDIR", in.TempDir); err != nil {
+			return err
+		}
+		defer os.RemoveAll(in.TempDir)
+	}
 	confinement, err := confineServe(stderr, in.folders(), webfront.Development())
 	if err != nil {
 		return err

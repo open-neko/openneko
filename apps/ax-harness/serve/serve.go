@@ -112,6 +112,10 @@ type Server struct {
 	Host, Kernel string
 	// Log takes serve's own lines; nil writes to stderr.
 	Log io.Writer
+	// RefusePeer, when set, closes a connection from a process for which it
+	// returns true, and one whose peer the OS does not report. It gets pid 0
+	// for a process outside this pid namespace.
+	RefusePeer func(pid int) bool
 	// Run runs one turn; tests replace it.
 	Run      func(context.Context, harness.Turn) (int, error)
 	Generate func(context.Context, inference.Request, string, string) (inference.Result, error)
@@ -145,6 +149,13 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 				return nil
 			}
 			return err
+		}
+		if s.RefusePeer != nil {
+			if pid, ok := peerPID(conn); !ok || s.RefusePeer(pid) {
+				fmt.Fprintf(s.logOut(), "serve refused a connection on its agent socket from process %d\n", pid)
+				_ = conn.Close()
+				continue
+			}
 		}
 		s.wg.Add(1)
 		go func() {

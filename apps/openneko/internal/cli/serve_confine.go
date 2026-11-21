@@ -106,7 +106,32 @@ func confineTurnHost(out io.Writer, f serveFolders, development bool) (confine.S
 // Production refuses to start only when a system that can confine refuses
 // the rules.
 func confineServe(out io.Writer, f serveFolders, development bool) (confine.State, error) {
-	return confinePart(out, "the network part of openneko serve", serveSpec(f), []string{os.TempDir(), f.files, f.index, f.subsDir}, development)
+	dirs := []string{os.TempDir(), f.files, f.index, f.subsDir}
+	if f.checkSocket != "" {
+		dirs = append(dirs, filepath.Dir(f.checkSocket))
+	}
+	return confinePart(out, "the network part of openneko serve", serveSpec(f), dirs, development)
+}
+
+// networkSocketFolder refuses a config check socket in a folder that holds,
+// or lies above, another socket of serve, web or the sandbox: the network
+// part of serve may create and remove files in its socket's folder.
+func networkSocketFolder(check string, kept ...string) error {
+	if check == "" {
+		return nil
+	}
+	dir := filepath.Clean(filepath.Dir(check))
+	for _, k := range kept {
+		if k == "" {
+			continue
+		}
+		rel, err := filepath.Rel(dir, filepath.Clean(filepath.Dir(k)))
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("the config check socket %s is in a folder that holds %s; give it a folder of its own in OPENNEKO_CONFIG_CHECK_SOCKET, for example %s",
+				check, k, filepath.Join(dir, "check", "check.sock"))
+		}
+	}
+	return nil
 }
 
 // confinePart confines a part of serve for good. Production refuses to start

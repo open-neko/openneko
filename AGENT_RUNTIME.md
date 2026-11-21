@@ -388,13 +388,12 @@ The network part keeps only these paths:
   the other name files, the time zone files, `/proc`, `/sys/fs/cgroup`,
   `~/.postgresql` and the certificate files named in the database URL.
 - read and write: the files folder, the file index, the subscriptions
-  folder, the GraphJin config folder, its temp folder (`TMPDIR`) and
-  `/dev/null`.
+  folder, the GraphJin config folder, its own temp folder and `/dev/null`.
 - listen: the config check socket and the sockets of its two GraphJin
   children.
 
 The turn part keeps the `openneko` program, the same system files, the
-agent runs folder, its temp folder, its own socket, the key door socket and
+agent runs folder, its own temp folder, its own socket, the key door socket and
 the sandbox socket. On macOS the turn part is not confined: a process under
 a Seatbelt profile cannot start a runner that applies its own profile. Each
 runner there confines itself (see "The runner confines itself (macOS)").
@@ -403,8 +402,11 @@ Neither part can read the config folder (the secret key, `config.json` with
 the database login, `secrets.json`), the serve credentials folder, the web
 admin socket token, the rest of the home folder or the other part's
 folders. Neither can run a file that it wrote, or read the memory or the
-environment of a process outside its domain. A native install gives serve
-its own temp folder, `<data>/tmp`.
+environment of a process outside its domain. At start, serve makes a
+private folder `openneko-serve-*` (mode 0700) in its `TMPDIR` (`<data>/tmp`
+on a native install). It holds the sockets of the GraphJin children and one
+temp folder for each part; each part sets `TMPDIR` to its own and gets no
+right on the rest of `TMPDIR`.
 
 ### Linux
 
@@ -432,9 +434,22 @@ Serve uses any ABI from 1. Below ABI 9, Landlock cannot refuse a connect
 to a named socket, so the web admin socket also needs a token that `openneko
 web` writes beside it (`web-admin.sock.token`, mode 0600). Serve cannot read
 that file. From ABI 9, the turn part may connect only to the key door socket
-and the sandbox socket, and the network part only to its own sockets. The
-config check socket shares the run folder with the agent socket, so below
-ABI 9 the network part could also replace the agent socket.
+and the sandbox socket, and the network part only to its own sockets.
+
+The config check socket has a folder of its own (`check/check.sock` in the
+data folder, `/run/openneko/check/check.sock` in Docker), so the network
+part cannot make, replace or remove a file beside the agent socket, the
+key door or the sandbox socket. Serve refuses to start when
+`OPENNEKO_CONFIG_CHECK_SOCKET` names a folder that holds, or lies above,
+one of those sockets or the web admin socket. Below ABI 9 the network part
+can still connect to a named socket, so:
+
+- the agent socket reads the peer process of each connection and closes a
+  connection from the network part or one of its children (GraphJin,
+  DuckDB). A process in another pid namespace, as web in its own container,
+  passes;
+- the key door takes only a one-call token of a turn, and the sandbox takes
+  only its key or a run's token. The network part holds neither.
 
 On a Linux kernel with no Landlock, both parts start unconfined and say so,
 so that data reads, the web app and workflows without an agent step still
@@ -867,8 +882,8 @@ with the same restarts, 503 answer and state file.
 - It connects as `neko_subscriptions_<database>`. Serve reads the role's URL from
   `subscriptions.url` in the credentials folder at start and gives it to the
   network part, which writes the GraphJin config into a private folder
-  (`OPENNEKO_SUBSCRIPTIONS_DIR`, default `$TMPDIR/openneko-subscriptions`,
-  mode 0700). A new URL takes effect when serve restarts. A URL for another
+  (`OPENNEKO_SUBSCRIPTIONS_DIR`, default `subscriptions` in the data
+  folder, mode 0700). A new URL takes effect when serve restarts. A URL for another
   role is refused.
 - The child gets no `GJ_*` variables and no `GO_ENV`, because those are for
   the customer GraphJin.
@@ -943,7 +958,9 @@ status page shows the Sandbox card as failing.
   `1001:1001`. `web` and serve share it. The sandbox does not
   mount it.
 - `openneko-run` → `/run/openneko`, `1001:1001`, mode `0770`. It holds
-  `serve.sock` and `config-check.sock`. The sandbox does not mount it.
+  `serve.sock`, and `check/check.sock` in a folder of its own: the network
+  part of serve gets rights on that folder only. The sandbox does not
+  mount it.
 - `openneko-sandbox-socket` → `/run/openneko-sandbox`, with the sandbox
   overlay only. It holds `sandbox.sock` (`root:1001`, mode `0660`). The
   sandbox, `web` and serve mount it; `web` joins group `1001` for it.
@@ -959,7 +976,7 @@ Compose sets all of these. They matter only for custom deployments.
 |---|---|---|
 | `OPENNEKO_SERVE_SOCKET` | web, serve | the agent socket of serve (`/run/openneko/serve.sock`) |
 | `OPENNEKO_SERVE_MAX_TURNS` | serve | turns that run at once (default 32) |
-| `OPENNEKO_AGENT_RUNS_DIR` | web | where runs are staged |
+| `OPENNEKO_AGENT_RUNS_DIR` | web, serve | where runs are staged; default `agent-runs` in the data folder (`~/.local/share/openneko` on Linux) |
 | `OPENNEKO_SANDBOX_URL` | web, serve | the sandbox service (`unix:///path`, `http://` or `https://`); empty turns the terminal off |
 | `OPENNEKO_SANDBOX_KEY` | web, serve, sandbox | the bearer key of the sandbox service |
 | `OPENNEKO_SANDBOX_EGRESS_PROXY` | sandbox | the egress proxy that the sandbox's relay at `127.0.0.1:3128` passes commands to (`openneko-egress:3128`); empty gives commands no proxy |

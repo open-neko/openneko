@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/open-neko/openneko/apps/ax-harness/ownacl"
 	"io"
 	"net"
 	"net/http"
@@ -207,6 +208,9 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			return err
 		}
 		defer os.RemoveAll(sockDir)
+		if err := ownacl.Set(sockDir); err != nil {
+			return err
+		}
 		sock = filepath.Join(sockDir, "graphjin.sock")
 	} else {
 		defer os.Remove(sock)

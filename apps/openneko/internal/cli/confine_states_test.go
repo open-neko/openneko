@@ -63,3 +63,43 @@ func TestNoRunnerConfinementIsSaidOnStartDoctorAndReleaseCheck(t *testing.T) {
 		t.Fatalf("release-check passed a serve whose agent turns run unconfined: %v", err)
 	}
 }
+
+// TestDoctorReportsWhatServeDoes: serve started when it could not confine
+// its runners, and the system can confine them now. Doctor says what serve
+// does, and falls back to what the system can give only when serve does not
+// answer.
+func TestDoctorReportsWhatServeDoes(t *testing.T) {
+	t.Setenv(serveConfineEnv, "")
+	t.Setenv("OPENNEKO_ENV", "production")
+	cleanServeEnv(t)
+	t.Setenv(webAdminSocketEnv, filepath.Join(testsock.Dir(t), "no-web.sock"))
+	off := confine.State{Mechanism: "landlock+seccomp", Reason: "Linux 4.18.0 has no Landlock"}
+	stubConfinement(t, confine.State{Mechanism: "landlock", Reason: off.Reason}, off)
+	sock := filepath.Join(testsock.Dir(t), "serve.sock")
+	ctx, stop := context.WithCancel(context.Background())
+	done, err := serveAgentTurns(ctx, io.Discard, sock, 1, sandbox.Config{}, confine.State{Mechanism: "landlock", Reason: off.Reason}, confine.State{Mechanism: "landlock", Reason: off.Reason})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENNEKO_SERVE_SOCKET", sock)
+	on := confine.State{Mechanism: "landlock+seccomp", ABI: 8, Confined: true}
+	stubConfinement(t, on, on)
+
+	var out strings.Builder
+	failed := confinementDoctorLines(context.Background(), &out)
+	for _, want := range []string{"openneko serve answers on " + sock, "agent turns: unconfined: " + off.Reason, "so agent turns are off"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("doctor does not say %q:\n%s", want, out.String())
+		}
+	}
+	if !failed {
+		t.Errorf("doctor passed a serve that refuses agent turns:\n%s", out.String())
+	}
+
+	stop()
+	<-done
+	out.Reset()
+	if confinementDoctorLines(context.Background(), &out) || !strings.Contains(out.String(), "openneko serve: no answer") || !strings.Contains(out.String(), "agent confinement: landlock+seccomp ABI 8") {
+		t.Errorf("with no serve, doctor did not say what the system can give:\n%s", out.String())
+	}
+}

@@ -58,8 +58,12 @@ func TestConfineProbeChild(t *testing.T) {
 		FilesFile string
 		Part      string
 		Hidden    []string
+		TempDir   string
 	}
 	if err := json.Unmarshal([]byte(os.Getenv(confineProbeEnv)), &in); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Setenv("TMPDIR", in.TempDir); err != nil {
 		t.Fatal(err)
 	}
 	f := serveFolders{files: in.Folders["files"], index: in.Folders["index"], agentRuns: in.Folders["agentRuns"], subsDir: in.Folders["subs"],
@@ -236,18 +240,28 @@ func TestConfinedServeOneAccount(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	tmp, err := serveTemp(l.Tmp())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpFile, netTmpFile, turnTmpFile := filepath.Join(l.Tmp(), "of-another-program.txt"), filepath.Join(tmp.Network, "network-part.txt"), filepath.Join(tmp.Turns, "turn-part.txt")
+	for _, p := range []string{tmpFile, netTmpFile, turnTmpFile} {
+		if err := os.WriteFile(p, []byte("planted"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, part := range []string{"network", "host"} {
 		t.Run(part, func(t *testing.T) {
-			own, hidden := l.Files(), []string{runFile}
+			own, hidden, ownTmp := l.Files(), []string{runFile, tmpFile, turnTmpFile}, tmp.Network
 			if part == "host" {
-				own, hidden = l.AgentRuns(), []string{userFile, gjFile}
+				own, hidden, ownTmp = l.AgentRuns(), []string{userFile, gjFile, tmpFile, netTmpFile}, tmp.Turns
 			}
 			in, _ := json.Marshal(map[string]any{
 				"Folders": map[string]string{"files": l.Files(), "index": l.Index(), "agentRuns": l.AgentRuns(), "subs": l.Subscriptions(),
 					"gj": l.GraphJin(), "agentSocket": env["OPENNEKO_SERVE_SOCKET"], "checkSocket": env["OPENNEKO_CONFIG_CHECK_SOCKET"]},
 				"Planted": planted, "WebAdmin": l.WebAdmin(), "Door": env["OPENNEKO_KEY_DOOR_SOCKET"], "WebPID": os.Getpid(), "WebAddr": uintptr(unsafe.Pointer(unsafe.StringData(webSecret))),
 				"Outside": filepath.Join(l.Root, "planted-by-serve"), "ExecCopy": filepath.Join(own, "tool"),
-				"FilesFile": filepath.Join(own, "kept.txt"), "Part": part, "Hidden": hidden,
+				"FilesFile": filepath.Join(own, "kept.txt"), "Part": part, "Hidden": hidden, "TempDir": ownTmp,
 			})
 			probeServePart(t, l, home, configDir, env, in)
 		})
@@ -279,7 +293,8 @@ func probeServePart(t *testing.T, l native.Layout, home, configDir string, env m
 		}
 		_ = os.Remove(filepath.Join(l.AgentRuns(), "tool"))
 		_ = os.Remove(filepath.Join(l.Files(), "tool"))
-		for _, p := range []string{filepath.Join(l.AgentRuns(), "run-of-another-user.md.new"), filepath.Join(l.Files(), "user-upload.csv.new"), l.GraphJin() + ".new"} {
+		for _, p := range []string{filepath.Join(l.AgentRuns(), "run-of-another-user.md.new"), filepath.Join(l.Files(), "user-upload.csv.new"), l.GraphJin() + ".new",
+			filepath.Join(l.Tmp(), "of-another-program.txt.new")} {
 			_ = os.Remove(p)
 		}
 		return res
@@ -399,4 +414,28 @@ func hasPath(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func TestTheCheckSocketNeedsAFolderOfItsOwn(t *testing.T) {
+	for _, c := range []struct {
+		name, check string
+		kept        []string
+		ok          bool
+	}{
+		{"native before", "/d/run/config-check.sock", []string{"/d/run/serve.sock", "/d/door/keydoor.sock"}, false},
+		{"native", "/d/check/check.sock", []string{"/d/run/serve.sock", "/d/door/keydoor.sock", "/d/web-admin.sock"}, true},
+		{"docker before", "/run/openneko/config-check.sock", []string{"/run/openneko/serve.sock"}, false},
+		{"docker", "/run/openneko/check/check.sock", []string{"/run/openneko/serve.sock", "/run/openneko-sandbox/sandbox.sock"}, true},
+		{"above the serve socket", "/run/check.sock", []string{"/run/openneko/serve.sock"}, false},
+		{"beside the sandbox", "/run/box/check.sock", []string{"/run/openneko/serve.sock", "/run/box/sandbox.sock"}, false},
+		{"check off", "", []string{"/run/openneko/serve.sock"}, true},
+	} {
+		err := networkSocketFolder(c.check, c.kept...)
+		if (err == nil) != c.ok {
+			t.Errorf("%s: %v", c.name, err)
+		}
+		if err != nil && !strings.Contains(err.Error(), "OPENNEKO_CONFIG_CHECK_SOCKET") {
+			t.Errorf("%s: the refusal names no setting: %v", c.name, err)
+		}
+	}
 }

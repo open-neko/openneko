@@ -73,7 +73,12 @@ func TestPrepareRefusesASocketPathTooLongToListenOn(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(base) })
-	longest := filepath.Join("run", "config-check.sock")
+	longest := ""
+	for _, p := range (Layout{Root: "R"}).sockets() {
+		if rel := strings.TrimPrefix(p, "R"+string(filepath.Separator)); len(rel) > len(longest) {
+			longest = rel
+		}
+	}
 	rootAt := func(n int) Layout {
 		pad := n - len(base) - len(longest) - 2
 		return Layout{Root: filepath.Join(base, strings.Repeat("r", pad))}
@@ -93,14 +98,14 @@ func TestPrepareRefusesASocketPathTooLongToListenOn(t *testing.T) {
 
 	over := rootAt(MaxSocketPath() + 1)
 	err = over.Prepare()
-	want := fmt.Sprintf("config-check.sock has %d bytes", MaxSocketPath()+1)
+	want := fmt.Sprintf("%s has %d bytes", filepath.Base(longest), MaxSocketPath()+1)
 	if err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "shorter instance name") {
 		t.Fatalf("a path one byte over the limit: %v", err)
 	}
 	if strings.Contains(err.Error(), "\n") {
 		t.Fatalf("not one line: %q", err)
 	}
-	path := filepath.Join(over.Run(), "config-check.sock")
+	path := filepath.Join(over.Root, longest)
 	if ln, lerr := net.Listen("unix", path); lerr == nil {
 		_ = ln.Close()
 		t.Fatalf("listen on %s (%d bytes) worked; the limit is too low", path, len(path))
