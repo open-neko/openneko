@@ -42,6 +42,7 @@ func runHelper(mode, arg string) int {
 		return 3
 	case "stubborn":
 		signal.Ignore(syscall.SIGTERM)
+		fmt.Println("up")
 		for {
 			time.Sleep(50 * time.Millisecond)
 		}
@@ -238,7 +239,10 @@ func TestSupervisorKillsAfterGrace(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx) }()
-	waitFor(t, "serve starts", 10*time.Second, func() bool { return servePID(l) > 0 })
+	waitFor(t, "serve ignores SIGTERM", 10*time.Second, func() bool {
+		raw, _ := os.ReadFile(l.Log("serve"))
+		return servePID(l) > 0 && strings.Contains(string(raw), "up")
+	})
 	serve := servePID(l)
 	start := time.Now()
 	cancel()
