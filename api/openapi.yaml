@@ -7929,6 +7929,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '409':
+          description: The proposal would replace a rule that a pack installed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /policies/proposals/{proposalId}/reject:
     post:
       operationId: postPoliciesProposalsByProposalIdReject

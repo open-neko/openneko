@@ -322,5 +322,15 @@ export const adminCases: Case[] = [
   { op: "POST /onboarding/submit", name: "needs a company name", status: 400, request: { body: {} } },
   { op: "GET /policies", name: "lists the policies", status: 200 },
   { op: "GET /policies/{policyId}", name: "refuses an unknown policy", status: 404, request: (c) => ({ params: { policyId: c.ids.unknownId } }) },
+  { op: "GET /policies/proposals", name: "lists the pending rule proposals", status: 200 },
+  { op: "GET /policies/proposals", name: "refuses a member", as: "member", status: 403 },
+  {
+    op: "POST /policies/proposals/{proposalId}/confirm", name: "refuses an unknown proposal", status: 404,
+    request: (c) => ({ params: { proposalId: c.ids.unknownId } }),
+  },
+  {
+    op: "POST /policies/proposals/{proposalId}/reject", name: "refuses an unknown proposal", status: 404,
+    request: (c) => ({ params: { proposalId: c.ids.unknownId } }),
+  },
   { op: "PATCH /policies/{policyId}", name: "needs a change", status: 400, request: (c) => ({ params: { policyId: c.ids.unknownId }, body: {} }) },
 ];
