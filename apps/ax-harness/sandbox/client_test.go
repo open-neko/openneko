@@ -167,6 +167,10 @@ func TestClientCarriesNoSecretsToTheSandbox(t *testing.T) {
 }
 
 func TestClientKeepsTheWorkspaceInStepWithTheSandbox(t *testing.T) {
+	keepsTheWorkspaceInStep(t)
+}
+
+func keepsTheWorkspaceInStep(t *testing.T) {
 	fake := &fakeSandbox{answers: []any{
 		map[string]any{"exit_code": 0, "output": "", "dirs": []string{"runs", "runs/r1", "runs/r1/empty"}, "changed": []map[string]any{
 			{"path": "runs/r1/artifacts/report.xlsx", "mode": 0o644, "data": []byte("xlsx bytes")},

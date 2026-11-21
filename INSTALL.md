@@ -487,8 +487,9 @@ The web app, data reads and workflows without an agent step still work.
 
 The lowest kernel is Linux 5.13 (Landlock ABI 1). A newer kernel closes two
 small gaps: rename and link between folders (Linux 5.19) and ioctl on a
-device (Linux 6.10). `openneko doctor` prints the active security modules
-and the state. To check by hand:
+device (Linux 6.10). On every kernel, the runner can read the metadata (size,
+times, extended attributes) of a path that it names. `openneko doctor` prints
+the active security modules and the state. To check by hand:
 
 ```bash
 cat /sys/kernel/security/lsm   # must hold landlock
