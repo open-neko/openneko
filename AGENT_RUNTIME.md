@@ -453,8 +453,11 @@ own Unix sockets, the name service socket, and the Mach services that name
 lookup and TLS certificate checks use (`com.apple.dnssd.service`,
 `com.apple.trustd`, `com.apple.SystemConfiguration.DNSConfiguration` and a
 few logging and directory services). It can fork, run the `openneko` and
-DuckDB programs, and signal its own children. It cannot read another
-process's arguments or environment. It can read the metadata of a path
+DuckDB programs, and signal its own children. It reads the same named
+sysctls as the runner, and the interface list (`net.routetable`) for name
+lookup. It cannot read another process's arguments, environment or record.
+It binds a Unix socket only at the real path of each of its own sockets
+(`/tmp` resolves to `/private/tmp`). It can read the metadata of a path
 that it names.
 
 When macOS has no `sandbox_init`, the network part starts unconfined and
@@ -644,8 +647,11 @@ libSystem, with no cgo). The profile is built for each turn from the same
 - read of `/`, `/usr/lib`, `/System/Library`, the dyld cache and cryptexes,
   `/dev/null`, `/dev/urandom` and `/dev/random`;
 - the metadata (size, times) of any path;
-- sysctl reads, except `kern.procargs` and `kern.procargs2`, which give the
-  arguments and environment of another process;
+- reads of the sysctls that the Go runtime and libSystem need, each one
+  named (`hw.ncpu`, `hw.pagesize`, `kern.osrelease` and the like), and
+  `kern.proc.pid` for its own process. Every other sysctl is refused, so
+  `kern.procargs`, `kern.procargs2` and `kern.proc.pid` of another process,
+  which give its arguments, environment and record, are refused;
 - signals and process information for itself only.
 
 It allows no network rule, no fork, no program to run and no Mach service.
@@ -668,8 +674,9 @@ on Linux (start, status page, doctor, each refused turn, and
 Proof tests, run on the `macos-15` GitHub runner with `CI` set, so they
 fail when they cannot run: `TestConfinedRunner`
 (`internal/cli/runner_confine_darwin_test.go`) runs the 17 checks of the
-CONF0 macOS probe and three more (truncate by path, the parent's
-arguments, a file it wrote) in a real runner. It runs them unconfined as a
+CONF0 macOS probe and more (truncate by path, a file it wrote, and the
+arguments, environment and record of a web stand-in that holds a planted
+secret in each) in a real runner. It runs them unconfined as a
 control, confined, and then with one rule added at a time; each added rule
 must open the checks that it covers, and each check must be covered.
 `TestRunnerRefusesATurnWhenItCannotConfine` covers no workspace, no
