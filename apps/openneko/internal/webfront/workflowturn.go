@@ -224,7 +224,9 @@ func (a *API) workflowTurnBody(ctx context.Context, o workflowTurnOptions, st *w
 			evidence = &skillEvidence{ToolCalls: slices.Clone(st.toolCalls)}
 			st.mu.Unlock()
 		}
-		stage.finish(context.WithoutCancel(ctx), a, wf.OrgID, o.RunID, ctx.Err() != nil, evidence)
+		for _, notice := range stage.finish(context.WithoutCancel(ctx), a, wf.OrgID, o.RunID, ctx.Err() != nil, evidence).notices() {
+			_ = st.wrapped(context.WithoutCancel(ctx), notice)
+		}
 		return res, err
 	}()
 	if err != nil {

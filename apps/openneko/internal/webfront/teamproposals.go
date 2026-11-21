@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -135,6 +136,17 @@ func (f proposedFile) bytes() ([]byte, error) {
 	return []byte(f.Content), nil
 }
 
+func (f proposedFile) shown() (shownFile, error) {
+	if f.Path == "" {
+		return shownFile{}, nil
+	}
+	data, err := f.bytes()
+	if err != nil {
+		return shownFile{}, unshownFile{f.Path}
+	}
+	return showProposedFile(f.Path, data)
+}
+
 type skillProposal struct {
 	Files   []proposedFile    `json:"files"`
 	Removed []string          `json:"removed"`
@@ -165,6 +177,9 @@ func (a *API) proposeSkillEdit(ctx context.Context, orgID, teamRoot, name string
 	}
 	for _, f := range changed {
 		if skillOf(f.Path) == name {
+			if _, err := showProposedFile(f.Path, f.Content); err != nil {
+				return "", err
+			}
 			after.Files = append(after.Files, fileForProposal(f.Path, f.Content))
 			add(f.Path)
 		}
@@ -242,10 +257,13 @@ func lineDiff(before, after string) []diffLine {
 }
 
 type proposalFileDiff struct {
-	Path   string     `json:"path"`
-	Change string     `json:"change"`
-	Binary bool       `json:"binary"`
-	Lines  []diffLine `json:"lines"`
+	Path       string     `json:"path"`
+	Change     string     `json:"change"`
+	Binary     bool       `json:"binary"`
+	BinaryKind string     `json:"binaryKind,omitempty"`
+	Charset    string     `json:"charset,omitempty"`
+	Unshown    bool       `json:"unshown,omitempty"`
+	Lines      []diffLine `json:"lines"`
 }
 
 type teamProposalOut struct {
@@ -253,6 +271,7 @@ type teamProposalOut struct {
 	Kind       string             `json:"kind"`
 	Target     string             `json:"target"`
 	Title      string             `json:"title"`
+	Details    []string           `json:"details"`
 	Files      []proposalFileDiff `json:"files"`
 	ProposedBy *string            `json:"proposedBy"`
 	RunID      *string            `json:"runId"`
@@ -265,6 +284,24 @@ func textDiff(path, before, after string, existed bool) proposalFileDiff {
 		change = "added"
 	}
 	return proposalFileDiff{Path: path, Change: change, Lines: lineDiff(before, after)}
+}
+
+func memoryProposalDetails(m memoryProposal) []string {
+	out := []string{"Kind: " + strings.ReplaceAll(m.Kind, "_", " ")}
+	switch {
+	case m.Scope == "thread":
+		out = append(out, "Scope: one conversation")
+	case deref(m.ScopeID) != "":
+		out = append(out, "Scope: "+m.Scope+" "+deref(m.ScopeID))
+	default:
+		out = append(out, "Scope: the whole organization")
+	}
+	if m.Pinned {
+		out = append(out, "Pinned: every run of every member loads this text into its prompt")
+	} else {
+		out = append(out, "Not pinned: a run loads it when a question matches it")
+	}
+	return out
 }
 
 func describeTeamProposal(p *teamProposalOut, before, after []byte) {
@@ -282,6 +319,7 @@ func describeTeamProposal(p *teamProposalOut, before, after []byte) {
 			p.Title = "Add a team memory (" + strings.ReplaceAll(next.Kind, "_", " ") + ")"
 		}
 		p.Files = []proposalFileDiff{textDiff("memory", prev.Text, next.Text, existed)}
+		p.Details = memoryProposalDetails(next)
 	case "skill":
 		var next skillProposal
 		var prev skillBefore
@@ -297,21 +335,27 @@ func describeTeamProposal(p *teamProposalOut, before, after []byte) {
 		}
 		for _, f := range next.Files {
 			o, existed := old[f.Path]
-			if f.Encoding == "base64" || o.Encoding == "base64" {
-				d := proposalFileDiff{Path: f.Path, Change: "changed", Binary: true, Lines: []diffLine{}}
-				if !existed {
-					d.Change = "added"
-				}
-				p.Files = append(p.Files, d)
-				continue
+			shown, err := f.shown()
+			prev, prevErr := o.shown()
+			d := textDiff(f.Path, prev.Text, shown.Text, existed)
+			d.Charset = shown.Charset
+			switch {
+			case err != nil:
+				d.Binary, d.Unshown, d.Lines = true, true, []diffLine{}
+			case shown.Binary != "":
+				d.Binary, d.BinaryKind, d.Lines = true, shown.Binary, []diffLine{}
+			case prevErr != nil || prev.Binary != "":
+				d.Lines = lineDiff("", shown.Text)
 			}
-			p.Files = append(p.Files, textDiff(f.Path, o.Content, f.Content, existed))
+			p.Files = append(p.Files, d)
 		}
 		for _, path := range next.Removed {
 			o := old[path]
-			d := proposalFileDiff{Path: path, Change: "removed", Binary: o.Encoding == "base64", Lines: []diffLine{}}
-			if !d.Binary {
-				d.Lines = lineDiff(o.Content, "")
+			d := proposalFileDiff{Path: path, Change: "removed", Lines: []diffLine{}}
+			if prev, err := o.shown(); err == nil && prev.Binary == "" {
+				d.Lines, d.Charset = lineDiff(prev.Text, ""), prev.Charset
+			} else {
+				d.Binary, d.BinaryKind = true, prev.Binary
 			}
 			p.Files = append(p.Files, d)
 		}
@@ -327,6 +371,9 @@ func describeTeamProposal(p *teamProposalOut, before, after []byte) {
 	}
 	if p.Files == nil {
 		p.Files = []proposalFileDiff{}
+	}
+	if p.Details == nil {
+		p.Details = []string{}
 	}
 }
 
@@ -391,6 +438,22 @@ func (a *API) pendingTeamProposal(w http.ResponseWriter, r *http.Request, orgID 
 	return &p, true
 }
 
+// claimTeamProposal decides a pending change before anything is applied,
+// so a second admin's decision on the same change finds it decided.
+func (a *API) claimTeamProposal(w http.ResponseWriter, r *http.Request, id, status, adminID string) bool {
+	tag, err := a.DB.Exec(r.Context(), `update team_item_proposal set status = $2, decided_by_user_id = $3, decided_at = now()
+		where id = $1 and status = 'pending'`, id, status, adminID)
+	if err != nil {
+		a.fail(w, r, err)
+		return false
+	}
+	if tag.RowsAffected() == 0 {
+		sendError(w, http.StatusConflict, "Another admin decided this change first. Nothing was applied.")
+		return false
+	}
+	return true
+}
+
 type staleProposal string
 
 func (s staleProposal) Error() string { return string(s) }
@@ -407,6 +470,9 @@ func (a *API) teamProposalConfirm(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !a.claimTeamProposal(w, r, p.id, "confirmed", act.UserID) {
+		return
+	}
 	var err error
 	switch p.kind {
 	case "memory":
@@ -420,8 +486,7 @@ func (a *API) teamProposalConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 	var stale staleProposal
 	if errors.As(err, &stale) {
-		if _, err := a.DB.Exec(ctx, `update team_item_proposal set status = 'stale', decided_by_user_id = $2, decided_at = now() where id = $1`,
-			p.id, act.UserID); err != nil {
+		if _, err := a.DB.Exec(ctx, `update team_item_proposal set status = 'stale' where id = $1 and status = 'confirmed'`, p.id); err != nil {
 			a.fail(w, r, err)
 			return
 		}
@@ -429,11 +494,15 @@ func (a *API) teamProposalConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		a.fail(w, r, err)
-		return
-	}
-	if _, err := a.DB.Exec(ctx, `update team_item_proposal set status = 'confirmed', decided_by_user_id = $2, decided_at = now() where id = $1`,
-		p.id, act.UserID); err != nil {
+		if _, undo := a.DB.Exec(ctx, `update team_item_proposal set status = 'pending', decided_by_user_id = null, decided_at = null
+			where id = $1 and status = 'confirmed'`, p.id); undo != nil {
+			log.Printf("[team-proposals] could not put %s back to pending: %v", p.id, undo)
+		}
+		var unshown unshownFile
+		if errors.As(err, &unshown) {
+			sendError(w, http.StatusUnprocessableEntity, unshown.Error()+" Reject this change.")
+			return
+		}
 		a.fail(w, r, err)
 		return
 	}
@@ -452,9 +521,7 @@ func (a *API) teamProposalReject(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, err := a.DB.Exec(r.Context(), `update team_item_proposal set status = 'rejected', decided_by_user_id = $2, decided_at = now() where id = $1`,
-		p.id, act.UserID); err != nil {
-		a.fail(w, r, err)
+	if !a.claimTeamProposal(w, r, p.id, "rejected", act.UserID) {
 		return
 	}
 	a.recordAudit(r.Context(), auditEvent{OrgID: act.OrgID, EntityKind: "team_item_proposal", EntityID: p.id, Event: "team_item:rejected",
@@ -511,6 +578,11 @@ func (a *API) applySkillProposal(ctx context.Context, orgID string, p *pendingTe
 		}
 		if current[path] != next.Base[path] {
 			return staleProposal("The skill " + p.target + " changed after this change was proposed (" + path + "). Nothing was applied.")
+		}
+	}
+	for _, f := range next.Files {
+		if _, err := f.shown(); err != nil {
+			return err
 		}
 	}
 	for _, f := range next.Files {

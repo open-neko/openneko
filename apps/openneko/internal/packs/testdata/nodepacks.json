@@ -1777,7 +1777,7 @@
       "manifest": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"actions\":\"actions\",\"graphjin\":{\"relationships\":\"graphjin/relationships.yaml\",\"sources\":\"graphjin/sources.yaml\",\"specs\":[\"graphjin/specs/parallel.yaml\"]},\"policies\":\"policies\",\"skills\":[\"skills/parallel-web-search\"]},\"compatibility\":{\"applications\":[{\"editions\":[\"cloud\"],\"id\":\"parallel\",\"versions\":\"v1beta\"}],\"databases\":[],\"graphjin\":{\"analytics\":\">=3.21.0 <4.0.0\",\"operator\":\">=3.21.0 <4.0.0\"},\"openneko\":\">=4.9.0 <5.0.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{\"search\":[]},\"requiredPreflight\":[]},\"inputs\":[{\"default\":\"ask\",\"description\":\"The search text leaves this install for Parallel (api.parallel.ai). Choose ask to approve each search, or auto to let searches run without approval.\",\"key\":\"parallel_search.approval\",\"required\":true,\"type\":\"enum\",\"values\":[\"ask\",\"auto\"]}],\"kind\":\"SolutionPack\",\"metadata\":{\"category\":\"research\",\"id\":\"parallel-search\",\"name\":\"Parallel web search\",\"publisher\":\"openneko\",\"version\":\"0.2.0\"},\"oauth\":[],\"permissions\":{\"network\":[\"api.parallel.ai\"]},\"secrets\":[{\"key\":\"parallel-search.api_key\",\"purpose\":\"graphjin_api_auth\",\"required\":true}]}",
       "manifestHash": "5f1ae2928334d51dda07f64da3380760ac83d502081d75b86e44ea382111931d",
       "bundleHash": "8816ba8069934b7b62e39818a05d316008b486fefc78a5cf5fef14e33c08c0e0",
-      "filesHash": "4cd3381a1144660f8d3b376401f2a3cf6f6673353d1676ea67e1453070ae1c94",
+      "filesHash": "b09a27ff22063e4d5b685b6f4bee16128db0ae1f43b93c8e9d389263bf710e38",
       "artifacts": [
         {
           "kind": "action",

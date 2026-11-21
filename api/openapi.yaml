@@ -3885,7 +3885,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '409':
-          description: The item changed after the change was proposed; nothing is applied and the change is marked stale
+          description: The item changed after the change was proposed, or another admin decided the change first; nothing is applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: The change holds a file that the card cannot show; nothing is applied
           content:
             application/json:
               schema:
@@ -7966,6 +7972,22 @@ paths:
                 properties:
                   policies:
                     type: array
+                  packChoices:
+                    type: array
+                    description: Pack rules that an earlier pack version installed in auto mode; the admin answers ask or auto once
+                    items:
+                      type: object
+                      required: [policyId, packId, question, line]
+                      additionalProperties: false
+                      properties:
+                        policyId:
+                          type: string
+                        packId:
+                          type: string
+                        question:
+                          type: string
+                        line:
+                          type: string
         '401':
           description: The session or device token is not valid
           content:
@@ -8119,6 +8141,74 @@ paths:
                     type: string
         '404':
           description: No pending rule proposal has this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /policies/{policyId}/pack-choice:
+    post:
+      operationId: postPoliciesByPolicyIdPackChoice
+      tags:
+      - policies
+      summary: Answer ask or auto for a pack rule that an earlier pack version installed in auto mode
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      parameters:
+      - name: policyId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - mode
+              properties:
+                mode:
+                  type: string
+                  enum:
+                  - ask
+                  - auto
+      responses:
+        '200':
+          description: The rule takes the mode, and the pack install keeps the answer
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  ok:
+                    type: boolean
+        '400':
+          description: The mode is not ask or auto
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an admin, or SSO is live and no session is present
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: No choice waits for this rule
           content:
             application/json:
               schema:

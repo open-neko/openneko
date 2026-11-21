@@ -386,6 +386,9 @@ func (a *API) createActionRequestInGo(ctx context.Context, in *jsObj) (*jsObj, e
 		if err != nil {
 			return nil, err
 		}
+		if err := a.slackPlaceProblem(ctx, orgID, kind, guarded); err != nil {
+			return nil, err
+		}
 		payloadObj.set("body", guarded)
 	}
 
@@ -487,7 +490,7 @@ func (a *API) createActionRequestInGo(ctx context.Context, in *jsObj) (*jsObj, e
 		return nil, err
 	}
 
-	facts := a.approvalFactsFor(ctx, orgID, kind, target, payloadObj)
+	facts := a.approvalFactsFor(ctx, orgID, kind, payloadObj)
 	return jsObjOf("id", record.ID, "status", record.Status, "facts", jsFromGo(facts)), nil
 }
 
@@ -622,6 +625,9 @@ func (a *API) executeDeclarativePackAction(ctx context.Context, req *actionReque
 		return nil, err
 	}
 	if bodyVal, err = guardPackBody(req.Kind, bodyVal); err != nil {
+		return nil, err
+	}
+	if err := a.slackPlaceProblem(ctx, req.OrgID, req.Kind, bodyVal); err != nil {
 		return nil, err
 	}
 

@@ -2,6 +2,7 @@ package webfront
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"github.com/open-neko/neko/apps/openneko/internal/packs"
 	"io"
@@ -350,6 +351,7 @@ func TestSlackPackMessageFetchesNoURL(t *testing.T) {
 	}
 	seed(t, db, `insert into action_policy (org_id, name, applies_to_kinds, applies_to_scopes, mode, priority)
 		values ('org', 'Post', '{slack.message}', '{external}', 'auto_approve', 1)`)
+	putReplies(t, f, `{"channel":"slack","mode":"listed","places":["C0123ABCD"]}`)
 	execute := func(body string) (string, int) {
 		t.Helper()
 		in, _ := jsParse([]byte(`{"orgId":"org","scope":"external","kind":"slack.message","status":"approved","workRunId":"` + runMine +
@@ -401,5 +403,75 @@ func TestSlackPackMessageFetchesNoURL(t *testing.T) {
 	plain := `{"channel":"C0123ABCD","text":"x","blocks":[{"type":"section","text":{"type":"mrkdwn","text":"*Revenue* is down 4%"}}]}`
 	if status, sent := execute(plain); status != "executed|" || sent != 1 {
 		t.Fatalf("blocks with no URL: %s, %d calls", status, sent)
+	}
+
+	refused(`{"channel":"C0999OTHER","text":"Revenue is down 4%"}`, "answer rule keeps data out of the channel C0999OTHER")
+	if status, sent := execute(`{"channel":"U0123ABCD","text":"Revenue is down 4%"}`); status != "executed|" || sent != 1 {
+		t.Fatalf("a message to one person: %s, %d calls", status, sent)
+	}
+	in, _ := jsParse([]byte(`{"orgId":"org","scope":"external","kind":"slack.message","workRunId":"` + runMine +
+		`","payload":{"operation":"post_message","body":{"channel":"C0123ABCD","text":"Revenue is down 4%"}}}`))
+	waiting, err := a.createActionRequestInGo(ctx, in.(*jsObj))
+	if err != nil {
+		t.Fatal(err)
+	}
+	putReplies(t, f, `{"channel":"slack","mode":"direct"}`)
+	id, _ := waiting.vals["id"].(string)
+	seed(t, db, `update action_request set status = 'approved' where id = $1::uuid`, id)
+	mu.Lock()
+	before := len(bodies)
+	mu.Unlock()
+	_ = a.ActionExecute(ctx, "org", id)
+	mu.Lock()
+	sentAfter := len(bodies) - before
+	mu.Unlock()
+	if got := rowText(t, db, `select status || '|' || coalesce(failure_reason, '') from action_request where id = $1::uuid`, id); !strings.Contains(got, "answer rule") || sentAfter != 0 {
+		t.Fatalf("a post approved before the rule changed went out: %s, %d calls", got, sentAfter)
+	}
+}
+
+func TestGmailApprovalCardShowsTheMessageRecipients(t *testing.T) {
+	f, db := memoryFront(t)
+	a := f.API
+	ctx := context.Background()
+	seedRiver(t, db, f)
+	const sourceID = "22222222-2222-4222-8222-222222222224"
+	seed(t, db, `insert into data_source (id, org_id, kind, name, graphql_url, auth_mode, is_default, enabled)
+		values ($1, 'org', 'graphjin', 'google_workspace_gmail', 'http://127.0.0.1:9/api/v1/graphql', 'jwt', true, true)`, sourceID)
+	bundle := seedBundledPack(t, db, "google-workspace")
+	runtime, _ := json.Marshal(map[string]any{"_runtime": map[string]any{"source": map[string]any{
+		"id": sourceID, "graphqlUrl": "http://127.0.0.1:9/api/v1/graphql", "authMode": "jwt"}}})
+	seed(t, db, `update pack_install set config = $1::jsonb, installed_at = now() where pack_id = 'google-workspace'`, string(runtime))
+	for _, art := range bundle.Artifacts {
+		if art.Kind == packs.KindAction && art.Key == "action.google_workspace_gmail" {
+			definition, _ := json.Marshal(art.Record())
+			seed(t, db, `insert into pack_action_definition (org_id, kind, description, definition, definition_hash, readiness, enabled)
+				values ('org', 'google_workspace.gmail', 'Gmail', $1::jsonb, 'h', 'ready', true)`, string(definition))
+		}
+	}
+	msg := "To: Ann <ann@acme.com>, x@outside.example\r\nBcc: copy@leak.example\r\nSubject: Q3\r\nContent-Type: text/plain\r\n\r\n" + strings.Repeat("line\r\n", 100)
+	in, _ := jsParse([]byte(`{"orgId":"org","scope":"external","kind":"google_workspace.gmail","target":"ann@acme.com","workRunId":"` + runMine +
+		`","payload":{"operation":"send_message","path":{"userId":"me"},"body":{"message":{"raw":"` + base64.RawURLEncoding.EncodeToString([]byte(msg)) + `"}}}}`))
+	created, err := a.createActionRequestInGo(ctx, in.(*jsObj))
+	if err != nil {
+		t.Fatal(err)
+	}
+	card := jsStringify(created.vals["facts"], false)
+	for _, want := range []string{`"headline":"Send or draft an email: ann@acme.com, x@outside.example, copy@leak.example"`,
+		`Bcc: copy@leak.example (outside domain leak.example)`, `Goes to an outside domain: leak.example`} {
+		if !strings.Contains(card, want) {
+			t.Errorf("the card lacks %s: %s", want, card)
+		}
+	}
+
+	seed(t, db, `insert into action_request (org_id, scope, kind, status, payload) values
+		('org', 'external', 'send_webhook', 'executed', '{"url":"https://hooks.acme.com.evil.example/in"}'),
+		('org', 'external', 'send_webhook', 'executed', '{"url":"https://user@API.Partner.example:8443/in"}')`)
+	known := a.knownActionHost(ctx, "org")
+	for host, want := range map[string]bool{"acme.com": false, "hooks.acme.com": false, "hooks.acme.com.evil.example": true,
+		"api.partner.example": true, "partner.example": false} {
+		if got := known(host); got != want {
+			t.Errorf("known host %s: %v, want %v", host, got, want)
+		}
 	}
 }

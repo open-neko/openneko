@@ -542,11 +542,11 @@ func readStagedFile(root *os.Root, rel string, seen fs.FileInfo, limit int64) ([
 // artifacts come back unless the turn was cancelled, the skill edits are
 // saved when the tool calls show the skills folder can have changed, and
 // the stage goes.
-func (s *turnStage) finish(ctx context.Context, a *API, orgID, runID string, aborted bool, evidence *skillEvidence) {
+func (s *turnStage) finish(ctx context.Context, a *API, orgID, runID string, aborted bool, evidence *skillEvidence) *savedSkillEdits {
 	defer os.RemoveAll(s.Dir)
 	if !s.Workspace.runners.settled() {
 		log.Printf("[agent-run] run %s artifacts and skill edits skipped: serve did not report the runner's end", runID)
-		return
+		return nil
 	}
 	if !aborted {
 		if err := s.copyBack(); err != nil {
@@ -563,18 +563,19 @@ func (s *turnStage) finish(ctx context.Context, a *API, orgID, runID string, abo
 	}
 	if !capture {
 		log.Printf("[agent-run] run %s skill capture skipped: %s", runID, reason)
-		return
+		return nil
 	}
 	saved, err := a.captureSkillEdits(ctx, orgID, runID, s.actor, s.baseline, s.own, s.Workspace.SkillsRoot)
 	if err != nil {
 		log.Printf("[agent-run] skill capture failed: %v", err)
-		return
+		return nil
 	}
 	if saved != nil {
 		log.Printf("[agent-run] run %s saved skill edits (%s): proposed %s; refused %s; own %s; copies %s; skipped: %s", runID, reason,
 			strings.Join(saved.Proposed, ", "), strings.Join(saved.Refused, ", "), strings.Join(saved.Own, ", "),
 			strings.Join(saved.copyList(), ", "), strings.Join(saved.Skipped, ", "))
 	}
+	return saved
 }
 
 func jsTrimEnd(s string) string { return strings.TrimRightFunc(s, jsSpace) }

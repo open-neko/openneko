@@ -3,6 +3,7 @@ package webfront
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -39,6 +40,11 @@ func guardPackBody(kind string, body any) (any, error) {
 		if why := slackLinkProblem(obj); why != "" {
 			return nil, refuse(why)
 		}
+		for _, k := range []string{"blocks", "attachments"} {
+			if why := slackURLProblem(obj.vals[k], "", ""); why != "" {
+				return nil, refuse(why)
+			}
+		}
 		if _, hasChannel := obj.vals["channel"]; hasChannel {
 			obj.set("unfurl_links", false)
 			obj.set("unfurl_media", false)
@@ -46,6 +52,9 @@ func guardPackBody(kind string, body any) (any, error) {
 	case kind == "parallel_search.web_search":
 		if objective, ok := obj.vals["objective"].(string); ok && utf8.RuneCountInString(objective) > searchObjectiveMax {
 			return nil, refuse(fmt.Sprintf("the search objective has %d characters; a search needs at most %d", utf8.RuneCountInString(objective), searchObjectiveMax))
+		}
+		if why := searchQueriesProblem(obj.vals["search_queries"]); why != "" {
+			return nil, refuse(why)
 		}
 	case kind == "resend.email":
 		if _, has := obj.vals["attachments"]; has {
@@ -68,9 +77,93 @@ func guardPackBody(kind string, body any) (any, error) {
 	return obj, nil
 }
 
-const searchObjectiveMax = 500
+const (
+	searchObjectiveMax = 500
+	searchQueriesMax   = 5
+	searchQueryMax     = 200
+)
 
-var slackFetchKeys = map[string]bool{"image_url": true, "thumb_url": true, "author_icon": true, "footer_icon": true, "icon_url": true}
+func searchQueriesProblem(v any) string {
+	if v == nil {
+		return ""
+	}
+	list, ok := v.([]any)
+	if !ok {
+		return "search_queries must be a list of search texts"
+	}
+	if len(list) > searchQueriesMax {
+		return fmt.Sprintf("the search has %d queries; a search takes at most %d", len(list), searchQueriesMax)
+	}
+	for _, q := range list {
+		s, ok := q.(string)
+		if !ok {
+			return "each search query must be text"
+		}
+		if n := utf8.RuneCountInString(s); n > searchQueryMax {
+			return fmt.Sprintf("a search query has %d characters; a query needs at most %d", n, searchQueryMax)
+		}
+	}
+	return ""
+}
+
+var slackFetchKeys = map[string]bool{"image_url": true, "thumb_url": true, "thumbnail_url": true, "video_url": true, "author_icon": true,
+	"footer_icon": true, "icon_url": true, "provider_icon_url": true}
+
+var urlShaped = regexp.MustCompile(`(?i)^\s*(?:[a-z][a-z0-9+.-]*://|//|data:|www\.)`)
+
+// slackURLProblem refuses every URL in blocks and attachments except the
+// url of a button, which the approval card shows with its host, and of a
+// link element whose text, if it has one, names its host.
+func slackURLProblem(v any, key, parentType string) string {
+	switch x := v.(type) {
+	case string:
+		lower, value := strings.ToLower(key), strings.TrimSpace(x)
+		wholeURL := urlShaped.MatchString(value) && !strings.ContainsAny(value, " \t\r\n")
+		if value == "" || !wholeURL && !strings.Contains(lower, "url") && !strings.Contains(lower, "link") && !slackFetchKeys[lower] {
+			return ""
+		}
+		if key == "url" && (parentType == "button" || parentType == "link") {
+			return ""
+		}
+		return fmt.Sprintf("the message holds the URL %s %q in its blocks or attachments. Put the link in the text", key, x)
+	case *jsObj:
+		t, _ := x.vals["type"].(string)
+		if t == "button" || t == "link" {
+			if u, ok := x.vals["url"].(string); ok {
+				host, valid := linkHost(u)
+				if !valid {
+					return fmt.Sprintf("the %s link %q is not an http, https or mailto link", t, u)
+				}
+				if shown := slackShownText(x.vals["text"]); t == "link" && shown != "" && !showsHost(shown, host) {
+					return fmt.Sprintf("the %s text %q hides its host %s; name the host in the text", t, shown, host)
+				}
+			}
+		}
+		for _, k := range x.ordered() {
+			if why := slackURLProblem(x.vals[k], k, t); why != "" {
+				return why
+			}
+		}
+	case []any:
+		for _, item := range x {
+			if why := slackURLProblem(item, key, parentType); why != "" {
+				return why
+			}
+		}
+	}
+	return ""
+}
+
+func slackShownText(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case *jsObj:
+		s, _ := x.vals["text"].(string)
+		return s
+	}
+	return ""
+}
 
 func slackFetchedField(v any) string {
 	switch x := v.(type) {
@@ -147,7 +240,9 @@ func htmlFetchInStrings(v any) string {
 }
 
 var (
-	cssURL      = regexp.MustCompile(`(?i)url\s*\(|@import`)
+	cssFetch    = regexp.MustCompile(`(?i)(?:url|image-set|image|cross-fade|element|src|paint|expression)\s*\(|@import|@font-face|behavior\s*:|-moz-binding`)
+	cssComment  = regexp.MustCompile(`(?s)/\*.*?(?:\*/|$)`)
+	cssEscape   = regexp.MustCompile(`\\(?:([0-9a-fA-F]{1,6})[ \t\r\n\f]?|(\n)|(.))`)
 	fetchAttrs  = map[string]bool{"src": true, "srcset": true, "background": true, "poster": true, "data": true, "lowsrc": true, "dynsrc": true, "xlink:href": true}
 	fetchTags   = map[atom.Atom]bool{atom.Img: true, atom.Image: true, atom.Picture: true, atom.Source: true, atom.Video: true, atom.Audio: true, atom.Iframe: true, atom.Frame: true, atom.Object: true, atom.Embed: true, atom.Link: true, atom.Script: true, atom.Track: true, atom.Svg: true, atom.Meta: true, atom.Base: true, atom.Form: true}
 	allowedTags = map[atom.Atom]bool{atom.P: true, atom.Br: true, atom.Div: true, atom.Span: true, atom.H1: true, atom.H2: true, atom.H3: true, atom.H4: true, atom.H5: true, atom.H6: true,
@@ -155,6 +250,32 @@ var (
 		atom.Tbody: true, atom.Tfoot: true, atom.Tr: true, atom.Th: true, atom.Td: true, atom.Code: true, atom.Pre: true, atom.Blockquote: true, atom.Hr: true, atom.Small: true}
 	cellAttrs = map[string]bool{"colspan": true, "rowspan": true}
 )
+
+// cssLoads checks the CSS as written, without comments, and with its
+// escapes decoded, so "\75 rl(" and "u/**/rl(" count as url(.
+func cssLoads(s string) bool {
+	stripped := cssComment.ReplaceAllString(s, "")
+	return cssFetch.MatchString(s) || cssFetch.MatchString(stripped) || cssFetch.MatchString(decodeCSSEscapes(stripped)) ||
+		cssFetch.MatchString(decodeCSSEscapes(s))
+}
+
+func decodeCSSEscapes(s string) string {
+	return cssEscape.ReplaceAllStringFunc(s, func(m string) string {
+		sub := cssEscape.FindStringSubmatch(m)
+		switch {
+		case sub[1] != "":
+			var r rune
+			_, _ = fmt.Sscanf(sub[1], "%x", &r)
+			if r == 0 || r > utf8.MaxRune {
+				return "\uFFFD"
+			}
+			return string(r)
+		case sub[2] != "":
+			return ""
+		}
+		return sub[3]
+	})
+}
 
 func parseFragment(s string) ([]*html.Node, error) {
 	return html.ParseFragment(strings.NewReader(s), &html.Node{Type: html.ElementNode, Data: "body", DataAtom: atom.Body})
@@ -205,7 +326,7 @@ func showsHost(text, host string) bool {
 // htmlProblem names the first thing in HTML that fetches a URL or a link
 // whose text hides its host; "" means the HTML is safe as it is.
 func htmlProblem(s string) string {
-	nodes, err := parseFragment(s)
+	doc, err := html.Parse(strings.NewReader(s))
 	if err != nil {
 		return "the HTML does not parse"
 	}
@@ -220,13 +341,16 @@ func htmlProblem(s string) string {
 				found = "the HTML holds a <" + n.Data + "> element, which loads content from a URL"
 				return
 			}
-			if n.DataAtom == atom.Style && cssURL.MatchString(nodeText(n)) {
+			if n.DataAtom == atom.Style && cssLoads(nodeText(n)) {
 				found = "the HTML style loads a URL"
 				return
 			}
 			for _, a := range n.Attr {
 				key := strings.ToLower(a.Key)
-				if fetchAttrs[key] || key == "style" && cssURL.MatchString(a.Val) {
+				if a.Namespace != "" {
+					key = a.Namespace + ":" + key
+				}
+				if fetchAttrs[key] || key == "style" && cssLoads(a.Val) {
 					found = "the HTML attribute " + key + " loads a URL"
 					return
 				}
@@ -252,9 +376,7 @@ func htmlProblem(s string) string {
 			walk(c)
 		}
 	}
-	for _, n := range nodes {
-		walk(n)
-	}
+	walk(doc)
 	return found
 }
 
@@ -364,14 +486,23 @@ func rawMIMEProblem(v any) string {
 	return ""
 }
 
-func mimeMessageProblem(raw string) string {
+var errRawNotBase64 = errors.New("the raw message is not base64")
+
+func decodeRawMessage(raw string) (*mail.Message, error) {
 	data, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(strings.TrimSpace(raw), "="))
 	if err != nil {
 		if data, err = base64.StdEncoding.DecodeString(strings.TrimSpace(raw)); err != nil {
-			return "the raw message is not base64"
+			return nil, errRawNotBase64
 		}
 	}
-	msg, err := mail.ReadMessage(bytes.NewReader(data))
+	return mail.ReadMessage(bytes.NewReader(data))
+}
+
+func mimeMessageProblem(raw string) string {
+	msg, err := decodeRawMessage(raw)
+	if errors.Is(err, errRawNotBase64) {
+		return err.Error()
+	}
 	if err != nil {
 		return "the raw message does not parse as an email"
 	}
