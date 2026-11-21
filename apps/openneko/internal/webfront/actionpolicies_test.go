@@ -64,7 +64,7 @@ func TestActionPolicies(t *testing.T) {
 		values ($1, 'org', 'B rule', 'approval', 10, '{email.send}', '{"patterns":["a@x.com"]}', '{"10":1,"b":2}', '2026-11-01T00:00:00Z', '2026-11-02T00:00:00Z'),
 		('b0000000-0000-4000-8000-000000000002', 'org', 'A rule', 'auto', 20, '{}', null, '{}', '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z')`, rulePolicyID)
 	w := call(f, "GET", "/api/v1/policies", "", admin)
-	want := `{"policies":[{"id":"` + rulePolicyID + `","name":"B rule","description":"","appliesToKinds":["email.send"],"appliesToScopes":[],` +
+	want := `{"packChoices":[],"policies":[{"id":"` + rulePolicyID + `","name":"B rule","description":"","appliesToKinds":["email.send"],"appliesToScopes":[],` +
 		`"mode":"approval","riskThresholdAutoApprove":null,"allowedTargets":{"patterns":["a@x.com"]},"deniedTargets":null,` +
 		`"limits":{"10":1,"b":2},"approverGroupId":null,"priority":10,"enabled":true,` +
 		`"createdAt":"2026-11-01T00:00:00.000Z","updatedAt":"2026-11-02T00:00:00.000Z"},{"id":"b0000000-0000-4000-8000-000000000002"`
