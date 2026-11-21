@@ -15,7 +15,7 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
 
-func confinementService() externalService {
+func (a *API) confinementService() externalService {
 	return externalService{
 		id: "agent-confinement", label: "Agent confinement", timeout: 5 * time.Second,
 		whenOff: "Agent turns are off: OPENNEKO_SERVE_SOCKET is not set.",
@@ -32,6 +32,13 @@ func confinementService() externalService {
 				return "", "", err
 			}
 			if st.turnsOff != "" {
+				setting, err := a.unconfinedTurnsSetting(ctx)
+				if err != nil {
+					return "", "", fmt.Errorf("%s; the admin setting for turns without confinement cannot be read: %w", st.turnsOff, err)
+				}
+				if setting.On {
+					return "", "", errors.New(setting.line())
+				}
 				return "", "", errors.New(st.turnsOff)
 			}
 			if !st.runner.Confined && st.runner.Mechanism != "" {
@@ -69,9 +76,9 @@ func confinementService() externalService {
 }
 
 type serveStates struct {
-	host, network, runner confine.State
-	turnsOff              string
-	production            bool
+	host, network, runner      confine.State
+	turnsOff, hostName, kernel string
+	production                 bool
 }
 
 // serveConfinement asks serve over its agent socket how the OS confines it
@@ -99,6 +106,6 @@ func serveConfinement(ctx context.Context, socket string) (serveStates, error) {
 	if len(status.RunnerConfinement) > 0 {
 		_ = json.Unmarshal(status.RunnerConfinement, &st.runner)
 	}
-	st.turnsOff, st.production = status.TurnsOff, status.RequireDoor
+	st.turnsOff, st.production, st.hostName, st.kernel = status.TurnsOff, status.RequireDoor, status.Host, status.Kernel
 	return st, nil
 }

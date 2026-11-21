@@ -252,7 +252,7 @@ func TestTurnsAreOffWhenRunnersCannotBeConfined(t *testing.T) {
 		t.Fatalf("production: off=%q confine=%v state=%+v", off, confineIt, st)
 	}
 	var out strings.Builder
-	if !confinementDoctorLines(&out) || !strings.Contains(out.String(), want) {
+	if !confinementDoctorLines(context.Background(), &out) || !strings.Contains(out.String(), want) {
 		t.Fatalf("doctor:\n%s", out.String())
 	}
 	if _, _, off := runnerConfinement(&strings.Builder{}, true); off != "" {
@@ -287,7 +287,7 @@ func TestTurnsAreOffWhenRunnersCannotBeConfined(t *testing.T) {
 
 	confine.SetForTest(false, "")
 	out.Reset()
-	if confinementDoctorLines(&out) || !strings.Contains(out.String(), "agent confinement: seatbelt, on macOS") {
+	if confinementDoctorLines(context.Background(), &out) || !strings.Contains(out.String(), "agent confinement: seatbelt, on macOS") {
 		t.Fatalf("doctor on this Mac:\n%s", out.String())
 	}
 }

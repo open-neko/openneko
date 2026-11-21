@@ -30,7 +30,7 @@ func TestServeStartsWithoutLandlockAndRefusesOnlyTurns(t *testing.T) {
 		t.Fatalf("production on a kernel without Landlock: %v, %v, %q", st, err, log.String())
 	}
 	_, confineIt, off := runnerConfinement(&log, false)
-	if confineIt || off != turnsOffLine(confine.State{Reason: noLandlock}) {
+	if confineIt || off != turnsOffLine(confine.State{Mechanism: "landlock+seccomp", Reason: noLandlock}) {
 		t.Fatalf("agent turns on a kernel without Landlock: confine=%v off=%q", confineIt, off)
 	}
 }
@@ -40,12 +40,12 @@ func TestNoRunnerConfinementIsSaidOnStartDoctorAndReleaseCheck(t *testing.T) {
 	notBuilt := confine.State{Reason: "confinement on windows is not built yet"}
 	stubConfinement(t, notBuilt, notBuilt)
 	var start strings.Builder
-	if _, confineIt, off := runnerConfinement(&start, false); confineIt || off != "" || !strings.Contains(start.String(), confine.NotAvailable) {
+	want := confine.NotAvailable + " (confinement on windows is not built yet), so agent turns are off"
+	if _, confineIt, off := runnerConfinement(&start, false); confineIt || off != want || !strings.Contains(start.String(), unconfinedHint) {
 		t.Fatalf("start: confine=%v off=%q log=%q", confineIt, off, start.String())
 	}
 	var doctor strings.Builder
-	confinementDoctorLines(&doctor)
-	if !strings.Contains(doctor.String(), confine.NotAvailable+" (confinement on windows is not built yet)") {
+	if !confinementDoctorLines(context.Background(), &doctor) || !strings.Contains(doctor.String(), want) {
 		t.Fatalf("doctor: %q", doctor.String())
 	}
 	t.Setenv("OPENNEKO_ENV", "production")

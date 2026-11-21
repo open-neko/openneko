@@ -58,6 +58,8 @@
 * A native install gives serve its own temp folder, `<data>/tmp`.
 * `openneko release-check --serve-socket` prints `serve_confinement=` and fails when serve runs unconfined in production mode. The status page shows "Agent confinement".
 * On a Linux kernel without Landlock, serve starts and refuses only agent turns; host model calls and embeddings run. On Windows, the start line, status page, `openneko doctor` and `release-check` say "agent confinement: not available on this system yet", and `release-check` fails in production mode.
+* **Breaking:** on Windows, serve refuses every agent turn in production mode, because Windows has no agent confinement yet. Before, turns ran unconfined.
+* On a system that cannot confine agent turns (Linux without Landlock or seccomp, Windows), an admin can turn on "Run agent turns without OS confinement on this system" at Admin, Settings, Agent, after typing the host name. The form refuses it where the system can confine turns. Each change goes in the audit chain of every organization (`agent.unconfined_turns.on`, `.off`). While it is on, the status page and `openneko doctor` show a failure, each run record stores `ran_unconfined`, and `openneko release-check --serve-socket` fails unless `--allow-unconfined` is given. Migration 0149 adds the `install_setting` table and the run column. New routes: `GET` and `PUT /api/v1/settings/agent/unconfined`.
 * `web_fetch` refuses shared (100.64.0.0/10) and NAT64 addresses, and checks the host's addresses also when web uses a proxy. Serve labels each stderr line of an agent runner and caps it.
 
 ### Sandbox image
