@@ -8,7 +8,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func setList(t *testing.T, path, sddl string) {
+func setTestList(t *testing.T, path, sddl string) {
 	t.Helper()
 	sd, err := windows.SecurityDescriptorFromString(sddl)
 	if err != nil {
@@ -23,7 +23,7 @@ func setList(t *testing.T, path, sddl string) {
 
 func TestSocketFolderLimitsAnOpenFolder(t *testing.T) {
 	dir := t.TempDir()
-	setList(t, dir, "D:P(A;OICI;FA;;;WD)(A;OICI;FA;;;SY)")
+	setTestList(t, dir, "D:P(A;OICI;FA;;;WD)(A;OICI;FA;;;SY)")
 	if err := Verify(dir); err == nil {
 		t.Fatal("Verify accepts a folder open to everyone")
 	}
@@ -41,7 +41,7 @@ func TestSocketFolderRefusesAFolderItCannotLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	setList(t, dir, "D:P(D;;WD;;;OW)(D;;WD;;;"+user.User.Sid.String()+")(A;OICI;FA;;;WD)(A;OICI;FA;;;SY)")
+	setTestList(t, dir, "D:P(D;;WD;;;OW)(D;;WD;;;"+user.User.Sid.String()+")(A;OICI;FA;;;WD)(A;OICI;FA;;;SY)")
 	if err := SocketFolder(filepath.Join(dir, "x.sock")); err == nil {
 		t.Fatal("SocketFolder accepts a folder that stays open to everyone")
 	}
@@ -56,8 +56,34 @@ func TestVerifyReadsDenyEntriesAsHarmless(t *testing.T) {
 	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	setList(t, file, "D:P(D;;WD;;;WD)(A;;FA;;;SY)(A;;FA;;;"+user.User.Sid.String()+")")
+	setTestList(t, file, "D:P(D;;WD;;;WD)(A;;FA;;;SY)(A;;FA;;;"+user.User.Sid.String()+")")
 	if err := Verify(file); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSetReadsTheListBack(t *testing.T) {
+	defer func(f func(string, *windows.ACL) error) { setList = f }(setList)
+	setList = func(string, *windows.ACL) error { return nil }
+	dir := t.TempDir()
+	open := filepath.Join(dir, "f")
+	if err := os.WriteFile(open, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	setTestList(t, open, "D:P(A;;FA;;;WD)(A;;FA;;;SY)")
+	if err := Set(open); err == nil {
+		t.Fatal("Set reports success while the file stays open to everyone")
+	}
+}
+
+func TestSetRefusesAVolumeWithNoAccessList(t *testing.T) {
+	flags, err := volumeFlags(t.TempDir())
+	if err != nil || flags&windows.FILE_PERSISTENT_ACLS == 0 {
+		t.Fatalf("control: the test folder's volume keeps no access list (flags %#x, %v)", flags, err)
+	}
+	defer func(f func(string) (uint32, error)) { volumeFlags = f }(volumeFlags)
+	volumeFlags = func(string) (uint32, error) { return flags &^ windows.FILE_PERSISTENT_ACLS, nil }
+	if err := Set(t.TempDir()); err == nil {
+		t.Fatal("Set accepts a volume that keeps no access list")
 	}
 }

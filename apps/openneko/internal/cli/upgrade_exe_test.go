@@ -78,8 +78,8 @@ func TestReplaceFileOverARunningExecutable(t *testing.T) {
 		t.Fatal("the running process ended during the upgrade")
 	default:
 	}
-	if left, _ := filepath.Glob(exe + ".old*"); runtime.GOOS == "windows" && len(left) != 1 {
-		t.Fatalf("want the running image moved aside, found %v", left)
+	if left, _ := filepath.Glob(exe + ".old*"); len(left) != 0 {
+		t.Fatalf("the running image moved aside to %v, so a crash between two renames could leave no executable", left)
 	}
 
 	_ = cmd.Process.Kill()

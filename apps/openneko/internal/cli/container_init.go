@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
 	"github.com/spf13/cobra"
 )
 
@@ -123,5 +124,8 @@ func writePrivateFile(path string, data []byte, flag int) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Chmod(path, 0o600)
+	if err := os.Chmod(path, 0o600); err != nil {
+		return err
+	}
+	return ownonly.Set(path)
 }

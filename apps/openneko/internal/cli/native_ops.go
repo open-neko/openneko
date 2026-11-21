@@ -711,11 +711,16 @@ func replaceFile(src, dst string) error {
 	return swapAside(tmp.Name(), dst)
 }
 
-// Windows refuses a rename onto the image of a running process but allows
-// a rename of that image, so the running openneko.exe moves aside first.
+// Windows refuses a plain rename onto the image of a running process. A
+// POSIX rename replaces it in one step; where the system refuses that too,
+// the running openneko.exe moves aside first, which leaves a short gap with
+// no openneko.exe.
 var moveExecutableAside = runtime.GOOS == "windows"
 
 func swapAside(next, dst string) error {
+	if replaceInPlace(next, dst) == nil {
+		return nil
+	}
 	aside := dst + ".old"
 	if err := os.Remove(aside); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		aside = fmt.Sprintf("%s.old-%d", dst, time.Now().UnixNano())

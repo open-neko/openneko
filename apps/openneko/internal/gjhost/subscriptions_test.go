@@ -159,9 +159,7 @@ func TestSubscriptionsServeWorkflowOutputsAsTheNarrowRole(t *testing.T) {
 		_, out = graphql(t, addr, `{ workflow_output { title kind org_id } }`)
 		return strings.Contains(out, "stock is low")
 	})
-	if info, err := os.Stat(dir); err != nil || !testmode.Is(t, info, 0o700) {
-		t.Fatalf("config folder mode: %v %v", info.Mode().Perm(), err)
-	}
+	testmode.Private(t, dir, 0o700)
 	if _, out := graphql(t, addr, `{ organization { id } }`); strings.Contains(out, "org-1") || !strings.Contains(out, "permission denied for table organization") {
 		t.Fatalf("the role must see workflow_output only, got %s", out)
 	}

@@ -15,6 +15,8 @@ import (
 	"slices"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
 )
 
 const (
@@ -46,6 +48,10 @@ func StageArchive(ctx context.Context, data []byte, stagingParent string, reserv
 	}
 	temporary, err := os.MkdirTemp(stagingParent, ".upload-")
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := ownonly.Set(temporary); err != nil {
+		_ = os.RemoveAll(temporary)
 		return nil, nil, err
 	}
 	cleanup := func() { _ = os.RemoveAll(temporary) }

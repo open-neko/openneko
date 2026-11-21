@@ -88,9 +88,7 @@ func TestOpenEvalTrace(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { tr.Close() })
-	if info, err := os.Stat(path); err != nil || !testmode.Is(t, info, 0o600) {
-		t.Fatalf("mode %v %v", info.Mode(), err)
-	}
+	testmode.Private(t, path, 0o600)
 
 	b := traceBinding{RunID: "run-trace", OrgID: "org", Kind: "work"}
 	unregister = tr.register(b.RunID)
