@@ -20,6 +20,10 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
 
+// agentPeerRefused, when set, names the processes that may not use the
+// agent socket.
+var agentPeerRefused func(pid int) bool
+
 func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns int, box sandbox.Config, confinement, network confine.State) (<-chan error, error) {
 	if err := box.Check(); err != nil {
 		return nil, err
@@ -61,7 +65,8 @@ func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns
 	}
 	hostName, _ := os.Hostname()
 	srv := &serve.Server{Getenv: os.Getenv, Host: hostName, Kernel: confine.Kernel(), Log: out, MaxTurns: maxTurns, Sandbox: box, RequireDoor: !webfront.Development(), KeyEnv: names, Confinement: state, NetworkConfinement: networkState,
-		Runner: runner, RunnerEnv: runnerEnv, RunnerConfinement: runnerJSON, ConfineRunner: confineRunner, TurnsOff: turnsOff}
+		Runner: runner, RunnerEnv: runnerEnv, RunnerConfinement: runnerJSON, ConfineRunner: confineRunner, TurnsOff: turnsOff,
+		RefusePeer: agentPeerRefused}
 	done := make(chan error, 1)
 	go func() {
 		err := srv.Serve(ctx, ln)

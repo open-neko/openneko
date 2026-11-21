@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/open-neko/neko/apps/openneko/internal/appdir"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
@@ -45,7 +46,7 @@ func agentRunsRoot() string {
 	if v := strings.TrimSpace(os.Getenv("OPENNEKO_AGENT_RUNS_DIR")); v != "" {
 		return v
 	}
-	return filepath.Join(os.TempDir(), "openneko-agent-runs")
+	return filepath.Join(appdir.Data(), "agent-runs")
 }
 
 // stageOwner differs from the Node launcher's owner, so that neither host

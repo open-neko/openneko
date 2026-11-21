@@ -18,6 +18,8 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/filestore"
 	"github.com/open-neko/neko/apps/openneko/internal/native"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
+	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
+	"github.com/open-neko/openneko/apps/ax-harness/ownacl"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
@@ -43,11 +45,17 @@ func newServeCmd() *cobra.Command {
 			}
 			in := networkStart{TokenKey: key, DatabaseURL: dsn, Addr: addr, FilesDir: filesDir, IndexDir: indexDir, DuckDB: duckdb,
 				CheckSocket: checkSocket, GraphJinConfig: gjConfig, GraphJinAddr: gjAddr, SubscriptionsDir: subsDir}
-			sockDir, err := os.MkdirTemp("", "openneko-serve-")
+			sandboxSocket, _ := sandbox.SocketPath(sandboxURL)
+			if err := networkSocketFolder(checkSocket, agentSocket, keydoor.SocketPath(os.Getenv, agentSocket), sandboxSocket, webAdminSocket()); err != nil {
+				return err
+			}
+			tmp, err := serveTemp(os.TempDir())
 			if err != nil {
 				return err
 			}
-			defer os.RemoveAll(sockDir)
+			defer os.RemoveAll(tmp.Base)
+			in.TempDir = tmp.Network
+			sockDir := tmp.Sockets
 			if gjConfig != "" {
 				in.GraphJinSocket = filepath.Join(sockDir, "gj.sock")
 			}
@@ -67,7 +75,11 @@ func newServeCmd() *cobra.Command {
 				return err
 			}
 			defer network.stop()
+			agentPeerRefused = refuseNetworkPeers(network.proc.Pid)
 
+			if err := os.Setenv("TMPDIR", tmp.Turns); err != nil {
+				return err
+			}
 			hostState, err := confineTurnHost(cmd.ErrOrStderr(), serveFolders{agentRuns: webfront.AgentRunsDir(), agentSocket: agentSocket, sandboxURL: sandboxURL}, development)
 			if err != nil {
 				return err
@@ -113,6 +125,31 @@ func newServeCmd() *cobra.Command {
 	return cmd
 }
 
+// serveTempDirs are the private temp folders of serve: one for the sockets
+// of the network part, one for each part's own temp files.
+type serveTempDirs struct{ Base, Sockets, Network, Turns string }
+
+// serveTemp makes serve's temp folders under root. Each part of serve
+// confines itself to its own folder, never to all of root.
+func serveTemp(root string) (serveTempDirs, error) {
+	base, err := os.MkdirTemp(root, "openneko-serve-")
+	if err != nil {
+		return serveTempDirs{}, err
+	}
+	if err := ownacl.Set(base); err != nil {
+		_ = os.RemoveAll(base)
+		return serveTempDirs{}, err
+	}
+	d := serveTempDirs{Base: base, Sockets: filepath.Join(base, "sockets"), Network: filepath.Join(base, "network-tmp"), Turns: filepath.Join(base, "turn-tmp")}
+	for _, dir := range []string{d.Sockets, d.Network, d.Turns} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			_ = os.RemoveAll(base)
+			return serveTempDirs{}, err
+		}
+	}
+	return d, nil
+}
+
 func serveKeyAndDatabase(credentials string) ([]byte, string, error) {
 	if credentials != "" {
 		key, dsn, err := readServeCredentials(credentials)
@@ -133,7 +170,7 @@ func serveKeyAndDatabase(credentials string) ([]byte, string, error) {
 }
 
 func subscriptionsDir() string {
-	return envOr("OPENNEKO_SUBSCRIPTIONS_DIR", filepath.Join(os.TempDir(), "openneko-subscriptions"))
+	return envOr("OPENNEKO_SUBSCRIPTIONS_DIR", filepath.Join(appdir.Data(), "subscriptions"))
 }
 
 func reportFileStore(ctx context.Context, w io.Writer, store filestore.Store, dir string) {

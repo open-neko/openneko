@@ -46,7 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-15]
+        os: [ubuntu-22.04, ubuntu-24.04-arm, macos-15]
     defaults:
       run:
         working-directory: apps/openneko
@@ -93,9 +93,20 @@ jobs:
           cat /sys/kernel/security/lsm || true
           tests=(TestEveryThreadIsConfined TestConfinedServeOneAccount TestServeRefusesToStartUnconfinedInProduction
             TestConfinedRunner TestRunnerRefusesATurnWhenItCannotConfine TestTurnsAreOffWhenRunnersCannotBeConfined
-            TestDoctorNamesTheConfinementAndTheModules TestNoLandlockNamesTheCause TestRunnerFilterRefusesTheListedCalls)
+            TestDoctorNamesTheConfinementAndTheModules TestNoLandlockNamesTheCause TestRunnerFilterRefusesTheListedCalls
+            TestRunnerThreadFloodStaysInTheRunner)
           go test -count=1 -v -run "^($(IFS='|'; echo "${tests[*]}"))\$" ./internal/confine ./internal/cli | tee "$RUNNER_TEMP/confine.log"
           ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/confine.log" "${tests[@]}"
+
+      - name: Hostile runner tests of serve run and do not skip
+        if: runner.os == 'Linux'
+        working-directory: apps/ax-harness
+        run: |
+          set -euo pipefail
+          uname -m
+          tests=(TestBrokerCapsTheRequestsOfATurn TestBrokerKeepsALongTurnThatPacesItsRequests TestServeEndsATurnWhoseRunnerLeftAChildOnTheLink)
+          go test -count=1 -v -run "^($(IFS='|'; echo "${tests[*]}"))\$" ./serve | tee "$RUNNER_TEMP/hostile.log"
+          ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/hostile.log" "${tests[@]}"
 
       - name: macOS confinement proofs run and do not skip
         if: runner.os == 'macOS'
