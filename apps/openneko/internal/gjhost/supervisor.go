@@ -31,6 +31,8 @@ type Supervisor struct {
 	MaxBackoff time.Duration
 	// Command builds the child that serves GraphJin on the unix socket.
 	Command func(socket string) *exec.Cmd
+	// Socket is the child's unix socket; empty puts it in a new temp folder.
+	Socket string
 }
 
 type State struct {
@@ -198,12 +200,17 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		maxB = 30 * time.Second
 	}
 	_ = os.Remove(filepath.Join(dir, staleAgentKey))
-	sockDir, err := os.MkdirTemp("", "openneko-gj-")
-	if err != nil {
-		return err
+	sock := s.Socket
+	if sock == "" {
+		sockDir, err := os.MkdirTemp("", "openneko-gj-")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(sockDir)
+		sock = filepath.Join(sockDir, "graphjin.sock")
+	} else {
+		defer os.Remove(sock)
 	}
-	defer os.RemoveAll(sockDir)
-	sock := filepath.Join(sockDir, "graphjin.sock")
 
 	st := &supervisorState{file: filepath.Join(dir, StateFile)}
 	st.set(StateStarting, "", false)
